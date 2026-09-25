@@ -16,6 +16,7 @@ import {
 } from './recogniseText.js';
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000000fe');
+const STAMP = () => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' });
 
 /**
  * The UI half of the wired pair for D6 rows 2 and 3.
@@ -154,6 +155,7 @@ describe('the recognise-text command', () => {
     await recogniseTextCommand({
       client,
       onApplied: () => undefined,
+      stamp: STAMP,
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
@@ -179,6 +181,7 @@ describe('the recognise-text command', () => {
     await recogniseTextCommand({
       client,
       onApplied: () => undefined,
+      stamp: STAMP,
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
@@ -200,6 +203,7 @@ describe('the recognise-text command', () => {
     await recogniseTextCommand({
       client,
       onApplied: () => undefined,
+      stamp: STAMP,
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
@@ -219,6 +223,7 @@ describe('the recognise-text command', () => {
     await recogniseTextCommand({
       client,
       onApplied: () => undefined,
+      stamp: STAMP,
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
@@ -237,6 +242,7 @@ describe('the recognise-text command', () => {
     await recogniseTextCommand({
       client,
       onApplied: () => undefined,
+      stamp: STAMP,
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
@@ -257,7 +263,7 @@ describe('the recognise-text command', () => {
     const { ask } = recordingAsk({ pages: 'all', language: 'eng' });
     const { track, steps, totals, ended } = recordingTrack();
 
-    await recogniseTextCommand({ client, onApplied: () => undefined, ask, track, servicesReady: () => false }).run(
+    await recogniseTextCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, track, servicesReady: () => false }).run(
       contextWith(3),
     );
 
@@ -286,7 +292,7 @@ describe('the recognise-text command', () => {
       end: () => undefined,
     });
 
-    await recogniseTextCommand({ client, onApplied: () => undefined, ask, track, servicesReady: () => false }).run(
+    await recogniseTextCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, track, servicesReady: () => false }).run(
       contextWith(3),
     );
 
@@ -311,6 +317,7 @@ describe('the recognise-text command', () => {
     await recogniseTextCommand({
       client,
       onApplied: () => undefined,
+      stamp: STAMP,
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
@@ -330,6 +337,7 @@ describe('the recognise-text command', () => {
     await exportSearchableCommand({
       client,
       onApplied: () => undefined,
+      stamp: STAMP,
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
@@ -358,7 +366,7 @@ describe('the recognise-text command', () => {
       end: () => undefined,
     });
 
-    await exportSearchableCommand({ client, onApplied: () => undefined, ask, track, servicesReady: () => false }).run(
+    await exportSearchableCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, track, servicesReady: () => false }).run(
       contextWith(2),
     );
 
@@ -379,6 +387,7 @@ describe('the recognise-text command', () => {
     await enhanceScansCommand({
       client,
       onApplied: () => undefined,
+      stamp: STAMP,
       ask,
       track: UNTRACKED,
     }).run(contextWith(4));
@@ -401,6 +410,7 @@ describe('the recognise-text command', () => {
     await enhanceScansCommand({
       client,
       onApplied: () => undefined,
+      stamp: STAMP,
       ask,
       track: UNTRACKED,
     }).run(contextWith(2));
@@ -418,7 +428,7 @@ describe('the recognise-text command', () => {
     const { client, dispatched, read } = clientOver(['text', 'image-only', 'empty', 'image-only']);
     const { ask, opened } = recordingAsk(undefined);
 
-    await straightenScansCommand({ client, onApplied: () => undefined, ask, track: UNTRACKED }).run(
+    await straightenScansCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, track: UNTRACKED }).run(
       contextWith(4),
     );
 
@@ -430,7 +440,7 @@ describe('the recognise-text command', () => {
   it('STRAIGHTEN: says so when there is nothing to straighten, and a cancelled walk sends and says nothing', async () => {
     const empty = clientOver(['text']);
     const told = recordingAsk(undefined);
-    await straightenScansCommand({ client: empty.client, onApplied: () => undefined, ask: told.ask, track: UNTRACKED }).run(
+    await straightenScansCommand({ client: empty.client, onApplied: () => undefined, stamp: STAMP, ask: told.ask, track: UNTRACKED }).run(
       contextWith(1),
     );
     expect(empty.dispatched).toStrictEqual([]);
@@ -448,7 +458,7 @@ describe('the recognise-text command', () => {
       },
       end: () => undefined,
     });
-    await straightenScansCommand({ client: cancelled.client, onApplied: () => undefined, ask: quiet.ask, track }).run(
+    await straightenScansCommand({ client: cancelled.client, onApplied: () => undefined, stamp: STAMP, ask: quiet.ask, track }).run(
       contextWith(2),
     );
     expect(cancelled.dispatched).toStrictEqual([]);
@@ -462,6 +472,7 @@ describe('the recognise-text command', () => {
     await recogniseTextCommand({
       client,
       onApplied: () => undefined,
+      stamp: STAMP,
       ask,
       track: UNTRACKED,
       servicesReady: () => false,

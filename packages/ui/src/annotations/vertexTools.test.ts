@@ -1,4 +1,4 @@
-import type { RenderableCommand } from '@monstera/contract';
+import type { DispatchableCommand } from '@monstera/contract';
 import { viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -74,7 +74,7 @@ function draw(
   // A looser type here would make every `await` in this file answer `{}`, and
   // the assertions would then be reading a value TypeScript cannot describe —
   // which is how a case ends up asserting on a shape nothing guarantees.
-  command: RenderableCommand | undefined | Promise<RenderableCommand | undefined>;
+  command: DispatchableCommand | undefined | Promise<DispatchableCommand | undefined>;
   over: boolean;
 } {
   let gesture: Gesture | undefined;

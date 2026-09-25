@@ -3,7 +3,7 @@ import type {
   AnnotationDraft,
   AnnotationRect,
   LineEnding,
-  RenderableCommand,
+  DispatchableCommand,
 } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
@@ -161,7 +161,7 @@ function boxTool(
       gesture: Gesture,
       page: number,
       transform: PageTransform,
-    ): RenderableCommand | undefined => {
+    ): DispatchableCommand | undefined => {
       // THE SAME THRESHOLD AS THE PREVIEW, read from it rather than restated:
       // a preview that appeared for a drag the tool then discards is a control
       // that showed something and did nothing, and two copies of one number is
@@ -208,7 +208,7 @@ function lineTool(id: string, ending: LineEnding, style: AnnotationStyle): UiToo
       gesture: Gesture,
       page: number,
       transform: PageTransform,
-    ): RenderableCommand | undefined => {
+    ): DispatchableCommand | undefined => {
       if (drawn(gesture) === undefined) return undefined;
       // TWO POINTS AND NOT A RECTANGLE, which is the difference the draft
       // carries: a rectangle cannot say which diagonal was drawn, so a line
@@ -269,7 +269,7 @@ function inkTool(id: string, style: AnnotationStyle): UiTool {
       gesture: Gesture,
       page: number,
       transform: PageTransform,
-    ): RenderableCommand | undefined => {
+    ): DispatchableCommand | undefined => {
       if (drawn(gesture) === undefined) return undefined;
       return {
         kind: 'addAnnotation',

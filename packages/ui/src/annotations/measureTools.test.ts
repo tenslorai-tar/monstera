@@ -1,4 +1,4 @@
-import type { MeasureScale, RenderableCommand } from '@monstera/contract';
+import type { MeasureScale, DispatchableCommand } from '@monstera/contract';
 import { viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -59,11 +59,11 @@ function drag(
   tool: UiTool,
   from: readonly [number, number],
   to: readonly [number, number],
-): RenderableCommand | undefined {
+): DispatchableCommand | undefined {
   const { controller } = tool;
   const started = controller.begin(viewportPoint(from[0], from[1]));
   const moved = controller.update(started, viewportPoint(to[0], to[1]));
-  return controller.commit(moved, 3, overlayTransform(PAGE)) as RenderableCommand | undefined;
+  return controller.commit(moved, 3, overlayTransform(PAGE)) as DispatchableCommand | undefined;
 }
 
 /**
@@ -83,7 +83,7 @@ function press(gesture: Gesture | undefined, at: readonly [number, number], doub
 function draw(
   tool: UiTool,
   points: readonly (readonly [number, number])[],
-): { command: RenderableCommand | undefined; over: boolean } {
+): { command: DispatchableCommand | undefined; over: boolean } {
   let gesture: Gesture | undefined;
   for (const [at, point] of points.entries()) {
     gesture = press(gesture, point, at === points.length - 1);
@@ -93,7 +93,7 @@ function draw(
   return {
     command: over
       ? (tool.controller.commit(gesture, 3, overlayTransform(PAGE)) as
-          | RenderableCommand
+          | DispatchableCommand
           | undefined)
       : undefined,
     over,

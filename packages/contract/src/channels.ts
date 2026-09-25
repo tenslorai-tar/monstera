@@ -30,6 +30,10 @@ import {
   MAX_TEXT_REPLACEMENTS,
   annotationKindNameSchema,
   annotationRectSchema,
+  annotationAuthorSchema,
+  annotationBlendSchema,
+  annotationStampSchema,
+  annotationInstantSchema,
   formDataFormatSchema,
   formDataImportFormatSchema,
   annotationDataFormatSchema,
@@ -1033,6 +1037,12 @@ export const channels = {
        * artifact rather than something detected at runtime.
        */
       installChannel: z.enum(['store', 'web', 'development']),
+      /**
+       * The signed-in Windows user's name, which an empty *Your name for comments* stands for
+       * (ADR-0103 Decision 2). `main` reads it from the operating system; the renderer has no other
+       * route to it. Bounded by the author bound, since it is written into `/T` as it is.
+       */
+      userName: annotationAuthorSchema,
     }),
   ),
 
@@ -2771,6 +2781,8 @@ export const channels = {
       rect: annotationRectSchema,
       text: z.string().min(1).max(MAX_BARCODE_TEXT),
       format: z.enum(BARCODE_FORMATS),
+      /** Who placed it and when — the renderer's to say, main's to write (ADR-0103). */
+      stamp: annotationStampSchema,
     }),
     z.discriminatedUnion('kind', [
       z.object({
@@ -2844,6 +2856,8 @@ export const channels = {
       docId: docIdSchema,
       pages: z.array(z.number().int().nonnegative()).min(1).max(MAX_IMAGE_PAGES).readonly(),
       rect: annotationRectSchema,
+      /** Who placed it and when — the renderer's to say, main's to write (ADR-0103). */
+      stamp: annotationStampSchema,
     }),
     z.discriminatedUnion('kind', [
       z.object({
@@ -3718,6 +3732,21 @@ export const channels = {
              * index would be read against this entry's own page.
              */
             inReplyTo: z.number().int().nonnegative().nullable(),
+            /**
+             * Who made it — `/T`, or empty where the document names nobody (ADR-0103). Sliced to
+             * the bound rather than refused, for `contents`' reason: a long name is still a name.
+             */
+            author: annotationAuthorSchema,
+            /**
+             * When it was made — `/CreationDate` as a UTC instant, or `null` where the document
+             * carries none or one that does not parse. Never invented: a mark with no date says so.
+             */
+            created: annotationInstantSchema.nullable(),
+            /**
+             * The blend its appearance is DRAWN in — what a viewer shows, read from the appearance
+             * stream rather than from the dictionary's `/BM` claim (ADR-0103).
+             */
+            blend: annotationBlendSchema,
           }),
         )
         .max(MAX_ANNOTATIONS)

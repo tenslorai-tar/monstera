@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react';
-import type { ContractClient, RenderableCommand } from '@monstera/contract';
+import type { ContractClient, DispatchableCommand } from '@monstera/contract';
 import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 import type React from 'react';
 import { Fragment, type ReactElement, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -205,7 +205,7 @@ export interface PageListProps {
   readonly drawing?:
     | {
         readonly tool: UiTool;
-        readonly onCommand: (command: RenderableCommand) => void;
+        readonly onCommand: (command: DispatchableCommand) => void;
         /**
          * What the select tool has picked, drawn over its own page.
          *

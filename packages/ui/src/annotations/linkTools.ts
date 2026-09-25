@@ -1,4 +1,4 @@
-import type { LinkTarget, RenderableCommand } from '@monstera/contract';
+import type { LinkTarget, DispatchableCommand } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 
 import {
@@ -69,7 +69,7 @@ function linkTool(
       gesture: Gesture,
       page: number,
       transform: PageTransform,
-    ): Promise<RenderableCommand | undefined> => {
+    ): Promise<DispatchableCommand | undefined> => {
       if (!drawn(gesture)) return undefined;
       // READ BEFORE THE ASK. The rectangle belongs to the drag that just
       // happened; converting after the dialog resolves would use whatever

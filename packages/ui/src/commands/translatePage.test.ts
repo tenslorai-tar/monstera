@@ -66,6 +66,7 @@ async function run(options: {
   await translatePageCommand({
     client,
     onApplied: (a) => applied.push(a),
+    stamp: () => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' }),
     ask: (id, props) => {
       asked.push({ id, props });
       // `in`, not `??`: a DISMISSAL is `undefined`, and a case must be able to pass exactly that.

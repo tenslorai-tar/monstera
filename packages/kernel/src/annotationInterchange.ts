@@ -8,7 +8,7 @@ import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { fdfFile, pdfName, pdfString, xmlCanCarry, xmlEscaped } from './interchangeEncoding.js';
 import { withDocument } from './mupdfWriter.js';
-import { annotationAt, markAuthored, pageAt } from './pageAnnotations.js';
+import { annotationAt, markAuthored, pageAt, redraw } from './pageAnnotations.js';
 import { type XfdfAnnotation, readXfdfAnnotations } from './xfdfReader.js';
 
 /**
@@ -874,8 +874,9 @@ export const applyImportAnnotations: Apply<'mupdf', 'importAnnotations'> = (sess
       // DRAWN NOW, and not load-bearing for the file: measured 2026-09-17, with this call removed
       // MuPDF's save still wrote a correct appearance (`7 w`, `1 0 0 RG`, the inset box) for an
       // imported square. It is MuPDF's own call for an annotation whose entries changed, and it
-      // gives the session an appearance before any save does.
-      annotation.update();
+      // gives the session an appearance before any save does. Through `redraw`, the kernel's one
+      // redraw, so an imported `/BM` reaches the appearance too (ADR-0103).
+      redraw(annotation, document);
     }
   });
 

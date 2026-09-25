@@ -1,4 +1,4 @@
-import type { AnnotationColour, RenderableCommand } from '@monstera/contract';
+import type { AnnotationColour, DispatchableCommand } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 
 import { ANNOTATION_TEXT_DIALOG_ID } from '../dialogs/annotationText.js';
@@ -134,7 +134,7 @@ function boxTextTool(
       gesture: Gesture,
       page: number,
       transform: PageTransform,
-    ): Promise<RenderableCommand | undefined> => {
+    ): Promise<DispatchableCommand | undefined> => {
       // THE SAME THRESHOLD AS THE PREVIEW, read from it rather than restated —
       // and here it also decides whether a modal opens at all, so the two
       // coming apart would be a dialog appearing for a drag that showed no box.

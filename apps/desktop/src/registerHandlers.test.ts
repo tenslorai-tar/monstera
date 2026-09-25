@@ -42,7 +42,7 @@ function recorder(): IpcHandleTarget & {
   };
 }
 
-const appInfo: AppInfo = { version: '9.9.9', installChannel: 'web' };
+const appInfo: AppInfo = { version: '9.9.9', installChannel: 'web', userName: 'A. Tester' };
 
 /**
  * The command bus is not exercised by anything in this file.
@@ -198,7 +198,7 @@ describe('main-process contract registration', () => {
     expect(listener).toBeDefined();
     const envelope = await listener?.({}, {});
 
-    expect(envelope).toEqual({ ok: true, value: { version: '9.9.9', installChannel: 'web' } });
+    expect(envelope).toEqual({ ok: true, value: { version: '9.9.9', installChannel: 'web', userName: 'A. Tester' } });
   });
 
   // THE ASSERTION IS ON THE DIAGNOSTIC, and the first draft of this case was

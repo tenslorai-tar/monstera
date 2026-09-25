@@ -1,4 +1,4 @@
-import type { RenderableCommand } from '@monstera/contract';
+import type { DispatchableCommand } from '@monstera/contract';
 import { viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -61,7 +61,7 @@ function twoPress(
 function commit(
   tool: UiTool,
   gesture: Gesture,
-): RenderableCommand | undefined | Promise<RenderableCommand | undefined> {
+): DispatchableCommand | undefined | Promise<DispatchableCommand | undefined> {
   return tool.controller.commit(gesture, 3, overlayTransform(PAGE));
 }
 

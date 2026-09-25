@@ -74,6 +74,7 @@ function callbacks(reply: unknown): {
       onApplied: record('applied'),
       onOpened: record('opened'),
       onActivate: record('activate'),
+      stamp: () => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' }),
     },
   };
 }

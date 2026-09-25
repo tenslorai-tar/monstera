@@ -1,4 +1,4 @@
-import type { AnnotationKindName, RenderableCommand } from '@monstera/contract';
+import type { AnnotationBlend, AnnotationKindName, DispatchableCommand } from '@monstera/contract';
 import type { DocVersion, PageTransform } from '@monstera/shared';
 import { pdfPoint, toViewport } from '@monstera/shared';
 
@@ -96,6 +96,12 @@ export interface ErasableAnnotation {
    * later would describe a document those handles may no longer name.
    */
   readonly contents: string;
+  /** `/T`, or empty — the Properties tab's author, carried for `contents`' reason (ADR-0103). */
+  readonly author: string;
+  /** `/CreationDate` as a UTC instant, or `null` where the mark carries none. */
+  readonly created: string | null;
+  /** The blend its appearance is drawn in. */
+  readonly blend: AnnotationBlend;
 }
 
 /** What the walk answered, and the version it answered at. */
@@ -146,7 +152,7 @@ export function eraserTool(deps: EraserDeps): UiTool {
       gesture: Gesture,
       page: number,
       transform: PageTransform,
-    ): Promise<RenderableCommand | undefined> => {
+    ): Promise<DispatchableCommand | undefined> => {
       // WHERE THE CLICK LANDED, not where the pointer was released. The point
       // tools' rule and for their reason: a hand that slid on the way up still
       // meant the mark it came down on.

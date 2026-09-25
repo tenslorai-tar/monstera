@@ -1,4 +1,4 @@
-import type { RenderableCommand } from '@monstera/contract';
+import type { DispatchableCommand } from '@monstera/contract';
 import type { ViewportPoint } from '@monstera/shared';
 import type React from 'react';
 import { type ReactElement, useCallback, useRef, useState } from 'react';
@@ -62,7 +62,7 @@ export interface AnnotationOverlayProps {
    * second opinion B3a spends its time on, on the one question every mutation
    * asks.
    */
-  readonly onCommand: (command: RenderableCommand) => void;
+  readonly onCommand: (command: DispatchableCommand) => void;
   /** The accessible name for the drawing surface, resolved by the caller. */
   readonly label: string;
 }

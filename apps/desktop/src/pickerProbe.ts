@@ -162,7 +162,7 @@ export async function reportPickerProbe(): Promise<void> {
     // and an edit here expires a person's observation; three of them were spent
     // on arguments that had nothing to do with what the person saw.
     ...harnessSurfaces('the picker probe'),
-    appInfo: { version: app.getVersion(), installChannel: 'development' },
+    appInfo: { version: app.getVersion(), installChannel: 'development', userName: 'Picker Probe' },
     // THE ONE OVERRIDE, and it is the whole subject of the record: the real
     // picker, wrapped only to note that a value came back.
     pickDocument: async () => {

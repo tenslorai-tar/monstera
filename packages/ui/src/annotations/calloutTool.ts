@@ -1,4 +1,4 @@
-import type { AnnotationColour, RenderableCommand } from '@monstera/contract';
+import type { AnnotationColour, DispatchableCommand } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
@@ -81,7 +81,7 @@ export function calloutTool(deps: TextToolDeps): UiTool {
       gesture: Gesture,
       page: number,
       transform: PageTransform,
-    ): Promise<RenderableCommand | undefined> => {
+    ): Promise<DispatchableCommand | undefined> => {
       const box = boxOf(gesture);
       if (box === undefined) return undefined;
       // BOTH READ BEFORE THE ASK, `textTools.ts`' rule: the transform is the one

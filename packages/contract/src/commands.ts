@@ -1183,8 +1183,14 @@ export type AnnotationColour = z.infer<typeof annotationColourSchema>;
  * display-only defect with a slider in front of it. Ten percent is faint and
  * still visibly there. A person who wants a mark gone deletes it, which is what
  * the eraser is for.
+ *
+ * The floor is a named value because a control has to state it too: a slider offering less is a control whose
+ * value the payload refuses, over the person's document.
  */
-export const annotationOpacitySchema = z.number().min(0.1).max(1);
+export const MIN_ANNOTATION_OPACITY = 0.1;
+
+/** How opaque an annotation is, from {@link MIN_ANNOTATION_OPACITY} to fully opaque. */
+export const annotationOpacitySchema = z.number().min(MIN_ANNOTATION_OPACITY).max(1);
 
 /** How opaque an annotation is. See {@link annotationOpacitySchema}. */
 export type AnnotationOpacity = z.infer<typeof annotationOpacitySchema>;
@@ -2150,12 +2156,45 @@ export const fillFormFieldSchema = z.object({
  * annotation across a scope, which is a different intent with a different undo,
  * and it takes the scope union `cropPages` introduced rather than widening this.
  */
+/**
+ * How long an annotation's author (`/T`) may be, in characters — a person's name, not a note. Bounded
+ * because every string that crosses is, and a document's own `/T` is hostile input when it is read.
+ */
+export const MAX_ANNOTATION_AUTHOR = 128;
+export const annotationAuthorSchema = z.string().max(MAX_ANNOTATION_AUTHOR);
+
+/**
+ * An annotation's creation instant, as ISO 8601 in UTC (`2026-09-24T09:38:00.000Z`). The format bounds
+ * it in practice; the `max` bounds it in the schema, which is what invariant L11's sweep reads — a
+ * pattern is not a length. 40 is past the longest instant the format allows (six-digit years and
+ * fractional seconds included) and far below anything worth carrying.
+ */
+export const annotationInstantSchema = z.iso.datetime().max(40);
+
+/**
+ * Who made an annotation and when, carried by every command that creates one (ADR-0103 Decision 1).
+ *
+ * **In the payload, not read from a clock in the kernel.** The creation commands are declared
+ * reproducible — the same command against the same bytes writes the same bytes — and a date stamped
+ * by the engine would make every replay write a different one. Here the moment is part of the
+ * intent. `created` is an ISO 8601 instant in UTC, which is what `/CreationDate` is written from.
+ */
+export const annotationStampSchema = z
+  .object({
+    author: annotationAuthorSchema,
+    created: annotationInstantSchema,
+  })
+  .strict();
+export type AnnotationStamp = z.infer<typeof annotationStampSchema>;
+
 export const addAnnotationSchema = z.object({
   kind: z.literal('addAnnotation'),
   /** Zero-based index of the page it goes on. */
   page: z.number().int().nonnegative(),
   /** What was drawn. */
   annotation: annotationDraftSchema,
+  /** Who drew it and when (ADR-0103). */
+  stamp: annotationStampSchema,
 });
 
 /**
@@ -2383,6 +2422,8 @@ export const placeImageSchema = z.object({
     (value) => value instanceof Uint8Array && value.byteLength <= MAX_IMAGE_BYTES,
     { message: 'not an image this build will place, or larger than the bound' },
   ),
+  /** Who placed it and when (ADR-0103). */
+  stamp: annotationStampSchema,
 });
 
 /**
@@ -2540,6 +2581,13 @@ export const MAX_STYLED_ANNOTATIONS = 1024;
  * callers. Absent means *leave the width alone*, and the kernel skips a subtype
  * that has none whatever it is asked.
  */
+/**
+ * The blend modes a person may choose for an annotation (ADR-0103): Multiply lets what is under a
+ * mark show through its colour, as a highlighter does; Normal paints over it.
+ */
+export const annotationBlendSchema = z.enum(['multiply', 'normal']);
+export type AnnotationBlend = z.infer<typeof annotationBlendSchema>;
+
 export const styleAnnotationSchema = z
   .object({
     kind: z.literal('styleAnnotation'),
@@ -2559,6 +2607,8 @@ export const styleAnnotationSchema = z
     opacity: annotationOpacitySchema.optional(),
     /** Points. */
     borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER).optional(),
+    /** Written to the dictionary's `/BM` and into the appearance, where viewers read it (ADR-0103). */
+    blend: annotationBlendSchema.optional(),
     /** The version that answer carried. Refused if the document has moved. */
     version: docVersionSchema,
   })
@@ -2566,8 +2616,11 @@ export const styleAnnotationSchema = z
   // step in the log for a document that did not change.
   .refine(
     (command) =>
-      command.colour !== undefined || command.opacity !== undefined || command.borderWidth !== undefined,
-    { message: 'a restyle names at least one of colour, opacity and line width' },
+      command.colour !== undefined ||
+      command.opacity !== undefined ||
+      command.borderWidth !== undefined ||
+      command.blend !== undefined,
+    { message: 'a restyle names at least one of colour, opacity, line width and blend' },
   );
 
 /**
@@ -2624,6 +2677,25 @@ export const editAnnotationTextSchema = z.object({
 });
 
 /**
+ * Rewrites who ONE annotation says made it — its `/T` (ADR-0103 Decision 3).
+ *
+ * `editAnnotationText`'s shape and its reasons: singular, because one field of one mark is one
+ * decision; an empty string allowed, because undo restores a mark that named nobody. The creation
+ * time has no such command: a *created* date a person can edit is not one.
+ */
+export const setAnnotationAuthorSchema = z.object({
+  kind: z.literal('setAnnotationAuthor'),
+  /** Zero-based index of the page it sits on. */
+  page: z.number().int().nonnegative(),
+  /** Its position in the walk that produced the answer this names. */
+  index: z.number().int().nonnegative(),
+  /** Who it should name. */
+  author: annotationAuthorSchema,
+  /** The version that answer carried. Refused if the document has moved. */
+  version: docVersionSchema,
+});
+
+/**
  * Answers one annotation with another — §7's *reply* on the annotation menu.
  *
  * ## The SHAPE is PDF's, not ours (B3a)
@@ -2668,6 +2740,8 @@ export const replyToAnnotationSchema = z.object({
    * carrying nothing is a marker a reader opens to find no answer in it.
    */
   text: z.string().min(1).max(MAX_ANNOTATION_TEXT),
+  /** Who replied and when (ADR-0103). The reply's own, never the mark it answers. */
+  stamp: annotationStampSchema,
   /** The version that answer carried. Refused if the document has moved. */
   version: docVersionSchema,
 });
@@ -2679,9 +2753,9 @@ export const replyToAnnotationSchema = z.object({
  *
  * After one of these, a handle minted at the version it was composed against names the same mark at
  * the version it produced, so a selection is re-read there rather than dropped. The walk is a total
- * order over a fixed set per version (ADR-0041), and these three change neither the order nor the
- * set: a restyle writes `/C`, `/CA` and `/BS`, an edit writes `/Contents`, and a placement writes
- * the geometry — each on the object the handle names, in place.
+ * order over a fixed set per version (ADR-0041), and these four change neither the order nor the
+ * set: a restyle writes `/C`, `/CA`, `/BS` and `/BM`, an edit writes `/Contents`, an author change
+ * writes `/T`, and a placement writes the geometry — each on the object the handle names, in place.
  *
  * `removeAnnotation` shrinks the set and `replyToAnnotation` grows it, so neither is here. **The
  * kernel proves each member keeps the walk and each of those two does not**, against the engine, so
@@ -2692,10 +2766,11 @@ export const KEEPS_THE_ANNOTATION_WALK: ReadonlySet<WalkKeepingKind> = new Set([
   'placeAnnotation',
   'styleAnnotation',
   'editAnnotationText',
+  'setAnnotationAuthor',
 ] as const);
 
 /** The kinds {@link KEEPS_THE_ANNOTATION_WALK} names. */
-export type WalkKeepingKind = 'placeAnnotation' | 'styleAnnotation' | 'editAnnotationText';
+export type WalkKeepingKind = 'placeAnnotation' | 'styleAnnotation' | 'editAnnotationText' | 'setAnnotationAuthor';
 
 /** Whether `command` is one of them — the set's one reader for a command in hand. */
 export function keepsTheAnnotationWalk<C extends { readonly kind: string }>(
@@ -4327,6 +4402,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   addLinkSchema,
   styleAnnotationSchema,
   editAnnotationTextSchema,
+  setAnnotationAuthorSchema,
   replyToAnnotationSchema,
   fillFormFieldSchema,
   deleteFormFieldsSchema,
@@ -4449,6 +4525,8 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // anywhere to put the string: the subtype decides, and the kernel is what
   // reads it.
   editAnnotationTextSchema,
+  // RENDERABLE, the same shape again with a name in place of the text (ADR-0103).
+  setAnnotationAuthorSchema,
   // RENDERABLE, and the only draft-like command whose index names something it
   // does NOT change. The reply's own identity is minted in the kernel, as every
   // add's is; what crosses is which mark is being answered and what the answer
@@ -4557,6 +4635,30 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
 
 /** A command a renderer may send. */
 export type RenderableCommand = z.infer<typeof renderableCommandSchema>;
+
+/** A command with its stamp removed, where it has one. */
+type Unstamped<C> = C extends { readonly stamp: AnnotationStamp } ? Omit<C, 'stamp'> : C;
+
+/**
+ * A command as a SURFACE builds it: every renderable command, the creation commands without their
+ * stamp (ADR-0103).
+ *
+ * A tool, a menu command or a panel says what to make; who made it and when is the dispatcher's to
+ * say, from the person's name for comments and the moment it is sent. Typed so a surface cannot
+ * write a stamp at all — a tool that forged an author or a date would be a second writer of both —
+ * and so the dispatcher cannot forget one: {@link withStamp} is the only way from this type to the
+ * wire's.
+ */
+export type DispatchableCommand = Unstamped<RenderableCommand>;
+
+/** Attaches the dispatcher's stamp to a creation command, and passes every other command through. */
+export function withStamp(command: DispatchableCommand, stamp: AnnotationStamp): RenderableCommand {
+  // THE TWO RENDERABLE CREATION KINDS BY NAME. The compiler holds the list: a third renderable kind
+  // gaining a required `stamp` leaves it in the unstamped half of `DispatchableCommand`, and the
+  // `return command` below stops type-checking until it is named here.
+  if (command.kind === 'addAnnotation' || command.kind === 'replyToAnnotation') return { ...command, stamp };
+  return command;
+}
 
 /**
  * Which kinds a renderer may **not** send, checked in both directions.
@@ -4712,6 +4814,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'placeAnnotation') return command.version;
   if (command.kind === 'styleAnnotation') return command.version;
   if (command.kind === 'editAnnotationText') return command.version;
+  if (command.kind === 'setAnnotationAuthor') return command.version;
   if (command.kind === 'replyToAnnotation') return command.version;
   if (command.kind === 'fillFormField') return command.version;
   if (command.kind === 'deleteFormFields') return command.version;
@@ -4740,6 +4843,7 @@ export type NamesAnAnnotation =
   | 'placeAnnotation'
   | 'styleAnnotation'
   | 'editAnnotationText'
+  | 'setAnnotationAuthor'
   // THE ONE MEMBER WHOSE INDEX IS NOT THE MARK IT CHANGES. A reply names the
   // annotation it ANSWERS, which is still a handle into this walk and still
   // stale the moment the document moves — the staleness question is about what

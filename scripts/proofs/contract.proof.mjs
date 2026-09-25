@@ -843,6 +843,25 @@ const EDIT_ANNOTATION_TEXT_SPEC = `  editAnnotationText: {
  * is the walk's one invertible command, and a copy of it here would have compiled a
  * table in which the *true* combination appeared twice and this shape not at all.
  */
+/**
+ * THE NEWEST KIND (2026-09-24, ADR-0103), and the one the missing-kind case now omits.
+ * `editAnnotationText`'s axes exactly — one index and one string, so invertible with an inverse
+ * undo — because it rewrites `/T` where that command rewrites `/Contents`.
+ */
+const SET_ANNOTATION_AUTHOR_SPEC = `  setAnnotationAuthor: {
+    kind: 'setAnnotationAuthor',
+    writer: 'mupdf',
+    apply: applySetAnnotationAuthor,
+    capture: captureSetAnnotationAuthor,
+    invert: invertSetAnnotationAuthor,
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
 const REPLY_TO_ANNOTATION_SPEC = `  replyToAnnotation: {
     kind: 'replyToAnnotation',
     writer: 'mupdf',
@@ -1104,6 +1123,9 @@ const SPEC_IMPORTS = `import {
   applyEditAnnotationText,
   captureEditAnnotationText,
   invertEditAnnotationText,
+  applySetAnnotationAuthor,
+  captureSetAnnotationAuthor,
+  invertSetAnnotationAuthor,
   applyReplyToAnnotation,
   captureReplyToAnnotation,
   invertReplyToAnnotation,
@@ -1246,7 +1268,7 @@ const CASES = [
 import type { ContractHandlers } from '@monstera/contract';
 import { ok, asDocVersion } from '@monstera/shared';
 export const handlers: ContractHandlers = {
-  'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
+  'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development', userName: 'A. Tester' })),
   'app.ocrLanguages': () => Promise.resolve(ok({ languages: [] })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.recent': () =>
@@ -1405,7 +1427,7 @@ export const handlers: ContractHandlers = {
 import type { ContractHandlers } from '@monstera/contract';
 import { ok, asDocVersion } from '@monstera/shared';
 export const handlers: ContractHandlers = {
-  'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
+  'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development', userName: 'A. Tester' })),
   'app.ocrLanguages': () => Promise.resolve(ok({ languages: [] })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.recent': () =>
@@ -1546,7 +1568,7 @@ export const handlers: ContractHandlers = {
 import type { ContractHandlers } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 export const handlers: ContractHandlers = {
-  'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
+  'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development', userName: 'A. Tester' })),
   'app.notDeclared': () => Promise.resolve(ok({})),
 };
 `,
@@ -1566,7 +1588,7 @@ export const handlers: ContractHandlers = {
 import type { ContractHandlers } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 export const handlers: ContractHandlers = {
-  'app.info': () => Promise.resolve(ok({ version: 1, installChannel: 'development' })),
+  'app.info': () => Promise.resolve(ok({ version: 1, installChannel: 'development', userName: 'A. Tester' })),
 };
 `,
   },
@@ -1580,7 +1602,7 @@ export const handlers: ContractHandlers = {
 import type { ContractHandlers } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 export const handlers: ContractHandlers = {
-  'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'beta' })),
+  'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'beta', userName: 'A. Tester' })),
 };
 `,
   },
@@ -1637,7 +1659,7 @@ export const handlers: ContractHandlers = {
 import type { ContractClient } from '@monstera/contract';
 import { ok, asDocVersion } from '@monstera/shared';
 export const shim: ContractClient = {
-  'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
+  'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development', userName: 'A. Tester' })),
   'app.ocrLanguages': () => Promise.resolve(ok({ languages: [] })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.recent': () =>
@@ -1915,6 +1937,7 @@ ${IMPORT_ANNOTATIONS_SPEC}
 ${EDIT_ANNOTATION_TEXT_SPEC}
 ${REPLY_TO_ANNOTATION_SPEC}
 ${EDIT_BLOCK_SPEC}
+${SET_ANNOTATION_AUTHOR_SPEC}
 };
 `,
   },
@@ -1962,9 +1985,11 @@ ${EDIT_BLOCK_SPEC}
     // than a nuisance: the wrong code is the reminder. FOUR for four on
     // `replyToAnnotation` (2026-09-21), TS2739 naming it and
     // `editAnnotationText`, for the same reason each time: the table had not
-    // grown by the previous kind either.
+    // grown by the previous kind either. FIVE for five on `setAnnotationAuthor`
+    // (2026-09-24): TS2739 naming it and `editTextBlock`, which this table had
+    // been omitting as the newest.
     because:
-      /Property 'editTextBlock' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'setAnnotationAuthor' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -2032,6 +2057,7 @@ ${IMPORT_LAYER_SPEC}
 ${IMPORT_ANNOTATIONS_SPEC}
 ${EDIT_ANNOTATION_TEXT_SPEC}
 ${REPLY_TO_ANNOTATION_SPEC}
+${EDIT_BLOCK_SPEC}
 };
 `,
   },
@@ -3349,7 +3375,8 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // `signDocument` (all 2026-09-12), 43 since `straightenScans` (2026-09-13), and 44
     // since `importPageAsLayer` (2026-09-14), 45 since `importAnnotations` (2026-09-17), and
     // 46 since `editAnnotationText` (2026-09-20), and 47 since
-    // `replyToAnnotation` (2026-09-21), and 48 since `editTextBlock` (2026-09-23).
+    // `replyToAnnotation` (2026-09-21), and 48 since `editTextBlock` (2026-09-23), and 49 since
+    // `setAnnotationAuthor` (2026-09-24).
     //
     // AND PAST EIGHT MEMBERS TYPESCRIPT ITSELF STARTS ELIDING, which is a
     // change in the diagnostic rather than in the type. The reason line is now
@@ -3367,7 +3394,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 44 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 45 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

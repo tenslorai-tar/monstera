@@ -42,6 +42,11 @@ function clientAnswering(
           // read here, so the default is the ordinary case rather than a value
           // no case asserts.
           inReplyTo: null,
+          // NAMING NOBODY, UNDATED AND NORMAL by default, before the spread so the case about the
+          // author can say otherwise (ADR-0103). The panel reads the author and neither of the others.
+          author: '',
+          created: null,
+          blend: 'normal',
           ...row,
         }
       : row,
@@ -137,6 +142,17 @@ describe('AnnotationsPanel', () => {
     // FIVE ON SCREEN, FOUR IN THE CALL. The two halves of the correspondence in
     // one case, which is the only place they meet.
     expect(jumps).toStrictEqual([4]);
+  });
+
+  it('shows WHO made each mark where the document names someone, and nothing where it names nobody', async () => {
+    // The owner's request for this panel (ADR-0103). Two rows: one naming its author, one naming
+    // nobody — so a panel that printed an author on every row, or on none, fails here.
+    await panel([
+      { page: 0, index: 0, kind: 'square', contents: '', authored: true, author: 'Priya Raman' },
+      { page: 0, index: 1, kind: 'square', contents: '', authored: true },
+    ]);
+    const authors = [...document.querySelectorAll('[data-annotation-author]')].map((element) => element.textContent);
+    expect(authors).toStrictEqual(['Priya Raman']);
   });
 
   it('shows an annotation’s note when it has one', async () => {

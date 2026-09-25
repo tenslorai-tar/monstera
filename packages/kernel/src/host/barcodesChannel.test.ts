@@ -40,6 +40,7 @@ beforeAll(async () => {
       pages: [0],
       rect: barcodeRect({ x0: 100, y0: 400, x1: 300, y1: 600 }, image.width, image.height),
       bytes: image.png,
+      stamp: { author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' },
     });
     withQr = await mupdfWriter.serialise(session);
   } finally {

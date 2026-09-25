@@ -15,7 +15,7 @@ import type { Brand } from '@monstera/shared';
 // Same mechanism as the Electron download one file over, with a different bill.
 import type { ByteImage, PreReadValue } from './engineSeam.js';
 import type { PriorFieldValue } from './formFields.js';
-import type { PriorAnnotationText } from './pageAnnotations.js';
+import type { PriorAnnotationAuthor, PriorAnnotationText } from './pageAnnotations.js';
 // TYPE-ONLY, and here that is load-bearing rather than habitual: this module is
 // reached from `main` and `pdfiumTextEdit.js` reaches koffi and `pdfium.dll`.
 // The import is erased, so the edge the header above warns about is not
@@ -501,6 +501,8 @@ export interface CommandPrior {
    * text is restored to carrying none.
    */
   readonly editAnnotationText: PriorAnnotationText;
+  /** Who a mark named, and which mark — `editAnnotationText`'s prior with `/T` in place of the text. */
+  readonly setAnnotationAuthor: PriorAnnotationAuthor;
   /**
    * **`never`**, and it is {@link addAnnotation}'s statement rather than a new
    * one: a reply mints an annotation whose walk index is not in the payload, so

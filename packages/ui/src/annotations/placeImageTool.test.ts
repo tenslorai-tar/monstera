@@ -1,4 +1,4 @@
-import type { AnnotationRect, RenderableCommand } from '@monstera/contract';
+import type { AnnotationRect, DispatchableCommand } from '@monstera/contract';
 import { viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -19,7 +19,7 @@ import {
  *
  * ## What is asserted is the CALL, for `snapshotTool.test.ts`' reason
  *
- * This tool answers no `RenderableCommand`, so a case reading only `commit`'s
+ * This tool answers no `DispatchableCommand`, so a case reading only `commit`'s
  * return would pass for a tool that did nothing: `undefined` is both the
  * correct answer and what a dead control gives. Every case here reads what
  * reached `onPlaceImage`, and the one that reads the return value asserts it
@@ -49,7 +49,7 @@ function dragged(
   to: readonly [number, number],
 ): {
   readonly sent: readonly { page: number; rect: AnnotationRect }[];
-  readonly command: RenderableCommand | undefined;
+  readonly command: DispatchableCommand | undefined;
   readonly tool: UiTool;
 } {
   const sent: { page: number; rect: AnnotationRect }[] = [];
@@ -62,7 +62,7 @@ function dragged(
   const started = controller.begin(viewportPoint(from[0], from[1]));
   const moved = controller.update(started, viewportPoint(to[0], to[1]));
   const command = controller.commit(moved, 3, overlayTransform(PAGE)) as
-    | RenderableCommand
+    | DispatchableCommand
     | undefined;
   return { sent, command, tool };
 }

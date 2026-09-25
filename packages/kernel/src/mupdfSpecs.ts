@@ -48,6 +48,9 @@ import {
   applyEditAnnotationText,
   captureEditAnnotationText,
   invertEditAnnotationText,
+  applySetAnnotationAuthor,
+  captureSetAnnotationAuthor,
+  invertSetAnnotationAuthor,
   applyReplyToAnnotation,
   captureReplyToAnnotation,
   invertReplyToAnnotation,
@@ -309,6 +312,13 @@ export const mupdfSpecs = {
     apply: applyEditAnnotationText,
     capture: captureEditAnnotationText,
     invert: invertEditAnnotationText,
+  },
+  setAnnotationAuthor: {
+    // Invertible through the spread, as `editAnnotationText` is (ADR-0103).
+    ...declaredCommands.setAnnotationAuthor,
+    apply: applySetAnnotationAuthor,
+    capture: captureSetAnnotationAuthor,
+    invert: invertSetAnnotationAuthor,
   },
   replyToAnnotation: {
     ...declaredCommands.replyToAnnotation,

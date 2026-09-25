@@ -1,11 +1,14 @@
-import type {
-  AnnotationDraft,
-  AnnotationKindName,
-  AnnotationPoint,
-  AnnotationRect,
-  CommandOfKind,
-  LineEnding,
-} from '@monstera/contract';
+import {
+  type AnnotationBlend,
+  type AnnotationDraft,
+  type AnnotationKindName,
+  type AnnotationPoint,
+  type AnnotationRect,
+  type AnnotationStamp,
+  type CommandOfKind,
+  type LineEnding,
+  MAX_ANNOTATION_AUTHOR,
+} from '@monstera/contract/host';
 import {
   type PageTransform,
   pageTransform,
@@ -1124,6 +1127,17 @@ export function markAuthored(annotation: PDFAnnotation): void {
 }
 
 /**
+ * Writes who made an annotation and when — `/T` and `/CreationDate` — from the command's own stamp
+ * (ADR-0103). MuPDF formats the date (measured 2026-09-24: `D:20260924093800Z`) and stamps no `/M`
+ * beside it, so the effect is still a function of the payload and the creation commands stay
+ * reproducible.
+ */
+function writeStamp(annotation: PDFAnnotation, stamp: AnnotationStamp): void {
+  annotation.setAuthor(stamp.author);
+  annotation.setCreationDate(new Date(stamp.created));
+}
+
+/**
  * Whether this build wrote it.
  *
  * **The value is checked, not the key's presence.** A document carrying
@@ -1139,6 +1153,108 @@ export function markAuthored(annotation: PDFAnnotation): void {
 function authoredHere(annotation: PDFAnnotation): boolean {
   const mark = annotation.getObject().get(AUTHORED_KEY);
   return mark.isBoolean() && mark.asBoolean();
+}
+
+/** The PDF name each of the contract's blend modes is written as (ADR-0103). */
+const BLEND_NAMES: Record<AnnotationBlend, string> = { multiply: 'Multiply', normal: 'Normal' };
+
+/** The ExtGState this build prepends to an appearance so the whole of it paints in the chosen mode. */
+const BLEND_STATE = 'MonsteraBlend';
+
+/**
+ * Redraws an annotation's appearance — the ONLY way this kernel calls `update()` (ADR-0103).
+ *
+ * `update()` regenerates the appearance stream, and measured 2026-09-24 (MuPDF 1.28.0,
+ * `scripts/research/annotationBlend.mjs`) it discards a blend written into that stream and ignores
+ * the dictionary's `/BM`. So a mark set to Normal would turn Multiply again at its next move, restyle
+ * or text edit. This re-applies the dictionary's `/BM` to the new appearance after every redraw. A
+ * mark whose dictionary carries no `/BM` — every foreign mark, and every mark nobody set a blend on —
+ * is left exactly as MuPDF drew it.
+ */
+export function redraw(annotation: PDFAnnotation, document: PDFDocument): void {
+  annotation.update();
+  const mode = annotation.getObject().get('BM');
+  if (mode.isName()) blendAppearance(annotation, document, mode.asName());
+}
+
+/**
+ * Sets an annotation's blend mode where both kinds of viewer read it: the dictionary's `/BM` (PDF
+ * 2.0, Table 166) and its appearance streams. The caller redraws afterwards through {@link redraw},
+ * which is what writes the appearance half.
+ */
+export function setBlend(annotation: PDFAnnotation, document: PDFDocument, blend: AnnotationBlend): void {
+  annotation.getObject().put('BM', document.newName(BLEND_NAMES[blend]));
+}
+
+/**
+ * The blend the appearance will be DRAWN in: `multiply` when an ExtGState of the normal appearance
+ * says so, `normal` otherwise — what a viewer draws, not what the dictionary claims (ADR-0103).
+ */
+function blendOf(annotation: PDFAnnotation): AnnotationBlend {
+  // EACH STEP CHECKED: `get` on MuPDF's null object throws rather than answering null.
+  const appearances = annotation.getObject().get('AP');
+  if (!appearances.isDictionary()) return 'normal';
+  const normal = appearances.get('N');
+  if (!normal.isStream()) return 'normal';
+  const resources = normal.get('Resources');
+  if (!resources.isDictionary()) return 'normal';
+  const states = resources.get('ExtGState');
+  if (!states.isDictionary()) return 'normal';
+  const modes: string[] = [];
+  states.forEach((state) => {
+    const mode = state.isDictionary() ? state.get('BM') : null;
+    if (mode?.isName() === true) modes.push(mode.asName());
+  });
+  return modes.includes(BLEND_NAMES.multiply) ? 'multiply' : 'normal';
+}
+
+/**
+ * Writes `mode` into every appearance stream: on every ExtGState it already has, and on one it
+ * prepends. Both, measured: a highlight's own `/H` state comes after anything prepended and would
+ * override it, and a rectangle at opacity 1 has no ExtGState at all.
+ */
+function blendAppearance(annotation: PDFAnnotation, document: PDFDocument, mode: string): void {
+  const appearances = annotation.getObject().get('AP');
+  if (!appearances.isDictionary()) return;
+  for (const which of ['N', 'R', 'D']) {
+    const entry = appearances.get(which);
+    if (entry.isStream()) blendStream(entry, document, mode);
+    else if (entry.isDictionary()) {
+      entry.forEach((state) => {
+        if (state.isStream()) blendStream(state, document, mode);
+      });
+    }
+  }
+}
+
+function blendStream(stream: PDFObject, document: PDFDocument, mode: string): void {
+  let resources = stream.get('Resources');
+  if (!resources.isDictionary()) {
+    resources = document.newDictionary();
+    stream.put('Resources', resources);
+  }
+  let states = resources.get('ExtGState');
+  if (!states.isDictionary()) {
+    states = document.newDictionary();
+    resources.put('ExtGState', states);
+  }
+  states.forEach((state) => {
+    if (state.isDictionary()) state.put('BM', document.newName(mode));
+  });
+  const own = document.newDictionary();
+  own.put('Type', document.newName('ExtGState'));
+  own.put('BM', document.newName(mode));
+  states.put(BLEND_STATE, own);
+  // BYTES, not a string: the content is operators, and a decode and re-encode would be a chance to
+  // rewrite bytes this function has no business touching.
+  const prefix = new TextEncoder().encode(`/${BLEND_STATE} gs\n`);
+  const content = stream.readStream().asUint8Array();
+  const alreadyThere = prefix.every((byte, at) => content[at] === byte);
+  if (alreadyThere) return;
+  const joined = new Uint8Array(prefix.length + content.length);
+  joined.set(prefix, 0);
+  joined.set(content, prefix.length);
+  stream.writeStream(joined);
 }
 
 /**
@@ -1202,11 +1318,12 @@ export const applyAddAnnotation: Apply<'mupdf', 'addAnnotation'> = (
     // to omit one, and the omission's symptom is an annotation of ours that
     // reads as somebody else's, which nothing about that kind would show.
     markAuthored(annotation);
+    writeStamp(annotation, command.stamp);
     // The appearance stream. Without it the annotation is a dictionary with no
     // `/AP`, which every viewer is free to render its own way or not at all —
     // and MuPDF's own renderer would still draw it, so a proof that rasterised
     // through MuPDF could not see the difference.
-    annotation.update();
+    redraw(annotation, document);
   });
 
 /**
@@ -1331,6 +1448,7 @@ export const applyPlaceImage: Apply<'mupdf', 'placeImage'> = (
       // `applyAddAnnotation`'s reason — and this is the second creation site
       // that function's comment anticipated.
       markAuthored(annotation);
+      writeStamp(annotation, command.stamp);
     }
   });
 
@@ -1466,6 +1584,12 @@ export interface ListedAnnotation {
    * surface say which one they are about to change.
    */
   readonly authored: boolean;
+  /** `/T`, or empty where the document names nobody (ADR-0103). */
+  readonly author: string;
+  /** `/CreationDate` as a UTC instant, or `null` where there is none or it does not parse. */
+  readonly created: string | null;
+  /** The blend its appearance is drawn in — {@link blendOf}. */
+  readonly blend: AnnotationBlend;
 }
 
 /** MuPDF's subtype back to the name a surface may use. */
@@ -1646,6 +1770,9 @@ export function readAnnotations(
           style: styleOf(annotation),
           contents: annotation.getContents().slice(0, MAX_LISTED_CONTENTS),
           authored: authoredHere(annotation),
+          author: authorOf(annotation),
+          created: createdOf(annotation),
+          blend: blendOf(annotation),
         });
       }
     }
@@ -1685,6 +1812,27 @@ function replyTargetOf(
   const relationship = object.get('RT');
   if (!relationship.isNull() && relationship.isName() && relationship.asName() !== 'R') return null;
   return positionOf.get(target.asIndirect()) ?? null;
+}
+
+/**
+ * `/T`, read from the dictionary and sliced to the contract's bound — a document's own author string
+ * is hostile input, and a long one is still a name to list rather than a reason to refuse the mark.
+ * Read as the key rather than through `getAuthor`, which MuPDF declares only for the markup subtypes.
+ */
+function authorOf(annotation: PDFAnnotation): string {
+  const author = annotation.getObject().get('T');
+  return author.isString() ? author.asString().slice(0, MAX_ANNOTATION_AUTHOR) : '';
+}
+
+/**
+ * `/CreationDate` as a UTC instant, or `null`. The KEY decides whether there is a date: MuPDF's getter
+ * answers a date for a mark that has none (measured 2026-09-24: 1969-12-31T23:59:59Z, epoch minus a
+ * second), so reading the getter alone would invent one.
+ */
+function createdOf(annotation: PDFAnnotation): string | null {
+  if (!annotation.getObject().get('CreationDate').isString()) return null;
+  const created = annotation.getCreationDate();
+  return Number.isNaN(created.getTime()) || created.getTime() < 0 ? null : created.toISOString();
 }
 
 /**
@@ -1957,7 +2105,7 @@ export const applyPlaceAnnotation: Apply<'mupdf', 'placeAnnotation'> = (
       // Without it the dictionary says one place and the `/AP` draws another,
       // and MuPDF's own renderer would still show the move — so a proof that
       // rasterised through MuPDF could not see this line missing.
-      annotation.update();
+      redraw(annotation, document);
     }
   });
 
@@ -1997,6 +2145,8 @@ export const applyStyleAnnotation: Apply<'mupdf', 'styleAnnotation'> = (
       // ONLY WHAT THE COMMAND NAMES: an absent property is each mark's own, left as it was.
       if (command.colour !== undefined) annotation.setColor([...command.colour]);
       if (command.opacity !== undefined) annotation.setOpacity(command.opacity);
+      // THE DICTIONARY HALF here; the redraw below writes the appearance half (ADR-0103).
+      if (command.blend !== undefined) setBlend(annotation, document, command.blend);
       if (command.borderWidth !== undefined && annotation.hasBorder()) {
         annotation.setBorderWidth(command.borderWidth);
       }
@@ -2004,7 +2154,7 @@ export const applyStyleAnnotation: Apply<'mupdf', 'styleAnnotation'> = (
       // Without it the dictionary says one colour and the `/AP` draws another —
       // and MuPDF's own renderer would still show the new one, so a proof that
       // rasterised through MuPDF could not see this line missing.
-      annotation.update();
+      redraw(annotation, document);
     }
   });
 
@@ -2069,7 +2219,7 @@ export const applyEditAnnotationText: Apply<'mupdf', 'editAnnotationText'> = (
     const loaded = pageAt(document, command.page, document.countPages());
     const annotation = annotationAt(loaded, command.index);
     annotation.setContents(command.text);
-    annotation.update();
+    redraw(annotation, document);
   });
 
 /**
@@ -2112,7 +2262,64 @@ export const invertEditAnnotationText: Invert<'mupdf', 'editAnnotationText'> = (
     const loaded = pageAt(document, inverse.page, document.countPages());
     const annotation = annotationAt(loaded, inverse.index);
     annotation.setContents(inverse.text);
-    annotation.update();
+    redraw(annotation, document);
+  });
+
+/** Who a mark named, and which one to name it on again — {@link PriorAnnotationText}'s shape. */
+export interface PriorAnnotationAuthor {
+  readonly page: number;
+  readonly index: number;
+  readonly author: string;
+}
+
+/** Rewrites who one annotation names as its author — `/T` (ADR-0103 Decision 3). */
+export const applySetAnnotationAuthor: Apply<'mupdf', 'setAnnotationAuthor'> = (
+  session: MupdfSession,
+  command: CommandOfKind<'setAnnotationAuthor'>,
+): Promise<void> =>
+  withDocument(session, (document) => {
+    const loaded = pageAt(document, command.page, document.countPages());
+    const annotation = annotationAt(loaded, command.index);
+    annotation.setAuthor(command.author);
+    redraw(annotation, document);
+  });
+
+/**
+ * Records who the mark named, so the change can be undone exactly.
+ *
+ * **A foreign `/T` longer than the contract's bound is not captured**, and the bus takes a checkpoint
+ * instead: the prior crosses the host's pipe under `MAX_ANNOTATION_AUTHOR`, and a sliced prior would
+ * be an undo that restores a different name than the one the document had.
+ */
+export function captureSetAnnotationAuthor(
+  session: MupdfSession,
+  command: CommandOfKind<'setAnnotationAuthor'>,
+): Promise<CaptureResult<PriorAnnotationAuthor>> {
+  return withDocument(session, (document) => {
+    const loaded = pageAt(document, command.page, document.countPages());
+    const annotation = annotationAt(loaded, command.index);
+    const named = annotation.getObject().get('T');
+    const author = named.isString() ? named.asString() : '';
+    if (author.length > MAX_ANNOTATION_AUTHOR) {
+      return {
+        captured: false,
+        reason:
+          `the annotation names an author ${String(author.length)} characters long, over the ` +
+          `${String(MAX_ANNOTATION_AUTHOR)} a prior may carry, so undo restores a checkpoint rather ` +
+          'than a shortened name',
+      };
+    }
+    return { captured: true, prior: { page: command.page, index: command.index, author } };
+  });
+}
+
+/** Puts back who the mark named, through the same write the apply uses. */
+export const invertSetAnnotationAuthor: Invert<'mupdf', 'setAnnotationAuthor'> = (session, inverse) =>
+  withDocument(session, (document) => {
+    const loaded = pageAt(document, inverse.page, document.countPages());
+    const annotation = annotationAt(loaded, inverse.index);
+    annotation.setAuthor(inverse.author);
+    redraw(annotation, document);
   });
 
 /**
@@ -2160,7 +2367,8 @@ export const applyReplyToAnnotation: Apply<'mupdf', 'replyToAnnotation'> = (
     object.put('IRT', parent.getObject());
     object.put('RT', document.newName('R'));
     markAuthored(reply);
-    reply.update();
+    writeStamp(reply, command.stamp);
+    redraw(reply, document);
   });
 
 /**

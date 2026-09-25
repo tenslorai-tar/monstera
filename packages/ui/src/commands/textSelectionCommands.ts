@@ -1,4 +1,4 @@
-import type { RenderableCommand } from '@monstera/contract';
+import type { DispatchableCommand } from '@monstera/contract';
 
 import { stickyNoteCommand } from '../annotations/pointTools.js';
 import { STROKE } from '../annotations/shapeTools.js';
@@ -44,7 +44,7 @@ export interface TextSelectionDeps {
    * annotation tool's commit takes. The focused document is the one whose text layer holds the
    * selection, because a text selection is only tracked there.
    */
-  readonly place: (command: RenderableCommand) => void;
+  readonly place: (command: DispatchableCommand) => void;
   /** The style the next annotation is drawn in — the markup tools' own. */
   readonly style: () => AnnotationStyle;
   /** Opens the find field searching for `text`. */

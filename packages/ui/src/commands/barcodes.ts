@@ -58,7 +58,7 @@ export function readBarcodesCommand(deps: {
  * adds nothing, which is what they asked for.
  */
 export async function placeBarcode(
-  deps: Pick<DocumentCommandDeps, 'ask' | 'client' | 'onApplied'>,
+  deps: Pick<DocumentCommandDeps, 'ask' | 'client' | 'onApplied' | 'stamp'>,
   docId: DocId,
   page: number,
   rect: AnnotationRect,
@@ -76,6 +76,8 @@ export async function placeBarcode(
       rect,
       text: answer.text,
       format: answer.format,
+      // Main builds the `placeImage`; who placed it and when are this side's (ADR-0103).
+      stamp: deps.stamp(),
     });
     if (!placed.ok) {
       reportProblem(deps, placed.error);

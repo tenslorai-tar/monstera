@@ -1,14 +1,16 @@
-import type {
-  AnnotationRect,
-  ChannelResult,
-  Channels,
-  ContractClient,
-  FailureOf,
-  FormDataFormat,
-  FormDataImportFormat,
-  OptimizeSetting,
-  RenderableCommand,
-  SignaturePlacement,
+import {
+  type AnnotationRect,
+  type AnnotationStamp,
+  type ChannelResult,
+  type Channels,
+  type ContractClient,
+  type DispatchableCommand,
+  type FailureOf,
+  type FormDataFormat,
+  type FormDataImportFormat,
+  type OptimizeSetting,
+  type SignaturePlacement,
+  withStamp,
 } from '@monstera/contract';
 import { type DocId, type DocVersion, type Failure, type MessageKey, lineText } from '@monstera/shared';
 
@@ -303,6 +305,12 @@ export interface DocumentCommandDeps {
    * it knows the id — which is the same place `openWith` validates the props.
    */
   readonly ask: (id: string, props: unknown) => Promise<unknown>;
+  /**
+   * Who is making a mark, and when: the person's name for comments and the moment, asked at the
+   * instant a creation command is sent (ADR-0103). A function rather than a value, so the time is
+   * the send's and not the moment this bag was built.
+   */
+  readonly stamp: () => AnnotationStamp;
 }
 
 /**
@@ -428,12 +436,15 @@ export function hasDocument(context: CommandContext): boolean {
 export async function applyDocumentCommand(
   deps: DocumentCommandDeps,
   docId: DocId,
-  // `RenderableCommand` AND NOT `Command`, which is the narrower of the two and
+  // THE RENDERABLE SUBSET AND NOT `Command`, which is the narrower of the two and
   // the one this side may hold: `insertImagePage` carries an image main reads
   // from a picked file, and it is absent from this union so a UI command cannot
   // be written that sends one. The type is the mechanism — no runtime check
   // here refuses it, because none can be reached.
-  command: RenderableCommand,
+  //
+  // AND UNSTAMPED (ADR-0103): a surface says what to make, and the stamp is
+  // attached below, from `deps.stamp`, at the moment it is sent.
+  command: DispatchableCommand,
   options: {
     /**
      * A refusal the CALLER says in its own place, answering `true` for the ones
@@ -445,7 +456,7 @@ export async function applyDocumentCommand(
     readonly keep?: (error: Failure<FailureOf<Channels, 'document.execute'>>) => boolean;
   } = {},
 ): Promise<boolean> {
-  const answer = await deps.client['document.execute']({ docId, command });
+  const answer = await deps.client['document.execute']({ docId, command: withStamp(command, deps.stamp()) });
 
   // A DECLARED FAILURE IS AN OUTCOME AND CHANGES NOTHING — see
   // `rotatePageCommand`, whose comment this behaviour was extracted from. It is
@@ -551,12 +562,14 @@ export function imagePagesFor(
 }
 
 export async function placeImage(
-  deps: Pick<DocumentCommandDeps, 'ask' | 'client' | 'onApplied'>,
+  deps: Pick<DocumentCommandDeps, 'ask' | 'client' | 'onApplied' | 'stamp'>,
   docId: DocId,
   pages: readonly number[],
   rect: AnnotationRect,
 ): Promise<void> {
-  const answer = await deps.client['document.placeImage']({ docId, pages, rect });
+  // THE STAMP TRAVELS WITH THE REQUEST: main builds the `placeImage` command from the picked file,
+  // and who placed it and when are this side's to say (ADR-0103).
+  const answer = await deps.client['document.placeImage']({ docId, pages, rect, stamp: deps.stamp() });
   if (!answer.ok) {
     reportProblem(deps, answer.error);
     return;
@@ -1358,8 +1371,9 @@ export function deskewPagesCommand(deps: DocumentCommandDeps): UiCommand {
  *
  * The picker is Electron's and runs in **main**, so this command's whole job is
  * to say which document and where. It cannot send an image even by mistake:
- * `applyDocumentCommand` takes `RenderableCommand`, which is the command union
- * with `insertImagePage` removed, so a UI command that tried would not compile.
+ * `applyDocumentCommand` takes `DispatchableCommand`, the renderable union — the
+ * command union with `insertImagePage` removed — so a UI command that tried would
+ * not compile.
  *
  * That is why this goes through its own channel rather than
  * `document.execute` — the same shape `saveCopyCommand` uses, and for the same

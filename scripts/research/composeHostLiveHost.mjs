@@ -181,7 +181,7 @@ async function main() {
 
     const { handlers } = composition.createShellDependencies({
       ...harnessModule.harnessSurfaces('the compose-host live harness'),
-      appInfo: { version: '0.0.0', installChannel: 'development' },
+      appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
       pickMarkdown: () => Promise.resolve(join(scratch, 'notes.md')),
       readMarkdown: () => Promise.resolve({ kind: 'read', bytes: next.bytes }),
       pickCsv: () => Promise.resolve(join(scratch, 'table.csv')),

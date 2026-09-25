@@ -467,6 +467,12 @@ export interface BrowserShimOptions {
     readonly rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null;
     /** The walk index this mark answers, for a case about a thread. Absent is an ordinary mark. */
     readonly inReplyTo?: number | null;
+    /** `/T`, for a case about the author (ADR-0103). Absent names nobody. */
+    readonly author?: string;
+    /** `/CreationDate` as a UTC instant, for a case about the date. Absent is no date. */
+    readonly created?: string | null;
+    /** The blend its appearance is drawn in. Absent is `normal`, the format's own. */
+    readonly blend?: 'multiply' | 'normal';
   }[];
 
   /**
@@ -784,6 +790,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           // artifact can have (E4), which is `available: true` for a binary that
           // cannot be spawned, in a new place.
           installChannel: options.installChannel ?? 'development',
+          // A FIXED NAME, so what the shim stamps does not depend on who ran it.
+          userName: 'Shim User',
         }),
       ),
 
@@ -1761,6 +1769,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
             // has to be able to say which mark the reply answers, and no plain
             // value expresses that.
             inReplyTo: annotation.inReplyTo ?? null,
+            author: annotation.author ?? '',
+            created: annotation.created ?? null,
+            blend: annotation.blend ?? 'normal',
           })),
           truncated: false,
         }),

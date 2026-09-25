@@ -35,6 +35,9 @@ const SELECTION: AnnotationSelection = {
       style: { colour: [1, 0, 0], opacity: 1, borderWidth: 2 },
       kind: 'square',
       contents: '',
+      author: '',
+      created: null,
+      blend: 'normal',
     },
   ],
 };

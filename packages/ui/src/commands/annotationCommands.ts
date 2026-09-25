@@ -1,4 +1,4 @@
-import type { ContractClient, RenderableCommand } from '@monstera/contract';
+import type { ContractClient, DispatchableCommand } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 
 import {
@@ -214,7 +214,7 @@ export interface SelectionCommandDeps {
   /** Removes it, through the same dispatcher every other caller uses. */
   readonly onDelete: (selection: AnnotationSelection) => void;
   /** Sends a placement, through that same dispatcher. */
-  readonly onPlace: (command: RenderableCommand) => void;
+  readonly onPlace: (command: DispatchableCommand) => void;
 }
 
 /**

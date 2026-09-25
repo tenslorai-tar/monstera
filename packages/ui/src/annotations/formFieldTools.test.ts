@@ -1,4 +1,4 @@
-import type { RenderableCommand } from '@monstera/contract';
+import type { DispatchableCommand } from '@monstera/contract';
 import { createFormFieldSchema } from '@monstera/contract';
 import { viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
@@ -74,7 +74,7 @@ async function drag(
   from: readonly [number, number],
   to: readonly [number, number],
   page = 3,
-): Promise<RenderableCommand | undefined> {
+): Promise<DispatchableCommand | undefined> {
   const { controller } = tool as ReturnType<typeof formFieldTools>[number];
   const started = controller.begin(viewportPoint(from[0], from[1]));
   const moved = controller.update(started, viewportPoint(to[0], to[1]));

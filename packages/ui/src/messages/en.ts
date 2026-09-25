@@ -898,6 +898,8 @@ export const TOOL_TEXT_BOX_TITLE = messageKey('command.annotate.text-box');
 export const TOOL_STICKY_NOTE_TITLE = messageKey('command.annotate.sticky-note');
 export const TOOL_CARET_TITLE = messageKey('command.annotate.caret');
 export const EDITING_COLOUR_TITLE = messageKey('setting.editing.annotation-colour');
+export const EDITING_AUTHOR_NAME_TITLE = messageKey('setting.editing.author-name');
+export const EDITING_AUTHOR_NAME_DESCRIPTION = messageKey('setting.editing.author-name.description');
 export const EDITING_OPACITY_TITLE = messageKey('setting.editing.annotation-opacity');
 export const EDITING_LINE_WIDTH_TITLE = messageKey('setting.editing.annotation-line-width');
 export const EDITING_FONT_SIZE_TITLE = messageKey('setting.editing.annotation-font-size');
@@ -906,6 +908,11 @@ export const STYLE_PANEL_LABEL = messageKey('surface.style.label');
 export const COMMENT_STYLES_NO_WIDTH = messageKey('surface.comment-styles.no-width');
 export const STYLE_COLOUR_AUTO = messageKey('surface.style.colour-auto');
 export const PROPERTIES_AS_DEFAULT = messageKey('surface.properties.as-default');
+export const PROPERTIES_AUTHOR = messageKey('surface.properties.author');
+export const PROPERTIES_BLEND = messageKey('surface.properties.blend');
+export const PROPERTIES_BLEND_MULTIPLY = messageKey('surface.properties.blend.multiply');
+export const PROPERTIES_BLEND_NORMAL = messageKey('surface.properties.blend.normal');
+export const PROPERTIES_CREATED = messageKey('surface.properties.created');
 export const PROPERTIES_COLOUR = messageKey('surface.properties.colour');
 export const PROPERTIES_OPACITY = messageKey('surface.properties.opacity');
 export const PROPERTIES_OPACITY_VALUE = messageKey('surface.properties.opacity-value');
@@ -2393,6 +2400,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ANNOTATIONS_KIND_POLYGON]: 'Shape',
   [ANNOTATIONS_KIND_POLYLINE]: 'Connected lines',
   [EDITING_COLOUR_TITLE]: 'Annotation colour',
+  [EDITING_AUTHOR_NAME_TITLE]: 'Your name for comments',
+  // SAYS WHERE THE NAME GOES, because it leaves the machine in every document the person shares.
+  [EDITING_AUTHOR_NAME_DESCRIPTION]:
+    'Written into every comment and mark you make, and seen by anyone you share the document with. Leave it empty to use your Windows user name.',
   [EDITING_OPACITY_TITLE]: 'Annotation opacity',
   [EDITING_LINE_WIDTH_TITLE]: 'Annotation line width',
   [EDITING_FONT_SIZE_TITLE]: 'Annotation font size',
@@ -2409,6 +2420,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // *ANNOTATIONS* AND NOT v5-02's *highlights*: the four style settings are shared by every tool, so
   // naming the selected kind would promise a per-kind default nothing stores.
   [PROPERTIES_AS_DEFAULT]: 'Use as default for new annotations',
+  [PROPERTIES_AUTHOR]: 'Author',
+  [PROPERTIES_BLEND]: 'Blend',
+  // THE FORMAT'S OWN NAMES, which are what every other PDF tool calls them.
+  [PROPERTIES_BLEND_MULTIPLY]: 'Multiply',
+  [PROPERTIES_BLEND_NORMAL]: 'Normal',
+  [PROPERTIES_CREATED]: 'Created {when}',
   [PROPERTIES_COLOUR]: 'Colour',
   [PROPERTIES_OPACITY]: 'Opacity',
   [PROPERTIES_OPACITY_VALUE]: '{opacity, number, percent}',

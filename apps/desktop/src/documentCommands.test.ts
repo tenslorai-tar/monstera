@@ -1101,7 +1101,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           // INERT: this case is about a document command, and an assistant with no key
           // and nowhere to push answers the state a machine without one is in.
           assistant: createAssistant({ secret: () => undefined, setting: () => undefined, send: () => undefined }),
-          appInfo: { version: '0.0.0', installChannel: 'development' },
+          appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
           capabilities: new CapabilityRegistry(),
           commands,
           documents: service,
@@ -1641,7 +1641,7 @@ describe('search is E2s first consumer, through the composition point', () => {
           send: () => undefined,
           fetchImpl,
         }),
-        appInfo: { version: '0.0.0', installChannel: 'development' },
+        appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
         capabilities: new CapabilityRegistry(),
         commands: searchCommands(askPicture),
         documents: searchService,
@@ -1793,7 +1793,10 @@ describe('barcodes — placed from typed text and read back, through the lane (A
     expect(before.barcodes).toStrictEqual([]);
 
     // A WIDE BOX, so a placement that filled it would squeeze the symbol.
-    const placed = await commands.placeBarcode(docId, [0], { x0: 40, y0: 40, x1: 440, y1: 200 }, 'MONSTERA 42', 'QRCode');
+    const placed = await commands.placeBarcode(docId, [0], { x0: 40, y0: 40, x1: 440, y1: 200 }, 'MONSTERA 42', 'QRCode', {
+      author: 'A. Tester',
+      created: '2026-09-24T09:38:00.000Z',
+    });
     expect(placed.kind).toBe('placed');
 
     const after = await commands.pageBarcodes(docId, 0);
@@ -1821,7 +1824,12 @@ describe('barcodes — placed from typed text and read back, through the lane (A
       engine: engine(),
     });
     const before = await commands.pageBarcodes(docId, 0);
-    expect(await commands.placeBarcode(docId, [0], { x0: 40, y0: 40, x1: 440, y1: 200 }, 'letters', 'EAN13')).toStrictEqual({
+    expect(
+      await commands.placeBarcode(docId, [0], { x0: 40, y0: 40, x1: 440, y1: 200 }, 'letters', 'EAN13', {
+        author: 'A. Tester',
+        created: '2026-09-24T09:38:00.000Z',
+      }),
+    ).toStrictEqual({
       kind: 'refused',
     });
     expect((await commands.pageBarcodes(docId, 0)).version).toBe(before.version);

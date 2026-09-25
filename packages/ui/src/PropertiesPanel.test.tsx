@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
+import { annotationOpacitySchema, MIN_ANNOTATION_OPACITY } from '@monstera/contract';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -54,6 +55,9 @@ const SQUARE = {
   rect: { x0: 0, y0: 0, x1: 10, y1: 10 },
   kind: 'square' as const,
   contents: 'check the figure',
+  author: 'Priya Raman',
+  created: '2026-09-24T09:38:00.000Z',
+  blend: 'normal' as const,
   style: { colour: [0.2, 0.4, 0.6], opacity: 0.5, borderWidth: 2 },
 };
 
@@ -62,6 +66,9 @@ const HIGHLIGHT = {
   index: 3,
   kind: 'highlight' as const,
   contents: '',
+  author: '',
+  created: null,
+  blend: 'multiply' as const,
   style: { colour: [1, 0.83, 0], opacity: 1, borderWidth: null },
 };
 
@@ -71,6 +78,7 @@ interface Mounted {
   readonly store: SettingsStore;
   readonly restyled: StyleChange[];
   readonly commented: string[];
+  readonly authors: string[];
   readonly ran: string[];
 }
 
@@ -78,6 +86,7 @@ function mounted(selection: AnnotationSelection | undefined, foot: readonly UiCo
   const store = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
   const restyled: StyleChange[] = [];
   const commented: string[] = [];
+  const authors: string[] = [];
   const ran: string[] = [];
   render(
     <Wrapped>
@@ -86,6 +95,10 @@ function mounted(selection: AnnotationSelection | undefined, foot: readonly UiCo
         onComment={(chosen, text) => {
           expect(chosen).toBe(selection);
           commented.push(text);
+        }}
+        onAuthor={(chosen, author) => {
+          expect(chosen).toBe(selection);
+          authors.push(author);
         }}
         onRestyle={(chosen, change) => {
           expect(chosen).toBe(selection);
@@ -97,7 +110,7 @@ function mounted(selection: AnnotationSelection | undefined, foot: readonly UiCo
       />
     </Wrapped>,
   );
-  return { store, restyled, commented, ran };
+  return { store, restyled, commented, authors, ran };
 }
 
 describe('PropertiesPanel with marks selected', () => {
@@ -149,6 +162,22 @@ describe('PropertiesPanel with marks selected', () => {
     expect(restyled).toStrictEqual([]);
   });
 
+  it('the slider SHOWS the mark’s own opacity, and offers no value the payload would refuse', () => {
+    // The mark is at 0.5 and the opacity setting starts at 1, so a slider showing the setting reads differently.
+    mounted(ONE);
+    const slider = screen.getByRole<HTMLInputElement>('slider', { name: 'Opacity' });
+    expect(slider.value).toBe('0.5');
+    expect(slider.max).toBe('1');
+    // Its floor is the LOWEST value the contract accepts: at it, accepted; a hundredth under, refused.
+    expect(annotationOpacitySchema.safeParse(Number(slider.min)).success).toBe(true);
+    expect(annotationOpacitySchema.safeParse(Number(slider.min) - 0.01).success).toBe(false);
+  });
+
+  it('a foreign mark fainter than the floor shows AT the floor, not off the slider’s end', () => {
+    mounted({ ...ONE, items: [{ ...SQUARE, style: { ...SQUARE.style, opacity: 0.05 } }] });
+    expect(screen.getByRole<HTMLInputElement>('slider', { name: 'Opacity' }).value).toBe(String(MIN_ANNOTATION_OPACITY));
+  });
+
   it('a width segment sends the width alone, and the pressed one sends nothing', () => {
     const { restyled, store } = mounted(ONE);
     fireEvent.click(screen.getByRole('button', { name: '2 pt' }));
@@ -173,6 +202,42 @@ describe('PropertiesPanel with marks selected', () => {
     fireEvent.change(field, { target: { value: 'confirm the rate' } });
     fireEvent.blur(field);
     expect(commented).toStrictEqual(['confirm the rate']);
+  });
+
+  it('the AUTHOR is sent when focus leaves it changed, and not when unchanged (ADR-0103)', () => {
+    const { authors } = mounted(ONE);
+    const field = screen.getByRole('textbox', { name: 'Author' });
+    expect((field as HTMLInputElement).value).toBe('Priya Raman');
+    fireEvent.blur(field);
+    expect(authors).toStrictEqual([]);
+    fireEvent.change(field, { target: { value: 'Sam Okafor' } });
+    fireEvent.blur(field);
+    expect(authors).toStrictEqual(['Sam Okafor']);
+  });
+
+  it('shows WHEN the mark was made, read-only, and nothing for a mark with no date', () => {
+    mounted(ONE);
+    const created = document.querySelector('[data-properties-created]');
+    expect(created?.getAttribute('data-properties-created')).toBe('2026-09-24T09:38:00.000Z');
+    expect(created?.textContent).toMatch(/^Created /u);
+    // READ-ONLY: nothing on the tab edits it.
+    expect(screen.queryByRole('textbox', { name: /created/iu })).toBeNull();
+    cleanup();
+    mounted({ ...ONE, items: [HIGHLIGHT] });
+    expect(document.querySelector('[data-properties-created]')).toBeNull();
+  });
+
+  it('BLEND shows the mark’s own and sends the other as a restyle, never as a default', () => {
+    const { restyled, store } = mounted({ ...ONE, items: [HIGHLIGHT] });
+    const multiply = screen.getByRole('button', { name: 'Multiply' });
+    expect(multiply.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(multiply);
+    // THE PRESSED ONE SENDS NOTHING: no restyle for a document that would not change.
+    expect(restyled).toStrictEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Normal' }));
+    expect(restyled).toStrictEqual([{ blend: 'normal' }]);
+    // *Use as default* is on, and the blend is not one of the settings it writes.
+    expect(store.get(ANNOTATION_COLOUR_SETTING.id)).toBe('auto');
   });
 
   it('offers no comment for TWO marks, which have two', () => {

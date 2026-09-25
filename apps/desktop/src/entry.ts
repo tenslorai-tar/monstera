@@ -50,6 +50,7 @@ import { createWin32ShareSurface } from './win32ShareSurface.js';
 import { startShell } from './main.js';
 import { nodeEditWatchSurface } from './nodeEditWatch.js';
 import { isPdfPath } from './openExternalEditor.js';
+import { windowsUserName } from './userName.js';
 
 /**
  * The OS credential store, as the secrets and the saved conversations both take it. `safeStorage`
@@ -146,6 +147,7 @@ startShell(() => {
     appInfo: {
       version: app.getVersion(),
       installChannel: 'development',
+      userName: windowsUserName(),
     },
     // Built here, for the same reason `AppInfo` is: this is the only file that
     // may hold both Electron and the graph. `composition.ts` takes the picker

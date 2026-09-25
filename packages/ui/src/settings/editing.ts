@@ -1,4 +1,6 @@
 import {
+  annotationAuthorSchema,
+  annotationOpacitySchema,
   MAX_ANNOTATION_BORDER,
   MAX_ANNOTATION_FONT,
   MIN_ANNOTATION_FONT,
@@ -11,6 +13,8 @@ import {
 import { z } from 'zod';
 
 import {
+  EDITING_AUTHOR_NAME_DESCRIPTION,
+  EDITING_AUTHOR_NAME_TITLE,
   EDITING_COLOUR_TITLE,
   EDITING_FONT_SIZE_TITLE,
   EDITING_IMAGE_PAGES_TITLE,
@@ -100,7 +104,7 @@ export const ANNOTATION_COLOUR_SETTING: SettingDefinition<
 export const ANNOTATION_OPACITY_SETTING: SettingDefinition<z.ZodNumber> = {
   id: 'editing.annotation-opacity',
   title: EDITING_OPACITY_TITLE,
-  schema: z.number().min(0.1).max(1),
+  schema: annotationOpacitySchema,
   fallback: 1,
   category: 'editing',
 };
@@ -354,6 +358,27 @@ export const ANNOTATION_FONT_SIZE_SETTING: SettingDefinition<z.ZodNumber> = {
   fallback: 12,
   category: 'editing',
 };
+
+/**
+ * The name a person's comments carry — `/T` on every mark they make (ADR-0103 Decision 2).
+ *
+ * **Empty means *my Windows user name***, which `main` answers on `app.info`, so a fresh install signs
+ * comments with the account's name and follows it, rather than a copy taken on the day of install. A
+ * typed name wins. {@link authorFor} is the one place the two are combined.
+ */
+export const AUTHOR_NAME_SETTING: SettingDefinition<typeof annotationAuthorSchema> = {
+  id: 'editing.author-name',
+  title: EDITING_AUTHOR_NAME_TITLE,
+  description: EDITING_AUTHOR_NAME_DESCRIPTION,
+  schema: annotationAuthorSchema,
+  fallback: '',
+  category: 'editing',
+};
+
+/** Who a new mark names: the name typed in {@link AUTHOR_NAME_SETTING}, else the Windows user name. */
+export function authorFor(typed: string, userName: string): string {
+  return typed.trim() === '' ? userName : typed;
+}
 
 /**
  * Whether a change made to selected marks in the Properties tab is also written to the four settings

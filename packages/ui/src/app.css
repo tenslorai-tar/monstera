@@ -1380,6 +1380,8 @@ textarea {
  * bounds it, and a second bound in the renderer would be two answers to how
  * much of a note there is — the one on screen and the one in the payload.
  */
+/* The author shares the note's treatment: secondary text, truncated by the row rather than the string. */
+.m-annotations-author,
 .m-annotations-note {
   color: var(--muted);
   overflow: hidden;

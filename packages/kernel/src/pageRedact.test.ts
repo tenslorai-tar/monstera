@@ -127,6 +127,7 @@ describe('applyRedactions', () => {
       await applyAddAnnotation(session, {
         kind: 'addAnnotation',
         page: 0,
+        stamp: { author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' },
         annotation: {
           type: 'redact',
           over: 'text',

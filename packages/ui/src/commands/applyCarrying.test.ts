@@ -1,4 +1,4 @@
-import { type RenderableCommand, channels, createClient } from '@monstera/contract';
+import { type DispatchableCommand, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -30,12 +30,15 @@ const PICKED: AnnotationSelection = {
       rect: BOX,
       kind: 'square',
       contents: '',
+      author: 'Priya Raman',
+      created: '2026-09-24T09:38:00.000Z',
+      blend: 'normal',
       style: { colour: [1, 0, 0], opacity: 1, borderWidth: 2 },
     },
   ],
 };
 
-const RESTYLE: RenderableCommand = {
+const RESTYLE: DispatchableCommand = {
   kind: 'styleAnnotation',
   page: 1,
   indices: [0],
@@ -56,6 +59,9 @@ function walkAt(version: typeof AFTER): unknown {
         contents: '',
         authored: true,
         inReplyTo: null,
+        author: 'Priya Raman',
+        created: '2026-09-24T09:38:00.000Z',
+        blend: 'normal',
       },
     ],
     truncated: false,
@@ -68,7 +74,7 @@ interface Run {
   selection: AnnotationSelection | undefined;
 }
 
-async function run(command: RenderableCommand, walk: unknown): Promise<Run> {
+async function run(command: DispatchableCommand, walk: unknown): Promise<Run> {
   const record: Run = { calls: [], applied: [], selection: PICKED };
   const client = createClient(channels, (id) => {
     record.calls.push(id);
@@ -82,6 +88,7 @@ async function run(command: RenderableCommand, walk: unknown): Promise<Run> {
     {
       client,
       ask: () => Promise.resolve(undefined),
+      stamp: () => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' }),
       onApplied: (answer) => {
         record.calls.push('onApplied');
         record.applied.push(answer);

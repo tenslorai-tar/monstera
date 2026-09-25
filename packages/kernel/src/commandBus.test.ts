@@ -1618,6 +1618,7 @@ describe('CommandBus and the targets axis', () => {
     await applyAddAnnotation(session, {
       kind: 'addAnnotation',
       page: 0,
+      stamp: { author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' },
       annotation: {
         type: 'square',
         rect: { x0: 10, y0: 20, x1: 110, y1: 70 },

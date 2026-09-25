@@ -5,7 +5,7 @@ import { act, render } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { hexOf, overlayOf, useWindowControlsOverlay } from './windowControlsOverlay.js';
+import { groundOf, hexOf, overlayOf, useWindowControlsOverlay } from './windowControlsOverlay.js';
 
 describe('hexOf', () => {
   it('writes an opaque computed colour as lower-case #rrggbb, with or without an alpha of 1', () => {
@@ -45,6 +45,37 @@ describe('overlayOf', () => {
       symbolColor: '#e6e8e6',
       height: 34,
     });
+  });
+
+  it('reads the GROUND a transparent bar sits on, as v5 draws it, and keeps the bar’s own text colour', () => {
+    // The ground is a different colour from anything the bar states, so reading the bar alone would refuse — the
+    // defect this replaces, where the buttons kept the system's colours on every v5 window.
+    const ground = document.createElement('div');
+    ground.style.backgroundColor = 'rgb(5, 10, 8)';
+    document.body.append(ground);
+    const bar = aBar('rgba(0, 0, 0, 0)', 'rgb(230, 232, 230)', 33);
+    ground.append(bar);
+    expect(groundOf(bar)).toBe('rgb(5, 10, 8)');
+    expect(overlayOf(bar)).toStrictEqual({ color: '#050a08', symbolColor: '#e6e8e6', height: 33 });
+  });
+
+  it('CONTROL: a bar that paints its own colour is read as itself, whatever lies behind it', () => {
+    const ground = document.createElement('div');
+    ground.style.backgroundColor = 'rgb(5, 10, 8)';
+    document.body.append(ground);
+    const bar = aBar('rgb(20, 22, 24)', 'rgb(230, 232, 230)', 33);
+    ground.append(bar);
+    expect(overlayOf(bar)?.color).toBe('#141618');
+  });
+
+  it('CONTROL: a TRANSLUCENT bar stops the walk and is refused, rather than read through to the ground', () => {
+    const ground = document.createElement('div');
+    ground.style.backgroundColor = 'rgb(5, 10, 8)';
+    document.body.append(ground);
+    const bar = aBar('rgba(20, 22, 24, 0.5)', 'rgb(230, 232, 230)', 33);
+    ground.append(bar);
+    expect(groundOf(bar)).toBe('rgba(20, 22, 24, 0.5)');
+    expect(overlayOf(bar)).toBeUndefined();
   });
 
   it('states nothing for a bar outside the channel height bound, which main would refuse', () => {

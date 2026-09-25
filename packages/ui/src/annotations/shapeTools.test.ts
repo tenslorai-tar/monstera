@@ -1,4 +1,4 @@
-import type { RenderableCommand } from '@monstera/contract';
+import type { DispatchableCommand } from '@monstera/contract';
 import { viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -61,7 +61,7 @@ function drag(
   from: readonly [number, number],
   to: readonly [number, number],
   page = 3,
-): RenderableCommand | undefined {
+): DispatchableCommand | undefined {
   const { controller } = tool;
   const started = controller.begin(viewportPoint(from[0], from[1]));
   const moved = controller.update(started, viewportPoint(to[0], to[1]));
@@ -71,7 +71,7 @@ function drag(
   // `textTools.test.ts`. Widening these twenty-two cases to `async` for a value
   // that is never a promise would put the ceremony where the behaviour is not.
   return controller.commit(moved, page, overlayTransform(PAGE)) as
-    | RenderableCommand
+    | DispatchableCommand
     | undefined;
 }
 

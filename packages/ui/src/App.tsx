@@ -1,6 +1,7 @@
 import {
   AI_PROVIDER_KEY_SETTING_IDS,
   type AnnotationRect,
+  type AnnotationStamp,
   ANTHROPIC_KEY_SETTING_ID,
   AZURE_KEY_SETTING_ID,
   CHAT_HISTORY_SETTING_ID,
@@ -9,7 +10,7 @@ import {
   type SecretSettingId,
   type FieldFill,
   type MeasureScale,
-  type RenderableCommand,
+  type DispatchableCommand,
 } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
@@ -323,6 +324,8 @@ import {
   MEASURE_UNIT_SETTING,
   AZURE_DI_ENDPOINT_SETTING,
   OCR_LANGUAGE_SETTING,
+  AUTHOR_NAME_SETTING,
+  authorFor,
 } from './settings/editing.js';
 import { AssistantPanel } from './AssistantPanel.js';
 import type { EventSubscriber } from './bridge.js';
@@ -847,6 +850,22 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
   );
 
   /**
+   * The Windows user name `main` answers on `app.info` — what an empty *Your name for comments*
+   * stands for (ADR-0103). Empty until that answer arrives, and a mark made in that instant names
+   * nobody rather than waiting.
+   */
+  const [userName, setUserName] = useState('');
+  const typedAuthor = useSetting(settings, AUTHOR_NAME_SETTING);
+  /**
+   * Who is making a mark and when, asked at the moment a creation command is sent (ADR-0103): the
+   * dispatcher attaches it, so no tool, menu command or panel can write either.
+   */
+  const stamp = useCallback(
+    (): AnnotationStamp => ({ author: authorFor(typedAuthor, userName), created: new Date().toISOString() }),
+    [typedAuthor, userName],
+  );
+
+  /**
    * Reorders the document, from the thumbnail strip.
    *
    * ## Dispatched from a SURFACE rather than the registry, and why that is right
@@ -866,7 +885,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
     (from: number, to: number): void => {
       if (activeId === undefined) return;
       void applyDocumentCommand(
-        { client, onApplied: applied, ask },
+        { client, onApplied: applied, ask, stamp },
         activeId,
         { kind: 'movePage', from, to },
       ).then((moved) => {
@@ -885,7 +904,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         stores.get(activeId)?.getState().movedPages(count, { from, to });
       });
     },
-    [activeId, applied, ask, client, stores],
+    [activeId, applied, ask, client, stamp, stores],
   );
 
   /**
@@ -910,7 +929,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
   const removeAnnotation = useCallback(
     (handle: { page: number; index: number; version: DocVersion }): void => {
       if (activeId === undefined) return;
-      void applyDocumentCommand({ client, onApplied: applied, ask }, activeId, {
+      void applyDocumentCommand({ client, onApplied: applied, ask, stamp }, activeId, {
         kind: 'removeAnnotation',
         page: handle.page,
         // A ROW NAMES ONE. The payload is plural because a selection can be
@@ -921,7 +940,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         version: handle.version,
       });
     },
-    [activeId, applied, ask, client],
+    [activeId, applied, ask, client, stamp],
   );
 
   /**
@@ -944,7 +963,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       value: FieldFill;
     }): void => {
       if (activeId === undefined) return;
-      void applyDocumentCommand({ client, onApplied: applied, ask }, activeId, {
+      void applyDocumentCommand({ client, onApplied: applied, ask, stamp }, activeId, {
         kind: 'fillFormField',
         page: handle.page,
         index: handle.index,
@@ -952,7 +971,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         version: handle.version,
       });
     },
-    [activeId, applied, ask, client],
+    [activeId, applied, ask, client, stamp],
   );
 
   /**
@@ -966,14 +985,14 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
   const deleteFormField = useCallback(
     (handle: { page: number; index: number; version: DocVersion }): void => {
       if (activeId === undefined) return;
-      void applyDocumentCommand({ client, onApplied: applied, ask }, activeId, {
+      void applyDocumentCommand({ client, onApplied: applied, ask, stamp }, activeId, {
         kind: 'deleteFormFields',
         page: handle.page,
         indices: [handle.index],
         version: handle.version,
       });
     },
-    [activeId, applied, ask, client],
+    [activeId, applied, ask, client, stamp],
   );
 
   /**
@@ -982,8 +1001,8 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
    */
   const flattenActiveForm = useCallback((): void => {
     if (activeId === undefined) return;
-    void flattenForm({ client, onApplied: applied, ask }, activeId);
-  }, [activeId, applied, ask, client]);
+    void flattenForm({ client, onApplied: applied, ask, stamp }, activeId);
+  }, [activeId, applied, ask, client, stamp]);
 
   /**
    * Removing everything the select tool has picked.
@@ -1000,14 +1019,14 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
   const removeSelection = useCallback(
     (chosen: AnnotationSelection): void => {
       if (activeId === undefined) return;
-      void applyDocumentCommand({ client, onApplied: applied, ask }, activeId, {
+      void applyDocumentCommand({ client, onApplied: applied, ask, stamp }, activeId, {
         kind: 'removeAnnotation',
         page: chosen.page,
         indices: chosen.items.map((item) => item.index),
         version: chosen.version,
       });
     },
-    [activeId, applied, ask, client],
+    [activeId, applied, ask, client, stamp],
   );
 
   /**
@@ -1023,10 +1042,10 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
 
   /** A command sent to one document, carrying the selection across it where it keeps the walk (ADR-0102). */
   const send = useCallback(
-    (docId: DocId, command: RenderableCommand): void => {
-      void applyCarrying({ client, onApplied: applied, ask, carry: setPicked }, docId, command);
+    (docId: DocId, command: DispatchableCommand): void => {
+      void applyCarrying({ client, onApplied: applied, ask, stamp, carry: setPicked }, docId, command);
     },
-    [applied, ask, client],
+    [applied, ask, client, stamp],
   );
 
   /**
@@ -1037,7 +1056,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
    * `document.execute` is the thing `applyDocumentCommand` exists to prevent.
    */
   const dispatch = useCallback(
-    (command: RenderableCommand): void => {
+    (command: DispatchableCommand): void => {
       if (activeId === undefined) return;
       send(activeId, command);
     },
@@ -1056,12 +1075,12 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
     (a: number, b: number): void => {
       if (activeId === undefined) return;
       void applyDocumentCommand(
-        { client, onApplied: applied, ask },
+        { client, onApplied: applied, ask, stamp },
         activeId,
         { kind: 'swapPages', a, b },
       );
     },
-    [activeId, applied, ask, client],
+    [activeId, applied, ask, client, stamp],
   );
 
   /**
@@ -1624,6 +1643,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       (answer) => {
         if (cancelled || !answer.ok) return;
         setAppVersion(answer.value.version);
+        setUserName(answer.value.userName);
       },
       () => {
         // SWALLOWED ON PURPOSE: a version that cannot be read leaves the footer without its version line, which
@@ -1806,13 +1826,13 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
     (page: number, rect: AnnotationRect): void => {
       if (activeId === undefined) return;
       void placeImage(
-        { client, ask, onApplied: applied },
+        { client, ask, onApplied: applied, stamp },
         activeId,
         imagePagesFor(imagePages, page, pageCount),
         rect,
       );
     },
-    [activeId, applied, ask, client, imagePages, pageCount],
+    [activeId, applied, ask, client, imagePages, pageCount, stamp],
   );
 
   /**
@@ -1838,9 +1858,9 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
   const onPlaceBarcode = useCallback(
     (page: number, rect: AnnotationRect): void => {
       if (activeId === undefined) return;
-      void placeBarcode({ client, ask, onApplied: applied }, activeId, page, rect);
+      void placeBarcode({ client, ask, onApplied: applied, stamp }, activeId, page, rect);
     },
-    [activeId, applied, ask, client],
+    [activeId, applied, ask, client, stamp],
   );
 
   /**
@@ -1876,6 +1896,16 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       const item = chosen.items[0];
       if (chosen.items.length !== 1 || item === undefined) return;
       dispatch({ kind: 'editAnnotationText', page: chosen.page, index: item.index, text, version: chosen.version });
+    },
+    [dispatch],
+  );
+
+  /** Rewriting the one selected mark's author, from the Properties tab (ADR-0103) — carried like a comment. */
+  const authorSelection = useCallback(
+    (chosen: AnnotationSelection, author: string): void => {
+      const item = chosen.items[0];
+      if (chosen.items.length !== 1 || item === undefined) return;
+      dispatch({ kind: 'setAnnotationAuthor', page: chosen.page, index: item.index, author, version: chosen.version });
     },
     [dispatch],
   );
@@ -2033,7 +2063,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         aiSetup,
         showWordCountCommand({ client, ask, track }),
         compareDocumentsCommand({ client, ask, track }),
-        translatePageCommand({ client, onApplied: applied, ask, toast, track, storedSecrets: () => storedSecrets }),
+        translatePageCommand({ client, onApplied: applied, ask, stamp, toast, track, storedSecrets: () => storedSecrets }),
         inspectPageStructureCommand({ client, ask }),
         accessibilityCheckCommand({ client, ask }),
         readBarcodesCommand({ client, ask }),
@@ -2047,46 +2077,48 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         // THREE ROTATIONS, one factory. D2's row is a surface over the command
         // Stage 0 already declared — `rotatePages` takes the quarter turns, so
         // 180 and 270 needed no new command and no new contract entry.
-        rotatePageCommand({ client, onApplied: applied, ask }, 1),
-        rotatePageCommand({ client, onApplied: applied, ask }, 2),
-        rotatePageCommand({ client, onApplied: applied, ask }, 3),
+        rotatePageCommand({ client, onApplied: applied, ask, stamp }, 1),
+        rotatePageCommand({ client, onApplied: applied, ask, stamp }, 2),
+        rotatePageCommand({ client, onApplied: applied, ask, stamp }, 3),
         // THE FIRST DESTRUCTIVE COMMAND, and it registers exactly like the
         // three above it. What is different is invisible here and deliberately
         // so: its log entry is terminal, and undoing it restores the checkpoint
         // the bus took rather than an inverse (ADR-0037).
-        insertBlankPageCommand({ client, onApplied: applied, ask }),
-        duplicatePageCommand({ client, onApplied: applied, ask }),
-        deletePageCommand({ client, onApplied: applied, ask }),
+        insertBlankPageCommand({ client, onApplied: applied, ask, stamp }),
+        duplicatePageCommand({ client, onApplied: applied, ask, stamp }),
+        deletePageCommand({ client, onApplied: applied, ask, stamp }),
         // THE FIRST COMMAND WHOSE ARGUMENTS COME FROM A DIALOG. Its `run`
         // awaits an answer and dispatches only if there was one, which is the
         // whole of the mutation-dialog gate (ADR-0038).
-        deletePagesCommand({ client, onApplied: applied, ask }),
-        cropPagesCommand({ client, onApplied: applied, ask }),
-        protectDocumentCommand({ client, onApplied: applied, ask }),
-        sanitizeDocumentCommand({ client, onApplied: applied, ask }),
-        signDocumentCommand({ client, onApplied: applied, ask }),
-        signaturesCommand({ client, onApplied: applied, ask }),
+        deletePagesCommand({ client, onApplied: applied, ask, stamp }),
+        cropPagesCommand({ client, onApplied: applied, ask, stamp }),
+        protectDocumentCommand({ client, onApplied: applied, ask, stamp }),
+        sanitizeDocumentCommand({ client, onApplied: applied, ask, stamp }),
+        signDocumentCommand({ client, onApplied: applied, ask, stamp }),
+        signaturesCommand({ client, onApplied: applied, ask, stamp }),
         docusignSendCommand({
           client,
           onApplied: applied,
           ask,
+          stamp,
           docusignReady: () => docusignKeyStored,
         }),
         docusignRetrieveCommand({
           client,
           onApplied: applied,
           ask,
+          stamp,
           docusignReady: () => docusignKeyStored,
         }),
-        redactMatchesCommand({ client, onApplied: applied, ask }),
-        applyRedactionsCommand({ client, onApplied: applied, ask }),
-        watermarkPagesCommand({ client, onApplied: applied, ask }),
-        headerFooterCommand({ client, onApplied: applied, ask }),
-        batesNumberCommand({ client, onApplied: applied, ask }),
-        pageTransitionCommand({ client, onApplied: applied, ask }),
-        pageBackgroundCommand({ client, onApplied: applied, ask }),
-        resizePagesCommand({ client, onApplied: applied, ask }),
-        deskewPagesCommand({ client, onApplied: applied, ask }),
+        redactMatchesCommand({ client, onApplied: applied, ask, stamp }),
+        applyRedactionsCommand({ client, onApplied: applied, ask, stamp }),
+        watermarkPagesCommand({ client, onApplied: applied, ask, stamp }),
+        headerFooterCommand({ client, onApplied: applied, ask, stamp }),
+        batesNumberCommand({ client, onApplied: applied, ask, stamp }),
+        pageTransitionCommand({ client, onApplied: applied, ask, stamp }),
+        pageBackgroundCommand({ client, onApplied: applied, ask, stamp }),
+        resizePagesCommand({ client, onApplied: applied, ask, stamp }),
+        deskewPagesCommand({ client, onApplied: applied, ask, stamp }),
         // TAKES `track` AS WELL AS THE THREE ABOVE, and it is the first mutating
         // command to: recognition is 3.8–4.4 s per page and this one dispatches
         // once per page, so the status bar is where a reader watches it and where
@@ -2097,6 +2129,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           client,
           onApplied: applied,
           ask,
+          stamp,
           track,
           servicesReady: () => azureReady || claudeKeyStored,
         }),
@@ -2108,6 +2141,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           client,
           onApplied: applied,
           ask,
+          stamp,
           track,
           servicesReady: () => azureReady || claudeKeyStored,
         }),
@@ -2115,11 +2149,11 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         // dialog — the levels come from each image's own histogram — and it reads the
         // page kinds for the same reason the OCR commands do: levelling is only
         // meaningful where the page's content is a raster.
-        enhanceScansCommand({ client, onApplied: applied, ask, track }),
+        enhanceScansCommand({ client, onApplied: applied, ask, stamp, track }),
         // D9's DOCUMENT SCAN ROW, enhance's shape and its walk: the image-only pages,
         // one command, one undo.
-        straightenScansCommand({ client, onApplied: applied, ask, track }),
-        insertImageCommand({ client, onApplied: applied, ask }),
+        straightenScansCommand({ client, onApplied: applied, ask, stamp, track }),
+        insertImageCommand({ client, onApplied: applied, ask, stamp }),
         // D9's MARKDOWN ROW. The new document arrives as a tab by `openCommand`'s
         // callbacks; the append also adds a tab, then returns to the document it
         // changed (ADR-0060's correction).
@@ -2139,33 +2173,36 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           client,
           onApplied: applied,
           ask,
+          stamp,
           onOpened: opened,
           onActivate: activate,
         }),
-        mergeDocumentCommand({ client, onApplied: applied, ask }),
-        insertFromPdfCommand({ client, onApplied: applied, ask }),
-        replacePageCommand({ client, onApplied: applied, ask }),
-        importPageAsLayerCommand({ client, onApplied: applied, ask }),
+        mergeDocumentCommand({ client, onApplied: applied, ask, stamp }),
+        insertFromPdfCommand({ client, onApplied: applied, ask, stamp }),
+        replacePageCommand({ client, onApplied: applied, ask, stamp }),
+        importPageAsLayerCommand({ client, onApplied: applied, ask, stamp }),
         // D9's EDIT PAGE IN ANOTHER APP: its reimport opens the edited page as a tab, so it takes
         // `appendMarkdownCommand`'s two callbacks as well as `replacePageCommand`'s (ADR-0062).
         editPageExternallyCommand({
           client,
           onApplied: applied,
           ask,
+          stamp,
           onOpened: opened,
           onActivate: activate,
         }),
-        extractPagesCommand({ client, onApplied: applied, ask, toast }),
-        splitDocumentCommand({ client, onApplied: applied, ask }),
-        exportPageImagesCommand({ client, onApplied: applied, ask }),
-        exportTextCommand({ client, onApplied: applied, ask }),
-        exportLayoutTextCommand({ client, onApplied: applied, ask }),
-        exportWordCommand({ client, onApplied: applied, ask }),
-        exportPowerPointCommand({ client, onApplied: applied, ask }),
+        extractPagesCommand({ client, onApplied: applied, ask, stamp, toast }),
+        splitDocumentCommand({ client, onApplied: applied, ask, stamp }),
+        exportPageImagesCommand({ client, onApplied: applied, ask, stamp }),
+        exportTextCommand({ client, onApplied: applied, ask, stamp }),
+        exportLayoutTextCommand({ client, onApplied: applied, ask, stamp }),
+        exportWordCommand({ client, onApplied: applied, ask, stamp }),
+        exportPowerPointCommand({ client, onApplied: applied, ask, stamp }),
         exportExcelCommand({
           client,
           onApplied: applied,
           ask,
+          stamp,
           // THE SAME TWO FACTS the OCR tool's engines are offered on (`cloudReady`, `claudeReady`
           // below): a service is offered where its key is stored, and nowhere else (ADR-0086).
           tableEngines: () => [
@@ -2174,44 +2211,44 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
             ...(claudeKeyStored ? (['claude'] as const) : []),
           ],
         }),
-        printCommand({ client, onApplied: applied, ask }),
-        emailCommand({ client, onApplied: applied, ask }),
-        exportPdfaCommand({ client, onApplied: applied, ask }),
-        optimizeCommand({ client, onApplied: applied, ask, track, toast }),
-        generateTocCommand({ client, onApplied: applied, ask }),
-        findDuplicatePagesCommand({ client, onApplied: applied, ask }),
-        undoCommand({ client, onApplied: applied, ask }),
-        redoCommand({ client, onApplied: applied, ask }),
+        printCommand({ client, onApplied: applied, ask, stamp }),
+        emailCommand({ client, onApplied: applied, ask, stamp }),
+        exportPdfaCommand({ client, onApplied: applied, ask, stamp }),
+        optimizeCommand({ client, onApplied: applied, ask, stamp, track, toast }),
+        generateTocCommand({ client, onApplied: applied, ask, stamp }),
+        findDuplicatePagesCommand({ client, onApplied: applied, ask, stamp }),
+        undoCommand({ client, onApplied: applied, ask, stamp }),
+        redoCommand({ client, onApplied: applied, ask, stamp }),
         saveCommand({ client, ask, toast, onSaved }),
         closeTabCommand({ close: (docId) => requestClose([docId]) }),
         closeOthersCommand({ close: requestClose }),
         // THE SHELL'S OWN `activeId` AND `setCompareId`, which is what keeps this a second ROUTE
         // to the compare pane rather than a second owner of it: the picker writes the same value.
         openSideBySideCommand({ focused: readActiveId, compare: setCompareId, settings }),
-        saveCopyCommand({ client, onApplied: applied, ask, toast }),
-        exportFormDataJsonCommand({ client, onApplied: applied, ask }),
-        exportFormDataXfdfCommand({ client, onApplied: applied, ask }),
-        exportFormDataFdfCommand({ client, onApplied: applied, ask }),
-        importFormDataJsonCommand({ client, onApplied: applied, ask }),
-        importFormDataXfdfCommand({ client, onApplied: applied, ask }),
-        importFormDataFdfCommand({ client, onApplied: applied, ask }),
+        saveCopyCommand({ client, onApplied: applied, ask, stamp, toast }),
+        exportFormDataJsonCommand({ client, onApplied: applied, ask, stamp }),
+        exportFormDataXfdfCommand({ client, onApplied: applied, ask, stamp }),
+        exportFormDataFdfCommand({ client, onApplied: applied, ask, stamp }),
+        importFormDataJsonCommand({ client, onApplied: applied, ask, stamp }),
+        importFormDataXfdfCommand({ client, onApplied: applied, ask, stamp }),
+        importFormDataFdfCommand({ client, onApplied: applied, ask, stamp }),
         // THE COMMENTS' FILES, Review › Comment files (ADR-0077).
-        importAnnotationsXfdfCommand({ client, onApplied: applied, ask }),
-        importAnnotationsFdfCommand({ client, onApplied: applied, ask }),
-        importAnnotationsJsonCommand({ client, onApplied: applied, ask }),
+        importAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp }),
+        importAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp }),
+        importAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp }),
         // THE CLIPBOARD'S PASTE, beside the import it is: main mints the same command.
-        pasteAnnotationsCommand({ client, onApplied: applied, ask, hasCopied: readHasCopied }),
-        exportAnnotationsXfdfCommand({ client, onApplied: applied, ask }),
-        exportAnnotationsFdfCommand({ client, onApplied: applied, ask }),
-        exportAnnotationsJsonCommand({ client, onApplied: applied, ask }),
-        detectFlatFieldsCommand({ client, onApplied: applied, ask }),
-        flattenFormCommand({ client, onApplied: applied, ask }),
+        pasteAnnotationsCommand({ client, onApplied: applied, ask, stamp, hasCopied: readHasCopied }),
+        exportAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp }),
+        exportAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp }),
+        exportAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp }),
+        detectFlatFieldsCommand({ client, onApplied: applied, ask, stamp }),
+        flattenFormCommand({ client, onApplied: applied, ask, stamp }),
         // EDIT TEXT, a MODE in the tool slot (ADR-0096): it toggles as a drawing
         // tool's command does, and `editing` below is what the mode draws.
         editTextCommand({ activeTool: readTool, onSelect: setToolId }),
         handToolCommand({ activeTool: readTool, onSelect: setToolId }),
         selectTextCommand({ onSelect: setToolId }),
-        editPageObjectCommand({ client, onApplied: applied, ask }),
+        editPageObjectCommand({ client, onApplied: applied, ask, stamp }),
         // NO DEPS: it takes the caret to the find bar and searches nothing, so
         // there is no client for it to hold. A command needing none is what a
         // command that acts on a surface looks like.
@@ -2219,8 +2256,8 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         // THE TWO LISTS, from their own ribbon sections (the placement audit, 2026-09-23).
         showPanelCommand({ settings }, 'comments'),
         showPanelCommand({ settings }, 'forms'),
-        movePageCommand({ client, onApplied: applied, ask }, 'earlier'),
-        movePageCommand({ client, onApplied: applied, ask }, 'later'),
+        movePageCommand({ client, onApplied: applied, ask, stamp }, 'earlier'),
+        movePageCommand({ client, onApplied: applied, ask, stamp }, 'later'),
         // §7's SELECTED-TEXT MENU. The markups dispatch through the one dispatcher, drawn in the
         // tools' own style; *Search* opens the Search panel and seeds the find field.
         ...(() => {
@@ -2357,6 +2394,8 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       askAssistant,
       readSelection,
       openAssistant,
+      // WHO IS MAKING A MARK AND WHEN (ADR-0103): changes when the person's name for comments does.
+      stamp,
     ]);
 
   /**
@@ -2382,7 +2421,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
     const docId = open.docId;
     return {
       tool,
-      onCommand: (command: RenderableCommand): void => {
+      onCommand: (command: DispatchableCommand): void => {
         // A DRAG OF THE SELECTION is a `placeAnnotation`, which keeps the walk, so the marks stay
         // selected for the next drag — the same route an arrow key takes.
         send(docId, command);
@@ -2412,7 +2451,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
     const { docId } = open;
     /** Whether this mode has reported a refused read already — once per entry into it. */
     const refusal = { reported: false };
-    const deps = { client, onApplied: applied, ask };
+    const deps = { client, onApplied: applied, ask, stamp };
     return {
       version: open.version,
       read: async (page) => {
@@ -2434,7 +2473,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         setToolId(undefined);
       },
     };
-  }, [applied, ask, client, open, toolId]);
+  }, [applied, ask, client, open, stamp, toolId]);
 
   // The start screen's context: no document focused. `hasSelection` and `dirty`
   // are false because there is nothing to select in and nothing to dirty — not
@@ -2713,6 +2752,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
               <PropertiesPanel
                 context={context}
                 onComment={commentSelection}
+                onAuthor={authorSelection}
                 onRestyle={restyleSelection}
                 registry={registry}
                 selection={selection}
@@ -2780,7 +2820,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
                 onJump={navigator.jumpTo}
                 onHighlight={setSearch}
                 seed={findSeed}
-                commands={{ client, onApplied: applied, ask }}
+                commands={{ client, onApplied: applied, ask, stamp }}
               />
             ),
           }}

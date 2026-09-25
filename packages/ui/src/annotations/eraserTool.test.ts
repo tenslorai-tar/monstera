@@ -1,4 +1,4 @@
-import type { RenderableCommand } from '@monstera/contract';
+import type { DispatchableCommand } from '@monstera/contract';
 import { asDocVersion, viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -43,7 +43,7 @@ const PLAIN = { colour: [1, 0, 0], opacity: 1, borderWidth: 2 } as const;
  * The comment above applies to all three together: the eraser decides from the
  * rectangle alone, so these are inputs the code under test never touches.
  */
-const CARRIED = { style: PLAIN, kind: 'square', contents: '' } as const;
+const CARRIED = { style: PLAIN, kind: 'square', contents: '', author: '', created: null, blend: 'normal' } as const;
 
 /** An annotation covering PDF x 60–100, y 350–390 — screen (20,20) to (100,100). */
 const NEAR: ErasableAnnotation = {
@@ -65,7 +65,7 @@ function erasing(snapshot: AnnotationSnapshot | undefined): {
   readonly click: (
     at: readonly [number, number],
     page?: number,
-  ) => Promise<RenderableCommand | undefined>;
+  ) => Promise<DispatchableCommand | undefined>;
   readonly reads: number[];
 } {
   const reads: number[] = [];
@@ -76,7 +76,7 @@ function erasing(snapshot: AnnotationSnapshot | undefined): {
     },
   });
   return {
-    click: async (at, page = 3): Promise<RenderableCommand | undefined> => {
+    click: async (at, page = 3): Promise<DispatchableCommand | undefined> => {
       const { controller } = tool;
       const started = controller.begin(viewportPoint(at[0], at[1]));
       return controller.commit(started, page, overlayTransform(PAGE));

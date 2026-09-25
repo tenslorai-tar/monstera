@@ -232,7 +232,7 @@ describe('the declaration table', () => {
     expect(declared).toContain('mergeDocument');
   });
 
-  it('CONTROL: exactly fourteen kinds declare a target, and the rest answer none', () => {
+  it('CONTROL: exactly fifteen kinds declare a target, and the rest answer none', () => {
     // The targets axis's version of the control above, and it carries the
     // second half as well. `never extends X` would satisfy one type-level line
     // on its own; and a table where EVERY command declared a target would
@@ -247,6 +247,8 @@ describe('the declaration table', () => {
       'placeAnnotation',
       'styleAnnotation',
       'editAnnotationText',
+      // THE AUTHOR, `editAnnotationText`'s shape with `/T` (ADR-0103).
+      'setAnnotationAuthor',
       // THE ONE WHOSE INDEX IS NOT THE MARK IT CHANGES. A reply names the
       // annotation it ANSWERS, and it belongs here for the same reason as its
       // four neighbours: the handle is a position in this walk and goes stale

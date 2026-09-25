@@ -1,4 +1,4 @@
-import type { AnnotationRect, RenderableCommand } from '@monstera/contract';
+import type { AnnotationRect, DispatchableCommand } from '@monstera/contract';
 import { asDocVersion, viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -36,7 +36,7 @@ const PLAIN = { colour: [1, 0, 0], opacity: 1, borderWidth: 2 } as const;
  * selection carries can grow without this file gaining a dozen edits. None of
  * these cases reads any of it — they are about which boxes a marquee picks.
  */
-const CARRIED = { style: PLAIN, kind: 'square', contents: '' } as const;
+const CARRIED = { style: PLAIN, kind: 'square', contents: '', author: '', created: null, blend: 'normal' } as const;
 
 /** PDF x 60–100, y 350–390 — screen (20,20) to (100,100). */
 const A_RECT: AnnotationRect = { x0: 60, y0: 350, x1: 100, y1: 390 };
@@ -53,7 +53,7 @@ function selecting(
     from: readonly [number, number],
     to?: readonly [number, number],
     page?: number,
-  ) => Promise<RenderableCommand | undefined>;
+  ) => Promise<DispatchableCommand | undefined>;
   readonly chosen: (AnnotationSelection | undefined)[];
 } {
   const chosen: (AnnotationSelection | undefined)[] = [];
@@ -66,7 +66,7 @@ function selecting(
     selected: () => selected,
   });
   return {
-    drag: async (from, to = from, page = 3): Promise<RenderableCommand | undefined> => {
+    drag: async (from, to = from, page = 3): Promise<DispatchableCommand | undefined> => {
       const { controller } = tool;
       const started = controller.begin(viewportPoint(from[0], from[1]));
       const moved = controller.update(started, viewportPoint(to[0], to[1]));
@@ -298,7 +298,17 @@ describe('carrySelection (ADR-0102)', () => {
     version: AFTER,
     annotations: [
       { page: 1, index: 1, rect: BOX, ...CARRIED },
-      { page: 1, index: 2, rect: BOX, style: { colour: [0, 0, 1], opacity: 0.4, borderWidth: 2 }, kind: 'square', contents: 'done' },
+      {
+        page: 1,
+        index: 2,
+        rect: BOX,
+        style: { colour: [0, 0, 1], opacity: 0.4, borderWidth: 2 },
+        kind: 'square',
+        contents: 'done',
+        author: 'Sam Okafor',
+        created: '2026-09-24T09:38:00.000Z',
+        blend: 'multiply',
+      },
       { page: 2, index: 2, rect: BOX, ...CARRIED },
     ],
   } as const;
@@ -314,6 +324,9 @@ describe('carrySelection (ADR-0102)', () => {
           style: { colour: [0, 0, 1], opacity: 0.4, borderWidth: 2 },
           kind: 'square',
           contents: 'done',
+          author: 'Sam Okafor',
+          created: '2026-09-24T09:38:00.000Z',
+          blend: 'multiply',
         },
       ],
     });

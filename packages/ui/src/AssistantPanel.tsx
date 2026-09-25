@@ -10,7 +10,7 @@ import {
   MAX_ANNOTATION_TEXT,
   MAX_ASK_CONTEXT,
   MAX_CHAT_TEXT,
-  type RenderableCommand,
+  type DispatchableCommand,
   citationsIn,
 } from '@monstera/contract';
 import type { DocId, MessageKey } from '@monstera/shared';
@@ -172,7 +172,7 @@ export interface AssistantPanelProps {
    * would let the same request be asked again. */
   readonly onHandled: (serial: number) => void;
   /** Posts a drafted reply to its note, through `App`'s one dispatcher. */
-  readonly onReply?: ((command: Extract<RenderableCommand, { kind: 'replyToAnnotation' }>) => void) | undefined;
+  readonly onReply?: ((command: Extract<DispatchableCommand, { kind: 'replyToAnnotation' }>) => void) | undefined;
   /**
    * Places an answer on the page the reader is on as a sticky note, and says whether it could — the
    * page's box is known only once it has been drawn. Absent, *Add as note* is not offered.

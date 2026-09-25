@@ -39,7 +39,7 @@ const INERT_ASSISTANT = createAssistant({
 });
 import { createEphemeralSettings } from './settingsFile.js';
 
-const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development' };
+const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' };
 
 /** These cases are about opening; nothing here dispatches a command. */
 const unusedCommands = {} as unknown as DocumentCommands;

@@ -16,6 +16,7 @@ import { placeBarcode, readBarcodesCommand } from './barcodes.js';
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000000bc');
 const BOX = { x0: 60, y0: 390, x1: 110, y1: 360 };
+const STAMP = () => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' });
 
 function contextOn(page: number | undefined): CommandContext {
   return { docId: DOC, version: asDocVersion(1), hasSelection: false, dirty: false, page, pageCount: 5 } as CommandContext;
@@ -109,10 +110,13 @@ describe('placing a barcode', () => {
     const { client, sent } = clientPlacing(['placed']);
     const { ask, opened } = recordingAsk([{ text: 'MONSTERA 42', format: 'DataMatrix' }]);
     const applied: unknown[] = [];
-    await placeBarcode({ client, ask, onApplied: (value) => applied.push(value) }, DOC, 3, BOX);
+    await placeBarcode({ client, ask, onApplied: (value) => applied.push(value), stamp: STAMP }, DOC, 3, BOX);
 
     expect(opened).toStrictEqual([{ id: PLACE_BARCODE_DIALOG_ID, props: {} }]);
-    expect(sent).toStrictEqual([{ docId: DOC, pages: [3], rect: BOX, text: 'MONSTERA 42', format: 'DataMatrix' }]);
+    // AND WHO PLACED IT AND WHEN, which main writes into the `placeImage` it builds (ADR-0103).
+    expect(sent).toStrictEqual([
+      { docId: DOC, pages: [3], rect: BOX, text: 'MONSTERA 42', format: 'DataMatrix', stamp: STAMP() },
+    ]);
     expect(applied).toStrictEqual([{ version: 2, byteLength: 5000 }]);
   });
 
@@ -122,7 +126,7 @@ describe('placing a barcode', () => {
     const second = { text: 'letters', format: 'QRCode' };
     const { ask, opened } = recordingAsk([first, second]);
     const applied: unknown[] = [];
-    await placeBarcode({ client, ask, onApplied: (value) => applied.push(value) }, DOC, 0, BOX);
+    await placeBarcode({ client, ask, onApplied: (value) => applied.push(value), stamp: STAMP }, DOC, 0, BOX);
 
     expect(opened).toStrictEqual([
       { id: PLACE_BARCODE_DIALOG_ID, props: {} },
@@ -136,7 +140,7 @@ describe('placing a barcode', () => {
     const { client, sent } = clientPlacing(['placed']);
     const { ask } = recordingAsk([undefined]);
     const applied: unknown[] = [];
-    await placeBarcode({ client, ask, onApplied: (value) => applied.push(value) }, DOC, 0, BOX);
+    await placeBarcode({ client, ask, onApplied: (value) => applied.push(value), stamp: STAMP }, DOC, 0, BOX);
     expect(sent).toStrictEqual([]);
     expect(applied).toStrictEqual([]);
   });

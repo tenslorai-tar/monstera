@@ -60,6 +60,7 @@ function placement(bytes: Uint8Array): CommandOfKind<'placeImage'> {
     pages: [0],
     rect: { x0: 40, y0: 60, x1: 240, y1: 160 },
     bytes,
+    stamp: { author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' },
   };
 }
 

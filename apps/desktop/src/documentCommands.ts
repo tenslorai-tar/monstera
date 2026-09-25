@@ -1,6 +1,7 @@
 import {
   type AnnotationDataFormat,
   type AnnotationRect,
+  type AnnotationStamp,
   MAX_ANNOTATION_DATA_BYTES,
   type CommandKind,
   type CommandOfKind,
@@ -2799,6 +2800,7 @@ export class DocumentCommands {
     rect: AnnotationRect,
     text: string,
     format: BarcodeFormat,
+    stamp: AnnotationStamp,
   ): Promise<PlaceBarcodeOutcome> {
     if (this.#documents.nameOf(docId) === undefined) {
       throw new DocumentNotOpenError(docId, 'place a barcode');
@@ -2810,6 +2812,7 @@ export class DocumentCommands {
       pages,
       rect: barcodeRect(rect, written.width, written.height),
       bytes: written.png,
+      stamp,
     });
     return { kind: 'placed', ...applied };
   }
@@ -5077,6 +5080,7 @@ export class DocumentCommands {
     docId: DocId,
     pages: readonly number[],
     rect: AnnotationRect,
+    stamp: AnnotationStamp,
   ): Promise<PlaceImageOutcome> {
     // READ BEFORE THE DIALOG, `insertImage`'s ordering and its reason.
     if (this.#documents.nameOf(docId) === undefined) {
@@ -5091,7 +5095,7 @@ export class DocumentCommands {
     if (read.kind === 'unreadable') return { kind: 'unreadable' };
 
     try {
-      const applied = await this.execute(docId, { kind: 'placeImage', pages, rect, bytes: read.bytes });
+      const applied = await this.execute(docId, { kind: 'placeImage', pages, rect, bytes: read.bytes, stamp });
       return { kind: 'placed', ...applied };
     } catch (error) {
       // `insertImage`'s catch and its reason: a decoder refusing is an outcome,

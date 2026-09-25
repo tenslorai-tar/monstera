@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import type { RenderableCommand } from '@monstera/contract';
+import type { DispatchableCommand } from '@monstera/contract';
 import { act, fireEvent, render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -46,9 +46,9 @@ const PAGE: OverlayPage = { crop: [50, 100, 250, 400], rotation: 0, zoom: 2 };
 /** Renders an overlay and returns the surface plus every command it sent. */
 function mounted(tool: UiTool = rectangleTool): {
   readonly surface: Element;
-  readonly sent: RenderableCommand[];
+  readonly sent: DispatchableCommand[];
 } {
-  const sent: RenderableCommand[] = [];
+  const sent: DispatchableCommand[] = [];
   const { container } = render(
     <AnnotationOverlay
       geometry={PAGE}

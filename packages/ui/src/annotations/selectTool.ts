@@ -1,4 +1,4 @@
-import type { AnnotationRect, RenderableCommand } from '@monstera/contract';
+import type { AnnotationRect, DispatchableCommand } from '@monstera/contract';
 import type { DocVersion, PageTransform, ViewportPoint } from '@monstera/shared';
 import { pdfPoint, toPdf, toViewport, viewportPoint } from '@monstera/shared';
 
@@ -83,6 +83,12 @@ export interface SelectedAnnotation {
   readonly kind: ErasableAnnotation['kind'];
   /** What it says now, carried from the walk for {@link style}'s reason. */
   readonly contents: ErasableAnnotation['contents'];
+  /** Who it names, carried from the walk for {@link style}'s reason (ADR-0103). */
+  readonly author: ErasableAnnotation['author'];
+  /** When it was made, or `null`, carried for the same reason. */
+  readonly created: ErasableAnnotation['created'];
+  /** The blend it is drawn in, carried for the same reason. */
+  readonly blend: ErasableAnnotation['blend'];
 }
 
 /**
@@ -118,6 +124,9 @@ function selectedFrom(entry: ErasableAnnotation): SelectedAnnotation | undefined
     style: entry.style,
     kind: entry.kind,
     contents: entry.contents,
+    author: entry.author,
+    created: entry.created,
+    blend: entry.blend,
   };
 }
 
@@ -275,7 +284,7 @@ function placementFor(
   marquee: ReturnType<typeof marqueeOf>,
   page: number,
   transform: PageTransform,
-): RenderableCommand | undefined {
+): DispatchableCommand | undefined {
   if (selection === undefined) return undefined;
   // A SELECTION BELONGS TO ONE PAGE, so a gesture on any other is a pick.
   if (selection.page !== page) return undefined;
@@ -340,7 +349,7 @@ export function selectTool(deps: SelectDeps): UiTool {
       gesture: Gesture,
       page: number,
       transform: PageTransform,
-    ): Promise<RenderableCommand | undefined> => {
+    ): Promise<DispatchableCommand | undefined> => {
       const marquee = marqueeOf(gesture);
 
       // A GESTURE THAT STARTED ON THE SELECTION IS AN EDIT, NOT A PICK, and it

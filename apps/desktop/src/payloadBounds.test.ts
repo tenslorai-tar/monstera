@@ -136,7 +136,7 @@ afterAll(() => {
  * excluded below with their reason, since no engine host runs in a unit test.
  */
 function handlers(): ReturnType<typeof createContractHandlers> {
-  const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development' };
+  const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' };
   return createContractHandlers({
     // INERT, like every other surface here: these cases drive the SCHEMAS, not the work.
     assistant: createAssistant({ secret: () => undefined, setting: () => undefined, send: () => undefined }),

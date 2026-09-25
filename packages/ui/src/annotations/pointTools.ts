@@ -1,4 +1,4 @@
-import type { AnnotationColour, RenderableCommand } from '@monstera/contract';
+import type { AnnotationColour, DispatchableCommand } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
@@ -92,7 +92,7 @@ export function stickyNoteCommand(
   at: { readonly x: number; readonly y: number },
   text: string,
   style: AnnotationStyle,
-): RenderableCommand {
+): DispatchableCommand {
   return {
     kind: 'addAnnotation',
     page,
@@ -155,7 +155,7 @@ export function stickyNoteTool(deps: TextToolDeps & { readonly style: Annotation
       gesture: Gesture,
       page: number,
       transform: PageTransform,
-    ): Promise<RenderableCommand | undefined> => {
+    ): Promise<DispatchableCommand | undefined> => {
       // THE POINT IS READ BEFORE THE ASK, `textTools.ts`' rule: the transform
       // is the one the overlay measured at pointer-up, and converting after the
       // person has typed would place the note using whatever zoom the page has
@@ -202,7 +202,7 @@ export function caretTool(deps: { readonly style: AnnotationStyle }): UiTool {
         gesture: Gesture,
         page: number,
         transform: PageTransform,
-      ): RenderableCommand | undefined => ({
+      ): DispatchableCommand | undefined => ({
         kind: 'addAnnotation',
         page,
         annotation: {

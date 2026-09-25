@@ -73,7 +73,7 @@ async function document(pages = PAGES): Promise<Uint8Array> {
 }
 
 function command(page: number): CommandOfKind<'addAnnotation'> {
-  return { kind: 'addAnnotation', page, annotation: MARK };
+  return { kind: 'addAnnotation', page, annotation: MARK, stamp: { author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' } };
 }
 
 /** Runs `work` against an open session and serialises the result. */

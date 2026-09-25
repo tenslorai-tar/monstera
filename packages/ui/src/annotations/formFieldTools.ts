@@ -1,4 +1,4 @@
-import type { CreatedField, RenderableCommand } from '@monstera/contract';
+import type { CreatedField, DispatchableCommand } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 
 import {
@@ -140,7 +140,7 @@ function fieldTool(shape: FieldToolShape, deps: TextToolDeps): UiTool {
       gesture: Gesture,
       page: number,
       transform: PageTransform,
-    ): Promise<RenderableCommand | undefined> => {
+    ): Promise<DispatchableCommand | undefined> => {
       // THE SAME THRESHOLD AS THE PREVIEW, read from it rather than restated —
       // here it also decides whether a modal opens at all, so the two coming
       // apart would be a dialog appearing for a drag that showed no box.

@@ -28,15 +28,39 @@ export function hexOf(computed: string): string | undefined {
   return `#${channels.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
 }
 
+/** A computed background that paints nothing: CSS's `transparent`, any zero alpha, or no value at all. */
+const PAINTS_NOTHING = /^(?:|transparent|rgba\([^)]*,\s*0(?:\.0*)?\s*\))$/u;
+
 /**
- * What the title bar asks main to paint, read off the bar itself — or `undefined` when it cannot be stated.
+ * The background colour that shows where `bar` is, which is not always the bar's own.
  *
- * **Read, never looked up in `tokens.css`.** The bar's colours are resolved against the theme, the user's accent
- * and the platform's contrast state, and the computed style is the one place all three have already been applied.
+ * A fully transparent box paints nothing, so what a person sees there is the first box outward that does — the
+ * v5 title bar sits on the ground that way. The walk stops at a TRANSLUCENT colour and returns it, for `hexOf` to
+ * refuse: over whatever lies behind it, it has no single colour.
+ *
+ * A background IMAGE is not read, because the overlay takes one colour. The ground's glow is the one image there:
+ * its radius is 70% of the width and it is transparent from 70% of that radius, so the window's top corner lies
+ * outside it, and what remains under the buttons is the thinning edge of `--accent-soft`, which the overlay does
+ * not carry.
+ */
+export function groundOf(bar: Element): string {
+  for (let box: Element | null = bar; box !== null; box = box.parentElement) {
+    const colour = getComputedStyle(box).backgroundColor;
+    if (!PAINTS_NOTHING.test(colour)) return colour;
+  }
+  return 'transparent';
+}
+
+/**
+ * What the title bar asks main to paint, read off the page — or `undefined` when it cannot be stated.
+ *
+ * **Read, never looked up in `tokens.css`.** The colours are resolved against the theme, the user's accent and
+ * the platform's contrast state, and the computed style is the one place all three have already been applied.
+ * The background is {@link groundOf}'s, and the text colour is the bar's own, which it inherits when it sets none.
  */
 export function overlayOf(bar: Element): TitleBarOverlayRequest | undefined {
   const style = getComputedStyle(bar);
-  const color = hexOf(style.backgroundColor);
+  const color = hexOf(groundOf(bar));
   const symbolColor = hexOf(style.color);
   const height = Math.round(bar.getBoundingClientRect().height);
   if (color === undefined || symbolColor === undefined) return undefined;

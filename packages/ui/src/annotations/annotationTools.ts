@@ -70,7 +70,7 @@ export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
     snapshotTool(deps),
     // THE SAME GESTURE AND A COMMAND, which is the one difference worth naming
     // beside the snapshot above: a region's recognition changes the document, so
-    // `commit` answers a `RenderableCommand` and the registry dispatches it. D6
+    // `commit` answers a `DispatchableCommand` and the registry dispatches it. D6
     // row 6, registered into ADR-0042's platform with nothing widened.
     ocrRegionTool(deps),
     // THE SECOND REGISTRATION OF THE SAME GESTURE, differing in one field of the

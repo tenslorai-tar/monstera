@@ -145,6 +145,8 @@ export type UnlockDocument = (
 export interface AppInfo {
   readonly version: string;
   readonly installChannel: 'store' | 'web' | 'development';
+  /** The signed-in Windows user's name — `windowsUserName()` (ADR-0103). */
+  readonly userName: string;
 }
 
 /** What `window.titleBarOverlay` carries, already validated: two `#rrggbb` colours and a whole-pixel height. */
@@ -1012,9 +1014,10 @@ function placeImageHandler(commands: DocumentCommands): ContractHandlers['docume
     docId,
     pages,
     rect,
+    stamp,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.placeImage']>>> => {
     try {
-      const outcome = await commands.placeImage(docId, pages, rect);
+      const outcome = await commands.placeImage(docId, pages, rect, stamp);
       if (outcome.kind === 'cancelled') return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'unreadable') return ok({ kind: 'unreadable' } as const);
       if (outcome.kind === 'too-large') {
@@ -1043,9 +1046,10 @@ function placeBarcodeHandler(commands: DocumentCommands): ContractHandlers['docu
     rect,
     text,
     format,
+    stamp,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.placeBarcode']>>> => {
     try {
-      const outcome = await commands.placeBarcode(docId, pages, rect, text, format);
+      const outcome = await commands.placeBarcode(docId, pages, rect, text, format, stamp);
       if (outcome.kind === 'refused') return ok({ kind: 'refused' } as const);
       return ok({
         kind: 'placed',

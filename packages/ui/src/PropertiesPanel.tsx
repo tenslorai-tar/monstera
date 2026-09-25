@@ -1,10 +1,13 @@
 import { useLingui } from '@lingui/react';
 import {
+  type AnnotationBlend,
   type AnnotationColour,
+  MAX_ANNOTATION_AUTHOR,
   MAX_ANNOTATION_BORDER,
   MAX_ANNOTATION_FONT,
   MAX_ANNOTATION_TEXT,
   MIN_ANNOTATION_FONT,
+  MIN_ANNOTATION_OPACITY,
 } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import { type ReactElement, useId, useState } from 'react';
@@ -17,6 +20,11 @@ import {
   COMMENT_STYLES_NO_WIDTH,
   PROPERTIES_ACTIONS,
   PROPERTIES_AS_DEFAULT,
+  PROPERTIES_AUTHOR,
+  PROPERTIES_BLEND,
+  PROPERTIES_BLEND_MULTIPLY,
+  PROPERTIES_BLEND_NORMAL,
+  PROPERTIES_CREATED,
   PROPERTIES_COLOUR,
   PROPERTIES_COMMENT,
   PROPERTIES_CUSTOM_COLOUR,
@@ -33,6 +41,7 @@ import {
 } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { Button } from './primitives/Button.js';
+import { SegmentedControl, type SegmentedOption } from './primitives/SegmentedControl.js';
 import type { CommandContext, CommandRegistry } from './registries/commands.js';
 import {
   ANNOTATION_COLOUR_SETTING,
@@ -49,7 +58,8 @@ import { useSetting } from './useSetting.js';
 export type StyleChange =
   | { readonly colour: AnnotationColour }
   | { readonly opacity: number }
-  | { readonly borderWidth: number };
+  | { readonly borderWidth: number }
+  | { readonly blend: AnnotationBlend };
 
 export interface PropertiesPanelProps {
   readonly settings: SettingsStore;
@@ -59,6 +69,8 @@ export interface PropertiesPanelProps {
   readonly onRestyle: (selection: AnnotationSelection, change: StyleChange) => void;
   /** Rewrites the one selected mark's comment. */
   readonly onComment: (selection: AnnotationSelection, text: string) => void;
+  /** Rewrites who the one selected mark names as its author (ADR-0103). */
+  readonly onAuthor: (selection: AnnotationSelection, author: string) => void;
   /** Where the foot's commands come from (`properties` placements), and what they run with. */
   readonly registry: CommandRegistry;
   readonly context: CommandContext;
@@ -90,16 +102,19 @@ export interface PropertiesPanelProps {
  * read and which no command changes on an existing mark — and *Each tool's own* first among the
  * colours, the setting's `'auto'`.
  *
- * ## What v5-02 draws and this does not
+ * ## Author, created and blend (ADR-0103)
  *
- * Author, blend and the *created* line: the walk carries no `/T`, `/BM` or `/CreationDate`, and no
- * command writes them. Recorded in ADR-0102 for the owner.
+ * The author is the one mark's `/T`, sent on blur by its own command; the creation time is shown and
+ * never edited; the blend is the appearance's, sent as one property of a restyle like the others. None
+ * of the three is written to the authoring settings: the author's default is its own setting, and the
+ * blend differs by kind.
  */
 export function PropertiesPanel({
   settings,
   selection,
   onRestyle,
   onComment,
+  onAuthor,
   registry,
   context,
 }: PropertiesPanelProps): ReactElement {
@@ -164,6 +179,8 @@ export function PropertiesPanel({
   // than a state: nothing is drawn for it.
   if (first === undefined) return <section className="m-properties" />;
   const only = selection.items.length === 1 ? first : undefined;
+  /** The one mark's creation instant, or `null` — for several marks, or a mark with no date. */
+  const created = only?.created ?? null;
   const hex = hexFromColour([first.style.colour[0] ?? 0, first.style.colour[1] ?? 0, first.style.colour[2] ?? 0]);
   // THE WIDTH ROW ONLY WHERE A SELECTED MARK HAS ONE. Six subtypes carry no `/BS`, and the kernel
   // skips them; a row that set nothing on a highlight would be a control that does nothing.
@@ -185,6 +202,17 @@ export function PropertiesPanel({
         <p className="m-properties__meta">
           {i18n._(PROPERTIES_WHERE, { count: selection.items.length, page: pdfjsPageOf(selection.page) })}
         </p>
+        {/* WHEN IT WAS MADE, read-only (ADR-0103): a mark carrying no date says nothing rather than
+            showing one nobody wrote. The instant is formatted in the reader's own locale. */}
+        {created === null ? null : (
+          <p className="m-properties__meta" data-properties-created={created}>
+            {i18n._(PROPERTIES_CREATED, {
+              when: new Intl.DateTimeFormat(i18n.locale, { dateStyle: 'medium', timeStyle: 'short' }).format(
+                new Date(created),
+              ),
+            })}
+          </p>
+        )}
       </header>
       <ColourRow
         auto={false}
@@ -196,9 +224,9 @@ export function PropertiesPanel({
         }}
       />
       <OpacityRow
-        // THE ENGINE'S FLOOR, so a foreign mark drawn fainter than a command may ask for shows where
+        // THE CONTRACT'S FLOOR, so a foreign mark drawn fainter than a command may ask for shows where
         // the slider starts rather than off its end.
-        value={Math.max(first.style.opacity, OPACITY_FLOOR)}
+        value={Math.max(first.style.opacity, MIN_ANNOTATION_OPACITY)}
         onCommit={(opacity) => {
           change({ opacity });
         }}
@@ -210,6 +238,32 @@ export function PropertiesPanel({
           value={first.style.borderWidth ?? widths[0] ?? 0}
           onPick={(borderWidth) => {
             change({ borderWidth });
+          }}
+        />
+      )}
+      <div className="m-properties__row">
+        <span className="m-properties__label" aria-hidden="true">
+          {i18n._(PROPERTIES_BLEND)}
+        </span>
+        {/* THE BLEND THE APPEARANCE IS DRAWN IN, the walk's reading rather than the dictionary's
+            claim (ADR-0103). Not written to the authoring settings: it differs by kind, and a
+            remembered blend would turn a person's next rectangle into a multiply. */}
+        <SegmentedControl
+          label={PROPERTIES_BLEND}
+          onChange={(blend) => {
+            onRestyle(selection, { blend });
+          }}
+          options={BLEND_OPTIONS}
+          value={first.blend}
+        />
+      </div>
+      {only === undefined ? null : (
+        <AuthorRow
+          // A NEW FIELD PER MARK AND PER NAME, `CommentRow`'s reason.
+          key={`${String(selection.page)}:${String(only.index)}:${only.author}`}
+          author={only.author}
+          onCommit={(author) => {
+            onAuthor(selection, author);
           }}
         />
       )}
@@ -251,8 +305,6 @@ export function PropertiesPanel({
   );
 }
 
-/** `annotationOpacitySchema`'s floor: a fully transparent mark is indistinguishable from none. */
-const OPACITY_FLOOR = 0.1;
 
 /**
  * The swatches, a custom colour, and — for the authoring settings only — *Each tool's own* first.
@@ -383,7 +435,7 @@ function OpacityRow({
         className="m-properties__slider"
         id={id}
         max={1}
-        min={OPACITY_FLOOR}
+        min={MIN_ANNOTATION_OPACITY}
         onBlur={commit}
         onChange={(event) => {
           setDraft({ from: value, to: Number(event.target.value) });
@@ -433,6 +485,45 @@ function WidthRow({
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** The blend's two choices, in v5-02's order. */
+const BLEND_OPTIONS: readonly SegmentedOption<AnnotationBlend>[] = [
+  { value: 'multiply', label: PROPERTIES_BLEND_MULTIPLY },
+  { value: 'normal', label: PROPERTIES_BLEND_NORMAL },
+];
+
+/** The one selected mark's author, sent when focus leaves it changed (ADR-0103). */
+function AuthorRow({
+  author,
+  onCommit,
+}: {
+  readonly author: string;
+  readonly onCommit: (author: string) => void;
+}): ReactElement {
+  const { i18n } = useLingui();
+  const id = useId();
+  const [draft, setDraft] = useState(author);
+  return (
+    <div className="m-properties__row">
+      <label className="m-properties__label" htmlFor={id}>
+        {i18n._(PROPERTIES_AUTHOR)}
+      </label>
+      <input
+        className="m-properties__comment"
+        id={id}
+        maxLength={MAX_ANNOTATION_AUTHOR}
+        onBlur={() => {
+          if (draft !== author) onCommit(draft);
+        }}
+        onChange={(event) => {
+          setDraft(event.target.value);
+        }}
+        type="text"
+        value={draft}
+      />
     </div>
   );
 }

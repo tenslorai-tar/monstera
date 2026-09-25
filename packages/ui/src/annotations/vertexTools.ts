@@ -3,7 +3,7 @@ import type {
   AnnotationDraft,
   AnnotationPoint,
   BorderEffect,
-  RenderableCommand,
+  DispatchableCommand,
 } from '@monstera/contract';
 import type { PageTransform, ViewportPoint } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
@@ -157,7 +157,7 @@ export function vertexTool(
       gesture: Gesture,
       page: number,
       transform: PageTransform,
-    ): RenderableCommand | undefined => {
+    ): DispatchableCommand | undefined => {
       const points = placed(gesture, transform);
       // TOO FEW IS THE ORDINARY OUTCOME, not an error: a double press with one
       // vertex down is a stray double-click on the page. `undefined` is what

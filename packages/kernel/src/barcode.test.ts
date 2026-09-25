@@ -36,6 +36,7 @@ async function placedAndRead(format: BarcodeWriteFormat, text: string, bytes?: U
       pages: [0],
       rect: barcodeRect(WIDE_BOX, image.width, image.height),
       bytes: image.png,
+      stamp: { author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' },
     });
     return await readPageBarcodes(session, 0);
   } finally {

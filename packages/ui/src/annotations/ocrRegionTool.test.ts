@@ -1,4 +1,4 @@
-import type { OcrLanguage, RenderableCommand } from '@monstera/contract';
+import type { OcrLanguage, DispatchableCommand } from '@monstera/contract';
 import { viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -23,7 +23,7 @@ import {
  * `snapshotTool.test.ts` and `placeImageTool.test.ts` both read a callback,
  * because their tools answer `undefined` and a case reading the return value
  * would pass for a tool that did nothing. This tool answers a
- * `RenderableCommand`, so the command *is* the observable — and the refusal
+ * `DispatchableCommand`, so the command *is* the observable — and the refusal
  * cases are the ones that need care here for the same reason those files'
  * success cases did: `undefined` is both the correct answer to a four-pixel
  * slip and what a tool with no `commit` at all returns. Hence the control two
@@ -65,13 +65,13 @@ function dragged(
   from: readonly [number, number],
   to: readonly [number, number],
   language: () => OcrLanguage = () => LANGUAGE,
-): RenderableCommand | undefined {
+): DispatchableCommand | undefined {
   const { controller } = ocrRegionTool(deps(language));
   const started = controller.begin(viewportPoint(from[0], from[1]));
   const moved = controller.update(started, viewportPoint(to[0], to[1]));
   // The cast every file in this directory makes: `commit` may answer a promise
   // for the two tools that ask a person something, and this one never does.
-  return controller.commit(moved, 3, overlayTransform(PAGE)) as RenderableCommand | undefined;
+  return controller.commit(moved, 3, overlayTransform(PAGE)) as DispatchableCommand | undefined;
 }
 
 describe('the OCR region tool', () => {
@@ -96,11 +96,11 @@ describe('the OCR region tool', () => {
     // the case above and fail this one.
     let language: OcrLanguage = 'eng';
     const tool = ocrRegionTool(deps(() => language));
-    const drag = (): RenderableCommand | undefined => {
+    const drag = (): DispatchableCommand | undefined => {
       const started = tool.controller.begin(viewportPoint(20, 20));
       const moved = tool.controller.update(started, viewportPoint(120, 80));
       return tool.controller.commit(moved, 3, overlayTransform(PAGE)) as
-        | RenderableCommand
+        | DispatchableCommand
         | undefined;
     };
     expect(drag()).toMatchObject({ language: 'eng' });
@@ -170,10 +170,10 @@ describe('the OCR region tool', () => {
 
 describe('the network region tools', () => {
   /** The same drag, through another registration. */
-  function draggedWith(tool: UiTool): RenderableCommand | undefined {
+  function draggedWith(tool: UiTool): DispatchableCommand | undefined {
     const started = tool.controller.begin(viewportPoint(20, 20));
     const moved = tool.controller.update(started, viewportPoint(120, 80));
-    return tool.controller.commit(moved, 3, overlayTransform(PAGE)) as RenderableCommand | undefined;
+    return tool.controller.commit(moved, 3, overlayTransform(PAGE)) as DispatchableCommand | undefined;
   }
 
   it.each([

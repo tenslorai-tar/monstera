@@ -41,7 +41,7 @@ import { harnessSurfaces } from './harnessComposition.js';
  * validating one. What is faked is the platform, which is exactly the boundary
  * `EngineHostPlatform` was introduced to put a fake behind.
  */
-const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development' };
+const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' };
 
 // The destination picker and the ephemeral stores come from
 // `harnessComposition.ts` — see `composition.test.ts`.

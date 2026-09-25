@@ -256,7 +256,7 @@ async function main() {
     // the built output, so it names the same object every `.ts` harness does.
     const { handlers } = composition.createShellDependencies({
       ...harnessModule.harnessSurfaces('the host-recovery harness'),
-      appInfo: { version: '0.0.0', installChannel: 'development' },
+      appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
       pickDocument: () => Promise.resolve(document),
       enginePlatform: platform,
     });

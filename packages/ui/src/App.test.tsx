@@ -650,7 +650,7 @@ describe('App', () => {
     // application's real version and channel, so it is wrong the moment anything
     // about it breaks — rather than a dialog that renders correctly whatever the
     // application is doing.
-    const { client } = recordingClient({ version: '1.2.3', installChannel: 'development' });
+    const { client } = recordingClient({ version: '1.2.3', installChannel: 'development', userName: 'A. Tester' });
     render(<App client={client} settings={freshSettings()} />);
 
     await act(async () => {
@@ -673,7 +673,7 @@ describe('App', () => {
     // without this the case above passes for a host that mounts every registered
     // dialog and shows one. A mounted-but-closed dialog keeps its body's state
     // across opens, which is the defect Decision 7's laziness exists for.
-    const { client } = recordingClient({ version: '1.2.3', installChannel: 'development' });
+    const { client } = recordingClient({ version: '1.2.3', installChannel: 'development', userName: 'A. Tester' });
     render(<App client={client} settings={freshSettings()} />);
 
     await act(async () => {
@@ -2454,7 +2454,7 @@ describe('the first-run AI setup (E5 onboarding)', () => {
   async function started(stored: readonly string[], hydrate: Readonly<Record<string, unknown>> | null): Promise<void> {
     const client = createClient(channels, (id) => {
       if (id === 'settings.loadSecrets') return Promise.resolve(ok({ stored, available: true }));
-      if (id === 'app.info') return Promise.resolve(ok({ version: '0.0.0', installChannel: 'development' }));
+      if (id === 'app.info') return Promise.resolve(ok({ version: '0.0.0', installChannel: 'development', userName: 'A. Tester' }));
       const answer = OTHER_ANSWERS[id];
       if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
       return Promise.resolve(ok(answer));

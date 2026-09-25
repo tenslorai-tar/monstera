@@ -21,7 +21,7 @@ import { ColorSpace, Pixmap } from 'mupdf';
 import { describe, expect, it } from 'vitest';
 
 import type { MupdfSession } from './engineSeam.js';
-import { mupdfWriter } from './mupdfWriter.js';
+import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import type { ListedAnnotation } from './pageAnnotations.js';
 import {
   applyAddAnnotation,
@@ -30,6 +30,9 @@ import {
   applyRemoveAnnotation,
   applyStyleAnnotation,
   applyEditAnnotationText,
+  applySetAnnotationAuthor,
+  captureSetAnnotationAuthor,
+  invertSetAnnotationAuthor,
   captureAddAnnotation,
   capturePlaceAnnotation,
   capturePlaceImage,
@@ -320,10 +323,16 @@ const LINE: Extract<AnnotationDraft, { type: 'line' }> = {
   borderWidth: 2,
 };
 
+/**
+ * The stamp every creation command in this file carries (ADR-0103). One fixed instant, so the
+ * reproducibility cases compare two runs of the same intent.
+ */
+const STAMP = { author: 'Priya Raman', created: '2026-09-24T09:38:00.000Z' } as const;
+
 function command(
-  overrides: Partial<CommandOfKind<'addAnnotation'>> = {},
+  overrides: Partial<Omit<CommandOfKind<'addAnnotation'>, 'stamp'>> = {},
 ): CommandOfKind<'addAnnotation'> {
-  return { kind: 'addAnnotation', page: 0, annotation: SQUARE, ...overrides };
+  return { kind: 'addAnnotation', page: 0, annotation: SQUARE, stamp: STAMP, ...overrides };
 }
 
 /** Applies the command to a fixture and returns the resulting bytes. */
@@ -358,7 +367,7 @@ async function drawnOn(
  */
 function withoutPlace(listed: {
   readonly annotations: readonly ListedAnnotation[];
-}): readonly Omit<ListedAnnotation, 'rect' | 'style' | 'inReplyTo'>[] {
+}): readonly Omit<ListedAnnotation, 'rect' | 'style' | 'inReplyTo' | 'author' | 'created' | 'blend'>[] {
   return listed.annotations.map((entry) => ({
     page: entry.page,
     index: entry.index,
@@ -510,9 +519,12 @@ describe('applyAddAnnotation writes a text box as the format defines one', () =>
     // writes no `/IT` at all. So a text box shipped a leader line from the
     // page's corner that a conforming viewer ignores and a lenient one draws.
     // The writer deletes it, and this line is where that is asserted.
+    //
+    // AND `/CreationDate` AND `/T` ARE, since 2026-09-24: the command's stamp (ADR-0103), written by
+    // this build rather than the engine. No `/M` arrives with them — measured, and pinned here.
     const drawn = await drawnOn(await fixture(), command({ annotation: TEXT_BOX }));
     expect((await freeTextIn(drawn)).keys.sort().join(' ')).toBe(
-      '/AP /BS /Contents /DA /F /Monstera_Authored /P /RD /Rect /Subtype /Type',
+      '/AP /BS /Contents /CreationDate /DA /F /Monstera_Authored /P /RD /Rect /Subtype /T /Type',
     );
   });
 
@@ -1144,6 +1156,7 @@ describe('applyAddAnnotation places the rectangle in PDF user space', () => {
         kind: 'addAnnotation',
         page: 0,
         annotation: { ...SQUARE, rect: { x0: 60, y0: 110, x1: 140, y1: 160 } },
+        stamp: STAMP,
       }),
     );
     expect(stored?.bounds).toStrictEqual([60, 110, 140, 160]);
@@ -1158,6 +1171,7 @@ describe('applyAddAnnotation places the rectangle in PDF user space', () => {
         kind: 'addAnnotation',
         page: 0,
         annotation: { ...SQUARE, rect: { x0: 110, y0: 70, x1: 10, y1: 20 } },
+        stamp: STAMP,
       }),
     );
     expect(stored?.bounds).toStrictEqual([10, 20, 110, 70]);
@@ -2121,6 +2135,7 @@ describe('applyReplyToAnnotation answers a mark the way PDF defines a reply', ()
         page: 0,
         index,
         text,
+        stamp: STAMP,
         version: asDocVersion(1),
       });
       return await mupdfWriter.serialise(session);
@@ -2199,6 +2214,7 @@ describe('applyReplyToAnnotation answers a mark the way PDF defines a reply', ()
         page: 0,
         index: 0,
         text: 'grouped, not answering',
+        stamp: STAMP,
         version: asDocVersion(1),
       });
       bytes = await mupdfWriter.serialise(session);
@@ -2995,9 +3011,9 @@ describe('applyPlaceImage', () => {
   const BOX: AnnotationRect = { x0: 20, y0: 40, x1: 120, y1: 90 };
 
   function placement(
-    overrides: Partial<CommandOfKind<'placeImage'>> = {},
+    overrides: Partial<Omit<CommandOfKind<'placeImage'>, 'stamp'>> = {},
   ): CommandOfKind<'placeImage'> {
-    return { kind: 'placeImage', pages: [0], rect: BOX, bytes: png(), ...overrides };
+    return { kind: 'placeImage', pages: [0], rect: BOX, bytes: png(), stamp: STAMP, ...overrides };
   }
 
   /** Applies a placement to a fixture and returns the resulting bytes. */
@@ -3161,6 +3177,7 @@ describe('capturePlaceImage', () => {
         pages: [0],
         rect: { x0: 20, y0: 40, x1: 120, y1: 90 },
         bytes: new Uint8Array([0]),
+        stamp: STAMP,
       }),
     );
     expect(result.captured).toBe(false);
@@ -3179,6 +3196,7 @@ describe('capturePlaceImage', () => {
           pages: [9],
           rect: { x0: 20, y0: 40, x1: 120, y1: 90 },
           bytes: new Uint8Array([0]),
+          stamp: STAMP,
         }),
       ),
     ).rejects.toThrow(/outside this/u);
@@ -3281,6 +3299,14 @@ describe('the commands that keep the annotation walk', () => {
         text: 'the figure is on page 9',
         version: asDocVersion(1),
       }),
+    setAnnotationAuthor: (session) =>
+      applySetAnnotationAuthor(session, {
+        kind: 'setAnnotationAuthor',
+        page: 0,
+        index: 3,
+        author: 'Sam Okafor',
+        version: asDocVersion(1),
+      }),
     placeAnnotation: (session) =>
       applyPlaceAnnotation(session, {
         kind: 'placeAnnotation',
@@ -3332,6 +3358,7 @@ describe('the commands that keep the annotation walk', () => {
         page: 0,
         index: 0,
         text: 'agreed',
+        stamp: STAMP,
         version: asDocVersion(1),
       }),
     );
@@ -3340,5 +3367,251 @@ describe('the commands that keep the annotation walk', () => {
     const named: ReadonlySet<string> = KEEPS_THE_ANNOTATION_WALK;
     expect(named.has('removeAnnotation')).toBe(false);
     expect(named.has('replyToAnnotation')).toBe(false);
+  });
+});
+
+/**
+ * ADR-0103: who made a mark, when, and how it blends — each written, read back through the walk AND
+ * through pdf-lib after a save and reopen, since MuPDF's getters answer what its setters were given.
+ */
+describe('an annotation carries its author, its creation time and its blend', () => {
+  /** A saved document read back with pdf-lib: each annotation dictionary on page 0, popups skipped. */
+  async function dictionaries(bytes: Uint8Array): Promise<readonly PDFDict[]> {
+    const document = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = document.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    if (!(annots instanceof PDFArray)) throw new Error('no /Annots');
+    return annots
+      .asArray()
+      .map((ref) => document.context.lookup(ref))
+      .filter((entry): entry is PDFDict => entry instanceof PDFDict)
+      .filter((entry) => entry.lookup(PDFName.of('Subtype')) !== PDFName.of('Popup'));
+  }
+
+  const text = (value: unknown): string | undefined =>
+    value instanceof PDFString || value instanceof PDFHexString ? value.decodeText() : undefined;
+
+  /** The blend names on every ExtGState of an annotation's normal appearance, read by pdf-lib. */
+  function appearanceBlends(annotation: PDFDict): readonly string[] {
+    const normal = annotation.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N'));
+    if (!(normal instanceof PDFStream)) throw new Error('no normal appearance stream');
+    const states = normal.dict.lookup(PDFName.of('Resources'), PDFDict).lookup(PDFName.of('ExtGState'), PDFDict);
+    return states.values().map((state) => {
+      const resolved = state instanceof PDFRef ? states.context.lookup(state) : state;
+      if (!(resolved instanceof PDFDict)) throw new Error('an ExtGState that is not a dictionary');
+      return String(resolved.lookup(PDFName.of('BM')));
+    });
+  }
+
+  /** Dark pixels (every channel under 100) inside a PDF-space box, MuPDF rendering at 3×. */
+  async function darkPixels(bytes: Uint8Array, box: AnnotationRect): Promise<number> {
+    const session = await mupdfWriter.open(bytes);
+    try {
+      return await withDocument(session, (document) => {
+        const scale = 3;
+        const pixmap = document.loadPage(0).toPixmap([scale, 0, 0, scale, 0, 0], ColorSpace.DeviceRGB, false, true);
+        const pixels = pixmap.getPixels();
+        const stride = pixmap.getStride();
+        let dark = 0;
+        for (let y = Math.ceil((MEDIA[1] - box.y1) * scale); y < Math.floor((MEDIA[1] - box.y0) * scale); y += 1) {
+          for (let x = Math.ceil(box.x0 * scale); x < Math.floor(box.x1 * scale); x += 1) {
+            const at = y * stride + x * 3;
+            if ((pixels[at] ?? 255) < 100 && (pixels[at + 1] ?? 255) < 100 && (pixels[at + 2] ?? 255) < 100) dark += 1;
+          }
+        }
+        pixmap.destroy();
+        return dark;
+      });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  /** A yellow highlight over the first line of {@link withText}, at opacity 1. */
+  const HIGHLIGHT: Extract<AnnotationDraft, { type: 'highlight' }> = {
+    type: 'highlight',
+    from: { x: 22, y: 256 },
+    to: { x: 100, y: 252 },
+    colour: [1, 0.9, 0.2],
+    opacity: 1,
+  };
+  /**
+   * Where the dark pixels are counted: the mark's own box as the walk reports it, inset by a point so
+   * anti-aliased edges and the letters either side of the selection are not counted. A fixed box ran
+   * past the highlight's end and counted letters it never covered.
+   */
+  async function markBox(bytes: Uint8Array): Promise<AnnotationRect> {
+    const listed = await onSession(bytes, (session) => readAnnotations(session));
+    const rect = listed.annotations[0]?.rect;
+    if (rect === null || rect === undefined) throw new Error('no mark to count under');
+    return { x0: rect.x0 + 1, y0: rect.y0 + 1, x1: rect.x1 - 1, y1: rect.y1 - 1 };
+  }
+  const NOTE_DRAFT: Extract<AnnotationDraft, { type: 'sticky-note' }> = {
+    type: 'sticky-note',
+    at: { x: 40, y: 200 },
+    text: 'check the figure',
+    colour: [1, 0.8, 0.2],
+    opacity: 1,
+  };
+
+  async function restyled(bytes: Uint8Array, blend: 'multiply' | 'normal'): Promise<Uint8Array> {
+    return onSession(bytes, async (session) => {
+      await applyStyleAnnotation(session, {
+        kind: 'styleAnnotation',
+        page: 0,
+        indices: [0],
+        blend,
+        version: asDocVersion(1),
+      });
+      return mupdfWriter.serialise(session);
+    });
+  }
+
+  it('STAMPS a new mark with the command’s author and instant, and the walk reads both back', async () => {
+    const drawn = await drawnOn(await fixture(), command());
+    const [stored] = await dictionaries(drawn);
+    // PDF-LIB, a second reader: `/T` and a `/CreationDate` in the format's date syntax.
+    expect(text(stored?.lookup(PDFName.of('T')))).toBe('Priya Raman');
+    expect(text(stored?.lookup(PDFName.of('CreationDate')))).toBe('D:20260924093800Z');
+    const listed = await onSession(drawn, (session) => readAnnotations(session));
+    expect(listed.annotations[0]?.author).toBe('Priya Raman');
+    expect(listed.annotations[0]?.created).toBe('2026-09-24T09:38:00.000Z');
+  });
+
+  it('stamps every kind this build writes, from one helper, without refusing any', async () => {
+    // `setAuthor` is MuPDF's markup setter, so a kind it refused would throw here rather than on a
+    // person's first mark of that kind.
+    const drafts: readonly AnnotationDraft[] = [SQUARE, INK, LINE, REDACT, NOTE_DRAFT];
+    for (const draft of drafts) {
+      const drawn = await drawnOn(await fixture(), command({ annotation: draft }));
+      const listed = await onSession(drawn, (session) => readAnnotations(session));
+      expect(listed.annotations.map((entry) => entry.author), draft.type).toStrictEqual(['Priya Raman']);
+    }
+  });
+
+  it('a reply and a placed image carry their own stamp', async () => {
+    const replied = await onSession(await drawnOn(await fixture(), command()), async (session) => {
+      await applyReplyToAnnotation(session, {
+        kind: 'replyToAnnotation',
+        page: 0,
+        index: 0,
+        text: 'agreed',
+        stamp: { author: 'Sam Okafor', created: '2026-09-25T08:00:00.000Z' },
+        version: asDocVersion(1),
+      });
+      return mupdfWriter.serialise(session);
+    });
+    const listed = await onSession(replied, (session) => readAnnotations(session));
+    expect(listed.annotations.map((entry) => [entry.author, entry.created])).toStrictEqual([
+      ['Priya Raman', '2026-09-24T09:38:00.000Z'],
+      ['Sam Okafor', '2026-09-25T08:00:00.000Z'],
+    ]);
+  });
+
+  it('a FOREIGN mark reads its own /T, and no creation date where it has none — never an invented one', async () => {
+    // MuPDF's getter answers 1969-12-31T23:59:59Z for a mark with no date (measured 2026-09-24), so a
+    // walk that trusted it would list every foreign mark as made in 1969. The fixture's foreign
+    // square names "Someone Else" and carries no `/CreationDate`.
+    const listed = await onSession(await fixture({ foreign: true }), (session) => readAnnotations(session));
+    expect(listed.annotations.map((entry) => [entry.author, entry.created])).toStrictEqual([['Someone Else', null]]);
+  });
+
+  it('CONTROL: a mark this build drew with an empty author reads empty, not a name from elsewhere', async () => {
+    const drawn = await drawnOn(await fixture(), { ...command(), stamp: { author: '', created: STAMP.created } });
+    const listed = await onSession(drawn, (session) => readAnnotations(session));
+    expect(listed.annotations[0]?.author).toBe('');
+  });
+
+  it('setAnnotationAuthor writes /T, survives a save, and its inverse restores the name before', async () => {
+    const drawn = await drawnOn(await fixture(), command());
+    const command2 = {
+      kind: 'setAnnotationAuthor',
+      page: 0,
+      index: 0,
+      author: 'Sam Okafor',
+      version: asDocVersion(1),
+    } as const;
+    const captured = await onSession(drawn, (session) => captureSetAnnotationAuthor(session, command2));
+    const renamed = await onSession(drawn, async (session) => {
+      await applySetAnnotationAuthor(session, command2);
+      return mupdfWriter.serialise(session);
+    });
+    expect(text((await dictionaries(renamed))[0]?.lookup(PDFName.of('T')))).toBe('Sam Okafor');
+    if (!captured.captured) throw new Error('the author was not captured');
+    expect(captured.prior).toStrictEqual({ page: 0, index: 0, author: 'Priya Raman' });
+    const restored = await onSession(renamed, async (session) => {
+      await invertSetAnnotationAuthor(session, captured.prior);
+      return mupdfWriter.serialise(session);
+    });
+    const listed = await onSession(restored, (session) => readAnnotations(session));
+    expect(listed.annotations[0]?.author).toBe('Priya Raman');
+  });
+
+  it('a HIGHLIGHT is Multiply by default: the text under it stays dark, and the walk says so', async () => {
+    const plain = await withText();
+    const highlighted = await drawnOn(plain, command({ annotation: HIGHLIGHT }));
+    const box = await markBox(highlighted);
+    const underPaper = await darkPixels(plain, box);
+    // THE FIXTURE HAS INK THERE, or every count below is trivially zero.
+    expect(underPaper).toBeGreaterThan(50);
+    expect(await darkPixels(highlighted, box)).toBeGreaterThan(underPaper / 2);
+    const listed = await onSession(highlighted, (session) => readAnnotations(session));
+    expect(listed.annotations[0]?.blend).toBe('multiply');
+  });
+
+  it('NORMAL covers the text, in the dictionary AND the appearance, and a later redraw keeps it', async () => {
+    const drawn = await drawnOn(await withText(), command({ annotation: HIGHLIGHT }));
+    const box = await markBox(drawn);
+    // THE SAME BOX HAS INK UNDER IT before the restyle, so the zero below is the blend.
+    expect(await darkPixels(drawn, box)).toBeGreaterThan(50);
+    const normal = await restyled(drawn, 'normal');
+    expect(await darkPixels(normal, box)).toBe(0);
+    const [stored] = await dictionaries(normal);
+    if (stored === undefined) throw new Error('no annotation');
+    // WHERE EACH KIND OF VIEWER READS IT, through a second library.
+    expect(String(stored.lookup(PDFName.of('BM')))).toBe('/Normal');
+    expect(appearanceBlends(stored).every((mode) => mode === '/Normal')).toBe(true);
+    // A MOVE REDRAWS THE APPEARANCE, which MuPDF regenerates as Multiply; the kernel's one redraw puts
+    // Normal back. The control is the default case above: without the re-apply this count is not 0.
+    const moved = await onSession(normal, async (session) => {
+      await applyPlaceAnnotation(session, {
+        kind: 'placeAnnotation',
+        page: 0,
+        placements: [{ index: 0, rect: { x0: 18, y0: 246, x1: 90, y1: 264 } }],
+        version: asDocVersion(1),
+      });
+      return mupdfWriter.serialise(session);
+    });
+    const movedBox = await markBox(moved);
+    expect(await darkPixels(await withText(), movedBox)).toBeGreaterThan(50);
+    expect(await darkPixels(moved, movedBox)).toBe(0);
+    const listed = await onSession(moved, (session) => readAnnotations(session));
+    expect(listed.annotations[0]?.blend).toBe('normal');
+  });
+
+  it('MULTIPLY on a kind whose appearance has no ExtGState: the prepended state reaches it', async () => {
+    // A rectangle at opacity 1 draws with no ExtGState (measured 2026-09-24), and so does a stroke,
+    // so "set every ExtGState" alone would change nothing. A 14-point yellow ink stroke along the
+    // text line: as drawn it covers the glyphs under it, Multiply leaves them dark. The count is in a
+    // box well inside the stroke and over the letters "llo there wo".
+    const stroke: Extract<AnnotationDraft, { type: 'ink' }> = {
+      type: 'ink',
+      points: [
+        { x: 20, y: 255 },
+        { x: 60, y: 255 },
+        { x: 100, y: 255 },
+      ],
+      colour: [1, 0.9, 0.2],
+      opacity: 1,
+      borderWidth: 14,
+    };
+    const under: AnnotationRect = { x0: 30, y0: 250, x1: 90, y1: 258 };
+    expect(await darkPixels(await withText(), under)).toBeGreaterThan(50);
+    const drawn = await drawnOn(await withText(), command({ annotation: stroke }));
+    expect(await darkPixels(drawn, under)).toBe(0);
+    const multiplied = await restyled(drawn, 'multiply');
+    expect(await darkPixels(multiplied, under)).toBeGreaterThan(50);
+    const [stored] = await dictionaries(multiplied);
+    if (stored === undefined) throw new Error('no annotation');
+    expect(appearanceBlends(stored)).toContain('/Multiply');
   });
 });

@@ -25,7 +25,7 @@ const PLAIN_ITEM = { colour: [1, 0, 0], opacity: 1, borderWidth: 2 } as const;
  * selection gains is added here once. `contents` is the only one any case below
  * reads, and only the *Edit* ones do.
  */
-const CARRIED = { style: PLAIN_ITEM, kind: 'square', contents: '' } as const;
+const CARRIED = { style: PLAIN_ITEM, kind: 'square', contents: '', author: '', created: null, blend: 'normal' } as const;
 import { ELLIPSE_TOOL_ID, RECTANGLE_TOOL_ID } from '../annotations/shapeTools.js';
 import type { CommandContext } from '../registries/commands.js';
 import { ALL_SETTINGS } from '../settings/all.js';
@@ -373,6 +373,9 @@ describe('editSelectionCommand', () => {
     style: PLAIN_ITEM,
     kind: 'sticky-note',
     contents: 'what it said before',
+    author: '',
+    created: null,
+    blend: 'normal',
   };
   const SELECTION: AnnotationSelection = {
     page: 2,
@@ -477,6 +480,9 @@ describe('replySelectionCommand', () => {
     style: PLAIN_ITEM,
     kind: 'sticky-note',
     contents: 'what it said before',
+    author: '',
+    created: null,
+    blend: 'normal',
   };
   const SELECTION: AnnotationSelection = {
     page: 2,
@@ -698,6 +704,9 @@ describe('copyAnnotationsCommand', () => {
     style: PLAIN_ITEM,
     kind: 'sticky-note',
     contents: 'copy me',
+    author: '',
+    created: null,
+    blend: 'normal',
   };
   const SELECTION: AnnotationSelection = {
     page: 2,

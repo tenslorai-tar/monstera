@@ -1,4 +1,4 @@
-import type { OcrEngine, OcrLanguage, RenderableCommand } from '@monstera/contract';
+import type { OcrEngine, OcrLanguage, DispatchableCommand } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
@@ -114,7 +114,7 @@ function regionTool(id: string, engine: OcrEngine, deps: OcrRegionDeps): UiTool 
       gesture: Gesture,
       page: number,
       transform: PageTransform,
-    ): RenderableCommand | undefined => {
+    ): DispatchableCommand | undefined => {
       // BOTH AXES, as the snapshot's minimum is: a region flat in one direction has
       // no area, and the kernel refuses it — so refusing here is what keeps a slip
       // from spending four seconds on nothing.

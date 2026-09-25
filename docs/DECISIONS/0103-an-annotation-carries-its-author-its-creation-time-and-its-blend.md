@@ -116,3 +116,16 @@ a person who never opened Settings would carry a copy nobody chose.
 
 **Edit the author through `editAnnotationText`.** One field per command is the reason both are singular;
 a payload carrying either would be two commands wearing one kind.
+
+## Correction, 2026-09-24 (the build)
+
+Two counts above were wrong when written, both found while building.
+
+- **Eight redraw call sites, not nine.** The search counted a line of documentation that names
+  `update()`. `redrawOwner.test.ts` now does the count, skipping comments, and allows exactly one.
+- **`markAuthored` has four callers, not three.** Importing annotations (`annotationInterchange.ts`)
+  calls it too. That path takes its entries from the imported file and carries no stamp, as *What this
+  does not do* already says; the three commands that carry one are unchanged.
+
+And one thing the build added: **the instant is bounded** (`annotationInstantSchema`, 40 characters).
+`z.iso.datetime()` alone has a pattern and no length, and invariant L11's sweep reported it.

@@ -892,6 +892,179 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — Stage audit of `22b709d..5b55d66` — findings PPPPPP-1 to PPPPPP-2
+
+35 commits, 135 files, 4 proofs added, 28 modified and 2 removed, 8 source files added, 43 changed
+and 2 removed (`npm run audit:scope`). The range is Stage 9's close, DocuSign's live fixes, the
+window title and toast, and Stage 10's v5 surfaces up to the Properties tab. The commit gate
+stopped the Author, Created and Blend batch at 216 files, so this audit rides in that commit.
+
+Every modified proof carrying deletions was read commit by commit (`git log -p`). The DocuSign
+rewrites kept every refusal case and widened the host cases; the ribbon, placement and Settings
+rewrites each carry a replacement for what they removed. The two removed files, `StylePanel.test.tsx`
+and `CommentStylesPanel.test.tsx`, left with the panels the Properties tab replaced, and were read
+case by case against `PropertiesPanel.test.tsx` — which is where PPPPPP-2 was found.
+
+**PPPPPP-1 — the v5 palette (72d1ecc) moved three things its own checks cannot see, and `main` was
+red at both pushes in this range.** 72d1ecc through 45e2321 went in one push. CI stopped at the token
+contrast proof, whose two ADR-0003 cases read the shipped palette (fixed in 5b55d66). **A failing step
+masks the steps after it**, so the next push was the first run of `proof:rendererpolicy`, and it
+stopped there — masking `proof:canvaspixels` behind it. Both were real:
+
+- `WINDOW_BACKGROUND` is a copy of the default theme's `--canvas`, and still said `#141618` while the
+  ground became `#050a08`. The proof compares the running window with the mounted surface and named
+  both numbers. Now `#050a08`.
+- v5's title bar is transparent, so it sits on the ground. `overlayOf` read the bar's own background,
+  got `rgba(0, 0, 0, 0)`, refused it — correctly, since no overlay can take it — and **never
+  reported**: on every v5 window the three caption buttons kept the system's colours. The colour a
+  person sees there is the first box outward that paints, so `groundOf` walks outward to it; a
+  translucent box still stops the walk and is refused. The proof compared the painted overlay with
+  the bar's computed background, which would have shared the renderer's choice of box, so it now
+  compares with **the page's own composited pixel under the controls** (`capturePage`). Resolution
+  tested before the renderer fix: with nothing reported the pixel read `#050a08` while the buttons
+  wore the system's colours, so the capture does not contain the buttons and the reading is
+  independent. Unit cases: the ground under a transparent bar, and two controls — an opaque bar is
+  read as itself over a different ground, and a translucent one is refused rather than read through.
+  With `overlayOf` put back to the bar alone, the first case is red.
+
+Every CI step after the failing one was then run here one at a time — eighteen, from
+`canvasPixels` to `electronImports`, including the unit suite and the accessibility gate. Only these
+two failed.
+
+**How it reached `main` is mine, not the tooling's.** The pre-push pair runs no runtime proof, and
+`scripts/lib/affectedProofs.mjs` names them: asked on 2026-09-25 (a scratch script calling
+`affectedProofs`), `packages/ui/src/tokens.css` reaches exactly `proof:rendererpolicy`,
+`proof:canvaspixels`, `proof:rendergeometry` and `proof:tokencontrast`. `npm run local` prints that
+list, and I did not run what it named. That is the *printed is necessary and not sufficient* line in
+`CLAUDE.md`, met by the seat that reads it. Whether the pre-push hook should run the affected proofs
+itself is a cost the owner decides, and it is on the report.
+
+**PPPPPP-2 — the Properties rewrite dropped the opacity slider's bounds case, and the floor was
+written three times.** `StylePanel.test.tsx` pinned the slider at 0.1 to 1 (*offers no value the
+payload would refuse*), and `CommentStylesPanel.test.tsx` pinned that the controls show the mark's
+own style. Neither reached `PropertiesPanel.test.tsx`. Reading why, the floor was `0.1` in
+`annotationOpacitySchema`, again in the opacity setting's schema — under a comment calling it *the
+contract's own bound, imported*, which it was not — and again as `OPACITY_FLOOR` in the panel. B3a:
+`MIN_ANNOTATION_OPACITY` is now the one value, the setting takes `annotationOpacitySchema` itself and
+the panel takes the constant. Two cases: the slider shows the mark's 0.5 where the setting starts at
+1, and its floor is accepted by the schema while a hundredth under is refused; and a foreign mark
+fainter than the floor shows at the floor. Mutations: a floor of 0 reddens the first, and a slider
+showing the setting reddens both.
+
+### 1. Root cause or workaround?
+
+Root causes, each stated above with its mechanism: a copy of a token that the palette moved; a
+reading of the wrong box once the bar stopped painting; coverage that left with a rewrite; a value
+written three times. The one fix in the range that changes a check rather than code is the contrast
+proof's (5b55d66), which now takes ADR-0003's recorded colours for the two cases that reproduce
+ADR-0003's figures; the live palette is still checked in full by its third case.
+
+### 2. Verified against the easy shape only?
+
+No. The overlay case is the v5 shape, a transparent bar over a ground of a different colour, with an
+opaque bar and a translucent one as controls. The blend was measured in both engines on a highlight
+and a stroke, dictionary and appearance (ADR-0103). Not covered: the packaged build.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Yes, once, and it is a strengthening. `proof:canvaspixels` compared the overlay with the bar's
+computed style; it now compares with a composited pixel, which no stylesheet choice can make agree.
+
+### 3. Would CI have caught it?
+
+It did, both defects of PPPPPP-1, answered from the two runs' failing steps (`npm run board:why` at
+45e2321 and 5b55d66), not from the workflow file. The pre-push pair could not have: it runs no
+runtime proof. PPPPPP-2 would have reddened nothing; a missing case is silent by construction.
+
+### 4. Are the proofs non-vacuous?
+
+Each new case was run against a mutation and went red, as recorded above. The overlay proof's
+negative control is the run before the renderer fix: nothing painted, and the case failed naming it.
+
+### 4a. Has every instrument passed a resolution test?
+
+`pagePixel` is new, and was tested before it measured anything: with the renderer reporting nothing
+it read `#050a08` beside buttons in the system's colours, so it separates the page from the controls.
+`scripts/research/annotationBlend.mjs` carries its own control, yellow over paper, recorded in
+ADR-0103.
+
+### 4b. Is the instrument a search? Then it needs a positive control.
+
+One arrived: `fullAppTestLimit.test.ts` searches every test file for one that renders `App`. Its
+first case requires more than a hundred files read and `App.test.tsx` found among them.
+
+### 4c. Derived extents
+
+The same file: the set of files owing the limit is derived from the search, which is the direction
+4c allows, because the failure to fear, a file rendering `App` without the limit, makes the set
+bigger. The opposite direction is its third case: a file naming the limit without rendering `App`.
+
+### 5. Executed, or asserted?
+
+**Executed**: every mutation and proof run above, the eighteen CI steps after the failing one, and
+`affectedProofs` on the palette's files, all 2026-09-25. **Asserted only**: the packaged build.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before, each in its own commit: 8b50f58, e339daa and 6bc8833 are B4 amendments, and e1c6fc4 records
+ADR-0103 before its build.
+
+### 7. Do the documents still match the code?
+
+The title bar row in `docs/FEATURES.md` said the renderer sends the bar's computed colours; its body
+now says what is sent and names this finding. No kernel module added in the range imports `mupdf`,
+so `CLAUDE.md`'s engine-surface figures stand. `CLAUDE.md`'s note that `WINDOW_BACKGROUND` is not a
+component is still true of the new value.
+
+STATED LIMIT: addition-only proof diffs were read where this seat wrote them, which is all of them in
+this range.
+
+---
+
+## 2026-09-24 — Every mark carries its author, its creation time and its blend
+
+The owner's decision on v5-02's three unbuilt rows: build all three, each with its pair of tests and
+surviving save and reopen, the blend looking the same in other viewers. Measured first
+(`scripts/research/annotationBlend.mjs`, recorded in [ADR-0103](DECISIONS/0103-an-annotation-carries-its-author-its-creation-time-and-its-blend.md)):
+MuPDF and PDFium draw the blend an appearance stream carries and agree on both modes; MuPDF's
+`update()` puts a highlight back to Multiply; a rectangle's appearance has no ExtGState to set.
+
+**The stamp.** `addAnnotation`, `replyToAnnotation` and `placeImage` carry a required
+`stamp { author, created }`. A tool, menu command or panel builds a `DispatchableCommand`, the
+renderable union with the stamp removed, so it cannot write one; `applyDocumentCommand` attaches the
+stamp from `deps.stamp()` at the moment it sends. `placeImage` and the barcode placement are built in
+`main`, so their channels carry the stamp from the renderer. The time is in the payload, so the three
+commands stay reproducible: a kernel case pins `/CreationDate` and `/T` in a text box's key set and no
+`/M` arrives.
+
+**The name.** *Your name for comments* (`editing.author-name`) is empty by default, and empty means the
+Windows user name `main` answers on `app.info` (`os.userInfo().username`; an account without one gives
+an empty name, not an error). `authorFor` is the one place the two combine.
+
+**The author of an existing mark** changes through `setAnnotationAuthor`, singular and invertible like
+`editAnnotationText`, and a member of `KEEPS_THE_ANNOTATION_WALK`. Its walk case arrived owed, as the
+set's `Record` was built to make it; so did the captured-prior case, whose fixture note now carries a
+`/T` so the prior cannot be the empty string a blind capture would also produce. A foreign `/T` longer
+than 128 characters is not captured, and undo takes a checkpoint instead of a shortened name.
+
+**The blend** is on `styleAnnotation` as one more optional property. The kernel writes `/BM` on the
+dictionary, then `redraw` — now the only caller of `update()`, enforced by `redrawOwner.test.ts` — sets
+it on every appearance ExtGState and prepends one of its own. Three mutations, each caught: without the
+re-apply, a moved Normal highlight shows its text again; without setting existing states, a highlight's
+own `/H` keeps it Multiply; without the prepended state, a Multiply ink stroke still covers the text. The
+walk reports the blend the appearance is drawn in.
+
+**The tab** shows *Created …* (read-only, the reader's locale), an Author field sent on blur, and a
+Multiply / Normal choice using the existing segmented control. The Comments panel shows each row's
+author. The blend is not written to the authoring settings: it differs by kind.
+
+**What went wrong on the way:** my first sample points in the research script missed the highlight —
+MuPDF's quad is top-down — and every reading was paper until a control required yellow over paper. The
+ADR's two counts were wrong (corrected there). And a first pass typed the instant with no length bound,
+which the L11 sweep reported.
+
+---
+
 ## 2026-09-24 — The full-app tests take a measured time limit, the owner's decision
 
 The pre-push `npm run test` failed three tests in `AppClose.test.tsx` and `AppTabs.test.tsx` at

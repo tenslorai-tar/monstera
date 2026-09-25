@@ -203,6 +203,13 @@ export function AnnotationsPanel({
                       {i18n._(ANNOTATIONS_FOREIGN)}
                     </span>
                   )}
+                  {annotation.author === '' ? null : (
+                    // WHO MADE IT, the owner's request for this panel (ADR-0103). Its own element for
+                    // the note's reason below: CSS truncates it, never a second bound on the string.
+                    <span className="m-annotations-author" data-annotation-author="">
+                      {annotation.author}
+                    </span>
+                  )}
                   {annotation.contents === '' ? null : (
                     // THE NOTE, when there is one — which is almost always a
                     // foreign annotation's, because nothing this build writes
@@ -322,6 +329,8 @@ interface PanelAnnotation {
    * rectangle would call every stacked pair a thread.
    */
   readonly inReplyTo: number | null;
+  /** Who it names — `/T`, or empty (ADR-0103). The row shows it where there is one. */
+  readonly author: string;
 }
 
 /**

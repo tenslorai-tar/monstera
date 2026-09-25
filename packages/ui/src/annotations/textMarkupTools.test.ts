@@ -1,4 +1,4 @@
-import type { RenderableCommand } from '@monstera/contract';
+import type { DispatchableCommand } from '@monstera/contract';
 import { viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -39,7 +39,7 @@ function drag(
   tool: UiTool,
   from: readonly [number, number],
   to: readonly [number, number],
-): RenderableCommand | undefined | Promise<RenderableCommand | undefined> {
+): DispatchableCommand | undefined | Promise<DispatchableCommand | undefined> {
   const started = tool.controller.begin(viewportPoint(from[0], from[1]));
   const moved = tool.controller.update(started, viewportPoint(to[0], to[1]));
   return tool.controller.commit(moved, 3, overlayTransform(PAGE));

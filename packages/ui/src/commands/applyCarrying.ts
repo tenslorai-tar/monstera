@@ -1,4 +1,4 @@
-import { type RenderableCommand, keepsTheAnnotationWalk } from '@monstera/contract';
+import { type DispatchableCommand, keepsTheAnnotationWalk } from '@monstera/contract';
 import type { DocId } from '@monstera/shared';
 
 import { type AnnotationSelection, carrySelection } from '../annotations/selectTool.js';
@@ -34,7 +34,7 @@ export type CarrySelection = (
 export async function applyCarrying(
   deps: DocumentCommandDeps & { readonly carry: CarrySelection },
   docId: DocId,
-  command: RenderableCommand,
+  command: DispatchableCommand,
 ): Promise<boolean> {
   if (!keepsTheAnnotationWalk(command)) return applyDocumentCommand(deps, docId, command);
 

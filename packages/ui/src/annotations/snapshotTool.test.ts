@@ -1,4 +1,4 @@
-import type { AnnotationRect, RenderableCommand } from '@monstera/contract';
+import type { AnnotationRect, DispatchableCommand } from '@monstera/contract';
 import { viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -16,7 +16,7 @@ import {
  *
  * ## What is asserted is the CALL, not a returned command
  *
- * This tool produces no `RenderableCommand`, so a case that only checked
+ * This tool produces no `DispatchableCommand`, so a case that only checked
  * `commit`'s answer would pass for a tool that did nothing at all — `undefined`
  * is both the correct answer and what a dead control returns. So every case
  * here reads what reached `onSnapshot`, and the one that reads the return value
@@ -43,7 +43,7 @@ function dragged(
   to: readonly [number, number],
 ): {
   readonly sent: readonly { page: number; rect: AnnotationRect; scale: number }[];
-  readonly command: RenderableCommand | undefined;
+  readonly command: DispatchableCommand | undefined;
   readonly tool: UiTool;
 } {
   const sent: { page: number; rect: AnnotationRect; scale: number }[] = [];
@@ -56,7 +56,7 @@ function dragged(
   const started = controller.begin(viewportPoint(from[0], from[1]));
   const moved = controller.update(started, viewportPoint(to[0], to[1]));
   const command = controller.commit(moved, 3, overlayTransform(PAGE)) as
-    | RenderableCommand
+    | DispatchableCommand
     | undefined;
   return { sent, command, tool };
 }

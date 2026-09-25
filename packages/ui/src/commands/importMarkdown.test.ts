@@ -50,6 +50,8 @@ function recording(answers: Readonly<Record<string, unknown>>): {
 }
 
 /** Every callback a command can make, recorded in order. */
+const STAMP = () => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' });
+
 function callbacks(): {
   readonly calls: { name: string; value: unknown }[];
   readonly record: (name: string) => (value: unknown) => void;
@@ -179,6 +181,7 @@ describe('appendMarkdownCommand', () => {
     await appendMarkdownCommand({
       client,
       ask,
+      stamp: STAMP,
       onApplied: record('applied'),
       onOpened: record('opened'),
       onActivate: record('activate'),
@@ -208,6 +211,7 @@ describe('appendMarkdownCommand', () => {
     await appendMarkdownCommand({
       client,
       ask,
+      stamp: STAMP,
       onApplied: record('applied'),
       onOpened: record('opened'),
       onActivate: record('activate'),
@@ -233,6 +237,7 @@ describe('appendMarkdownCommand', () => {
     await appendMarkdownCommand({
       client,
       ask,
+      stamp: STAMP,
       onApplied: record('applied'),
       onOpened: record('opened'),
       onActivate: record('activate'),

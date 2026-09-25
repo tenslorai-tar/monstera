@@ -160,7 +160,11 @@ export interface OverlayReadback {
   readonly visible: boolean | null;
   readonly areaWidth: number | null;
   readonly innerWidth: number;
-  readonly barBackground: string | null;
+  /**
+   * The page's own pixel under the window controls, as `#rrggbb` — what the three buttons sit on, read off the
+   * composited page rather than off any stylesheet. `null` when the capture came back empty.
+   */
+  readonly groundBeneathControls: string | null;
   /** The bar's laid-out height in CSS pixels, unrounded — what the overlay's height has to settle on. */
   readonly barHeight: number | null;
   readonly painted: readonly TitleBarOverlay[];
@@ -299,6 +303,22 @@ async function writePixels(
   }
   await writeFile(path, bgra);
   return { path, width: size.width, height: size.height };
+}
+
+/**
+ * One composited pixel of the page at CSS position (`x`, `y`), as `#rrggbb`, or `null` for an empty capture.
+ *
+ * `capturePage` reads the page's own surface, so this is the colour a person sees there with no stylesheet
+ * consulted — the independent side of a comparison whose other side is a colour the renderer computed. It does
+ * not include the window controls: the corner under them reads as the page's ground while they still wear the
+ * system's colours (measured 2026-09-25 with the renderer reporting nothing, see `canvasPixels.proof.mjs`).
+ * `toBitmap` is BGRA, so the channels are taken 2, 1, 0.
+ */
+async function pagePixel(contents: Electron.WebContents, x: number, y: number): Promise<string | null> {
+  const image = await contents.capturePage({ x: Math.max(0, x), y: Math.max(0, y), width: 1, height: 1 });
+  const bgra = image.toBitmap();
+  if (bgra.length < 4) return null;
+  return `#${[bgra[2], bgra[1], bgra[0]].map((channel) => (channel ?? 0).toString(16).padStart(2, '0')).join('')}`;
 }
 
 /**
@@ -588,7 +608,8 @@ export async function reportCanvasPixels(
   // registered first would be exercising a configuration the product never runs.
   const deps = createShellDependencies({
     ...harnessSurfaces('the canvas harness'),
-    appInfo: { version: app.getVersion(), installChannel: 'development' },
+    // A FIXED NAME in the harness, so what it stamps does not depend on who ran it.
+    appInfo: { version: app.getVersion(), installChannel: 'development', userName: 'Canvas Harness' },
     // THE ONE SUBSTITUTION, and it is a function returning a path because that
     // is exactly what `PickDocument` is. Nothing downstream can tell this from
     // `createDocumentPicker()` — which is the point of the seam, and the reason
@@ -688,19 +709,19 @@ export async function reportCanvasPixels(
          visible: controls === undefined ? null : controls.visible,
          areaWidth: controls === undefined ? null : controls.getTitlebarAreaRect().width,
          innerWidth: window.innerWidth,
-         barBackground: bar === null ? null : getComputedStyle(bar).backgroundColor,
          barHeight: bar === null ? null : bar.getBoundingClientRect().height,
        };
      })()`,
-    (value): value is Omit<OverlayReadback, 'painted'> =>
+    (value): value is Omit<OverlayReadback, 'painted' | 'groundBeneathControls'> =>
       typeof value === 'object' && value !== null && 'innerWidth' in value,
     'overlay',
   );
+  const groundBeneathControls = await pagePixel(contents, overlayPage.innerWidth - 2, 2);
 
   const readback: CanvasReadback = {
     dispatched,
     zoomed,
-    overlay: { ...overlayPage, painted: overlaysPainted },
+    overlay: { ...overlayPage, groundBeneathControls, painted: overlaysPainted },
     settledBy: settled.settledBy,
     width: settled.width,
     height: settled.height,

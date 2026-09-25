@@ -5,6 +5,7 @@ import type { CaptureResult } from './commandLog.js';
 import type { Apply, MupdfSession } from './engineSeam.js';
 import { pruneEmptyFields } from './formFields.js';
 import { withDocument, withDocumentRemoving } from './mupdfWriter.js';
+import { redraw } from './pageAnnotations.js';
 
 /**
  * Burning redact marks into the document — the other half of D3 row 131's mark.
@@ -317,7 +318,7 @@ export const applyMarkMatchesForRedaction: Apply<'mupdf', 'markMatchesForRedacti
             Math.max(...xs),
             Math.max(...ys),
           ]);
-          annotation.update();
+          redraw(annotation, document);
         }
       }
     }

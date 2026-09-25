@@ -38,6 +38,10 @@ import {
   placeAnnotationSchema,
   styleAnnotationSchema,
   editAnnotationTextSchema,
+  setAnnotationAuthorSchema,
+  annotationAuthorSchema,
+  annotationBlendSchema,
+  annotationInstantSchema,
   replyToAnnotationSchema,
   removeAnnotationSchema,
   replacePageSchema,
@@ -458,6 +462,12 @@ const engineAnnotationSchema = z
      * would make the wire spelling differ from the reader's.
      */
     inReplyTo: z.number().int().nonnegative().nullable(),
+    /** `/T`, bounded by the contract's own author bound (ADR-0103). */
+    author: annotationAuthorSchema,
+    /** `/CreationDate` as a UTC instant, or `null` — nullable for `inReplyTo`'s wire reason. */
+    created: annotationInstantSchema.nullable(),
+    /** The blend the appearance is drawn in. */
+    blend: annotationBlendSchema,
   })
   .strict();
 
@@ -851,6 +861,19 @@ const capturedPriorSchema = z.discriminatedUnion('kind', [
         .strict(),
     })
     .strict(),
+  z
+    .object({
+      kind: z.literal('setAnnotationAuthor'),
+      /** Who a mark named, and which mark — the member above's shape with `/T` (ADR-0103). */
+      prior: z
+        .object({
+          page: z.number().int().nonnegative(),
+          index: z.number().int().nonnegative(),
+          author: annotationAuthorSchema,
+        })
+        .strict(),
+    })
+    .strict(),
 ]);
 
 /**
@@ -1008,6 +1031,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   placeImageSchema.omit({ bytes: true }),
   styleAnnotationSchema,
   editAnnotationTextSchema,
+  setAnnotationAuthorSchema,
   replyToAnnotationSchema,
   addLinkSchema,
   fillFormFieldSchema,

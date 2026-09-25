@@ -1332,6 +1332,25 @@ const declarations = {
     asset: 'none',
     purpose: 'ordinary',
   },
+  setAnnotationAuthor: {
+    kind: 'setAnnotationAuthor',
+    display: 'image',
+    // `/T` is a key on an object in `/Annots` — `editAnnotationText`'s
+    // classification with a different key (ADR-0103).
+    writer: 'mupdf',
+    // `editAnnotationText`'s reason exactly: one index and one string, so the
+    // prior is one value `CommandPrior` can carry.
+    invertible: true,
+    undo: 'inverse',
+    // One key and an appearance stream, and no clock: the name is the payload's.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    targets: 'annotation',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
   replyToAnnotation: {
     kind: 'replyToAnnotation',
     display: 'image',

@@ -1,4 +1,4 @@
-import type { AnnotationRect, RenderableCommand } from '@monstera/contract';
+import type { AnnotationRect, DispatchableCommand } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
@@ -18,7 +18,7 @@ import { endOf, pointerPath, startOf } from '../registries/tools.js';
  * ([ADR-0044](../../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)).
  *
  * So the dependency is not a workaround for a missing seam, it is the seam:
- * `commit` returning `RenderableCommand | undefined` is what lets a tool whose
+ * `commit` returning `DispatchableCommand | undefined` is what lets a tool whose
  * effect is main's be a registration.
  *
  * ## The rectangle is converted HERE, by the one adapter
@@ -84,7 +84,7 @@ function boxPlacement(onPlace: (page: number, rect: AnnotationRect) => void): To
       gesture: Gesture,
       page: number,
       transform: PageTransform,
-    ): RenderableCommand | undefined => {
+    ): DispatchableCommand | undefined => {
       // BOTH AXES, `snapshotTool`'s reason: a box flat in one direction has no
       // area to draw into, and refusing here is what keeps a slip from opening
       // a dialog.

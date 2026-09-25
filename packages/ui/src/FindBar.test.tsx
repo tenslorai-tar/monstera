@@ -323,7 +323,12 @@ describe('FindBar replace-all', () => {
           pageCount={PAGES}
           onJump={vi.fn()}
           onHighlight={painted}
-          commands={{ client, onApplied: applied, ask: vi.fn() }}
+          commands={{
+            client,
+            onApplied: applied,
+            ask: vi.fn(),
+            stamp: () => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' }),
+          }}
         />
       </Wrapped>,
     );

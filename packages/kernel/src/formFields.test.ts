@@ -1010,6 +1010,7 @@ async function formWithComment(): Promise<Uint8Array> {
     await applyAddAnnotation(session, {
       kind: 'addAnnotation',
       page: 0,
+      stamp: { author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' },
       annotation: {
         type: 'square',
         rect: { x0: 250, y0: 100, x1: 350, y1: 180 },

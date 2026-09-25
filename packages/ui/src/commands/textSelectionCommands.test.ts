@@ -1,4 +1,4 @@
-import type { RenderableCommand } from '@monstera/contract';
+import type { DispatchableCommand } from '@monstera/contract';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -34,8 +34,8 @@ const CONTEXT: CommandContext = {
 
 const SELECTION: TextSelection = { page: 2, text: 'quarterly totals', from: { x: 72, y: 700 }, to: { x: 210, y: 700 } };
 
-function recording(selection: TextSelection | undefined): { deps: TextSelectionDeps; placed: RenderableCommand[]; searched: string[]; copies: number[] } {
-  const placed: RenderableCommand[] = [];
+function recording(selection: TextSelection | undefined): { deps: TextSelectionDeps; placed: DispatchableCommand[]; searched: string[]; copies: number[] } {
+  const placed: DispatchableCommand[] = [];
   const searched: string[] = [];
   const copies: number[] = [];
   return {

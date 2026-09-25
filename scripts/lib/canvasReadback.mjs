@@ -122,7 +122,7 @@ export function controlName(key) {
  *     visible: boolean | null,
  *     areaWidth: number | null,
  *     innerWidth: number,
- *     barBackground: string | null,
+ *     groundBeneathControls: string | null,
  *     barHeight: number | null,
  *     painted: { color: string, symbolColor: string, height: number }[],
  *   },

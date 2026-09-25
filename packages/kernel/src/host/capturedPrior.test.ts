@@ -93,6 +93,9 @@ beforeAll(async () => {
       Subtype: PDFName.of('Text'),
       Rect: context.obj([20, 20, 40, 40]),
       Contents: PDFString.of('what it said before'),
+      // AND WHO IT NAMED, for the same reason: `setAnnotationAuthor`'s prior must be a name, not
+      // the empty string a capture that read nothing would also produce.
+      T: PDFString.of('who it named before'),
     }),
   );
   const annotations = PDFArray.withContext(context);
@@ -171,6 +174,14 @@ const COMMANDS: { readonly [K in InvertibleKind]: CommandOfKind<K> } = {
     // equal to the command's own string, and an inverse that carried either one
     // would parse and pass.
     text: 'what it says now',
+    version: asDocVersion(1),
+  },
+  setAnnotationAuthor: {
+    kind: 'setAnnotationAuthor',
+    page: 0,
+    index: 0,
+    // DIFFERENT FROM THE FIXTURE NOTE'S `/T`, the map's rule above.
+    author: 'who it names now',
     version: asDocVersion(1),
   },
 };

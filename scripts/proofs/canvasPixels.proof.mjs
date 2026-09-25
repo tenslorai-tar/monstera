@@ -51,7 +51,6 @@ import { fileURLToPath } from 'node:url';
 
 import { CANVAS_PIXELS_RUNTIME, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { controlName, readback } from '../lib/canvasReadback.mjs';
-import { rgbToHex } from '../lib/cssColour.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { partialOutcome } from '../lib/unverifiable.mjs';
@@ -182,7 +181,7 @@ const RUNTIME_CASES = [
   'the canvas is EXACTLY the page at the zoom, which is the rasteriser honouring the scale',
   'the zoomed canvas CARRIES A DRAWN PAGE, so the bigger bitmap is not a stretched empty one',
   'the window shows the CONTROLS OVERLAY, and leaves the title bar a narrower area than the window',
-  'main PAINTED the overlay in the colour the title bar computed, read off the same running window',
+  'main PAINTED the overlay in the colour the page shows beneath the controls, read off the same running window',
   "the overlay SETTLES at the title bar's own height, so the two do not grow each other",
 ];
 
@@ -411,15 +410,20 @@ try {
 
     const last = overlay.painted.at(-1);
     check(
-      'main PAINTED the overlay in the colour the title bar computed, read off the same running window',
+      'main PAINTED the overlay in the colour the page shows beneath the controls, read off the same running window',
       last !== undefined &&
-        overlay.barBackground !== null &&
-        last.color === rgbToHex(overlay.barBackground),
+        overlay.groundBeneathControls !== null &&
+        last.color === overlay.groundBeneathControls,
       `the attached window was asked to paint ${String(overlay.painted.length)} overlay(s), the last ` +
-        `${JSON.stringify(last ?? null)}; the title bar computes ${String(overlay.barBackground)}.\n      ` +
+        `${JSON.stringify(last ?? null)}; the page's pixel beneath the controls is ` +
+        `${String(overlay.groundBeneathControls)}.\n      ` +
         `NONE means the renderer never reported, or the shell never attached — the channel answers \`applied: false\` ` +
         `for the second, which the renderer does not surface. A DIFFERENT colour means the renderer read something ` +
-        `other than the bar, or reported before the theme applied and never again.`,
+        `other than what shows there, or reported before the theme applied and never again.\n      ` +
+        `THE PIXEL, NOT THE BAR'S STYLE: v5's bar is transparent, so its computed background names a colour no ` +
+        `overlay can take, and a comparison against it would share the renderer's own choice of box. ` +
+        `The capture excludes the controls themselves — with nothing reported it read the ground (#050a08) while ` +
+        `the buttons wore the system's colours, measured 2026-09-25.`,
     );
 
     check(

@@ -1,4 +1,4 @@
-import type { AnnotationColour, RenderableCommand } from '@monstera/contract';
+import type { AnnotationColour, DispatchableCommand } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
@@ -78,7 +78,7 @@ export function markupCommand(
   from: { readonly x: number; readonly y: number },
   to: { readonly x: number; readonly y: number },
   style: AnnotationStyle,
-): RenderableCommand {
+): DispatchableCommand {
   return {
     kind: 'addAnnotation',
     page,
@@ -108,7 +108,7 @@ function markupTool(id: string, type: MarkupType, style: AnnotationStyle): UiToo
       gesture: Gesture,
       page: number,
       transform: PageTransform,
-    ): RenderableCommand | undefined => {
+    ): DispatchableCommand | undefined => {
       if (!moved(gesture)) return undefined;
       return markupCommand(type, page, toPdf(startOf(gesture), transform), toPdf(endOf(gesture), transform), style);
     },

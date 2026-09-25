@@ -1,4 +1,4 @@
-import type { RenderableCommand } from '@monstera/contract';
+import type { DispatchableCommand } from '@monstera/contract';
 import type { PageTransform, ViewportPoint } from '@monstera/shared';
 
 /**
@@ -217,7 +217,7 @@ export interface ToolController {
    * is a **value rather than a throw** for the reason a capture refusal is: the
    * overlay has to do something sensible with it, and a caller may not catch.
    *
-   * The command is `RenderableCommand`, which is the narrower union — the type
+   * The command is `DispatchableCommand`, which is the narrower union — the type
    * is what stops a surface expressing a command only main may mint.
    *
    * ## IT MAY ANSWER NOW OR LATER
@@ -250,7 +250,7 @@ export interface ToolController {
     gesture: Gesture,
     page: number,
     transform: PageTransform,
-  ) => RenderableCommand | undefined | Promise<RenderableCommand | undefined>;
+  ) => DispatchableCommand | undefined | Promise<DispatchableCommand | undefined>;
   /**
    * What is drawn while the gesture is in flight, in the overlay's own
    * coordinates.

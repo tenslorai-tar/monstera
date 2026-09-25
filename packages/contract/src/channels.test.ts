@@ -37,7 +37,7 @@ function ignore(_incident: Incident): void {
  * `typecheck` and `test` were green and right to be.
  */
 const handlers: ContractHandlers = {
-  'app.info': () => Promise.resolve(ok({ version: '0.0.0', installChannel: 'development' })),
+  'app.info': () => Promise.resolve(ok({ version: '0.0.0', installChannel: 'development', userName: 'A. Tester' })),
   // ONE LANGUAGE RATHER THAN NONE OR ALL. An empty list is what a machine with
   // nothing provisioned answers and is also what a handler dropping the field
   // would produce; fourteen is what a fixture that stopped being a subset looks
@@ -584,6 +584,7 @@ describe('the shipping contract, exercised through its own map', () => {
           opacity: 1,
           borderWidth: 2,
         },
+        stamp: { author: 'A. Surveyor', created: '2026-09-24T09:38:00.000Z' },
       },
     });
     return result.ok;

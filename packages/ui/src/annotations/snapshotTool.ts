@@ -1,4 +1,4 @@
-import type { AnnotationRect, RenderableCommand } from '@monstera/contract';
+import type { AnnotationRect, DispatchableCommand } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
@@ -13,7 +13,7 @@ import { endOf, pointerPath, startOf } from '../registries/tools.js';
  * A snapshot does not change the document: there is nothing to log, nothing to
  * undo, and no version to bump. So `commit` answers `undefined` and the region
  * goes to a dependency, exactly as a selection does — the tool registry's
- * `commit` returning a `RenderableCommand | undefined` is what makes that a
+ * `commit` returning a `DispatchableCommand | undefined` is what makes that a
  * registration rather than a seam to widen (B4 was checked and not needed).
  *
  * ## The rectangle is converted HERE, by the one adapter
@@ -88,7 +88,7 @@ export function snapshotTool(deps: SnapshotDeps): UiTool {
       gesture: Gesture,
       page: number,
       transform: PageTransform,
-    ): RenderableCommand | undefined => {
+    ): DispatchableCommand | undefined => {
       // BOTH AXES, unlike a line's single-axis minimum: a region flat in one
       // direction has no area, and the kernel refuses it — so refusing here is
       // what keeps a slip from opening a save dialog for a snapshot that will

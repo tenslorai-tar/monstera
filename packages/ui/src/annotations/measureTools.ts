@@ -1,4 +1,4 @@
-import type { AnnotationColour, MeasureScale, RenderableCommand } from '@monstera/contract';
+import type { AnnotationColour, MeasureScale, DispatchableCommand } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
@@ -86,7 +86,7 @@ function distanceTool(deps: MeasureDeps): UiTool {
       gesture: Gesture,
       page: number,
       transform: PageTransform,
-    ): RenderableCommand | undefined => {
+    ): DispatchableCommand | undefined => {
       if (drawn(gesture) === undefined) return undefined;
       const from = toPdf(startOf(gesture), transform);
       const to = toPdf(endOf(gesture), transform);

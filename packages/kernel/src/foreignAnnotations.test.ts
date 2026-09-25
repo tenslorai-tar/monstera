@@ -222,6 +222,7 @@ describe('a plain save and an annotation this build did not author', () => {
       applyAddAnnotation(session, {
         kind: 'addAnnotation',
         page: 0,
+        stamp: { author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' },
         annotation: {
           type: 'square',
           rect: { x0: 100, y0: 100, x1: 150, y1: 150 },

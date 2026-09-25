@@ -2,14 +2,14 @@
   "subject": "apps/desktop/src/documentPicker.ts",
   "outcome": "opened",
   "pathArrived": true,
-  "painted": 483431,
+  "painted": 49516,
   "width": 612,
   "height": 792,
   "certifies": "That Electron’s open dialog ran, returned a path, and the document reached the screen. THE PROBE HOLDS NO PATH OF ITS OWN — the only path in the process is the one the dialog returned — so a recorded \"opened\" cannot have been produced without one. The chosen file is deliberately not recorded: this is a tracked file in a public repository and a user’s filesystem layout is not evidence anybody needs.",
   "exercise": "npm run probe:picker",
-  "recordedAt": "2026-09-05T05:10:30.687Z",
+  "recordedAt": "2026-09-25T03:51:39.326Z",
   "verdict": {
-    "digest": "9f23e27dac20b731d6aef35bc4a5c15ffe950751398870e4faa27896a1c26223",
+    "digest": "28e5ec1c61e5d57ebf454370010c4ffbf079eaafe0260af2a43fa929b19b38a2",
     "inputs": [
       {
         "name": "file:apps/desktop/src/documentPicker.ts",
@@ -17,7 +17,7 @@
       },
       {
         "name": "file:apps/desktop/src/pickerProbe.ts",
-        "digest": "8e0b19d22e89ff24f1922e32c881719858f10d3e1355cb9ce896f743345a3ad7"
+        "digest": "93dd8aaffafd0880e35f02d72fc715f5b92047993e9025c290289b86f083c315"
       }
     ]
   }
