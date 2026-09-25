@@ -1646,6 +1646,56 @@ test('an existing REDACT mark is drawn as a SOLID preview over the region it cov
   }
 });
 
+test('the COMMENTS panel at its default width sets each row on one line, with the remove control beside it', async ({
+  page,
+}) => {
+  // Found in the Stage 9 close's live run (JOURNAL 2026-09-24): at the default width each row's label ran one word to
+  // a line and *Remove this annotation* was drawn across it. Measured in Chromium because the defect is layout, which
+  // happy-dom does not do.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const bytes = await onePagePdf();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000d4');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'marked.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    annotations: [
+      { page: 0, index: 0, kind: 'highlight', rect: { x0: 100, y0: 600, x1: 300, y1: 620 } },
+      { page: 0, index: 1, kind: 'square', rect: { x0: 350, y0: 100, x1: 450, y1: 200 } },
+      { page: 0, index: 2, kind: 'strikeout', rect: { x0: 100, y0: 400, x1: 300, y1: 420 } },
+    ],
+    settings: { 'appearance.document-panel': 'comments' },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+
+  const rows = page.locator('.m-annotations-row');
+  await expect(rows).toHaveCount(3);
+  // MEASURED ON THE ROW'S JUMP BUTTON, which the build before this fix also has — so the same case run against that
+  // build fails on the layout, rather than on a class it never had (which is how its first draft failed).
+  for (let at = 0; at < 3; at += 1) {
+    const row = rows.nth(at);
+    const item = row.locator('.m-annotations-item');
+    const jump = await item.boundingBox();
+    const remove = await row.getByRole('button', { name: 'Remove this annotation' }).boundingBox();
+    // One line of the item's own text, plus its padding and border: what a row with no author and no note is.
+    const oneLine = await item.evaluate((node) => {
+      const style = getComputedStyle(node);
+      const line = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.5;
+      return (
+        line +
+        Number.parseFloat(style.paddingTop) +
+        Number.parseFloat(style.paddingBottom) +
+        Number.parseFloat(style.borderTopWidth) +
+        Number.parseFloat(style.borderBottomWidth)
+      );
+    });
+    if (jump === null || remove === null) throw new Error(`row ${String(at)} has no jump or no remove control`);
+    expect(jump.height, `row ${String(at)}: ${String(jump.height)} px against one line of ${String(oneLine)} px`).toBeLessThanOrEqual(oneLine + 1);
+    // AND NOTHING DRAWN OVER IT: the remove control starts where the jump has ended.
+    expect(remove.x, `row ${String(at)}`).toBeGreaterThanOrEqual(jump.x + jump.width - 1);
+  }
+});
+
 // TRANSLATE THIS PAGE (ADR-0097), in every theme: the dialog says what it sends before the control
 // that sends it, passes the gate, and a translation ends in ONE edit and its toast.
 for (const look of LOOKS) {

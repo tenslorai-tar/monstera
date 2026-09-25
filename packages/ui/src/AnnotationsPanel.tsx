@@ -33,6 +33,8 @@ import {
   ANNOTATIONS_UNAVAILABLE,
 } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
+import { IconButton } from './primitives/IconButton.js';
+import { ICONS } from './primitives/icons.js';
 
 /**
  * Every annotation in the document, with a jump to the page each sits on.
@@ -169,10 +171,13 @@ export function AnnotationsPanel({
                   }}
                   type="button"
                 >
-                  {i18n._(ANNOTATIONS_ROW, {
-                    kind: i18n._(ANNOTATION_KIND_LABELS[annotation.kind]),
-                    page: pdfjsPageOf(annotation.page),
-                  })}
+                  {/* ITS OWN ELEMENT, so the kind and page wrap as one line rather than a word at a time. */}
+                  <span className="m-annotations-label">
+                    {i18n._(ANNOTATIONS_ROW, {
+                      kind: i18n._(ANNOTATION_KIND_LABELS[annotation.kind]),
+                      page: pdfjsPageOf(annotation.page),
+                    })}
+                  </span>
                   {annotation.inReplyTo === null ? null : (
                     // AN ANSWER, AND NOT A DUPLICATE. A reply carries its
                     // parent's rectangle, so the two rows name the same kind on
@@ -219,8 +224,14 @@ export function AnnotationsPanel({
                     <span className="m-annotations-note">{annotation.contents}</span>
                   )}
                 </button>
-                <button
-                  className="m-annotations-remove"
+                {/* AN ICON, NAMED BY ITS LABEL. The panel's default width left the row's label no room
+                    beside a worded button that does not shrink, so the label's words ran on under it — one
+                    word to a line, with *Remove this annotation* drawn across them. The name is unchanged
+                    and the tooltip shows it. */}
+                <IconButton
+                  icon={ICONS.Trash2}
+                  label={ANNOTATIONS_REMOVE}
+                  size="dense"
                   onClick={() => {
                     // THE VERSION COMES FROM THE ANSWER, not from the `version`
                     // prop, and the two are equal here — the guard above returns
@@ -236,11 +247,7 @@ export function AnnotationsPanel({
                       version: state.version,
                     });
                   }}
-                  title={i18n._(ANNOTATIONS_REMOVE)}
-                  type="button"
-                >
-                  {i18n._(ANNOTATIONS_REMOVE)}
-                </button>
+                />
               </li>
             ))}
           </ul>

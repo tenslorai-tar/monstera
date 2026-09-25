@@ -1559,19 +1559,25 @@ textarea {
   white-space: nowrap;
 }
 
-.m-annotations-remove {
-  flex: 0 0 auto;
-  padding: var(--space-2) var(--space-4);
-  background: none;
-  border: 1px solid transparent;
-  color: var(--muted);
-  cursor: pointer;
+/* The jump WRAPS its parts rather than squeezing them: the kind-and-page line stays whole, and the badges,
+   the author and the note move to the next line when the panel is narrow. */
+.m-annotations-row > .m-annotations-item {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  row-gap: var(--space-2);
 }
 
-.m-annotations-remove:hover,
-.m-annotations-remove:focus-visible {
-  background: var(--surface2);
-  color: var(--text);
+.m-annotations-label {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-annotations-row > .m-icon-button {
+  flex: 0 0 auto;
 }
 
 /*

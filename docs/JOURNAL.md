@@ -892,6 +892,21 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — The Stage 9 run's four display defects
+
+Found in the Stage 9 close's live run (2026-09-24) and owed to the design pass.
+
+- **The Comments panel.** Each row is a flex row of the jump and a remove control. The remove control was
+  worded (*Remove this annotation*) and does not shrink, and the jump's label was a bare text node, so at
+  the panel's default width the label shrank to a word a line and ran on under the control. The remove
+  control is now an icon button with the same name and a tooltip, and the label is its own element that
+  stays on one line and wraps as a unit. A Chromium case measures each row's jump against one line of its
+  own text and the control's left edge against the jump's right; run against the build before the fix it
+  reads a 57 px row against a 25.5 px line. Its first draft located a class the old build did not have and
+  failed on that — a control that fails for a reason other than the defect proves nothing about it.
+
+---
+
 ## 2026-09-25 — Ctrl+V pastes marks; the row floor is 500; history-trimmed stays a dialog
 
 The owner's item 3(h) named four things to fix, and items 8a and 8b two rulings.
