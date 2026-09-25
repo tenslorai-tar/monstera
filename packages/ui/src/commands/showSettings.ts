@@ -47,7 +47,8 @@ export function showSettingsCommand(deps: {
     icon: 'Settings',
     title: SETTINGS_COMMAND_TITLE,
     placements: [
-      { surface: 'start-screen', slot: 'footer', order: 3 },
+      // FIRST in the footer, v5-01's order: Settings · About · Help centre.
+      { surface: 'start-screen', slot: 'footer', order: 1 },
       // 900s: Application is the LAST group on Tools. The section is for working on documents, and
       // a ribbon that opened on Settings and About put the application ahead of the work.
       { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 905 },

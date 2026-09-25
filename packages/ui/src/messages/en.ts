@@ -722,6 +722,7 @@ export const START_PRODUCT = messageKey('surface.start.product');
 export const START_TAGLINE = messageKey('surface.start.tagline');
 export const START_VERSION = messageKey('surface.start.version');
 export const START_COPYRIGHT = messageKey('surface.start.copyright');
+export const START_LICENCE = messageKey('surface.start.licence');
 export const START_F1_HINT = messageKey('surface.start.shortcuts-hint');
 export const KEYBOARD_SHORTCUTS_TITLE = messageKey('dialog.keyboard-shortcuts.title');
 export const KEYBOARD_SHORTCUTS_COMMAND_TITLE = messageKey('command.keyboard-shortcuts.title');
@@ -2228,8 +2229,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // §10.3's hero, word for word, and ADR-0002 keeps both lines beneath the supplied artwork.
   [START_PRODUCT]: 'PDF EDITOR',
   [START_TAGLINE]: 'Built For The Way You Work',
-  [START_VERSION]: 'Version {version}',
+  [START_VERSION]: 'Monstera {version}',
   [START_COPYRIGHT]: '© Tenslor Inc.',
+  // `package.json`'s `AGPL-3.0-or-later`. v5-01 prints *AGPL 3.0*; the *or later* is the licence's own term, and a
+  // footer that dropped it would state a narrower grant than the one the project makes.
+  [START_LICENCE]: 'AGPL 3.0 or later',
   // THE CHORD IS A VALUE, not part of the sentence: it is read off the shortcut map, so the hint cannot name a key
   // the registry does not bind.
   [START_F1_HINT]: 'Press {chord} for keyboard shortcuts',

@@ -196,10 +196,13 @@ textarea {
 
 /* THE START SCREEN SPANS THE RAIL'S COLUMN, because there is no rail over it:
    `Ribbon` renders nothing when no section holds a command. */
+/* A COLUMN, so the footer's `margin-block-start: auto` can pin it to the foot while the screen is short. */
 .m-start-area {
   grid-area: body;
   grid-column: 1 / -1;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 /* THE WINDOW'S FALLBACK, in the body's area across the rail's column: the title bar and the
@@ -397,13 +400,18 @@ textarea {
   line-height: 1.4;
 }
 
-/* The footer slot's commands and the screen's own line beneath them, quieter than everything above. */
+/* v5-01's footer: a bar along the window's foot — links left, the F1 hint centred, the build right. `margin-block-start:
+   auto` pins it to the bottom of the start area while the content is shorter than the window, and lets it follow the
+   recent list when that is taller, so it never sits on top of a card. The two side columns share the spare width
+   equally, which is what keeps the hint centred on the window rather than between the two neighbours. */
 .m-start-footer {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: var(--space-8);
-  padding-block: var(--space-16);
+  gap: var(--space-16);
+  margin-block-start: auto;
+  padding: var(--space-4) var(--space-16);
+  border-block-start: 1px solid var(--border);
   color: var(--muted);
   font-size: var(--font-chrome-12);
 }
@@ -411,16 +419,30 @@ textarea {
 .m-start-footer__commands {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-8);
-  justify-content: center;
+  gap: var(--space-4);
 }
 
-.m-start-footer__text {
+.m-start-footer__commands .m-button {
+  font-size: var(--font-chrome-12);
+}
+
+.m-start-footer__hint {
+  margin: 0;
+  text-align: center;
+}
+
+/* The build, separated by the middle dot the design draws — as generated content, so the three stay separate
+   pieces of text and none of them carries a separator a translation would have to keep. */
+.m-start-footer__build {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-8);
+  justify-content: flex-end;
   margin: 0;
+}
+
+.m-start-footer__build > span + span::before {
+  content: '·';
+  padding-inline: var(--space-8);
 }
 
 /* The F1 list: a table because the content is one — a command against its chord — so the pairing is announced. */

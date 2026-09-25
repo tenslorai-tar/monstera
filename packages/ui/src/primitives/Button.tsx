@@ -56,8 +56,11 @@ export interface ButtonProps {
    * object at every call site is ceremony that teaches nothing.
    */
   values?: Readonly<Record<string, string | number>> | undefined;
-  /** Filled with `--accent` (`primary`) or bounded by `--border-control`. */
-  variant?: 'primary' | 'default';
+  /**
+   * Filled with `--accent` (`primary`), bounded by `--border-control` (`default`), or text alone (`quiet`) — a
+   * row of links the design draws as words, such as the start screen's footer.
+   */
+  variant?: 'primary' | 'default' | 'quiet';
   /**
    * A glyph before the label, as the owner's design draws Donate and Rate Us (2026-09-22).
    *

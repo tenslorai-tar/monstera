@@ -65,6 +65,21 @@
   background: var(--accent-hover);
 }
 
+/* Text alone, for a row of links the design draws as words — the start screen's footer. The edge is transparent
+   rather than absent so the three variants share one box and a row can mix them without shifting. It keeps the
+   focus ring below, which is how a keyboard user finds a control that has no edge. */
+.m-button--quiet {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  padding-inline: var(--space-4);
+}
+
+.m-button--quiet:hover:not(:disabled) {
+  color: var(--text);
+  text-decoration: underline;
+}
+
 .m-button:disabled {
   cursor: default;
   color: var(--faint);

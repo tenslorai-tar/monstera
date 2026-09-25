@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
 
-import { START_COPYRIGHT, START_F1_HINT, START_VERSION } from '../messages/en.js';
+import { START_COPYRIGHT, START_F1_HINT, START_LICENCE, START_VERSION } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
 import { shortcutMapOf, startScreenModel } from './projections.js';
@@ -10,13 +10,16 @@ import { shortcutMapOf, startScreenModel } from './projections.js';
 const HELP_CHORD = 'f1';
 
 /**
- * The start screen's footer (§10.3: *"Footer: … version + © Tenslor Inc."*).
+ * The start screen's footer (§10.3: *"Footer: … version + © Tenslor Inc."*), laid out as v5-01 draws it: a bar
+ * along the window's foot with the links on the left, the F1 hint in the middle, and the build on the right.
  *
  * ## The `footer` slot's commands, and the screen's own text beside them
  *
  * About, Settings and the diagnostics log are projected here (ADR-0068): with no
  * document the ribbon is not drawn, so without this slot they would be reachable
- * from the palette alone. The version and the copyright are text, not commands.
+ * from the palette alone. They are drawn as words, the design's links, through the
+ * button primitive's `quiet` variant — still buttons, since each runs a command. The
+ * version, the copyright and the licence are text, not commands.
  *
  * ## Separate from `StartScreen` because of where it sits
  *
@@ -27,8 +30,8 @@ const HELP_CHORD = 'f1';
  *
  * ## The version is `app.info`'s, and absent until main answers
  *
- * `undefined` draws no version line rather than a placeholder: a footer that said
- * *Version* with nothing after it looks like an answer.
+ * `undefined` draws no version rather than a placeholder: a footer that said
+ * *Monstera* with nothing after it looks like an answer.
  *
  * ## The F1 hint is read off the shortcut map, by CHORD
  *
@@ -57,6 +60,7 @@ export function StartFooter({
           <Button
             key={entry.command.id}
             label={entry.command.title}
+            variant="quiet"
             onClick={() => {
               // Not awaited, for `StartScreen`'s reason.
               void entry.command.run(context);
@@ -64,10 +68,13 @@ export function StartFooter({
           />
         ))}
       </div>
-      <p className="m-start-footer__text">
-        {help?.shortcut === undefined ? null : <span>{_(START_F1_HINT, { chord: help.shortcut })}</span>}
+      <p className="m-start-footer__hint">
+        {help?.shortcut === undefined ? null : _(START_F1_HINT, { chord: help.shortcut })}
+      </p>
+      <p className="m-start-footer__build">
         {version === undefined ? null : <span>{_(START_VERSION, { version })}</span>}
         <span>{_(START_COPYRIGHT)}</span>
+        <span>{_(START_LICENCE)}</span>
       </p>
     </footer>
   );

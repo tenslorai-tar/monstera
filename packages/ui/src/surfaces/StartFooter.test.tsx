@@ -6,7 +6,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { activateCatalogue, i18n } from '../i18n.js';
-import { ABOUT_COMMAND_TITLE, EN, KEYBOARD_SHORTCUTS_COMMAND_TITLE } from '../messages/en.js';
+import { ABOUT_COMMAND_TITLE, EN, KEYBOARD_SHORTCUTS_COMMAND_TITLE, SETTINGS_COMMAND_TITLE } from '../messages/en.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from '../registries/commands.js';
 import { StartFooter } from './StartFooter.js';
 
@@ -69,16 +69,23 @@ describe('StartFooter', () => {
         <StartFooter registry={new CommandRegistry([about])} context={context} version="1.2.3" />
       </Wrapped>,
     );
-    expect(screen.getByText('Version 1.2.3')).toBeDefined();
+    expect(screen.getByText('Monstera 1.2.3')).toBeDefined();
     unmount();
     drawn([about], undefined);
-    expect(screen.queryByText(/^Version/u)).toBeNull();
-    // THE FOOTER STILL DRAWS — the missing line is the version's alone.
+    expect(screen.queryByText(/^Monstera/u)).toBeNull();
+    // THE FOOTER STILL DRAWS — the missing piece is the version's alone.
     expect(screen.getByText('© Tenslor Inc.')).toBeDefined();
+    expect(screen.getByText('AGPL 3.0 or later')).toBeDefined();
   });
 
-  it('projects the footer slot’s commands', () => {
-    drawn([about], undefined);
-    expect(screen.getByRole('button', { name: 'About' })).toBeDefined();
+  it('projects the footer slot’s commands as LINKS, in their declared order', () => {
+    const settings: UiCommand = { ...about, id: 'app.settings', title: SETTINGS_COMMAND_TITLE, placements: [{ surface: 'start-screen', slot: 'footer', order: 1 }] };
+    const aboutSecond: UiCommand = { ...about, placements: [{ surface: 'start-screen', slot: 'footer', order: 2 }] };
+    // REGISTERED IN THE OTHER ORDER, so a footer drawing registration order reads *About, Settings* here.
+    drawn([aboutSecond, settings], undefined);
+    const buttons = screen.getAllByRole('button');
+    expect(buttons.map((button) => button.textContent)).toStrictEqual(['Settings', 'About']);
+    // The design's words, not bordered buttons.
+    for (const button of buttons) expect(button.className).toContain('m-button--quiet');
   });
 });

@@ -892,6 +892,29 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — The start screen's footer is v5-01's bar
+
+A bar along the foot of the start area: the footer slot's commands on the left as words, the F1 hint in
+the middle, and *Monstera {version} · © Tenslor Inc. · AGPL 3.0 or later* on the right. It is pinned to the
+foot while the screen is shorter than the window and follows the recent list when that is taller, so it
+never covers a card (the start area became a flex column; the footer takes `margin-block-start: auto`).
+
+- **The links are still buttons**, each running its command, through a new `quiet` variant of the one
+  button primitive — text alone, a transparent edge so the variants share a box, the focus ring kept.
+  The three themes' accessibility cases pass over it.
+- **Order is v5-01's: Settings, About, then Reveal diagnostics log**, which sits where the design draws
+  *Help centre* until item 6 builds one. The log stays because its own comment is right: the start screen
+  is where somebody who cannot open a document goes looking. On the unmapped list as a deviation.
+- **The licence reads *AGPL 3.0 or later***, not the design's *AGPL 3.0*: `package.json` is
+  `AGPL-3.0-or-later`, and dropping *or later* would state a narrower grant than the project makes.
+- **The pin's first case could not fail.** At the default window the content is taller than the window,
+  so *the footer's bottom is near the window's* held with the pin removed. The case now sets a 1,100 px
+  window and asserts the footer's bottom equals the start area's to within a pixel; unpinned it measured
+  386 px off, and pinned it measured 8 px off the WINDOW's edge — the shell's padding — which is why the
+  reference is the area.
+
+---
+
 ## 2026-09-25 — Stage audit of `5b55d66..1e1bfad` — findings QQQQQQ-1 to QQQQQQ-13
 
 19 commits, 183 files, 10 proofs added, 60 modified and none removed, 12 source files added, 83 changed

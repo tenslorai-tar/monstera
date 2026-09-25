@@ -33,9 +33,9 @@ export function revealLogCommand(deps: { readonly client: ContractClient }): UiC
     ribbonTitle: RIBBON_DIAGNOSTICS,
     // The start screen, because that is where somebody who cannot open their
     // document goes looking. A document-scoped placement would put the
-    // diagnostics behind the thing that is failing.
+    // diagnostics behind the thing that is failing. Third, where v5-01 draws *Help centre*, which is not built.
     placements: [
-      { surface: 'start-screen', slot: 'footer', order: 2 },
+      { surface: 'start-screen', slot: 'footer', order: 3 },
       { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 910 },
     ],
     run: async (): Promise<void> => {

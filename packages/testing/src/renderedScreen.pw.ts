@@ -1519,7 +1519,24 @@ test('the START SCREEN draws the supplied logo, the hero lines, one primary Open
   await expect(footer.getByRole('button', { name: 'Settings' })).toBeVisible();
   await expect(footer.getByRole('button', { name: 'About' })).toBeVisible();
   await expect(footer).toContainText('© Tenslor Inc.');
-  await expect(footer).toContainText('Version ');
+  await expect(footer).toContainText('Monstera ');
+  // v5-01'S BAR: pinned to the window's foot while the screen is short, links on the left, the build on the right.
+  // A WINDOW TALLER THAN THE SCREEN'S CONTENT, and the bottom edge EXACT: at the default size the content overflows,
+  // the footer follows it below the fold, and *its bottom is near the window's* held without the pin (measured
+  // 2026-09-25 with `margin-block-start: auto` removed).
+  // Measured against the START AREA's bottom, not the window's: the shell pads the body's grid area, so the window
+  // edge is 8 px further down whether or not the footer is pinned.
+  await page.setViewportSize({ width: 1280, height: 1100 });
+  const bar = await footer.boundingBox();
+  const area = await page.locator('.m-start-area').boundingBox();
+  const viewport = page.viewportSize();
+  if (bar === null || area === null || viewport === null) throw new Error('the footer has no box');
+  expect(Math.abs(bar.y + bar.height - (area.y + area.height))).toBeLessThanOrEqual(1);
+  const links = await footer.locator('.m-start-footer__commands').boundingBox();
+  const build = await footer.locator('.m-start-footer__build').boundingBox();
+  if (links === null || build === null) throw new Error('a footer region has no box');
+  expect(links.x).toBeLessThan(viewport.width / 4);
+  expect(build.x + build.width).toBeGreaterThan((viewport.width * 3) / 4);
 });
 
 test('F1 opens the KEYBOARD SHORTCUTS list from the registry, and the start screen footer names the key', async ({
