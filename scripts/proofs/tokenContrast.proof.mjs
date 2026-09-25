@@ -29,7 +29,7 @@ import { repoRoot } from '../lib/gitScope.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 13 });
+const roster = createRoster(failures, { cases: 15 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -223,6 +223,38 @@ try {
     `failures: ${perTheme.failures.join('; ') || 'none'}. The control: a check that had simply ` +
       `raised the floor everywhere would report both, which reddens the build for light and ` +
       `dark text nobody asked to be enhanced (ADR-0003's first rejected alternative).`,
+  );
+
+  // ---- The dialog's glass (the owner, 2026-09-25) ----
+  // A pale grey text on a white surface clears 4.5:1 solid; through thin glass over a black window it cannot.
+  // The same file at full opacity is the control: the glass block must report only what the glass causes.
+  const glassAt = (/** @type {string} */ opacity) =>
+    evaluate(
+      fixture([
+        ' * @role surface surface',
+        ' * @role canvas surface',
+        ' * @role ink text @on surface',
+        "[data-theme='light'] {",
+        '  --surface: #ffffff;',
+        '  --canvas: #ffffff;',
+        '  --ink: #6c6c6c;',
+        `  --glass-opacity: ${opacity};`,
+        '  --glass-blur: 16px;',
+        '  --backdrop-opacity: 60%;',
+        '}',
+      ]),
+    );
+  check(
+    'text that clears its floor SOLID is reported on THIN glass over a black window',
+    glassAt('50%').failures.some((failure) => failure.includes('--ink on the dialog\'s glass over black')),
+    `failures: ${glassAt('50%').failures.join('; ') || 'none'}. #6c6c6c on white is about 5.25:1, and at half ` +
+      `opacity over a dimmed black window the glass is mid-grey — the case the solid pairs cannot see.`,
+  );
+  check(
+    'CONTROL: the same file with SOLID glass reports nothing',
+    glassAt('100%').failures.length === 0,
+    `failures: ${glassAt('100%').failures.join('; ') || 'none'}. A glass block that reported every file would ` +
+      `satisfy the case above while separating nothing.`,
   );
 
   if (failures.length > 0) {

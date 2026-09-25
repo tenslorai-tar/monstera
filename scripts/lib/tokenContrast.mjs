@@ -97,6 +97,40 @@ const OBLIGATION = {
 /** Categories that must declare a surface set, and those that must not. */
 const NEEDS_SURFACES = new Set(['text', 'boundary-control', 'graphic']);
 
+/**
+ * Theme values that are not colour roles, BY NAME: an elevation, and the dialog's two amounts, which the glass
+ * block evaluates rather than skips.
+ */
+const NOT_COLOUR_ROLES = new Set(['shadow', 'glass-opacity', 'glass-blur', 'backdrop-opacity']);
+
+/**
+ * A CSS percentage as a fraction, or `null` for anything else — never a default, since a guessed amount would
+ * report a ratio for glass nobody could draw.
+ *
+ * @param {string | undefined} value
+ * @returns {number | null}
+ */
+function fraction(value) {
+  const match = /^(\d{1,3}(?:\.\d+)?)%$/u.exec((value ?? '').trim());
+  if (match === null) return null;
+  const amount = Number(match[1]) / 100;
+  return amount >= 0 && amount <= 1 ? amount : null;
+}
+
+/**
+ * `top` at `alpha` over `under` — the compositing `channels` does for an `rgba()`, for an amount the token file
+ * states apart from the colour.
+ *
+ * @param {readonly number[]} top
+ * @param {number} alpha
+ * @param {readonly number[]} under
+ * @returns {[number, number, number]}
+ */
+function mix(top, alpha, under) {
+  const at = (/** @type {number} */ index) => (top[index] ?? 0) * alpha + (under[index] ?? 0) * (1 - alpha);
+  return [at(0), at(1), at(2)];
+}
+
 /** @param {string} root */
 export function tokenFile(root) {
   return join(root, 'packages', 'ui', 'src', 'tokens.css');
@@ -235,11 +269,12 @@ export function evaluate(css) {
   }
   for (const theme of themes) {
     for (const name of theme.values.keys()) {
-      // `--shadow` is an elevation value rather than a colour role. Named here
-      // rather than pattern-matched: a rule like "skip anything not a colour"
-      // would skip a colour the parser failed to read, which is this check's
-      // reassuring answer produced by a broken parse.
-      if (name === 'shadow') continue;
+      // `--shadow` is an elevation value rather than a colour role, and the
+      // dialog's glass and backdrop are amounts, checked by the glass block
+      // below. Named here rather than pattern-matched: a rule like "skip anything
+      // not a colour" would skip a colour the parser failed to read, which is
+      // this check's reassuring answer produced by a broken parse.
+      if (NOT_COLOUR_ROLES.has(name)) continue;
       if (!declared.has(name)) {
         failures.push(`--${name} has a value in ${theme.theme} but no @role declaration`);
       }
@@ -288,6 +323,49 @@ export function evaluate(css) {
               `below ${minimum}:1 (${role.category})`,
           );
         }
+      }
+    }
+  }
+
+  // ---- The dialog's glass (the owner, 2026-09-25) ----
+  //
+  // Every dialog is `--surface` at `--glass-opacity` over a blur of the window, dimmed first by the backdrop
+  // (`--canvas` at `--backdrop-opacity`). A translucent surface's colour depends on what is behind it, so the
+  // pairs above — text on the solid surface — do not cover it. The worst case is a FLAT field of an extreme:
+  // a blur averages what is behind and can only move the result towards the middle. So every text role that
+  // may sit on `--surface` is held to its floor on the glass over flat white and over flat black.
+  for (const theme of themes) {
+    // THE GLASS IS `--surface`'s, so a theme with a surface owes it. That cannot quietly narrow the shipped
+    // file: `--surface` is a declared role there, and a theme dropping its value already fails above.
+    if (!theme.values.has('surface')) continue;
+    const glassOpacity = fraction(theme.values.get('glass-opacity'));
+    const backdropOpacity = fraction(theme.values.get('backdrop-opacity'));
+    const surface = channels(theme.values.get('surface') ?? '');
+    const canvas = channels(theme.values.get('canvas') ?? '');
+    if (glassOpacity === null || backdropOpacity === null || surface === null || canvas === null) {
+      failures.push(
+        `${theme.theme}: the dialog's glass cannot be evaluated — --glass-opacity and --backdrop-opacity must be ` +
+          `percentages, and --surface and --canvas static colours`,
+      );
+      continue;
+    }
+    for (const [behindName, behind] of /** @type {const} */ ([
+      ['white', [255, 255, 255]],
+      ['black', [0, 0, 0]],
+    ])) {
+      const glass = mix(surface, glassOpacity, mix(canvas, backdropOpacity, behind));
+      for (const role of roles) {
+        if (role.category !== 'text' || !role.on.includes('surface')) continue;
+        const foreground = channels(theme.values.get(role.name) ?? '', glass);
+        if (foreground === null) continue;
+        evaluated += 1;
+        const minimum = colour.textContrastFloor(theme.theme);
+        const ratio = contrast(foreground, glass);
+        const pair = `${theme.theme}: --${role.name} on the dialog's glass over ${behindName}`;
+        if (tightest === null || ratio - minimum < tightest.ratio - tightest.minimum) {
+          tightest = { pair, ratio, minimum };
+        }
+        if (ratio < minimum) failures.push(`${pair} is ${ratio.toFixed(2)}:1, below ${minimum}:1 (text)`);
       }
     }
   }

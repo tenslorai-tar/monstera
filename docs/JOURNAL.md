@@ -892,6 +892,32 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — Every dialog is glass, and the contrast check holds the glass to the text floor
+
+The owner's order: dialogs glassy like v5-10's Settings, but not so see-through that the text is hard to
+read, and **every dialog the same**. So it is one rule on the `Dialog` primitive — `--surface` at
+`--glass-opacity` over `backdrop-filter: blur(--glass-blur)` — and every dialog is drawn in that primitive.
+
+**The opacity was computed, not chosen by eye.** The token contrast check reads a colour's RGB and would
+judge a translucent surface as if it were opaque — the reassuring answer — so
+`scripts/research/dialogGlassContrast.mjs` composited the worst cases through `packages/shared`' own
+maths: a flat white or flat black window, dimmed by the backdrop (`--canvas` at 60%), under the glass. A
+blur averages what is behind, so a flat extreme is the limit. Faintest text, worst case: 80% gives
+5.16:1 dark and **4.65:1 light**; 85% gives 5.44:1 and 4.91:1; 90% gives 5.72:1 and 5.18:1. 85% was
+taken — glass that shows, with margin over 4.5:1 in both. **High contrast is solid** (100%, no blur): a
+surface whose colour depends on what is behind it is the one thing that theme must not have. Its
+dialog baseline did not move, which is that claim checked.
+
+**And it is now a check, not a note.** `check:tokencontrast` composites every theme's glass over flat
+white and flat black and holds each text role that sits on `--surface` to the theme's floor: 18 new
+pairs, 69 in all. The backdrop's 60% became `--backdrop-opacity` so the check reads the value the dialog
+draws, not a copy. The glass tokens join `--shadow` in the check's named list of non-colour values.
+Light's glass set to 70% reddened it on two pairs; `proof:tokencontrast` holds a thin-glass fixture that
+must fail and its solid twin that must not (15 cases). The accessibility suite passed on the rendered
+dialogs.
+
+---
+
 ## 2026-09-25 — The six start cards say what this build does, which is less than the design said
 
 v5-01 draws each feature shortcut as a card with a one-line claim. The owner's order was to verify

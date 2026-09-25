@@ -353,7 +353,8 @@
   position: fixed;
   inset: 0;
   background: var(--canvas);
-  opacity: 0.6;
+  /* The theme's, so `check:tokencontrast` composites the glass over the backdrop this draws, not over a copy. */
+  opacity: var(--backdrop-opacity);
   /* NO-DRAG, so a press on the title bar is a press outside. The title bar is a `drag` region, and Electron hands a
      drag region's presses to the window frame rather than to the page; a `no-drag` region subtracts from the drag
      regions under it, so while a modal is open the whole window belongs to the backdrop. MEASURED in the built
@@ -373,7 +374,11 @@
   padding: var(--space-24);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-10);
-  background: var(--surface);
+  /* GLASS, ON EVERY DIALOG AT ONCE (the owner, 2026-09-25): this primitive is the one every dialog is drawn in,
+     so the opacity and the blur are one rule and cannot drift between dialogs. The values are the theme's —
+     see `--glass-opacity` for why 85% and not less, and why high contrast is solid. */
+  background: color-mix(in srgb, var(--surface) var(--glass-opacity), transparent);
+  backdrop-filter: blur(var(--glass-blur));
   color: var(--text);
   box-shadow: var(--elevation-3);
   /* BOUNDED BY THE WINDOW, and the reason is that nothing else can be. The popup is fixed and centred by translate,
