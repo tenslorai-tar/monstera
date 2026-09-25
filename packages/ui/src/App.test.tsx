@@ -542,6 +542,53 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Rate now' })).toBeTruthy();
   });
 
+  it('a cloud file DOWNLOADING is said on screen until main answers — the note the shell draws (busyNote.ts)', async () => {
+    // `cloudStorage.test.ts` proves the command raises and ends the note; this is that the shell DRAWS it, with
+    // main's answer held back so the download is still under way when the case looks.
+    let answer: (value: unknown) => void = () => undefined;
+    const pending = new Promise((settle) => {
+      answer = settle;
+    });
+    const client = createClient(channels, (id) => {
+      if (id === 'cloud.open') return pending.then((value) => ok(value));
+      if (id === 'cloud.status') return Promise.resolve(ok({ providers: [{ provider: 'onedrive', state: 'signed-in' }] }));
+      if (id === 'cloud.list') {
+        return Promise.resolve(ok({ kind: 'listed', files: [{ id: 'f1', name: 'contract.pdf', size: 9, modified: null }] }));
+      }
+      const known = (OPEN_DOCUMENT_ANSWERS as Record<string, unknown>)[id] ?? OTHER_ANSWERS[id];
+      return known === undefined ? Promise.reject(new Error(`no answer for ${id}`)) : Promise.resolve(ok(known));
+    });
+    render(<App client={client} settings={freshSettings()} />);
+    await withDocumentOpen();
+    // POLLED INSIDE `act`, one task at a time. The cloud dialog's body is a `React.lazy` import, so when it
+    // arrives is a module load rather than a number of promise hops, and `findBy*` — which polls OUTSIDE `act` —
+    // never saw it here in three runs of three: this environment is not configured for `act` and draws inside it.
+    const until = async <T,>(find: () => T | null, what: string): Promise<T> => {
+      for (let tries = 0; tries < 100; tries += 1) {
+        const found = find();
+        if (found !== null) return found;
+        await act(async () => {
+          await new Promise((done) => setTimeout(done, 0));
+        });
+      }
+      throw new Error(`${what} never appeared`);
+    };
+
+    await pressCommand('Cloud storage…', 'Home');
+    (await until(() => screen.queryByRole('button', { name: 'Show my PDFs' }), 'Show my PDFs')).click();
+    (await until(() => screen.queryByRole('button', { name: 'Open contract.pdf' }), 'the listed file')).click();
+
+    expect(await until(() => screen.queryByText('Downloading contract.pdf…'), 'the download note')).toBeTruthy();
+
+    // AND IT GOES when main answers — here with a refusal, which reopens the dialog rather than a tab.
+    await act(async () => {
+      answer({ kind: 'refused', reason: 'unreachable' });
+      await pending;
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('Downloading contract.pdf…')).toBeNull();
+  });
+
   it('shows the page surface once a document is open, and stops showing the start screen', async () => {
     // The `opened` answer is what turns the start screen into a document view.
     // Both halves are asserted because a surface that added the pages WITHOUT

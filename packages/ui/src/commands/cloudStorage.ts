@@ -3,7 +3,15 @@ import type { DocId } from '@monstera/shared';
 
 import { CLOUD_OUTCOME_DIALOG_ID } from '../dialogs/cloudOutcome.js';
 import { CLOUD_DIALOG_ID, CLOUD_RESULT } from '../dialogs/cloudStorage.js';
-import { CLOUD_COMMAND_TITLE, GROUP_FILE, SAVE_BACK_TITLE, TOAST_SAVED_BACK } from '../messages/en.js';
+import type { ShowBusy } from '../busyNote.js';
+import {
+  CLOUD_COMMAND_TITLE,
+  CLOUD_DOWNLOADING,
+  CLOUD_DOWNLOADING_FILE,
+  GROUP_FILE,
+  SAVE_BACK_TITLE,
+  TOAST_SAVED_BACK,
+} from '../messages/en.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
 import { type WritesItsOwnFile, hasDocument, reportProblem } from './documentCommands.js';
 import type { OpenedDocument } from './importMarkdown.js';
@@ -27,6 +35,8 @@ export function cloudStorageCommand(deps: {
   readonly ask: (id: string, props: unknown) => Promise<unknown>;
   readonly onOpened: (opened: OpenedDocument) => void;
   readonly onAlreadyOpen: (docId: DocId) => void;
+  /** Says a download is under way while `cloud.open` runs. */
+  readonly busy: ShowBusy;
 }): UiCommand {
   return {
     id: 'cloud.storage',
@@ -92,7 +102,11 @@ export function cloudStorageCommand(deps: {
           continue;
         }
 
-        const opened = await deps.client['cloud.open']({ provider: choice.provider, fileId: choice.fileId });
+        // A LINE ON SCREEN FOR THE DOWNLOAD: the dialog has closed and the tab arrives only when main has the
+        // whole file, which the Stage 9 run measured at about sixteen seconds of nothing (see `busyNote.ts`).
+        const name = listing?.files.find((file) => file.id === choice.fileId)?.name;
+        const done = name === undefined ? deps.busy(CLOUD_DOWNLOADING, {}) : deps.busy(CLOUD_DOWNLOADING_FILE, { name });
+        const opened = await deps.client['cloud.open']({ provider: choice.provider, fileId: choice.fileId }).finally(done);
         if (!opened.ok) return;
         const result = opened.value;
         if (result.kind === 'opened') {

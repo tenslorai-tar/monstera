@@ -61,6 +61,26 @@ export function recentLine(
   return when ?? where;
 }
 
+/**
+ * A cloud file's second line: when it last changed and how large it is, joined as a recent card's are.
+ *
+ * The listing names files by their name alone, and a cloud can hold several with one name — four identical
+ * rows was the Stage 9 run's finding. The date is `recentWhen`'s rule, so a file changed today reads as a recent
+ * card opened today does; the size is `size`, already formatted by the caller through `byteSize`.
+ * `null` where the provider gave neither.
+ */
+export function cloudFileLine(
+  file: { readonly modified: number | null },
+  size: string | null,
+  now: Date,
+  locale: string,
+  _: Translate,
+): string | null {
+  const when = file.modified === null ? null : recentWhen(new Date(file.modified).toISOString(), now, locale, _);
+  if (when !== null && size !== null) return _(RECENT_META, { when, where: size });
+  return when ?? size;
+}
+
 function startOfDay(date: Date): number {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }

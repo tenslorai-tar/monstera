@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { i18n, activateCatalogue } from './i18n.js';
 import { EN } from './messages/en.js';
-import { type Translate, recentLine, recentWhen, recentWhere } from './recentLine.js';
+import { type Translate, cloudFileLine, recentLine, recentWhen, recentWhere } from './recentLine.js';
 
 activateCatalogue('en', EN);
 const _: Translate = (key, values) => i18n._(key, values);
@@ -53,5 +53,21 @@ describe('recentLine', () => {
     expect(recentLine({ openedAt: null, location: where('google-drive', null) }, NOW, 'en', _)).toBe('Google Drive');
     expect(recentLine({ openedAt: local(24, 9), location: where(null, null) }, NOW, 'en', _)).toBe('Yesterday');
     expect(recentLine({ openedAt: null, location: where(null, null) }, NOW, 'en', _)).toBeNull();
+  });
+});
+
+describe('cloudFileLine', () => {
+  const modified = (day: number, hour: number): number => new Date(2026, 8, day, hour).getTime();
+
+  it('is when it changed · how large it is, by the recent cards’ date rule', () => {
+    expect(cloudFileLine({ modified: modified(24, 9) }, '1.2 MB', NOW, 'en', _)).toBe('Yesterday · 1.2 MB');
+    // A DATE FURTHER BACK is the short date, as a recent card's is — the same rule, not a second one.
+    expect(cloudFileLine({ modified: modified(18, 9) }, '640 KB', NOW, 'en', _)).toBe('Sep 18 · 640 KB');
+  });
+
+  it('shows the half the provider gave, and nothing when it gave neither', () => {
+    expect(cloudFileLine({ modified: null }, '640 KB', NOW, 'en', _)).toBe('640 KB');
+    expect(cloudFileLine({ modified: modified(25, 0) }, null, NOW, 'en', _)).toBe('Today');
+    expect(cloudFileLine({ modified: null }, null, NOW, 'en', _)).toBeNull();
   });
 });

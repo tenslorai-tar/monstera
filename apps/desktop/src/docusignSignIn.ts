@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 
 /**
@@ -42,12 +43,52 @@ export const SIGN_IN_PATH = '/docusign';
 export const SIGN_IN_TIMEOUT_MS = 300_000;
 
 /**
+ * The page's colours: the renderer's tokens, light and dark, COPIED because a browser tab cannot read
+ * `tokens.css`. A copy that exists must be proven equal (CLAUDE.md, the CSP's rule), and
+ * `docusignSignIn.test.ts` compares every value here with the stylesheet's own; the first draft of this
+ * table was written from memory and every value in it was wrong.
+ */
+export const RETURN_PAGE_TOKENS = {
+  light: { bg: '#f5f8f6', surface: '#ffffff', text: '#1d2023', muted: '#5d656c', accent: '#16a34a', 'border-control': '#848688' },
+  dark: { bg: '#0e1613', surface: '#131d19', text: '#e6ece8', muted: '#9aa8a1', accent: '#2fb96a', 'border-control': '#6e7a74' },
+} as const;
+
+const variables = (theme: keyof typeof RETURN_PAGE_TOKENS): string =>
+  Object.entries(RETURN_PAGE_TOKENS[theme])
+    .map(([name, value]) => `--${name}:${value}`)
+    .join(';');
+
+/** The page's own styles: the application's green and grounds, light or dark as the browser is. */
+const RETURN_STYLE = [
+  `:root{color-scheme:light dark;${variables('light')}}`,
+  `@media (prefers-color-scheme:dark){:root{${variables('dark')}}}`,
+  'body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--text);font:15px/1.5 "Segoe UI",system-ui,sans-serif}',
+  'main{max-width:26rem;margin:16px;padding:28px 32px;border:1px solid var(--border-control);border-radius:10px;background:var(--surface);text-align:center}',
+  'h1{margin:0 0 8px;font-size:20px;font-weight:600;color:var(--accent)}',
+  'p{margin:0;color:var(--muted)}',
+].join('');
+
+/**
  * The page a browser shows after the redirect.
  *
- * Plain text, because the page exists only to end the browser's side; the person's
- * next step is back in the application, which says what happened in its own words.
+ * **It says only what is true whatever the redirect carried**: the page is written before the state and
+ * the code are read, so it cannot say *signed in* — a declined or mismatched sign-in lands here too. The
+ * application says what happened, in its own words. What the page adds over the bare sentence it
+ * replaces (the Stage 9 run, 2026-09-24: *"bare text on an empty page"*) is that it plainly belongs to
+ * Monstera.
+ *
+ * **No script, and a policy that admits only this page's own styles**, by hash — derived from the text
+ * above at load, so the two cannot drift. Nothing on it is a link or a form.
  */
-const RETURN_PAGE = 'You can close this tab and return to Monstera.';
+const RETURN_PAGE = [
+  '<!doctype html><html lang="en"><head><meta charset="utf-8">',
+  '<meta name="viewport" content="width=device-width,initial-scale=1">',
+  '<title>Monstera</title>',
+  `<style>${RETURN_STYLE}</style></head>`,
+  '<body><main><h1>Monstera</h1><p>You can close this tab and return to Monstera.</p></main></body></html>',
+].join('');
+
+const RETURN_POLICY = `default-src 'none'; style-src 'sha256-${createHash('sha256').update(RETURN_STYLE, 'utf8').digest('base64')}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
 
 /** Why a sign-in produced no code. */
 export type SignInRefusal =
@@ -140,7 +181,9 @@ export async function signInThroughLoopback(options: {
       return;
     }
     response.writeHead(200, {
-      'content-type': 'text/plain; charset=utf-8',
+      'content-type': 'text/html; charset=utf-8',
+      'content-security-policy': RETURN_POLICY,
+      'x-content-type-options': 'nosniff',
       'cache-control': 'no-store',
       connection: 'close',
     });

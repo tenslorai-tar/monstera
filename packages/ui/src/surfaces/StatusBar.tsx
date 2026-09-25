@@ -1,12 +1,9 @@
-import type { I18n } from '@lingui/core';
 import { useLingui } from '@lingui/react';
 import type { MessageKey } from '@monstera/shared';
 import { type ReactElement, useId, useState } from 'react';
 
 import {
   STATUS_PAGES,
-  STATUS_SIZE_KB,
-  STATUS_SIZE_MB,
   STATUS_CHROME_GROUP,
   STATUS_GO_TO,
   STATUS_GO_TO_OUTSIDE,
@@ -20,6 +17,7 @@ import {
   TASK_CANCEL,
   TASK_PROGRESS,
 } from '../messages/en.js';
+import { byteSize } from '../byteSize.js';
 import { kernelPageOf, pdfjsPageOf } from '../pageNumbering.js';
 import { ICONS } from '../primitives/icons.js';
 import { IconButton } from '../primitives/IconButton.js';
@@ -35,18 +33,6 @@ const SLIDER_MAX = ZOOM_STEPS[ZOOM_STEPS.length - 1] ?? SLIDER_MIN;
 /** Five percent a step: fine enough to aim, coarse enough that an arrow key visibly moves it. */
 const SLIDER_STEP = 0.05;
 
-const KILOBYTE = 1024;
-const MEGABYTE = KILOBYTE * 1024;
-
-/**
- * The document's size as a person reads it: whole KB under a megabyte, MB to one decimal above,
- * as v5-02's *"2.4 MB"*. The number goes through the catalogue's ICU `number`, so the decimal
- * separator is the reader's language's and not JavaScript's.
- */
-function documentSize(i18n: I18n, bytes: number): string {
-  if (bytes < MEGABYTE) return i18n._(STATUS_SIZE_KB, { size: Math.max(1, Math.round(bytes / KILOBYTE)) });
-  return i18n._(STATUS_SIZE_MB, { size: Math.round((bytes / MEGABYTE) * 10) / 10 });
-}
 
 /**
  * The strip along the bottom: which document this is, where the reader is and how to move, how
@@ -239,7 +225,7 @@ export function StatusBar({
         <span aria-hidden="true">·</span>
         <span>{i18n._(STATUS_PAGES, { count: pageCount })}</span>
         <span aria-hidden="true">·</span>
-        <span>{documentSize(i18n, byteLength)}</span>
+        <span>{byteSize(i18n, byteLength)}</span>
         <span aria-hidden="true">·</span>
         <span className="m-status-saved" data-dirty={saved.dirty ? 'true' : 'false'}>
           {i18n._(saved.message, saved.values)}

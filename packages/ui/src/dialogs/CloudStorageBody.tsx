@@ -19,7 +19,9 @@ import {
   CLOUD_STATE_NAMES,
   CLOUD_UPLOAD,
 } from '../messages/en.js';
+import { byteSize } from '../byteSize.js';
 import { Button } from '../primitives/Button.js';
+import { cloudFileLine } from '../recentLine.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { CloudAnswer } from './cloudStorage.js';
 
@@ -49,7 +51,7 @@ export default function CloudStorageBody({
   readonly problem?: CloudRefusal | undefined;
   readonly note?: 'signed-in' | 'signed-out' | 'uploaded' | undefined;
 } & DialogAnswering<CloudAnswer>): ReactElement {
-  const { _ } = useLingui();
+  const { _, i18n } = useLingui();
 
   return (
     <div className="m-cloud">
@@ -115,9 +117,20 @@ export default function CloudStorageBody({
                 <p className="m-cloud__hint">{_(CLOUD_FILES_EMPTY)}</p>
               ) : (
                 <ul aria-label={_(CLOUD_FILES_LABEL)} className="m-cloud__files">
-                  {listing.files.map((file) => (
+                  {listing.files.map((file) => {
+                    const line = cloudFileLine(
+                      file,
+                      file.size === null ? null : byteSize(i18n, file.size),
+                      new Date(),
+                      i18n.locale,
+                      (key, values) => _(key, values),
+                    );
+                    return (
                     <li className="m-cloud__file" key={file.id}>
-                      <span className="m-cloud__file-name">{file.name}</span>
+                      <span className="m-cloud__file-name">
+                        {file.name}
+                        {line === null ? null : <span className="m-cloud__file-meta">{line}</span>}
+                      </span>
                       <Button
                         label={CLOUD_OPEN}
                         values={{ name: file.name }}
@@ -126,7 +139,8 @@ export default function CloudStorageBody({
                         }}
                       />
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
               )
             ) : null}

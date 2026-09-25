@@ -1,9 +1,13 @@
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { createServer } from 'node:http';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { SIGN_IN_PATH, SignInRefused, signInThroughLoopback } from './docusignSignIn.js';
+import { RETURN_PAGE_TOKENS, SIGN_IN_PATH, SignInRefused, signInThroughLoopback } from './docusignSignIn.js';
 
 /**
  * The loopback sign-in, driven by a "browser" that fetches the redirect.
@@ -64,6 +68,51 @@ describe('signInThroughLoopback', () => {
     // CLOSED: the decision is the assertion — a second request finds nothing
     // listening, so an ended sign-in holds no port for the session.
     await expect(fetch(`${redirect}?code=late&state=the-state`)).rejects.toThrow();
+  });
+
+  it('the page the browser lands on is Monstera’s, runs no script, and admits only its own styles', async () => {
+    let page: Response | undefined;
+    let body = '';
+    await signInThroughLoopback({
+      authorize,
+      openInBrowser: async (url) => {
+        page = await fetch(`${redirectOf(url)}?code=the-code&state=the-state`);
+        body = await page.text();
+      },
+    });
+    if (page === undefined) throw new Error('the browser never landed');
+    expect(page.headers.get('content-type')).toBe('text/html; charset=utf-8');
+    expect(body).toContain('<h1>Monstera</h1>');
+    expect(body).toContain('You can close this tab and return to Monstera.');
+    // NEITHER *signed in* NOR *failed*: the page is written before the redirect is read.
+    expect(body.toLowerCase()).not.toContain('signed in');
+    expect(body).not.toContain('<script');
+    // THE POLICY'S HASH IS THE PAGE'S OWN STYLE: recomputed here from the body the browser received, so a
+    // style edited without its hash — which a browser would silently refuse to apply — reads here.
+    const style = /<style>([\s\S]*?)<\/style>/u.exec(body)?.[1];
+    if (style === undefined) throw new Error('the page carries no style');
+    const hash = createHash('sha256').update(style, 'utf8').digest('base64');
+    expect(page.headers.get('content-security-policy')).toContain(`default-src 'none'; style-src 'sha256-${hash}'`);
+  });
+
+  it('the page’s colours are the renderer’s tokens, value for value, in both themes', () => {
+    // THE COPY'S PROOF: a browser tab cannot read `tokens.css`, so the page carries a copy, and a copy that
+    // exists must be shown equal — its first draft was written from memory and all twelve values were wrong.
+    const sheet = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../../packages/ui/src/tokens.css'), 'utf8');
+    const block = (selector: string): string => {
+      const start = sheet.indexOf(`${selector} {`);
+      if (start < 0) throw new Error(`tokens.css has no ${selector} block`);
+      return sheet.slice(start, sheet.indexOf('}', start));
+    };
+    for (const [theme, selector] of [
+      ['light', "[data-theme='light']"],
+      ['dark', "[data-theme='dark']"],
+    ] as const) {
+      const text = block(selector);
+      for (const [name, value] of Object.entries(RETURN_PAGE_TOKENS[theme])) {
+        expect(new RegExp(`--${name}:\\s*([^;]+);`, 'u').exec(text)?.[1]?.trim(), `${theme} --${name}`).toBe(value);
+      }
+    }
   });
 
   it('REGISTERED PORTS (DocuSign, exact match): the first FREE one is the redirect’s, a busy one skipped', async () => {

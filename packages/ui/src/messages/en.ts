@@ -1825,6 +1825,8 @@ export const CLOUD_SIGN_OUT = messageKey('dialog.cloud.sign-out');
 export const CLOUD_LIST = messageKey('dialog.cloud.list');
 export const CLOUD_UPLOAD = messageKey('dialog.cloud.upload');
 export const CLOUD_OPEN = messageKey('dialog.cloud.open');
+export const CLOUD_DOWNLOADING_FILE = messageKey('surface.busy.cloud-downloading-file');
+export const CLOUD_DOWNLOADING = messageKey('surface.busy.cloud-downloading');
 export const CLOUD_FILES_LABEL = messageKey('dialog.cloud.files');
 export const CLOUD_FILES_EMPTY = messageKey('dialog.cloud.files-empty');
 export const CLOUD_GOOGLE_NOTE = messageKey('dialog.cloud.google-note');
@@ -2820,6 +2822,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CLOUD_LIST]: 'Show my PDFs',
   [CLOUD_UPLOAD]: 'Upload this document',
   [CLOUD_OPEN]: 'Open {name}',
+  [CLOUD_DOWNLOADING_FILE]: 'Downloading {name}…',
+  [CLOUD_DOWNLOADING]: 'Downloading the file…',
   [CLOUD_FILES_LABEL]: 'PDFs in cloud storage',
   [CLOUD_FILES_EMPTY]: 'No PDFs were found here.',
   [CLOUD_GOOGLE_NOTE]:

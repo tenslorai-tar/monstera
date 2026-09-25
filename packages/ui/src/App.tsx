@@ -148,6 +148,7 @@ import { ErrorBoundary } from './ErrorBoundary.js';
 import { FindBar } from './FindBar.js';
 import type { SearchHighlight } from './searchHighlight.js';
 import { type RunningTask, trackerOver } from './runningTask.js';
+import { type BusyNote, busyOver } from './busyNote.js';
 import { checkSpellingCommand } from './commands/checkSpelling.js';
 import {
   enhanceScansCommand,
@@ -599,6 +600,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
    * command on every keystroke. `setTask` is stable, so this never recomputes.
    */
   const track = useMemo(() => trackerOver(setTask), []);
+  // WHAT THE WINDOW IS WAITING ON, where there is no progress to show and nothing to cancel (`busyNote.ts`).
+  const [busyNote, setBusyNote] = useState<BusyNote | undefined>(undefined);
+  const busy = useMemo(() => busyOver(setBusyNote), []);
   const open = tabs.find((tab) => tab.docId === activeId);
   /**
    * The clock the saved-state text is read against, and the timer that moves it.
@@ -2189,7 +2193,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
         // D9's OPEN FROM URL, the same callbacks: a fetched document arrives as a tab.
         openFromUrlCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         // CLOUD STORAGE (ADR-0091): the same two callbacks, so a cloud file arrives as a tab.
-        cloudStorageCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
+        cloudStorageCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate, busy }),
         saveBackCommand({ client, ask, toast, onSaved }),
         // D9's WEBCAM ROW, the same callbacks: the pictures arrive as a tab.
         newFromCaptureCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
@@ -2408,6 +2412,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
       // render, which is the property that matters here and not their presence in the list.
       toast,
       onSaved,
+      // Stable for the same reason: a memo over a state setter.
+      busy,
       // THE SELECTED-TEXT MENU reads these three: the selection its `when` asks about, the one
       // dispatcher, and the style a markup is drawn in.
       textSelection,
@@ -2889,6 +2895,12 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
       {/* E3's rating prompt: asked once per window, drawn only when main says it is due, and outside the
           document guard because it is about the application rather than the file on screen. */}
       <ReviewPrompt client={client} settings={settings} toast={toast} />
+      {/* ALWAYS MOUNTED, for the toast strip's reason: a live region announces what changes inside it. */}
+      <div aria-live="polite" className="m-busy">
+        {busyNote === undefined ? null : (
+          <p className="m-busy__note">{_(busyNote.message, busyNote.values)}</p>
+        )}
+      </div>
       <ToastStrip
         toasts={toasts}
         dismissLabel={TOAST_DISMISS}

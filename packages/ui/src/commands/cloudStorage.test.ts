@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 
 import { CLOUD_OUTCOME_DIALOG_ID } from '../dialogs/cloudOutcome.js';
 import { CLOUD_DIALOG_ID, type CloudAnswer } from '../dialogs/cloudStorage.js';
-import { TOAST_SAVED_BACK } from '../messages/en.js';
+import type { ShowBusy } from '../busyNote.js';
+import { CLOUD_DOWNLOADING_FILE, TOAST_SAVED_BACK } from '../messages/en.js';
 import type { CommandContext } from '../registries/commands.js';
 import type { ShowToast } from '../toasts.js';
 import { cloudStorageCommand, saveBackCommand } from './cloudStorage.js';
@@ -49,6 +50,9 @@ function dialogs(answers: readonly (CloudAnswer | undefined)[]): { ask: (id: str
 
 const STATUS = { providers: [{ provider: 'onedrive', state: 'signed-in' }, { provider: 'google-drive', state: 'not-configured' }] };
 
+/** A busy note nobody is looking at, for the cases about something else. */
+const NO_BUSY: ShowBusy = () => () => undefined;
+
 describe('Cloud storage…', () => {
   it('SHOW MY PDFS lists them in the dialog, and OPEN makes the file a tab through the open callback', async () => {
     const { client: built, sent } = client({
@@ -61,7 +65,7 @@ describe('Cloud storage…', () => {
       { kind: 'open', provider: 'onedrive', fileId: 'f1' },
     ]);
     const opened: unknown[] = [];
-    await cloudStorageCommand({ client: built, ask, onOpened: (document) => opened.push(document), onAlreadyOpen: () => undefined }).run(START);
+    await cloudStorageCommand({ client: built, ask, onOpened: (document) => opened.push(document), onAlreadyOpen: () => undefined, busy: NO_BUSY }).run(START);
 
     expect(sent.filter((call) => call.id !== 'cloud.status').map((call) => [call.id, call.params])).toStrictEqual([
       ['cloud.list', { provider: 'onedrive' }],
@@ -74,23 +78,54 @@ describe('Cloud storage…', () => {
     expect(opened).toStrictEqual([{ docId: DOC, version: asDocVersion(1), byteLength: 9, name: 'contract.pdf' }]);
   });
 
+  it('says the download is UNDER WAY for exactly as long as cloud.open runs, naming the file', async () => {
+    // THE ORDER is the property: raised before the request goes, ended after its answer. A note raised after
+    // the answer, or never ended, reads the same in a case that only asks whether one was raised.
+    const log: string[] = [];
+    const built = createClient(channels, (id) => {
+      if (id === 'cloud.open') log.push('cloud.open sent');
+      const answers: Record<string, unknown> = {
+        'cloud.status': STATUS,
+        'cloud.list': { kind: 'listed', files: [{ id: 'f1', name: 'contract.pdf', size: 9, modified: 1 }] },
+        'cloud.open': { kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: 9, name: 'contract.pdf' },
+      };
+      return Promise.resolve(ok(answers[id]));
+    });
+    const { ask } = dialogs([
+      { kind: 'list', provider: 'onedrive' },
+      { kind: 'open', provider: 'onedrive', fileId: 'f1' },
+    ]);
+    await cloudStorageCommand({
+      client: built,
+      ask,
+      onOpened: () => log.push('opened'),
+      onAlreadyOpen: () => undefined,
+      busy: (message, values) => {
+        log.push(`raised ${message === CLOUD_DOWNLOADING_FILE ? 'file' : 'other'} ${values['name'] ?? ''}`);
+        return () => log.push('ended');
+      },
+    }).run(START);
+
+    expect(log).toStrictEqual(['raised file contract.pdf', 'cloud.open sent', 'ended', 'opened']);
+  });
+
   it('a refused sign-in is SAID on the next showing, by name', async () => {
     const { client: built } = client({ 'cloud.status': STATUS, 'cloud.signIn': { kind: 'refused', reason: 'sign-in-cancelled' } });
     const { ask, shown } = dialogs([{ kind: 'sign-in', provider: 'onedrive' }, undefined]);
-    await cloudStorageCommand({ client: built, ask, onOpened: () => undefined, onAlreadyOpen: () => undefined }).run(START);
+    await cloudStorageCommand({ client: built, ask, onOpened: () => undefined, onAlreadyOpen: () => undefined, busy: NO_BUSY }).run(START);
     expect((shown[1]?.props as { problem?: string }).problem).toBe('sign-in-cancelled');
   });
 
   it('UPLOAD is offered with a document open and sends it; CONTROL: on the start screen it is not offered', async () => {
     const { client: built, sent } = client({ 'cloud.status': STATUS, 'cloud.uploadCopy': { kind: 'done' } });
     const withDoc = dialogs([{ kind: 'upload', provider: 'onedrive' }, undefined]);
-    await cloudStorageCommand({ client: built, ask: withDoc.ask, onOpened: () => undefined, onAlreadyOpen: () => undefined }).run(WITH_DOCUMENT);
+    await cloudStorageCommand({ client: built, ask: withDoc.ask, onOpened: () => undefined, onAlreadyOpen: () => undefined, busy: NO_BUSY }).run(WITH_DOCUMENT);
     expect((withDoc.shown[0]?.props as { documentOpen: boolean }).documentOpen).toBe(true);
     expect(sent.find((call) => call.id === 'cloud.uploadCopy')?.params).toStrictEqual({ docId: DOC, provider: 'onedrive' });
     expect((withDoc.shown[1]?.props as { note?: string }).note).toBe('uploaded');
 
     const atStart = dialogs([undefined]);
-    await cloudStorageCommand({ client: built, ask: atStart.ask, onOpened: () => undefined, onAlreadyOpen: () => undefined }).run(START);
+    await cloudStorageCommand({ client: built, ask: atStart.ask, onOpened: () => undefined, onAlreadyOpen: () => undefined, busy: NO_BUSY }).run(START);
     expect((atStart.shown[0]?.props as { documentOpen: boolean }).documentOpen).toBe(false);
   });
 });

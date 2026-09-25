@@ -892,6 +892,30 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — The Stage 9 run's other three: the cloud list, the download, the sign-in page
+
+- **Four files with one name were four identical rows.** The listing already carried each file's size
+  and time; the dialog drew the name alone. Each row now reads *Jan 10 · 2.4 MB* under its name —
+  the date by `recentWhen`, the recent cards' rule, and the size by `byteSize`, which is the status
+  bar's formatter moved to its own module so the two surfaces cannot round one file two ways (B3a).
+- **About sixteen seconds of nothing between choosing a file and its tab.** A running task would draw a
+  Cancel, and `cloud.open` cannot be cancelled — a dead Cancel is the display-only defect with a bar
+  attached — and a toast leaves on its own. So there is a third carrier, `busyNote.ts`: a line with no
+  control, up exactly as long as the work, which an earlier note's end cannot take down. The command's
+  case asserts the order (raised, request sent, ended, tab opened); the App's case holds main's answer
+  back and finds *Downloading contract.pdf…* on screen, then gone. **That case first used `findBy*` and
+  failed three runs in three**: the dialog's body is a `React.lazy` import, so it arrives after a module
+  load rather than a number of promise hops, and this file's environment draws only inside `act` — so
+  the case polls inside `act`, a task at a time, rather than waiting longer outside it.
+- **The sign-in page was bare text.** It is now a small page that is plainly Monstera's, light or dark
+  as the browser is, with no script and a policy admitting only its own styles by hash, derived from
+  the style at load. It still says only *you can close this tab* — it is written before the redirect
+  is read, so it cannot say *signed in*. Its colours are a copy of `tokens.css`, because a browser tab
+  cannot read the stylesheet, and **the first draft of that copy was written from memory and all twelve
+  values were wrong**; a case now compares each against `tokens.css` and reddened with one altered.
+
+---
+
 ## 2026-09-25 — The Stage 9 run's four display defects
 
 Found in the Stage 9 close's live run (2026-09-24) and owed to the design pass.

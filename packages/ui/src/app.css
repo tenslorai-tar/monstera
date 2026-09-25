@@ -2875,7 +2875,16 @@ textarea {
 
 .m-cloud__file-name {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
   overflow-wrap: anywhere;
+}
+
+/* When it changed and how large it is — what tells apart files that share a name. */
+.m-cloud__file-meta {
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
 }
 
 /* THE FIRST-RUN AI SETUP (E5): the sentence, the two fields, and Skip beside the check, the same
@@ -3917,6 +3926,29 @@ textarea {
  * and an invisible empty box over the corner of the document would swallow clicks on the page
  * beneath it for the whole session.
  */
+/* WHAT THE WINDOW IS WAITING ON (`busyNote.ts`): centred at the foot, above the status bar by the toasts'
+   offset, drawn as a toast is so it reads as the same family of message — and it carries no control. */
+.m-busy {
+  position: fixed;
+  inset-block-end: calc(var(--space-24) + var(--space-16));
+  inset-inline: 0;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.m-busy__note {
+  margin: 0;
+  padding: var(--space-8) var(--space-16);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-6);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  font-size: var(--font-chrome-12);
+}
+
 /* E3's rating prompt. At the foot of the window on the START side, where the toasts are not, so a save's
    confirmation never lands on top of it; above the status bar by the toasts' own offset. It stays until it
    is answered, so it is drawn as a toast is — the same edge and ground, for the same legibility reason —
