@@ -68,11 +68,18 @@ try {
     `blind=${String(live.blind)}\n      ${live.failures.join('\n      ')}`,
   );
 
-  // ---- 4-5. ADR-0003's two recorded figures, reproduced ----
-  const dark = themes.find((theme) => theme.theme === 'dark');
-  const control = channels(dark?.values.get('border-control') ?? '');
-  const surface2 = channels(dark?.values.get('surface2') ?? '');
-  const border = channels(dark?.values.get('border') ?? '');
+  // ---- 4-5. ADR-0003's two recorded figures, reproduced FROM ITS OWN COLOURS ----
+  //
+  // THE ADR'S COLOURS, NOT THE SHIPPED FILE'S. These cases check the arithmetic against a figure
+  // computed elsewhere, and that is only a check while both sides describe the same inputs. They read
+  // the live token file until 2026-09-24, when the owner's v5 palette (72d1ecc) changed the dark
+  // surfaces and a correct instrument turned CI red: 3.58 and 1.09 against the ADR's 3.04 and 1.16 —
+  // a palette change, not an arithmetic one. ADR-0003 records the pair it solved: `--border-control`
+  // `#74787c` and `--border` `#33393e` in its table, on the dark `--surface2` `#2a2f33` it names for
+  // the zoom slider. The live palette is case 3's subject, and it is checked there in full.
+  const control = channels('#74787c');
+  const surface2 = channels('#2a2f33');
+  const border = channels('#33393e');
   check(
     "ADR-0003's solved --border-control clears 3:1 on dark --surface2 at 3.04:1",
     control !== null && surface2 !== null && contrast(control, surface2).toFixed(2) === '3.04',
