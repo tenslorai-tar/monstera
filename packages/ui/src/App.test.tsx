@@ -13,7 +13,7 @@ import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 import { SettingsRegistry } from './registries/settings.js';
 import { ALL_SETTINGS } from './settings/all.js';
-import { THEME_SETTING } from './settings/appearance.js';
+import { REDUCE_MOTION_SETTING, THEME_SETTING } from './settings/appearance.js';
 import { FIRST_PAGE } from './pageNumbering.js';
 import { SettingsStore } from './settingsStore.js';
 import { resetSharedPainter } from './searchHighlight.js';
@@ -616,6 +616,43 @@ describe('App', () => {
     });
 
     expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+  });
+
+  it('REDUCE MOTION moves the root to data-motion="reduced", and back, including after a hydrate', async () => {
+    // The attribute IS the effect: `app.css` stills every motion under it (`reducedMotion.test.ts` holds that list).
+    const { client } = recordingClient({ kind: 'cancelled' });
+    const settings = freshSettings();
+    render(<App client={client} settings={settings} />);
+    expect(document.documentElement.dataset['motion']).toBe('full');
+
+    await act(async () => {
+      settings.hydrate({ [REDUCE_MOTION_SETTING.id]: true });
+      await Promise.resolve();
+    });
+    expect(document.documentElement.dataset['motion']).toBe('reduced');
+
+    await act(async () => {
+      settings.set(REDUCE_MOTION_SETTING.id, false);
+      await Promise.resolve();
+    });
+    expect(document.documentElement.dataset['motion']).toBe('full');
+  });
+
+  it('and WINDOWS asking for reduced motion reduces it with the setting off', () => {
+    const matchMedia = vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query) =>
+        ({
+          matches: query === '(prefers-reduced-motion: reduce)',
+          media: query,
+          addEventListener: () => undefined,
+          removeEventListener: () => undefined,
+        }) as unknown as MediaQueryList,
+    );
+    const { client } = recordingClient({ kind: 'cancelled' });
+    render(<App client={client} settings={freshSettings()} />);
+
+    expect(document.documentElement.dataset['motion']).toBe('reduced');
+    matchMedia.mockRestore();
   });
 
   it('the registered SETTING is read, and changing it moves the root attribute', async () => {

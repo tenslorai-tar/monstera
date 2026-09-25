@@ -196,6 +196,29 @@ describe('Thumbnails', () => {
     expect(rasterised).toStrictEqual([[1, { fitWidth: 96 }]]);
   });
 
+  it('THUMBNAIL SIZE: draws at the size’s width and lays the strip in its columns, and a new size REDRAWS', async () => {
+    const theView = view();
+    const strip = (size: 'small' | 'large'): ReactElement => (
+      <Wrapped>
+        <Thumbnails {...reads()} view={theView} pageCount={4} current={0} onJump={vi.fn()} size={size} />
+      </Wrapped>
+    );
+    const { container, rerender } = render(strip('large'));
+    await settle();
+
+    const nav = container.querySelector<HTMLElement>('.m-thumbnails');
+    expect(nav?.style.getPropertyValue('--m-thumb-columns')).toBe('1');
+    expect(nav?.style.getPropertyValue('--m-thumb-width')).toBe('160px');
+    expect(rasterised).toStrictEqual([[1, { fitWidth: 160 }]]);
+
+    rerender(strip('small'));
+    await settle();
+
+    // DRAWN AGAIN at the new width, not the large picture squeezed: a stretched canvas is a blurred one.
+    expect(nav?.style.getPropertyValue('--m-thumb-columns')).toBe('3');
+    expect(rasterised.at(-1)).toStrictEqual([1, { fitWidth: 60 }]);
+  });
+
   it('CANCELS the earlier draw when the view is replaced, so the redraw can have the canvas', async () => {
     // A command replaces the view; PDF.js refuses a render on a canvas an earlier one still holds,
     // and cancelling through the signal is what releases it. The call made is the assertion — an

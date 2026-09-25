@@ -298,9 +298,13 @@ import { DialogRegistry } from './registries/dialogs.js';
 import { DialogHost, useDialogHost } from './surfaces/DialogHost.js';
 import {
   HIGH_CONTRAST_QUERIES,
+  REDUCED_MOTION_QUERY,
+  REDUCE_MOTION_SETTING,
   THEME_SETTING,
+  THUMBNAIL_SIZE_SETTING,
   type Theme,
   applyAppearance,
+  applyMotion,
   highContrastWanted,
 } from './settings/appearance.js';
 import { ACCENT_SETTING, applyAccent } from './settings/accent.js';
@@ -3000,9 +3004,20 @@ function useTheme(settings: SettingsStore): void {
     // after this first applies the fallback, and a hydrate names no single id.
     const unsubscribe = settings.watch([THEME_SETTING.id, ACCENT_SETTING.id], apply);
 
+    // MOTION, from the setting and the platform together (`applyMotion`), re-applied when either changes.
+    const motion = (): void => {
+      applyMotion(root, settings.get(REDUCE_MOTION_SETTING.id) === true);
+    };
+    motion();
+    const motionQuery = window.matchMedia(REDUCED_MOTION_QUERY);
+    motionQuery.addEventListener('change', motion);
+    const unsubscribeMotion = settings.watch([REDUCE_MOTION_SETTING.id], motion);
+
     return (): void => {
       for (const query of watched) query.removeEventListener('change', apply);
       unsubscribe();
+      motionQuery.removeEventListener('change', motion);
+      unsubscribeMotion();
     };
   }, [settings]);
 }
@@ -3189,6 +3204,8 @@ function PageCanvas({
    * read through `split` below, so there is no moment with no reporter.
    */
   const [secondActive, setSecondActive] = useState(false);
+  // THE PAGES STRIP'S SIZE, the Appearance setting's, read where the strip is mounted.
+  const thumbnailSize = useSetting(settings, THUMBNAIL_SIZE_SETTING);
   const reporting: 'first' | 'second' = split && compare === undefined && secondActive ? 'second' : 'first';
   const activateFirst = useCallback(() => {
     setSecondActive(false);
@@ -3318,6 +3335,7 @@ function PageCanvas({
             onMove={onMove}
             onSwap={onSwap}
             pageMenu={pageMenu}
+            size={thumbnailSize}
           />
         }
       />

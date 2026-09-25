@@ -662,6 +662,29 @@ test('the PAGE MENU opens from the keyboard on a focused thumbnail — Shift+F10
   }
 });
 
+test('THUMBNAIL SIZE: a stored Large lays the Pages strip in ONE column of 160 px pictures, drawn at that width', async ({
+  page,
+}) => {
+  // THE APP'S HALF of the setting: under happy-dom the document never parses, so the strip never mounts and
+  // nothing there can show the setting reaching it. Here a real PDF.js draws it in the production build.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const bytes = await threePagePdf();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000e7');
+  await bridge(page, {
+    settings: { 'appearance.thumbnail-size': 'large' },
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'three.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+
+  const first = page.locator('[data-thumb-page="0"] canvas');
+  await expect(first).toHaveCSS('width', '160px');
+  const columns = await page.locator('.m-thumbnails').evaluate((strip) => getComputedStyle(strip).gridTemplateColumns);
+  // ONE TRACK: a single length, where Medium's two would be two.
+  expect(columns.trim().split(/\s+/u)).toHaveLength(1);
+});
+
 test('SELECTED TEXT opens the selected-text menu above the page’s, in the owner’s order (§7)', async ({ page }) => {
   // A real mouse drag over the text layer, in the production build: the selection is the browser's,
   // `readTextSelection` reads it through the layer's own transform, and the menu's groups are

@@ -1,6 +1,15 @@
 import { z } from 'zod';
 
-import { THEME_DESCRIPTION, THEME_OPTION_TITLES, THEME_TITLE } from '../messages/en.js';
+import {
+  REDUCE_MOTION_DESCRIPTION,
+  REDUCE_MOTION_TITLE,
+  THEME_DESCRIPTION,
+  THEME_OPTION_TITLES,
+  THEME_TITLE,
+  THUMBNAIL_SIZE_DESCRIPTION,
+  THUMBNAIL_SIZE_OPTION_TITLES,
+  THUMBNAIL_SIZE_TITLE,
+} from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
 
 /**
@@ -77,6 +86,66 @@ export function applyTheme(root: HTMLElement, theme: Theme): void {
  * matters for a Store app; `prefers-contrast: more` is the cross-platform
  * expression of the same request. Either is enough.
  */
+/**
+ * Turns off movement in the interface (v5-10's Appearance page).
+ *
+ * Off by default, and ALSO in force whenever Windows asks for reduced motion: {@link applyMotion} answers the
+ * two together, so the stylesheet keys on one attribute and holds one list of what moves.
+ */
+export const REDUCE_MOTION_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'appearance.reduce-motion',
+  title: REDUCE_MOTION_TITLE,
+  description: REDUCE_MOTION_DESCRIPTION,
+  schema: z.boolean(),
+  fallback: false,
+  category: 'appearance',
+};
+
+/** How large the Pages panel draws its page pictures (v5-10's Appearance page). */
+export const THUMBNAIL_SIZE_SETTING: SettingDefinition<z.ZodEnum<{ small: 'small'; medium: 'medium'; large: 'large' }>> = {
+  id: 'appearance.thumbnail-size',
+  title: THUMBNAIL_SIZE_TITLE,
+  description: THUMBNAIL_SIZE_DESCRIPTION,
+  schema: z.enum(['small', 'medium', 'large']),
+  fallback: 'medium',
+  category: 'appearance',
+  optionTitles: THUMBNAIL_SIZE_OPTION_TITLES,
+};
+
+/** One of {@link THUMBNAIL_SIZE_SETTING}'s sizes. */
+export type ThumbnailSize = z.infer<(typeof THUMBNAIL_SIZE_SETTING)['schema']>;
+
+/**
+ * What each size draws: a picture's width in CSS pixels and how many columns the strip lays them in.
+ *
+ * **Medium is the strip as v5-02 drew it** — two columns of 96. The other two are chosen to fit the panel's
+ * default width, 224 px (`DOCUMENT_PANEL_WIDTH_SETTING`): three columns of 60, and one of 160, which also fits
+ * the panel's 192 px minimum. The width and the count change TOGETHER, so a larger picture never pushes the
+ * strip wider than its panel.
+ */
+export const THUMBNAIL_SIZES: Readonly<Record<ThumbnailSize, { readonly width: number; readonly columns: number }>> = {
+  small: { width: 60, columns: 3 },
+  medium: { width: 96, columns: 2 },
+  large: { width: 160, columns: 1 },
+};
+
+/** The platform's own request for less movement. */
+export const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
+
+/**
+ * Marks the root `data-motion="reduced"` when the setting or the platform asks, and `full` otherwise.
+ *
+ * ONE ATTRIBUTE FOR BOTH, rather than a media block beside an attribute block: two selectors over the same list
+ * of motions is two lists, and the next motion added would be switched off by one and not the other.
+ */
+export function applyMotion(root: HTMLElement, settingReduces: boolean): void {
+  const platformReduces =
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia(REDUCED_MOTION_QUERY).matches;
+  root.dataset['motion'] = settingReduces || platformReduces ? 'reduced' : 'full';
+}
+
 export const HIGH_CONTRAST_QUERIES = [
   '(forced-colors: active)',
   '(prefers-contrast: more)',

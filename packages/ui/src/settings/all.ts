@@ -8,7 +8,7 @@ import {
 } from './ai.js';
 import { DOCUSIGN_ENVIRONMENT_SETTING, DOCUSIGN_INTEGRATION_KEY_SETTING } from './integrations.js';
 import { RECENT_PREVIEWS_SETTING } from './privacy.js';
-import { THEME_SETTING } from './appearance.js';
+import { REDUCE_MOTION_SETTING, THEME_SETTING, THUMBNAIL_SIZE_SETTING } from './appearance.js';
 import {
   CONTEXT_PANEL_OPEN_SETTING,
   CONTEXT_PANEL_TAB_SETTING,
@@ -77,6 +77,8 @@ import {
 export const ALL_SETTINGS: readonly SettingDefinition[] = [
   THEME_SETTING,
   ACCENT_SETTING,
+  REDUCE_MOTION_SETTING,
+  THUMBNAIL_SIZE_SETTING,
   DOCUMENT_PANEL_SETTING,
   DOCUMENT_PANEL_OPEN_SETTING,
   DOCUMENT_PANEL_WIDTH_SETTING,

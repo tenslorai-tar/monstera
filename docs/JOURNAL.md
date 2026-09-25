@@ -892,6 +892,33 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — Settings: Reduce motion and Thumbnail size, and what v5-10's Appearance page gets instead
+
+v5-10's Appearance page lists six rows. Theme and Accent existed. Of the other four:
+
+- **Reduce motion — built.** The root carries `data-motion="reduced"` when the setting OR Windows asks
+  (`applyMotion`), and the stylesheet keys on that one attribute: the system-preference media block it
+  replaces was a second list of the same motions. There are two motions in the application (the switch's
+  slide, the toast's entrance). `reducedMotion.test.ts` reads every stylesheet and requires each selector
+  that moves to be stilled under the attribute, with the two known motions as its positive control; with
+  the toast's override renamed it named `.m-toast`. Its first draft judged `transition: none` as motion —
+  a `\s*` before a negative lookahead backtracks to nothing — and now parses declarations instead.
+  `App.test.tsx`: the setting and a hydrate move the attribute, and a platform preference alone does too.
+- **Thumbnail size — built.** Small, Medium, Large for the Pages strip. Medium is v5-02's strip as it was
+  (two columns of 96 px); Small is three of 60 and Large one of 160, chosen to fit the panel's default
+  224 px (Large also fits its 192 px minimum). Width and column count change together, and a new size
+  **redraws** — a stretched picture is a blurred one. The strip's case asserts both and reddened with the
+  width out of the draw's dependencies; a Chromium case with *Large* stored reads a 160 px canvas and one
+  grid track, and reddened with the App's pass-through altered, which is the half happy-dom cannot reach
+  (the document never parses there, so the strip never mounts).
+- **Start with ribbon collapsed — not built, on purpose.** The existing *Layout* setting (Ribbon, Studio,
+  Focus) is on this page and remembered across launches, so choosing Studio already starts that way. A
+  second switch would be a second writer of the same launch state (B3). On the unmapped list.
+- **Interface language — not built.** The build has one catalogue, English; a menu with one entry is a
+  control that does nothing. On the unmapped list until a second language exists.
+
+---
+
 ## 2026-09-25 — No dialog is taller than four-fifths of the window
 
 The owner: the keyboard shortcuts' list ran from the window's top to its bottom, which is not a dialog.

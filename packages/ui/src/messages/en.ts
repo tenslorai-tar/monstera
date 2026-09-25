@@ -39,6 +39,15 @@ export const OPEN_DOCUMENT_TITLE = messageKey('command.open-document.title');
 export const CLOSE_LABEL = messageKey('action.close.label');
 export const DOCUMENT_SURFACE_LABEL = messageKey('surface.document.label');
 export const THEME_TITLE = messageKey('setting.appearance-theme.title');
+export const REDUCE_MOTION_TITLE = messageKey('setting.appearance-reduce-motion.title');
+export const REDUCE_MOTION_DESCRIPTION = messageKey('setting.appearance-reduce-motion.description');
+export const THUMBNAIL_SIZE_TITLE = messageKey('setting.viewing-thumbnail-size.title');
+export const THUMBNAIL_SIZE_DESCRIPTION = messageKey('setting.viewing-thumbnail-size.description');
+export const THUMBNAIL_SIZE_OPTION_TITLES = {
+  small: messageKey('setting.viewing-thumbnail-size.small'),
+  medium: messageKey('setting.viewing-thumbnail-size.medium'),
+  large: messageKey('setting.viewing-thumbnail-size.large'),
+} as const;
 export const ABOUT_TITLE = messageKey('dialog.about.title');
 export const ABOUT_COMMAND_TITLE = messageKey('command.show-about.title');
 export const DONATE_TITLE = messageKey('dialog.donate.title');
@@ -1868,6 +1877,15 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CLOSE_LABEL]: 'Close',
   [DOCUMENT_SURFACE_LABEL]: 'Document',
   [THEME_TITLE]: 'Theme',
+  // v5-10's Appearance rows. *Also on when Windows asks* is true of the build: `applyMotion` reads both.
+  [REDUCE_MOTION_TITLE]: 'Reduce motion',
+  [REDUCE_MOTION_DESCRIPTION]:
+    'Turns off the transitions and animations in the interface. Also on whenever Windows asks for reduced motion.',
+  [THUMBNAIL_SIZE_TITLE]: 'Thumbnail size',
+  [THUMBNAIL_SIZE_DESCRIPTION]: 'How large the page pictures in the Pages panel are drawn.',
+  [THUMBNAIL_SIZE_OPTION_TITLES.small]: 'Small',
+  [THUMBNAIL_SIZE_OPTION_TITLES.medium]: 'Medium',
+  [THUMBNAIL_SIZE_OPTION_TITLES.large]: 'Large',
   [LAYOUT_MODE_TITLE]: 'Layout',
   [RIBBON_SECTION_TITLE]: 'Ribbon section',
   [LAYOUT_MODE_RIBBON]: 'Ribbon',

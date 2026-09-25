@@ -2193,8 +2193,10 @@ textarea {
    * intersects — so the observer would drop it and it would never become
    * visible, which is a deadlock rather than a slow load.
    */
-  min-inline-size: 96px;
-  min-block-size: 124px;
+  /* THE SIZE'S WIDTH, and a portrait page's height for it (792 / 612 of the width), so an undrawn slot is the
+     size its picture will be. Medium's 96 px is the fallback, for `.m-thumbnails`' reason. */
+  min-inline-size: var(--m-thumb-width, 96px);
+  min-block-size: calc(var(--m-thumb-width, 96px) * 792 / 612);
 }
 
 .m-thumb-current {
@@ -3949,16 +3951,16 @@ textarea {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .m-switch::after {
-    transition: none;
-  }
+/* REDUCED MOTION, from the Appearance setting or from Windows: `applyMotion` sets this one attribute for both,
+   so this is the one list of what moves. A motion added anywhere must be named here too. */
+:root[data-motion='reduced'] .m-switch::after {
+  transition: none;
+}
 
-  /* The message still arrives and still leaves on its timer; only the movement goes. A toast
-     that stayed under reduced motion would be a different feature, and one that accumulates. */
-  .m-toast {
-    animation: none;
-  }
+/* The message still arrives and still leaves on its timer; only the movement goes. A toast that stayed under
+   reduced motion would be a different feature, and one that accumulates. */
+:root[data-motion='reduced'] .m-toast {
+  animation: none;
 }
 
 /*
@@ -4056,7 +4058,9 @@ textarea {
    one width, so pages of different sizes still line up in each column. */
 .m-thumbnails {
   display: grid;
-  grid-template-columns: repeat(2, max-content);
+  /* THE SIZE'S COLUMN COUNT (the Appearance setting), set on the strip by `Thumbnails.tsx`, which always sets
+     it; the fallback is Medium's, for a strip drawn with no size at all. */
+  grid-template-columns: repeat(var(--m-thumb-columns, 2), max-content);
   justify-content: center;
   align-content: start;
   gap: var(--space-8);

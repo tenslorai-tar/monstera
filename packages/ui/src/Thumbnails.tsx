@@ -7,6 +7,7 @@ import type { DocumentView } from './documentView.js';
 import { THUMBNAILS_LABEL, THUMBNAIL_PAGE } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { RenderCancelledError, renderPage } from './renderPage.js';
+import { THUMBNAIL_SIZES, type ThumbnailSize } from './settings/appearance.js';
 import { usePageRotations } from './usePageRotations.js';
 import { useVisiblePages } from './useVisiblePages.js';
 
@@ -63,7 +64,10 @@ export function Thumbnails({
   onMove,
   onSwap,
   pageMenu,
+  size = 'medium',
 }: {
+  /** How large the pictures are drawn (the Appearance setting). Medium for a strip with no setting behind it. */
+  readonly size?: ThumbnailSize;
   /**
    * Wraps one thumbnail in the page context menu for THAT page (§7) — the shell's
    * `ContextMenuArea`, handed down so this strip never names the registry. Optional for
@@ -122,8 +126,16 @@ export function Thumbnails({
   // browser is dragging.
   const dragging = useRef<number | null>(null);
 
+  const { width, columns } = THUMBNAIL_SIZES[size];
+
   return (
-    <nav className="m-thumbnails" aria-label={i18n._(THUMBNAILS_LABEL)}>
+    <nav
+      className="m-thumbnails"
+      aria-label={i18n._(THUMBNAILS_LABEL)}
+      // THE SIZE IS TWO CUSTOM PROPERTIES, the grid's column count and a picture's width, because they change
+      // together and `app.css` lays both out — the token rule's own line: values that are genuinely dynamic.
+      style={{ '--m-thumb-columns': String(columns), '--m-thumb-width': `${String(width)}px` } as React.CSSProperties}
+    >
       {Array.from({ length: pageCount }, (_, page) => {
         const thumbnail = (
         <button
@@ -187,6 +199,7 @@ export function Thumbnails({
           <ThumbCanvas
             view={view}
             page={page}
+            width={width}
             draw={visible.has(page) && rotations.has(page)}
             rotation={rotations.get(page)}
           />
@@ -206,24 +219,23 @@ export function Thumbnails({
 }
 
 /**
- * How wide a thumbnail is drawn, in CSS pixels.
+ * One thumbnail's canvas, drawn only while its slot is near the viewport.
  *
- * A fixed width rather than a scale, because the strip's job is a uniform
- * column a reader can scan — pages of different sizes should line up. The
- * height follows from the page's own aspect ratio, which is what `renderPage`
- * reports back.
+ * `width` is the size's (`THUMBNAIL_SIZES`): one width for every page rather than a scale, because the strip's
+ * job is a uniform column a reader can scan — pages of different sizes should line up. The height follows from
+ * the page's own aspect ratio, which is what `renderPage` reports back. A new size REDRAWS, since a picture
+ * drawn at 60 px and stretched to 160 is a blurred one.
  */
-const THUMB_WIDTH = 96;
-
-/** One thumbnail's canvas, drawn only while its slot is near the viewport. */
 function ThumbCanvas({
   view,
   page,
+  width,
   draw,
   rotation,
 }: {
   readonly view: DocumentView | undefined;
   readonly page: number;
+  readonly width: number;
   readonly draw: boolean;
   /** The view model's rotation, or `undefined` where it did not answer for this version. */
   readonly rotation: number | undefined;
@@ -245,7 +257,7 @@ function ThumbCanvas({
         view.document,
         pdfjsPageOf(page),
         element,
-        { fitWidth: THUMB_WIDTH },
+        { fitWidth: width },
         rotation,
         superseded.signal,
       );
@@ -264,7 +276,7 @@ function ThumbCanvas({
     return (): void => {
       superseded.abort();
     };
-  }, [draw, page, rotation, view]);
+  }, [draw, page, rotation, view, width]);
 
   return (
     <canvas
@@ -273,7 +285,7 @@ function ThumbCanvas({
       style={
         size === undefined
           ? undefined
-          : { width: `${String(THUMB_WIDTH)}px`, height: `${String(size.height)}px` }
+          : { width: `${String(width)}px`, height: `${String(size.height)}px` }
       }
     />
   );
