@@ -21,8 +21,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
-
-const { channels, contrast } = await import(`file://${join(repoRoot(), 'packages/shared/dist/colour.js')}`);
+// THE CHECK'S OWN MATHS, not a second route to it: `tokenContrast.mjs` already loads `packages/shared`' colour
+// functions, refusing a stale build first, and exports them.
+import { channels, contrast } from '../lib/tokenContrast.mjs';
 
 /**
  * Reads one theme block's colour tokens from the shipped token file.
