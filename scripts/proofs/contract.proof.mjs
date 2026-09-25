@@ -1273,6 +1273,8 @@ export const handlers: ContractHandlers = {
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.recent': () =>
     Promise.resolve(ok({ entries: [], lastExitClean: true, lastSession: [] })),
+  'document.recentPreview': () => Promise.resolve(ok({ kind: 'none' as const })),
+  'document.clearRecent': () => Promise.resolve(ok({ cleared: 0 })),
   'document.openRecent': () => Promise.resolve(ok({ kind: 'absent' as const })),
   'document.close': () => Promise.resolve(ok({ closed: true })),
   'document.unsaved': () => Promise.resolve(ok({ unsaved: true })),
@@ -1432,6 +1434,8 @@ export const handlers: ContractHandlers = {
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.recent': () =>
     Promise.resolve(ok({ entries: [], lastExitClean: true, lastSession: [] })),
+  'document.recentPreview': () => Promise.resolve(ok({ kind: 'none' as const })),
+  'document.clearRecent': () => Promise.resolve(ok({ cleared: 0 })),
   'document.openRecent': () => Promise.resolve(ok({ kind: 'absent' as const })),
   'document.close': () => Promise.resolve(ok({ closed: true })),
   'document.unsaved': () => Promise.resolve(ok({ unsaved: true })),
@@ -1664,6 +1668,8 @@ export const shim: ContractClient = {
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.recent': () =>
     Promise.resolve(ok({ entries: [], lastExitClean: true, lastSession: [] })),
+  'document.recentPreview': () => Promise.resolve(ok({ kind: 'none' as const })),
+  'document.clearRecent': () => Promise.resolve(ok({ cleared: 0 })),
   'document.openRecent': () => Promise.resolve(ok({ kind: 'absent' as const })),
   'document.close': () => Promise.resolve(ok({ closed: true })),
   'document.unsaved': () => Promise.resolve(ok({ unsaved: true })),

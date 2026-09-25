@@ -1,4 +1,10 @@
-import { ACCESSIBILITY_HUMAN_CHECKS, BARCODE_FORMATS, MAX_BARCODE_TEXT, MAX_PAGE_BARCODES } from '@monstera/contract';
+import {
+  ACCESSIBILITY_HUMAN_CHECKS,
+  BARCODE_FORMATS,
+  MAX_BARCODE_TEXT,
+  MAX_PAGE_BARCODES,
+  RECENT_PREVIEWS_SETTING_ID,
+} from '@monstera/contract';
 import {
   HUMAN_CHECKS,
   CapabilityRegistry,
@@ -21,6 +27,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { CloudOutcomeRefused, unconfiguredCloud } from './cloudSession.js';
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
+import { NO_RECENT_PICTURES, createRecentPictures } from './recentPictures.js';
 import type { DocumentCommands } from './documentCommands.js';
 import { createRecentFiles } from './recentFiles.js';
 import { createEphemeralSecrets } from './secretStore.js';
@@ -70,6 +77,9 @@ function serviceAnswering(outcome: OpenOutcome): {
   return { documents, opened };
 }
 
+/** What the harness's page image answers: a JPEG's first two bytes, enough to be told apart from nothing. */
+const PAGE_ONE_JPEG = Uint8Array.of(0xff, 0xd8, 0x01);
+
 /** When every opening in {@link harness} happens. */
 const OPENED_AT = new Date('2026-09-25T08:00:00.000Z');
 
@@ -93,6 +103,25 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
   // rather than assert that a call was made.
   // A FIXED CLOCK, so a case asserts the instant an opening was stamped with rather than that one was.
   const recent = createRecentFiles(createEphemeralSettings(), () => OPENED_AT);
+  // THE REAL PICTURE STORE over a folder held in memory, wired as the composition root wires it, so a case
+  // reads what a capture kept and what a removal deleted rather than that a call was made.
+  const pictureFolder = new Map<string, Uint8Array<ArrayBuffer>>();
+  const pictures = createRecentPictures({
+    files: {
+      // A COPY, as a file on disk is: what was written, not a view of the caller's buffer.
+      write: (name, bytes) => pictureFolder.set(name, new Uint8Array(bytes)),
+      read: (name) => pictureFolder.get(name) ?? null,
+      remove: (name) => pictureFolder.delete(name),
+      names: () => [...pictureFolder.keys()],
+    },
+    picture: () => Promise.resolve(PAGE_ONE_JPEG),
+    enabled: () => settings.read()[RECENT_PREVIEWS_SETTING_ID] !== false,
+    listed: (path) => recent.has(path),
+    notKept: () => undefined,
+  });
+  recent.onDropped((paths) => {
+    pictures.drop(paths);
+  });
   const handlers = createContractHandlers({
     assistant: INERT_ASSISTANT,
     appInfo,
@@ -109,6 +138,7 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
     pickDocument,
     recent,
     recentRoots: RECENT_ROOTS,
+    recentPictures: pictures,
     // RETURNED, so cases about persistence read the same object the handlers
     // wrote rather than a second copy. `settings.save` answering `stored: true`
     // is a claim about a surface having accepted the values, and a test that
@@ -150,7 +180,7 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
     // every case here exercise that one.
     ocrLanguages: () => Promise.resolve(['eng' as const]),
   });
-  return { capabilities, handlers, opened, recent, revealed, secrets, sessioned, settings, webPages };
+  return { capabilities, handlers, opened, pictureFolder, recent, revealed, secrets, sessioned, settings, webPages };
 }
 
 const A_DOC: DocId = asDocId('doc-1');
@@ -397,6 +427,7 @@ describe('document.open', () => {
           pickDocument: () => Promise.resolve(null),
           recent: createRecentFiles(createEphemeralSettings()),
           recentRoots: [],
+          recentPictures: NO_RECENT_PICTURES,
           settings: createEphemeralSettings(),
           secrets: createEphemeralSecrets(),
           chatHistory: NO_HISTORY,
@@ -522,6 +553,63 @@ describe('document.openDropped (ADR-0099)', () => {
     // line above.
     expect(opened).toStrictEqual([]);
     expect(recent.list()).toStrictEqual([]);
+  });
+});
+
+describe('the recent cards’ pictures (ADR-0100)', () => {
+  const OPENED: OpenOutcome = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' };
+
+  /** Opens `C:/docs/a.pdf`, waits for its picture, and answers the list's handle for it. */
+  async function openedWithPicture(
+    parts: ReturnType<typeof harness>,
+  ): Promise<ReturnType<typeof parts.capabilities.mint>> {
+    await parts.handlers['document.open']({});
+    // THE CAPTURE FOLLOWS THE SESSION, off the open's own answer, so the case waits for its effect.
+    await vi.waitFor(() => {
+      expect(parts.pictureFolder.size).toBe(1);
+    });
+    const listed = await parts.handlers['document.recent']({});
+    if (!listed.ok || listed.value.entries[0] === undefined) throw new Error('the open was not listed');
+    return listed.value.entries[0].handle;
+  }
+
+  it('an OPEN leaves a picture of page 1, and the card reads it back by the list’s handle', async () => {
+    const parts = harness(OPENED, () => Promise.resolve('C:/docs/a.pdf'));
+    const handle = await openedWithPicture(parts);
+
+    const preview = await parts.handlers['document.recentPreview']({ handle });
+
+    expect(preview).toStrictEqual({ ok: true, value: { kind: 'picture', jpeg: PAGE_ONE_JPEG } });
+  });
+
+  it('*Clear list* empties the list AND deletes the picture in the same step', async () => {
+    const parts = harness(OPENED, () => Promise.resolve('C:/docs/a.pdf'));
+    const handle = await openedWithPicture(parts);
+
+    const cleared = await parts.handlers['document.clearRecent']({});
+
+    expect(cleared).toStrictEqual({ ok: true, value: { cleared: 1 } });
+    expect(parts.pictureFolder.size).toBe(0);
+    expect(await parts.handlers['document.recentPreview']({ handle })).toStrictEqual({ ok: true, value: { kind: 'none' } });
+  });
+
+  it('turning the Privacy setting OFF deletes every picture with the write that turned it off', async () => {
+    const parts = harness(OPENED, () => Promise.resolve('C:/docs/a.pdf'));
+    const handle = await openedWithPicture(parts);
+
+    await parts.handlers['settings.save']({ values: { [RECENT_PREVIEWS_SETTING_ID]: false } });
+
+    expect(parts.pictureFolder.size).toBe(0);
+    expect(await parts.handlers['document.recentPreview']({ handle })).toStrictEqual({ ok: true, value: { kind: 'none' } });
+  });
+
+  it('a handle this run did not mint answers none, and names no file', async () => {
+    const parts = harness(OPENED, () => Promise.resolve('C:/docs/a.pdf'));
+    await openedWithPicture(parts);
+
+    const preview = await parts.handlers['document.recentPreview']({ handle: asFileHandle('never-minted') });
+
+    expect(preview).toStrictEqual({ ok: true, value: { kind: 'none' } });
   });
 });
 
@@ -652,6 +740,7 @@ describe('the recent list', () => {
       pickDocument: () => Promise.resolve(null),
       recent,
       recentRoots: [],
+      recentPictures: NO_RECENT_PICTURES,
       settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
       chatHistory: NO_HISTORY,
@@ -710,6 +799,7 @@ describe('log.reveal', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
+      recentPictures: NO_RECENT_PICTURES,
 settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
       chatHistory: NO_HISTORY,
@@ -761,6 +851,7 @@ describe('ai.checkKey', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
+      recentPictures: NO_RECENT_PICTURES,
 settings: createEphemeralSettings(),
       secrets,
       chatHistory: NO_HISTORY,
@@ -859,6 +950,7 @@ describe('ai.translatePage (ADR-0097)', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
+      recentPictures: NO_RECENT_PICTURES,
 settings: createEphemeralSettings(),
       secrets,
       chatHistory: NO_HISTORY,
@@ -983,6 +1075,7 @@ describe('ai.history (ADR-0093)', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
+      recentPictures: NO_RECENT_PICTURES,
 settings,
       secrets: createEphemeralSecrets(),
       chatHistory: history,
@@ -1061,6 +1154,7 @@ describe('cloud.saveBack', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
+      recentPictures: NO_RECENT_PICTURES,
 settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
       chatHistory: NO_HISTORY,

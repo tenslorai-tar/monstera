@@ -773,7 +773,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // Copied and consumed, exactly like `viewModels`.
   const layerLists = [...(options.layers ?? [])];
   const fieldLists = [...(options.formFields ?? [])];
-  const recentEntries = options.recent ?? [];
+  // `let`, because *Clear list* empties it as main's store empties itself.
+  let recentEntries = options.recent ?? [];
 
   // `Promise.resolve`, not `async`. The contract's handler type is asynchronous
   // because the real ones are; nothing here awaits anything, and `async` on a
@@ -992,6 +993,19 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      * let a surface pass while sending a stale handle, which is the one thing
      * this channel's `unknown-handle` outcome exists for.
      */
+    /**
+     * NO PICTURE, for any entry: the shim draws no page, so every card shows its placeholder — the state a
+     * first run after this build is in, and the one the start screen must render well.
+     */
+    'document.recentPreview': () => Promise.resolve(ok({ kind: 'none' as const })),
+
+    /** Empties the fixture's list, as main's store empties itself, and says how many went. */
+    'document.clearRecent': () => {
+      const cleared = recentEntries.length;
+      recentEntries = [];
+      return Promise.resolve(ok({ cleared }));
+    },
+
     'document.openRecent': ({ handle }) => {
       if (!recentEntries.some((entry) => entry.handle === handle)) {
         return Promise.resolve(err({ code: 'unknown-handle' }));

@@ -716,6 +716,11 @@ export const START_AT_CAPACITY = messageKey('surface.start.at-capacity');
 export const START_NO_PATH = messageKey('surface.start.no-path');
 export const START_DROP_HINT = messageKey('surface.start.drop-hint');
 export const DROP_OVERLAY = messageKey('surface.drop.overlay');
+export const PRIVACY_RECENT_PREVIEWS_TITLE = messageKey('setting.privacy.recent-previews.title');
+export const PRIVACY_RECENT_PREVIEWS_DESCRIPTION = messageKey('setting.privacy.recent-previews.description');
+export const RECENT_HEADING = messageKey('surface.recent.heading');
+export const RECENT_CLEAR = messageKey('surface.recent.clear');
+export const RECENT_PLACEHOLDER = messageKey('surface.recent.placeholder');
 export const RECENT_TODAY = messageKey('surface.recent.today');
 export const RECENT_YESTERDAY = messageKey('surface.recent.yesterday');
 export const RECENT_IN_DOCUMENTS = messageKey('surface.recent.in-documents');
@@ -2202,6 +2207,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [DROP_OVERLAY]: 'Drop to open',
   // A RECENT CARD'S SECOND LINE, v5-01's shape: *Today · Documents › Leases*. The known folders are
   // Windows' own names for them; the folder after the arrow is the person's own and is never translated.
+  [PRIVACY_RECENT_PREVIEWS_TITLE]: 'Show previews of recent files',
+  [PRIVACY_RECENT_PREVIEWS_DESCRIPTION]:
+    'Keeps a small picture of each recent file’s first page, made when you opened it. Turning this off deletes them.',
+  // v5-01's header over the cards, and its one action.
+  [RECENT_HEADING]: 'Recent',
+  [RECENT_CLEAR]: 'Clear list',
+  // A CARD WITH NO PICTURE shows the page's shape and its type, the way a file icon does.
+  [RECENT_PLACEHOLDER]: 'PDF',
   [RECENT_TODAY]: 'Today',
   [RECENT_YESTERDAY]: 'Yesterday',
   [RECENT_IN_DOCUMENTS]: 'Documents',

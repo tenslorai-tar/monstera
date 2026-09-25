@@ -42,6 +42,7 @@ import { removeRetiredCaches } from './retiredCaches.js';
 import { readCloudClients } from './cloudClients.js';
 import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
 import { knownRoots } from './displayLocation.js';
+import { pictureDirectory } from './recentPictures.js';
 import { createChatHistory } from './chatHistory.js';
 import { type SecretCipher, createSecretStore } from './secretStore.js';
 import { createJsonFile, createSettingsFile } from './settingsFile.js';
@@ -357,6 +358,9 @@ startShell(() => {
       env: process.env,
       cloudWorkingDirectory,
     }),
+    // THE RECENT CARDS' PICTURES (ADR-0100), beside the recent list under `userData`: they are about
+    // the same entries and go with them.
+    recentPictureFiles: pictureDirectory(join(app.getPath('userData'), 'recent-pictures')),
     // Same trade, one layer along. The platform's own module may not import
     // Electron either, so *where the app may write* — which is Electron's
     // question and nobody else's — is resolved above and handed down. Under

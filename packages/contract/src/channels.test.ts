@@ -82,6 +82,8 @@ const handlers: ContractHandlers = {
   // list and `lastExitClean: true` are what a boundary that dropped both fields
   // produces, and they are also the ordinary state — so the fixture that
   // separates them is the unusual one.
+  'document.recentPreview': () => Promise.resolve(ok({ kind: 'picture' as const, jpeg: Uint8Array.of(0xff, 0xd8) })),
+  'document.clearRecent': () => Promise.resolve(ok({ cleared: 2 })),
   'document.recent': () =>
     Promise.resolve(
       ok({

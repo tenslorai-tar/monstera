@@ -60,6 +60,17 @@ export interface RecentFiles {
   record(entry: RecentEntry): void;
   /** Drops one, for a file that is no longer there. */
   forget(path: string): void;
+  /** Empties the list, answering how many entries went (ADR-0100's *Clear list*). */
+  clear(): number;
+  /** Whether a path is on the list now. */
+  has(path: string): boolean;
+  /**
+   * Names who is told the paths of entries that LEFT the list — forgotten, cleared, or pushed past the cap —
+   * so what is kept about an entry leaves with it (ADR-0100: a picture never outlives its entry). This store
+   * is the one place that knows every way an entry leaves, so it is the one that says so. One listener: the
+   * composition root registers the pictures' `drop` as it builds them, before any handler can run.
+   */
+  onDropped(listener: (paths: readonly string[]) => void): void;
   /**
    * Whether the previous run reached its shutdown.
    *
@@ -125,6 +136,8 @@ export const RECENT_FILE = 'recent.json';
  * @param now the clock an opening is stamped from, injected so a case can assert the instant recorded
  */
 export function createRecentFiles(file: SettingsSurface, now: () => Date = () => new Date()): RecentFiles {
+  /** Who is told when entries leave; see {@link RecentFiles.onDropped}. */
+  let dropped: (paths: readonly string[]) => void = () => undefined;
   const stored = file.read();
   // READ ONCE, at construction, and the marker is answered from THIS copy for
   // the rest of the run. The first thing below is a write that clears it.
@@ -177,15 +190,32 @@ export function createRecentFiles(file: SettingsSurface, now: () => Date = () =>
       // must not fill the list with one document, and an entry whose name has
       // changed — the file was renamed and reopened by its new name — takes the
       // newer one.
-      entries = [
+      const ordered = [
         { path: entry.path, name: entry.name, openedAt: now().toISOString() },
         ...entries.filter((held) => held.path !== entry.path),
-      ].slice(0, MAX_RECENT);
+      ];
+      entries = ordered.slice(0, MAX_RECENT);
       persist(false);
+      // PUSHED PAST THE CAP is leaving too, and the quietest way to: nobody asked for it.
+      const evicted = ordered.slice(MAX_RECENT).map((held) => held.path);
+      if (evicted.length > 0) dropped(evicted);
     },
     forget: (path) => {
+      const before = entries.length;
       entries = entries.filter((held) => held.path !== path);
       persist(false);
+      if (entries.length < before) dropped([path]);
+    },
+    clear: () => {
+      const gone = entries.map((held) => held.path);
+      entries = [];
+      persist(false);
+      if (gone.length > 0) dropped(gone);
+      return gone.length;
+    },
+    has: (path) => entries.some((held) => held.path === path),
+    onDropped: (listener) => {
+      dropped = listener;
     },
     lastExitClean: () => wasClean,
     markCleanExit: () => {

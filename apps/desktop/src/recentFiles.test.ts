@@ -132,6 +132,35 @@ describe('the recent list', () => {
     expect(recent.list().map((entry) => entry.name)).toStrictEqual(['b.pdf']);
   });
 
+  it('says WHICH PATHS LEFT, however they left: forgotten, cleared, or pushed past the cap (ADR-0100)', () => {
+    const recent = createRecentFiles(aFile());
+    const left: string[][] = [];
+    recent.onDropped((paths) => left.push([...paths]));
+
+    for (let index = 0; index <= MAX_RECENT; index += 1) {
+      recent.record({ path: `C:/${String(index)}.pdf`, name: `${String(index)}.pdf` });
+    }
+    recent.forget('C:/5.pdf');
+    // A path not on the list leaves nothing, so nothing is said.
+    recent.forget('C:/never.pdf');
+    const cleared = recent.clear();
+
+    expect(left).toStrictEqual([
+      // THE OLDEST, pushed out by the eleventh: the quiet way to leave, and the one easiest to miss.
+      ['C:/0.pdf'],
+      ['C:/5.pdf'],
+      ['C:/10.pdf', 'C:/9.pdf', 'C:/8.pdf', 'C:/7.pdf', 'C:/6.pdf', 'C:/4.pdf', 'C:/3.pdf', 'C:/2.pdf', 'C:/1.pdf'],
+    ]);
+    expect(cleared).toBe(MAX_RECENT - 1);
+    expect(recent.list()).toStrictEqual([]);
+  });
+
+  it('knows whether a path is on the list', () => {
+    const recent = createRecentFiles(aFile());
+    recent.record({ path: 'C:/a.pdf', name: 'a.pdf' });
+    expect([recent.has('C:/a.pdf'), recent.has('C:/b.pdf')]).toStrictEqual([true, false]);
+  });
+
   it('SURVIVES A RESTART, which is the whole point of the file', () => {
     const file = aFile();
     createRecentFiles(file, () => AT).record({ path: 'C:/a.pdf', name: 'a.pdf' });

@@ -417,6 +417,59 @@ textarea {
   inline-size: min(100%, 110ch);
 }
 
+/* The heading and *Clear list* on one line, across the cards' width. */
+.m-recent-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  inline-size: min(100%, 110ch);
+}
+
+.m-recent-heading {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.m-recent-clear {
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: var(--font-chrome-12);
+  cursor: pointer;
+}
+
+.m-recent-clear:hover,
+.m-recent-clear:focus-visible {
+  text-decoration: underline;
+}
+
+/* The page, at the card's width and a portrait page's shape; the picture fills it from the top, as a
+   first page is read. With no picture, the same box holds the type. */
+.m-recent-item__picture {
+  display: block;
+  inline-size: 100%;
+  aspect-ratio: 612 / 792;
+  max-block-size: 16ch;
+  object-fit: cover;
+  object-position: top;
+  border-radius: var(--radius-4);
+  background: var(--page);
+}
+
+.m-recent-item__picture--none {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+  font-weight: 600;
+  background: var(--surface2);
+}
+
 .m-recent-item {
   display: flex;
   flex-direction: column;

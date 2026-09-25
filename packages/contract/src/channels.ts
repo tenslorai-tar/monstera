@@ -837,6 +837,21 @@ export type DisplayLocation = z.infer<typeof displayLocationSchema>;
 export const MAX_RECENT_ENTRIES = 10;
 
 /**
+ * The largest recent-card picture that is kept or crosses (ADR-0100). A bound on the message, not a size
+ * aimed at: measured 2026-09-25 over the 11-file corpus, page 1 at quality 60 is at most 73,186 bytes, and a
+ * page larger than Letter grows with its area — A3 is about twice as many pixels. A picture over this is not
+ * kept, and its card shows the placeholder.
+ */
+export const MAX_RECENT_PREVIEW_BYTES = 256 * 1024;
+
+/**
+ * Whether recent files keep a picture of their first page — a Privacy setting, on unless a person turns it
+ * off (ADR-0100). Named here because main reads it before every capture and the renderer declares its
+ * control: one id, two readers, as `CHAT_HISTORY_SETTING_ID` is.
+ */
+export const RECENT_PREVIEWS_SETTING_ID = 'privacy.recent-previews';
+
+/**
  * A link's rectangle, in the page's own units.
  *
  * ## `z.number()` ALREADY refuses `Infinity` and `NaN` here, and that matters
@@ -1521,6 +1536,35 @@ export const channels = {
       z.object({ kind: z.literal('not-locked') }),
     ]),
     ['document-not-open'],
+  ),
+
+  /**
+   * A recent file's picture of its first page, by the handle the list carried (ADR-0100).
+   *
+   * **It never parses a file.** The picture was made when the document was last open here, and this reads
+   * it back or answers `none` — for an entry that never had one, one whose capture failed, or when the
+   * Privacy setting is off. A handle the list did not mint answers `none` too: this channel has nothing to
+   * say about a file that is not on the list.
+   */
+  'document.recentPreview': channel(
+    'The picture of a recent file’s first page, kept from when it was last open.',
+    z.object({ handle: fileHandleSchema }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('picture'),
+        jpeg: z.instanceof(Uint8Array).refine((bytes) => bytes.length <= MAX_RECENT_PREVIEW_BYTES),
+      }),
+      z.object({ kind: z.literal('none') }),
+    ]),
+  ),
+
+  /**
+   * Empties the recent list, and deletes every picture with it (ADR-0100). Answers how many entries went.
+   */
+  'document.clearRecent': channel(
+    'Empties the recent list and deletes the pictures kept for it.',
+    z.object({}).strict(),
+    z.object({ cleared: z.number().int().nonnegative().max(MAX_RECENT_ENTRIES) }),
   ),
 
   'document.openRecent': channel(

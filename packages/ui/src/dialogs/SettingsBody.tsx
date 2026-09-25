@@ -115,11 +115,11 @@ const PAGE_NOTES: Partial<Record<SettingCategory, MessageKey>> = {
  * **Named, rather than derived from {@link PAGE_NOTES}**, and that stopped being the same thing the
  * moment every page got a note: listing a page *because it has a note* would have put an empty
  * Viewing page back the instant one was written for it, which is exactly the screen the owner's
- * design calls out. A page earns its place by holding something to read or press, and these three
- * are the ones that do — Keyboard points at F1, Updates says who updates this build, Privacy
- * carries *Clear chat history*.
+ * design calls out. A page earns its place by holding something to read or press, and these two
+ * are the ones that do — Keyboard points at F1, and Updates says who updates this build. Privacy
+ * left this list when *Show previews of recent files* gave it a setting (ADR-0100).
  */
-const PAGES_WITHOUT_SETTINGS: readonly SettingCategory[] = ['keyboard', 'updates', 'privacy'];
+const PAGES_WITHOUT_SETTINGS: readonly SettingCategory[] = ['keyboard', 'updates'];
 
 /**
  * The value a number field holds while it is being typed, parsed for its schema.

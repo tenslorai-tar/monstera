@@ -171,9 +171,10 @@ export interface ShellLog {
   /** Shows the log directory, or answers `false` because there is nothing there. */
   readonly reveal: () => Promise<boolean>;
   /**
-   * Appends one already-formatted line. For the proof, and for one lifecycle
-   * notice that is rare by construction: the retired-cache removal, which fires
-   * on the one start that finds the directory (`retiredCaches.ts`).
+   * Appends one already-formatted line. For the proof, and for two notices that
+   * are rare by construction: the retired-cache removal, which fires on the one
+   * start that finds the directory (`retiredCaches.ts`), and a recent card's
+   * picture that was not kept — at most one line per open (`recentPictures.ts`).
    */
   readonly write: (kind: string, detail: string) => void;
 }

@@ -7,6 +7,7 @@ import {
   CHAT_HISTORY_SETTING,
 } from './ai.js';
 import { DOCUSIGN_ENVIRONMENT_SETTING, DOCUSIGN_INTEGRATION_KEY_SETTING } from './integrations.js';
+import { RECENT_PREVIEWS_SETTING } from './privacy.js';
 import { THEME_SETTING } from './appearance.js';
 import {
   CONTEXT_PANEL_OPEN_SETTING,
@@ -115,4 +116,5 @@ export const ALL_SETTINGS: readonly SettingDefinition[] = [
   CHAT_HISTORY_SETTING,
   DOCUSIGN_INTEGRATION_KEY_SETTING,
   DOCUSIGN_ENVIRONMENT_SETTING,
+  RECENT_PREVIEWS_SETTING,
 ];

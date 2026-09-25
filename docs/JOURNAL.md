@@ -892,6 +892,44 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — A recent card shows its first page, and *Clear list* and the setting delete it
+
+ADR-0100's second decision, and the Privacy switch it put beside it. **Measured first**
+(`scripts/research/recentPreviewSize.mjs`, through the kernel's own `rasterisePageImage`, the one the
+host runs): page 1 at one pixel per point over the 11-file corpus is a median of 67,321 bytes and a
+maximum of 73,186 at JPEG quality 60, 83,269 and 90,200 at 75, 118,772 and 129,919 at 90. The blank
+Letter page built as the control is 6,243 at every quality, under all eleven. Quality 60 was taken, and
+`MAX_RECENT_PREVIEW_BYTES` is 256 KiB, a bound on the message rather than a size aimed at.
+
+- **Made from the open document, never from a file on disk.** `openPath` chains the capture on the
+  sessions promise a person's own open created; `DocumentCommands.firstPagePicture` draws page 1 in the
+  document's lane at `MIN_SNAPSHOT_SCALE`. It is checked again after the draw — still listed, setting still
+  on — because a picture written for an entry that left meanwhile is one nothing would delete.
+- **Never outlives its entry.** The recent store is the one place that knows every way an entry leaves,
+  so it says so: `onDropped` hears the forgotten, the cleared and the ones **pushed past the cap**, the
+  quiet way nobody asked for. The composition root registers the pictures' `drop` there;
+  `composition.test.ts` holds that join on the root itself, and with the listener disabled it went red.
+- **The setting takes effect with the write that turns it off**: `settings.save` tells the pictures, which
+  delete every file of theirs and leave anything else in the folder alone. Reads answer none while it is off.
+- File names are the SHA-256 of the path, as the chat history's are; a failure is logged by the error's
+  NAME, never its message, which can carry the path.
+
+**One finding while wiring it, and it was a cost rather than a bug.** The capture holds the document's
+lane for one page render. The composition cases' fake host answers no page image, so undo, redo, shutdown
+and a replace-page case waited out their 5-second limits behind a capture. The root now builds no picture
+store at all without a folder to keep pictures in — drawing a page whose result is thrown away is work
+the setting-off path already refuses. In the product the cost is one page render ahead of the first
+command after an open; it was **not measured** on a live host, and is the thing to time on the next
+packaged run.
+
+The page asks each card's picture by handle, holds it as an object URL revoked when the card goes, and
+shows a page-shaped placeholder with the type where there is none. *Clear list* is the list's own
+control — ADR-0068 keeps the recent list out of the registry as data with a control — and the cards go
+only when main has cleared. `payloadBounds.test.ts`' roster now covers the preload's channels as well; the
+drop channel had been invisible to it.
+
+---
+
 ## 2026-09-25 — A recent file says where it is and when it was opened
 
 v5-01's second line under each recent card: *Today · Documents › Leases*. ADR-0100 decided it, and

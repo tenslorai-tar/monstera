@@ -7,6 +7,7 @@ import { noChatHistory } from './chatHistory.js';
 import { unconfiguredCloud } from './cloudSession.js';
 import { type AppInfo, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
+import { NO_RECENT_PICTURES } from './recentPictures.js';
 import {
   type IpcHandleTarget,
   type IpcSenderCheck,
@@ -112,8 +113,17 @@ function handlers() {
       lastSession: () => {
         throw new Error('registration cases must not reach the recent list');
       },
+      clear: () => {
+        throw new Error('registration cases must not reach the recent list');
+      },
+      has: () => {
+        throw new Error('registration cases must not reach the recent list');
+      },
+      // REGISTERING a listener is construction, not a use of the list, so it does not throw.
+      onDropped: () => undefined,
     },
     recentRoots: [],
+    recentPictures: NO_RECENT_PICTURES,
     settings: {
       read: () => {
         throw new Error('registration cases must not reach the settings surface');

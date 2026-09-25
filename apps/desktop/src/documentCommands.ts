@@ -1,4 +1,5 @@
 import {
+  MIN_SNAPSHOT_SCALE,
   type AnnotationDataFormat,
   type AnnotationRect,
   type AnnotationStamp,
@@ -1224,6 +1225,15 @@ class PageRefused extends Error {
 }
 
 /** The resolutions a print may be asked for, in dots per inch. */
+/**
+ * The JPEG quality of a recent card's picture (ADR-0100). Measured 2026-09-25 by
+ * `scripts/research/recentPreviewSize.mjs` over the 11-file corpus, page 1 at one pixel per point: quality 60
+ * is a median of 67,321 bytes and a maximum of 73,186; 75 is 83,269 and 90,200; 90 is 118,772 and 129,919.
+ * The lowest of the three, because the card draws the picture smaller than it is made; how it looks there is
+ * judged by eye in the side-by-side captures, not measured.
+ */
+export const RECENT_PREVIEW_QUALITY = 60;
+
 export const PRINT_DPIS = [150, 300, 600] as const;
 
 export type PrintDpi = (typeof PRINT_DPIS)[number];
@@ -2515,6 +2525,33 @@ export class DocumentCommands {
         };
       }
       return { png: await this.#askPicture(docId, sessions, page), sent: pictureSent(page, pageCount) };
+    });
+    return value;
+  }
+
+  /**
+   * Page 1 as a small JPEG, for the recent list's card
+   * ([ADR-0100](../../../docs/DECISIONS/0100-a-recent-file-shows-where-it-is-and-a-preview-both-from-main.md)).
+   *
+   * At `MIN_SNAPSHOT_SCALE`, one pixel per point — the smallest the host draws, and already larger than the
+   * card — so nothing bigger than the card needs is made. In the LANE, for `askPicture`'s reason.
+   *
+   * @throws the set `askPicture` throws when the document has no usable session
+   */
+  async firstPagePicture(docId: DocId): Promise<Uint8Array> {
+    const { value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#pageImage(docId, sessions, {
+        page: 0,
+        format: 'jpeg',
+        scale: MIN_SNAPSHOT_SCALE,
+        quality: RECENT_PREVIEW_QUALITY,
+      });
     });
     return value;
   }

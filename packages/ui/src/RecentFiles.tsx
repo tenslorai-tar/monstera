@@ -6,9 +6,12 @@ import { type ReactElement, useEffect, useId, useState } from 'react';
 import { recentLine } from './recentLine.js';
 import { Button } from './primitives/Button.js';
 import {
+  RECENT_CLEAR,
   RECENT_EMPTY,
+  RECENT_HEADING,
   RECENT_LABEL,
   RECENT_MISSING,
+  RECENT_PLACEHOLDER,
   RECOVER_LABEL,
   RECOVER_OFFER,
 } from './messages/en.js';
@@ -149,6 +152,31 @@ export function RecentFiles({
         </div>
       ) : null}
       {state.missing ? <p className="m-recent-problem">{_(RECENT_MISSING)}</p> : null}
+      {state.entries.length === 0 ? null : (
+        // v5-01's HEADER: the list's name and its one action. *Clear list* is the list's own control, as its
+        // cards are — ADR-0068 keeps the recent list out of the registry as data with a control.
+        <div className="m-recent-header">
+          <h2 className="m-recent-heading">{_(RECENT_HEADING)}</h2>
+          <button
+            type="button"
+            className="m-recent-clear"
+            onClick={() => {
+              void client['document.clearRecent']({}).then(
+                (answer) => {
+                  if (!answer.ok) return;
+                  setState((current) => (current.kind === 'listed' ? { ...current, entries: [] } : current));
+                },
+                () => {
+                  // Nothing is cleared on the page unless main cleared it, so a failed ask leaves the list on
+                  // screen — which is the true state, and says it did not happen.
+                },
+              );
+            }}
+          >
+            {_(RECENT_CLEAR)}
+          </button>
+        </div>
+      )}
       {state.entries.length === 0 ? (
         <p className="m-recent-empty">{_(RECENT_EMPTY)}</p>
       ) : (
@@ -161,6 +189,7 @@ export function RecentFiles({
             <li key={entry.handle}>
               <RecentCard
                 entry={entry}
+                client={client}
                 onOpen={() => {
                   void open(entry.handle);
                 }}
@@ -189,11 +218,20 @@ type ListedRow = ChannelResult<'document.recent'>['entries'][number];
  * **The name NAMES the button and the line DESCRIBES it.** Read from content, the accessible name would be
  * both run together — *annual.pdf Today · Documents › Leases* — which is not what the control is called.
  */
-function RecentCard({ entry, onOpen }: { readonly entry: ListedRow; readonly onOpen: () => void }): ReactElement {
+function RecentCard({
+  entry,
+  client,
+  onOpen,
+}: {
+  readonly entry: ListedRow;
+  readonly client: ContractClient;
+  readonly onOpen: () => void;
+}): ReactElement {
   const { _, i18n } = useLingui();
   const nameId = useId();
   const lineId = useId();
   const line = recentLine(entry, new Date(), i18n.locale, (key, values) => _(key, values));
+  const picture = usePicture(client, entry.handle);
   return (
     <button
       type="button"
@@ -202,6 +240,15 @@ function RecentCard({ entry, onOpen }: { readonly entry: ListedRow; readonly onO
       aria-describedby={line === null ? undefined : lineId}
       onClick={onOpen}
     >
+      {/* THE PICTURE IS DECORATIVE: the card is named by the file, and a picture of a page says nothing a
+          screen reader should read out. With none, the page's shape and its type, as a file icon shows. */}
+      {picture === null ? (
+        <span aria-hidden="true" className="m-recent-item__picture m-recent-item__picture--none">
+          {_(RECENT_PLACEHOLDER)}
+        </span>
+      ) : (
+        <img alt="" className="m-recent-item__picture" src={picture} />
+      )}
       <span className="m-recent-item__name" id={nameId}>
         {entry.name}
       </span>
@@ -212,6 +259,37 @@ function RecentCard({ entry, onOpen }: { readonly entry: ListedRow; readonly onO
       )}
     </button>
   );
+}
+
+/**
+ * A listed file's picture as an object URL, or `null` while none has arrived or main has none (ADR-0100).
+ *
+ * **The URL is revoked** when the card goes or its handle changes, so a list redrawn a hundred times holds
+ * one picture per card and not a hundred. A refused or failed ask is a card with the placeholder, which is
+ * what *no picture* means on this screen; nothing else waits on it.
+ */
+function usePicture(client: ContractClient, handle: FileHandle): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let made: string | null = null;
+    let current = true;
+    void client['document.recentPreview']({ handle }).then(
+      (answer) => {
+        if (!current || !answer.ok || answer.value.kind !== 'picture') return;
+        made = URL.createObjectURL(new Blob([answer.value.jpeg], { type: 'image/jpeg' }));
+        setUrl(made);
+      },
+      () => {
+        // The list's own rule for an unreadable convenience (the `document.recent` ask above): the card keeps
+        // its placeholder, which is what *no picture* already looks like.
+      },
+    );
+    return (): void => {
+      current = false;
+      if (made !== null) URL.revokeObjectURL(made);
+    };
+  }, [client, handle]);
+  return url;
 }
 
 /**

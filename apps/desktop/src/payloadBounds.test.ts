@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { z } from 'zod';
 
-import { channelIds, channels } from '@monstera/contract';
+import { PRELOAD_CHANNEL_IDS, channelIds, channels } from '@monstera/contract';
 import { CapabilityRegistry, DocumentService } from '@monstera/kernel';
 import { type DocId, asDocVersion } from '@monstera/shared';
 
@@ -17,6 +17,7 @@ import { unconfiguredCloud } from './cloudSession.js';
 import { type AppInfo, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
 import { createRecentFiles } from './recentFiles.js';
+import { NO_RECENT_PICTURES } from './recentPictures.js';
 import { createEphemeralSecrets } from './secretStore.js';
 import { createEphemeralSettings } from './settingsFile.js';
 
@@ -149,6 +150,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     pickDocument: () => Promise.resolve(null),
     recent: createRecentFiles(createEphemeralSettings()),
     recentRoots: [],
+    recentPictures: NO_RECENT_PICTURES,
     settings: createEphemeralSettings(),
     secrets: createEphemeralSecrets(),
     chatHistory: noChatHistory(),
@@ -245,6 +247,12 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.open': 'drives a picker; its answer is measured through the service below',
   'document.openRecent': "same answer as document.open, by a handle rather than a picker",
   'document.recent': 'answers a bounded list of files the user opened, not about a document',
+  // ONE PAGE, AT ONE PIXEL PER POINT, and refused past `MAX_RECENT_PREVIEW_BYTES` by the schema's own refine:
+  // a thousand-page document's picture is the same size as a one-page one's.
+  'document.recentPreview': 'answers one picture of page 1, bounded by MAX_RECENT_PREVIEW_BYTES',
+  'document.clearRecent': 'takes nothing and answers a count bounded by the recent list’s cap',
+  // THE PRELOAD'S CHANNEL (ADR-0099): a path bounded by Win32's own limit in, `document.open`'s outcomes out.
+  'document.openDropped': 'takes one bounded path and answers what document.open answers',
   // A `DocId` in, a boolean out. Nothing in either direction can grow with a
   // document, which is the rare case where L11's question has a one-line
   // answer rather than a bound.
@@ -618,7 +626,8 @@ describe('invariant L11: no channel answers with a payload that scales', () => {
     // The anchor. A channel added without a thought about its payload lands
     // here rather than passing silently, which is the whole point of deriving
     // the set from the registry rather than keeping a list.
-    const unaccounted = channelIds.filter(
+    // THE PRELOAD'S CHANNELS TOO: main registers them beside the rest, so L11's question is theirs as well.
+    const unaccounted = [...channelIds, ...PRELOAD_CHANNEL_IDS].filter(
       (id) => EXCLUDED[id] === undefined && id !== 'document.readRange',
     );
 
@@ -632,7 +641,8 @@ describe('invariant L11: no channel answers with a payload that scales', () => {
     // AND THE EXCLUSIONS ARE REAL CHANNELS. A reason written for an id that no
     // longer exists is a paragraph nobody will delete, and it makes the list
     // above look shorter than the work it represents.
-    expect(Object.keys(EXCLUDED).filter((id) => !channelIds.includes(id as never))).toStrictEqual(
+    const declared: readonly string[] = [...channelIds, ...PRELOAD_CHANNEL_IDS];
+    expect(Object.keys(EXCLUDED).filter((id) => !declared.includes(id))).toStrictEqual(
       [],
     );
   });

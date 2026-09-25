@@ -96,6 +96,9 @@ export {
   type KnownFolder,
   // NTFS's component bound, which main's location derivation drops a longer folder name at.
   MAX_DOCUMENT_NAME_LENGTH,
+  // A recent card's picture: main's store refuses to keep one past the bound, and both sides read the setting.
+  MAX_RECENT_PREVIEW_BYTES,
+  RECENT_PREVIEWS_SETTING_ID,
   type MainHandlers,
   MAX_DROPPED_PATH_LENGTH,
   type PreloadChannels,

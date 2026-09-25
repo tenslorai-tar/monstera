@@ -56,6 +56,7 @@ import type { Assistant } from './assistant.js';
 import type { ChatHistory } from './chatHistory.js';
 import { CloudOutcomeRefused, type CloudStorage } from './cloudSession.js';
 import { type KnownRoot, displayLocationOf } from './displayLocation.js';
+import type { RecentPictures } from './recentPictures.js';
 import type { RecentFiles } from './recentFiles.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import type { SettingsSurface } from './settingsFile.js';
@@ -210,6 +211,8 @@ export function createContractHandlers(deps: {
    * an optional one defaulting to none would show every file as *under no known folder* and look correct.
    */
   readonly recentRoots: readonly KnownRoot[];
+  /** The recent list's pictures of first pages (ADR-0100). REQUIRED, for `recentRoots`' reason. */
+  readonly recentPictures: RecentPictures;
   readonly settings: SettingsSurface;
   /**
    * Where a `secret` setting lives, which is not the settings file.
@@ -307,6 +310,15 @@ export function createContractHandlers(deps: {
       }
     },
     'document.recent': recentHandler(deps),
+    // A LISTED FILE'S PICTURE, by the handle the list minted, and never a file parsed to draw it (ADR-0100).
+    // A handle this run did not mint, or one for a file no longer listed, answers `none`.
+    'document.recentPreview': ({ handle }) => {
+      const path = deps.capabilities.resolve(handle);
+      const jpeg = path !== undefined && deps.recent.has(path) ? deps.recentPictures.read(path) : null;
+      return Promise.resolve(ok(jpeg === null ? ({ kind: 'none' } as const) : ({ kind: 'picture', jpeg } as const)));
+    },
+    // THE LIST'S OWN *Clear list*: the store empties itself and tells the pictures which paths left.
+    'document.clearRecent': () => Promise.resolve(ok({ cleared: deps.recent.clear() })),
     'document.openRecent': openRecentHandler(deps),
     'document.close': closeHandler({ documents: deps.documents, recent: deps.recent }),
     'document.unsaved': unsavedHandler(deps.documents),
@@ -376,6 +388,9 @@ export function createContractHandlers(deps: {
     'settings.load': () => Promise.resolve(ok({ stored: deps.settings.read() })),
     'settings.save': ({ values }) => {
       deps.settings.write(values);
+      // THE PRIVACY SETTING TAKES EFFECT HERE (ADR-0100): turned off, every recent picture is deleted with the
+      // write that turned it off, not at some later start screen.
+      deps.recentPictures.settingsWritten();
       // ANSWERED AFTER THE WRITE RETURNS, so `stored: true` is a statement about
       // the filesystem rather than about the call having been made. The surface
       // renames a temporary file into place, so a caller that has this answer
@@ -2496,6 +2511,7 @@ interface OpenPathParts {
   readonly capabilities: CapabilityRegistry;
   readonly openedDocument: OpenedDocument;
   readonly recent: RecentFiles;
+  readonly recentPictures: RecentPictures;
 }
 
 /**
@@ -2551,6 +2567,11 @@ async function openPath(
     // at*; the session is *what is on screen now*, which is what a crash
     // recovery has to offer once several documents can be.
     deps.recent.opened(outcome.docId, { path, name: outcome.name });
+    // AND ITS PICTURE, once the session a person's own open created exists (ADR-0100). Not awaited: the
+    // document is on screen already, and the card needs the picture only on the next start screen. The
+    // sessions promise settles either way, and a capture reports its own failure.
+    const opened = outcome.docId;
+    void sessions.then(() => deps.recentPictures.capture(opened, path));
     return { outcome, sessions };
   }
 

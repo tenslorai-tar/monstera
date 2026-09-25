@@ -2,11 +2,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { RECENT_PREVIEWS_SETTING_ID } from '@monstera/contract';
 import { asDocId } from '@monstera/shared';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { createShellDependencies } from './composition.js';
 import { harnessSurfaces } from './harnessComposition.js';
+import { type PictureFiles, pictureName } from './recentPictures.js';
 import type { AppInfo } from './contractHandlers.js';
 
 /**
@@ -275,5 +277,48 @@ describe('the composition root, with no engine host platform', () => {
       if (executed.ok) throw new Error('the command should not have succeeded');
       expect(executed.error.code).toBe('document-poisoned');
     }
+  });
+});
+
+describe('the recent cards’ pictures, as the root wires them (ADR-0100)', () => {
+  /** A picture folder in memory, handed in as `entry.ts` hands the real one. */
+  function memoryFolder(): PictureFiles & { readonly held: Map<string, Uint8Array> } {
+    const held = new Map<string, Uint8Array>();
+    return {
+      held,
+      write: (name, bytes) => held.set(name, bytes),
+      read: (name) => (held.has(name) ? new Uint8Array(held.get(name) ?? []) : null),
+      remove: (name) => held.delete(name),
+      names: () => [...held.keys()],
+    };
+  }
+
+  it('an entry LEAVING the list takes its picture with it — the store’s listener, registered by the root', async () => {
+    // THE JOIN ONLY THIS ROOT MAKES: the recent store says which paths left, and the pictures delete theirs.
+    // The handler cases wire the same join in their own harness; this is the one the product runs.
+    const folder = memoryFolder();
+    const surfaces = harnessSurfaces('the composition test');
+    surfaces.recent.record({ path: 'C:/docs/a.pdf', name: 'a.pdf' });
+    folder.write(pictureName('C:/docs/a.pdf'), Uint8Array.of(0xff, 0xd8));
+    const deps = createShellDependencies({ ...surfaces, appInfo, recentPictureFiles: folder });
+
+    await deps.handlers['document.clearRecent']({});
+
+    expect(folder.held.size).toBe(0);
+  });
+
+  it('the Privacy setting, turned off through the channel, empties the folder — the id the root reads is the page’s', async () => {
+    const folder = memoryFolder();
+    const surfaces = harnessSurfaces('the composition test');
+    surfaces.recent.record({ path: 'C:/docs/a.pdf', name: 'a.pdf' });
+    folder.write(pictureName('C:/docs/a.pdf'), Uint8Array.of(0xff, 0xd8));
+    const deps = createShellDependencies({ ...surfaces, appInfo, recentPictureFiles: folder });
+
+    // CONTROL: a settings write that leaves it on deletes nothing.
+    await deps.handlers['settings.save']({ values: { [RECENT_PREVIEWS_SETTING_ID]: true } });
+    expect(folder.held.size).toBe(1);
+
+    await deps.handlers['settings.save']({ values: { [RECENT_PREVIEWS_SETTING_ID]: false } });
+    expect(folder.held.size).toBe(0);
   });
 });

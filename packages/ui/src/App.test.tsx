@@ -140,6 +140,9 @@ const OTHER_ANSWERS: Partial<Record<string, unknown>> = {
   // Takes no parameters and answers a boolean. Nothing else in this file's
   // fixtures is shaped like it.
   'log.reveal': { revealed: false },
+  // EVERY RECENT CARD ASKS FOR ITS PICTURE (ADR-0100), and a case about something else gets the placeholder.
+  'document.recentPreview': { kind: 'none' },
+  'document.clearRecent': { cleared: 0 },
   // The start screen asks for this on every mount, so every case that renders
   // one needs an answer. Empty and clean is the first-launch state: a list
   // here would put rows in front of cases that are about something else, and
@@ -2330,6 +2333,69 @@ describe('App', () => {
     function row(handle: string, name: string): { handle: string; name: string; location: unknown; openedAt: null } {
       return { handle, name, location: { within: null, folder: null }, openedAt: null };
     }
+
+    it('a card shows the picture main kept, asked for by the list’s handle, and the placeholder otherwise', async () => {
+      const sent: Sent[] = [];
+      const client = createClient(channels, (id, params) => {
+        sent.push({ id, params });
+        if (id === 'document.recent') {
+          return Promise.resolve(
+            ok({ entries: [row('handle-a', 'annual.pdf'), row('handle-b', 'notes.pdf')], lastExitClean: true, lastSession: [] }),
+          );
+        }
+        if (id === 'document.recentPreview') {
+          const { handle } = params as { handle: string };
+          return Promise.resolve(
+            ok(handle === 'handle-a' ? { kind: 'picture', jpeg: Uint8Array.of(0xff, 0xd8) } : { kind: 'none' }),
+          );
+        }
+        return Promise.resolve(ok(OTHER_ANSWERS[id] ?? (OPEN_DOCUMENT_ANSWERS as Record<string, unknown>)[id]));
+      });
+      const created: Blob[] = [];
+      const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+        created.push(blob as Blob);
+        return `blob:picture-${String(created.length)}`;
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // ASKED BY HANDLE, once per card: the page names the file by the capability it was given, nothing else.
+      expect(sent.filter((call) => call.id === 'document.recentPreview').map((call) => call.params)).toStrictEqual([
+        { handle: 'handle-a' },
+        { handle: 'handle-b' },
+      ]);
+      const first = screen.getByRole('button', { name: 'annual.pdf' });
+      expect(first.querySelector('img')?.getAttribute('src')).toBe('blob:picture-1');
+      expect(created[0]?.type).toBe('image/jpeg');
+      // THE OTHER CARD HAS NONE, and shows the page's shape with its type rather than an empty box.
+      const second = screen.getByRole('button', { name: 'notes.pdf' });
+      expect(second.querySelector('img')).toBeNull();
+      expect(second.querySelector('.m-recent-item__picture--none')?.textContent).toBe('PDF');
+      createObjectURL.mockRestore();
+    });
+
+    it('*Clear list* asks main to empty it, and the cards go only when main has', async () => {
+      const { client, sent } = withRecent({
+        entries: [row('handle-a', 'annual.pdf')],
+        lastExitClean: true,
+        lastSession: [],
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Clear list' }).click();
+        await Promise.resolve();
+      });
+
+      expect(sent.some((call) => call.id === 'document.clearRecent')).toBe(true);
+      expect(screen.queryByRole('button', { name: 'annual.pdf' })).toBeNull();
+    });
 
     it('a card is NAMED by the file and DESCRIBED by when and where it was opened (ADR-0100)', async () => {
       const { client } = withRecent({

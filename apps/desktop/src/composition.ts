@@ -18,6 +18,7 @@ import {
   type NetworkOcrEngine,
   OPTIMIZE_SETTINGS,
   ENGINE_HOST_MAX_IN_FLIGHT,
+  RECENT_PREVIEWS_SETTING_ID,
   type ClientApi,
   type IncidentSink,
   createClient,
@@ -124,6 +125,7 @@ import {
 } from './budget.js';
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
+import { NO_RECENT_PICTURES, type PictureFiles, createRecentPictures } from './recentPictures.js';
 import {
   lazyBarcodeWriter,
   DocumentCommands,
@@ -560,6 +562,12 @@ export interface ShellComposition {
    */
   readonly recentRoots?: readonly KnownRoot[];
   /**
+   * Where the recent cards' pictures are kept (ADR-0100), a directory under `userData` resolved in
+   * `entry.ts`. Absent, no picture is made or kept and every card shows the placeholder — every unit test's
+   * position, and never the product's.
+   */
+  readonly recentPictureFiles?: PictureFiles;
+  /**
    * The Win32 surfaces the engine host is created through, or `null`.
    *
    * `null` wherever they do not exist — every unit test, every non-Windows run —
@@ -676,6 +684,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     sendEvent,
     recent,
     recentRoots = [],
+    recentPictureFiles,
     enginePlatform = null,
     pdfiumPlatform = null,
     composePlatform = null,
@@ -1309,6 +1318,30 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     directory: pickDirectory,
   });
 
+  // THE RECENT CARDS' PICTURES (ADR-0100): made from the document a person opened, through the host's page
+  // image; on unless the Privacy setting is `false`, so an unset one means the default, on.
+  //
+  // NONE AT ALL WITHOUT A FOLDER TO KEEP THEM IN. A capture draws page 1 in the document's lane, and a graph
+  // with nowhere to put the picture would pay that on every open for nothing — measured the costly way: the
+  // composition cases' fake host answers no page image, so a capture held the lane and the next command
+  // waited out its timeout.
+  const recentPictures =
+    recentPictureFiles === undefined
+      ? NO_RECENT_PICTURES
+      : createRecentPictures({
+          files: recentPictureFiles,
+          picture: (docId) => commands.firstPagePicture(docId),
+          enabled: () => settings.read()[RECENT_PREVIEWS_SETTING_ID] !== false,
+          listed: (path) => recent.has(path),
+          notKept: (reason, detail) => {
+            log?.write('recent-picture', `not kept: ${reason} (${detail})`);
+          },
+        });
+  // THE STORE SAYS WHEN AN ENTRY LEAVES, and its picture leaves with it — registered before any handler runs.
+  recent.onDropped((paths) => {
+    recentPictures.drop(paths);
+  });
+
   const openedDocument = engineHost.openedDocument;
   const unlockDocument = engineHost.unlockDocument;
 
@@ -1365,6 +1398,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       pickDocument,
       recent,
       recentRoots,
+      recentPictures,
       // CLOUD STORAGE (ADR-0091), over the same secret store and the same browser opener as
       // DocuSign's sign-in. A working copy is written by the save pipeline's streamed write, checked
       // against open documents like any copy, into a folder made for it.
