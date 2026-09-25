@@ -889,8 +889,8 @@ registerRule({
 });
 
 // ---------------------------------------------------------------------------
-// 11. A FEATURES row this commit edited does not get LONGER once it is past 250
-// words (finding RRRR-4).
+// 11. A FEATURES row this commit edited does not get LONGER once it is past the
+// floor (finding RRRR-4).
 //
 // The trial that produced this: a row was rewritten in a commit whose stated
 // intent was compression, and it went from 1470 words to 1756 — up 19% — while
@@ -912,13 +912,16 @@ registerRule({
 //     number this run produced rather than restating a target. A compensation
 //     that could have been printed before the change is a disclaimer.
 //
-// The 250-word floor is deliberate. Under it a row is short enough that growth
-// is not the problem, and a rule that fired on a 40-word row gaining ten would
-// be one people learn to ignore.
+// The floor is deliberate. Under it a row is short enough that growth is not the
+// problem, and a rule that fired on a 40-word row gaining ten would be one people
+// learn to ignore. It was 250 until 2026-09-25, when the owner raised it to 500
+// (their item 8a): a FEATURES row carries its pairs, its expiry and its pointer,
+// and at 250 the rule was firing on rows doing exactly that. There is no target
+// length for a row and never was; this governs growth past the floor, nothing else.
 // ---------------------------------------------------------------------------
 
-/** Below this a row may grow freely: it is short enough that growth is not the defect. */
-const ROW_WORD_FLOOR = 250;
+/** Below this a row may grow freely: it is short enough that growth is not the defect. The owner's figure. */
+export const ROW_WORD_FLOOR = 500;
 
 /**
  * How many leading words of a row's first cell make its key.

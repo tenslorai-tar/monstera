@@ -892,6 +892,32 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — Ctrl+V pastes marks; the row floor is 500; history-trimmed stays a dialog
+
+The owner's item 3(h) named four things to fix, and items 8a and 8b two rulings.
+
+- **Ctrl+V pastes copied annotations.** The command's header had kept the chord off for one reason —
+  a document-level Ctrl+V would take the key from every text field — and that reason was answered on
+  2026-09-23 by `fieldOwnsChord`. What remained was the choice itself, which the order makes. With
+  nothing copied the command's `when` hides it, the chord is unclaimed and the browser keeps the key.
+  `annotationData.test.ts` now drives the real dispatcher: unclaimed before a copy, the paste sent for
+  the context's page after. Copy stays chordless: Ctrl+C is the selected-text copy.
+- **The focus ring around a whole dialog, and the Properties checkbox label far from its box**, were
+  both already fixed when this item was reached — `.m-dialog:focus-visible` and `.m-properties__check`,
+  earlier in Stage 10 — and are recorded here so the list is closed against the code rather than
+  against memory.
+- **8b — `dialog.history-trimmed` stays a dialog.** A toast leaves on its own and can be missed; undo
+  steps gone for good should not be. The Toasts row now reads *done* with the ruling in its body, and
+  the dialog's header states the ruling in place of the reason that expired.
+- **8a — the FEATURES row floor is 500 words, from 250.** `ROW_WORD_FLOOR` in `documentConsistency.mjs`
+  is exported and `rowLengthRatchet.proof.mjs` pins it with a literal from both sides — growth to about
+  450 words passes, to about 550 is reported — and reddened with the constant set back to 250. The
+  proof's filler grew from 300 words to 600 so its other cases still sit over the floor. **Correction
+  to earlier entries:** where they speak of a *250-word target* (2026-09-24, among others), there was
+  never a target length for a row; the rule governs growth past a floor, and the floor is now 500.
+
+---
+
 ## 2026-09-25 — The start screen's footer is v5-01's bar
 
 A bar along the foot of the start area: the footer slot's commands on the left as words, the F1 hint in

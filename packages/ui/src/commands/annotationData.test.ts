@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { IMPORT_ANNOTATIONS_PROBLEM_DIALOG_ID } from '../dialogs/importAnnotationsProblem.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { GROUP_COMMENT_FILES } from '../messages/en.js';
-import type { CommandContext } from '../registries/commands.js';
+import { type CommandContext, CommandRegistry } from '../registries/commands.js';
+import { dispatchChord, shortcutsFor } from '../surfaces/shortcuts.js';
 import {
   exportAnnotationsFdfCommand,
   exportAnnotationsJsonCommand,
@@ -139,10 +140,24 @@ describe('pasteAnnotationsCommand — main mints the import from the clipboard i
     expect(pasteAnnotationsCommand({ ...deps, hasCopied: () => true }).when?.(CONTEXT)).toBe(true);
   });
 
-  it('sits in the PAGE menu and claims NO chord — a claimed Ctrl+V would take the key from every text field', () => {
-    const { deps } = harness(undefined);
-    const command = pasteAnnotationsCommand({ ...deps, hasCopied: () => true });
+  it('sits in the PAGE menu, and Ctrl+V on the page RUNS it through the dispatcher once marks are copied', async () => {
+    const { deps, sent } = harness({ kind: 'empty' });
+    let copied = false;
+    const command = pasteAnnotationsCommand({ ...deps, hasCopied: () => copied });
     expect(command.placements).toStrictEqual([{ surface: 'context-menu', context: 'page', order: 25 }]);
-    expect(command.shortcut).toBeUndefined();
+    const registry = new CommandRegistry([command]);
+    const map = shortcutsFor(registry);
+    const ctrlV = { key: 'v', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false };
+
+    // NOTHING COPIED: the chord is UNCLAIMED, so the browser keeps the key rather than losing it to nothing.
+    expect(dispatchChord(registry, map, ctrlV, CONTEXT).kind).toBe('unclaimed');
+    expect(sent).toStrictEqual([]);
+
+    copied = true;
+    expect(dispatchChord(registry, map, ctrlV, { ...CONTEXT, page: 2, pageCount: 3 }).kind).toBe('ran');
+    await Promise.resolve();
+    expect(sent).toStrictEqual([{ id: 'document.pasteAnnotations', params: { docId: DOC, page: 2 } }]);
+    // A TEXT FIELD'S Ctrl+V never reaches this dispatcher: `useShortcuts` asks `fieldOwnsChord` first, and
+    // `shortcutsField.test.ts` holds that Ctrl+V is a field's.
   });
 });

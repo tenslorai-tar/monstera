@@ -130,13 +130,13 @@ function importAnnotationsCommand(
  * is a control that does nothing — and it is `hasCopied` that is asked, not main, since the
  * renderer is told the count by every copy it made.
  *
- * ## NO Ctrl+V yet, and the reason it gave has been answered
+ * ## Ctrl+V, and why it takes nothing from a text field
  *
  * `useShortcuts` listens on the document, and a claimed Ctrl+V used to take the key from every
  * input in the application. Since 2026-09-23 the dispatcher leaves a text field the keys it answers
- * itself (`fieldOwnsChord`, Ctrl+V among them), so that objection no longer holds. What remains is
- * a choice nobody has made: Ctrl+V on the page meaning *paste the marks I copied* rather than
- * nothing. It stays on the page menu and the palette until that is decided.
+ * itself (`fieldOwnsChord`, Ctrl+V among them). The choice that remained — Ctrl+V on the page meaning
+ * *paste the marks I copied* — was the owner's, taken 2026-09-25. With nothing copied `when` hides the
+ * command, the chord is unclaimed, and the browser keeps the key.
  */
 export function pasteAnnotationsCommand(
   deps: DocumentCommandDeps & { readonly hasCopied: () => boolean },
@@ -144,6 +144,7 @@ export function pasteAnnotationsCommand(
   return {
     id: 'annotate.paste',
     title: PASTE_ANNOTATIONS_TITLE,
+    shortcut: 'Ctrl+V',
     placements: [{ surface: 'context-menu', context: 'page', order: 25 }],
     when: (context) => hasDocument(context) && deps.hasCopied(),
     run: async (context): Promise<void> => {

@@ -28,17 +28,19 @@ export const HISTORY_TRIMMED_DIALOG_ID = 'dialog.history-trimmed';
  * member that is not a failure, ending the property that makes the union
  * readable.
  *
- * ## Why a dialog rather than a toast, and the honest limit
+ * ## Why a dialog rather than a toast
  *
- * A toast is the better carrier and does not exist: it is D12, Stage 0/1, and
- * unstarted. Between a modal and nothing, invariant 18 chooses the modal — the
- * same reasoning `dialog.save-problem` records for a message that can be missed
- * by not looking.
+ * A toast leaves on its own after a few seconds and can be missed by not looking,
+ * and what this reports — undo steps gone for good — is not something a person
+ * should be able to miss. So it stays a dialog, which is the owner's ruling of
+ * 2026-09-25, taken after the toast primitive existed; the reason this header gave
+ * before then was that no toast existed, and that reason is gone without the
+ * conclusion changing. `dialog.save-problem` records the same choice.
  *
  * **It fires rarely by construction**, because it fires only when the budget was
  * actually reached, which needs a session long enough to accumulate checkpoints
- * past §9.17's ceiling. If that turns out to be often, the answer is the toast
- * and not a suppression rule.
+ * past §9.17's ceiling. If that turns out to be often, the answer is a larger
+ * budget or a better message, never a suppression rule.
  *
  * ## A COUNT, and it is not optional
  *

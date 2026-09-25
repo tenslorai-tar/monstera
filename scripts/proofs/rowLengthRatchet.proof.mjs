@@ -36,6 +36,7 @@
  */
 
 import {
+  ROW_WORD_FLOOR,
   featureRowKey,
   featureRowWords,
   judgeRowLengths,
@@ -45,7 +46,7 @@ import { createRoster } from '../lib/passRoster.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 10 });
+const roster = createRoster(failures, { cases: 11 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -54,8 +55,8 @@ function check(name, condition, detail) {
   roster.record(mark, name);
 }
 
-/** Words enough to sit over the 250-word floor, and countable. */
-const FILLER = 'padding '.repeat(300).trim();
+/** Words enough to sit over the 500-word floor, and countable. */
+const FILLER = 'padding '.repeat(600).trim();
 
 /**
  * Openings long enough that appending a body does not change the key.
@@ -278,6 +279,31 @@ function table(rows) {
       `first column identically, so keying headers collides on the second table and takes the ` +
       `check down — which is a loud failure, and the reason it is excluded structurally rather ` +
       `than by matching the word.`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 11. THE FLOOR IS 500 — the owner's figure (2026-09-25), pinned from both sides.
+// ---------------------------------------------------------------------------
+{
+  // A LITERAL, not `ROW_WORD_FLOOR`: a case reading the constant agrees with any value the constant is given,
+  // which is 4c's derived count arriving in one number. Growth to about 450 words is under the floor and must
+  // pass — the old floor of 250 would have reported it — and growth to about 550 must be reported.
+  /** @param {number} count */
+  const words = (count) => 'word '.repeat(count).trim();
+  const under = judgeRowLengths(
+    table([`| ${SUBSTRATE} short body | **done** |`]),
+    table([`| ${SUBSTRATE} ${words(440)} | **done** |`]),
+  );
+  const over = judgeRowLengths(
+    table([`| ${SUBSTRATE} short body | **done** |`]),
+    table([`| ${SUBSTRATE} ${words(540)} | **done** |`]),
+  );
+  check(
+    'the floor is 500 words: growth to ~450 passes and growth to ~550 is reported',
+    under.length === 0 && over.length === 1 && ROW_WORD_FLOOR === 500,
+    `under: ${String(under.length)} report(s), over: ${String(over.length)}, constant ${String(ROW_WORD_FLOOR)}. ` +
+      `The owner set 500 in item 8a; a different figure is their decision to make, in this case and the constant.`,
   );
 }
 
