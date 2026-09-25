@@ -411,7 +411,7 @@ textarea {
   gap: var(--space-16);
   margin-block-start: auto;
   padding: var(--space-4) var(--space-16);
-  border-block-start: 1px solid var(--border);
+  border-block-start: 1px solid var(--border); /* decorative: separates the footer bar from the screen above; its links carry their own focus rings */
   color: var(--muted);
   font-size: var(--font-chrome-12);
 }
