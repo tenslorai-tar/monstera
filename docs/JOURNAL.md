@@ -892,6 +892,17 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — No dialog is taller than four-fifths of the window
+
+The owner: the keyboard shortcuts' list ran from the window's top to its bottom, which is not a dialog.
+The primitive's height cap was the window less 32 px a side; it is now `min(80vh, …)` of that, so a long
+body scrolls inside a dialog that stays centred with the window around it — every dialog alike, since
+the cap is the one they share. The Settings dialog (560 px) and the palette (60vh) set their own heights
+inside it. The dialog baselines were re-approved with the glass in one commit after this one; the
+accessibility suite passed.
+
+---
+
 ## 2026-09-25 — Every dialog is glass, and the contrast check holds the glass to the text floor
 
 The owner's order: dialogs glassy like v5-10's Settings, but not so see-through that the text is hard to

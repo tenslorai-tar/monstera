@@ -386,7 +386,10 @@
      measured live 2026-09-15, the camera dialog grew to its stream's native frame and put Take picture and Make PDF
      outside the window. The body below scrolls instead, so the title and close button stay reachable. */
   max-inline-size: calc(100vw - 2 * var(--space-32));
-  max-block-size: calc(100vh - 2 * var(--space-32));
+  /* AND NEVER TALLER THAN FOUR-FIFTHS OF THE WINDOW (the owner, 2026-09-25): the keyboard shortcuts' list ran from
+     the window's top to its bottom, which reads as a page rather than a dialog. A long body now scrolls inside a
+     dialog that stays centred with the window around it — every dialog alike, since this is the one they share. */
+  max-block-size: min(80vh, calc(100vh - 2 * var(--space-32)));
 }
 
 /* THE POPUP IS WHERE FOCUS LANDS, NOT A CONTROL, so it draws no ring. `Dialog.tsx` focuses the popup on open
