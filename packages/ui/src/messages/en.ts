@@ -43,10 +43,14 @@ export const REDUCE_MOTION_TITLE = messageKey('setting.appearance-reduce-motion.
 export const REDUCE_MOTION_DESCRIPTION = messageKey('setting.appearance-reduce-motion.description');
 export const THUMBNAIL_SIZE_TITLE = messageKey('setting.viewing-thumbnail-size.title');
 export const THUMBNAIL_SIZE_DESCRIPTION = messageKey('setting.viewing-thumbnail-size.description');
+export const THUMBNAIL_SIZE_SMALL = messageKey('setting.viewing-thumbnail-size.small');
+export const THUMBNAIL_SIZE_MEDIUM = messageKey('setting.viewing-thumbnail-size.medium');
+export const THUMBNAIL_SIZE_LARGE = messageKey('setting.viewing-thumbnail-size.large');
+/** `appearance.thumbnail-size`'s members, each its own exported key as the other option sets are. */
 export const THUMBNAIL_SIZE_OPTION_TITLES = {
-  small: messageKey('setting.viewing-thumbnail-size.small'),
-  medium: messageKey('setting.viewing-thumbnail-size.medium'),
-  large: messageKey('setting.viewing-thumbnail-size.large'),
+  small: THUMBNAIL_SIZE_SMALL,
+  medium: THUMBNAIL_SIZE_MEDIUM,
+  large: THUMBNAIL_SIZE_LARGE,
 } as const;
 export const ABOUT_TITLE = messageKey('dialog.about.title');
 export const ABOUT_COMMAND_TITLE = messageKey('command.show-about.title');
