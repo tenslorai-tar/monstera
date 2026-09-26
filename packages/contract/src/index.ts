@@ -107,6 +107,17 @@ export {
   RECENT_PREVIEWS_SETTING_ID,
   CRASH_REPORTS_SETTING_ID,
   crashReportIdSchema,
+  // THE UPDATE CHECK (ADR-0110): main parses the manifest and answers the status; the page reads the status, and
+  // registers the check's switch only while the address is live.
+  compareReleaseVersions,
+  releaseVersionSchema,
+  UPDATE_CHECK_SETTING_ID,
+  UPDATE_MANIFEST,
+  type UpdateManifest,
+  type UpdateManifestAddress,
+  updateManifestSchema,
+  type UpdateStatus,
+  updateStatusSchema,
   // The rating prompt's opt-out (E3): main reads it, the page declares its control.
   REVIEW_PROMPTS_SETTING_ID,
   type MainHandlers,

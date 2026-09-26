@@ -87,7 +87,10 @@ export type SettingCategory =
   | 'ocr'
   /** The shortcut map. No setting of its own yet; the page is the map. */
   | 'keyboard'
-  /** Where updates come from. No setting of its own: Windows updates Store apps (ADR-0018). */
+  /**
+   * Where updates come from: Windows updates Store apps (ADR-0018). The one setting here, the update check's switch,
+   * is registered only while the manifest has an address (ADR-0110), so today the page is its note alone.
+   */
   | 'updates'
   // What is drawn OVER the document, as against how the shell is painted:
   // rulers, grid, page layout, dark page mode. `BUILD-PROMPT.md:608-611` groups

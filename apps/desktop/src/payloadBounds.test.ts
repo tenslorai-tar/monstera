@@ -243,7 +243,11 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // neither side can carry anything a document contributes to — which is also why the renderer
   // cannot name an address.
   'app.openWebPage': 'names one of two declared pages and answers a boolean',
-  'app.openStore': 'names one of two declared Store pages and answers a boolean',
+  'app.openStore': 'names one of three declared Store pages and answers a boolean',
+  // THE UPDATE CHECK (ADR-0110): nothing in, and out a kind with at most a bounded version — the manifest's numbers,
+  // never its text, and nothing a document contributes to.
+  'app.updateStatus': 'carries nothing and answers a kind and a bounded version',
+  'app.acknowledgeSecurityUpdate': 'carries nothing and answers a boolean',
   // A PICKER AND A WRITE, whose answer says which of three things happened. The settings document
   // it writes is this build's own registered set and holds no secret and nothing a document
   // contributes to, which is `settings.load`'s answer above.

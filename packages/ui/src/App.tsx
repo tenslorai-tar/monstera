@@ -11,6 +11,7 @@ import {
   type FieldFill,
   type MeasureScale,
   type DispatchableCommand,
+  type UpdateStatus,
 } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
@@ -158,6 +159,7 @@ import { ErrorBoundary } from './ErrorBoundary.js';
 import { FindBar } from './FindBar.js';
 import type { SearchHighlight } from './searchHighlight.js';
 import { type RunningTask, trackerOver } from './runningTask.js';
+import { offerSecurityNotice } from './updateStatus.js';
 import { type BusyNote, busyOver } from './busyNote.js';
 import { checkSpellingCommand } from './commands/checkSpelling.js';
 import {
@@ -171,6 +173,7 @@ import { type OpenProblem, openDocument, openDocumentCommand, openDroppedFiles }
 import { revealLogCommand } from './commands/revealLog.js';
 import { donateCommand } from './commands/donate.js';
 import { rateUsCommand } from './commands/rateUs.js';
+import { updateAvailableCommand } from './commands/updateAvailable.js';
 import { showAboutCommand } from './commands/showAbout.js';
 import { showSettingsCommand } from './commands/showSettings.js';
 import { SETTINGS_DIALOG } from './dialogs/settings.js';
@@ -181,6 +184,7 @@ import { ACCESSIBILITY_DIALOG } from './dialogs/accessibilityCheck.js';
 import { placeBarcode, readBarcodesCommand } from './commands/barcodes.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
 import { DONATE_DIALOG } from './dialogs/donate.js';
+import { SECURITY_UPDATE_DIALOG } from './dialogs/securityUpdate.js';
 import { AI_SETUP_DIALOG } from './dialogs/aiSetup.js';
 import { CLOUD_DIALOG } from './dialogs/cloudStorage.js';
 import { CLOUD_OUTCOME_DIALOG } from './dialogs/cloudOutcome.js';
@@ -758,6 +762,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
         ABOUT_DIALOG,
         AI_SETUP_DIALOG,
         DONATE_DIALOG,
+        SECURITY_UPDATE_DIALOG,
         CLOUD_DIALOG,
         CLOUD_OUTCOME_DIALOG,
         KEYBOARD_SHORTCUTS_DIALOG,
@@ -1798,6 +1803,35 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
       cancelled = true;
     };
   }, [client]);
+
+  // WHAT THIS START'S UPDATE CHECK FOUND (ADR-0110), asked once per client after the first paint — so the check main
+  // runs on this ask is never on the startup path. The title bar's indicator reads it through its command's `when`.
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | undefined>(undefined);
+  const readUpdateStatus = useCallback(() => updateStatus, [updateStatus]);
+  useEffect(() => {
+    let cancelled = false;
+    client['app.updateStatus']({}).then(
+      (answer) => {
+        if (cancelled || !answer.ok) return;
+        setUpdateStatus(answer.value.status);
+      },
+      () => {
+        // NO ANSWER IS NO INDICATOR: the check is a courtesy, and main has already logged why it found nothing.
+      },
+    );
+    return (): void => {
+      cancelled = true;
+    };
+  }, [client]);
+  // THE SECURITY NOTICE, offered once per mount when main found an unacknowledged security release. A notice whose
+  // acknowledgement main did not record simply returns at the next start — its own outcome for a dismissal — so a
+  // failed call has nothing further to do here.
+  const securityNoticeOffered = useRef(false);
+  useEffect(() => {
+    if (updateStatus === undefined || securityNoticeOffered.current) return;
+    securityNoticeOffered.current = true;
+    offerSecurityNotice({ client, ask }, updateStatus).catch(() => undefined);
+  }, [ask, client, updateStatus]);
   const styleOpacity = useSetting(settings, ANNOTATION_OPACITY_SETTING);
   const styleLineWidth = useSetting(settings, ANNOTATION_LINE_WIDTH_SETTING);
   const styleFontSize = useSetting(settings, ANNOTATION_FONT_SIZE_SETTING);
@@ -2248,6 +2282,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
         showAboutCommand({ client, ask }),
         donateCommand({ client, ask }),
         rateUsCommand({ client, toast }),
+        // ADR-0018's INDICATOR, present only while main has offered an update (ADR-0110).
+        updateAvailableCommand({ client, status: readUpdateStatus }),
         // RE-ASKS MAIN WHICH SECRETS ARE STORED when a key moved, so the cloud
         // tool appears the moment its key lands rather than on the next launch.
         showSettingsCommand({
@@ -2539,6 +2575,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
       readActiveId,
       // WHETHER *PASTE ANNOTATIONS* EXISTS, which changes when a copy succeeds.
       readHasCopied,
+      // WHETHER *UPDATE AVAILABLE* EXISTS, which changes once, when main's answer arrives.
+      readUpdateStatus,
       // THE PREDICATES' INPUTS: `cloudReady` and the others close over this
       // render's answers, so without these a service's tools would stay hidden
       // however many keys were entered. Each is main's answer to *is a key

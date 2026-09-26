@@ -23,6 +23,9 @@ import {
   type ClientApi,
   type IncidentSink,
   type StorePage,
+  UPDATE_CHECK_SETTING_ID,
+  UPDATE_MANIFEST,
+  type UpdateManifest,
   createClient,
 } from '@monstera/contract';
 import {
@@ -129,6 +132,7 @@ import { type AppInfo, type PickDocument, createContractHandlers } from './contr
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, type PictureFiles, createRecentPictures } from './recentPictures.js';
 import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
+import { createUpdateCheck, manifestTransport, UPDATE_PROVIDERS } from './updateCheck.js';
 import {
   lazyBarcodeWriter,
   DocumentCommands,
@@ -579,10 +583,21 @@ export interface ShellComposition {
   /**
    * Opens one of the Store application's pages — `shell.openExternal` of a constant from `STORE_URIS`, which only
    * `entry.ts` may reach. The rating prompt's *review* uses it in the Store build (absent, the web listing), and
-   * `app.openStore` names *updates* for *Help › Check for updates* (ADR-0107). Absent, `app.openStore` answers
-   * `opened: false`.
+   * `app.openStore` names *updates* for *Help › Check for updates* (ADR-0107) and *listing* for the update
+   * indicator (ADR-0110). Absent, `app.openStore` answers `opened: false`.
    */
   readonly openStore?: (page: StorePage) => Promise<boolean>;
+  /**
+   * Where the security notice's acknowledgement is kept (ADR-0110), `update-check.json` under `userData`, resolved
+   * in `entry.ts`. Absent, nothing is recorded and the notice returns at the next start.
+   */
+  readonly updateRecordFile?: SettingsSurface;
+  /**
+   * The manifest's GET, injected so a case can count calls; absent, `manifestTransport`'s real one. The address it
+   * is handed is the contract's `UPDATE_MANIFEST`, never a parameter of this composition — so no caller can point
+   * the application at another file, and a dormant build hands it nothing.
+   */
+  readonly fetchUpdateManifest?: (url: string) => Promise<UpdateManifest>;
   /**
    * The Win32 surfaces the engine host is created through, or `null`.
    *
@@ -708,6 +723,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     recentPictureFiles,
     engagementFile,
     openStore,
+    updateRecordFile,
+    fetchUpdateManifest,
     enginePlatform = null,
     pdfiumPlatform = null,
     composePlatform = null,
@@ -1483,6 +1500,19 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // saying so is the honest answer rather than a silent success.
       revealLog: log === null ? (): Promise<boolean> => Promise.resolve(false) : log.reveal,
       crashReports,
+      // THE UPDATE CHECK (ADR-0110): this build's channel picks the provider, the contract's address decides whether
+      // anything is called, and the setting is read when the check runs — once, the first time the page asks.
+      updateCheck: createUpdateCheck({
+        provider: UPDATE_PROVIDERS[appInfo.installChannel],
+        address: UPDATE_MANIFEST,
+        installed: appInfo.version,
+        enabled: () => settings.read()[UPDATE_CHECK_SETTING_ID] !== false,
+        record: updateRecordFile ?? null,
+        fetchManifest: fetchUpdateManifest ?? manifestTransport(),
+        log: (detail) => {
+          log?.write('update-check', detail);
+        },
+      }),
       readDictionary: readSpellingDictionary,
       // WHICH MODELS THIS MACHINE HAS, composed for `readDictionary`'s reason: it
       // is a filesystem read, and the renderer cannot ask the question any other

@@ -57,6 +57,7 @@ import {
 import type { Assistant } from './assistant.js';
 import type { ChatHistory } from './chatHistory.js';
 import type { CrashReports } from './crashReports.js';
+import type { UpdateCheck } from './updateCheck.js';
 import { CloudOutcomeRefused, type CloudStorage } from './cloudSession.js';
 import { type KnownRoot, displayLocationOf } from './displayLocation.js';
 import type { RecentPictures } from './recentPictures.js';
@@ -246,6 +247,11 @@ export function createContractHandlers(deps: {
    * without a dumps folder, every unit test's, has no report to offer, and absent answers exactly that.
    */
   readonly crashReports?: CrashReports | null;
+  /**
+   * This start's update check (ADR-0110). Optional for `crashReports`' reason: a graph with no check has nothing to
+   * report, and absent answers `none` — the channel with no provider behind it — and records nothing.
+   */
+  readonly updateCheck?: UpdateCheck;
   /**
    * Reads a spelling dictionary's two files. `readSpellingDictionary`.
    *
@@ -597,6 +603,8 @@ export function createContractHandlers(deps: {
     'window.copyText': ({ text }) => Promise.resolve(ok({ copied: deps.copyText(text) })),
     'app.openWebPage': async ({ page }) => ok({ opened: await deps.openWebPage(page) }),
     'app.openStore': async ({ page }) => ok({ opened: await deps.openStore(page) }),
+    'app.updateStatus': async () => ok({ status: (await deps.updateCheck?.status()) ?? { kind: 'none' as const } }),
+    'app.acknowledgeSecurityUpdate': async () => ok({ acknowledged: (await deps.updateCheck?.acknowledge()) ?? false }),
     'window.closeListening': () => Promise.resolve(ok({ acknowledged: deps.closeListening() })),
   };
 }

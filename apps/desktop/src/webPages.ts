@@ -53,11 +53,14 @@ export const STORE_REVIEW_URI = `ms-windows-store://review/?ProductId=${STORE_PR
  * The Store application's pages by the contract's own names, so a page the contract adds is a compile error here.
  * `updates` is *Downloads and updates*, `ms-windows-store://downloadsandupdates` (Microsoft Learn, *Launch the
  * Microsoft Store app*, updated 2026-01-07, read 2026-09-26) — the owner's answer for *Check for updates* until the
- * project's own update check is live.
+ * project's own update check is live. `listing` is the Store application's page for this product,
+ * `ms-windows-store://pdp/?ProductId=…` — *"the recommended way to link to a specific product"* (Microsoft Learn, *Using
+ * ms-windows-store URIs*, updated 2026-01-07, read 2026-09-26) — where the update indicator sends a person (ADR-0110).
  */
 export const STORE_URIS: Readonly<Record<StorePage, string>> = {
   review: STORE_REVIEW_URI,
   updates: 'ms-windows-store://downloadsandupdates',
+  listing: `ms-windows-store://pdp/?ProductId=${STORE_PRODUCT_ID}`,
 };
 
 /** Every page's address, keyed by the channel's own union so a page with no entry is a compile error. */

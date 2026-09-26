@@ -128,3 +128,10 @@ difference between a future config change and a future amendment.
   makes none. It is stated in §8, in settings, and here, because an
   open-source-audience application that quietly acquires a call home has spent
   something it cannot get back.
+
+## Built, 2026-09-26
+
+The registry and `StoreUpdateProvider` are built, **dormant**, by
+[ADR-0110](0110-the-update-check-is-built-dormant-and-reads-numbers-only.md): the
+manifest's address is a state that the owner's word moves, and while it is dormant
+the GET above is never made. Nothing in this record's decision changed.

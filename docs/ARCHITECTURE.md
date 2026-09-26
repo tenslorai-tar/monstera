@@ -1673,12 +1673,13 @@ reconciled.
   use, and no self-update path.
 
   The two-flavour design is **kept as a seam and not deleted**. The flavour
-  switch stays, `WebUpdateProvider` is **to be registered with no implementation
-  behind it** — the update-provider registry is not built yet, which ADR-0018
-  itself says (*"lands as amendment and ADR now, and as an implementation when
-  the registries are built"*; corrected 2026-09-26, the stage audit of
-  1e1bfad..e24eca0e, where this read *"stays registered"*) — and the signing
-  certificate stays as an **empty build config
+  switch stays, `WebUpdateProvider` is **registered with no implementation
+  behind it** — in `UPDATE_PROVIDERS`, the update-provider registry, built
+  2026-09-26 with the Store check it carries
+  ([ADR-0110](DECISIONS/0110-the-update-check-is-built-dormant-and-reads-numbers-only.md);
+  until then this read *"to be registered"*, and before the stage audit of
+  1e1bfad..e24eca0e *"stays registered"*, a sentence ahead of the code) — and
+  the signing certificate stays as an **empty build config
   value**. A signed direct download may be added later, and when it is it must
   be a configuration change rather than an architecture change. That is the
   reason the seam exists — it is not dead code, and removing it converts a
@@ -1702,6 +1703,13 @@ reconciled.
      shows a notice requiring acknowledgement.
   3. **A settings entry to disable the check**, describing exactly what it sends
      and what it fetches. Default on.
+
+  **All three are built and DORMANT** (2026-09-26,
+  [ADR-0110](DECISIONS/0110-the-update-check-is-built-dormant-and-reads-numbers-only.md)):
+  the manifest's address is the contract's `UPDATE_MANIFEST`, `{ state: 'dormant' }`
+  until the owner says monsterapdf.com serves the file, and while it is dormant the
+  check calls nothing and the settings entry is not registered — a switch for a check
+  that cannot run would be display-only. Going live is that one value.
 
   The `security` flag is the join between the advisory tracker and the user: the
   tracker decides how fast a fix can ship, this decides how fast it arrives.
@@ -1865,10 +1873,11 @@ say**.
     interpreter plus that binding, and anything more means it is loading
     something it has no business loading. **Printing binds `gdi32.dll` and
     `comdlg32.dll` when a person prints**, and **sharing binds `combase.dll` when a
-    person emails a document**, neither before, so they are among what
+    person emails a document or shares a crash report**, neither before, so they are among what
     `main` may load and not part of its baseline
     ([ADR-0074](DECISIONS/0074-printing-is-mupdfs-raster-through-the-system-print-dialog-and-gdi.md),
-    [ADR-0080](DECISIONS/0080-emailing-a-document-is-the-windows-share-sheet-from-main.md);
+    [ADR-0080](DECISIONS/0080-emailing-a-document-is-the-windows-share-sheet-from-main.md),
+    [ADR-0109](DECISIONS/0109-a-crash-report-is-written-here-and-sent-only-by-the-person.md);
     `userenv.dll` was missing from this list from the day it was written). `mupdf-host` carries the same binding
     **and** the statically linked engine, so its fixed cost is larger by the
     engine's own footprint — but the engine's fixed cost is meant to be a

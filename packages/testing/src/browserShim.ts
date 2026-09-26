@@ -7,6 +7,7 @@ import {
   type FormFieldKind,
   type Incident,
   type OcrLanguage,
+  type UpdateStatus,
   type WindowEditAction,
   MAX_FORM_DATA_BYTES,
   ACCESSIBILITY_HUMAN_CHECKS,
@@ -377,6 +378,12 @@ export interface BrowserShimOptions {
 
   /** A crash report left by a previous run, for the start screen's offer (ADR-0109). Absent is none. */
   readonly crashReport?: { readonly id: string; readonly crashedAt: string };
+
+  /**
+   * What main's update check found this start (ADR-0110). Absent, `dormant` — this build's own answer, so no screen
+   * that is about something else carries the indicator or the security notice.
+   */
+  readonly updateStatus?: UpdateStatus;
 
   /**
    * Which pages carry a picture and no text, indexed by page.
@@ -750,6 +757,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   let revealedLog = 0;
   /** Whether the seeded crash report was shared or dismissed — then it is offered no more. */
   let crashReportDone = false;
+  /** The seeded update status, which an acknowledgement moves as main's record does. */
+  let updateStatus: UpdateStatus = options.updateStatus ?? { kind: 'dormant' };
   const titleBarOverlays: { readonly color: string; readonly symbolColor: string; readonly height: number }[] = [];
   let windowCloses = 0;
   let closeListenings = 0;
@@ -1944,6 +1953,14 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'app.openWebPage': () => Promise.resolve(ok({ opened: false })),
     // AND NO STORE APPLICATION, for the same reason.
     'app.openStore': () => Promise.resolve(ok({ opened: false })),
+    // THE UPDATE CHECK'S ANSWER IS WHAT THE CASE SEEDS (ADR-0110), and an acknowledgement is recorded as main
+    // records it: only for a security release, after which the status says so.
+    'app.updateStatus': () => Promise.resolve(ok({ status: updateStatus })),
+    'app.acknowledgeSecurityUpdate': () => {
+      if (updateStatus.kind !== 'security') return Promise.resolve(ok({ acknowledged: false }));
+      updateStatus = { ...updateStatus, acknowledged: true };
+      return Promise.resolve(ok({ acknowledged: true }));
+    },
     // THE RATING PROMPT (E3): never due unless a fixture says so, so no screen that is about something else
     // carries the banner; and nothing opens, since the shim has no Store.
     'app.reviewPrompt': () => Promise.resolve(ok({ due: options.reviewDue ?? false })),

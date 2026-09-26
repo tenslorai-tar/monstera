@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { openWebPage } from './webPages.js';
+import { openWebPage, STORE_PRODUCT_ID, STORE_URIS } from './webPages.js';
 
 /**
  * The `main` half of *Donate*'s pair (ADR-0095): the place the renderer named becomes an address
@@ -92,5 +92,14 @@ describe('openWebPage', () => {
     await openWebPage('licences', open);
     expect(opened).toHaveLength(4);
     for (const url of opened) expect(new URL(url).protocol).toBe('https:');
+  });
+});
+
+describe('the Store application’s pages', () => {
+  it('every page is the Store protocol, and the update indicator’s listing names THIS product', () => {
+    for (const uri of Object.values(STORE_URIS)) expect(new URL(uri).protocol).toBe('ms-windows-store:');
+    // THE PRODUCT, not the Store's front page: a listing without the id would open the Store and show nothing to update.
+    expect(STORE_URIS.listing).toBe(`ms-windows-store://pdp/?ProductId=${STORE_PRODUCT_ID}`);
+    expect(new Set(Object.values(STORE_URIS)).size).toBe(Object.keys(STORE_URIS).length);
   });
 });

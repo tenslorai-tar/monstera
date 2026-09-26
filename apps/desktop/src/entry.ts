@@ -44,6 +44,7 @@ import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
 import { knownRoots } from './displayLocation.js';
 import { pictureDirectory } from './recentPictures.js';
 import { ENGAGEMENT_FILE } from './engagement.js';
+import { UPDATE_RECORD_FILE } from './updateCheck.js';
 import { STORE_URIS } from './webPages.js';
 import { createChatHistory } from './chatHistory.js';
 import { type SecretCipher, createSecretStore } from './secretStore.js';
@@ -407,6 +408,9 @@ startShell(() => {
     // Store application's pages: `shell.openExternal` of a constant from `STORE_URIS`, never of anything a page
     // supplied — a page names `review` or `updates`, and the table is the only place a URI is.
     engagementFile: createJsonFile(app.getPath('userData'), ENGAGEMENT_FILE),
+    // WHICH SECURITY RELEASE THE PERSON ACKNOWLEDGED (ADR-0110), in its own document beside the rating record. The
+    // manifest's GET is the composition's own default; its address is the contract's, dormant in this build.
+    updateRecordFile: createJsonFile(app.getPath('userData'), UPDATE_RECORD_FILE),
     openStore: async (page) => {
       await shell.openExternal(STORE_URIS[page]);
       return true;

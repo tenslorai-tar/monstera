@@ -402,10 +402,11 @@ export const WINDOW_EDIT_ACTIONS = ['cut', 'copy', 'paste', 'selectAll'] as cons
 export type WindowEditAction = (typeof WINDOW_EDIT_ACTIONS)[number];
 
 /**
- * The Store application's pages this build opens. `review` is reached by the rating prompt through `app.review`, and
- * `updates` by `app.openStore`; `main` holds one table of their URIs, so the two routes share one opener.
+ * The Store application's pages this build opens. `review` is reached by the rating prompt through `app.review`;
+ * `updates` (*Help › Check for updates*) and `listing` (the update indicator, ADR-0110) by `app.openStore`. `main`
+ * holds one table of their URIs, so the two routes share one opener.
  */
-export const STORE_PAGES = ['review', 'updates'] as const;
+export const STORE_PAGES = ['review', 'updates', 'listing'] as const;
 export type StorePage = (typeof STORE_PAGES)[number];
 
 /**
@@ -870,6 +871,97 @@ export const CRASH_REPORTS_SETTING_ID = 'privacy.crash-reports';
 
 /** A crash report's id: its file's NAME, never a path (ADR-0109). */
 export const crashReportIdSchema = z.string().min(1).max(128).regex(/^[A-Za-z0-9._-]+$/u);
+
+/**
+ * A release's version: `MAJOR.MINOR.PATCH`, digits only, no leading zeros and no pre-release tag
+ * ([ADR-0110](../../../docs/DECISIONS/0110-the-update-check-is-built-dormant-and-reads-numbers-only.md)).
+ * Six digits a part is far past any version this application will reach, and bounds the string.
+ */
+export const releaseVersionSchema = z
+  .string()
+  .max(20)
+  .regex(/^(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})$/u);
+
+/**
+ * Orders two versions the schema above accepts: negative, zero or positive, part by part. **Numbers compare as
+ * numbers** — `1.2.10` is above `1.2.9`, which a string comparison gets wrong. The one comparison the manifest's
+ * own rule and main's check both take (B3a).
+ */
+export function compareReleaseVersions(a: string, b: string): number {
+  const left = a.split('.').map(Number);
+  const right = b.split('.').map(Number);
+  for (let part = 0; part < 3; part += 1) {
+    const difference = (left[part] ?? 0) - (right[part] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
+/**
+ * The update manifest monsterapdf.com serves for the Store build (ADR-0018, ADR-0110).
+ *
+ * **Numbers only, and `.strict()`, on purpose.** The file carries no address and no text, so a manifest a stranger
+ * swapped can at worst show a false *update available* that opens the real Microsoft Store; every sentence a person
+ * reads is this application's own. A field added here would widen that — and an installed build reads this file for
+ * years, so a new shape is published at a new path (`/v2/`) rather than added to this one.
+ */
+export const updateManifestSchema = z
+  .object({
+    /** The shape's own number, as the path's `/v1/` is. */
+    schema: z.literal(1),
+    /** Which build this file describes; a store build refuses any other. */
+    channel: z.literal('store'),
+    /** The newest version the Store offers. */
+    version: releaseVersionSchema,
+    /** Below this, an installed build is no longer supported. */
+    minimumVersion: releaseVersionSchema,
+    /** Whether `version` fixes a security problem — the notice that needs acknowledging. */
+    security: z.boolean(),
+  })
+  .strict()
+  .refine((manifest) => compareReleaseVersions(manifest.minimumVersion, manifest.version) <= 0, {
+    message: 'the minimum supported version is above the newest',
+  });
+
+export type UpdateManifest = z.infer<typeof updateManifestSchema>;
+
+/**
+ * Where the Store build reads the manifest — a state, not an address (ADR-0110).
+ *
+ * **Dormant until the owner says monsterapdf.com serves the file.** While dormant, main's check answers `dormant`
+ * and calls nothing, and the renderer registers no switch for it. Going live is {@link UPDATE_MANIFEST}'s one value:
+ * `{ state: 'live', url: 'https://monsterapdf.com/updates/v1/store.json' }` — the proposed path, `/v1/` because an
+ * installed build reads it for years. The type admits that host only, over HTTPS.
+ */
+export type UpdateManifestAddress =
+  | { readonly state: 'dormant' }
+  | { readonly state: 'live'; readonly url: `https://monsterapdf.com/${string}` };
+
+/** This build's manifest address. Dormant: nothing hosts the file yet (the owner's work list, 2026-09-26). */
+export const UPDATE_MANIFEST: UpdateManifestAddress = { state: 'dormant' };
+
+/** Whether the Store build checks for a newer version. Main reads it when the check runs; the renderer declares it. */
+export const UPDATE_CHECK_SETTING_ID = 'updates.check';
+
+/**
+ * What this start's update check found (ADR-0110).
+ *
+ * `none` — this build's channel has no check (a development or web build); `dormant` — the build has no address;
+ * `off` — the person turned the check off; `unknown` — a request was made and no usable answer came back. The other
+ * four are what the manifest said, and `security` carries whether this person acknowledged that release.
+ */
+export const updateStatusSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('none') }).strict(),
+  z.object({ kind: z.literal('dormant') }).strict(),
+  z.object({ kind: z.literal('off') }).strict(),
+  z.object({ kind: z.literal('unknown') }).strict(),
+  z.object({ kind: z.literal('current') }).strict(),
+  z.object({ kind: z.literal('newer'), version: releaseVersionSchema }).strict(),
+  z.object({ kind: z.literal('unsupported'), version: releaseVersionSchema }).strict(),
+  z.object({ kind: z.literal('security'), version: releaseVersionSchema, acknowledged: z.boolean() }).strict(),
+]);
+
+export type UpdateStatus = z.infer<typeof updateStatusSchema>;
 
 /**
  * Whether Monstera may ask for a Store rating (the founding record's E3: *"A Settings toggle surfaces
@@ -5123,7 +5215,8 @@ export const channels = {
 
   /**
    * Opens one of the Microsoft Store APPLICATION's own pages — *Help › Check for updates* (ADR-0107, the owner's answer
-   * of 2026-09-26: the Store's *Downloads and updates* page until this project's own update check is live).
+   * of 2026-09-26: the Store's *Downloads and updates* page), and the update indicator's page for this application
+   * (ADR-0110).
    *
    * **A place, never an address**, `app.openWebPage`'s shape: the renderer names `updates` and `main` holds the
    * `ms-windows-store:` URI, which is not a web address and so is opened by the platform rather than by the browser
@@ -5134,6 +5227,26 @@ export const channels = {
     'Opens one of the Microsoft Store application’s own pages.',
     z.object({ page: z.enum(STORE_PAGES) }).strict(),
     z.object({ opened: z.boolean() }),
+  ),
+
+  /**
+   * What this start's update check found (ADR-0110). The first ask runs the check in main — one GET, when the
+   * address is live, the build is a Store build and the setting is on — and every later ask shares its answer.
+   */
+  'app.updateStatus': channel(
+    'What this start’s update check found.',
+    z.object({}).strict(),
+    z.object({ status: updateStatusSchema }),
+  ),
+
+  /**
+   * Records that the person saw the security notice for the release main found. The page names no version: main
+   * records its own answer's, so a page cannot acknowledge a release main did not report.
+   */
+  'app.acknowledgeSecurityUpdate': channel(
+    'Records that the security notice was seen.',
+    z.object({}).strict(),
+    z.object({ acknowledged: z.boolean() }),
   ),
 } as const;
 

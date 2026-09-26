@@ -505,6 +505,7 @@ export const ABOUT_CHANNEL_DEVELOPMENT = messageKey('dialog.about.channel-develo
 export const ABOUT_UPDATES_STORE = messageKey('dialog.about.updates-store');
 export const ABOUT_UPDATES_WEB = messageKey('dialog.about.updates-web');
 export const ABOUT_UPDATES_DEVELOPMENT = messageKey('dialog.about.updates-development');
+export const ABOUT_UPDATES_CHECKED = messageKey('dialog.about.updates-checked');
 export const ABOUT_LICENCE = messageKey('dialog.about.licence');
 export const ABOUT_SOURCE = messageKey('dialog.about.source');
 export const ABOUT_LICENCES = messageKey('dialog.about.licences');
@@ -1559,6 +1560,13 @@ export const SHOW_LAYERS_TITLE = messageKey('command.show-layers.title');
 export const SHOW_SEARCH_TITLE = messageKey('command.show-search.title');
 export const SHOW_PROPERTIES_TITLE = messageKey('command.show-properties.title');
 export const CHECK_FOR_UPDATES_TITLE = messageKey('command.check-for-updates.title');
+export const UPDATE_AVAILABLE_TITLE = messageKey('command.update-available.title');
+export const SECURITY_UPDATE_TITLE = messageKey('dialog.security-update.title');
+export const SECURITY_UPDATE_TEXT = messageKey('dialog.security-update.text');
+export const SECURITY_UPDATE_OPEN_STORE = messageKey('dialog.security-update.open-store');
+export const SECURITY_UPDATE_UNDERSTOOD = messageKey('dialog.security-update.understood');
+export const UPDATES_CHECK_TITLE = messageKey('setting.updates.check.title');
+export const UPDATES_CHECK_DESCRIPTION = messageKey('setting.updates.check.description');
 export const RIBBON_SECTION_TITLE = messageKey('setting.appearance-ribbon-section.title');
 /**
  * `appearance.ribbon-section`'s members, by the word the rail already shows. Declared AFTER the section keys it names,
@@ -2072,6 +2080,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ABOUT_UPDATES_STORE]: 'Updates are managed by the Microsoft Store. Monstera does not check for updates itself.',
   [ABOUT_UPDATES_WEB]: 'This build does not check for updates. Newer versions are on monsterapdf.com.',
   [ABOUT_UPDATES_DEVELOPMENT]: 'A development build. It does not check for updates.',
+  [ABOUT_UPDATES_CHECKED]:
+    'Updates are installed by the Microsoft Store. Monstera also asks monsterapdf.com when it starts whether a newer version is out.',
   [ABOUT_LICENCE]:
     'Monstera is free software under the GNU Affero General Public License, version 3 or later. You can read and build its source code.',
   [ABOUT_SOURCE]: 'Source code',
@@ -3749,6 +3759,17 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SHOW_SEARCH_TITLE]: 'Search panel',
   [SHOW_PROPERTIES_TITLE]: 'Properties panel',
   [CHECK_FOR_UPDATES_TITLE]: 'Check for updates',
+  // THE STORE INSTALLS IT, so no word here says Monstera will (ADR-0018). The indicator names what exists.
+  [UPDATE_AVAILABLE_TITLE]: 'Update available',
+  [SECURITY_UPDATE_TITLE]: 'Important security update',
+  [SECURITY_UPDATE_TEXT]:
+    'Monstera {version} fixes a security problem. Please update from the Microsoft Store as soon as you can.',
+  [SECURITY_UPDATE_OPEN_STORE]: 'Open Microsoft Store',
+  [SECURITY_UPDATE_UNDERSTOOD]: 'I understand',
+  // WHAT IS FETCHED AND WHAT IS SENT, as ADR-0018 requires the setting to say.
+  [UPDATES_CHECK_TITLE]: 'Check for new versions',
+  [UPDATES_CHECK_DESCRIPTION]:
+    'Each time Monstera starts, it downloads a small file from monsterapdf.com that says which version is newest. Nothing about you or your documents is sent; like any website, it can see your internet address. The Microsoft Store installs updates, never Monstera itself.',
   [GROUP_FILE]: 'File',
   [GROUP_FIND]: 'Find',
   [GROUP_PAGES]: 'Pages',

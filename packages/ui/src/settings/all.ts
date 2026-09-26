@@ -10,6 +10,7 @@ import { DOCUSIGN_ENVIRONMENT_SETTING, DOCUSIGN_INTEGRATION_KEY_SETTING } from '
 import { CRASH_REPORTS_SETTING, RECENT_PREVIEWS_SETTING } from './privacy.js';
 import { REVIEW_PROMPTS_SETTING } from './advanced.js';
 import { AUTOSAVE_SETTING } from './saving.js';
+import { UPDATES_SETTINGS } from './updates.js';
 import {
   ORGANIZE_GRID_SIZE_SETTING,
   REDUCE_MOTION_SETTING,
@@ -130,4 +131,7 @@ export const ALL_SETTINGS: readonly SettingDefinition[] = [
   CRASH_REPORTS_SETTING,
   REVIEW_PROMPTS_SETTING,
   AUTOSAVE_SETTING,
+  // THE UPDATE CHECK'S SWITCH, present only while the manifest has an address (ADR-0110): a switch for a check that
+  // cannot run would read ON while nothing is ever asked.
+  ...UPDATES_SETTINGS,
 ];

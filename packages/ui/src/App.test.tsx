@@ -157,6 +157,9 @@ const OTHER_ANSWERS: Partial<Record<string, unknown>> = {
   // E3's rating prompt asks once per mount. Not due is every case's position: a banner here would put four
   // buttons in front of cases that are about something else.
   'app.reviewPrompt': { due: false },
+  // THE UPDATE CHECK asks once per mount (ADR-0110). Dormant is this build's own answer, and every case's position:
+  // an indicator or a security notice here would put a control in front of cases about something else.
+  'app.updateStatus': { status: { kind: 'dormant' } },
 };
 
 function recordingClient(answer: unknown): {
@@ -198,6 +201,8 @@ function commandCalls(calls: readonly string[]): readonly string[] {
   // `crashReport.pending` joins them for the recent list's reason: the start screen asks main, each time it is shown
   // (the offer mounts with it, so File › Start screen asks again — a read, with no effect), whether the last
   // run left a crash report to offer (ADR-0109). What the offer sends is `CrashReportOffer.test.tsx`' subject.
+  // `app.updateStatus` joins them the same way: the shell asks main once what this start's update check found
+  // (ADR-0110). What the indicator and the notice send is the update cases' subject below.
   return calls.filter(
     (id) =>
       id !== 'document.recent' &&
@@ -205,7 +210,8 @@ function commandCalls(calls: readonly string[]): readonly string[] {
       id !== 'app.info' &&
       id !== 'window.closeListening' &&
       id !== 'app.reviewPrompt' &&
-      id !== 'crashReport.pending',
+      id !== 'crashReport.pending' &&
+      id !== 'app.updateStatus',
   );
 }
 
@@ -871,6 +877,74 @@ describe('App', () => {
       ]);
       unmount();
     }
+  });
+
+  describe('the update check’s renderer half (ADR-0110)', () => {
+    /** A client whose update check found `status`, recording what the page sends. */
+    const updating = (status: unknown): { client: ContractClient; sent: Sent[] } => {
+      const sent: Sent[] = [];
+      const client = createClient(channels, (id, params) => {
+        sent.push({ id, params });
+        if (id === 'app.updateStatus') return Promise.resolve(ok({ status }));
+        if (id === 'app.info') return Promise.resolve(ok({ version: '1.3.0', installChannel: 'store', userName: 'A. Tester' }));
+        if (id === 'app.openStore') return Promise.resolve(ok({ opened: true }));
+        if (id === 'app.acknowledgeSecurityUpdate') return Promise.resolve(ok({ acknowledged: true }));
+        return Promise.resolve(ok(OTHER_ANSWERS[id] ?? { kind: 'cancelled' }));
+      });
+      return { client, sent };
+    };
+
+    it('a newer version puts Update available in the title bar, and pressing it opens the Store’s listing by name', async () => {
+      const { client, sent } = updating({ kind: 'newer', version: '1.4.0' });
+      render(<App client={client} settings={freshSettings()} />);
+      const indicator = await screen.findByRole('button', { name: 'Update available' });
+      await act(async () => {
+        indicator.click();
+        await Promise.resolve();
+      });
+      expect(sent.filter((call) => call.id === 'app.openStore')).toStrictEqual([
+        { id: 'app.openStore', params: { page: 'listing' } },
+      ]);
+    });
+
+    it('CONTROL: this build’s own answer, dormant, draws no indicator and opens no notice', async () => {
+      const { client } = updating({ kind: 'dormant' });
+      render(<App client={client} settings={freshSettings()} />);
+      // THE ANSWER ARRIVED before absence is read, so the absence is about the answer rather than about timing.
+      await act(async () => {
+        await new Promise((settle) => setTimeout(settle, 0));
+      });
+      expect(screen.queryByRole('button', { name: 'Update available' })).toBeNull();
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('an unacknowledged security release opens the notice at start, and I understand acknowledges it', async () => {
+      const { client, sent } = updating({ kind: 'security', version: '1.4.0', acknowledged: false });
+      render(<App client={client} settings={freshSettings()} />);
+      expect(await screen.findByRole('dialog', { name: 'Important security update' })).toBeDefined();
+      expect(await screen.findByText(/Monstera 1\.4\.0 fixes a security problem/u)).toBeDefined();
+      await act(async () => {
+        (await screen.findByRole('button', { name: 'I understand' })).click();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await new Promise((settle) => setTimeout(settle, 0));
+      });
+      expect(sent.filter((call) => call.id === 'app.acknowledgeSecurityUpdate')).toHaveLength(1);
+      expect(sent.filter((call) => call.id === 'app.openStore')).toStrictEqual([]);
+    });
+
+    it('About says monsterapdf.com was asked only on a run that asked', async () => {
+      const { client } = updating({ kind: 'current' });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        screen.getByRole('button', { name: 'About' }).click();
+        await Promise.resolve();
+      });
+      expect(await screen.findByText(/Monstera also asks monsterapdf\.com/u)).toBeDefined();
+      // AGAINST the Store build's own line, which the dormant cases above show.
+      expect(screen.queryByText(/Monstera does not check for updates itself/u)).toBeNull();
+    });
   });
 
   it('CONTROL: nothing is mounted until the dialog is opened', async () => {

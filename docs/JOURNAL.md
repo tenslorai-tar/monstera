@@ -892,6 +892,30 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-26 — The update check is built, and makes no call
+
+The 26 September list's item 7, under ADR-0110 (no amendment: §8's three clauses are what was built). What is worth
+keeping:
+
+**Dormant is a value the check reads first, not a flag beside a URL.** The contract's `UPDATE_MANIFEST` is
+`{ state: 'dormant' }`, and the check answers `dormant` before it reads the setting or reaches `fetch`. The case that
+holds it builds a Store build with the setting on and a counting fetch — every other reason not to call is removed,
+so the empty count can only mean the address. The proposed address is `https://monsterapdf.com/updates/v1/store.json`.
+
+**The switch comes with the address.** A row for a check that cannot run would read ON while nothing is asked, so the
+settings list spreads a set derived from the same contract value, and a case mocks that value live to prove the row
+then appears — without that control, a module that never registered the row passes the dormant case.
+
+**"Sends nothing" was measured, not asserted.** A fake `fetch` sees only the arguments passed, never the headers Node
+adds, so the transport's cases run Node's real `fetch` against a server on 127.0.0.1: seven header names, all
+`fetch`'s own, written into the test from its first run; a redirect whose live target receives nothing; a body one
+byte past the bound refused with no length announced.
+
+**The registry ADR-0018 waited for is a `Record` over the install channel**, so `WebUpdateProvider` is finally
+registered with nothing behind it rather than *owed*, and three documents that said *not built* now say what is.
+
+---
+
 ## 2026-09-26 — Stage audit of `e24eca0e..8d044e72` — findings SSSSSS-1 to SSSSSS-12
 
 11 commits, 199 files, 7 proofs added, 46 modified and none removed, 11 source files added and 90 changed

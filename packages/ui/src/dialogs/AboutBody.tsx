@@ -10,6 +10,7 @@ import {
   ABOUT_LICENCE,
   ABOUT_LICENCES,
   ABOUT_SOURCE,
+  ABOUT_UPDATES_CHECKED,
   ABOUT_UPDATES_DEVELOPMENT,
   ABOUT_UPDATES_STORE,
   ABOUT_UPDATES_WEB,
@@ -31,8 +32,11 @@ const CHANNEL_NAMES: Readonly<Record<Channel, MessageKey>> = {
 /**
  * How this build is updated, per channel (the founding record's E4: *"show 'Updates are managed by Microsoft
  * Store' in About"*, and *"Update checks are the only phone-home in the app, and the About panel says so"*).
- * No build here checks for updates itself: the Store build never self-updates, and the web channel's updater
- * is not built — so each line says what is true of this build rather than what a later one will do.
+ * A build that did not ask monsterapdf.com this run says so here: the Store build never self-updates, and the web
+ * channel has no updater — so each line says what is true of this build rather than what a later one will do.
+ *
+ * **A run that DID ask says that instead** (`ABOUT_UPDATES_CHECKED`, ADR-0110), decided from main's status for the run
+ * rather than from the channel, so the line cannot claim a check that a dormant address or the setting prevented.
  */
 const UPDATE_LINES: Readonly<Record<Channel, MessageKey>> = {
   store: ABOUT_UPDATES_STORE,
@@ -55,10 +59,12 @@ const UPDATE_LINES: Readonly<Record<Channel, MessageKey>> = {
 export default function AboutBody({
   version,
   installChannel,
+  checksForUpdates,
   resolve,
 }: {
   readonly version: string;
   readonly installChannel: Channel;
+  readonly checksForUpdates: boolean;
 } & DialogAnswering<AboutAnswer>): ReactElement {
   const { _ } = useLingui();
 
@@ -70,7 +76,7 @@ export default function AboutBody({
         <dt>{_(ABOUT_CHANNEL_LABEL)}</dt>
         <dd>{_(CHANNEL_NAMES[installChannel])}</dd>
       </dl>
-      <p className="m-about__line">{_(UPDATE_LINES[installChannel])}</p>
+      <p className="m-about__line">{_(checksForUpdates ? ABOUT_UPDATES_CHECKED : UPDATE_LINES[installChannel])}</p>
       <p className="m-about__line">{_(ABOUT_LICENCE)}</p>
       <div className="m-about__actions">
         <Button

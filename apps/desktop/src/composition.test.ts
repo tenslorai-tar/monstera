@@ -127,6 +127,47 @@ describe('the Store application’s pages, through the assembled handlers', () =
   });
 });
 
+describe('the update check, through the assembled handlers (ADR-0110)', () => {
+  it('this build answers dormant and CALLS NOTHING — a Store build with the setting on, so dormancy is the only reason', async () => {
+    // A STORE BUILD, on, with a fetch that counts: the three things that would let a call through are all set, so an
+    // empty count separates *the address is dormant* from *nothing would have called anyway*.
+    const urls: string[] = [];
+    const deps = createShellDependencies({
+      ...harnessSurfaces('the composition test'),
+      appInfo: { ...appInfo, installChannel: 'store' },
+      fetchUpdateManifest: (url) => {
+        urls.push(url);
+        return Promise.reject(new Error('the composition test serves no manifest'));
+      },
+    });
+    expect(await deps.handlers['app.updateStatus']({})).toStrictEqual({ ok: true, value: { status: { kind: 'dormant' } } });
+    expect(await deps.handlers['app.acknowledgeSecurityUpdate']({})).toStrictEqual({
+      ok: true,
+      value: { acknowledged: false },
+    });
+    expect(urls).toStrictEqual([]);
+  });
+
+  it('a development build answers none, the channel with no provider behind it', async () => {
+    const deps = createShellDependencies({ ...harnessSurfaces('the composition test'), appInfo });
+    expect(await deps.handlers['app.updateStatus']({})).toStrictEqual({ ok: true, value: { status: { kind: 'none' } } });
+  });
+
+  it('the indicator’s listing is a Store page the opener receives by name', async () => {
+    const asked: string[] = [];
+    const deps = createShellDependencies({
+      ...harnessSurfaces('the composition test'),
+      appInfo,
+      openStore: (page) => {
+        asked.push(page);
+        return Promise.resolve(true);
+      },
+    });
+    expect(await deps.handlers['app.openStore']({ page: 'listing' })).toStrictEqual({ ok: true, value: { opened: true } });
+    expect(asked).toStrictEqual(['listing']);
+  });
+});
+
 describe('closing the window, through the assembled handlers and the shell’s hook', () => {
   it('holds the platform’s close and asks the page, then lets exactly the confirmed close through', async () => {
     // THE JOIN ONLY THIS ROOT MAKES: `closeRequested` (what main.ts binds to the window's close)

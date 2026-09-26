@@ -3263,15 +3263,18 @@ textarea {
 }
 
 /* *Support Monstera*: two short paragraphs and two answers. The measure is held because the text is
-   prose and a dialog as wide as the window is a dialog nobody reads to the end of. */
-.m-donate {
+   prose and a dialog as wide as the window is a dialog nobody reads to the end of. The security notice
+   (ADR-0110) is the same shape — a sentence and two answers — so it takes the same rules. */
+.m-donate,
+.m-security-update {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
   max-inline-size: 34rem;
 }
 
-.m-donate__actions {
+.m-donate__actions,
+.m-security-update__actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-8);

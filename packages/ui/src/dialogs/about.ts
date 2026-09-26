@@ -48,6 +48,8 @@ export const ABOUT_DIALOG = declareDialog({
   props: z.object({
     version: z.string().min(1),
     installChannel: z.enum(['store', 'web', 'development']),
+    /** Whether this run asked monsterapdf.com for the newest version — `checksForUpdates` of main's status. */
+    checksForUpdates: z.boolean(),
   }),
   result: ABOUT_RESULT,
   // Lazy, per ADR-0029 Decision 7: a mounted-but-closed dialog keeps its body's

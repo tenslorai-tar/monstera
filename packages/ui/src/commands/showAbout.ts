@@ -3,6 +3,7 @@ import type { ContractClient } from '@monstera/contract';
 import { ABOUT_DIALOG_ID, ABOUT_RESULT } from '../dialogs/about.js';
 import { ABOUT_COMMAND_TITLE, GROUP_APPLICATION } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
+import { checksForUpdates } from '../updateStatus.js';
 
 /**
  * Opens the About dialog with what main says about the running application.
@@ -38,10 +39,14 @@ export function showAboutCommand(deps: {
     run: async (): Promise<void> => {
       const answer = await deps.client['app.info']({});
       if (!answer.ok) return;
+      // WHETHER THIS RUN ASKED monsterapdf.com (ADR-0110). No answer is *did not*: the line then says what the
+      // channel does by default, which is never a claim that a request was made.
+      const updates = await deps.client['app.updateStatus']({}).catch(() => undefined);
       const chosen = ABOUT_RESULT.safeParse(
         await deps.ask(ABOUT_DIALOG_ID, {
           version: answer.value.version,
           installChannel: answer.value.installChannel,
+          checksForUpdates: updates?.ok === true && checksForUpdates(updates.value.status),
         }),
       );
       // A DISMISSAL ANSWERS NOTHING the schema accepts, and opens nothing (ADR-0038).
