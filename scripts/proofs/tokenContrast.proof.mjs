@@ -29,7 +29,7 @@ import { repoRoot } from '../lib/gitScope.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 15 });
+const roster = createRoster(failures, { cases: 17 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -225,36 +225,66 @@ try {
       `dark text nobody asked to be enhanced (ADR-0003's first rejected alternative).`,
   );
 
-  // ---- The dialog's glass (the owner, 2026-09-25) ----
-  // A pale grey text on a white surface clears 4.5:1 solid; through thin glass over a black window it cannot.
-  // The same file at full opacity is the control: the glass block must report only what the glass causes.
-  const glassAt = (/** @type {string} */ opacity) =>
+  // ---- 14-15. A FLOATING surface is held over anything (the owner's glass, 2026-09-25; v5's floats, 2026-09-26) ----
+  // A pale grey text on a white surface clears 4.5:1 solid; on the same white at half opacity over a black image it
+  // cannot. The same file at full opacity is the control: only what the translucency causes is reported.
+  const floatAt = (/** @type {string} */ alpha) =>
     evaluate(
       fixture([
-        ' * @role surface surface',
-        ' * @role canvas surface',
-        ' * @role ink text @on surface',
+        ' * @role float surface @over any',
+        ' * @role ink text @on float',
         "[data-theme='light'] {",
-        '  --surface: #ffffff;',
-        '  --canvas: #ffffff;',
+        `  --float: rgba(255, 255, 255, ${alpha});`,
         '  --ink: #6c6c6c;',
-        `  --glass-opacity: ${opacity};`,
-        '  --glass-blur: 16px;',
-        '  --backdrop-opacity: 60%;',
         '}',
       ]),
     );
   check(
-    'text that clears its floor SOLID is reported on THIN glass over a black window',
-    glassAt('50%').failures.some((failure) => failure.includes('--ink on the dialog\'s glass over black')),
-    `failures: ${glassAt('50%').failures.join('; ') || 'none'}. #6c6c6c on white is about 5.25:1, and at half ` +
-      `opacity over a dimmed black window the glass is mid-grey — the case the solid pairs cannot see.`,
+    'text that clears its floor on a SOLID surface is reported on a THIN floating one over black',
+    floatAt('0.5').failures.some((failure) => failure.includes('--ink on --float over flat black')),
+    `failures: ${floatAt('0.5').failures.join('; ') || 'none'}. #6c6c6c on white is about 5.25:1, and at half ` +
+      `opacity over black the surface is mid-grey — the case the solid pairs cannot see.`,
   );
   check(
-    'CONTROL: the same file with SOLID glass reports nothing',
-    glassAt('100%').failures.length === 0,
-    `failures: ${glassAt('100%').failures.join('; ') || 'none'}. A glass block that reported every file would ` +
-      `satisfy the case above while separating nothing.`,
+    'CONTROL: the same file with a SOLID floating surface reports nothing',
+    floatAt('1').failures.length === 0,
+    `failures: ${floatAt('1').failures.join('; ') || 'none'}. A check that reported every file would satisfy the ` +
+      `case above while separating nothing.`,
+  );
+
+  // ---- 16-17. A translucent PANEL is held over the lit ground, at the glow's peak (v5, 2026-09-26) ----
+  // The same text on the same panel passes over the plain ground and fails under a bright glow. A check that composited
+  // over the ground alone — or read the rgba as if it were opaque, which `channels` does with nothing beneath — would
+  // pass the lit case too.
+  const litAt = (/** @type {string} */ glowAlpha) =>
+    evaluate(
+      fixture([
+        ' * @role base ground',
+        ' * @role light glow',
+        ' * @role panel surface @over ground',
+        ' * @role ink text @on panel',
+        "[data-theme='dark'] {",
+        '  --base: #000000;',
+        `  --light: rgba(255, 255, 255, ${glowAlpha});`,
+        '  --panel: rgba(0, 0, 0, 0.5);',
+        '  --ink: #767676;',
+        '}',
+      ]),
+    );
+  check(
+    'a text that holds over the plain ground is reported under a bright glow through a translucent panel',
+    litAt('0.6').failures.some((failure) => failure.includes('--ink on --panel over --base under --light')),
+    `failures: ${litAt('0.6').failures.join('; ') || 'none'}. #767676 on black is about 4.7:1; a white glow at 0.6 under ` +
+      `a half-opaque black panel lifts the panel to mid-grey, where it cannot hold.`,
+  );
+  check(
+    'CONTROL: the same panel with no glow reports nothing, and a translucent surface with no @over is refused',
+    litAt('0').failures.length === 0 &&
+      evaluate(
+        fixture([' * @role panel surface', "[data-theme='dark'] {", '  --panel: rgba(0, 0, 0, 0.5);', '}']),
+      ).failures.some((failure) => failure.includes('--panel is translucent and declares no @over')),
+    `failures: ${litAt('0').failures.join('; ') || 'none'}. Without the glow the pair clears; and a translucent surface ` +
+      `that names nothing beneath it is a colour this check cannot know, which it must say rather than read as opaque.`,
   );
 
   if (failures.length > 0) {

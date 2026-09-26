@@ -832,7 +832,7 @@ test('OPEN SIDE BY SIDE puts the right-clicked tab’s document in the second pa
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   // THE SECOND FROM THE RIBBON, where a person opens another with one already open: Home › File's
   // Open, whose caption is its short title (the start screen's button is gone once a document is).
-  await page.locator('.m-ribbon__tools').getByRole('button', { name: 'Open…', exact: true }).click();
+  await page.locator('.m-ribbon__tools').getByRole('button', { name: 'Open', exact: true }).click();
 
   // THE SECOND OPEN IS FOCUSED, so `first.pdf` is the background tab and the one to right-click.
   const background = page.locator('nav.m-tabs button', { hasText: 'first.pdf' }).first();
@@ -1069,30 +1069,28 @@ test('the FLOATING TOOLBAR is a pill inside the page area, off the rail and the 
   // AND THEREFORE OFF what it covered, asserted directly, so a page area that itself overlapped them fails too.
   expect(box?.x ?? 0).toBeGreaterThanOrEqual(right(organize) - 0.5);
   expect(box?.x ?? 0).toBeGreaterThanOrEqual(right(panelPane) - 0.5);
-  // A PILL: one icon column. Its icon buttons are 16 px glyphs with their padding; under 64 px separates that from
-  // the 149.64 px of text buttons with room either side.
+  // A PILL: v5's 40 px column. Under 64 px separates that from the 149.64 px of text buttons with room either side.
   expect(box?.width ?? Number.POSITIVE_INFINITY).toBeLessThan(64);
 
-  // AND IT COVERS NO PAGE, at the narrowest window the application allows — the owner's enhancement
-  // (2026-09-22), from `document-light-narrow.png` where the pill sits over a table. A pill that
-  // floats over the canvas is fine; one that floats over the document is not, and the canvas is at
-  // its narrowest exactly where the page is widest relative to it.
-  await page.setViewportSize({ width: MINIMUM_WINDOW.width, height: MINIMUM_WINDOW.height });
-  const narrowPill = await toolbar.boundingBox();
-  const sheet = await page.locator('.m-page').first().boundingBox();
-  expect(narrowPill).not.toBeNull();
-  expect(sheet).not.toBeNull();
-  // NO HORIZONTAL OVERLAP: the pill ends before the page starts, or starts after it ends. Vertical
-  // is not asked, because the pill is centred and the page is taller than the window at every zoom.
-  const clear = right(narrowPill) <= (sheet?.x ?? 0) + 0.5 || (narrowPill?.x ?? 0) >= right(sheet) - 0.5;
-  expect(clear, `pill ${JSON.stringify(narrowPill)} against page ${JSON.stringify(sheet)}`).toBe(true);
+  // IT FLOATS OVER THE PAGE AREA and reserves nothing beside it (the owner, 2026-09-26, rejecting the strip of
+  // 2026-09-22): the page area has no inline padding with the pill shown, so the pages are laid out in its full
+  // width and the pill sits over them, as v5 draws it. A strip coming back reddens this line.
+  const padding = await page
+    .locator('.m-canvas-area')
+    .evaluate((element) => [getComputedStyle(element).paddingInlineStart, getComputedStyle(element).paddingInlineEnd]);
+  expect(padding).toStrictEqual(['0px', '0px']);
 
-  await page.setViewportSize({ width: 1280, height: 800 });
   // HIDDEN from the status bar's toggle, and RESTORED by the chord — the pill's own controls are gone by then.
   const bar = page.getByRole('status', { name: 'Document status' });
   await bar.getByRole('button', { name: 'Show or hide the floating toolbar' }).click();
   await expect(toolbar).toHaveCount(0);
   await page.keyboard.press('Control+Shift+Q');
+  await expect(toolbar).toBeVisible();
+  // AND FROM THE RAIL (the owner, 2026-09-26): the Toolbar button at the rail's foot hides it and shows it again.
+  const rail = page.getByRole('navigation', { name: 'Sections' });
+  await rail.getByRole('button', { name: 'Toolbar' }).click();
+  await expect(toolbar).toHaveCount(0);
+  await rail.getByRole('button', { name: 'Toolbar' }).click();
   await expect(toolbar).toBeVisible();
 });
 

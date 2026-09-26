@@ -60,6 +60,17 @@ export interface ToolButtonProps {
   readonly command?: string | undefined;
 }
 
+/**
+ * A ribbon caption as the owner's v5 draws it: plain words, with no trailing ellipsis (2026-09-26 — *"Open"*, *"Print"*,
+ * *"Word"*, not *"Open…"*). The ellipsis is Windows' mark for "a dialog follows" and stays in the full title — the
+ * palette, the menus and the tooltip still carry it. Removed HERE, in the one place a ribbon caption is drawn, so a
+ * command whose ribbon label is its title and one with a short `ribbonTitle` are treated alike, and a new command is
+ * treated alike without anyone remembering to.
+ */
+export function ribbonCaption(text: string): string {
+  return text.endsWith('…') ? text.slice(0, -1).trimEnd() : text;
+}
+
 export function ToolButton({ label, description, icon, onClick, command }: ToolButtonProps): ReactElement {
   const { _ } = useLingui();
   const describedBy = useId();
@@ -73,7 +84,7 @@ export function ToolButton({ label, description, icon, onClick, command }: ToolB
       type="button"
     >
       <Icon name={icon} size="ribbon" />
-      <span className="m-tool-button__label">{_(label)}</span>
+      <span className="m-tool-button__label">{ribbonCaption(_(label))}</span>
     </BaseButton>
   );
   if (description === undefined) return button;

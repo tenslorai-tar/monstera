@@ -1100,7 +1100,7 @@ describe('App', () => {
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
-      await pressCommand('Delete pages…');
+      await pressCommand('Delete pages', 'Organize');
 
       const field = await screen.findByLabelText('Pages to delete');
       await act(async () => {
@@ -1135,7 +1135,7 @@ describe('App', () => {
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
-      await pressCommand('Delete pages…');
+      await pressCommand('Delete pages', 'Organize');
       await screen.findByLabelText('Pages to delete');
 
       await act(async () => {

@@ -5,6 +5,7 @@ import {
   LAYOUT_RIBBON_COMMAND_TITLE,
   LAYOUT_STUDIO_COMMAND_TITLE,
   LEAVE_FOCUS_COMMAND_TITLE,
+  QUICK_TOOLBAR_TOGGLE_SHORT,
   QUICK_TOOLBAR_TOGGLE_TITLE,
 } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
@@ -53,10 +54,17 @@ export function toggleQuickToolbarCommand(deps: { readonly settings: SettingsSto
     id: 'view.toggle-quick-toolbar',
     icon: 'PanelLeftDashed',
     title: QUICK_TOOLBAR_TOGGLE_TITLE,
+    ribbonTitle: QUICK_TOOLBAR_TOGGLE_SHORT,
     shortcut: 'Ctrl+Shift+Q',
     // §10.3: "in the palette, on a shortcut, and as a status-bar toggle". The palette lists every
-    // command, the chord is above, and this is the toggle (ADR-0067's chrome cluster).
-    placements: [{ surface: 'status-bar', cluster: 'chrome', order: 10 }],
+    // command, the chord is above, and this is the toggle (ADR-0067's chrome cluster). AND ON THE RAIL
+    // (the owner, 2026-09-26): a button at the rail's foot above Settings (ADR-0098's foot), so the toolbar
+    // that floats over the page is shown and hidden from beside it. Shown by default and remembered
+    // (`QUICK_TOOLBAR_OPEN_SETTING`).
+    placements: [
+      { surface: 'status-bar', cluster: 'chrome', order: 10 },
+      { surface: 'rail', order: 5 },
+    ],
     when: hasDocument,
     run: (): void => {
       // READ THROUGH THE STORE at run time, never a value captured at registration.

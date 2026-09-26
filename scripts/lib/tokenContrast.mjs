@@ -83,6 +83,14 @@ const colour = await import(pathToFileURL(join(repoRoot(), SHARED_BUILT)).href);
 /** Contrast obligations by category. `null` means the category carries none. */
 const OBLIGATION = {
   surface: null,
+  // THE WINDOW'S GROUND and the light laid over it (the owner's v5 `--ambient`, 2026-09-26): no obligation of their
+  // own, and the reason they are roles at all — a translucent surface is only as dark or light as what it sits on, so
+  // the grounds and the glows are the inputs every such surface is composited over.
+  ground: null,
+  glow: null,
+  // A TINT is a translucent colour a surface's own gradient lays over it at its peak (the v5 per-surface gradients).
+  // It declares the surfaces it tints with `@on`, and each is evaluated with and without it.
+  tint: null,
   // THE DEFAULT FLOOR, and the pair loop below asks again per theme:
   // `textContrastFloor` answers 7 under `hc` (ADR-0003, corrected 2026-09-16). Taken from
   // the same function rather than spelt here, so 4.5 has one home.
@@ -95,41 +103,59 @@ const OBLIGATION = {
 };
 
 /** Categories that must declare a surface set, and those that must not. */
-const NEEDS_SURFACES = new Set(['text', 'boundary-control', 'graphic']);
+const NEEDS_SURFACES = new Set(['text', 'boundary-control', 'graphic', 'tint']);
 
 /**
- * Theme values that are not colour roles, BY NAME: an elevation, and the dialog's two amounts, which the glass
- * block evaluates rather than skips.
+ * Theme values that are not colour roles, BY NAME: the paint built FROM the roles — gradients, shadows, glows, blur
+ * radii, amounts. Named rather than pattern-matched: a rule like "skip anything that is not a colour" would skip a
+ * colour the parser failed to read, which is this check's reassuring answer produced by a broken parse. Every
+ * gradient here is built from `var()`s of declared roles wherever it carries a colour a text sits on, so what the
+ * pairs evaluate is what the gradients draw.
  */
-const NOT_COLOUR_ROLES = new Set(['shadow', 'glass-opacity', 'glass-blur', 'backdrop-opacity']);
+const NOT_COLOUR_ROLES = new Set([
+  'shadow',
+  'ambient',
+  'grain-opacity',
+  'mica',
+  'ribbon-bg',
+  'rail-bg',
+  'panel-bg',
+  'status-bg',
+  'float-bg',
+  'canvas-bg',
+  'hero-bg',
+  'dialog-head',
+  'active-bg',
+  'accent-grad',
+  'bubble',
+  'wordmark-fill',
+  'panel-edge',
+  'float-shadow',
+  'page-shadow',
+  'active-edge',
+  'glow',
+  'glow-sm',
+  'sel-glow',
+  'vignette',
+  'scrim',
+  'blur-menu',
+  'blur-dialog',
+  'blur-toolbar',
+  'blur-scrim',
+]);
+
+/** The backgrounds `@on` and `@over` may name that are not tokens: the window's ground, and anything at all. */
+const PSEUDO_SURFACES = new Set(['ground', 'any']);
 
 /**
- * A CSS percentage as a fraction, or `null` for anything else — never a default, since a guessed amount would
- * report a ratio for glass nobody could draw.
- *
- * @param {string | undefined} value
- * @returns {number | null}
+ * What `@over any` stands for: a surface that floats over ANYTHING — a menu over the white page, a dialog over a black
+ * image. A blur averages what is behind and can only move the result towards the middle, so the flat extremes are the
+ * worst cases.
  */
-function fraction(value) {
-  const match = /^(\d{1,3}(?:\.\d+)?)%$/u.exec((value ?? '').trim());
-  if (match === null) return null;
-  const amount = Number(match[1]) / 100;
-  return amount >= 0 && amount <= 1 ? amount : null;
-}
-
-/**
- * `top` at `alpha` over `under` — the compositing `channels` does for an `rgba()`, for an amount the token file
- * states apart from the colour.
- *
- * @param {readonly number[]} top
- * @param {number} alpha
- * @param {readonly number[]} under
- * @returns {[number, number, number]}
- */
-function mix(top, alpha, under) {
-  const at = (/** @type {number} */ index) => (top[index] ?? 0) * alpha + (under[index] ?? 0) * (1 - alpha);
-  return [at(0), at(1), at(2)];
-}
+const ANYTHING = /** @type {const} */ ([
+  ['white', [255, 255, 255]],
+  ['black', [0, 0, 0]],
+]);
 
 /** @param {string} root */
 export function tokenFile(root) {
@@ -137,9 +163,22 @@ export function tokenFile(root) {
 }
 
 /**
- * @typedef {{ name: string, category: string, on: string[] }} Role
+ * @typedef {{ name: string, category: string, on: string[], over: string[] }} Role
  * @typedef {{ theme: string, values: Map<string, string> }} Theme
  */
+
+/**
+ * The words after `keyword` in a declaration's tail, up to the next `@` keyword.
+ *
+ * @param {string} tail
+ * @param {string} keyword
+ * @returns {string[]}
+ */
+function listAfter(tail, keyword) {
+  const match = new RegExp(`@${keyword}\\s+([^@]*)`, 'u').exec(tail);
+  const words = (match?.[1] ?? '').trim();
+  return words === '' ? [] : words.split(/\s+/u);
+}
 
 /**
  * @param {string} css
@@ -151,14 +190,125 @@ export function rolesIn(css) {
   for (const line of css.split('\n')) {
     const match = /^\s*\*\s*@role\s+(\S+)\s+(\S+)(.*)$/u.exec(line);
     if (match === null) continue;
-    const on = (match[3] ?? '').replace(/@on\s*/u, '').trim();
+    const tail = match[3] ?? '';
     roles.push({
       name: match[1] ?? '',
       category: match[2] ?? '',
-      on: on === '' ? [] : on.split(/\s+/u),
+      on: listAfter(tail, 'on'),
+      over: listAfter(tail, 'over'),
     });
   }
   return roles;
+}
+
+/**
+ * A colour's alpha, or 1 for a solid one — the question of whether a surface depends on what is behind it.
+ *
+ * @param {string} value
+ */
+function alphaOf(value) {
+  const rgba = /^rgba\(([^)]+)\)$/u.exec(value.trim());
+  if (rgba === null) return 1;
+  const alpha = Number((rgba[1] ?? '').split(',')[3]);
+  return Number.isFinite(alpha) ? alpha : 1;
+}
+
+/**
+ * EVERY OPAQUE COLOUR each surface can present, per theme — the backgrounds a foreground on it is held against.
+ *
+ * A solid surface presents itself. A translucent one presents itself composited over each colour of each surface it
+ * declares `@over` — `ground` for the window's own, `any` for flat white and black — and each tint declared `@on` it is
+ * laid over every one of those as well. The GROUND is each ground role alone and under each glow at its peak: the v5
+ * glows peak in different corners of the window (top-left, bottom-right, bottom-centre, top-right), so a point lies
+ * under one of them at full strength, never two.
+ *
+ * @param {Role[]} roles
+ * @param {Theme} theme
+ * @param {string[]} failures
+ * @returns {Map<string, { name: string, colour: [number, number, number] }[]>}
+ */
+function presentedSurfaces(roles, theme, failures) {
+  /** @type {Map<string, { name: string, colour: [number, number, number] }[]>} */
+  const presented = new Map();
+  const value = (/** @type {string} */ name) => theme.values.get(name) ?? '';
+
+  /** @type {{ name: string, colour: [number, number, number] }[]} */
+  const ground = [];
+  const glows = roles.filter((role) => role.category === 'glow');
+  for (const role of roles.filter((candidate) => candidate.category === 'ground')) {
+    const base = channels(value(role.name));
+    if (base === null) continue;
+    ground.push({ name: `--${role.name}`, colour: base });
+    for (const glow of glows) {
+      const lit = channels(value(glow.name), base);
+      if (lit !== null) ground.push({ name: `--${role.name} under --${glow.name}`, colour: lit });
+    }
+  }
+  // THE TINTS ON THE GROUND ITSELF — the title bar's and menu bar's mica, the start screen's glow — are laid over every
+  // ground colour, glow-lit ones included: the title bar's green sits at the top-left, where the green glow peaks.
+  // EACH ALONE: the tints on one surface are drawn in different places (the mica on the title bar, the start glow on the
+  // start screen), so no colour is under two of them.
+  const tints = roles.filter((role) => role.category === 'tint');
+  const untinted = [...ground];
+  for (const tint of tints.filter((candidate) => candidate.on.includes('ground'))) {
+    for (const entry of untinted) {
+      const colour = channels(value(tint.name), entry.colour);
+      if (colour !== null) ground.push({ name: `${entry.name} tinted --${tint.name}`, colour });
+    }
+  }
+  presented.set('ground', ground);
+  // A SURFACE sits on the bare ground: the ground's tints belong to what is drawn directly on it (the title bar's mica,
+  // the start screen's glow), and no panel is drawn on either.
+  presented.set('ground-bare', untinted);
+  presented.set(
+    'any',
+    ANYTHING.map(([name, colour]) => ({ name: `flat ${name}`, colour: /** @type {[number, number, number]} */ ([...colour]) })),
+  );
+
+  const surfaces = roles.filter((role) => role.category === 'surface');
+  // Resolved in dependency order: a surface is ready once everything it declares @over is.
+  const pending = new Set(surfaces.map((role) => role.name));
+  for (let pass = 0; pass <= surfaces.length && pending.size > 0; pass += 1) {
+    for (const role of surfaces) {
+      if (!pending.has(role.name)) continue;
+      const raw = value(role.name);
+      const solid = alphaOf(raw) >= 1;
+      if (!solid && role.over.length === 0) {
+        failures.push(
+          `${theme.theme}: --${role.name} is translucent and declares no @over, so what it presents cannot be known`,
+        );
+        pending.delete(role.name);
+        continue;
+      }
+      if (!solid && !role.over.every((under) => presented.has(under))) continue;
+      /** @type {{ name: string, colour: [number, number, number] }[]} */
+      const own = [];
+      if (solid) {
+        const colour = channels(raw);
+        if (colour !== null) own.push({ name: `--${role.name}`, colour });
+      } else {
+        for (const under of role.over) {
+          for (const below of presented.get(under === 'ground' ? 'ground-bare' : under) ?? []) {
+            const colour = channels(raw, below.colour);
+            if (colour !== null) own.push({ name: `--${role.name} over ${below.name}`, colour });
+          }
+        }
+      }
+      const bare = [...own];
+      for (const tint of tints.filter((candidate) => candidate.on.includes(role.name))) {
+        for (const entry of bare) {
+          const colour = channels(value(tint.name), entry.colour);
+          if (colour !== null) own.push({ name: `${entry.name} tinted --${tint.name}`, colour });
+        }
+      }
+      presented.set(role.name, own);
+      pending.delete(role.name);
+    }
+  }
+  for (const name of pending) {
+    failures.push(`${theme.theme}: --${name} declares @over a surface that is never resolved (a cycle or a typo)`);
+  }
+  return presented;
 }
 
 /**
@@ -281,8 +431,9 @@ export function evaluate(css) {
     }
   }
 
-  // ---- The declared pairs ----
+  // ---- The declared pairs, against every colour each surface can present ----
   for (const theme of themes) {
+    const presented = presentedSurfaces(roles, theme, failures);
     for (const role of roles) {
       const declared = OBLIGATION[/** @type {keyof typeof OBLIGATION} */ (role.category)];
       if (declared === null || declared === undefined) continue;
@@ -296,79 +447,46 @@ export function evaluate(css) {
       if (rawForeground === undefined) continue;
 
       for (const surfaceName of role.on) {
-        const rawSurface = theme.values.get(surfaceName);
-        if (rawSurface === undefined) {
+        // `ground` and `any` are the two backgrounds that are not a token: the window's own, and anything at all.
+        if (!PSEUDO_SURFACES.has(surfaceName) && theme.values.get(surfaceName) === undefined) {
           failures.push(`--${role.name} declares @on ${surfaceName}, which has no value in ${theme.theme}`);
           continue;
         }
-        const background = channels(rawSurface);
-        if (background === null) {
+        const backgrounds = presented.get(surfaceName) ?? [];
+        if (backgrounds.length === 0) {
           deferred.push(`${theme.theme}: --${role.name} on --${surfaceName} (surface is not a static colour)`);
           continue;
         }
-        const foreground = channels(rawForeground, background);
-        if (foreground === null) {
+        // THE WORST colour the surface presents is the pair's reading: a text that clears its floor over the plain
+        // ground and fails under the green glow fails.
+        /** @type {{ ratio: number, where: string } | null} */
+        let worst = null;
+        for (const background of backgrounds) {
+          const foreground = channels(rawForeground, background.colour);
+          if (foreground === null) continue;
+          const ratio = contrast(foreground, background.colour);
+          if (worst === null || ratio < worst.ratio) worst = { ratio, where: background.name };
+        }
+        if (worst === null) {
           deferred.push(`${theme.theme}: --${role.name} on --${surfaceName} (foreground is derived)`);
           continue;
         }
         evaluated += 1;
-        const ratio = contrast(foreground, background);
-        const pair = `${theme.theme}: --${role.name} on --${surfaceName}`;
-        if (tightest === null || ratio - minimum < tightest.ratio - tightest.minimum) {
-          tightest = { pair, ratio, minimum };
+        const pair = `${theme.theme}: --${role.name} on ${worst.where}`;
+        if (tightest === null || worst.ratio - minimum < tightest.ratio - tightest.minimum) {
+          tightest = { pair, ratio: worst.ratio, minimum };
         }
-        if (ratio < minimum) {
-          failures.push(
-            `${theme.theme}: --${role.name} on --${surfaceName} is ${ratio.toFixed(2)}:1, ` +
-              `below ${minimum}:1 (${role.category})`,
-          );
+        if (worst.ratio < minimum) {
+          failures.push(`${pair} is ${worst.ratio.toFixed(2)}:1, below ${minimum}:1 (${role.category})`);
         }
       }
     }
   }
 
-  // ---- The dialog's glass (the owner, 2026-09-25) ----
-  //
-  // Every dialog is `--surface` at `--glass-opacity` over a blur of the window, dimmed first by the backdrop
-  // (`--canvas` at `--backdrop-opacity`). A translucent surface's colour depends on what is behind it, so the
-  // pairs above — text on the solid surface — do not cover it. The worst case is a FLAT field of an extreme:
-  // a blur averages what is behind and can only move the result towards the middle. So every text role that
-  // may sit on `--surface` is held to its floor on the glass over flat white and over flat black.
-  for (const theme of themes) {
-    // THE GLASS IS `--surface`'s, so a theme with a surface owes it. That cannot quietly narrow the shipped
-    // file: `--surface` is a declared role there, and a theme dropping its value already fails above.
-    if (!theme.values.has('surface')) continue;
-    const glassOpacity = fraction(theme.values.get('glass-opacity'));
-    const backdropOpacity = fraction(theme.values.get('backdrop-opacity'));
-    const surface = channels(theme.values.get('surface') ?? '');
-    const canvas = channels(theme.values.get('canvas') ?? '');
-    if (glassOpacity === null || backdropOpacity === null || surface === null || canvas === null) {
-      failures.push(
-        `${theme.theme}: the dialog's glass cannot be evaluated — --glass-opacity and --backdrop-opacity must be ` +
-          `percentages, and --surface and --canvas static colours`,
-      );
-      continue;
-    }
-    for (const [behindName, behind] of /** @type {const} */ ([
-      ['white', [255, 255, 255]],
-      ['black', [0, 0, 0]],
-    ])) {
-      const glass = mix(surface, glassOpacity, mix(canvas, backdropOpacity, behind));
-      for (const role of roles) {
-        if (role.category !== 'text' || !role.on.includes('surface')) continue;
-        const foreground = channels(theme.values.get(role.name) ?? '', glass);
-        if (foreground === null) continue;
-        evaluated += 1;
-        const minimum = colour.textContrastFloor(theme.theme);
-        const ratio = contrast(foreground, glass);
-        const pair = `${theme.theme}: --${role.name} on the dialog's glass over ${behindName}`;
-        if (tightest === null || ratio - minimum < tightest.ratio - tightest.minimum) {
-          tightest = { pair, ratio, minimum };
-        }
-        if (ratio < minimum) failures.push(`${pair} is ${ratio.toFixed(2)}:1, below ${minimum}:1 (text)`);
-      }
-    }
-  }
+  // THE DIALOG'S GLASS is no longer a block of its own (it was, 2026-09-25 → 2026-09-26): every floating surface —
+  // dialogs, menus, the quick toolbar — is `--float`, declared `@over any`, so the pairs above already hold each text
+  // on it to its floor over flat white and flat black. One mechanism for every translucent surface rather than one
+  // per surface that happened to be translucent first.
 
   // The derived half, named rather than absent. `--accent-soft` is declared a
   // surface whose only permitted foreground is the derived chrome accent text

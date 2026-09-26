@@ -5,6 +5,11 @@
  * component is a lint error unless the value is genuinely dynamic — a
  * user-chosen annotation colour is the one legitimate case.
  *
+ * THE VALUES ARE THE OWNER'S v5 DESIGN (`v5-design-values.md`, 2026-09-26), taken as numbers rather than sampled
+ * from screenshots, EXCEPT where a value would put text under its contrast floor: those few are moved by the least
+ * amount that clears it, each marked `v5 was …` beside it with the pair that forced it. The design's surfaces are
+ * translucent over a lit ground, which is what the role grammar's `@over` below exists to evaluate.
+ *
  * ## Two declaration sites, and why they are two rather than one
  *
  * ROLES are declared once, in the block below. VALUES are declared once per
@@ -21,7 +26,7 @@
  *
  * ## The role grammar
  *
- * Each declaration is one line reading: (at)role NAME CATEGORY [(at)on SURFACE …].
+ * Each declaration is one line reading: (at)role NAME CATEGORY [(at)on SURFACE …] [(at)over SURFACE …].
  * Spelled that way here on purpose — a line that begins with the real marker is
  * a declaration, and an example of one in this header would be parsed as one.
  * That is not hypothetical: it was, on the check's first run, and the check
@@ -29,18 +34,22 @@
  *
  * | category | obligation |
  * |---|---|
- * | `surface` | none itself; a background others are checked against |
- * | `text` | 4.5:1 against its declared surface set; 7:1 where the theme is `hc` |
+ * | `surface` | none itself; a background others are checked against. A TRANSLUCENT one must say what it sits `@over` |
+ * | `ground` | none; a colour the window's own background is at some point |
+ * | `glow` | none; a light laid over the ground, taken at its peak |
+ * | `tint` | none; a surface's own gradient at its peak, laid over the surfaces it names `@on` |
+ * | `text` | 4.5:1 against every colour its declared surfaces present; 7:1 where the theme is `hc` |
  * | `boundary-control` | 3:1 against every surface it may sit on (WCAG 1.4.11) |
  * | `boundary-decorative` | none; lint forbids its use as a control boundary |
  * | `fill` | none itself; if it carries a foreground it is also a `surface` |
  * | `graphic` | 3:1 against its declared surface set; a chrome graphic drawn over the document, never text |
  * | `derived` | computed at the point of use by `onColor`; never stored |
  *
- * `@on` is required for `text`, `boundary-control` and `graphic`, and forbidden elsewhere.
- * The check evaluates exactly the declared pairs — no more, no fewer. Invariant
- * L16 is what makes that exhaustive rather than narrow: a foreground that is not
- * a token cannot exist, so a pair the check does not evaluate cannot render.
+ * `@on` is required for `text`, `boundary-control`, `graphic` and `tint`, and forbidden elsewhere. `@on` and `@over`
+ * may name two backgrounds that are not tokens: `ground`, the window's own, and `any` — flat white or flat black, for
+ * a surface that floats over the page or anything else. The check evaluates exactly the declared pairs, each against
+ * the WORST colour its surface can present. Invariant L16 is what makes that exhaustive rather than narrow: a
+ * foreground that is not a token cannot exist, so a pair the check does not evaluate cannot render.
  *
  * ## Why `--page` is not a surface for chrome text
  *
@@ -57,113 +66,281 @@
  */
 
 /* ─── roles ─────────────────────────────────────────────────────────────────
- * @role bg surface
- * @role bg2 surface
- * @role surface surface
- * @role surface2 surface
- * @role canvas surface
+ * @role app-bg ground
+ * @role ground-start ground
+ * @role ground-mid ground
+ * @role ground-end ground
+ * @role glow-green glow
+ * @role glow-teal glow
+ * @role glow-lime glow
+ * @role glow-warm glow
+ * @role tint-mica tint @on ground
+ * @role tint-start tint @on ground
+ * @role bg surface @over ground
+ * @role canvas surface @over ground
+ * @role bg2 surface @over ground canvas
+ * @role surface surface @over ground bg bg2
+ * @role float surface @over any
+ * @role surface2 surface @over bg bg2 surface float canvas
+ * @role active surface @over bg bg2 surface
  * @role page surface
+ * @role tint-rail tint @on bg
+ * @role tint-ribbon tint @on bg2
+ * @role tint-panel tint @on surface
+ * @role tint-float tint @on float
+ * @role tint-canvas tint @on canvas
  * @role redact-mark graphic @on page
- * @role text text @on bg bg2 surface surface2
- * @role muted text @on bg bg2 surface surface2
- * @role faint text @on bg bg2 surface surface2
- * @role border-control boundary-control @on bg bg2 surface surface2
+ * @role text text @on ground bg bg2 surface surface2 canvas float active
+ * @role muted text @on ground bg bg2 surface surface2 canvas float
+ * @role faint text @on ground bg bg2 surface canvas
+ * @role accent-text text @on ground bg bg2 surface canvas float
+ * @role border-control boundary-control @on ground bg bg2 surface surface2 canvas float
  * @role border boundary-decorative
  * @role border-soft boundary-decorative
+ * @role border-grad boundary-decorative
  * @role accent fill
  * @role accent-hover fill
- * @role accent-soft surface
+ * @role accent-soft surface @over bg bg2 surface float
  * ─────────────────────────────────────────────────────────────────────────── */
 
 :root,
 [data-theme='dark'] {
-  /* Colour. Seeded from DESIGN-DRAFT.html, which M2 names as the seed and the
-     naming authority; `--border-control` is ADR-0003's solved value, which the
-     draft predates and does not carry. */
-  /* THE OWNER'S v5 PALETTE (2026-09-24), sampled from `v5-02-document-dark.png` rather than set by eye:
-     a green-black ground (#040807 read there) under panels of #0e1613, the hairline between them
-     about #1a1e1d. The panels are `--bg`; `--canvas` is the ground the document and the panels sit on. */
-  --bg: #0e1613;
-  --bg2: #0b120f;
-  --surface: #131d19;
-  --surface2: #18241f;
-  --canvas: #050a08;
+  /* THE GROUND: the window's base and the four lights over it (v5 `--ambient`). */
+  --app-bg: #060b09;
+  --ground-start: #07130d;
+  --ground-mid: #050907;
+  --ground-end: #061210;
+  /* v5 was 0.38. At that strength --muted, --faint, --accent-text and --border-control fall under their floors wherever
+     they are drawn under the glow's peak (muted on the ground 3.14:1, border-control on a panel 2.73:1 — check:tokencontrast,
+     2026-09-26). The ellipse is centred above the window (8% -5%), so the window never shows its full strength; 0.30 is
+     the least cut that, with the text moves below, holds every pair. */
+  --glow-green: rgba(34, 197, 94, 0.3);
+  --glow-teal: rgba(20, 184, 166, 0.28);
+  --glow-lime: rgba(132, 204, 22, 0.12);
+  --glow-warm: rgba(250, 204, 21, 0.07);
+  --tint-mica: rgba(59, 198, 119, 0.1);
+  --tint-start: rgba(59, 198, 119, 0.16);
+  /* THE SURFACES, translucent over it. */
+  --bg: rgba(12, 19, 16, 0.55);
+  --canvas: rgba(4, 7, 6, 0.6);
+  --bg2: rgba(16, 24, 21, 0.5);
+  --surface: rgba(20, 29, 25, 0.6);
+  /* v5 was 0.74. A menu or dialog floats over ANYTHING — a context menu over the white page is the ordinary case — and
+     at 0.74 over white --muted is 3.08:1 and --text on a hovered row fails too. 0.91 is the least that holds them. */
+  --float: rgba(18, 26, 23, 0.91);
+  --surface2: rgba(255, 255, 255, 0.055);
+  --active: rgba(255, 255, 255, 0.16);
   --page: #ffffff;
+  --tint-rail: rgba(59, 198, 119, 0.15);
+  --tint-ribbon: rgba(59, 198, 119, 0.13);
+  --tint-panel: rgba(59, 198, 119, 0.07);
+  --tint-float: rgba(59, 198, 119, 0.1);
+  --tint-canvas: rgba(59, 198, 119, 0.13);
   --redact-mark: #000000;
-  --text: #e6ece8;
-  --muted: #9aa8a1;
-  --faint: #929f98;
-  --border-control: #6e7a74;
-  --border: #1f2b26;
-  --border-soft: #17211c;
+  --text: #eef1ef;
+  /* v5 was #a8b3ad / #8e9a94 / #4ad083 / 0.36 alpha: each moved the least (toward white, 1% steps) that clears its
+     floor on every colour its surfaces present over the lit ground. --faint lands on --muted's value: over this ground
+     a third, dimmer level of text cannot hold 4.5:1, so dark keeps two. */
+  --muted: #bdc5c1;
+  --faint: #bdc5c1;
+  --accent-text: #67d897;
+  --border-control: rgba(255, 255, 255, 0.46);
+  --border: rgba(255, 255, 255, 0.085);
+  --border-soft: rgba(255, 255, 255, 0.055);
+  --border-grad: rgba(255, 255, 255, 0.16);
   --accent: #2fb96a;
   --accent-hover: #3bc677;
-  --accent-soft: rgba(47, 185, 106, 0.14);
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  /* EVERY DIALOG IS GLASS (the owner, 2026-09-25): `--surface` at this opacity over a blur of the window.
-     85% is the lowest of those measured whose faintest text stays above 4.5:1 over ANY backdrop — computed by
-     `scripts/research/dialogGlassContrast.mjs` over flat white and flat black behind the dimmed backdrop: 5.44:1
-     here at worst, 4.91:1 in light (80% left light 4.65:1). `check:tokencontrast` now holds every theme's glass
-     to the text floor the same way, so a palette change cannot thin it past legibility. The blur's radius is the
-     design's, judged by eye. */
-  --glass-opacity: 85%;
-  --glass-blur: 16px;
-  /* What a dialog dims the window with: `--canvas` at this opacity, beneath the glass. */
-  --backdrop-opacity: 60%;
+  --accent-soft: rgba(59, 198, 119, 0.16);
+
+  /* THE PAINT, built from the roles above wherever a text sits on it. */
+  --ambient:
+    radial-gradient(ellipse 60% 55% at 8% -5%, var(--glow-green), transparent 70%),
+    radial-gradient(ellipse 50% 50% at 105% 105%, var(--glow-teal), transparent 70%),
+    radial-gradient(ellipse 40% 35% at 60% 110%, var(--glow-lime), transparent 70%),
+    radial-gradient(ellipse 30% 25% at 78% 20%, var(--glow-warm), transparent 70%),
+    linear-gradient(135deg, var(--ground-start) 0%, var(--ground-mid) 50%, var(--ground-end) 100%);
+  --grain-opacity: 0.07;
+  --mica: linear-gradient(90deg, var(--tint-mica), rgba(250, 204, 21, 0.035) 45%, rgba(8, 12, 10, 0.35));
+  --ribbon-bg: linear-gradient(90deg, var(--tint-ribbon), rgba(20, 184, 166, 0.04) 45%, transparent 75%), var(--bg2);
+  --rail-bg: linear-gradient(180deg, var(--tint-rail), transparent 45%), var(--bg);
+  --panel-bg: linear-gradient(180deg, var(--tint-panel), transparent 30%), var(--surface);
+  --status-bg: linear-gradient(90deg, rgba(59, 198, 119, 0.09), transparent 40%, rgba(20, 184, 166, 0.07)), var(--bg);
+  --float-bg: linear-gradient(180deg, var(--tint-float), transparent 60%), var(--float);
+  --canvas-bg:
+    radial-gradient(ellipse 55% 40% at 50% 30%, var(--tint-canvas), transparent 70%),
+    radial-gradient(ellipse 40% 50% at 100% 100%, rgba(20, 184, 166, 0.08), transparent 70%), var(--canvas);
+  --hero-bg: linear-gradient(180deg, rgba(59, 198, 119, 0.17), rgba(20, 184, 166, 0.05) 160px, var(--surface) 320px);
+  --dialog-head: linear-gradient(90deg, rgba(59, 198, 119, 0.14), transparent 65%);
+  --active-bg: linear-gradient(180deg, var(--active), rgba(255, 255, 255, 0.08));
+  --accent-grad: linear-gradient(180deg, #3ccf7b, #27a55c);
+  --bubble: linear-gradient(135deg, rgba(59, 198, 119, 0.28), rgba(59, 198, 119, 0.1));
+  --wordmark-fill: linear-gradient(180deg, #ffffff 20%, #b9f0cf);
+  --panel-edge: inset 0 1px 0 rgba(255, 255, 255, 0.09), inset 0 -1px 0 rgba(74, 208, 131, 0.1), 0 10px 30px rgba(0, 0, 0, 0.28);
+  --float-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(255, 255, 255, 0.03), 0 18px 48px rgba(0, 0, 0, 0.55);
+  --page-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 24px 70px rgba(0, 0, 0, 0.65), 0 0 90px rgba(59, 198, 119, 0.1);
+  --active-edge: inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 -2px 0 rgba(74, 208, 131, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.09), 0 4px 14px rgba(0, 0, 0, 0.4);
+  --glow: 0 0 0 1px rgba(74, 208, 131, 0.45), 0 0 18px rgba(59, 198, 119, 0.45);
+  --glow-sm: 0 0 10px 1px rgba(74, 208, 131, 0.75);
+  --sel-glow: 0 0 0 1px rgba(74, 208, 131, 0.5), 0 0 22px rgba(74, 208, 131, 0.55);
+  --shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  --vignette: rgba(0, 0, 0, 0.45);
+  --scrim: rgba(0, 0, 0, 0.34);
+  --blur-menu: 28px;
+  --blur-dialog: 32px;
+  --blur-toolbar: 20px;
+  --blur-scrim: 6px;
   /* THE NATIVE PARTS FOLLOW THE THEME: a select's list and the scrollbars are drawn by the
      platform, which reads this and nothing else — without it they were light on a dark window. */
   color-scheme: dark;
 }
 
 [data-theme='light'] {
-  /* v5-04's light palette: a mint-grey ground (#dce5e0 read there) under near-white panels (#f5f8f6). */
-  --bg: #f5f8f6;
-  --bg2: #edf2ef;
-  --surface: #ffffff;
-  --surface2: #f3f7f5;
-  --canvas: #dde6e1;
+  --app-bg: #e8eeeb;
+  --ground-start: #eef5f1;
+  --ground-mid: #e8eeeb;
+  --ground-end: #e3ebe7;
+  /* v5 was 0.32; the dark block's reason, at 0.24 here. */
+  --glow-green: rgba(34, 197, 94, 0.24);
+  --glow-teal: rgba(45, 212, 191, 0.26);
+  --glow-lime: rgba(163, 230, 53, 0.16);
+  --glow-warm: rgba(251, 191, 36, 0.14);
+  --tint-mica: rgba(22, 163, 74, 0.08);
+  --tint-start: rgba(22, 163, 74, 0.12);
+  --bg: rgba(255, 255, 255, 0.45);
+  --canvas: rgba(205, 215, 210, 0.5);
+  --bg2: rgba(255, 255, 255, 0.5);
+  --surface: rgba(255, 255, 255, 0.66);
+  /* v5 was 0.76; over black (a dark image on the page) --muted and --accent-text fell under 4.5:1. */
+  --float: rgba(255, 255, 255, 0.83);
+  --surface2: rgba(15, 30, 22, 0.045);
+  --active: #ffffff;
   --page: #ffffff;
+  --tint-rail: rgba(22, 163, 74, 0.11);
+  --tint-ribbon: rgba(22, 163, 74, 0.1);
+  --tint-panel: rgba(22, 163, 74, 0.05);
+  --tint-float: rgba(22, 163, 74, 0.07);
+  --tint-canvas: rgba(22, 163, 74, 0.1);
   --redact-mark: #000000;
-  --text: #1d2023;
-  --muted: #5d656c;
-  --faint: #5f6770;
-  --border-control: #848688;
-  --border: #d6dfda;
-  --border-soft: #e3eae6;
+  --text: #131816;
+  /* v5 was #4c5752 / #55615b / #15803d / 0.42 alpha, each moved the least (toward black) that clears its floor. */
+  --muted: #4a5550;
+  --faint: #4f5a55;
+  --accent-text: #116530;
+  --border-control: rgba(15, 30, 22, 0.52);
+  --border: rgba(15, 30, 22, 0.1);
+  --border-soft: rgba(15, 30, 22, 0.06);
+  --border-grad: rgba(15, 30, 22, 0.16);
   --accent: #16a34a;
   --accent-hover: #159645;
   --accent-soft: rgba(22, 163, 74, 0.12);
-  --shadow: 0 10px 30px rgba(30, 35, 40, 0.18);
-  /* The dark block's glass, and its measurement: 4.91:1 for the faintest text over flat black here. */
-  --glass-opacity: 85%;
-  --glass-blur: 16px;
-  --backdrop-opacity: 60%;
+
+  --ambient:
+    radial-gradient(ellipse 60% 55% at 8% -5%, var(--glow-green), transparent 70%),
+    radial-gradient(ellipse 50% 50% at 105% 105%, var(--glow-teal), transparent 70%),
+    radial-gradient(ellipse 40% 35% at 60% 110%, var(--glow-lime), transparent 70%),
+    radial-gradient(ellipse 30% 25% at 78% 20%, var(--glow-warm), transparent 70%),
+    linear-gradient(135deg, var(--ground-start), var(--ground-end));
+  --grain-opacity: 0.04;
+  --mica: linear-gradient(90deg, var(--tint-mica), rgba(251, 191, 36, 0.05) 45%, rgba(255, 255, 255, 0.35));
+  --ribbon-bg: linear-gradient(90deg, var(--tint-ribbon), rgba(45, 212, 191, 0.04) 45%, transparent 75%), var(--bg2);
+  --rail-bg: linear-gradient(180deg, var(--tint-rail), transparent 45%), var(--bg);
+  --panel-bg: linear-gradient(180deg, var(--tint-panel), transparent 30%), var(--surface);
+  --status-bg: linear-gradient(90deg, rgba(22, 163, 74, 0.07), transparent 40%, rgba(45, 212, 191, 0.06)), var(--bg);
+  --float-bg: linear-gradient(180deg, var(--tint-float), transparent 60%), var(--float);
+  --canvas-bg:
+    radial-gradient(ellipse 55% 40% at 50% 30%, var(--tint-canvas), transparent 70%),
+    radial-gradient(ellipse 40% 50% at 100% 100%, rgba(45, 212, 191, 0.08), transparent 70%), var(--canvas);
+  --hero-bg: linear-gradient(180deg, rgba(22, 163, 74, 0.12), rgba(45, 212, 191, 0.05) 160px, var(--surface) 320px);
+  --dialog-head: linear-gradient(90deg, rgba(22, 163, 74, 0.1), transparent 65%);
+  --active-bg: var(--active);
+  --accent-grad: linear-gradient(180deg, #15803d, #116631);
+  --bubble: linear-gradient(135deg, rgba(22, 163, 74, 0.16), rgba(22, 163, 74, 0.06));
+  --wordmark-fill: linear-gradient(180deg, #0f1a14 30%, #15803d);
+  --panel-edge: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(22, 163, 74, 0.08), 0 8px 24px rgba(20, 40, 30, 0.08);
+  --float-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 0 0 1px rgba(15, 30, 22, 0.03), 0 16px 40px rgba(20, 40, 30, 0.14);
+  --page-shadow: 0 0 0 1px rgba(15, 30, 22, 0.06), 0 18px 50px rgba(20, 40, 30, 0.22);
+  --active-edge: inset 0 -2px 0 rgba(22, 163, 74, 0.7), 0 0 0 1px rgba(15, 30, 22, 0.1), 0 2px 8px rgba(20, 40, 30, 0.16);
+  --glow: 0 0 0 1px rgba(22, 163, 74, 0.4), 0 0 14px rgba(22, 163, 74, 0.3);
+  --glow-sm: 0 0 8px rgba(22, 163, 74, 0.5);
+  --sel-glow: 0 0 0 1px rgba(22, 163, 74, 0.35), 0 0 16px rgba(22, 163, 74, 0.35);
+  --shadow: 0 20px 50px rgba(20, 40, 30, 0.18);
+  --vignette: rgba(20, 40, 30, 0.14);
+  --scrim: rgba(0, 0, 0, 0.34);
+  --blur-menu: 28px;
+  --blur-dialog: 32px;
+  --blur-toolbar: 20px;
+  --blur-scrim: 6px;
   color-scheme: light;
 }
 
+/* HIGH CONTRAST STAYS FLAT (the design, and §10.2): no gradient, no grain, no blur. A surface whose colour depends on
+   what is behind it is the one thing this theme must not have, so every surface is solid and every light is none. */
 [data-theme='hc'] {
+  --app-bg: #000000;
+  --ground-start: #000000;
+  --ground-mid: #000000;
+  --ground-end: #000000;
+  --glow-green: rgba(0, 0, 0, 0);
+  --glow-teal: rgba(0, 0, 0, 0);
+  --glow-lime: rgba(0, 0, 0, 0);
+  --glow-warm: rgba(0, 0, 0, 0);
+  --tint-mica: rgba(0, 0, 0, 0);
+  --tint-start: rgba(0, 0, 0, 0);
   --bg: #000000;
+  --canvas: #000000;
   --bg2: #000000;
   --surface: #0a0a0a;
+  --float: #0a0a0a;
   --surface2: #101010;
-  --canvas: #000000;
+  --active: #0d3a22;
   --page: #ffffff;
+  --tint-rail: rgba(0, 0, 0, 0);
+  --tint-ribbon: rgba(0, 0, 0, 0);
+  --tint-panel: rgba(0, 0, 0, 0);
+  --tint-float: rgba(0, 0, 0, 0);
+  --tint-canvas: rgba(0, 0, 0, 0);
   --redact-mark: #000000;
   --text: #ffffff;
   --muted: #e6e6e6;
   --faint: #bfbfbf;
+  --accent-text: #3ff08f;
   --border-control: #ffffff;
   --border: #ffffff;
   --border-soft: #8a8f94;
+  --border-grad: #ffffff;
   --accent: #3ff08f;
   --accent-hover: #6ff5ab;
-  --accent-soft: rgba(63, 240, 143, 0.28);
+  --accent-soft: #0d3a22;
+
+  --ambient: var(--app-bg);
+  --grain-opacity: 0;
+  --mica: var(--bg);
+  --ribbon-bg: var(--bg2);
+  --rail-bg: var(--bg);
+  --panel-bg: var(--surface);
+  --status-bg: var(--bg);
+  --float-bg: var(--float);
+  --canvas-bg: var(--canvas);
+  --hero-bg: var(--surface);
+  --dialog-head: transparent;
+  --active-bg: var(--active);
+  --accent-grad: var(--accent);
+  --bubble: var(--accent-soft);
+  --wordmark-fill: linear-gradient(#ffffff, #ffffff);
+  --panel-edge: none;
+  --float-shadow: none;
+  --page-shadow: 0 0 0 1px #ffffff;
+  --active-edge: 0 0 0 2px #3ff08f;
+  --glow: none;
+  --glow-sm: none;
+  --sel-glow: none;
   --shadow: none;
-  /* SOLID, and no blur: high contrast exists for legibility at 7:1, and a surface whose colour depends on what
-     is behind it is the one thing that theme must not have. */
-  --glass-opacity: 100%;
-  --glass-blur: 0px;
-  --backdrop-opacity: 60%;
+  --vignette: transparent;
+  --scrim: rgba(0, 0, 0, 0.6);
+  --blur-menu: 0px;
+  --blur-dialog: 0px;
+  --blur-toolbar: 0px;
+  --blur-scrim: 0px;
   color-scheme: dark;
 }
 
@@ -174,20 +351,29 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* Spacing: the 8 px grid governs layout regions; 2/4 px increments are for
-     control interiors (M2). */
+  /* Spacing: the v5 base gaps (2, 4, 6, 8, 12, 16, 24). The 8 px grid governs layout regions; 2/4/6 px increments are
+     for control interiors (M2). The body padding and the gap between panels are both 8. */
   --space-2: 2px;
   --space-4: 4px;
+  --space-6: 6px;
   --space-8: 8px;
+  --space-10: 10px;
+  --space-12: 12px;
   --space-16: 16px;
+  --space-20: 20px;
   --space-24: 24px;
   --space-32: 32px;
 
-  /* The UI font (§10.4): the system stack, Segoe UI first on Windows. A stack and not
-     a webfont, so the application draws in the platform's own face and loads nothing. */
-  --font-ui: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  /* THE TYPEFACES (v5 §4). The UI face is Windows' own — Segoe UI Variable where the system has it — so the chrome
+     draws in the platform's face and loads nothing. The brand face is Marcellus, the free OFL cut, bundled
+     (`assets/fonts/marcellus`, NOTICE): the design names "Marcellus Pro" first, which is a commercial cut this build
+     does not carry. */
+  --font-ui: 'Segoe UI Variable Text', 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'Segoe UI Variable Display', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-brand: 'Marcellus', Georgia, serif;
 
-  /* Type. Chrome sizes, and 10 px is the FLOOR — no UI text renders smaller. */
+  /* Type. Chrome sizes, and 10 px is the FLOOR — no UI text renders smaller. v5 §4: 12 is the base UI size; 11 the
+     ribbon labels, captions and section headings; 10 the keyboard hints. */
   --font-chrome-10: 10px;
   --font-chrome-11: 11px;
   --font-chrome-12: 12px;
@@ -196,42 +382,84 @@
   --font-content-14: 14px;
   --font-content-16: 16px;
   --font-content-20: 20px;
+  /* The start screen's wordmark (v5: 64 px Marcellus, line-height 1). */
+  --font-wordmark: 64px;
   /* §10.3: "PDF EDITOR" letterspaced beneath the start screen's logo. In `em`, so the spacing follows the size the
      text is set at rather than being a second size to keep in step with it. */
   --tracking-wide: 0.2em;
 
-  /* Icons. Each size has a stated use (§10.4): inline chrome · status bar, dense
-     controls and the document panel's tabs (§10.3) · primary controls · ribbon
-     buttons. */
+  /* Icons. Each size has a stated use (§10.4): inline chrome · status bar, dense controls, menus and the document
+     panel's tabs · primary controls · ribbon and rail buttons. The stroke is v5's: 1.6 at 20 px and above, 1.75 below. */
   --icon-12: 12px;
   --icon-14: 14px;
   --icon-16: 16px;
   --icon-20: 20px;
+  --icon-stroke: 1.6;
+  --icon-stroke-small: 1.75;
 
-  /* Control extents the law names by number. §10.3: the ribbon's "compact 52 px
-     buttons". A size stated in the architecture is a token with that source; a
-     calc() of spacing tokens that happens to equal it would be a magic number
-     wearing tokens. */
+  /* THE AREAS AT 1920 × 1080 (v5 §7), each a number the design states. */
+  --menu-bar: 32px;
+  --menu-bar-item: 24px;
+  --window-control: 46px;
+  --title-bar: 40px;
+  --title-tab: 32px;
+  --title-tab-max: 280px;
+  --title-control: 26px;
+  --command-search: 300px;
+  --ribbon: 100px;
+  --ribbon-caption: 22px;
   --control-ribbon: 52px;
+  --control-ribbon-tall: 64px;
+  --rail: 64px;
+  --rail-studio: 48px;
+  --rail-button: 48px;
+  --rail-button-studio: 36px;
+  --panel-tabs-left: 32px;
+  --panel-tabs-right: 36px;
+  --status-bar: 36px;
+  --quick-toolbar: 40px;
+  --quick-tool: 30px;
+  --menu-min: 280px;
+  --menu-item: 30px;
+  --context-menu-min: 232px;
+  --dialog-settings-width: 880px;
+  --dialog-settings-height: 600px;
+  --dialog-head-height: 48px;
+  --start-drop-width: 720px;
+  --start-drop-height: 132px;
+  --start-card-width: 232px;
+  --start-card-height: 88px;
+  --start-footer: 36px;
+  --ruler: 18px;
+  --scrollbar: 10px;
   /* §10.3: the document panel's "six icon tabs (24 px tabs, 14 px icons)". */
   --control-panel-tab: 24px;
-  /* The strip the floating quick toolbar is given on the canvas edge, so the page is never laid out
-     under it (the owner's enhancement, 2026-09-22: in `document-light-narrow.png` the pill sits over
-     a table). MEASURED 2026-09-23 in the built renderer: the pill is 36 px wide, and it is offset
-     `--space-8` from the edge, so 8 + 36 + 8 = 52 leaves it the same clearance on both sides.
-
-     A NUMBER HERE IS A COPY OF THE PILL'S WIDTH, so a rendered case asserts the pill and the page do
-     not overlap at the narrowest window the application allows. A pill that grows past this strip
-     fails there rather than quietly covering a document again. */
-  --quick-toolbar-strip: 52px;
   /* The brand artwork's heights, which `assets/brand/README.md` names beside ADR-0002: *"the start-screen hero is 84 px
-     and the title bar 26 px"*. The derivatives are drawn at twice these, for a 2x display. */
+     and the title bar 26 px"*. The derivatives are drawn at twice these, for a 2x display. v5 draws the menu bar's
+     icon at 18. */
   --logo-title: 26px;
+  --logo-menu: 18px;
   --logo-hero: 84px;
 
+  /* Radii (v5 §6): buttons, inputs and menu items 6; chips 5; tabs 8 8 0 0; cards 10–12; menus, context menu and the
+     status bar 12; panels, rail, ribbon and canvas 14; the Studio overlay 16; dialogs 18; the quick toolbar 20. */
   --radius-4: 4px;
+  --radius-5: 5px;
   --radius-6: 6px;
+  --radius-8: 8px;
   --radius-10: 10px;
+  --radius-12: 12px;
+  --radius-14: 14px;
+  --radius-16: 16px;
+  --radius-18: 18px;
+  --radius-20: 20px;
+
+  /* THE FOCUS RING (v5 §3): 2 px of the accent text colour, which holds 4.5:1 — so more than the 3:1 a focus
+     indicator needs — on every surface a control sits on, in every theme. An alias, so the fourteen rings share it. */
+  --focus-ring: var(--accent-text);
+
+  /* Motion (v5 §6): 140 ms ease-out for buttons, rises and fades; none under reduced motion. */
+  --motion-fast: 140ms;
 
   --elevation-0: none;
   --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.18);

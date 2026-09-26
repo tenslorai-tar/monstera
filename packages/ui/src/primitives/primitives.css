@@ -34,16 +34,18 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-8);
-  padding: var(--space-8) var(--space-16);
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-12);
   border-radius: var(--radius-6);
-  font-size: var(--font-chrome-13);
+  font-size: var(--font-chrome-12);
+  font-weight: 600;
   cursor: pointer;
+  transition: background-color var(--motion-fast) ease-out, filter var(--motion-fast) ease-out;
 }
 
 .m-button--default {
   border: 1px solid var(--border-control);
-  background: var(--surface);
+  background: transparent;
   color: var(--text);
 }
 
@@ -51,9 +53,11 @@
   background: var(--surface2);
 }
 
+/* v5's primary: the accent's own gradient, lit a touch on hover. The foreground is still solved against `--accent`,
+   which is the gradient's middle — both of its ends sit either side of it. */
 .m-button--primary {
-  border: 1px solid var(--accent);
-  background: var(--accent);
+  border: 1px solid transparent;
+  background: var(--accent-grad);
   /* No `color` here. The primary variant's foreground is solved against the
      fill in effect by `useOnColor` and applied through React's style prop, so
      that it is correct in every theme rather than in the one it was sampled in.
@@ -61,8 +65,7 @@
 }
 
 .m-button--primary:hover:not(:disabled) {
-  border-color: var(--accent-hover);
-  background: var(--accent-hover);
+  filter: brightness(1.06);
 }
 
 /* Text alone, for a row of links the design draws as words — the start screen's footer. The edge is transparent
@@ -93,7 +96,7 @@
 }
 
 .m-button:focus-visible {
-  outline: 2px solid var(--border-control);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -114,7 +117,7 @@
   justify-content: center;
   padding: var(--space-4);
   border: 1px solid transparent;
-  border-radius: var(--radius-4);
+  border-radius: var(--radius-6);
   background: transparent;
   color: var(--text);
   cursor: pointer;
@@ -130,8 +133,20 @@
 }
 
 .m-icon-button:focus-visible {
-  outline: 2px solid var(--border-control);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+/* v5's STROKE: 1.75 below 20 px and 1.6 at 20 px, over lucide's own 2. A CSS property outranks the presentational
+   `stroke-width` attribute lucide writes, so this is the one place the weight is set for every glyph. */
+.m-icon-button svg,
+.m-icon {
+  stroke-width: var(--icon-stroke-small);
+}
+
+.m-icon-button--ribbon svg,
+.m-icon--ribbon {
+  stroke-width: var(--icon-stroke);
 }
 
 /* §10.4's four sizes, and the only place they are written as values. The
@@ -204,7 +219,7 @@
 }
 
 .m-splitter__handle:focus-visible {
-  outline: 2px solid var(--border-control);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
 
@@ -214,19 +229,22 @@
    transparent until hovered, because a ribbon of outlined boxes is the wireframe
    §10.2 warns against; the focus ring is `--border-control`, the one boundary a
    keyboard user must always see. */
+/* v5: at least 52 wide and 64 tall, the 20 px glyph over an 11 px label with 6 px between. */
 .m-tool-button {
   display: inline-flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--space-4);
-  min-block-size: var(--control-ribbon);
-  padding-inline: var(--space-8);
+  gap: var(--space-6);
+  min-inline-size: var(--control-ribbon);
+  block-size: var(--control-ribbon-tall);
+  padding: var(--space-4) var(--space-6) var(--space-2);
   border: 1px solid transparent;
   border-radius: var(--radius-6);
   background: transparent;
   color: var(--text);
   cursor: pointer;
+  transition: background-color var(--motion-fast) ease-out;
 }
 
 .m-tool-button:hover:not(:disabled) {
@@ -234,13 +252,14 @@
 }
 
 .m-tool-button:focus-visible {
-  outline: 2px solid var(--border-control);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
 .m-tool-button__label {
-  color: var(--muted);
+  color: var(--text);
   font-size: var(--font-chrome-11);
+  line-height: 1;
   white-space: nowrap;
 }
 
@@ -249,14 +268,17 @@
 /* The name of an icon-only control (§10.4). Chrome text on `--surface2`, a pair the token
    file declares, at the 11 px chrome size, with the control boundary so it reads in
    forced colours. */
+/* A FLOAT (v5): the floating surface, its glass and its shadow, like a menu. The edge is `--border-control` still, so
+   the tooltip reads in forced colours where the background is discarded. */
 .m-tooltip {
-  padding: var(--space-2) var(--space-8);
+  padding: var(--space-4) var(--space-8);
   border: 1px solid var(--border-control);
-  border-radius: var(--radius-4);
-  background: var(--surface2);
+  border-radius: var(--radius-6);
+  background: var(--float-bg);
+  backdrop-filter: blur(var(--blur-toolbar)) saturate(1.4);
   color: var(--text);
   font-size: var(--font-chrome-11);
-  box-shadow: var(--elevation-2);
+  box-shadow: var(--float-shadow);
 }
 
 /* ─── SegmentedControl ───────────────────────────────────────────────────── */
@@ -272,16 +294,17 @@
   padding: var(--space-2);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-6);
-  background: var(--bg2);
+  background: var(--surface);
 }
 
 .m-segmented__item {
-  padding: var(--space-2) var(--space-8);
+  padding: var(--space-2) var(--space-10);
   border: 1px solid transparent;
-  border-radius: var(--radius-4);
+  border-radius: var(--radius-5);
   background: transparent;
   color: var(--muted);
-  font-size: var(--font-chrome-12);
+  font-size: var(--font-chrome-11);
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -290,14 +313,17 @@
   color: var(--text);
 }
 
+/* v5's RAISED CHIP: the active surface and its edge — a lit top and a green underline. The edge carries a boundary
+   too, so forced colours, which discard the background, still show which segment is pressed. */
 .m-segmented__item[data-pressed] {
-  background: var(--accent-soft);
+  background: var(--active-bg);
   border-color: var(--border-control);
+  box-shadow: var(--active-edge);
   color: var(--text);
 }
 
 .m-segmented__item:focus-visible {
-  outline: 2px solid var(--border-control);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
@@ -345,12 +371,12 @@
 }
 
 .m-input {
-  padding: var(--space-8);
+  padding: var(--space-6) var(--space-8);
   border: 1px solid var(--border-control);
-  border-radius: var(--radius-4);
-  background: var(--bg2);
+  border-radius: var(--radius-6);
+  background: var(--surface);
   color: var(--text);
-  font-size: var(--font-chrome-13);
+  font-size: var(--font-chrome-12);
 }
 
 .m-input::placeholder {
@@ -358,18 +384,19 @@
 }
 
 .m-input:focus-visible {
-  outline: 2px solid var(--border-control);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
 /* ─── Dialog ─────────────────────────────────────────────────────────────── */
 
+/* v5's SCRIM: the window dimmed and softened behind a dialog. The dialog itself is held to its floors over anything
+   (`--float @over any`), so the scrim is presentation and carries no contrast obligation of its own. */
 .m-dialog__backdrop {
   position: fixed;
   inset: 0;
-  background: var(--canvas);
-  /* The theme's, so `check:tokencontrast` composites the glass over the backdrop this draws, not over a copy. */
-  opacity: var(--backdrop-opacity);
+  background: var(--scrim);
+  backdrop-filter: blur(var(--blur-scrim));
   /* NO-DRAG, so a press on the title bar is a press outside. The title bar is a `drag` region, and Electron hands a
      drag region's presses to the window frame rather than to the page; a `no-drag` region subtracts from the drag
      regions under it, so while a modal is open the whole window belongs to the backdrop. MEASURED in the built
@@ -386,16 +413,17 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-16);
-  padding: var(--space-24);
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-10);
-  /* GLASS, ON EVERY DIALOG AT ONCE (the owner, 2026-09-25): this primitive is the one every dialog is drawn in,
-     so the opacity and the blur are one rule and cannot drift between dialogs. The values are the theme's —
-     see `--glass-opacity` for why 85% and not less, and why high contrast is solid. */
-  background: color-mix(in srgb, var(--surface) var(--glass-opacity), transparent);
-  backdrop-filter: blur(var(--glass-blur));
+  padding: 0 var(--space-24) var(--space-24);
+  border: 1px solid var(--border); /* decorative: the dialog's edge; every control inside draws its own boundary and focus ring */
+  border-radius: var(--radius-18);
+  /* GLASS, ON EVERY DIALOG AT ONCE (the owner, 2026-09-25; v5's values 2026-09-26): this primitive is the one every
+     dialog is drawn in, so the surface, the blur and the shadow are one rule and cannot drift between dialogs. The
+     surface is `--float`, held to its floors over anything; high contrast is solid and unblurred. */
+  background: var(--float-bg);
+  backdrop-filter: blur(var(--blur-dialog)) saturate(1.5);
   color: var(--text);
-  box-shadow: var(--elevation-3);
+  box-shadow: var(--float-shadow), var(--shadow);
+  overflow: hidden;
   /* BOUNDED BY THE WINDOW, and the reason is that nothing else can be. The popup is fixed and centred by translate,
      so content wider or taller than the window pushes both edges past it, and a fixed box cannot be scrolled to:
      measured live 2026-09-15, the camera dialog grew to its stream's native frame and put Take picture and Make PDF
@@ -417,18 +445,25 @@
   outline: none;
 }
 
+/* v5's DIALOG HEAD: 48 tall, the accent's wash from the left edge, the title in the display face at 16/600. It runs
+   the popup's full width, over its side padding. */
 .m-dialog__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-16);
-  padding-bottom: var(--space-8);
-  border-bottom: 1px solid var(--border); /* decorative: separates the dialog's title from its body; nothing here is interactive */
+  min-block-size: var(--dialog-head-height);
+  margin-inline: calc(-1 * var(--space-24));
+  padding-inline: var(--space-24) var(--space-12);
+  background: var(--dialog-head);
+  border-bottom: 1px solid var(--border-soft); /* decorative: separates the dialog's title from its body; nothing here is interactive */
 }
 
 .m-dialog__title {
   margin: 0;
+  font-family: var(--font-display);
   font-size: var(--font-content-16);
+  font-weight: 600;
   color: var(--text);
 }
 

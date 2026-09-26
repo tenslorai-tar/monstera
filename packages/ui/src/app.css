@@ -175,7 +175,7 @@ textarea {
 }
 
 .m-command-search:focus-visible {
-  outline: 2px solid var(--border-control);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
@@ -1860,7 +1860,7 @@ textarea {
 }
 
 .m-panel-tab:focus-visible {
-  outline: 2px solid var(--border-control);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
@@ -1951,7 +1951,7 @@ textarea {
 .m-context-panel__tab:focus-visible {
   /* The command search's ring, the convention in this stylesheet: an undefined token here
      would drop the whole declaration and leave the tab with no visible focus at all. */
-  outline: 2px solid var(--border-control);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
@@ -2599,7 +2599,7 @@ textarea {
 }
 
 .m-ribbon__tab:focus-visible {
-  outline: 2px solid var(--border-control);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
@@ -2747,48 +2747,43 @@ textarea {
 }
 
 /*
- * THE PILL GETS A STRIP OF ITS OWN, so a page is never laid out under it (the owner's enhancement,
- * 2026-09-22). An absolutely positioned child is placed against its container's PADDING box, so
- * padding here reserves the strip the pill sits in and moves the page clear of it in one rule —
- * the pill's own `left`/`right` offset is unchanged and still measured from the same edge.
- *
- * `:has()`, so the edge follows the pill rather than being plumbed through two components as a prop
- * nothing else would read. With the pill hidden neither rule matches and the page takes the whole
- * area back, which is what hiding it is for.
- */
-.m-canvas-area:has(.m-quick-toolbar--start) {
-  padding-inline-start: var(--quick-toolbar-strip);
-}
-
-.m-canvas-area:has(.m-quick-toolbar--end) {
-  padding-inline-end: var(--quick-toolbar-strip);
-}
-
-/*
- * §10.3's floating quick toolbar: a vertical pill on the canvas edge. ABSOLUTE against
- * `.m-canvas-area`, never fixed: fixed placed it against the window, 16 px from its left edge, which
- * is where the section rail and the document panel are (measured 2026-09-15). The edge is
- * `appearance.quick-toolbar-edge`, in physical terms because its option titles say left and right.
+ * §10.3's floating quick toolbar: a vertical pill FLOATING OVER the page area (v5: 40 wide, radius 20, vertically
+ * centred). The strip that reserved room beside the page (2026-09-22) is gone — the owner rejected it on 2026-09-26:
+ * the pill floats, and hiding it is the rail's Toolbar button, the status bar's toggle or Ctrl+Shift+Q. ABSOLUTE
+ * against `.m-canvas-area`, never fixed: fixed placed it against the window, 16 px from its left edge, which is where
+ * the section rail and the document panel are (measured 2026-09-15). The edge is `appearance.quick-toolbar-edge`, in
+ * physical terms because its option titles say left and right.
  */
 .m-quick-toolbar {
   position: absolute;
+  z-index: 1;
   inset-block-start: 50%;
   transform: translateY(-50%);
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-4);
+  align-items: center;
+  gap: var(--space-2);
+  inline-size: var(--quick-toolbar);
+  padding: var(--space-6) var(--space-4);
   border: 1px solid var(--border-control);
-  border-radius: var(--radius-10);
-  background: var(--surface);
+  border-radius: var(--radius-20);
+  background: var(--float-bg);
+  backdrop-filter: blur(var(--blur-toolbar)) saturate(1.4);
+  box-shadow: var(--float-shadow);
+}
+
+.m-quick-toolbar .m-icon-button {
+  inline-size: var(--quick-tool);
+  block-size: var(--quick-tool);
+  border-radius: 50%;
 }
 
 .m-quick-toolbar--start {
-  left: var(--space-8);
+  left: var(--space-12);
 }
 
 .m-quick-toolbar--end {
-  right: var(--space-8);
+  right: var(--space-12);
 }
 
 /*
@@ -2947,7 +2942,7 @@ textarea {
 }
 
 .m-document-choice select:focus-visible {
-  outline: 2px solid var(--border-control);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
@@ -3878,7 +3873,7 @@ textarea {
 }
 
 .m-switch:focus-visible {
-  outline: 2px solid var(--border-control);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -3909,7 +3904,7 @@ textarea {
 }
 
 .m-segmented__choice:focus-visible {
-  outline: 2px solid var(--border-control);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
 
@@ -4095,58 +4090,355 @@ textarea {
 }
 
 /*
- * THE OWNER'S v5 SURFACES (2026-09-24, `v5-02`, `v5-04`, `v5-05`).
+ * THE OWNER'S v5 SHELL (`v5-design-values.md`, 2026-09-26; first drawn 2026-09-24 from the exports).
  *
- * Every region of the document screen is a PANEL on a ground: the rail, the ribbon, the document
- * panel, the page area, the contextual panel and the status bar each have their own rounded,
- * hairlined box, with 8 px of ground between them and at the window's edges. The title bar sits on
- * the ground itself. The ground carries the design's green glow at the top, from `--accent-soft`,
- * so each theme's own accent tints it and high contrast, whose soft accent is a flat state
- * surface, reads as the design's plain black.
+ * The window is a LIT GROUND — `--ambient`, four lights over a dark or pale base, and a fine grain over all of it —
+ * and every region of the document screen is a translucent PANEL on it: the rail, the ribbon, the document panel, the
+ * page area, the contextual panel and the status bar each have their own rounded box, their own gradient, a lit top
+ * edge and a soft shadow, with 8 px of ground between them and at the window's edges. The title bar sits on the
+ * ground itself, under the mica. High contrast draws none of the light: its tokens make every gradient a flat colour.
  *
  * ONE BLOCK, AFTER EVERYTHING IT RESTYLES, so a rule above that set a region's background or
  * border is overridden here by position rather than by a specificity nobody chose.
  */
+body {
+  background: var(--app-bg);
+  font-size: var(--font-chrome-12);
+}
+
 .m-document-surface {
   gap: var(--space-8);
   padding: 0 var(--space-8) var(--space-8);
-  background:
-    radial-gradient(ellipse 70% 45% at 50% 0%, var(--accent-soft), transparent 70%),
-    var(--canvas);
+  background: var(--ambient);
+}
+
+/* THE GRAIN (v5): fractal noise laid over the whole window in `overlay`, 7% in dark and 4% in light, none in high
+   contrast. BEHIND the panels — a negative layer inside the surface's own stacking context paints over the surface's
+   background and under everything in it — so it shows through their translucency as the design draws it. */
+.m-document-surface::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: url('../../../assets/texture/grain.svg');
+  opacity: var(--grain-opacity);
+  mix-blend-mode: overlay;
+  pointer-events: none;
 }
 
 /* The title bar spans the window, over the ground's own edge padding, so its drag region and the
-   Window Controls Overlay reach the window's edges as before. */
+   Window Controls Overlay reach the window's edges as before. v5: 40 tall, on the mica. */
 .m-title-bar {
   margin-inline: calc(-1 * var(--space-8));
-  background: transparent;
+  min-block-size: max(var(--title-bar), env(titlebar-area-height, 0px));
+  padding-block: 0;
+  align-items: stretch;
+  background: var(--mica);
+  border-block-end: 1px solid var(--border); /* decorative: the seam under the title bar; each control draws its own focus ring */
+}
+
+.m-title-bar > * {
+  align-self: center;
+}
+
+.m-title-bar__commands .m-button {
+  block-size: var(--title-control);
+  padding-block: 0;
+}
+
+.m-command-search {
+  inline-size: var(--command-search);
+  block-size: var(--title-control);
+  min-inline-size: 0;
+  padding-block: 0;
+  background: var(--surface);
+}
+
+.m-command-search__chord {
+  padding: 1px var(--space-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  font-size: var(--font-chrome-10);
+}
+
+/* THE TABS (v5): 32 tall, rounded at the top only, standing on the title bar's bottom edge; the current one lifted
+   onto a surface with an accent line along its top. The line is a border, so forced colours still say which. */
+.m-tabs {
+  align-self: stretch;
+  align-items: flex-end;
+}
+
+.m-tab-list {
+  align-items: flex-end;
+  block-size: 100%;
+}
+
+.m-tab {
+  position: relative;
+  block-size: var(--title-tab);
+  max-inline-size: var(--title-tab-max);
+  gap: var(--space-4);
+  padding-inline: var(--space-8) var(--space-4);
+  border: 1px solid transparent;
   border-block-end: none;
+  border-radius: var(--radius-8) var(--radius-8) 0 0;
+  inset-block-end: -1px;
 }
 
-.m-ribbon__rail,
-.m-ribbon__tools,
+.m-tab-current {
+  background: var(--surface);
+  border-color: var(--border); /* decorative: the lifted tab's outline; the tab's buttons draw their own focus rings */
+  border-block-start: 2px solid var(--accent-text);
+}
+
+.m-tab-name {
+  max-inline-size: calc(var(--title-tab-max) - var(--space-32) - var(--space-16));
+  font-size: var(--font-chrome-12);
+}
+
+.m-tab-dot {
+  inline-size: 7px;
+  block-size: 7px;
+  color: var(--accent-text);
+}
+
+/* THE RIBBON (v5): 100 tall, its own gradient, rounded 14, lit at the top edge; groups separated by a hairline that
+   fades at both ends; the caption row 22 tall under the buttons. */
+.m-ribbon__tools {
+  block-size: var(--ribbon);
+  gap: 0;
+  padding: var(--space-6) var(--space-8) 0;
+  overflow: hidden;
+  background: var(--ribbon-bg);
+  border: 1px solid var(--border); /* decorative: the ribbon's edge on the ground; every tool draws its own focus ring */
+  border-radius: var(--radius-14);
+  box-shadow: var(--panel-edge);
+}
+
+.m-ribbon__group {
+  gap: 0;
+  padding-inline: var(--space-6);
+  border-inline-end: 1px solid transparent; /* decorative: the fading hairline between groups; each tool draws its own boundary */
+  border-image: linear-gradient(180deg, transparent, var(--border-grad), transparent) 1;
+}
+
+.m-ribbon__buttons {
+  flex: 1 1 auto;
+  align-items: flex-start;
+}
+
+.m-ribbon__caption {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  block-size: var(--ribbon-caption);
+  font-size: var(--font-chrome-11);
+  white-space: nowrap;
+}
+
+/* THE RAIL (v5): 64 wide in Ribbon, 48 in Studio; its own gradient; each section a labelled icon 48 tall (36 in
+   Studio, icon only); the active one a raised chip with an accent bar at its left edge that glows. */
+.m-ribbon__rail {
+  inline-size: var(--rail);
+  padding: var(--space-8) var(--space-6);
+  background: var(--rail-bg);
+  border: 1px solid var(--border); /* decorative: the rail's edge on the ground; every section draws its own focus ring */
+  border-radius: var(--radius-14);
+  box-shadow: var(--panel-edge);
+  overflow: visible;
+}
+
+.m-document-surface[data-layout='studio'] .m-ribbon__rail {
+  inline-size: var(--rail-studio);
+}
+
+.m-ribbon__tab {
+  position: relative;
+  justify-content: center;
+  block-size: var(--rail-button);
+  gap: var(--space-4);
+  padding: 0;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.m-ribbon__tab .m-icon {
+  inline-size: var(--icon-20);
+  block-size: var(--icon-20);
+  stroke-width: var(--icon-stroke);
+}
+
+.m-document-surface[data-layout='studio'] .m-ribbon__tab {
+  block-size: var(--rail-button-studio);
+}
+
+.m-document-surface[data-layout='studio'] .m-ribbon__tab-label {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.m-ribbon__tab.is-active {
+  background: var(--active-bg);
+  border-color: var(--border-control);
+  box-shadow: var(--active-edge);
+  color: var(--text);
+}
+
+.m-ribbon__tab.is-active::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: calc(-1 * var(--space-6));
+  inset-block: 25%;
+  inline-size: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent-text);
+  box-shadow: var(--glow-sm);
+}
+
+/* THE PANELS (v5): each its own gradient, rounded 14, lit at the top edge. The document panel's tab strip is 32 tall,
+   the contextual panel's 36; the Assistant's panel carries the hero wash. */
 .m-document-panel,
-.m-context-panel,
-.m-canvas-area,
-.m-status-bar {
-  background: var(--bg);
+.m-context-panel {
+  background: var(--panel-bg);
   border: 1px solid var(--border); /* decorative: the panel's edge on the ground; every control inside draws its own focus ring */
-  border-radius: var(--radius-10);
-}
-
-/* The page area's panel is the ground's own colour, as the design draws the canvas: the page is
-   the bright thing, and a lighter box behind it would compete. */
-.m-canvas-area {
-  background: var(--canvas);
+  border-radius: var(--radius-14);
+  box-shadow: var(--panel-edge);
   overflow: hidden;
 }
 
+.m-document-panel__strip {
+  min-block-size: var(--panel-tabs-left);
+  border-image: linear-gradient(90deg, transparent, var(--border-grad), transparent) 1;
+}
+
+.m-panel-tab {
+  inline-size: 34px;
+  border-radius: var(--radius-5);
+}
+
+.m-panel-tab[data-active] {
+  background: var(--active-bg);
+  box-shadow: var(--active-edge);
+}
+
+.m-context-panel__header {
+  min-block-size: var(--panel-tabs-right);
+  padding-block: 0;
+  border-image: linear-gradient(90deg, transparent, var(--border-grad), transparent) 1;
+}
+
+.m-context-panel__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  block-size: var(--panel-tabs-right);
+  padding-inline: var(--space-10);
+  border-radius: 0;
+  font-size: var(--font-chrome-12);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* THE SELECTED TAB is Base UI's `data-active` (1.7's `TabsTabDataAttributes`) — `data-selected`, which this file
+   keyed on until 2026-09-26, is never set, so the rule never matched and the tab showed no state (a11y review). An
+   underline drawn as a border, so forced colours still show it. */
+.m-context-panel__tab[data-active] {
+  color: var(--text);
+  background: transparent;
+  border-block-end: 2px solid var(--accent-text);
+}
+
+.m-context-panel:has(.m-assistant) {
+  background: var(--hero-bg);
+}
+
+/* THE PAGE AREA (v5): the canvas gradient under the page, rounded 14; the page itself lifted by its shadow and, in
+   dark, a faint green glow. */
+.m-canvas-area {
+  background: var(--canvas-bg);
+  border: 1px solid var(--border); /* decorative: the page area's edge on the ground; nothing here is a control boundary */
+  border-radius: var(--radius-14);
+  overflow: hidden;
+}
+
+.m-page {
+  box-shadow: var(--page-shadow);
+}
+
+/* THE STATUS BAR (v5): 36 tall, its own gradient, rounded 12, 11 px figures in tabular numerals. */
 .m-status-bar {
-  block-size: auto;
-  min-block-size: var(--space-32);
+  block-size: var(--status-bar);
+  min-block-size: 0;
+  gap: var(--space-4);
+  padding-block: 0;
+  padding-inline: var(--space-12);
+  background: var(--status-bg);
+  border: 1px solid var(--border); /* decorative: the status bar's edge on the ground; every control inside draws its own focus ring */
+  border-radius: var(--radius-12);
+  box-shadow: var(--panel-edge);
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+  font-variant-numeric: tabular-nums;
   /* v5-02's ORDER: the page field and the tool that is on at the start, the document's own line
      from the middle on, then the panel toggles and the zoom at the end. */
   justify-content: flex-start;
+}
+
+/* EVERY FLOATING SURFACE (v5): menus, the context menu, a group's More, the command palette — the float surface, its
+   glass and its shadow, rounded 12; items 30 tall, rounded 6. */
+.m-context-menu {
+  min-inline-size: var(--context-menu-min);
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid var(--border); /* decorative: the menu's edge; every item draws its own focus state */
+  border-radius: var(--radius-12);
+  background: var(--float-bg);
+  backdrop-filter: blur(var(--blur-menu)) saturate(1.5);
+  box-shadow: var(--float-shadow);
+}
+
+.m-context-menu-item {
+  min-block-size: var(--menu-item);
+  border-radius: var(--radius-6);
+  font-size: var(--font-chrome-12);
+}
+
+/* A FOCUSED ITEM SHOWS ITS RING (WCAG 2.4.7): the rule above this file's end set `outline: none` and left a hover
+   fill of about 1.1:1 against the menu as the only sign — the a11y review's finding 4. */
+.m-context-menu-item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.m-context-menu-chord {
+  font-size: var(--font-chrome-11);
+}
+
+/* THE SCROLLBARS (v5): 10 px, the thumb the gradient hairline's colour, rounded, inset by a transparent border. */
+::-webkit-scrollbar {
+  inline-size: var(--scrollbar);
+  block-size: var(--scrollbar);
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent; /* decorative: the thumb's inset; a scrollbar is operated by the platform, not drawn as a control boundary */
+  border-radius: var(--scrollbar);
+  background: var(--border-grad);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* MOTION (v5): 140 ms ease-out, and none at all when reduced motion is asked for. */
+:root[data-motion='reduced'] .m-button,
+:root[data-motion='reduced'] .m-tool-button {
+  transition: none;
 }
 
 .m-status-saved {
@@ -4287,6 +4579,6 @@ textarea {
 }
 
 .m-thumb:focus-visible {
-  outline: 2px solid var(--border-control);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
