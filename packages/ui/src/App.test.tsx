@@ -19,10 +19,11 @@ import { SettingsStore } from './settingsStore.js';
 import { resetSharedPainter } from './searchHighlight.js';
 import { SPLIT_VIEW_SETTING } from './settings/viewing.js';
 import { AUTOSAVE_SETTING } from './settings/saving.js';
-import { FULL_APP_TEST_TIMEOUT } from './fullAppTestLimit.js';
+import { applyFullAppLimits } from './fullAppTestLimit.js';
 
-// THIS FILE RENDERS THE WHOLE APP, whose tests' measured spread crosses Vitest's default limit.
-vi.setConfig({ testTimeout: FULL_APP_TEST_TIMEOUT });
+// THIS FILE RENDERS THE WHOLE APP, whose tests' measured spread crosses Vitest's default limit and whose dialog bodies
+// arrive by a first import inside Testing Library's wait (`fullAppTestLimit.ts`).
+applyFullAppLimits();
 
 /**
  * The UI-level half of the wired-tools pair for `document.open`.

@@ -15,10 +15,10 @@ import { ALL_SETTINGS } from './settings/all.js';
 import { SettingsStore } from './settingsStore.js';
 import { CONTEXT_PANEL_OPEN_SETTING, CONTEXT_PANEL_TAB_SETTING, RIBBON_SECTION_SETTING } from './settings/layout.js';
 import { SPLIT_VIEW_SETTING } from './settings/viewing.js';
-import { FULL_APP_TEST_TIMEOUT } from './fullAppTestLimit.js';
+import { applyFullAppLimits } from './fullAppTestLimit.js';
 
-// THIS FILE RENDERS THE WHOLE APP, whose tests' measured spread crosses Vitest's default limit.
-vi.setConfig({ testTimeout: FULL_APP_TEST_TIMEOUT });
+// THIS FILE RENDERS THE WHOLE APP: the case limit and the wait window of `fullAppTestLimit.ts`.
+applyFullAppLimits();
 
 /**
  * Multi-document tabs, driven through `App`.

@@ -1,3 +1,6 @@
+import { configure } from '@testing-library/react';
+import { vi } from 'vitest';
+
 /**
  * The time limit for a test that renders the whole `App`, in milliseconds. TEST-ONLY: nothing the
  * application runs imports this.
@@ -29,3 +32,38 @@
  * one of them does not take this limit or any other file does.
  */
 export const FULL_APP_TEST_TIMEOUT = 20_000;
+
+/**
+ * How long a `find*` or `waitFor` in these files waits — Testing Library's own default is 1000 ms, a figure nobody
+ * chose here either.
+ *
+ * ## A dialog's body is a lazy chunk, and its first import happens INSIDE the wait
+ *
+ * ADR-0029 Decision 7 makes every dialog body `lazy()`: the frame and its title render at once and the body when its
+ * module arrives. Under Vitest that arrival is the worker transforming the module on first import, which is not UI
+ * settling and has no bound of its own. Measured 2026-09-26 on the owner's machine (Windows 11, 4 cores): importing
+ * all 82 bodies cold took 4376 ms, 53 ms each on average (a probe under `packages/ui/src`, not kept). And on
+ * windows-latest at 7539dd80 the first import of one body missed the 1000 ms window: the dialog titled *That could
+ * not be done* was found and its sentence was not (`App.test.tsx`, the POISONED case, the run's public annotation).
+ *
+ * 10 s is more than twice the cold cost of every body at once, and half the case limit — so a real miss still ends
+ * in Testing Library's DOM dump, which names what was on screen, rather than in a bare case timeout, which names
+ * nothing.
+ */
+export const FULL_APP_WAIT = 10_000;
+
+/**
+ * Both limits, in the ONE call every file that renders `App` makes — so a file cannot take the case limit and keep
+ * the 1 s wait, which is how the window above went unchosen while the limit beside it was chosen.
+ */
+export function applyFullAppLimits(
+  // THE TWO SETTERS, defaulted and injectable: Vitest exposes no reader for a file's test limit, so the case that
+  // proves both are set asserts the calls rather than a readback.
+  set: {
+    readonly vitest: (config: { readonly testTimeout: number }) => void;
+    readonly testingLibrary: (config: { readonly asyncUtilTimeout: number }) => void;
+  } = { vitest: vi.setConfig, testingLibrary: configure },
+): void {
+  set.vitest({ testTimeout: FULL_APP_TEST_TIMEOUT });
+  set.testingLibrary({ asyncUtilTimeout: FULL_APP_WAIT });
+}

@@ -13,10 +13,10 @@ import { STATUS_LABEL, THUMBNAILS_LABEL } from './messages/en.js';
 import { SettingsRegistry } from './registries/settings.js';
 import { ALL_SETTINGS } from './settings/all.js';
 import { SettingsStore } from './settingsStore.js';
-import { FULL_APP_TEST_TIMEOUT } from './fullAppTestLimit.js';
+import { applyFullAppLimits } from './fullAppTestLimit.js';
 
-// THIS FILE RENDERS THE WHOLE APP, whose tests' measured spread crosses Vitest's default limit.
-vi.setConfig({ testTimeout: FULL_APP_TEST_TIMEOUT });
+// THIS FILE RENDERS THE WHOLE APP: the case limit and the wait window of `fullAppTestLimit.ts`.
+applyFullAppLimits();
 
 /**
  * §10.5a's guarantee, asserted rather than repeated.
