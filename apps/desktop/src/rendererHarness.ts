@@ -1,5 +1,5 @@
 import { BRIDGE_KEY } from '@monstera/contract';
-import { BrowserWindow, app, session } from 'electron';
+import { BrowserWindow, type WebContents, app, session } from 'electron';
 
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -216,8 +216,11 @@ interface Readback {
   readonly permissions: Readonly<Record<string, string>>;
   /** Document loads observed after a navigation the policy REFUSES. */
   readonly refusedNavigationLoads: number;
-  /** Document loads observed after a navigation the policy PERMITS. */
+  /** What the shell decided on that attempt's `will-navigate`, read off the event itself. */
+  readonly refusedNavigation: NavigationDecision;
+  /** Document loads observed after a navigation the policy PERMITS, counted once its load has arrived. */
   readonly permittedNavigationLoads: number;
+  readonly permittedNavigation: NavigationDecision;
   readonly finalUrl: string;
 }
 
@@ -225,6 +228,48 @@ interface Readback {
 function settle(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
+  });
+}
+
+/**
+ * The shell's answer to one navigation, as its `will-navigate` carried it: `'prevented'` or `'allowed'` — which only an
+ * event that fired for THAT url can produce — or `'no-event'` when none arrived inside the bound, which is a broken
+ * probe rather than a refusal, since a refused navigation still emits the event it was refused on.
+ */
+type NavigationDecision = 'prevented' | 'allowed' | 'no-event';
+
+/**
+ * Awaits the `will-frame-navigate` for `url` in the main frame. THAT event and not `will-navigate`, because it is the
+ * first of the chain and the one every attempt emits: the shell refuses there (`lockNavigation`), and a navigation
+ * refused there never emits `will-navigate` at all — measured, the first version of this waited on `will-navigate`
+ * and read `'no-event'` for every refused attempt. Installed BEFORE the navigation is asked for, and after the shell's
+ * own handler, so `defaultPrevented` here is what the shell decided. The bound decides nothing when the mechanism
+ * works — the wait ends when the event does — and exists so a missing event fails rather than hangs.
+ */
+function decisionFor(contents: WebContents, url: string): Promise<NavigationDecision> {
+  return new Promise((resolve) => {
+    const bound = setTimeout(() => {
+      contents.off('will-frame-navigate', heard);
+      resolve('no-event');
+    }, CRASH_BOUND_MS);
+    function heard(event: Electron.Event<Electron.WebContentsWillFrameNavigateEventParams>): void {
+      if (!event.isMainFrame || event.url !== url) return;
+      clearTimeout(bound);
+      contents.off('will-frame-navigate', heard);
+      resolve(event.defaultPrevented ? 'prevented' : 'allowed');
+    }
+    contents.on('will-frame-navigate', heard);
+  });
+}
+
+/** The next `did-finish-load`, or the bound — whichever is first; the count taken after it says which. */
+function nextLoad(contents: WebContents): Promise<void> {
+  return new Promise((resolve) => {
+    const bound = setTimeout(resolve, CRASH_BOUND_MS);
+    contents.once('did-finish-load', () => {
+      clearTimeout(bound);
+      resolve();
+    });
   });
 }
 
@@ -726,14 +771,27 @@ export async function reportRendererPolicy(): Promise<void> {
   // the bytes are on disk so it loads without a network, and the href differs so
   // `isPermittedNavigation` refuses it. It also happens to exercise the exact
   // property that function claims — whole-href comparison, never a prefix.
+  //
+  // THE DECISION IS READ OFF THE EVENT, AND THE LOAD IS AWAITED, NOT SLEPT FOR. Both attempts used to be followed by
+  // a fixed 400 ms and a count. Measured 2026-09-26: with a typecheck and a lint running beside it, the PERMITTED
+  // reload had not finished inside 400 ms and the case read zero loads — a false red, reproduced on demand. The same
+  // sleep ran the other way on the REFUSED side, where it was the reassuring answer: a guard deleted on a slow
+  // machine starts a reload that lands after the count, and reads as refused. So each attempt now awaits the
+  // main-frame `will-frame-navigate` Electron emits for it (`decisionFor` says why that event) — the harness's listener
+  // is installed after the shell's, so `defaultPrevented` is the shell's decision — and the permitted reload is awaited
+  // on its own `did-finish-load`. Mutation-checked: with `lockNavigation`'s refusal disabled the case reads
+  // "allowed the refused attempt" and goes red.
+  // The refused count still settles, because an absence has no event, but it is no longer the only reading.
   const before = loads;
   const refusedTarget = `${webContents.getURL()}?probe=refused`;
+  const refusedDecision = decisionFor(webContents, refusedTarget);
   await evaluate(
     webContents,
     `(() => { location.href = ${JSON.stringify(refusedTarget)}; return true; })()`,
     (value): value is boolean => value === true,
     'refused navigation',
   );
+  const refusedNavigation = await refusedDecision;
   await settle(SETTLE_MS);
   const refusedNavigationLoads = loads - before;
 
@@ -742,13 +800,16 @@ export async function reportRendererPolicy(): Promise<void> {
   // resets the page's JavaScript context, so it runs last.
   const beforePermitted = loads;
   const loaded = webContents.getURL();
+  const permittedDecision = decisionFor(webContents, loaded);
+  const permittedLoad = nextLoad(webContents);
   await evaluate(
     webContents,
     `(() => { location.href = ${JSON.stringify(loaded)}; return true; })()`,
     (value): value is boolean => value === true,
     'permitted navigation',
   );
-  await settle(SETTLE_MS);
+  const permittedNavigation = await permittedDecision;
+  await permittedLoad;
   const permittedNavigationLoads = loads - beforePermitted;
 
   // COUNTED AGAINST A BASELINE, because an absolute count is not evidence.
@@ -844,7 +905,9 @@ export async function reportRendererPolicy(): Promise<void> {
     windowCount,
     permissions,
     refusedNavigationLoads,
+    refusedNavigation,
     permittedNavigationLoads,
+    permittedNavigation,
     finalUrl,
   };
 

@@ -309,7 +309,9 @@ function pinnedPolicy(markdown) {
  *   windowCount: number,
  *   permissions: Record<string, string>,
  *   refusedNavigationLoads: number,
+ *   refusedNavigation: 'prevented' | 'allowed' | 'no-event',
  *   permittedNavigationLoads: number,
+ *   permittedNavigation: 'prevented' | 'allowed' | 'no-event',
  *   finalUrl: string,
  * }}
  */
@@ -667,8 +669,13 @@ try {
 
     check(
       'navigation off the loaded document is refused, and a permitted one completes',
-      seen.refusedNavigationLoads === 0 && seen.permittedNavigationLoads === 1,
-      `refused attempt produced ${String(seen.refusedNavigationLoads)} load(s), permitted ` +
+      seen.refusedNavigation === 'prevented' &&
+        seen.refusedNavigationLoads === 0 &&
+        seen.permittedNavigation === 'allowed' &&
+        seen.permittedNavigationLoads === 1,
+      `the shell ${seen.refusedNavigation} the refused attempt and ${seen.permittedNavigation} the permitted one ` +
+        `(read off each main-frame will-frame-navigate; 'no-event' is a probe that saw nothing, never a refusal). ` +
+        `Refused attempt produced ${String(seen.refusedNavigationLoads)} load(s), permitted ` +
         `attempt produced ${String(seen.permittedNavigationLoads)}; final URL ${seen.finalUrl}. ` +
         `The URL is deliberately not the discriminator: a refused navigation leaves it ` +
         `unchanged and a permitted navigation to the loaded document leaves it unchanged too, ` +
