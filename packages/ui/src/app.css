@@ -2329,8 +2329,15 @@ textarea {
   border-color: var(--accent);
 }
 
+/* THE THUMBNAIL'S WIDTH IS THE SIZE'S, drawn or not. A canvas nothing has drawn on yet keeps the browser's default
+   300 × 150, and the strip's columns are sized to their widest content — so ONE undrawn thumbnail widened every column
+   to 306 px and pushed the strip past the panel's left edge. Measured 2026-09-26 at 1920 × 1080: with 6 pages every
+   thumbnail drew at once and the columns were 102 px; with 24 the ones below the fold had not drawn, the columns were
+   306 px, and the first thumbnail started at x −87. The height follows the canvas's own ratio. */
 .m-thumb-canvas {
   display: block;
+  inline-size: var(--m-thumb-width, 96px);
+  block-size: auto;
   background: var(--page);
 }
 

@@ -1094,6 +1094,40 @@ test('the FLOATING TOOLBAR is a pill inside the page area, off the rail and the 
   await expect(toolbar).toBeVisible();
 });
 
+test('the PAGES STRIP keeps every thumbnail inside the panel on a long document, drawn or not yet drawn', async ({
+  page,
+}) => {
+  // MEASURED 2026-09-26 at 1920 × 1080: on a 24-page document the thumbnails below the fold had not drawn yet, an
+  // undrawn canvas keeps the browser's 300 × 150, the strip's max-content columns took that width — 306 px — and the
+  // first thumbnail started at x −87, off the panel. Six pages drew at once and never showed it, which is why the
+  // document here is long: the defect needs thumbnails that are not drawn when the strip is laid out.
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const document = await PDFDocument.create();
+  for (let at = 0; at < 24; at += 1) document.addPage([612, 792]);
+  const bytes = await document.save();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000c9');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'long.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('.m-thumb')).toHaveCount(24);
+
+  const strip = await page.locator('.m-thumbnails').boundingBox();
+  expect(strip).not.toBeNull();
+  const boxes = await page.locator('.m-thumb').evaluateAll((thumbs) =>
+    thumbs.map((thumb) => {
+      const box = thumb.getBoundingClientRect();
+      return { left: box.left, right: box.right };
+    }),
+  );
+  const outside = boxes.filter(
+    (box) => box.left < (strip?.x ?? 0) - 0.5 || box.right > (strip?.x ?? 0) + (strip?.width ?? 0) + 0.5,
+  );
+  expect(outside, `thumbnails outside the strip ${JSON.stringify(strip)}: ${JSON.stringify(outside.slice(0, 3))}`).toHaveLength(0);
+});
+
 test('a DIALOG taller than the window stays inside it, and its body scrolls to the last control', async ({ page }) => {
   // THE CLASS, found live on 2026-09-15: the camera dialog grew to its stream's native frame and put its buttons
   // outside the window, where a fixed, centred box cannot be scrolled to. The camera itself is not reachable in this
