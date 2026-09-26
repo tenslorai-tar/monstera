@@ -758,8 +758,9 @@ const capturedPriorSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('duplicatePage'),
-      /** Where the copy landed, so the inverse removes that page and not the original. */
-      prior: z.object({ at: z.number().int().nonnegative() }).strict(),
+      /** Where the copies landed, so the inverse removes those pages and not the originals. */
+      // `.readonly()` so the inferred wire type IS `CommandPrior['duplicatePage']`, `rotatePages`' reason above.
+      prior: z.object({ at: z.array(z.number().int().nonnegative()).min(1).readonly() }).strict(),
     })
     .strict(),
   z

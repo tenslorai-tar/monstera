@@ -11,6 +11,8 @@ import {
   applyDocumentCommand,
   cropPagesCommand,
   watermarkPagesCommand,
+  duplicatePageCommand,
+  insertBlankPageCommand,
   headerFooterCommand,
   batesNumberCommand,
   exportFormDataFdfCommand,
@@ -640,7 +642,8 @@ describe('delete pages — the mutation-dialog gate', () => {
     // the document does not have, and the props schema requires it — so a
     // command that omitted it would throw at the open call rather than here.
     expect(opened).toStrictEqual([
-      { id: 'dialog.delete-pages', props: { pageCount: CONTEXT.pageCount } },
+      // AND THE PAGE ON SHOW, written into the field — nothing is ticked in this context (ADR-0104).
+      { id: 'dialog.delete-pages', props: { pageCount: CONTEXT.pageCount, pages: [3] } },
     ]);
     expect(sent).toStrictEqual([
       {
@@ -1564,7 +1567,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       },
     }).run(CONTEXT);
 
-    expect(opened).toStrictEqual([{ id: 'dialog.resize-pages', props: { page: 3 } }]);
+    expect(opened).toStrictEqual([{ id: 'dialog.resize-pages', props: { pages: [3] } }]);
     expect(sent).toStrictEqual([
       {
         id: 'document.execute',
@@ -2149,7 +2152,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     }).run(CONTEXT);
 
     // THE BOUND GOES IN, so the dialog can refuse a page this document lacks.
-    expect(opened).toStrictEqual([{ id: 'dialog.extract-pages', props: { pageCount: 10 } }]);
+    expect(opened).toStrictEqual([{ id: 'dialog.extract-pages', props: { pageCount: 10, pages: [3] } }]);
     // AND THE PAGES COME OUT UNCHANGED — no arithmetic in the command, because
     // `parsePageRanges` already converted from what the reader typed.
     expect(sent).toStrictEqual([
@@ -2198,7 +2201,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       },
     }).run(CONTEXT);
     expect(spoken).toStrictEqual([
-      { id: 'dialog.extract-pages', props: { pageCount: 10 } },
+      { id: 'dialog.extract-pages', props: { pageCount: 10, pages: [3] } },
       { id: 'dialog.save-problem', props: { outcome: 'contested' } },
     ]);
     expect(failed.said).toStrictEqual([]);
@@ -4079,6 +4082,68 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
         selectedPages: [],
       });
       expect(none.sent.map((command) => (command as { pages?: unknown }).pages), kind).toStrictEqual([[2]]);
+    }
+  });
+
+  it('THE REST OF ORGANIZE reads `targetPages` too: duplicate and insert act, and the dialogs open on the ticked pages', async () => {
+    // Work list 2026-09-26, item 4. Same fixture shape as the case above: page 2 on show, pages 0 and 3 ticked, so a
+    // command still reading `page` gives 2 — or 3 for an insert — where these give the ticked pages.
+    const ticked: CommandContext = { ...CONTEXT, page: 2, selectedPages: [0, 3] };
+    const shown: CommandContext = { ...CONTEXT, page: 2, selectedPages: [] };
+
+    for (const [context, pages, at] of [
+      [ticked, [0, 3], 4],
+      [shown, [2], 3],
+    ] as const) {
+      const duplicated = sending();
+      await duplicatePageCommand({ client: duplicated.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp }).run(context);
+      expect(duplicated.sent).toStrictEqual([{ kind: 'duplicatePage', pages }]);
+
+      // AFTER THE LAST TARGET PAGE, which is the page on show when nothing is ticked.
+      const inserted = sending();
+      await insertBlankPageCommand({ client: inserted.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp }).run(context);
+      expect(inserted.sent).toStrictEqual([{ kind: 'insertBlankPage', at }]);
+
+      // EVERY PAGE DIALOG is opened with the same pages; a dismissal sends nothing, so only the props are read.
+      for (const factory of [
+        cropPagesCommand,
+        resizePagesCommand,
+        headerFooterCommand,
+        batesNumberCommand,
+        watermarkPagesCommand,
+        pageTransitionCommand,
+      ]) {
+        const opened: unknown[] = [];
+        const quiet = sending();
+        await factory({
+          client: quiet.client,
+          ask: (_id, props) => {
+            opened.push(props);
+            return Promise.resolve(undefined);
+          },
+          onApplied: () => undefined,
+          stamp,
+        }).run(context);
+        expect(opened).toStrictEqual([{ pages }]);
+        expect(quiet.sent).toStrictEqual([]);
+      }
+
+      // THE RANGE DIALOGS start with the same pages, and keep the bound beside them.
+      for (const factory of [deletePagesCommand, extractPagesCommand]) {
+        const opened: unknown[] = [];
+        const quiet = sending();
+        await factory({
+          client: quiet.client,
+          ask: (_id, props) => {
+            opened.push(props);
+            return Promise.resolve(undefined);
+          },
+          onApplied: () => undefined,
+          toast: () => undefined,
+          stamp,
+        }).run(context);
+        expect(opened).toStrictEqual([{ pageCount: CONTEXT.pageCount, pages }]);
+      }
     }
   });
 

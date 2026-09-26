@@ -199,7 +199,7 @@ describe('an annotation survives the page operations that move its page', () => 
     // object, and whether it carries the original's annotations is a fact about
     // how the copy is made rather than about the page tree.
     const doubled = await through(await marked(), (session) =>
-      applyDuplicatePage(session, { kind: 'duplicatePage', page: 1 }),
+      applyDuplicatePage(session, { kind: 'duplicatePage', pages: [1] }),
     );
     expect((await marksIn(doubled)).map((mark) => mark.page)).toStrictEqual([1, 2]);
   });
@@ -209,7 +209,7 @@ describe('an annotation survives the page operations that move its page', () => 
     // *duplicate carries annotations* from *every page has one*. Without it a
     // reader cannot tell which of the two the case measured.
     const doubled = await through(await marked(), (session) =>
-      applyDuplicatePage(session, { kind: 'duplicatePage', page: 0 }),
+      applyDuplicatePage(session, { kind: 'duplicatePage', pages: [0] }),
     );
     // Page 0 duplicated to page 1 pushes the marked page to 2.
     expect((await marksIn(doubled)).map((mark) => mark.page)).toStrictEqual([2]);

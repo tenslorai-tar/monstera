@@ -1057,10 +1057,13 @@ export function insertBlankPageCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.page === undefined) return;
+      // AFTER THE LAST OF `targetPages` (ADR-0104), which is the page on show when nothing is ticked — so the
+      // reading-view behaviour above is unchanged, and a ticked set gains its page after itself.
+      const last = targetPages(context).at(-1);
+      if (context.docId === undefined || last === undefined) return;
       await applyDocumentCommand(deps, context.docId, {
         kind: 'insertBlankPage',
-        at: context.page + 1,
+        at: last + 1,
       });
     },
   };
@@ -1085,10 +1088,12 @@ export function duplicatePageCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.page === undefined) return;
+      // `targetPages`' pages (ADR-0104): the ticked ones in the grid, each copied after itself, in one undo step.
+      const pages = targetPages(context);
+      if (context.docId === undefined || pages.length === 0) return;
       await applyDocumentCommand(deps, context.docId, {
         kind: 'duplicatePage',
-        page: context.page,
+        pages: [...pages],
       });
     },
   };
@@ -1181,9 +1186,12 @@ export function deletePagesCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.pageCount === undefined) return;
+      // THE FIELD STARTS WITH `targetPages` (ADR-0104): the ticked ones in the grid, else the page on show.
+      const pages = targetPages(context);
+      if (context.docId === undefined || context.pageCount === undefined || pages.length === 0) return;
       const answer = (await deps.ask(DELETE_PAGES_DIALOG_ID, {
         pageCount: context.pageCount,
+        pages: [...pages],
       })) as DeletePagesAnswer | undefined;
 
       // DISMISSED. Nothing was collected, so nothing is dispatched — and the
@@ -1225,8 +1233,10 @@ export function cropPagesCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.page === undefined) return;
-      const answer = (await deps.ask(CROP_PAGES_DIALOG_ID, { page: context.page })) as
+      // `targetPages`' pages (ADR-0104): the ticked ones in the grid, else the page on show.
+      const pages = targetPages(context);
+      if (context.docId === undefined || pages.length === 0) return;
+      const answer = (await deps.ask(CROP_PAGES_DIALOG_ID, { pages: [...pages] })) as
         | CropPagesAnswer
         | undefined;
       if (answer === undefined) return;
@@ -1277,8 +1287,9 @@ export function headerFooterCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.page === undefined) return;
-      const answer = (await deps.ask(HEADER_FOOTER_DIALOG_ID, { page: context.page })) as
+      const pages = targetPages(context);
+      if (context.docId === undefined || pages.length === 0) return;
+      const answer = (await deps.ask(HEADER_FOOTER_DIALOG_ID, { pages: [...pages] })) as
         | HeaderFooterAnswer
         | undefined;
       if (answer === undefined) return;
@@ -1313,8 +1324,9 @@ export function batesNumberCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.page === undefined) return;
-      const answer = (await deps.ask(BATES_NUMBER_DIALOG_ID, { page: context.page })) as
+      const pages = targetPages(context);
+      if (context.docId === undefined || pages.length === 0) return;
+      const answer = (await deps.ask(BATES_NUMBER_DIALOG_ID, { pages: [...pages] })) as
         | BatesNumberAnswer
         | undefined;
       if (answer === undefined) return;
@@ -1354,8 +1366,9 @@ export function pageTransitionCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.page === undefined) return;
-      const answer = (await deps.ask(PAGE_TRANSITION_DIALOG_ID, { page: context.page })) as
+      const pages = targetPages(context);
+      if (context.docId === undefined || pages.length === 0) return;
+      const answer = (await deps.ask(PAGE_TRANSITION_DIALOG_ID, { pages: [...pages] })) as
         | PageTransitionAnswer
         | undefined;
       if (answer === undefined) return;
@@ -1387,8 +1400,9 @@ export function resizePagesCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.page === undefined) return;
-      const answer = (await deps.ask(RESIZE_PAGES_DIALOG_ID, { page: context.page })) as
+      const pages = targetPages(context);
+      if (context.docId === undefined || pages.length === 0) return;
+      const answer = (await deps.ask(RESIZE_PAGES_DIALOG_ID, { pages: [...pages] })) as
         | ResizePagesAnswer
         | undefined;
       if (answer === undefined) return;
@@ -1471,11 +1485,13 @@ export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.page === undefined) return;
+      // After the last of `targetPages`, `insertBlankPageCommand`'s rule (ADR-0104).
+      const last = targetPages(context).at(-1);
+      if (context.docId === undefined || last === undefined) return;
 
       const answer = await deps.client['document.insertImage']({
         docId: context.docId,
-        at: context.page + 1,
+        at: last + 1,
       });
       if (!answer.ok) {
         reportProblem(deps, answer.error);
@@ -1867,8 +1883,9 @@ export function watermarkPagesCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.page === undefined) return;
-      const answer = (await deps.ask(WATERMARK_PAGES_DIALOG_ID, { page: context.page })) as
+      const pages = targetPages(context);
+      if (context.docId === undefined || pages.length === 0) return;
+      const answer = (await deps.ask(WATERMARK_PAGES_DIALOG_ID, { pages: [...pages] })) as
         | WatermarkPagesAnswer
         | undefined;
       if (answer === undefined) return;
@@ -2286,10 +2303,13 @@ export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile): Ui
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.pageCount === undefined) return;
+      // The field starts with `targetPages`, the delete dialog's rule (ADR-0104).
+      const pages = targetPages(context);
+      if (context.docId === undefined || context.pageCount === undefined || pages.length === 0) return;
 
       const chosen = (await deps.ask(EXTRACT_PAGES_DIALOG_ID, {
         pageCount: context.pageCount,
+        pages: [...pages],
       })) as ExtractPagesAnswer | undefined;
       if (chosen === undefined) return;
 

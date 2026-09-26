@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { CROP_PAGES_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
 import { CROP_PAGES_RESULT } from './cropPagesResult.js';
+import { TARGET_PAGES } from './pageScope.js';
 
 /** The id `cropPagesCommand` opens to collect margins and a scope. */
 export const CROP_PAGES_DIALOG_ID = 'dialog.crop-pages';
@@ -35,8 +36,8 @@ export const CROP_PAGES_DIALOG = declareDialog({
   title: CROP_PAGES_TITLE,
   props: z
     .object({
-      /** The page being read, zero-based, for the *this page* scope. */
-      page: z.number().int().nonnegative(),
+      /** The command's `targetPages`, for the scope's first choice (ADR-0104). */
+      pages: TARGET_PAGES,
     })
     .strict(),
   result: CROP_PAGES_RESULT,

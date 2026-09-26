@@ -537,7 +537,7 @@ describe('captureInsertBlankPage and invertInsertBlankPage', () => {
 describe('applyDuplicatePage', () => {
   it('PUTS THE COPY AFTER THE SOURCE, and the saved document has one more page', async () => {
     const copied = await edited(await flatDocument(3), (session) =>
-      applyDuplicatePage(session, { kind: 'duplicatePage', page: 0 }),
+      applyDuplicatePage(session, { kind: 'duplicatePage', pages: [0] }),
     );
 
     // 100 twice, and the SECOND 100 is what separates a duplicate from a
@@ -554,7 +554,7 @@ describe('applyDuplicatePage', () => {
     // difference becomes observable.
     const session = await mupdfWriter.open(await flatDocument(3));
     try {
-      await applyDuplicatePage(session, { kind: 'duplicatePage', page: 0 });
+      await applyDuplicatePage(session, { kind: 'duplicatePage', pages: [0] });
       await applyRotatePages(session, { kind: 'rotatePages', pages: [1], quarterTurns: 1 });
 
       expect(await rotationsOf(await mupdfWriter.serialise(session))).toStrictEqual([
@@ -571,7 +571,7 @@ describe('applyDuplicatePage', () => {
     // rotation of its own and resolves against the ROOT instead — an upright
     // page beside a landscape one, with the count and the order both correct.
     const copied = await edited(await nestedDocument(4), (session) =>
-      applyDuplicatePage(session, { kind: 'duplicatePage', page: 0 }),
+      applyDuplicatePage(session, { kind: 'duplicatePage', pages: [0] }),
     );
 
     expect(await widthsOf(copied)).toStrictEqual([100, 100, 101, 102, 103]);
@@ -582,8 +582,30 @@ describe('applyDuplicatePage', () => {
     const session = await mupdfWriter.open(await flatDocument(3));
     try {
       await expect(
-        applyDuplicatePage(session, { kind: 'duplicatePage', page: 9 }),
+        applyDuplicatePage(session, { kind: 'duplicatePage', pages: [9] }),
       ).rejects.toThrow(/outside a document of 3 page/u);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('SEVERAL PAGES, each copy after its own source — the Organize grid’s ticked set (ADR-0104)', async () => {
+    // NOT ADJACENT and given out of order with a repeat: a copy placed at the end, a sort skipped, or a page copied
+    // twice each gives a different list. Widths 100..104; pages 1 and 3 copied.
+    const copied = await edited(await flatDocument(5), (session) =>
+      applyDuplicatePage(session, { kind: 'duplicatePage', pages: [3, 1, 3] }),
+    );
+    expect(await widthsOf(copied)).toStrictEqual([100, 101, 101, 102, 103, 103, 104]);
+  });
+
+  it('REFUSES the whole set when ONE page is outside, and copies nothing', async () => {
+    const session = await mupdfWriter.open(await flatDocument(3));
+    try {
+      await expect(
+        applyDuplicatePage(session, { kind: 'duplicatePage', pages: [0, 9] }),
+      ).rejects.toThrow(/page 9 is outside a document of 3 page/u);
+      // CONTROL: the first page, which is in range, was not copied before the refusal.
+      expect(await widthsOf(await mupdfWriter.serialise(session))).toStrictEqual([100, 101, 102]);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -594,12 +616,12 @@ describe('captureDuplicatePage and invertDuplicatePage', () => {
   it('THE INVERSE REMOVES THE COPY, and the original order comes back', async () => {
     const session = await mupdfWriter.open(await flatDocument(3));
     try {
-      const command = { kind: 'duplicatePage', page: 1 } as const;
+      const command = { kind: 'duplicatePage' as const, pages: [1] };
       const capture = await captureDuplicatePage(session, command);
       if (!capture.captured) throw new Error('the capture was refused');
       // THE STORED DESTINATION, asserted rather than assumed: the inverse reads
       // this and a wrong value here removes the wrong page.
-      expect(capture.prior).toStrictEqual({ at: 2 });
+      expect(capture.prior).toStrictEqual({ at: [2] });
 
       await applyDuplicatePage(session, command);
       expect(await widthsOf(await mupdfWriter.serialise(session))).toStrictEqual([
@@ -623,7 +645,7 @@ describe('captureDuplicatePage and invertDuplicatePage', () => {
     const session = await mupdfWriter.open(await flatDocument(3));
     try {
       await applyRotatePages(session, { kind: 'rotatePages', pages: [1], quarterTurns: 1 });
-      const command = { kind: 'duplicatePage', page: 1 } as const;
+      const command = { kind: 'duplicatePage' as const, pages: [1] };
       const capture = await captureDuplicatePage(session, command);
       if (!capture.captured) throw new Error('the capture was refused');
 
@@ -644,10 +666,34 @@ describe('captureDuplicatePage and invertDuplicatePage', () => {
     }
   });
 
+  it('SEVERAL COPIES are recorded where each landed, and the inverse removes exactly those', async () => {
+    // The sources are rotated differently from their neighbours so a wrong index removes a visible page.
+    const session = await mupdfWriter.open(await flatDocument(5));
+    try {
+      await applyRotatePages(session, { kind: 'rotatePages', pages: [1, 3], quarterTurns: 1 });
+      const command = { kind: 'duplicatePage' as const, pages: [3, 1] };
+      const capture = await captureDuplicatePage(session, command);
+      if (!capture.captured) throw new Error('the capture was refused');
+      // Page 1's copy at 2; page 3 has been pushed to 4 by then, so its copy lands at 5.
+      expect(capture.prior).toStrictEqual({ at: [2, 5] });
+
+      await applyDuplicatePage(session, command);
+      // Diverge each copy from its source, so removing a source instead of its copy shows.
+      await applyRotatePages(session, { kind: 'rotatePages', pages: [2, 5], quarterTurns: 2 });
+      await invertDuplicatePage(session, capture.prior);
+
+      const saved = await mupdfWriter.serialise(session);
+      expect(await widthsOf(saved)).toStrictEqual([100, 101, 102, 103, 104]);
+      expect(await rotationsOf(saved)).toStrictEqual([0, 90, 0, 90, 0]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
   it('a duplicate of a page OUTSIDE the document is NOT CAPTURED, with a reason', async () => {
     const session = await mupdfWriter.open(await flatDocument(3));
     try {
-      const capture = await captureDuplicatePage(session, { kind: 'duplicatePage', page: 9 });
+      const capture = await captureDuplicatePage(session, { kind: 'duplicatePage', pages: [9] });
 
       expect(capture.captured).toBe(false);
       if (capture.captured) throw new Error('the capture should have been refused');

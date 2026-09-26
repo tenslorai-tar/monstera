@@ -1,7 +1,7 @@
 import type { Result } from '@monstera/shared';
 import { err, ok } from '@monstera/shared';
 
-import { kernelPageOf } from './pageNumbering.js';
+import { kernelPageOf, pdfjsPageOf } from './pageNumbering.js';
 
 /**
  * The one parser for a page-range expression a person types — `1-3, 5`.
@@ -116,6 +116,40 @@ export function parsePageGroups(
   }
 
   return ok(groups);
+}
+
+/**
+ * Zero-based pages written as the expression a person would type — `[0, 1, 2, 4]` is `1-3, 5`.
+ *
+ * **The inverse of {@link parsePageRanges}, and in this module for that reason**: a range dialog opened on the
+ * Organize grid's ticked pages starts with them written out (ADR-0104), and a second writer of the syntax
+ * elsewhere would be a second opinion about it that the parser never meets (B3a). `parsePageRanges` of the
+ * result gives the same set back, which is the property its case asserts.
+ *
+ * Sorted and deduplicated first, for the parser's reason: the answer is a set.
+ */
+export function formatPageRanges(pages: readonly number[]): string {
+  const sorted = [...new Set(pages)].sort((a, b) => a - b);
+  const parts: string[] = [];
+  let start: number | undefined;
+  let previous: number | undefined;
+  const close = (): void => {
+    if (start === undefined || previous === undefined) return;
+    const from = pdfjsPageOf(start);
+    const to = pdfjsPageOf(previous);
+    parts.push(from === to ? String(from) : `${String(from)}-${String(to)}`);
+  };
+  for (const page of sorted) {
+    if (previous !== undefined && page === previous + 1) {
+      previous = page;
+      continue;
+    }
+    close();
+    start = page;
+    previous = page;
+  }
+  close();
+  return parts.join(', ');
 }
 
 /**

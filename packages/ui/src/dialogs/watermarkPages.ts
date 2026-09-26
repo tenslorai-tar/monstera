@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { WATERMARK_PAGES_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
+import { TARGET_PAGES } from './pageScope.js';
 import { WATERMARK_PAGES_RESULT } from './watermarkPagesResult.js';
 
 /** The id `watermarkPagesCommand` opens to collect the text and its appearance. */
@@ -32,8 +33,8 @@ export const WATERMARK_PAGES_DIALOG = declareDialog({
   title: WATERMARK_PAGES_TITLE,
   props: z
     .object({
-      /** The page being read, zero-based, for the *this page* scope. */
-      page: z.number().int().nonnegative(),
+      /** The command's `targetPages`, for the scope's first choice (ADR-0104). */
+      pages: TARGET_PAGES,
     })
     .strict(),
   result: WATERMARK_PAGES_RESULT,

@@ -6,20 +6,19 @@ import {
   RESIZE_PAGES_A3,
   RESIZE_PAGES_A4,
   RESIZE_PAGES_A5,
-  RESIZE_PAGES_ALL,
   RESIZE_PAGES_APPLY,
   RESIZE_PAGES_HEIGHT,
   RESIZE_PAGES_LEGAL,
   RESIZE_PAGES_LETTER,
   RESIZE_PAGES_NOT_A_SIZE,
   RESIZE_PAGES_TABLOID,
-  RESIZE_PAGES_THIS,
   RESIZE_PAGES_UNIFORM_NOTE,
   RESIZE_PAGES_WIDTH,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
+import { PageScopeChoice } from './PageScopeChoice.js';
 import type { ResizePagesAnswer } from './resizePagesResult.js';
 
 /**
@@ -60,10 +59,10 @@ const A4 = { width: 595, height: 842 } as const;
  * A default export because `declareDialog` takes a `lazy()` component.
  */
 export default function ResizePagesBody({
-  page,
+  pages,
   resolve,
 }: {
-  readonly page: number;
+  readonly pages: readonly number[];
 } & DialogAnswering<ResizePagesAnswer>): ReactElement {
   const { _ } = useLingui();
   const [width, setWidth] = useState(String(A4.width));
@@ -106,23 +105,7 @@ export default function ResizePagesBody({
         }}
       />
       <p className="m-resize-pages__note">{_(RESIZE_PAGES_UNIFORM_NOTE)}</p>
-      <fieldset className="m-resize-pages__scope">
-        {/* TWO BUTTONS RATHER THAN A CHECKBOX, for `CropPagesBody`'s reason. */}
-        <Button
-          label={RESIZE_PAGES_THIS}
-          variant={everyPage ? 'default' : 'primary'}
-          onClick={() => {
-            setEveryPage(false);
-          }}
-        />
-        <Button
-          label={RESIZE_PAGES_ALL}
-          variant={everyPage ? 'primary' : 'default'}
-          onClick={() => {
-            setEveryPage(true);
-          }}
-        />
-      </fieldset>
+      <PageScopeChoice className="m-resize-pages__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
       <p className="m-resize-pages__problem" role="status">
         {ready ? '' : _(RESIZE_PAGES_NOT_A_SIZE)}
       </p>
@@ -136,7 +119,7 @@ export default function ResizePagesBody({
           // size outside the format's bounds, and a mismatch would be a thrown
           // `DialogResultRejected` over the user's document.
           if (widthPoints === null || heightPoints === null) return;
-          resolve({ pages: everyPage ? 'all' : [page], widthPoints, heightPoints });
+          resolve({ pages: everyPage ? 'all' : [...pages], widthPoints, heightPoints });
         }}
       />
     </div>

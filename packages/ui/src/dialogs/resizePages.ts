@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { RESIZE_PAGES_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
+import { TARGET_PAGES } from './pageScope.js';
 import { RESIZE_PAGES_RESULT } from './resizePagesResult.js';
 
 /** The id `resizePagesCommand` opens to collect a target size. */
@@ -20,8 +21,8 @@ export const RESIZE_PAGES_DIALOG = declareDialog({
   title: RESIZE_PAGES_TITLE,
   props: z
     .object({
-      /** The page being read, zero-based, for the *this page* scope. */
-      page: z.number().int().nonnegative(),
+      /** The command's `targetPages`, for the scope's first choice (ADR-0104). */
+      pages: TARGET_PAGES,
     })
     .strict(),
   result: RESIZE_PAGES_RESULT,

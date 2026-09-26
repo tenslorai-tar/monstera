@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { DELETE_PAGES_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
 import { DELETE_PAGES_RESULT } from './deletePagesResult.js';
+import { TARGET_PAGES } from './pageScope.js';
 
 /** The id `deletePagesCommand` opens to collect a range. */
 export const DELETE_PAGES_DIALOG_ID = 'dialog.delete-pages';
@@ -43,7 +44,8 @@ export const DELETE_PAGES_DIALOG_ID = 'dialog.delete-pages';
 export const DELETE_PAGES_DIALOG = declareDialog({
   id: DELETE_PAGES_DIALOG_ID,
   title: DELETE_PAGES_TITLE,
-  props: z.object({ pageCount: z.number().int().positive() }).strict(),
+  // `pages` IS WHAT THE FIELD STARTS WITH — the command's `targetPages`, written as a range (ADR-0104).
+  props: z.object({ pageCount: z.number().int().positive(), pages: TARGET_PAGES }).strict(),
   result: DELETE_PAGES_RESULT,
   component: lazy(() => import('./DeletePagesBody.js')),
 });

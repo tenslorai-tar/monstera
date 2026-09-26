@@ -3,7 +3,6 @@ import type { ReactElement } from 'react';
 import { useState } from 'react';
 
 import {
-  PAGE_TRANSITION_ALL,
   PAGE_TRANSITION_APPLY,
   PAGE_TRANSITION_BLINDS,
   PAGE_TRANSITION_BOX,
@@ -13,11 +12,11 @@ import {
   PAGE_TRANSITION_NOT_A_NUMBER,
   PAGE_TRANSITION_REPLACE,
   PAGE_TRANSITION_REPLACE_NOTE,
-  PAGE_TRANSITION_THIS,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
+import { PageScopeChoice } from './PageScopeChoice.js';
 import type { PageTransitionAnswer } from './pageTransitionResult.js';
 
 /**
@@ -53,10 +52,10 @@ const DEFAULT_DURATION = '1';
  * A default export because `declareDialog` takes a `lazy()` component.
  */
 export default function PageTransitionBody({
-  page,
+  pages,
   resolve,
 }: {
-  readonly page: number;
+  readonly pages: readonly number[];
 } & DialogAnswering<PageTransitionAnswer>): ReactElement {
   const { _ } = useLingui();
   const [style, setStyle] = useState<(typeof STYLES)[number]['key']>('dissolve');
@@ -88,23 +87,7 @@ export default function PageTransitionBody({
           setDuration(next);
         }}
       />
-      <fieldset className="m-page-transition__scope">
-        {/* TWO BUTTONS RATHER THAN A CHECKBOX, for `CropPagesBody`'s reason. */}
-        <Button
-          label={PAGE_TRANSITION_THIS}
-          variant={everyPage ? 'default' : 'primary'}
-          onClick={() => {
-            setEveryPage(false);
-          }}
-        />
-        <Button
-          label={PAGE_TRANSITION_ALL}
-          variant={everyPage ? 'primary' : 'default'}
-          onClick={() => {
-            setEveryPage(true);
-          }}
-        />
-      </fieldset>
+      <PageScopeChoice className="m-page-transition__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
       <p className="m-page-transition__problem" role="status">
         {ready ? '' : _(PAGE_TRANSITION_NOT_A_NUMBER)}
       </p>
@@ -118,7 +101,7 @@ export default function PageTransitionBody({
           // duration over 60, and a mismatch would be a thrown
           // `DialogResultRejected` over the user's document.
           if (seconds === null) return;
-          resolve({ pages: everyPage ? 'all' : [page], style, durationSeconds: seconds });
+          resolve({ pages: everyPage ? 'all' : [...pages], style, durationSeconds: seconds });
         }}
       />
     </div>

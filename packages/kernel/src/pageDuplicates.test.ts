@@ -75,7 +75,7 @@ describe('findDuplicatePages', () => {
     // own duplicates are exact. This is the case that says the two features
     // agree, which neither alone can.
     const groups = await against(await fixture(), async (session) => {
-      await applyDuplicatePage(session, { kind: 'duplicatePage', page: 1 });
+      await applyDuplicatePage(session, { kind: 'duplicatePage', pages: [1] });
       return findDuplicatePages(session);
     });
 

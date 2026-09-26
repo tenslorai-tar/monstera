@@ -39,7 +39,7 @@ describe('the recognition dialog', () => {
   it('says where handwriting is read when models are installed', () => {
     render(
       <Wrapped>
-        <OcrBody page={0} languages={['eng']} servicesReady={false} resolve={() => undefined} update={() => undefined} />
+        <OcrBody pages={[0]} languages={['eng']} servicesReady={false} resolve={() => undefined} update={() => undefined} />
       </Wrapped>,
     );
     // THE CONTROL that this is the installed branch: its start button is there.
@@ -52,7 +52,7 @@ describe('the recognition dialog', () => {
   it('and when none are, beside the sentence saying so', () => {
     render(
       <Wrapped>
-        <OcrBody page={0} languages={[]} servicesReady={false} resolve={() => undefined} update={() => undefined} />
+        <OcrBody pages={[0]} languages={[]} servicesReady={false} resolve={() => undefined} update={() => undefined} />
       </Wrapped>,
     );
     expect(screen.getByText(english(OCR_UNAVAILABLE))).toBeDefined();
@@ -63,7 +63,7 @@ describe('the recognition dialog', () => {
   it('with a service’s key STORED it says where the tool is, and not "add a key" (§10.5)', () => {
     render(
       <Wrapped>
-        <OcrBody page={0} languages={['eng']} servicesReady resolve={() => undefined} update={() => undefined} />
+        <OcrBody pages={[0]} languages={['eng']} servicesReady resolve={() => undefined} update={() => undefined} />
       </Wrapped>,
     );
     expect(screen.getByText(english(OCR_HANDWRITING_READY))).toBeDefined();

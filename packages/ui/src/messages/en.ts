@@ -119,8 +119,6 @@ export const CROP_PAGES_TOP = messageKey('dialog.crop-pages.top');
 export const CROP_PAGES_BOTTOM = messageKey('dialog.crop-pages.bottom');
 export const CROP_PAGES_LEFT = messageKey('dialog.crop-pages.left');
 export const CROP_PAGES_RIGHT = messageKey('dialog.crop-pages.right');
-export const CROP_PAGES_THIS = messageKey('dialog.crop-pages.this-page');
-export const CROP_PAGES_ALL = messageKey('dialog.crop-pages.all-pages');
 export const CROP_PAGES_APPLY = messageKey('dialog.crop-pages.apply');
 export const CROP_PAGES_NOT_A_NUMBER = messageKey('dialog.crop-pages.not-a-number');
 export const CROP_PAGES_NEGATIVE = messageKey('dialog.crop-pages.negative');
@@ -130,8 +128,6 @@ export const WATERMARK_PAGES_TEXT = messageKey('dialog.watermark-pages.text');
 export const WATERMARK_PAGES_OPACITY = messageKey('dialog.watermark-pages.opacity');
 export const WATERMARK_PAGES_ROTATION = messageKey('dialog.watermark-pages.rotation');
 export const WATERMARK_PAGES_SIZE = messageKey('dialog.watermark-pages.size');
-export const WATERMARK_PAGES_THIS = messageKey('dialog.watermark-pages.this-page');
-export const WATERMARK_PAGES_ALL = messageKey('dialog.watermark-pages.all-pages');
 export const WATERMARK_PAGES_APPLY = messageKey('dialog.watermark-pages.apply');
 export const WATERMARK_PAGES_NO_TEXT = messageKey('dialog.watermark-pages.no-text');
 export const WATERMARK_PAGES_NOT_A_NUMBER = messageKey('dialog.watermark-pages.not-a-number');
@@ -147,8 +143,6 @@ export const HEADER_FOOTER_RIGHT = messageKey('dialog.header-footer.right');
 export const HEADER_FOOTER_TOKENS = messageKey('dialog.header-footer.tokens');
 export const HEADER_FOOTER_SIZE = messageKey('dialog.header-footer.size');
 export const HEADER_FOOTER_MARGIN = messageKey('dialog.header-footer.margin');
-export const HEADER_FOOTER_THIS = messageKey('dialog.header-footer.this-page');
-export const HEADER_FOOTER_ALL = messageKey('dialog.header-footer.all-pages');
 export const HEADER_FOOTER_APPLY = messageKey('dialog.header-footer.apply');
 export const HEADER_FOOTER_EMPTY = messageKey('dialog.header-footer.empty');
 export const HEADER_FOOTER_NOT_A_NUMBER = messageKey('dialog.header-footer.not-a-number');
@@ -164,8 +158,6 @@ export const BATES_NUMBER_EDGE_FOOTER = messageKey('dialog.bates-number.edge-foo
 export const BATES_NUMBER_SLOT_LEFT = messageKey('dialog.bates-number.slot-left');
 export const BATES_NUMBER_SLOT_CENTRE = messageKey('dialog.bates-number.slot-centre');
 export const BATES_NUMBER_SLOT_RIGHT = messageKey('dialog.bates-number.slot-right');
-export const BATES_NUMBER_THIS = messageKey('dialog.bates-number.this-page');
-export const BATES_NUMBER_ALL = messageKey('dialog.bates-number.all-pages');
 export const BATES_NUMBER_APPLY = messageKey('dialog.bates-number.apply');
 export const BATES_NUMBER_NOT_A_NUMBER = messageKey('dialog.bates-number.not-a-number');
 export const BATES_NUMBER_COMMAND_TITLE = messageKey('command.bates-number.title');
@@ -187,8 +179,6 @@ export const PAGE_TRANSITION_BOX = messageKey('dialog.page-transition.box');
 export const PAGE_TRANSITION_BLINDS = messageKey('dialog.page-transition.blinds');
 export const PAGE_TRANSITION_REPLACE_NOTE = messageKey('dialog.page-transition.replace-note');
 export const PAGE_TRANSITION_DURATION = messageKey('dialog.page-transition.duration');
-export const PAGE_TRANSITION_THIS = messageKey('dialog.page-transition.this-page');
-export const PAGE_TRANSITION_ALL = messageKey('dialog.page-transition.all-pages');
 export const PAGE_TRANSITION_APPLY = messageKey('dialog.page-transition.apply');
 export const PAGE_TRANSITION_NOT_A_NUMBER = messageKey('dialog.page-transition.not-a-number');
 export const PAGE_TRANSITION_COMMAND_TITLE = messageKey('command.page-transition.title');
@@ -203,8 +193,6 @@ export const RESIZE_PAGES_TABLOID = messageKey('dialog.resize-pages.tabloid');
 export const RESIZE_PAGES_WIDTH = messageKey('dialog.resize-pages.width');
 export const RESIZE_PAGES_HEIGHT = messageKey('dialog.resize-pages.height');
 export const RESIZE_PAGES_UNIFORM_NOTE = messageKey('dialog.resize-pages.uniform-note');
-export const RESIZE_PAGES_THIS = messageKey('dialog.resize-pages.this-page');
-export const RESIZE_PAGES_ALL = messageKey('dialog.resize-pages.all-pages');
 export const RESIZE_PAGES_APPLY = messageKey('dialog.resize-pages.apply');
 export const RESIZE_PAGES_NOT_A_SIZE = messageKey('dialog.resize-pages.not-a-size');
 export const RESIZE_PAGES_COMMAND_TITLE = messageKey('command.resize-pages.title');
@@ -587,8 +575,10 @@ export const SCAN_OUTCOME_NONE = messageKey('dialog.scan-outcome.none');
 export const OCR_TITLE = messageKey('dialog.ocr.title');
 export const OCR_UNAVAILABLE = messageKey('dialog.ocr.unavailable');
 export const OCR_LANGUAGE = messageKey('dialog.ocr.language');
-export const OCR_THIS_PAGE = messageKey('dialog.ocr.this-page');
-export const OCR_ALL_PAGES = messageKey('dialog.ocr.all-pages');
+/** A dialog's page scope (`PageScopeChoice`): the pages it was opened for, counted, or every page. */
+export const PAGE_SCOPE_LABEL = messageKey('dialog.page-scope.label');
+export const PAGE_SCOPE_TARGET = messageKey('dialog.page-scope.target');
+export const PAGE_SCOPE_ALL = messageKey('dialog.page-scope.all');
 export const OCR_START = messageKey('dialog.ocr.start');
 export const OCR_HANDWRITING = messageKey('dialog.ocr.handwriting');
 export const OCR_HANDWRITING_READY = messageKey('dialog.ocr.handwriting-ready');
@@ -2190,8 +2180,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [OCR_UNAVAILABLE]:
     'No recognition models are installed, so nothing can be read from a scan yet.',
   [OCR_LANGUAGE]: 'Language of the text',
-  [OCR_THIS_PAGE]: 'This page',
-  [OCR_ALL_PAGES]: 'All pages',
+  [PAGE_SCOPE_LABEL]: 'Pages',
+  [PAGE_SCOPE_TARGET]: '{count, plural, one {This page} other {These # pages}}',
+  [PAGE_SCOPE_ALL]: 'All pages',
   [OCR_START]: 'Recognise',
   // THE ONE LINE THE OWNER SPECIFIED (2026-09-18): handwriting is read by a
   // service since ADR-0085, and a key is what makes its tool appear.
@@ -3271,8 +3262,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PAGE_TRANSITION_REPLACE_NOTE]:
     'None sets the page to change with no visible effect. Transitions show in full-screen reading.',
   [PAGE_TRANSITION_DURATION]: 'Duration (seconds)',
-  [PAGE_TRANSITION_THIS]: 'This page',
-  [PAGE_TRANSITION_ALL]: 'All pages',
   [PAGE_TRANSITION_APPLY]: 'Set transition',
   [PAGE_TRANSITION_NOT_A_NUMBER]: 'Duration is a number of seconds, from 0 to 60.',
   [PAGE_TRANSITION_COMMAND_TITLE]: 'Page transition…',
@@ -3291,8 +3280,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RESIZE_PAGES_UNIFORM_NOTE]:
     'Content is scaled to fit and centred, keeping its proportions. A page that is turned takes ' +
     'the size you asked for as you see it.',
-  [RESIZE_PAGES_THIS]: 'This page',
-  [RESIZE_PAGES_ALL]: 'All pages',
   [RESIZE_PAGES_APPLY]: 'Resize',
   [RESIZE_PAGES_NOT_A_SIZE]: 'Width and height are numbers of points, above 0 and up to 14400.',
   [RESIZE_PAGES_COMMAND_TITLE]: 'Resize pages…',
@@ -4053,8 +4040,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CROP_PAGES_BOTTOM]: 'Bottom (points)',
   [CROP_PAGES_LEFT]: 'Left (points)',
   [CROP_PAGES_RIGHT]: 'Right (points)',
-  [CROP_PAGES_THIS]: 'This page',
-  [CROP_PAGES_ALL]: 'All pages',
   [CROP_PAGES_APPLY]: 'Crop',
   [CROP_PAGES_NOT_A_NUMBER]: 'Margins are numbers of points. Leave an edge empty to keep it.',
   // NAMED SEPARATELY from the general refusal: "that is not a number" is
@@ -4067,8 +4052,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [WATERMARK_PAGES_OPACITY]: 'Opacity (%)',
   [WATERMARK_PAGES_ROTATION]: 'Angle (degrees)',
   [WATERMARK_PAGES_SIZE]: 'Size (points)',
-  [WATERMARK_PAGES_THIS]: 'This page',
-  [WATERMARK_PAGES_ALL]: 'All pages',
   [WATERMARK_PAGES_APPLY]: 'Add watermark',
   [WATERMARK_PAGES_NO_TEXT]: 'A watermark needs some text.',
   [WATERMARK_PAGES_NOT_A_NUMBER]:
@@ -4085,8 +4068,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [HEADER_FOOTER_TOKENS]: 'Type {n} for the page number and {N} for the page count.',
   [HEADER_FOOTER_SIZE]: 'Size (points)',
   [HEADER_FOOTER_MARGIN]: 'Margin (points)',
-  [HEADER_FOOTER_THIS]: 'This page',
-  [HEADER_FOOTER_ALL]: 'All pages',
   [HEADER_FOOTER_APPLY]: 'Add',
   [HEADER_FOOTER_EMPTY]: 'Fill in at least one header or footer.',
   [HEADER_FOOTER_NOT_A_NUMBER]:
@@ -4103,8 +4084,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [BATES_NUMBER_SLOT_LEFT]: 'Left',
   [BATES_NUMBER_SLOT_CENTRE]: 'Centre',
   [BATES_NUMBER_SLOT_RIGHT]: 'Right',
-  [BATES_NUMBER_THIS]: 'This page',
-  [BATES_NUMBER_ALL]: 'All pages',
   [BATES_NUMBER_APPLY]: 'Number pages',
   [BATES_NUMBER_NOT_A_NUMBER]:
     'Start is a whole number and digits is between 1 and 12.',

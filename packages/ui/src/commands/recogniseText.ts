@@ -20,7 +20,7 @@ import {
   RIBBON_ENHANCE,
   RIBBON_STRAIGHTEN_PHOTOS,
 } from '../messages/en.js';
-import type { CommandContext, UiCommand } from '../registries/commands.js';
+import { type CommandContext, targetPages, type UiCommand } from '../registries/commands.js';
 import type { TrackTask } from '../runningTask.js';
 import {
   type DocumentCommandDeps,
@@ -94,8 +94,10 @@ export function recogniseTextCommand(
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 10 }],
     when: hasDocument,
     run: async (context: CommandContext): Promise<void> => {
-      const { docId, page, pageCount } = context;
-      if (docId === undefined || page === undefined || pageCount === undefined) return;
+      const { docId, pageCount } = context;
+      // `targetPages`' pages (ADR-0104): the ticked ones in the grid, else the page on show.
+      const pages = targetPages(context);
+      if (docId === undefined || pages.length === 0 || pageCount === undefined) return;
 
       const models = await deps.client['app.ocrLanguages']({});
       // A CHANNEL REFUSAL IS NOT AN EMPTY LIST. This channel declares no failure
@@ -105,7 +107,7 @@ export function recogniseTextCommand(
       if (!models.ok) return;
 
       const answered = await deps.ask(OCR_DIALOG_ID, {
-        page,
+        pages: [...pages],
         languages: models.value.languages,
         servicesReady: deps.servicesReady(),
       });
@@ -377,8 +379,10 @@ export function exportSearchableCommand(
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 20 }],
     when: hasDocument,
     run: async (context: CommandContext): Promise<void> => {
-      const { docId, page, pageCount } = context;
-      if (docId === undefined || page === undefined || pageCount === undefined) return;
+      const { docId, pageCount } = context;
+      // The dialog's scope is ignored here (below), so its first choice only needs to be a page that exists.
+      const pages = targetPages(context);
+      if (docId === undefined || pages.length === 0 || pageCount === undefined) return;
 
       const models = await deps.client['app.ocrLanguages']({});
       if (!models.ok) return;
@@ -388,7 +392,7 @@ export function exportSearchableCommand(
       // only in the absence of two buttons would be a second place the language
       // list is rendered. The answer's `language` is what this command needs.
       const answered = await deps.ask(OCR_DIALOG_ID, {
-        page,
+        pages: [...pages],
         languages: models.value.languages,
         servicesReady: deps.servicesReady(),
       });

@@ -4,20 +4,19 @@ import type { ReactElement } from 'react';
 import { useState } from 'react';
 
 import {
-  CROP_PAGES_ALL,
   CROP_PAGES_APPLY,
   CROP_PAGES_BOTTOM,
   CROP_PAGES_LEFT,
   CROP_PAGES_NEGATIVE,
   CROP_PAGES_NOT_A_NUMBER,
   CROP_PAGES_RIGHT,
-  CROP_PAGES_THIS,
   CROP_PAGES_TOP,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { CropPagesAnswer } from './cropPagesResult.js';
+import { PageScopeChoice } from './PageScopeChoice.js';
 
 /** The four edges, in the order a person reads a margin control. */
 const EDGES = [
@@ -53,10 +52,10 @@ const EMPTY: Edges = { top: '', bottom: '', left: '', right: '' };
  * A default export because `declareDialog` takes a `lazy()` component.
  */
 export default function CropPagesBody({
-  page,
+  pages,
   resolve,
 }: {
-  readonly page: number;
+  readonly pages: readonly number[];
 } & DialogAnswering<CropPagesAnswer>): ReactElement {
   const { _ } = useLingui();
   const [edges, setEdges] = useState<Edges>(EMPTY);
@@ -76,25 +75,7 @@ export default function CropPagesBody({
           }}
         />
       ))}
-      <fieldset className="m-crop-pages__scope">
-        {/* TWO BUTTONS RATHER THAN A CHECKBOX, because the choice is between
-            two named things and a checkbox makes one of them the absence of the
-            other — which reads as *all pages, unless* rather than as a choice. */}
-        <Button
-          label={CROP_PAGES_THIS}
-          variant={everyPage ? 'default' : 'primary'}
-          onClick={() => {
-            setEveryPage(false);
-          }}
-        />
-        <Button
-          label={CROP_PAGES_ALL}
-          variant={everyPage ? 'primary' : 'default'}
-          onClick={() => {
-            setEveryPage(true);
-          }}
-        />
-      </fieldset>
+      <PageScopeChoice className="m-crop-pages__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
       <p className="m-crop-pages__problem" role="status">
         {parsed === null ? _(problemOf(edges)) : ''}
       </p>
@@ -108,7 +89,7 @@ export default function CropPagesBody({
           // negative margin, and a mismatch would be a thrown
           // `DialogResultRejected` over the user's document.
           if (parsed === null) return;
-          resolve({ pages: everyPage ? 'all' : [page], margins: parsed });
+          resolve({ pages: everyPage ? 'all' : [...pages], margins: parsed });
         }}
       />
     </div>

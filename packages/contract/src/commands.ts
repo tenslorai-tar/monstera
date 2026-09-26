@@ -158,7 +158,14 @@ export const deletePagesSchema = z.object({
 });
 
 /**
- * Duplicate one page, placing the copy immediately after it.
+ * Duplicate pages, placing each copy immediately after its source.
+ *
+ * ## A LIST, since the Organize grid (ADR-0104)
+ *
+ * This took one `page` until the grid gave a person a ticked set to act on. Four ticked pages duplicated one command
+ * at a time would be four undo steps for one request, which is `deletePages`' reason for taking a list too — so the
+ * copies are one command and one step. Sorted and deduplicated by the kernel before it places anything, since the
+ * answer is a set of pages and a page named twice is not two copies anybody asked for.
  *
  * ## The destination is not a parameter, and that is a decision
  *
@@ -173,8 +180,8 @@ export const deletePagesSchema = z.object({
  */
 export const duplicatePageSchema = z.object({
   kind: z.literal('duplicatePage'),
-  /** Zero-based index of the page to copy. */
-  page: z.number().int().nonnegative(),
+  /** Zero-based indices of the pages to copy, in the document as it stands. */
+  pages: z.array(z.number().int().nonnegative()).min(1),
 });
 
 /**

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parsePageRanges } from './pageRanges.js';
+import { formatPageRanges, parsePageRanges } from './pageRanges.js';
 
 /**
  * The one parser for a page-range expression.
@@ -83,5 +83,28 @@ describe('parsePageRanges', () => {
     // CONTROL: the last page itself is in range. Without this, a bound written
     // as `>=` would pass every case above.
     expect(parsed('10')).toStrictEqual([9]);
+  });
+});
+
+describe('formatPageRanges — the ticked pages written as a person would type them', () => {
+  it('joins runs, keeps singles, and counts from one', () => {
+    // NOT STARTING AT PAGE ONE, for this file's reason: index 0 written as `0` or `1` is the whole question.
+    expect(formatPageRanges([1, 2, 3, 5, 8, 9])).toBe('2-4, 6, 9-10');
+    expect(formatPageRanges([4])).toBe('5');
+  });
+
+  it('writes a set: order and repeats in the input change nothing', () => {
+    expect(formatPageRanges([9, 1, 2, 1])).toBe('2-3, 10');
+  });
+
+  it('ROUND-TRIPS through the parser, which is the one reader of what it writes', () => {
+    for (const pages of [[0], [1, 2, 3, 5, 8, 9], [0, 2, 4, 6, 8], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]]) {
+      expect(parsed(formatPageRanges(pages))).toStrictEqual(pages);
+    }
+  });
+
+  it('CONTROL: nothing ticked is the empty expression, which the parser refuses', () => {
+    expect(formatPageRanges([])).toBe('');
+    expect(refused('')).toBe('empty');
   });
 });

@@ -8,7 +8,7 @@ import {
   EXTRACT_PAGES_EMPTY,
   EXTRACT_PAGES_LABEL,
 } from '../messages/en.js';
-import { parsePageRanges } from '../pageRanges.js';
+import { formatPageRanges, parsePageRanges } from '../pageRanges.js';
 import type { ExtractPagesAnswer } from './extractPagesResult.js';
 import { renderRangeProblem } from './pageRangeProblem.js';
 import { Button } from '../primitives/Button.js';
@@ -35,12 +35,15 @@ import type { DialogAnswering } from '../registries/dialogs.js';
  */
 export default function ExtractPagesBody({
   pageCount,
+  pages,
   resolve,
 }: {
   readonly pageCount: number;
+  readonly pages: readonly number[];
 } & DialogAnswering<ExtractPagesAnswer>): ReactElement {
   const { _ } = useLingui();
-  const [text, setText] = useState('');
+  // STARTS WITH THE COMMAND'S PAGES written out, so the ticked set is one keystroke from done and still editable.
+  const [text, setText] = useState(() => formatPageRanges(pages));
 
   const parsed = parsePageRanges(text, pageCount);
 

@@ -227,7 +227,7 @@ describe('AnnotationOverlay', () => {
       id: 'annotate.other',
       controller: {
         ...pointerPath,
-        commit: (_gesture, page) => Promise.resolve({ kind: 'duplicatePage', page }),
+        commit: (_gesture, page) => Promise.resolve({ kind: 'duplicatePage', pages: [page] }),
         preview: () => undefined,
       },
     };
@@ -235,7 +235,7 @@ describe('AnnotationOverlay', () => {
 
     await drag(surface, [20, 20], [120, 80]);
 
-    expect(sent).toStrictEqual([{ kind: 'duplicatePage', page: 3 }]);
+    expect(sent).toStrictEqual([{ kind: 'duplicatePage', pages: [3] }]);
   });
 
   it('KEEPS A GESTURE ITS TOOL HAS NOT COMPLETED, across the release', async () => {

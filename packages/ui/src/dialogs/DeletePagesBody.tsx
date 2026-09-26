@@ -10,7 +10,7 @@ import {
   DELETE_PAGES_LABEL,
 } from '../messages/en.js';
 import { renderRangeProblem } from './pageRangeProblem.js';
-import { parsePageRanges } from '../pageRanges.js';
+import { formatPageRanges, parsePageRanges } from '../pageRanges.js';
 import type { DeletePagesAnswer } from './deletePagesResult.js';
 import { Button } from '../primitives/Button.js';
 import { Input } from '../primitives/Input.js';
@@ -39,15 +39,19 @@ import type { DialogAnswering } from '../registries/dialogs.js';
  */
 export default function DeletePagesBody({
   pageCount,
+  pages,
   resolve,
 }: {
   readonly pageCount: number;
+  /** What the field starts with — the command's `targetPages` (ADR-0104). */
+  readonly pages: readonly number[];
   // THE SCHEMA'S OWN OUTPUT, not a hand-written restatement of it — see
   // `deletePagesResult.ts` for why it is a separate module and why the
   // hand-written version did not compile.
 } & DialogAnswering<DeletePagesAnswer>): ReactElement {
   const { _ } = useLingui();
-  const [text, setText] = useState('');
+  // STARTS WITH THE COMMAND'S PAGES written out, so the ticked set is one keystroke from done and still editable.
+  const [text, setText] = useState(() => formatPageRanges(pages));
 
   const parsed = parsePageRanges(text, pageCount);
   // EVERY PAGE IS REFUSED, and it is computed from the parse rather than from

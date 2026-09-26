@@ -1298,7 +1298,7 @@ describe('App', () => {
       expect(executed).toHaveLength(1);
       expect(executed[0]?.params).toStrictEqual({
         docId: DOC,
-        command: { kind: 'duplicatePage', page: 0 },
+        command: { kind: 'duplicatePage', pages: [0] },
       });
     });
 

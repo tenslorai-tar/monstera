@@ -337,14 +337,19 @@ export const applySwapPages: Apply<'mupdf', 'swapPages'> = (
     rewriteKids(document, swapPermutation(count, command.a, command.b));
   });
 
-/** Where a duplicate's copy landed, which is what its inverse removes. */
+/** Where a duplicate's copies landed, which is what its inverse removes. */
 export interface PriorPageCopy {
-  /** Zero-based index the copy occupies after the command. */
-  readonly at: number;
+  /** Zero-based indices the copies occupy after the command, ascending. */
+  readonly at: readonly number[];
+}
+
+/** The pages a duplicate copies — sorted and deduplicated, the schema's own note: the answer is a set. */
+function duplicatedPages(command: CommandOfKind<'duplicatePage'>): readonly number[] {
+  return [...new Set(command.pages)].sort((a, b) => a - b);
 }
 
 /**
- * Records where the copy will land, and validates the source page.
+ * Records where the copies will land, and validates the source pages.
  *
  * The destination is computed HERE and stored, rather than re-derived by the
  * inverse from *"immediately after the source"*. The rule is a placement
@@ -358,30 +363,34 @@ export function captureDuplicatePage(
 ): Promise<CaptureResult<PriorPageCopy>> {
   return withDocument(session, (document) => {
     const count = document.countPages();
-    if (command.page >= count) {
+    const pages = duplicatedPages(command);
+    const outside = pages.find((page) => page >= count);
+    if (outside !== undefined) {
       return {
         captured: false,
         reason:
-          `page ${String(command.page)} is outside this document, which has ` +
+          `page ${String(outside)} is outside this document, which has ` +
           `${String(count)} page(s), so there is nothing to copy`,
       };
     }
-    return { captured: true, prior: { at: command.page + 1 } };
+    // EACH COPY SITS AFTER ITS SOURCE, and every earlier copy has pushed it one further along: the i-th source in
+    // ascending order lands at its own index plus i + 1.
+    return { captured: true, prior: { at: pages.map((page, index) => page + index + 1) } };
   });
 }
 
-/** Removes the page the duplicate added. */
+/** Removes the pages the duplicate added. */
 export const invertDuplicatePage: Invert<'mupdf', 'duplicatePage'> = (
   session: MupdfSession,
   inverse: PriorPageCopy,
 ): Promise<void> =>
   withDocument(session, (document) => {
     const count = document.countPages();
-    rewriteKids(document, keptPermutation(count, [inverse.at]));
+    rewriteKids(document, keptPermutation(count, inverse.at));
   });
 
 /**
- * Copies one page, placing the copy immediately after it.
+ * Copies pages, placing each copy immediately after its source.
  *
  * ## MuPDF's own graft is the copy, and that is measured rather than assumed
  *
@@ -410,9 +419,11 @@ export const applyDuplicatePage: Apply<'mupdf', 'duplicatePage'> = (
 ): Promise<void> =>
   withDocument(session, (document) => {
     const count = document.countPages();
-    if (command.page >= count) {
+    const pages = duplicatedPages(command);
+    const outside = pages.find((page) => page >= count);
+    if (outside !== undefined) {
       throw new RangeError(
-        `page ${String(command.page)} is outside a document of ${String(count)} page(s). The ` +
+        `page ${String(outside)} is outside a document of ${String(count)} page(s). The ` +
           `bus validates against the document it captured, so reaching here means the two ` +
           `disagree.`,
       );
@@ -424,8 +435,7 @@ export const applyDuplicatePage: Apply<'mupdf', 'duplicatePage'> = (
     // ROOT's box — a landscape page duplicated as a portrait one, with the
     // order and the page count both correct.
     const leaves = leavesWithInheritables(document);
-    const source = leaves[command.page];
-    if (source === undefined) throw new RangeError(`page ${String(command.page)} vanished`);
+    const copied = new Set(pages);
 
     // GRAFTED FROM THE PUSHED-DOWN LEAF. `leavesWithInheritables` mutates the
     // page objects in place, so this line and `graftObject(findPage(page))` are
@@ -433,12 +443,11 @@ export const applyDuplicatePage: Apply<'mupdf', 'duplicatePage'> = (
     // above is the whole of what makes the copy correct rather than this
     // expression. Moving the graft above that call reddens the nested case with
     // `[90, 0, 90, 0, 0]`: the copy resolves its rotation against the root.
-    const copy = document.graftObject(source);
-    setKids(document, [
-      ...leaves.slice(0, command.page + 1),
-      copy,
-      ...leaves.slice(command.page + 1),
-    ]);
+    // Each copy goes straight after its own source, which is where `capture` recorded it.
+    setKids(
+      document,
+      leaves.flatMap((leaf, index) => (copied.has(index) ? [leaf, document.graftObject(leaf)] : [leaf])),
+    );
   });
 
 /** Where an insert put its page, which is what its inverse removes. */

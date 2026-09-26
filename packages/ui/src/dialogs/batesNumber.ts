@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { BATES_NUMBER_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
 import { BATES_NUMBER_RESULT } from './batesNumberResult.js';
+import { TARGET_PAGES } from './pageScope.js';
 
 /** The id `batesNumberCommand` opens to collect the identifier and its placement. */
 export const BATES_NUMBER_DIALOG_ID = 'dialog.bates-number';
@@ -18,8 +19,8 @@ export const BATES_NUMBER_DIALOG = declareDialog({
   title: BATES_NUMBER_TITLE,
   props: z
     .object({
-      /** The page being read, zero-based, for the *this page* scope. */
-      page: z.number().int().nonnegative(),
+      /** The command's `targetPages`, for the scope's first choice (ADR-0104). */
+      pages: TARGET_PAGES,
     })
     .strict(),
   result: BATES_NUMBER_RESULT,

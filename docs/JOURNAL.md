@@ -892,6 +892,30 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-26 — The Organize grid's other page commands take the ticked pages
+
+The 26 September list's item 4 closes the Organize row's owed half. Every page command that means something on a set
+now reads `targetPages` (ADR-0104): Duplicate, the two inserts, the seven dialogs with a *this page / all pages* choice,
+and the two range dialogs. What is worth keeping:
+
+**Duplicate became a list in the contract, not a loop in the renderer.** Four ticked pages duplicated one command at
+a time would be four undo steps for one request — `deletePages`' reason for taking a list. The kernel now records
+where each copy lands (the i-th source ascending lands at its index plus i + 1) and the inverse removes exactly those;
+the case rotates the sources first so an inverse that removed a source instead of its copy shows.
+
+**Seven dialogs held the same two buttons, each with its own pair of messages.** They are one `PageScopeChoice` now,
+whose first label counts its pages (*These 3 pages*), built on `SegmentedControl` — the copies showed the choice only
+as a button style, with no pressed state and an unnamed group, which the WCAG 2.2 review found in the new component
+before it was committed. The label was the thing that had to learn a count, and seven
+copies were seven places for one not to. The range dialogs gained `formatPageRanges`, the parser's inverse, in the
+parser's module — a round trip through the parser is its case.
+
+**A cast hid a missing field.** The OCR command's test built its context `as CommandContext` without
+`selectedPages`; the first command to go through `targetPages` read `undefined.length`. The field is there now, with
+a comment saying why the cast let it be absent.
+
+---
+
 ## 2026-09-26 — The menu bar, and two reds on main that were each a single missing thing
 
 The 26 September list's item 3 (ADR-0107 and its correction): the window's top row is now v5-14's menu bar, every item a

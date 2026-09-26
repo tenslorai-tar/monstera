@@ -4,7 +4,6 @@ import type { ReactElement } from 'react';
 import { useState } from 'react';
 
 import {
-  HEADER_FOOTER_ALL,
   HEADER_FOOTER_APPLY,
   HEADER_FOOTER_CENTRE,
   HEADER_FOOTER_EMPTY,
@@ -15,13 +14,13 @@ import {
   HEADER_FOOTER_NOT_A_NUMBER,
   HEADER_FOOTER_RIGHT,
   HEADER_FOOTER_SIZE,
-  HEADER_FOOTER_THIS,
   HEADER_FOOTER_TOKENS,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { HeaderFooterAnswer } from './headerFooterResult.js';
+import { PageScopeChoice } from './PageScopeChoice.js';
 
 /** The two edges, in the order a page has them. */
 const EDGES = [
@@ -83,10 +82,10 @@ const DEFAULT_MARGIN = '36';
  * A default export because `declareDialog` takes a `lazy()` component.
  */
 export default function HeaderFooterBody({
-  page,
+  pages,
   resolve,
 }: {
-  readonly page: number;
+  readonly pages: readonly number[];
 } & DialogAnswering<HeaderFooterAnswer>): ReactElement {
   const { _ } = useLingui();
   const [slots, setSlots] = useState<Slots>(EMPTY_SLOTS);
@@ -134,23 +133,7 @@ export default function HeaderFooterBody({
           setMargin(next);
         }}
       />
-      <fieldset className="m-header-footer__scope">
-        {/* TWO BUTTONS RATHER THAN A CHECKBOX, for `CropPagesBody`'s reason. */}
-        <Button
-          label={HEADER_FOOTER_THIS}
-          variant={everyPage ? 'default' : 'primary'}
-          onClick={() => {
-            setEveryPage(false);
-          }}
-        />
-        <Button
-          label={HEADER_FOOTER_ALL}
-          variant={everyPage ? 'primary' : 'default'}
-          onClick={() => {
-            setEveryPage(true);
-          }}
-        />
-      </fieldset>
+      <PageScopeChoice className="m-header-footer__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
       <p className="m-header-footer__problem" role="status">
         {ready ? '' : _(problemOf(anySlot))}
       </p>
@@ -165,7 +148,7 @@ export default function HeaderFooterBody({
           // `DialogResultRejected` over the user's document.
           if (size === null || inset === null || !ready) return;
           resolve({
-            pages: everyPage ? 'all' : [page],
+            pages: everyPage ? 'all' : [...pages],
             // TRIMMED HERE, once. A slot of spaces is a slot the person left
             // empty, and the kernel's *empty means unused* test is
             // `length === 0` — so untrimmed whitespace would draw an invisible

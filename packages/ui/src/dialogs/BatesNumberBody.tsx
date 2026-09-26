@@ -3,7 +3,6 @@ import type { ReactElement } from 'react';
 import { useState } from 'react';
 
 import {
-  BATES_NUMBER_ALL,
   BATES_NUMBER_APPLY,
   BATES_NUMBER_DIGITS,
   BATES_NUMBER_EDGE_FOOTER,
@@ -16,12 +15,12 @@ import {
   BATES_NUMBER_SLOT_RIGHT,
   BATES_NUMBER_START,
   BATES_NUMBER_SUFFIX,
-  BATES_NUMBER_THIS,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { BatesNumberAnswer } from './batesNumberResult.js';
+import { PageScopeChoice } from './PageScopeChoice.js';
 
 /** Where the stamp can sit, as the two axes the command carries. */
 const EDGES = [
@@ -68,10 +67,10 @@ const DEFAULT_MARGIN = '36';
  * A default export because `declareDialog` takes a `lazy()` component.
  */
 export default function BatesNumberBody({
-  page,
+  pages,
   resolve,
 }: {
-  readonly page: number;
+  readonly pages: readonly number[];
 } & DialogAnswering<BatesNumberAnswer>): ReactElement {
   const { _ } = useLingui();
   const [prefix, setPrefix] = useState('');
@@ -148,22 +147,7 @@ export default function BatesNumberBody({
           />
         ))}
       </fieldset>
-      <fieldset className="m-bates-number__scope">
-        <Button
-          label={BATES_NUMBER_THIS}
-          variant={everyPage ? 'default' : 'primary'}
-          onClick={() => {
-            setEveryPage(false);
-          }}
-        />
-        <Button
-          label={BATES_NUMBER_ALL}
-          variant={everyPage ? 'primary' : 'default'}
-          onClick={() => {
-            setEveryPage(true);
-          }}
-        />
-      </fieldset>
+      <PageScopeChoice className="m-bates-number__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
       <p className="m-bates-number__problem" role="status">
         {ready ? '' : _(BATES_NUMBER_NOT_A_NUMBER)}
       </p>
@@ -176,7 +160,7 @@ export default function BatesNumberBody({
           // `CropPagesBody`'s reason.
           if (startValue === null || digitsValue === null || !ready) return;
           resolve({
-            pages: everyPage ? 'all' : [page],
+            pages: everyPage ? 'all' : [...pages],
             prefix,
             suffix,
             start: startValue,

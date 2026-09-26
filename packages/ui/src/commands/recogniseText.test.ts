@@ -38,6 +38,8 @@ const STAMP = () => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' 
 
 /** A context with a document focused, which is what `when` asks about. */
 function contextWith(pageCount: number, page = 0): CommandContext {
+  // NO CAST. This was `as CommandContext` and left `selectedPages` out, so the command read `undefined.length` the
+  // first time it went through `targetPages` (ADR-0104). Typed, a missing field is a compile error here instead.
   return {
     docId: DOC,
     version: asDocVersion(1),
@@ -45,7 +47,10 @@ function contextWith(pageCount: number, page = 0): CommandContext {
     dirty: false,
     page,
     pageCount,
-  } as CommandContext;
+    openDocuments: [],
+    // Nothing ticked, so `targetPages` is the page on show.
+    selectedPages: [],
+  };
 }
 
 /**
@@ -232,7 +237,7 @@ describe('the recognise-text command', () => {
     // AN EMPTY LIST REACHES THE DIALOG, which is what makes the no-models state
     // the dialog's to design rather than this command's to hide. A command that
     // returned early would leave the control doing nothing at all.
-    expect(opened).toStrictEqual([{ id: OCR_DIALOG_ID, props: { page: 0, languages: [], servicesReady: false } }]);
+    expect(opened).toStrictEqual([{ id: OCR_DIALOG_ID, props: { pages: [0], languages: [], servicesReady: false } }]);
   });
 
   it('reports what it did, including when there was nothing to do', async () => {

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { OCR_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
 import { OCR_RESULT } from './ocrResult.js';
+import { TARGET_PAGES } from './pageScope.js';
 
 /** The id the OCR command opens to collect a language and a scope. */
 export const OCR_DIALOG_ID = 'dialog.ocr';
@@ -41,8 +42,8 @@ export const OCR_DIALOG = declareDialog({
   title: OCR_TITLE,
   props: z
     .object({
-      /** The page being read, zero-based, for the *this page* scope. */
-      page: z.number().int().nonnegative(),
+      /** The command's `targetPages`, for the scope's first choice (ADR-0104). */
+      pages: TARGET_PAGES,
       /**
        * The models this machine has, in {@link OCR_LANGUAGES}' order.
        *

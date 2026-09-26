@@ -135,7 +135,7 @@ const COMMANDS: { readonly [K in InvertibleKind]: CommandOfKind<K> } = {
   rotatePages: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
   setLayerVisibility: { kind: 'setLayerVisibility', layer: 0, visible: false },
   movePage: { kind: 'movePage', from: 0, to: 2 },
-  duplicatePage: { kind: 'duplicatePage', page: 1 },
+  duplicatePage: { kind: 'duplicatePage', pages: [1] },
   swapPages: { kind: 'swapPages', a: 0, b: 2 },
   insertBlankPage: { kind: 'insertBlankPage', at: 1 },
   cropPages: {

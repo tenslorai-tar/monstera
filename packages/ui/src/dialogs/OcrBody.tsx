@@ -4,18 +4,17 @@ import type { ReactElement } from 'react';
 import { useState } from 'react';
 
 import {
-  OCR_ALL_PAGES,
   OCR_HANDWRITING,
   OCR_HANDWRITING_READY,
   OCR_LANGUAGE,
   OCR_LANGUAGE_NAMES,
   OCR_START,
-  OCR_THIS_PAGE,
   OCR_UNAVAILABLE,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { OcrAnswer } from './ocrResult.js';
+import { PageScopeChoice } from './PageScopeChoice.js';
 
 /**
  * The recognition dialog's body — a language, and a scope.
@@ -41,12 +40,12 @@ import type { OcrAnswer } from './ocrResult.js';
  * A default export because `declareDialog` takes a `lazy()` component.
  */
 export default function OcrBody({
-  page,
+  pages,
   languages,
   servicesReady,
   resolve,
 }: {
-  readonly page: number;
+  readonly pages: readonly number[];
   readonly languages: readonly OcrLanguage[];
   readonly servicesReady: boolean;
 } & DialogAnswering<OcrAnswer>): ReactElement {
@@ -86,28 +85,12 @@ export default function OcrBody({
           />
         ))}
       </fieldset>
-      <fieldset className="m-ocr__scope">
-        {/* TWO BUTTONS RATHER THAN A CHECKBOX, for `CropPagesBody`'s reason. */}
-        <Button
-          label={OCR_THIS_PAGE}
-          variant={everyPage ? 'default' : 'primary'}
-          onClick={() => {
-            setEveryPage(false);
-          }}
-        />
-        <Button
-          label={OCR_ALL_PAGES}
-          variant={everyPage ? 'primary' : 'default'}
-          onClick={() => {
-            setEveryPage(true);
-          }}
-        />
-      </fieldset>
+      <PageScopeChoice className="m-ocr__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
       <Button
         label={OCR_START}
         variant="primary"
         onClick={() => {
-          resolve({ pages: everyPage ? 'all' : [page], language });
+          resolve({ pages: everyPage ? 'all' : [...pages], language });
         }}
       />
       {handwriting}

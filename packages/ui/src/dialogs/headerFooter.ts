@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { HEADER_FOOTER_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
 import { HEADER_FOOTER_RESULT } from './headerFooterResult.js';
+import { TARGET_PAGES } from './pageScope.js';
 
 /** The id `headerFooterCommand` opens to collect the six slots. */
 export const HEADER_FOOTER_DIALOG_ID = 'dialog.header-footer';
@@ -20,8 +21,8 @@ export const HEADER_FOOTER_DIALOG = declareDialog({
   title: HEADER_FOOTER_TITLE,
   props: z
     .object({
-      /** The page being read, zero-based, for the *this page* scope. */
-      page: z.number().int().nonnegative(),
+      /** The command's `targetPages`, for the scope's first choice (ADR-0104). */
+      pages: TARGET_PAGES,
     })
     .strict(),
   result: HEADER_FOOTER_RESULT,

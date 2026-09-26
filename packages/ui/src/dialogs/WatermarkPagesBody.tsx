@@ -4,7 +4,6 @@ import type { ReactElement } from 'react';
 import { useState } from 'react';
 
 import {
-  WATERMARK_PAGES_ALL,
   WATERMARK_PAGES_APPLY,
   WATERMARK_PAGES_NO_TEXT,
   WATERMARK_PAGES_OPACITY,
@@ -14,11 +13,11 @@ import {
   WATERMARK_PAGES_SIZE,
   WATERMARK_PAGES_SIZE_RANGE,
   WATERMARK_PAGES_TEXT,
-  WATERMARK_PAGES_THIS,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
+import { PageScopeChoice } from './PageScopeChoice.js';
 import type { WatermarkPagesAnswer } from './watermarkPagesResult.js';
 
 /**
@@ -76,10 +75,10 @@ const DEFAULTS: Appearance = {
  * A default export because `declareDialog` takes a `lazy()` component.
  */
 export default function WatermarkPagesBody({
-  page,
+  pages,
   resolve,
 }: {
-  readonly page: number;
+  readonly pages: readonly number[];
 } & DialogAnswering<WatermarkPagesAnswer>): ReactElement {
   const { _ } = useLingui();
   const [text, setText] = useState('');
@@ -120,25 +119,7 @@ export default function WatermarkPagesBody({
           setAppearance({ ...appearance, fontSize: next });
         }}
       />
-      <fieldset className="m-watermark-pages__scope">
-        {/* TWO BUTTONS RATHER THAN A CHECKBOX, for `CropPagesBody`'s reason:
-            the choice is between two named things, and a checkbox makes one of
-            them the absence of the other. */}
-        <Button
-          label={WATERMARK_PAGES_THIS}
-          variant={everyPage ? 'default' : 'primary'}
-          onClick={() => {
-            setEveryPage(false);
-          }}
-        />
-        <Button
-          label={WATERMARK_PAGES_ALL}
-          variant={everyPage ? 'primary' : 'default'}
-          onClick={() => {
-            setEveryPage(true);
-          }}
-        />
-      </fieldset>
+      <PageScopeChoice className="m-watermark-pages__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
       <p className="m-watermark-pages__problem" role="status">
         {ready ? '' : _(problemOf(trimmed, appearance))}
       </p>
@@ -152,7 +133,7 @@ export default function WatermarkPagesBody({
           // opacity above 1, and a mismatch would be a thrown
           // `DialogResultRejected` over the user's document.
           if (parsed === null || trimmed.length === 0) return;
-          resolve({ pages: everyPage ? 'all' : [page], text: trimmed, ...parsed });
+          resolve({ pages: everyPage ? 'all' : [...pages], text: trimmed, ...parsed });
         }}
       />
     </div>

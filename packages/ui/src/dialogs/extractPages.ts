@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { EXTRACT_PAGES_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
 import { EXTRACT_PAGES_RESULT } from './extractPagesResult.js';
+import { TARGET_PAGES } from './pageScope.js';
 
 /** The id `extractPagesCommand` opens to collect a range. */
 export const EXTRACT_PAGES_DIALOG_ID = 'dialog.extract-pages';
@@ -30,7 +31,8 @@ export const EXTRACT_PAGES_DIALOG_ID = 'dialog.extract-pages';
 export const EXTRACT_PAGES_DIALOG = declareDialog({
   id: EXTRACT_PAGES_DIALOG_ID,
   title: EXTRACT_PAGES_TITLE,
-  props: z.object({ pageCount: z.number().int().positive() }).strict(),
+  // `pages` is what the field starts with, `DELETE_PAGES_DIALOG`'s rule (ADR-0104).
+  props: z.object({ pageCount: z.number().int().positive(), pages: TARGET_PAGES }).strict(),
   result: EXTRACT_PAGES_RESULT,
   component: lazy(() => import('./ExtractPagesBody.js')),
 });
