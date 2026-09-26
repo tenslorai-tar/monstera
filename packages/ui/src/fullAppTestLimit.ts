@@ -49,6 +49,11 @@ export const FULL_APP_TEST_TIMEOUT = 20_000;
  * 10 s is more than twice the cold cost of every body at once, and half the case limit — so a real miss still ends
  * in Testing Library's DOM dump, which names what was on screen, rather than in a bare case timeout, which names
  * nothing.
+ *
+ * **This is the BACKSTOP, not the remedy** (corrected the same day). `App.test.tsx` already preloads the dialog
+ * bodies its cases read — its own block, from 2026-09-06, rejects a longer wait as the remedy — and the red run was a
+ * body missing from that list. The preload removes the race; this window only turns a forgotten entry into a slower
+ * case instead of a red one.
  */
 export const FULL_APP_WAIT = 10_000;
 

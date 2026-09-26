@@ -425,10 +425,21 @@ async function pressCommand(name: string, section?: string): Promise<void> {
  * the old race back, and it will present as this one did: green alone, green on
  * a re-run, red about once in a full suite. That is the cost, written down
  * rather than discovered again.
+ *
+ * **AND IT WAS DISCOVERED AGAIN, 2026-09-26, exactly as predicted.** The POISONED case reads the
+ * command-problem dialog's sentence, `CommandProblemBody` was never on this list, and main went red
+ * on windows-latest at 7539dd80 — the dialog found, its sentence not. It is on the list now. The
+ * commit before this one (6b570c3b) answered the same failure by widening the wait to 10 s
+ * (`fullAppTestLimit.ts`), written without reading this block, and so took the route this block had
+ * rejected. Both now stand and they are two layers, not two opinions: the preload REMOVES the race
+ * for every body named here; the window is the backstop for a body someone forgets to name, so the
+ * omission this block predicts costs a slower case rather than a red run. What the window cannot do
+ * is make a missing entry visible — that is still this list's to get right.
  */
 beforeAll(async () => {
   await Promise.all([
     import('./dialogs/AboutBody.js'),
+    import('./dialogs/CommandProblemBody.js'),
     import('./dialogs/CropPagesBody.js'),
     import('./dialogs/DeletePagesBody.js'),
     import('./dialogs/DuplicatePagesBody.js'),
