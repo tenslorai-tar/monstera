@@ -10,6 +10,7 @@ import {
   CONTEXT_PANEL_TAB_PROPERTIES,
   CONTEXT_PANEL_TAB_STRIP,
 } from '../messages/en.js';
+import { Icon } from '../primitives/Icon.js';
 import { ICONS } from '../primitives/icons.js';
 import { IconButton } from '../primitives/IconButton.js';
 import { CONTEXT_PANEL_OPEN_SETTING, CONTEXT_PANEL_TAB_SETTING } from '../settings/layout.js';
@@ -45,9 +46,10 @@ export interface ContextPanelProps {
 }
 
 /** The panel's tabs, in strip order. */
+/** Each tab's name and v5's glyph beside it: *info* for Properties, *sparkles* for the Assistant. */
 const TABS = [
-  { id: 'properties', title: CONTEXT_PANEL_TAB_PROPERTIES },
-  { id: 'assistant', title: CONTEXT_PANEL_TAB_ASSISTANT },
+  { id: 'properties', title: CONTEXT_PANEL_TAB_PROPERTIES, icon: 'Info' },
+  { id: 'assistant', title: CONTEXT_PANEL_TAB_ASSISTANT, icon: 'Sparkles' },
 ] as const;
 
 export function ContextPanel({ settings, children, assistant }: ContextPanelProps): ReactElement {
@@ -91,6 +93,8 @@ export function ContextPanel({ settings, children, assistant }: ContextPanelProp
               key={entry.id}
               value={entry.id}
             >
+              {/* THE GLYPH IS DECORATION beside the name, which stays the tab's accessible name. */}
+              <Icon name={entry.icon} size="dense" />
               {i18n._(entry.title)}
             </Tabs.Tab>
           ))}

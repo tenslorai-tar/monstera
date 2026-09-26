@@ -234,20 +234,25 @@ textarea {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-8);
-  padding-block: var(--space-16);
+  gap: var(--space-24);
+  padding-block: var(--space-32) var(--space-16);
   text-align: center;
 }
 
+/* v5-01's glow over the start screen: the accent's wash from the top centre, over the window's own light. */
+.m-start-area {
+  background: radial-gradient(ellipse 60% 50% at 50% 0%, var(--tint-start), transparent 70%);
+}
+
 /*
- * §10.3's hero: the supplied artwork, "PDF EDITOR" letterspaced beneath, and the
- * tagline. ADR-0002 withdrew the text wordmark — the artwork carries the name.
+ * §10.3's hero: the supplied artwork, the wordmark, "PDF EDITOR" letterspaced beneath, and the tagline (v5-01: 12 px
+ * between the artwork and the name, 12 to "PDF EDITOR", 14 to the tagline).
  */
 .m-start-hero {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-12);
 }
 
 /* The heading holds only the artwork, so a text line box would add its height under the image. */
@@ -261,33 +266,57 @@ textarea {
   src: url('../../../assets/fonts/marcellus/Marcellus-Regular.ttf') format('truetype');
 }
 
+/* v5-01's WORDMARK: 64 px Marcellus, line-height 1, filled with the theme's wordmark gradient (white to a pale green in
+   dark, near-black to the accent in light, flat white in high contrast). The fill is `background-clip: text`, so the
+   `color` beneath it is the forced-colours fallback and the one a screen shows when clipping is unsupported. */
 .m-start-title {
   margin: 0;
+  padding-inline: var(--space-4);
   color: var(--text);
-  font-family: 'Marcellus', serif;
-  font-size: calc(var(--font-content-20) * 3);
+  background: var(--wordmark-fill);
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-family: var(--font-brand);
+  font-size: var(--font-wordmark);
   font-weight: 400;
-  line-height: 1.1;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
 }
 
-/* ADR-0002: the brand's height, and the width the image's own ratio gives it — never stretched. */
+/* FORCED COLOURS discard the gradient and would leave a transparent fill: the name falls back to the system's text. */
+@media (forced-colors: active) {
+  .m-start-title {
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}
+
+/* ADR-0002: the brand's height, and the width the image's own ratio gives it — never stretched. v5 lifts it on a soft
+   green shadow. */
 .m-start-logo {
   block-size: var(--logo-hero);
   inline-size: auto;
+  filter: drop-shadow(0 12px 28px var(--accent-soft));
 }
 
+/* "PDF EDITOR" in the brand face, the accent's text colour, letterspaced (v5: 16 px, 0.2em) — not grey. */
 .m-start-product {
   margin: 0;
-  color: var(--muted);
-  font-size: var(--font-chrome-13);
-  font-weight: 600;
+  padding-inline-start: var(--tracking-wide);
+  color: var(--accent-text);
+  font-family: var(--font-brand);
+  font-size: var(--font-content-16);
+  font-weight: 400;
   letter-spacing: var(--tracking-wide);
+  line-height: 1;
 }
 
 .m-start-tagline {
-  margin: 0;
-  color: var(--text);
+  margin: var(--space-2) 0 0;
+  color: var(--muted);
   font-size: var(--font-content-16);
+  letter-spacing: 0.01em;
 }
 
 /* The primary slot (ADR-0068): §10.3's one button, centred under the hero. */
@@ -297,13 +326,24 @@ textarea {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-8);
-  inline-size: min(100%, 56ch);
-  margin-block-start: var(--space-8);
-  padding: var(--space-32) var(--space-16);
-  border: 1px dashed var(--border-control);
-  border-radius: var(--radius-10);
-  background: var(--bg);
+  justify-content: center;
+  gap: var(--space-12);
+  box-sizing: border-box;
+  inline-size: min(100%, var(--start-drop-width));
+  min-block-size: var(--start-drop-height);
+  padding: var(--space-16);
+  border: 1.5px dashed var(--border-control);
+  border-radius: var(--radius-12);
+  background: transparent;
+}
+
+/* v5-01's Open button: 36 tall, 13/700, glowing. */
+.m-start-primary .m-button--primary {
+  min-block-size: var(--space-32);
+  padding-inline: var(--space-20);
+  font-size: var(--font-chrome-13);
+  font-weight: 700;
+  box-shadow: var(--glow);
 }
 
 .m-start-drop-hint {
@@ -347,28 +387,40 @@ textarea {
 /* v5-01's cards: three across under the drop frame, at its width, fewer as the window narrows. */
 .m-start-shortcuts {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(28ch, 1fr));
-  gap: var(--space-8);
-  inline-size: min(100%, 110ch);
+  grid-template-columns: repeat(auto-fill, var(--start-card-width));
+  justify-content: center;
+  gap: var(--space-12);
+  inline-size: min(100%, var(--start-drop-width));
 }
 
+/* v5-01's cards: 232 × 88, rounded 10, the glyph in a soft accent badge, lifting on hover. The EDGE is the control
+   boundary token, not the design's hairline: the whole card is a button, and a button's edge meets 3:1 (ADR-0003). */
 .m-start-card {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-8);
-  padding: var(--space-8) var(--space-16) var(--space-16) var(--space-8);
-  /* A CONTROL'S BOUNDARY: the whole card is the button, so its edge meets 3:1 (ADR-0003). */
+  gap: var(--space-12);
+  box-sizing: border-box;
+  min-block-size: var(--start-card-height);
+  padding: var(--space-12) var(--space-16);
   border: 1px solid var(--border-control);
-  border-radius: var(--radius-6);
-  background: var(--bg);
+  border-radius: var(--radius-10);
+  background: var(--surface);
   color: var(--text);
   text-align: start;
   cursor: pointer;
+  transition: transform var(--motion-fast) ease-out, box-shadow var(--motion-fast) ease-out;
 }
 
 .m-start-card:hover,
 .m-start-card:focus-visible {
   background: var(--surface2);
+  box-shadow: var(--glow);
+  transform: translateY(-2px);
+}
+
+:root[data-motion='reduced'] .m-start-card {
+  transition: none;
+  transform: none;
 }
 
 /* The glyph in the accent's soft tint, as a tool's badge. */
@@ -376,27 +428,29 @@ textarea {
   display: grid;
   flex: none;
   place-items: center;
-  inline-size: calc(var(--space-32) + var(--space-4));
-  block-size: calc(var(--space-32) + var(--space-4));
+  inline-size: var(--start-glyph);
+  block-size: var(--start-glyph);
   border: 1px solid var(--border); /* decorative: the glyph's badge inside a card whose own edge is the control's */
-  border-radius: var(--radius-6);
-  background: var(--accent-soft);
-  color: var(--accent);
+  border-radius: var(--radius-10);
+  background: linear-gradient(135deg, var(--accent-soft), transparent);
+  color: var(--accent-text);
 }
 
 .m-start-card__text {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-4);
+  min-inline-size: 0;
 }
 
 .m-start-card__title {
+  font-size: var(--font-chrome-13);
   font-weight: 600;
 }
 
 .m-start-card__summary {
   color: var(--muted);
-  font-size: var(--font-chrome-12);
+  font-size: var(--font-chrome-11);
   line-height: 1.4;
 }
 
@@ -410,20 +464,23 @@ textarea {
   align-items: center;
   gap: var(--space-16);
   margin-block-start: auto;
-  padding: var(--space-4) var(--space-16);
-  border-block-start: 1px solid var(--border); /* decorative: separates the footer bar from the screen above; its links carry their own focus rings */
+  min-block-size: var(--start-footer);
+  padding: 0 var(--space-20);
+  border-block-start: 1px solid var(--border-soft); /* decorative: separates the footer bar from the screen above; its links carry their own focus rings */
   color: var(--muted);
-  font-size: var(--font-chrome-12);
+  font-size: var(--font-chrome-11);
 }
 
 .m-start-footer__commands {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-4);
+  gap: var(--space-8);
 }
 
 .m-start-footer__commands .m-button {
-  font-size: var(--font-chrome-12);
+  padding-block: var(--space-2);
+  font-size: var(--font-chrome-11);
+  font-weight: 400;
 }
 
 .m-start-footer__hint {
@@ -3691,15 +3748,16 @@ textarea {
  * changes go. The dialog widens for this one body through `:has`, rather than the registry learning
  * a width: what needs the room is the content, and the selector says exactly that.
  * ═══════════════════════════════════════════════════════════════════════════════════════════════ */
+/* v5-08/v5-10: 880 × 600. */
 .m-dialog:has(.m-settings) {
-  inline-size: min(880px, calc(100vw - 2 * var(--space-32)));
-  block-size: min(560px, calc(100vh - 2 * var(--space-32)));
+  inline-size: min(var(--dialog-settings-width), calc(100vw - 2 * var(--space-32)));
+  block-size: min(var(--dialog-settings-height), calc(100vh - 2 * var(--space-32)));
 }
 
 .m-settings {
   display: flex;
   flex-direction: column;
-  gap: var(--space-16);
+  gap: var(--space-12);
   min-block-size: 0;
   block-size: 100%;
 }
@@ -3722,7 +3780,7 @@ textarea {
 
 .m-settings__frame {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
+  grid-template-columns: var(--settings-pages) minmax(0, 1fr);
   gap: var(--space-24);
   min-block-size: 0;
   flex: 1;
@@ -3735,16 +3793,17 @@ textarea {
   overflow-y: auto;
 }
 
+/* v5: a compact list, 12 px, so every category of the dialog shows at once without scrolling. */
 .m-settings__page-choice {
   display: flex;
   align-items: center;
   gap: var(--space-8);
-  padding: var(--space-8);
+  padding: var(--space-6) var(--space-8);
   border: 1px solid transparent;
   border-radius: var(--radius-6);
   background: none;
   color: var(--text);
-  font-size: var(--font-chrome-13);
+  font-size: var(--font-chrome-12);
   text-align: start;
   cursor: pointer;
 }
@@ -3757,7 +3816,8 @@ textarea {
    contrast setting may not see, and this list is how they know where they are. */
 .m-settings__page-choice[aria-current='page'] {
   border-color: var(--border-control);
-  background: var(--accent-soft);
+  background: var(--active-bg);
+  box-shadow: var(--active-edge);
   font-weight: 600;
 }
 

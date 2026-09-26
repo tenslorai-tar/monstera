@@ -2209,12 +2209,14 @@ describe('App', () => {
     // BY SLOT (ADR-0068), each counted inside its own container so it counts COMMANDS rather than every control on
     // the page: Open is the one primary button, and About, the log and Settings are the footer's.
     expect(container.querySelectorAll('.m-start-primary button')).toHaveLength(1);
-    expect(container.querySelectorAll('.m-start-footer button')).toHaveLength(3);
+    // v5-01's FOOTER: Settings and About (Help centre joins them when it is built); the diagnostics log moved to the
+    // Help menu on 2026-09-26, so the footer holding it again is the regression this count catches.
+    expect(container.querySelectorAll('.m-start-footer button')).toHaveLength(2);
     // AND THE GRID: §10.3's six feature shortcuts.
     expect(container.querySelectorAll('.m-start-shortcuts button')).toHaveLength(6);
     expect(screen.getByRole('button', { name: 'Open PDF…' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'About' })).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Reveal diagnostics log' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Reveal diagnostics log' })).toBeNull();
     // SETTINGS, the fourth (ADR-0056): wanted before anything is open, and where a
     // person whose cloud engine is missing its key comes looking.
     expect(screen.getByRole('button', { name: 'Settings' })).toBeDefined();
@@ -2855,11 +2857,23 @@ describe('App', () => {
     const { client, calls } = recordingClient({ kind: 'cancelled' });
     render(<App client={client} settings={freshSettings()} />);
 
-    // `act` with a promise it can settle: the click dispatches an async `run`,
+    // WITH NO DOCUMENT OPEN, which is when somebody whose file will not open needs it: through the command palette
+    // (Ctrl+K), since the start screen's footer no longer carries it.
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'k', ctrlKey: true }));
+      await Promise.resolve();
+    });
+    const field = await vi.waitFor(() => {
+      const found = document.querySelector('.m-palette-query');
+      if (!(found instanceof HTMLInputElement)) throw new Error('the palette is not open yet');
+      return found;
+    });
+    fireEvent.change(field, { target: { value: 'Reveal diagnostics log' } });
+    // `act` with a promise it can settle: the choice dispatches an async `run`,
     // and without something for React to flush the assertion below reads the
     // call list before the command has reached the client.
     await act(() => {
-      screen.getByRole('button', { name: 'Reveal diagnostics log' }).click();
+      screen.getByRole('option', { name: /Reveal diagnostics log/u }).click();
       return Promise.resolve();
     });
 

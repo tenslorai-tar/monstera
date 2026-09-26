@@ -31,13 +31,10 @@ export function revealLogCommand(deps: { readonly client: ContractClient }): UiC
     icon: 'ScrollText',
     title: REVEAL_LOG_TITLE,
     ribbonTitle: RIBBON_DIAGNOSTICS,
-    // The start screen, because that is where somebody who cannot open their
-    // document goes looking. A document-scoped placement would put the
-    // diagnostics behind the thing that is failing. Third, where v5-01 draws *Help centre*, which is not built.
-    placements: [
-      { surface: 'start-screen', slot: 'footer', order: 3 },
-      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 910 },
-    ],
+    // NOT ON THE START SCREEN since 2026-09-26: the owner moved it to the Help menu, which is where somebody who
+    // cannot open their document goes looking, and v5-01's footer is Settings · About · Help centre. It is never behind
+    // a document — the palette and the menu bar reach it with none open — and Tools › Diagnostics keeps it on the ribbon.
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 910 }],
     run: async (): Promise<void> => {
       await deps.client['log.reveal']({});
     },

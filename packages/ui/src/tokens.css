@@ -425,11 +425,13 @@
   --dialog-settings-width: 880px;
   --dialog-settings-height: 600px;
   --dialog-head-height: 48px;
+  --settings-pages: 184px;
   --start-drop-width: 720px;
   --start-drop-height: 132px;
   --start-card-width: 232px;
   --start-card-height: 88px;
   --start-footer: 36px;
+  --start-glyph: 34px;
   --ruler: 18px;
   /* The Assistant's message box (v5-03): its text grows from 36 to 280 tall; a picker in its foot stays compact. */
   --composer-min: 36px;
