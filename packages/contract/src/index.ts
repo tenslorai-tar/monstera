@@ -124,9 +124,12 @@ export {
   type EventId,
   type EventMap,
   type EventPayload,
+  MAX_WEB_SOURCES,
+  answerIdSchema,
   checkEvent,
   subscribeToEvent,
   subscriptionIdSchema,
+  webSourceSchema,
 } from './events.js';
 export {
   type AnswerPiece,
@@ -395,10 +398,14 @@ export {
   AI_PROVIDER_KEY_SETTING_IDS,
   AZURE_OPENAI_ENDPOINT_SETTING_ID,
   CHAT_HISTORY_SETTING_ID,
+  WEB_SEARCH_ABSENCES,
+  webSearchOf,
   type AiModel,
   type AiModelCapabilities,
   type AiProvider,
   type AiProviderId,
+  type WebSearchAbsence,
+  type WebSearchSupport,
 } from './aiProviders.js';
 export {
   CLOUD_PROVIDER_IDS,

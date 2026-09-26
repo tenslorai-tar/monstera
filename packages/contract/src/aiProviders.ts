@@ -136,6 +136,62 @@ export interface AiModelCapabilities {
   readonly streaming: boolean | null;
 }
 
+/**
+ * Why a provider or model cannot search the web for an answer (ADR-0108) — each is a sentence the Assistant shows
+ * beside a disabled *Document + web*.
+ *
+ * - `no-hosted-search`: the provider's documentation offers no search tool (DeepSeek, read 2026-09-26).
+ * - `display-terms`: it does, on terms this application cannot keep — Gemini's grounding must be shown with
+ *   Google's own HTML snippet, which the pinned CSP (§9.27) refuses to render.
+ * - `model-cannot`: the provider searches with some models and not this one (Groq: the `gpt-oss` models only).
+ */
+export const WEB_SEARCH_ABSENCES = ['no-hosted-search', 'display-terms', 'model-cannot'] as const;
+export type WebSearchAbsence = (typeof WEB_SEARCH_ABSENCES)[number];
+
+/**
+ * Whether an answer from this provider and model can use the web (ADR-0108).
+ *
+ * - `optional`: the provider's own search tool, sent only when the person chose *Document + web*; the model then
+ *   decides whether to search.
+ * - `always`: the model searches before every answer whatever the request says (OpenAI's chat search models,
+ *   Perplexity's deep research). *Document only* never sends to one.
+ * - `none`: it cannot, for the named reason.
+ */
+export type WebSearchSupport =
+  | { readonly kind: 'optional' }
+  | { readonly kind: 'always' }
+  | { readonly kind: 'none'; readonly reason: WebSearchAbsence };
+
+/**
+ * THE ONE READING of whether a provider and model can search (B3a): the renderer's switch, `main`'s request and
+ * its refusal to send a *Document only* ask to a model that always searches all take it from here. Each rule is
+ * what the provider's own documentation said on 2026-09-26, named in ADR-0108.
+ */
+export function webSearchOf(provider: AiProviderId, model: string): WebSearchSupport {
+  switch (provider) {
+    case 'gemini':
+      return { kind: 'none', reason: 'display-terms' };
+    case 'deepseek':
+      return { kind: 'none', reason: 'no-hosted-search' };
+    case 'groq':
+      // `browser_search` is documented for the `gpt-oss` models alone.
+      return model.startsWith('openai/gpt-oss-') ? { kind: 'optional' } : { kind: 'none', reason: 'model-cannot' };
+    case 'openai':
+      // THE CHAT SEARCH MODELS "always search before responding" (OpenAI's web search guide) — `gpt-5-search-api`
+      // and the `-search-preview` pair.
+      return model.includes('-search-') || model.endsWith('-search-api') ? { kind: 'always' } : { kind: 'optional' };
+    case 'perplexity':
+      // `disable_search` names no exception, and nothing says deep research honours it — so it is not trusted to.
+      return model.includes('deep-research') ? { kind: 'always' } : { kind: 'optional' };
+    case 'anthropic':
+    case 'mistral':
+    case 'xai':
+    case 'azure-openai':
+    case 'openrouter':
+      return { kind: 'optional' };
+  }
+}
+
 /** One model, as a surface names it. */
 export interface AiModel {
   readonly id: string;

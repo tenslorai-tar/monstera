@@ -1409,6 +1409,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         send: (event, payload) => {
           sendEvent?.(event, payload);
         },
+        // AN ANSWER'S WEB SOURCES open through the one HTTPS-only route every page takes (ADR-0108).
+        openInBrowser,
       }),
       openedDocument,
       unlockDocument,

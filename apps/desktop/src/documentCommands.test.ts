@@ -1102,7 +1102,12 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         createContractHandlers({
           // INERT: this case is about a document command, and an assistant with no key
           // and nowhere to push answers the state a machine without one is in.
-          assistant: createAssistant({ secret: () => undefined, setting: () => undefined, send: () => undefined }),
+          assistant: createAssistant({
+            secret: () => undefined,
+            setting: () => undefined,
+            send: () => undefined,
+            openInBrowser: () => Promise.resolve(),
+          }),
           appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
           capabilities: new CapabilityRegistry(),
           commands,
@@ -1507,6 +1512,7 @@ describe('search is E2s first consumer, through the composition point', () => {
         model: 'claude-opus-5',
         messages: [{ role: 'user', text: 'Where is the needle?' }],
         about: { scope: 'page', docId: searchable, page: 1 },
+        web: false,
       });
       await new Promise((settle) => setTimeout(settle, 0));
 
@@ -1533,6 +1539,7 @@ describe('search is E2s first consumer, through the composition point', () => {
         messages: [{ role: 'user', text: 'What does each say?' }],
         about: { scope: 'document', docId: searchable },
         alongside: { scope: 'document', docId: other },
+        web: false,
       });
       await new Promise((settle) => setTimeout(settle, 0));
 
@@ -1564,6 +1571,7 @@ describe('search is E2s first consumer, through the composition point', () => {
         model: 'claude-opus-5',
         messages: [{ role: 'user', text: 'Read the table' }],
         about: { scope: 'page-image', docId: searchable, page: 1 },
+        web: false,
       });
       await new Promise((settle) => setTimeout(settle, 0));
 
@@ -1595,6 +1603,7 @@ describe('search is E2s first consumer, through the composition point', () => {
         model: 'claude-opus-5',
         messages: [{ role: 'user', text: 'Read it' }],
         about: { scope: 'page-image', docId: searchable, page: 0 },
+        web: false,
       });
       expect(answer.ok ? null : answer.error.code).toBe('page-too-large');
       expect(bodies).toStrictEqual([]);
@@ -1612,6 +1621,7 @@ describe('search is E2s first consumer, through the composition point', () => {
         model: 'claude-opus-5',
         messages: [{ role: 'user', text: 'Read it' }],
         about: { scope: 'page-image', docId: searchable, page: 9 },
+        web: false,
       });
       await new Promise((settle) => setTimeout(settle, 0));
       expect(asked).toStrictEqual([]);
@@ -1645,6 +1655,7 @@ describe('search is E2s first consumer, through the composition point', () => {
           secret: (id) => (id === 'ai.anthropic-key' ? 'a-key' : undefined),
           setting: () => undefined,
           send: () => undefined,
+          openInBrowser: () => Promise.resolve(),
           fetchImpl,
         }),
         appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
@@ -1687,9 +1698,10 @@ describe('search is E2s first consumer, through the composition point', () => {
         secret: () => 'a-key',
         setting: () => undefined,
         send: () => undefined,
+        openInBrowser: () => Promise.resolve(),
         fetchImpl,
       });
-      assistant.ask({ subscription: 'ask-2', provider: 'anthropic', model: 'm', messages: [{ role: 'user', text: 'hi' }] });
+      assistant.ask({ subscription: 'ask-2', provider: 'anthropic', model: 'm', messages: [{ role: 'user', text: 'hi' }], web: false });
       await new Promise((settle) => setTimeout(settle, 0));
 
       expect(JSON.parse(bodies[0] ?? '{}')).not.toHaveProperty('system');

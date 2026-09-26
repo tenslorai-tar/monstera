@@ -41,7 +41,35 @@ export const MAX_EVENT_TEXT = 8192;
  * `out-of-credit` is Anthropic's account refusal, told apart from `rejected` because it is the one
  * the person fixes by paying (anthropicCredit.ts).
  */
-export const AI_ANSWER_REFUSALS = ['no-key', 'unauthorised', 'out-of-credit', 'rejected', 'unreachable', 'unreadable'] as const;
+export const AI_ANSWER_REFUSALS = [
+  'no-key',
+  'unauthorised',
+  'out-of-credit',
+  'rejected',
+  'unreachable',
+  'unreadable',
+  // A *Document only* ask to a model that searches the web before every answer (ADR-0108): refused in `main` before
+  // anything is sent, so the document never reaches a search engine the person did not choose.
+  'searches-the-web',
+] as const;
+
+/** The most web sources one answer carries (ADR-0108) — Anthropic's five searches, each with a handful of results. */
+export const MAX_WEB_SOURCES = 20;
+
+/**
+ * One web source an answer used, as the renderer SHOWS it (ADR-0108): a title and the site's host. **Never the
+ * address**: `main` keeps each answer's addresses and opens one by its place in the list (`ai.openSource`), so the
+ * renderer holds nothing a document or a provider could turn into a navigation — `app.openWebPage`'s rule.
+ */
+export const webSourceSchema = z
+  .object({
+    title: z.string().min(1).max(300),
+    host: z.string().min(1).max(253),
+  })
+  .strict();
+
+/** The id `main` gives one finished answer, which `ai.openSource` names to open one of its sources. */
+export const answerIdSchema = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/u);
 
 export const EVENTS = {
   /**
@@ -63,6 +91,18 @@ export const EVENTS = {
       subscription: subscriptionIdSchema,
       stopped: z.boolean(),
       refusal: z.enum(AI_ANSWER_REFUSALS).optional(),
+      /**
+       * What the web contributed (ADR-0108), REQUIRED so no sender can leave it out: `searched` is whether the
+       * provider reported running a search, and `sources` the pages it cited or found. An answer asked with the web
+       * off is `false` and empty — which is also what the renderer's *No web search was used* line reads.
+       */
+      web: z
+        .object({
+          answer: answerIdSchema,
+          searched: z.boolean(),
+          sources: z.array(webSourceSchema).max(MAX_WEB_SOURCES),
+        })
+        .strict(),
     })
     .strict(),
 

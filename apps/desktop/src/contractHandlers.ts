@@ -456,7 +456,7 @@ export function createContractHandlers(deps: {
       return Promise.resolve(ok({ saved: true }));
     },
     'ai.history.clear': () => Promise.resolve(ok({ cleared: deps.chatHistory.clear() })),
-    'ai.ask': async ({ subscription, provider, model, messages, about, alongside }) => {
+    'ai.ask': async ({ subscription, provider, model, messages, about, alongside, web }) => {
       // THE WINDOW IS READ HERE, INSIDE THE ASK THAT SENDS IT (ADR-0088 Decision 5): nothing
       // about a document is read until a person asks, and what was read is answered so the
       // turn can say which pages went.
@@ -495,17 +495,18 @@ export function createContractHandlers(deps: {
       }
       const system =
         paired !== null && window !== null && second !== null
-          ? askPairInstruction(window, second, paired.scope)
+          ? askPairInstruction(window, second, paired.scope, web)
           : picture?.png != null
-            ? askPictureInstruction(picture.sent)
+            ? askPictureInstruction(picture.sent, web)
             : window !== null && about !== undefined && about.scope !== 'page-image'
-              ? askInstruction(window, about.scope)
+              ? askInstruction(window, about.scope, web)
               : undefined;
       const started = deps.assistant.ask({
         subscription,
         provider,
         model,
         messages,
+        web,
         ...(system === undefined ? {} : { system }),
         ...(picture?.png == null
           ? {}
@@ -522,6 +523,7 @@ export function createContractHandlers(deps: {
         : err({ code: 'subscription-in-use' });
     },
     'ai.stop': ({ subscription }) => Promise.resolve(ok(deps.assistant.stop(subscription))),
+    'ai.openSource': async ({ answer, index }) => ok(await deps.assistant.openSource(answer, index)),
     'ai.translatePage': translatePageHandler(deps),
     ...cloudHandlers(deps),
 

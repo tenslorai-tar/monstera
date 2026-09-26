@@ -2169,6 +2169,48 @@ textarea {
   font-size: var(--font-chrome-11);
 }
 
+/* WHAT AN ANSWER RESTED ON (ADR-0108): the uncited mark and the web's sources, in the sent line's quiet voice — they
+   qualify the answer, and must not compete with it. */
+.m-assistant__grounding {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-block-start: var(--space-4);
+}
+
+.m-assistant__uncited,
+.m-assistant__web-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+}
+
+.m-assistant__web-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.m-assistant__web-source {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-chrome-11);
+  text-align: start;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.m-assistant__web-source:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .m-assistant__quick {
   display: flex;
   flex-wrap: wrap;

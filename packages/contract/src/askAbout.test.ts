@@ -91,6 +91,9 @@ describe('two documents side by side (ADR-0089)', () => {
       messages: [{ role: 'user', text: 'which is later?' }],
       about,
       alongside,
+      // REQUIRED since ADR-0108: without it every request here fails, and the refusal cases below would pass for
+      // that reason rather than their own.
+      web: false,
     }).success;
 
   it('pairs a different document in the same page or document scope', () => {

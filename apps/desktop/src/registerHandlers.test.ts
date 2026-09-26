@@ -67,7 +67,12 @@ const trustAll: IpcSenderCheck = () => true;
 function handlers() {
   return createContractHandlers({
     // Same reasoning as the parts below: these cases are about which channels register.
-    assistant: createAssistant({ secret: () => undefined, setting: () => undefined, send: () => undefined }),
+    assistant: createAssistant({
+      secret: () => undefined,
+      setting: () => undefined,
+      send: () => undefined,
+      openInBrowser: () => Promise.resolve(),
+    }),
     appInfo,
     // Same reasoning as `unusedCommands` above: these cases are about which
     // channels get registered and by what route, not about what any handler

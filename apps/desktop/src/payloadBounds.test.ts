@@ -141,7 +141,12 @@ function handlers(): ReturnType<typeof createContractHandlers> {
   const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' };
   return createContractHandlers({
     // INERT, like every other surface here: these cases drive the SCHEMAS, not the work.
-    assistant: createAssistant({ secret: () => undefined, setting: () => undefined, send: () => undefined }),
+    assistant: createAssistant({
+      secret: () => undefined,
+      setting: () => undefined,
+      send: () => undefined,
+      openInBrowser: () => Promise.resolve(),
+    }),
     appInfo,
     capabilities,
     commands: {} as unknown as DocumentCommands,
@@ -206,6 +211,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'ai.models': 'names a provider from the registry and answers a bounded list of bounded model ids',
   'ai.ask': 'every field is bounded: the subscription id, the model id, and the conversation’s turns',
   'ai.stop': 'one bounded subscription id',
+  'ai.openSource': 'a bounded answer id and a place below the sources’ bound',
   // A page's blocks, each bounded by `MAX_REPLACED_TEXT`, at most `MAX_EDIT_BLOCKS` — a page's
   // words, never a document's — and it needs an engine session to read them.
   'ai.translatePage': 'needs an engine session; a page of bounded blocks',

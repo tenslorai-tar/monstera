@@ -14,7 +14,7 @@ import {
 } from './cloudProviders.js';
 import type { PreloadChannelId } from './bridge.js';
 import { channel, type Channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
-import { AI_ANSWER_REFUSALS, subscriptionIdSchema } from './events.js';
+import { AI_ANSWER_REFUSALS, MAX_WEB_SOURCES, answerIdSchema, subscriptionIdSchema } from './events.js';
 import { TRANSLATION_LANGUAGE_IDS } from './translationLanguages.js';
 import {
   MAX_ANNOTATION_BORDER,
@@ -4660,6 +4660,12 @@ export const channels = {
          * same scope as `about`. Each window reads half of the bound.
          */
         alongside: askAboutSchema.optional(),
+        /**
+         * *Document + web* (`true`) or *Document only* (`false`), the Assistant's switch (ADR-0108). REQUIRED: a
+         * sender that forgot it would otherwise ask whichever way a default said, and the one that matters —
+         * whether a document's text may reach a search engine — is not a default's to decide.
+         */
+        web: z.boolean(),
       })
       .strict()
       .refine((request) => request.alongside === undefined || pairsWith(request.about, request.alongside), {
@@ -4687,6 +4693,18 @@ export const channels = {
     'Stops a streaming assistant answer.',
     z.object({ subscription: subscriptionIdSchema }).strict(),
     z.object({ stopped: z.boolean() }),
+  ),
+
+  /**
+   * Opens one of an answer's web sources in the person's browser (ADR-0108), **by its place, never by its address**:
+   * `main` kept the addresses when the answer finished and the renderer only ever saw a title and a host, so there is
+   * no URL here for a page or a provider to have written. `opened: false` is an answer `main` no longer holds (it keeps
+   * the most recent ones) or a place past its list.
+   */
+  'ai.openSource': channel(
+    'Opens one web source of an assistant answer in the browser.',
+    z.object({ answer: answerIdSchema, index: z.number().int().nonnegative().max(MAX_WEB_SOURCES - 1) }).strict(),
+    z.object({ opened: z.boolean() }),
   ),
 
   /**

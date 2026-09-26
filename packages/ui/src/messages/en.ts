@@ -1150,6 +1150,22 @@ export const ASSISTANT_ASSISTANT = messageKey('assistant.assistant');
 export const ASSISTANT_EMPTY = messageKey('assistant.empty');
 export const ASSISTANT_ASK = messageKey('assistant.ask-hint');
 export const ASSISTANT_NO_KEY = messageKey('assistant.no-key');
+/** A *Document only* ask to a model that searches the web for every answer, refused before sending (ADR-0108). */
+export const ASSISTANT_SEARCHES_THE_WEB = messageKey('assistant.searches-the-web');
+/** The *Document only / Document + web* switch on the Asking-about line, and what it says (ADR-0108). */
+export const ASSISTANT_WEB_LABEL = messageKey('assistant.web.label');
+export const ASSISTANT_WEB_DOCUMENT = messageKey('assistant.web.document');
+export const ASSISTANT_WEB_ON = messageKey('assistant.web.on');
+export const ASSISTANT_WEB_SENDS = messageKey('assistant.web.sends');
+export const ASSISTANT_WEB_ALWAYS = messageKey('assistant.web.always');
+export const ASSISTANT_WEB_NONE_NO_SEARCH = messageKey('assistant.web.none.no-search');
+export const ASSISTANT_WEB_NONE_TERMS = messageKey('assistant.web.none.terms');
+export const ASSISTANT_WEB_NONE_MODEL = messageKey('assistant.web.none.model');
+export const ASSISTANT_WEB_SOURCES = messageKey('assistant.web.sources');
+export const ASSISTANT_WEB_SOURCE = messageKey('assistant.web.source');
+export const ASSISTANT_WEB_UNUSED = messageKey('assistant.web.unused');
+/** An answer about a document that cites none of its pages (work list 2026-09-26, item 5c). */
+export const ASSISTANT_NO_PAGE_CITED = messageKey('assistant.no-page-cited');
 export const ASSISTANT_NO_MODELS = messageKey('assistant.no-models');
 export const ASSISTANT_PROBLEM_UNAUTHORISED = messageKey('assistant.problem-unauthorised');
 export const ASSISTANT_PROBLEM_UNREACHABLE = messageKey('assistant.problem-unreachable');
@@ -2884,6 +2900,21 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_EMPTY]: 'No provider key is stored yet. Add one in Settings › AI and the assistant can start answering.',
   [ASSISTANT_ASK]: 'Enter sends. Shift+Enter starts a new line.',
   [ASSISTANT_NO_KEY]: 'This provider has no key stored. Add it in Settings › AI; the key stays on this machine.',
+  [ASSISTANT_SEARCHES_THE_WEB]:
+    'This model searches the web for every answer, so nothing was sent. Choose another model, or turn on Document + web.',
+  [ASSISTANT_WEB_LABEL]: 'Answer from',
+  [ASSISTANT_WEB_DOCUMENT]: 'Document only',
+  [ASSISTANT_WEB_ON]: 'Document + web',
+  [ASSISTANT_WEB_SENDS]:
+    'Your question, and possibly text from the document, goes to a search engine through {provider}. Searches may cost extra.',
+  [ASSISTANT_WEB_ALWAYS]: 'Always searches the web. To use this model, choose Document + web.',
+  [ASSISTANT_WEB_NONE_NO_SEARCH]: 'Web search isn’t available with this provider.',
+  [ASSISTANT_WEB_NONE_TERMS]: 'Web search isn’t available with this provider in Monstera.',
+  [ASSISTANT_WEB_NONE_MODEL]: 'This model can’t search the web. Choose another model to use Document + web.',
+  [ASSISTANT_WEB_SOURCES]: 'From the web',
+  [ASSISTANT_WEB_SOURCE]: '{title} · {host}',
+  [ASSISTANT_WEB_UNUSED]: 'No web search was used for this answer.',
+  [ASSISTANT_NO_PAGE_CITED]: 'No page cited — check this against the document.',
   [ASSISTANT_NO_MODELS]: 'No models are listed for this provider yet. With a key stored, the list is fetched from the provider.',
   [ASSISTANT_PROBLEM_UNAUTHORISED]: 'The provider did not accept the key. Check it in Settings › AI, then ask again.',
   [ASSISTANT_PROBLEM_UNREACHABLE]: 'The provider could not be reached. Check the connection, then ask again.',

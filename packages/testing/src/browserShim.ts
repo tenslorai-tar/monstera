@@ -1947,6 +1947,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'settings.export': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
     'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),
     'ai.stop': () => Promise.resolve(ok({ stopped: false })),
+    // NO ANSWER HERE HOLDS A SOURCE, because no answer here streams (`ai.ask` answers not-started).
+    'ai.openSource': () => Promise.resolve(ok({ opened: false })),
     // NO PROVIDER IN A BROWSER, so no key: what `main` answers a translation with none stored —
     // unless a case hands one in to drive the write that follows.
     'ai.translatePage': () =>

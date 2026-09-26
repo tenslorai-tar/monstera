@@ -4,6 +4,7 @@ import type { MessageKey } from '@monstera/shared';
 import { TRANSLATE_PAGE_DIALOG_ID, type TranslatePageAnswer } from '../dialogs/translatePage.js';
 import {
   ANTHROPIC_OUT_OF_CREDIT,
+  ASSISTANT_SEARCHES_THE_WEB,
   ASSISTANT_NO_KEY,
   ASSISTANT_PROBLEM_UNAUTHORISED,
   ASSISTANT_PROBLEM_UNREACHABLE,
@@ -31,6 +32,8 @@ const REFUSALS = {
   'out-of-credit': ANTHROPIC_OUT_OF_CREDIT,
   rejected: TOAST_TRANSLATE_REJECTED,
   unreadable: TOAST_TRANSLATE_UNREADABLE,
+  // A translation never uses the web, so a model that always searches is refused before the page is sent (ADR-0108).
+  'searches-the-web': ASSISTANT_SEARCHES_THE_WEB,
 } as const satisfies Record<Extract<ChannelResult<'ai.translatePage'>, { kind: 'refused' }>['problem'], MessageKey>;
 
 export interface TranslatePageDeps extends DocumentCommandDeps {

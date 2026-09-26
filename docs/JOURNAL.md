@@ -892,6 +892,31 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-26 — Document only, or Document + web
+
+The 26 September list's item 5, under ADR-0108 (its own commit, ahead of this one). What is worth keeping:
+
+**The choice that matters is enforced where the request is made, not where the button is.** *Document only* is a
+required field on `ai.ask`, and `main` refuses an always-searching model before sending anything, whatever the panel
+did. The panel disabling Send is the courtesy; the refusal is the guarantee.
+
+**A source is opened by its place, never by its address.** The renderer shows a title and a host; `main` keeps the
+addresses of the last fifty answers and opens one through the same HTTPS-only route every page takes. So a provider's
+search result is never a string the renderer can navigate to — `app.openWebPage`'s rule, applied to addresses that are
+not ours.
+
+**Four fixtures would have passed for the wrong reason once the fields became required**, and each was given the new
+field so its own reason stays the one tested: the events test's *extra field* and *bad subscription* cases, the
+unsubscribe control (both pushes were about to be dropped as malformed, so a broken unsubscribe would have passed),
+and `askAbout.test.ts`' request helper, whose refusal cases would all have failed on the missing `web`.
+
+**The live run found a defect no fixture had.** Anthropic answers in several text blocks, split around a search and at
+every citation; joined with nothing, *"…this detail.Joseph B. Strauss…"* ran together. A text block after a search now
+starts a new paragraph, while the citation splits — which fall mid-sentence — still join as they came. The case uses
+the live run's block order; the owner's search budget was not spent re-running it.
+
+---
+
 ## 2026-09-26 — The Organize grid's other page commands take the ticked pages
 
 The 26 September list's item 4 closes the Organize row's owed half. Every page command that means something on a set

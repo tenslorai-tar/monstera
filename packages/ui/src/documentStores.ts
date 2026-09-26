@@ -38,9 +38,21 @@ export interface ConversationTurn {
     readonly about: AskAbout | undefined;
     readonly alongside?: AskAbout;
     readonly sides?: { readonly asked: AskSides; readonly right: DocId };
+    /** *Document + web* (ADR-0108); absent is *Document only*, which a turn saved before the switch was. */
+    readonly web?: boolean;
   };
   /** The model an asked turn went to, as the picker named it — the caption under its answer. */
   readonly model?: string;
+  /**
+   * What the web contributed to an ANSWER asked with *Document + web* (ADR-0108), set when it ended: `main`'s id for
+   * the answer, whether a search ran, and each source as a title and a host. Not saved with the conversation — the
+   * addresses live in `main` and go when the session does, so a reloaded answer shows no sources to open.
+   */
+  readonly web?: {
+    readonly answer: string;
+    readonly searched: boolean;
+    readonly sources: readonly { readonly title: string; readonly host: string }[];
+  };
 }
 
 /**

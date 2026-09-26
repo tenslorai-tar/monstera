@@ -45,6 +45,7 @@ describe('streamChat', () => {
       model: 'm',
       key: 'k',
       messages: ASK,
+      web: false,
       onDelta: (delta) => seen.push(delta),
       fetchImpl,
     });
@@ -52,7 +53,7 @@ describe('streamChat', () => {
     expect(sent[0]?.url).toBe('https://api.groq.com/openai/v1/chat/completions');
     expect(sent[0]?.headers['authorization']).toBe('Bearer k');
     expect(sent[0]?.body).toMatchObject({ model: 'm', stream: true, messages: [{ role: 'user', content: 'What is on page 2?' }] });
-    expect(answer).toStrictEqual({ text: 'Page two.', stopped: false });
+    expect(answer).toStrictEqual({ text: 'Page two.', stopped: false, searched: false, sources: [] });
     // THE PIECES REACHED THE CALLER AS THEY ARRIVED, which is what makes the panel stream
     // rather than appear at the end.
     expect(seen).toStrictEqual(['Page ', 'two.']);
@@ -64,7 +65,7 @@ describe('streamChat', () => {
       'data: {"type":"message_stop"}\n\n',
     ]);
 
-    const answer = await streamChat({ provider: 'anthropic', model: 'claude-x', key: 'k', messages: ASK, fetchImpl });
+    const answer = await streamChat({ provider: 'anthropic', model: 'claude-x', key: 'k', messages: ASK, web: false, fetchImpl });
 
     expect(sent[0]?.url).toBe('https://api.anthropic.com/v1/messages');
     expect(sent[0]?.headers['x-api-key']).toBe('k');
@@ -82,6 +83,7 @@ describe('streamChat', () => {
       model: 'models/gemini-x',
       key: 'k',
       messages: [...ASK, { role: 'assistant', text: 'earlier' }],
+      web: false,
       fetchImpl,
     });
 
@@ -99,6 +101,7 @@ describe('streamChat', () => {
       key: 'k',
       endpoint: 'https://mine.openai.azure.com/',
       messages: ASK,
+      web: false,
       fetchImpl,
     });
 
@@ -116,7 +119,7 @@ describe('streamChat', () => {
       { provider: 'azure-openai' as const, model: 'm', key: 'k', messages: ASK, endpoint: '' },
     ]) {
       const { fetchImpl, sent } = streaming([]);
-      const answer = await streamChat({ ...request, fetchImpl });
+      const answer = await streamChat({ ...request, web: false, fetchImpl });
       expect(sent).toStrictEqual([]);
       expect(answer.refusal).toBe('no-key');
     }
@@ -129,8 +132,8 @@ describe('streamChat', () => {
   ] as const) {
     it(`names HTTP ${String(status)} as ${refusal}, with no text`, async () => {
       const { fetchImpl } = streaming([], status);
-      const answer = await streamChat({ provider: 'openai', model: 'm', key: 'k', messages: ASK, fetchImpl });
-      expect(answer).toStrictEqual({ text: '', stopped: false, refusal });
+      const answer = await streamChat({ provider: 'openai', model: 'm', key: 'k', messages: ASK, web: false, fetchImpl });
+      expect(answer).toStrictEqual({ text: '', stopped: false, refusal, searched: false, sources: [] });
     });
   }
 
@@ -141,7 +144,7 @@ describe('streamChat', () => {
         Promise.resolve(
           new Response(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message } }), { status }),
         )) as unknown as typeof fetch;
-      return (await streamChat({ provider, model: 'm', key: 'k', messages: ASK, fetchImpl })).refusal;
+      return (await streamChat({ provider, model: 'm', key: 'k', messages: ASK, web: false, fetchImpl })).refusal;
     };
 
     expect(await answerTo('anthropic', 400, credit)).toBe('out-of-credit');
@@ -172,10 +175,10 @@ describe('streamChat', () => {
       return Promise.resolve(new Response(stream, { status: 200 }));
     }) as unknown as typeof fetch;
 
-    const answer = await streamChat({ provider: 'openai', model: 'm', key: 'k', messages: ASK, fetchImpl: broken });
+    const answer = await streamChat({ provider: 'openai', model: 'm', key: 'k', messages: ASK, web: false, fetchImpl: broken });
 
     // THE WORDS A PERSON ALREADY READ ARE NOT TAKEN BACK.
-    expect(answer).toStrictEqual({ text: 'half', stopped: false, refusal: 'unreadable' });
+    expect(answer).toStrictEqual({ text: 'half', stopped: false, refusal: 'unreadable', searched: false, sources: [] });
   });
 
   it('answers STOPPED, not failed, when the caller aborts before the first byte', async () => {
@@ -190,19 +193,20 @@ describe('streamChat', () => {
       model: 'm',
       key: 'k',
       messages: ASK,
+      web: false,
       signal: controller.signal,
       fetchImpl: aborting,
     });
 
-    expect(answer).toStrictEqual({ text: '', stopped: true });
+    expect(answer).toStrictEqual({ text: '', stopped: true, searched: false, sources: [] });
   });
 
   it('CONTROL: the same failure without an abort is unreachable, not stopped', async () => {
     const failing = (() => Promise.reject(new Error('no network'))) as unknown as typeof fetch;
 
-    const answer = await streamChat({ provider: 'openai', model: 'm', key: 'k', messages: ASK, fetchImpl: failing });
+    const answer = await streamChat({ provider: 'openai', model: 'm', key: 'k', messages: ASK, web: false, fetchImpl: failing });
 
-    expect(answer).toStrictEqual({ text: '', stopped: false, refusal: 'unreachable' });
+    expect(answer).toStrictEqual({ text: '', stopped: false, refusal: 'unreachable', searched: false, sources: [] });
   });
 });
 
@@ -247,7 +251,7 @@ describe('deltaOf', () => {
 describe('prepareChat', () => {
   it('CONTROL: each shape produces a DIFFERENT url, so a provider cannot be asked at another’s', () => {
     const urls = (['openai', 'anthropic', 'gemini', 'deepseek'] as const).map(
-      (provider) => prepareChat({ provider, model: 'm', key: 'k', messages: ASK })?.url,
+      (provider) => prepareChat({ provider, model: 'm', key: 'k', messages: ASK, web: false })?.url,
     );
     expect(new Set(urls).size).toBe(urls.length);
   });
@@ -255,7 +259,7 @@ describe('prepareChat', () => {
   it('carries a document instruction in each shape’s own place (ADR-0088)', () => {
     const system = '[Page 1]\nthe window';
     const body = (provider: 'anthropic' | 'gemini' | 'openai') =>
-      JSON.parse(prepareChat({ provider, model: 'm', key: 'k', messages: ASK, system })?.body ?? '{}') as Record<
+      JSON.parse(prepareChat({ provider, model: 'm', key: 'k', messages: ASK, system, web: false })?.body ?? '{}') as Record<
         string,
         unknown
       >;
@@ -272,7 +276,14 @@ describe('prepareChat', () => {
   it('CONTROL: with no instruction, or an empty one, no shape carries the field', () => {
     for (const system of [undefined, ''] as const) {
       for (const provider of ['anthropic', 'gemini', 'openai'] as const) {
-        const request = prepareChat({ provider, model: 'm', key: 'k', messages: ASK, ...(system === undefined ? {} : { system }) });
+        const request = prepareChat({
+          provider,
+          model: 'm',
+          key: 'k',
+          messages: ASK,
+          web: false,
+          ...(system === undefined ? {} : { system }),
+        });
         const body = JSON.parse(request?.body ?? '{}') as Record<string, unknown>;
         expect(body['system'], provider).toBeUndefined();
         expect(body['systemInstruction'], provider).toBeUndefined();
@@ -291,7 +302,8 @@ describe('prepareChat', () => {
     const image = { mediaType: 'image/png', base64: 'iVBORw0KGgo=' } as const;
     const body = (provider: 'anthropic' | 'gemini' | 'openai', withImage: boolean) =>
       JSON.parse(
-        prepareChat({ provider, model: 'm', key: 'k', messages: TALK, ...(withImage ? { image } : {}) })?.body ?? '{}',
+        prepareChat({ provider, model: 'm', key: 'k', messages: TALK, web: false, ...(withImage ? { image } : {}) })?.body ??
+          '{}',
       ) as Record<string, unknown>;
 
     it('rides on the LAST user turn in each shape’s own form, and earlier turns stay text', () => {
@@ -322,5 +334,246 @@ describe('prepareChat', () => {
       expect((body('gemini', false)['contents'] as { parts: unknown }[])[2]?.parts).toStrictEqual([{ text: 'Read the table' }]);
       expect((body('openai', false)['messages'] as { content: unknown }[])[2]?.content).toBe('Read the table');
     });
+  });
+});
+
+describe('the web, each provider’s own search (ADR-0108)', () => {
+  /** A server-sent event line for one JSON payload. */
+  const event = (payload: unknown): string => `data: ${JSON.stringify(payload)}\n\n`;
+
+  it('ANTHROPIC: sends its search tool only with the web on, and reads the search, the text and the citation', async () => {
+    const { fetchImpl, sent } = streaming([
+      event({ type: 'content_block_start', index: 0, content_block: { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search' } }),
+      event({
+        type: 'content_block_start',
+        index: 1,
+        content_block: {
+          type: 'web_search_tool_result',
+          tool_use_id: 'srvtoolu_1',
+          content: [
+            { type: 'web_search_result', url: 'https://example.org/a', title: 'Found A' },
+            // HTTP IS DROPPED: the one route that opens a source refuses anything but HTTPS.
+            { type: 'web_search_result', url: 'http://example.org/b', title: 'Found B' },
+          ],
+        },
+      }),
+      event({ type: 'content_block_delta', index: 2, delta: { type: 'text_delta', text: 'It was 1912.' } }),
+      event({
+        type: 'content_block_delta',
+        index: 2,
+        delta: {
+          type: 'citations_delta',
+          citation: { type: 'web_search_result_location', url: 'https://example.org/cited', title: 'Cited page', cited_text: '1912' },
+        },
+      }),
+      event({ type: 'message_delta', usage: { server_tool_use: { web_search_requests: 1 } } }),
+    ]);
+
+    const answer = await streamChat({ provider: 'anthropic', model: 'claude-haiku-4-5', key: 'k', messages: ASK, web: true, fetchImpl });
+
+    expect((sent[0]?.body as { tools?: unknown }).tools).toStrictEqual([
+      { type: 'web_search_20250305', name: 'web_search', max_uses: 5 },
+    ]);
+    // THE CITED PAGE, not the two found: an answer that cited something shows what it cited.
+    expect(answer).toStrictEqual({
+      text: 'It was 1912.',
+      stopped: false,
+      searched: true,
+      sources: [{ url: 'https://example.org/cited', title: 'Cited page' }],
+    });
+  });
+
+  it('ANTHROPIC: a search that cited nothing still shows what it found, and HTTPS only', async () => {
+    const { fetchImpl } = streaming([
+      event({
+        type: 'content_block_start',
+        index: 0,
+        content_block: {
+          type: 'web_search_tool_result',
+          content: [
+            { type: 'web_search_result', url: 'https://example.org/a', title: 'Found A' },
+            { type: 'web_search_result', url: 'http://example.org/b', title: 'Found B' },
+          ],
+        },
+      }),
+      event({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'Not in the document.' } }),
+    ]);
+    const answer = await streamChat({ provider: 'anthropic', model: 'm', key: 'k', messages: ASK, web: true, fetchImpl });
+    expect(answer.sources).toStrictEqual([{ url: 'https://example.org/a', title: 'Found A' }]);
+    expect(answer.searched).toBe(true);
+  });
+
+  it('ANTHROPIC: text after a SEARCH starts a new paragraph, and CONTROL: text split at a citation joins as it came', async () => {
+    // THE LIVE RUN'S ORDER (2026-09-26): a text block, the search, then text blocks split at a citation boundary.
+    const { fetchImpl } = streaming([
+      event({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+      event({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'I will search.' } }),
+      event({ type: 'content_block_start', index: 1, content_block: { type: 'server_tool_use', name: 'web_search' } }),
+      event({ type: 'content_block_start', index: 2, content_block: { type: 'web_search_tool_result', content: [] } }),
+      event({ type: 'content_block_start', index: 3, content_block: { type: 'text', text: '' } }),
+      event({ type: 'content_block_delta', index: 3, delta: { type: 'text_delta', text: 'Joseph Strauss' } }),
+      event({ type: 'content_block_start', index: 4, content_block: { type: 'text', text: '' } }),
+      event({ type: 'content_block_delta', index: 4, delta: { type: 'text_delta', text: ' was the engineer.' } }),
+    ]);
+    const answer = await streamChat({ provider: 'anthropic', model: 'm', key: 'k', messages: ASK, web: true, fetchImpl });
+    expect(answer.text).toBe('I will search.\n\nJoseph Strauss was the engineer.');
+  });
+
+  it('CONTROL: with the web off Anthropic is sent no tool, and an ordinary answer reports nothing searched', async () => {
+    const { fetchImpl, sent } = streaming([event({ type: 'content_block_delta', delta: { type: 'text_delta', text: 'Yes' } })]);
+    const answer = await streamChat({ provider: 'anthropic', model: 'm', key: 'k', messages: ASK, web: false, fetchImpl });
+    expect((sent[0]?.body as { tools?: unknown }).tools).toBeUndefined();
+    expect(answer).toStrictEqual({ text: 'Yes', stopped: false, searched: false, sources: [] });
+  });
+
+  it('OPENAI and xAI search through the RESPONSES API, and xAI’s numbered title becomes the host', async () => {
+    const stream = [
+      event({ type: 'response.output_item.added', item: { type: 'web_search_call', id: 'ws_1', status: 'in_progress' } }),
+      event({ type: 'response.output_text.delta', delta: 'Paris' }),
+      event({
+        type: 'response.output_text.annotation.added',
+        annotation: { type: 'url_citation', url: 'https://example.org/paris', title: '1', start_index: 0, end_index: 5 },
+      }),
+    ];
+    for (const [provider, url, title] of [
+      ['openai', 'https://api.openai.com/v1/responses', 'example.org'],
+      ['xai', 'https://api.x.ai/v1/responses', 'example.org'],
+    ] as const) {
+      const { fetchImpl, sent } = streaming(stream);
+      const answer = await streamChat({ provider, model: 'm', key: 'k', messages: ASK, system: 'the window', web: true, fetchImpl });
+      expect(sent[0]?.url, provider).toBe(url);
+      expect(sent[0]?.body, provider).toMatchObject({
+        model: 'm',
+        stream: true,
+        instructions: 'the window',
+        input: [{ role: 'user', content: 'What is on page 2?' }],
+        tools: [{ type: 'web_search' }],
+      });
+      expect(answer, provider).toStrictEqual({
+        text: 'Paris',
+        stopped: false,
+        searched: true,
+        sources: [{ url: 'https://example.org/paris', title }],
+      });
+    }
+  });
+
+  it('AZURE OPENAI searches at the person’s resource’s Responses address, with its own key header', async () => {
+    const { fetchImpl, sent } = streaming([event({ type: 'response.output_text.delta', delta: 'x' })]);
+    await streamChat({
+      provider: 'azure-openai',
+      model: 'my-deployment',
+      key: 'k',
+      endpoint: 'https://mine.openai.azure.com/',
+      messages: ASK,
+      web: true,
+      fetchImpl,
+    });
+    expect(sent[0]?.url).toBe('https://mine.openai.azure.com/openai/v1/responses');
+    expect(sent[0]?.headers['api-key']).toBe('k');
+    expect(sent[0]?.body).toMatchObject({ model: 'my-deployment', tools: [{ type: 'web_search' }] });
+  });
+
+  it('MISTRAL searches through CONVERSATIONS, stores nothing there, and reads a tool reference as a citation', async () => {
+    const { fetchImpl, sent } = streaming([
+      event({ type: 'tool.execution.started', id: 't1', name: 'web_search', arguments: '{}' }),
+      event({
+        type: 'message.output.delta',
+        content: [
+          { type: 'text', text: 'Rome' },
+          { type: 'tool_reference', tool: 'web_search', title: 'Rome page', url: 'https://example.org/rome' },
+        ],
+      }),
+    ]);
+    const answer = await streamChat({ provider: 'mistral', model: 'mistral-medium-latest', key: 'k', messages: ASK, web: true, fetchImpl });
+    expect(sent[0]?.url).toBe('https://api.mistral.ai/v1/conversations');
+    expect(sent[0]?.body).toMatchObject({ store: false, tools: [{ type: 'web_search' }], inputs: [{ role: 'user' }] });
+    expect(answer).toStrictEqual({
+      text: 'Rome',
+      stopped: false,
+      searched: true,
+      sources: [{ url: 'https://example.org/rome', title: 'Rome page' }],
+    });
+  });
+
+  it('CONTROL: with the web off, OpenAI, xAI and Mistral are asked at their ordinary chat address', () => {
+    for (const provider of ['openai', 'xai', 'mistral'] as const) {
+      const request = prepareChat({ provider, model: 'm', key: 'k', messages: ASK, web: false });
+      expect(request?.url, provider).toMatch(/\/chat\/completions$/u);
+      expect((JSON.parse(request?.body ?? '{}') as { tools?: unknown }).tools, provider).toBeUndefined();
+    }
+  });
+
+  it('OPENROUTER adds its server tool and reads the NESTED url_citation', async () => {
+    const { fetchImpl, sent } = streaming([
+      event({ choices: [{ delta: { content: 'Oslo' } }] }),
+      event({
+        choices: [
+          {
+            delta: {
+              annotations: [{ type: 'url_citation', url_citation: { url: 'https://example.org/oslo', title: 'Oslo page' } }],
+            },
+          },
+        ],
+      }),
+    ]);
+    const answer = await streamChat({ provider: 'openrouter', model: 'm', key: 'k', messages: ASK, web: true, fetchImpl });
+    expect((sent[0]?.body as { tools?: unknown }).tools).toStrictEqual([
+      { type: 'openrouter:web_search', parameters: { max_results: 5 } },
+    ]);
+    expect(answer.sources).toStrictEqual([{ url: 'https://example.org/oslo', title: 'Oslo page' }]);
+    expect(answer.searched).toBe(true);
+  });
+
+  it('PERPLEXITY searches by default, so DOCUMENT ONLY is the request that must turn it off', () => {
+    const bodyWith = (web: boolean): Record<string, unknown> =>
+      JSON.parse(prepareChat({ provider: 'perplexity', model: 'sonar', key: 'k', messages: ASK, web })?.body ?? '{}') as Record<
+        string,
+        unknown
+      >;
+    const off = bodyWith(false);
+    const on = bodyWith(true);
+    expect(off).toMatchObject({ disable_search: true });
+    expect(on['disable_search']).toBeUndefined();
+  });
+
+  it('PERPLEXITY’s search results are the sources', async () => {
+    const { fetchImpl } = streaming([
+      event({ choices: [{ delta: { content: 'x' } }], search_results: [{ title: 'Result', url: 'https://example.org/r' }] }),
+    ]);
+    const answer = await streamChat({ provider: 'perplexity', model: 'sonar', key: 'k', messages: ASK, web: true, fetchImpl });
+    expect(answer.sources).toStrictEqual([{ url: 'https://example.org/r', title: 'Result' }]);
+    expect(answer.searched).toBe(true);
+  });
+
+  it('GROQ sends its browser search only to a model that takes it', () => {
+    const tools = (model: string) =>
+      (JSON.parse(prepareChat({ provider: 'groq', model, key: 'k', messages: ASK, web: true })?.body ?? '{}') as { tools?: unknown })
+        .tools;
+    expect(tools('openai/gpt-oss-120b')).toStrictEqual([{ type: 'browser_search' }]);
+    // CONTROL: another Groq model is asked without it, and its answer will say nothing was searched.
+    expect(tools('llama-3.3-70b-versatile')).toBeUndefined();
+  });
+
+  it('GEMINI and DEEPSEEK are asked the ordinary way even with the web on — neither can search here', () => {
+    for (const provider of ['gemini', 'deepseek'] as const) {
+      const body = JSON.parse(prepareChat({ provider, model: 'm', key: 'k', messages: ASK, web: true })?.body ?? '{}') as Record<
+        string,
+        unknown
+      >;
+      expect(body['tools'], provider).toBeUndefined();
+    }
+  });
+
+  it('DOCUMENT ONLY never reaches a model that always searches — refused before anything is sent', async () => {
+    const { fetchImpl, sent } = streaming([event({ choices: [{ delta: { content: 'x' } }] })]);
+    const refused = await streamChat({ provider: 'openai', model: 'gpt-5-search-api', key: 'k', messages: ASK, web: false, fetchImpl });
+    expect(sent).toStrictEqual([]);
+    expect(refused).toStrictEqual({ text: '', stopped: false, refusal: 'searches-the-web', searched: false, sources: [] });
+
+    // CONTROL: the same model with the web on is asked — the refusal is the switch's, not the model's.
+    const asked = await streamChat({ provider: 'openai', model: 'gpt-5-search-api', key: 'k', messages: ASK, web: true, fetchImpl });
+    expect(sent).toHaveLength(1);
+    expect(asked.refusal).toBeUndefined();
   });
 });

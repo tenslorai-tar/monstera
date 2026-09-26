@@ -11,7 +11,9 @@ import {
   MAX_ASK_CONTEXT,
   MAX_CHAT_TEXT,
   type DispatchableCommand,
+  type WebSearchAbsence,
   citationsIn,
+  webSearchOf,
 } from '@monstera/contract';
 import type { DocId, MessageKey } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
@@ -28,6 +30,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 
+import { AnswerGrounding } from './AnswerGrounding.js';
 import { answerElements } from './answerMarkdown.js';
 import type { AssistantRequest, ReplyTarget } from './assistantRequest.js';
 import type { EventSubscriber } from './bridge.js';
@@ -60,6 +63,15 @@ import {
   ASSISTANT_EMPTY,
   ASSISTANT_MODEL_LABEL,
   ASSISTANT_NO_KEY,
+  ASSISTANT_SEARCHES_THE_WEB,
+  ASSISTANT_WEB_ALWAYS,
+  ASSISTANT_WEB_DOCUMENT,
+  ASSISTANT_WEB_LABEL,
+  ASSISTANT_WEB_NONE_MODEL,
+  ASSISTANT_WEB_NONE_NO_SEARCH,
+  ASSISTANT_WEB_NONE_TERMS,
+  ASSISTANT_WEB_ON,
+  ASSISTANT_WEB_SENDS,
   ASSISTANT_NO_MODELS,
   ASSISTANT_NO_VISION,
   ASSISTANT_PROBLEM_PAGE_TOO_LARGE,
@@ -222,7 +234,15 @@ const PROBLEMS = {
   unreadable: ASSISTANT_PROBLEM_UNREADABLE,
   'no-key': ASSISTANT_NO_KEY,
   'page-too-large': ASSISTANT_PROBLEM_PAGE_TOO_LARGE,
+  'searches-the-web': ASSISTANT_SEARCHES_THE_WEB,
 } as const;
+
+/** Why *Document + web* is off, as the sentence beside the disabled choice (ADR-0108). */
+const WEB_ABSENT: Readonly<Record<WebSearchAbsence, MessageKey>> = {
+  'no-hosted-search': ASSISTANT_WEB_NONE_NO_SEARCH,
+  'display-terms': ASSISTANT_WEB_NONE_TERMS,
+  'model-cannot': ASSISTANT_WEB_NONE_MODEL,
+};
 
 /**
  * Whether the assistant can answer, as ONE value, so the panel says one sentence about it.
@@ -303,6 +323,12 @@ export function AssistantPanel({
     scope: 'page',
     after: 0,
   });
+  /**
+   * *Document + web*, chosen for ONE document's conversation (ADR-0108). Every new chat starts *Document only*: the
+   * choice is held with the document it was made in and dropped by *New chat*, so another tab — or the same one after
+   * a new chat — reads it as off.
+   */
+  const [webChosen, setWebChosen] = useState<{ readonly docId: DocId } | null>(null);
 
   /** Turns for the start screen, where there is no document store to hold them. */
   const [looseTurns, setLooseTurns] = useState<readonly ConversationTurn[]>([]);
@@ -315,7 +341,13 @@ export function AssistantPanel({
    * The live ask: its subscription, and WHERE its answer goes — the conversation it was asked
    * from, captured at Send, never the one focused when a delta arrives.
    */
-  const live = useRef<{ subscription: string; write: (turns: readonly ConversationTurn[]) => void; read: () => readonly ConversationTurn[] } | null>(null);
+  const live = useRef<{
+    subscription: string;
+    write: (turns: readonly ConversationTurn[]) => void;
+    read: () => readonly ConversationTurn[];
+    /** Asked with *Document + web* — the answer then carries what the web gave (ADR-0108). */
+    web: boolean;
+  } | null>(null);
   /** The answer being assembled, kept out of state so each delta is one write. */
   const answer = useRef('');
 
@@ -368,6 +400,14 @@ export function AssistantPanel({
   const canSee = models.find((entry) => entry.id === model)?.vision !== false;
   const blindForPicture = scope === 'page-image' && !canSee;
 
+  // WHETHER THIS PROVIDER AND MODEL CAN SEARCH — `webSearchOf`, the one reading `main` also takes (ADR-0108).
+  const webSupport = webSearchOf(provider, model);
+  const webPicked = webChosen !== null && webChosen.docId === focused?.docId;
+  // WHAT AN ASK SENDS: the person's choice, where this model can search at all.
+  const webAsked = webPicked && webSupport.kind !== 'none';
+  // A MODEL THAT ALWAYS SEARCHES is not asked *Document only* — `main` would refuse it; Send says so first.
+  const searchesAnyway = webSupport.kind === 'always' && !webAsked;
+
   useEffect(() => {
     const stopDelta = subscribe('ai.delta', (payload) => {
       const asking = live.current;
@@ -384,8 +424,16 @@ export function AssistantPanel({
       );
     });
     const stopDone = subscribe('ai.done', (payload) => {
-      if (live.current?.subscription !== payload.subscription) return;
+      const asking = live.current;
+      if (asking?.subscription !== payload.subscription) return;
       if (payload.refusal !== undefined) setProblem(payload.refusal);
+      // WHAT THE WEB GAVE lands on the answer it belongs to — only for an ask made with the web on, so a *Document
+      // only* answer never carries the *No web search was used* line (ADR-0108).
+      const existing = asking.read();
+      const last = existing.at(-1);
+      if (asking.web && last?.role === 'assistant') {
+        asking.write([...existing.slice(0, -1), { ...last, web: payload.web }]);
+      }
       answer.current = '';
       live.current = null;
       setStreaming(null);
@@ -425,9 +473,18 @@ export function AssistantPanel({
     [beside, canSee, focused, selection, sides],
   );
 
+  /** A NEW ask's request: the scope's, with the switch as it stands now (ADR-0108). *Regenerate* keeps its own. */
+  const newRequest = useCallback(
+    (chosen: Scope): AskRequest | null => {
+      const request = requestFor(chosen);
+      return request === null ? null : { ...request, web: webAsked };
+    },
+    [requestFor, webAsked],
+  );
+
   const ask = useCallback(
     /** @returns whether the ask began; a request not begun is kept for when it can be. */
-    (text: string, { about, alongside, sides: asked }: AskRequest, replyTo?: ReplyTarget): boolean => {
+    (text: string, { about, alongside, sides: asked, web = false }: AskRequest, replyTo?: ReplyTarget): boolean => {
       if (text === '' || model === '' || live.current !== null) return false;
       const store = focused?.store;
       const read = (): readonly ConversationTurn[] => (store === undefined ? looseRef.current : store.getState().conversation);
@@ -448,13 +505,14 @@ export function AssistantPanel({
           about,
           ...(alongside === undefined ? {} : { alongside }),
           ...(asked === undefined ? {} : { sides: asked }),
+          web,
         },
         model: models.find((entry) => entry.id === model)?.label ?? model,
       };
       write([...before, turn]);
       setProblem(null);
       answer.current = '';
-      live.current = { subscription, write, read };
+      live.current = { subscription, write, read, web };
       setStreaming(subscription);
       void client['ai.ask']({
         subscription,
@@ -463,6 +521,7 @@ export function AssistantPanel({
         messages: [...before, turn].map((each) => ({ role: each.role, text: each.text })),
         ...(about === undefined ? {} : { about }),
         ...(alongside === undefined ? {} : { alongside }),
+        web,
       }).then((result) => {
         if (result.ok && result.value.started) {
           // THE DRAFT IS CLEARED ONLY ONCE THE ASK STARTED. A request that never began must
@@ -519,7 +578,7 @@ export function AssistantPanel({
   );
 
   const send = useCallback(() => {
-    const wanted = requestFor(scope);
+    const wanted = newRequest(scope);
     if (wanted === null) return;
     // EDIT AND RESEND: the edited question and everything after it go before the new one is asked.
     // Only when the ask can begin, so a Send that cannot start leaves the conversation as it was.
@@ -528,7 +587,7 @@ export function AssistantPanel({
       setEditing(null);
     }
     ask(draft.trim(), wanted);
-  }, [ask, draft, editing, model, requestFor, scope, setEditing, turns, writeTurns]);
+  }, [ask, draft, editing, model, newRequest, scope, setEditing, turns, writeTurns]);
 
   /** *Regenerate* the last answer: the same question, about the same thing, asked again. */
   const regenerate = useCallback(() => {
@@ -712,10 +771,10 @@ export function AssistantPanel({
       {focused !== undefined && hasKey && turns.length === 0 && (
         <div aria-label={i18n._(ASSISTANT_QUICK_LABEL)} className="m-assistant__quick" role="group">
           {quickStarts.map((quick) => {
-            const wanted = requestFor(quick.scope);
+            const wanted = newRequest(quick.scope);
             return (
               <Button
-                disabled={wanted === null}
+                disabled={wanted === null || searchesAnyway}
                 key={quick.key}
                 label={quick.key}
                 onClick={() => {
@@ -739,6 +798,8 @@ export function AssistantPanel({
               writeTurns([]);
               setEditing(null);
               setProblem(null);
+              // A NEW CHAT STARTS *DOCUMENT ONLY* (ADR-0108), whatever the last one used.
+              setWebChosen(null);
             }}
           />
         </div>
@@ -764,6 +825,15 @@ export function AssistantPanel({
                 {line}
               </p>
             ))}
+            {turn.role === 'assistant' && (streaming === null || at !== turns.length - 1) && (
+              <AnswerGrounding
+                answer={turn}
+                question={turns[at - 1]}
+                open={(answer, index) => {
+                  void client['ai.openSource']({ answer, index });
+                }}
+              />
+            )}
             {turn.role === 'assistant' && (streaming === null || at !== turns.length - 1) && turn.text.trim() !== '' && (
               // THE ANSWER'S OWN ACTIONS, the owner's design: under a whole answer, never a streaming
               // one. Regenerate and Edit belong to the LAST exchange, because a conversation replays
@@ -900,6 +970,38 @@ export function AssistantPanel({
               wrap
             />
           </div>
+          {/* DOCUMENT ONLY OR DOCUMENT + WEB (ADR-0108): each choice disabled, never dropped, where this provider and
+              model cannot take it — with the sentence that says why beneath. */}
+          <div className="m-assistant__about-line" data-assistant-web="">
+            <span className="m-assistant__about-label">{i18n._(ASSISTANT_WEB_LABEL)}</span>
+            <SegmentedControl<'document' | 'web'>
+              label={ASSISTANT_WEB_LABEL}
+              onChange={(next) => {
+                setWebChosen(next === 'web' ? { docId: focused.docId } : null);
+              }}
+              options={[
+                { value: 'document', label: ASSISTANT_WEB_DOCUMENT, disabled: webSupport.kind === 'always' },
+                { value: 'web', label: ASSISTANT_WEB_ON, disabled: webSupport.kind === 'none' },
+              ]}
+              value={webAsked ? 'web' : 'document'}
+              wrap
+            />
+          </div>
+          {webSupport.kind === 'none' && (
+            <p className="m-assistant__state" data-assistant-web-absent={webSupport.reason}>
+              {i18n._(WEB_ABSENT[webSupport.reason])}
+            </p>
+          )}
+          {searchesAnyway && (
+            <p className="m-assistant__state" data-assistant-web-always="">
+              {i18n._(ASSISTANT_WEB_ALWAYS)}
+            </p>
+          )}
+          {webAsked && (
+            <p className="m-assistant__consent" data-assistant-web-sends="">
+              {i18n._(ASSISTANT_WEB_SENDS, { provider: i18n._(AI_PROVIDER_NAMES[provider]) })}
+            </p>
+          )}
           {pairable && (
             // NATIVE RADIOS with nothing checked until a person chooses — a segmented control
             // always holds one, and holding one here would be the default ADR-0089 refuses.
@@ -1022,7 +1124,7 @@ export function AssistantPanel({
               CONTROL (§10.5): with no key, or no model to ask, Send is disabled and the lines above say which. */}
           {streaming === null ? (
             <IconButton
-              disabled={!hasKey || model === '' || waitingForSides || blindForPicture}
+              disabled={!hasKey || model === '' || waitingForSides || blindForPicture || searchesAnyway}
               icon={ArrowUp}
               label={ASSISTANT_SEND}
               onClick={send}

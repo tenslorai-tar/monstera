@@ -110,15 +110,30 @@ export function pictureSent(page: number, pageCount: number): AskSent {
  * The instruction a picture travels with: which page it is, and the same citation form every
  * other ask asks for, so a link in the answer goes to the page that was pictured.
  */
-export function askPictureInstruction(sent: AskSent): string {
+export function askPictureInstruction(sent: AskSent, web: boolean): string {
   const page = sent.firstPage ?? 0;
   return (
     `${WHAT['page-image']} It is page ${String(page + 1)} of ${String(sent.pageCount)}. ` +
     `Read it as it appears, including any table, handwriting or figure; when you give a table, give it as a ` +
     `Markdown table. When you rely on the page, cite it as ${askCitation(page)}. ` +
-    'If the answer is not on the page, say so rather than guessing.'
+    groundRule(NOT_ON_PAGE, web)
   );
 }
+
+/**
+ * What the answer may rest on (ADR-0108) — the whole difference between *Document only* and *Document + web* inside
+ * the instruction. The *not in the text* sentence stays in both: with the web on, the person still needs to be told
+ * the document did not say it before being told what a web page did.
+ */
+function groundRule(notInText: string, web: boolean): string {
+  return web ? `${notInText} ${WEB_ALLOWED}` : `${notInText} ${DOCUMENT_ONLY}`;
+}
+
+const NOT_ON_PAGE = 'If the answer is not on the page, say so rather than guessing.';
+const DOCUMENT_ONLY = 'Use only this text, not outside knowledge.';
+const WEB_ALLOWED =
+  'You may search the web for what the document does not say; keep what the web says apart from what the document ' +
+  'says, and never present a web result as the document’s.';
 
 /** One annotation's words, as the comments window lists them. */
 export interface CommentLine {
@@ -167,11 +182,11 @@ export async function commentsWindow(
  * when the window stopped early, because a model told nothing will summarise twelve pages of
  * forty as though they were all of it.
  */
-export function askInstruction(window: AskWindow, scope: AskAbout['scope']): string {
+export function askInstruction(window: AskWindow, scope: AskAbout['scope'], web: boolean): string {
   const reach = scope === 'comments' ? commentsCoverage(window.sent) : coverage(window.sent, 'It');
   return (
     `${WHAT[scope]} ${reach} Each page begins with a marker such as ${askPageMarker(2)}. ` +
-    `When you rely on a page, cite it as ${askCitation(2)}. ${NOT_IN_TEXT}` +
+    `When you rely on a page, cite it as ${askCitation(2)}. ${groundRule(NOT_IN_TEXT, web)}` +
     `\n\n${window.text}`
   );
 }
@@ -181,12 +196,12 @@ export function askInstruction(window: AskWindow, scope: AskAbout['scope']): str
  * with markers and citations that say which document a page is in — `[p. 3]` from a paired answer
  * would name two pages.
  */
-export function askPairInstruction(left: AskWindow, right: AskWindow, scope: 'page' | 'document'): string {
+export function askPairInstruction(left: AskWindow, right: AskWindow, scope: 'page' | 'document', web: boolean): string {
   return (
     `${PAIR_WHAT[scope]} The Left document is the one on the left of the screen and the Right document the one ` +
     `on the right. ${coverage(left.sent, 'The Left text')} ${coverage(right.sent, 'The Right text')} ` +
     `Each page begins with a marker naming its side, such as ${askPageMarker(2, 'left')} or ${askPageMarker(2, 'right')}. ` +
-    `When you rely on a page, cite it with its side, as ${askCitation(2, 'left')} or ${askCitation(2, 'right')}. ${NOT_IN_TEXT}` +
+    `When you rely on a page, cite it with its side, as ${askCitation(2, 'left')} or ${askCitation(2, 'right')}. ${groundRule(NOT_IN_TEXT, web)}` +
     `\n\n${left.text}\n${right.text}`
   );
 }

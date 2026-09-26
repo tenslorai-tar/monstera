@@ -116,6 +116,8 @@ const answer = await streamChat({
   key,
   system: translationInstruction('French'),
   messages: [{ role: 'user', text: translationRequest(texts) }],
+  // A TRANSLATION NEVER USES THE WEB, as `main`'s own translate path asks it (ADR-0108).
+  web: false,
 });
 if (answer.refusal !== undefined) fail(`the provider refused: ${answer.refusal}.`);
 const translated = readTranslation(answer.text, texts.length);

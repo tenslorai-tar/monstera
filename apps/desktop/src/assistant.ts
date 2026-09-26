@@ -14,7 +14,9 @@ import {
   type ChatRefusal,
   listModels,
   streamChat,
+  type WebSource,
 } from '@monstera/kernel';
+import { randomUUID } from 'node:crypto';
 
 /**
  * The assistant, in `main`
@@ -52,6 +54,13 @@ export interface AssistantParts {
   readonly send: <K extends EventId>(id: K, payload: EventPayload<K>) => void;
   /** Injected so a case drives the provider. The application passes the real one. */
   readonly fetchImpl?: typeof fetch;
+  /**
+   * Opens an HTTPS address in the person's browser — the composition root's one route, which refuses anything else.
+   * Only ever handed an address a provider's search returned and `main` kept (ADR-0108).
+   */
+  readonly openInBrowser: (url: string) => Promise<void>;
+  /** Mints an answer's id. Injected so a case names it; the application passes `randomUUID`. */
+  readonly answerId?: () => string;
 }
 
 export interface AskRequest {
@@ -63,7 +72,15 @@ export interface AskRequest {
   readonly system?: string;
   /** A picture of a page, sent with the last turn (ADR-0090). */
   readonly image?: ChatImage;
+  /** *Document + web* or *Document only* — the person's switch, required for `ai.ask`'s reason (ADR-0108). */
+  readonly web: boolean;
 }
+
+/**
+ * How many finished answers keep their sources' addresses for `ai.openSource`. Older ones answer `opened: false`,
+ * which a conversation reaching back that far meets — bounded so a long session does not hold every address it saw.
+ */
+export const KEPT_ANSWERS = 50;
 
 export interface Assistant {
   readonly models: (provider: AiProviderId) => Promise<Awaited<ReturnType<typeof listModels>>>;
@@ -74,11 +91,17 @@ export interface Assistant {
   /** `stopped: false` means nothing was streaming to that subscription. */
   readonly stop: (subscription: string) => { readonly stopped: boolean };
   /**
+   * Opens source `index` of answer `answer` — by place, from the addresses `main` kept (ADR-0108). `opened: false`
+   * for an answer no longer kept or a place past its list.
+   */
+  readonly openSource: (answer: string, index: number) => Promise<{ readonly opened: boolean }>;
+  /**
    * One whole answer, gathered rather than streamed — a translation's (ADR-0097), which is read
    * as one array and written, so no piece of it is shown as it arrives. The same `streamChat`
-   * every ask goes through: one resolver of how each provider is asked (B3a).
+   * every ask goes through: one resolver of how each provider is asked (B3a). Never with the web: a translation is
+   * of the page's own words.
    */
-  readonly complete: (request: Omit<AskRequest, 'subscription' | 'image'>) => Promise<ChatAnswer>;
+  readonly complete: (request: Omit<AskRequest, 'subscription' | 'image' | 'web'>) => Promise<ChatAnswer>;
 }
 
 /** The pieces one delta becomes, each within the event's bound. */
@@ -97,11 +120,37 @@ export function createAssistant(parts: AssistantParts): Assistant {
   const endpointFor = (provider: AiProviderId): string =>
     provider === 'azure-openai' ? (parts.setting(AZURE_OPENAI_ENDPOINT_SETTING_ID) ?? '') : '';
 
-  const finish = (subscription: string, stopped: boolean, refusal?: ChatRefusal): void => {
+  /** Each kept answer's source addresses, oldest first — `ai.openSource`'s only source of an address. */
+  const kept = new Map<string, readonly WebSource[]>();
+  const mint = parts.answerId ?? randomUUID;
+
+  const finish = (
+    subscription: string,
+    stopped: boolean,
+    refusal: ChatRefusal | undefined,
+    web: Pick<ChatAnswer, 'searched' | 'sources'>,
+  ): void => {
     live.delete(subscription);
+    const answer = mint();
+    kept.set(answer, web.sources);
+    // THE OLDEST GOES FIRST: a Map iterates in insertion order.
+    for (const old of kept.keys()) {
+      if (kept.size <= KEPT_ANSWERS) break;
+      kept.delete(old);
+    }
     parts.send(
       'ai.done',
-      checkEvent('ai.done', { subscription, stopped, ...(refusal === undefined ? {} : { refusal }) }),
+      checkEvent('ai.done', {
+        subscription,
+        stopped,
+        ...(refusal === undefined ? {} : { refusal }),
+        web: {
+          answer,
+          searched: web.searched,
+          // A TITLE AND A HOST, never the address (ADR-0108). `streamChat` kept HTTPS sources only, so each parses.
+          sources: web.sources.map((source) => ({ title: source.title.slice(0, 300), host: new URL(source.url).host })),
+        },
+      }),
     );
   };
 
@@ -122,7 +171,7 @@ export function createAssistant(parts: AssistantParts): Assistant {
         ...(parts.fetchImpl === undefined ? {} : { fetchImpl: parts.fetchImpl }),
       }),
 
-    ask: ({ subscription, provider, model, messages, system, image }) => {
+    ask: ({ subscription, provider, model, messages, system, image, web }) => {
       if (live.has(subscription)) return { started: false };
       const controller = new AbortController();
       live.set(subscription, controller);
@@ -137,6 +186,7 @@ export function createAssistant(parts: AssistantParts): Assistant {
         messages,
         ...(system === undefined ? {} : { system }),
         ...(image === undefined ? {} : { image }),
+        web,
         signal: controller.signal,
         onDelta: (text) => {
           // A SUBSCRIPTION THAT WAS STOPPED GETS NOTHING MORE. The abort reaches the
@@ -149,12 +199,12 @@ export function createAssistant(parts: AssistantParts): Assistant {
         ...(parts.fetchImpl === undefined ? {} : { fetchImpl: parts.fetchImpl }),
       }).then(
         (answer) => {
-          finish(subscription, answer.stopped, answer.refusal);
+          finish(subscription, answer.stopped, answer.refusal, answer);
         },
         () => {
           // `streamChat` does not throw; this is the belt for a defect in it, and it must
           // still end the conversation's turn rather than leaving a spinner running.
-          finish(subscription, false, 'unreadable');
+          finish(subscription, false, 'unreadable', { searched: false, sources: [] });
         },
       );
 
@@ -168,6 +218,13 @@ export function createAssistant(parts: AssistantParts): Assistant {
       return { stopped: true };
     },
 
+    openSource: async (answer, index) => {
+      const source = kept.get(answer)?.[index];
+      if (source === undefined) return { opened: false };
+      await parts.openInBrowser(source.url);
+      return { opened: true };
+    },
+
     complete: ({ provider, model, messages, system }) =>
       streamChat({
         provider,
@@ -176,6 +233,7 @@ export function createAssistant(parts: AssistantParts): Assistant {
         endpoint: endpointFor(provider),
         messages,
         ...(system === undefined ? {} : { system }),
+        web: false,
         ...(parts.fetchImpl === undefined ? {} : { fetchImpl: parts.fetchImpl }),
       }),
   };

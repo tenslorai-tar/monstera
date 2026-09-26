@@ -6,6 +6,7 @@ import {
   AI_PROVIDER_KEY_SETTING_IDS,
   ANTHROPIC_KEY_SETTING_ID,
   AZURE_OPENAI_ENDPOINT_SETTING_ID,
+  webSearchOf,
 } from './aiProviders.js';
 import { SECRET_SETTING_IDS } from './schemas.js';
 
@@ -54,5 +55,40 @@ describe('the AI provider registry', () => {
     const shapes = AI_PROVIDER_IDS.map((id) => AI_PROVIDERS[id].adapter);
     expect(new Set(shapes)).toStrictEqual(new Set(['openai-format', 'anthropic', 'gemini']));
     expect(shapes.filter((shape) => shape === 'openai-format')).toHaveLength(8);
+  });
+});
+
+describe('webSearchOf — which provider and model can search the web (ADR-0108)', () => {
+  it('reads each provider’s documented search, one row per provider, WRITTEN OUT', () => {
+    // A LITERAL, not a loop over the table: the danger is a provider quietly moved from `none` to `optional`, and a
+    // derived expectation would agree with the move.
+    const answers = Object.fromEntries(AI_PROVIDER_IDS.map((id) => [id, webSearchOf(id, 'some-model').kind]));
+    expect(answers).toStrictEqual({
+      anthropic: 'optional',
+      openai: 'optional',
+      gemini: 'none',
+      mistral: 'optional',
+      xai: 'optional',
+      'azure-openai': 'optional',
+      openrouter: 'optional',
+      groq: 'none',
+      perplexity: 'optional',
+      deepseek: 'none',
+    });
+  });
+
+  it('names why a provider cannot, which is the sentence the switch shows', () => {
+    expect(webSearchOf('gemini', 'gemini-3-pro')).toStrictEqual({ kind: 'none', reason: 'display-terms' });
+    expect(webSearchOf('deepseek', 'deepseek-chat')).toStrictEqual({ kind: 'none', reason: 'no-hosted-search' });
+    expect(webSearchOf('groq', 'llama-3.3-70b-versatile')).toStrictEqual({ kind: 'none', reason: 'model-cannot' });
+  });
+
+  it('knows the models that ALWAYS search, and CONTROL: their neighbours do not', () => {
+    expect(webSearchOf('openai', 'gpt-5-search-api').kind).toBe('always');
+    expect(webSearchOf('openai', 'gpt-4o-mini-search-preview').kind).toBe('always');
+    expect(webSearchOf('perplexity', 'sonar-deep-research').kind).toBe('always');
+    expect(webSearchOf('openai', 'gpt-5.5').kind).toBe('optional');
+    expect(webSearchOf('perplexity', 'sonar-pro').kind).toBe('optional');
+    expect(webSearchOf('groq', 'openai/gpt-oss-20b').kind).toBe('optional');
   });
 });

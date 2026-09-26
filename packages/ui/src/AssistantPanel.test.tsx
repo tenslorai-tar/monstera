@@ -68,6 +68,7 @@ function recording(
       });
     }
     if (id === 'ai.stop') return Promise.resolve({ ok: true, value: { stopped: true } });
+    if (id === 'ai.openSource') return Promise.resolve({ ok: true, value: { opened: true } });
     if (id === 'window.copyText') return Promise.resolve({ ok: true, value: { copied: true } });
     throw new Error(`this case does not answer ${id}`);
   });
@@ -96,6 +97,9 @@ function events(): {
 }
 
 const ANTHROPIC_KEY = 'ai.anthropic-key';
+
+/** An answer's end when the web took no part — what `main` sends for every *Document only* answer (ADR-0108). */
+const NO_WEB = { answer: 'a0', searched: false, sources: [] } as const;
 
 /**
  * The panel under a host that holds the handled serial, as `App` does — so a remount (`mount`)
@@ -240,7 +244,7 @@ describe('the assistant tab', () => {
     });
     expect(sent.at(-1)).toStrictEqual({ id: 'ai.stop', params: { subscription } });
 
-    push('ai.done', { subscription, stopped: true });
+    push('ai.done', { subscription, stopped: true, web: NO_WEB });
     expect(screen.getByRole('button', { name: 'Send' })).toBeTruthy();
   });
 
@@ -254,7 +258,7 @@ describe('the assistant tab', () => {
     const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
 
     push('ai.delta', { subscription, text: 'half an answer' });
-    push('ai.done', { subscription, stopped: false, refusal: 'unauthorised' });
+    push('ai.done', { subscription, stopped: false, refusal: 'unauthorised', web: NO_WEB });
 
     expect(screen.getByText(/did not accept the key/u)).toBeTruthy();
     // THE WORDS A PERSON READ ARE STILL THERE.
@@ -270,7 +274,7 @@ describe('the assistant tab', () => {
     });
     const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
 
-    push('ai.done', { subscription, stopped: false, refusal: 'out-of-credit' });
+    push('ai.done', { subscription, stopped: false, refusal: 'out-of-credit', web: NO_WEB });
 
     expect(
       screen.getByText('Your Anthropic account is out of credit — add credit at console.anthropic.com'),
@@ -410,13 +414,129 @@ describe('the assistant about a document (ADR-0088)', () => {
     expect(screen.queryByText(/only when you press Send/u)).toBeNull();
   });
 
+  describe('Document only / Document + web (ADR-0108)', () => {
+    /** Presses one side of the switch. */
+    function answerFrom(label: 'Document only' | 'Document + web'): void {
+      const group = screen.getByRole('group', { name: 'Answer from' });
+      fireEvent.click(within(group).getByRole('button', { name: label }));
+    }
+    /** The `web` the last ask carried. */
+    function lastWeb(sent: readonly { id: string; params: unknown }[]): unknown {
+      return (sent.filter((entry) => entry.id === 'ai.ask').at(-1)?.params as { web?: unknown } | undefined)?.web;
+    }
+    const lastSubscription = (sent: readonly { id: string; params: unknown }[]): string =>
+      (sent.filter((entry) => entry.id === 'ai.ask').at(-1)?.params as { subscription: string }).subscription;
+
+    it('starts DOCUMENT ONLY, asks with the web only once chosen, and says where the question then goes', async () => {
+      const { sent, push } = await drawn({ focused: focusedOn() });
+      const group = screen.getByRole('group', { name: 'Answer from' });
+      expect(within(group).getByRole('button', { name: 'Document only' }).getAttribute('aria-pressed')).toBe('true');
+      expect(screen.queryByText(/goes to a search engine/u)).toBeNull();
+
+      type('First');
+      await send();
+      expect(lastWeb(sent)).toBe(false);
+      push('ai.done', { subscription: lastSubscription(sent), stopped: false, web: NO_WEB });
+
+      answerFrom('Document + web');
+      expect(screen.getByText(/goes to a search engine through Anthropic\. Searches may cost extra\./u)).toBeDefined();
+      type('Second');
+      await send();
+      expect(lastWeb(sent)).toBe(true);
+    });
+
+    it('a NEW CHAT starts Document only again, and CONTROL: another document never inherits the choice', async () => {
+      const a = focusedOn();
+      const { sent, push, redraw } = await drawn({ focused: a });
+      const pressed = (label: string): string | null =>
+        within(screen.getByRole('group', { name: 'Answer from' })).getByRole('button', { name: label }).getAttribute('aria-pressed');
+      answerFrom('Document + web');
+      type('Asked with the web');
+      await send();
+      push('ai.delta', { subscription: lastSubscription(sent), text: 'An answer.' });
+      push('ai.done', { subscription: lastSubscription(sent), stopped: false, web: NO_WEB });
+
+      await redraw({ focused: focusedOn(DOC_B) });
+      expect(pressed('Document only')).toBe('true');
+
+      // BACK ON THE SAME DOCUMENT'S CHAT the choice still stands — it is that conversation's.
+      await redraw({ focused: a });
+      expect(pressed('Document + web')).toBe('true');
+      fireEvent.click(screen.getByRole('button', { name: 'New chat' }));
+      expect(pressed('Document only')).toBe('true');
+    });
+
+    it('DISABLES the web, with the reason, for a provider that cannot search — and CONTROL: Anthropic can', async () => {
+      await drawn({ focused: focusedOn(), stored: [ANTHROPIC_KEY, 'ai.gemini-key'] });
+      const web = (): HTMLElement =>
+        within(screen.getByRole('group', { name: 'Answer from' })).getByRole('button', { name: 'Document + web' });
+      expect(web().hasAttribute('disabled')).toBe(false);
+
+      fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'gemini' } });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(web().hasAttribute('disabled')).toBe(true);
+      expect(screen.getByText('Web search isn’t available with this provider in Monstera.')).toBeDefined();
+    });
+
+    it('shows the web sources under the answer, opens one BY ITS PLACE, and says when no search was used', async () => {
+      const { sent, push } = await drawn({ focused: focusedOn() });
+      answerFrom('Document + web');
+      type('When was it built?');
+      await send();
+      const subscription = lastSubscription(sent);
+      push('ai.delta', { subscription, text: 'It was built in 1912.' });
+      push('ai.done', {
+        subscription,
+        stopped: false,
+        web: { answer: 'a7', searched: true, sources: [{ title: 'City history', host: 'example.org' }] },
+      });
+
+      const sources = screen.getByRole('group', { name: 'From the web' });
+      fireEvent.click(within(sources).getByRole('button', { name: 'City history · example.org' }));
+      expect(sent.find((entry) => entry.id === 'ai.openSource')?.params).toStrictEqual({ answer: 'a7', index: 0 });
+      expect(screen.queryByText('No web search was used for this answer.')).toBeNull();
+
+      // A SECOND ANSWER THAT DID NOT SEARCH says so, with the web on.
+      type('And the architect?');
+      await send();
+      const second = lastSubscription(sent);
+      push('ai.delta', { subscription: second, text: 'Not in the document.' });
+      push('ai.done', { subscription: second, stopped: false, web: { answer: 'a8', searched: false, sources: [] } });
+      expect(screen.getByText('No web search was used for this answer.')).toBeDefined();
+    });
+
+    it('CONTROL: a Document-only answer never says "no web search", and an uncited answer about the document is marked', async () => {
+      const { sent, push } = await drawn({ focused: focusedOn() });
+      type('What does it say?');
+      await send();
+      const subscription = lastSubscription(sent);
+      push('ai.delta', { subscription, text: 'It is about bridges.' });
+      push('ai.done', { subscription, stopped: false, web: NO_WEB });
+      expect(screen.queryByText('No web search was used for this answer.')).toBeNull();
+      // ITEM 5c: no `[p. N]` anywhere in the answer, and the question was about the document.
+      expect(screen.getByText('No page cited — check this against the document.')).toBeDefined();
+    });
+
+    it('CONTROL: an answer that cites a page is NOT marked uncited', async () => {
+      const { sent, push } = await drawn({ focused: focusedOn() });
+      type('What does it say?');
+      await send();
+      const subscription = lastSubscription(sent);
+      push('ai.delta', { subscription, text: 'Bridges, as on [p. 7].' });
+      push('ai.done', { subscription, stopped: false, web: NO_WEB });
+      expect(screen.queryByText('No page cited — check this against the document.')).toBeNull();
+    });
+  });
+
   it('CONTROL: an ask about nothing carries no scope at all', async () => {
     const { sent, push } = await drawn({ focused: focusedOn() });
     about('None');
     type('Just a question');
     await send();
     const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
-    push('ai.done', { subscription, stopped: false });
+    push('ai.done', { subscription, stopped: false, web: NO_WEB });
     expect(sent.some((entry) => entry.id === 'ai.ask')).toBe(true);
     expect(lastAbout(sent)).toBeUndefined();
   });
@@ -441,7 +561,7 @@ describe('the assistant about a document (ADR-0088)', () => {
     const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
 
     push('ai.delta', { subscription, text: 'It is set out on [p. 5], in the second clause.' });
-    push('ai.done', { subscription, stopped: false });
+    push('ai.done', { subscription, stopped: false, web: NO_WEB });
 
     fireEvent.click(screen.getByRole('button', { name: 'Go to page 5' }));
     // KERNEL PAGE 4 for the page a person calls 5 — the one frame, crossed once.
@@ -459,7 +579,7 @@ describe('the assistant about a document (ADR-0088)', () => {
     // Streamed in pieces, as a provider sends it: the structure exists only in the whole text.
     push('ai.delta', { subscription, text: '## Deadlines\n\n- Notice by **1 May** [p. 2]\n' });
     push('ai.delta', { subscription, text: '- Payment <script>x</script>\n' });
-    push('ai.done', { subscription, stopped: false });
+    push('ai.done', { subscription, stopped: false, web: NO_WEB });
 
     const answer = document.querySelector('.m-assistant__answer');
     expect(answer?.querySelector('h4')?.textContent).toBe('Deadlines');
@@ -478,7 +598,7 @@ describe('the assistant about a document (ADR-0088)', () => {
     await send();
     const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
     push('ai.delta', { subscription, text: 'answer for A' });
-    push('ai.done', { subscription, stopped: false });
+    push('ai.done', { subscription, stopped: false, web: NO_WEB });
 
     await redraw({ focused: b });
     expect(screen.queryByText('answer for A')).toBeNull();
@@ -497,7 +617,7 @@ describe('the assistant about a document (ADR-0088)', () => {
 
     await redraw({ focused: b });
     push('ai.delta', { subscription, text: 'late words' });
-    push('ai.done', { subscription, stopped: false });
+    push('ai.done', { subscription, stopped: false, web: NO_WEB });
 
     expect(b.store.getState().conversation).toStrictEqual([]);
     expect(a.store.getState().conversation.at(-1)).toStrictEqual({ role: 'assistant', text: 'late words' });
@@ -574,7 +694,7 @@ describe('the assistant about a document (ADR-0088)', () => {
     push('ai.delta', { subscription, text: '  Yes — Friday works. ' });
     // STILL STREAMING: a half-written draft is not offered.
     expect(screen.queryByRole('button', { name: 'Post as a reply' })).toBeNull();
-    push('ai.done', { subscription, stopped: false });
+    push('ai.done', { subscription, stopped: false, web: NO_WEB });
     expect(posted).toStrictEqual([]);
 
     fireEvent.click(screen.getByRole('button', { name: 'Post as a reply' }));
@@ -595,7 +715,7 @@ describe('the assistant about a document (ADR-0088)', () => {
       await Promise.resolve();
     });
     const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
-    push('ai.done', { subscription, stopped: false });
+    push('ai.done', { subscription, stopped: false, web: NO_WEB });
 
     // THE PANEL UNMOUNTS AND MOUNTS AGAIN, as it does when the last tab closes and a document
     // opens: the request is still `App`'s, and only `App`'s memory of handling it holds.
@@ -633,7 +753,7 @@ describe('the assistant about a document (ADR-0088)', () => {
     });
     const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
     push('ai.delta', { subscription, text: 'Friday works.' });
-    push('ai.done', { subscription, stopped: false });
+    push('ai.done', { subscription, stopped: false, web: NO_WEB });
 
     fireEvent.click(screen.getByRole('button', { name: 'Post as a reply' }));
     expect(screen.queryByRole('button', { name: 'Post as a reply' })).toBeNull();
@@ -646,7 +766,7 @@ describe('the assistant about a document (ADR-0088)', () => {
     await send();
     const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
     push('ai.delta', { subscription, text: 'hi' });
-    push('ai.done', { subscription, stopped: false });
+    push('ai.done', { subscription, stopped: false, web: NO_WEB });
     expect(screen.queryByRole('button', { name: 'Post as a reply' })).toBeNull();
   });
 
@@ -818,7 +938,7 @@ describe('the assistant about a document (ADR-0088)', () => {
 
       const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
       push('ai.delta', { subscription, text: 'See [Left p. 7] and [Right p. 3]; also [p. 2].' });
-      push('ai.done', { subscription, stopped: false });
+      push('ai.done', { subscription, stopped: false, web: NO_WEB });
 
       fireEvent.click(screen.getByRole('button', { name: 'Go to page 7' }));
       fireEvent.click(screen.getByRole('button', { name: 'Go to page 3 of the document on the right' }));
@@ -839,7 +959,7 @@ describe('the assistant about a document (ADR-0088)', () => {
       await send();
       const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
       push('ai.delta', { subscription, text: 'On [p. 3].' });
-      push('ai.done', { subscription, stopped: false });
+      push('ai.done', { subscription, stopped: false, web: NO_WEB });
       expect(screen.getByRole('button', { name: 'Go to page 3 of the document on the right' })).toBeTruthy();
 
       await redraw({ beside: { docId: asDocId('00000000-0000-4000-8000-00000000000c'), page: 0 } });
@@ -863,7 +983,7 @@ describe('the chat extras (the owner’s design, 2026-09-15)', () => {
     const subscription = (harness.sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string })
       .subscription;
     harness.push('ai.delta', { subscription, text: 'On 17 March.' });
-    harness.push('ai.done', { subscription, stopped: false });
+    harness.push('ai.done', { subscription, stopped: false, web: NO_WEB });
     return { ...harness, store };
   }
 

@@ -46,6 +46,7 @@ const INERT_ASSISTANT = createAssistant({
   secret: () => undefined,
   setting: () => undefined,
   send: () => undefined,
+  openInBrowser: () => Promise.resolve(),
 });
 import { createEphemeralSettings } from './settingsFile.js';
 
@@ -893,6 +894,7 @@ describe('ai.checkKey', () => {
       secret: (id) => secrets.read()[id],
       setting: () => undefined,
       send: () => undefined,
+      openInBrowser: () => Promise.resolve(),
       fetchImpl: (_input, init) => {
         asked.push(String(new Headers(init?.headers).get('authorization')));
         return Promise.resolve(
@@ -984,6 +986,7 @@ describe('ai.translatePage (ADR-0097)', () => {
       secret: (id) => secrets.read()[id],
       setting: () => undefined,
       send: () => undefined,
+      openInBrowser: () => Promise.resolve(),
       fetchImpl: ((_url: string, init?: { body?: string }) => {
         const body = JSON.parse(init?.body ?? '{}') as { messages: { role: string; content: string }[] };
         asked.push({
