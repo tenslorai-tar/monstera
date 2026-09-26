@@ -892,6 +892,42 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-26 — The owner's v5 material, and contrast checked over a lit ground
+
+The 26 September list's item 2: the build takes `v5-design-values.md`'s numbers. What is worth keeping from the day:
+
+**The design's values do not all hold their floors, and the check could not have said so.** v5's surfaces are
+translucent over four lights, and `channels(rgba)` with nothing beneath returns the colour as if it were opaque — so
+the old check would have passed every one. ADR-0106 makes the ground, the glows and the surfaces' own tints roles, and
+holds each pair against the worst colour its surface can present. Run against the design as drawn: 46 failures, all
+under the green glow's peak or on a float over the white page. Two were the model's own mistakes, found by reading the
+failures rather than trusting them — tints on one surface stacked as if drawn in one place, and panels composited over
+the start screen's glow they never sit on. The seven moves that remain are the least that clear the floors, found by a
+scratch solver driving the checker's own `evaluate()`, and each is marked `v5 was …` in `tokens.css`. Dark keeps two
+levels of grey text, not three: over this ground a third, dimmer one cannot hold 4.5:1.
+
+**`npm run typecheck`'s output cannot be grepped for `error TS`**: it is coloured, and the escape codes sit between the
+two words — this project's own recorded lesson, relearned when a typecheck "passed" with seven missing imports and only
+`tsc --pretty false` said so. Exit codes from here on.
+
+**A navigation proof that slept for 400 ms failed under load** (`bbda08a7`): the permitted reload finished after the
+count; the same sleep was a false pass on the refused side. Each attempt now awaits the main-frame
+`will-frame-navigate` and reads `defaultPrevented` off it — the first version waited on `will-navigate`, which a
+navigation refused one event earlier never emits.
+
+**The captures found a real defect**: on a 24-page document the Pages strip drew off the panel's left edge, because an
+undrawn canvas keeps the browser's 300 × 150 and the strip's columns are `max-content`. Six pages draw at once and never
+showed it.
+
+**Blur and grain** cost nothing this setup can resolve (84.5 against 85.3 frames in 3 s of scrolling, spread 73–92,
+headless Chromium). The first reading said they cost a third of the frames; it measured them first, while the pages
+were drawing for the first time, and a second run in both orders withdrew it.
+
+**B4 was taken after its code once** (ADR-0106 follows `f124f5fe` in the same unpushed range); the ADR says so rather
+than the history being rearranged.
+
+---
+
 ## 2026-09-25 — The v5 side-by-sides, and Focus mode's way-out note
 
 `packages/testing/src/v5.capture.ts` (run by hand through `scripts/test/capture.config.mjs`) sets each of the
