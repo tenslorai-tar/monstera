@@ -1410,14 +1410,23 @@ type Placement =
   | { surface: 'title-bar';     emphasis: 'primary' | 'normal'; order: number }
   | { surface: 'rail';          order: number }
   | { surface: 'properties';    order: number }
+  | { surface: 'menu-bar';      menu: 'file' | 'edit' | 'view' | 'window' | 'help'; group: number; order: number;
+      caption?: MessageKey }
 ```
+
+**The menu bar is a projection** (amended 2026-09-26,
+[ADR-0107](DECISIONS/0107-the-menu-bar-is-a-projection.md)). A SECTION's menu is its ribbon section — every tool,
+primary, secondary and a named menu's members, under its group's caption — so nothing is placed twice for it; the
+application menus (File, Edit's own items, View, Window, Help) come from `menu-bar` placements. Every command with a
+ribbon placement is reachable through the menu bar, asserted as set equality. A menu lists every command and disables
+one whose `when` is false, where the ribbon hides it.
 
 A command may carry several placements — Highlight legitimately lives in
 Home › Quick tools, Comment › Markup, and the annotation context menu.
 
 `SectionId` is exactly the eight sections of §10.3. The ribbon, floating
 toolbar, context menus, start-screen shortcuts, the status bar's command buttons,
-the title bar's, the rail's foot and the Properties tab's foot are all **derived** from placements. **A
+the title bar's, the rail's foot, the Properties tab's foot and the menu bar are all **derived** from placements. **A
 hand-maintained layout file for any of them is the second wiring place this
 registry exists to forbid.**
 
@@ -2527,7 +2536,11 @@ them.
 
 ### 10.3 Layout anatomy
 
-- **Title bar:** integrated document tabs (Window Controls Overlay), the
+- **Menu bar** (amended 2026-09-26, [ADR-0107](DECISIONS/0107-the-menu-bar-is-a-projection.md)): the window's top
+  row, 32 px — the application's mark, File · Edit · View · Organize · Comment · Forms · Review · Protect · Tools ·
+  Window · Help, and the system's own window controls (Window Controls Overlay) at its end. Alt and F10 reach it;
+  Electron's application menu stays `null`, so none of its accelerators exist.
+- **Title bar:** below the menu bar — integrated document tabs, the
   application's own commands as labelled buttons (amended 2026-09-23,
   [ADR-0095](DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md)
   — the owner's design places Donate and Rate Us there, projected from the
@@ -2705,6 +2718,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-09-26 | **The menu bar is a projection: section menus from the ribbon, the rest from a menu-bar placement** (§7's `Placement`, §10.3's title bar). v5-14 draws a menu bar as the window's top row with the window controls at its end; §7 named menus among the projections and no placement could say *this is in File*. A section's menu is its ribbon section; `menu-bar` places the application menus' items; every ribbon command is reachable through the bar (set equality); an unavailable item is disabled, not hidden; the overlay moves to the menu bar's row. **Rejected:** Electron's application menu built from the registry; a menu file of ids; section menus from their own placements | §10.3's single-row title bar carrying the window controls; §7's placement union without `menu-bar` | [0107](DECISIONS/0107-the-menu-bar-is-a-projection.md) |
 | 2026-09-26 | **A translucent surface is held to its floors over everything it can sit on** (§10.2's categories). v5 draws every panel translucent over a lit ground, and the check read an `rgba()` as opaque. Three categories without obligations — `ground`, `glow`, `tint` — and `@over` on a translucent surface; each pair is held against the worst colour its surface can present; the dialog-glass block becomes one `float @over any`. Recorded after its code commit in the same unpushed range. **Rejected:** reading rgba as opaque; the base ground only; a block per translucent surface | §10.2's check against a surface's single value | [0106](DECISIONS/0106-a-translucent-surface-is-held-over-everything-it-can-sit-on.md) |
 | 2026-09-26 | **The section rail's order is the owner's v5 order** (§10.3's rail clause). The owner's v5 design lists the sections Home, Organize, Edit, Comment, Forms, Protect, Review, Tools on every screen that draws the rail and in its prototype's section table; the order was M3's and binding, so it changes here rather than in the code. `SECTION_IDS` is the one list the rail and ribbon iterate, the active-section setting takes its values from it, and a case pins the sequence. **Rejected:** keeping M3's order and drawing the design's elsewhere — two orders for one list | `BUILD-PROMPT.md` M3 (:1054-1055), *"Home, Comment, Edit, Organize, Forms, Review, Protect, Tools"* | [0105](DECISIONS/0105-the-section-rails-order-is-the-owners-v5-order.md) |
 | 2026-09-25 | **Organize shows the pages as a grid, and page commands act on the pages selected there** (§10.3's canvas clause, §7's command context). The owner's v5-09 draws the Organize section's canvas as a grid of page cards with a selection, *"Drag to reorder · Ctrl+click to multi-select · Delete removes"*; §10.3 named one thing in the canvas and nothing gave a command more than one page. The canvas's view now follows the rail's active section, the grid is `Thumbnails` laid out across it (one reorder, one lazy draw), the selection is per document in its store and cleared when the version moves, and `targetPages(context)` is the one reading of which pages a page command means. **Rejected:** an organize dialog; the grid as a document panel; a grid toggle of its own beside the section; commands reading `page` beside a selection-aware set | §10.3's *"Canvas (the star, quiet chrome)"*, which named one view | [0104](DECISIONS/0104-organize-shows-the-pages-as-a-grid-and-page-commands-act-on-the-selection.md) |
