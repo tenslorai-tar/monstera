@@ -1363,7 +1363,7 @@ A feature is finished when it is **registered**, not when it is wired.
 
 | Registry | Entry | Derives |
 |---|---|---|
-| **Commands** (`UiCommand`) | id, title (i18n key), icon, shortcut, `when(ctx)`, `run(ctx)`, **`placements[]`** | ribbon, floating toolbar, menus, command palette, shortcut map, context menus, start-screen shortcuts, status-bar buttons, title-bar buttons, the rail's foot |
+| **Commands** (`UiCommand`) | id, title (i18n key), icon, shortcut, `when(ctx)`, `checked?(ctx)`, `run(ctx)`, **`placements[]`** | ribbon, floating toolbar, menus, command palette, shortcut map, context menus, start-screen shortcuts, status-bar buttons, title-bar buttons, the rail's foot |
 | **Dialogs** | id, lazy component, props schema, **result schema** | one mount point, one focus trap, one Escape/backdrop handler, and the promise an opener awaits |
 | **Settings** | id, type, default, category, i18n key, **a title per member of an enumerated setting**, **an unset title for a colour setting**, `secret?`, migration | the entire Settings dialog — **one control per schema kind, a colour as a no-choice checkbox beside a colour input, a secret write-only and never read back** ([ADR-0056](DECISIONS/0056-the-settings-dialog-derives-a-control-from-a-schema-and-a-secret-is-write-only.md)) — persistence, export (secrets excluded) |
 | **Annotation types** | geometry adapter, renderer, kernel writer mapping | overlay, panel, persistence |
@@ -1418,8 +1418,12 @@ type Placement =
 [ADR-0107](DECISIONS/0107-the-menu-bar-is-a-projection.md)). A SECTION's menu is its ribbon section — every tool,
 primary, secondary and a named menu's members, under its group's caption — so nothing is placed twice for it; the
 application menus (File, Edit's own items, View, Window, Help) come from `menu-bar` placements. Every command with a
-ribbon placement is reachable through the menu bar, asserted as set equality. A menu lists every command and disables
-one whose `when` is false, where the ribbon hides it.
+ribbon placement is reachable through the menu bar, and the registry REFUSES one that is not — a command whose only
+ribbon placements are in Home must carry a `menu-bar` placement, since every other section is a menu (corrected
+2026-09-26: this said *asserted as set equality*, and a registration rule checks the application's own registry every
+time it is built). A menu lists every command and disables one whose `when` is false, where the ribbon hides it. A
+command may say it is ON with `checked(ctx)`, pure and synchronous like `when`, and the menu draws it with its mark —
+the current theme, layout, or a panel that is showing.
 
 A command may carry several placements — Highlight legitimately lives in
 Home › Quick tools, Comment › Markup, and the annotation context menu.
@@ -2718,6 +2722,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-09-26 | **A command may say it is on, and every ribbon command's menu is a registration rule** (§7's `UiCommand`, ADR-0107's Decision 3). View's themes and layouts are one choice among several and the panels are on or off; a menu that could not mark the current one hides the state it offers to change. `checked?(ctx)` beside `when`, drawn as a checkable item. Decision 3 moves from a set-equality case to `CommandRegistry`, which refuses a command whose only ribbon placements are in Home without a `menu-bar` placement. **Rejected:** a `checked` field on the menu-bar placement (a fact about the command in every surface); the menu reading the setting a command writes | §7's `UiCommand` fields; ADR-0107's *asserted as set equality* | [0107](DECISIONS/0107-the-menu-bar-is-a-projection.md) |
 | 2026-09-26 | **The menu bar is a projection: section menus from the ribbon, the rest from a menu-bar placement** (§7's `Placement`, §10.3's title bar). v5-14 draws a menu bar as the window's top row with the window controls at its end; §7 named menus among the projections and no placement could say *this is in File*. A section's menu is its ribbon section; `menu-bar` places the application menus' items; every ribbon command is reachable through the bar (set equality); an unavailable item is disabled, not hidden; the overlay moves to the menu bar's row. **Rejected:** Electron's application menu built from the registry; a menu file of ids; section menus from their own placements | §10.3's single-row title bar carrying the window controls; §7's placement union without `menu-bar` | [0107](DECISIONS/0107-the-menu-bar-is-a-projection.md) |
 | 2026-09-26 | **A translucent surface is held to its floors over everything it can sit on** (§10.2's categories). v5 draws every panel translucent over a lit ground, and the check read an `rgba()` as opaque. Three categories without obligations — `ground`, `glow`, `tint` — and `@over` on a translucent surface; each pair is held against the worst colour its surface can present; the dialog-glass block becomes one `float @over any`. Recorded after its code commit in the same unpushed range. **Rejected:** reading rgba as opaque; the base ground only; a block per translucent surface | §10.2's check against a surface's single value | [0106](DECISIONS/0106-a-translucent-surface-is-held-over-everything-it-can-sit-on.md) |
 | 2026-09-26 | **The section rail's order is the owner's v5 order** (§10.3's rail clause). The owner's v5 design lists the sections Home, Organize, Edit, Comment, Forms, Protect, Review, Tools on every screen that draws the rail and in its prototype's section table; the order was M3's and binding, so it changes here rather than in the code. `SECTION_IDS` is the one list the rail and ribbon iterate, the active-section setting takes its values from it, and a case pins the sequence. **Rejected:** keeping M3's order and drawing the design's elsewhere — two orders for one list | `BUILD-PROMPT.md` M3 (:1054-1055), *"Home, Comment, Edit, Organize, Forms, Review, Protect, Tools"* | [0105](DECISIONS/0105-the-section-rails-order-is-the-owners-v5-order.md) |

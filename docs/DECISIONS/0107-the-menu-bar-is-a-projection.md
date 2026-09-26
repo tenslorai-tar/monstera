@@ -68,3 +68,20 @@ than hidden — the ribbon hides what cannot apply; a menu lists what exists and
 - **A menu file listing command ids**: the second wiring place.
 - **A section menu from its own placements**: every ribbon tool would need a second placement to appear there, which is
   the duplication Decision 1 makes unnecessary and the omission Decision 3 exists to catch.
+
+## Correction, 2026-09-26 — a command may say it is ON, and Decision 3 is a registration rule
+
+**A command may carry `checked(context)`**, pure and synchronous like `when`, answering whether the state it sets is
+the current one. The menu bar draws a checked command as a checkable item with its mark — View's *Light*, *Dark* and
+*Match the system* and its three layouts are one choice among several, and rulers, grid and the panels are on or off.
+A menu that could not show which theme is current would be a list of verbs over a state it hides, which is what the
+prototype's menu does not do. Absent means the command sets no state a menu shows. **Rejected:** a menu-bar
+placement field (`checked` is a fact about the command in every surface, and a ribbon toggle will want it next); the
+menu reading the setting itself (the menu would then know which command writes which setting — the layout table
+one field narrower).
+
+**Decision 3 is enforced at REGISTRATION, not by a case.** "Every command with a ribbon placement is reachable
+through the menu bar" reduces to one fact, because every section but Home is a menu by Decision 1: a command whose
+only ribbon placements are in Home must carry a `menu-bar` placement. `CommandRegistry` refuses one that does not, so
+the application's own registry is checked every time it is built, including by every test that renders the shell,
+where a set-equality case would have checked a fixture.
