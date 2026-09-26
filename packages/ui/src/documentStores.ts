@@ -315,6 +315,7 @@ export function createDocumentStore(
   docId: DocId,
   version: DocVersion,
   page = 0,
+  zoom: ZoomMode = DEFAULT_ZOOM,
 ): DocumentStore {
   return createStore<DocumentState & DocumentActions>()((set, get) => ({
     docId,
@@ -325,7 +326,8 @@ export function createDocumentStore(
     // do nothing, which reads as a broken control rather than as a boundary.
     history: [page],
     historyAt: 0,
-    zoom: DEFAULT_ZOOM,
+    // THE ZOOM IT OPENS AT, which the *Starting zoom* setting chooses (the opener passes it) — DEFAULT_ZOOM otherwise.
+    zoom,
     // NOT ZERO. A document whose parser has not answered has an unknown page
     // count, and zero is a number the navigation commands would clamp against.
     pageCount: undefined,
@@ -470,14 +472,14 @@ export class DocumentStores {
    * reused, and both are defects the caller has to hear about — replacing the
    * store silently would drop the state the first one holds.
    */
-  open(docId: DocId, version: DocVersion): DocumentStore {
+  open(docId: DocId, version: DocVersion, zoom: ZoomMode = DEFAULT_ZOOM): DocumentStore {
     if (this.#stores.has(docId)) {
       throw new Error(
         `${docId} already has a store. A second open with no close between them would discard ` +
           `the first store's state, so this is reported rather than resolved.`,
       );
     }
-    const store = createDocumentStore(docId, version);
+    const store = createDocumentStore(docId, version, 0, zoom);
     this.#stores.set(docId, store);
     for (const watcher of this.#watchers) watcher.opened(docId, store);
     return store;

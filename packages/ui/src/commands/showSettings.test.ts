@@ -33,10 +33,12 @@ function harness(options: {
   readonly sent: { id: string; params: unknown }[];
   readonly asked: { id: string; props: unknown }[];
   readonly secretsChanged: () => number;
+  readonly recentCleared: () => number;
 } {
   const sent: { id: string; params: unknown }[] = [];
   const asked: { id: string; props: unknown }[] = [];
   let changed = 0;
+  let recentCleared = 0;
   const client = createClient(channels, (id, params) => {
     sent.push({ id, params });
     if (id === 'settings.loadSecrets') {
@@ -56,6 +58,7 @@ function harness(options: {
     // THE FOOTER'S TWO CHANNELS, answered so a case can see which of them an action reached.
     if (id === 'ai.history.clear') return Promise.resolve(ok({ cleared: 2 }));
     if (id === 'settings.export') return Promise.resolve(ok({ kind: 'cancelled' as const }));
+    if (id === 'document.clearRecent') return Promise.resolve(ok({ cleared: 3 }));
     throw new Error(`this fixture answers only the secret and footer channels, not ${id}`);
   });
   const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
@@ -69,6 +72,9 @@ function harness(options: {
     },
     onSecretsChanged: () => {
       changed += 1;
+    },
+    onRecentCleared: () => {
+      recentCleared += 1;
     },
   });
   return {
@@ -88,6 +94,7 @@ function harness(options: {
     sent,
     asked,
     secretsChanged: () => changed,
+    recentCleared: () => recentCleared,
   };
 }
 
@@ -157,12 +164,21 @@ describe('showSettingsCommand', () => {
     // so the case waits a turn for the call it asserts.
     const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
     const footer = (id: string): string[] =>
-      id === 'ai.history.clear' || id === 'settings.export' ? [id] : [];
+      id === 'ai.history.clear' || id === 'settings.export' || id === 'document.clearRecent' ? [id] : [];
 
     const cleared = harness({ reports: [{ values: {}, secrets: {}, action: 'clear-chat-history' }] });
     await cleared.run();
     await settle();
     expect(cleared.sent.flatMap((call) => footer(call.id))).toStrictEqual(['ai.history.clear']);
+    // CONTROL for the one below: clearing the chats does not tell the start screen to read its list again.
+    expect(cleared.recentCleared()).toBe(0);
+
+    // THE RECENT LIST: main empties it, THEN the start screen is told, so it reads the emptied list.
+    const recent = harness({ reports: [{ values: {}, secrets: {}, action: 'clear-recent' }] });
+    await recent.run();
+    await settle();
+    expect(recent.sent.flatMap((call) => footer(call.id))).toStrictEqual(['document.clearRecent']);
+    expect(recent.recentCleared()).toBe(1);
 
     const exported = harness({ reports: [{ values: {}, secrets: {}, action: 'export' }] });
     await exported.run();

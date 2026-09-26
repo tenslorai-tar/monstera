@@ -11,14 +11,17 @@ export const PRINT_DIALOG_ID = 'dialog.print';
  * printer, pages and copies are the operating system's dialog's, which main opens
  * next (ADR-0074). The same three values `document.print` takes.
  */
-export const PRINT_RESULT = z.object({ dpi: z.union([z.literal(150), z.literal(300), z.literal(600)]) }).strict();
+const DPI = z.union([z.literal(150), z.literal(300), z.literal(600)]);
+
+export const PRINT_RESULT = z.object({ dpi: DPI }).strict();
 
 export type PrintAnswer = z.infer<typeof PRINT_RESULT>;
 
 export const PRINT_DIALOG = declareDialog({
   id: PRINT_DIALOG_ID,
   title: PRINT_TITLE,
-  props: z.object({}).strict(),
+  // THE RESOLUTION IT STARTS ON — Settings › Rendering › *Print quality*, which the command reads.
+  props: z.object({ dpi: DPI }).strict(),
   result: PRINT_RESULT,
   component: lazy(() => import('./PrintBody.js')),
 });

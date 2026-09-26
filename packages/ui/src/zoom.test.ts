@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DEFAULT_ZOOM,
+  STARTING_ZOOMS,
   ZOOM_STEPS,
   type ZoomMode,
   resolveZoom,
+  startingZoomMode,
   zoomInFrom,
   zoomOutFrom,
 } from './zoom.js';
@@ -109,5 +111,18 @@ describe('the ladder', () => {
     );
     expect(ascending).toBe(true);
     expect(new Set(ZOOM_STEPS).size).toBe(ZOOM_STEPS.length);
+  });
+});
+
+describe('the Starting zoom setting’s members (Part F)', () => {
+  it('are the two fits and EXACTLY the ladder’s steps — in both directions', () => {
+    const scales = STARTING_ZOOMS.map(startingZoomMode).flatMap((mode) => (mode.kind === 'scale' ? [mode.scale] : []));
+    expect(scales).toStrictEqual([...ZOOM_STEPS]);
+    expect(startingZoomMode('fit-width')).toStrictEqual({ kind: 'fit-width' });
+    expect(startingZoomMode('fit-page')).toStrictEqual({ kind: 'fit-page' });
+  });
+
+  it('defaults to what every document opened at before it existed', () => {
+    expect(startingZoomMode('100pct')).toStrictEqual(DEFAULT_ZOOM);
   });
 });

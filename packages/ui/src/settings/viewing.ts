@@ -14,9 +14,13 @@ import {
   RULER_UNIT_TITLE,
   SECOND_RENDERER_DESCRIPTION,
   SECOND_RENDERER_TITLE,
+  STARTING_ZOOM_DESCRIPTION,
+  STARTING_ZOOM_OPTION_TITLES,
+  STARTING_ZOOM_TITLE,
   UNIT_TITLES,
 } from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
+import { STARTING_ZOOMS, type StartingZoom } from '../zoom.js';
 
 /**
  * What a reader sees over the page, as opposed to how the shell is painted.
@@ -37,7 +41,8 @@ import type { SettingDefinition } from '../registries/settings.js';
  * Each defaults off, or to a person's own unit, except the rulers, which the owner's design draws
  * on every document screen. A ruler and a grid are reading aids. They are stored per install rather than
  * per document, because a document does not have an opinion about whether you
- * want a ruler — which is the same reason the zoom is not a setting.
+ * want a ruler — which is the same reason a document's zoom is its window's state, and only the zoom a document
+ * OPENS at is a setting (*Starting zoom*, below).
  */
 export const RULERS_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: 'viewing.rulers',
@@ -221,4 +226,20 @@ export const SECOND_RENDERER_SETTING: SettingDefinition<z.ZodBoolean> = {
   // HOW A PAGE IS DRAWN is the owner's *Rendering* page; the id keeps its `viewing.` prefix, which
   // names where the setting was declared and not which page shows it.
   category: 'rendering',
+};
+
+/**
+ * The zoom a document OPENS at — Part F's *"default zoom mode & level"* (`BUILD-PROMPT.md`:609).
+ *
+ * **100% by default, which is what every document opened at before this setting existed.** Read once, when a document's
+ * store is made (`App.tsx`'s opener); after that the zoom is the window's, and changing this moves no open document.
+ */
+export const STARTING_ZOOM_SETTING: SettingDefinition<z.ZodEnum<{ [K in StartingZoom]: K }>> = {
+  id: 'viewing.starting-zoom',
+  title: STARTING_ZOOM_TITLE,
+  description: STARTING_ZOOM_DESCRIPTION,
+  schema: z.enum(STARTING_ZOOMS),
+  fallback: '100pct',
+  category: 'viewing',
+  optionTitles: STARTING_ZOOM_OPTION_TITLES,
 };

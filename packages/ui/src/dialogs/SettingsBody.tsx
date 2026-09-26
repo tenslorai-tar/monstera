@@ -12,6 +12,8 @@ import {
   AI_PROVIDER_NAMES,
   SETTINGS_ACTION_CLEAR_HISTORY,
   SETTINGS_ACTION_CLEAR_HISTORY_DESCRIPTION,
+  SETTINGS_ACTION_CLEAR_RECENT,
+  SETTINGS_ACTION_CLEAR_RECENT_DESCRIPTION,
   SETTINGS_ACTION_CLEARED,
   SETTINGS_AI_NOTE,
   SETTINGS_AI_PROVIDER,
@@ -477,6 +479,7 @@ export default function SettingsBody({
   const [query, setQuery] = useState('');
   const [provider, setProvider] = useState<AiProviderId>('anthropic');
   const [cleared, setCleared] = useState(false);
+  const [clearedRecent, setClearedRecent] = useState(false);
   const searchId = useId();
 
   /** The settings each page draws: the AI page shows one provider's key, never all ten. */
@@ -638,6 +641,18 @@ export default function SettingsBody({
                     setCleared(true);
                   }}
                   title={SETTINGS_ACTION_CLEAR_HISTORY}
+                />
+              )}
+              {page?.id === 'privacy' && (
+                <ActionRow
+                  description={SETTINGS_ACTION_CLEAR_RECENT_DESCRIPTION}
+                  done={clearedRecent}
+                  label={SETTINGS_ACTION_CLEAR_RECENT}
+                  onRun={() => {
+                    report({ action: 'clear-recent' });
+                    setClearedRecent(true);
+                  }}
+                  title={SETTINGS_ACTION_CLEAR_RECENT}
                 />
               )}
             </>

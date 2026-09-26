@@ -954,8 +954,10 @@ function PageSlot({
       if (target === null) return;
       // EXACTLY `devicePixelRatio × zoom`, which is E1's first rule: one bitmap
       // pixel per device pixel. Supersampling and letting CSS shrink the result
-      // is what blurs text, and E1 keeps it as an explicit `renderQuality`
-      // setting rather than a default — so nothing here multiplies it.
+      // is what blurs text, and E1 allows it only as an explicit `renderQuality`
+      // setting — which is NOT registered: a multiplier squares a canvas that
+      // tiling, unbuilt, exists to bound at high zoom (the Settings row). So
+      // nothing here multiplies it.
       const scale = devicePixels() * renderZoom;
       const drawn = await renderPage(
         view.document,

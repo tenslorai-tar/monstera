@@ -88,9 +88,10 @@ export const SETTINGS_RESULT = z
      * A button on a page, rather than a setting — reported to the command that opened the dialog
      * (ADR-0094), because the body has no client and the command is the writer. `reset` is the
      * footer's *Reset to defaults*; `export` writes the settings to a file a person picks; and
-     * `clear-chat-history` empties the saved conversations from the Privacy page.
+     * `clear-chat-history` and `clear-recent` empty the saved conversations and the Recent list from the
+     * Privacy page.
      */
-    action: z.enum(['reset', 'export', 'clear-chat-history']).optional(),
+    action: z.enum(['reset', 'export', 'clear-chat-history', 'clear-recent']).optional(),
   })
   .strict();
 

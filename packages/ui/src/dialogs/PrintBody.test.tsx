@@ -32,7 +32,7 @@ describe('PrintBody', () => {
       const resolve = vi.fn();
       render(
         <Wrapped>
-          <PrintBody resolve={resolve} update={() => undefined} />
+          <PrintBody dpi={300} resolve={resolve} update={() => undefined} />
         </Wrapped>,
       );
       fireEvent.click(screen.getByRole('radio', { name: label }));
@@ -42,14 +42,17 @@ describe('PrintBody', () => {
     }
   });
 
-  it('CONTROL: with nothing chosen it answers 300, the resolution selected first', () => {
-    const resolve = vi.fn();
-    render(
-      <Wrapped>
-        <PrintBody resolve={resolve} update={() => undefined} />
-      </Wrapped>,
-    );
-    fireEvent.click(screen.getByRole('button'));
-    expect(resolve).toHaveBeenCalledWith({ dpi: 300 });
+  it('CONTROL: with nothing chosen it answers the resolution it STARTED on — the setting’s, handed in', () => {
+    for (const dpi of [300, 600] as const) {
+      const resolve = vi.fn();
+      render(
+        <Wrapped>
+          <PrintBody dpi={dpi} resolve={resolve} update={() => undefined} />
+        </Wrapped>,
+      );
+      fireEvent.click(screen.getByRole('button'));
+      expect(resolve).toHaveBeenCalledWith({ dpi });
+      cleanup();
+    }
   });
 });

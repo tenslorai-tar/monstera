@@ -73,6 +73,31 @@ export const AUTOSAVE_2 = messageKey('setting.saving-autosave.2');
 export const AUTOSAVE_5 = messageKey('setting.saving-autosave.5');
 export const AUTOSAVE_10 = messageKey('setting.saving-autosave.10');
 export const AUTOSAVE_30 = messageKey('setting.saving-autosave.30');
+export const STARTING_ZOOM_TITLE = messageKey('setting.viewing-starting-zoom.title');
+export const STARTING_ZOOM_DESCRIPTION = messageKey('setting.viewing-starting-zoom.description');
+export const STARTING_ZOOM_FIT_WIDTH = messageKey('setting.viewing-starting-zoom.fit-width');
+export const STARTING_ZOOM_FIT_PAGE = messageKey('setting.viewing-starting-zoom.fit-page');
+export const STARTING_ZOOM_50 = messageKey('setting.viewing-starting-zoom.50');
+export const STARTING_ZOOM_75 = messageKey('setting.viewing-starting-zoom.75');
+export const STARTING_ZOOM_100 = messageKey('setting.viewing-starting-zoom.100');
+export const STARTING_ZOOM_125 = messageKey('setting.viewing-starting-zoom.125');
+export const STARTING_ZOOM_150 = messageKey('setting.viewing-starting-zoom.150');
+export const STARTING_ZOOM_200 = messageKey('setting.viewing-starting-zoom.200');
+export const STARTING_ZOOM_300 = messageKey('setting.viewing-starting-zoom.300');
+export const STARTING_ZOOM_400 = messageKey('setting.viewing-starting-zoom.400');
+/** `viewing.starting-zoom`'s members, each its own exported key as the other option sets are. */
+export const STARTING_ZOOM_OPTION_TITLES = {
+  'fit-width': STARTING_ZOOM_FIT_WIDTH,
+  'fit-page': STARTING_ZOOM_FIT_PAGE,
+  '50pct': STARTING_ZOOM_50,
+  '75pct': STARTING_ZOOM_75,
+  '100pct': STARTING_ZOOM_100,
+  '125pct': STARTING_ZOOM_125,
+  '150pct': STARTING_ZOOM_150,
+  '200pct': STARTING_ZOOM_200,
+  '300pct': STARTING_ZOOM_300,
+  '400pct': STARTING_ZOOM_400,
+} as const;
 /** `saving.autosave`'s members, each its own exported key as the other option sets are. */
 export const AUTOSAVE_OPTION_TITLES = {
   off: AUTOSAVE_OFF,
@@ -279,6 +304,7 @@ export const PRINT_DPI = messageKey('dialog.print.dpi');
 export const PRINT_DPI_150 = messageKey('dialog.print.dpi-150');
 export const PRINT_DPI_300 = messageKey('dialog.print.dpi-300');
 export const PRINT_DPI_600 = messageKey('dialog.print.dpi-600');
+export const PRINT_QUALITY_DESCRIPTION = messageKey('setting.rendering-print-quality.description');
 export const PRINT_APPLY = messageKey('dialog.print.apply');
 export const GROUP_COMPARE = messageKey('surface.ribbon.group.compare');
 export const GROUP_COMMENT_FILES = messageKey('surface.ribbon.group.comment-files');
@@ -1358,6 +1384,8 @@ export const SETTINGS_AI_PROVIDER_DESCRIPTION = messageKey('dialog.settings.ai-p
 export const SETTINGS_AI_PROVIDER_STORED = messageKey('dialog.settings.ai-provider.stored');
 export const SETTINGS_ACTION_CLEAR_HISTORY = messageKey('dialog.settings.clear-history');
 export const SETTINGS_ACTION_CLEAR_HISTORY_DESCRIPTION = messageKey('dialog.settings.clear-history.description');
+export const SETTINGS_ACTION_CLEAR_RECENT = messageKey('dialog.settings.clear-recent');
+export const SETTINGS_ACTION_CLEAR_RECENT_DESCRIPTION = messageKey('dialog.settings.clear-recent.description');
 export const SETTINGS_ACTION_CLEARED = messageKey('dialog.settings.clear-history.done');
 export const SETTINGS_KEYBOARD_NOTE = messageKey('dialog.settings.keyboard-note');
 export const SETTINGS_UPDATES_NOTE = messageKey('dialog.settings.updates-note');
@@ -2027,6 +2055,18 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AUTOSAVE_TITLE]: 'Save automatically',
   [AUTOSAVE_DESCRIPTION]:
     'Saves each document with unsaved changes to its own file on a timer. Off unless you turn it on, because a save replaces the file.',
+  [STARTING_ZOOM_TITLE]: 'Starting zoom',
+  [STARTING_ZOOM_DESCRIPTION]: 'How large a document is shown when you open it. You can still zoom each one as you read.',
+  [STARTING_ZOOM_OPTION_TITLES['fit-width']]: 'Fit width',
+  [STARTING_ZOOM_OPTION_TITLES['fit-page']]: 'Fit page',
+  [STARTING_ZOOM_OPTION_TITLES['50pct']]: '50%',
+  [STARTING_ZOOM_OPTION_TITLES['75pct']]: '75%',
+  [STARTING_ZOOM_OPTION_TITLES['100pct']]: '100%',
+  [STARTING_ZOOM_OPTION_TITLES['125pct']]: '125%',
+  [STARTING_ZOOM_OPTION_TITLES['150pct']]: '150%',
+  [STARTING_ZOOM_OPTION_TITLES['200pct']]: '200%',
+  [STARTING_ZOOM_OPTION_TITLES['300pct']]: '300%',
+  [STARTING_ZOOM_OPTION_TITLES['400pct']]: '400%',
   [AUTOSAVE_OPTION_TITLES.off]: 'Off',
   [AUTOSAVE_OPTION_TITLES['1min']]: 'Every minute',
   [AUTOSAVE_OPTION_TITLES['2min']]: 'Every 2 minutes',
@@ -3165,6 +3205,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SETTINGS_AI_PROVIDER_STORED]: '{provider} — key stored',
   [SETTINGS_ACTION_CLEAR_HISTORY]: 'Clear chat history',
   [SETTINGS_ACTION_CLEAR_HISTORY_DESCRIPTION]: 'Removes every saved conversation from this computer.',
+  [SETTINGS_ACTION_CLEAR_RECENT]: 'Clear recent files',
+  // `document.clearRecent`'s own effect: the list and the pictures kept for it, and nothing else.
+  [SETTINGS_ACTION_CLEAR_RECENT_DESCRIPTION]:
+    'Empties the Recent list on the start screen and deletes the previews kept for it. Your files are not touched.',
   [SETTINGS_ACTION_CLEARED]: 'Saved conversations were cleared.',
   [SETTINGS_KEYBOARD_NOTE]: 'Press F1 for the full list of shortcuts, or open the command palette with Ctrl+K.',
   [SETTINGS_UPDATES_NOTE]:
@@ -3456,6 +3500,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PRINT_DPI_150]: 'Draft — 150 dots per inch',
   [PRINT_DPI_300]: 'Standard — 300 dots per inch',
   [PRINT_DPI_600]: 'High — up to 600 dots per inch, lower on a large page',
+  [PRINT_QUALITY_DESCRIPTION]: 'The quality the Print dialog starts on. You can still choose another each time you print.',
   [PRINT_APPLY]: 'Choose a printer…',
   [GROUP_COMPARE]: 'Compare',
   [GROUP_COMMENT_FILES]: 'Comment files',

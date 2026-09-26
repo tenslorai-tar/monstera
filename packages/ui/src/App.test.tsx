@@ -3117,3 +3117,20 @@ describe('the menu bar, in the shell (ADR-0107)', () => {
     expect(document.activeElement).toBe(field);
   });
 });
+
+describe('Settings › Viewing › Starting zoom (Part F)', () => {
+  it('a document opens at the chosen zoom — and CONTROL: at 100% when nothing was chosen', async () => {
+    for (const [chosen, shown] of [
+      ['200pct', '200%'],
+      [undefined, '100%'],
+    ] as const) {
+      const settings = freshSettings();
+      if (chosen !== undefined) settings.set('viewing.starting-zoom', chosen);
+      const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
+      const { container, unmount } = render(<App client={client} settings={settings} />);
+      await withDocumentOpen();
+      expect(container.querySelector('.m-status-zoom')?.textContent, String(chosen)).toBe(shown);
+      unmount();
+    }
+  });
+});

@@ -266,12 +266,15 @@ describe('SettingsBody', () => {
     expect(screen.getByText(/Nothing matches/u)).toBeDefined();
   });
 
-  it('the footer reports the three ACTIONS, and Done answers with nothing left to apply', () => {
+  it('the Privacy page and the footer report their four ACTIONS, and Done answers with nothing left to apply', () => {
     const { reported, answers } = opened({});
 
     goTo('privacy');
     fireEvent.click(screen.getByRole('button', { name: 'Clear chat history' }));
     expect(reported.at(-1)).toStrictEqual({ values: {}, secrets: {}, action: 'clear-chat-history' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear recent files' }));
+    expect(reported.at(-1)).toStrictEqual({ values: {}, secrets: {}, action: 'clear-recent' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Export settings…' }));
     expect(reported.at(-1)).toStrictEqual({ values: {}, secrets: {}, action: 'export' });

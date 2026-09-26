@@ -4,7 +4,9 @@ import { describe, expect, it } from 'vitest';
 
 import { TOAST_COPY_SAVED, TOAST_PAGES_SAVED, TOAST_SAVED } from '../messages/en.js';
 import type { CommandContext } from '../registries/commands.js';
-import type { SettingsStore } from '../settingsStore.js';
+import { SettingsRegistry } from '../registries/settings.js';
+import { ALL_SETTINGS } from '../settings/all.js';
+import { SettingsStore } from '../settingsStore.js';
 import type { ShowToast } from '../toasts.js';
 import {
   type Applied,
@@ -2627,6 +2629,9 @@ describe('delete pages — the mutation-dialog gate', () => {
   });
 
   describe('print (ADR-0074)', () => {
+    /** The shipped settings, so the print quality is read through the registry as the application reads it. */
+    const printSettings = (): SettingsStore => new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+
     it('asks the resolution and dispatches exactly the one chosen, for each of the three', async () => {
       for (const dpi of [150, 300, 600] as const) {
         const { client, sent } = recording({ 'document.print': { kind: 'printed', pages: 2 } });
@@ -2635,6 +2640,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         await printCommand({
           client,
           stamp,
+          settings: printSettings(),
           onApplied: () => undefined,
           ask: (id, props) => {
             asked.push({ id, props });
@@ -2642,15 +2648,44 @@ describe('delete pages — the mutation-dialog gate', () => {
           },
         }).run(CONTEXT);
 
-        expect(asked).toStrictEqual([{ id: 'dialog.print', props: {} }]);
+        // THE DIALOG STARTS ON STANDARD, the setting's default.
+        expect(asked).toStrictEqual([{ id: 'dialog.print', props: { dpi: 300 } }]);
         expect(sent).toStrictEqual([{ id: 'document.print', params: { docId: DOC, dpi } }]);
+      }
+    });
+
+    it('the dialog STARTS ON the quality Settings › Rendering chose', async () => {
+      for (const [quality, dpi] of [
+        ['draft', 150],
+        ['high', 600],
+      ] as const) {
+        const settings = printSettings();
+        settings.set('rendering.print-quality', quality);
+        const asked: unknown[] = [];
+        await printCommand({
+          client: recording().client,
+          stamp,
+          settings,
+          onApplied: () => undefined,
+          ask: (id, props) => {
+            asked.push({ id, props });
+            return Promise.resolve(undefined);
+          },
+        }).run(CONTEXT);
+        expect(asked).toStrictEqual([{ id: 'dialog.print', props: { dpi } }]);
       }
     });
 
     it('CONTROL: a DISMISSED resolution dialog prints nothing', async () => {
       const { client, sent } = recording();
 
-      await printCommand({ client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp }).run(CONTEXT);
+      await printCommand({
+        client,
+        onApplied: () => undefined,
+        ask: () => Promise.resolve(undefined),
+        stamp,
+        settings: printSettings(),
+      }).run(CONTEXT);
 
       expect(sent).toStrictEqual([]);
     });
@@ -2659,7 +2694,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       for (const [answered, spokenLast] of [
         [{ kind: 'unavailable' }, { id: 'dialog.save-problem', props: { outcome: 'print-unavailable' } }],
         [{ kind: 'failed' }, { id: 'dialog.save-problem', props: { outcome: 'print-failed' } }],
-        [{ kind: 'cancelled' }, { id: 'dialog.print', props: {} }],
+        [{ kind: 'cancelled' }, { id: 'dialog.print', props: { dpi: 300 } }],
       ] as const) {
         const { client } = recording({ 'document.print': answered });
         const spoken: unknown[] = [];
@@ -2667,6 +2702,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         await printCommand({
           client,
           stamp,
+          settings: printSettings(),
           onApplied: () => undefined,
           ask: (id, props) => {
             spoken.push({ id, props });

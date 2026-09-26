@@ -41,6 +41,8 @@ export function showSettingsCommand(deps: {
   readonly settings: SettingsStore;
   readonly ask: (id: string, props: unknown, onUpdate?: (result: unknown) => void) => Promise<unknown>;
   readonly onSecretsChanged: () => void;
+  /** Told when the Privacy page emptied the Recent list, so a start screen behind the dialog reads it again. */
+  readonly onRecentCleared: () => void;
 }): UiCommand {
   return {
     id: 'app.settings',
@@ -95,6 +97,10 @@ export function showSettingsCommand(deps: {
           }
         }
         if (answer.action === 'clear-chat-history') await deps.client['ai.history.clear']({});
+        if (answer.action === 'clear-recent') {
+          await deps.client['document.clearRecent']({});
+          deps.onRecentCleared();
+        }
         if (answer.action === 'export') await deps.client['settings.export']({});
       };
 

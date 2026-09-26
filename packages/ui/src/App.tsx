@@ -113,7 +113,7 @@ import { checkForUpdatesCommand } from './commands/checkForUpdates.js';
 import { createTypingFocus, type TypingFocus } from './typingFocus.js';
 import { MenuBar } from './surfaces/MenuBar.js';
 import { usePageAnnotations } from './usePageAnnotations.js';
-import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
+import { DEFAULT_ZOOM, startingZoomMode, type ZoomMode } from './zoom.js';
 import {
   commandPaletteCommand,
   toggleDarkPageCommand,
@@ -334,6 +334,7 @@ import {
   RULER_UNIT_SETTING,
   SECOND_RENDERER_SETTING,
   SPLIT_VIEW_SETTING,
+  STARTING_ZOOM_SETTING,
   applyDarkPage,
 } from './settings/viewing.js';
 import {
@@ -1211,6 +1212,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
     setActiveId(undefined);
   }, []);
 
+  // THE ZOOM A NEW DOCUMENT OPENS AT (Settings › Viewing › *Starting zoom*), read by the opener below.
+  const startingZoom = useSetting(settings, STARTING_ZOOM_SETTING);
+
+  // HOW MANY TIMES THE RECENT LIST HAS BEEN EMPTIED FROM SETTINGS — its key, so each empty is a fresh read.
+  const [recentReads, setRecentReads] = useState(0);
 
   /**
    * A document main has opened, added as a tab and brought to the front.
@@ -1232,7 +1238,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
       // already has it. Guarded by the same `get`-misses read the render uses,
       // so re-opening an open document activates its tab rather than throwing.
       if (stores.get(document.docId) === undefined) {
-        stores.open(document.docId, document.version);
+        // AT THE ZOOM THE PERSON CHOSE TO START AT (Settings › Viewing); from here on the zoom is this document's.
+        stores.open(document.docId, document.version, startingZoomMode(startingZoom));
       }
       setTabs((current) =>
         current.some((tab) => tab.docId === document.docId)
@@ -1243,7 +1250,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
       );
       activate(document.docId);
     },
-    [activate, stores],
+    [activate, startingZoom, stores],
   );
 
   /**
@@ -2293,6 +2300,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
           onSecretsChanged: () => {
             refreshSecrets();
           },
+          // A START SCREEN BEHIND THE DIALOG READS ITS LIST AGAIN, rather than showing entries main just emptied.
+          onRecentCleared: () => {
+            setRecentReads((reads) => reads + 1);
+          },
         }),
         aiSetup,
         showWordCountCommand({ client, ask, track }),
@@ -2445,7 +2456,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
             ...(claudeKeyStored ? (['claude'] as const) : []),
           ],
         }),
-        printCommand({ client, onApplied: applied, ask, stamp }),
+        printCommand({ client, onApplied: applied, ask, stamp, settings }),
         emailCommand({ client, onApplied: applied, ask, stamp }),
         exportPdfaCommand({ client, onApplied: applied, ask, stamp }),
         optimizeCommand({ client, onApplied: applied, ask, stamp, track, toast }),
@@ -2845,7 +2856,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
           {/* BESIDE the projection, not inside it: a recent file is data with a
               control, not a registered command, and registering one per row
               would mean rebuilding the registry whenever the list changed. */}
-          <RecentFiles client={client} onOpened={opened} />
+          {/* KEYED ON THE READS, so emptying the list from Settings remounts it and it asks main again. */}
+          <RecentFiles key={recentReads} client={client} onOpened={opened} />
           {/* THE FOOTER, after the recent list because §10.3 puts it there (see `StartFooter`). */}
           <StartFooter registry={registry} context={context} version={appVersion} />
         </div>

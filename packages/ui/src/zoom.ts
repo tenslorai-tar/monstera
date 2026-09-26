@@ -60,8 +60,37 @@ export interface Box {
   readonly height: number;
 }
 
-/** The mode a document opens at. */
+/** The mode a document opens at when nothing has chosen one — the *Starting zoom* setting's default, 100%. */
 export const DEFAULT_ZOOM: ZoomMode = { kind: 'scale', scale: 1 };
+
+/**
+ * The *Starting zoom* setting's members (Part F's *"default zoom mode & level"*): the two fits and each step of the
+ * ladder, as WORDS — the settings registry refuses an index-like member, which zod would move ahead of the fits.
+ */
+export const STARTING_ZOOMS = [
+  'fit-width',
+  'fit-page',
+  '50pct',
+  '75pct',
+  '100pct',
+  '125pct',
+  '150pct',
+  '200pct',
+  '300pct',
+  '400pct',
+] as const;
+
+export type StartingZoom = (typeof STARTING_ZOOMS)[number];
+
+/**
+ * The mode a starting zoom names. A step is read back off its own name and must be a ladder value — the case in
+ * `zoom.test.ts` holds the members and `ZOOM_STEPS` equal in both directions, so a step added to one and not the other
+ * is red rather than a setting that opens at a scale the ± controls cannot reach.
+ */
+export function startingZoomMode(choice: StartingZoom): ZoomMode {
+  if (choice === 'fit-width' || choice === 'fit-page') return { kind: choice };
+  return { kind: 'scale', scale: Number(choice.slice(0, -'pct'.length)) / 100 };
+}
 
 /**
  * The scale a fit cannot go below or above.

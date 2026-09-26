@@ -892,6 +892,25 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-27 — Part F's settings, three built and the rest classified
+
+The 26 September list's item 8, its first row. A helper's gap table (a draft) sorted Part F's 56 items; each row
+acted on was re-read at its line first, and two of its *can build now* rows turned out not to be:
+
+**Page sharpness was READY by the code and not by the law's reason for it.** One multiplier at `PageList.tsx`'s scale
+would work — the slot divides by `drawnAt`, so the page keeps its size — but it squares the canvas, and §6.1 bounds high
+zoom by tiling, which is unbuilt. It is deferred with that figure written into the row.
+
+**The AI default model fires a trigger somebody wrote down.** ADR-0081: *"D6's `claude-opus-5` constant expires when
+this stage's model setting lands."* A model setting is therefore also a decision about which model reads handwriting,
+and that is the owner's. A grep for the feature's name in the ADRs is what found it before it was built.
+
+What was built: *Starting zoom*, whose members are words the registry accepts and a case holds equal to the ladder;
+*Print quality*, which the dialog starts on; and *Clear recent files*, whose command tells the start screen behind the
+dialog to read its list again — without that, the list on screen would name entries main had just emptied.
+
+---
+
 ## 2026-09-26 — The update check is built, and makes no call
 
 The 26 September list's item 7, under ADR-0110 (no amendment: §8's three clauses are what was built). What is worth

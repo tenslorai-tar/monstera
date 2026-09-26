@@ -70,6 +70,7 @@ import { OPTIMIZE_DIALOG_ID, type OptimizeAnswer } from '../dialogs/optimize.js'
 import type { TrackTask } from '../runningTask.js';
 import { PDFA_REMOVALS_DIALOG_ID } from '../dialogs/pdfaRemovals.js';
 import { PRINT_DIALOG_ID, type PrintAnswer } from '../dialogs/print.js';
+import { PRINT_QUALITY_DPI, PRINT_QUALITY_SETTING } from '../settings/rendering.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
 import { EXPORT_WORD_DIALOG_ID, type ExportWordAnswer } from '../dialogs/exportWord.js';
 import type { ReplacePageAnswer } from '../dialogs/replacePageResult.js';
@@ -2760,8 +2761,11 @@ export function optimizeCommand(
  * A dismissed resolution dialog dispatches nothing; a dismissed system dialog is
  * main's `cancelled` and says nothing. A platform with no print dialog and a
  * printer that refused a step each say so through the save problem dialog.
+ *
+ * The dialog starts on Settings › Rendering › *Print quality*, read when the command runs, so a change there applies
+ * to the next print without a restart.
  */
-export function printCommand(deps: DocumentCommandDeps): UiCommand {
+export function printCommand(deps: DocumentCommandDeps & { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'document.print',
     icon: 'Printer',
@@ -2775,7 +2779,8 @@ export function printCommand(deps: DocumentCommandDeps): UiCommand {
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
 
-      const chosen = (await deps.ask(PRINT_DIALOG_ID, {})) as PrintAnswer | undefined;
+      const quality = PRINT_QUALITY_SETTING.schema.parse(deps.settings.get(PRINT_QUALITY_SETTING.id));
+      const chosen = (await deps.ask(PRINT_DIALOG_ID, { dpi: PRINT_QUALITY_DPI[quality] })) as PrintAnswer | undefined;
       if (chosen === undefined) return;
 
       const answer = await deps.client['document.print']({ docId: context.docId, dpi: chosen.dpi });
