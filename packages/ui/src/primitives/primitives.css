@@ -258,8 +258,13 @@
    transparent until hovered, because a ribbon of outlined boxes is the wireframe
    §10.2 warns against; the focus ring is `--border-control`, the one boundary a
    keyboard user must always see. */
-/* v5: at least 52 wide and 64 tall, the 20 px glyph over an 11 px label with 6 px between. */
+/* v5: at least 52 wide and 64 tall, the 20 px glyph over an 11 px label with 6 px between.
+   BORDER-BOX ON THE CLASS, not left to the element: a `button` is border-box by the browser's own
+   sheet and a `span` is content-box, so the same minimum measured 55.2 px on the More and 66 px on the
+   hidden gauge that sizes it for the fold (`RibbonMoreGauge`) — every folded group was charged 11 px it
+   did not draw, and a wide font left 100 px of ribbon empty (CI, ubuntu-latest, 3f94567c). */
 .m-tool-button {
+  box-sizing: border-box;
   display: inline-flex;
   flex-direction: column;
   align-items: center;

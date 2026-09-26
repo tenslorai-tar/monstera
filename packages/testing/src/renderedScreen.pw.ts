@@ -1435,6 +1435,17 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every
   await expect.poll(async () => more.count()).toBeGreaterThan(0);
   await expect.poll(async () => tools.locator('.m-tool-button[data-command]').count()).toBeLessThan(wideButtons);
 
+  // THE GAUGE MEASURES WHAT THE ROW DRAWS. The fold charges every More at the hidden gauge's width, so
+  // the two must agree to the pixel. They did not on 3f94567c: the gauge is a `span` and a More is a
+  // `button`, the browser gives them different box models, and the same minimum width came out 66 px
+  // and 55.2 px. Asserted directly because the room check below only saw it under a wide font — the
+  // ubuntu runner's — and passed on this machine's.
+  const gaugeAndMore = await tools.evaluate((element) => [
+    element.querySelector('.m-ribbon__more-gauge')?.getBoundingClientRect().width ?? -1,
+    element.querySelector('.m-ribbon__buttons .m-ribbon__more')?.getBoundingClientRect().width ?? -2,
+  ]);
+  expect(Math.abs((gaugeAndMore[0] ?? 0) - (gaugeAndMore[1] ?? 0))).toBeLessThan(0.5);
+
   // NOTHING SCROLLS SIDEWAYS — the order's words. The row's content fits the box it is drawn in.
   const overflow = await tools.evaluate((element) => element.scrollWidth - element.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
