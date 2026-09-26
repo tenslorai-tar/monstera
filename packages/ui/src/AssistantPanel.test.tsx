@@ -527,7 +527,12 @@ describe('the assistant about a document (ADR-0088)', () => {
       about: { scope: 'selection', docId: DOC_B, page: 2, text: 'words from B' },
     };
     await drawn({ focused: focusedOn(DOC_A), request });
-    expect(screen.queryByRole('option', { name: /you selected/u })).toBeNull();
+    // THE CHIP AND THE LINE, the two places the positive case above finds the selection. This queried an `option`
+    // until the audit of 1e1bfad..e24eca0e: the choices became buttons in 44250155 and no option exists, so the case
+    // passed whatever the panel drew.
+    const group = screen.getByRole('group', { name: 'Asking about' });
+    expect(within(group).queryByRole('button', { name: 'Selection' })).toBeNull();
+    expect(screen.queryByText(/you selected/u)).toBeNull();
   });
 
   it('names a COMMENT as a comment on the line, and asks with the comment scope', async () => {

@@ -317,12 +317,14 @@ describe('the Organize grid, driven through App (ADR-0104)', () => {
     });
     expect(executed.at(-1)).toMatchObject({ kind: 'rotatePages', pages: [1] });
 
-    // THE VERSION MOVED, so the selection went with it; Delete then removes the focused card's page.
+    // THE VERSION MOVED, so the selection went with it; Delete then removes the FOCUSED card's page — card 2, while
+    // page 1 is still the one on show, so a Delete that read the current page would send [0]. (The audit of
+    // 1e1bfad..e24eca0e: this pressed card 1, which is also the page on show, and could not tell the two apart.)
     await act(async () => {
-      fireEvent.keyDown(card(container, 0), { key: 'Delete' });
+      fireEvent.keyDown(card(container, 1), { key: 'Delete' });
       await Promise.resolve();
     });
-    expect(executed.at(-1)).toStrictEqual({ kind: 'deletePages', pages: [0] });
+    expect(executed.at(-1)).toStrictEqual({ kind: 'deletePages', pages: [1] });
   });
 
   it('ENTER on a card opens that page in the reading view, which is Home', async () => {

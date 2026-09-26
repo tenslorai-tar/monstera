@@ -107,7 +107,16 @@ export function Button({
   // A DISABLED primary is not on the accent: the stylesheet draws it as `--faint` on `--surface`,
   // a declared pair. Solving here anyway would write an inline colour, which beats the `:disabled`
   // rule, and leave the control looking exactly as pressable as an enabled one.
-  useOnColor(element, 'color', '--text', variant === 'primary' && !disabled ? ['--accent'] : [], 'text');
+  // BOTH ENDS OF THE GRADIENT DRAWN, not `--accent`: in light the gradient is darker than the accent at both ends, and
+  // a label solved against the accent came out dark on dark green — about 2.5:1 at the bottom (the stage audit of
+  // 1e1bfad..e24eca0e, the design diff's finding; v5 draws white there).
+  useOnColor(
+    element,
+    'color',
+    '--text',
+    variant === 'primary' && !disabled ? ['--accent-grad-top', '--accent-grad-bottom'] : [],
+    'text',
+  );
 
   return (
     <BaseButton

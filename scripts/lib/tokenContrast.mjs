@@ -111,6 +111,13 @@ const NEEDS_SURFACES = new Set(['text', 'boundary-control', 'graphic', 'tint']);
  * colour the parser failed to read, which is this check's reassuring answer produced by a broken parse. Every
  * gradient here is built from `var()`s of declared roles wherever it carries a colour a text sits on, so what the
  * pairs evaluate is what the gradients draw.
+ *
+ * **That sentence was false for five of them until the stage audit of 1e1bfad..e24eca0e**: `--accent-grad`,
+ * `--status-bg`, `--hero-bg` and `--dialog-head` carried raw colours under text, and `--bubble` was painted nowhere.
+ * The first four are now built from roles (`--accent-grad-top`/`-bottom`, `--tint-status`, `--tint-hero`,
+ * `--dialog-head-wash`) and `--bubble` is deleted; the light primary button's label had been solved against a colour
+ * its gradient never draws. A gradient's secondary stops (the teal ends) are not roles: each tint is held at its
+ * peak, the stronger stop.
  */
 const NOT_COLOUR_ROLES = new Set([
   'shadow',
@@ -127,7 +134,6 @@ const NOT_COLOUR_ROLES = new Set([
   'dialog-head',
   'active-bg',
   'accent-grad',
-  'bubble',
   'wordmark-fill',
   'panel-edge',
   'float-shadow',
@@ -419,11 +425,9 @@ export function evaluate(css) {
   }
   for (const theme of themes) {
     for (const name of theme.values.keys()) {
-      // `--shadow` is an elevation value rather than a colour role, and the
-      // dialog's glass and backdrop are amounts, checked by the glass block
-      // below. Named here rather than pattern-matched: a rule like "skip anything
-      // not a colour" would skip a colour the parser failed to read, which is
-      // this check's reassuring answer produced by a broken parse.
+      // The paint and the amounts, by name (`NOT_COLOUR_ROLES`). Named rather than pattern-matched: a rule like
+      // "skip anything not a colour" would skip a colour the parser failed to read, which is this check's
+      // reassuring answer produced by a broken parse.
       if (NOT_COLOUR_ROLES.has(name)) continue;
       if (!declared.has(name)) {
         failures.push(`--${name} has a value in ${theme.theme} but no @role declaration`);

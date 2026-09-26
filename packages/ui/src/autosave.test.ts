@@ -2,6 +2,7 @@ import { type DocId, asDocId } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { autosaveEvery, createAutosave } from './autosave.js';
+import { AUTOSAVE_SETTING } from './settings/saving.js';
 
 const A = asDocId('00000000-0000-4000-8000-00000000000a');
 const B = asDocId('00000000-0000-4000-8000-00000000000b');
@@ -28,11 +29,28 @@ function harness(answers: Partial<Record<DocId, boolean>> = {}) {
 describe('autosave', () => {
   it('is off unless chosen, and an interval is whole minutes', () => {
     expect(autosaveEvery('off')).toBeNull();
-    expect(autosaveEvery('1')).toBe(60_000);
-    expect(autosaveEvery('10')).toBe(600_000);
+    expect(autosaveEvery('1min')).toBe(60_000);
+    expect(autosaveEvery('10min')).toBe(600_000);
+    expect(autosaveEvery('30min')).toBe(1_800_000);
   });
 
-  it('saves every document with unsaved changes, and ONLY those', async () => {
+  it('offers the founding record’s six choices, OFF FIRST, in its order (BUILD-PROMPT.md:617)', () => {
+    // THE LITERAL IS THE ANCHOR: a list derived from the schema would agree with any list the schema held, which is
+    // how two of the six went missing unnoticed. And the ORDER is what the dialog draws — with bare numbers zod read
+    // `['1', '5', '10', 'off']`, so *Off* was drawn last.
+    expect(AUTOSAVE_SETTING.schema.options).toStrictEqual(['off', '1min', '2min', '5min', '10min', '30min']);
+  });
+
+  it('reads a value stored before the rename as the same choice, and anything else as unchanged', () => {
+    const migrate = AUTOSAVE_SETTING.migrate;
+    expect(['1', '5', '10'].map((stored) => migrate?.(stored))).toStrictEqual(['1min', '5min', '10min']);
+    // CONTROL: a current value passes untouched, so the migration cannot turn a new choice into an old one.
+    expect(['off', '2min', '30min'].map((stored) => migrate?.(stored))).toStrictEqual(['off', '2min', '30min']);
+  });
+
+  // THE *ONLY* IS THE APP'S: this unit is handed the dirty list, so it saves exactly what that list names; that a clean
+  // document is not on it is `App.test.tsx`'s AUTOSAVE case, third row.
+  it('saves every document the dirty list names, and nothing else', async () => {
     const { autosave, saved, setDirty } = harness();
     setDirty([A]);
     await autosave.tick();

@@ -41,16 +41,19 @@ function render(ui: ReactElement): ReturnType<typeof renderBare> {
  * defect and the correct behaviour would produce the same colour, and the case
  * would separate nothing.
  */
-function declareTokens(accent = '#2fb96a'): void {
+function declareTokens(accent = '#2fb96a', bottom = accent): void {
   // A STYLESHEET RULE THAT MATCHES THE CONTROL, not properties set on the root.
   // `useOnColor` reads at the element, because §10.2 remaps tokens under
   // `data-*` attributes and `tokens.css` writes those selectors unqualified, so
   // a token may carry a different value below the root. Declaring them here the
   // way the real cascade does is what keeps the harness from quietly testing a
   // different read site than the one that ships.
+  //
+  // THE FILL IS THE GRADIENT'S TWO ENDS, which is what `.m-button--primary` paints; one value for both unless a case
+  // needs them apart.
   const sheet = document.createElement('style');
   sheet.dataset['fixture'] = 'tokens';
-  sheet.textContent = `.m-button { --text: #e7eaec; --accent: ${accent}; }`;
+  sheet.textContent = `.m-button { --text: #e7eaec; --accent-grad-top: ${accent}; --accent-grad-bottom: ${bottom}; }`;
   document.head.append(sheet);
 }
 
@@ -261,7 +264,8 @@ describe('Button', () => {
       // carried the same value would pass whichever site the hook read — the
       // defect and the fix producing one output, which is no case at all.
       document.documentElement.style.setProperty('--text', '#e7eaec');
-      document.documentElement.style.setProperty('--accent', '#10243a');
+      document.documentElement.style.setProperty('--accent-grad-top', '#10243a');
+      document.documentElement.style.setProperty('--accent-grad-bottom', '#10243a');
       declareTokens('#2fb96a');
 
       render(<Button label={SAVE} variant="primary" />);
@@ -287,6 +291,37 @@ describe('Button', () => {
       expect(contrast(channels('#e7eaec') ?? [0, 0, 0], rootFill)).toBeGreaterThanOrEqual(4.5);
 
       document.documentElement.removeAttribute('style');
+    });
+
+    it('clears BOTH ends of the gradient it is painted on, not only the top', async () => {
+      // ENDS THE STARTING TEXT CLEARS ONE OF AND FAILS THE OTHER, in both orders — so a solve that read only the top
+      // keeps the text in one order and a solve that read only the bottom keeps it in the other. The light theme's
+      // label was the first: solved against `--accent`, which is lighter than both of its ends (the stage audit of
+      // 1e1bfad..e24eca0e). These ARE light's two ends, and white clears both, so a solve exists.
+      const text = channels('#e7eaec');
+      for (const [top, bottom] of [
+        ['#15803d', '#116631'],
+        ['#116631', '#15803d'],
+      ] as const) {
+        declareTokens(top, bottom);
+        const { unmount } = render(<Button label={SAVE} variant="primary" />);
+        const button = screen.getByRole('button', { name: 'Save' });
+        await vi.waitFor(() => {
+          expect(button.style.color).not.toBe('');
+        });
+
+        const applied = channels(button.style.color);
+        const ends = [channels(top), channels(bottom)];
+        if (applied === null || text === null || ends[0] === null || ends[1] === null) {
+          throw new Error('a colour did not parse');
+        }
+        for (const end of ends) expect(contrast(applied, end ?? [0, 0, 0]), top).toBeGreaterThanOrEqual(4.5);
+        // THE CONTROL: the starting text is readable on one end and not on the other, which is what makes each order
+        // catch a one-ended read.
+        expect(ends.map((end) => contrast(text, end ?? [0, 0, 0]) >= 4.5).sort()).toStrictEqual([false, true]);
+        unmount();
+        for (const sheet of document.querySelectorAll('style[data-fixture="tokens"]')) sheet.remove();
+      }
     });
 
     it('applies no colour when the tokens cannot be read, rather than guessing', () => {

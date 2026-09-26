@@ -1,7 +1,7 @@
 import { getConfig } from '@testing-library/dom';
 import { describe, expect, it } from 'vitest';
 
-import { FULL_APP_TEST_TIMEOUT, FULL_APP_WAIT, applyFullAppLimits } from './fullAppTestLimit.js';
+import { DIALOG_BODIES, FULL_APP_TEST_TIMEOUT, applyFullAppLimits } from './fullAppTestLimit.js';
 
 /**
  * Which test files take `FULL_APP_TEST_TIMEOUT` is decided by SEARCHING THE SOURCE, never by a list
@@ -49,24 +49,22 @@ describe('FULL_APP_TEST_TIMEOUT', () => {
   });
 });
 
-describe('applyFullAppLimits', () => {
-  it('sets BOTH the case limit and the wait window, each to its own figure', () => {
-    // BOTH CALLS, with their arguments: a helper that set one limit and not the other, or swapped the two numbers,
-    // would pass a case that asserted either alone.
-    const calls: string[] = [];
-    applyFullAppLimits({
-      vitest: (config) => calls.push(`vitest ${String(config.testTimeout)}`),
-      testingLibrary: (config) => calls.push(`testing-library ${String(config.asyncUtilTimeout)}`),
-    });
-    expect(calls).toStrictEqual([`vitest ${String(FULL_APP_TEST_TIMEOUT)}`, `testing-library ${String(FULL_APP_WAIT)}`]);
-    expect(FULL_APP_WAIT).toBeLessThan(FULL_APP_TEST_TIMEOUT);
+describe('applyFullAppLimits and the dialog bodies it brings', () => {
+  it('sets the case limit, and leaves Testing Library’s wait at its own default', () => {
+    const calls: number[] = [];
+    applyFullAppLimits({ vitest: (config) => calls.push(config.testTimeout) });
+    expect(calls).toStrictEqual([FULL_APP_TEST_TIMEOUT]);
+    // THE WAIT IS NOT WIDENED (the audit of 1e1bfad..e24eca0e withdrew the 10 s window): a missing body must be a red
+    // case, not a slow one.
+    expect(getConfig().asyncUtilTimeout).toBe(1000);
   });
 
-  it('and the default setters are the real ones: the wait window in effect is the one declared', () => {
-    // THE CONTROL IS THE BEFORE — Testing Library's own 1000 ms in this file, which never applied the limits — so a
-    // default that pointed at nothing could not pass.
-    expect(getConfig().asyncUtilTimeout).toBe(1000);
-    applyFullAppLimits();
-    expect(getConfig().asyncUtilTimeout).toBe(FULL_APP_WAIT);
+  it('holds EVERY dialog body there is — the set is the folder, so none can be left off', () => {
+    // COMPARED WITH THE FOLDER READ A SECOND WAY, as raw text, so a glob that matched nothing would not agree with it.
+    // And the POSITIVE CONTROL: the body whose absence reddened main at 7539dd80 is in it.
+    const onDisk = Object.keys(import.meta.glob('./dialogs/*Body.tsx', { query: '?raw', import: 'default' })).sort();
+    expect(Object.keys(DIALOG_BODIES).sort()).toStrictEqual(onDisk);
+    expect(onDisk.length).toBeGreaterThan(50);
+    expect(Object.keys(DIALOG_BODIES)).toContain('./dialogs/CommandProblemBody.tsx');
   });
 });

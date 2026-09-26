@@ -69,14 +69,18 @@ export const AUTOSAVE_TITLE = messageKey('setting.saving-autosave.title');
 export const AUTOSAVE_DESCRIPTION = messageKey('setting.saving-autosave.description');
 export const AUTOSAVE_OFF = messageKey('setting.saving-autosave.off');
 export const AUTOSAVE_1 = messageKey('setting.saving-autosave.1');
+export const AUTOSAVE_2 = messageKey('setting.saving-autosave.2');
 export const AUTOSAVE_5 = messageKey('setting.saving-autosave.5');
 export const AUTOSAVE_10 = messageKey('setting.saving-autosave.10');
+export const AUTOSAVE_30 = messageKey('setting.saving-autosave.30');
 /** `saving.autosave`'s members, each its own exported key as the other option sets are. */
 export const AUTOSAVE_OPTION_TITLES = {
   off: AUTOSAVE_OFF,
-  '1': AUTOSAVE_1,
-  '5': AUTOSAVE_5,
-  '10': AUTOSAVE_10,
+  '1min': AUTOSAVE_1,
+  '2min': AUTOSAVE_2,
+  '5min': AUTOSAVE_5,
+  '10min': AUTOSAVE_10,
+  '30min': AUTOSAVE_30,
 } as const;
 export const SETTINGS_SAVING_NOTE = messageKey('dialog.settings.saving-note');
 export const ABOUT_TITLE = messageKey('dialog.about.title');
@@ -1963,9 +1967,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AUTOSAVE_DESCRIPTION]:
     'Saves each document with unsaved changes to its own file on a timer. Off unless you turn it on, because a save replaces the file.',
   [AUTOSAVE_OPTION_TITLES.off]: 'Off',
-  [AUTOSAVE_OPTION_TITLES['1']]: 'Every minute',
-  [AUTOSAVE_OPTION_TITLES['5']]: 'Every 5 minutes',
-  [AUTOSAVE_OPTION_TITLES['10']]: 'Every 10 minutes',
+  [AUTOSAVE_OPTION_TITLES['1min']]: 'Every minute',
+  [AUTOSAVE_OPTION_TITLES['2min']]: 'Every 2 minutes',
+  [AUTOSAVE_OPTION_TITLES['5min']]: 'Every 5 minutes',
+  [AUTOSAVE_OPTION_TITLES['10min']]: 'Every 10 minutes',
+  [AUTOSAVE_OPTION_TITLES['30min']]: 'Every 30 minutes',
   [SETTINGS_SAVING_NOTE]: 'When Monstera writes your documents to their files.',
   [LAYOUT_MODE_TITLE]: 'Layout',
   [RIBBON_SECTION_TITLE]: 'Ribbon section',

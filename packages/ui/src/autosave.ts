@@ -4,7 +4,7 @@ import type { AutosaveInterval } from './settings/saving.js';
 
 /** The interval in milliseconds, or `null` for off. */
 export function autosaveEvery(interval: AutosaveInterval): number | null {
-  return interval === 'off' ? null : Number(interval) * 60_000;
+  return interval === 'off' ? null : Number.parseInt(interval, 10) * 60_000;
 }
 
 export interface Autosave {

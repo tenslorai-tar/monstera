@@ -4,7 +4,7 @@ import { type ContractClient, channels, createClient } from '@monstera/contract'
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { act, cleanup, fireEvent, render as renderBare, screen, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App.js';
 import type { DropOpener } from './bridge.js';
@@ -435,17 +435,14 @@ async function pressCommand(name: string, section?: string): Promise<void> {
  * for every body named here; the window is the backstop for a body someone forgets to name, so the
  * omission this block predicts costs a slower case rather than a red run. What the window cannot do
  * is make a missing entry visible — that is still this list's to get right.
+ *
+ * **THE LIST IS GONE, and so is the window** (the stage audit of 1e1bfad..e24eca0e, the same day). It found two more
+ * bodies a full-App case reads with no preload — Cloud storage here and the close question in `AppClose.test.tsx` — so
+ * the hand list had been incomplete in two files, not one. `fullAppTestLimit.ts` now loads EVERY dialog body by glob
+ * when it is imported, which every file that renders `App` does, and Testing Library's default wait is back. The
+ * paragraph *"This list is hand-kept and cannot be derived"* above was right about `lazy` and wrong about the list:
+ * the modules can be loaded ahead of `lazy` without awaiting it.
  */
-beforeAll(async () => {
-  await Promise.all([
-    import('./dialogs/AboutBody.js'),
-    import('./dialogs/CommandProblemBody.js'),
-    import('./dialogs/CropPagesBody.js'),
-    import('./dialogs/DeletePagesBody.js'),
-    import('./dialogs/DuplicatePagesBody.js'),
-    import('./dialogs/SaveProblemBody.js'),
-  ]);
-});
 
 describe('App', () => {
   it('renders the document surface as a landmark', () => {
@@ -1972,9 +1969,13 @@ describe('App', () => {
     it('AUTOSAVE saves a changed document on its interval, and with the setting off it never does', async () => {
       // `autosave.test.ts` holds the decision; this is that the shell RUNS it — the setting read, the timer set,
       // the tabs' own dirty rule, and Save's channel. Only the interval is faked, so everything else is real.
-      for (const [interval, expected] of [
-        ['1', 1],
-        ['off', 0],
+      // THE THIRD ROW IS THE *ONLY*: the interval set and nothing changed, so the tabs' dirty rule is what keeps the save
+      // from being sent. `autosave.test.ts` cannot hold this half — its unit is handed the dirty list and never sees a
+      // clean document (the stage audit of 1e1bfad..e24eca0e).
+      for (const [interval, expected, change] of [
+        ['1min', 1, true],
+        ['off', 0, true],
+        ['1min', 0, false],
       ] as const) {
         vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
         let version = 1;
@@ -1996,11 +1997,13 @@ describe('App', () => {
         await withDocumentOpen();
 
         // A CHANGE, so there is something to save; a clean document is never autosaved.
-        await pressCommand('Rotate page', 'Organize');
-        await act(async () => {
-          await Promise.resolve();
-        });
-        expect(document.title, interval).toBe('annual.pdf ● — Monstera PDF Editor');
+        if (change) {
+          await pressCommand('Rotate page', 'Organize');
+          await act(async () => {
+            await Promise.resolve();
+          });
+          expect(document.title, interval).toBe('annual.pdf ● — Monstera PDF Editor');
+        }
 
         await act(async () => {
           vi.advanceTimersByTime(60_000);

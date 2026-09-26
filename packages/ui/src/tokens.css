@@ -89,8 +89,13 @@
  * @role tint-panel tint @on surface
  * @role tint-float tint @on float
  * @role tint-canvas tint @on canvas
+ * @role tint-status tint @on bg
+ * @role tint-hero tint @on surface
+ * @role dialog-head-wash surface @over float
+ * @role accent-grad-top fill
+ * @role accent-grad-bottom fill
  * @role redact-mark graphic @on page
- * @role text text @on ground bg bg2 surface surface2 canvas float active
+ * @role text text @on ground bg bg2 surface surface2 canvas float active dialog-head-wash
  * @role muted text @on ground bg bg2 surface surface2 canvas float
  * @role faint text @on ground bg bg2 surface canvas
  * @role accent-text text @on ground bg bg2 surface canvas float
@@ -164,16 +169,24 @@
   --ribbon-bg: linear-gradient(90deg, var(--tint-ribbon), rgba(20, 184, 166, 0.04) 45%, transparent 75%), var(--bg2);
   --rail-bg: linear-gradient(180deg, var(--tint-rail), transparent 45%), var(--bg);
   --panel-bg: linear-gradient(180deg, var(--tint-panel), transparent 30%), var(--surface);
-  --status-bg: linear-gradient(90deg, rgba(59, 198, 119, 0.09), transparent 40%, rgba(20, 184, 166, 0.07)), var(--bg);
+  /* TINTS UNDER TEXT ARE ROLES, so the contrast check holds text against each at its peak (the stage audit of
+     1e1bfad..e24eca0e: they were raw values inside exempt gradients, and nothing looked at them). */
+  --tint-status: rgba(59, 198, 119, 0.09);
+  --tint-hero: rgba(59, 198, 119, 0.17);
+  /* A SURFACE, not a tint: only the dialog's title and its close glyph — both `--text` — sit on it, so the check holds
+     that pair and no other against it. */
+  --dialog-head-wash: rgba(59, 198, 119, 0.14);
+  --accent-grad-top: #3ccf7b;
+  --accent-grad-bottom: #27a55c;
+  --status-bg: linear-gradient(90deg, var(--tint-status), transparent 40%, rgba(20, 184, 166, 0.07)), var(--bg);
   --float-bg: linear-gradient(180deg, var(--tint-float), transparent 60%), var(--float);
   --canvas-bg:
     radial-gradient(ellipse 55% 40% at 50% 30%, var(--tint-canvas), transparent 70%),
     radial-gradient(ellipse 40% 50% at 100% 100%, rgba(20, 184, 166, 0.08), transparent 70%), var(--canvas);
-  --hero-bg: linear-gradient(180deg, rgba(59, 198, 119, 0.17), rgba(20, 184, 166, 0.05) 160px, var(--surface) 320px);
-  --dialog-head: linear-gradient(90deg, rgba(59, 198, 119, 0.14), transparent 65%);
+  --hero-bg: linear-gradient(180deg, var(--tint-hero), rgba(20, 184, 166, 0.05) 160px, var(--surface) 320px);
+  --dialog-head: linear-gradient(90deg, var(--dialog-head-wash), transparent 65%);
   --active-bg: linear-gradient(180deg, var(--active), rgba(255, 255, 255, 0.08));
-  --accent-grad: linear-gradient(180deg, #3ccf7b, #27a55c);
-  --bubble: linear-gradient(135deg, rgba(59, 198, 119, 0.28), rgba(59, 198, 119, 0.1));
+  --accent-grad: linear-gradient(180deg, var(--accent-grad-top), var(--accent-grad-bottom));
   --wordmark-fill: linear-gradient(180deg, #ffffff 20%, #b9f0cf);
   --panel-edge: inset 0 1px 0 rgba(255, 255, 255, 0.09), inset 0 -1px 0 rgba(74, 208, 131, 0.1), 0 10px 30px rgba(0, 0, 0, 0.28);
   --float-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(255, 255, 255, 0.03), 0 18px 48px rgba(0, 0, 0, 0.55);
@@ -245,16 +258,20 @@
   --ribbon-bg: linear-gradient(90deg, var(--tint-ribbon), rgba(45, 212, 191, 0.04) 45%, transparent 75%), var(--bg2);
   --rail-bg: linear-gradient(180deg, var(--tint-rail), transparent 45%), var(--bg);
   --panel-bg: linear-gradient(180deg, var(--tint-panel), transparent 30%), var(--surface);
-  --status-bg: linear-gradient(90deg, rgba(22, 163, 74, 0.07), transparent 40%, rgba(45, 212, 191, 0.06)), var(--bg);
+  --tint-status: rgba(22, 163, 74, 0.07);
+  --tint-hero: rgba(22, 163, 74, 0.12);
+  --dialog-head-wash: rgba(22, 163, 74, 0.1);
+  --accent-grad-top: #15803d;
+  --accent-grad-bottom: #116631;
+  --status-bg: linear-gradient(90deg, var(--tint-status), transparent 40%, rgba(45, 212, 191, 0.06)), var(--bg);
   --float-bg: linear-gradient(180deg, var(--tint-float), transparent 60%), var(--float);
   --canvas-bg:
     radial-gradient(ellipse 55% 40% at 50% 30%, var(--tint-canvas), transparent 70%),
     radial-gradient(ellipse 40% 50% at 100% 100%, rgba(45, 212, 191, 0.08), transparent 70%), var(--canvas);
-  --hero-bg: linear-gradient(180deg, rgba(22, 163, 74, 0.12), rgba(45, 212, 191, 0.05) 160px, var(--surface) 320px);
-  --dialog-head: linear-gradient(90deg, rgba(22, 163, 74, 0.1), transparent 65%);
+  --hero-bg: linear-gradient(180deg, var(--tint-hero), rgba(45, 212, 191, 0.05) 160px, var(--surface) 320px);
+  --dialog-head: linear-gradient(90deg, var(--dialog-head-wash), transparent 65%);
   --active-bg: var(--active);
-  --accent-grad: linear-gradient(180deg, #15803d, #116631);
-  --bubble: linear-gradient(135deg, rgba(22, 163, 74, 0.16), rgba(22, 163, 74, 0.06));
+  --accent-grad: linear-gradient(180deg, var(--accent-grad-top), var(--accent-grad-bottom));
   --wordmark-fill: linear-gradient(180deg, #0f1a14 30%, #15803d);
   --panel-edge: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(22, 163, 74, 0.08), 0 8px 24px rgba(20, 40, 30, 0.08);
   --float-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 0 0 1px rgba(15, 30, 22, 0.03), 0 16px 40px rgba(20, 40, 30, 0.14);
@@ -318,6 +335,11 @@
   --ribbon-bg: var(--bg2);
   --rail-bg: var(--bg);
   --panel-bg: var(--surface);
+  --tint-status: rgba(0, 0, 0, 0);
+  --tint-hero: rgba(0, 0, 0, 0);
+  --dialog-head-wash: rgba(0, 0, 0, 0);
+  --accent-grad-top: var(--accent);
+  --accent-grad-bottom: var(--accent);
   --status-bg: var(--bg);
   --float-bg: var(--float);
   --canvas-bg: var(--canvas);
@@ -325,7 +347,6 @@
   --dialog-head: transparent;
   --active-bg: var(--active);
   --accent-grad: var(--accent);
-  --bubble: var(--accent-soft);
   --wordmark-fill: linear-gradient(#ffffff, #ffffff);
   --panel-edge: none;
   --float-shadow: none;

@@ -230,6 +230,19 @@ export class SettingsRegistry {
       // makes it the universe: the titles alone pass a missing member, and the
       // members alone pass a title for one that does not exist.
       const members = setting.schema instanceof z.ZodEnum ? setting.schema.options.map(String) : null;
+      // A MEMBER THAT READS AS AN ARRAY INDEX LOSES ITS PLACE. zod keeps an enum's members as an object's keys, and
+      // JavaScript orders integer-like keys first, ascending, whatever order they were declared in — so the dialog,
+      // which draws `options` in order, showed *Save automatically*'s *Off* LAST (measured: `['off', '1', '5', '10']`
+      // declared, `['1', '5', '10', 'off']` read; the stage audit of 1e1bfad..e24eca0e). Refused, since no order
+      // written in the declaration can survive it.
+      const indexLike = (members ?? []).filter((member) => /^(?:0|[1-9]\d*)$/u.test(member));
+      if (indexLike.length > 0) {
+        throw new Error(
+          `Setting "${setting.id}" has the member(s) ${indexLike.join(', ')}, which read as array indices: zod keeps ` +
+            'enum members as object keys, where those are moved to the front, so the choices would not be drawn in ' +
+            'the order declared. Give them a word, e.g. "5min".',
+        );
+      }
       const titled = setting.optionTitles === undefined ? null : Object.keys(setting.optionTitles);
       if (members === null && titled !== null) {
         throw new Error(

@@ -892,6 +892,159 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-26 — Stage audit of `1e1bfad..e24eca0e` — findings RRRRRR-1 to RRRRRR-12
+
+39 commits, 167 files at the tree read, 5 proofs added, 58 modified and none removed, 7 source files added and 48
+changed (`npm run audit:scope`). The range is the v5 design pass, the Organize grid's selection, autosave, About's
+channel line, the cloud download note, the rating prompt's picture lane, the fold gauge's box model, the two B4
+amendments for the menu bar, and the two fixes for the POISONED red on windows-latest. The commit gate stopped the
+menu bar itself at 213 files, so this audit rides in its own commit and the feature follows it.
+
+Every modified proof was read commit by commit (`git log -p`) by a helper, as a draft; each finding below was then
+located by hand, and the ones acted on were mutated before and after. **One check in the range was loosened for a
+root cause inside the repository, and it was mine** (RRRRRR-1).
+
+**RRRRRR-1 — a raised wait stood in for an incomplete preload list, twice.** 6b570c3b raised Testing Library's wait
+to 10 s for every file that renders `App`, after windows-latest found a dialog's title and not its sentence; e24eca0e
+added the missing body to `App.test.tsx`'s preload list and kept the 10 s as a *backstop*. Rule 0 bans the first
+outright, and the second's stated reason — an omission costs a slower case rather than a red one — is the loosening
+itself: the red run was the only signal that ever found an omission. And the list was short in two more places the
+audit found: `AppClose.test.tsx` reads the close question's body with no preload at all, and `App.test.tsx`'s cloud
+download case reads Cloud storage's through a 100-tick loop no wait covers. **Closed at the class:**
+`fullAppTestLimit.ts` now loads every `dialogs/*Body.tsx` by glob when it is imported — which every `App` file does —
+so the set is every body there is, and the default wait is back. `fullAppTestLimit.test.ts` asserts the loaded set
+equals the folder and contains the body that went red. The 2026-09-06 block's *"this list cannot be derived"* was
+right about `lazy()` and wrong about the list; its correction is appended beneath it.
+
+**RRRRRR-2 — `AssistantPanel.test.tsx`'s cross-document CONTROL asked for a role that cannot exist.** 44250155 made
+*Asking about* a button group; the control still asserted no `option` named *you selected*, which absence satisfies
+whatever the panel draws. Its sibling was converted and this one missed. It now asserts the Selection button is
+absent and the text is absent — the sibling's form.
+
+**RRRRRR-3 — `NOT_COLOUR_ROLES` exempted five tokens carrying literal colours under text, and one failed.** f124f5fe's
+reason for the exemption — every gradient is built from declared roles — was false for `--accent-grad`, `--hero-bg`,
+`--status-bg`, `--dialog-head` and `--bubble`. The one that mattered: light's primary button paints
+`#15803d → #116631`, and `Button` solved its label against `--accent` (`#16a34a`), lighter than both ends, so it kept
+the dark text — about 3.6:1 at the top and 2.5:1 at the bottom (the design-diff helper saw the same button drawn dark
+where v5 draws white). Closed: the gradients are built from declared roles (`accent-grad-top`, `accent-grad-bottom`,
+`tint-status`, `tint-hero`, `dialog-head-wash @over float`), `--bubble` had no reader and is gone, and `Button` and
+`IconButton` solve against both ends. `check:tokencontrast` passes 105 pairs; `Button.test.tsx` gains a case whose
+text clears one end and fails the other, in both orders, which goes red with the bottom end dropped (run). **Stated
+limit:** `IconButton` has no primary-variant case and no primary caller was found, so its copy of the rule is proven
+only by sharing `Button`'s shape.
+
+**RRRRRR-4 — autosave drew *Off* LAST, and two of the founding record's six choices were missing.** Found reading
+0c6f79cb's cases: the setting declared `['off', '1', '5', '10']`, and zod keeps enum members as an object's keys,
+where JavaScript moves integer-like keys to the front — so `options` read `['1', '5', '10', 'off']`. And
+BUILD-PROMPT.md:617 names six intervals. Closed at the class: the members are words (`'1min'` …), the six are there
+in the founding order with a literal anchor, a value stored before the rename migrates, and **the settings registry
+refuses an index-like enum member** with a control — so no setting can be declared in an order it will not be drawn in.
+
+**RRRRRR-5 — Organize's Delete case could not tell the focused card from the page on show.** `AppTabs.test.tsx`
+pressed Delete on card 0, which is also the page on show, so a grid wiring `context.page` gave the same
+`deletePages [0]`. It now presses Delete on card 1 with page 1 on show and expects `[1]`. This is also the only
+discriminating case for `Thumbnails.tsx`'s none-ticked branch, whose component test names that branch in its title and
+never runs it.
+
+**RRRRRR-6 — autosave's *only the changed ones* was true by the interface and tested nowhere.** The unit is handed the
+dirty list and never sees a clean document. The App case gains a third row: interval set, nothing changed, no save.
+
+**RRRRRR-7 — `composition.test.ts` stopped asserting the no-record root's `app.reviewPrompt` answer.** 4924e8a9
+retired it as a control, correctly — a fresh record answers the same — and nothing else pinned the behaviour. It is
+back as an assertion inside the no-record case, labelled as not discriminating.
+
+**RRRRRR-8 — a digest and the law said `WebUpdateProvider` *stays registered*.** ADR-0018 says it lands *"as an
+implementation when the registries are built"*, and no update-provider registry exists. Found preparing item 7's
+update check. `docs/ARCHITECTURE.md` §8, `CLAUDE.md` and the Updater row in `docs/FEATURES.md` now say it is owed,
+and why; the amendment log's 2026-08-18 row records what was decided that day and is left as it stands.
+
+**RRRRRR-9 — `ribbonCaption`'s `trimEnd` was reached by no case**: no caption in the file had a space before its
+ellipsis, so dropping it could change no assertion. `ToolButton`'s
+case now includes a caption whose ellipsis follows a space.
+
+**RRRRRR-10 — two stale halves in `rendererHarness.ts`.** bbda08a7 moved the navigation read to
+`will-frame-navigate` and the field's own comment still said `will-navigate`, twice. Corrected.
+
+**RRRRRR-11 — stated, not changed: two rendered cases keyed to one implementation.** The floating toolbar's
+no-overlap assertion became *the canvas area's inline padding is 0* when the owner reversed the strip (f124f5fe), so a
+strip brought back by margin or a grid column passes it; and the primitives-stylesheet case's `left: 20px` now comes
+from `app.css`, leaving `top: 6px` as the only witness of `primitives.css` — enough to redden (Chromium's default is
+1 px), and the comment already says which value comes from where. Neither is worth a new case until the toolbar's
+placement settles in item 9's visual QA.
+
+**RRRRRR-12 — stated, not changed: two tautologies and a set-level constant.** `settings/layout.test.ts` compares
+`z.enum(SECTION_IDS)`'s options with `SECTION_IDS` (a tripwire for a future hand-written enum, and it says so);
+`selectedPages: []` is constant across about 25 surface fixtures, so none of those files could see a surface that
+misreads the selection — the discriminating cases live in `documentCommands.test.ts`, `registries.test.ts` and
+`AppTabs.test.tsx`. The row-length floor went 250 → 500 on the owner's item 8a and is pinned from both sides.
+
+### 1. Root cause or workaround?
+
+One workaround, mine, and it is RRRRRR-1: the 10 s wait was a raised timeout for a cause inside the repository, and
+calling it a backstop did not change what it was. It is gone. The range's other fixes are root: the fold gauge's box
+model (93927c74, at the class, with a control), the preload entry (right remedy, incomplete list — now derived), the
+tokens behind the gradients, and the registry rule that makes an index-like enum member unregistrable.
+
+### 2. Verified against the easy shape only?
+
+Twice: the wait was verified on the one body that went red, and the Organize Delete case on the one card that equals
+the page on show. Both are the fixture the defect also handles (RRRRRR-1, RRRRRR-5). The gradient label was verified in
+dark, where the accent sits between the two ends, and not in light, where it does not (RRRRRR-3).
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Yes, twice, both now stated: the preload moved from a named list to a glob, which is coverage arriving (every body,
+not six); and the no-record review answer moved from a control to a plain assertion (RRRRRR-7), which is honest about
+not separating anything.
+
+### 3. Would CI have caught it?
+
+`affectedProofs()` over the closure's changed files names twelve proofs — the hook set (`guards`, `hookintegrity`,
+`hookprobe`, reached through `CLAUDE.md`), `docrulescope`, `rowlength`, `preload`, `rendererpolicy`, `canvaspixels`,
+`rendergeometry`, `auditscope`, `tokencontrast` and `prosesweep`. Eight ran here and passed before this commit; the
+others run in the pre-push pair. CI did catch RRRRRR-1's cause — the windows-latest red — and could not have caught
+RRRRRR-3, because axe reports contrast over a gradient as *incomplete*, not as a violation.
+
+### 4. Are the proofs non-vacuous?
+
+Mutated and run: the Button case with the bottom end dropped — red, and green again on revert. Not run: `ribbonCaption`
+without `trimEnd`, and the registry rule with its refusal removed; each new case asserts the exact output the mutation
+would change (`'Exporter'`, a throw), which is reasoning, not a run. The new glob's case asserts the loaded set equals
+the folder, so an emptied glob fails it rather than loading nothing quietly.
+
+### 4a. Has every instrument passed a resolution test?
+
+One instrument in the closure: the 4376 ms cold-import reading behind the old window, which is now history rather than
+a threshold — nothing reads it. The contrast figures in RRRRRR-3 are the checker's own maths, whose resolution is its
+proof's.
+
+### 4b. Is the instrument a search, with a positive control on every run?
+
+The dialog-body glob is a search, and its positive control is the case requiring `CommandProblemBody` — the body that
+went red — to be in the set, beside the equality with the folder.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+The glob does, deliberately: the danger is a body left out, which makes the set SMALLER, and the anchor that catches
+that is the folder listing the case reads independently. Autosave's six intervals are a literal, not derived from the
+schema, for the opposite reason — two had gone missing from a schema-derived view.
+
+### 5. Executed, or asserted?
+
+Executed: the one mutation run above, `check:tokencontrast`, the eight proofs, the touched unit files. Asserted: the
+two mutations not run, and that no
+primary `IconButton` exists (one grep, which a multi-line JSX call could evade — stated in RRRRRR-3).
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before: the menu bar's two amendments (f7cbb588, 07a445f1) are their own B4 commits ahead of a feature not yet
+committed; the registry rule in RRRRRR-4 registers into the settings seam and changes no seam.
+
+### 7. Do the documents still match the code?
+
+The cross-document sweep for RRRRRR-8 was `grep -rn "WebUpdateProvider"` over `docs/` and `CLAUDE.md`: three live
+statements, all corrected; the ADR is right and unchanged. The two `will-navigate` comments are RRRRRR-10.
+
 ## 2026-09-26 — The owner's v5 material, and contrast checked over a lit ground
 
 The 26 September list's item 2: the build takes `v5-design-values.md`'s numbers. What is worth keeping from the day:

@@ -527,9 +527,11 @@ is wrong** — fix the boundary, not the test.
 
 - **Distribution is the Microsoft Store only.** No direct download. The
   two-flavour seam is kept deliberately — flavour switch, `WebUpdateProvider`
-  registered with nothing behind it, signing certificate as an empty config
-  value — so adding a signed download later is a config change, not an
-  amendment. **Do not delete it as dead code** (ADR-0018). Windows updates Store
+  to be registered with nothing behind it, signing certificate as an empty
+  config value — so adding a signed download later is a config change, not an
+  amendment. **Do not delete it as dead code** (ADR-0018). **The update-provider
+  registry is not built yet** (ADR-0018 says so); this line read *"registered"*
+  until the stage audit of 1e1bfad..e24eca0e, a digest ahead of the code. Windows updates Store
   apps; the app never installs its own package and never overrides a user who
   disabled automatic updates.
 

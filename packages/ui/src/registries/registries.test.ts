@@ -259,6 +259,26 @@ describe('SettingsRegistry', () => {
     ).toThrow(/sepia/);
   });
 
+  it('refuses a member that reads as an array index — zod would draw it ahead of the others', () => {
+    // MEASURED FIRST, so the rule is about the library and not a guess: declared `['off', '1', '5']`, read back with
+    // the numbers first. Without the refusal the dialog draws `Off` last.
+    expect(z.enum(['off', '1', '5']).options).toStrictEqual(['1', '5', 'off']);
+    const indexLike = {
+      schema: z.enum(['off', '5']),
+      fallback: 'off',
+      optionTitles: { off: messageKey('setting.test.off'), '5': messageKey('setting.test.5') },
+    };
+    expect(() => new SettingsRegistry([setting(indexLike)])).toThrow(/member\(s\) 5, which read as array indices/u);
+    // CONTROL: the same choice given a word keeps its place and is accepted.
+    const worded = {
+      schema: z.enum(['off', '5min']),
+      fallback: 'off',
+      optionTitles: { off: messageKey('setting.test.off'), '5min': messageKey('setting.test.5') },
+    };
+    expect(z.enum(['off', '5min']).options).toStrictEqual(['off', '5min']);
+    expect(() => new SettingsRegistry([setting(worded)])).not.toThrow();
+  });
+
   it('refuses an enumerated setting with no titles at all', () => {
     expect(
       () =>

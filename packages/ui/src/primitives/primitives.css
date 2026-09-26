@@ -53,8 +53,9 @@
   background: var(--surface2);
 }
 
-/* v5's primary: the accent's own gradient, lit a touch on hover. The foreground is still solved against `--accent`,
-   which is the gradient's middle — both of its ends sit either side of it. */
+/* v5's primary: the accent's own gradient, lit a touch on hover. The foreground is solved against BOTH of the
+   gradient's ends (`--accent-grad-top`, `--accent-grad-bottom`). It was solved against `--accent` on the claim that
+   the accent sits between the two ends — true in dark and false in light, where both ends are darker. */
 .m-button--primary {
   border: 1px solid transparent;
   background: var(--accent-grad);

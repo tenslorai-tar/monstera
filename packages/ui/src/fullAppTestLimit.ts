@@ -1,4 +1,3 @@
-import { configure } from '@testing-library/react';
 import { vi } from 'vitest';
 
 /**
@@ -34,41 +33,39 @@ import { vi } from 'vitest';
 export const FULL_APP_TEST_TIMEOUT = 20_000;
 
 /**
- * How long a `find*` or `waitFor` in these files waits — Testing Library's own default is 1000 ms, a figure nobody
- * chose here either.
+ * EVERY DIALOG BODY, loaded when this module is imported — which every file that renders `App` does, for
+ * {@link applyFullAppLimits}.
  *
- * ## A dialog's body is a lazy chunk, and its first import happens INSIDE the wait
+ * ## The race this removes, and why the set is derived
  *
  * ADR-0029 Decision 7 makes every dialog body `lazy()`: the frame and its title render at once and the body when its
- * module arrives. Under Vitest that arrival is the worker transforming the module on first import, which is not UI
- * settling and has no bound of its own. Measured 2026-09-26 on the owner's machine (Windows 11, 4 cores): importing
- * all 82 bodies cold took 4376 ms, 53 ms each on average (a probe under `packages/ui/src`, not kept). And on
- * windows-latest at 7539dd80 the first import of one body missed the 1000 ms window: the dialog titled *That could
- * not be done* was found and its sentence was not (`App.test.tsx`, the POISONED case, the run's public annotation).
+ * module arrives. Under Vitest that arrival is the worker transforming the module on first import — measured
+ * 2026-09-26 on the owner's machine, 4376 ms for all 82 bodies cold, 53 ms each on average — and it happened inside
+ * Testing Library's 1000 ms wait. On windows-latest at 7539dd80 the dialog titled *That could not be done* was found
+ * and its sentence was not.
  *
- * 10 s is more than twice the cold cost of every body at once, and half the case limit — so a real miss still ends
- * in Testing Library's DOM dump, which names what was on screen, rather than in a bare case timeout, which names
- * nothing.
+ * `App.test.tsx` had removed that race since 2026-09-06 with a HAND-KEPT list of the bodies it reads, whose comment
+ * predicted its own failure: a body added to a case and not to the list. The command-problem body was the one missed,
+ * and the stage audit of 1e1bfad..e24eca0e found two more a full-App case reads with no preload — the close question
+ * in `AppClose.test.tsx` and Cloud storage in `App.test.tsx`. Glob-loaded, the set IS every body there is, so there is
+ * no entry to forget.
  *
- * **This is the BACKSTOP, not the remedy** (corrected the same day). `App.test.tsx` already preloads the dialog
- * bodies its cases read — its own block, from 2026-09-06, rejects a longer wait as the remedy — and the red run was a
- * body missing from that list. The preload removes the race; this window only turns a forgotten entry into a slower
- * case instead of a red one.
+ * **What this replaced**: a 10 s wait window (6b570c3b, kept as a "backstop" in e24eca0e). A longer wait was a raised
+ * timeout standing in for an incomplete list — Rule 0's banned reflex, and the remedy the 2026-09-06 block had already
+ * rejected — and it made a missed entry slower rather than visible. Testing Library's default wait is back.
+ *
+ * Cost: the import, once per file that renders `App` (five), at the figure above.
  */
-export const FULL_APP_WAIT = 10_000;
+export const DIALOG_BODIES: Readonly<Record<string, unknown>> = import.meta.glob('./dialogs/*Body.tsx', { eager: true });
 
 /**
- * Both limits, in the ONE call every file that renders `App` makes — so a file cannot take the case limit and keep
- * the 1 s wait, which is how the window above went unchosen while the limit beside it was chosen.
+ * The case limit, in the ONE call every file that renders `App` makes — and importing it is what loads
+ * {@link DIALOG_BODIES}, so a file cannot take the limit without the bodies.
  */
 export function applyFullAppLimits(
-  // THE TWO SETTERS, defaulted and injectable: Vitest exposes no reader for a file's test limit, so the case that
-  // proves both are set asserts the calls rather than a readback.
-  set: {
-    readonly vitest: (config: { readonly testTimeout: number }) => void;
-    readonly testingLibrary: (config: { readonly asyncUtilTimeout: number }) => void;
-  } = { vitest: vi.setConfig, testingLibrary: configure },
+  // THE SETTER, defaulted and injectable: Vitest exposes no reader for a file's test limit, so the case that proves
+  // it is set asserts the call rather than a readback.
+  set: { readonly vitest: (config: { readonly testTimeout: number }) => void } = { vitest: vi.setConfig },
 ): void {
   set.vitest({ testTimeout: FULL_APP_TEST_TIMEOUT });
-  set.testingLibrary({ asyncUtilTimeout: FULL_APP_WAIT });
 }

@@ -1666,8 +1666,12 @@ reconciled.
   use, and no self-update path.
 
   The two-flavour design is **kept as a seam and not deleted**. The flavour
-  switch stays, `WebUpdateProvider` stays **registered with no implementation
-  behind it**, and the signing certificate stays as an **empty build config
+  switch stays, `WebUpdateProvider` is **to be registered with no implementation
+  behind it** — the update-provider registry is not built yet, which ADR-0018
+  itself says (*"lands as amendment and ADR now, and as an implementation when
+  the registries are built"*; corrected 2026-09-26, the stage audit of
+  1e1bfad..e24eca0e, where this read *"stays registered"*) — and the signing
+  certificate stays as an **empty build config
   value**. A signed direct download may be added later, and when it is it must
   be a configuration change rather than an architecture change. That is the
   reason the seam exists — it is not dead code, and removing it converts a

@@ -64,7 +64,14 @@ export function IconButton({
   const { _ } = useLingui();
   const element = useRef<HTMLElement>(null);
   // `Button`'s rule: only an enabled primary sits on the accent; disabled, the stylesheet draws `--faint` on the surface.
-  useOnColor(element, 'color', '--text', variant === 'primary' && !disabled ? ['--accent'] : [], 'text');
+  // BOTH ENDS OF THE GRADIENT DRAWN, `Button`'s reason: in light both are darker than `--accent`.
+  useOnColor(
+    element,
+    'color',
+    '--text',
+    variant === 'primary' && !disabled ? ['--accent-grad-top', '--accent-grad-bottom'] : [],
+    'text',
+  );
 
   return (
     <Tooltip label={label}>

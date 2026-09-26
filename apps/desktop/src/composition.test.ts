@@ -338,6 +338,9 @@ describe('the Store rating prompt, as the root wires it (E3)', () => {
     });
     expect(await deps.handlers['app.review']({ action: 'rate' })).toStrictEqual({ ok: true, value: { opened: false } });
     expect(browsed).toStrictEqual([]);
+    // AND IT NEVER ASKS. Not discriminating on its own — a fresh record answers the same — but it is the behaviour,
+    // and nothing else pins it since the case that did was retired (the stage audit of 1e1bfad..e24eca0e).
+    expect(await deps.handlers['app.reviewPrompt']({})).toStrictEqual({ ok: true, value: { due: false } });
   });
 });
 

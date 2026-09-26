@@ -216,7 +216,7 @@ interface Readback {
   readonly permissions: Readonly<Record<string, string>>;
   /** Document loads observed after a navigation the policy REFUSES. */
   readonly refusedNavigationLoads: number;
-  /** What the shell decided on that attempt's `will-navigate`, read off the event itself. */
+  /** What the shell decided on that attempt's `will-frame-navigate`, read off the event itself. */
   readonly refusedNavigation: NavigationDecision;
   /** Document loads observed after a navigation the policy PERMITS, counted once its load has arrived. */
   readonly permittedNavigationLoads: number;
@@ -232,7 +232,7 @@ function settle(ms: number): Promise<void> {
 }
 
 /**
- * The shell's answer to one navigation, as its `will-navigate` carried it: `'prevented'` or `'allowed'` — which only an
+ * The shell's answer to one navigation, as its `will-frame-navigate` carried it: `'prevented'` or `'allowed'` — which only an
  * event that fired for THAT url can produce — or `'no-event'` when none arrived inside the bound, which is a broken
  * probe rather than a refusal, since a refused navigation still emits the event it was refused on.
  */
