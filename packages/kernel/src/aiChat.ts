@@ -184,6 +184,10 @@ export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'f
       body: JSON.stringify({
         model,
         stream: true,
+        // NOT KEPT ON THE PROVIDER'S SIDE. The Responses API stores a response by default — OpenAI's data-controls page
+        // says for 30 days — where a chat completion was never stored; without this, *Document + web* would leave the
+        // document's text there. Mistral's Conversations path sends the same (the privacy draft's finding, 2026-09-26).
+        store: false,
         max_output_tokens: MAX_OUTPUT_TOKENS,
         ...(instruction === null ? {} : { instructions: instruction }),
         input: messages.map((message, at) =>

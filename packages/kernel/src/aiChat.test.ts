@@ -445,6 +445,8 @@ describe('the web, each provider’s own search (ADR-0108)', () => {
       expect(sent[0]?.body, provider).toMatchObject({
         model: 'm',
         stream: true,
+        // THE DOCUMENT IS NOT KEPT on the provider's side: the Responses API stores by default.
+        store: false,
         instructions: 'the window',
         input: [{ role: 'user', content: 'What is on page 2?' }],
         tools: [{ type: 'web_search' }],
@@ -471,7 +473,7 @@ describe('the web, each provider’s own search (ADR-0108)', () => {
     });
     expect(sent[0]?.url).toBe('https://mine.openai.azure.com/openai/v1/responses');
     expect(sent[0]?.headers['api-key']).toBe('k');
-    expect(sent[0]?.body).toMatchObject({ model: 'my-deployment', tools: [{ type: 'web_search' }] });
+    expect(sent[0]?.body).toMatchObject({ model: 'my-deployment', store: false, tools: [{ type: 'web_search' }] });
   });
 
   it('MISTRAL searches through CONVERSATIONS, stores nothing there, and reads a tool reference as a citation', async () => {
