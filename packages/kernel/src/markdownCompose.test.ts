@@ -8,6 +8,9 @@ import { shownOn } from './shownText.js';
 /** US Letter, the size a composed document is set at when nothing else decides it. */
 const LETTER = { width: 612, height: 792 } as const;
 
+/** How long composing the deepest nesting may take — the case's claim that it does not run away, in milliseconds. */
+const RUNAWAY_BOUND_MS = 10_000;
+
 /** The source as the picker hands it: bytes, never a string. */
 function bytesOf(text: string): Uint8Array {
   return new TextEncoder().encode(text);
@@ -136,14 +139,20 @@ describe('composeMarkdown', () => {
     expect(Buffer.from(first).equals(Buffer.from(second))).toBe(true);
   });
 
-  it('composes two thousand nested list levels without running away', async () => {
-    // THE MEASURED SHAPE that exhausted `marked`'s heap (ADR-0060). The parser's
-    // own `maxNesting` is what bounds it, so this asserts the composer does not
-    // undo that bound — and the item text proves it drew something.
-    const nested = Array.from({ length: 2000 }, (_, at) => `${' '.repeat(at * 2)}- item ${String(at)}`).join('\n');
-    const started = performance.now();
-    const pdf = await composeMarkdown(bytesOf(nested), LETTER);
-    expect(performance.now() - started).toBeLessThan(10_000);
-    expect((await shownText(pdf)).join('')).toContain('item 0');
-  });
+  it(
+    'composes two thousand nested list levels without running away',
+    async () => {
+      // THE MEASURED SHAPE that exhausted `marked`'s heap (ADR-0060). The parser's
+      // own `maxNesting` is what bounds it, so this asserts the composer does not
+      // undo that bound — and the item text proves it drew something.
+      const nested = Array.from({ length: 2000 }, (_, at) => `${' '.repeat(at * 2)}- item ${String(at)}`).join('\n');
+      const started = performance.now();
+      const pdf = await composeMarkdown(bytesOf(nested), LETTER);
+      expect(performance.now() - started).toBeLessThan(RUNAWAY_BOUND_MS);
+      expect((await shownText(pdf)).join('')).toContain('item 0');
+    },
+    // THE CASE'S OWN BOUND DECIDES, `csvRead.test.ts`' reason: below it, Vitest's 5 s default ends the case first
+    // under load and this claim is never the one tested.
+    RUNAWAY_BOUND_MS * 2,
+  );
 });
