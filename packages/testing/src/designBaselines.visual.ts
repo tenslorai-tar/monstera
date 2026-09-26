@@ -32,7 +32,7 @@ import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
  * case asserts the rail shows exactly these, so a section added or lost is a
  * failure that names this list rather than a baseline nobody captured.
  */
-const SECTIONS = ['home', 'comment', 'edit', 'organize', 'forms', 'review', 'protect', 'tools'] as const;
+const SECTIONS = ['home', 'organize', 'edit', 'comment', 'forms', 'protect', 'review', 'tools'] as const;
 
 // THE LOOKS ARE THE BRIDGE'S, not this file's. §10.4's gate checks the same three, and two lists
 // would drift the day one gains a fourth — the second-opinion shape B3a forbids (audit IIIIII-2).
@@ -122,6 +122,15 @@ for (const look of LOOKS) {
     const panel = page.locator('.m-context-panel');
     await expect(panel).toBeVisible();
     await expect(panel).toHaveScreenshot(`${look.name}-panel-context.png`);
+
+    // THE DOCUMENT-OPEN SCREEN at the design's own size (the owner, 2026-09-26): 1920 × 1080 with Home chosen, so
+    // the whole v5 window — the lit ground, the ribbon, the rail, both panels, the floating toolbar, the status bar —
+    // is one baseline per theme. The page's raster is masked for §6's reason above.
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.locator('[data-ribbon-section="home"]').click();
+    await parkPointer(page);
+    await documentDrawn(page);
+    await expect(page).toHaveScreenshot(`${look.name}-document-open.png`, { mask: [canvases] });
   });
 }
 

@@ -69,14 +69,14 @@ export const DOCUMENT_PANEL_OPEN_SETTING: SettingDefinition<z.ZodBoolean> = {
 /**
  * The narrowest the document panel may be, in CSS pixels.
  *
- * Derived from the strip it must hold, read from the stylesheets on 2026-09-14: the strip's
- * `--space-4` padding on both sides (8), six `--control-panel-tab` tabs (144) with five
- * `--space-2` gaps (10), the `--space-2` gap before the collapse chevron (2), the chevron itself —
- * a 14 px glyph with `--space-4` padding and a 1 px border on each side (24) — and the panel's
- * 1 px border: 189, raised to 192, the next step of §10.2's 8 px grid. Narrower, and the strip's
- * last tab or the chevron is clipped. The rendered test asserts the strip fits at this width.
+ * Derived from the strip it must hold, read from the stylesheets: the strip's `--space-4` padding on both sides (8),
+ * six v5 tabs of `--panel-tab-wide` (6 × 34 = 204) with five `--space-2` gaps (10), the `--space-2` gap before the
+ * collapse chevron (2), the chevron itself — a 14 px glyph with `--space-4` padding and a 1 px border on each side (24)
+ * — and the panel's 1 px border on each side (2): 250, raised to 256, the next step of §10.2's 8 px grid. Narrower,
+ * and the strip's last tab or the chevron is clipped; the rendered test asserts the strip fits at this width. It was
+ * 192 until 2026-09-26, derived from 24 px tabs; v5 draws them 34 wide, and the rendered case went red at 192.
  */
-export const DOCUMENT_PANEL_MIN_WIDTH = 192;
+export const DOCUMENT_PANEL_MIN_WIDTH = 256;
 
 /**
  * The widest a STORED document-panel width may be, in CSS pixels — the bound on what the setting holds.

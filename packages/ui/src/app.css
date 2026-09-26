@@ -4424,7 +4424,7 @@ body {
 }
 
 .m-panel-tab {
-  inline-size: 34px;
+  inline-size: var(--panel-tab-wide);
   border-radius: var(--radius-5);
 }
 

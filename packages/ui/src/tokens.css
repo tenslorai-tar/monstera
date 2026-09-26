@@ -440,6 +440,8 @@
   --scrollbar: 10px;
   /* §10.3: the document panel's "six icon tabs (24 px tabs, 14 px icons)". */
   --control-panel-tab: 24px;
+  /* v5 draws those tabs 34 wide at the same 24 tall; `DOCUMENT_PANEL_MIN_WIDTH` is derived from this. */
+  --panel-tab-wide: 34px;
   /* The brand artwork's heights, which `assets/brand/README.md` names beside ADR-0002: *"the start-screen hero is 84 px
      and the title bar 26 px"*. The derivatives are drawn at twice these, for a 2x display. v5 draws the menu bar's
      icon at 18. */

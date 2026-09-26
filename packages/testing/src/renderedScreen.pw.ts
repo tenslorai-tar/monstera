@@ -189,8 +189,8 @@ test('the PRIMITIVES are styled in the production build, not left as browser con
   // placeholder case below.
   //
   // PADDING, because the value separates the two states. The primitive declares
-  // `var(--space-8) var(--space-16)`, and Chromium's default button padding is 1px 6px, so
-  // a missing stylesheet cannot produce 8px by coincidence.
+  // `var(--space-6) var(--space-12)` and the start screen's Open widens it to v5's 20 px a side, while Chromium's
+  // default button padding is 1px 6px — so a missing stylesheet cannot produce these by coincidence.
   await bridge(page);
   await page.goto('/');
 
@@ -200,7 +200,7 @@ test('the PRIMITIVES are styled in the production build, not left as browser con
     const style = getComputedStyle(element);
     return { top: style.paddingTop, left: style.paddingLeft };
   });
-  expect(padding).toStrictEqual({ top: '8px', left: '16px' });
+  expect(padding).toStrictEqual({ top: '6px', left: '20px' });
 });
 
 test('the UI FONT is the system stack, on text and on controls, in the production build', async ({
@@ -217,8 +217,9 @@ test('the UI FONT is the system stack, on text and on controls, in the productio
   const expected = await page.evaluate(() =>
     getComputedStyle(document.documentElement).getPropertyValue('--font-ui').trim(),
   );
-  // THE TOKEN IS THERE, or the comparisons below would pass on two empty strings.
-  expect(expected.startsWith("'Segoe UI'") || expected.startsWith('"Segoe UI"')).toBe(true);
+  // THE TOKEN IS THERE, or the comparisons below would pass on two empty strings. v5's stack leads with Windows'
+  // variable Segoe UI cut, then Segoe UI itself.
+  expect(/^['"]Segoe UI/u.test(expected) && expected.includes('Segoe UI')).toBe(true);
 
   const body = await page.evaluate(() => getComputedStyle(document.body).fontFamily);
   const open = page.getByRole('button', { name: 'Open PDF…' });
@@ -372,10 +373,10 @@ test('the document panel is RESIZABLE, and its width is the stored setting, acro
   // lays nothing out, every rect is 0, and the splitter resolves no pixel size against a zero
   // root. The production build in a real browser is the subject.
   //
-  // THE STORED WIDTH IS NOT THE FALLBACK. 256 against a fallback of 224, so a panel that ignored
-  // the setting cannot pass the first assertion by drawing its default.
+  // THE STORED WIDTH IS NOT THE FALLBACK. 300 against a fallback of 260 (v5's; 256 against 224 until
+  // 2026-09-26), so a panel that ignored the setting cannot pass the first assertion by drawing its default.
   await page.setViewportSize({ width: 1280, height: 800 });
-  await bridgeWithDocument(page, { 'appearance.document-panel-width': 256 }, 2);
+  await bridgeWithDocument(page, { 'appearance.document-panel-width': 300 }, 2);
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
 
@@ -387,11 +388,11 @@ test('the document panel is RESIZABLE, and its width is the stored setting, acro
   // percentage out as a flex-grow share of the root MINUS the handle, written to three significant
   // figures. Measured 2026-09-14 at this viewport: root 1216.33, handle 6, pane 254.17 — 1.26 px
   // from the handle's share and 0.57 px from the rounding. So the tolerance is the handle as this
-  // page measures it, plus one pixel for the rounding, and it still separates the stored 256 from
-  // the fallback 224 by thirty pixels.
+  // page measures it, plus one pixel for the rounding, and it still separates the stored 300 from
+  // the fallback 260 by forty pixels.
   const handleWidth = (await handle.boundingBox())?.width ?? 0;
   expect(handleWidth).toBeGreaterThan(0);
-  await expect.poll(async () => Math.abs((await panelPaneWidth(page)) - 256)).toBeLessThan(handleWidth + 1);
+  await expect.poll(async () => Math.abs((await panelPaneWidth(page)) - 300)).toBeLessThan(handleWidth + 1);
 
   // THE KEYBOARD STEP, the resize every person can perform. The machine's own step is 1 % of the
   // root, so at this viewport it moves the pane by several pixels — well past the rounding the
@@ -399,15 +400,15 @@ test('the document panel is RESIZABLE, and its width is the stored setting, acro
   await handle.focus();
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowRight');
-  await expect.poll(() => panelPaneWidth(page)).toBeGreaterThan(262);
+  await expect.poll(() => panelPaneWidth(page)).toBeGreaterThan(306);
   const resized = await panelPaneWidth(page);
 
   // ACROSS A RELOAD, which is what PERSISTED means: a fresh renderer reads the settings the shim
-  // saved, and the width it lays out is the resized one, not 256 and not the fallback.
+  // saved, and the width it lays out is the resized one, not 300 and not the fallback.
   await page.reload();
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   await expect(page.getByRole('separator', { name: 'Resize the document panel' })).toBeVisible();
-  await expect.poll(() => panelPaneWidth(page)).toBeGreaterThan(262);
+  await expect.poll(() => panelPaneWidth(page)).toBeGreaterThan(306);
   expect(Math.abs((await panelPaneWidth(page)) - resized)).toBeLessThan(1.5);
 });
 
@@ -458,12 +459,12 @@ test('the RIGHT contextual panel resizes on its own handle, persists, and leaves
   // with a hole in its size array (Splitter.tsx), which no component test can lay out — so this is
   // also the case that fails if a library version stops filling that hole.
   //
-  // STORED WIDTHS THAT ARE NOT THE FALLBACKS: 300 on the right against 256, 240 on the left against
-  // 224, so a side that ignored its setting cannot pass by drawing its default.
+  // STORED WIDTHS THAT ARE NOT THE FALLBACKS: 300 on the right against 340, 280 on the left against
+  // 260 (v5's defaults), so a side that ignored its setting cannot pass by drawing its default.
   await page.setViewportSize({ width: 1280, height: 800 });
   await bridgeWithDocument(
     page,
-    { 'appearance.document-panel-width': 240, 'appearance.context-panel-width': 300 },
+    { 'appearance.document-panel-width': 280, 'appearance.context-panel-width': 300 },
     2,
   );
   await page.goto('/');
@@ -514,7 +515,7 @@ test('the RIGHT contextual panel resizes on its own handle, persists, and leaves
   await expect
     .poll(async () => (await storedSettings(page))['appearance.context-panel-open'])
     .toBe(false);
-  expect((await storedSettings(page))['appearance.document-panel-width']).toBe(240);
+  expect((await storedSettings(page))['appearance.document-panel-width']).toBe(280);
 });
 
 /**
@@ -1015,15 +1016,16 @@ test('a page ZOOMED WIDER THAN ITS PANE can still be scrolled to its left edge',
 test("at its MINIMUM width the document panel's strip still holds every tab and the chevron", async ({
   page,
 }) => {
-  // `DOCUMENT_PANEL_MIN_WIDTH` is 192, derived by adding the strip's padding, six tabs, their gaps,
-  // the chevron and the border as the stylesheets declare them: 189. That sum is arithmetic on
-  // declarations; this is the rendered strip, which is what a person would see clipped.
+  // `DOCUMENT_PANEL_MIN_WIDTH` is 256, derived by adding the strip's padding, six v5 tabs, their gaps,
+  // the chevron and the border as the stylesheets declare them: 250. That sum is arithmetic on
+  // declarations; this is the rendered strip, which is what a person would see clipped. (192 until
+  // 2026-09-26, for 24 px tabs; this case went red when v5's 34 px tabs arrived, which is its job.)
   await page.setViewportSize({ width: 1280, height: 800 });
-  await bridgeWithDocument(page, { 'appearance.document-panel-width': 192 }, 1);
+  await bridgeWithDocument(page, { 'appearance.document-panel-width': 256 }, 1);
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
 
-  await expect.poll(() => panelPaneWidth(page)).toBeGreaterThan(191);
+  await expect.poll(() => panelPaneWidth(page)).toBeGreaterThan(255);
   const pane = await page.locator('.m-splitter__pane').first().boundingBox();
   const lastTab = await page.getByRole('tab', { name: 'Search' }).boundingBox();
   const chevron = await page.getByRole('button', { name: 'Collapse the document panel' }).boundingBox();
