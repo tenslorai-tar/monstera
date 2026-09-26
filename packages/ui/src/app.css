@@ -4267,7 +4267,9 @@ textarea {
 
 .m-thumbnails.m-thumbnails--grid {
   flex: 1 1 auto;
-  grid-template-columns: repeat(auto-fill, minmax(var(--m-thumb-width), max-content));
+  /* `Thumbnails.tsx` always sets the width on the grid; the fallback is `.m-thumb`'s, for the same reason, and
+     without one an unset property would void this whole declaration rather than fall back. */
+  grid-template-columns: repeat(auto-fill, minmax(var(--m-thumb-width, 96px), max-content));
   justify-content: start;
   gap: var(--space-16);
   padding: var(--space-8) var(--space-16) var(--space-16);
