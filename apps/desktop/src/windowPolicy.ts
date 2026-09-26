@@ -72,9 +72,11 @@ export function devToolsAllowed(packaged: boolean): boolean {
  * body paints — a resize is the live one, since `show: false` until
  * `ready-to-show` closes the startup path — is a visible seam.
  *
- * The default theme's `--canvas` is `#050a08` since the v5 palette. A palette
- * change reaches this line, so a change to `tokens.css` owes a run of the proof
- * named below; nothing about the token file's own checks can see this copy.
+ * The default theme's ground is `--app-bg`, `#060b09`, since the owner's v5 values (2026-09-26) — the solid colour
+ * under `--ambient`'s lights, and the surface's own `background-color`. It was `--canvas`, `#050a08`, until v5 made
+ * `--canvas` a translucent layer; `proof:rendererpolicy` went red on the change, which is how this copy was found. A
+ * palette change reaches this line, so a change to `tokens.css` owes a run of the proof named below; nothing about the
+ * token file's own checks can see this copy.
  *
  * Both values were already recorded in this comment, two lines apart, and
  * neither was read against the other. That is the compound-claim shape inside
@@ -117,7 +119,7 @@ export function devToolsAllowed(packaged: boolean): boolean {
  * source said fully transparent — an answer that had never been true. The
  * constant states what is in force, and the proof reads it back.
  */
-export const WINDOW_BACKGROUND = '#050a08';
+export const WINDOW_BACKGROUND = '#060b09';
 
 /**
  * The only permission the app may be granted, per ARCHITECTURE §2.

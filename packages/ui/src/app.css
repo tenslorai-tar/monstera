@@ -4214,10 +4214,13 @@ body {
   font-size: var(--font-chrome-12);
 }
 
+/* THE GROUND IS A COLOUR UNDER THE LIGHTS: `--app-bg` as the surface's own background colour — what the window paints
+   before the first frame (`WINDOW_BACKGROUND`, compared by `proof:rendererpolicy`) — and `--ambient` as images over it. */
 .m-document-surface {
   gap: var(--space-8);
   padding: 0 var(--space-8) var(--space-8);
-  background: var(--ambient);
+  background-color: var(--app-bg);
+  background-image: var(--ambient);
 }
 
 /* THE GRAIN (v5): fractal noise laid over the whole window in `overlay`, 7% in dark and 4% in light, none in high

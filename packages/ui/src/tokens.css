@@ -312,7 +312,7 @@
   --accent-hover: #6ff5ab;
   --accent-soft: #0d3a22;
 
-  --ambient: var(--app-bg);
+  --ambient: none;
   --grain-opacity: 0;
   --mica: var(--bg);
   --ribbon-bg: var(--bg2);
