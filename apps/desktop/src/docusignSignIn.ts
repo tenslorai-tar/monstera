@@ -49,8 +49,25 @@ export const SIGN_IN_TIMEOUT_MS = 300_000;
  * table was written from memory and every value in it was wrong.
  */
 export const RETURN_PAGE_TOKENS = {
-  light: { bg: '#f5f8f6', surface: '#ffffff', text: '#1d2023', muted: '#5d656c', accent: '#16a34a', 'border-control': '#848688' },
-  dark: { bg: '#0e1613', surface: '#131d19', text: '#e6ece8', muted: '#9aa8a1', accent: '#2fb96a', 'border-control': '#6e7a74' },
+  // THE WINDOW'S SOLID GROUND, not `--bg`: since v5 (2026-09-26) the renderer's surfaces are translucent over a lit
+  // ground, and a translucent colour as a browser tab's whole background would be composited over the tab's white.
+  // The card is `--surface` over that ground, and the heading `--accent-text`, the accent's checked text role.
+  light: {
+    'app-bg': '#e8eeeb',
+    surface: 'rgba(255, 255, 255, 0.66)',
+    text: '#131816',
+    muted: '#4a5550',
+    'accent-text': '#116530',
+    'border-control': 'rgba(15, 30, 22, 0.52)',
+  },
+  dark: {
+    'app-bg': '#060b09',
+    surface: 'rgba(20, 29, 25, 0.6)',
+    text: '#eef1ef',
+    muted: '#bdc5c1',
+    'accent-text': '#67d897',
+    'border-control': 'rgba(255, 255, 255, 0.46)',
+  },
 } as const;
 
 const variables = (theme: keyof typeof RETURN_PAGE_TOKENS): string =>
@@ -62,9 +79,9 @@ const variables = (theme: keyof typeof RETURN_PAGE_TOKENS): string =>
 const RETURN_STYLE = [
   `:root{color-scheme:light dark;${variables('light')}}`,
   `@media (prefers-color-scheme:dark){:root{${variables('dark')}}}`,
-  'body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--text);font:15px/1.5 "Segoe UI",system-ui,sans-serif}',
-  'main{max-width:26rem;margin:16px;padding:28px 32px;border:1px solid var(--border-control);border-radius:10px;background:var(--surface);text-align:center}',
-  'h1{margin:0 0 8px;font-size:20px;font-weight:600;color:var(--accent)}',
+  'body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--app-bg);color:var(--text);font:15px/1.5 "Segoe UI",system-ui,sans-serif}',
+  'main{max-width:26rem;margin:16px;padding:28px 32px;border:1px solid var(--border-control);border-radius:18px;background:var(--surface);text-align:center}',
+  'h1{margin:0 0 8px;font-size:20px;font-weight:600;color:var(--accent-text)}',
   'p{margin:0;color:var(--muted)}',
 ].join('');
 
