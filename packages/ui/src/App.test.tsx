@@ -195,7 +195,8 @@ function commandCalls(calls: readonly string[]): readonly string[] {
   // announcement is the subject instead of noise to be removed.
   // `app.reviewPrompt` joins them the same way: the shell asks main once whether the rating prompt is due
   // (E3). What the prompt then sends is `ReviewPrompt.test.tsx`' subject.
-  // `crashReport.pending` joins them for the recent list's reason: the start screen asks main once whether the last
+  // `crashReport.pending` joins them for the recent list's reason: the start screen asks main, each time it is shown
+  // (the offer mounts with it, so File › Start screen asks again — a read, with no effect), whether the last
   // run left a crash report to offer (ADR-0109). What the offer sends is `CrashReportOffer.test.tsx`' subject.
   return calls.filter(
     (id) =>
@@ -3017,5 +3018,28 @@ describe('the menu bar, in the shell (ADR-0107)', () => {
 
     await pressMenuItem('Help', 'Check for updates');
     expect(sent.slice(before)).toStrictEqual([{ id: 'app.openStore', params: { page: 'updates' } }]);
+  });
+
+  it('Edit › Cut with text selected in a FIELD runs the browser’s cut through main, and leaves the focus in the field', async () => {
+    // THE WHOLE PATH, which no unit case crosses: the shell's own typing-focus tracker (with its menu predicate), the
+    // registered verb, the menu bar's item, and `window.edit`. The units inject the field; this one is found.
+    const { client, sent } = answeringClient({ ...OPEN_DOCUMENT_ANSWERS, 'window.edit': { done: true } });
+    render(<App client={client} settings={freshSettings()} />);
+    await withDocumentOpen();
+    await openPanel('Search');
+    const field = screen.getByLabelText<HTMLInputElement>('Find on this page');
+    await act(async () => {
+      fireEvent.change(field, { target: { value: 'needle' } });
+      field.focus();
+      field.setSelectionRange(0, 6);
+      await Promise.resolve();
+    });
+    const before = sent.length;
+
+    await pressMenuItem('Edit', 'Cut');
+    expect(sent.slice(before).filter((call) => call.id === 'window.edit')).toStrictEqual([
+      { id: 'window.edit', params: { action: 'cut' } },
+    ]);
+    expect(document.activeElement).toBe(field);
   });
 });

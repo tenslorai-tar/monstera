@@ -60,8 +60,11 @@ describe('applyFullAppLimits and the dialog bodies it brings', () => {
   });
 
   it('holds EVERY dialog body there is — the set is the folder, so none can be left off', () => {
-    // COMPARED WITH THE FOLDER READ A SECOND WAY, as raw text, so a glob that matched nothing would not agree with it.
-    // And the POSITIVE CONTROL: the body whose absence reddened main at 7539dd80 is in it.
+    // COMPARED WITH THE FOLDER LOADED A SECOND WAY — as raw text, through the SAME `*Body.tsx` pattern, so what this
+    // separates is a glob that loaded nothing from one that loaded the folder; a lazy body named any other way would
+    // be missed by both, and every `lazy(() => import(...))` in the package targets a `*Body.js` today. The count
+    // floor and the POSITIVE CONTROL — the body whose absence reddened main at 7539dd80 — keep an empty pair from
+    // agreeing.
     const onDisk = Object.keys(import.meta.glob('./dialogs/*Body.tsx', { query: '?raw', import: 'default' })).sort();
     expect(Object.keys(DIALOG_BODIES).sort()).toStrictEqual(onDisk);
     expect(onDisk.length).toBeGreaterThan(50);

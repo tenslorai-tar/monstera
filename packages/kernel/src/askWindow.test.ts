@@ -129,6 +129,15 @@ describe('what an answer may rest on — Document only, or Document + web (ADR-0
     // CONTROL: the two modes differ in exactly the sentence that decides what the answer may rest on.
     expect(instruction).not.toContain(DOCUMENT_ONLY);
     expect(askInstruction(window, 'document', false)).not.toContain('You may search the web');
+
+    // THE PAIR'S AND THE PICTURE'S instructions take the same switch: each called with `true` must carry the web
+    // sentence and drop the document-only one, or a call site passing a literal `false` would pass the case above.
+    const left = await readAskWindow([0], 1, pagesOf(['alpha']).read, 100, 'left');
+    const right = await readAskWindow([0], 1, pagesOf(['beta']).read, 100, 'right');
+    for (const other of [askPairInstruction(left, right, 'document', true), askPictureInstruction(pictureSent(0, 1), true)]) {
+      expect(other).toContain('You may search the web');
+      expect(other).not.toContain(DOCUMENT_ONLY);
+    }
   });
 });
 

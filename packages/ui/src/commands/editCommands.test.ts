@@ -82,7 +82,9 @@ describe('the Edit menu’s verbs, in a TEXT FIELD', () => {
   });
 
   it('Cut and Copy are DISABLED in a field with nothing selected in it; Paste and Select all are not', () => {
-    const { byId } = harness({ field: aField('invoice 42', 3, 3) });
+    // MARKS AND PAGE TEXT ARE BOTH ON OFFER, so a caret-only field that fell through to the page would answer
+    // enabled; without them, falling through and deciding for the field give the same `false`.
+    const { byId } = harness({ field: aField('invoice 42', 3, 3), marks: true, text: true });
     expect(byId('edit.cut').when?.(CONTEXT)).toBe(false);
     expect(byId('edit.copy').when?.(CONTEXT)).toBe(false);
     expect(byId('edit.paste').when?.(CONTEXT)).toBe(true);

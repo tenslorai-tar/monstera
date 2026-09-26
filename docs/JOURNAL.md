@@ -892,6 +892,139 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-26 — Stage audit of `e24eca0e..8d044e72` — findings SSSSSS-1 to SSSSSS-12
+
+11 commits, 199 files, 7 proofs added, 46 modified and none removed, 11 source files added and 90 changed
+(`npm run audit:scope`). The range is the menu bar and item 11's author case, the v5 baselines, the Organize grid's
+page commands, the two named time bounds, ADR-0108 and the Assistant's Document + web switch, the Responses API's
+`store: false`, ADR-0109 and crash reports. The commit gate stopped item 7 (the update check) at 215 files, so this
+audit rides in its own commit and the feature follows it.
+
+Every modified proof and the seven added ones were read commit by commit (`git log -p`) by a helper, as a draft; each
+finding below was located by hand at its line before anything changed. **One of the helper's suggested fixes was
+itself the defect** (SSSSSS-2), which is why a draft is never applied as written. Board GREEN at 8d044e72, read
+21:23:26Z.
+
+**SSSSSS-1 — the menu bar moved commands and swept no FEATURES row: thirteen rows named places that no longer exist.**
+8bc175ef took Home's secondary tools into the menu bar and Tools › Convert, and rows 227, 233-237, 241, 243-245 and
+327 still sent a reader to *Home › File*, *Organize › Pages*, *Organize › Barcodes* and *Home › History*; row 276 said
+the title bar draws the mark, and `assets/brand/README.md` said so at the wrong size (the menu bar draws it at 18 px,
+`--logo-menu`). Two more rows carried *owed* clauses already built — the ribbon's fold and minimum window (row 266,
+with its status cell) and the start screen's drop-to-open (row 63). Each place was checked against its command's
+`placements` and corrected. **Stated, not mechanised:** a check comparing every *Section › Group* phrase with the
+placements would have caught all thirteen, and the menu-item phrases are harder; it is carried to item 9's help-centre
+work, which needs the same map.
+
+**SSSSSS-2 — the crash report order case could not tell *newest first* from *no sort*.** `older.dmp` and `newer.dmp`
+sort by name the way they sort by time, so a listing read in name order passed. The helper proposed `a-newest` and
+`z-oldest` — the same agreement, reversed in both. The names are now `a-older` and `z-newer`, which sort against their
+times.
+
+**SSSSSS-3 — a filter on what is compared loosened the rating prompt's web leg, and it was mine (8bc175ef).** Counting
+only `review` let a web build that opened any other Store page pass. The case records every page the opener receives
+and asserts `['review']` after both builds.
+
+**SSSSSS-4 — Window › Properties panel's mark was proven for three of four states.** None held the panel closed on the
+Properties tab, so a mark reading the tab alone passed. Added.
+
+**SSSSSS-5 — *Cut and Copy disabled in a field with nothing selected* held marks and page text off**, so a caret-only
+field that fell through to the page also answered disabled. Both are on offer now.
+
+**SSSSSS-6 — `PageScopeChoice` held `every` at true in both behavioural cases.** A control that always pressed
+*All pages*, or reported from one button, passed. An `every={false}` leg asserts the pressed state and that *All
+pages* reports `true`.
+
+**SSSSSS-7 — *says Copied only when main did* had no case for main not copying.** The client answered `copied: true`
+always; a refusal leg asserts the call was made and no *Copied* appears.
+
+**SSSSSS-8 — the web source case opened the only source, index 0**, so a panel that always sent 0 passed. Two sources;
+the second is pressed and index 1 is sent.
+
+**SSSSSS-9 — `searched` copied from the request would have passed every web case in the kernel and the shell.** Every
+`web: true` stream carried a search event. A text-only stream with the web on now answers `searched: false` — the state
+the panel's *No web search was used* note is drawn from. The code already read it from the stream; nothing guarded it.
+
+**SSSSSS-10 — the Edit menu's verbs were crossed at App level by nothing** — the pair's second blind spot. The units
+inject the field, and `typingFocus.test.ts` uses its own predicate rather than App's `.m-menu-bar, [role="menu"]`. An
+App case focuses the Find field with text selected, chooses Edit › Cut and asserts `window.edit { cut }` and the focus
+still in the field.
+
+**SSSSSS-11 — the pair and picture instructions were called with the web on by no case**, so a call site passing a
+literal `false` passed. Both now carry the web sentence with `true`.
+
+**SSSSSS-12 — two comments said more than their cases.** `fullAppTestLimit.test.ts` called its comparison *the folder
+read a second way* when it uses the same `*Body.tsx` pattern (every `lazy` import targets a `*Body.js` today, by
+`git grep`); and App.test's filter said the start screen asks for a crash report *once*, when the offer mounts with the
+screen and asks again. Both reworded.
+
+### 1. Root cause or workaround?
+
+Classified in the range: 9a188cc8 raised two cases' runner limit to twice their own named bound. Not a bumped timeout —
+the case's assertion (`< 10 s`) is unchanged, and the runner's 5 s default sat under it, so the runner decided a claim
+the case was written to decide. **Stated:** the bound is wall clock on a loaded machine; whether 10 s holds under the
+full suite was never measured, because the 5 s kill ended the case first, and *alone it takes under 2 s* carried no
+command. The other fixes are root: `store: false` on every Responses request, the shim's written-out list, the block
+separator after a search (seen in the live run), and SSSSSS-3's own loosening.
+
+### 2. Verified against the easy shape only?
+
+Nine times, all in fixtures (SSSSSS-2 to -11): each case held constant the value its defect keys on. The shape was the
+same every time — the one arrangement where the right answer and the broken one agree.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+No. The range's proofs gained cases; none moved from asserted to derived.
+
+### 3. Would CI have caught it?
+
+`affectedProofs()` named nine proofs for the pushed range (`hookintegrity`, `hookprobe`, `rendererpolicy`,
+`canvaspixels`, `rendergeometry`, `contract`, `auditscope`, `ocrmodels`, `composehost`); all nine ran here before the
+push and the board is green on both workflows at 8d044e72. No CI step could see SSSSSS-1 to -11: each is a case that
+passes for the wrong reason.
+
+### 4. Are the proofs non-vacuous?
+
+**Not mutated, and stated:** a session classifier refused a run with a deliberate source mutation earlier today, and
+that shape is not retried. Each new case instead asserts the output only the correct path produces — the names that
+sort against their times, the full page list, the second index, `searched: false` from a text-only stream — and each
+was read against the mutation it exists to catch. That is reasoning, not a run.
+
+### 4a. Has every instrument passed a resolution test?
+
+No measuring instrument arrived. `assistantWebLive.mjs` is a probe with a yes-or-no answer: it ran once, live, and
+asserts a search and at least one source — a run that did not search fails it.
+
+### 4b. Is the instrument a search?
+
+Two arrived. `crashReports.ts` lists the dumps folder at any depth, and its case finds a nested dump (the positive
+control). `aiChat.ts` reads each provider's stream for search evidence, where a blind reader answers *not searched*
+and the panel says so — the unreassuring direction, and SSSSSS-9 now holds the reading itself.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+None new. The channel lists this range extended — the shim's written-out list, `payloadBounds`' descriptions and the
+contract proof's three handler maps — are hand-kept anchors, and each caught a channel the range added (the crash
+report entry above says which).
+
+### 5. Executed, or asserted?
+
+Executed: every provider's request and stream shape against a fixture, and Anthropic live on Haiku 4.5. Asserted: the
+other eight providers' shapes, from their documentation (ADR-0108 says which). Crash reports have not met a real crash
+or a packaged build (ADR-0109 says so).
+
+### 6. Architecture before the feature?
+
+Yes: ADR-0108 (dbbd609a) before the web switch (adeaea10), the §8 amendment (b6b6ce50) before crash reports
+(8d044e72), and ADR-0107 in the previous range before the menu bar.
+
+### 7. Do the documents match the code?
+
+SSSSSS-1 is this item's finding. The engine-surface figures stand: the range added no kernel module and no `mupdf`
+import (`git diff --name-status --diff-filter=A e24eca0e..8d044e72 -- packages/kernel` and a grep of the added lines
+both print nothing).
+
+---
+
 ## 2026-09-26 — Crash reports stay here until the person sends one
 
 The 26 September list's item 6, under ADR-0109 (its own B4 commit, ahead of this one). What is worth keeping:

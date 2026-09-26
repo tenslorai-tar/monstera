@@ -553,8 +553,27 @@ describe('the web, each provider’s own search (ADR-0108)', () => {
       (JSON.parse(prepareChat({ provider: 'groq', model, key: 'k', messages: ASK, web: true })?.body ?? '{}') as { tools?: unknown })
         .tools;
     expect(tools('openai/gpt-oss-120b')).toStrictEqual([{ type: 'browser_search' }]);
-    // CONTROL: another Groq model is asked without it, and its answer will say nothing was searched.
+    // CONTROL: another Groq model is asked without it.
     expect(tools('llama-3.3-70b-versatile')).toBeUndefined();
+  });
+
+  it('WITH THE WEB ON, an answer whose stream shows no search says it did not search — read from the stream', async () => {
+    // EVERY OTHER web case here streams a search event, so `searched` copied from the request would pass them all;
+    // this stream is text only, and only reading the events answers false. The panel's "No web search was used"
+    // note is drawn from exactly this.
+    const { fetchImpl } = streaming([
+      event({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Not in the document.' } }),
+    ]);
+    const answer = await streamChat({
+      provider: 'anthropic',
+      model: 'claude-haiku-4-5-20251001',
+      key: 'k',
+      messages: ASK,
+      web: true,
+      fetchImpl,
+    });
+    expect(answer.text).toBe('Not in the document.');
+    expect([answer.searched, answer.sources]).toStrictEqual([false, []]);
   });
 
   it('GEMINI and DEEPSEEK are asked the ordinary way even with the web on — neither can search here', () => {

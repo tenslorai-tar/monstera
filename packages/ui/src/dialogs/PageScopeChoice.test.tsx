@@ -52,4 +52,26 @@ describe('PageScopeChoice — the pages a page dialog acts on (ADR-0104)', () =>
     fireEvent.click(screen.getByRole('button', { name: 'These 2 pages' }));
     expect(chosen).toStrictEqual([false]);
   });
+
+  it('CONTROL: with the ticked pages held, the pressed state is theirs and All pages reports true', () => {
+    // THE OTHER VALUE OF `every`: both cases above hold it true, so a choice that pressed All pages whatever it was
+    // given, or reported from one button only, passed them.
+    const chosen: boolean[] = [];
+    render(
+      <PageScopeChoice
+        className="x"
+        pages={[1, 2]}
+        every={false}
+        onChange={(every) => {
+          chosen.push(every);
+        }}
+      />,
+      { wrapper: Wrapped },
+    );
+    expect(screen.getByRole('button', { name: 'All pages' }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: 'These 2 pages' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'These 2 pages' }));
+    fireEvent.click(screen.getByRole('button', { name: 'All pages' }));
+    expect(chosen).toStrictEqual([true]);
+  });
 });

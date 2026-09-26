@@ -51,14 +51,16 @@ const LOG = [{ fileName: 'shell.log', bytes: new TextEncoder().encode('log') }] 
 
 describe('crash reports (ADR-0109)', () => {
   it('offers the NEWEST report not yet offered, by its name and time — and none where there is no folder', async () => {
-    const { root, folder } = folderWith({ 'older.dmp': 1_000, 'newer.dmp': 2_000 });
+    // NAMES THAT SORT AGAINST THEIR TIMES: a listing read in name order, with no sort by time, offers `a-older.dmp`
+    // first — so only the newest-first rule passes. Named `older`/`newer` they sorted the same way as their times.
+    const { root, folder } = folderWith({ 'a-older.dmp': 1_000, 'z-newer.dmp': 2_000 });
     const reports = createCrashReports({ folder, offeredFile: join(root, 'offered.json'), share: null, logFiles: () => Promise.resolve(LOG) });
-    expect(await reports.pending()).toStrictEqual({ id: 'newer.dmp', crashedAt: new Date(2_000_000).toISOString() });
+    expect(await reports.pending()).toStrictEqual({ id: 'z-newer.dmp', crashedAt: new Date(2_000_000).toISOString() });
 
     // DISMISSED IS SHOWN: the next start offers the other one, and then nothing.
-    await reports.dismiss('newer.dmp');
-    expect((await reports.pending())?.id).toBe('older.dmp');
-    await reports.dismiss('older.dmp');
+    await reports.dismiss('z-newer.dmp');
+    expect((await reports.pending())?.id).toBe('a-older.dmp');
+    await reports.dismiss('a-older.dmp');
     expect(await reports.pending()).toBeNull();
 
     const none = createCrashReports({ folder: join(root, 'absent'), offeredFile: join(root, 'o2.json'), share: null, logFiles: () => Promise.resolve(LOG) });

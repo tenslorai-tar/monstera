@@ -490,12 +490,20 @@ describe('the assistant about a document (ADR-0088)', () => {
       push('ai.done', {
         subscription,
         stopped: false,
-        web: { answer: 'a7', searched: true, sources: [{ title: 'City history', host: 'example.org' }] },
+        web: {
+          answer: 'a7',
+          searched: true,
+          sources: [
+            { title: 'City archive', host: 'example.net' },
+            { title: 'City history', host: 'example.org' },
+          ],
+        },
       });
 
+      // THE SECOND SOURCE, so a panel that always sent index 0 is told apart from one that sends the place pressed.
       const sources = screen.getByRole('group', { name: 'From the web' });
       fireEvent.click(within(sources).getByRole('button', { name: 'City history · example.org' }));
-      expect(sent.find((entry) => entry.id === 'ai.openSource')?.params).toStrictEqual({ answer: 'a7', index: 0 });
+      expect(sent.find((entry) => entry.id === 'ai.openSource')?.params).toStrictEqual({ answer: 'a7', index: 1 });
       expect(screen.queryByText('No web search was used for this answer.')).toBeNull();
 
       // A SECOND ANSWER THAT DID NOT SEARCH says so, with the web on.

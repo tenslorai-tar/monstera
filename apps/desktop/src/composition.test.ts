@@ -306,7 +306,9 @@ describe('the composition root, with no engine host platform', () => {
 
 describe('the Store rating prompt, as the root wires it (E3)', () => {
   it('the STORE build rates through the Store application; every other build opens the web listing', async () => {
-    let deepLinks = 0;
+    // EVERY PAGE THE OPENER RECEIVED, not a count of one page: a web build that opened any other Store page must show
+    // here, and a filter on `review` would have hidden it.
+    const pages: string[] = [];
     const browsed: string[] = [];
     const rootFor = (installChannel: AppInfo['installChannel']) =>
       createShellDependencies({
@@ -314,8 +316,7 @@ describe('the Store rating prompt, as the root wires it (E3)', () => {
         appInfo: { ...appInfo, installChannel },
         engagementFile: createEphemeralSettings(),
         openStore: (page) => {
-          // THE REVIEW PAGE, by name: the rating prompt must ask for that page and no other.
-          if (page === 'review') deepLinks += 1;
+          pages.push(page);
           return Promise.resolve(true);
         },
         openInBrowser: (url) => {
@@ -325,10 +326,11 @@ describe('the Store rating prompt, as the root wires it (E3)', () => {
       });
 
     await rootFor('store').handlers['app.review']({ action: 'rate' });
-    expect([deepLinks, browsed.length]).toStrictEqual([1, 0]);
+    // THE REVIEW PAGE, by name: the rating prompt asks for that page and no other.
+    expect([pages, browsed.length]).toStrictEqual([['review'], 0]);
 
     await rootFor('web').handlers['app.review']({ action: 'rate' });
-    expect(deepLinks).toBe(1);
+    expect(pages).toStrictEqual(['review']);
     expect(browsed).toStrictEqual(['https://apps.microsoft.com/detail/9NHV3B1PV3XS']);
   });
 

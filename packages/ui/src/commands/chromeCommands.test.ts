@@ -136,6 +136,10 @@ describe('Window › Properties panel (ADR-0107)', () => {
     // CONTROL: open on the OTHER tab is not checked — the mark is the panel's tab, not merely its being open.
     settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
     expect(command.checked?.(withDocument)).toBe(false);
+    // AND THE OTHER HALF: closed on the Properties tab is not checked either — the mark is not the tab alone.
+    settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'properties');
+    settings.set(CONTEXT_PANEL_OPEN_SETTING.id, false);
+    expect(command.checked?.(withDocument)).toBe(false);
     expect(command.when?.(noDocument)).toBe(false);
   });
 });

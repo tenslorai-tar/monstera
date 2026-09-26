@@ -29,6 +29,7 @@ function Wrapped({ children }: { readonly children: ReactNode }): ReactElement {
 function client(
   report: { id: string; crashedAt: string } | null,
   outcome: 'offered' | 'unavailable' | 'failed' | 'gone' = 'offered',
+  copied = true,
 ): { readonly client: ContractClient; readonly sent: { id: string; params: unknown }[] } {
   const sent: { id: string; params: unknown }[] = [];
   return {
@@ -38,7 +39,7 @@ function client(
       if (id === 'crashReport.pending') return Promise.resolve({ ok: true, value: { report } });
       if (id === 'crashReport.share') return Promise.resolve({ ok: true, value: { outcome } });
       if (id === 'crashReport.dismiss') return Promise.resolve({ ok: true, value: { dismissed: true } });
-      if (id === 'window.copyText') return Promise.resolve({ ok: true, value: { copied: true } });
+      if (id === 'window.copyText') return Promise.resolve({ ok: true, value: { copied } });
       throw new Error(`this case does not answer ${id}`);
     }),
   };
@@ -109,5 +110,17 @@ describe('the crash report offer (ADR-0109)', () => {
     });
     expect(wire.sent.find((call) => call.id === 'window.copyText')?.params).toStrictEqual({ text: 'report@monsterapdf.com' });
     expect(screen.getByText('Copied')).toBeDefined();
+  });
+
+  it('CONTROL: when main copied nothing, the offer does not say Copied', async () => {
+    const wire = client(REPORT, 'offered', false);
+    await drawn(wire);
+    fireEvent.click(screen.getByRole('button', { name: 'Copy address' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // THE CALL WAS MADE, so the absence below is about main's answer rather than about a press that sent nothing.
+    expect(wire.sent.some((call) => call.id === 'window.copyText')).toBe(true);
+    expect(screen.queryByText('Copied')).toBeNull();
   });
 });
