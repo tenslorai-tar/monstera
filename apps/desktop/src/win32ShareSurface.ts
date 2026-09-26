@@ -371,7 +371,8 @@ export function createWin32ShareSurface(temporaryRoot: string, owner: () => bigi
         if (entry.startsWith(SHARE_PREFIX)) await rm(join(temporaryRoot, entry), { recursive: true, force: true });
       }
       const folder = await mkdtemp(join(temporaryRoot, SHARE_PREFIX));
-      await writeFile(join(folder, offer.fileName), offer.bytes);
+      // EVERY FILE OF THE OFFER, into one fresh folder whose items the sheet offers together (ADR-0109).
+      for (const file of offer.files) await writeFile(join(folder, file.fileName), file.bytes);
 
       const items = await folderItems(bindings, folder);
       if (pending !== undefined) release(bindings, pending.items);

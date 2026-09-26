@@ -863,6 +863,15 @@ export const MAX_RECENT_PREVIEW_BYTES = 256 * 1024;
 export const RECENT_PREVIEWS_SETTING_ID = 'privacy.recent-previews';
 
 /**
+ * Whether crash reports are kept on this computer (ADR-0109) — on unless turned off. `main` reads it at start, before
+ * the first window, and the renderer declares its control: one id, two readers.
+ */
+export const CRASH_REPORTS_SETTING_ID = 'privacy.crash-reports';
+
+/** A crash report's id: its file's NAME, never a path (ADR-0109). */
+export const crashReportIdSchema = z.string().min(1).max(128).regex(/^[A-Za-z0-9._-]+$/u);
+
+/**
  * Whether Monstera may ask for a Store rating (the founding record's E3: *"A Settings toggle surfaces
  * `optedOut` so the choice is reversible and visible"*). On unless a person turns it off — here, or with the
  * prompt's *Don't ask again*, which writes this same value. Main reads it before every prompt, so the
@@ -4915,6 +4924,33 @@ export const channels = {
     'Shows the diagnostics log in the OS file manager. No path crosses.',
     z.object({}),
     z.object({ revealed: z.boolean() }),
+  ),
+
+  /**
+   * The crash report the start screen may offer to send (ADR-0109): the newest one not yet offered, by its file's
+   * name and when it was written, or `null`. Nothing is read from inside a report to answer this.
+   */
+  'crashReport.pending': channel(
+    'The newest crash report not yet offered, if there is one.',
+    z.object({}).strict(),
+    z.object({ report: z.object({ id: crashReportIdSchema, crashedAt: z.iso.datetime().max(40) }).nullable() }),
+  ),
+
+  /**
+   * Opens the Windows Share sheet with the report and the diagnostics log (ADR-0109). `offered` is the sheet shown,
+   * never anything sent — the person picks where it goes, or closes it. `gone` is a report no longer on disk.
+   */
+  'crashReport.share': channel(
+    'Offers a crash report to the Windows Share sheet.',
+    z.object({ id: crashReportIdSchema }).strict(),
+    z.object({ outcome: z.enum(['offered', 'unavailable', 'failed', 'gone']) }),
+  ),
+
+  /** Records a report as offered without sending it, so the next start does not ask again. */
+  'crashReport.dismiss': channel(
+    'Stops offering a crash report.',
+    z.object({ id: crashReportIdSchema }).strict(),
+    z.object({ dismissed: z.boolean() }),
   ),
 
   /**

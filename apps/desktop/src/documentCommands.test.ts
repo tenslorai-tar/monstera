@@ -3012,7 +3012,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const { commands } = exportingTo(null, { share: sheet.destination, flush: () => Promise.resolve(FLUSHED) });
 
       expect(await commands.email(textDoc)).toStrictEqual({ kind: 'offered' });
-      expect(sheet.offers).toStrictEqual([{ fileName: 'words.pdf', title: 'words', bytes: FLUSHED }]);
+      expect(sheet.offers).toStrictEqual([{ title: 'words', files: [{ fileName: 'words.pdf', bytes: FLUSHED }] }]);
     });
 
     it('answers FAILED when a step before the sheet refuses', async () => {

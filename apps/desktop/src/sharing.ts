@@ -9,14 +9,21 @@ import { createHash } from 'node:crypto';
  * `win32ShareSurface.ts`; a case here injects its own.
  */
 
-/** One document offered to the sheet. */
-export interface ShareOffer {
-  /** The file's name as the receiving application shows it — the document's own. */
+/** One file offered to the sheet. */
+export interface SharedFile {
+  /** The file's name as the receiving application shows it — a document's own, or a crash report's. */
   readonly fileName: string;
+  readonly bytes: Uint8Array;
+}
+
+/**
+ * What one share offers: a title and ONE OR MORE files. A list since ADR-0109 — a crash report goes with the
+ * diagnostics log beside it — and never empty, by type: a sheet offering nothing is not a state a person can act on.
+ */
+export interface ShareOffer {
   /** The sheet's title for what is shared. */
   readonly title: string;
-  /** The document's current bytes. */
-  readonly bytes: Uint8Array;
+  readonly files: readonly [SharedFile, ...SharedFile[]];
 }
 
 /** The Windows Share sheet, or null where there is none. */

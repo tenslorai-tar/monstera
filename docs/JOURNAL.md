@@ -892,6 +892,26 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-26 — Crash reports stay here until the person sends one
+
+The 26 September list's item 6, under ADR-0109 (its own B4 commit, ahead of this one). What is worth keeping:
+
+**With uploads off, Electron cannot say a crash happened.** `getLastCrashReport()` lists uploaded reports only, so
+`main` lists the dumps folder itself — every `.dmp` at any depth, since Crashpad's layout is not a stable contract —
+and records which it has offered. A report's id is its file name, matched against that listing and never joined onto
+a path, and the case offers `../../secret.dmp` to prove it.
+
+**The Share route carried one file, and a report needs two.** `ShareOffer` became a title and a non-empty list of
+files — typed non-empty, since a sheet offering nothing is not a state anyone can act on — and Email passes one.
+
+**A started reporter cannot be stopped.** So the setting is read before the first window, takes effect at the next
+start, and says so; turning it off also deletes what was kept, in the same start.
+
+**Two anchors caught the new channels, as they exist to**: the payload-bound check refused an unbounded timestamp
+(now `.max(40)`, the contract's other instant's bound), and the shim's written-out channel list needed the three names.
+
+---
+
 ## 2026-09-26 — Document only, or Document + web
 
 The 26 September list's item 5, under ADR-0108 (its own commit, ahead of this one). What is worth keeping:

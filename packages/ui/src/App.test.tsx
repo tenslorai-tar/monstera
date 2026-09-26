@@ -195,13 +195,16 @@ function commandCalls(calls: readonly string[]): readonly string[] {
   // announcement is the subject instead of noise to be removed.
   // `app.reviewPrompt` joins them the same way: the shell asks main once whether the rating prompt is due
   // (E3). What the prompt then sends is `ReviewPrompt.test.tsx`' subject.
+  // `crashReport.pending` joins them for the recent list's reason: the start screen asks main once whether the last
+  // run left a crash report to offer (ADR-0109). What the offer sends is `CrashReportOffer.test.tsx`' subject.
   return calls.filter(
     (id) =>
       id !== 'document.recent' &&
       id !== 'settings.loadSecrets' &&
       id !== 'app.info' &&
       id !== 'window.closeListening' &&
-      id !== 'app.reviewPrompt',
+      id !== 'app.reviewPrompt' &&
+      id !== 'crashReport.pending',
   );
 }
 

@@ -200,6 +200,7 @@ import { type ChatHistory, noChatHistory } from './chatHistory.js';
 import type { SettingsSurface } from './settingsFile.js';
 import type { ShellFailureSink } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
+import type { CrashReports } from './crashReports.js';
 import type { ConverterPlatform } from './converterSession.js';
 import { createLayoutTextSource } from './layoutText.js';
 import { createPdfaSource } from './pdfaConversion.js';
@@ -660,6 +661,11 @@ export interface ShellComposition {
    * on every `document.open` case.
    */
   readonly log?: ShellLog | null;
+  /**
+   * The crash reports this computer keeps (ADR-0109) — built in `entry.ts`, where the dumps folder and the Share
+   * sheet are. Optional for `log`'s reason: every unit test has no dumps folder, and `null` answers *no report*.
+   */
+  readonly crashReports?: CrashReports | null;
 }
 
 export function createShellDependencies(composition: ShellComposition): ShellDependencies {
@@ -711,6 +717,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     share = null,
     encodePng,
     log = null,
+    crashReports = null,
   } = composition;
   const capabilities = new CapabilityRegistry();
 
@@ -1475,6 +1482,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // test in this repository — genuinely has no directory to reveal, and
       // saying so is the honest answer rather than a silent success.
       revealLog: log === null ? (): Promise<boolean> => Promise.resolve(false) : log.reveal,
+      crashReports,
       readDictionary: readSpellingDictionary,
       // WHICH MODELS THIS MACHINE HAS, composed for `readDictionary`'s reason: it
       // is a filesystem read, and the renderer cannot ask the question any other

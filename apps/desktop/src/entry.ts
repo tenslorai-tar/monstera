@@ -8,7 +8,7 @@ import {
   MAX_IMAGE_BYTES,
   MAX_MARKDOWN_BYTES,
 } from '@monstera/contract';
-import { BrowserWindow, app, clipboard, nativeImage, safeStorage, shell } from 'electron';
+import { BrowserWindow, app, clipboard, crashReporter, nativeImage, safeStorage, shell } from 'electron';
 
 import { createShellDependencies } from './composition.js';
 import {
@@ -49,6 +49,7 @@ import { createChatHistory } from './chatHistory.js';
 import { type SecretCipher, createSecretStore } from './secretStore.js';
 import { createJsonFile, createSettingsFile } from './settingsFile.js';
 import { createShellLog } from './shellLog.js';
+import { createCrashReports, crashReportsOn, logFilesIn } from './crashReports.js';
 import { createWin32PrintSurface } from './win32PrintSurface.js';
 import { createWin32ShareSurface } from './win32ShareSurface.js';
 import { startShell } from './main.js';
@@ -108,6 +109,14 @@ const OS_CIPHER: SecretCipher = {
  * order.
  */
 startShell(() => {
+  // CRASH REPORTS, FIRST (ADR-0109): kept on this computer, never uploaded — no submit address, nothing added to a
+  // report. Started before the first window so the renderer is watched, and inside the lambda so a losing second
+  // launch starts nothing. Off in Settings › Privacy: not started, and the reports already written are deleted. A
+  // started reporter cannot be stopped, so the setting takes effect at the next start, which its text says.
+  const crashDumps = app.getPath('crashDumps');
+  const reportsOn = crashReportsOn(createSettingsFile(app.getPath('userData')).read());
+  if (reportsOn) crashReporter.start({ uploadToServer: false });
+
   // NAMED, BECAUSE PDFIUM'S PLATFORM IS DERIVED FROM IT. `createPdfiumHostPlatform`
   // takes MuPDF's rather than building a second one from scratch, so that the
   // session root, the directory surface and the containment negative are
@@ -139,6 +148,37 @@ startShell(() => {
     const problem = await shell.openPath(directory);
     return problem === '';
   });
+
+  // THE SHARE SHEET (ADR-0080): the window's handle is Electron's, and so is the
+  // temporary directory the shared file is written under — one folder per share, in a
+  // directory this application owns. Built once, for Email and for a crash report (ADR-0109).
+  const share =
+    process.platform === 'win32'
+      ? createWin32ShareSurface(join(app.getPath('temp'), 'Monstera shares'), () => {
+          const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+          if (window === undefined) throw new Error('there is no window for the share sheet to belong to');
+          return window.getNativeWindowHandle().readBigUInt64LE(0);
+        })
+      : null;
+
+  // THE REPORTS THIS COMPUTER KEEPS, offered at the start after a crash (ADR-0109). Off, there is nothing to offer:
+  // the folder is emptied here, not waited on — nothing depends on it being gone.
+  const crashReports = reportsOn
+    ? createCrashReports({
+        folder: crashDumps,
+        offeredFile: join(app.getPath('userData'), 'crash-reports-offered.json'),
+        share,
+        logFiles: () => logFilesIn(log.directory),
+      })
+    : null;
+  if (!reportsOn) {
+    void createCrashReports({
+      folder: crashDumps,
+      offeredFile: join(app.getPath('userData'), 'crash-reports-offered.json'),
+      share: null,
+      logFiles: () => Promise.resolve([]),
+    }).clear();
+  }
 
   // INSIDE THE LAMBDA, so after the single-instance lock: a losing second launch
   // must not delete anything in the winner's profile. Not awaited — nothing the
@@ -438,17 +478,8 @@ startShell(() => {
       const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
       window?.webContents.send(event, payload);
     },
-    // THE SHARE SHEET (ADR-0080): the window's handle is Electron's, and so is the
-    // temporary directory the shared file is written under — one folder per share, in a
-    // directory this application owns.
-    share:
-      process.platform === 'win32'
-        ? createWin32ShareSurface(join(app.getPath('temp'), 'Monstera shares'), () => {
-            const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-            if (window === undefined) throw new Error('there is no window for the share sheet to belong to');
-            return window.getNativeWindowHandle().readBigUInt64LE(0);
-          })
-        : null,
+    share,
+    crashReports,
     // WHERE A DIAGNOSTIC GOES WHEN NOBODY IS WATCHING STDERR, which is every
     // packaged run: a Store application has no terminal attached, so until this
     // existed every failure this repository takes care to describe went to a

@@ -378,6 +378,7 @@ import { DocumentBody } from './surfaces/DocumentBody.js';
 import { DocumentPanel, type DocumentPanelProps } from './surfaces/DocumentPanel.js';
 import { dispatchChord, fieldOwnsChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
+import { CrashReportOffer } from './CrashReportOffer.js';
 import { DocumentTabs } from './surfaces/DocumentTabs.js';
 import { keyboardShortcutsCommand } from './commands/keyboardShortcuts.js';
 import { shortcutListModel } from './surfaces/projections.js';
@@ -2800,6 +2801,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
         // column: no rail is drawn with no document (`Ribbon` renders nothing).
         <div className="m-start-area">
           <StartScreen registry={registry} context={context} problem={openProblem} />
+          {/* THE CRASH REPORT OFFER (ADR-0109), above the recent list and its reopen offer: data with its own
+              controls, which draws nothing unless the last run left a report not yet offered. */}
+          <CrashReportOffer client={client} />
           {/* BESIDE the projection, not inside it: a recent file is data with a
               control, not a registered command, and registering one per row
               would mean rebuilding the registry whenever the list changed. */}

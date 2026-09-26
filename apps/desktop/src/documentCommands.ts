@@ -4592,7 +4592,7 @@ export class DocumentCommands {
     });
 
     try {
-      await this.#share.offer({ fileName, title: shareTitle(fileName), bytes });
+      await this.#share.offer({ title: shareTitle(fileName), files: [{ fileName, bytes }] });
       return { kind: 'offered' };
     } catch (thrown) {
       if (thrown instanceof ShareFailedError) return { kind: 'failed' };

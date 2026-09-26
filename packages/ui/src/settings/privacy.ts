@@ -1,7 +1,12 @@
-import { RECENT_PREVIEWS_SETTING_ID } from '@monstera/contract';
+import { CRASH_REPORTS_SETTING_ID, RECENT_PREVIEWS_SETTING_ID } from '@monstera/contract';
 import { z } from 'zod';
 
-import { PRIVACY_RECENT_PREVIEWS_DESCRIPTION, PRIVACY_RECENT_PREVIEWS_TITLE } from '../messages/en.js';
+import {
+  PRIVACY_CRASH_REPORTS_DESCRIPTION,
+  PRIVACY_CRASH_REPORTS_TITLE,
+  PRIVACY_RECENT_PREVIEWS_DESCRIPTION,
+  PRIVACY_RECENT_PREVIEWS_TITLE,
+} from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
 
 /**
@@ -16,6 +21,23 @@ export const RECENT_PREVIEWS_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: RECENT_PREVIEWS_SETTING_ID,
   title: PRIVACY_RECENT_PREVIEWS_TITLE,
   description: PRIVACY_RECENT_PREVIEWS_DESCRIPTION,
+  schema: z.boolean(),
+  fallback: true,
+  category: 'privacy',
+};
+
+/**
+ * Whether crash reports are kept on this computer
+ * ([ADR-0109](../../../../docs/DECISIONS/0109-a-crash-report-is-written-here-and-sent-only-by-the-person.md)).
+ *
+ * **On by default — the owner's decision of 2026-09-26.** A report never leaves unless the person sends one from the
+ * offer at the next start. Main reads it before the first window; turning it off takes effect the next time Monstera
+ * starts and deletes the reports already kept, which the description says.
+ */
+export const CRASH_REPORTS_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: CRASH_REPORTS_SETTING_ID,
+  title: PRIVACY_CRASH_REPORTS_TITLE,
+  description: PRIVACY_CRASH_REPORTS_DESCRIPTION,
   schema: z.boolean(),
   fallback: true,
   category: 'privacy',

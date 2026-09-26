@@ -375,6 +375,9 @@ export interface BrowserShimOptions {
    */
   readonly edit?: (action: WindowEditAction) => Promise<void>;
 
+  /** A crash report left by a previous run, for the start screen's offer (ADR-0109). Absent is none. */
+  readonly crashReport?: { readonly id: string; readonly crashedAt: string };
+
   /**
    * Which pages carry a picture and no text, indexed by page.
    *
@@ -745,6 +748,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // settings object has something to assert against.
   const secrets: Record<string, string> = { ...(options.secrets ?? {}) };
   let revealedLog = 0;
+  /** Whether the seeded crash report was shared or dismissed — then it is offered no more. */
+  let crashReportDone = false;
   const titleBarOverlays: { readonly color: string; readonly symbolColor: string; readonly height: number }[] = [];
   let windowCloses = 0;
   let closeListenings = 0;
@@ -1986,6 +1991,19 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'log.reveal': () => {
       revealedLog += 1;
       return Promise.resolve(ok({ revealed: false }));
+    },
+    // A CRASH REPORT IS WHAT THE CASE SEEDS (ADR-0109): none unless `crashReport` is given, and once shared or
+    // dismissed it is offered no more — main's rule, stated as data rather than simulated with files.
+    'crashReport.pending': () =>
+      Promise.resolve(ok({ report: options.crashReport !== undefined && !crashReportDone ? options.crashReport : null })),
+    'crashReport.share': ({ id }) => {
+      if (options.crashReport?.id !== id || crashReportDone) return Promise.resolve(ok({ outcome: 'gone' as const }));
+      crashReportDone = true;
+      return Promise.resolve(ok({ outcome: 'offered' as const }));
+    },
+    'crashReport.dismiss': ({ id }) => {
+      if (options.crashReport?.id === id) crashReportDone = true;
+      return Promise.resolve(ok({ dismissed: true }));
     },
     // RECORDED, and answered `applied: true` as a window would: a browser has no window controls to paint, and
     // what a UI test can assert is what the renderer SENT — its computed colours — which is the half this side owns.

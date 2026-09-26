@@ -105,6 +105,8 @@ export {
   // A recent card's picture: main's store refuses to keep one past the bound, and both sides read the setting.
   MAX_RECENT_PREVIEW_BYTES,
   RECENT_PREVIEWS_SETTING_ID,
+  CRASH_REPORTS_SETTING_ID,
+  crashReportIdSchema,
   // The rating prompt's opt-out (E3): main reads it, the page declares its control.
   REVIEW_PROMPTS_SETTING_ID,
   type MainHandlers,

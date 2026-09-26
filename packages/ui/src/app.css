@@ -745,6 +745,32 @@ textarea {
   margin: 0;
 }
 
+/* THE CRASH REPORT OFFER (ADR-0109), in the recovery offer's voice: a question, its two actions, then where it may
+   go and what it may hold, in the quieter colour. */
+.m-crash-offer {
+  display: grid;
+  gap: var(--space-8);
+  margin: 0;
+  color: var(--text);
+}
+
+.m-crash-offer p {
+  margin: 0;
+}
+
+.m-crash-offer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.m-crash-offer__address,
+.m-crash-offer__warning,
+.m-crash-offer__problem {
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+}
+
 .m-recover-list {
   display: grid;
   gap: var(--space-4);

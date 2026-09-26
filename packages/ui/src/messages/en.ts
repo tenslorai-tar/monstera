@@ -776,6 +776,17 @@ export const START_NO_PATH = messageKey('surface.start.no-path');
 export const START_DROP_HINT = messageKey('surface.start.drop-hint');
 export const DROP_OVERLAY = messageKey('surface.drop.overlay');
 export const PRIVACY_RECENT_PREVIEWS_TITLE = messageKey('setting.privacy.recent-previews.title');
+/** Settings › Privacy's crash-report switch, and the start screen's offer after a crash (ADR-0109). */
+export const PRIVACY_CRASH_REPORTS_TITLE = messageKey('setting.privacy.crash-reports.title');
+export const PRIVACY_CRASH_REPORTS_DESCRIPTION = messageKey('setting.privacy.crash-reports.description');
+export const CRASH_REPORT_OFFER = messageKey('surface.crash-report.offer');
+export const CRASH_REPORT_SHARE = messageKey('surface.crash-report.share');
+export const CRASH_REPORT_DISMISS = messageKey('surface.crash-report.dismiss');
+export const CRASH_REPORT_ADDRESS_LABEL = messageKey('surface.crash-report.address');
+export const CRASH_REPORT_COPY = messageKey('surface.crash-report.copy');
+export const CRASH_REPORT_COPIED = messageKey('surface.crash-report.copied');
+export const CRASH_REPORT_FRAGMENTS = messageKey('surface.crash-report.fragments');
+export const CRASH_REPORT_SHARE_FAILED = messageKey('surface.crash-report.share-failed');
 export const PRIVACY_RECENT_PREVIEWS_DESCRIPTION = messageKey('setting.privacy.recent-previews.description');
 export const RECENT_HEADING = messageKey('surface.recent.heading');
 export const RECENT_CLEAR = messageKey('surface.recent.clear');
@@ -2396,6 +2407,18 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [DROP_OVERLAY]: 'Drop to open',
   // A RECENT CARD'S SECOND LINE, v5-01's shape: *Today · Documents › Leases*. The known folders are
   // Windows' own names for them; the folder after the arrow is the person's own and is never translated.
+  [PRIVACY_CRASH_REPORTS_TITLE]: 'Keep crash reports',
+  [PRIVACY_CRASH_REPORTS_DESCRIPTION]:
+    'If Monstera closes unexpectedly, a report is saved on this computer so you can choose to send it to us. Nothing is sent unless you do. Turning this off takes effect the next time Monstera starts, and deletes saved reports.',
+  [CRASH_REPORT_OFFER]: 'Monstera closed unexpectedly last time. Send us the crash report?',
+  [CRASH_REPORT_SHARE]: 'Share…',
+  [CRASH_REPORT_DISMISS]: 'Not now',
+  [CRASH_REPORT_ADDRESS_LABEL]: 'Share it with your mail app, or send it to {address}.',
+  [CRASH_REPORT_COPY]: 'Copy address',
+  [CRASH_REPORT_COPIED]: 'Copied',
+  [CRASH_REPORT_FRAGMENTS]:
+    'A report can contain parts of the documents that were open, and their file names. It leaves this computer only if you share it.',
+  [CRASH_REPORT_SHARE_FAILED]: 'The Windows Share window couldn’t open, so nothing was shared.',
   [PRIVACY_RECENT_PREVIEWS_TITLE]: 'Show previews of recent files',
   [PRIVACY_RECENT_PREVIEWS_DESCRIPTION]:
     'Keeps a small picture of each recent file’s first page, made when you opened it. Turning this off deletes them.',

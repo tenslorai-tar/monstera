@@ -56,6 +56,7 @@ import {
 } from './documentCommands.js';
 import type { Assistant } from './assistant.js';
 import type { ChatHistory } from './chatHistory.js';
+import type { CrashReports } from './crashReports.js';
 import { CloudOutcomeRefused, type CloudStorage } from './cloudSession.js';
 import { type KnownRoot, displayLocationOf } from './displayLocation.js';
 import type { RecentPictures } from './recentPictures.js';
@@ -239,6 +240,12 @@ export function createContractHandlers(deps: {
    * path even by accident (B5 over a rule at the call site).
    */
   readonly revealLog: () => Promise<boolean>;
+  /**
+   * The crash reports this computer keeps (ADR-0109). Named by a report's file NAME, never a path; `null` where the
+   * shell has none to offer — a build with the setting off. Optional for the composition's `log` reason: a graph built
+   * without a dumps folder, every unit test's, has no report to offer, and absent answers exactly that.
+   */
+  readonly crashReports?: CrashReports | null;
   /**
    * Reads a spelling dictionary's two files. `readSpellingDictionary`.
    *
@@ -577,6 +584,13 @@ export function createContractHandlers(deps: {
       } as const);
     },
     'log.reveal': async () => ok({ revealed: await deps.revealLog() }),
+    'crashReport.pending': async () => ok({ report: (await deps.crashReports?.pending()) ?? null }),
+    'crashReport.share': async ({ id }) => ok({ outcome: (await deps.crashReports?.share(id)) ?? ('gone' as const) }),
+    'crashReport.dismiss': async ({ id }) => {
+      if (deps.crashReports == null) return ok({ dismissed: false });
+      await deps.crashReports.dismiss(id);
+      return ok({ dismissed: true });
+    },
     'window.titleBarOverlay': (overlay) => Promise.resolve(ok({ applied: deps.titleBarOverlay(overlay) })),
     'window.close': () => Promise.resolve(ok({ closing: deps.confirmClose() })),
     'window.edit': ({ action }) => Promise.resolve(ok({ done: deps.edit(action) })),
