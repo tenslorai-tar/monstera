@@ -79,13 +79,23 @@ export const DOCUMENT_PANEL_OPEN_SETTING: SettingDefinition<z.ZodBoolean> = {
 export const DOCUMENT_PANEL_MIN_WIDTH = 192;
 
 /**
- * The widest the document panel may be, in CSS pixels.
+ * The widest a STORED document-panel width may be, in CSS pixels — the bound on what the setting holds.
  *
- * A CHOICE, not a measurement: nothing in the law bounds it. 480 leaves a 1280 px window with
- * most of its width for the pages, and it bounds what a stored value can do — a width written
- * on a wide monitor and read on a small one cannot take the whole document surface.
+ * A CHOICE, not a measurement, and no longer what limits the panel on screen (the owner, 2026-09-26: people size
+ * the panels *"as they wish"*). What is drawn is bounded by {@link SIDE_PANEL_MAX_SHARE} of the row, so a width
+ * written on a wide monitor and read on a small one still cannot take the document surface; this only stops a
+ * setting holding a number no monitor draws. It was 480 px until 2026-09-26.
  */
-export const DOCUMENT_PANEL_MAX_WIDTH = 480;
+export const DOCUMENT_PANEL_MAX_WIDTH = 1600;
+
+/**
+ * The widest either side panel may be DRAWN, as a percentage of the document row (the owner, 2026-09-26).
+ *
+ * Chosen so the page area keeps a usable floor with BOTH panels at their widest: at 1920 × 1080 the row is about
+ * 1,840 px wide, 35% of it is 644 px a side, and the page area keeps about 530 px — a letter page at 60% or more.
+ * At the smallest window the application allows, each panel's minimum wins over the share.
+ */
+export const SIDE_PANEL_MAX_SHARE = 35;
 
 /**
  * The document panel's width, in CSS pixels (§10.3: *"panels resizable with persisted widths"*).
@@ -99,7 +109,8 @@ export const DOCUMENT_PANEL_WIDTH_SETTING: SettingDefinition<z.ZodNumber> = {
   id: 'appearance.document-panel-width',
   title: DOCUMENT_PANEL_WIDTH_TITLE,
   schema: z.number().int().min(DOCUMENT_PANEL_MIN_WIDTH).max(DOCUMENT_PANEL_MAX_WIDTH),
-  fallback: 224,
+  // v5: the left panel is 260 wide (224 until 2026-09-26).
+  fallback: 260,
   category: 'appearance',
   // REMEMBERED: the control for a panel's width is its splitter.
   remembered: true,
@@ -229,14 +240,14 @@ export const CONTEXT_PANEL_MIN_WIDTH = 216;
 export const CONTEXT_PANEL_MAX_WIDTH = DOCUMENT_PANEL_MAX_WIDTH;
 
 /**
- * The right contextual panel's width, in CSS pixels. The fallback is a CHOICE — the style panels
- * had no width before, filling a row beneath the document — set 40 px over the measured floor.
+ * The right contextual panel's width, in CSS pixels. The fallback is the owner's v5 width, 340.
  */
 export const CONTEXT_PANEL_WIDTH_SETTING: SettingDefinition<z.ZodNumber> = {
   id: 'appearance.context-panel-width',
   title: CONTEXT_PANEL_WIDTH_TITLE,
   schema: z.number().int().min(CONTEXT_PANEL_MIN_WIDTH).max(CONTEXT_PANEL_MAX_WIDTH),
-  fallback: 256,
+  // v5: the right panel is 340 wide (256 until 2026-09-26).
+  fallback: 340,
   category: 'appearance',
   remembered: true,
 };

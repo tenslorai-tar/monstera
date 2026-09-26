@@ -12,6 +12,7 @@ import {
   DOCUMENT_PANEL_OPEN_SETTING,
   DOCUMENT_PANEL_WIDTH_SETTING,
   LAYOUT_MODE_SETTING,
+  SIDE_PANEL_MAX_SHARE,
 } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import { useSetting } from '../useSetting.js';
@@ -86,6 +87,7 @@ export function DocumentBody({ settings, panel, page, contextPanel, quickToolbar
           width: panelWidth,
           minWidth: DOCUMENT_PANEL_MIN_WIDTH,
           maxWidth: DOCUMENT_PANEL_MAX_WIDTH,
+          maxShare: SIDE_PANEL_MAX_SHARE,
           open: !focus && panelOpen,
           onWidthChange: (next) => {
             settings.set(DOCUMENT_PANEL_WIDTH_SETTING.id, next);
@@ -103,6 +105,7 @@ export function DocumentBody({ settings, panel, page, contextPanel, quickToolbar
           width: contextWidth,
           minWidth: CONTEXT_PANEL_MIN_WIDTH,
           maxWidth: CONTEXT_PANEL_MAX_WIDTH,
+          maxShare: SIDE_PANEL_MAX_SHARE,
           open: !focus && contextOpen,
           onWidthChange: (next) => {
             settings.set(CONTEXT_PANEL_WIDTH_SETTING.id, next);

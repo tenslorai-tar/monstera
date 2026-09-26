@@ -209,13 +209,31 @@
    transparent until the pointer is on it. Its focus ring is the control boundary every keyboard user
    must see, so a handle that is invisible at rest is still found by Tab. */
 .m-splitter__handle {
+  position: relative;
   inline-size: var(--space-8);
   background: transparent;
+  cursor: col-resize;
 }
 
 .m-splitter__handle:hover,
 .m-splitter__handle[data-dragging] {
   background: var(--accent-soft);
+}
+
+/* A GRIP THAT SHOWS WHERE TO TAKE HOLD (the owner, 2026-09-26): a short accent bar centred in the gap, drawn on hover,
+   while dragging and on keyboard focus — where the arrow keys resize the panel. */
+.m-splitter__handle:hover::after,
+.m-splitter__handle[data-dragging]::after,
+.m-splitter__handle:focus-visible::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  inline-size: 3px;
+  block-size: var(--space-32);
+  border-radius: var(--radius-4);
+  background: var(--accent-text);
+  transform: translate(-50%, -50%);
 }
 
 .m-splitter__handle:focus-visible {

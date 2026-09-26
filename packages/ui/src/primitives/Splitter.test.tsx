@@ -34,7 +34,7 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
 }
 
 function fixed(content: string, label: FixedPane['label'], onWidthChange = (): void => undefined): FixedPane {
-  return { content: <p>{content}</p>, label, width: 224, minWidth: 192, maxWidth: 480, open: true, onWidthChange };
+  return { content: <p>{content}</p>, label, width: 224, minWidth: 192, maxWidth: 1600, maxShare: 35, open: true, onWidthChange };
 }
 
 /** Whether `a` comes before `b` in document order. */
@@ -178,6 +178,44 @@ describe('Splitter', () => {
       host.remove();
       if (actEnvironment === undefined) delete environment.IS_REACT_ACT_ENVIRONMENT;
       else environment.IS_REACT_ACT_ENVIRONMENT = actEnvironment;
+      rect.mockRestore();
+    }
+  });
+
+  it('a side is DRAWN no wider than its share of the row, whatever width was stored (the owner, 2026-09-26)', async () => {
+    // A width written on a wide monitor, read in a 1000 px row: 700 px stored, 35% allowed. The control is a stored
+    // width inside the share, drawn as stored — a splitter that ignored the share would draw 0.70, and one that
+    // always drew the share would draw 0.35 for the control too.
+    const rect = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement): DOMRect {
+        const width = this.classList.contains('m-splitter') ? 1000 : 0;
+        return { x: 0, y: 0, top: 0, left: 0, right: width, bottom: 0, width, height: 0, toJSON: () => ({}) };
+      });
+    const share = async (stored: number): Promise<number> => {
+      const view = render(
+        <Wrapped>
+          <Splitter start={{ ...fixed('start pane', RESIZE_START), width: stored }} middle={<p>middle pane</p>} />
+        </Wrapped>,
+      );
+      let result = Number.NaN;
+      await vi.waitFor(() => {
+        const grows = [...document.querySelectorAll<HTMLElement>('.m-splitter__pane')].map((pane) =>
+          Number.parseFloat(pane.style.flexGrow),
+        );
+        // RESOLVED, not merely rendered: the machine resolves sizes in a microtask after it starts, and before that
+        // every pane reads a zero grow.
+        expect(grows).toHaveLength(2);
+        expect(grows[0] ?? 0).toBeGreaterThan(0);
+        result = (grows[0] ?? Number.NaN) / grows.reduce((total, grow) => total + grow, 0);
+      });
+      view.unmount();
+      return result;
+    };
+    try {
+      expect(await share(700)).toBeCloseTo(0.35, 2);
+      expect(await share(240)).toBeCloseTo(0.24, 2);
+    } finally {
       rect.mockRestore();
     }
   });

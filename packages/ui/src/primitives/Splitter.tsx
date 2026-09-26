@@ -95,7 +95,14 @@ export interface FixedPane {
   /** CSS pixels, kept while the pane is shut and drawn again when it opens. */
   readonly width: number;
   readonly minWidth: number;
+  /** The widest a STORED width may be, in CSS pixels — the bound on what a setting can hold. */
   readonly maxWidth: number;
+  /**
+   * The widest the pane may be DRAWN, as a percentage of the row: handed to the machine as `"N%"`, which it resolves
+   * against its root itself (`utils/size.mjs` `percentRegex`), so the pane follows the window rather than a pixel
+   * figure chosen for one size of monitor. Never below `minWidth`: a row too narrow for both leaves the minimum.
+   */
+  readonly maxShare: number;
   /** Whether the pane is drawn. Shut, it stays a zero-width pane with no content and no handle. */
   readonly open: boolean;
   /** A finished resize that changed this pane, in whole CSS pixels within its bounds. */
@@ -146,7 +153,7 @@ export function Splitter({ start, middle, end }: SplitterProps): ReactElement {
         : {
             id: pane.id,
             minSize: pane.fixed.open ? `${String(pane.fixed.minWidth)}px` : SHUT,
-            maxSize: pane.fixed.open ? `${String(pane.fixed.maxWidth)}px` : SHUT,
+            maxSize: pane.fixed.open ? `${String(pane.fixed.maxShare)}%` : SHUT,
             resizeBehavior: 'preserve-pixel-size' as const,
           },
     ),
@@ -167,7 +174,8 @@ export function Splitter({ start, middle, end }: SplitterProps): ReactElement {
         if (percent === undefined) return;
         const pixels = pixelsOfRoot(percent, measured);
         if (pixels === undefined) return;
-        const next = Math.min(pane.fixed.maxWidth, Math.max(pane.fixed.minWidth, Math.round(pixels)));
+        const shareBound = Math.max(pane.fixed.minWidth, Math.floor((pane.fixed.maxShare / 100) * measured));
+        const next = Math.min(pane.fixed.maxWidth, shareBound, Math.max(pane.fixed.minWidth, Math.round(pixels)));
         // ONLY THE PANE THAT MOVED: a resize at one handle leaves the other side's width exactly
         // where it was, and writing it back unchanged would be a second change nobody made.
         if (next !== pane.fixed.width) pane.fixed.onWidthChange(next);
