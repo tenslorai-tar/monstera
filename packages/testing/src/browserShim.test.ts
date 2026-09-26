@@ -193,6 +193,7 @@ describe('browser shim', () => {
       'ai.history.load',
       'ai.history.save',
       'ai.models',
+      'ai.openSource',
       'ai.stop',
       'ai.translatePage',
       'app.info',
