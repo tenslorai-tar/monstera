@@ -211,6 +211,13 @@ export interface UiCommand {
    * always.
    */
   readonly when?: (context: CommandContext) => boolean;
+  /**
+   * Whether the state this command sets is the current one — the theme it chooses, the panel it shows
+   * ([ADR-0107](../../../../docs/DECISIONS/0107-the-menu-bar-is-a-projection.md)'s correction). Pure and synchronous
+   * for `when`'s reason. The menu bar draws a command that has it as a checkable item with its mark. Absent means the
+   * command sets no state a surface shows.
+   */
+  readonly checked?: (context: CommandContext) => boolean;
   /** Required. See the note above about what that does and does not buy. */
   readonly run: (context: CommandContext) => void | Promise<void>;
 }
@@ -320,6 +327,40 @@ export class CommandRegistry {
         throw new Error(
           `The ribbon group ${group} holds only secondary tools, so it would draw as a caption over a ` +
             `lone More. Make at least one of its placements primary (ADR-0098).`,
+        );
+      }
+    }
+    // ONE CAPTION PER MENU GROUP (ADR-0107): a group's caption is taken from its placements, so two of them naming
+    // different captions would leave which one is drawn to the order commands were registered in.
+    const captions = new Map<string, { caption: MessageKey | undefined; by: string }>();
+    for (const command of this.#byId.values()) {
+      for (const placement of command.placements) {
+        if (placement.surface !== 'menu-bar' || placement.caption === undefined) continue;
+        const key = `${placement.menu} #${String(placement.group)}`;
+        const seen = captions.get(key);
+        if (seen !== undefined && seen.caption !== placement.caption) {
+          throw new Error(
+            `"${command.id}" captions the menu group ${key} "${placement.caption}", and "${seen.by}" captions it ` +
+              `"${String(seen.caption)}". A group has one caption (ADR-0107); give one of them another group.`,
+          );
+        }
+        captions.set(key, { caption: placement.caption, by: command.id });
+      }
+    }
+    // EVERY RIBBON COMMAND IS IN SOME MENU (ADR-0107 Decision 3 and its correction). Every section but Home is a menu
+    // by construction, so the one way to miss is a command placed in Home alone with no menu-bar placement. Refused
+    // here, so the application's own registry is checked every time it is built — by every test that renders the
+    // shell, too — where a case would have checked a fixture.
+    for (const command of this.#byId.values()) {
+      const ribbon = command.placements.filter((placement) => placement.surface === 'ribbon');
+      if (ribbon.length === 0) continue;
+      const inAMenu =
+        ribbon.some((placement) => placement.section !== 'home') ||
+        command.placements.some((placement) => placement.surface === 'menu-bar');
+      if (!inAMenu) {
+        throw new Error(
+          `"${command.id}" is on the Home ribbon and in no menu. Home is not a menu (ADR-0107), so a Home tool needs ` +
+            `a menu-bar placement or a place in another section.`,
         );
       }
     }

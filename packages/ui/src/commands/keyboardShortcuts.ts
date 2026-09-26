@@ -26,7 +26,11 @@ export function keyboardShortcutsCommand(deps: {
     icon: 'Keyboard',
     title: KEYBOARD_SHORTCUTS_COMMAND_TITLE,
     shortcut: 'F1',
-    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 930 }],
+    placements: [
+      // SECONDARY since Help › Keyboard shortcuts exists (ADR-0107).
+      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 930, prominence: 'secondary' },
+      { surface: 'menu-bar', menu: 'help', group: 0, order: 10 },
+    ],
     run: (): void => {
       // Voided, for `showAbout`'s reason: this dialog declares no result and settles only on dismissal.
       void deps.ask(KEYBOARD_SHORTCUTS_DIALOG_ID, { entries: [...deps.shortcuts()] });

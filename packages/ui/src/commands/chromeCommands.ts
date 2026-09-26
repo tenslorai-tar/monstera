@@ -1,3 +1,5 @@
+import type { MessageKey } from '@monstera/shared';
+
 import {
   CONTEXT_PANEL_TOGGLE_TITLE,
   DOCUMENT_PANEL_TOGGLE_TITLE,
@@ -5,12 +7,21 @@ import {
   LAYOUT_RIBBON_COMMAND_TITLE,
   LAYOUT_STUDIO_COMMAND_TITLE,
   LEAVE_FOCUS_COMMAND_TITLE,
+  MENU_GROUP_LAYOUT,
+  MENU_GROUP_PANELS,
+  MENU_GROUP_THEME,
+  SHOW_PROPERTIES_TITLE,
   QUICK_TOOLBAR_TOGGLE_SHORT,
   QUICK_TOOLBAR_TOGGLE_TITLE,
+  THEME_DARK_COMMAND_TITLE,
+  THEME_LIGHT_COMMAND_TITLE,
+  THEME_SYSTEM_COMMAND_TITLE,
 } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
+import { THEME_SETTING, type Theme } from '../settings/appearance.js';
 import {
   CONTEXT_PANEL_OPEN_SETTING,
+  CONTEXT_PANEL_TAB_SETTING,
   DOCUMENT_PANEL_OPEN_SETTING,
   LAYOUT_MODE_SETTING,
   type LayoutMode,
@@ -64,8 +75,10 @@ export function toggleQuickToolbarCommand(deps: { readonly settings: SettingsSto
     placements: [
       { surface: 'status-bar', cluster: 'chrome', order: 10 },
       { surface: 'rail', order: 5 },
+      { surface: 'menu-bar', menu: 'window', group: 1, order: 30 },
     ],
     when: hasDocument,
+    checked: () => deps.settings.get(QUICK_TOOLBAR_OPEN_SETTING.id) === true,
     run: (): void => {
       // READ THROUGH THE STORE at run time, never a value captured at registration.
       deps.settings.set(QUICK_TOOLBAR_OPEN_SETTING.id, deps.settings.get(QUICK_TOOLBAR_OPEN_SETTING.id) !== true);
@@ -80,9 +93,10 @@ export function togglePanelCommand(deps: { readonly settings: SettingsStore }): 
     icon: 'PanelLeft',
     title: DOCUMENT_PANEL_TOGGLE_TITLE,
     shortcut: 'Ctrl+Shift+B',
-    // Palette and chord only: the panel's own chevron and edge handle are its on-screen controls.
-    placements: [],
+    // The panel's own chevron and edge handle are its on-screen controls; Window is where a hidden one is found again.
+    placements: [{ surface: 'menu-bar', menu: 'window', group: 1, order: 10 }],
     when: hasDocument,
+    checked: () => deps.settings.get(DOCUMENT_PANEL_OPEN_SETTING.id) === true,
     run: (): void => {
       deps.settings.set(DOCUMENT_PANEL_OPEN_SETTING.id, deps.settings.get(DOCUMENT_PANEL_OPEN_SETTING.id) !== true);
     },
@@ -94,6 +108,9 @@ const LAYOUT_TITLES = {
   studio: LAYOUT_STUDIO_COMMAND_TITLE,
   focus: LAYOUT_FOCUS_COMMAND_TITLE,
 } as const;
+
+/** View › Layout in the switcher's order. */
+const MODE_ORDER: Readonly<Record<LayoutMode, number>> = { ribbon: 10, studio: 20, focus: 30 };
 
 /**
  * §7's layout-mode switch and §10.3's *"Esc returns"*, as the four commands that share one memory.
@@ -127,7 +144,8 @@ export function layoutModeCommands(deps: { readonly settings: SettingsStore }): 
     // No chord for Ribbon and Studio: §10.3 names none, and Escape is Focus's way out. Focus has one because a mode
     // that hides the ribbon is the one a person enters from the keyboard while reading.
     ...(mode === 'focus' ? { shortcut: 'Ctrl+Shift+F' } : {}),
-    placements: [],
+    placements: [{ surface: 'menu-bar', menu: 'view', group: 0, order: MODE_ORDER[mode], caption: MENU_GROUP_LAYOUT }],
+    checked: () => deps.settings.get(LAYOUT_MODE_SETTING.id) === mode,
     run: (): void => {
       const current = deps.settings.get(LAYOUT_MODE_SETTING.id) as LayoutMode;
       if (mode === 'focus' && current !== 'focus') beforeFocus = current;
@@ -156,10 +174,56 @@ export function toggleContextPanelCommand(deps: { readonly settings: SettingsSto
     icon: 'PanelRight',
     title: CONTEXT_PANEL_TOGGLE_TITLE,
     shortcut: 'Ctrl+Shift+J',
-    placements: [],
+    placements: [{ surface: 'menu-bar', menu: 'window', group: 1, order: 20 }],
     when: hasDocument,
+    checked: () => deps.settings.get(CONTEXT_PANEL_OPEN_SETTING.id) === true,
     run: (): void => {
       deps.settings.set(CONTEXT_PANEL_OPEN_SETTING.id, deps.settings.get(CONTEXT_PANEL_OPEN_SETTING.id) !== true);
     },
   };
+}
+
+/**
+ * *Window › Properties panel* (ADR-0107): the right panel, open, on its Properties tab — `annotate.properties`' two
+ * writes without its selection, because the tab also says how the NEXT mark is drawn when nothing is selected.
+ */
+export function showPropertiesCommand(deps: { readonly settings: SettingsStore }): UiCommand {
+  return {
+    id: 'view.show-properties',
+    icon: 'PanelRight',
+    title: SHOW_PROPERTIES_TITLE,
+    placements: [{ surface: 'menu-bar', menu: 'window', group: 0, order: 70, caption: MENU_GROUP_PANELS }],
+    when: hasDocument,
+    checked: () =>
+      deps.settings.get(CONTEXT_PANEL_OPEN_SETTING.id) === true &&
+      deps.settings.get(CONTEXT_PANEL_TAB_SETTING.id) === 'properties',
+    run: (): void => {
+      deps.settings.set(CONTEXT_PANEL_OPEN_SETTING.id, true);
+      deps.settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'properties');
+    },
+  };
+}
+
+const THEMES: readonly { readonly theme: Theme; readonly title: MessageKey; readonly order: number }[] = [
+  { theme: 'system', title: THEME_SYSTEM_COMMAND_TITLE, order: 10 },
+  { theme: 'light', title: THEME_LIGHT_COMMAND_TITLE, order: 20 },
+  { theme: 'dark', title: THEME_DARK_COMMAND_TITLE, order: 30 },
+];
+
+/**
+ * *View › Theme* (ADR-0107): one command per value of `appearance.theme`, for `layoutModeCommands`' reason — a command
+ * takes no argument, so a choice among three is three commands. Each writes the setting the Settings dialog writes,
+ * and is checked while it is the current value. High contrast is not among them: it follows the platform's request
+ * (`highContrastWanted`) and overrides this setting, so offering it here would make an assistive mode a preference.
+ */
+export function themeCommands(deps: { readonly settings: SettingsStore }): readonly UiCommand[] {
+  return THEMES.map(({ theme, title, order }) => ({
+    id: `view.theme-${theme}`,
+    title,
+    placements: [{ surface: 'menu-bar', menu: 'view', group: 1, order, caption: MENU_GROUP_THEME }],
+    checked: () => deps.settings.get(THEME_SETTING.id) === theme,
+    run: (): void => {
+      deps.settings.set(THEME_SETTING.id, theme);
+    },
+  }));
 }

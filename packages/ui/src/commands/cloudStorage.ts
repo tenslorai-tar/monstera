@@ -8,7 +8,6 @@ import {
   CLOUD_COMMAND_TITLE,
   CLOUD_DOWNLOADING,
   CLOUD_DOWNLOADING_FILE,
-  GROUP_FILE,
   SAVE_BACK_TITLE,
   TOAST_SAVED_BACK,
 } from '../messages/en.js';
@@ -42,10 +41,10 @@ export function cloudStorageCommand(deps: {
     id: 'cloud.storage',
     icon: 'Cloud',
     title: CLOUD_COMMAND_TITLE,
-    // HOME › FILE, beside the other ways a document is opened and saved. It needs no document —
-    // it is a way to START with one — so it declares no `when`, and the palette reaches it on the
-    // start screen too.
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 35, prominence: 'secondary' }],
+    // FILE, beside the other ways a document is opened. It needs no document — it is a way to START with one — so it
+    // declares no `when`, and the menu and the palette reach it on the start screen too. It was Home › File's More
+    // until the menu bar gave the application menus a home (ADR-0107).
+    placements: [{ surface: 'menu-bar', menu: 'file', group: 0, order: 30 }],
     run: async (context: CommandContext): Promise<void> => {
       let listing: { provider: CloudProviderId; files: readonly CloudFile[] } | undefined;
       let problem: CloudRefusal | undefined;
@@ -147,7 +146,7 @@ export function saveBackCommand(
     id: 'cloud.save-back',
     icon: 'CloudUpload',
     title: SAVE_BACK_TITLE,
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 36, prominence: 'secondary' }],
+    placements: [{ surface: 'menu-bar', menu: 'file', group: 1, order: 30 }],
     when: hasDocument,
     run: async (context: CommandContext): Promise<void> => {
       const { docId } = context;

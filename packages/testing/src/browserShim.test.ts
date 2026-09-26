@@ -197,6 +197,7 @@ describe('browser shim', () => {
       'ai.translatePage',
       'app.info',
       'app.ocrLanguages',
+      'app.openStore',
       'app.openWebPage',
       'app.review',
       'app.reviewPrompt',
@@ -283,8 +284,8 @@ describe('browser shim', () => {
       'spelling.dictionary',
       'window.close',
       'window.closeListening',
-      'window.copy',
       'window.copyText',
+      'window.edit',
       'window.titleBarOverlay',
     ]);
   });

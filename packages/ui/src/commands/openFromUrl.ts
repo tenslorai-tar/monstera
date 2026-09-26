@@ -60,7 +60,10 @@ export function openFromUrlCommand(deps: {
     icon: 'Globe',
     title: OPEN_FROM_URL_COMMAND_TITLE,
     ribbonTitle: RIBBON_OPEN_FROM_URL,
-    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 50 }],
+    placements: [
+      { surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 50 },
+      { surface: 'menu-bar', menu: 'file', group: 0, order: 20 },
+    ],
     run: async (): Promise<void> => {
       // A DISMISSAL ANSWERS NOTHING the schema accepts, so it sends nothing (ADR-0038).
       const typed = OPEN_FROM_URL_RESULT.safeParse(await deps.ask(OPEN_FROM_URL_DIALOG_ID, {}));

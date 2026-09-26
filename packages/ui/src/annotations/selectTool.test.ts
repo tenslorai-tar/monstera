@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { overlayTransform } from './annotationSpace.js';
 import type { ErasableAnnotation } from './eraserTool.js';
 import type { AnnotationSelection } from './selectTool.js';
-import { SELECT_TOOL_ID, carrySelection, selectTool } from './selectTool.js';
+import { SELECT_TOOL_ID, carrySelection, selectTool, selectionOfPage } from './selectTool.js';
 
 /**
  * The select tool's controller, driven without a DOM.
@@ -349,5 +349,30 @@ describe('carrySelection (ADR-0102)', () => {
     expect(carrySelection(other, { page: 1, version: BEFORE }, AFTER, walk)).toBe(other);
     const elsewhere: AnnotationSelection = { ...picked, page: 2 };
     expect(carrySelection(elsewhere, { page: 1, version: BEFORE }, AFTER, walk)).toBe(elsewhere);
+  });
+});
+
+describe('selectionOfPage (ADR-0107, Edit › Select all)', () => {
+  const VERSION = asDocVersion(4);
+
+  it('selects every mark ON THE PAGE that draws a region, at the walk’s own version', () => {
+    const walk = {
+      version: VERSION,
+      annotations: [A, B, { ...A, page: 4, index: 1 }, { ...B, index: 3, rect: null }],
+    };
+    expect(selectionOfPage(walk, 3)).toStrictEqual({
+      page: 3,
+      version: VERSION,
+      items: [
+        { index: 1, rect: A_RECT, ...CARRIED },
+        { index: 2, rect: B_RECT, ...CARRIED },
+      ],
+    });
+  });
+
+  it('CONTROL: a page with no drawable mark is NOTHING selected — never an empty selection', () => {
+    const walk = { version: VERSION, annotations: [A, { ...B, page: 5, rect: null }] };
+    expect(selectionOfPage(walk, 5)).toBeUndefined();
+    expect(selectionOfPage(walk, 9)).toBeUndefined();
   });
 });

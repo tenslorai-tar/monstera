@@ -180,9 +180,9 @@ const RUNTIME_CASES = [
   'the shipped zoom-in control was found and clicked, so the zoom reading means something',
   'the canvas is EXACTLY the page at the zoom, which is the rasteriser honouring the scale',
   'the zoomed canvas CARRIES A DRAWN PAGE, so the bigger bitmap is not a stretched empty one',
-  'the window shows the CONTROLS OVERLAY, and leaves the title bar a narrower area than the window',
+  'the window shows the CONTROLS OVERLAY, and leaves the menu bar a narrower area than the window',
   'main PAINTED the overlay in the colour the page shows beneath the controls, read off the same running window',
-  "the overlay SETTLES at the title bar's own height, so the two do not grow each other",
+  "the overlay SETTLES at the menu bar's own height, so the two do not grow each other",
 ];
 
 /** Cases decidable without a runtime. These run on every machine. */
@@ -396,12 +396,12 @@ try {
     // §10.3's WINDOW CONTROLS OVERLAY, on the window this harness created the shipped way — the attach included.
     const { overlay } = seen;
     check(
-      'the window shows the CONTROLS OVERLAY, and leaves the title bar a narrower area than the window',
+      'the window shows the CONTROLS OVERLAY, and leaves the menu bar a narrower area than the window',
       overlay.visible === true &&
         overlay.areaWidth !== null &&
         overlay.areaWidth > 0 &&
         overlay.areaWidth < overlay.innerWidth,
-      `navigator.windowControlsOverlay reported visible=${String(overlay.visible)}, title bar area ` +
+      `navigator.windowControlsOverlay reported visible=${String(overlay.visible)}, menu bar area ` +
         `${String(overlay.areaWidth)} px of a ${String(overlay.innerWidth)} px window.\n      ` +
         `\`null\` is a window created without \`titleBarOverlay\`, where the API reports nothing; an area as wide as ` +
         `the window is one whose native caption is still there, so the controls sit above the row rather than ` +
@@ -427,9 +427,9 @@ try {
     );
 
     check(
-      "the overlay SETTLES at the title bar's own height, so the two do not grow each other",
+      "the overlay SETTLES at the menu bar's own height, so the two do not grow each other",
       last !== undefined && overlay.barHeight !== null && last.height === Math.round(overlay.barHeight),
-      `the last overlay painted was ${String(last?.height)} px tall and the title bar measures ` +
+      `the last overlay painted was ${String(last?.height)} px tall and the menu bar measures ` +
         `${String(overlay.barHeight)} px, after ${String(overlay.painted.length)} report(s) at heights ` +
         `${overlay.painted.map((each) => String(each.height)).join(', ')}.\n      ` +
         `THE LOOP THIS GUARDS, found by reading mutation G2b-1's output: the bar's minimum height is the overlay's ` +

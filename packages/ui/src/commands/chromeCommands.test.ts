@@ -4,14 +4,22 @@ import { describe, expect, it } from 'vitest';
 import { CommandRegistry, type CommandContext } from '../registries/commands.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
+import { THEME_SETTING } from '../settings/appearance.js';
 import {
   CONTEXT_PANEL_OPEN_SETTING,
+  CONTEXT_PANEL_TAB_SETTING,
   DOCUMENT_PANEL_OPEN_SETTING,
   QUICK_TOOLBAR_OPEN_SETTING,
 } from '../settings/layout.js';
 import { SettingsStore } from '../settingsStore.js';
 import { paletteModel, shortcutMapOf, statusBarModel } from '../surfaces/projections.js';
-import { toggleContextPanelCommand, togglePanelCommand, toggleQuickToolbarCommand } from './chromeCommands.js';
+import {
+  showPropertiesCommand,
+  themeCommands,
+  toggleContextPanelCommand,
+  togglePanelCommand,
+  toggleQuickToolbarCommand,
+} from './chromeCommands.js';
 
 /**
  * §7: *"Chrome visibility is itself commanded … which is what guarantees a hidden surface can always
@@ -90,5 +98,44 @@ describe('the chrome visibility commands', () => {
     expect(statusBarModel(registry, withDocument).chrome.map((entry) => entry.command.id)).toStrictEqual([
       'view.toggle-quick-toolbar',
     ]);
+  });
+});
+
+describe('View › Theme (ADR-0107)', () => {
+  it('one command per value of the theme setting, each writing its value and CHECKED exactly while it is current', () => {
+    const settings = store();
+    const commands = themeCommands({ settings });
+    expect(commands.map((command) => command.id)).toStrictEqual(['view.theme-system', 'view.theme-light', 'view.theme-dark']);
+    // THE FALLBACK IS SYSTEM, so a case that only ran Dark could pass on a command that wrote nothing.
+    expect(commands.map((command) => command.checked?.(withDocument))).toStrictEqual([true, false, false]);
+
+    const dark = commands[2];
+    void dark?.run(withDocument);
+    expect(settings.get(THEME_SETTING.id)).toBe('dark');
+    expect(commands.map((command) => command.checked?.(withDocument))).toStrictEqual([false, false, true]);
+
+    void commands[1]?.run(withDocument);
+    expect(settings.get(THEME_SETTING.id)).toBe('light');
+    expect(commands.map((command) => command.checked?.(withDocument))).toStrictEqual([false, true, false]);
+  });
+});
+
+describe('Window › Properties panel (ADR-0107)', () => {
+  it('opens the right panel ON its Properties tab, and is checked only while both hold', () => {
+    const settings = store();
+    settings.set(CONTEXT_PANEL_OPEN_SETTING.id, false);
+    settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
+    const command = showPropertiesCommand({ settings });
+    expect(command.checked?.(withDocument)).toBe(false);
+
+    void command.run(withDocument);
+    expect(settings.get(CONTEXT_PANEL_OPEN_SETTING.id)).toBe(true);
+    expect(settings.get(CONTEXT_PANEL_TAB_SETTING.id)).toBe('properties');
+    expect(command.checked?.(withDocument)).toBe(true);
+
+    // CONTROL: open on the OTHER tab is not checked — the mark is the panel's tab, not merely its being open.
+    settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
+    expect(command.checked?.(withDocument)).toBe(false);
+    expect(command.when?.(noDocument)).toBe(false);
   });
 });

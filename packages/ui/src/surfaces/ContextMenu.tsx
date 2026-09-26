@@ -86,6 +86,8 @@ export function ContextMenuArea({
                 className="m-context-menu-item"
                 data-command={entry.command.id}
                 label={i18n._(entry.command.title)}
+                // THE CHORD ANNOUNCED AS A SHORTCUT and kept out of the item's name, `MenuBar`'s rule.
+                aria-keyshortcuts={entry.command.shortcut}
                 onClick={() => {
                   // Not awaited, `QuickToolbar`'s reason: the command reports through its own
                   // callback, and a handler returning a promise would make the menu wait on IPC.
@@ -94,7 +96,9 @@ export function ContextMenuArea({
               >
                 <span>{i18n._(entry.command.title)}</span>
                 {entry.command.shortcut === undefined ? null : (
-                  <span className="m-context-menu-chord">{entry.command.shortcut}</span>
+                  <span className="m-context-menu-chord" aria-hidden="true">
+                    {entry.command.shortcut}
+                  </span>
                 )}
               </ContextMenu.Item>
               )),

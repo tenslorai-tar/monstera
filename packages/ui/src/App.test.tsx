@@ -386,6 +386,23 @@ async function pressCommand(name: string, section?: string): Promise<void> {
 }
 
 /**
+ * Runs a command through the MENU BAR, the way a person does (ADR-0107): the named menu opened, the named item
+ * chosen. For a command whose only place is a menu — File's Cloud storage, Save a copy — this is its reader's route.
+ */
+async function pressMenuItem(menu: string, name: string): Promise<void> {
+  const bar = screen.getByRole('menubar');
+  await act(async () => {
+    fireEvent.click(within(bar).getByRole('menuitem', { name: menu }));
+    await Promise.resolve();
+  });
+  const item = await screen.findByRole('menuitem', { name });
+  await act(async () => {
+    fireEvent.click(item);
+    await Promise.resolve();
+  });
+}
+
+/**
  * Every lazily-imported dialog body a case in this file waits for, loaded once
  * before any of them runs.
  *
@@ -584,7 +601,7 @@ describe('App', () => {
       throw new Error(`${what} never appeared`);
     };
 
-    await pressCommand('Cloud storage…', 'Home');
+    await pressMenuItem('File', 'Cloud storage…');
     (await until(() => screen.queryByRole('button', { name: 'Show my PDFs' }), 'Show my PDFs')).click();
     (await until(() => screen.queryByRole('button', { name: 'Open contract.pdf' }), 'the listed file')).click();
 
@@ -1961,7 +1978,7 @@ describe('App', () => {
       await settle();
       expect(document.title).toBe('annual.pdf ● — Monstera PDF Editor');
 
-      await pressCommand('Save back to cloud', 'Home');
+      await pressMenuItem('File', 'Save back to cloud');
       await settle();
       expect(document.title).toBe('annual.pdf — Monstera PDF Editor');
     });
@@ -2437,11 +2454,14 @@ describe('App', () => {
       expect(document.querySelectorAll('.m-page-list')).toHaveLength(2);
     });
 
-    it('gives the second viewport a NAME, and leaves the first without one', async () => {
-      // Two unnamed scrollable regions are two a screen-reader user cannot tell
-      // apart, which is the whole of what the split is for. The first keeps no
-      // name because with one pane there is nothing to distinguish it from.
+    it('names both viewports, and names them APART', async () => {
+      // Two scrollable regions under one name are two a screen-reader user cannot tell apart, which is the whole of
+      // what the split is for. *Corrected 2026-09-26:* the first was left unnamed while the scroller could not take the
+      // focus; it is a focusable region now (the menu bar's rendered case found a plain page could not be scrolled from
+      // the keyboard), and a focusable region carries a name.
       const { settings } = await withDocument();
+      const single = [...document.querySelectorAll('.m-page-list')].map((pane) => pane.getAttribute('aria-label'));
+      expect(single).toStrictEqual(['Document pages']);
       await act(async () => {
         settings.set(SPLIT_VIEW_SETTING.id, true);
         await Promise.resolve();
@@ -2449,7 +2469,7 @@ describe('App', () => {
 
       const panes = [...document.querySelectorAll('.m-page-list')];
       expect(panes.map((pane) => pane.getAttribute('aria-label'))).toStrictEqual([
-        null,
+        'Document pages',
         'Second view of this document',
       ]);
     });
@@ -2951,5 +2971,48 @@ describe('the first-run AI setup (E5 onboarding)', () => {
   it('CONTROL: a key that is not an AI provider’s — Azure Document Intelligence — does not count as set up', async () => {
     await started(['editing.azure-di-key'], {});
     expect(await screen.findByRole('dialog', { name: 'Set up the AI assistant' })).toBeTruthy();
+  });
+});
+
+describe('the menu bar, in the shell (ADR-0107)', () => {
+  it('draws v5-14’s menus in order over the application’s own registry — Home is not one', async () => {
+    const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
+    render(<App client={client} settings={freshSettings()} />);
+    await withDocumentOpen();
+    const menus = within(screen.getByRole('menubar', { name: 'Menu bar' })).getAllByRole('menuitem');
+    expect(menus.map((menu) => menu.textContent)).toStrictEqual([
+      'File',
+      'Edit',
+      'View',
+      'Organize',
+      'Comment',
+      'Forms',
+      'Review',
+      'Protect',
+      'Tools',
+      'Window',
+      'Help',
+    ]);
+  });
+
+  it('File › Start screen shows the start screen and KEEPS the document’s tab', async () => {
+    const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
+    const { container } = render(<App client={client} settings={freshSettings()} />);
+    await withDocumentOpen();
+    expect(container.querySelector('.m-start-area')).toBeNull();
+
+    await pressMenuItem('File', 'Start screen');
+    expect(container.querySelector('.m-start-area')).not.toBeNull();
+    expect(container.querySelector(`[data-tab="${DOC}"]`)).not.toBeNull();
+  });
+
+  it('Help › Check for updates asks main for the Store’s updates page, and for nothing else', async () => {
+    const { client, sent } = answeringClient({ ...OPEN_DOCUMENT_ANSWERS, 'app.openStore': { opened: true } });
+    render(<App client={client} settings={freshSettings()} />);
+    await withDocumentOpen();
+    const before = sent.length;
+
+    await pressMenuItem('Help', 'Check for updates');
+    expect(sent.slice(before)).toStrictEqual([{ id: 'app.openStore', params: { page: 'updates' } }]);
   });
 });

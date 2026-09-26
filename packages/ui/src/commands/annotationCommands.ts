@@ -119,6 +119,7 @@ import {
   POLYLINE_TOOL_TITLE,
   RECTANGLE_TOOL_TITLE,
   REDACT_TOOL_TITLE,
+  SELECT_ALL_MARKS_TITLE,
   SELECT_TOOL_TITLE,
   PLACE_IMAGE_TOOL_TITLE,
   PLACE_SIGNATURE_TOOL_TITLE,
@@ -134,7 +135,7 @@ import {
   UNDERLINE_TOOL_TITLE,
 } from '../messages/en.js';
 import type { IconName } from '../primitives/icons.js';
-import type { UiCommand } from '../registries/commands.js';
+import type { CommandContext, UiCommand } from '../registries/commands.js';
 import type { SectionId } from '../registries/placement.js';
 import { hasDocument } from './documentCommands.js';
 
@@ -762,27 +763,67 @@ export function copyAnnotationsCommand(
     placements: [{ surface: 'context-menu', context: 'annotation', order: 40 }],
     when: () => deps.selection() !== undefined,
     run: async (context): Promise<void> => {
-      const selection = deps.selection();
-      if (selection === undefined || context.docId === undefined) return;
-      const answer = await deps.client['document.copyAnnotations']({
-        docId: context.docId,
-        page: selection.page,
-        indices: selection.items.map((item) => item.index),
-        version: selection.version,
-      });
-      if (!answer.ok) {
-        void deps.ask(COMMAND_PROBLEM_DIALOG_ID, { code: answer.error.code });
-        return;
-      }
-      if (answer.value.kind === 'stale') {
-        void deps.ask(COMMAND_PROBLEM_DIALOG_ID, { code: 'stale-target' });
-        return;
-      }
-      if (answer.value.kind === 'nothing-copyable') {
-        void deps.ask(COMMAND_PROBLEM_DIALOG_ID, { code: 'not-copyable' });
-        return;
-      }
-      deps.onCopied(answer.value.copied);
+      await copySelectedAnnotations(deps, context);
+    },
+  };
+}
+
+/**
+ * Copies the selected marks to main's clipboard, saying why when it cannot, and answering whether it DID — which is
+ * what *Cut* needs before it deletes anything (ADR-0107): a cut that deleted what it could not copy loses it.
+ */
+export async function copySelectedAnnotations(
+  deps: SelectionCommandDeps & {
+    readonly client: ContractClient;
+    readonly ask: (id: string, props: unknown) => Promise<unknown>;
+    readonly onCopied: (count: number) => void;
+  },
+  context: CommandContext,
+): Promise<boolean> {
+  const selection = deps.selection();
+  if (selection === undefined || context.docId === undefined) return false;
+  const answer = await deps.client['document.copyAnnotations']({
+    docId: context.docId,
+    page: selection.page,
+    indices: selection.items.map((item) => item.index),
+    version: selection.version,
+  });
+  if (!answer.ok) {
+    void deps.ask(COMMAND_PROBLEM_DIALOG_ID, { code: answer.error.code });
+    return false;
+  }
+  if (answer.value.kind === 'stale') {
+    void deps.ask(COMMAND_PROBLEM_DIALOG_ID, { code: 'stale-target' });
+    return false;
+  }
+  if (answer.value.kind === 'nothing-copyable') {
+    void deps.ask(COMMAND_PROBLEM_DIALOG_ID, { code: 'not-copyable' });
+    return false;
+  }
+  deps.onCopied(answer.value.copied);
+  return true;
+}
+
+/**
+ * *Select every comment on this page* — the page half of *Edit › Select all* (ADR-0107). The select tool comes on, since
+ * a selection only exists while it is on, and every mark on the page on show that draws a region is selected, read from
+ * the walk at the version on screen. Hidden while the page has none, so *Select all* on a page with no marks is disabled
+ * rather than a control that selects nothing.
+ */
+export function selectAllMarksCommand(deps: {
+  /** How many marks the page on show draws a region for — the layers' own read (`usePageAnnotations`). */
+  readonly marksOn: (page: number) => number;
+  /** Turns the select tool on and selects every mark on `page` that has a region. */
+  readonly selectAll: (page: number) => Promise<void>;
+}): UiCommand {
+  return {
+    id: 'annotate.select-all',
+    title: SELECT_ALL_MARKS_TITLE,
+    placements: [],
+    when: (context) => context.page !== undefined && deps.marksOn(context.page) > 0,
+    run: async (context): Promise<void> => {
+      if (context.page === undefined) return;
+      await deps.selectAll(context.page);
     },
   };
 }

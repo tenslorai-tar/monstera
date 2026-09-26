@@ -34,6 +34,8 @@ import { SettingsRegistry } from '../registries/settings.js';
 import { SettingsStore } from '../settingsStore.js';
 import {
   copyAnnotationsCommand,
+  copySelectedAnnotations,
+  selectAllMarksCommand,
   deleteSelectionCommand,
   editSelectionCommand,
   replySelectionCommand,
@@ -783,7 +785,50 @@ describe('copyAnnotationsCommand', () => {
   it('sits FOURTH in the annotation menu, where the owner’s order puts it, and claims no chord', () => {
     const { command } = copying(SELECTION, undefined);
     expect(command.placements).toStrictEqual([{ surface: 'context-menu', context: 'annotation', order: 40 }]);
-    // Ctrl+C is the selected-text Copy; one chord cannot name two commands.
+    // Ctrl+C is Edit › Copy's, which runs this when marks are what is selected (ADR-0107); one chord, one command.
     expect(command.shortcut).toBeUndefined();
+  });
+
+  it('copySelectedAnnotations ANSWERS whether it copied — true only for a copy, which is what Cut waits on', async () => {
+    // EVERY REFUSAL ANSWERS FALSE: a cut that deleted after any of these would lose what it did not copy.
+    for (const [answer, expected] of [
+      [{ kind: 'copied', copied: 2, skipped: 0 }, true],
+      [{ kind: 'nothing-copyable' }, false],
+      [{ kind: 'stale' }, false],
+    ] as const) {
+      const sent: unknown[] = [];
+      const client = createClient(channels, (id) => {
+        sent.push(id);
+        return Promise.resolve(ok(answer));
+      });
+      const deps = {
+        selection: () => SELECTION,
+        onDelete: () => undefined,
+        onPlace: () => undefined,
+        client,
+        ask: () => Promise.resolve(undefined),
+        onCopied: () => undefined,
+      };
+      expect(await copySelectedAnnotations(deps, WITH_DOCUMENT), answer.kind).toBe(expected);
+    }
+  });
+});
+
+describe('selectAllMarksCommand (ADR-0107)', () => {
+  it('exists only on a page that draws a mark, and selects THAT page', async () => {
+    const selected: number[] = [];
+    const command = selectAllMarksCommand({
+      marksOn: (page) => (page === 2 ? 2 : 0),
+      selectAll: (page) => {
+        selected.push(page);
+        return Promise.resolve();
+      },
+    });
+    expect(command.when?.(WITH_DOCUMENT)).toBe(true);
+    // CONTROL: the same command on a page with none does not exist, so Select all is disabled rather than empty.
+    expect(command.when?.({ ...WITH_DOCUMENT, page: 3 })).toBe(false);
+    expect(command.when?.({ ...WITH_DOCUMENT, page: undefined })).toBe(false);
+    await command.run(WITH_DOCUMENT);
+    expect(selected).toStrictEqual([2]);
   });
 });

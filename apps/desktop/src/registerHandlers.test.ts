@@ -167,7 +167,7 @@ function handlers() {
     confirmClose: () => {
       throw new Error('registration cases must not reach the window');
     },
-    copySelection: () => {
+    edit: () => {
       throw new Error('registration cases must not reach the window');
     },
     copyText: () => {
@@ -175,6 +175,9 @@ function handlers() {
     },
     openWebPage: () => {
       throw new Error('registration cases must not reach the browser');
+    },
+    openStore: () => {
+      throw new Error('registration cases must not reach the Store');
     },
     closeListening: () => {
       throw new Error('registration cases must not reach the window');

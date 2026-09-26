@@ -160,9 +160,10 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     revealLog: () => Promise.resolve(false),
     titleBarOverlay: () => false,
     confirmClose: () => false,
-    copySelection: () => false,
+    edit: () => false,
     copyText: () => false,
     openWebPage: () => Promise.resolve(false),
+    openStore: () => Promise.resolve(false),
     closeListening: () => false,
     cloud: unconfiguredCloud(),
     readDictionary: () => Promise.resolve(null),
@@ -227,12 +228,13 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'log.reveal': 'answers a boolean',
   'window.titleBarOverlay': 'answers a boolean; two colours and a height go in, and no document contributes',
   'window.close': 'carries nothing and answers a boolean',
-  'window.copy': 'carries nothing and answers a boolean',
+  'window.edit': 'names one of four declared verbs and answers a boolean',
   'window.copyText': 'text bounded by MAX_CHAT_TEXT in, a boolean out',
   // ONE OF TWO DECLARED PLACES IN, A BOOLEAN OUT (ADR-0095). The parameter is a closed enum, so
   // neither side can carry anything a document contributes to — which is also why the renderer
   // cannot name an address.
   'app.openWebPage': 'names one of two declared pages and answers a boolean',
+  'app.openStore': 'names one of two declared Store pages and answers a boolean',
   // A PICKER AND A WRITE, whose answer says which of three things happened. The settings document
   // it writes is this build's own registered set and holds no secret and nothing a document
   // contributes to, which is `settings.load`'s answer above.

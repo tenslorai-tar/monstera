@@ -667,7 +667,8 @@ test('the PAGE MENU opens from the keyboard on a focused thumbnail — Shift+F10
 
   const second = page.locator('[data-thumb-page="1"]');
   await expect(second).toBeVisible();
-  const items = page.getByRole('menuitem');
+  // THE OPEN MENU'S ITEMS: the menu bar's eleven menus are menuitems too (the WAI-ARIA menubar pattern, ADR-0107).
+  const items = page.getByRole('menu').getByRole('menuitem');
 
   for (const key of ['Shift+F10', 'ContextMenu']) {
     await second.focus();
@@ -729,9 +730,12 @@ test('SELECTED TEXT opens the selected-text menu above the page’s, in the owne
   expect(await page.evaluate(() => document.getSelection()?.toString().trim() ?? '')).not.toBe('');
 
   await line.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } });
-  await expect(page.getByRole('menuitem').first()).toBeVisible();
-  await expect(page.getByRole('menuitem')).toHaveText([
-    'CopyCtrl+C',
+  // THE OPEN MENU'S ITEMS, not the menu bar's menus, which are menuitems too (ADR-0107).
+  const menuItems = page.getByRole('menu').getByRole('menuitem');
+  await expect(menuItems.first()).toBeVisible();
+  await expect(menuItems).toHaveText([
+    // NO CHORD SINCE ADR-0107: Ctrl+C is Edit › Copy's, which copies the selected text through this very command.
+    'Copy',
     'Highlight',
     'Underline',
     'Strikethrough',
@@ -800,8 +804,9 @@ test('a triple-click on a page’s LAST LINE still opens the selected-text menu,
   ).toBe(true);
 
   await line.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } });
-  await expect(page.getByRole('menuitem').first()).toBeVisible();
-  await expect(page.getByRole('menuitem').first()).toHaveText('CopyCtrl+C');
+  const menuItems = page.getByRole('menu').getByRole('menuitem');
+  await expect(menuItems.first()).toBeVisible();
+  await expect(menuItems.first()).toHaveText('Copy');
   await expect(page.getByRole('menuitem', { name: 'Explain' })).toBeVisible();
 });
 
@@ -840,7 +845,7 @@ test('OPEN SIDE BY SIDE puts the right-clicked tab’s document in the second pa
   await expect(background).toBeVisible();
   await background.click({ button: 'right' });
 
-  const items = page.getByRole('menuitem');
+  const items = page.getByRole('menu').getByRole('menuitem');
   await expect(items.first()).toBeVisible();
   // THE OWNER'S TAB ITEMS, exhaustive so a stray placement shows up as an extra row.
   await expect(items).toHaveText(['Close tabCtrl+W', 'Close other tabs', 'Open side by side']);
@@ -1356,9 +1361,14 @@ test('the TITLE BAR holds the tabs, the command search and the switcher on one r
     expect(middle).toBeGreaterThan(barBox.y);
     expect(middle).toBeLessThan(barBox.y + barBox.height);
   }
-  // ABOVE THE RAIL, which is where the tabs' own row used to be.
+  // ABOVE THE RAIL, which is where the tabs' own row used to be — and BELOW THE MENU BAR, the window's top row since
+  // v5-14 (ADR-0107), which carries the window controls.
   const rail = await page.locator('.m-ribbon__rail').boundingBox();
   expect(barBox.y + barBox.height).toBeLessThanOrEqual((rail?.y ?? 0) + 0.5);
+  const menuBar = await page.locator('.m-menu-bar').boundingBox();
+  if (menuBar === null) throw new Error('the menu bar has a box');
+  expect(menuBar.y).toBeLessThan(barBox.y);
+  expect(menuBar.y + menuBar.height).toBeLessThanOrEqual(barBox.y + 0.5);
 
   await search.click();
   await expect(page.locator('.m-palette-query')).toBeVisible();
@@ -1402,13 +1412,17 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every
   // and waiting on the page list instead would tie this case to a panel it says nothing about.
   await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
 
-  // AT THE PRIMARY WIDTH, nothing folds. This is the control: without it, a ribbon that folded at
-  // every width would pass every assertion below. Home's groups carry secondaries, so their Mores
-  // are here — each holding none of the width's.
-  await expect(tools.locator('.m-ribbon__more[data-width-folded="0"]').first()).toBeVisible();
-  await expect(more).toHaveCount(0);
+  // AT THE PRIMARY WIDTH, HOME DRAWS NO MORE AT ALL — the owner's design, and what moving Home's secondary tools to
+  // the menu bar was for (ADR-0107): every Home tool is on the row at 1920.
+  await expect(tools.locator('.m-ribbon__more:not(.m-ribbon__more-gauge)')).toHaveCount(0);
   const wideButtons = await tools.locator('.m-tool-button[data-command]').count();
   expect(wideButtons).toBeGreaterThan(0);
+  // AND NOTHING FOLDS IN A SECTION THAT DOES CARRY SECONDARIES. This is the control: without it, a ribbon that folded
+  // at every width would pass every assertion below. Tools › Convert keeps its less-used formats in its More, so a More
+  // is here — holding none of the width's — and the selector that finds folded ones is shown to be able to find a More.
+  await page.locator('.m-ribbon__tab[data-ribbon-section="tools"]').click();
+  await expect(tools.locator('.m-ribbon__more[data-width-folded="0"]').first()).toBeVisible();
+  await expect(more).toHaveCount(0);
   // EACH SECTION'S WIDEST BUTTON, read at the primary width where (nearly) every button is drawn: the
   // fold below may leave at most that much room unused, or it hid a button that fitted.
   // THE SECTIONS BY THEIR OWN ATTRIBUTE: the rail's foot draws Settings with the same class (ADR-0098),
@@ -1548,10 +1562,12 @@ test('the START SCREEN draws the supplied logo, the hero lines, one primary Open
   // one artwork, and the image's own ratio is the property ADR-0002 states for any.
   expect(drawn.width / drawn.height).toBeCloseTo(drawn.naturalRatio, 1);
 
-  const title = await measure(page.locator('.m-title-bar__logo'));
-  expect(title.natural).toBeGreaterThan(0);
-  expect(title.height).toBeCloseTo(26, 0);
-  expect(title.width / title.height).toBeCloseTo(title.naturalRatio, 1);
+  // THE MARK IN THE MENU BAR since v5-14 (ADR-0107), at the design's 18 px — the title bar draws none.
+  const mark = await measure(page.locator('.m-menu-bar__logo'));
+  expect(mark.natural).toBeGreaterThan(0);
+  expect(mark.height).toBeCloseTo(18, 0);
+  expect(mark.width / mark.height).toBeCloseTo(mark.naturalRatio, 1);
+  await expect(page.locator('.m-title-bar img')).toHaveCount(0);
 
   await expect(page.getByText('PDF EDITOR')).toBeVisible();
   await expect(page.getByText('Built For The Way You Work')).toBeVisible();
@@ -1774,6 +1790,72 @@ for (const look of LOOKS) {
   });
 }
 
+// THE MENU BAR (ADR-0107), in every theme: the window's top row above the title bar, reached from the keyboard by F10,
+// walked with the arrows, an open menu marking the current theme and disabling what cannot run — and passing the gate
+// with a menu OPEN, which is the state a screen reader meets it in.
+for (const look of LOOKS) {
+  test(`${look.name}: the MENU BAR opens from the keyboard, marks and disables its items, and passes axe`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await bridgeWithDocument(page, { 'appearance.theme': look.theme }, 1);
+    await page.emulateMedia({ contrast: look.contrast, reducedMotion: 'reduce' });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('.m-page-list .m-page').first()).toBeVisible();
+
+    const bar = page.getByRole('menubar', { name: 'Menu bar' });
+    const gate = async (scan: AxeBuilder): Promise<void> => {
+      const results = await scan.analyze();
+      const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+      expect(
+        blocking,
+        blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+      ).toEqual([]);
+    };
+    // THE WHOLE WINDOW WITH THE BAR CLOSED, nothing excluded.
+    await gate(new AxeBuilder({ page }));
+    await expect(bar.getByRole('menuitem')).toHaveText([
+      'File',
+      'Edit',
+      'View',
+      'Organize',
+      'Comment',
+      'Forms',
+      'Review',
+      'Protect',
+      'Tools',
+      'Window',
+      'Help',
+    ]);
+
+    // F10, then Right twice and Down: the keyboard route to View, with no pointer.
+    await page.keyboard.press('F10');
+    await expect(bar.getByRole('menuitem', { name: 'File' })).toBeFocused();
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowDown');
+    const view = page.getByRole('menu');
+    await expect(view.getByRole('menuitemcheckbox', { name: 'Ribbon layout' })).toBeVisible();
+    // THE CURRENT LAYOUT IS MARKED and the others are not — the mark is a state, not decoration.
+    await expect(view.getByRole('menuitemcheckbox', { name: 'Ribbon layout' })).toHaveAttribute('aria-checked', 'true');
+    await expect(view.getByRole('menuitemcheckbox', { name: 'Focus layout' })).toHaveAttribute('aria-checked', 'false');
+
+    // THE OPEN MENU ITSELF, which is what is new on screen. Not the whole window while a menu is open, and the reason is
+    // Base UI's, measured here on 2026-09-26 (1.7.0): an open menu renders a placeholder `<span aria-owns>` where its
+    // `Menu.Portal` sits — inside the menubar, in the library's own documented structure — which axe reports as a child
+    // a menubar may not have; and the open menu makes the rest of the window inert, so the page list is reported as a
+    // scrollable region with nothing focusable. Neither is on screen with the bar closed, which the scan above covers
+    // whole.
+    await gate(new AxeBuilder({ page }).include('[role="menu"]'));
+
+    // EDIT, with nothing selected and no field focused: Cut is DISABLED rather than hidden.
+    await page.keyboard.press('Escape');
+    await bar.getByRole('menuitem', { name: 'Edit' }).click();
+    await expect(page.getByRole('menu').getByRole('menuitem', { name: 'Cut' })).toHaveAttribute('aria-disabled', 'true');
+    // CONTROL: Undo's neighbour Redo is there too, so the disabled item is one of a drawn menu, not of an empty one.
+    await expect(page.getByRole('menu').getByRole('menuitem', { name: 'Redo' })).toBeVisible();
+  });
+}
+
 // TRANSLATE THIS PAGE (ADR-0097), in every theme: the dialog says what it sends before the control
 // that sends it, passes the gate, and a translation ends in ONE edit and its toast.
 for (const look of LOOKS) {
@@ -1815,6 +1897,53 @@ for (const look of LOOKS) {
     await dialog.getByRole('button', { name: 'Translate' }).click();
     // THE WRITE'S OWN TOAST, which only a document.execute that answered produces.
     await expect(page.getByText('Page translated. Undo puts the original back.')).toBeVisible();
+  });
+}
+
+// THE AUTHOR A NEW MARK CARRIES, as the App composes it (ADR-0103; finding QQQQQQ-13). `authorFor` is unit-tested and
+// every command case injects its own stamp, so the one line that joins the setting to the Windows user name — `App`'s
+// `stamp` — was crossed by nothing: `authorFor(typedAuthor, '')` passed the whole suite. This places a mark the way a
+// person does and reads the author off the command the page SENT, which no screen shows.
+//
+// THE SECOND ROW IS THE CONTROL: nothing typed, so the author is the user name `app.info` answers — the shim's
+// `Shim User`. It is the row the broken join fails, since an empty user name gives an empty author; the first row
+// alone would pass it.
+for (const [typed, expected] of [
+  ['Ada Lovelace', 'Ada Lovelace'],
+  ['', 'Shim User'],
+] as const) {
+  test(`a new mark names ${expected} as its author when the name setting is "${typed}"`, async ({ page }) => {
+    const bytes = await onePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000c9');
+    const sent: unknown[] = [];
+    await bridge(
+      page,
+      {
+        settings: typed === '' ? {} : { 'editing.author-name': typed },
+        opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'author.pdf' }],
+        documentBytes: new Map([[docId, bytes]]),
+      },
+      (channel, params) => {
+        if (channel === 'document.execute') sent.push(params);
+      },
+    );
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+
+    // THE INSERTION MARK, because it is a click that commits at once — no dialog between the gesture and the send.
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('Insertion mark');
+    await page.keyboard.press('Enter');
+    await page.getByLabel('Draw on page 1').click();
+
+    const authors = (): unknown[] =>
+      sent.flatMap((params) => {
+        const command = (params as { readonly command?: { readonly kind?: string; readonly stamp?: { readonly author?: unknown } } })
+          .command;
+        return command?.kind === 'addAnnotation' ? [command.stamp?.author] : [];
+      });
+    await expect.poll(authors).toStrictEqual([expected]);
   });
 }
 

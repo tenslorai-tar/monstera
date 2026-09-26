@@ -892,6 +892,42 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-26 — The menu bar, and two reds on main that were each a single missing thing
+
+The 26 September list's item 3 (ADR-0107 and its correction): the window's top row is now v5-14's menu bar, every item a
+projection of the registry, and Home's secondary tools live in File and a new Tools › Convert. What is worth keeping:
+
+**main was red twice today, and both causes were one missing thing that a check had predicted.** At 3f94567c the ribbon
+fold on ubuntu left 100.9 px empty beside a group whose widest hidden tool was 72.1 px: the hidden gauge that sizes a
+*More* is a `span` and a *More* is a `button`, the browser gives them different box models, and v5's `min-inline-size`
+measured 66 px on one and 55.2 on the other. `box-sizing` is now the class's. At 7539dd80 a windows-latest App case
+found the problem dialog's title and not its sentence: `App.test.tsx` had preloaded the dialog bodies its cases read
+since 2026-09-06, its comment predicted exactly this failure for a body left off the list, and the command-problem body
+was off it. I widened the wait window first (6b570c3b) without reading that block, which is the remedy it had rejected;
+e24eca0e added the body and kept the window as a backstop, and the stage audit below removed the window and the list
+together (RRRRRR-1). **Read the failing file's own setup before designing a fix.**
+
+**One chord, one command, and the Edit menu takes four.** Cut, Copy, Paste and Select all act on what has focus — a text
+field through the browser's own verbs (`window.edit`, one channel for four verbs, which replaced `window.copy`), the page
+otherwise through the commands that already owned each half. `text.copy` and `annotate.paste` gave their chords up; the
+selected-text menu's *Copy* no longer shows Ctrl+C, and Ctrl+C still copies the selection.
+
+**The accessibility gate found a defect nothing had looked at.** Scanning the whole window with a document open — no
+earlier rendered case did with the page list present — reported the page scroller as a scrollable region with nothing
+focusable: a plain page could not be scrolled from the keyboard. It is a named, focusable region now. The same case met
+a limit that is Base UI's: an open menu renders `span[aria-owns]` inside the menubar. It is stated in the test and the
+row, and the case scans the whole window with the bar closed.
+
+**The owner's exception, recorded:** *New window* is not built. *Help centre* is item 9's.
+
+**QQQQQQ-13 is closed (item 11).** The page bridge now takes an observer told every channel call the page makes, and a
+rendered case places an insertion mark and reads the author off the command the page sent: *Ada Lovelace* when typed,
+and the Windows user name — the shim's *Shim User* — when nothing is. The second row is the control; the join the
+finding named, `authorFor(typedAuthor, '')`, gives an empty author there. Its trigger was *a Chromium case that draws
+one*, and this is that case.
+
+---
+
 ## 2026-09-26 — Stage audit of `1e1bfad..e24eca0e` — findings RRRRRR-1 to RRRRRR-12
 
 39 commits, 167 files at the tree read, 5 proofs added, 58 modified and none removed, 7 source files added and 48
@@ -1044,6 +1080,8 @@ committed; the registry rule in RRRRRR-4 registers into the settings seam and ch
 
 The cross-document sweep for RRRRRR-8 was `grep -rn "WebUpdateProvider"` over `docs/` and `CLAUDE.md`: three live
 statements, all corrected; the ADR is right and unchanged. The two `will-navigate` comments are RRRRRR-10.
+
+---
 
 ## 2026-09-26 — The owner's v5 material, and contrast checked over a lit ground
 

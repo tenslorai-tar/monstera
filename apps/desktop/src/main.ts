@@ -1,4 +1,4 @@
-import { type IncidentSink, type MainHandlers, checkEvent } from '@monstera/contract';
+import { type IncidentSink, type MainHandlers, type WindowEditAction, checkEvent } from '@monstera/contract';
 import { Menu, app, ipcMain, session } from 'electron';
 
 import type { TitleBarOverlay } from './contractHandlers.js';
@@ -107,8 +107,8 @@ export interface ShellWindow {
    * or destroyed — and then the gate lets the close through.
    */
   readonly askToClose: () => boolean;
-  /** Runs the browser's copy on the page's current selection — `webContents.copy()`. */
-  readonly copy: () => void;
+  /** Runs the browser's edit command on what has focus in the page — `webContents[action]()`. */
+  readonly edit: (action: WindowEditAction) => void;
 }
 
 /**
@@ -168,8 +168,8 @@ export function startShell(build: () => ShellDependencies): void {
         contents.send('window.close-requested', checkEvent('window.close-requested', {}));
         return true;
       },
-      copy: () => {
-        window.webContents.copy();
+      edit: (action) => {
+        window.webContents[action]();
       },
     });
     // EVERY PLATFORM ROUTE TO CLOSING passes one of these two. `app.quit()` closes each window

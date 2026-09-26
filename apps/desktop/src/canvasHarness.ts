@@ -146,7 +146,8 @@ export interface CanvasReadback {
    */
   readonly zoomed: ZoomedReadback;
   /**
-   * The title bar's Window Controls Overlay, as Chromium reports it and as main painted it.
+   * The menu bar's Window Controls Overlay (the window's top row since ADR-0107), as Chromium reports it and as main
+   * painted it.
    *
    * `visible` and `areaWidth` come from `navigator.windowControlsOverlay` in the page; `painted` is every overlay
    * the shell's attached window was asked to paint, recorded on the way through — so the proof compares what main
@@ -155,7 +156,7 @@ export interface CanvasReadback {
   readonly overlay: OverlayReadback;
 }
 
-/** The overlay half of a readback. `null` where the page has no `windowControlsOverlay` or no title bar. */
+/** The overlay half of a readback. `null` where the page has no `windowControlsOverlay` or no menu bar. */
 export interface OverlayReadback {
   readonly visible: boolean | null;
   readonly areaWidth: number | null;
@@ -631,8 +632,8 @@ export async function reportCanvasPixels(
     // NOBODY TO ASK: this harness closes its window when its reading is done, and a held close
     // would leave it waiting on a question no case answers.
     askToClose: () => false,
-    copy: () => {
-      window.webContents.copy();
+    edit: (action) => {
+      window.webContents[action]();
     },
   });
   registerContractHandlers(ipcMain, deps.handlers, deps.incidents, senderCheckFor(window));
@@ -698,13 +699,13 @@ export async function reportCanvasPixels(
   const zoomed = await readZoomed(contents, zoomControlName, settled.width);
   const pixelsTo = pixelPath === undefined ? null : await writePixels(contents, pixelPath);
 
-  // READ LAST, long after the renderer's first report: the title bar mounts with the start screen and a document
-  // has opened and zoomed since.
+  // READ LAST, long after the renderer's first report: the menu bar mounts with the start screen and a document
+  // has opened and zoomed since. THE MENU BAR since v5-14 (ADR-0107): it is the row the controls are drawn over.
   const overlayPage = await evaluate(
     contents,
     `(() => {
        const controls = navigator.windowControlsOverlay;
-       const bar = document.querySelector('.m-title-bar');
+       const bar = document.querySelector('.m-menu-bar');
        return {
          visible: controls === undefined ? null : controls.visible,
          areaWidth: controls === undefined ? null : controls.getTitlebarAreaRect().width,

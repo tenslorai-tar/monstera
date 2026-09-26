@@ -73,12 +73,15 @@ describe('donateCommand', () => {
     expect((await run(undefined)).asked).toStrictEqual([DONATE_DIALOG_ID]);
   });
 
-  it('is offered everywhere through ONE placement: the title bar, which the start screen draws too', () => {
+  it('is offered through the title bar, which the start screen draws too, and Help — the two places the design draws it', () => {
     const command = donateCommand({ client: client().client, ask: () => Promise.resolve(undefined) });
 
     expect(command.when).toBeUndefined();
-    // THE WHOLE LIST, so a second placement — a start-screen footer button the owner's exports do
-    // not draw — fails here rather than appearing on a screen nobody compared against the design.
-    expect(command.placements).toStrictEqual([{ surface: 'title-bar', emphasis: 'primary', order: 1 }]);
+    // THE WHOLE LIST, so a third placement — a start-screen footer button the owner's exports do not draw — fails here
+    // rather than appearing on a screen nobody compared against the design. Help › Donate is v5-14's (ADR-0107).
+    expect(command.placements).toStrictEqual([
+      { surface: 'title-bar', emphasis: 'primary', order: 1 },
+      { surface: 'menu-bar', menu: 'help', group: 1, order: 10 },
+    ]);
   });
 });

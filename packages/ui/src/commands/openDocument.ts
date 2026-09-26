@@ -112,6 +112,7 @@ export function openDocumentCommand(deps: OpenDocumentDeps): UiCommand {
       // (the start screen) and after there is one (the ribbon), and those are
       // two moments rather than two features.
       { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 10 },
+      { surface: 'menu-bar', menu: 'file', group: 0, order: 10 },
     ],
     run: async (): Promise<void> => {
       await openDocument(deps);

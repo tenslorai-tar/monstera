@@ -88,8 +88,10 @@ function draw(
 }
 
 describe('the ribbon', () => {
+  // WITH ITS FILE PLACEMENT, as the application's Save has: a Home tool is in some menu (ADR-0107's correction).
   const SAVE = commandOf('a.save', 'test.save', [
     { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 10 },
+    { surface: 'menu-bar', menu: 'file', group: 1, order: 10 },
   ]);
   const ROTATE = commandOf('b.rotate', 'test.rotate', [
     { surface: 'ribbon', section: 'organize', group: GROUP_ADJUST, order: 10 },
@@ -157,6 +159,7 @@ describe('the ribbon', () => {
       {
         ...commandOf('a.save', 'test.save', [
           { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 10 },
+          { surface: 'menu-bar', menu: 'file', group: 1, order: 10 },
         ]),
         run: ran,
       },

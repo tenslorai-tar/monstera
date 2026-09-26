@@ -7,6 +7,7 @@ import {
   type FormFieldKind,
   type Incident,
   type OcrLanguage,
+  type WindowEditAction,
   MAX_FORM_DATA_BYTES,
   ACCESSIBILITY_HUMAN_CHECKS,
   MAX_IMAGE_BYTES,
@@ -369,10 +370,10 @@ export interface BrowserShimOptions {
   readonly pageLines?: readonly (readonly string[])[];
 
   /**
-   * What `window.copy` copies through — main's attached window, for a shim that has a page.
-   * Absent, the channel answers `copied: false`, main's own answer with no window attached.
+   * What `window.edit` runs through — main's attached window, for a shim that has a page. Absent,
+   * the channel answers `done: false`, main's own answer with no window attached.
    */
-  readonly copySelection?: () => Promise<void>;
+  readonly edit?: (action: WindowEditAction) => Promise<void>;
 
   /**
    * Which pages carry a picture and no text, indexed by page.
@@ -1936,6 +1937,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // NO BROWSER TO OPEN A BROWSER IN: a shim page opens nothing outside itself, which is the same
     // answer a build with no address for the page gives.
     'app.openWebPage': () => Promise.resolve(ok({ opened: false })),
+    // AND NO STORE APPLICATION, for the same reason.
+    'app.openStore': () => Promise.resolve(ok({ opened: false })),
     // THE RATING PROMPT (E3): never due unless a fixture says so, so no screen that is about something else
     // carries the banner; and nothing opens, since the shim has no Store.
     'app.reviewPrompt': () => Promise.resolve(ok({ due: options.reviewDue ?? false })),
@@ -2004,10 +2007,10 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       closeListenings += 1;
       return Promise.resolve(ok({ acknowledged: true }));
     },
-    'window.copy': async () => {
-      if (options.copySelection === undefined) return ok({ copied: false });
-      await options.copySelection();
-      return ok({ copied: true });
+    'window.edit': async ({ action }) => {
+      if (options.edit === undefined) return ok({ done: false });
+      await options.edit(action);
+      return ok({ done: true });
     },
     // A REAL DICTIONARY, three words long. The shim runs in a browser and
     // cannot read `dictionary-en` off disk, and the two obvious answers are

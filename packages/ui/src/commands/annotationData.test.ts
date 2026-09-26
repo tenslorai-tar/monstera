@@ -1,11 +1,11 @@
 import { channels, createClient } from '@monstera/contract';
-import { asDocId, asDocVersion, ok } from '@monstera/shared';
+import { asDocId, asDocVersion, messageKey, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { IMPORT_ANNOTATIONS_PROBLEM_DIALOG_ID } from '../dialogs/importAnnotationsProblem.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { GROUP_COMMENT_FILES } from '../messages/en.js';
-import { type CommandContext, CommandRegistry } from '../registries/commands.js';
+import { type CommandContext, CommandRegistry, type UiCommand } from '../registries/commands.js';
 import { dispatchChord, shortcutsFor } from '../surfaces/shortcuts.js';
 import {
   exportAnnotationsFdfCommand,
@@ -16,6 +16,7 @@ import {
   importAnnotationsXfdfCommand,
   pasteAnnotationsCommand,
 } from './annotationData.js';
+import { editCommands } from './editCommands.js';
 
 /**
  * The six comment-file commands against a validating client. The kernel half — that a file's
@@ -145,7 +146,22 @@ describe('pasteAnnotationsCommand — main mints the import from the clipboard i
     let copied = false;
     const command = pasteAnnotationsCommand({ ...deps, hasCopied: () => copied });
     expect(command.placements).toStrictEqual([{ surface: 'context-menu', context: 'page', order: 25 }]);
-    const registry = new CommandRegistry([command]);
+    // THE CHORD IS EDIT › PASTE'S since the menu bar (ADR-0107), so the registry holds both: the owner's meaning of
+    // Ctrl+V on the page reaches this command through it, with no field holding the focus.
+    const idle: UiCommand = { id: 'test.idle', title: messageKey('command.idle.title'), placements: [], when: () => false, run: () => undefined };
+    const registry = new CommandRegistry([
+      command,
+      ...editCommands({
+        field: () => undefined,
+        native: () => undefined,
+        copyText: idle,
+        copyMarks: idle,
+        copyMarksFor: () => Promise.resolve(false),
+        deleteMarks: idle,
+        pasteMarks: command,
+        selectAllMarks: idle,
+      }),
+    ]);
     const map = shortcutsFor(registry);
     const ctrlV = { key: 'v', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false };
 

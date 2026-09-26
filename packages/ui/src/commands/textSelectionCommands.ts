@@ -60,7 +60,7 @@ export function copySelectionCommand(deps: TextSelectionDeps): UiCommand {
   return {
     id: 'text.copy',
     title: COPY_SELECTION_TITLE,
-    shortcut: 'Ctrl+C',
+    // NO CHORD OF ITS OWN: Ctrl+C is `edit.copy`'s, which runs this when the page's text is what is selected (ADR-0107).
     icon: 'Copy',
     placements: [
       { surface: 'context-menu', context: 'selection', order: 10 },

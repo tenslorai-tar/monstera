@@ -54,6 +54,7 @@ export function showSettingsCommand(deps: {
       { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 905 },
       // THE RAIL'S FOOT, where the owner's v5 design draws the gear on every document screen (ADR-0098).
       { surface: 'rail', order: 10 },
+      { surface: 'menu-bar', menu: 'window', group: 2, order: 10 },
     ],
     run: async (): Promise<void> => {
       const secrets = await deps.client['settings.loadSecrets']({});

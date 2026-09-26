@@ -1,7 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { ReactElement, ReactNode } from 'react';
 
-import titleLogo from '../../../../assets/brand/logo-title.png';
 import { LAYOUT_MODE_OPTION_TITLES, LAYOUT_MODE_TITLE, PALETTE_PLACEHOLDER } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { Icon } from '../primitives/Icon.js';
@@ -16,7 +15,7 @@ const PALETTE_COMMAND = 'view.command-palette';
 const MODES: readonly LayoutMode[] = ['ribbon', 'studio', 'focus'];
 
 /**
- * §10.3's title bar: the document tabs (Window Controls Overlay), **the application's own commands**,
+ * §10.3's title bar: the document tabs, **the application's own commands**,
  * the Ctrl+K command search and the layout switcher — drawn in every layout mode, because Focus keeps
  * it: *"the title bar stays because it holds the tabs and the way out"*.
  *
@@ -49,8 +48,11 @@ const MODES: readonly LayoutMode[] = ['ribbon', 'studio', 'focus'];
  *
  * `DocumentTabs` is data with controls and needs the shell's tab state; this bar only places it.
  *
- * Window Controls Overlay — the bar as the window's own caption — is not here: it needs main to hide
- * the native title bar and a channel carrying the theme's colours to the overlay's buttons.
+ * ## The window's caption is the row ABOVE this one
+ *
+ * Since v5-14 (ADR-0107) the menu bar is the window's top row, and the system draws its three window
+ * controls over that row's end (Window Controls Overlay, `windowControlsOverlay.ts`). This bar sits
+ * below it, spans the window, and reserves no room for them.
  */
 export function TitleBar({
   registry,
@@ -75,9 +77,7 @@ export function TitleBar({
 
   return (
     <header className="m-title-bar">
-      {/* ADR-0002: the supplied artwork, scaled. Decorative — at 26 px it reads as a shape, and the tabs beside it carry
-          the identifying text — so it has an empty name rather than a second "Monstera" for a screen reader. */}
-      <img className="m-title-bar__logo" src={titleLogo} alt="" />
+      {/* The application's mark is the MENU BAR's since v5-14 (ADR-0107), which is the row above this one. */}
       {children}
       {/* THE APPLICATION'S OWN COMMANDS (ADR-0095) — Donate and Rate Us in the owner's design.
           Projected, so this surface names none of them and adding a third is a placement. */}

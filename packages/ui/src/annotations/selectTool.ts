@@ -161,6 +161,19 @@ export function carrySelection(
   return { page: current.page, version: produced, items };
 }
 
+/**
+ * Every mark on `page` that draws a region, selected at the walk's own version — *Select all* on the page (ADR-0107).
+ * `undefined` when there is none, for {@link AnnotationSelection}'s one *nothing*. Items come from `selectedFrom`, as
+ * the select tool's and {@link carrySelection}'s do.
+ */
+export function selectionOfPage(walk: AnnotationSnapshot, page: number): AnnotationSelection | undefined {
+  const items = walk.annotations
+    .filter((entry) => entry.page === page)
+    .map(selectedFrom)
+    .filter((item): item is SelectedAnnotation => item !== undefined);
+  return items.length === 0 ? undefined : { page, version: walk.version, items };
+}
+
 export interface SelectDeps {
   /** The same read the eraser holds. */
   readonly annotations: () => Promise<AnnotationSnapshot | undefined>;

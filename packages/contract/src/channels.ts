@@ -397,6 +397,17 @@ export const MAX_SECRET_SETTING = 8 * 1024;
  */
 export const SETTINGS_SECRET_CHANNELS = ['settings.loadSecrets', 'settings.saveSecret'] as const;
 
+/** The browser's own edit commands `window.edit` runs, named as `webContents` names its methods. */
+export const WINDOW_EDIT_ACTIONS = ['cut', 'copy', 'paste', 'selectAll'] as const;
+export type WindowEditAction = (typeof WINDOW_EDIT_ACTIONS)[number];
+
+/**
+ * The Store application's pages this build opens. `review` is reached by the rating prompt through `app.review`, and
+ * `updates` by `app.openStore`; `main` holds one table of their URIs, so the two routes share one opener.
+ */
+export const STORE_PAGES = ['review', 'updates'] as const;
+export type StorePage = (typeof STORE_PAGES)[number];
+
 /**
  * Bounds on what the assistant's channels carry.
  *
@@ -4966,22 +4977,25 @@ export const channels = {
   ),
 
   /**
-   * Copies the page's current selection, exactly as Ctrl+C does — the selected-text menu's *Copy*.
+   * Runs one of the browser's own edit commands on what has focus in the window, exactly as its
+   * chord does — the selected-text menu's *Copy*, and the menu bar's *Cut*, *Copy*, *Paste* and
+   * *Select all* while a text field holds the focus (ADR-0107).
    *
-   * ## Chromium's own copy, run from main, and it carries NO TEXT
+   * ## Chromium's own edits, run from main, and they carry NO TEXT
    *
    * The renderer has two ways to reach the clipboard itself and neither is open to it: the async
-   * clipboard API asks for `clipboard-sanitized-write`, which ARCHITECTURE §2 does not grant (the
-   * window is permitted `media` alone), and `document.execCommand` is deprecated. `webContents.copy()`
-   * runs the browser's copy command on whatever is selected, so what reaches the clipboard is decided
-   * by the one thing that already decides it for the chord — the browser — rather than by a string
-   * this side assembles (B3a). Nothing crosses but the request. `copied: false` is a harness with no
-   * window attached.
+   * clipboard API asks for `clipboard-sanitized-write` and `clipboard-read`, which ARCHITECTURE §2
+   * does not grant (the window is permitted `media` alone), and `document.execCommand` is deprecated
+   * and refuses a paste. `webContents.cut()`, `copy()`, `paste()` and `selectAll()` run the browser's
+   * command on whatever has focus, so what moves is decided by the one thing that already decides it
+   * for the chord — the browser — rather than by a string this side assembles (B3a). One channel for
+   * the four, because they are one question with one answer; a channel per verb would be four
+   * spellings of it. Nothing crosses but the verb. `done: false` is a harness with no window attached.
    */
-  'window.copy': channel(
-    'Copies the current selection in the window, as the copy chord does.',
-    z.object({}),
-    z.object({ copied: z.boolean() }),
+  'window.edit': channel(
+    'Runs the browser’s own cut, copy, paste or select all on what has focus in the window.',
+    z.object({ action: z.enum(WINDOW_EDIT_ACTIONS) }).strict(),
+    z.object({ done: z.boolean() }),
   ),
 
   /**
@@ -5050,6 +5064,21 @@ export const channels = {
     'Opens one of this project’s own pages in the person’s browser.',
     // `source` and `licences` are About's (AGPL's source offer and the third-party notices).
     z.object({ page: z.enum(['donate', 'store-listing', 'source', 'licences']) }).strict(),
+    z.object({ opened: z.boolean() }),
+  ),
+
+  /**
+   * Opens one of the Microsoft Store APPLICATION's own pages — *Help › Check for updates* (ADR-0107, the owner's answer
+   * of 2026-09-26: the Store's *Downloads and updates* page until this project's own update check is live).
+   *
+   * **A place, never an address**, `app.openWebPage`'s shape: the renderer names `updates` and `main` holds the
+   * `ms-windows-store:` URI, which is not a web address and so is opened by the platform rather than by the browser
+   * route's HTTPS rule. The Store updates this application; the application never installs itself (ADR-0018), so this
+   * opens the page where a person sees and takes the update. `opened: false` is a build with no way to reach the Store.
+   */
+  'app.openStore': channel(
+    'Opens one of the Microsoft Store application’s own pages.',
+    z.object({ page: z.enum(STORE_PAGES) }).strict(),
     z.object({ opened: z.boolean() }),
   ),
 } as const;

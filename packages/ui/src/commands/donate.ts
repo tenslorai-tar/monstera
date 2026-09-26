@@ -31,7 +31,10 @@ export function donateCommand(deps: {
     id: 'app.donate',
     icon: 'Heart',
     title: DONATE_COMMAND_TITLE,
-    placements: [{ surface: 'title-bar', emphasis: 'primary', order: 1 }],
+    placements: [
+      { surface: 'title-bar', emphasis: 'primary', order: 1 },
+      { surface: 'menu-bar', menu: 'help', group: 1, order: 10 },
+    ],
     run: async (): Promise<void> => {
       const answer = (await deps.ask(DONATE_DIALOG_ID, {})) as DonateAnswer | undefined;
       // DISMISSAL AND *Not now* ARE ONE ANSWER, which is what the result schema's own header says:

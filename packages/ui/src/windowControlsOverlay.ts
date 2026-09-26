@@ -85,7 +85,8 @@ export function overlayOf(bar: Element): TitleBarOverlayRequest | undefined {
  */
 export function useWindowControlsOverlay(client: ContractClient): void {
   useEffect(() => {
-    const bar = document.querySelector('.m-title-bar');
+    // THE MENU BAR, the window's top row since v5-14 (ADR-0107): the controls are drawn over its end, at its height.
+    const bar = document.querySelector('.m-menu-bar');
     if (bar === null) return undefined;
     let sent = '';
     const report = (): void => {

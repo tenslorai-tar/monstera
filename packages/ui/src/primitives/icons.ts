@@ -3,6 +3,7 @@ import {
   Bookmark,
   Braces,
   Camera,
+  Check,
   ChevronDown,
   ChevronFirst,
   ChevronLast,
@@ -180,6 +181,8 @@ export const ICONS = {
   Bookmark,
   Braces,
   Camera,
+  // THE MENU BAR'S MARK beside a command that is on (ADR-0107).
+  Check,
   ChevronDown,
   ChevronFirst,
   ChevronLast,

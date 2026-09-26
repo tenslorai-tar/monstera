@@ -67,10 +67,13 @@ describe('rateUsCommand', () => {
     }
   });
 
-  it('is the title bar’s second button, beside Donate, and needs no document', () => {
+  it('is the title bar’s second button, beside Donate, and Help’s — and needs no document', () => {
     const command = rateUsCommand({ client: createClient(channels, () => Promise.reject(new Error('unused'))), toast: () => undefined });
 
     expect(command.when).toBeUndefined();
-    expect(command.placements).toStrictEqual([{ surface: 'title-bar', emphasis: 'normal', order: 2 }]);
+    expect(command.placements).toStrictEqual([
+      { surface: 'title-bar', emphasis: 'normal', order: 2 },
+      { surface: 'menu-bar', menu: 'help', group: 1, order: 20 },
+    ]);
   });
 });

@@ -31,7 +31,9 @@ export function showAboutCommand(deps: {
     title: ABOUT_COMMAND_TITLE,
     placements: [
       { surface: 'start-screen', slot: 'footer', order: 2 },
-      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 920 },
+      // SECONDARY since Help › About exists (ADR-0107).
+      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 920, prominence: 'secondary' },
+      { surface: 'menu-bar', menu: 'help', group: 2, order: 30 },
     ],
     run: async (): Promise<void> => {
       const answer = await deps.client['app.info']({});

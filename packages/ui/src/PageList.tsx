@@ -13,7 +13,7 @@ import { TextLayer, type TextLayerLine } from './TextLayer.js';
 import { type PageAnnotation, usePageAnnotations } from './usePageAnnotations.js';
 import { usePageRotations } from './usePageRotations.js';
 import { type PageTextAnswer, usePageText } from './usePageText.js';
-import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY } from './messages/en.js';
+import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY, PAGE_LIST_LABEL } from './messages/en.js';
 import type { UiTool } from './registries/tools.js';
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
@@ -704,6 +704,12 @@ export function PageList({
 
   return (
     <div
+      // A NAMED, FOCUSABLE REGION: the document scrolls here, and a scroller with nothing focusable inside — a page of
+      // plain text, a scan — could not be scrolled from the keyboard at all (WCAG 2.1.1; axe's
+      // `scrollable-region-focusable`, found by the menu bar's rendered case on 2026-09-26). Focused, the arrows and
+      // Page Up/Down scroll it, which is the browser's own behaviour for a focused scroller.
+      role="region"
+      tabIndex={0}
       className={[
         'm-page-list',
         grid === undefined ? '' : 'm-page-list-grid',
@@ -754,13 +760,13 @@ export function PageList({
               '--m-grid-y': `${String(pageOrigin.y)}px`,
             } as React.CSSProperties)
       }
-      // NAMED ONLY WHEN THERE ARE TWO. A single scroller is the document
-      // surface and needs no name of its own; two unnamed scrollable regions
-      // are two a screen-reader user cannot tell apart, and telling them apart
-      // is the whole of what the split view is for.
+      // ALWAYS NAMED, since it is a focusable region (2026-09-26): *Document pages* alone, and in the split view each
+      // pane's own name — two scrollable regions under one name are two a screen-reader user cannot tell apart, and
+      // telling them apart is the whole of what the split view is for. *Corrected:* this was named only when there were
+      // two, which was right while the scroller could not take the focus.
       aria-label={
         label === undefined
-          ? undefined
+          ? i18n._(PAGE_LIST_LABEL)
           : labelValues === undefined
             ? i18n._(label)
             : i18n._(label, labelValues)

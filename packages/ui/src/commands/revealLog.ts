@@ -34,7 +34,11 @@ export function revealLogCommand(deps: { readonly client: ContractClient }): UiC
     // NOT ON THE START SCREEN since 2026-09-26: the owner moved it to the Help menu, which is where somebody who
     // cannot open their document goes looking, and v5-01's footer is Settings · About · Help centre. It is never behind
     // a document — the palette and the menu bar reach it with none open — and Tools › Diagnostics keeps it on the ribbon.
-    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 910 }],
+    placements: [
+      // SECONDARY since Help › Diagnostics exists (ADR-0107): Tools › Application keeps Settings on the row.
+      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 910, prominence: 'secondary' },
+      { surface: 'menu-bar', menu: 'help', group: 2, order: 20 },
+    ],
     run: async (): Promise<void> => {
       await deps.client['log.reveal']({});
     },

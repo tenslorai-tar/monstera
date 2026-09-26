@@ -2,7 +2,7 @@
 import { I18nProvider } from '@lingui/react';
 import { type ContractClient, type EventId, channels, createClient } from '@monstera/contract';
 import { type DocId, asDocId, asDocVersion, ok } from '@monstera/shared';
-import { act, render as renderBare, screen } from '@testing-library/react';
+import { act, fireEvent, render as renderBare, screen, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -377,6 +377,50 @@ describe('the window’s close, as main pushes it', () => {
     await settle();
     await answer('Don’t save');
 
+    expect(called(sent, 'document.close')).toStrictEqual([{ docId: FIRST }, { docId: SECOND }]);
+    expect(called(sent, 'window.close')).toHaveLength(1);
+  });
+});
+
+/** *File › Exit*, chosen the way a person chooses it: the File menu opened on the menu bar, the item pressed. */
+async function exitFromTheMenu(): Promise<void> {
+  await act(async () => {
+    fireEvent.click(within(screen.getByRole('menubar')).getByRole('menuitem', { name: 'File' }));
+    await Promise.resolve();
+  });
+  const exit = await screen.findByRole('menuitem', { name: 'Exit' });
+  await act(async () => {
+    fireEvent.click(exit);
+    await Promise.resolve();
+  });
+  await settle();
+}
+
+describe('File › Exit (ADR-0107)', () => {
+  it('asks EXACTLY what the window’s × asks, and a Cancel keeps every document and the window', async () => {
+    // THE OWNER'S CONDITION: Exit goes through the same close path — never quits without asking.
+    const { client: built, sent } = client({ unsaved: [FIRST, SECOND] });
+    render(<App client={built} settings={freshSettings()} subscribe={events().subscribe} />);
+    await openBoth();
+
+    await exitFromTheMenu();
+    await screen.findByText(/“report\.pdf” has changes/u);
+    await answer('Don’t save');
+    await screen.findByText(/“notes\.pdf” has changes/u);
+    await answer('Cancel');
+
+    expect(called(sent, 'document.close')).toStrictEqual([]);
+    expect(called(sent, 'window.close')).toStrictEqual([]);
+  });
+
+  it('CONTROL: with nothing unsaved, closes every document and then the window, asking nothing', async () => {
+    const { client: built, sent } = client({ unsaved: [] });
+    render(<App client={built} settings={freshSettings()} subscribe={events().subscribe} />);
+    await openBoth();
+
+    await exitFromTheMenu();
+
+    expect(screen.queryByText(/has changes/u)).toBeNull();
     expect(called(sent, 'document.close')).toStrictEqual([{ docId: FIRST }, { docId: SECOND }]);
     expect(called(sent, 'window.close')).toHaveLength(1);
   });

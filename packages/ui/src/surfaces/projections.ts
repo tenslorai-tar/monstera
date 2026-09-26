@@ -3,6 +3,8 @@ import type { MessageKey } from '@monstera/shared';
 import type { CommandContext, CommandRegistry, UiCommand } from '../registries/commands.js';
 import {
   SECTION_IDS,
+  type MenuBarMenu,
+  type MenuBarPlacement,
   type MenuContext,
   type Placement,
   type SectionId,
@@ -73,7 +75,7 @@ export interface RibbonEntry {
 
 /** One captioned group within a ribbon section. */
 export interface RibbonGroup {
-  readonly group: string;
+  readonly group: MessageKey;
   readonly entries: readonly RibbonEntry[];
 }
 
@@ -99,10 +101,15 @@ export function ribbonModel(
   registry: CommandRegistry,
   context: CommandContext,
 ): readonly RibbonSection[] {
-  const bySection = new Map<SectionId, Map<string, RibbonEntry[]>>();
+  return sectionsOf(registry.available(context));
+}
+
+/** The sections' captioned groups over a set of commands: the available ones for the ribbon, all of them for a menu. */
+function sectionsOf(commands: readonly UiCommand[]): readonly RibbonSection[] {
+  const bySection = new Map<SectionId, Map<MessageKey, RibbonEntry[]>>();
   for (const section of SECTION_IDS) bySection.set(section, new Map());
 
-  for (const command of registry.available(context)) {
+  for (const command of commands) {
     for (const placement of command.placements) {
       const slot = ribbonSlot(placement);
       if (slot === undefined) continue;
@@ -118,7 +125,7 @@ export function ribbonModel(
 
   return SECTION_IDS.map((section) => ({
     section,
-    groups: [...(bySection.get(section) ?? new Map<string, RibbonEntry[]>())]
+    groups: [...(bySection.get(section) ?? new Map<MessageKey, RibbonEntry[]>())]
       // Groups are ordered by their earliest member, so a feature controls where
       // its group sits by the same number that controls its buttons — rather
       // than by a second ordering nobody would know to set.
@@ -170,6 +177,7 @@ function railOrder(placement: Placement): number | undefined {
     case 'status-bar':
     case 'title-bar':
     case 'properties':
+    case 'menu-bar':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -206,6 +214,7 @@ function propertiesOrder(placement: Placement): number | undefined {
     case 'status-bar':
     case 'title-bar':
     case 'rail':
+    case 'menu-bar':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -220,7 +229,7 @@ function ribbonSlot(
 ):
   | {
       readonly section: SectionId;
-      readonly group: string;
+      readonly group: MessageKey;
       readonly order: number;
       readonly secondary: boolean;
       readonly menu: MessageKey | undefined;
@@ -242,6 +251,7 @@ function ribbonSlot(
     case 'title-bar':
     case 'rail':
     case 'properties':
+    case 'menu-bar':
       return undefined;
     default: {
       // Decision 4. A new `Placement` variant lands here as a compile error, in
@@ -292,6 +302,7 @@ function quickToolbarOrder(placement: Placement): number | undefined {
     case 'title-bar':
     case 'rail':
     case 'properties':
+    case 'menu-bar':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -335,6 +346,7 @@ function contextMenuOrder(placement: Placement, menu: MenuContext): number | und
     case 'title-bar':
     case 'rail':
     case 'properties':
+    case 'menu-bar':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -381,6 +393,7 @@ function startScreenSlot(
     case 'title-bar':
     case 'rail':
     case 'properties':
+    case 'menu-bar':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -448,6 +461,7 @@ function statusBarSlot(placement: Placement): { readonly gap: StatusBarGap; read
     case 'title-bar':
     case 'rail':
     case 'properties':
+    case 'menu-bar':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -494,6 +508,111 @@ function titleBarSlot(placement: Placement): TitleBarPlacement | undefined {
     case 'context-menu':
     case 'start-screen':
     case 'status-bar':
+    case 'rail':
+    case 'properties':
+    case 'menu-bar':
+      return undefined;
+    default: {
+      const unhandled: never = placement;
+      return unhandled;
+    }
+  }
+}
+
+/** One menu item: its command, whether it can run in the context the bar was drawn in, and whether it is on. */
+export interface MenuBarItem {
+  readonly command: UiCommand;
+  readonly enabled: boolean;
+  /** `undefined` for a command that sets no state; otherwise its `checked` in this context. */
+  readonly checked: boolean | undefined;
+}
+
+/** A run of items between separators, under its caption where it has one. */
+export interface MenuBarGroup {
+  readonly caption: MessageKey | undefined;
+  readonly items: readonly MenuBarItem[];
+}
+
+/** One menu on the bar: an application menu, or a ribbon section's. */
+export interface MenuBarMenuModel {
+  /** An application menu, or one of the sections that is a menu — never Home, which is not. */
+  readonly id: MenuBarMenu | (typeof MENU_BAR_SECTIONS)[number];
+  readonly groups: readonly MenuBarGroup[];
+}
+
+/**
+ * The section menus, in v5-14's order, which is the prototype's and not the rail's (ADR-0107). Home is not a menu: its
+ * tools are placed on the application menus.
+ */
+export const MENU_BAR_SECTIONS = ['organize', 'comment', 'forms', 'review', 'protect', 'tools'] as const satisfies readonly SectionId[];
+
+/**
+ * THE MENU BAR (§7, §10.3, [ADR-0107](../../../../docs/DECISIONS/0107-the-menu-bar-is-a-projection.md)): *File · Edit ·
+ * View · Organize · Comment · Forms · Review · Protect · Tools · Window · Help*.
+ *
+ * A section's menu IS its ribbon section — every tool in it, primary, secondary and a named menu's members — so a tool
+ * registered into a ribbon group is in the matching menu with no second placement. The application menus come from
+ * `menu-bar` placements. Edit is both: its application groups first, then the Edit section's.
+ *
+ * **Over ALL commands, not the available ones.** The ribbon hides what cannot apply; a menu lists what exists and
+ * disables what cannot run now, so it is the one projection besides the shortcut map that reads `when` as a state
+ * rather than as a filter.
+ */
+export function menuBarModel(registry: CommandRegistry, context: CommandContext): readonly MenuBarMenuModel[] {
+  const enabled = new Set(registry.available(context).map((command) => command.id));
+  const item = (command: UiCommand): MenuBarItem => ({
+    command,
+    enabled: enabled.has(command.id),
+    checked: command.checked?.(context),
+  });
+
+  type Collected = Map<number, { caption: MessageKey | undefined; entries: OrderedEntry[] }>;
+  const application = new Map<MenuBarMenu, Collected>();
+  for (const command of registry.all()) {
+    for (const placement of command.placements) {
+      const slot = menuBarSlot(placement);
+      if (slot === undefined) continue;
+      const menu: Collected = application.get(slot.menu) ?? new Map<number, { caption: MessageKey | undefined; entries: OrderedEntry[] }>();
+      const group = menu.get(slot.group) ?? { caption: undefined, entries: [] };
+      group.caption ??= slot.caption;
+      group.entries.push({ command, order: slot.order });
+      menu.set(slot.group, group);
+      application.set(slot.menu, menu);
+    }
+  }
+  const applicationGroups = (menu: MenuBarMenu): MenuBarGroup[] =>
+    [...(application.get(menu) ?? [])]
+      .sort(([left], [right]) => left - right)
+      .map(([, group]) => ({ caption: group.caption, items: ordered(group.entries).map((entry) => item(entry.command)) }));
+
+  const sections = new Map(sectionsOf(registry.all()).map((section) => [section.section, section.groups]));
+  const sectionGroups = (section: SectionId): MenuBarGroup[] =>
+    (sections.get(section) ?? []).map((group) => ({
+      caption: group.group,
+      items: group.entries.map((entry) => item(entry.command)),
+    }));
+
+  const menus: MenuBarMenuModel[] = [
+    { id: 'file', groups: applicationGroups('file') },
+    { id: 'edit', groups: [...applicationGroups('edit'), ...sectionGroups('edit')] },
+    { id: 'view', groups: applicationGroups('view') },
+    ...MENU_BAR_SECTIONS.map((section) => ({ id: section, groups: sectionGroups(section) })),
+    { id: 'window', groups: applicationGroups('window') },
+    { id: 'help', groups: applicationGroups('help') },
+  ];
+  return menus.filter((menu) => menu.groups.length > 0);
+}
+
+function menuBarSlot(placement: Placement): MenuBarPlacement | undefined {
+  switch (placement.surface) {
+    case 'menu-bar':
+      return placement;
+    case 'ribbon':
+    case 'quick-toolbar':
+    case 'context-menu':
+    case 'start-screen':
+    case 'status-bar':
+    case 'title-bar':
     case 'rail':
     case 'properties':
       return undefined;

@@ -75,7 +75,7 @@ describe('the title bar overlay, through the assembled handlers', () => {
       },
       close: () => undefined,
       askToClose: () => false,
-      copy: () => undefined,
+      edit: () => undefined,
     });
     const after = await deps.handlers['window.titleBarOverlay'](overlay);
     expect(after).toStrictEqual({ ok: true, value: { applied: true } });
@@ -83,24 +83,47 @@ describe('the title bar overlay, through the assembled handlers', () => {
   });
 });
 
-describe('copying the selection, through the assembled handlers', () => {
-  it('answers copied:false before a window is attached, then runs the attached window’s copy exactly once', async () => {
-    // The overlay case's join, for the selected-text menu's *Copy*: asserted as the CALL the window
-    // received, because `copied: true` from a root that wired the handler to nothing reads the same.
+describe('the browser’s edit commands, through the assembled handlers', () => {
+  it('answers done:false before a window is attached, then runs exactly the verb asked for, once', async () => {
+    // The overlay case's join, for *Copy* and the menu bar's edits: asserted as the CALL the window
+    // received, because `done: true` from a root that wired the handler to nothing reads the same —
+    // and as the VERB, because a root that ran `copy` for every action would answer the same too.
     const deps = createShellDependencies({ ...harnessSurfaces('the composition test'), appInfo });
-    expect(await deps.handlers['window.copy']({})).toStrictEqual({ ok: true, value: { copied: false } });
+    expect(await deps.handlers['window.edit']({ action: 'copy' })).toStrictEqual({ ok: true, value: { done: false } });
 
-    let copies = 0;
+    const ran: string[] = [];
     deps.attachWindow({
       setTitleBarOverlay: () => undefined,
       close: () => undefined,
       askToClose: () => false,
-      copy: () => {
-        copies += 1;
+      edit: (action) => {
+        ran.push(action);
       },
     });
-    expect(await deps.handlers['window.copy']({})).toStrictEqual({ ok: true, value: { copied: true } });
-    expect(copies).toBe(1);
+    expect(await deps.handlers['window.edit']({ action: 'copy' })).toStrictEqual({ ok: true, value: { done: true } });
+    expect(await deps.handlers['window.edit']({ action: 'paste' })).toStrictEqual({ ok: true, value: { done: true } });
+    expect(ran).toStrictEqual(['copy', 'paste']);
+  });
+});
+
+describe('the Store application’s pages, through the assembled handlers', () => {
+  it('opens exactly the page named — Check for updates reaches the updates page — and answers false with no opener', async () => {
+    // AS THE CALL THE OPENER RECEIVED, for the edit case's reason: `opened: true` from a root that ignored the name
+    // and opened the review page reads the same.
+    const asked: string[] = [];
+    const deps = createShellDependencies({
+      ...harnessSurfaces('the composition test'),
+      appInfo,
+      openStore: (page) => {
+        asked.push(page);
+        return Promise.resolve(true);
+      },
+    });
+    expect(await deps.handlers['app.openStore']({ page: 'updates' })).toStrictEqual({ ok: true, value: { opened: true } });
+    expect(asked).toStrictEqual(['updates']);
+
+    const without = createShellDependencies({ ...harnessSurfaces('the composition test'), appInfo });
+    expect(await without.handlers['app.openStore']({ page: 'updates' })).toStrictEqual({ ok: true, value: { opened: false } });
   });
 });
 
@@ -121,7 +144,7 @@ describe('closing the window, through the assembled handlers and the shell’s h
         asked += 1;
         return true;
       },
-      copy: () => undefined,
+      edit: () => undefined,
     });
 
     // THE RENDERER SAYS IT IS LISTENING FIRST, as it does at mount: before that the gate lets a
@@ -151,7 +174,7 @@ describe('closing the window, through the assembled handlers and the shell’s h
         asked += 1;
         return true;
       },
-      copy: () => undefined,
+      edit: () => undefined,
     });
 
     expect(deps.closeRequested()).toBe(true);
@@ -290,8 +313,9 @@ describe('the Store rating prompt, as the root wires it (E3)', () => {
         ...harnessSurfaces('the composition test'),
         appInfo: { ...appInfo, installChannel },
         engagementFile: createEphemeralSettings(),
-        openStoreReview: () => {
-          deepLinks += 1;
+        openStore: (page) => {
+          // THE REVIEW PAGE, by name: the rating prompt must ask for that page and no other.
+          if (page === 'review') deepLinks += 1;
           return Promise.resolve(true);
         },
         openInBrowser: (url) => {

@@ -46,7 +46,16 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
 }
 
 const SAVE_RUN = vi.fn();
-const SAVE = commandOf('a.save', 'test.modes.save', [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 10 }], SAVE_RUN);
+// WITH ITS FILE PLACEMENT, as the application's Save has: a Home tool is in some menu (ADR-0107's correction).
+const SAVE = commandOf(
+  'a.save',
+  'test.modes.save',
+  [
+    { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 10 },
+    { surface: 'menu-bar', menu: 'file', group: 1, order: 10 },
+  ],
+  SAVE_RUN,
+);
 const ROTATE = commandOf('b.rotate', 'test.modes.rotate', [
   { surface: 'ribbon', section: 'organize', group: GROUP_ADJUST, order: 10 },
 ]);

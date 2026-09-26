@@ -1,4 +1,4 @@
-import type { ChannelParams } from '@monstera/contract';
+import type { ChannelParams, StorePage } from '@monstera/contract';
 
 /**
  * Where this project's own pages are — the addresses behind `app.openWebPage`
@@ -48,6 +48,17 @@ const STORE_LISTING = `https://apps.microsoft.com/detail/${STORE_PRODUCT_ID}`;
  * platform, and no page can name it.
  */
 export const STORE_REVIEW_URI = `ms-windows-store://review/?ProductId=${STORE_PRODUCT_ID}`;
+
+/**
+ * The Store application's pages by the contract's own names, so a page the contract adds is a compile error here.
+ * `updates` is *Downloads and updates*, `ms-windows-store://downloadsandupdates` (Microsoft Learn, *Launch the
+ * Microsoft Store app*, updated 2026-01-07, read 2026-09-26) — the owner's answer for *Check for updates* until the
+ * project's own update check is live.
+ */
+export const STORE_URIS: Readonly<Record<StorePage, string>> = {
+  review: STORE_REVIEW_URI,
+  updates: 'ms-windows-store://downloadsandupdates',
+};
 
 /** Every page's address, keyed by the channel's own union so a page with no entry is a compile error. */
 export type WebAddresses = Readonly<Record<WebPage, string>>;

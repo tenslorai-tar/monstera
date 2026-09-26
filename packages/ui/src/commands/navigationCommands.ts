@@ -147,7 +147,8 @@ export function goToCommand(): UiCommand {
     id: 'view.go-to',
     title: GO_TO_TITLE,
     shortcut: 'Ctrl+Shift+G',
-    placements: [],
+    // EDIT, after the clipboard: finding a place in the document, beside Find in the Edit section's groups (ADR-0107).
+    placements: [{ surface: 'menu-bar', menu: 'edit', group: 2, order: 10 }],
     when: hasDocument,
     run: (): void => {
       const field = document.querySelector('[data-goto-input]');

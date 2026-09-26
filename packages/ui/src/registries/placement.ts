@@ -99,7 +99,25 @@ export type Placement =
   | StatusBarPlacement
   | TitleBarPlacement
   | RailPlacement
-  | PropertiesPlacement;
+  | PropertiesPlacement
+  | MenuBarPlacement;
+
+/** The menu bar's own menus (ADR-0107); the section menus between View and Window are the ribbon's sections. */
+export type MenuBarMenu = 'file' | 'edit' | 'view' | 'window' | 'help';
+
+/**
+ * An item in one of the menu bar's APPLICATION menus ([ADR-0107](../../../../docs/DECISIONS/0107-the-menu-bar-is-a-projection.md)).
+ * `group` numbers the runs between separators, in order; a group with a caption (View's *Layout*, *Theme*, *Zoom*) takes
+ * it from its placements, and two placements in one group naming different captions are refused by the registry. A
+ * section's menu is its ribbon section and needs no placement.
+ */
+export interface MenuBarPlacement {
+  readonly surface: 'menu-bar';
+  readonly menu: MenuBarMenu;
+  readonly group: number;
+  readonly order: number;
+  readonly caption?: MessageKey | undefined;
+}
 
 /**
  * A button at the FOOT of the right panel's Properties tab, drawn while marks are selected

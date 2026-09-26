@@ -83,6 +83,8 @@ import type { WatermarkPagesAnswer } from '../dialogs/watermarkPagesResult.js';
 import {
   FIND_TITLE,
   FIT_PAGE_TITLE,
+  ACTUAL_SIZE_TITLE,
+  MENU_GROUP_ZOOM,
   FIT_WIDTH_TITLE,
   GROUP_ADJUST,
   GROUP_DISPLAY,
@@ -92,6 +94,7 @@ import {
   GROUP_DATA,
   GROUP_FIELDS,
   GROUP_MANAGE,
+  GROUP_CONVERT,
   GROUP_EXPORT,
   GROUP_FILE,
   GROUP_FIND,
@@ -102,8 +105,13 @@ import {
   GROUP_TEXT,
   EDIT_TEXT_COMMAND_TITLE,
   GROUP_MARKUP,
+  SHOW_BOOKMARKS_TITLE,
   SHOW_COMMENTS_TITLE,
   SHOW_FIELDS_TITLE,
+  SHOW_LAYERS_TITLE,
+  SHOW_PAGES_TITLE,
+  SHOW_SEARCH_TITLE,
+  MENU_GROUP_PANELS,
   MOVE_PAGE_EARLIER_TITLE,
   MOVE_PAGE_LATER_TITLE,
   EDIT_PAGE_OBJECT_COMMAND_TITLE,
@@ -213,6 +221,7 @@ import {
 } from '../messages/en.js';
 import type { IconName } from '../primitives/icons.js';
 import { type CommandContext, targetPages, type UiCommand } from '../registries/commands.js';
+import type { Placement } from '../registries/placement.js';
 import { DOCUMENT_PANEL_OPEN_SETTING, DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
 import { SPLIT_VIEW_SETTING } from '../settings/viewing.js';
 import type { SettingsStore } from '../settingsStore.js';
@@ -695,16 +704,20 @@ export function zoomCommand(direction: 'in' | 'out', deps: ZoomDeps): UiCommand 
       // section is the same button twice on screen, so the overlap is exactly
       // that list and nothing else.
       { surface: 'quick-toolbar', order: direction === 'in' ? 50 : 60 },
+      // SECONDARY IN TOOLS › DISPLAY since the menu bar (ADR-0107): v5's Tools › Display draws the rulers, the grid and
+      // the loupe, and zoom is on the status bar, the floating toolbar and View › Zoom.
       {
         surface: 'ribbon',
         section: 'tools',
         group: GROUP_DISPLAY,
         order: direction === 'in' ? 10 : 20,
+        prominence: 'secondary',
       },
       // §10.3's zoom cluster, "zoom-out button · slider · zoom-in button · current percentage": out
       // sits before the slider, and in BETWEEN the slider and the percentage (ADR-0067's
       // 2026-09-15 correction).
       { surface: 'status-bar', cluster: 'zoom', side: direction === 'in' ? 'between' : 'before', order: 10 },
+      { surface: 'menu-bar', menu: 'view', group: 2, order: direction === 'in' ? 10 : 20, caption: MENU_GROUP_ZOOM },
     ],
     when: hasDocument,
     run: (): void => {
@@ -733,20 +746,38 @@ export function fitCommand(fit: 'width' | 'page', deps: ZoomDeps): UiCommand {
     title: fit === 'width' ? FIT_WIDTH_TITLE : FIT_PAGE_TITLE,
     shortcut: fit === 'width' ? 'Ctrl+1' : 'Ctrl+0',
     placements: [
+      // SECONDARY IN TOOLS › DISPLAY, the zoom commands' reason (ADR-0107).
       {
         surface: 'ribbon',
         section: 'tools',
         group: GROUP_DISPLAY,
         order: fit === 'width' ? 30 : 40,
+        prominence: 'secondary',
       },
-      // AND HOME › DISPLAY, where v5-02 draws *Fit Width* first. Fit page is not drawn there, so it
-      // sits in the group's More (ADR-0098).
-      fit === 'width'
-        ? { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 200 }
-        : { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 202, prominence: 'secondary' },
+      // AND HOME › DISPLAY for Fit width, which v5-02 draws first there. Fit page is not drawn on Home; it is in View ›
+      // Zoom and Tools › Display (ADR-0107 moved Home's secondaries).
+      ...(fit === 'width' ? [{ surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 200 } as const] : []),
+      { surface: 'menu-bar', menu: 'view', group: 2, order: fit === 'width' ? 40 : 50, caption: MENU_GROUP_ZOOM },
       // §10.3's "fit mode", at the end of the zoom cluster after the percentage.
       { surface: 'status-bar', cluster: 'zoom', side: 'after', order: fit === 'width' ? 20 : 30 },
     ],
+    when: hasDocument,
+    run: (): void => {
+      deps.onZoom(() => mode);
+    },
+  };
+}
+
+/**
+ * *View › Zoom › Actual size*: the page at 100 %, a point drawn as a point (ADR-0107). No chord: Ctrl+0 is Fit page's
+ * here, and moving it would change a key people already use for a menu item they have not.
+ */
+export function actualSizeCommand(deps: ZoomDeps): UiCommand {
+  const mode: ZoomMode = { kind: 'scale', scale: 1 };
+  return {
+    id: 'view.actual-size',
+    title: ACTUAL_SIZE_TITLE,
+    placements: [{ surface: 'menu-bar', menu: 'view', group: 2, order: 30, caption: MENU_GROUP_ZOOM }],
     when: hasDocument,
     run: (): void => {
       deps.onZoom(() => mode);
@@ -774,31 +805,70 @@ export function showSearchPanel(settings: SettingsStore): void {
  * only from the panel's own tabs: a person on the Comment or Forms ribbon had no control there
  * that led to them. The setting is the one owner of which panel shows, as `showSearchPanel`'s is.
  */
-export function showPanelCommand(
-  deps: { readonly settings: SettingsStore },
-  panel: 'comments' | 'forms',
-): UiCommand {
-  const comments = panel === 'comments';
+export function showPanelCommand(deps: { readonly settings: SettingsStore }, panel: DocumentPanelTab): UiCommand {
+  const shown = SHOWN_PANELS[panel];
   return {
-    id: comments ? 'view.show-comments' : 'view.show-fields',
-    icon: comments ? 'MessageSquare' : 'ClipboardList',
-    title: comments ? SHOW_COMMENTS_TITLE : SHOW_FIELDS_TITLE,
+    id: shown.id,
+    icon: shown.icon,
+    title: shown.title,
     placements: [
-      comments
-        ? // LAST IN MARKUP: the group folds from its end, and the list is also a tab on the left
-          // panel, where the marks are not.
-          { surface: 'ribbon', section: 'comment', group: GROUP_MARKUP, order: 59 }
-        : // A SECONDARY in Fields since the owner's v5-08, whose Fields group draws the five field
-          // tools; the list is the left panel's Forms tab, which the design shows open.
-          { surface: 'ribbon', section: 'forms', group: GROUP_FIELDS, order: 76, prominence: 'secondary' },
+      ...shown.ribbon,
+      // WINDOW › PANELS, every tab of the left panel in its own order (ADR-0107): the one place each is found by name.
+      { surface: 'menu-bar', menu: 'window', group: 0, order: shown.order, caption: MENU_GROUP_PANELS },
     ],
     when: hasDocument,
+    // ON while the panel is open ON this tab — the two settings together are what is on screen.
+    checked: () =>
+      deps.settings.get(DOCUMENT_PANEL_OPEN_SETTING.id) === true && deps.settings.get(DOCUMENT_PANEL_SETTING.id) === panel,
     run: (): void => {
       deps.settings.set(DOCUMENT_PANEL_OPEN_SETTING.id, true);
       deps.settings.set(DOCUMENT_PANEL_SETTING.id, panel);
     },
   };
 }
+
+/** Which tab of the document panel a command shows — the setting's own values. */
+type DocumentPanelTab = z.infer<(typeof DOCUMENT_PANEL_SETTING)['schema']>;
+
+/**
+ * Each tab's command. Keyed by the setting's own union, so a seventh tab arrives owing a command here. The comments and
+ * fields lists keep the ribbon places the audit of 2026-09-23 gave them; the others were reached only from their tab.
+ */
+const SHOWN_PANELS: Readonly<
+  Record<
+    DocumentPanelTab,
+    {
+      readonly id: string;
+      readonly icon: IconName;
+      readonly title: MessageKey;
+      readonly order: number;
+      readonly ribbon: readonly Placement[];
+    }
+  >
+> = {
+  pages: { id: 'view.show-pages', icon: 'Files', title: SHOW_PAGES_TITLE, order: 10, ribbon: [] },
+  bookmarks: { id: 'view.show-bookmarks', icon: 'Bookmark', title: SHOW_BOOKMARKS_TITLE, order: 20, ribbon: [] },
+  comments: {
+    id: 'view.show-comments',
+    icon: 'MessageSquare',
+    title: SHOW_COMMENTS_TITLE,
+    order: 30,
+    // LAST IN MARKUP: the group folds from its end, and the list is also a tab on the left panel, where the marks are
+    // not.
+    ribbon: [{ surface: 'ribbon', section: 'comment', group: GROUP_MARKUP, order: 59 }],
+  },
+  forms: {
+    id: 'view.show-fields',
+    icon: 'ClipboardList',
+    title: SHOW_FIELDS_TITLE,
+    order: 40,
+    // A SECONDARY in Fields since the owner's v5-08, whose Fields group draws the five field tools; the list is the
+    // left panel's Forms tab, which the design shows open.
+    ribbon: [{ surface: 'ribbon', section: 'forms', group: GROUP_FIELDS, order: 76, prominence: 'secondary' }],
+  },
+  layers: { id: 'view.show-layers', icon: 'Layers', title: SHOW_LAYERS_TITLE, order: 50, ribbon: [] },
+  search: { id: 'view.show-search', icon: 'Search', title: SHOW_SEARCH_TITLE, order: 60, ribbon: [] },
+};
 
 /**
  * Moves the page on show one place earlier or later — `movePage`, from Organize › Arrange.
@@ -1889,6 +1959,8 @@ export function undoCommand(deps: DocumentCommandDeps): UiCommand {
     placements: [
       // IN FILE, as v5-02 draws Open · Save · Print · Undo · Redo in one group.
       { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 24 },
+      // EDIT's FIRST, as every Windows application draws it (ADR-0107).
+      { surface: 'menu-bar', menu: 'edit', group: 0, order: 10 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1920,7 +1992,10 @@ export function redoCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'Redo2',
     title: REDO_TITLE,
     shortcut: 'Ctrl+Y',
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 26 }],
+    placements: [
+      { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 26 },
+      { surface: 'menu-bar', menu: 'edit', group: 0, order: 20 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -1990,6 +2065,7 @@ export function saveCommand(deps: {
     shortcut: 'Ctrl+S',
     placements: [
       { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 20 },
+      { surface: 'menu-bar', menu: 'file', group: 1, order: 10 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -2019,7 +2095,10 @@ export function closeTabCommand(deps: {
     shortcut: 'Ctrl+W',
     // THE TAB MENU, where the context is the right-clicked tab's document — so *Close* closes that
     // tab, not the one on show.
-    placements: [{ surface: 'context-menu', context: 'tab', order: 10 }],
+    placements: [
+      { surface: 'context-menu', context: 'tab', order: 10 },
+      { surface: 'menu-bar', menu: 'file', group: 3, order: 20 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -2096,7 +2175,10 @@ export function closeOthersCommand(deps: {
     id: 'document.close-others',
     icon: 'X',
     title: CLOSE_OTHERS_TITLE,
-    placements: [{ surface: 'context-menu', context: 'tab', order: 20 }],
+    placements: [
+      { surface: 'context-menu', context: 'tab', order: 20 },
+      { surface: 'menu-bar', menu: 'file', group: 3, order: 30 },
+    ],
     when: (context) => context.docId !== undefined && context.openDocuments.some((tab) => tab.docId !== context.docId),
     run: async (context): Promise<void> => {
       const kept = context.docId;
@@ -2290,7 +2372,8 @@ export function exportTextCommand(deps: DocumentCommandDeps): UiCommand {
     title: EXPORT_TEXT_COMMAND_TITLE,
     // HOME › FILE, beside Save a copy: `docs/FEATURES.md` places D10 under Home ›
     // Export, and File is the Home group that writes a file out today.
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 312, prominence: 'secondary' }],
+    // TOOLS › CONVERT, with the other formats a document is written out in (ADR-0107 moved Home's secondaries).
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 170, prominence: 'secondary' }],
     when: hasDocument,
     run: (context) => runTextExport(deps, context, 'plain'),
   };
@@ -2310,7 +2393,7 @@ export function exportLayoutTextCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'FileText',
     title: EXPORT_LAYOUT_TEXT_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_LAYOUT_TEXT,
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 314, prominence: 'secondary' }],
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 180, prominence: 'secondary' }],
     when: hasDocument,
     run: (context) => runTextExport(deps, context, 'layout'),
   };
@@ -2329,7 +2412,10 @@ export function exportWordCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'FileText',
     title: EXPORT_WORD_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_WORD,
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 302 }],
+    placements: [
+      { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 302 },
+      { surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 110 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -2362,7 +2448,7 @@ export function exportPowerPointCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'FileImage',
     title: EXPORT_POWERPOINT_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_POWERPOINT,
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 308, prominence: 'secondary' }],
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 160, prominence: 'secondary' }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -2412,7 +2498,10 @@ export function exportExcelCommand(
     icon: 'FileSpreadsheet',
     title: EXPORT_EXCEL_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_EXCEL,
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 304 }],
+    placements: [
+      { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 304 },
+      { surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 120 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       const { docId } = context;
@@ -2510,7 +2599,7 @@ export function exportPdfaCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'FileCheck',
     title: EXPORT_PDFA_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_PDFA,
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 310, prominence: 'secondary' }],
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 130 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -2574,7 +2663,7 @@ export function optimizeCommand(
     title: OPTIMIZE_COMMAND_TITLE,
     ribbonTitle: RIBBON_OPTIMIZE,
     // SECONDARY in File: the owner's v5 Home draws Open · Save · Print · Undo · Redo (ADR-0098).
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 40, prominence: 'secondary' }],
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 140 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       const { docId } = context;
@@ -2657,7 +2746,10 @@ export function printCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.print',
     icon: 'Printer',
     title: PRINT_COMMAND_TITLE,
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 22 }],
+    placements: [
+      { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 22 },
+      { surface: 'menu-bar', menu: 'file', group: 2, order: 10 },
+    ],
     shortcut: 'Ctrl+P',
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -2694,7 +2786,10 @@ export function emailCommand(deps: DocumentCommandDeps): UiCommand {
     title: EMAIL_COMMAND_TITLE,
     // v5-02's Home › Export › *Share*, the owner's own mapping: sharing a document is emailing it.
     ribbonTitle: RIBBON_SHARE,
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 306 }],
+    placements: [
+      { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 306 },
+      { surface: 'menu-bar', menu: 'file', group: 2, order: 20 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -2759,6 +2854,7 @@ export function exportPageImagesCommand(deps: DocumentCommandDeps): UiCommand {
     placements: [
       // v5-02's Home › Export › *Image*, the first of the group.
       { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 300 },
+      { surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 150, prominence: 'secondary' },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -3086,9 +3182,9 @@ export function saveCopyCommand(deps: DocumentCommandDeps & WritesAFile): UiComm
     icon: 'SaveAll',
     title: SAVE_COPY_TITLE,
     ribbonTitle: RIBBON_SAVE_COPY,
-    placements: [
-      { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 30, prominence: 'secondary' },
-    ],
+    // FILE › SAVE A COPY, beside Save: the design's Home › File draws no More, and a menu is where a person looks for
+    // the second way of saving (ADR-0107).
+    placements: [{ surface: 'menu-bar', menu: 'file', group: 1, order: 20 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -3185,6 +3281,8 @@ export function handToolCommand(deps: {
     placements: [
       { surface: 'ribbon', section: 'home', group: GROUP_QUICK_TOOLS, order: 102 },
       { surface: 'quick-toolbar', order: 40 },
+      // VIEW, with Select text: the two ways a press on the page reads — move it, or select its words (ADR-0107).
+      { surface: 'menu-bar', menu: 'view', group: 4, order: 10 },
     ],
     when: hasDocument,
     run: (): void => {
@@ -3208,6 +3306,7 @@ export function selectTextCommand(deps: { readonly onSelect: (id: string | undef
     placements: [
       { surface: 'ribbon', section: 'home', group: GROUP_QUICK_TOOLS, order: 103 },
       { surface: 'quick-toolbar', order: 41 },
+      { surface: 'menu-bar', menu: 'view', group: 4, order: 20 },
     ],
     when: hasDocument,
     run: (): void => {

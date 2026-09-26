@@ -1508,6 +1508,40 @@ export const SECTION_FORMS = messageKey('surface.ribbon.section.forms');
 export const SECTION_REVIEW = messageKey('surface.ribbon.section.review');
 export const SECTION_PROTECT = messageKey('surface.ribbon.section.protect');
 export const SECTION_TOOLS = messageKey('surface.ribbon.section.tools');
+/**
+ * The menu bar (ADR-0107): its accessible name, the application menus' names — a section's menu takes its section's
+ * name above — and the captions of View's groups.
+ */
+export const MENU_BAR_LABEL = messageKey('surface.menu-bar.label');
+/** The document's page scroller, a named region a keyboard can focus and scroll. */
+export const PAGE_LIST_LABEL = messageKey('surface.page-list.label');
+export const MENU_FILE = messageKey('surface.menu-bar.file');
+export const MENU_VIEW = messageKey('surface.menu-bar.view');
+export const MENU_WINDOW = messageKey('surface.menu-bar.window');
+export const MENU_HELP = messageKey('surface.menu-bar.help');
+export const MENU_GROUP_LAYOUT = messageKey('surface.menu-bar.group.layout');
+export const MENU_GROUP_THEME = messageKey('surface.menu-bar.group.theme');
+export const MENU_GROUP_ZOOM = messageKey('surface.menu-bar.group.zoom');
+export const MENU_GROUP_SHOW = messageKey('surface.menu-bar.group.show');
+export const MENU_GROUP_PANELS = messageKey('surface.menu-bar.group.panels');
+/** The commands the menu bar brought (ADR-0107). */
+export const EDIT_CUT_TITLE = messageKey('command.edit-cut.title');
+export const EDIT_COPY_TITLE = messageKey('command.edit-copy.title');
+export const EDIT_PASTE_TITLE = messageKey('command.edit-paste.title');
+export const EDIT_SELECT_ALL_TITLE = messageKey('command.edit-select-all.title');
+export const SELECT_ALL_MARKS_TITLE = messageKey('command.select-all-marks.title');
+export const START_SCREEN_TITLE = messageKey('command.start-screen.title');
+export const EXIT_TITLE = messageKey('command.exit.title');
+export const THEME_SYSTEM_COMMAND_TITLE = messageKey('command.theme-system.title');
+export const THEME_LIGHT_COMMAND_TITLE = messageKey('command.theme-light.title');
+export const THEME_DARK_COMMAND_TITLE = messageKey('command.theme-dark.title');
+export const ACTUAL_SIZE_TITLE = messageKey('command.actual-size.title');
+export const SHOW_PAGES_TITLE = messageKey('command.show-pages.title');
+export const SHOW_BOOKMARKS_TITLE = messageKey('command.show-bookmarks.title');
+export const SHOW_LAYERS_TITLE = messageKey('command.show-layers.title');
+export const SHOW_SEARCH_TITLE = messageKey('command.show-search.title');
+export const SHOW_PROPERTIES_TITLE = messageKey('command.show-properties.title');
+export const CHECK_FOR_UPDATES_TITLE = messageKey('command.check-for-updates.title');
 export const RIBBON_SECTION_TITLE = messageKey('setting.appearance-ribbon-section.title');
 /**
  * `appearance.ribbon-section`'s members, by the word the rail already shows. Declared AFTER the section keys it names,
@@ -1572,6 +1606,8 @@ export const GROUP_NAVIGATE = messageKey('surface.ribbon.group.navigate');
 export const GROUP_APPLICATION = messageKey('surface.ribbon.group.application');
 /** TOOLS › OCR, which `BUILD-PROMPT.md`:472 names as D6's ribbon placement. */
 export const GROUP_OCR = messageKey('surface.ribbon.group.ocr');
+/** Tools › Convert — v5's group for writing the document out in another format (ADR-0107's Home move). */
+export const GROUP_CONVERT = messageKey('surface.ribbon.group.convert');
 /** REVIEW › Accessibility, where D8's reading-order inspection sits. */
 export const GROUP_ACCESSIBILITY = messageKey('surface.ribbon.group.accessibility');
 
@@ -3644,6 +3680,34 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SECTION_REVIEW]: 'Review',
   [SECTION_PROTECT]: 'Protect',
   [SECTION_TOOLS]: 'Tools',
+  [MENU_BAR_LABEL]: 'Menu bar',
+  [PAGE_LIST_LABEL]: 'Document pages',
+  [MENU_FILE]: 'File',
+  [MENU_VIEW]: 'View',
+  [MENU_WINDOW]: 'Window',
+  [MENU_HELP]: 'Help',
+  [MENU_GROUP_LAYOUT]: 'Layout',
+  [MENU_GROUP_THEME]: 'Theme',
+  [MENU_GROUP_ZOOM]: 'Zoom',
+  [MENU_GROUP_SHOW]: 'Show',
+  [MENU_GROUP_PANELS]: 'Panels',
+  [EDIT_CUT_TITLE]: 'Cut',
+  [EDIT_COPY_TITLE]: 'Copy',
+  [EDIT_PASTE_TITLE]: 'Paste',
+  [EDIT_SELECT_ALL_TITLE]: 'Select all',
+  [SELECT_ALL_MARKS_TITLE]: 'Select every comment on this page',
+  [START_SCREEN_TITLE]: 'Start screen',
+  [EXIT_TITLE]: 'Exit',
+  [THEME_SYSTEM_COMMAND_TITLE]: 'Match the system theme',
+  [THEME_LIGHT_COMMAND_TITLE]: 'Light theme',
+  [THEME_DARK_COMMAND_TITLE]: 'Dark theme',
+  [ACTUAL_SIZE_TITLE]: 'Actual size',
+  [SHOW_PAGES_TITLE]: 'Pages panel',
+  [SHOW_BOOKMARKS_TITLE]: 'Bookmarks panel',
+  [SHOW_LAYERS_TITLE]: 'Layers panel',
+  [SHOW_SEARCH_TITLE]: 'Search panel',
+  [SHOW_PROPERTIES_TITLE]: 'Properties panel',
+  [CHECK_FOR_UPDATES_TITLE]: 'Check for updates',
   [GROUP_FILE]: 'File',
   [GROUP_FIND]: 'Find',
   [GROUP_PAGES]: 'Pages',
@@ -3835,6 +3899,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [GROUP_NAVIGATE]: 'Navigate',
   [GROUP_APPLICATION]: 'Application',
   [GROUP_OCR]: 'OCR',
+  [GROUP_CONVERT]: 'Convert',
   [GROUP_ACCESSIBILITY]: 'Accessibility',
   [WORD_COUNT_PROGRESS]: 'Counting words',
   [SPELL_CHECK_PROGRESS]: 'Checking spelling',

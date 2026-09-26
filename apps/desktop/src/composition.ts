@@ -22,6 +22,7 @@ import {
   REVIEW_PROMPTS_SETTING_ID,
   type ClientApi,
   type IncidentSink,
+  type StorePage,
   createClient,
 } from '@monstera/contract';
 import {
@@ -575,10 +576,12 @@ export interface ShellComposition {
    */
   readonly engagementFile?: SettingsSurface;
   /**
-   * Opens the Store application's review page for this product — `shell.openExternal` of the one constant
-   * `STORE_REVIEW_URI`, which only `entry.ts` may reach. Used by the Store build; absent, the web listing.
+   * Opens one of the Store application's pages — `shell.openExternal` of a constant from `STORE_URIS`, which only
+   * `entry.ts` may reach. The rating prompt's *review* uses it in the Store build (absent, the web listing), and
+   * `app.openStore` names *updates* for *Help › Check for updates* (ADR-0107). Absent, `app.openStore` answers
+   * `opened: false`.
    */
-  readonly openStoreReview?: () => Promise<boolean>;
+  readonly openStore?: (page: StorePage) => Promise<boolean>;
   /**
    * The Win32 surfaces the engine host is created through, or `null`.
    *
@@ -698,7 +701,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     recentRoots = [],
     recentPictureFiles,
     engagementFile,
-    openStoreReview,
+    openStore,
     enginePlatform = null,
     pdfiumPlatform = null,
     composePlatform = null,
@@ -1423,8 +1426,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
                 now: () => new Date(),
                 enabled: () => settings.read()[REVIEW_PROMPTS_SETTING_ID] !== false,
               }),
-              appInfo.installChannel === 'store' && openStoreReview !== undefined
-                ? openStoreReview
+              appInfo.installChannel === 'store' && openStore !== undefined
+                ? () => openStore('review')
                 : () => openWebPage('store-listing', openInBrowser),
             ),
       // CLOUD STORAGE (ADR-0091), over the same secret store and the same browser opener as
@@ -1486,9 +1489,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         closeGate.confirm();
         return true;
       },
-      copySelection: () => {
+      edit: (action) => {
         if (shellWindow === null) return false;
-        shellWindow.copy();
+        shellWindow.edit(action);
         return true;
       },
       copyText: (text) => {
@@ -1499,6 +1502,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // THE ADDRESS IS RESOLVED HERE, from the place the renderer named (ADR-0095), and handed to
       // the one route by which this application opens a URL outside itself.
       openWebPage: (page) => openWebPage(page, openInBrowser),
+      openStore: async (page) => (openStore === undefined ? false : openStore(page)),
       closeListening: () => {
         if (shellWindow === null) return false;
         closeGate.listening();

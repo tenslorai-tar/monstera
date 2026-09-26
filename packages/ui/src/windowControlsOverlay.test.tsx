@@ -22,10 +22,13 @@ describe('hexOf', () => {
   });
 });
 
-/** A title bar with stated colours and a stated height, since happy-dom lays nothing out. */
-function aBar(background: string, text: string, height: number): HTMLElement {
+/**
+ * A MENU BAR — the window's top row since ADR-0107, which the controls are drawn over — with stated colours and a
+ * stated height, since happy-dom lays nothing out.
+ */
+function aBar(background: string, text: string, height: number, className = 'm-menu-bar'): HTMLElement {
   const bar = document.createElement('header');
-  bar.className = 'm-title-bar';
+  bar.className = className;
   bar.style.backgroundColor = background;
   bar.style.color = text;
   bar.getBoundingClientRect = () => ({ height }) as DOMRect;
@@ -95,6 +98,16 @@ function aClient(): { readonly client: ContractClient; readonly sent: ReturnType
 }
 
 describe('useWindowControlsOverlay', () => {
+  it('reports the MENU BAR, the row the controls sit over — not the title bar below it, whose height differs', () => {
+    // THE TITLE BAR FIRST IN THE DOCUMENT and a different height, so a hook still reading it would report 40, and one
+    // reading the first header it found would too.
+    aBar('rgb(20, 22, 24)', 'rgb(230, 232, 230)', 40, 'm-title-bar');
+    aBar('rgb(20, 22, 24)', 'rgb(230, 232, 230)', 32);
+    const { client, sent } = aClient();
+    render(<Host client={client} />);
+    expect(sent.mock.calls).toStrictEqual([[{ color: '#141618', symbolColor: '#e6e8e6', height: 32 }]]);
+  });
+
   it('sends the bar as computed on mount, and AGAIN when the theme changes its colours — never an unchanged one', async () => {
     const bar = aBar('rgb(20, 22, 24)', 'rgb(230, 232, 230)', 33);
     const { client, sent } = aClient();

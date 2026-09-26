@@ -79,8 +79,9 @@ textarea {
   isolation: isolate;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   grid-template-areas:
+    'menu menu'
     'title title'
     'ribbon ribbon'
     'rail body'
@@ -100,20 +101,11 @@ textarea {
   display: flex;
   align-items: center;
   gap: var(--space-8);
-  /* WINDOW CONTROLS OVERLAY. In the desktop build the native caption is gone and Windows paints its three
-     controls over this row's end; `titlebar-area-*` is the part of the row they leave. The row is at least as
-     tall as that area, and its end padding clears the controls. In a browser the variables are undefined and
-     the fallbacks reduce both to the plain values.
-
-     BORDER-BOX, AND IT IS WHAT KEEPS THE TWO HEIGHTS FROM GROWING EACH OTHER. The renderer reports the bar's laid-out
-     height as the overlay's, and the overlay's area is this minimum. Under the default content box the minimum
-     excluded the 2 + 2 px padding and the 1 px border, so every report came back 5 px taller than it was measured
-     from: measured 36, 41, 46, 51, 56, 61, stopping only where the channel's 64 px bound refused the next. */
+  /* THE WINDOW CONTROLS ARE THE MENU BAR'S since v5-14 (ADR-0107): the system draws them over the row above this
+     one, so this row spans the window and reserves no room for them. */
   box-sizing: border-box;
-  min-block-size: env(titlebar-area-height, 0px);
   padding-block: var(--space-2);
-  padding-inline: var(--space-8)
-    calc(var(--space-8) + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+  padding-inline: var(--space-8);
   background: var(--bg2);
   border-block-end: 1px solid var(--border); /* decorative: separates the title bar from the chrome under it; each control draws its own focus ring */
   /* The row moves the window, as the caption it replaces did; every control inside it stays a control. */
@@ -143,11 +135,91 @@ textarea {
   padding-block: var(--space-2);
 }
 
+/*
+ * THE MENU BAR (v5-14, ADR-0107): the window's top row. The system draws its three window controls over the row's end
+ * (Window Controls Overlay): `titlebar-area-*` is the part of the row they leave, so the row is at least as tall as
+ * that area and its end padding clears the controls. In a browser the variables are undefined and the fallbacks reduce
+ * both to the plain values. The row moves the window, as the caption it replaces did; each menu stays a control.
+ *
+ * BORDER-BOX, AND IT IS WHAT KEEPS THE TWO HEIGHTS FROM GROWING EACH OTHER — the title bar's measured reason, moved
+ * with the controls: the renderer reports this row's laid-out height as the overlay's, and the overlay's area is this
+ * minimum, so a content box would report its padding back as extra height on every report (measured when the title
+ * bar carried the controls: 36, 41, 46, 51, 56, 61, until the channel's 64 px bound refused the next).
+ */
+.m-menu-bar {
+  grid-area: menu;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  min-block-size: max(var(--menu-bar), env(titlebar-area-height, 0px));
+  padding-inline: var(--space-10)
+    calc(var(--space-8) + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+  -webkit-app-region: drag;
+}
+
 /* ADR-0002: the brand's height, and the width the image's own ratio gives it — never stretched. */
-.m-title-bar__logo {
+.m-menu-bar__logo {
   flex: none;
-  block-size: var(--logo-title);
+  block-size: var(--logo-menu);
   inline-size: auto;
+}
+
+.m-menu-bar__menus {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.m-menu-bar__trigger {
+  display: inline-flex;
+  align-items: center;
+  block-size: var(--menu-bar-item);
+  padding-inline: var(--space-8);
+  border: 1px solid transparent;
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-chrome-12);
+  cursor: default;
+  -webkit-app-region: no-drag;
+}
+
+.m-menu-bar__trigger:hover,
+.m-menu-bar__trigger[data-popup-open] {
+  background: var(--active-bg);
+  box-shadow: var(--active-edge);
+}
+
+.m-menu-bar__trigger:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+/* A MENU'S ITEMS: a column for the mark of a command that is on, the name, the chord at the end — so names line up
+   whether or not a group has marks. A disabled item is `--muted`, the pair the float declares; it is also announced
+   as unavailable, so the colour is not the only sign. */
+.m-menu-bar__item {
+  display: grid;
+  grid-template-columns: var(--icon-16) minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-8);
+}
+
+.m-menu-bar__item[data-disabled] {
+  color: var(--muted);
+  cursor: default;
+}
+
+.m-menu-bar__mark {
+  display: inline-flex;
+}
+
+.m-menu-bar__caption {
+  padding: var(--space-4) var(--space-8) var(--space-2);
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+  font-weight: 600;
 }
 
 /* The command search looks like the field it opens, and is a button: the palette is where the
@@ -2392,6 +2464,13 @@ textarea {
   transform-origin: 0 0;
 }
 
+/* THE SCROLLER TAKES THE KEYBOARD (it is a focusable region): its ring is drawn inside it, since the pane's edges are
+   flush with the panels either side and an outside ring would be cut. */
+.m-page-list:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
 .m-page-list {
   display: flex;
   flex-direction: column;
@@ -4237,11 +4316,19 @@ body {
   pointer-events: none;
 }
 
-/* The title bar spans the window, over the ground's own edge padding, so its drag region and the
-   Window Controls Overlay reach the window's edges as before. v5: 40 tall, on the mica. */
+/* THE MENU BAR (v5-14): 32 tall, on the mica, spanning the window over the ground's edge padding so its drag region
+   and the Window Controls Overlay reach the window's edges. The mica is a gradient, so the colour the overlay's buttons
+   take is the ground's beneath it (`groundOf`), as the title bar's was. */
+.m-menu-bar {
+  margin-inline: calc(-1 * var(--space-8));
+  background: var(--mica);
+}
+
+/* The title bar spans the window, over the ground's own edge padding, so its drag region reaches the window's edges.
+   v5: 40 tall, on the mica, under the menu bar that carries the window controls. */
 .m-title-bar {
   margin-inline: calc(-1 * var(--space-8));
-  min-block-size: max(var(--title-bar), env(titlebar-area-height, 0px));
+  min-block-size: var(--title-bar);
   padding-block: 0;
   align-items: stretch;
   background: var(--mica);

@@ -30,7 +30,10 @@ export function rateUsCommand(deps: { readonly client: ContractClient; readonly 
     id: 'app.rate',
     icon: 'Star',
     title: RATE_US_COMMAND_TITLE,
-    placements: [{ surface: 'title-bar', emphasis: 'normal', order: 2 }],
+    placements: [
+      { surface: 'title-bar', emphasis: 'normal', order: 2 },
+      { surface: 'menu-bar', menu: 'help', group: 1, order: 20 },
+    ],
     run: () => rateOnStore(deps.client, deps.toast),
   };
 }

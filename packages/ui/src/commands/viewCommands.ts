@@ -3,6 +3,7 @@ import {
   GRID_TITLE,
   GROUP_DISPLAY,
   LOUPE_TITLE,
+  MENU_GROUP_SHOW,
   PALETTE_TITLE,
   RULERS_TITLE,
   SPLIT_VIEW_TITLE,
@@ -77,8 +78,12 @@ export function toggleRulersCommand(deps: { readonly settings: SettingsStore }):
     // lands" and this is that line — MOVED rather than added, because the pill
     // and a ribbon section are both on screen at once and §10.3's list for the
     // pill does not include the rulers.
-    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 50 }],
+    placements: [
+      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 50 },
+      { surface: 'menu-bar', menu: 'view', group: 3, order: 10, caption: MENU_GROUP_SHOW },
+    ],
     when: hasDocument,
+    checked: () => deps.settings.get(RULERS_SETTING.id) === true,
     run: (): void => {
       // READ THROUGH THE STORE, not from a captured value: the command object is
       // built once and a captured boolean would toggle from whatever was true at
@@ -120,8 +125,9 @@ export function commandPaletteCommand(deps: { readonly onToggle: () => void }): 
     // NO RIBBON PLACEMENT since the owner's v5 design (2026-09-24). The title bar's command search
     // is this command's surface on every screen — a field-shaped opener that runs it (ADR-0095) —
     // and the v5 Home draws File · Quick tools · Display · Export with no Find group. It had a Home
-    // placement while that search did not exist, which was right then and is a duplicate now.
-    placements: [],
+    // placement while that search did not exist, which was right then and is a duplicate now. In WINDOW beside Settings,
+    // because a menu is where a person who does not know the chord looks (ADR-0107).
+    placements: [{ surface: 'menu-bar', menu: 'window', group: 2, order: 20 }],
     run: (): void => {
       deps.onToggle();
     },
@@ -137,8 +143,10 @@ export function toggleGridCommand(deps: { readonly settings: SettingsStore }): U
     shortcut: 'Ctrl+G',
     placements: [
       { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 60 },
+      { surface: 'menu-bar', menu: 'view', group: 3, order: 20, caption: MENU_GROUP_SHOW },
     ],
     when: hasDocument,
+    checked: () => deps.settings.get(GRID_SETTING.id) === true,
     run: (): void => {
       deps.settings.set(GRID_SETTING.id, deps.settings.get(GRID_SETTING.id) !== true);
     },
@@ -154,8 +162,10 @@ export function toggleLoupeCommand(deps: { readonly settings: SettingsStore }): 
     shortcut: 'Ctrl+Shift+L',
     placements: [
       { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 80 },
+      { surface: 'menu-bar', menu: 'view', group: 3, order: 30, caption: MENU_GROUP_SHOW },
     ],
     when: hasDocument,
+    checked: () => deps.settings.get(LOUPE_SETTING.id) === true,
     run: (): void => {
       deps.settings.set(LOUPE_SETTING.id, deps.settings.get(LOUPE_SETTING.id) !== true);
     },
@@ -175,11 +185,14 @@ export function toggleSplitViewCommand(deps: { readonly settings: SettingsStore 
     title: SPLIT_VIEW_TITLE,
     shortcut: 'Ctrl+Shift+E',
     placements: [
-      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 90 },
+      // SECONDARY IN TOOLS › DISPLAY: drawn on Home › Display and in View › Show (ADR-0107).
+      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 90, prominence: 'secondary' },
       // AND HOME › DISPLAY, v5-02's *Split View*.
       { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 204 },
+      { surface: 'menu-bar', menu: 'view', group: 3, order: 40, caption: MENU_GROUP_SHOW },
     ],
     when: hasDocument,
+    checked: () => deps.settings.get(SPLIT_VIEW_SETTING.id) === true,
     run: (): void => {
       deps.settings.set(SPLIT_VIEW_SETTING.id, deps.settings.get(SPLIT_VIEW_SETTING.id) !== true);
     },
@@ -199,11 +212,14 @@ export function toggleDarkPageCommand(deps: { readonly settings: SettingsStore }
     title: DARK_PAGE_TITLE,
     shortcut: 'Ctrl+Shift+D',
     placements: [
-      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 70 },
+      // SECONDARY IN TOOLS › DISPLAY: drawn on Home › Display and in View › Show (ADR-0107).
+      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 70, prominence: 'secondary' },
       // AND HOME › DISPLAY as v5-02's *Dim Pages*: this is the command that dims a page for a dark room.
       { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 206 },
+      { surface: 'menu-bar', menu: 'view', group: 3, order: 50, caption: MENU_GROUP_SHOW },
     ],
     when: hasDocument,
+    checked: () => deps.settings.get(DARK_PAGE_SETTING.id) === true,
     run: (): void => {
       deps.settings.set(DARK_PAGE_SETTING.id, deps.settings.get(DARK_PAGE_SETTING.id) !== true);
     },

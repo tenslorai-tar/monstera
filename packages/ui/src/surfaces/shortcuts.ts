@@ -103,8 +103,11 @@ const FIELD_CTRL_KEYS: ReadonlySet<string> = new Set([
   'delete',
 ]);
 
-/** Whether an element is one a person types text into. */
-function isTypingField(target: EventTarget | null): boolean {
+/**
+ * Whether an element is one a person types text into. Exported because the Edit menu's verbs ask the same question of
+ * the element that had the focus (`typingFocus.ts`) — one answer to *is this a text field*, not two (B3a).
+ */
+export function isTypingField(target: EventTarget | null): target is HTMLElement {
   if (typeof HTMLElement === 'undefined' || !(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
   if (target instanceof HTMLTextAreaElement) return !target.readOnly;

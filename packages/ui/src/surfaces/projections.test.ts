@@ -4,8 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { CommandRegistry, type CommandContext, type UiCommand } from '../registries/commands.js';
 import { SECTION_IDS, type Placement } from '../registries/placement.js';
 import {
+  MENU_BAR_SECTIONS,
   ShortcutConflict,
   contextMenuModel,
+  menuBarModel,
   normaliseChord,
   paletteModel,
   quickToolbarModel,
@@ -136,14 +138,16 @@ describe('ribbonModel', () => {
 });
 
 describe('secondary placements and the rail (ADR-0098)', () => {
+  // IN TOOLS, which is a menu: a fixture in Home alone would need a menu-bar placement too (ADR-0107's correction),
+  // and these cases are about prominence, not about Home.
   const FILE = messageKey('test.group.file');
 
   it('carries PROMINENCE through: absent is primary, secondary is marked', () => {
     const registry = new CommandRegistry([
-      command('doc.open', [{ surface: 'ribbon', section: 'home', group: FILE, order: 1 }]),
-      command('doc.pdfa', [{ surface: 'ribbon', section: 'home', group: FILE, order: 2, prominence: 'secondary' }]),
+      command('doc.open', [{ surface: 'ribbon', section: 'tools', group: FILE, order: 1 }]),
+      command('doc.pdfa', [{ surface: 'ribbon', section: 'tools', group: FILE, order: 2, prominence: 'secondary' }]),
     ]);
-    const entries = ribbonModel(registry, context).find((section) => section.section === 'home')?.groups[0]?.entries;
+    const entries = ribbonModel(registry, context).find((section) => section.section === 'tools')?.groups[0]?.entries;
     expect(entries?.map((entry) => [entry.command.id, entry.secondary])).toStrictEqual([
       ['doc.open', false],
       ['doc.pdfa', true],
@@ -152,11 +156,11 @@ describe('secondary placements and the rail (ADR-0098)', () => {
 
   it('a group whose primaries `when` hides draws its FIRST remaining tool, never a lone More', () => {
     const registry = new CommandRegistry([
-      command('doc.open', [{ surface: 'ribbon', section: 'home', group: FILE, order: 1 }], { when: () => false }),
-      command('doc.save-copy', [{ surface: 'ribbon', section: 'home', group: FILE, order: 2, prominence: 'secondary' }]),
-      command('doc.pdfa', [{ surface: 'ribbon', section: 'home', group: FILE, order: 3, prominence: 'secondary' }]),
+      command('doc.open', [{ surface: 'ribbon', section: 'tools', group: FILE, order: 1 }], { when: () => false }),
+      command('doc.save-copy', [{ surface: 'ribbon', section: 'tools', group: FILE, order: 2, prominence: 'secondary' }]),
+      command('doc.pdfa', [{ surface: 'ribbon', section: 'tools', group: FILE, order: 3, prominence: 'secondary' }]),
     ]);
-    const entries = ribbonModel(registry, context).find((section) => section.section === 'home')?.groups[0]?.entries;
+    const entries = ribbonModel(registry, context).find((section) => section.section === 'tools')?.groups[0]?.entries;
     expect(entries?.map((entry) => [entry.command.id, entry.secondary])).toStrictEqual([
       ['doc.save-copy', false],
       ['doc.pdfa', true],
@@ -167,15 +171,15 @@ describe('secondary placements and the rail (ADR-0098)', () => {
     expect(
       () =>
         new CommandRegistry([
-          command('doc.pdfa', [{ surface: 'ribbon', section: 'home', group: FILE, order: 1, prominence: 'secondary' }]),
+          command('doc.pdfa', [{ surface: 'ribbon', section: 'tools', group: FILE, order: 1, prominence: 'secondary' }]),
         ]),
-    ).toThrow(/home › test\.group\.file holds only secondary tools/u);
+    ).toThrow(/tools › test\.group\.file holds only secondary tools/u);
     // CONTROL: the same group with one primary beside it is accepted.
     expect(
       () =>
         new CommandRegistry([
-          command('doc.open', [{ surface: 'ribbon', section: 'home', group: FILE, order: 0 }]),
-          command('doc.pdfa', [{ surface: 'ribbon', section: 'home', group: FILE, order: 1, prominence: 'secondary' }]),
+          command('doc.open', [{ surface: 'ribbon', section: 'tools', group: FILE, order: 0 }]),
+          command('doc.pdfa', [{ surface: 'ribbon', section: 'tools', group: FILE, order: 1, prominence: 'secondary' }]),
         ]),
     ).not.toThrow();
   });
@@ -184,7 +188,7 @@ describe('secondary placements and the rail (ADR-0098)', () => {
     const registry = new CommandRegistry([
       command('app.about', [{ surface: 'rail', order: 20 }]),
       command('app.settings', [{ surface: 'rail', order: 10 }]),
-      command('doc.open', [{ surface: 'ribbon', section: 'home', group: FILE, order: 1 }]),
+      command('doc.open', [{ surface: 'ribbon', section: 'tools', group: FILE, order: 1 }]),
     ]);
     expect(ids(railModel(registry, context))).toStrictEqual(['app.settings', 'app.about']);
   });
@@ -209,6 +213,8 @@ describe('the other placement surfaces', () => {
     command('a.start-primary', [{ surface: 'start-screen', slot: 'primary', order: 1 }]),
     command('a.ribbon', [
       { surface: 'ribbon', section: 'home', group: messageKey('group.g'), order: 1 },
+      // A HOME TOOL IS IN SOME MENU, which the registry requires (ADR-0107's correction).
+      { surface: 'menu-bar', menu: 'file', group: 0, order: 1 },
     ]),
     // THE STATUS BAR'S FOUR SLOTS, each holding something, and registered OUT of order so the
     // projection has to sort. Every other case in this block names its exact ids, so a status-bar
@@ -432,6 +438,143 @@ describe('ONE registration, and every surface follows it', () => {
 
     expect(listed(before)).toStrictEqual(['a.fixed', 'a.mover']);
     expect(listed(after)).toStrictEqual(['a.fixed', 'a.mover']);
+  });
+});
+
+describe('menuBarModel (ADR-0107)', () => {
+  const MARKUP = messageKey('test.group.markup');
+  const EXPORT = messageKey('test.group.export');
+  const ZOOM = messageKey('test.menu.zoom');
+  const menuOf = (registry: CommandRegistry, id: string, at: CommandContext = context) =>
+    menuBarModel(registry, at).find((menu) => menu.id === id);
+  const itemIds = (menu: ReturnType<typeof menuOf>): string[][] =>
+    (menu?.groups ?? []).map((group) => group.items.map((item) => item.command.id));
+
+  it('draws the menus in v5-14’s order — never Home — and drops a menu with nothing in it', () => {
+    // THE LITERAL IS THE ANCHOR: the section menus are the prototype's order, which is not the rail's.
+    expect(MENU_BAR_SECTIONS).toStrictEqual(['organize', 'comment', 'forms', 'review', 'protect', 'tools']);
+    const registry = new CommandRegistry([
+      command('a.help', [{ surface: 'menu-bar', menu: 'help', group: 0, order: 1 }]),
+      command('a.file', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 1 }]),
+      command('a.tools', [{ surface: 'ribbon', section: 'tools', group: MARKUP, order: 1 }]),
+      command('a.comment', [{ surface: 'ribbon', section: 'comment', group: MARKUP, order: 1 }]),
+      command('a.home', [
+        { surface: 'ribbon', section: 'home', group: MARKUP, order: 1 },
+        { surface: 'menu-bar', menu: 'view', group: 0, order: 1 },
+      ]),
+    ]);
+    expect(menuBarModel(registry, context).map((menu) => menu.id)).toStrictEqual([
+      'file',
+      'view',
+      'comment',
+      'tools',
+      'help',
+    ]);
+  });
+
+  it('a SECTION menu is its ribbon section — secondaries and a named menu’s members included — in the ribbon’s order', () => {
+    const registry = new CommandRegistry([
+      command('b.second', [{ surface: 'ribbon', section: 'forms', group: EXPORT, order: 2, menu: EXPORT }]),
+      command('b.first', [{ surface: 'ribbon', section: 'forms', group: EXPORT, order: 1, menu: EXPORT }]),
+      command('a.mark', [{ surface: 'ribbon', section: 'forms', group: MARKUP, order: 0 }]),
+      command('a.more', [{ surface: 'ribbon', section: 'forms', group: MARKUP, order: 5, prominence: 'secondary' }]),
+    ]);
+    const forms = menuOf(registry, 'forms');
+    expect(forms?.groups.map((group) => group.caption)).toStrictEqual([MARKUP, EXPORT]);
+    expect(itemIds(forms)).toStrictEqual([['a.mark', 'a.more'], ['b.first', 'b.second']]);
+  });
+
+  it('Edit is its application groups FIRST, then the Edit section’s', () => {
+    const registry = new CommandRegistry([
+      command('e.section', [{ surface: 'ribbon', section: 'edit', group: MARKUP, order: 0 }]),
+      command('e.redo', [{ surface: 'menu-bar', menu: 'edit', group: 0, order: 20 }]),
+      command('e.cut', [{ surface: 'menu-bar', menu: 'edit', group: 1, order: 10 }]),
+      command('e.undo', [{ surface: 'menu-bar', menu: 'edit', group: 0, order: 10 }]),
+    ]);
+    expect(itemIds(menuOf(registry, 'edit'))).toStrictEqual([['e.undo', 'e.redo'], ['e.cut'], ['e.section']]);
+  });
+
+  it('an application group takes its CAPTION from its placements, and a group without one has none', () => {
+    const registry = new CommandRegistry([
+      command('v.out', [{ surface: 'menu-bar', menu: 'view', group: 2, order: 2, caption: ZOOM }]),
+      command('v.in', [{ surface: 'menu-bar', menu: 'view', group: 2, order: 1, caption: ZOOM }]),
+      command('v.hand', [{ surface: 'menu-bar', menu: 'view', group: 4, order: 1 }]),
+    ]);
+    const view = menuOf(registry, 'view');
+    expect(view?.groups.map((group) => group.caption)).toStrictEqual([ZOOM, undefined]);
+    expect(itemIds(view)).toStrictEqual([['v.in', 'v.out'], ['v.hand']]);
+  });
+
+  it('lists EVERY command and DISABLES one whose `when` is false, where the ribbon hides it', () => {
+    const registry = new CommandRegistry([
+      command('f.can', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 1 }]),
+      command('f.cannot', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 2 }], { when: () => false }),
+      command('t.cannot', [{ surface: 'ribbon', section: 'tools', group: MARKUP, order: 1 }], { when: () => false }),
+    ]);
+    expect(menuOf(registry, 'file')?.groups[0]?.items.map((item) => [item.command.id, item.enabled])).toStrictEqual([
+      ['f.can', true],
+      ['f.cannot', false],
+    ]);
+    // A SECTION MENU OVER A HIDDEN TOOL still lists it, disabled — and the ribbon, the control, does not draw it.
+    expect(menuOf(registry, 'tools')?.groups[0]?.items.map((item) => item.enabled)).toStrictEqual([false]);
+    expect(ribbonModel(registry, context).find((section) => section.section === 'tools')?.groups).toStrictEqual([]);
+  });
+
+  it('carries `checked` from the command in this context, and `undefined` for one that sets no state', () => {
+    let on = false;
+    const registry = new CommandRegistry([
+      command('v.toggle', [{ surface: 'menu-bar', menu: 'view', group: 0, order: 1 }], { checked: () => on }),
+      command('v.plain', [{ surface: 'menu-bar', menu: 'view', group: 0, order: 2 }]),
+    ]);
+    const checks = (): (boolean | undefined)[] => menuOf(registry, 'view')?.groups[0]?.items.map((item) => item.checked) ?? [];
+    expect(checks()).toStrictEqual([false, undefined]);
+    on = true;
+    expect(checks()).toStrictEqual([true, undefined]);
+  });
+});
+
+describe('the registry’s menu-bar rules (ADR-0107 and its correction)', () => {
+  const GROUP = messageKey('test.group.g');
+
+  it('REFUSES a command on the Home ribbon alone, naming it — Home is not a menu', () => {
+    expect(() => new CommandRegistry([command('h.only', [{ surface: 'ribbon', section: 'home', group: GROUP, order: 1 }])])).toThrow(
+      /"h\.only" is on the Home ribbon and in no menu/u,
+    );
+  });
+
+  it('CONTROL: accepts the same command with a menu-bar placement, or with a place in a section that is a menu', () => {
+    expect(
+      () =>
+        new CommandRegistry([
+          command('h.menu', [
+            { surface: 'ribbon', section: 'home', group: GROUP, order: 1 },
+            { surface: 'menu-bar', menu: 'file', group: 0, order: 1 },
+          ]),
+          command('h.also', [
+            { surface: 'ribbon', section: 'home', group: GROUP, order: 2 },
+            { surface: 'ribbon', section: 'tools', group: GROUP, order: 1 },
+          ]),
+        ]),
+    ).not.toThrow();
+  });
+
+  it('REFUSES two captions for one application group, and CONTROL: accepts the same caption twice', () => {
+    const first = messageKey('test.menu.one');
+    const second = messageKey('test.menu.two');
+    expect(
+      () =>
+        new CommandRegistry([
+          command('c.a', [{ surface: 'menu-bar', menu: 'view', group: 1, order: 1, caption: first }]),
+          command('c.b', [{ surface: 'menu-bar', menu: 'view', group: 1, order: 2, caption: second }]),
+        ]),
+    ).toThrow(/captions the menu group view #1/u);
+    expect(
+      () =>
+        new CommandRegistry([
+          command('c.a', [{ surface: 'menu-bar', menu: 'view', group: 1, order: 1, caption: first }]),
+          command('c.b', [{ surface: 'menu-bar', menu: 'view', group: 1, order: 2, caption: first }]),
+        ]),
+    ).not.toThrow();
   });
 });
 

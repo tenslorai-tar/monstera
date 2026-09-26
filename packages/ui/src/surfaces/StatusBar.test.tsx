@@ -214,7 +214,7 @@ describe('StatusBar', () => {
 
     it('renders NO button a command did not place here', () => {
       const { container } = drawn({
-        commands: [command('a.ribbon-only', NAV_FIRST, { surface: 'ribbon', section: 'home', group: messageKey('group.g'), order: 1 })],
+        commands: [command('a.ribbon-only', NAV_FIRST, { surface: 'ribbon', section: 'organize', group: messageKey('group.g'), order: 1 })],
       });
       expect(container.querySelectorAll('.m-status-cluster button')).toHaveLength(0);
     });

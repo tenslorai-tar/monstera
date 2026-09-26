@@ -16,6 +16,8 @@ import {
   type PreloadHandlers,
   type OcrLanguage,
   type SpellingLanguage,
+  type StorePage,
+  type WindowEditAction,
 } from '@monstera/contract';
 import {
   type AskWindow,
@@ -268,10 +270,11 @@ export function createContractHandlers(deps: {
    */
   readonly confirmClose: () => boolean;
   /**
-   * Runs the browser's copy on the window's current selection (`webContents.copy()`), answering
-   * whether a window took it. Injected and required for {@link titleBarOverlay}'s reason.
+   * Runs one of the browser's edit commands on what has focus in the window (`webContents.cut()`,
+   * `copy()`, `paste()` or `selectAll()`), answering whether a window took it. Injected and required
+   * for {@link titleBarOverlay}'s reason.
    */
-  readonly copySelection: () => boolean;
+  readonly edit: (action: WindowEditAction) => boolean;
   /** Writes text to the system clipboard; `false` where this graph has none to write to. */
   readonly copyText: (text: string) => boolean;
   /**
@@ -280,6 +283,8 @@ export function createContractHandlers(deps: {
    * function resolves the second from the first, in `main`, so no page can name a destination.
    */
   readonly openWebPage: (page: WebPage) => Promise<boolean>;
+  /** Opens one of the Store application's pages (ADR-0107), answering whether this build can reach the Store. */
+  readonly openStore: (page: StorePage) => Promise<boolean>;
   /**
    * The renderer has subscribed to close requests. Answers whether the gate took it — `false`
    * where no window is attached, as its neighbours do.
@@ -572,9 +577,10 @@ export function createContractHandlers(deps: {
     'log.reveal': async () => ok({ revealed: await deps.revealLog() }),
     'window.titleBarOverlay': (overlay) => Promise.resolve(ok({ applied: deps.titleBarOverlay(overlay) })),
     'window.close': () => Promise.resolve(ok({ closing: deps.confirmClose() })),
-    'window.copy': () => Promise.resolve(ok({ copied: deps.copySelection() })),
+    'window.edit': ({ action }) => Promise.resolve(ok({ done: deps.edit(action) })),
     'window.copyText': ({ text }) => Promise.resolve(ok({ copied: deps.copyText(text) })),
     'app.openWebPage': async ({ page }) => ok({ opened: await deps.openWebPage(page) }),
+    'app.openStore': async ({ page }) => ok({ opened: await deps.openStore(page) }),
     'window.closeListening': () => Promise.resolve(ok({ acknowledged: deps.closeListening() })),
   };
 }

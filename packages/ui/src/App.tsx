@@ -104,7 +104,14 @@ import {
   undoCommand,
   redoCommand,
   zoomCommand,
+  actualSizeCommand,
 } from './commands/documentCommands.js';
+import { editCommands } from './commands/editCommands.js';
+import { exitCommand, startScreenCommand } from './commands/windowCommands.js';
+import { checkForUpdatesCommand } from './commands/checkForUpdates.js';
+import { createTypingFocus, type TypingFocus } from './typingFocus.js';
+import { MenuBar } from './surfaces/MenuBar.js';
+import { usePageAnnotations } from './usePageAnnotations.js';
 import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
 import {
   commandPaletteCommand,
@@ -116,6 +123,8 @@ import {
 } from './commands/viewCommands.js';
 import {
   layoutModeCommands,
+  showPropertiesCommand,
+  themeCommands,
   toggleContextPanelCommand,
   togglePanelCommand,
   toggleQuickToolbarCommand,
@@ -284,13 +293,15 @@ import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
 import { stickyNoteCommand } from './annotations/pointTools.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
-import { SELECT_TOOL_ID } from './annotations/selectTool.js';
+import { SELECT_TOOL_ID, selectionOfPage } from './annotations/selectTool.js';
 import { applyCarrying } from './commands/applyCarrying.js';
 import {
   deleteSelectionCommand,
   editSelectionCommand,
   replySelectionCommand,
   copyAnnotationsCommand,
+  copySelectedAnnotations,
+  selectAllMarksCommand,
   nudgeSelectionCommands,
   selectionPropertiesCommand,
   shapeToolCommands,
@@ -1186,6 +1197,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
   const activate = useCallback((docId: DocId): void => {
     setActiveId(docId);
   }, []);
+  /**
+   * *File › Start screen* (ADR-0107): no document in front, every tab kept — `activate`'s one other route, named beside
+   * it for the reason above. The start screen draws whenever nothing is active, so this is all it takes.
+   */
+  const showStart = useCallback((): void => {
+    setActiveId(undefined);
+  }, []);
 
 
   /**
@@ -1434,21 +1452,23 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
 
   // THE WINDOW'S CLOSE, held by main until this answers (`windowClose.ts`): every open
   // document through the one path, then `window.close`. A Cancel answers nothing and the
-  // window stays.
+  // window stays. ONE FUNCTION for the caption's × and *File › Exit* (ADR-0107), so Exit asks
+  // exactly what the × asks and cannot quit past an unsaved document.
+  const closeWindow = useCallback(async (): Promise<void> => {
+    if (await requestClose(tabs.map((tab) => tab.docId))) {
+      await client['window.close']({});
+    }
+  }, [client, requestClose, tabs]);
   useEffect(() => {
     const stop = subscribe('window.close-requested', () => {
-      void (async (): Promise<void> => {
-        if (await requestClose(tabs.map((tab) => tab.docId))) {
-          await client['window.close']({});
-        }
-      })();
+      void closeWindow();
     });
     // AND MAIN IS TOLD THERE IS NOW SOMEBODY TO ASK. A pushed request reaches whoever is
     // listening when it is sent, so until this arrives the gate lets a close through rather than
     // holding the window for an answer that was delivered to nobody (`windowClose.ts`).
     void client['window.closeListening']({});
     return stop;
-  }, [client, requestClose, subscribe, tabs]);
+  }, [client, closeWindow, subscribe]);
 
   /**
    * The magnification the reader asked for, as a MODE.
@@ -1681,6 +1701,42 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
     [open?.version, picked, toolId],
   );
   const readSelection = useCallback(() => selection, [selection]);
+  /**
+   * *Edit › Select all* on the page (ADR-0107): how many marks each page draws, from the layers' own read, so the item
+   * is disabled on a page with none rather than a control that selects nothing — a THIRD reader of
+   * `document.annotations`, which `usePageAnnotations`' header allows: one answer, several surfaces.
+   */
+  const pageMarks = usePageAnnotations(client, open?.docId, open?.version);
+  const marksOn = useCallback(
+    (page: number): number => (pageMarks.get(page) ?? []).filter((mark) => mark.rect !== null).length,
+    [pageMarks],
+  );
+  const selectAllOn = useCallback(
+    async (page: number): Promise<void> => {
+      const walk = await listAnnotations();
+      const all = walk === undefined ? undefined : selectionOfPage(walk, page);
+      if (all === undefined) return;
+      // A SELECTION EXISTS ONLY WHILE THE SELECT TOOL IS ON, so it comes on with it.
+      setToolId(SELECT_TOOL_ID);
+      setPicked(all);
+    },
+    [listAnnotations],
+  );
+  /**
+   * The text field that has the focus, or had it when the menu bar took it — what the Edit menu's verbs act on first
+   * (`typingFocus.ts`). ONE tracker per mount, created once; the effect only starts and stops its listening, so nothing
+   * the shell holds is reassigned, and a menu drawn during render asks it a question rather than reading a ref.
+   */
+  const [typingFocus] = useState<TypingFocus>(() =>
+    createTypingFocus((element) => element.closest('.m-menu-bar, [role="menu"]') !== null),
+  );
+  useEffect(() => {
+    typingFocus.start(document);
+    return (): void => {
+      typingFocus.stop();
+    };
+  }, [typingFocus]);
+  const focusedField = typingFocus.field;
   /**
    * Which document is ON SHOW, for a command that also receives a different one.
    *
@@ -2133,7 +2189,54 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
     // memo returns, and read only when the command runs — never during render (the refs rule that refused G1's first
     // layout memory) and never from module state two mounted shells would share.
     const holder: { registry?: CommandRegistry } = {};
+    const textDeps: TextSelectionDeps = {
+      selection: () => textSelection,
+      place: dispatch,
+      style: () => style,
+      // THE BROWSER'S OWN COPY, run by main on this window: the selection is still the
+      // page's (the menu keeps it), and what it copies as is what the chord would copy.
+      copy: () => {
+        void client['window.edit']({ action: 'copy' });
+      },
+      search: (text) => {
+        showSearchPanel(settings);
+        setFindSeed((previous) => ({ text, nonce: (previous?.nonce ?? 0) + 1 }));
+      },
+    };
+    // THE PAGE'S HALVES OF THE EDIT MENU, held by name so *Cut*, *Copy*, *Paste* and *Select all* run these very
+    // commands rather than a second copy of them (`editCommands.ts`).
+    const textCopy = copySelectionCommand(textDeps);
+    const marksCopyDeps = { ...selectionDeps, client, ask, onCopied: setCopiedCount };
+    const marksCopy = copyAnnotationsCommand(marksCopyDeps);
+    const marksDelete = deleteSelectionCommand(selectionDeps);
+    const marksPaste = pasteAnnotationsCommand({ client, onApplied: applied, ask, stamp, hasCopied: readHasCopied });
+    const marksSelectAll = selectAllMarksCommand({ marksOn, selectAll: selectAllOn });
     const built = new CommandRegistry([
+        // THE MENU BAR'S OWN (ADR-0107): the clipboard verbs on what has focus, the start screen, the window's one
+        // close, and the Store's updates page.
+        ...editCommands({
+          field: focusedField,
+          native: (action) => {
+            void client['window.edit']({ action });
+          },
+          copyText: textCopy,
+          copyMarks: marksCopy,
+          copyMarksFor: (context) => copySelectedAnnotations(marksCopyDeps, context),
+          deleteMarks: marksDelete,
+          pasteMarks: marksPaste,
+          selectAllMarks: marksSelectAll,
+        }),
+        marksSelectAll,
+        startScreenCommand({ showStart }),
+        exitCommand({ closeWindow }),
+        checkForUpdatesCommand({ client }),
+        ...themeCommands({ settings }),
+        showPropertiesCommand({ settings }),
+        actualSizeCommand({ onZoom: changeZoom }),
+        showPanelCommand({ settings }, 'pages'),
+        showPanelCommand({ settings }, 'bookmarks'),
+        showPanelCommand({ settings }, 'layers'),
+        showPanelCommand({ settings }, 'search'),
         keyboardShortcutsCommand({
           ask,
           shortcuts: () => (holder.registry === undefined ? [] : shortcutListModel(holder.registry)),
@@ -2331,7 +2434,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
         importAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp }),
         importAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp }),
         // THE CLIPBOARD'S PASTE, beside the import it is: main mints the same command.
-        pasteAnnotationsCommand({ client, onApplied: applied, ask, stamp, hasCopied: readHasCopied }),
+        marksPaste,
         exportAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp }),
         exportAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp }),
         exportAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp }),
@@ -2355,22 +2458,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
         // §7's SELECTED-TEXT MENU. The markups dispatch through the one dispatcher, drawn in the
         // tools' own style; *Search* opens the Search panel and seeds the find field.
         ...(() => {
-          const textDeps: TextSelectionDeps = {
-            selection: () => textSelection,
-            place: dispatch,
-            style: () => style,
-            // THE BROWSER'S OWN COPY, run by main on this window: the selection is still the
-            // page's (the menu keeps it), and what it copies as is what the chord would copy.
-            copy: () => {
-              void client['window.copy']({});
-            },
-            search: (text) => {
-              showSearchPanel(settings);
-              setFindSeed((previous) => ({ text, nonce: (previous?.nonce ?? 0) + 1 }));
-            },
-          };
           return [
-            copySelectionCommand(textDeps),
+            textCopy,
             ...markupSelectionCommands(textDeps),
             // ASK IS THIS COMMAND'S ALONE, not a member of `TextSelectionDeps`: it is the only
             // item in this menu that opens a dialog, and widening the shared interface would
@@ -2400,7 +2489,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
           // ONE INPUT: the Anthropic API needs no endpoint setting (ADR-0057).
           claudeReady: () => claudeKeyStored,
         }),
-        deleteSelectionCommand(selectionDeps),
+        marksDelete,
         // ASK IS PASSED PER COMMAND, `commentSelectionCommand`'s rule: only the
         // annotation-menu items that open a dialog receive it, and widening
         // `SelectionCommandDeps` would hand every selection command a
@@ -2412,7 +2501,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
         draftReplyCommand({ selection: readSelection, ask: askAssistant }),
         summariseCommentsCommand({ ask: askAssistant }),
         openAssistantCommand({ open: openAssistant }),
-        copyAnnotationsCommand({ ...selectionDeps, client, ask, onCopied: setCopiedCount }),
+        marksCopy,
         selectionPropertiesCommand({ ...selectionDeps, settings }),
         ...nudgeSelectionCommands(selectionDeps),
         toggleRulersCommand({ settings }),
@@ -2492,6 +2581,12 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
       openAssistant,
       // WHO IS MAKING A MARK AND WHEN (ADR-0103): changes when the person's name for comments does.
       stamp,
+      // THE MENU BAR'S (ADR-0107): the window's one close, the focused field, and the page's marks for Select all.
+      closeWindow,
+      focusedField,
+      marksOn,
+      selectAllOn,
+      showStart,
     ]);
 
   /**
@@ -2657,6 +2752,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
           document's. It carries the open documents, which is what the rest of
           the surface is about — the strip names which document every panel, the
           status bar and every command below refer to. */}
+      {/* THE MENU BAR, the window's top row in every mode and with no document too (§10.3, ADR-0107): the system's
+          window controls are drawn over its end, and every item in it is a projection of the registry. */}
+      <MenuBar registry={registry} context={context} focusBefore={focusedField} />
       <TitleBar registry={registry} context={context} settings={settings}>
         <DocumentTabs
           // §7's TAB MENU, with the right-clicked tab's document as the context's — so *Close* closes

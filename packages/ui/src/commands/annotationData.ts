@@ -137,6 +137,9 @@ function importAnnotationsCommand(
  * itself (`fieldOwnsChord`, Ctrl+V among them). The choice that remained — Ctrl+V on the page meaning
  * *paste the marks I copied* — was the owner's, taken 2026-09-25. With nothing copied `when` hides the
  * command, the chord is unclaimed, and the browser keeps the key.
+ *
+ * **The chord is `edit.paste`'s since the menu bar (ADR-0107)**, which runs this command when no field has
+ * the focus — so the owner's meaning of Ctrl+V on the page is unchanged, and *Edit › Paste* is the same act.
  */
 export function pasteAnnotationsCommand(
   deps: DocumentCommandDeps & { readonly hasCopied: () => boolean },
@@ -144,7 +147,7 @@ export function pasteAnnotationsCommand(
   return {
     id: 'annotate.paste',
     title: PASTE_ANNOTATIONS_TITLE,
-    shortcut: 'Ctrl+V',
+    // NO CHORD OF ITS OWN: Ctrl+V is `edit.paste`'s, which runs this when no text field has the focus (ADR-0107).
     placements: [{ surface: 'context-menu', context: 'page', order: 25 }],
     when: (context) => hasDocument(context) && deps.hasCopied(),
     run: async (context): Promise<void> => {

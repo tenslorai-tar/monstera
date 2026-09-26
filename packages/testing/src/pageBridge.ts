@@ -73,15 +73,49 @@ export async function bridgeUnder(
   await bridge(page, { ...options, settings: { ...options.settings, 'appearance.theme': look.theme } });
 }
 
+/**
+ * @param observe told every channel call the page makes, BEFORE the shim answers it — for a case whose
+ *   question is what the renderer SENT (a stamp's author, a command's pages), which no screen shows.
+ *   It observes and never answers, so a case cannot use it to stand in for the shim.
+ */
 export async function bridge(
   page: Page,
   options: Parameters<typeof createBrowserShim>[0] = {},
+  observe?: (channel: string, params: unknown) => void,
 ): Promise<void> {
-  // THE PAGE'S OWN COPY, standing in for main's `webContents.copy()`: whatever is selected in the
-  // page when the channel is called, not a string the renderer sent.
+  // THE PAGE'S OWN EDITS, standing in for main's `webContents[action]()`: they act on whatever has
+  // focus or is selected in the page when the channel is called, never on a string the renderer sent.
+  // A field is edited through `setRangeText`, anything else through the selection's range — the
+  // two standard ways a page changes text, since `execCommand` is deprecated.
   const shim = createBrowserShim({
-    copySelection: () =>
-      page.evaluate(() => navigator.clipboard.writeText(document.getSelection()?.toString() ?? '')),
+    edit: (action) =>
+      page.evaluate(async (verb) => {
+        const focused = document.activeElement;
+        const field = focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement ? focused : null;
+        const selection = document.getSelection();
+        const selected = (): string =>
+          field === null ? (selection?.toString() ?? '') : field.value.slice(field.selectionStart ?? 0, field.selectionEnd ?? 0);
+        const replace = (text: string): void => {
+          if (field !== null) {
+            field.setRangeText(text, field.selectionStart ?? 0, field.selectionEnd ?? 0, 'end');
+            field.dispatchEvent(new Event('input', { bubbles: true }));
+            return;
+          }
+          const range = selection !== null && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+          range?.deleteContents();
+          if (text !== '') range?.insertNode(document.createTextNode(text));
+        };
+        if (verb === 'copy') await navigator.clipboard.writeText(selected());
+        if (verb === 'cut') {
+          await navigator.clipboard.writeText(selected());
+          replace('');
+        }
+        if (verb === 'paste') replace(await navigator.clipboard.readText());
+        if (verb === 'selectAll') {
+          if (field !== null) field.select();
+          else selection?.selectAllChildren(document.body);
+        }
+      }, action),
     ...options,
     // A MACHINE WHOSE FIRST RUN IS ANSWERED, unless a case says otherwise. A fresh shim has no AI
     // key, so the first-run AI setup (E5) opens a modal over every screen these cases drive;
@@ -106,6 +140,7 @@ export async function bridge(
       // in the contract at all.
       throw new Error(`the page invoked an unknown channel: ${channel}`);
     }
+    observe?.(channel, params);
     return handler(params);
   });
 

@@ -13,6 +13,7 @@ import {
   DRAFT_REPLY_TITLE,
   EXPLAIN_SELECTION_TITLE,
   GROUP_AI,
+  MENU_GROUP_PANELS,
   OPEN_ASSISTANT_TITLE,
   SUMMARISE_COMMENTS_TITLE,
   SUMMARISE_SELECTION_TITLE,
@@ -39,7 +40,10 @@ export function openAssistantCommand(deps: { readonly open: () => void }): UiCom
     icon: 'Sparkles',
     title: OPEN_ASSISTANT_TITLE,
     shortcut: 'Ctrl+Shift+A',
-    placements: [{ surface: 'ribbon', section: 'review', group: GROUP_AI, order: 1 }],
+    placements: [
+      { surface: 'ribbon', section: 'review', group: GROUP_AI, order: 1 },
+      { surface: 'menu-bar', menu: 'window', group: 0, order: 80, caption: MENU_GROUP_PANELS },
+    ],
     run: (): void => {
       deps.open();
     },

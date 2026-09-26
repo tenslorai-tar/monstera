@@ -41,6 +41,12 @@ export {
   MAX_TABLE_CELL_TEXT,
   MAX_TABLE_CELLS,
   TABLE_ENGINES,
+  // Main's window names its methods by these; the renderer's edit commands name the verb they ask for.
+  WINDOW_EDIT_ACTIONS,
+  type WindowEditAction,
+  // The Store application's pages: `main`'s URI table is keyed by them.
+  STORE_PAGES,
+  type StorePage,
   SERVICE_REFUSALS,
   SERVICE_PROBLEMS,
   SERVICE_PROBLEM_OF,
