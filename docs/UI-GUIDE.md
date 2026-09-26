@@ -159,8 +159,10 @@ decides what is checked:
 | `boundary-control` | the boundary of something operable | 3:1 against each declared surface |
 | `boundary-decorative` | a divider, an outline, a rule | not checked |
 | `fill` | a solid block of brand colour | — |
+| `ground` · `glow` · `tint` | the window's base, the lights over it, a surface's own gradient | — (they are what translucent surfaces are composited over) |
 
-A new token needs its role on the same line as its value. A role without a value,
+A TRANSLUCENT surface says what it sits `@over` (a surface, `ground`, or `any` for anything that floats), and its
+pairs are checked against every colour it can present (ADR-0106). A new token needs its role on the same line as its value. A role without a value,
 or a value without a role, fails `check:tokencontrast` in both directions — an
 incomplete declaration silently narrows the check, which is the failure the
 bidirectional test exists to prevent.
