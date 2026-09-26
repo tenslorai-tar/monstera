@@ -127,6 +127,17 @@
   background: var(--surface2);
 }
 
+/* THE ONE ACTION OF ITS PLACE (v5-03's send arrow): the accent's gradient; the glyph colour is solved by `useOnColor`. */
+.m-icon-button--primary:not(:disabled) {
+  background: var(--accent-grad);
+  box-shadow: var(--glow-sm);
+}
+
+.m-icon-button--primary:hover:not(:disabled) {
+  background: var(--accent-grad);
+  filter: brightness(1.06);
+}
+
 .m-icon-button:disabled {
   cursor: default;
   color: var(--faint);
@@ -326,9 +337,18 @@
   cursor: pointer;
 }
 
-.m-segmented__item:hover {
+.m-segmented--wrap {
+  flex-wrap: wrap;
+}
+
+.m-segmented__item:hover:not(:disabled) {
   background: var(--surface2);
   color: var(--text);
+}
+
+.m-segmented__item:disabled {
+  color: var(--faint);
+  cursor: default;
 }
 
 /* v5's RAISED CHIP: the active surface and its edge — a lit top and a green underline. The edge carries a boundary

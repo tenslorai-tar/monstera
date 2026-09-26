@@ -8,6 +8,13 @@ import type { ReactElement } from 'react';
 export interface SegmentedOption<Value extends string> {
   readonly value: Value;
   readonly label: MessageKey;
+  /** Values the label's message interpolates — a page number in *Page {page}*. */
+  readonly values?: Readonly<Record<string, string | number>> | undefined;
+  /**
+   * Drawn but not choosable: a choice that exists and cannot be made now (a picture of the page for a model that
+   * cannot see). ADR-0081's rule — disabled, not dropped, so the choice does not appear and vanish under a person.
+   */
+  readonly disabled?: boolean | undefined;
 }
 
 export interface SegmentedControlProps<Value extends string> {
@@ -16,6 +23,8 @@ export interface SegmentedControlProps<Value extends string> {
   readonly options: readonly SegmentedOption<Value>[];
   readonly value: Value;
   readonly onChange: (value: Value) => void;
+  /** Lets the segments wrap onto more lines rather than overflow a narrow place (the Assistant's panel). */
+  readonly wrap?: boolean | undefined;
 }
 
 /**
@@ -40,12 +49,13 @@ export function SegmentedControl<Value extends string>({
   options,
   value,
   onChange,
+  wrap,
 }: SegmentedControlProps<Value>): ReactElement {
   const { _ } = useLingui();
   return (
     <ToggleGroup<Value>
       aria-label={_(label)}
-      className="m-segmented"
+      className={wrap === true ? 'm-segmented m-segmented--wrap' : 'm-segmented'}
       value={[value]}
       onValueChange={(next) => {
         const chosen = next[0];
@@ -54,8 +64,13 @@ export function SegmentedControl<Value extends string>({
       }}
     >
       {options.map((option) => (
-        <Toggle<Value> key={option.value} className="m-segmented__item" value={option.value}>
-          {_(option.label)}
+        <Toggle<Value>
+          key={option.value}
+          className="m-segmented__item"
+          disabled={option.disabled === true}
+          value={option.value}
+        >
+          {_(option.label, option.values)}
         </Toggle>
       ))}
     </ToggleGroup>

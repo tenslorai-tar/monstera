@@ -15,7 +15,7 @@ import {
 } from '@monstera/contract';
 import type { DocId, MessageKey } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
-import { Copy, Pencil, RefreshCw, StickyNote } from 'lucide-react';
+import { ArrowUp, Copy, Pencil, RefreshCw, Square, StickyNote } from 'lucide-react';
 import {
   Fragment,
   type ReactElement,
@@ -46,6 +46,13 @@ import {
   ASSISTANT_ABOUT_SENDS,
   ASSISTANT_ASK,
   ASSISTANT_ASSISTANT,
+  ASSISTANT_CHIP_COMMENT,
+  ASSISTANT_CHIP_COMMENTS,
+  ASSISTANT_CHIP_DOCUMENT,
+  ASSISTANT_CHIP_NOTHING,
+  ASSISTANT_CHIP_PAGE,
+  ASSISTANT_CHIP_PICTURE,
+  ASSISTANT_CHIP_SELECTION,
   ASSISTANT_CITATION,
   ASSISTANT_CITATION_RIGHT,
   ASSISTANT_COMPOSER_LABEL,
@@ -108,6 +115,7 @@ import {
 import { pdfjsPageOf } from './pageNumbering.js';
 import { Button } from './primitives/Button.js';
 import { IconButton } from './primitives/IconButton.js';
+import { SegmentedControl } from './primitives/SegmentedControl.js';
 
 /**
  * The assistant, as a tab of the right contextual panel
@@ -694,121 +702,6 @@ export function AssistantPanel({
 
   return (
     <div className="m-assistant">
-      <div className="m-assistant__choices">
-        <label className="m-document-choice" htmlFor={providerId}>
-          {i18n._(ASSISTANT_PROVIDER_LABEL)}
-          <select
-            data-assistant-provider=""
-            id={providerId}
-            onChange={(event) => {
-              setProvider(event.target.value as AiProviderId);
-            }}
-            value={provider}
-          >
-            {/* EVERY PROVIDER IS LISTED, with or without a key: a person choosing where to
-                put a key must be able to see the choice. The no-key line below says what
-                the chosen one needs. */}
-            {AI_PROVIDER_IDS.map((id) => (
-              <option key={id} value={id}>
-                {i18n._(AI_PROVIDER_NAMES[id])}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="m-document-choice" htmlFor={modelId}>
-          {i18n._(ASSISTANT_MODEL_LABEL)}
-          <select
-            data-assistant-model=""
-            disabled={models.length === 0}
-            id={modelId}
-            onChange={(event) => {
-              setModel(event.target.value);
-            }}
-            value={model}
-          >
-            {models.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      {focused !== undefined && (
-        <div className="m-assistant__about">
-          <label className="m-document-choice" htmlFor={aboutId}>
-            {i18n._(ASSISTANT_ABOUT_LABEL)}
-            <select
-              data-assistant-about=""
-              id={aboutId}
-              onChange={(event) => {
-                choose(event.target.value as Scope);
-              }}
-              value={scope}
-            >
-              {selection !== null && (
-                <option value={selection.scope}>
-                  {i18n._(selection.scope === 'comment' ? ASSISTANT_ABOUT_COMMENT : ASSISTANT_ABOUT_SELECTION, {
-                    page: pdfjsPageOf(selection.page),
-                  })}
-                </option>
-              )}
-              <option value="page">
-                {i18n._(ASSISTANT_ABOUT_PAGE, {
-                  // THE PAGE THAT WILL GO: the right pane's when the conversation asks the right.
-                  page: pdfjsPageOf(beside !== undefined && sides === 'right' ? beside.page : focused.page),
-                })}
-              </option>
-              <option value="document">{i18n._(ASSISTANT_ABOUT_DOCUMENT, { characters: number.format(MAX_ASK_CONTEXT) })}</option>
-              <option value="comments">{i18n._(ASSISTANT_ABOUT_COMMENTS)}</option>
-              {/* DISABLED, NOT DROPPED, for a model that says it cannot see (ADR-0081's rule). */}
-              <option disabled={!canSee} value="page-image">
-                {i18n._(ASSISTANT_ABOUT_PICTURE, { page: pdfjsPageOf(focused.page) })}
-              </option>
-              <option value="nothing">{i18n._(ASSISTANT_ABOUT_NOTHING)}</option>
-            </select>
-          </label>
-          {pairable && (
-            // NATIVE RADIOS with nothing checked until a person chooses — a segmented control
-            // always holds one, and holding one here would be the default ADR-0089 refuses.
-            <fieldset className="m-assistant__sides" data-assistant-sides="">
-              <legend>{i18n._(ASSISTANT_SIDES_LABEL)}</legend>
-              {SIDE_CHOICES.map((choice) => (
-                <label className="m-assistant__side" key={choice.sides}>
-                  <input
-                    checked={sides === choice.sides}
-                    name={sidesName}
-                    onChange={() => {
-                      focused.store.getState().choseSides(choice.sides);
-                    }}
-                    type="radio"
-                    value={choice.sides}
-                  />
-                  {i18n._(choice.label)}
-                </label>
-              ))}
-            </fieldset>
-          )}
-          {blindForPicture && (
-            <p className="m-assistant__state" data-assistant-no-vision="">
-              {i18n._(ASSISTANT_NO_VISION)}
-            </p>
-          )}
-          {waitingForSides && (
-            <p className="m-assistant__state" data-assistant-sides-needed="">
-              {i18n._(ASSISTANT_SIDES_NEEDED)}
-            </p>
-          )}
-          {scope !== 'nothing' && (
-            <p className="m-assistant__consent" data-assistant-consent="">
-              {i18n._(ASSISTANT_ABOUT_SENDS, { provider: i18n._(AI_PROVIDER_NAMES[provider]) })}
-            </p>
-          )}
-        </div>
-      )}
-
       {readiness !== 'ready' && (
         <p className="m-assistant__state" data-assistant-readiness={readiness}>
           {i18n._(READINESS[readiness])}
@@ -973,6 +866,101 @@ export function AssistantPanel({
           />
         </div>
       )}
+      {/* v5-03's FOOT: the "Asking about" choices as buttons over the message box, then the box itself with the
+          provider and model at its bottom-left and the send arrow at its bottom-right. */}
+      {focused !== undefined && (
+        <div className="m-assistant__about" data-assistant-about="">
+          <div className="m-assistant__about-line">
+            <span className="m-assistant__about-label">{i18n._(ASSISTANT_ABOUT_LABEL)}</span>
+            <SegmentedControl<Scope>
+              label={ASSISTANT_ABOUT_LABEL}
+              onChange={choose}
+              options={[
+                ...(selection === null
+                  ? []
+                  : [
+                      {
+                        value: selection.scope,
+                        label: selection.scope === 'comment' ? ASSISTANT_CHIP_COMMENT : ASSISTANT_CHIP_SELECTION,
+                      },
+                    ]),
+                {
+                  value: 'page' as const,
+                  label: ASSISTANT_CHIP_PAGE,
+                  // THE PAGE THAT WILL GO: the right pane's when the conversation asks the right.
+                  values: { page: pdfjsPageOf(beside !== undefined && sides === 'right' ? beside.page : focused.page) },
+                },
+                { value: 'document' as const, label: ASSISTANT_CHIP_DOCUMENT },
+                { value: 'comments' as const, label: ASSISTANT_CHIP_COMMENTS },
+                // DISABLED, NOT DROPPED, for a model that says it cannot see (ADR-0081's rule).
+                { value: 'page-image' as const, label: ASSISTANT_CHIP_PICTURE, disabled: !canSee },
+                { value: 'nothing' as const, label: ASSISTANT_CHIP_NOTHING },
+              ]}
+              value={scope}
+              wrap
+            />
+          </div>
+          {pairable && (
+            // NATIVE RADIOS with nothing checked until a person chooses — a segmented control
+            // always holds one, and holding one here would be the default ADR-0089 refuses.
+            <fieldset className="m-assistant__sides" data-assistant-sides="">
+              <legend>{i18n._(ASSISTANT_SIDES_LABEL)}</legend>
+              {SIDE_CHOICES.map((choice) => (
+                <label className="m-assistant__side" key={choice.sides}>
+                  <input
+                    checked={sides === choice.sides}
+                    name={sidesName}
+                    onChange={() => {
+                      focused.store.getState().choseSides(choice.sides);
+                    }}
+                    type="radio"
+                    value={choice.sides}
+                  />
+                  {i18n._(choice.label)}
+                </label>
+              ))}
+            </fieldset>
+          )}
+          {blindForPicture && (
+            <p className="m-assistant__state" data-assistant-no-vision="">
+              {i18n._(ASSISTANT_NO_VISION)}
+            </p>
+          )}
+          {waitingForSides && (
+            <p className="m-assistant__state" data-assistant-sides-needed="">
+              {i18n._(ASSISTANT_SIDES_NEEDED)}
+            </p>
+          )}
+          {/* THE CHOICE IN FULL, under its short button — which page, how much of the document — and, for anything
+              that sends, who it goes to and when. */}
+          <p className="m-assistant__consent" data-assistant-consent={scope === 'nothing' ? undefined : ''} id={aboutId}>
+            {i18n._(
+              {
+                selection: ASSISTANT_ABOUT_SELECTION,
+                comment: ASSISTANT_ABOUT_COMMENT,
+                page: ASSISTANT_ABOUT_PAGE,
+                document: ASSISTANT_ABOUT_DOCUMENT,
+                comments: ASSISTANT_ABOUT_COMMENTS,
+                'page-image': ASSISTANT_ABOUT_PICTURE,
+                nothing: ASSISTANT_ABOUT_NOTHING,
+              }[scope],
+              {
+                page: pdfjsPageOf(
+                  scope === 'selection' || scope === 'comment'
+                    ? (selection?.page ?? focused.page)
+                    : beside !== undefined && sides === 'right' && scope === 'page'
+                      ? beside.page
+                      : focused.page,
+                ),
+                characters: number.format(MAX_ASK_CONTEXT),
+              },
+            )}
+            {scope === 'nothing' ? null : ' · '}
+            {scope === 'nothing' ? null : i18n._(ASSISTANT_ABOUT_SENDS, { provider: i18n._(AI_PROVIDER_NAMES[provider]) })}
+          </p>
+        </div>
+      )}
+
       <div className="m-assistant__composer">
         <textarea
           aria-label={i18n._(ASSISTANT_COMPOSER_LABEL)}
@@ -991,18 +979,60 @@ export function AssistantPanel({
           rows={2}
           value={draft}
         />
-        {streaming === null ? (
-          // NOT A DEAD CONTROL (§10.5): with no key, or no model to ask, Send is disabled and the
-          // lines above say which — pressing it would otherwise do nothing and say nothing.
-          <Button
-            disabled={!hasKey || model === '' || waitingForSides || blindForPicture}
-            label={ASSISTANT_SEND}
-            onClick={send}
-            variant="primary"
-          />
-        ) : (
-          <Button label={ASSISTANT_STOP} onClick={stop} />
-        )}
+        <div className="m-assistant__composer-foot">
+          {/* THE PROVIDER AND MODEL, inside the box at its bottom-left (v5-03), each a compact labelled select. EVERY
+              PROVIDER IS LISTED, with or without a key: a person choosing where to put a key must be able to see the
+              choice, and the no-key line above says what the chosen one needs. */}
+          <label className="m-assistant__picker" htmlFor={providerId}>
+            <span className="m-visually-hidden">{i18n._(ASSISTANT_PROVIDER_LABEL)}</span>
+            <select
+              data-assistant-provider=""
+              id={providerId}
+              onChange={(event) => {
+                setProvider(event.target.value as AiProviderId);
+              }}
+              value={provider}
+            >
+              {AI_PROVIDER_IDS.map((id) => (
+                <option key={id} value={id}>
+                  {i18n._(AI_PROVIDER_NAMES[id])}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="m-assistant__picker" htmlFor={modelId}>
+            <span className="m-visually-hidden">{i18n._(ASSISTANT_MODEL_LABEL)}</span>
+            <select
+              data-assistant-model=""
+              disabled={models.length === 0}
+              id={modelId}
+              onChange={(event) => {
+                setModel(event.target.value);
+              }}
+              value={model}
+            >
+              {models.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {/* THE SEND ARROW at the bottom-right, which becomes Stop while an answer arrives (v5-03). NOT A DEAD
+              CONTROL (§10.5): with no key, or no model to ask, Send is disabled and the lines above say which. */}
+          {streaming === null ? (
+            <IconButton
+              disabled={!hasKey || model === '' || waitingForSides || blindForPicture}
+              icon={ArrowUp}
+              label={ASSISTANT_SEND}
+              onClick={send}
+              size="control"
+              variant="primary"
+            />
+          ) : (
+            <IconButton icon={Square} label={ASSISTANT_STOP} onClick={stop} size="control" />
+          )}
+        </div>
       </div>
       <p className="m-assistant__hint">{i18n._(ASSISTANT_ASK)}</p>
     </div>

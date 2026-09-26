@@ -2,7 +2,7 @@
 import { type AskSent, type ContractClient, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { I18nProvider } from '@lingui/react';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { type ReactElement, type ReactNode, useState } from 'react';
 import { beforeAll, describe, expect, it } from 'vitest';
 
@@ -363,6 +363,12 @@ describe('the assistant about a document (ADR-0088)', () => {
     return { docId, store: createDocumentStore(docId, asDocVersion(1)), page };
   }
 
+  /** Presses one of the "Asking about" buttons (v5-03), by the label it shows. */
+  function about(label: 'Selection' | 'Comment' | 'Document' | 'Comments' | 'Picture' | 'None' | RegExp): void {
+    const group = screen.getByRole('group', { name: 'Asking about' });
+    fireEvent.click(within(group).getByRole('button', { name: label }));
+  }
+
   /** The `about` the last ask carried, or `undefined` for an ask about nothing. */
   function lastAbout(sent: readonly { id: string; params: unknown }[]): unknown {
     const asks = sent.filter((entry) => entry.id === 'ai.ask');
@@ -379,8 +385,10 @@ describe('the assistant about a document (ADR-0088)', () => {
   it('names the page as a person reads it and the provider by name, and asks about THAT page', async () => {
     const { sent } = await drawn({ focused: focusedOn() });
 
-    expect(screen.getByRole('option', { name: 'This page (7)' })).toBeTruthy();
-    expect(screen.getByText('Sent to Anthropic only when you press Send.')).toBeTruthy();
+    const group = screen.getByRole('group', { name: 'Asking about' });
+    expect(within(group).getByRole('button', { name: 'Page 7' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText(/This page \(7\)/u)).toBeTruthy();
+    expect(screen.getByText(/Sent to Anthropic only when you press Send\./u)).toBeTruthy();
     // THE PROVIDER LIST SAYS NAMES, never the registry's ids.
     expect(screen.getByRole('option', { name: 'Google Gemini' })).toBeTruthy();
     expect(screen.queryByRole('option', { name: 'anthropic' })).toBeNull();
@@ -392,20 +400,19 @@ describe('the assistant about a document (ADR-0088)', () => {
 
   it('asks about the whole document when chosen, and CONTROL: about nothing sends no scope and no consent line', async () => {
     const { sent } = await drawn({ focused: focusedOn() });
-    const line = screen.getByLabelText('Asking about');
 
-    fireEvent.change(line, { target: { value: 'document' } });
+    about('Document');
     type('Summarise it');
     await send();
     expect(lastAbout(sent)).toStrictEqual({ scope: 'document', docId: DOC_A });
 
-    fireEvent.change(line, { target: { value: 'nothing' } });
+    about('None');
     expect(screen.queryByText(/only when you press Send/u)).toBeNull();
   });
 
   it('CONTROL: an ask about nothing carries no scope at all', async () => {
     const { sent, push } = await drawn({ focused: focusedOn() });
-    fireEvent.change(screen.getByLabelText('Asking about'), { target: { value: 'nothing' } });
+    about('None');
     type('Just a question');
     await send();
     const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
@@ -419,7 +426,7 @@ describe('the assistant about a document (ADR-0088)', () => {
       focused: focusedOn(),
       window: { firstPage: 0, lastPage: 11, pageCount: 40, characters: 99_870, truncated: true },
     });
-    fireEvent.change(screen.getByLabelText('Asking about'), { target: { value: 'document' } });
+    about('Document');
     type('Summarise it');
     await send();
 
@@ -509,7 +516,9 @@ describe('the assistant about a document (ADR-0088)', () => {
 
     expect(lastAbout(sent)).toStrictEqual(request.about);
     expect(screen.getByText('Explain the selected text in plain language.')).toBeTruthy();
-    expect(screen.getByRole('option', { name: 'The text you selected on page 3' })).toBeTruthy();
+    const group = screen.getByRole('group', { name: 'Asking about' });
+    expect(within(group).getByRole('button', { name: 'Selection' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText(/The text you selected on page 3/u)).toBeTruthy();
   });
 
   it('CONTROL: a selection from ANOTHER document is not offered, so the line never names words not on show', async () => {
@@ -533,9 +542,12 @@ describe('the assistant about a document (ADR-0088)', () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByRole('option', { name: 'The comment on page 4' })).toBeTruthy();
+    const group = screen.getByRole('group', { name: 'Asking about' });
+    expect(within(group).getByRole('button', { name: 'Comment' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText(/The comment on page 4/u)).toBeTruthy();
     // CONTROL: the selection's wording is not borrowed.
-    expect(screen.queryByRole('option', { name: /you selected/u })).toBeNull();
+    expect(within(group).queryByRole('button', { name: 'Selection' })).toBeNull();
+    expect(screen.queryByText(/you selected/u)).toBeNull();
     const params = sent.find((entry) => entry.id === 'ai.ask')?.params as { about: { scope: string } };
     expect(params.about.scope).toBe('comment');
   });
@@ -649,9 +661,10 @@ describe('the assistant about a document (ADR-0088)', () => {
       request: { serial: 1, about: { scope: 'comments', docId: DOC_A }, prompt: ASSISTANT_PROMPT_SUMMARISE_COMMENTS },
     });
     expect(lastAbout(sent)).toStrictEqual({ scope: 'comments', docId: DOC_A });
-    const line = screen.getByLabelText('Asking about');
-    expect(line instanceof HTMLSelectElement && line.value).toBe('comments');
-    expect(screen.getByRole('option', { name: 'All the comments in this document' })).toBeTruthy();
+    const group = screen.getByRole('group', { name: 'Asking about' });
+    expect(within(group).getByRole('button', { name: 'Comments' }).getAttribute('aria-pressed')).toBe('true');
+    // THE CHOICE IN FULL, under the buttons.
+    expect(screen.getByText(/All the comments in this document/u)).toBeTruthy();
   });
 
   describe('a picture of the page — vision analysis (ADR-0090)', () => {
@@ -670,13 +683,21 @@ describe('the assistant about a document (ADR-0088)', () => {
     });
 
     it('a model that SAYS it cannot see is not offered the picture, and Send waits with a sentence saying why', async () => {
-      const { sent } = await drawn({ focused: focusedOn(), models: [{ id: 'm-1', label: 'Model one', vision: false }] });
-      const picture = screen.getByRole('option', { name: 'A picture of this page (7)' });
-      expect(picture instanceof HTMLOptionElement && picture.disabled).toBe(true);
+      const { sent } = await drawn({
+        focused: focusedOn(),
+        models: [
+          { id: 'm-see', label: 'Model that sees', vision: true },
+          { id: 'm-blind', label: 'Model one', vision: false },
+        ],
+      });
+      // A STALE CHOICE, made for real: Picture chosen while a model that can see is picked, then the blind one picked.
+      about('Picture');
+      fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'm-blind' } });
+      const group = screen.getByRole('group', { name: 'Asking about' });
+      expect(within(group).getByRole('button', { name: 'Picture' }).hasAttribute('disabled')).toBe(true);
       expect(screen.getByRole('button', { name: 'Read the table on this page' }).hasAttribute('disabled')).toBe(true);
 
-      // CHOSEN ANYWAY — a stale choice from a model that could see — it still sends nothing.
-      fireEvent.change(screen.getByLabelText('Asking about'), { target: { value: 'page-image' } });
+      // CHOSEN BEFORE — it still sends nothing, and says why.
       expect(screen.getByText(/This model cannot read pictures/u)).toBeTruthy();
       type('Read it');
       fireEvent.keyDown(screen.getByLabelText('Ask about this document'), { key: 'Enter' });
@@ -688,8 +709,8 @@ describe('the assistant about a document (ADR-0088)', () => {
 
     it('CONTROL: a model whose provider does not say is offered it — unknown is not "cannot"', async () => {
       await drawn({ focused: focusedOn(), models: [{ id: 'm-1', label: 'Model one', vision: null }] });
-      const picture = screen.getByRole('option', { name: 'A picture of this page (7)' });
-      expect(picture instanceof HTMLOptionElement && picture.disabled).toBe(false);
+      const group = screen.getByRole('group', { name: 'Asking about' });
+      expect(within(group).getByRole('button', { name: 'Picture' }).hasAttribute('disabled')).toBe(false);
     });
   });
 
@@ -737,7 +758,8 @@ describe('the assistant about a document (ADR-0088)', () => {
       const { sent } = await drawn({ focused: focusedOn(), beside: BESIDE });
 
       pick('Right');
-      expect(screen.getByRole('option', { name: 'This page (3)' })).toBeTruthy();
+      expect(within(screen.getByRole('group', { name: 'Asking about' })).getByRole('button', { name: 'Page 3' })).toBeTruthy();
+      expect(screen.getByText(/This page \(3\)/u)).toBeTruthy();
       type('What is on the right page?');
       await send();
       expect(lastAsk(sent).about).toStrictEqual({ scope: 'page', docId: DOC_B, page: 2 });
@@ -847,7 +869,7 @@ describe('the chat extras (the owner’s design, 2026-09-15)', () => {
     const { sent, store } = await answered();
     // CONTROL of the premise: move the *Asking about* line away, so re-asking "what the line says
     // now" would send the whole document instead of page 3.
-    fireEvent.change(screen.getByLabelText('Asking about'), { target: { value: 'document' } });
+    fireEvent.click(within(screen.getByRole('group', { name: 'Asking about' })).getByRole('button', { name: 'Document' }));
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate this answer' }));
     await act(async () => {
       await Promise.resolve();

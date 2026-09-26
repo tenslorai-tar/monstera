@@ -1222,6 +1222,14 @@ export const AI_SETUP_NOT_STORED = messageKey('dialog.ai-setup.not-stored');
 export const AI_SETUP_AT_START_TITLE = messageKey('setting.ai.setup-at-start.title');
 export const AI_SAVE_HISTORY_TITLE = messageKey('setting.ai.save-history.title');
 export const ASSISTANT_ABOUT_NOTHING = messageKey('assistant.about.nothing');
+/** v5-03's "Asking about" choices, as short buttons over the message box; the sentence under them says the rest. */
+export const ASSISTANT_CHIP_SELECTION = messageKey('assistant.chip.selection');
+export const ASSISTANT_CHIP_COMMENT = messageKey('assistant.chip.comment');
+export const ASSISTANT_CHIP_PAGE = messageKey('assistant.chip.page');
+export const ASSISTANT_CHIP_DOCUMENT = messageKey('assistant.chip.document');
+export const ASSISTANT_CHIP_COMMENTS = messageKey('assistant.chip.comments');
+export const ASSISTANT_CHIP_PICTURE = messageKey('assistant.chip.picture');
+export const ASSISTANT_CHIP_NOTHING = messageKey('assistant.chip.nothing');
 export const ASSISTANT_ABOUT_SENDS = messageKey('assistant.about.sends');
 export const ASSISTANT_SENT_PAGE = messageKey('assistant.sent.page');
 export const ASSISTANT_SENT_PAGES = messageKey('assistant.sent.pages');
@@ -2943,6 +2951,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AI_SETUP_AT_START_TITLE]: 'Offer AI setup when Monstera starts',
   [AI_SAVE_HISTORY_TITLE]: 'Save chat history',
   [ASSISTANT_ABOUT_NOTHING]: 'Nothing from the document',
+  [ASSISTANT_CHIP_SELECTION]: 'Selection',
+  [ASSISTANT_CHIP_COMMENT]: 'Comment',
+  [ASSISTANT_CHIP_PAGE]: 'Page {page}',
+  [ASSISTANT_CHIP_DOCUMENT]: 'Document',
+  [ASSISTANT_CHIP_COMMENTS]: 'Comments',
+  [ASSISTANT_CHIP_PICTURE]: 'Picture',
+  [ASSISTANT_CHIP_NOTHING]: 'None',
   // WHO RECEIVES IT AND WHEN, which is BUILD-PROMPT's consent sentence: document content goes
   // to a provider only on an explicit action, and the panel says which provider.
   [ASSISTANT_ABOUT_SENDS]: 'Sent to {provider} only when you press Send.',

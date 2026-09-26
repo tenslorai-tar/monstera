@@ -431,6 +431,10 @@
   --start-card-height: 88px;
   --start-footer: 36px;
   --ruler: 18px;
+  /* The Assistant's message box (v5-03): its text grows from 36 to 280 tall; a picker in its foot stays compact. */
+  --composer-min: 36px;
+  --composer-max: 280px;
+  --composer-picker: 144px;
   --scrollbar: 10px;
   /* §10.3: the document panel's "six icon tabs (24 px tabs, 14 px icons)". */
   --control-panel-tab: 24px;

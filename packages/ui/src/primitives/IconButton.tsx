@@ -2,10 +2,11 @@ import { useLingui } from '@lingui/react';
 import { Button as BaseButton } from '@base-ui/react/button';
 import type { MessageKey } from '@monstera/shared';
 import type { LucideIcon } from 'lucide-react';
-import type { ReactElement } from 'react';
+import { useRef, type ReactElement } from 'react';
 
 import type { IconSize } from './iconSize.js';
 import { Tooltip } from './Tooltip.js';
+import { useOnColor } from './useOnColor.js';
 
 /**
  * An icon-only button (§10.4).
@@ -43,6 +44,11 @@ export interface IconButtonProps {
   size: IconSize;
   disabled?: boolean;
   onClick?: (() => void) | undefined;
+  /**
+   * `'primary'` fills the control with the accent — the one action of its place, as v5-03's send arrow. The glyph's
+   * colour is then SOLVED against the fill by `useOnColor`, exactly as `Button`'s primary does, never stored.
+   */
+  variant?: 'primary' | undefined;
 }
 
 export function IconButton({
@@ -51,19 +57,28 @@ export function IconButton({
   size,
   disabled = false,
   onClick,
+  variant,
 }: IconButtonProps): ReactElement {
   // Subscribed rather than resolved once — see `Button` for why the module
   // function is the wrong call here.
   const { _ } = useLingui();
+  const element = useRef<HTMLElement>(null);
+  // `Button`'s rule: only an enabled primary sits on the accent; disabled, the stylesheet draws `--faint` on the surface.
+  useOnColor(element, 'color', '--text', variant === 'primary' && !disabled ? ['--accent'] : [], 'text');
 
   return (
     <Tooltip label={label}>
       <BaseButton
         aria-label={_(label)}
-        className={`m-icon-button m-icon-button--${size}`}
+        className={
+          variant === 'primary'
+            ? `m-icon-button m-icon-button--${size} m-icon-button--primary`
+            : `m-icon-button m-icon-button--${size}`
+        }
         disabled={disabled}
         nativeButton
         onClick={onClick}
+        ref={element}
         type="button"
       >
         {/* `aria-hidden`: the glyph must not contribute a second name beside the
