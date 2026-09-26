@@ -2160,7 +2160,10 @@ describe('App', () => {
           await Promise.resolve();
         });
 
-        await pressCommand('Edit text');
+        // THE SECTION NAMED, because the search through the rail would pass Organize on the way to Edit (ADR-0105's
+        // order), and Organize swaps the reading view for the page grid (ADR-0104) — unmounting the slots whose
+        // intersections were fired above, which left one page asking and emptied the vacuity guard below.
+        await pressCommand('Edit text', 'Edit');
         await act(async () => {
           await Promise.resolve();
         });

@@ -53,14 +53,15 @@ describe('ribbonModel', () => {
     // §7 says `SectionId` is EXACTLY the eight sections of §10.3, which is a
     // claim about a number, and 4c's danger here runs toward shrinkage — where
     // a derived count agrees with any shrink.
+    // THE OWNER'S v5 ORDER since ADR-0105 (M3's Home, Comment, Edit, Organize… until 2026-09-26).
     expect(model.map((section) => section.section)).toStrictEqual([
       'home',
-      'comment',
-      'edit',
       'organize',
+      'edit',
+      'comment',
       'forms',
-      'review',
       'protect',
+      'review',
       'tools',
     ]);
     // Kept as well, because it is the half that catches a REORDER: the rail's

@@ -18,6 +18,7 @@ import {
   RIBBON_SECTION_OPTION_TITLES,
   RIBBON_SECTION_TITLE,
 } from '../messages/en.js';
+import { SECTION_IDS, type SectionId } from '../registries/placement.js';
 import type { SettingDefinition } from '../registries/settings.js';
 
 /**
@@ -131,25 +132,15 @@ export type LayoutMode = z.infer<(typeof LAYOUT_MODE_SETTING)['schema']>;
  * persists"*). `Ribbon.tsx` held it as component state and said persistence waited for the layout switcher, because the
  * two share one state model; this is that trigger.
  *
- * **The members are written out, and `layout.test.ts` holds them to `SECTION_IDS`.** A zod enum needs a literal tuple,
- * and deriving one from the array would take a cast; a test that fails when the two lists differ is the check a cast
- * would skip. A stored section that holds nothing is still the ribbon's to resolve — it opens on the first filled one.
+ * **The members are `SECTION_IDS` itself** (ADR-0105). A zod enum needs a literal tuple, and since the list became one
+ * (`as const`) it is passed straight in — no cast and no second spelling; the written-out copy this replaced was held
+ * equal by a test, which is a second list with a guard rather than one list. A stored section that holds nothing is
+ * still the ribbon's to resolve — it opens on the first filled one.
  */
-export const RIBBON_SECTION_SETTING: SettingDefinition<
-  z.ZodEnum<{
-    home: 'home';
-    comment: 'comment';
-    edit: 'edit';
-    organize: 'organize';
-    forms: 'forms';
-    review: 'review';
-    protect: 'protect';
-    tools: 'tools';
-  }>
-> = {
+export const RIBBON_SECTION_SETTING: SettingDefinition<z.ZodEnum<{ [K in SectionId]: K }>> = {
   id: 'appearance.ribbon-section',
   title: RIBBON_SECTION_TITLE,
-  schema: z.enum(['home', 'comment', 'edit', 'organize', 'forms', 'review', 'protect', 'tools']),
+  schema: z.enum(SECTION_IDS),
   fallback: 'home',
   category: 'appearance',
   remembered: true,

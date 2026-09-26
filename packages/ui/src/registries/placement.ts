@@ -27,34 +27,19 @@ import type { MessageKey } from '@monstera/shared';
  * §7 says `SectionId` is *exactly* the eight sections, so a ninth is a change to
  * the layout anatomy and not to a command.
  */
-export type SectionId =
-  | 'home'
-  | 'comment'
-  | 'edit'
-  | 'organize'
-  | 'forms'
-  | 'review'
-  | 'protect'
-  | 'tools';
+export type SectionId = (typeof SECTION_IDS)[number];
 
 /**
- * The sections in rail order, which is also ribbon order.
+ * The sections in rail order, which is also ribbon order — the owner's v5 order
+ * ([ADR-0105](../../../../docs/DECISIONS/0105-the-section-rails-order-is-the-owners-v5-order.md)).
  *
  * Ordered because the ribbon renders them in this sequence and a `Set` would
  * not say so; the ORDER is data the projection needs, and deriving it from
  * object key order elsewhere would make it depend on a declaration nobody reads
- * as ordering.
+ * as ordering. A literal tuple, so `SectionId` and the setting that remembers the
+ * active section are both read off this one list rather than spelling it again.
  */
-export const SECTION_IDS: readonly SectionId[] = [
-  'home',
-  'comment',
-  'edit',
-  'organize',
-  'forms',
-  'review',
-  'protect',
-  'tools',
-];
+export const SECTION_IDS = ['home', 'organize', 'edit', 'comment', 'forms', 'protect', 'review', 'tools'] as const;
 
 /**
  * Where on the start screen a command sits (ARCHITECTURE §7, ADR-0068): the button under the hero, the grid of

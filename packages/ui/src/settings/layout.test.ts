@@ -10,9 +10,7 @@ import { LAYOUT_MODE_SETTING, RIBBON_SECTION_SETTING } from './layout.js';
  */
 describe('the layout settings', () => {
   it('the ribbon-section enum IS the rail’s section list, in the rail’s order', () => {
-    // THE ANCHOR the setting's header names: the enum is written out because zod needs a literal tuple, and a ninth
-    // section added to SECTION_IDS without it would be a rail entry the setting refuses to store. Compared in order and
-    // as a whole, so a missing member, an extra one and a reordering all fail.
+    // The enum is built from SECTION_IDS; this keeps a later hand-written enum from drifting off the rail unnoticed.
     expect(RIBBON_SECTION_SETTING.schema.options).toStrictEqual([...SECTION_IDS]);
   });
 
