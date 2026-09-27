@@ -782,6 +782,11 @@ jobs:
       - name: Prove the brand masters' shape check
         run: node scripts/ci/annotate.mjs scripts/proofs/brandShape.proof.mjs
 
+      # The Store's 73 images, derived from the mark into a temporary directory and read back: Microsoft's set,
+      # at Microsoft's sizes, transparent, and a tile never a stretched square.
+      - name: Prove the Store images are the set and sizes Microsoft names
+        run: node scripts/ci/annotate.mjs scripts/proofs/storeAssets.proof.mjs
+
       # No --passWithNoTests. The flag's only effect is to turn "no test files
       # found" from exit 1 into exit 0, which is the single signal that would
       # reveal a broken include glob, a renamed src layout, or a vitest config

@@ -468,6 +468,9 @@
      MENU BAR at 18 (ADR-0107), which is where it moved from the title bar; the 26 px title-bar size is retired with it. */
   --logo-menu: 18px;
   --logo-hero: 84px;
+  /* The About window's, from the same wordmark derivative as the hero (the owner's list: the wordmark master for the
+     start screen, About and the website), drawn smaller because the window is. */
+  --logo-about: 64px;
 
   /* Radii (v5 §6): buttons, inputs and menu items 6; chips 5; tabs 8 8 0 0; cards 10–12; menus, context menu and the
      status bar 12; panels, rail, ribbon and canvas 14; the Studio overlay 16; dialogs 18; the quick toolbar 20. */

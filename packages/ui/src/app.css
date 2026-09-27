@@ -3261,6 +3261,13 @@ textarea {
   max-inline-size: 32rem;
 }
 
+/* ADR-0002: the brand's height and the width its own ratio gives it — never stretched. */
+.m-about__logo {
+  align-self: flex-start;
+  block-size: var(--logo-about);
+  inline-size: auto;
+}
+
 .m-about__facts {
   display: grid;
   grid-template-columns: auto 1fr;

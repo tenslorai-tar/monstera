@@ -13,10 +13,10 @@ protects users rather than the project.
 | File | Size | Origin | Used by |
 |---|---|---|---|
 | `monstera_new_logo.png` | 2048 × 2048, RGBA | **master — supplied by the owner**: the mark with its wordmark | `logo-256.png`, `logo-hero.png` |
-| `monstera_logo_no_text.png` | 2048 × 2048, RGBA | **master — supplied by the owner**: the mark alone | `logo-title.png`, `logo.ico`; the file-type icon and the Store tiles when packaging lands |
+| `monstera_logo_no_text.png` | 2048 × 2048, RGBA | **master — supplied by the owner**: the mark alone | `logo-title.png`, `logo.ico`; the Store's 73 images — the package's 72 and the listing's app tile icon (`npm run brand:store`, built into `apps/desktop/dist/store-assets/` and not committed); the file-type icon when packaging lands |
 | `logo-256.png` | 256 × 256 | generated | `README.md` and docs |
 | `logo-title.png` | 52 × 52 | generated | the menu bar's mark, drawn at 18 px (`--logo-menu`; the title bar's, at 26 px, until ADR-0107) |
-| `logo-hero.png` | 168 × 168 | generated | the start screen's hero, drawn at 84 px |
+| `logo-hero.png` | 168 × 168 | generated | the start screen's hero, drawn at 84 px; the About window, at 64 px |
 | `logo.ico` | 16/24/32/48/64/128/256 px | generated | the packaged application's icon |
 
 Which master feeds which output is this build's reading of the owner's file names, recorded in

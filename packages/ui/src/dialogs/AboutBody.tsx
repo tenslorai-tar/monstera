@@ -2,6 +2,7 @@ import { useLingui } from '@lingui/react';
 import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
 
+import heroLogo from '../../../../assets/brand/logo-hero.png';
 import {
   ABOUT_CHANNEL_DEVELOPMENT,
   ABOUT_CHANNEL_LABEL,
@@ -71,6 +72,9 @@ export default function AboutBody({
 
   return (
     <div className="m-about">
+      {/* THE WORDMARK, from the owner's `monstera_new_logo.png` through the start screen's derivative. `alt=""`: the
+          dialog's title already names the application, so the picture saying the same is not read twice. */}
+      <img className="m-about__logo" src={heroLogo} alt="" />
       <dl className="m-about__facts">
         <dt>{_(ABOUT_VERSION_LABEL)}</dt>
         <dd>{version}</dd>

@@ -95,6 +95,8 @@
     "brand:generate": "node scripts/brand/generateAssets.mjs",
     "brand:check": "node scripts/brand/generateAssets.mjs --check",
     "proof:brandshape": "node scripts/proofs/brandShape.proof.mjs",
+    "brand:store": "node scripts/brand/storeAssets.mjs",
+    "proof:storeassets": "node scripts/proofs/storeAssets.proof.mjs",
     "proof:contract": "node scripts/proofs/contract.proof.mjs",
     "proof:composition": "node scripts/proofs/composition.proof.mjs",
     "proof:shell": "node scripts/proofs/shell.proof.mjs",
