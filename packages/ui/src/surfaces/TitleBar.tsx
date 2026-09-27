@@ -68,7 +68,7 @@ export function TitleBar({
   const switchable = [...modeCommands.values()].every((command) => command !== undefined);
 
   return (
-    <header className="m-title-bar">
+    <header className="m-title-bar" data-pane="title-bar">
       {/* The application's mark is the MENU BAR's since v5-14 (ADR-0107), which is the row above this one. */}
       {children}
       {palette === undefined ? null : (

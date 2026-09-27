@@ -21,6 +21,7 @@ Monstera lists every command in one window with the keys that run it, and any of
 ## Good to know
 
 - Some shortcuts you will use most: **Ctrl+O** open, **Ctrl+S** save, **Ctrl+P** print, **Ctrl+Z** undo, **Ctrl+Y** redo, **Ctrl+F** find, **Ctrl+K** search tools, **Ctrl+W** close tab, **F1** help.
+- **F6** moves to the next part of the window — the tabs, the ribbon, the panels, the pages, the status bar — and **Shift+F6** moves back. They are in the list, so you can change them.
 - A few keys belong to one place and are not in the list, so they cannot be changed: **F10** or **Alt** reaches the menu bar, **Shift+F10** opens the right-click menu, and **Delete** deletes the selected pages in the Organize page grid.
 - A change works at once, in the menus and the tool search too, and is kept for next time.
 - Key names are shown in English, such as Ctrl and PageDown, whatever language Monstera is in.

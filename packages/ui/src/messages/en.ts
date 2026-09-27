@@ -1340,6 +1340,8 @@ export const CONTEXT_PANEL_TAB_TITLES = {
   assistant: CONTEXT_PANEL_TAB_ASSISTANT,
 } as const;
 export const QUICK_TOOLBAR_OPEN_TITLE = messageKey('setting.appearance-quick-toolbar-open.title');
+export const NEXT_PANE_TITLE = messageKey('command.next-pane.title');
+export const PREVIOUS_PANE_TITLE = messageKey('command.previous-pane.title');
 export const FLOAT_BAR_POSITION_TITLE = messageKey('setting.appearance-float-bar-position.title');
 export const FLOAT_BAR_RESET_TITLE = messageKey('command.reset-float-bar.title');
 /** The grip at the Float bar's top: its name, and the words that say how to move it without a mouse. */
@@ -3191,6 +3193,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CONTEXT_PANEL_OPEN_TITLE]: 'Show the properties panel',
   // THE FLOAT BAR, the owner's name for it (27 September list, item 3): one name in every place it is said.
   [QUICK_TOOLBAR_OPEN_TITLE]: 'Show the Float bar',
+  [NEXT_PANE_TITLE]: 'Move to the next pane',
+  [PREVIOUS_PANE_TITLE]: 'Move to the previous pane',
   [FLOAT_BAR_POSITION_TITLE]: 'Float bar position',
   [FLOAT_BAR_RESET_TITLE]: 'Reset Float bar position',
   [FLOAT_BAR_GRIP_LABEL]: 'Move the Float bar',

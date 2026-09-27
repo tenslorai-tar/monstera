@@ -67,6 +67,7 @@ export function DocumentPanel({ settings, pages, panels }: DocumentPanelProps): 
 
   return (
     <Tabs.Root
+      data-pane="document-panel"
       className="m-document-panel"
       value={chosen}
       onValueChange={(value) => {

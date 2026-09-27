@@ -2494,6 +2494,29 @@ describe('App', () => {
     expect(document.documentElement.dataset['glow']).toBe('off');
   });
 
+  it('F6 moves between the PANES in the real shell, and Shift+F6 back (item 12)', async () => {
+    // The commands' own file proves the cycle over a fixture; this proves the shell registered them and that its
+    // panes carry the attribute — a registered F6 over a shell with no marked pane would move nothing.
+    const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
+    render(<App client={client} settings={freshSettings()} />);
+    await withDocumentOpen();
+    const panes = [...document.querySelectorAll<HTMLElement>('[data-pane]')].map((pane) => pane.dataset['pane']);
+    expect(panes).toStrictEqual(['title-bar', 'ribbon', 'document-panel', 'pages', 'context-panel', 'status-bar']);
+
+    const press = async (shiftKey: boolean): Promise<string | undefined> => {
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F6', shiftKey, bubbles: true, cancelable: true }));
+        await Promise.resolve();
+      });
+      return document.activeElement?.closest<HTMLElement>('[data-pane]')?.dataset['pane'];
+    };
+    expect(await press(false)).toBe('title-bar');
+    expect(await press(false)).toBe('ribbon');
+    expect(await press(true)).toBe('title-bar');
+    // WRAPPING: back from the first pane is the last.
+    expect(await press(true)).toBe('status-bar');
+  });
+
   it('every Help article names only commands and places the application REGISTERS', () => {
     // ADR-0112 Decision 2, against the registries this shell builds rather than a list kept here. The vocabulary of
     // places is each one's own authority: the rail's sections, the two panels' tab settings, the dialog registry, and

@@ -257,7 +257,7 @@ export function Ribbon({ registry, context, settings, showing }: RibbonProps): R
     // beside the document, the tools across the top — and one component still
     // owns the one piece of state they share. Their grid areas are the shell's,
     // so this component never learns where the shell puts them.
-    <div className="m-ribbon">
+    <div className="m-ribbon" data-pane="ribbon">
       <nav aria-label={i18n._(RIBBON_RAIL_LABEL)} className="m-ribbon__rail" ref={railRef}>
         {SECTION_IDS.map((id) => {
           const has = filled.some((section) => section.section === id);

@@ -76,6 +76,7 @@ export function ContextPanel({ settings, children, assistant }: ContextPanelProp
     <Tabs.Root
       aria-label={i18n._(CONTEXT_PANEL_LABEL)}
       className="m-context-panel"
+      data-pane="context-panel"
       render={<aside />}
       value={tab}
       onValueChange={(value) => {

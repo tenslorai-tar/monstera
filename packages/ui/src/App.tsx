@@ -131,6 +131,7 @@ import {
   togglePanelCommand,
   toggleQuickToolbarCommand,
 } from './commands/chromeCommands.js';
+import { paneCommands } from './commands/paneCommands.js';
 import {
   CONTEXT_PANEL_OPEN_SETTING,
   CONTEXT_PANEL_TAB_SETTING,
@@ -2645,6 +2646,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // a chord because these exist, not because its own control survives being hidden.
         toggleQuickToolbarCommand({ settings }),
         resetFloatBarCommand({ settings }),
+        // F6 AND SHIFT+F6 between the panes (WCAG 2.1.1, Windows' convention).
+        ...paneCommands(),
         togglePanelCommand({ settings }),
         toggleContextPanelCommand({ settings }),
         // §7'S LAYOUT-MODE SWITCH and §10.3's "Esc returns": one command per mode, and Leave Focus.

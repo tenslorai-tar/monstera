@@ -155,7 +155,7 @@ export function StatusBar({
     });
 
   return (
-    <footer className="m-status-bar" role="status" aria-label={i18n._(STATUS_LABEL)}>
+    <footer className="m-status-bar" role="status" aria-label={i18n._(STATUS_LABEL)} data-pane="status-bar">
       {/* THE ANNOUNCEMENT, as text in the status region, visually hidden. */}
       <span className="m-status-page m-visually-hidden">
         {i18n._(STATUS_PAGE_OF, { page: pdfjsPageOf(page), count: pageCount })}

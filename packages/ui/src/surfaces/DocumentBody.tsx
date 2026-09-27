@@ -94,7 +94,7 @@ export function DocumentBody({ settings, panel, page, contextPanel, quickToolbar
           },
         }}
         middle={
-          <div className="m-canvas-area">
+          <div className="m-canvas-area" data-pane="pages">
             {page}
             {quickToolbar}
           </div>
