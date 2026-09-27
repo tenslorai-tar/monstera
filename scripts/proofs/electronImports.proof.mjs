@@ -588,8 +588,8 @@ try {
       {
         sites: 1,
         reason:
-          'loads packages/shared/dist/colour.js through a file:// URL. The WCAG contrast ' +
-          'formula lives in packages/shared because two callers need it and two ' +
+          'loads packages/shared/dist/index.js through a file:// URL, for the WCAG contrast ' +
+          'formula and the accent-turning rule (ADR-0114). Both live in packages/shared because two callers need them and two ' +
           'implementations of an external authority is what B3a forbids; this file is one of ' +
           'the callers. The import is DYNAMIC because a build-freshness guard has to run before ' +
           'it — a static import is hoisted above every statement, which would leave that guard ' +

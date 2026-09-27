@@ -70,18 +70,19 @@ import { repoRoot } from './gitScope.mjs';
  * `import` is hoisted above every statement in this file, which would make the
  * guard below dead code that reads like a guard.
  */
-const SHARED_BUILT = 'packages/shared/dist/colour.js';
+const SHARED_BUILT = 'packages/shared/dist/index.js';
 
 // THROUGH THE OWNER, and this file was one of THREE private copies of the same
 // rule (B3a). `buildFreshness.mjs` holds it, and what the copies did not have is
 // what makes it correct: a directory walk, a test-file exclusion, and a refusal
 // when the walk comes back empty — each measured, each absent here.
-refuseStaleBuild(repoRoot(), TOKEN_CONTRAST, 1);
+refuseStaleBuild(repoRoot(), TOKEN_CONTRAST, 2);
 
-const colour = await import(pathToFileURL(join(repoRoot(), SHARED_BUILT)).href);
-// THE SAME TURNING RULE THE APPLICATION APPLIES (ADR-0114), from the same built package, so the sweep below holds the
-// floors over the lights a person can actually be shown rather than over this file's idea of them (B3a).
-const lights = await import(pathToFileURL(join(repoRoot(), 'packages/shared/dist/lights.js')).href);
+// ONE LOAD, THROUGH THE PACKAGE'S BARREL: the contrast formula, and the same turning rule the application applies
+// (ADR-0114), so the sweep below holds the floors over the lights a person can actually be shown rather than over this
+// file's idea of them (B3a). One computed import is what `proof:electronimports` records for this file; a second, one
+// per module, was a load the register's recorded reason did not cover.
+const shared = await import(pathToFileURL(join(repoRoot(), SHARED_BUILT)).href);
 
 /**
  * THE FAMILY THE ACCENT CAN REACH, swept whole (ADR-0114). A light keeps its lightness and alpha and takes the
@@ -108,7 +109,7 @@ const OBLIGATION = {
   // THE DEFAULT FLOOR, and the pair loop below asks again per theme:
   // `textContrastFloor` answers 7 under `hc` (ADR-0003, corrected 2026-09-16). Taken from
   // the same function rather than spelt here, so 4.5 has one home.
-  text: colour.textContrastFloor(null),
+  text: shared.textContrastFloor(null),
   'boundary-control': 3,
   'boundary-decorative': null,
   fill: null,
@@ -369,13 +370,13 @@ export function themesIn(css) {
  * here, and pointing that proof at a second module would make *where the
  * contrast formula lives* a question with two answers again, one layer along.
  */
-export const channels = colour.channels;
+export const channels = shared.channels;
 
-/** @see {@link colour.luminance} — WCAG relative luminance. */
-export const luminance = colour.luminance;
+/** @see {@link shared.luminance} — WCAG relative luminance. */
+export const luminance = shared.luminance;
 
-/** @see {@link colour.contrast} — the WCAG ratio. */
-export const contrast = colour.contrast;
+/** @see {@link shared.contrast} — the WCAG ratio. */
+export const contrast = shared.contrast;
 
 /**
  * @typedef {{
@@ -400,10 +401,10 @@ export function turnedThemes(themes, turn) {
   // has already held them, and evaluating them again per turn was a third of the sweep for no answer that could differ.
   return themes.filter((theme) => theme.theme !== UNTURNED_THEME).map((theme) => {
     const values = new Map(theme.values);
-    for (const name of lights.ACCENT_LIGHTS) {
+    for (const name of shared.ACCENT_LIGHTS) {
       const design = values.get(name);
       if (design === undefined) continue;
-      values.set(name, lights.turnLight(design, turn) ?? design);
+      values.set(name, shared.turnLight(design, turn) ?? design);
     }
     return { theme: theme.theme, values };
   });
@@ -482,7 +483,7 @@ export function evaluate(css, turn = null) {
       // 7:1 under `hc` and 4.5:1 elsewhere. `boundary-control` and `graphic` keep 3:1
       // everywhere — WCAG 1.4.11 has no enhanced level.
       const minimum =
-        role.category === 'text' ? colour.textContrastFloor(theme.theme) : declared;
+        role.category === 'text' ? shared.textContrastFloor(theme.theme) : declared;
 
       const rawForeground = theme.values.get(role.name);
       if (rawForeground === undefined) continue;
@@ -619,7 +620,7 @@ function sweep(css, base) {
   // read every value as moved — the control passing for the reason it exists to refuse.
   const moved = half.some((turned) => {
     const design = themes.find((theme) => theme.theme === turned.theme);
-    return lights.ACCENT_LIGHTS.some(
+    return shared.ACCENT_LIGHTS.some(
       (/** @type {string} */ name) =>
         design?.values.get(name) !== undefined && design.values.get(name) !== turned.values.get(name),
     );

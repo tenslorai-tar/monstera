@@ -391,12 +391,15 @@ export const ROLE_MUPDF_HOST = [
 ];
 
 /**
- * The shared contrast formula `tokenContrast.mjs` evaluates the token file with.
+ * The shared contrast formula `tokenContrast.mjs` evaluates the token file with, and the turning rule it sweeps the
+ * lights through (ADR-0114). Both are read through the package's barrel; a stale `lights.js` beside a fresh
+ * `colour.js` would sweep the previous rule's colours and report on them as today's.
  *
  * @type {BuildEdge[]}
  */
 export const TOKEN_CONTRAST = [
   ['packages/shared/src/colour.ts', 'packages/shared/dist/colour.js', 'tsc'],
+  ['packages/shared/src/lights.ts', 'packages/shared/dist/lights.js', 'tsc'],
 ];
 
 /**
