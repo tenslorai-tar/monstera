@@ -892,6 +892,19 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-27 — A provisioned tree must be exactly the one its script pins
+
+The same defect `electron.mjs` fixed for itself on 2026-08-24, still standing in three siblings: an existing output
+file meant *provisioned*, so a tree a CI cache restored or anything altered after extraction was never hashed again.
+The repair is the rule the class needs rather than three early returns patched: every file of the `bin/` folder a
+program runs from is pinned in its tracked script, and the folder must hold those and no other — the extra-file case is
+the one an archive digest can never express, since Windows loads a DLL it finds beside the program. The pins were read
+from trees the scripts had just extracted with `force`, and the three shared runtime DLLs hash the same in Poppler and
+Ghostscript, which both take them from one pinned package. `mupdf.mjs` and `libreoffice.mjs` are left, each with its
+reason in the helper's header.
+
+---
+
 ## 2026-09-27 — The byte-image cost, re-measured for eight commands; packaging blocked where the owner said
 
 **The measurement refused to run, and that was the finding.** `byteImageCost.mjs` derives the set of commands routed

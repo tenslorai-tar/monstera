@@ -218,6 +218,14 @@ jobs:
       - name: Prove a verified download retries a reset and never a mismatch
         run: node scripts/ci/annotate.mjs scripts/proofs/fetchVerified.proof.mjs
 
+      # AND WHAT THE DOWNLOAD BECAME. A pinned archive is not a pinned installed
+      # file: PDFium, Poppler and Ghostscript returned early whenever their output
+      # existed, so a cache-restored or altered tree read as provisioned. This
+      # proves the tree check refuses other bytes, a missing file and a file
+      # nobody pinned, each against a tree that passes without the difference.
+      - name: Prove a provisioned tree must be exactly the one its script pins
+        run: node scripts/ci/annotate.mjs scripts/proofs/pinnedTree.proof.mjs
+
       # A detached OpenPGP signature is accepted only under a key pinned by its
       # computed fingerprint (ADR-0063). The signatures are built in the process,
       # so every refusal case asserts WHICH rule refused: a verifier that refused

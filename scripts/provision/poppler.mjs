@@ -47,12 +47,43 @@ import { fileURLToPath } from 'node:url';
 import { extract } from '../lib/extract.mjs';
 import { downloadVerified, fileExists, toolPath } from '../lib/fetchVerified.mjs';
 import { verifyDetached } from '../lib/openpgpVerify.mjs';
+import { treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { VC14_RUNTIME, committedLicenceName, installCondaPackage, sameAsCommitted } from './condaForge.mjs';
 import { POPPLER_KEY_FINGERPRINT, popplerKeyPath } from './keys/popplerKey.mjs';
 
 /** The conda-forge build ADR-0071 names; the newest Poppler on the channel, read 2026-09-16. */
 export const POPPLER_VERSION = '26.09.0';
+
+/**
+ * Every file in `bin/` — `pdftotext.exe` and the 21 libraries it loads — and its digest, read 2026-09-27 from a tree
+ * this script had just extracted from its verified packages (`pinsOf`, after a `force` run), never from one found on
+ * disk. The folder may hold these and nothing else: a library beside the program is one Windows' search order loads.
+ */
+export const POPPLER_BIN = {
+  'Lerc.dll': '451cd3d0eaede32c199886717ec7484b8ca7effda47ee89febea957540058975',
+  'deflate.dll': '6dd36dd208f18c6b44b3a78ae2c9462f28430e39b7e5bdb00faaec22b495021b',
+  'freetype.dll': '7a7fb5cf51bfab4f6b640c1850fc6371e9650c111f20af08a20479186d9058b5',
+  'icudt78.dll': '18dd8e1881c5d378de868f8f2c2309d95d3f6757ef40868b76657e7a1f061a51',
+  'icuuc78.dll': 'af525f3cb120014ded7c1b5c346ea00a5a488dee5d17b18e0172b6421e730737',
+  'jpeg8.dll': 'c8ae4649b8bcf41ec8bfd359bd6239ff7622e2041554cee3e99f740698db848f',
+  'lcms2.dll': 'd183dc2474a957dbfb455192a64049d6b273577539955ddc8f7ab8ed3e138d95',
+  'libcrypto-3-x64.dll': '16c775b3f2c381aff5c5e1bbb28a7527a5378c162ffafa0239aa8e4383e04b90',
+  'libcurl.dll': 'f4a617c5d17d4a1b87389e443fbd32de0d38bb16b35506da9f2fd8e7f3d85114',
+  'liblzma.dll': '8439ed3564a8dbbf6355e29c92e88fdf1f6dee096504149fc051104155c868a9',
+  'libpng16.dll': 'fd80ce925fc2bdce591c3f74ac0bbb2b36d72e5f55a0b686aa66453a1e388ff3',
+  'libssh2.dll': '69c35872dae1ed72e67388a4c64d51004dd15fc1be0901b2025da721d1496bb4',
+  'msvcp140.dll': '7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca',
+  'openjp2.dll': '5d11a0abfa2b679c22f0d91df66bd2abc83acb6988b050ad9e75ea0b0025e2b0',
+  'pdftotext.exe': 'eedb0417a5a70eae7901151cb1a8902d7890187c4bd0535ca54e2c3924584db5',
+  'poppler.dll': '333805d80f0a301e1626a72ecc7d2b4b149350b44f971927f2a08eb9cb29bb28',
+  'psl-5.dll': '24a1963f1684f342fbd2740c498cddd8f4dbf12846414d2b95637a1a24f86ba1',
+  'tiff.dll': 'e5555ff9f826a47885c87d9a648f9823d8bf6967b7c848e4d4824abcf518e356',
+  'vcruntime140.dll': 'd1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7',
+  'vcruntime140_1.dll': 'a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e',
+  'zlib.dll': 'f4f26ea6300c8449daad4650915e01ac80aafc6ca8b73a50be450f1fb66cdd63',
+  'zstd.dll': 'fcc1dc71b7df5489e37a78abab9c31d763570d55e93c67f388058c41c0d7b8df',
+};
 
 /**
  * `sha256` and `bytes` are the channel's, from `micromamba` 2.9.0's solve for
@@ -120,7 +151,11 @@ export function popplerLicenceRoot(root) {
  */
 export async function provisionPoppler({ root, force = false }) {
   const executable = pdftotextPath(root);
-  if (!force && (await fileExists(executable))) return { provisioned: false, executable };
+  if (!force && (await fileExists(executable))) {
+    // PRESENT IS NOT PINNED (`pinnedTree.mjs`): every file beside the program is checked, and no other may be there.
+    await verifyPinnedTree({ directory: join(popplerRoot(root), 'bin'), pins: POPPLER_BIN, context: `Poppler ${POPPLER_VERSION}` });
+    return { provisioned: false, executable };
+  }
 
   const versionDirectory = popplerRoot(root);
   const staging = `${versionDirectory}.staging-${String(process.pid)}`;
@@ -180,6 +215,9 @@ export async function provisionPoppler({ root, force = false }) {
     await rm(join(staging, 'unpack'), { recursive: true, force: true });
     await rm(join(staging, 'texts'), { recursive: true, force: true });
     await rm(sourceDirectory, { recursive: true, force: true });
+    // THE FRESH TREE MEETS THE SAME PINS, so a package bump fails here until the table is rewritten from a verified
+    // extraction.
+    await verifyPinnedTree({ directory: bin, pins: POPPLER_BIN, context: `the extracted Poppler ${POPPLER_VERSION}` });
     await rm(versionDirectory, { recursive: true, force: true });
     await mkdir(dirname(versionDirectory), { recursive: true });
     await rename(staging, versionDirectory);
@@ -196,12 +234,16 @@ if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
 
   if (check) {
     const executable = pdftotextPath(root);
+    // PRESENT AND PINNED, reported and never repaired: a check that removed a tree would be provisioning by another name.
+    const problems = existsSync(executable) ? await treeProblems(join(popplerRoot(root), 'bin'), POPPLER_BIN) : ['missing'];
     process.stdout.write(
-      existsSync(executable)
-        ? `Poppler ${POPPLER_VERSION} present at ${executable}\n`
-        : `Poppler ${POPPLER_VERSION} is NOT provisioned. Run: npm run provision:poppler\n`,
+      problems.length === 0
+        ? `Poppler ${POPPLER_VERSION} present at ${executable}, every file as pinned\n`
+        : existsSync(executable)
+          ? `Poppler ${POPPLER_VERSION} is present but NOT as pinned:\n  ${problems.join('\n  ')}\nRun: npm run provision:poppler\n`
+          : `Poppler ${POPPLER_VERSION} is NOT provisioned. Run: npm run provision:poppler\n`,
     );
-    process.exit(existsSync(executable) ? 0 : 1);
+    process.exit(problems.length === 0 ? 0 : 1);
   }
 
   try {

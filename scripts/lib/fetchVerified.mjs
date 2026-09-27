@@ -378,10 +378,12 @@ export async function verifyFileDigest({ path, sha256, context }) {
 }
 
 /**
+ * A file's SHA-256, lower-case hex — the one digest this layer computes, exported for `pinnedTree.mjs` (B3a).
+ *
  * @param {string} path
  * @returns {Promise<string>}
  */
-async function digestOf(path) {
+export async function digestOf(path) {
   const hash = createHash('sha256');
   await pipeline(createReadStream(path), hash);
   return `${hash.digest('hex')}`;

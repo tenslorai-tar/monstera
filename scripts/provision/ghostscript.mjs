@@ -34,11 +34,25 @@ import { fileURLToPath } from 'node:url';
 
 import { extract } from '../lib/extract.mjs';
 import { downloadVerified, fileExists, toolPath } from '../lib/fetchVerified.mjs';
+import { treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { VC14_RUNTIME, installCondaPackage, sameAsCommitted } from './condaForge.mjs';
 
 /** The conda-forge build ADR-0075 names; the newest Ghostscript on the channel, read 2026-09-17. */
 export const GHOSTSCRIPT_VERSION = '10.08.0';
+
+/**
+ * Every file in `bin/` — the program, its library and the MSVC runtime beside them — and its digest, read 2026-09-27
+ * from a tree this script had just extracted from its verified packages (`pinsOf`, after a `force` run). The three
+ * runtime digests equal Poppler's, since both take them from the same pinned `vc14_runtime` package.
+ */
+export const GHOSTSCRIPT_BIN = {
+  'gsdll64.dll': 'ce99e646335549b8069b5f8899e4e656492eb29a9ea738ceb122843d35f15c09',
+  'gswin64c.exe': 'ae1befbb8b540ea13d9a432a6eb5d21701e6cdedb599b1e3d160cc7d27bb546b',
+  'msvcp140.dll': '7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca',
+  'vcruntime140.dll': 'd1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7',
+  'vcruntime140_1.dll': 'a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e',
+};
 
 /** @type {readonly import('./condaForge.mjs').CondaPackage[]} */
 export const GHOSTSCRIPT_PACKAGES = [
@@ -113,7 +127,15 @@ export function ijsBanner(header) {
  */
 export async function provisionGhostscript({ root, force = false }) {
   const executable = gswin64cPath(root);
-  if (!force && (await fileExists(executable))) return { provisioned: false, executable };
+  if (!force && (await fileExists(executable))) {
+    // PRESENT IS NOT PINNED (`pinnedTree.mjs`): every file beside the program is checked, and no other may be there.
+    await verifyPinnedTree({
+      directory: join(ghostscriptRoot(root), 'bin'),
+      pins: GHOSTSCRIPT_BIN,
+      context: `Ghostscript ${GHOSTSCRIPT_VERSION}`,
+    });
+    return { provisioned: false, executable };
+  }
 
   const versionDirectory = ghostscriptRoot(root);
   const staging = `${versionDirectory}.staging-${String(process.pid)}`;
@@ -148,6 +170,9 @@ export async function provisionGhostscript({ root, force = false }) {
 
     await rm(join(staging, 'unpack'), { recursive: true, force: true });
     await rm(sourceDirectory, { recursive: true, force: true });
+    // THE FRESH TREE MEETS THE SAME PINS, so a package bump fails here until the table is rewritten from a verified
+    // extraction.
+    await verifyPinnedTree({ directory: bin, pins: GHOSTSCRIPT_BIN, context: `the extracted Ghostscript ${GHOSTSCRIPT_VERSION}` });
     await rm(versionDirectory, { recursive: true, force: true });
     await mkdir(dirname(versionDirectory), { recursive: true });
     await rename(staging, versionDirectory);
@@ -162,12 +187,18 @@ if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
 
   if (process.argv.includes('--check')) {
     const executable = gswin64cPath(root);
+    // PRESENT AND PINNED, reported and never repaired.
+    const problems = existsSync(executable)
+      ? await treeProblems(join(ghostscriptRoot(root), 'bin'), GHOSTSCRIPT_BIN)
+      : ['missing'];
     process.stdout.write(
-      existsSync(executable)
-        ? `Ghostscript ${GHOSTSCRIPT_VERSION} present at ${executable}\n`
-        : `Ghostscript ${GHOSTSCRIPT_VERSION} is NOT provisioned. Run: npm run provision:ghostscript\n`,
+      problems.length === 0
+        ? `Ghostscript ${GHOSTSCRIPT_VERSION} present at ${executable}, every file as pinned\n`
+        : existsSync(executable)
+          ? `Ghostscript ${GHOSTSCRIPT_VERSION} is present but NOT as pinned:\n  ${problems.join('\n  ')}\nRun: npm run provision:ghostscript\n`
+          : `Ghostscript ${GHOSTSCRIPT_VERSION} is NOT provisioned. Run: npm run provision:ghostscript\n`,
     );
-    process.exit(existsSync(executable) ? 0 : 1);
+    process.exit(problems.length === 0 ? 0 : 1);
   }
 
   try {

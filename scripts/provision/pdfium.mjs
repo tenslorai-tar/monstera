@@ -62,6 +62,7 @@ import { fileURLToPath } from 'node:url';
 
 import { extract } from '../lib/extract.mjs';
 import { downloadVerified, fileExists, toolPath } from '../lib/fetchVerified.mjs';
+import { treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { committedLicenceName, sameAsCommitted } from './condaForge.mjs';
 
@@ -82,6 +83,14 @@ export const PDFIUM_VERSION = '155.0.8044.0';
 export const PDFIUM_ASSET = 'pdfium-win-x64.tgz';
 export const PDFIUM_SHA256 =
   '78a17d9a5f14467631c26a3ac8741b27a0471ecc05bd6a119b523598160a0537';
+
+/**
+ * Every file the application loads from the extracted `bin/`, and its digest — read 2026-09-27 from a tree this
+ * script had just extracted from the archive above (`pinsOf`, after a `force` run), never from one found on disk.
+ */
+export const PDFIUM_BIN = {
+  'pdfium.dll': '04100c03e41cac1f979e36e5e26fb860bcb5a7461f53830d3c098716624a27a9',
+};
 
 /**
  * github.com issues the release URL; it always redirects to the signed asset
@@ -185,7 +194,12 @@ export function pdfiumLibrary(root) {
  */
 export async function provisionPdfium({ root, force = false }) {
   const library = pdfiumLibrary(root);
-  if (!force && (await fileExists(library))) return { provisioned: false, library };
+  if (!force && (await fileExists(library))) {
+    // PRESENT IS NOT PINNED: the tree is checked against the file pins on every run, cache hit or not
+    // (`pinnedTree.mjs`), and a tree that is not exactly the pinned one is removed and the run fails.
+    await verifyPinnedTree({ directory: join(pdfiumRoot(root), 'bin'), pins: PDFIUM_BIN, context: `PDFium ${PDFIUM_VERSION}` });
+    return { provisioned: false, library };
+  }
 
   const versionDirectory = pdfiumRoot(root);
   // STAGED AND PUBLISHED BY RENAME, `gitleaks.mjs`' shape and its reason: two
@@ -216,6 +230,9 @@ export async function provisionPdfium({ root, force = false }) {
     if (!(await fileExists(staged))) {
       throw new Error(`${PDFIUM_ASSET} did not contain bin/pdfium.dll`);
     }
+    // THE FRESH TREE MEETS THE SAME PINS, so a release bump that changes the library fails here, loudly, until the
+    // table is rewritten from a verified extraction — never by copying whatever a found tree holds.
+    await verifyPinnedTree({ directory: join(staging, 'bin'), pins: PDFIUM_BIN, context: `the extracted ${PDFIUM_ASSET}` });
 
     await rm(versionDirectory, { recursive: true, force: true });
     await mkdir(dirname(versionDirectory), { recursive: true });
@@ -236,13 +253,17 @@ if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
     // A CHECK REPORTS, and never provisions. `--check` exists so a proof or a
     // CI step can say *this machine has it* without a network call, and one
     // that quietly downloaded would make every such report a fact about what it
-    // just did.
+    // just did. And it never REPAIRS either: present-but-not-as-pinned is reported, and the tree is left for a
+    // provisioning run to remove.
+    const problems = existsSync(library) ? await treeProblems(join(pdfiumRoot(root), 'bin'), PDFIUM_BIN) : ['missing'];
     process.stdout.write(
-      existsSync(library)
-        ? `PDFium ${PDFIUM_VERSION} present at ${library}\n`
-        : `PDFium ${PDFIUM_VERSION} is NOT provisioned. Run: node scripts/provision/pdfium.mjs\n`,
+      problems.length === 0
+        ? `PDFium ${PDFIUM_VERSION} present at ${library}, as pinned\n`
+        : existsSync(library)
+          ? `PDFium ${PDFIUM_VERSION} is present but NOT as pinned:\n  ${problems.join('\n  ')}\nRun: node scripts/provision/pdfium.mjs\n`
+          : `PDFium ${PDFIUM_VERSION} is NOT provisioned. Run: node scripts/provision/pdfium.mjs\n`,
     );
-    process.exit(existsSync(library) ? 0 : 1);
+    process.exit(problems.length === 0 ? 0 : 1);
   }
 
   try {
