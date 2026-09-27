@@ -4941,9 +4941,25 @@ body {
   color: var(--muted);
   font-size: var(--font-chrome-11);
   font-variant-numeric: tabular-nums;
-  /* v5-02's ORDER: the page field and the tool that is on at the start, the document's own line
-     from the middle on, then the panel toggles and the zoom at the end. */
-  justify-content: flex-start;
+  /* THREE REGIONS (the owner's 27 September list, item 5, over v5-02): what the tool is doing at the start, the page
+     navigation at the CENTRE, the document's own line, the panel toggles and the zoom at the end. The outer tracks
+     are always equal, so the centre is the bar's at every width; a long file name gives way first — the name is the
+     one item here that ellipsises — rather than pushing the navigation off centre. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  column-gap: var(--space-12);
+}
+
+.m-status-start,
+.m-status-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-inline-size: 0;
+}
+
+.m-status-end {
+  justify-content: flex-end;
 }
 
 /* EVERY FLOATING SURFACE (v5): menus, the context menu, a group's More, the command palette — the float surface, its
@@ -5009,8 +5025,8 @@ body {
   white-space: nowrap;
 }
 
-/* THE DOCUMENT'S LINE takes the free space before it, so it sits right of centre as the design
-   draws it, and gives up its name first when the bar is narrow. */
+/* THE DOCUMENT'S LINE takes the free space before it in the end region, so it sits beside the zoom as the design
+   draws it, and gives up its name first when the bar is narrow. The tool's words at the start ellipsise the same way. */
 .m-status-document {
   display: flex;
   align-items: center;

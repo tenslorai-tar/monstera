@@ -913,6 +913,18 @@ test('the STATUS BAR projects page navigation and zoom, and each control changes
   await expect(field).toHaveValue('1');
   await expect(bar.locator('.m-status-total')).toHaveText('/ 3');
 
+  // PAGE NAVIGATION AT THE CENTRE (the owner's list, item 5), the document's line and the zoom at the end.
+  const barBox = await bar.boundingBox();
+  const navigation = await bar.getByRole('group', { name: 'Page navigation' }).boundingBox();
+  const documentLine = await bar.locator('.m-status-document').boundingBox();
+  const zoomGroup = await bar.getByRole('group', { name: 'Zoom' }).boundingBox();
+  if (barBox === null || navigation === null || documentLine === null || zoomGroup === null) {
+    throw new Error('the status bar and its three parts have boxes');
+  }
+  expect(Math.abs(navigation.x + navigation.width / 2 - (barBox.x + barBox.width / 2))).toBeLessThanOrEqual(1);
+  expect(documentLine.x).toBeGreaterThan(navigation.x + navigation.width);
+  expect(zoomGroup.x).toBeGreaterThan(documentLine.x);
+
   // ALL FOUR navigation buttons are there, from the registry.
   for (const name of ['First page', 'Previous page', 'Next page', 'Last page']) {
     await expect(bar.getByRole('button', { name })).toBeVisible();

@@ -10,8 +10,8 @@ The status bar runs along the bottom of the window. It shows where you are and l
 
 ## Steps
 
-1. To go to a page, type its number in the page field and press **Enter**. The buttons around it go to the **First page**, **Previous page**, **Next page** and **Last page**.
-2. To zoom, drag the **Zoom level** slider, or use the zoom buttons beside it, including **Fit width** and **Fit page**.
+1. To go to a page, type its number in the page field in the middle of the bar and press **Enter**. The buttons around it go to the **First page**, **Previous page**, **Next page** and **Last page**.
+2. To zoom, drag the **Zoom level** slider at the right end, or use the zoom buttons beside it, including **Fit width** and **Fit page**.
 3. Check the saved state: **Unsaved changes**, **Saved**, or how long ago it was saved.
 
 ![The status bar with the page field, the zoom slider and the saved state](screenshot:status-bar-1)

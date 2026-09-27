@@ -146,11 +146,25 @@ describe('StatusBar', () => {
     expect(small).toContain('50 KB');
   });
 
-  it('names the TOOL THAT IS ON beside the page field, and nothing when none is', () => {
+  it('names the TOOL THAT IS ON at the bar’s start, and nothing when none is', () => {
     const on = drawn({ mode: messageKey('command.hand-tool.title') });
     expect(on.container.querySelector('.m-status-mode')?.textContent).toBe('Hand — drag to move the pages');
     // CONTROL: with no tool, no line at all rather than an empty one.
     expect(drawn().container.querySelector('.m-status-mode')).toBeNull();
+  });
+
+  it('is THREE REGIONS: the tool at the start, page navigation at the CENTRE, document and zoom at the end (item 5)', () => {
+    const { container } = drawn({ mode: messageKey('command.hand-tool.title') });
+    const regions = [...(container.querySelector('.m-status-bar')?.children ?? [])]
+      .filter((child) => !child.classList.contains('m-visually-hidden'))
+      .map((child) => child.className);
+    expect(regions).toStrictEqual(['m-status-start', 'm-status-cluster m-status-centre', 'm-status-end']);
+    expect(container.querySelector('.m-status-start .m-status-mode')).not.toBeNull();
+    expect(container.querySelector('.m-status-centre [data-goto-input]')).not.toBeNull();
+    expect(container.querySelector('.m-status-end .m-status-document')).not.toBeNull();
+    expect(container.querySelector('.m-status-end .m-status-zoom-slider')).not.toBeNull();
+    // CONTROL: the page field is NOT at the end, where the document line is — the centre is its own region.
+    expect(container.querySelector('.m-status-end [data-goto-input]')).toBeNull();
   });
 
   it('shows the zoom as a percentage, rounded for display', () => {

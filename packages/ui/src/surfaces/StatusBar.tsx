@@ -160,7 +160,17 @@ export function StatusBar({
       <span className="m-status-page m-visually-hidden">
         {i18n._(STATUS_PAGE_OF, { page: pdfjsPageOf(page), count: pageCount })}
       </span>
-      <div className="m-status-cluster" role="group" aria-label={i18n._(STATUS_NAVIGATION)}>
+      {/* THREE REGIONS (the owner's 27 September list, item 5, over v5-02): what the tool is doing at the start, the
+          page navigation at the CENTRE, and the document's line, the panel toggles and the zoom at the end. The outer
+          two share the free width, so the centre is the bar's. */}
+      <div className="m-status-start">
+        {outside ? (
+          <span className="m-status-problem">{i18n._(STATUS_GO_TO_OUTSIDE, { count: pageCount })}</span>
+        ) : null}
+        {/* THE TOOL THAT IS ON, and nothing when none is. */}
+        {mode === undefined ? null : <span className="m-status-mode">{i18n._(mode)}</span>}
+      </div>
+      <div className="m-status-cluster m-status-centre" role="group" aria-label={i18n._(STATUS_NAVIGATION)}>
         {buttons(model.navigation.before)}
         <form
           className="m-status-goto"
@@ -211,71 +221,67 @@ export function StatusBar({
         </form>
         {buttons(model.navigation.after)}
       </div>
-      {outside ? (
-        <span className="m-status-problem">{i18n._(STATUS_GO_TO_OUTSIDE, { count: pageCount })}</span>
-      ) : null}
-      {/* THE TOOL THAT IS ON, beside the page field as v5-02 draws it, and nothing when none is. */}
-      {mode === undefined ? null : <span className="m-status-mode">{i18n._(mode)}</span>}
-      {/* THE DOCUMENT ITSELF, at the far end from the page field, as v5-02 draws it: its name, its
-          length, its size, and whether it is on disk — the four facts about the file rather than the
-          view, in one line with separators the design draws. */}
-      <span className="m-status-document">
-        <span className="m-status-name" title={name}>
-          {name}
+      <div className="m-status-end">
+        {/* THE DOCUMENT ITSELF, on the zoom's side as v5-02 draws it: its name, its length, its size, and whether it
+            is on disk — the four facts about the file rather than the view, in one line with the design's separators. */}
+        <span className="m-status-document">
+          <span className="m-status-name" title={name}>
+            {name}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>{i18n._(STATUS_PAGES, { count: pageCount })}</span>
+          <span aria-hidden="true">·</span>
+          <span>{byteSize(i18n, byteLength)}</span>
+          <span aria-hidden="true">·</span>
+          <span className="m-status-saved" data-dirty={saved.dirty ? 'true' : 'false'}>
+            {i18n._(saved.message, saved.values)}
+          </span>
         </span>
-        <span aria-hidden="true">·</span>
-        <span>{i18n._(STATUS_PAGES, { count: pageCount })}</span>
-        <span aria-hidden="true">·</span>
-        <span>{byteSize(i18n, byteLength)}</span>
-        <span aria-hidden="true">·</span>
-        <span className="m-status-saved" data-dirty={saved.dirty ? 'true' : 'false'}>
-          {i18n._(saved.message, saved.values)}
-        </span>
-      </span>
-      {model.chrome.length === 0 ? null : (
-        <div className="m-status-cluster" role="group" aria-label={i18n._(STATUS_CHROME_GROUP)}>
-          {buttons(model.chrome)}
+        {model.chrome.length === 0 ? null : (
+          <div className="m-status-cluster" role="group" aria-label={i18n._(STATUS_CHROME_GROUP)}>
+            {buttons(model.chrome)}
+          </div>
+        )}
+        <div className="m-status-cluster" role="group" aria-label={i18n._(STATUS_ZOOM_GROUP)}>
+          {buttons(model.zoom.before)}
+          <input
+            className="m-status-zoom-slider"
+            type="range"
+            aria-label={i18n._(STATUS_ZOOM_SLIDER)}
+            min={SLIDER_MIN}
+            max={SLIDER_MAX}
+            step={SLIDER_STEP}
+            // THE SCALE SHOWN, which for a fit is what the scroller resolved; moving the slider leaves
+            // the fit for that scale, as the zoom buttons do.
+            value={Math.min(SLIDER_MAX, Math.max(SLIDER_MIN, zoom))}
+            onChange={(event) => {
+              const scale = Number(event.target.value);
+              if (!Number.isFinite(scale)) return;
+              onZoom(() => ({ kind: 'scale', scale }));
+            }}
+          />
+          {buttons(model.zoom.between)}
+          <span className="m-status-zoom">
+            {/* ROUNDED FOR DISPLAY ONLY: derived from the live scale, never stored. */}
+            {i18n._(STATUS_ZOOM, { percent: Math.round(zoom * 100) })}
+          </span>
+          {buttons(model.zoom.after)}
         </div>
-      )}
-      <div className="m-status-cluster" role="group" aria-label={i18n._(STATUS_ZOOM_GROUP)}>
-        {buttons(model.zoom.before)}
-        <input
-          className="m-status-zoom-slider"
-          type="range"
-          aria-label={i18n._(STATUS_ZOOM_SLIDER)}
-          min={SLIDER_MIN}
-          max={SLIDER_MAX}
-          step={SLIDER_STEP}
-          // THE SCALE SHOWN, which for a fit is what the scroller resolved; moving the slider leaves
-          // the fit for that scale, as the zoom buttons do.
-          value={Math.min(SLIDER_MAX, Math.max(SLIDER_MIN, zoom))}
-          onChange={(event) => {
-            const scale = Number(event.target.value);
-            if (!Number.isFinite(scale)) return;
-            onZoom(() => ({ kind: 'scale', scale }));
-          }}
-        />
-        {buttons(model.zoom.between)}
-        <span className="m-status-zoom">
-          {/* ROUNDED FOR DISPLAY ONLY: derived from the live scale, never stored. */}
-          {i18n._(STATUS_ZOOM, { percent: Math.round(zoom * 100) })}
-        </span>
-        {buttons(model.zoom.after)}
+        {/* THE RUNNING TASK, absent rather than empty when nothing is running, and last, so the
+            numbers a reader checks do not move sideways while one runs. */}
+        {task === undefined ? null : (
+          <span className="m-status-task" data-status-task={String(task.done)}>
+            {i18n._(TASK_PROGRESS, {
+              label: i18n._(task.label),
+              done: task.done,
+              total: task.total,
+            })}
+            <button className="m-status-cancel" onClick={task.cancel} type="button">
+              {i18n._(TASK_CANCEL)}
+            </button>
+          </span>
+        )}
       </div>
-      {/* THE RUNNING TASK, absent rather than empty when nothing is running, and last, so the
-          numbers a reader checks do not move sideways while one runs. */}
-      {task === undefined ? null : (
-        <span className="m-status-task" data-status-task={String(task.done)}>
-          {i18n._(TASK_PROGRESS, {
-            label: i18n._(task.label),
-            done: task.done,
-            total: task.total,
-          })}
-          <button className="m-status-cancel" onClick={task.cancel} type="button">
-            {i18n._(TASK_CANCEL)}
-          </button>
-        </span>
-      )}
     </footer>
   );
 }
