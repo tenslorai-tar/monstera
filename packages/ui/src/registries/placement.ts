@@ -97,7 +97,7 @@ export type Placement =
   | { readonly surface: 'context-menu'; readonly context: MenuContext; readonly order: number }
   | { readonly surface: 'start-screen'; readonly slot: StartScreenSlot; readonly order: number }
   | StatusBarPlacement
-  | TitleBarPlacement
+  | MenuBarCommandsPlacement
   | RailPlacement
   | PropertiesPlacement
   | MenuBarPlacement;
@@ -142,23 +142,23 @@ export interface RailPlacement {
 }
 
 /**
- * A labelled button in the title bar (ARCHITECTURE §7 and §10.3,
- * [ADR-0095](../../../../docs/DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md)).
+ * A labelled button at the CENTRE OF THE MENU ROW (ARCHITECTURE §7 and §10.3,
+ * [ADR-0113](../../../../docs/DECISIONS/0113-the-applications-own-commands-sit-at-the-centre-of-the-menu-row.md),
+ * which moved them from the title bar that [ADR-0095](../../../../docs/DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md)
+ * placed them in).
  *
- * The owner's design puts Donate and Rate Us in the row between the document tabs and the command
- * search, and each is an ordinary command that opens a dialog.
+ * The owner puts Donate and Rate Us there, centred on the window's top row, so the tab row below keeps
+ * its whole width for the open documents. Each is an ordinary command.
  *
- * **`emphasis` is here rather than on the command** because the design gives one the filled accent
- * treatment and the other the outline, and a bar that decided that by reading a command's id would be
- * the hand-maintained layout table this union exists to forbid, one field narrower. It is also not a
- * property of the command: Highlight sits in three surfaces at once and looks different in each.
- *
- * The bar's other controls — the tabs, the search, the layout switcher — each hold a value, so none of
- * them can be a command (`run` takes no argument). That is ADR-0067's rule, unchanged.
+ * **`tone` is here rather than on the command** because a bar that chose a colour by reading a command's
+ * id would be the hand-maintained layout table this union exists to forbid, one field narrower. It is
+ * also not a property of the command: Donate is gold here and an ordinary item in the Help menu. `gold`
+ * and `violet` are the owner's brand tones, which do not follow the accent; `plain` is the row's
+ * ordinary outlined button, for a notice such as *Update available* that is not an appeal.
  */
-export interface TitleBarPlacement {
-  readonly surface: 'title-bar';
-  readonly emphasis: 'primary' | 'normal';
+export interface MenuBarCommandsPlacement {
+  readonly surface: 'menu-bar-commands';
+  readonly tone: 'gold' | 'violet' | 'plain';
   readonly order: number;
 }
 

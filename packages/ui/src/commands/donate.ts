@@ -5,8 +5,8 @@ import { DONATE_COMMAND_TITLE } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 
 /**
- * *Donate* — the title bar's filled button (the owner's design, 2026-09-22;
- * [ADR-0095](../../../../docs/DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md)).
+ * *Donate* — the gold button at the centre of the menu row (the owner's design, 2026-09-22, moved there
+ * on 2026-09-27; [ADR-0113](../../../../docs/DECISIONS/0113-the-applications-own-commands-sit-at-the-centre-of-the-menu-row.md)).
  *
  * ## The command names a place, and `main` knows the address
  *
@@ -16,9 +16,9 @@ import type { UiCommand } from '../registries/commands.js';
  *
  * ## One placement, and it needs no document
  *
- * No `when`: supporting the project is not a thing you do to a PDF. The title bar is drawn in every
- * layout mode including Focus **and on the start screen** — the owner's `start-*.png` show it there
- * with Donate in it — so one placement already reaches every state the application has. A second in
+ * No `when`: supporting the project is not a thing you do to a PDF. The menu row is drawn in every
+ * layout mode including Focus **and on the start screen**, so one placement already reaches every
+ * state the application has. A second in
  * the start screen's footer was written first and removed on reading those exports: the footer there
  * is *Settings · About · Help centre*, and a button the design does not draw is a deviation, not the
  * enhancement the order asks deviations to be.
@@ -32,7 +32,7 @@ export function donateCommand(deps: {
     icon: 'Heart',
     title: DONATE_COMMAND_TITLE,
     placements: [
-      { surface: 'title-bar', emphasis: 'primary', order: 1 },
+      { surface: 'menu-bar-commands', tone: 'gold', order: 1 },
       { surface: 'menu-bar', menu: 'help', group: 1, order: 10 },
     ],
     run: async (): Promise<void> => {

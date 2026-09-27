@@ -10,7 +10,7 @@ If you would like to support the people who make Monstera, you can make a donati
 
 ## Steps
 
-1. In the title bar, choose **Donate**.
+1. In the middle of the window's top row, beside the menus, choose the gold **Donate** button. It is also in the **Help** menu.
 2. The **Support Monstera** window explains what a donation pays for. Choose **Open the donation page** to continue in your browser, or **Not now**.
 
 ![The Support Monstera window](screenshot:donate-1)
@@ -22,5 +22,5 @@ If you would like to support the people who make Monstera, you can make a donati
 
 <!--
 Screenshots to capture:
-1. donate-1 — dialog.donate opened from the title bar. Frame the dialog and the Donate button.
+1. donate-1 — dialog.donate opened from the menu row's gold button. Frame the dialog and the Donate button.
 -->

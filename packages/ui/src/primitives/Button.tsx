@@ -58,9 +58,17 @@ export interface ButtonProps {
   values?: Readonly<Record<string, string | number>> | undefined;
   /**
    * Filled with `--accent` (`primary`), bounded by `--border-control` (`default`), or text alone (`quiet`) — a
-   * row of links the design draws as words, such as the start screen's footer.
+   * row of links the design draws as words, such as the start screen's footer. `gold` and `violet` are the owner's
+   * two brand tones for the menu row's Donate and Rate Us
+   * ([ADR-0113](../../../../docs/DECISIONS/0113-the-applications-own-commands-sit-at-the-centre-of-the-menu-row.md)):
+   * fixed tokens, declared and checked, that do not follow the accent — so nothing is solved here for them.
    */
-  variant?: 'primary' | 'default' | 'quiet';
+  variant?: 'primary' | 'default' | 'quiet' | 'gold' | 'violet';
+  /**
+   * The glyph alone, with the label kept as the accessible name and shown as the tooltip — for a row that has run out
+   * of room for words (ADR-0113's narrow window). Needs an `icon`; without one there would be nothing to see.
+   */
+  iconOnly?: boolean;
   /**
    * A glyph before the label, as the owner's design draws Donate and Rate Us (2026-09-22).
    *
@@ -91,6 +99,7 @@ export function Button({
   type = 'button',
   chord,
   icon,
+  iconOnly = false,
 }: ButtonProps): ReactElement {
   const element = useRef<HTMLElement>(null);
   // `useLingui` rather than the module-level `resolve`, so a locale change
@@ -118,17 +127,22 @@ export function Button({
     'text',
   );
 
+  const text = values === undefined ? _(label) : _(label, values);
+  // ICONS ALONE ONLY WHERE THERE IS AN ICON: a button with neither would be a blank control.
+  const bare = iconOnly && icon !== undefined;
+
   return (
     <BaseButton
-      className={`m-button m-button--${variant}`}
+      className={`m-button m-button--${variant}${bare ? ' m-button--icon-only' : ''}`}
       disabled={disabled}
       nativeButton
       onClick={onClick}
       ref={element}
       type={type}
+      title={bare ? text : undefined}
     >
       {icon === undefined ? null : <Icon name={icon} size="dense" />}
-      {values === undefined ? _(label) : _(label, values)}
+      {bare ? <span className="m-visually-hidden">{text}</span> : text}
       {chord === undefined ? null : (
         <kbd aria-hidden className="m-button__chord">
           {chord}

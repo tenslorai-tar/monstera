@@ -116,25 +116,6 @@ textarea {
   -webkit-app-region: no-drag;
 }
 
-/* THE APPLICATION'S OWN COMMANDS — Donate and Rate Us in the owner's design (ADR-0095).
-   `margin-inline-start: auto` here AND on the command search is what places them: two auto margins
-   divide the free space between them, so this group sits near the middle of the row and the search
-   at its end, which is where the exports draw them. A spacer element would do the same thing and be
-   a thing in the accessibility tree that is not a control. */
-.m-title-bar__commands {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: var(--space-8);
-  margin-inline-start: auto;
-}
-
-/* The bar is one row of chrome, so its buttons are denser than a dialog's — the vertical padding
-   only; the glyph, the label and every colour are the primitive's. */
-.m-title-bar__commands .m-button {
-  padding-block: var(--space-2);
-}
-
 /*
  * THE MENU BAR (v5-14, ADR-0107): the window's top row. The system draws its three window controls over the row's end
  * (Window Controls Overlay): `titlebar-area-*` is the part of the row they leave, so the row is at least as tall as
@@ -149,13 +130,45 @@ textarea {
 .m-menu-bar {
   grid-area: menu;
   box-sizing: border-box;
+  /* THREE TRACKS (ADR-0113): the mark and the menus, the application's own commands, and the drag track. The outer two
+     share the free width equally, so the commands sit at the window's centre; the first never goes below the menus'
+     own width and the last never below the reserve, so a narrow window moves the commands along after the menus
+     instead of over them. The padding is the same at both ends for the centre to be the window's. */
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
+  align-items: center;
+  column-gap: var(--space-8);
+  min-block-size: max(var(--menu-bar), env(titlebar-area-height, 0px));
+  padding-inline: var(--space-10);
+  -webkit-app-region: drag;
+}
+
+.m-menu-bar__start {
   display: flex;
   align-items: center;
   gap: var(--space-6);
-  min-block-size: max(var(--menu-bar), env(titlebar-area-height, 0px));
-  padding-inline: var(--space-10)
-    calc(var(--space-8) + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
-  -webkit-app-region: drag;
+  justify-self: start;
+}
+
+.m-menu-bar__commands {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.m-menu-bar__commands .m-button {
+  block-size: var(--title-control);
+  padding-block: 0;
+  font-size: var(--font-chrome-12);
+  -webkit-app-region: no-drag;
+}
+
+/* THE RESERVE: the system's window controls (Window Controls Overlay; zero in a browser, where the variables are
+   undefined) plus the least drag room the row always keeps. At the track's end, so it sits under the controls. */
+.m-menu-bar__reserve {
+  justify-self: end;
+  inline-size: calc(var(--menu-drag-min) + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+  block-size: 1px;
 }
 
 /* ADR-0002: the brand's height, and the width the image's own ratio gives it — never stretched. */
@@ -4641,11 +4654,6 @@ body {
 
 .m-title-bar > * {
   align-self: center;
-}
-
-.m-title-bar__commands .m-button {
-  block-size: var(--title-control);
-  padding-block: 0;
 }
 
 .m-command-search {

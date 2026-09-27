@@ -1388,6 +1388,45 @@ test('the TITLE BAR holds the tabs, the command search and the switcher on one r
   expect(overlay.y).toBeGreaterThanOrEqual(barBox.y + barBox.height - 0.5);
 });
 
+test('DONATE AND RATE US sit at the MENU ROW’s centre while they fit, and after the last menu — never over it — when not (ADR-0113)', async ({
+  page,
+}) => {
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  const row = page.locator('.m-menu-bar');
+  const group = page.locator('.m-menu-bar__commands');
+  const lastMenu = page.locator('.m-menu-bar__trigger').last();
+  const reserve = page.locator('.m-menu-bar__reserve');
+  type Box = { x: number; y: number; width: number; height: number };
+  await expect(group.getByRole('button', { name: 'Donate' })).toBeVisible();
+  await expect(page.locator('.m-title-bar').getByRole('button', { name: 'Donate' })).toHaveCount(0);
+
+  /** The three boxes, read after the layout has settled at a width. */
+  const boxes = async (width: number): Promise<{ group: Box; menu: Box; reserve: Box; row: Box }> => {
+    await page.setViewportSize({ width, height: 800 });
+    await page.waitForTimeout(150);
+    const read = async (locator: typeof row): Promise<Box> => {
+      const box = await locator.boundingBox();
+      if (box === null) throw new Error(`a box at ${String(width)}`);
+      return box;
+    };
+    return { group: await read(group), menu: await read(lastMenu), reserve: await read(reserve), row: await read(row) };
+  };
+
+  // WIDE: centred on the window to the pixel, which is what the equal outer tracks and the equal padding give.
+  for (const width of [1920, 1440]) {
+    const at = await boxes(width);
+    expect(Math.abs(at.group.x + at.group.width / 2 - width / 2)).toBeLessThanOrEqual(1);
+    expect(at.group.x).toBeGreaterThan(at.menu.x + at.menu.width);
+  }
+
+  // THE WINDOW'S FLOOR: never over the last menu, never into the reserve (window controls plus the drag minimum).
+  const narrow = await boxes(1024);
+  expect(narrow.group.x).toBeGreaterThanOrEqual(narrow.menu.x + narrow.menu.width);
+  expect(narrow.group.x + narrow.group.width).toBeLessThanOrEqual(narrow.reserve.x + 0.5);
+  expect(narrow.reserve.x + narrow.reserve.width).toBeLessThanOrEqual(narrow.row.x + narrow.row.width + 0.5);
+});
+
 test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every group keeps a named tool', async ({
   page,
 }) => {

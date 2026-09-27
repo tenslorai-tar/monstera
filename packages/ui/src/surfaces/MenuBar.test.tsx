@@ -128,4 +128,46 @@ describe('MenuBar (ADR-0107)', () => {
     fireEvent.keyUp(window, { key: 'Alt' });
     expect(document.activeElement?.textContent).toBe('File');
   });
+
+  describe('the application’s own commands, PROJECTED at the row’s centre (ADR-0113)', () => {
+    const placed = (id: string, title: string, tone: 'gold' | 'violet' | 'plain', order: number, run = vi.fn()): UiCommand =>
+      command(id, title, [{ surface: 'menu-bar-commands', tone, order }], { icon: 'Heart', run });
+
+    it('draws each placed command in DECLARED order, outside the menubar, and clicking one runs it alone', () => {
+      const donate = vi.fn();
+      const rate = vi.fn();
+      // REGISTERED IN REVERSE, so a projection that returned its input unsorted would read Print before Open.
+      render(drawn([placed('a.rate', 'test.menu.print', 'violet', 2, rate), placed('a.donate', 'test.menu.open', 'gold', 1, donate)]));
+
+      const group = document.querySelector('.m-menu-bar__commands');
+      expect([...(group?.querySelectorAll('button') ?? [])].map((button) => button.textContent)).toStrictEqual(['Open', 'Print']);
+      // NOT A MENU: a button in the row, never an item the menubar's arrow keys walk.
+      expect(within(screen.getByRole('menubar')).queryByRole('menuitem', { name: 'Open' })).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+      expect(donate).toHaveBeenCalledTimes(1);
+      expect(donate).toHaveBeenCalledWith(CONTEXT);
+      expect(rate).not.toHaveBeenCalled();
+    });
+
+    it('the TONE comes from the placement, so the bar never reads a command’s id', () => {
+      render(
+        drawn([
+          placed('a.one', 'test.menu.open', 'gold', 1),
+          placed('a.two', 'test.menu.print', 'violet', 2),
+          placed('a.three', 'test.menu.dark', 'plain', 3),
+        ]),
+      );
+      expect(screen.getByRole('button', { name: 'Open' }).className).toContain('m-button--gold');
+      expect(screen.getByRole('button', { name: 'Print' }).className).toContain('m-button--violet');
+      // THE CONTROL: the same surface and component, one field different, and not a brand tone.
+      expect(screen.getByRole('button', { name: 'Dark theme' }).className).toContain('m-button--default');
+    });
+
+    it('draws no group and no reserve over a registry with no such placement', () => {
+      render(drawn([command('a.open', 'test.menu.open', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 1 }])]));
+      expect(document.querySelector('.m-menu-bar__commands')).toBeNull();
+      expect(document.querySelector('.m-menu-bar__reserve')).toBeNull();
+    });
+  });
 });

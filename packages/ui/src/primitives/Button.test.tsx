@@ -94,6 +94,21 @@ describe('Button', () => {
     expect(button.tagName).toBe('BUTTON');
   });
 
+  it('ICON ONLY keeps the label as the name and the tooltip, and shows no words (ADR-0113)', () => {
+    render(<Button label={SAVE} icon="Heart" iconOnly />);
+    const button = screen.getByRole('button', { name: 'Save' });
+    expect(button.getAttribute('title')).toBe('Save');
+    expect(button.className).toContain('m-button--icon-only');
+    expect(button.querySelector('.m-visually-hidden')?.textContent).toBe('Save');
+  });
+
+  it('CONTROL: icon only with NO icon draws its words, since a blank button would be nothing to see', () => {
+    render(<Button label={SAVE} iconOnly />);
+    const button = screen.getByRole('button', { name: 'Save' });
+    expect(button.getAttribute('title')).toBeNull();
+    expect(button.querySelector('.m-visually-hidden')).toBeNull();
+  });
+
   it('defaults to type=button, so it cannot submit a form it did not mean to', () => {
     render(<Button label={SAVE} />);
     expect(screen.getByRole('button', { name: 'Save' }).getAttribute('type')).toBe('button');

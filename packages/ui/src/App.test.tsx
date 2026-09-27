@@ -581,9 +581,9 @@ describe('App', () => {
     expect(commandCalls(calls)).toStrictEqual([]);
   });
 
-  it('*Rate Us* is REGISTERED: the title bar draws it, and it sends the rating answer (E3)', async () => {
+  it('*Rate Us* is REGISTERED: the MENU ROW draws it, in violet beside a gold Donate, and it sends the rating answer (E3)', async () => {
     // `rateUs.test.ts` proves the command; this proves the shell registered it, which is the half a
-    // tested command beside a missing registration leaves out. The start screen draws the title bar.
+    // tested command beside a missing registration leaves out. The start screen draws the menu row.
     const { client, calls } = recordingClient({ opened: true });
     render(<App client={client} settings={freshSettings()} />);
     await act(async () => {
@@ -593,8 +593,17 @@ describe('App', () => {
     // control for the mounting case below.
     expect(screen.queryByRole('button', { name: 'Rate now' })).toBeNull();
 
+    // WHERE, at the composition root (ADR-0113): both in the menu row, in their tones, and neither in the title bar.
+    const rate = screen.getByRole('button', { name: 'Rate Us' });
+    const donate = screen.getByRole('button', { name: 'Donate' });
+    expect(rate.closest('.m-menu-bar__commands')).not.toBeNull();
+    expect(donate.closest('.m-menu-bar__commands')).not.toBeNull();
+    expect(rate.className).toContain('m-button--violet');
+    expect(donate.className).toContain('m-button--gold');
+    expect(document.querySelector('.m-title-bar')?.contains(rate)).toBe(false);
+
     await act(async () => {
-      screen.getByRole('button', { name: 'Rate Us' }).click();
+      rate.click();
       await Promise.resolve();
     });
 

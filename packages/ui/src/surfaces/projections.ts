@@ -10,7 +10,7 @@ import {
   type SectionId,
   type StartScreenSlot,
   type StatusBarPlacement,
-  type TitleBarPlacement,
+  type MenuBarCommandsPlacement,
 } from '../registries/placement.js';
 
 /**
@@ -175,7 +175,7 @@ function railOrder(placement: Placement): number | undefined {
     case 'context-menu':
     case 'start-screen':
     case 'status-bar':
-    case 'title-bar':
+    case 'menu-bar-commands':
     case 'properties':
     case 'menu-bar':
       return undefined;
@@ -212,7 +212,7 @@ function propertiesOrder(placement: Placement): number | undefined {
     case 'context-menu':
     case 'start-screen':
     case 'status-bar':
-    case 'title-bar':
+    case 'menu-bar-commands':
     case 'rail':
     case 'menu-bar':
       return undefined;
@@ -266,7 +266,7 @@ function ribbonSlot(
     case 'context-menu':
     case 'start-screen':
     case 'status-bar':
-    case 'title-bar':
+    case 'menu-bar-commands':
     case 'rail':
     case 'properties':
     case 'menu-bar':
@@ -317,7 +317,7 @@ function quickToolbarOrder(placement: Placement): number | undefined {
     case 'context-menu':
     case 'start-screen':
     case 'status-bar':
-    case 'title-bar':
+    case 'menu-bar-commands':
     case 'rail':
     case 'properties':
     case 'menu-bar':
@@ -361,7 +361,7 @@ function contextMenuOrder(placement: Placement, menu: MenuContext): number | und
     case 'quick-toolbar':
     case 'start-screen':
     case 'status-bar':
-    case 'title-bar':
+    case 'menu-bar-commands':
     case 'rail':
     case 'properties':
     case 'menu-bar':
@@ -408,7 +408,7 @@ function startScreenSlot(
     case 'quick-toolbar':
     case 'context-menu':
     case 'status-bar':
-    case 'title-bar':
+    case 'menu-bar-commands':
     case 'rail':
     case 'properties':
     case 'menu-bar':
@@ -476,7 +476,7 @@ function statusBarSlot(placement: Placement): { readonly gap: StatusBarGap; read
     case 'quick-toolbar':
     case 'context-menu':
     case 'start-screen':
-    case 'title-bar':
+    case 'menu-bar-commands':
     case 'rail':
     case 'properties':
     case 'menu-bar':
@@ -489,37 +489,39 @@ function statusBarSlot(placement: Placement): { readonly gap: StatusBarGap; read
 }
 
 /**
- * One title-bar button: the command, where it sits, and how the design draws it.
+ * One button at the menu row's centre: the command, where it sits, and the tone the owner gives it.
  *
- * `emphasis` is carried through from the placement rather than resolved here, because the bar renders
+ * `tone` is carried through from the placement rather than resolved here, because the bar renders
  * it and the projection's job is to say what is there — the same split every other model keeps.
  */
-export interface TitleBarEntry extends OrderedEntry {
-  readonly emphasis: TitleBarPlacement['emphasis'];
+export interface MenuBarCommandEntry extends OrderedEntry {
+  readonly tone: MenuBarCommandsPlacement['tone'];
 }
 
 /**
- * The title bar's projected buttons — the owner's Donate and Rate Us (§10.3, ARCHITECTURE §7,
- * [ADR-0095](../../../../docs/DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md)).
+ * The menu row's projected buttons — the owner's Donate and Rate Us (§10.3, ARCHITECTURE §7,
+ * [ADR-0113](../../../../docs/DECISIONS/0113-the-applications-own-commands-sit-at-the-centre-of-the-menu-row.md)).
  *
- * **Only the buttons.** The document tabs, the command search and the layout switcher each hold a
- * value — the open set and the active tab, the query, the current mode — so none of them is a command
- * and none is here. That is the status bar's rule above, unchanged.
+ * **Only the buttons.** The menus beside them are the menu bar's own model, and the title bar's tabs,
+ * search and layout switcher each hold a value, so none of them is a command and none is here.
  */
-export function titleBarModel(registry: CommandRegistry, context: CommandContext): readonly TitleBarEntry[] {
-  const entries: TitleBarEntry[] = [];
+export function menuBarCommandsModel(
+  registry: CommandRegistry,
+  context: CommandContext,
+): readonly MenuBarCommandEntry[] {
+  const entries: MenuBarCommandEntry[] = [];
   for (const command of registry.available(context)) {
     for (const placement of command.placements) {
-      const slot = titleBarSlot(placement);
-      if (slot !== undefined) entries.push({ command, order: slot.order, emphasis: slot.emphasis });
+      const slot = menuBarCommandsSlot(placement);
+      if (slot !== undefined) entries.push({ command, order: slot.order, tone: slot.tone });
     }
   }
   return ordered(entries);
 }
 
-function titleBarSlot(placement: Placement): TitleBarPlacement | undefined {
+function menuBarCommandsSlot(placement: Placement): MenuBarCommandsPlacement | undefined {
   switch (placement.surface) {
-    case 'title-bar':
+    case 'menu-bar-commands':
       return placement;
     case 'ribbon':
     case 'quick-toolbar':
@@ -630,7 +632,7 @@ function menuBarSlot(placement: Placement): MenuBarPlacement | undefined {
     case 'context-menu':
     case 'start-screen':
     case 'status-bar':
-    case 'title-bar':
+    case 'menu-bar-commands':
     case 'rail':
     case 'properties':
       return undefined;

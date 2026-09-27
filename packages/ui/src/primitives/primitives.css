@@ -84,6 +84,38 @@
   text-decoration: underline;
 }
 
+/* THE OWNER'S TWO BRAND TONES (ADR-0113), for the menu row's Donate and Rate Us. Fixed tokens that do not follow the
+   accent, each a declared role: the gold's dark label is held on both of its stops, the violet edge and star at 3:1,
+   and the label on the violet wash is `--text`, held there too. */
+.m-button--gold {
+  border: 1px solid transparent;
+  background: linear-gradient(180deg, var(--gold-top), var(--gold-bottom));
+  color: var(--on-gold);
+}
+
+.m-button--gold:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.m-button--violet {
+  border: 1px solid var(--violet-edge);
+  background: var(--violet-wash);
+  color: var(--text);
+}
+
+.m-button--violet .m-icon {
+  color: var(--violet-mark);
+}
+
+.m-button--violet:hover:not(:disabled) {
+  background: var(--surface2);
+}
+
+/* THE GLYPH ALONE (a row out of room for words): square, the label kept as the name and the tooltip. */
+.m-button--icon-only {
+  padding-inline: var(--space-6);
+}
+
 .m-button:disabled {
   cursor: default;
   color: var(--faint);

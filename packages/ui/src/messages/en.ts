@@ -2114,7 +2114,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ABOUT_COMMAND_TITLE]: 'About',
   [DONATE_TITLE]: 'Support Monstera',
   [DONATE_COMMAND_TITLE]: 'Donate',
-  // v5-01's second title-bar button, word for word.
+  // v5-01's second button beside Donate, word for word.
   [RATE_US_COMMAND_TITLE]: 'Rate Us',
   // E3's prompt: its four answers in E3's words, and a line that asks rather than pleads.
   [REVIEW_PROMPT_MESSAGE]: 'Is Monstera working for you? A rating in the Microsoft Store helps other people find it.',

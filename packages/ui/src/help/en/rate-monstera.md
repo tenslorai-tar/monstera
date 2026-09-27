@@ -10,7 +10,7 @@ A rating in the Microsoft Store helps other people find Monstera.
 
 ## Steps
 
-1. In the title bar, choose **Rate Us**. The Microsoft Store's review page opens.
+1. In the middle of the window's top row, beside **Donate**, choose **Rate Us**. The Microsoft Store's review page opens. It is also in the **Help** menu.
 2. Now and then a note at the bottom of the window asks whether Monstera is working for you. Choose **Rate now**, **Already reviewed**, **Later** or **Don't ask again**.
 
 ![The rating note at the bottom of the window with its four answers](screenshot:rate-monstera-1)

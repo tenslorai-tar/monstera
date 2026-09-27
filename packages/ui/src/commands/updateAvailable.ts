@@ -5,7 +5,8 @@ import type { UiCommand } from '../registries/commands.js';
 import { isUpdateOffered } from '../updateStatus.js';
 
 /**
- * *Update available* — ADR-0018's in-app indicator, in the title bar beside Donate and Rate Us (ADR-0095, ADR-0110).
+ * *Update available* — ADR-0018's in-app indicator, at the menu row's centre beside Donate and Rate Us (ADR-0113,
+ * ADR-0110), in the row's plain tone: it is a notice, not a third appeal.
  *
  * ## It exists only when there is something to update to
  *
@@ -26,7 +27,7 @@ export function updateAvailableCommand(deps: {
     id: 'app.update-available',
     icon: 'Download',
     title: UPDATE_AVAILABLE_TITLE,
-    placements: [{ surface: 'title-bar', emphasis: 'normal', order: 3 }],
+    placements: [{ surface: 'menu-bar-commands', tone: 'plain', order: 3 }],
     when: () => isUpdateOffered(deps.status()),
     run: async (): Promise<void> => {
       await deps.client['app.openStore']({ page: 'listing' });

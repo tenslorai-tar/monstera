@@ -18,7 +18,8 @@ export async function rateOnStore(client: ContractClient, toast: ShowToast): Pro
 }
 
 /**
- * *Rate Us* — the design's second title-bar button (v5-01, v5-02), beside *Donate* (ADR-0095).
+ * *Rate Us* — the violet button beside *Donate* at the centre of the menu row (v5-01 and v5-02 drew both in the
+ * title bar; the owner moved them on 2026-09-27, ADR-0113).
  *
  * **Through `app.review`, the rating prompt's own channel**, so a rating given from here and one given from
  * the prompt are the same fact in main's record — E3's `reviewedAt` has one writer, and a person who rated
@@ -31,7 +32,7 @@ export function rateUsCommand(deps: { readonly client: ContractClient; readonly 
     icon: 'Star',
     title: RATE_US_COMMAND_TITLE,
     placements: [
-      { surface: 'title-bar', emphasis: 'normal', order: 2 },
+      { surface: 'menu-bar-commands', tone: 'violet', order: 2 },
       { surface: 'menu-bar', menu: 'help', group: 1, order: 20 },
     ],
     run: () => rateOnStore(deps.client, deps.toast),

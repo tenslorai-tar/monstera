@@ -2,7 +2,7 @@ import { Menu } from '@base-ui/react/menu';
 import { Menubar } from '@base-ui/react/menubar';
 import { useLingui } from '@lingui/react';
 import type { MessageKey } from '@monstera/shared';
-import { Fragment, useEffect, useRef, useState, type ReactElement } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactElement } from 'react';
 
 import titleLogo from '../../../../assets/brand/logo-title.png';
 import {
@@ -19,9 +19,25 @@ import {
   SECTION_REVIEW,
   SECTION_TOOLS,
 } from '../messages/en.js';
+import { Button } from '../primitives/Button.js';
 import { Icon } from '../primitives/Icon.js';
 import type { CommandContext, CommandRegistry, UiCommand } from '../registries/commands.js';
-import { type MenuBarItem, type MenuBarMenuModel, menuBarModel, shortcutMapOf } from './projections.js';
+import { LABELLED, type RowFit, nextRowFit } from './menuRowFit.js';
+import {
+  type MenuBarCommandEntry,
+  type MenuBarItem,
+  type MenuBarMenuModel,
+  menuBarCommandsModel,
+  menuBarModel,
+  shortcutMapOf,
+} from './projections.js';
+
+/** The Button variant each placement tone draws as. Keyed by the placement's union, so a new tone fails to compile. */
+const TONE_VARIANT: Readonly<Record<MenuBarCommandEntry['tone'], 'gold' | 'violet' | 'default'>> = {
+  gold: 'gold',
+  violet: 'violet',
+  plain: 'default',
+};
 
 /** Each menu's name. Keyed by the model's own union, so a menu with no name is a compile error. */
 const MENU_TITLES: Readonly<Record<MenuBarMenuModel['id'], MessageKey>> = {
@@ -54,6 +70,15 @@ const MENU_TITLES: Readonly<Record<MenuBarMenuModel['id'], MessageKey>> = {
  * re-rendering. So opening a menu re-renders this bar, and the model is computed then, from the same context every
  * other surface receives.
  *
+ * ## At its centre, the application's own commands
+ *
+ * Donate and Rate Us ([ADR-0113](../../../../docs/DECISIONS/0113-the-applications-own-commands-sit-at-the-centre-of-the-menu-row.md)),
+ * projected by `menuBarCommandsModel` and drawn in the tone their placement names — never chosen here by id. The row is
+ * three tracks: the mark and the menus, the commands, and a drag track whose minimum is the window controls plus
+ * `--menu-drag-min`. The outer tracks share the free width, so the commands centre on the window; when the menus are
+ * wider than their half they keep their width and the commands follow them. When even that cannot hold the words, the
+ * buttons draw as their icons (`menuRowFit.ts`), which the row decides from its own measured slack.
+ *
  * ## Alt and F10
  *
  * The Windows convention: F10, or Alt pressed and released with no other key between, moves the focus to the first
@@ -74,8 +99,39 @@ export function MenuBar({
   // A COUNTER THE OPENING OF A MENU MOVES, so the model below is recomputed at that moment.
   const [, setOpened] = useState(0);
   const menus = menuBarModel(registry, context);
+  const buttons = menuBarCommandsModel(registry, context);
   const chords = new Map([...shortcutMapOf(registry)].map(([, command]) => [command.id, command.shortcut]));
   const bar = useRef<HTMLDivElement | null>(null);
+  const start = useRef<HTMLDivElement | null>(null);
+  const commands = useRef<HTMLDivElement | null>(null);
+  const reserve = useRef<HTMLDivElement | null>(null);
+  const [fit, setFit] = useState<RowFit>(LABELLED);
+  const hasButtons = buttons.length > 0;
+
+  // THE ROW'S SLACK, measured whenever any of its parts changes width — a window resize, a language, a button
+  // appearing. Its width less its padding, the three parts as drawn, and the two gaps between them.
+  useLayoutEffect(() => {
+    const row = bar.current;
+    if (row === null || !hasButtons || typeof ResizeObserver === 'undefined') return undefined;
+    const measure = (): void => {
+      const style = getComputedStyle(row);
+      const inner = row.clientWidth - parseFloat(style.paddingInlineStart) - parseFloat(style.paddingInlineEnd);
+      const gaps = 2 * parseFloat(style.columnGap || '0');
+      const held = [start, commands, reserve].reduce((sum, part) => sum + (part.current?.offsetWidth ?? 0), 0);
+      const drawn = commands.current?.offsetWidth ?? 0;
+      setFit((was) => {
+        const next = nextRowFit(was, inner - held - gaps, drawn);
+        return next.iconsOnly === was.iconsOnly && next.labelled === was.labelled ? was : next;
+      });
+    };
+    // NO FIRST CALL HERE: an observer reports every element once when it starts observing, which is the first
+    // measurement, and it arrives as a callback rather than as a state change inside this effect.
+    const observer = new ResizeObserver(measure);
+    for (const part of [row, start.current, commands.current]) if (part !== null) observer.observe(part);
+    return (): void => {
+      observer.disconnect();
+    };
+  }, [hasButtons]);
 
   useEffect(() => {
     let altAlone = false;
@@ -171,39 +227,60 @@ export function MenuBar({
 
   return (
     <div className="m-menu-bar" ref={bar}>
-      {/* ADR-0002: the supplied artwork. Decorative — the bar is named, and the window's title names the application. */}
-      <img className="m-menu-bar__logo" src={titleLogo} alt="" />
-      <Menubar className="m-menu-bar__menus" aria-label={_(MENU_BAR_LABEL)}>
-        {menus.map((menu) => (
-          <Menu.Root
-            key={menu.id}
-            onOpenChange={(open) => {
-              if (open) setOpened((count) => count + 1);
-            }}
-          >
-            <Menu.Trigger className="m-menu-bar__trigger" data-menu={menu.id}>
-              {_(MENU_TITLES[menu.id])}
-            </Menu.Trigger>
-            <Menu.Portal>
-              <Menu.Positioner side="bottom" align="start" sideOffset={2}>
-                <Menu.Popup className="m-context-menu m-menu-bar__popup" finalFocus={() => focusBefore() ?? true}>
-                  {menu.groups.map((group, index) => (
-                    <Fragment key={`${String(index)}:${group.caption ?? ''}`}>
-                      {index === 0 ? null : <Menu.Separator className="m-context-menu-separator" />}
-                      <Menu.Group className="m-menu-bar__group">
-                        {group.caption === undefined ? null : (
-                          <Menu.GroupLabel className="m-menu-bar__caption">{_(group.caption)}</Menu.GroupLabel>
-                        )}
-                        {group.items.map(item)}
-                      </Menu.Group>
-                    </Fragment>
-                  ))}
-                </Menu.Popup>
-              </Menu.Positioner>
-            </Menu.Portal>
-          </Menu.Root>
-        ))}
-      </Menubar>
+      <div className="m-menu-bar__start" ref={start}>
+        {/* ADR-0002: the supplied artwork. Decorative — the bar is named, and the window's title names the application. */}
+        <img className="m-menu-bar__logo" src={titleLogo} alt="" />
+        <Menubar className="m-menu-bar__menus" aria-label={_(MENU_BAR_LABEL)}>
+          {menus.map((menu) => (
+            <Menu.Root
+              key={menu.id}
+              onOpenChange={(open) => {
+                if (open) setOpened((count) => count + 1);
+              }}
+            >
+              <Menu.Trigger className="m-menu-bar__trigger" data-menu={menu.id}>
+                {_(MENU_TITLES[menu.id])}
+              </Menu.Trigger>
+              <Menu.Portal>
+                <Menu.Positioner side="bottom" align="start" sideOffset={2}>
+                  <Menu.Popup className="m-context-menu m-menu-bar__popup" finalFocus={() => focusBefore() ?? true}>
+                    {menu.groups.map((group, index) => (
+                      <Fragment key={`${String(index)}:${group.caption ?? ''}`}>
+                        {index === 0 ? null : <Menu.Separator className="m-context-menu-separator" />}
+                        <Menu.Group className="m-menu-bar__group">
+                          {group.caption === undefined ? null : (
+                            <Menu.GroupLabel className="m-menu-bar__caption">{_(group.caption)}</Menu.GroupLabel>
+                          )}
+                          {group.items.map(item)}
+                        </Menu.Group>
+                      </Fragment>
+                    ))}
+                  </Menu.Popup>
+                </Menu.Positioner>
+              </Menu.Portal>
+            </Menu.Root>
+          ))}
+        </Menubar>
+      </div>
+      {hasButtons ? (
+        <div className="m-menu-bar__commands" ref={commands} data-icons-only={fit.iconsOnly ? 'true' : 'false'}>
+          {buttons.map(({ command, tone }) => (
+            <Button
+              icon={command.icon}
+              iconOnly={fit.iconsOnly}
+              key={command.id}
+              label={command.title}
+              onClick={() => {
+                run(command);
+              }}
+              variant={TONE_VARIANT[tone]}
+            />
+          ))}
+        </div>
+      ) : null}
+      {/* THE DRAG TRACK'S MINIMUM, as a box the row can measure: the window controls' area plus `--menu-drag-min`.
+          Empty and hidden from the accessibility tree; the row itself is what moves the window. */}
+      {hasButtons ? <div className="m-menu-bar__reserve" ref={reserve} aria-hidden="true" /> : null}
     </div>
   );
 }
