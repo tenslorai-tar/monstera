@@ -783,6 +783,15 @@ export const START_LICENCE = messageKey('surface.start.licence');
 export const START_F1_HINT = messageKey('surface.start.shortcuts-hint');
 export const KEYBOARD_SHORTCUTS_TITLE = messageKey('dialog.keyboard-shortcuts.title');
 export const KEYBOARD_SHORTCUTS_COMMAND_TITLE = messageKey('command.keyboard-shortcuts.title');
+export const HELP_COMMAND_TITLE = messageKey('command.help.title');
+export const HELP_TITLE = messageKey('dialog.help.title');
+export const HELP_SEARCH = messageKey('dialog.help.search');
+export const HELP_HERE = messageKey('dialog.help.here');
+export const HELP_ALL = messageKey('dialog.help.all');
+export const HELP_NONE = messageKey('dialog.help.none');
+export const HELP_BACK = messageKey('dialog.help.back');
+export const HELP_SHOW_ME = messageKey('dialog.help.show-me');
+export const HELP_ARTICLE_COUNT = messageKey('dialog.help.count');
 export const SHORTCUTS_COMMAND_HEADER = messageKey('dialog.keyboard-shortcuts.command');
 export const SHORTCUTS_CHORD_HEADER = messageKey('dialog.keyboard-shortcuts.chord');
 export const SHORTCUTS_ACTIONS_HEADER = messageKey('dialog.keyboard-shortcuts.actions');
@@ -2436,9 +2445,18 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [START_LICENCE]: 'AGPL 3.0 or later',
   // THE CHORD IS A VALUE, not part of the sentence: it is read off the shortcut map, so the hint cannot name a key
   // the registry does not bind.
-  [START_F1_HINT]: 'Press {chord} for keyboard shortcuts',
+  [START_F1_HINT]: 'Press {chord} for help',
   [KEYBOARD_SHORTCUTS_TITLE]: 'Keyboard shortcuts',
   [KEYBOARD_SHORTCUTS_COMMAND_TITLE]: 'Keyboard shortcuts',
+  [HELP_COMMAND_TITLE]: 'Help centre',
+  [HELP_TITLE]: 'Help centre',
+  [HELP_SEARCH]: 'Search help',
+  [HELP_HERE]: 'For what you are doing',
+  [HELP_ALL]: 'All articles',
+  [HELP_NONE]: 'No article matches that. Try fewer or different words.',
+  [HELP_BACK]: 'Back to the list',
+  [HELP_SHOW_ME]: 'Show me',
+  [HELP_ARTICLE_COUNT]: '{count, plural, one {One article} other {# articles}}',
   [SHORTCUTS_COMMAND_HEADER]: 'Command',
   [SHORTCUTS_CHORD_HEADER]: 'Shortcut',
   [SHORTCUTS_ACTIONS_HEADER]: 'Change',

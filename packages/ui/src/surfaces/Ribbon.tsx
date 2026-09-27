@@ -86,7 +86,18 @@ export interface RibbonProps {
   readonly context: CommandContext;
   /** Where the active section and the layout mode live. */
   readonly settings: SettingsStore;
+  /**
+   * A control the Help centre's *Show me* asked to ring (ADR-0112 Decision 4), stamped with a count so the same
+   * command asked twice rings twice. The opener has already brought its section to the front.
+   */
+  readonly showing?: { readonly id: string; readonly stamp: number } | undefined;
 }
+
+/** How long a *Show me* ring stays: three pulses of the animation in `app.css`. */
+export const SHOW_ME_MS = 3000;
+
+/** A command id as the registry spells them, so it can sit inside an attribute selector unescaped. */
+const COMMAND_ID = /^[a-z0-9.-]+$/u;
 
 /**
  * A section's visible name.
@@ -96,7 +107,7 @@ export interface RibbonProps {
  * translation should be found, rather than at runtime as a rail entry labelled
  * with its own id.
  */
-const SECTION_TITLES: Readonly<Record<SectionId, MessageKey>> = {
+export const SECTION_TITLES: Readonly<Record<SectionId, MessageKey>> = {
   home: SECTION_HOME,
   comment: SECTION_COMMENT,
   edit: SECTION_EDIT,
@@ -123,7 +134,7 @@ const SECTION_ICONS: Readonly<Record<SectionId, IconName>> = {
   tools: 'Wrench',
 };
 
-export function Ribbon({ registry, context, settings }: RibbonProps): ReactElement | null {
+export function Ribbon({ registry, context, settings, showing }: RibbonProps): ReactElement | null {
   const { i18n } = useLingui();
   const chosen = useSetting(settings, RIBBON_SECTION_SETTING);
   const mode = useSetting(settings, LAYOUT_MODE_SETTING);
@@ -131,6 +142,15 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
   const [overlay, setOverlay] = useState(false);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const railRef = useRef<HTMLElement | null>(null);
+  // THE LAST *SHOW ME* THAT FINISHED OR WAS DISMISSED, by stamp. While one is asking, Studio's overlay is open without
+  // being set: DERIVED, so the ring never waits on a state change made inside the effect that rings it.
+  const [spent, setSpent] = useState<number | undefined>(undefined);
+  const asking = showing !== undefined && spent !== showing.stamp;
+  const open = overlay || (mode === 'studio' && asking);
+  const shut = (): void => {
+    setOverlay(false);
+    if (showing !== undefined) setSpent(showing.stamp);
+  };
 
   // CLICK-AWAY AND ESCAPE, only while Studio's overlay is open. A press on the rail is not "away": selecting a section
   // is what opens the overlay, so it must not also close it.
@@ -139,16 +159,21 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
   // rail button they just clicked. A handler on the overlay passed a unit case that fired the key AT the overlay and
   // failed in the production build (2026-09-15), where no real key press lands there. No command claims Escape in
   // Studio — `view.leave-focus` exists only in Focus — so nothing else competes for the key.
+  const stamp = showing?.stamp;
   useEffect(() => {
-    if (mode !== 'studio' || !overlay) return undefined;
+    if (mode !== 'studio' || !open) return undefined;
+    const close = (): void => {
+      setOverlay(false);
+      if (stamp !== undefined) setSpent(stamp);
+    };
     const away = (event: PointerEvent): void => {
       const target = event.target;
       if (!(target instanceof Node)) return;
       if (overlayRef.current?.contains(target) === true || railRef.current?.contains(target) === true) return;
-      setOverlay(false);
+      close();
     };
     const escape = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setOverlay(false);
+      if (event.key === 'Escape') close();
     };
     document.addEventListener('pointerdown', away);
     document.addEventListener('keydown', escape);
@@ -156,7 +181,7 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
       document.removeEventListener('pointerdown', away);
       document.removeEventListener('keydown', escape);
     };
-  }, [mode, overlay]);
+  }, [mode, open, stamp]);
   // MEMOISED, and the fold is why. `ribbonModel` builds a fresh object graph on every render, and an
   // effect keyed on that identity re-runs for ever — it measures, sets state, the render makes
   // another graph, it runs again. That put the ribbon behind the error boundary the first time the
@@ -174,6 +199,46 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
   // one. It is also the honest order: which section is drawn is what decides what gets measured.
   const activeSection = filled.find((section) => section.section === chosen) ?? filled[0];
   const fold = useRibbonFold(activeSection);
+
+  // SHOW ME (ADR-0112 Decision 4): ring the control that runs `showing.id` — its own button, or the *More* or named
+  // menu that holds it, which carries its members in `data-holds` because a closed menu's items are not in the page.
+  // In Studio the tools are an overlay, open while one is asking (`open` above); when the ring ends the overlay stays,
+  // as if the section had been chosen, and goes the way it always does.
+  //
+  // RE-FOUND WHENEVER THE ROW CHANGES, until the ring's time is up: the fold measures a newly shown section after it
+  // is drawn, and can move the button into *More* after it was rung — a ring on an element that then left the page is
+  // a *Show me* that showed nothing. The time runs from the first pass that saw the stamp. Focus moves once, on the
+  // next frame, after the closing dialog has put focus back.
+  const started = useRef<{ readonly stamp: number; readonly at: number } | undefined>(undefined);
+  const focused = useRef<number | undefined>(undefined);
+  const drawnSection = activeSection?.section;
+  const folds = fold.folds;
+  useEffect(() => {
+    if (showing === undefined || !asking || !COMMAND_ID.test(showing.id)) return undefined;
+    const asked = showing.stamp;
+    if (started.current?.stamp !== asked) started.current = { stamp: asked, at: Date.now() };
+    const left = Math.max(started.current.at + SHOW_ME_MS - Date.now(), 0);
+    const finish = window.setTimeout(() => {
+      if (mode === 'studio') setOverlay(true);
+      setSpent(asked);
+    }, left);
+    const selector = `[data-command="${showing.id}"], [data-holds~="${showing.id}"]`;
+    const target =
+      overlayRef.current?.querySelector<HTMLElement>(selector) ?? railRef.current?.querySelector<HTMLElement>(selector);
+    if (target !== null && target !== undefined) target.setAttribute('data-show-me', '');
+    const frame =
+      target === null || target === undefined || focused.current === asked
+        ? undefined
+        : requestAnimationFrame(() => {
+            focused.current = asked;
+            target.focus();
+          });
+    return (): void => {
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      window.clearTimeout(finish);
+      target?.removeAttribute('data-show-me');
+    };
+  }, [showing, asking, mode, open, drawnSection, folds]);
 
   // NOTHING AT ALL when no section holds anything, which is `QuickToolbar`'s
   // rule: an eight-entry rail of disabled buttons over a start screen is a
@@ -236,7 +301,7 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
           </div>
         )}
       </nav>
-      {mode === 'ribbon' || overlay ? (
+      {mode === 'ribbon' || open ? (
       <div
         aria-label={i18n._(RIBBON_TOOLS_LABEL)}
         className={mode === 'studio' ? 'm-ribbon__tools m-ribbon__tools--overlay' : 'm-ribbon__tools'}
@@ -265,7 +330,7 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
                       key={unit.key}
                       named={{ label: unit.menu, icon: entry.command.icon ?? 'File', measuredAs: unit.key }}
                       onChosen={() => {
-                        if (mode === 'studio') setOverlay(false);
+                        if (mode === 'studio') shut();
                       }}
                     />
                   );
@@ -293,7 +358,7 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
                     // wait on IPC, and nothing here reads the result.
                     void entry.command.run(context);
                     // A TOOL CHOICE DISMISSES STUDIO'S OVERLAY (§10.3).
-                    if (mode === 'studio') setOverlay(false);
+                    if (mode === 'studio') shut();
                   }}
                 />
                 );
@@ -307,7 +372,7 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
                   entries={splitFold(group.entries, fold.folds?.[index]).folded}
                   widthFolded={splitFold(group.entries, fold.folds?.[index]).folded.filter((entry) => !entry.secondary).length}
                   onChosen={() => {
-                    if (mode === 'studio') setOverlay(false);
+                    if (mode === 'studio') shut();
                   }}
                 />
               )}

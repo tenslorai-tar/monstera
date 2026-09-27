@@ -1438,7 +1438,7 @@ registry exists to forbid.**
 [ADR-0111](DECISIONS/0111-a-key-a-person-chose-is-a-setting-applied-before-the-registry-is-built.md)). A
 command's `shortcut` has two writers once a person can rebind it: the registration writes the default, and the
 setting `keyboard.shortcuts` writes the choice. They meet in ONE function, applied to the command list before
-`CommandRegistry` is constructed, so every projection — the shortcut map, the F1 list, the menu bar, the palette,
+`CommandRegistry` is constructed, so every projection — the shortcut map, the shortcut list, the menu bar, the palette,
 context menus — keeps reading `command.shortcut` and none of them learns there are two sources. A choice is
 validated where it is made (a conflict names the other command; a key the platform, the input method or the
 application's own navigation owns is refused) and never reaches the map unvalidated, because the map's conflict is

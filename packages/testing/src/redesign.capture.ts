@@ -72,7 +72,7 @@ for (const look of LOOKS) {
     await openDocument(page);
     await shot(page, look, '2-document');
 
-    await page.keyboard.press('F1');
+    await page.keyboard.press('Control+Slash');
     await expect(page.getByRole('dialog')).toBeVisible();
     await page.waitForTimeout(600);
     await shot(page, look, '4-dialog');

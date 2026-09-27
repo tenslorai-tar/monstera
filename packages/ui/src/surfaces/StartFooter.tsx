@@ -6,7 +6,7 @@ import { Button } from '../primitives/Button.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
 import { shortcutMapOf, startScreenModel } from './projections.js';
 
-/** §10.3's footer names F1; the hint shows only while the shortcut map binds it. */
+/** The footer names F1, which opens the Help centre (ADR-0112); the hint shows only while the shortcut map binds it. */
 const HELP_CHORD = 'f1';
 
 /**

@@ -54,3 +54,28 @@ articles are English, like the catalogue's only shipped locale.
 - **Keeping F1 for the shortcuts** and giving help another key: the owner's list names F1, which is also the key
   Windows applications give help by convention (Microsoft's Win32 keyboard guidance lists it so — read by a helper on
   2026-09-26, not re-read here).
+
+## Corrections, 2026-09-27, in the commit that built it
+
+1. **Decision 1's subset is wider by two things.** A web address written `<https://…>` is read as an *address* and
+   drawn as text to select and copy — never a link, because the renderer has no route to open a page and an article is
+   not the place to grow one; only `https:` is read, so no other scheme can be named. And front matter takes an
+   `outside:` list: bold words that name another application's controls (the Azure portal's *Keys and Endpoint*),
+   exempt from Decision 2's catalogue check and visible in review because they are listed.
+2. **Decision 2 checks more than it said, and the words it said were not enough.** A bold word is compared in every
+   form the catalogue can show — each plural branch, each placeholder as *…* — or *This page* and *Add … to dictionary*
+   read as stale. The catalogue check cannot see a word in the wrong PLACE, and the drafts had several (Home's
+   secondaries had moved to Tools › Convert and the File menu), so two more checks read the registry: every
+   *"choose SECTION, then TOOL in the GROUP group"* and its two other phrasings must be where the ribbon puts that
+   tool, and a section an article is listed under must hold one of its tools. A place said across two steps is outside
+   the sentence check, and a menu-bar route is checked for its words only.
+3. **Decision 4's *More* was not reachable.** A closed menu's items are not in the page, so a tool folded into a
+   group's *More* or a named menu had no element to ring. The trigger now carries its members in `data-holds`, and the
+   ring lands on it. The ribbon re-finds the control whenever the row changes until the ring's time is up, because the
+   fold measures a newly shown section after it is drawn and can move the button after it was rung. *Show me* also
+   moves focus to the control, and is not offered in Focus, where the ribbon is not drawn.
+4. **Ctrl+/ is the US layout's key.** A layout that types `/` with Shift produces Ctrl+Shift+/, which the list's
+   default does not answer; the Help menu and the editor, where any key can be chosen, are the routes there.
+5. **The `dialog.*` contexts are inert for F1.** No application shortcut runs over an open dialog (ADR-0111), so F1
+   is never pressed from one and its articles are never listed first by it; the contexts are checked and kept for a
+   dialog that later gains a help link.

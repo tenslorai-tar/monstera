@@ -1,0 +1,26 @@
+---
+id: donate
+title: Support Monstera with a donation
+summary: Open Monstera's donation page in your browser.
+keywords: [donate, donation, support, contribute, sponsor]
+commands: [app.donate]
+contexts: [dialog.donate]
+---
+If you would like to support the people who make Monstera, you can make a donation.
+
+## Steps
+
+1. In the title bar, choose **Donate**.
+2. The **Support Monstera** window explains what a donation pays for. Choose **Open the donation page** to continue in your browser, or **Not now**.
+
+![The Support Monstera window](screenshot:donate-1)
+
+## Good to know
+
+- The donation page opens in your web browser. Monstera never sees your payment details.
+- Donating is entirely optional; nothing in Monstera changes either way.
+
+<!--
+Screenshots to capture:
+1. donate-1 — dialog.donate opened from the title bar. Frame the dialog and the Donate button.
+-->

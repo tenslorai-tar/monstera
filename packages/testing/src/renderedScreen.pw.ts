@@ -1144,7 +1144,7 @@ test('a DIALOG taller than the window stays inside it, and its body scrolls to t
   await page.setViewportSize({ width: 1280, height: 420 });
   await bridge(page, {});
   await page.goto('/');
-  await page.keyboard.press('F1');
+  await page.keyboard.press('Control+Slash');
 
   const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
   await expect(dialog).toBeVisible();
@@ -1214,7 +1214,7 @@ test('NOTHING DRAWS OVER A DIALOG: every stacked element of the window sits unde
   expect(alone.stacked).toBeGreaterThan(0);
   expect(alone.self).toBe(alone.stacked);
 
-  await page.keyboard.press('F1');
+  await page.keyboard.press('Control+Slash');
   await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeVisible();
   const withDialog = await probe();
   expect(withDialog.stacked).toBe(alone.stacked);
@@ -1600,22 +1600,30 @@ test('the START SCREEN draws the supplied logo, the hero lines, one primary Open
   expect(build.x + build.width).toBeGreaterThan((viewport.width * 3) / 4);
 });
 
-test('F1 opens the KEYBOARD SHORTCUTS list from the registry, and the start screen footer names the key', async ({
-  page,
-}) => {
-  // §10.3's footer: "Press F1 for keyboard shortcuts". In Chromium, because a browser may claim F1 for itself before a
+test('F1 opens the HELP CENTRE, Ctrl+/ the keyboard shortcuts, and the start screen footer names F1', async ({ page }) => {
+  // ADR-0112: F1 is help, and the footer says so. In Chromium, because a browser may claim F1 for itself before a
   // page's listener sees it — the production build is where that would show.
   await bridge(page);
   await page.goto('/');
 
-  await expect(page.locator('.m-start-footer')).toContainText('Press F1 for keyboard shortcuts');
+  await expect(page.locator('.m-start-footer')).toContainText('Press F1 for help');
 
   await page.keyboard.press('F1');
+  const help = page.getByRole('dialog', { name: 'Help centre' });
+  await expect(help).toBeVisible();
+  // THE START SCREEN'S ARTICLES FIRST, then every article: the list is the bundled articles, not an empty shell.
+  await expect(help.getByRole('heading', { name: 'For what you are doing' })).toBeVisible();
+  await expect(help.locator('.m-help__item').first()).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(help).toHaveCount(0);
+
+  await page.keyboard.press('Control+Slash');
   const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
   await expect(dialog).toBeVisible();
   const table = dialog.getByRole('table');
   await expect(table.getByRole('row').filter({ hasText: 'Open PDF…' })).toContainText('Ctrl+O');
-  await expect(table.getByRole('row').filter({ hasText: 'Keyboard shortcuts' })).toContainText('F1');
+  await expect(table.getByRole('row').filter({ hasText: 'Keyboard shortcuts' })).toContainText('Ctrl+/');
+  await expect(table.getByRole('row').filter({ hasText: 'Help centre' })).toContainText('F1');
 
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);

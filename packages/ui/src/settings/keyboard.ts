@@ -11,7 +11,7 @@ import type { SettingDefinition } from '../registries/settings.js';
  * command a person never touched has no entry and keeps its registered default, so a default a later build changes
  * reaches everyone who did not choose otherwise.
  *
- * **Remembered, not a row**: its control is the keyboard shortcuts dialog (F1), where each key is changed against the
+ * **Remembered, not a row**: its control is the keyboard shortcuts dialog (Ctrl+/), where each key is changed against the
  * whole list — a generic Settings row could not show which command a key would collide with. The bounds are the
  * dialog's own: 512 commands, 64 characters a chord.
  */

@@ -14,6 +14,7 @@ import {
   railModel,
   ribbonModel,
   shortcutMapOf,
+  showMeModel,
   startScreenModel,
   statusBarModel,
 } from './projections.js';
@@ -568,5 +569,31 @@ describe('normaliseChord', () => {
     // A normaliser that dropped modifiers would satisfy every line above.
     expect(normaliseChord('Ctrl+P')).not.toBe(normaliseChord('Ctrl+Shift+P'));
     expect(normaliseChord('Ctrl+P')).not.toBe(normaliseChord('Alt+P'));
+  });
+});
+
+describe('showMeModel', () => {
+  it('names a command’s first ribbon section, the rail for the rail’s foot, and nothing for a menu or a hidden one', () => {
+    // ADR-0112 Decision 4: a *Show me* is offered only where a control is drawn. Each case below separates one branch —
+    // the menu-only command is the one a projection that took ANY placement would wrongly offer.
+    const model = showMeModel(
+      new CommandRegistry([
+        command('two.places', [
+          { surface: 'menu-bar', menu: 'file', group: 0, order: 1 },
+          { surface: 'ribbon', section: 'organize', group: messageKey('group.pages'), order: 1 },
+          { surface: 'ribbon', section: 'home', group: messageKey('group.pages'), order: 1 },
+        ]),
+        command('app.settings', [{ surface: 'rail', order: 10 }]),
+        command('menu.only', [{ surface: 'menu-bar', menu: 'help', group: 0, order: 1 }]),
+        command('edit.hidden', [{ surface: 'ribbon', section: 'edit', group: messageKey('group.text'), order: 1 }], {
+          when: () => false,
+        }),
+      ]),
+      context,
+    );
+    expect([...model].map(([id, where]) => [id, where.section])).toStrictEqual([
+      ['two.places', 'organize'],
+      ['app.settings', 'rail'],
+    ]);
   });
 });

@@ -7,8 +7,8 @@ import { normaliseChord } from '../surfaces/projections.js';
 import type { ShortcutRow } from '../surfaces/shortcutChoice.js';
 
 /**
- * Opens the keyboard shortcuts — the list, and where any key is changed (§10.3's footer: *"Press F1 for keyboard
- * shortcuts"*; [ADR-0111](../../../../docs/DECISIONS/0111-a-key-a-person-chose-is-a-setting-applied-before-the-registry-is-built.md)).
+ * Opens the keyboard shortcuts — the list, and where any key is changed (the founding record's D12 *"keyboard shortcut
+ * reference"*; [ADR-0111](../../../../docs/DECISIONS/0111-a-key-a-person-chose-is-a-setting-applied-before-the-registry-is-built.md)).
  *
  * ## The rows are read WHEN IT RUNS, through a function
  *
@@ -22,9 +22,10 @@ import type { ShortcutRow } from '../surfaces/shortcutChoice.js';
  * reaches a person who never chose otherwise. The shell rebuilds its registry from the setting, so the new key works
  * as soon as it is written — the menus and the palette read it from the same field.
  *
- * ## F1, and the ribbon beside About
+ * ## Ctrl+/, and the ribbon beside About
  *
- * F1 because §10.3 names it. The ribbon placement puts it in Tools › Application beside About.
+ * Ctrl+/ since ADR-0112 gave F1 to the Help centre, which is the key the owner's list names for help; this was F1
+ * because §10.3 named it before that amendment. The ribbon placement puts it in Tools › Application beside About.
  */
 export function keyboardShortcutsCommand(deps: {
   readonly ask: (id: string, props: unknown, onUpdate?: (result: unknown) => void) => Promise<unknown>;
@@ -37,7 +38,7 @@ export function keyboardShortcutsCommand(deps: {
     id: 'app.keyboard-shortcuts',
     icon: 'Keyboard',
     title: KEYBOARD_SHORTCUTS_COMMAND_TITLE,
-    shortcut: 'F1',
+    shortcut: 'Ctrl+/',
     placements: [
       // SECONDARY since Help › Keyboard shortcuts exists (ADR-0107).
       { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 930, prominence: 'secondary' },

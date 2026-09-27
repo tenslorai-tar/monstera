@@ -91,8 +91,8 @@ for (const look of LOOKS) {
     await openedOn(page, look);
     await expect(page).toHaveScreenshot(`${look.name}-start.png`);
 
-    // ONE DIALOG: the keyboard shortcuts list, opened the way a reader opens it.
-    await page.keyboard.press('F1');
+    // ONE DIALOG: the keyboard shortcuts list, opened the way a reader opens it (Ctrl+/ since ADR-0112).
+    await page.keyboard.press('Control+Slash');
     const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
     await expect(dialog).toBeVisible();
     // THE BODY ARRIVES WITH ITS CHUNK, after the title: a registered dialog is `lazy`, so the

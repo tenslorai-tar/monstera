@@ -46,7 +46,7 @@ describe('the registered settings', () => {
     // THE ANNOTATION COLOUR LEFT THIS LIST 2026-09-15 (ADR-0056's correction): it is
     // a colour kind now. The accent stays, because it can be refused on apply — and since
     // 2026-09-22 the Settings dialog draws it with a control of its own, the design's swatches.
-    // AND THE CHOSEN KEYS (ADR-0111), a map of command to chord whose control is the keyboard shortcuts dialog (F1),
+    // AND THE CHOSEN KEYS (ADR-0111), a map of command to chord whose control is the keyboard shortcuts dialog (Ctrl+/),
     // where each key is changed against the whole list — no generic row could show what a key collides with.
     expect(excluded).toStrictEqual(['appearance.accent', 'editing.personal-dictionary', 'keyboard.shortcuts']);
 

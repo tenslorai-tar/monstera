@@ -38,8 +38,8 @@ function harness(reports: readonly unknown[], rows: () => readonly ShortcutRow[]
 }
 
 describe('the keyboard shortcuts command', () => {
-  it('is bound to F1, the key §10.3’s footer names', () => {
-    expect(harness([]).command.shortcut).toBe('F1');
+  it('is bound to Ctrl+/, since ADR-0112 gave F1 to the Help centre', () => {
+    expect(harness([]).command.shortcut).toBe('Ctrl+/');
   });
 
   it('opens the dialog with the rows read when it RUNS, and the dropped choices', () => {

@@ -13,7 +13,7 @@ import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
 import { LAYOUT_MODE_SETTING, RIBBON_SECTION_SETTING } from '../settings/layout.js';
 import { SettingsStore } from '../settingsStore.js';
-import { Ribbon } from './Ribbon.js';
+import { Ribbon, SHOW_ME_MS } from './Ribbon.js';
 
 /**
  * §10.3's rail state and the three chrome modes, as the ribbon presents them: *"The rail's state model is identical in
@@ -183,5 +183,88 @@ describe('the ribbon’s section and modes', () => {
     press(railButton(container, 'organize'));
     const strip = screen.getByRole('toolbar');
     expect(strip.classList.contains('m-ribbon__tools--overlay')).toBe(false);
+  });
+});
+
+describe('SHOW ME, as the ribbon rings it (ADR-0112 Decision 4)', () => {
+  // A SECONDARY beside Rotate, so it is drawn inside the group's More: the ring must land on the trigger.
+  const SECONDARY = commandOf('b.flip', 'test.modes.rotate', [
+    { surface: 'ribbon', section: 'organize', group: GROUP_ADJUST, order: 20, prominence: 'secondary' },
+  ]);
+
+  function drawShowing(stored: Record<string, unknown>): {
+    readonly show: (showing: { readonly id: string; readonly stamp: number } | undefined) => void;
+  } {
+    const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+    settings.hydrate({ [RIBBON_SECTION_SETTING.id]: 'organize', ...stored });
+    const registry = new CommandRegistry([SAVE, ROTATE, SECONDARY]);
+    const tree = (showing: { readonly id: string; readonly stamp: number } | undefined): ReactElement => (
+      <Wrapped>
+        <Ribbon registry={registry} context={CONTEXT} settings={settings} showing={showing} />
+      </Wrapped>
+    );
+    const { rerender } = render(tree(undefined));
+    return {
+      show: (showing) => {
+        act(() => {
+          rerender(tree(showing));
+        });
+      },
+    };
+  }
+
+  const rung = (): Element | null => document.querySelector('[data-show-me]');
+
+  it('rings the button, for its time, and asking again rings again', () => {
+    vi.useFakeTimers();
+    try {
+      const { show } = drawShowing({});
+      expect(rung()).toBeNull();
+      show({ id: 'b.rotate', stamp: 1 });
+      expect(rung()?.getAttribute('data-command')).toBe('b.rotate');
+      act(() => {
+        vi.advanceTimersByTime(SHOW_ME_MS);
+      });
+      expect(rung()).toBeNull();
+      show({ id: 'b.rotate', stamp: 2 });
+      expect(rung()?.getAttribute('data-command')).toBe('b.rotate');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a tool inside More rings the More that holds it', () => {
+    const { show } = drawShowing({});
+    show({ id: 'b.flip', stamp: 1 });
+    expect(rung()?.getAttribute('data-holds')?.split(' ')).toContain('b.flip');
+  });
+
+  it('STUDIO: opens the overlay to ring, and leaves it open when the ring ends — CONTROL: shut before', () => {
+    vi.useFakeTimers();
+    try {
+      const { show } = drawShowing({ [LAYOUT_MODE_SETTING.id]: 'studio' });
+      expect(screen.queryByRole('toolbar')).toBeNull();
+      show({ id: 'b.rotate', stamp: 1 });
+      expect(screen.queryByRole('toolbar')).not.toBeNull();
+      expect(rung()?.getAttribute('data-command')).toBe('b.rotate');
+      act(() => {
+        vi.advanceTimersByTime(SHOW_ME_MS);
+      });
+      expect(rung()).toBeNull();
+      expect(screen.queryByRole('toolbar')).not.toBeNull();
+      // AND IT GOES THE WAY IT ALWAYS DOES.
+      act(() => {
+        fireEvent.keyDown(document.body, { key: 'Escape' });
+      });
+      expect(screen.queryByRole('toolbar')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('CONTROL: an id outside the registry’s grammar rings nothing rather than reaching a selector', () => {
+    const { show } = drawShowing({});
+    show({ id: 'b.rotate"], *, [x="', stamp: 1 });
+    expect(rung()).toBeNull();
   });
 });

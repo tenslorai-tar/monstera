@@ -657,6 +657,136 @@ textarea {
   justify-content: flex-end;
 }
 
+/* THE HELP CENTRE (ADR-0112): the search over the list, each article a full-width button naming it with its summary
+   under, and an article read at a comfortable measure. */
+.m-help {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.m-help h3 {
+  margin: var(--space-8) 0 0;
+}
+
+.m-help__count {
+  margin: 0;
+  color: var(--muted);
+}
+
+.m-help__count:empty {
+  display: none;
+}
+
+.m-help__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.m-help__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  inline-size: 100%;
+  padding: var(--space-6) var(--space-8);
+  border: 1px solid transparent;
+  border-radius: var(--radius-6);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.m-help__item:hover {
+  border-color: var(--border);
+  background: var(--accent-soft);
+}
+
+.m-help__item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.m-help__item-title {
+  font-weight: 600;
+}
+
+.m-help__item-summary {
+  color: var(--muted);
+}
+
+.m-help__article {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-8);
+  max-inline-size: 70ch;
+}
+
+.m-help__article :is(h3, h4, h5, p, ol, ul) {
+  margin: 0;
+}
+
+.m-help__article :is(ol, ul) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-inline-start: var(--space-20);
+}
+
+.m-help__article h3:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.m-help__show {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+/* AN ADDRESS IS TEXT TO COPY, never a link (`article.ts`), so it breaks anywhere rather than widening the dialog. */
+.m-help__address {
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.m-help__table {
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+
+.m-help__table table {
+  border-collapse: collapse;
+}
+
+.m-help__table :is(th, td) {
+  padding: var(--space-4) var(--space-8);
+  border-block-end: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+}
+
+/* SHOW ME's RING, on the control the Help centre pointed at: the focus ring's colour, pulsed three times, and held
+   still under reduced motion so the control is still marked. */
+[data-show-me] {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  animation: m-show-me 1s ease-in-out 3;
+}
+
+@keyframes m-show-me {
+  50% {
+    outline-offset: 6px;
+  }
+}
+
 /*
  * An open that produced no document. `--text` and not a colour of its own for
  * `.m-status-problem`'s reason: the token set declares no error role, and a raw
@@ -4402,6 +4532,11 @@ textarea {
 /* The message still arrives and still leaves on its timer; only the movement goes. A toast that stayed under
    reduced motion would be a different feature, and one that accumulates. */
 :root[data-motion='reduced'] .m-toast {
+  animation: none;
+}
+
+/* The ring stays for its time; only the pulse goes. */
+:root[data-motion='reduced'] [data-show-me] {
   animation: none;
 }
 

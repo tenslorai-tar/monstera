@@ -892,6 +892,28 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-27 — The Help centre: 133 articles, F1 for where you are, and checks that found the drafts wrong
+
+ADR-0112 (its B4 commit first; the stage audit of the range before it rides in the commit between). What is worth
+keeping:
+
+**The articles were written by helpers and read as right, and the checks said otherwise.** A bold word the catalogue has
+is not a word in the right place: *Save copy* in *Home › File › More* named a real button that moved to the File menu
+days ago, and every word in the sentence still existed. So the registry is asked twice more — is this tool in this
+group of this section, and does a section an article is listed under hold any of its tools. The second caught one the
+first cannot read: a place said across two numbered steps.
+
+**A plural is a word too.** The first catalogue comparison reported *This page* as stale, because the catalogue spells
+it inside `{count, plural, one {This page} …}`. Reading each branch and each placeholder as *…* took the report from
+67 lines to 28, and what remained was real — or another application's words, now listed per article as `outside:`.
+
+**Show me could not reach *More*.** A closed menu's items are not in the page, so a folded tool had nothing to ring.
+The trigger now carries its members, and the ribbon re-finds the control while the ring lasts, because the fold can
+move a button after it was rung. In Studio the overlay is DERIVED open while a *Show me* asks, rather than set inside
+the effect that rings — the hooks lint refused the set, and the derived form is also the one that cannot race it.
+
+---
+
 ## 2026-09-27 — Stage audit of `8d044e72..1e50ee56` — findings TTTTTT-1 to TTTTTT-5
 
 9 commits, 102 files, 8 proofs added, 29 modified and none removed, 11 source files added and 41 changed

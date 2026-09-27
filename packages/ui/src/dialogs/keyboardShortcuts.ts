@@ -25,8 +25,8 @@ export const KEYBOARD_SHORTCUTS_RESULT = z.discriminatedUnion('kind', [
 export type KeyboardShortcutsAnswer = z.infer<typeof KEYBOARD_SHORTCUTS_RESULT>;
 
 /**
- * Every command and its key, where any key can be changed (§10.3's footer: *"Press F1 for keyboard shortcuts"*; the
- * founding record's Part F: *"shortcut editor (rebind any registry command; conflict detection)"*;
+ * Every command and its key, where any key can be changed (the founding record's D12 *"keyboard shortcut reference"*,
+ * on Ctrl+/ since ADR-0112 gave F1 to the Help centre; its Part F: *"shortcut editor (rebind any registry command; conflict detection)"*;
  * [ADR-0111](../../../../docs/DECISIONS/0111-a-key-a-person-chose-is-a-setting-applied-before-the-registry-is-built.md)).
  *
  * ## The command lists and the dialog displays, which is `about.ts`' split

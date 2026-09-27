@@ -6,7 +6,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { activateCatalogue, i18n } from '../i18n.js';
-import { ABOUT_COMMAND_TITLE, EN, KEYBOARD_SHORTCUTS_COMMAND_TITLE, SETTINGS_COMMAND_TITLE } from '../messages/en.js';
+import { ABOUT_COMMAND_TITLE, EN, HELP_COMMAND_TITLE, SETTINGS_COMMAND_TITLE } from '../messages/en.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from '../registries/commands.js';
 import { StartFooter } from './StartFooter.js';
 
@@ -35,9 +35,9 @@ const about: UiCommand = {
 };
 
 const help = (shortcut: string): UiCommand => ({
-  id: 'app.keyboard-shortcuts',
-  icon: 'Keyboard',
-  title: KEYBOARD_SHORTCUTS_COMMAND_TITLE,
+  id: 'app.help',
+  icon: 'CircleHelp',
+  title: HELP_COMMAND_TITLE,
   shortcut,
   placements: [],
   run: () => undefined,
@@ -54,14 +54,14 @@ function drawn(commands: readonly UiCommand[], version: string | undefined): voi
 describe('StartFooter', () => {
   it('names F1 in the hint when the registry binds F1', () => {
     drawn([about, help('F1')], '1.2.3');
-    expect(screen.getByText('Press F1 for keyboard shortcuts')).toBeDefined();
+    expect(screen.getByText('Press F1 for help')).toBeDefined();
   });
 
   it('draws NO hint over a registry that binds nothing to F1 — a sentence naming a dead key is the defect', () => {
     // THE CONTROL for the case above: the same footer, the same command, a different chord. A hint drawn
     // unconditionally passes the first case and fails this one.
     drawn([about, help('Ctrl+/')], '1.2.3');
-    expect(screen.queryByText(/for keyboard shortcuts/u)).toBeNull();
+    expect(screen.queryByText(/for help/u)).toBeNull();
   });
 
   it('draws the version it is given, and no version line without one', () => {

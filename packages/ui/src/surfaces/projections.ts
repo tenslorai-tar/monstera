@@ -223,6 +223,24 @@ function propertiesOrder(placement: Placement): number | undefined {
   }
 }
 
+/**
+ * Where each available command has a control *Show me* can ring (ADR-0112 Decision 4): its first ribbon section, or
+ * the rail's foot. A command with neither is absent — a menu item exists only while its menu is open, and a *Show me*
+ * that rang nothing is the display-only defect.
+ */
+export function showMeModel(
+  registry: CommandRegistry,
+  context: CommandContext,
+): ReadonlyMap<string, { readonly command: UiCommand; readonly section: SectionId | 'rail' }> {
+  const found = new Map<string, { readonly command: UiCommand; readonly section: SectionId | 'rail' }>();
+  for (const command of registry.available(context)) {
+    const ribbon = command.placements.map(ribbonSlot).find((slot) => slot !== undefined);
+    if (ribbon !== undefined) found.set(command.id, { command, section: ribbon.section });
+    else if (command.placements.some((placement) => railOrder(placement) !== undefined)) found.set(command.id, { command, section: 'rail' });
+  }
+  return found;
+}
+
 /** The ribbon's view of one placement, or `undefined` when it belongs elsewhere. */
 function ribbonSlot(
   placement: Placement,

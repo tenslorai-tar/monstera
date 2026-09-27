@@ -57,6 +57,9 @@ export function RibbonMore({
       <Menu.Trigger
         className={named === undefined ? 'm-tool-button m-ribbon__more' : 'm-tool-button m-ribbon__menu'}
         data-command={named?.measuredAs}
+        // THE MEMBERS, for the Help centre's *Show me* (ADR-0112): a closed menu's items are not in the page, so the
+        // trigger is what a ring for one of them lands on.
+        data-holds={entries.map((entry) => entry.command.id).join(' ')}
         data-width-folded={widthFolded === undefined ? undefined : String(widthFolded)}
         nativeButton
       >

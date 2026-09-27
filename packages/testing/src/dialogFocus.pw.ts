@@ -24,7 +24,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('the popup a key opened is focus-visible and draws no outline', async ({ page }) => {
-  await page.keyboard.press('F1');
+  await page.keyboard.press('Control+Slash');
   const popup = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
   await expect(popup).toBeFocused();
   expect(await popup.evaluate((element) => element.matches(':focus-visible'))).toBe(true);
@@ -32,7 +32,7 @@ test('the popup a key opened is focus-visible and draws no outline', async ({ pa
 });
 
 test('CONTROL: Tab onto its Close button, and that control draws its ring', async ({ page }) => {
-  await page.keyboard.press('F1');
+  await page.keyboard.press('Control+Slash');
   const popup = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
   await expect(popup).toBeFocused();
   await page.keyboard.press('Tab');

@@ -9,6 +9,34 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App.js';
 import type { DropOpener, EventSubscriber } from './bridge.js';
 import { reportProblem } from './commands/documentCommands.js';
+import { START_SCREEN_CONTEXT } from './commands/help.js';
+import { HELP_ARTICLES } from './help/articles.js';
+import type { CommandRegistry } from './registries/commands.js';
+import type { DialogRegistry } from './registries/dialogs.js';
+import { SECTION_IDS } from './registries/placement.js';
+import { CONTEXT_PANEL_TAB_SETTING, DOCUMENT_PANEL_SETTING } from './settings/layout.js';
+import { SECTION_TITLES } from './surfaces/Ribbon.js';
+import type { Article, Inline } from './help/article.js';
+
+/** An article's text with its bold written back as `**…**`, one line per block, for the sentence checks below. */
+function markdownOf(article: Article): string {
+  const line = (parts: readonly Inline[]): string =>
+    parts.map((part) => (part.kind === 'bold' ? `**${part.text}**` : part.text)).join('');
+  return article.blocks
+    .flatMap((block) => {
+      switch (block.kind) {
+        case 'heading':
+        case 'paragraph':
+          return [line(block.inline)];
+        case 'numbered':
+        case 'bulleted':
+          return block.items.flatMap((item) => [line(item.inline), ...item.nested.map(line)]);
+        case 'table':
+          return [...block.header, ...block.rows.flat()].map(line);
+      }
+    })
+    .join('\n');
+}
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 import { SettingsRegistry } from './registries/settings.js';
@@ -2365,9 +2393,10 @@ describe('App', () => {
     // BY SLOT (ADR-0068), each counted inside its own container so it counts COMMANDS rather than every control on
     // the page: Open is the one primary button, and About, the log and Settings are the footer's.
     expect(container.querySelectorAll('.m-start-primary button')).toHaveLength(1);
-    // v5-01's FOOTER: Settings and About (Help centre joins them when it is built); the diagnostics log moved to the
-    // Help menu on 2026-09-26, so the footer holding it again is the regression this count catches.
-    expect(container.querySelectorAll('.m-start-footer button')).toHaveLength(2);
+    // v5-01's FOOTER: Settings, About and Help centre (ADR-0112); the diagnostics log moved to the Help menu on
+    // 2026-09-26, so the footer holding it again is the regression this count catches.
+    expect(container.querySelectorAll('.m-start-footer button')).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Help centre' })).toBeDefined();
     // AND THE GRID: §10.3's six feature shortcuts.
     expect(container.querySelectorAll('.m-start-shortcuts button')).toHaveLength(6);
     expect(screen.getByRole('button', { name: 'Open PDF…' })).toBeDefined();
@@ -2378,17 +2407,15 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Settings' })).toBeDefined();
   });
 
-  it('F1 lists the REGISTRY’s shortcuts, and the footer names the key only because the registry binds it', async () => {
-    // §10.3's footer: "Press F1 for keyboard shortcuts". The separating rows are ones only the finished registry can
-    // supply — Open's Ctrl+O, and F1 itself, which is the command that lists them — so a list captured before the
-    // registry existed, or a hard-coded one, cannot pass.
+  it('Ctrl+/ lists the REGISTRY’s shortcuts, F1 among them as the Help centre’s', async () => {
+    // The separating rows are ones only the finished registry can supply — Open's Ctrl+O, Ctrl+/ itself, which is the
+    // command that lists them, and F1 on the Help centre (ADR-0112) — so a list captured before the registry existed,
+    // or a hard-coded one, cannot pass.
     const { client } = recordingClient({ kind: 'cancelled' });
     render(<App client={client} settings={freshSettings()} />);
 
-    expect(screen.getByText('Press F1 for keyboard shortcuts')).toBeDefined();
-
     await act(async () => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F1', bubbles: true, cancelable: true }));
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: '/', ctrlKey: true, bubbles: true, cancelable: true }));
       await Promise.resolve();
     });
 
@@ -2398,7 +2425,158 @@ describe('App', () => {
       (row) => `${row.querySelector('th')?.textContent ?? ''}${row.querySelector('td')?.textContent ?? ''}`,
     );
     expect(rows).toContain('Open PDF…Ctrl+O');
-    expect(rows).toContain('Keyboard shortcutsF1');
+    expect(rows).toContain('Keyboard shortcutsCtrl+/');
+    expect(rows).toContain('Help centreF1');
+  });
+
+  it('F1 opens the HELP CENTRE, and the footer names the key only because the registry binds it', async () => {
+    // ADR-0112 Decision 3: on the start screen, the start screen's articles first. The separating content is the
+    // bundled articles' own — a heading the body draws only over a non-empty context list, and an article title.
+    const { client } = recordingClient({ kind: 'cancelled' });
+    render(<App client={client} settings={freshSettings()} />);
+
+    expect(screen.getByText('Press F1 for help')).toBeDefined();
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F1', bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+
+    const dialog = await screen.findByRole('dialog', { name: 'Help centre' }, { timeout: 2000 });
+    const here = within(dialog).getByRole('heading', { name: 'For what you are doing' });
+    const listed = [...(here.parentElement?.querySelectorAll('[data-article]') ?? [])].map((item) => item.getAttribute('data-article'));
+    const expected = HELP_ARTICLES.filter((article) => article.contexts.includes('start-screen')).map((article) => article.id);
+    expect(expected.length).toBeGreaterThan(0);
+    expect(listed).toStrictEqual(expected);
+  });
+
+  it('every Help article names only commands and places the application REGISTERS', () => {
+    // ADR-0112 Decision 2, against the registries this shell builds rather than a list kept here. The vocabulary of
+    // places is each one's own authority: the rail's sections, the two panels' tab settings, the dialog registry, and
+    // the start screen's name for itself.
+    let built: { readonly commands: CommandRegistry; readonly dialogs: DialogRegistry } | undefined;
+    const { client } = recordingClient({ kind: 'cancelled' });
+    render(<App client={client} settings={freshSettings()} onRegistries={(registries) => (built = registries)} />);
+    if (built === undefined) throw new Error('the shell reported no registries');
+    const { commands, dialogs } = built;
+
+    const places = new Set<string>([
+      START_SCREEN_CONTEXT,
+      ...SECTION_IDS,
+      ...DOCUMENT_PANEL_SETTING.schema.options.map((id) => `panel.${id}`),
+      ...CONTEXT_PANEL_TAB_SETTING.schema.options.map((id) => `context-panel.${id}`),
+    ]);
+    const unknown = HELP_ARTICLES.flatMap((article) => [
+      ...article.commands.filter((id) => commands.get(id) === undefined).map((id) => `${article.id}: command ${id}`),
+      ...article.contexts
+        .filter((place) => !places.has(place) && dialogs.get(place) === undefined)
+        .map((place) => `${article.id}: place ${place}`),
+    ]);
+    expect(unknown, `\n${unknown.join('\n')}\n`).toStrictEqual([]);
+    // CONTROL: the registries are the application's, so a real id is found and an invented one is not.
+    expect(commands.get('document.rotate-page')).toBeDefined();
+    expect(commands.get('document.frobnicate')).toBeUndefined();
+    expect(dialogs.get('dialog.help')).toBeDefined();
+  });
+
+  it('every Help article’s “choose SECTION, then TOOL in the GROUP group” is where the ribbon puts that tool', () => {
+    // ADR-0112 Decision 2's second half. A bold word that exists is not a bold word in the right PLACE: an article can
+    // send a person to a section that no longer holds the tool, in words every one of which the catalogue still has.
+    // Read against every placement of every registered command — `when` is about the moment, not the layout.
+    let commands: CommandRegistry | undefined;
+    const { client } = recordingClient({ kind: 'cancelled' });
+    render(<App client={client} settings={freshSettings()} onRegistries={(registries) => (commands = registries.commands)} />);
+    if (commands === undefined) throw new Error('the shell reported no registries');
+
+    const places = new Set<string>();
+    for (const command of commands.all()) {
+      for (const placement of command.placements) {
+        if (placement.surface !== 'ribbon') continue;
+        // THROUGH THE CATALOGUE THE SCREEN READS, so a caption is compared as it is drawn.
+        const label = i18n._(command.ribbonTitle ?? command.title);
+        // A NAMED MENU (ADR-0101) is chosen by its caption, so *Export in the Data group* names the menu.
+        const menu = placement.menu === undefined ? [] : [i18n._(placement.menu)];
+        for (const shown of new Set([label, i18n._(command.title), ...menu])) {
+          places.add(`${i18n._(SECTION_TITLES[placement.section])} › ${i18n._(placement.group)} › ${shown}`);
+        }
+      }
+    }
+    // THE THREE WAYS THE ARTICLES SAY IT, each read to SECTION › GROUP › TOOL; the third names no section, and is read
+    // against every section. A tool inside *More* is named by its ribbon caption.
+    const B = String.raw`\*\*([^*]+)\*\*`;
+    const sentences = [
+      { pattern: new RegExp(String.raw`choose ${B}, then ${B} in the ${B} group`, 'gu'), order: [1, 3, 2] },
+      { pattern: new RegExp(String.raw`choose ${B}\. In the ${B} group, choose \*\*More\*\*, then ${B}`, 'gu'), order: [1, 2, 3] },
+      { pattern: new RegExp(String.raw`choose \*\*More\*\* in the ${B} group, then ${B}`, 'gu'), order: [0, 1, 2] },
+    ] as const;
+    const claims = HELP_ARTICLES.flatMap((article) =>
+      sentences.flatMap(({ pattern, order }) =>
+        [...markdownOf(article).matchAll(pattern)].map((match) => ({
+          article: article.id,
+          place: order.map((at) => (at === 0 ? '*' : (match[at] ?? ''))).join(' › '),
+        })),
+      ),
+    );
+    // A FLOOR, so a sentence pattern that matched nothing fails here rather than passing on no claims.
+    expect(claims.length).toBeGreaterThan(80);
+    // AN ELLIPSIS IS NOT A DIFFERENCE IN THE NAME: *Merge…* on the button, *Merge* in a sentence.
+    const bare = (place: string): string => place.replaceAll('…', '');
+    const known = new Set([...places].flatMap((place) => [bare(place), bare(place).replace(/^[^›]+›/u, '* ›')]));
+    const wrong = claims.filter((claim) => !known.has(bare(claim.place))).map((claim) => `${claim.article}: ${claim.place}`);
+    expect(wrong, `\n${wrong.join('\n')}\n`).toStrictEqual([]);
+
+    // AND A SECTION AN ARTICLE IS LISTED UNDER holds one of its tools: F1 in that section offers it first, so an
+    // article whose tools all moved away would be offered where nothing it teaches is.
+    const sections = new Set<string>(SECTION_IDS);
+    const misplaced = HELP_ARTICLES.flatMap((article) =>
+      article.contexts
+        .filter((place) => sections.has(place) && article.commands.length > 0)
+        .filter(
+          (section) =>
+            !article.commands.some((id) =>
+              commands?.get(id)?.placements.some((placement) => placement.surface === 'ribbon' && placement.section === section),
+            ),
+        )
+        .map((section) => `${article.id}: ${section}`),
+    );
+    expect(misplaced, `\n${misplaced.join('\n')}\n`).toStrictEqual([]);
+    // CONTROL: the place set is the ribbon's — a real place is in it and the same tool in another section is not.
+    expect(known.has('Organize › Combine › Merge')).toBe(true);
+    expect(known.has('Protect › Combine › Merge')).toBe(false);
+    expect(known.has('* › Combine › Merge')).toBe(true);
+  });
+
+  it('SHOW ME closes the Help centre and rings the command’s own control in the ribbon', async () => {
+    // ADR-0112 Decision 4, end to end in the shell: the article's button answers the command, the command brings the
+    // control's section to the front, and the ribbon marks that control — its own button or the More that holds it.
+    const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
+    render(<App client={client} settings={freshSettings()} />);
+    await withDocumentOpen();
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F1', bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    const dialog = await screen.findByRole('dialog', { name: 'Help centre' }, { timeout: 2000 });
+    // NOTHING RUNG YET, so the ring below is this case's and not left over.
+    expect(document.querySelector('[data-show-me]')).toBeNull();
+    const article = dialog.querySelector<HTMLElement>('[data-article="rotate-pages"]');
+    if (article === null) throw new Error('the list has no rotate-pages article');
+    await act(async () => {
+      article.click();
+      await Promise.resolve();
+    });
+    const show = within(dialog).getByRole('group', { name: 'Show me' });
+    await act(async () => {
+      within(show).getByRole('button', { name: 'Rotate page' }).click();
+      await Promise.resolve();
+    });
+
+    await vi.waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Help centre' })).toBeNull();
+      const rung = document.querySelector('[data-show-me]');
+      expect(rung?.getAttribute('data-command') === 'document.rotate-page' || rung?.getAttribute('data-holds')?.split(' ').includes('document.rotate-page')).toBe(true);
+    });
   });
 
   describe('the start screen reports an open that produced no document', () => {

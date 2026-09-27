@@ -393,6 +393,9 @@ import { RecentFiles } from './RecentFiles.js';
 import { CrashReportOffer } from './CrashReportOffer.js';
 import { DocumentTabs } from './surfaces/DocumentTabs.js';
 import { keyboardShortcutsCommand } from './commands/keyboardShortcuts.js';
+import { helpCommand } from './commands/help.js';
+import { HELP_DIALOG } from './dialogs/help.js';
+import { showMeModel } from './surfaces/projections.js';
 import { shortcutRows, withChosenShortcuts } from './surfaces/shortcutChoice.js';
 import { StartFooter } from './surfaces/StartFooter.js';
 import { TitleBar } from './surfaces/TitleBar.js';
@@ -499,6 +502,12 @@ export interface AppProps {
    * control that renders and does nothing.
    */
   readonly dropOpener?: DropOpener;
+  /**
+   * Told the registries each time they are built. **Composition passes nothing**; a case passes a function, so the
+   * Help centre's articles can be held to the commands and dialogs the application actually registers (ADR-0112
+   * Decision 2) — a list assembled in the test would be a second copy of the registration, which is B3's defect.
+   */
+  readonly onRegistries?: (registries: { readonly commands: CommandRegistry; readonly dialogs: DialogRegistry }) => void;
 }
 
 /** A subscriber that never delivers: the state a surface with no `main` behind it is in. */
@@ -522,7 +531,7 @@ const NO_PAGES: readonly number[] = [];
  */
 const NOTE_MARGIN = 36;
 
-export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: AppProps): ReactElement {
+export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onRegistries }: AppProps): ReactElement {
   /**
    * Every open document, in the order they were opened.
    *
@@ -774,6 +783,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
         CLOUD_DIALOG,
         CLOUD_OUTCOME_DIALOG,
         KEYBOARD_SHORTCUTS_DIALOG,
+        HELP_DIALOG,
         WORD_COUNT_DIALOG,
         PAGE_STRUCTURE_DIALOG,
         SPELL_CHECK_DIALOG,
@@ -1673,6 +1683,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
    */
   const [toolId, setToolId] = useState<string | undefined>(undefined);
   const readTool = useCallback(() => toolId, [toolId]);
+  // THE CONTROL THE HELP CENTRE'S *SHOW ME* ASKED THE RIBBON TO RING (ADR-0112), stamped so asking twice rings twice.
+  const [showing, setShowing] = useState<{ readonly id: string; readonly stamp: number } | undefined>(undefined);
   /**
    * Reading every annotation in the open document, for the eraser.
    *
@@ -2316,6 +2328,23 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
           dropped: () => holder.dropped ?? [],
           settings,
         }),
+        // THE HELP CENTRE ON F1 (ADR-0112): where the person is, read when it runs; *Show me* only where the ribbon is
+        // drawn — Focus draws none — and only for a command it holds, brought to the front before it is rung.
+        helpCommand({
+          ask,
+          tool: readTool,
+          section: () => String(settings.get(RIBBON_SECTION_SETTING.id)),
+          shown: (at) =>
+            holder.registry === undefined || settings.get(LAYOUT_MODE_SETTING.id) === 'focus'
+              ? []
+              : [...showMeModel(holder.registry, at)].map(([id, where]) => ({ id, title: where.command.title })),
+          showMe: (id, at) => {
+            const where = holder.registry === undefined ? undefined : showMeModel(holder.registry, at).get(id);
+            if (where === undefined) return;
+            if (where.section !== 'rail') settings.set(RIBBON_SECTION_SETTING.id, where.section);
+            setShowing((previous) => ({ id, stamp: (previous?.stamp ?? 0) + 1 }));
+          },
+        }),
         openCommand,
         // §10.3's six start-screen shortcuts: the same open, then the feature's section.
         ...featureShortcutCommands({ open: () => openDocument(openDeps), settings }),
@@ -2680,6 +2709,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
       showStart,
     ]);
 
+  // A CASE'S OBSERVER (`onRegistries`): told each registry the shell builds, never in production.
+  useEffect(() => {
+    onRegistries?.({ commands: registry, dialogs });
+  }, [onRegistries, registry, dialogs]);
+
   /**
    * What the scroller needs to let a reader draw: the active tool, and where a
    * finished gesture's command goes.
@@ -2927,7 +2961,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
         // the scroller because an edit remounts it too and no caller's request can
         // reach the scroller that mounts after it (`PageList`'s `revealedStart`).
         <>
-        <Ribbon registry={registry} context={context} settings={settings} />
+        <Ribbon registry={registry} context={context} settings={settings} showing={showing} />
         {/* THE BODY AREA, one element whatever the view renders: a scroller, a
             loading placeholder or a failed canvas. Each of those is otherwise a
             grid item the shell would have to name, and a new state would land in
