@@ -9,6 +9,15 @@ import type { CommandContext, UiCommand } from '../registries/commands.js';
 export const START_SCREEN_CONTEXT = 'start-screen';
 
 /**
+ * Opens the Help centre on one article, from a dialog that pointed a person at it (the OCR dialog's *How to get a
+ * key*). No *Show me*: the caller does not hold the registry, and a *Show me* that rang nothing would be the
+ * display-only defect — the article's steps still say where each control is.
+ */
+export function openHelpArticle(ask: (id: string, props: unknown) => Promise<unknown>, article: string): Promise<unknown> {
+  return ask(HELP_DIALOG_ID, { article, context: null, showable: [] });
+}
+
+/**
  * Opens the Help centre on the article for where the person is
  * ([ADR-0112](../../../../docs/DECISIONS/0112-the-help-centre-is-bundled-articles-and-f1-opens-the-one-for-where-you-are.md)
  * Decision 3): with a tool in use, the article that teaches it; otherwise the list, with the articles for the rail

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
 import type { MessageKey } from '@monstera/shared';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -69,6 +69,32 @@ describe('the recognition dialog', () => {
     expect(screen.getByText(english(OCR_HANDWRITING_READY))).toBeDefined();
     // THE CONTROL: the no-key sentence is exactly what a person with a key must not be told.
     expect(screen.queryByText(handwritingLine)).toBeNull();
+  });
+
+  it('with NO key, offers the Help centre’s article on getting one, and answers with it', () => {
+    const answers: unknown[] = [];
+    render(
+      <Wrapped>
+        <OcrBody
+          pages={[0]}
+          languages={['eng']}
+          servicesReady={false}
+          resolve={(answer) => answers.push(answer)}
+          update={() => undefined}
+        />
+      </Wrapped>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'How to get a key, and what it costs' }));
+    expect(answers).toStrictEqual([{ help: 'ai-keys-and-pricing' }]);
+  });
+
+  it('CONTROL: with a key stored there is no such link — the person it is for has one', () => {
+    render(
+      <Wrapped>
+        <OcrBody pages={[0]} languages={['eng']} servicesReady resolve={() => undefined} update={() => undefined} />
+      </Wrapped>,
+    );
+    expect(screen.queryByRole('button', { name: 'How to get a key, and what it costs' })).toBeNull();
   });
 
   it('names both services and Settings, and no link', () => {

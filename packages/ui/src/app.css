@@ -663,6 +663,18 @@ textarea {
   justify-content: flex-end;
 }
 
+/* THE OCR DIALOG'S HANDWRITING NOTE and, while no key is stored, the link to the article on getting one under it. */
+.m-ocr__handwriting {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.m-ocr__handwriting p {
+  margin: 0;
+}
+
 /* THE HELP CENTRE (ADR-0112): the search over the list, each article a full-width button naming it with its summary
    under, and an article read at a comfortable measure. */
 .m-help {

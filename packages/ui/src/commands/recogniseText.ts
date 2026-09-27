@@ -7,6 +7,7 @@ import { OCR_RESULT } from '../dialogs/ocrResult.js';
 import { ENHANCE_OUTCOME_DIALOG_ID } from '../dialogs/enhanceOutcome.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { SCAN_OUTCOME_DIALOG_ID } from '../dialogs/scanOutcome.js';
+import { openHelpArticle } from './help.js';
 import {
   ENHANCE_COMMAND_TITLE,
   ENHANCE_PROGRESS,
@@ -115,6 +116,11 @@ export function recogniseTextCommand(
       // nothing was dispatched, so there is nothing to undo.
       const parsed = OCR_RESULT.safeParse(answered);
       if (!parsed.success) return;
+      // HOW TO GET A KEY, asked from the handwriting note: the Help centre on that article, and nothing recognised.
+      if ('help' in parsed.data) {
+        await openHelpArticle(deps.ask, parsed.data.help);
+        return;
+      }
 
       const targets =
         parsed.data.pages === 'all'
@@ -398,6 +404,11 @@ export function exportSearchableCommand(
       });
       const parsed = OCR_RESULT.safeParse(answered);
       if (!parsed.success) return;
+      // The same note in the same dialog: the article, and no copy written.
+      if ('help' in parsed.data) {
+        await openHelpArticle(deps.ask, parsed.data.help);
+        return;
+      }
 
       const walked = await recogniseScope(
         deps,

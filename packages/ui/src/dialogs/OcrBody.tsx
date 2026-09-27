@@ -6,6 +6,7 @@ import { useState } from 'react';
 import {
   OCR_HANDWRITING,
   OCR_HANDWRITING_READY,
+  OCR_KEYS_HELP,
   OCR_LANGUAGE,
   OCR_LANGUAGE_NAMES,
   OCR_START,
@@ -14,7 +15,7 @@ import {
 import { Button } from '../primitives/Button.js';
 import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
-import type { OcrAnswer } from './ocrResult.js';
+import { KEYS_ARTICLE, type OcrAnswer } from './ocrResult.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
 
 /**
@@ -58,8 +59,22 @@ export default function OcrBody({
   // with none is exactly where a reader most needs to hear there is another way.
   // AND TRUE OF THIS MACHINE: *add a key* only where none is stored, and where one is, the
   // place the service's tool is.
+  //
+  // AND WHERE TO LEARN HOW: the Help centre's article on getting a key and what it costs, answered rather than opened
+  // here (`ocrResult.ts`), offered only while no key is stored — the person it is for.
   const handwriting = (
-    <p className="m-ocr__handwriting">{_(servicesReady ? OCR_HANDWRITING_READY : OCR_HANDWRITING)}</p>
+    <div className="m-ocr__handwriting">
+      <p>{_(servicesReady ? OCR_HANDWRITING_READY : OCR_HANDWRITING)}</p>
+      {servicesReady ? null : (
+        <Button
+          label={OCR_KEYS_HELP}
+          variant="quiet"
+          onClick={() => {
+            resolve({ help: KEYS_ARTICLE });
+          }}
+        />
+      )}
+    </div>
   );
 
   if (language === null) {

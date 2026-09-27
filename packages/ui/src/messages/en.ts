@@ -612,6 +612,7 @@ export const PAGE_SCOPE_TARGET = messageKey('dialog.page-scope.target');
 export const PAGE_SCOPE_ALL = messageKey('dialog.page-scope.all');
 export const OCR_START = messageKey('dialog.ocr.start');
 export const OCR_HANDWRITING = messageKey('dialog.ocr.handwriting');
+export const OCR_KEYS_HELP = messageKey('dialog.ocr.keys-help');
 export const OCR_HANDWRITING_READY = messageKey('dialog.ocr.handwriting-ready');
 export const EXPORT_EXCEL_SERVICES_NO_KEY = messageKey('dialog.export-excel.services-no-key');
 export const OCR_OUTCOME_TITLE = messageKey('dialog.ocr-outcome.title');
@@ -2291,8 +2292,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // THE ONE LINE THE OWNER SPECIFIED (2026-09-18): handwriting is read by a
   // service since ADR-0085, and a key is what makes its tool appear.
   [OCR_HANDWRITING]: 'To read handwriting, add an Azure or Anthropic key in Settings.',
+  [OCR_KEYS_HELP]: 'How to get a key, and what it costs',
+  // WHERE THE TOOLS ARE, which is Tools › OCR since they left Comment (the recognition tools' own placement).
   [OCR_HANDWRITING_READY]:
-    'To read handwriting, draw a box with the Comment tool that sends it to Azure or to Claude — whichever you have a key for.',
+    'To read handwriting, draw a box with Azure OCR or Claude OCR, in the OCR group of Tools — whichever you have a key for.',
   [EXPORT_EXCEL_SERVICES_NO_KEY]:
     'To read tables from scanned pages with Azure Document Intelligence or Claude, add a key in Settings.',
   [OCR_OUTCOME_TITLE]: 'Recognition',

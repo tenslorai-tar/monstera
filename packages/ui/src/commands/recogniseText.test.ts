@@ -3,6 +3,7 @@ import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { ENHANCE_OUTCOME_DIALOG_ID } from '../dialogs/enhanceOutcome.js';
+import { HELP_DIALOG_ID } from '../dialogs/help.js';
 import { OCR_DIALOG_ID } from '../dialogs/ocr.js';
 import { OCR_OUTCOME_DIALOG_ID } from '../dialogs/ocrOutcome.js';
 import { SCAN_OUTCOME_DIALOG_ID } from '../dialogs/scanOutcome.js';
@@ -217,6 +218,26 @@ describe('the recognise-text command', () => {
     // THE MUTATION-DIALOG GATE (ADR-0038): a dismissal produces no value, so
     // there is nothing to apply — and no page is even read, because the scope is
     // what says which.
+    expect(dispatched).toStrictEqual([]);
+    expect(read).toStrictEqual([]);
+  });
+
+  it('HOW TO GET A KEY opens the Help centre on that article and recognises nothing', async () => {
+    const { client, dispatched, read } = clientOver(['image-only']);
+    const { ask, opened } = recordingAsk({ help: 'ai-keys-and-pricing' });
+
+    await recogniseTextCommand({
+      client,
+      onApplied: () => undefined,
+      stamp: STAMP,
+      ask,
+      track: UNTRACKED,
+      servicesReady: () => false,
+    }).run(contextWith(1));
+
+    expect(opened.map((each) => each.id)).toStrictEqual([OCR_DIALOG_ID, HELP_DIALOG_ID]);
+    expect(opened[1]?.props).toStrictEqual({ article: 'ai-keys-and-pricing', context: null, showable: [] });
+    // CONTROL on the other half: the answer that asked for help is not read as a scope.
     expect(dispatched).toStrictEqual([]);
     expect(read).toStrictEqual([]);
   });
