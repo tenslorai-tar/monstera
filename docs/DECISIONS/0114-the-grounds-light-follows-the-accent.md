@@ -59,3 +59,22 @@ draws no light whatever either setting says, as it does today.
   and the family the check must sweep becomes the whole colour space; the floors would hold only where someone happened
   to look.
 - **Keep the stored greens and tint only the start screen.** The owner's words are *every glow and tint*.
+
+## Correction, 2026-09-27 — a turned light is drawn weaker, and the ground's own colours do not turn
+
+**Decision 1 said the lights keep the design's alpha, and that a pass over the family followed from lightness and
+alpha being fixed. The sweep refuted the first half on its first run.** The design's text and control edges were solved
+to their floors with no headroom — the tightest pair reads 3.00:1 against 3:1, several 4.50:1 against 4.5:1 — so a
+light turned at the design's full strength broke seven pairs by a hundredth, some under a turn of one degree; the
+composite over a ground is not a function of lightness alone. Every light lowers contrast in both themes, so **a turned
+light is drawn at 0.75 of the design's alpha** (`TURNED_STRENGTH`), and the theme's own accent still at all of it — the
+default is the design exactly. At 0.85 three light-theme pairs still failed near a 207° turn; at 0.75 all 144,120
+evaluations pass. The family is still two parameters, so the sweep's argument stands.
+
+**Decision 1 listed the ground's own colours among what turns. They do not.** An opaque near-black turned by its hue
+moves its luminance, and it is the base the floors were solved against. The glows over it, the tints and the rings
+turn; `--app-bg` and the ground gradient's three stops stay the design's.
+
+**The sweep is 360 degrees at five chroma scales, and it costs about a minute** (57 s measured on this machine): parsing
+the same colour strings again was over half of each evaluation (a CPU profile), so the one parser now remembers what it
+has parsed, and the sweep leaves out high contrast, whose lights never turn.

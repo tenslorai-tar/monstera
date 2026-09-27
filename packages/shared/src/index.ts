@@ -25,12 +25,14 @@ export {
   HIGH_CONTRAST_THEME,
   type Rgb,
   channels,
+  channelsWithAlpha,
   contrast,
   luminance,
   onColor,
   onColorRounded,
   textContrastFloor,
 } from './colour.js';
+export { ACCENT_LIGHTS, type LightTurn, NO_TURN, TURNED_STRENGTH, turnFor, turnLight } from './lights.js';
 export { type MessageKey, isDottedName, messageDomain, messageKey } from './messages.js';
 // The matching rule, once. Both the kernel's search and the browser shim's
 // answer to `document.searchPage` take it from here — the shim may not import

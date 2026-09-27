@@ -79,6 +79,20 @@ const SHARED_BUILT = 'packages/shared/dist/colour.js';
 refuseStaleBuild(repoRoot(), TOKEN_CONTRAST, 1);
 
 const colour = await import(pathToFileURL(join(repoRoot(), SHARED_BUILT)).href);
+// THE SAME TURNING RULE THE APPLICATION APPLIES (ADR-0114), from the same built package, so the sweep below holds the
+// floors over the lights a person can actually be shown rather than over this file's idea of them (B3a).
+const lights = await import(pathToFileURL(join(repoRoot(), 'packages/shared/dist/lights.js')).href);
+
+/**
+ * THE FAMILY THE ACCENT CAN REACH, swept whole (ADR-0114). A light keeps its lightness and alpha and takes the
+ * accent's hue and a chroma scale, so every degree at these scales covers every colour a person can type as an
+ * accent, to the degree. Zero is a grey accent's neutral ground; one is the design's own chroma.
+ */
+const SWEEP_DEGREES = 360;
+const SWEEP_SCALES = [0, 0.25, 0.5, 0.75, 1];
+
+/** The theme the accent is never applied in (`App.tsx` clears it there), so its lights are never turned. */
+const UNTURNED_THEME = 'hc';
 
 /** Contrast obligations by category. `null` means the category carries none. */
 const OBLIGATION = {
@@ -374,12 +388,35 @@ export const contrast = colour.contrast;
  */
 
 /**
+ * The themes with every accent light turned, in each theme the accent is applied in. A light that does not parse is
+ * left as it is, which the base evaluation of the same value has already judged.
+ *
+ * @param {Theme[]} themes
+ * @param {{ degrees: number, scale: number }} turn
+ * @returns {Theme[]}
+ */
+export function turnedThemes(themes, turn) {
+  // THE UNTURNED THEME IS LEFT OUT, not copied: its values are the design's under every turn, so the base evaluation
+  // has already held them, and evaluating them again per turn was a third of the sweep for no answer that could differ.
+  return themes.filter((theme) => theme.theme !== UNTURNED_THEME).map((theme) => {
+    const values = new Map(theme.values);
+    for (const name of lights.ACCENT_LIGHTS) {
+      const design = values.get(name);
+      if (design === undefined) continue;
+      values.set(name, lights.turnLight(design, turn) ?? design);
+    }
+    return { theme: theme.theme, values };
+  });
+}
+
+/**
  * @param {string} css
+ * @param {{ degrees: number, scale: number } | null} [turn] every accent light turned by this, or the design as drawn
  * @returns {ContrastResult}
  */
-export function evaluate(css) {
+export function evaluate(css, turn = null) {
   const roles = rolesIn(css);
-  const themes = themesIn(css);
+  const themes = turn === null ? themesIn(css) : turnedThemes(themesIn(css), turn);
 
   if (roles.length === 0) {
     return { blind: 'no @role declarations found', evaluated: 0, deferred: [], failures: [], tightest: null };
@@ -547,7 +584,77 @@ export function scan({ root = repoRoot() } = {}) {
   if (!existsSync(path)) {
     return { blind: `${path} does not exist`, evaluated: 0, deferred: [], failures: [], tightest: null };
   }
-  return evaluate(readFileSync(path, 'utf8'));
+  return acrossAccents(readFileSync(path, 'utf8'));
+}
+
+/**
+ * The design's pairs and then every accent turn's, for any token text — what `scan` runs on the real file, and what
+ * the proof runs on fixtures that must fail only once a light is turned.
+ *
+ * @param {string} css
+ * @returns {ContrastResult}
+ */
+export function acrossAccents(css) {
+  const base = evaluate(css);
+  if (base.blind !== null) return base;
+  return { ...base, ...sweep(css, base) };
+}
+
+/**
+ * Every accent a person can choose, as the family of turns it reaches (ADR-0114), each pair held to its floor under
+ * every one. A failure is reported once per pair, with the turn that first broke it.
+ *
+ * THE SWEEP'S OWN CONTROL: a half turn must change at least one light the file declares. A sweep that changed nothing
+ * — an empty light list, names that no longer match the file, a turning rule that returned its input — would pass
+ * every one of its evaluations for the reason the base evaluation passed, and read as coverage.
+ *
+ * @param {string} css
+ * @param {ContrastResult} base
+ * @returns {Pick<ContrastResult, 'blind' | 'evaluated' | 'failures' | 'tightest'>}
+ */
+function sweep(css, base) {
+  const themes = themesIn(css);
+  const half = turnedThemes(themes, { degrees: 180, scale: 1 });
+  // BY THEME NAME: the half turn leaves the unturned theme out, so an index would pair a theme with a missing one and
+  // read every value as moved — the control passing for the reason it exists to refuse.
+  const moved = half.some((turned) => {
+    const design = themes.find((theme) => theme.theme === turned.theme);
+    return lights.ACCENT_LIGHTS.some(
+      (/** @type {string} */ name) =>
+        design?.values.get(name) !== undefined && design.values.get(name) !== turned.values.get(name),
+    );
+  });
+  if (!moved) {
+    return {
+      blind: 'a half turn of the accent changed no light the token file declares, so the sweep would prove nothing',
+      evaluated: 0,
+      failures: [],
+      tightest: null,
+    };
+  }
+  const failures = [...base.failures];
+  const broken = new Set(failures.map((failure) => failure.split(' is ')[0]));
+  let evaluated = base.evaluated;
+  let tightest = base.tightest;
+  for (const scale of SWEEP_SCALES) {
+    for (let degrees = 0; degrees < SWEEP_DEGREES; degrees += 1) {
+      const turn = { degrees, scale };
+      const result = evaluate(css, turn);
+      evaluated += result.evaluated;
+      const where = `under an accent turned ${String(degrees)}° at chroma ${String(scale)}`;
+      for (const failure of result.failures) {
+        const pair = failure.split(' is ')[0] ?? failure;
+        if (broken.has(pair)) continue;
+        broken.add(pair);
+        failures.push(`${failure} — ${where}`);
+      }
+      const at = result.tightest;
+      if (at !== null && (tightest === null || at.ratio - at.minimum < tightest.ratio - tightest.minimum)) {
+        tightest = { ...at, pair: `${at.pair} (${where})` };
+      }
+    }
+  }
+  return { blind: null, evaluated, failures, tightest };
 }
 
 /** @param {ContrastResult} result @returns {string} */
@@ -566,7 +673,8 @@ export function report(result) {
         : `      tightest: ${result.tightest.pair} at ${result.tightest.ratio.toFixed(2)}:1 ` +
           `against ${result.tightest.minimum}:1\n`;
     return (
-      `  ok  ${result.evaluated} declared token pair(s) meet their contrast obligation\n` +
+      `  ok  ${result.evaluated} declared token pair(s) meet their contrast obligation, the design's and under ` +
+      `every accent turn (${String(SWEEP_DEGREES)} degrees at ${String(SWEEP_SCALES.length)} chroma scales)\n` +
       `  ok  and the control fixture failed the pair it must fail, so that means something\n` +
       margin +
       deferredLines

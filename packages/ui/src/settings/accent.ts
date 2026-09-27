@@ -1,4 +1,4 @@
-import { type Rgb, channels, onColorRounded } from '@monstera/shared';
+import { ACCENT_LIGHTS, type Rgb, channels, onColorRounded, turnFor, turnLight } from '@monstera/shared';
 import { z } from 'zod';
 
 import { ACCENT_TITLE } from '../messages/en.js';
@@ -138,11 +138,12 @@ function surfaces(root: HTMLElement): Rgb[] {
  * @returns `undefined` when applied or cleared, or the reason it was refused
  */
 export function applyAccent(root: HTMLElement, accent: string): string | undefined {
-  if (accent === 'theme') {
-    root.style.removeProperty('--accent');
-    root.style.removeProperty('--on-accent');
-    return undefined;
-  }
+  // EVERYTHING THIS WROTE BEFORE, cleared first: the theme's own values are what a new accent is measured from and
+  // what the lights are turned from, and an override left in place would be read back as the design.
+  root.style.removeProperty('--accent');
+  root.style.removeProperty('--on-accent');
+  for (const light of ACCENT_LIGHTS) root.style.removeProperty(`--${light}`);
+  if (accent === 'theme') return undefined;
 
   const wanted = channels(accent);
   if (wanted === null) return `"${accent}" is not a colour this build can parse.`;
@@ -172,7 +173,22 @@ export function applyAccent(root: HTMLElement, accent: string): string | undefin
     return `No label colour works against the adjusted accent: ${label.error}`;
   }
 
+  // THE GROUND'S LIGHT FOLLOWS (ADR-0114): each light the theme draws, turned by this accent's hue against the theme's
+  // own accent. Read before `--accent` is written, so the reference is the theme's and not this one. A light that does
+  // not parse is left as the design draws it rather than guessed at.
+  const style = getComputedStyle(root);
+  const themeAccent = channels(style.getPropertyValue('--accent').trim());
+  const turned: [string, string][] = [];
+  if (themeAccent !== null) {
+    const turn = turnFor(written.value, themeAccent);
+    for (const light of ACCENT_LIGHTS) {
+      const value = turnLight(style.getPropertyValue(`--${light}`).trim(), turn);
+      if (value !== null) turned.push([`--${light}`, value]);
+    }
+  }
+
   root.style.setProperty('--accent', toHex(written.value));
   root.style.setProperty('--on-accent', toHex(label.value));
+  for (const [name, value] of turned) root.style.setProperty(name, value);
   return undefined;
 }

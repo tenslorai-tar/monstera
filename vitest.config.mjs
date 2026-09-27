@@ -47,7 +47,9 @@ export default defineConfig({
     // regex reported no selector. One file, named, rather than all CSS: the only reader is
     // `DocumentPanel.test.tsx`, which ties the attribute Base UI sets on a chosen tab to the
     // selector the stylesheet styles it by, and processing every stylesheet would change
-    // what every other rendering test loads.
-    css: { include: [/packages[\\/]ui[\\/]src[\\/]app\.css/u] },
+    // what every other rendering test loads. `tokens.css` is the second, for the same reason:
+    // `accentLights.test.ts` holds the real token file's lights to the accent rule, and only
+    // `main.tsx` imports it otherwise, which no test loads.
+    css: { include: [/packages[\\/]ui[\\/]src[\\/](?:app|tokens)\.css/u] },
   },
 });

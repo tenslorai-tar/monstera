@@ -78,6 +78,44 @@ export function textContrastFloor(theme: string | null | undefined): number {
  * could read.
  */
 export function channels(value: string, over: Rgb | null = null): Rgb | null {
+  const parsed = channelsWithAlpha(value);
+  if (parsed === null) return null;
+  const [[red, green, blue], alpha] = parsed;
+  if (alpha >= 1 || over === null) return [red, green, blue];
+  return [
+    red * alpha + over[0] * (1 - alpha),
+    green * alpha + over[1] * (1 - alpha),
+    blue * alpha + over[2] * (1 - alpha),
+  ];
+}
+
+/**
+ * The same parse as {@link channels}, keeping the alpha rather than compositing it away — for a caller that turns a
+ * translucent colour and must hand back one just as translucent (`lights.ts`). **One parser, two answers**: `channels`
+ * is this plus the composite, so the two cannot disagree about what a colour is (B3a).
+ *
+ * @returns the channels and the alpha (1 for an opaque colour), or `null` for a value this does not understand
+ */
+export function channelsWithAlpha(value: string): readonly [Rgb, number] | null {
+  const known = PARSED.get(value);
+  if (known !== undefined) return known;
+  const parsed = parse(value);
+  // BOUNDED, because a caller turning lights mints new strings per turn: past the bound the memory starts again
+  // rather than growing with every colour a long session has seen.
+  if (PARSED.size >= PARSED_BOUND) PARSED.clear();
+  PARSED.set(value, parsed);
+  return parsed;
+}
+
+/**
+ * THE PARSES ALREADY MADE, by the exact text. Measured 2026-09-27 (a CPU profile of `check:tokencontrast`): parsing
+ * the same few token strings again for every background they were composited over was over half of each evaluation,
+ * and the accent sweep runs thousands. Results are immutable tuples, so sharing one is safe.
+ */
+const PARSED = new Map<string, readonly [Rgb, number] | null>();
+const PARSED_BOUND = 4096;
+
+function parse(value: string): readonly [Rgb, number] | null {
   const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/iu.exec(value.trim());
   if (hex !== null) {
     const digits = hex[1] ?? '';
@@ -89,9 +127,12 @@ export function channels(value: string, over: Rgb | null = null): Rgb | null {
             .join('')
         : digits;
     return [
-      Number.parseInt(full.slice(0, 2), 16),
-      Number.parseInt(full.slice(2, 4), 16),
-      Number.parseInt(full.slice(4, 6), 16),
+      [
+        Number.parseInt(full.slice(0, 2), 16),
+        Number.parseInt(full.slice(2, 4), 16),
+        Number.parseInt(full.slice(4, 6), 16),
+      ],
+      1,
     ];
   }
 
@@ -99,15 +140,8 @@ export function channels(value: string, over: Rgb | null = null): Rgb | null {
   if (rgba === null) return null;
   const parts = (rgba[1] ?? '').split(',').map((part) => Number(part.trim()));
   const [red, green, blue, alpha = 1] = parts;
-  if (![red, green, blue].every((part) => Number.isFinite(part))) return null;
-  if (alpha >= 1 || over === null) {
-    return [Number(red), Number(green), Number(blue)];
-  }
-  return [
-    Number(red) * alpha + over[0] * (1 - alpha),
-    Number(green) * alpha + over[1] * (1 - alpha),
-    Number(blue) * alpha + over[2] * (1 - alpha),
-  ];
+  if (![red, green, blue, alpha].every((part) => Number.isFinite(part))) return null;
+  return [[Number(red), Number(green), Number(blue)], alpha];
 }
 
 /** WCAG relative luminance. */

@@ -2461,8 +2461,9 @@ value is genuinely dynamic (a user-chosen annotation color).
 **The ground's light follows the accent** (amended 2026-09-27,
 [ADR-0114](DECISIONS/0114-the-grounds-light-follows-the-accent.md)). Every glow and tint the design draws in green is
 stored once as the design's value and turned, at the point of use, by the chosen accent's OKLCH hue (and scaled by its
-chroma), keeping each light's own lightness and alpha — so the default accent draws the design to the byte, and the
-lights a person can reach form a family small enough for the contrast check to sweep whole. *Background glow*, on by
+chroma), keeping each light's own lightness and drawing it at a fixed share of its alpha — so the default accent draws
+the design to the byte, and the lights a person can reach form a family small enough for the contrast check to sweep
+whole. The ground's own opaque colours do not turn: the floors were solved against them, to the hundredth. *Background glow*, on by
 default, turns the glows and grain off; high contrast has none either way.
 
 **Contrast is enforced, not audited.** CI computes it from the token file

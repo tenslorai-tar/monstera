@@ -14,6 +14,7 @@ import { SHORTCUTS_SETTING } from './keyboard.js';
 import { PRINT_QUALITY_SETTING } from './rendering.js';
 import { UPDATES_SETTINGS } from './updates.js';
 import {
+  BACKGROUND_GLOW_SETTING,
   ORGANIZE_GRID_SIZE_SETTING,
   REDUCE_MOTION_SETTING,
   THEME_SETTING,
@@ -88,6 +89,7 @@ import {
 export const ALL_SETTINGS: readonly SettingDefinition[] = [
   THEME_SETTING,
   ACCENT_SETTING,
+  BACKGROUND_GLOW_SETTING,
   REDUCE_MOTION_SETTING,
   THUMBNAIL_SIZE_SETTING,
   ORGANIZE_GRID_SIZE_SETTING,

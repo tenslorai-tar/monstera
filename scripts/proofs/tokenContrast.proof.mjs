@@ -24,12 +24,21 @@ import { readFileSync } from 'node:fs';
 
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
-import { channels, contrast, evaluate, rolesIn, scan, themesIn, tokenFile } from '../lib/tokenContrast.mjs';
+import {
+  acrossAccents,
+  channels,
+  contrast,
+  evaluate,
+  rolesIn,
+  scan,
+  themesIn,
+  tokenFile,
+} from '../lib/tokenContrast.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 17 });
+const roster = createRoster(failures, { cases: 19 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -285,6 +294,37 @@ try {
       ).failures.some((failure) => failure.includes('--panel is translucent and declares no @over')),
     `failures: ${litAt('0').failures.join('; ') || 'none'}. Without the glow the pair clears; and a translucent surface ` +
       `that names nothing beneath it is a colour this check cannot know, which it must say rather than read as opaque.`,
+  );
+
+  // ---- 18-19. THE ACCENT SWEEP (ADR-0114) sees a pair that only a turned light breaks, and refuses when it turns nothing
+  // A soft fill the accent turns (`accent-soft` is one of its lights) under a grey text that clears it at the design's
+  // opaque pure green. Turned, it is another hue at the turned strength — translucent, so it presents whatever is under
+  // it — and over black the grey cannot hold. The base evaluation passes; only the sweep can see it. A sweep that turned
+  // nothing — a file with no accent light — must say so, because every evaluation it ran would then pass for the base
+  // evaluation's reason.
+  const softFill = fixture([
+    ' * @role accent-soft surface @over any',
+    ' * @role ink text @on accent-soft',
+    "[data-theme='dark'] {",
+    '  --accent-soft: #00ff00;',
+    '  --ink: #5a5a5a;',
+    '}',
+  ]);
+  const turned = acrossAccents(softFill);
+  check(
+    'the sweep reports a pair that holds at the design and fails under a turned accent, naming the turn',
+    evaluate(softFill).failures.length === 0 &&
+      turned.failures.some((failure) => failure.includes('--ink on --accent-soft') && failure.includes('turned')),
+    `base: ${evaluate(softFill).failures.join('; ') || 'none'}; swept: ${turned.failures.join('; ') || 'none'}. ` +
+      `#5a5a5a on opaque pure green is about 5.0:1; turned, the fill is translucent and over black the grey falls under 4.5.`,
+  );
+  const untouched = acrossAccents(
+    fixture([' * @role bg surface', ' * @role ink text @on bg', "[data-theme='dark'] {", '  --bg: #ffffff;', '  --ink: #000000;', '}']),
+  );
+  check(
+    'CONTROL: a file with no accent light is REFUSED by the sweep, not passed',
+    untouched.blind !== null && untouched.blind.includes('changed no light'),
+    `blind: ${String(untouched.blind)}. A sweep over nothing reads exactly like a sweep that found every pair holding.`,
   );
 
   if (failures.length > 0) {

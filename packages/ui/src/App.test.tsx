@@ -42,7 +42,7 @@ import { EN } from './messages/en.js';
 import { PSEUDO_LOCALE, pseudoCatalogue, pseudoMessage } from './messages/pseudo.js';
 import { SettingsRegistry } from './registries/settings.js';
 import { ALL_SETTINGS } from './settings/all.js';
-import { REDUCE_MOTION_SETTING, THEME_SETTING } from './settings/appearance.js';
+import { BACKGROUND_GLOW_SETTING, REDUCE_MOTION_SETTING, THEME_SETTING } from './settings/appearance.js';
 import { FIRST_PAGE } from './pageNumbering.js';
 import { SettingsStore } from './settingsStore.js';
 import { resetSharedPainter } from './searchHighlight.js';
@@ -2479,6 +2479,19 @@ describe('App', () => {
     const expected = HELP_ARTICLES.filter((article) => article.contexts.includes('start-screen')).map((article) => article.id);
     expect(expected.length).toBeGreaterThan(0);
     expect(listed).toStrictEqual(expected);
+  });
+
+  it('BACKGROUND GLOW reaches the root as the one attribute the stylesheet reads, and follows the setting (ADR-0114)', async () => {
+    const settings = freshSettings();
+    const { client } = recordingClient({ kind: 'cancelled' });
+    render(<App client={client} settings={settings} />);
+    expect(document.documentElement.dataset['glow']).toBe('on');
+    await act(async () => {
+      settings.set(BACKGROUND_GLOW_SETTING.id, false);
+      await Promise.resolve();
+    });
+    // CONTROL IN ONE CASE: the same root, the other value — the attribute follows the setting, not a default.
+    expect(document.documentElement.dataset['glow']).toBe('off');
   });
 
   it('every Help article names only commands and places the application REGISTERS', () => {
