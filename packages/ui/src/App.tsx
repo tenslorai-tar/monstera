@@ -1035,6 +1035,24 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   );
 
   /**
+   * Showing or hiding one layer, from the Layers panel's row: `removeAnnotation`'s shape, through the one dispatch
+   * every surface takes. The panel sent `document.execute` itself until 2026-09-27 and dropped the answer, so the
+   * version main moved to never reached the shell — the checkbox did not change, and every range read after it asked
+   * for a version main had left.
+   */
+  const setLayerVisibility = useCallback(
+    (layer: number, visible: boolean): void => {
+      if (activeId === undefined) return;
+      void applyDocumentCommand({ client, onApplied: applied, ask, stamp }, activeId, {
+        kind: 'setLayerVisibility',
+        layer,
+        visible,
+      });
+    },
+    [activeId, applied, ask, client, stamp],
+  );
+
+  /**
    * Filling one form field, from the row that names it.
    *
    * `removeAnnotation`'s shape on the other walk, and the same reasons: the
@@ -3140,7 +3158,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
               />
             ),
             // Keyed on the version: its own toggle is a command that moves it.
-            layers: <LayersPanel client={client} docId={open.docId} version={open.version} />,
+            layers: (
+              <LayersPanel client={client} docId={open.docId} onToggle={setLayerVisibility} version={open.version} />
+            ),
             // E2's substrate, reached by a person. `onHighlight` is the setter itself,
             // which React keeps stable, and `commands` are the three every dispatch takes.
             search: (

@@ -38,6 +38,9 @@ const LAYERS = [
   { index: 7, name: 'Draft stamp', visible: false },
 ];
 
+/** A toggle nobody reads, for the cases about reading rather than toggling. */
+const NO_TOGGLE = (): void => undefined;
+
 /**
  * A client answering both channels the panel uses, recording what it was sent.
  *
@@ -82,7 +85,7 @@ describe('LayersPanel', () => {
     const { client } = clientAnswering(LAYERS);
     const { container } = render(
       <Wrapped>
-        <LayersPanel client={client} docId={DOC} version={V1} />
+        <LayersPanel client={client} docId={DOC} onToggle={NO_TOGGLE} version={V1} />
       </Wrapped>,
     );
     await settle();
@@ -95,11 +98,21 @@ describe('LayersPanel', () => {
     expect(container.textContent).toContain('Draft stamp');
   });
 
-  it('THE DISPATCH: toggling sends setLayerVisibility with the LAYERS index', async () => {
+  it('THE REPORT: toggling names the LAYER’S index, and the panel sends nothing itself', async () => {
+    // THE SHELL DISPATCHES (App.test's layer case proves it reaches `document.execute` and the version moves); the
+    // panel sending the command itself is the defect this replaced, so `executed` staying empty is half the case.
     const { client, executed } = clientAnswering(LAYERS);
+    const toggled: [number, boolean][] = [];
     const { container } = render(
       <Wrapped>
-        <LayersPanel client={client} docId={DOC} version={V1} />
+        <LayersPanel
+          client={client}
+          docId={DOC}
+          onToggle={(layer, visible) => {
+            toggled.push([layer, visible]);
+          }}
+          version={V1}
+        />
       </Wrapped>,
     );
     await settle();
@@ -109,9 +122,8 @@ describe('LayersPanel', () => {
     container.querySelectorAll('input')[1]?.click();
     await settle();
 
-    expect(executed).toStrictEqual([
-      { docId: DOC, command: { kind: 'setLayerVisibility', layer: 7, visible: true } },
-    ]);
+    expect(toggled).toStrictEqual([[7, true]]);
+    expect(executed).toStrictEqual([]);
   });
 
   it('sends the OPPOSITE of what the layer is, so the command is never a no-op', async () => {
@@ -121,10 +133,18 @@ describe('LayersPanel', () => {
     // error anywhere: it applies, it captures, it inverts, and the document
     // ends where it started. The only way to see it is to toggle a VISIBLE
     // layer and a HIDDEN one and read the two payloads against each other.
-    const { client, executed } = clientAnswering(LAYERS);
+    const { client } = clientAnswering(LAYERS);
+    const toggled: [number, boolean][] = [];
     const { container } = render(
       <Wrapped>
-        <LayersPanel client={client} docId={DOC} version={V1} />
+        <LayersPanel
+          client={client}
+          docId={DOC}
+          onToggle={(layer, visible) => {
+            toggled.push([layer, visible]);
+          }}
+          version={V1}
+        />
       </Wrapped>,
     );
     await settle();
@@ -134,9 +154,9 @@ describe('LayersPanel', () => {
     boxes[1]?.click();
     await settle();
 
-    expect(executed).toStrictEqual([
-      { docId: DOC, command: { kind: 'setLayerVisibility', layer: 3, visible: false } },
-      { docId: DOC, command: { kind: 'setLayerVisibility', layer: 7, visible: true } },
+    expect(toggled).toStrictEqual([
+      [3, false],
+      [7, true],
     ]);
   });
 
@@ -151,7 +171,7 @@ describe('LayersPanel', () => {
     const { client } = clientAnswering(LAYERS);
     const { container } = render(
       <Wrapped>
-        <LayersPanel client={client} docId={DOC} version={V1} />
+        <LayersPanel client={client} docId={DOC} onToggle={NO_TOGGLE} version={V1} />
       </Wrapped>,
     );
     await settle();
@@ -172,13 +192,13 @@ describe('LayersPanel', () => {
     const { client, asked } = clientAnswering(LAYERS);
     const { rerender } = render(
       <Wrapped>
-        <LayersPanel client={client} docId={DOC} version={V1} />
+        <LayersPanel client={client} docId={DOC} onToggle={NO_TOGGLE} version={V1} />
       </Wrapped>,
     );
     await settle();
     rerender(
       <Wrapped>
-        <LayersPanel client={client} docId={DOC} version={asDocVersion(2)} />
+        <LayersPanel client={client} docId={DOC} onToggle={NO_TOGGLE} version={asDocVersion(2)} />
       </Wrapped>,
     );
     await settle();
@@ -193,13 +213,13 @@ describe('LayersPanel', () => {
     const { client, asked } = clientAnswering(LAYERS);
     const { rerender } = render(
       <Wrapped>
-        <LayersPanel client={client} docId={DOC} version={V1} />
+        <LayersPanel client={client} docId={DOC} onToggle={NO_TOGGLE} version={V1} />
       </Wrapped>,
     );
     await settle();
     rerender(
       <Wrapped>
-        <LayersPanel client={client} docId={DOC} version={V1} />
+        <LayersPanel client={client} docId={DOC} onToggle={NO_TOGGLE} version={V1} />
       </Wrapped>,
     );
     await settle();
@@ -211,7 +231,7 @@ describe('LayersPanel', () => {
     const none = clientAnswering([]);
     const { container: empty } = render(
       <Wrapped>
-        <LayersPanel client={none.client} docId={DOC} version={V1} />
+        <LayersPanel client={none.client} docId={DOC} onToggle={NO_TOGGLE} version={V1} />
       </Wrapped>,
     );
     await settle();
@@ -222,7 +242,7 @@ describe('LayersPanel', () => {
     const refused = clientAnswering([], { refuse: true });
     const { container: broken } = render(
       <Wrapped>
-        <LayersPanel client={refused.client} docId={DOC} version={V1} />
+        <LayersPanel client={refused.client} docId={DOC} onToggle={NO_TOGGLE} version={V1} />
       </Wrapped>,
     );
     await settle();
@@ -239,7 +259,7 @@ describe('LayersPanel', () => {
     const { client } = clientAnswering(LAYERS);
     const { container, rerender } = render(
       <Wrapped>
-        <LayersPanel client={client} docId={DOC} version={V1} />
+        <LayersPanel client={client} docId={DOC} onToggle={NO_TOGGLE} version={V1} />
       </Wrapped>,
     );
     await settle();
@@ -247,7 +267,7 @@ describe('LayersPanel', () => {
 
     rerender(
       <Wrapped>
-        <LayersPanel client={client} docId={OTHER} version={V1} />
+        <LayersPanel client={client} docId={OTHER} onToggle={NO_TOGGLE} version={V1} />
       </Wrapped>,
     );
     expect(container.querySelector('.m-layers')).toBeNull();
@@ -257,7 +277,7 @@ describe('LayersPanel', () => {
     const { client, asked } = clientAnswering(LAYERS);
     const { container } = render(
       <Wrapped>
-        <LayersPanel client={client} docId={undefined} version={undefined} />
+        <LayersPanel client={client} docId={undefined} onToggle={NO_TOGGLE} version={undefined} />
       </Wrapped>,
     );
     await settle();

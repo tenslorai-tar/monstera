@@ -36,12 +36,19 @@ export function LayersPanel({
   client,
   docId,
   version,
+  onToggle,
 }: {
   readonly client: ContractClient;
   /** `undefined` with no document open, which renders nothing. */
   readonly docId: DocId | undefined;
   /** The open document's version. A command moves it, and that re-reads. */
   readonly version: DocVersion | undefined;
+  /**
+   * Shows or hides one layer, by its index. The SHELL dispatches it, through `applyDocumentCommand`, so the version
+   * the command moves reaches the shell — and through `version` above, this panel. A panel that sent the command itself
+   * dropped the answer, and nothing on screen moved.
+   */
+  readonly onToggle: (layer: number, visible: boolean) => void;
 }): ReactElement | null {
   const { i18n } = useLingui();
   const [state, setState] = useState<PanelState>({ kind: 'idle' });
@@ -94,14 +101,7 @@ export function LayersPanel({
                   type="checkbox"
                   checked={layer.visible}
                   onChange={() => {
-                    void client['document.execute']({
-                      docId,
-                      command: {
-                        kind: 'setLayerVisibility',
-                        layer: layer.index,
-                        visible: !layer.visible,
-                      },
-                    });
+                    onToggle(layer.index, !layer.visible);
                   }}
                 />
                 <span className="m-layer-name">{layer.name}</span>

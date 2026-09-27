@@ -892,6 +892,27 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-27 — The three old leftovers, stated; and a Layers toggle that never reached the screen
+
+The 26 September list, item 10: each leftover stated as owed or closed, with its stage. A helper's notes were the draft
+and each claim was checked at its code before it was written.
+
+- **D1's `cmaps/`: owed, Stage 10, before release.** Its trigger, *the first CJK document in the corpus*, is not one
+  this build can fire, and the gap does not wait on it: no `cMapUrl`, no `BinaryDataFactory`, and a CSP that forbids the
+  fetch. PDF.js 6's `BinaryDataFactory` is the route that keeps the CSP.
+- **ADR-0084's row: open, Stage 10.** The mechanism is built; the two-image peak is unmeasured and over `main`'s budget
+  by arithmetic.
+- **Invariant 18 clause (ii): a Stage 10 ship blocker, and wider than recorded.** A host death reopens from the
+  canonical image, which only `'image'` commands refresh, so rotations and document protection since the last refresh
+  are dropped while the log says applied — read from the code, not reproduced. The replay needs a base, which is a B4.
+
+**The Layers toggle was the one defect found on the way, and it was the pair's own blind spot.** The panel dispatched
+for itself and dropped the answer; its test moved the version by hand, so the half that was missing was exactly the
+half nobody's case crossed. It now goes through the one dispatch, and the shell's case asserts both the command and the
+re-read.
+
+---
+
 ## 2026-09-27 — Stage audit of `1e50ee56..7ff18bb9` — findings UUUUUU-1 to UUUUUU-5
 
 6 commits, 198 files, 5 proofs added, 10 modified and none removed, 140 source files added (133 of them Help

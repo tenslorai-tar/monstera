@@ -2551,6 +2551,37 @@ describe('App', () => {
     expect(known.has('* › Combine › Merge')).toBe(true);
   });
 
+  it('a LAYER toggled in its panel reaches the engine and the version it moves reaches the panel', async () => {
+    // THE SHELL'S HALF of the Layers pair (LayersPanel.test's is the report). Until 2026-09-27 the panel sent the
+    // command itself and dropped the answer: the version main moved to never reached the shell, so the panel did not
+    // re-read — the control looked dead — and every range read after it named a version main had left.
+    const { client, sent } = answeringClient({
+      ...OPEN_DOCUMENT_ANSWERS,
+      'document.layers': { version: asDocVersion(1), layers: [{ index: 7, name: 'Draft stamp', visible: false }] },
+      'document.execute': { version: asDocVersion(2), byteLength: 1024, historyDropped: 0 },
+    });
+    render(<App client={client} settings={freshSettings()} />);
+    await withDocumentOpen();
+    await openPanel('Layers');
+    const box = await screen.findByRole('checkbox', { name: 'Draft stamp' });
+    const readsBefore = sent.filter((call) => call.id === 'document.layers').length;
+    expect(readsBefore).toBeGreaterThan(0);
+
+    await act(async () => {
+      box.click();
+      await Promise.resolve();
+    });
+
+    await vi.waitFor(() => {
+      const executed = sent.filter((call) => call.id === 'document.execute');
+      expect(executed).toHaveLength(1);
+      expect(executed[0]?.params).toMatchObject({ docId: DOC, command: { kind: 'setLayerVisibility', layer: 7, visible: true } });
+      // THE VERSION MOVED IN THE SHELL, which is the only way the panel re-reads — the defect's control: a dropped
+      // answer sends the command above and never asks again.
+      expect(sent.filter((call) => call.id === 'document.layers').length).toBeGreaterThan(readsBefore);
+    });
+  });
+
   it('SHOW ME closes the Help centre and rings the command’s own control in the ribbon', async () => {
     // ADR-0112 Decision 4, end to end in the shell: the article's button answers the command, the command brings the
     // control's section to the front, and the ribbon marks that control — its own button or the More that holds it.
