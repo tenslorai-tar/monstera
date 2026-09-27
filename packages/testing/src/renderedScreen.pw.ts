@@ -1458,6 +1458,55 @@ test('the TITLE BAR holds the tabs, the command search and the switcher on one r
   expect(overlay.y).toBeGreaterThanOrEqual(barBox.y + barBox.height - 0.5);
 });
 
+test('the status bar’s DOCUMENT LINE gives up its name first and never runs under the controls beside it', async ({
+  page,
+}) => {
+  // Found in the proof locale at the 1024 x 720 floor (2026-09-27): only the name could shorten, so once it was
+  // spent the page count, the size and *Saved* kept their width and *Saved* was drawn under the panel toggle. This
+  // lengthens the line's facts the way a longer language does, in the ordinary build.
+  await page.setViewportSize({ width: 1024, height: 720 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const line = page.locator('.m-status-document');
+  await expect(line).toBeVisible();
+
+  const lengthen = (selector: string): Promise<void> =>
+    page.evaluate((target) => {
+      for (const element of document.querySelectorAll(target)) {
+        element.textContent = `${element.textContent} ${'longer words '.repeat(6)}`;
+      }
+    }, selector);
+  const measure = (): Promise<{ lineEnd: number; nextStart: number; nameClipped: boolean; savedClipped: boolean }> =>
+    page.evaluate(() => {
+      const document_ = document.querySelector('.m-status-document');
+      const next = document_?.nextElementSibling;
+      const name = document.querySelector('.m-status-name');
+      const saved = document.querySelector('.m-status-saved');
+      if (document_ == null || next == null || name === null || saved === null) throw new Error('the line is laid out');
+      // THE FURTHEST CHILD, not the line's own box: the line shrinks to its space either way (`min-inline-size: 0`),
+      // and the defect is its children running past it.
+      return {
+        lineEnd: Math.max(...[...document_.children].map((child) => child.getBoundingClientRect().right)),
+        nextStart: next.getBoundingClientRect().left,
+        nameClipped: name.scrollWidth > name.clientWidth,
+        savedClipped: saved.scrollWidth > saved.clientWidth,
+      };
+    });
+
+  // THE NAME FIRST: a long name alone is ellipsed and *Saved* keeps every letter.
+  await lengthen('.m-status-name');
+  const named = await measure();
+  expect(named.nameClipped).toBe(true);
+  expect(named.savedClipped).toBe(false);
+  expect(named.lineEnd).toBeLessThanOrEqual(named.nextStart + 0.5);
+
+  // AND NEVER UNDER THE CONTROLS: with every fact long, the line still ends before the next cluster begins.
+  await lengthen('.m-status-document > span:not(.m-status-name)');
+  const long = await measure();
+  expect(long.lineEnd).toBeLessThanOrEqual(long.nextStart + 0.5);
+});
+
 test('with the RULERS on, the first page begins CLEAR of both of them, and the Float bar docks past the vertical one', async ({
   page,
 }) => {

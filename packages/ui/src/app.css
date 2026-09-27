@@ -2128,13 +2128,14 @@ textarea {
  * at the start of the bar and everything else is still pushed to the end. Putting the margin on
  * the name would have left this cell floating in the middle of the strip.
  *
- * `flex-shrink: 0` because the NAME is the thing that may be ellipsed when the window is narrow.
- * "Saved 12 min ago" truncated to "Saved 12 m…" is a worse sentence than a shortened file name,
- * and the name has a `title` carrying the whole of it while this has nothing to fall back on.
+ * The NAME is the thing ellipsed first when the window is narrow (`.m-status-document`'s shrink
+ * weights): "Saved 12 min ago" truncated to "Saved 12 m…" is a worse sentence than a shortened file
+ * name, and the name has a `title` carrying the whole of it while this has nothing to fall back on.
+ * It was `flex-shrink: 0`, which held when the name alone could absorb the shortage; in a longer
+ * language it could not, and the unshrinkable line ran under the controls beside it.
  */
 .m-status-saved {
   margin-inline-end: auto;
-  flex-shrink: 0;
   white-space: nowrap;
 }
 
@@ -5082,6 +5083,20 @@ body {
   min-inline-size: 0;
   margin-inline-start: auto;
   white-space: nowrap;
+}
+
+/* EVERY FACT IN THE LINE MAY SHORTEN, THE NAME FAR FIRST. Only the name could, so once it was spent the page count,
+   the size and *Saved* kept their width and the line ran under the controls beside it — measured 2026-09-27 in the
+   proof locale at 1024 x 720, *Saved* drawn under the panel toggle. A shrink weight of 1000 against 1 spends the
+   name (which has its `title`) before any other fact loses a letter; past that each ellipsises, and none overlaps. */
+.m-status-document > * {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.m-status-document > .m-status-name {
+  flex-shrink: 1000;
 }
 
 /* THE HAND TOOL (§10.3's floating toolbar): a grab cursor over the page area, a grabbing one while a
