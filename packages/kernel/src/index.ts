@@ -531,6 +531,10 @@ export {
   captureCreateFormField,
   invertCreateFormField,
 } from './formFieldCreate.js';
+// ON THE BARREL for the same check: `ocrTextLayer.ts` reaches `@cantoo/pdf-lib` and `pdfLibSession.ts`, and its
+// recognition input is a TYPE import, erased — the engine that recognises is not loaded by writing the layer. The
+// byte-image cost measurement is its reader here (`scripts/perf/byteImageCost.mjs`).
+export { applyOcrPage } from './ocrTextLayer.js';
 export {
   BACKGROUND_MARKER,
   applySetPageBackground,

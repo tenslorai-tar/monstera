@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * What the six byte-image commands cost on a document with many objects.
+ * What the byte-image commands cost on a document with many objects — eight since 2026-09-27.
  *
  * ## The finding this exists to size
  *
@@ -19,8 +19,9 @@
  * seconds**. So the structural writer does at 2M objects in 4.5s what the
  * byte-image writer takes 197s to do at 127k.
  *
- * Six shipped rows pay it — watermark, headers and footers, Bates numbering,
- * page background, insert from image, generate TOC — and the memory gate could
+ * Eight shipped rows pay it — watermark, headers and footers, Bates numbering,
+ * page background, insert from image, generate TOC, and (since the first
+ * reading) create form field and the OCR text layer — and the memory gate could
  * never have shown it: `budgetGate.mjs` measures **peak RSS**, and both of its
  * fixtures were chosen for memory shapes rather than for the axis this costs on.
  *
@@ -39,7 +40,7 @@
  * It measures, and it holds a **regression** bound — not a budget. The
  * difference is the whole of its scope: *nothing here may get quietly worse* is
  * a fact-keeper, and *these rows may not cost this much* is a design decision
- * that belongs in an ADR. Whether the six can leave the byte-image path at all,
+ * that belongs in an ADR. Whether the eight can leave the byte-image path at all,
  * given ADR-0039 exists because MuPDF's writer cannot draw what they draw, is
  * not decided here and is not decidable from a timing.
  *
@@ -48,9 +49,9 @@
  * One run is roughly twenty-five minutes, which is not a pre-commit check and
  * not a per-push CI job — MuPDF's own cold build, the most expensive step this
  * project has, is 336s. So no mechanism runs this on a schedule today. What
- * exists instead is the derived-set refusal below: a seventh command routed to
+ * exists instead is the derived-set refusal below: another command routed to
  * `pdf-lib` makes this script refuse to report rather than quietly measuring
- * six of seven. The trigger for re-running it is a change to the byte-image
+ * all but one — as it did on 2026-09-27, for two. The trigger for re-running it is a change to the byte-image
  * path, and that trigger is written into `docs/JOURNAL.md`'s entry of
  * 2026-09-07 rather than left to be recalled.
  *
@@ -88,7 +89,9 @@ import { readFile } from 'node:fs/promises';
 
 import {
   applyBatesNumberPages,
+  applyCreateFormField,
   applyGenerateToc,
+  applyOcrPage,
   applyHeaderFooterPages,
   applyInsertImagePage,
   applySetPageBackground,
@@ -230,6 +233,37 @@ const COMMANDS = [
     kind: 'generateToc',
     run: (image) => applyGenerateToc(image, { kind: 'generateToc', at: 0 }, OUTLINE),
   },
+  // THE TWO THAT JOINED THIS WRITER AFTER THE FIRST MEASUREMENT, found by the derived-set refusal below on
+  // 2026-09-27. Each writes to ONE page — the cost question is the whole-document load and save around it, which is
+  // exactly what the per-page work does not change.
+  {
+    kind: 'createFormField',
+    run: (image) =>
+      applyCreateFormField(image, {
+        kind: 'createFormField',
+        page: 0,
+        fields: [{ rect: { x0: 100, y0: 100, x1: 220, y1: 124 }, name: 'perf.field', field: { type: 'text' } }],
+      }),
+  },
+  {
+    kind: 'ocrPage',
+    run: (image) =>
+      applyOcrPage(
+        image,
+        { kind: 'ocrPage', page: 0, language: 'eng', engine: 'tesseract' },
+        {
+          lines: [
+            {
+              text: 'Monstera',
+              box: [72, 700, 152, 716],
+              words: [{ text: 'Monstera', box: [72, 700, 152, 716], confidence: 90 }],
+            },
+          ],
+          confidence: 90,
+          language: 'eng',
+        },
+      ),
+  },
 ];
 
 /**
@@ -311,8 +345,8 @@ async function against(path) {
 }
 
 async function main() {
-  // THE SET IS DERIVED, so a seventh command routed to this writer arrives here
-  // with no row and the run says so rather than quietly measuring six of seven.
+  // THE SET IS DERIVED, so another command routed to this writer arrives here
+  // with no row and the run says so rather than quietly measuring all but one.
   const routed = Object.values(declaredCommands)
     .filter((declaration) => declaration.writer === 'pdf-lib')
     .map((declaration) => declaration.kind)

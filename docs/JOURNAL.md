@@ -892,6 +892,21 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-27 — The byte-image cost, re-measured for eight commands; packaging blocked where the owner said
+
+**The measurement refused to run, and that was the finding.** `byteImageCost.mjs` derives the set of commands routed
+to pdf-lib and compares it with its own rows; two had joined since 2026-09-07 — *create form field* and the OCR text
+layer — so the row's "six shipped commands" had been false for weeks and its trigger (*a new command choosing this
+path*) had fired twice without anyone re-reading it. With the two rows added, all eight cost 192–239s on the
+127,082-object fixture (23:30–23:58Z, nothing else running) and about a second on the 122-object one. The lever
+(`commit()`) is unchanged and still waits on ADR-0008's conditions, which the row now names.
+
+**Packaging is blocked on exactly the change the owner reserved.** Developer Mode is off (`AppModelUnlock` carries
+neither value) and the session is not elevated, so no MSIX route installs here; the row says which of three the owner
+could grant.
+
+---
+
 ## 2026-09-27 — Part F's settings, three built and the rest classified
 
 The 26 September list's item 8, its first row. A helper's gap table (a draft) sorted Part F's 56 items; each row
