@@ -3238,7 +3238,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SETTINGS_ACTION_CLEAR_RECENT_DESCRIPTION]:
     'Empties the Recent list on the start screen and deletes the previews kept for it. Your files are not touched.',
   [SETTINGS_ACTION_CLEARED]: 'Saved conversations were cleared.',
-  [SETTINGS_KEYBOARD_NOTE]: 'Press F1 for the full list of shortcuts, or open the command palette with Ctrl+K.',
+  // NAMES NO KEY: any key can be changed (ADR-0111), and a sentence naming one goes false the day a person moves it.
+  [SETTINGS_KEYBOARD_NOTE]:
+    'Every shortcut, and a way to change any of them, is in Help › Keyboard shortcuts. The command palette finds any tool by name.',
   [SETTINGS_UPDATES_NOTE]:
     'Monstera is installed from the Microsoft Store, and Windows updates it. Monstera never installs anything itself.',
   // EVERY PAGE INTRODUCES ITSELF, as the owner's settings.png does. Each says what the page is

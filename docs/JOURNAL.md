@@ -892,6 +892,97 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-27 — Stage audit of `8d044e72..1e50ee56` — findings TTTTTT-1 to TTTTTT-5
+
+9 commits, 102 files, 8 proofs added, 29 modified and none removed, 11 source files added and 41 changed
+(`npm run audit:scope`). The range is the recording commit of the last audit, the update check (ADR-0110), Part F's
+settings, the byte-image re-measurement, the pinned binary trees, a file given at launch, ADR-0111 and the shortcut
+editor, and ADR-0112. The range alone is within a batch; the commit gate stopped the Help centre's commit at 254
+files, because its 133 articles are 152 files, so this audit rides in its own commit and the Help centre follows it.
+
+### 1. Root cause or workaround?
+
+The range's fixes are root causes, each with its mechanism: a provisioned tree was trusted whatever it held, and is now
+compared file by file with the pins its script writes (ecfce2b1); a Ctrl+letter chord was spelt from the layout's
+character, so non-Latin layouts had none, and letters and digits now come from the key's position where the character
+is not one (e672a84a); the page's shortcuts listened on the document with no knowledge of an open dialog, and the
+dialog host's own state now gates them. **TTTTTT-2 is this item's finding — a sentence naming keys, in the range that
+made every key movable.** Settings' Keyboard page said *"Press F1 for the full list of shortcuts, or open the command
+palette with Ctrl+K"*. ADR-0111 made both keys a person's choice; the start screen's hint already reads its key from
+the map for exactly this reason, and this note did not. It now names the Help menu and no key, so moving a key cannot
+falsify it. Fixed here.
+
+### 2. Verified against the easy shape only?
+
+The launch filter was tested on switches, relative paths, other files, repeats, the development launcher's extra
+argument and the bound, and the queue on a first and a later launch. The update check on a redirect, a body one byte
+past the bound with no length announced, a non-200 and a schema refusal. **TTTTTT-5, a stated gap:**
+`createLaunchDocuments.add` does not drop a path already waiting from an earlier launch; the second open answers
+`already-open` and reports nothing, so a person sees one document. Left as is.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+`projections.test.ts` lost `shortcutListModel`'s case with the function; its claim — a command hidden by `when` still
+has a row — is `shortcutChoice.test.ts`' case under `shortcutRows`, checked. `commandCalls` in `App.test.tsx`
+excludes two more mount-time channels (`app.updateStatus`, `document.openWaiting`); what those do on mount is
+asserted by their own cases. Nothing else moved.
+
+### 3. Would CI have caught it?
+
+The pushed part of the range (to ecfce2b1) was GREEN on both legs, read 05:41:54Z. The unpushed four reach
+`proof:guards`, `proof:hookintegrity`, `proof:hookprobe`, `proof:docrulescope`, `proof:rowlength`, `proof:preload`,
+`proof:rendererpolicy`, `proof:canvaspixels`, `proof:rendergeometry` and more (`affectedProofs`), all owed a run before
+the batch push, which has not happened at this commit. TTTTTT-1 and -2 are prose no check reads, so no.
+
+### 4. Are the proofs non-vacuous?
+
+Every modified proof's deletions were read (`git diff` over the range, and `git log -p` for `App.test.tsx`, whose one
+deletion nets away). None loosened a check. Four moved a claim somewhere stricter: the rating prompt's opener records
+every page it received rather than counting `review`, the source a person presses is the SECOND one, the crash-report
+order uses names that sort against their times, and Print's control runs at both qualities it could start on.
+Deliberate source mutations were refused by this session's command classifier, so the new proofs' controls were read
+instead — `pinnedTree.proof.mjs` has an exact-tree control, and `updateCheck.test.ts` a live-leg control that must
+call once.
+
+### 4a. Has every instrument passed a resolution test?
+
+`byteImageCost.mjs` gained two rows; its reading separates 192–239 s (dense) from about 1 s (image) on the same run,
+far beyond its spread. No other instrument in the range.
+
+### 4b. Is the instrument a search?
+
+`pinnedTree.mjs` is one — it lists a tree and compares it with the pins — and it refuses an empty pin table rather
+than passing an empty folder, which is its positive control's half; its proof's first case is the exact tree passing.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+The pinned-tree proof's roster is a literal 6. `EVENT_IDS` is anchored by a literal list in `events.test.ts`, which
+went from three to four by hand. Nothing in the range derives a count from what it polices.
+
+### 5. Executed, or asserted?
+
+**TTTTTT-4.** A file association and *Open with* on an INSTALLED build: packaging is blocked (Developer Mode off, the
+session not elevated), so `documentPathsIn` is proven on argv shapes and the composed queue, never on the Windows
+launch itself. The update check's live leg: dormant by decision, proven with a counting fetch. Both are stated on their
+rows.
+
+### 6. Architecture before the feature?
+
+**TTTTTT-3, checked and not a finding.** 580f73ba carried ADR-0110 and edits to `ARCHITECTURE.md` in the feature's
+commit. The update check registers into ADR-0018's existing seam, and the law's edits record that the registry now
+exists (a sentence that read *"not built yet"*) and add ADR-0109's crash-report sharing to the DLLs `main` may bind,
+which ADR-0109's own range had left out. ADR-0111 and ADR-0112 each had their B4 commit first.
+
+### 7. Do the documents match the code?
+
+**TTTTTT-1 — a FEATURES row went false by a commit that never opened it.** Row 265 (732448c9) listed *the shortcut
+editor (the F1 row)* as owed to a feature first; e672a84a built the editor and swept row 283 but not 265. Item 7's
+standing hole, again inside the range that made it. Fixed here. **SSSSSS-1's carried item**: a check of *Section ›
+Group* phrases against the placements now exists for the Help centre's articles (the next commit); FEATURES rows are
+still outside it.
+
+---
+
 ## 2026-09-27 — Any command can be given a key, and three keyboard defects under it are gone
 
 ADR-0111 (its B4 commit first). What is worth keeping:
