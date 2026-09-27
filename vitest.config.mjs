@@ -20,6 +20,9 @@ export default defineConfig({
     // its alias and silently fall back to `dist`.
     alias: workspaceAliases(ROOT),
   },
+  // THE RENDERER'S OWN ASSET RULE for PDF.js's packed CMaps (`scripts/build/renderer.vite.config.mjs`), so the tests
+  // import the bundled CMaps the way the built renderer does rather than failing on an extension they do not know.
+  assetsInclude: ['**/*.bcmap'],
   test: {
     // Vitest 4 does not exclude build output by default, so without this every
     // test file is collected twice: once from `src` as TypeScript and once from

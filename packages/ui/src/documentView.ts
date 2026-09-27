@@ -8,6 +8,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 // the UI thread.
 import workerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
+import { BUNDLED_CMAPS, BundledBinaryDataFactory } from './cmaps.js';
 import { DocumentRangeTransport, type OnVersionMoved } from './documentTransport.js';
 
 /**
@@ -116,6 +117,11 @@ export async function openDocumentView(options: {
     // `password: undefined` is unaffected, and keeping the shape honest costs
     // one spread.
     ...(options.password === undefined ? {} : { password: options.password }),
+    // THE PREDEFINED CMAPS, from the bundle (`cmaps.ts`): the worker asks the main thread for each by name because of
+    // `useWorkerFetch: false` below, and this factory answers without a fetch.
+    cMapUrl: BUNDLED_CMAPS,
+    cMapPacked: true,
+    BinaryDataFactory: BundledBinaryDataFactory,
     // ICC colour management is unavailable under this CSP and that is settled:
     // `qcms` arrives by a synchronous XHR, which `connect-src 'none'` refuses
     // before WebAssembly is ever reached. `useWorkerFetch: false` closes the

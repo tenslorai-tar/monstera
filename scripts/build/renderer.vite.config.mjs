@@ -50,6 +50,9 @@ export default defineConfig({
   root: join(REPO_ROOT, 'packages', 'ui'),
   base: './',
   plugins: [react()],
+  // PDF.js's packed CMaps (`packages/ui/src/cmaps.ts`): an extension Vite does not know, named so `?inline` makes each
+  // a chunk the renderer imports rather than a file it would have to fetch, which the CSP refuses.
+  assetsInclude: ['**/*.bcmap'],
   build: {
     outDir: join(REPO_ROOT, 'apps', 'desktop', 'dist', 'renderer'),
     // Emptied on every build. `renderer/` is Vite's alone — `tsc` writes its
