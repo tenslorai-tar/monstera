@@ -13,6 +13,7 @@
 // interchangeable and are not, and invariant 20 is what sits behind the
 // difference: no native engine code in main.
 import type {
+  DocumentContext,
   DocumentService,
   DocumentTeardown,
   EngineSupervisor,
@@ -237,6 +238,15 @@ export interface HostDeathSurfaces {
    * handed to a command that queued before it.
    */
   readonly reopen: (docId: DocId) => Promise<DocumentSessions>;
+  /**
+   * Re-applies, to the session just reopened, every applied log entry the canonical image does not include — the
+   * rebuild's second half ([ADR-0115](../../../docs/DECISIONS/0115-a-rebuilt-session-replays-what-the-image-does-not-hold.md),
+   * invariant 18 clause (ii)). Runs in the same lane entry as {@link reopen}, so no command reaches the session
+   * between the two.
+   *
+   * @returns how many entries were re-applied
+   */
+  readonly replay: (docId: DocId, context: DocumentContext) => Promise<number>;
   /**
    * Whether a lane entry failed because the document closed underneath it.
    *
@@ -514,9 +524,27 @@ export async function onEngineHostEnded(
     .filter((docId) => sessions.poisoned(docId) === undefined)
     .map(async (docId) => {
       try {
-        await surfaces.documents.run(docId, async () => {
+        await surfaces.documents.run(docId, async (context) => {
           await rebuilt;
           sessions.hold(docId, await surfaces.reopen(docId));
+          // THE REBUILD'S SECOND HALF, in the same lane entry (ADR-0115): the reopened session is the canonical image,
+          // which holds no view-model or nothing-drawn command since its last refresh — a rotation, protection — and
+          // the log still lists them as applied. Replayed here, before any queued command can see the session.
+          try {
+            await surfaces.replay(docId, context);
+          } catch (error) {
+            if (surfaces.closedMeanwhile(error)) throw error;
+            // CLAUSE (i): the log kept, the file on disk untouched, the session released and every further command
+            // refused — and the person told which document, and that its unsaved changes could not be restored.
+            sessions.recordFailure([docId], 'replay-failed');
+            surfaces.failures({
+              event: 'engine-host-gone',
+              detail:
+                `the unsaved changes to document ${docId.slice(0, 8)}… could not be restored after the engine ` +
+                `stopped: ${String(error)}. The file on disk is as it was last saved, the list of changes is kept, and ` +
+                `the document takes no further changes until it is closed and opened again.`,
+            });
+          }
         });
       } catch (error) {
         // A closed document is the seam working; anything else is a rebuild
@@ -562,7 +590,7 @@ const POISON_AT = 2;
  * memory, say) would read as a fourth state of a flag and as one more member
  * here.
  */
-export type SessionFailureReason = 'host-death' | 'document-unreadable';
+export type SessionFailureReason = 'host-death' | 'document-unreadable' | 'replay-failed';
 
 /** One open document's supervisor state. See {@link EngineSessions}. */
 interface DocumentEntry {
@@ -984,12 +1012,15 @@ export class EngineSessions implements EngineSessionSource {
     for (const docId of docIds) {
       const entry = this.#entries.get(docId);
       if (entry === undefined) continue;
+      // `'replay-failed'` goes straight to the bound with the unreadable document (ADR-0115 Decision 3): the log's own
+      // entries would not re-apply to a session opened from the canonical image, and a retry re-applies the same
+      // entries to the same image — invariant 18 clause (i) is the answer, not a second attempt.
       entry.consecutiveFailures =
-        reason === 'document-unreadable'
-          ? // Never downward: a document already past the bound stays where it
+        reason === 'host-death'
+          ? entry.consecutiveFailures + 1
+          : // Never downward: a document already past the bound stays where it
             // is, so this cannot be a route back from poisoned.
-            Math.max(entry.consecutiveFailures, POISON_AT)
-          : entry.consecutiveFailures + 1;
+            Math.max(entry.consecutiveFailures, POISON_AT);
       entry.sessions = {};
     }
   }

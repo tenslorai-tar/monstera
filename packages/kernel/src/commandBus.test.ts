@@ -410,6 +410,88 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     }
   });
 
+  it('THE REPLAY (ADR-0115) re-applies exactly the entries past the image’s base, to a session opened from the image', async () => {
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub();
+    // A SESSION OPENED FROM THE IMAGE, as a rebuild after a host death opens one: the flat fixture, which no rotation
+    // ever reached — a rotation is a view-model command, and the image takes none on its own.
+    const rebuilt = await mupdfWriter.open(flat);
+    try {
+      await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
+      await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
+      expect(context.log.imageHolds).toBe(0);
+      expect(context.log.pastImage).toHaveLength(2);
+
+      const replayed = await bus.replayPastImage({ mupdf: rebuilt }, context, noByteImageExpected);
+
+      expect(replayed).toBe(2);
+      const angle = await withDocument(rebuilt, (document) => document.loadPage(0).getObject().get('Rotate').asNumber());
+      expect(angle).toBe(180);
+      // THE LOG DID NOT MOVE AND NO VERSION WAS BUMPED: the renderer's image never changed, only the session caught up.
+      expect(context.log.entries).toHaveLength(2);
+      expect(context.bumps()).toBe(2);
+    } finally {
+      await mupdfWriter.close(session);
+      await mupdfWriter.close(rebuilt);
+    }
+  });
+
+  it('CONTROL: with the base at the cursor there is nothing to replay, and the session is left as opened', async () => {
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub();
+    const rebuilt = await mupdfWriter.open(flat);
+    try {
+      await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
+      context.mutableLog.imageIsCurrent();
+
+      expect(await bus.replayPastImage({ mupdf: rebuilt }, context, noByteImageExpected)).toBe(0);
+      const own = await withDocument(rebuilt, (document) => document.loadPage(0).getObject().get('Rotate').isNull());
+      expect(own).toBe(true);
+    } finally {
+      await mupdfWriter.close(session);
+      await mupdfWriter.close(rebuilt);
+    }
+  });
+
+  it('an UNDO BELOW THE BASE refreshes the image, so the base can never be ahead of the cursor (ADR-0115)', async () => {
+    // The image holds a rotation (a save, or an image command, put it there); undoing that rotation would leave the
+    // image holding a change the log no longer applies, and a replay only runs forwards. So the undo refreshes it.
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub(true);
+    try {
+      await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
+      context.mutableLog.imageIsCurrent();
+      expect(context.log.imageHolds).toBe(1);
+
+      await bus.undo({ mupdf: session }, context, noRestoreExpected, showingInputs(session));
+
+      expect(context.images()).toHaveLength(1);
+      expect(context.log.imageHolds).toBe(0);
+      // THE REFRESHED IMAGE IS THE UNDONE STATE: page 1 carries no rotation of its own again.
+      const [image] = context.images();
+      if (image === undefined) throw new Error('the undo refreshed no image');
+      expect(await ownRotationIn(image)).toBe('null');
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: an undo ABOVE the base replaces no image — a rotation is a view-model command', async () => {
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub(true);
+    try {
+      await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
+      await bus.undo({ mupdf: session }, context, noRestoreExpected, showingInputs(session));
+      expect(context.images()).toHaveLength(0);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
   it('THE TERMINAL BRANCH: a malformed /Rotate gets a checkpoint, and the rotation still happens', async () => {
     const bus = new CommandBus({ mupdf: localMupdfWriter });
     const session = await malformedSession();
@@ -496,6 +578,10 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
         // fits and two do not. A literal here would be a number that stops
         // separating anything the day the fixture changes size.
         context.ceiling(first.entry.checkpoint.byteLength);
+        // THE IMAGE HOLDS THE FIRST ROTATION, as a save or an image command would leave it: a rotation is a view-model
+        // command the image never takes on its own, and a trim may shed only what the image holds (ADR-0115). The case
+        // below is what happens without this line.
+        context.mutableLog.imageIsCurrent();
 
         const second = await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
 
@@ -520,6 +606,8 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
         if (first.entry.kind !== 'terminal') throw new Error('expected a terminal entry');
         await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
         expect(context.mutableLog.entries).toHaveLength(2);
+        // The image holds both, for the case above's reason (ADR-0115).
+        context.mutableLog.imageIsCurrent();
 
         context.ceiling(first.entry.checkpoint.byteLength);
         await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
@@ -532,6 +620,29 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
         expect(context.mutableLog.entries.length).toBe(
           context.mutableLog.retainedBytes() > 0 ? 1 : 0,
         );
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    });
+
+    it('NEVER sheds an entry the canonical image does not hold, over its target though that leaves it (ADR-0115)', async () => {
+      // The three cases above with the image left where a rotation leaves it: holding nothing. Shedding the first
+      // rotation would lose it outright — not in the image, and gone from the log — so a host death could never bring
+      // it back. The trim stops at the base and reports nothing dropped; the budget is the thing that gives way.
+      const bus = alwaysCheckpointing();
+      const session = await malformedSession();
+      const context = contextStub();
+      try {
+        const first = await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
+        if (first.entry.kind !== 'terminal') throw new Error('expected a terminal entry');
+        context.ceiling(first.entry.checkpoint.byteLength);
+        expect(context.mutableLog.imageHolds).toBe(0);
+
+        const second = await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
+
+        expect(second.trimmed).toEqual({ droppedEntries: 0, droppedBytes: 0 });
+        expect(context.mutableLog.entries).toHaveLength(2);
+        expect(context.mutableLog.pastImage).toHaveLength(2);
       } finally {
         await mupdfWriter.close(session);
       }
@@ -585,6 +696,8 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
 
         await bus.undo({ mupdf: session }, context, noRestoreExpected, noByteImageExpected);
         expect(context.mutableLog.canRedo).toBe(true);
+        // The image holds the applied entry, for the retention cases' reason (ADR-0115).
+        context.mutableLog.imageIsCurrent();
 
         context.mutableLog.trimTo(0);
 

@@ -3172,7 +3172,9 @@ export const invert: Invert<'mupdf', 'rotatePages'> = (
   {
     name: 'THE READABLE LOG IS NOT THE WRITABLE ONE',
     expect: 'reject',
-    code: 'TS2739',
+    // TS2740 rather than TS2739 since 2026-09-27, for a count and not a reason: TypeScript names up to four missing
+    // members as TS2739 and switches to TS2740 ("… and N more") at the fifth, and `imageIsCurrent` is the fifth.
+    code: 'TS2740',
     // §4 gives the log one writer, and it is the same component that owns the
     // counter — so it is the same capability, not a second one. An entry
     // recorded without an applied command makes undo reverse a change the
@@ -3186,9 +3188,11 @@ export const invert: Invert<'mupdf', 'rotatePages'> = (
     // narrower than the guarded accessor, or merely a second name for it.
     // `trimTo` joins the mutating half here, and it belongs there: it discards
     // entries and moves the cursor, which is exactly what the readable view is
-    // separated from.
+    // separated from. So does `imageIsCurrent` (ADR-0115): it moves the base a
+    // host-death replay starts from, and a lane entry that could set it without
+    // the bus's capability could tell the replay to skip entries the image lacks.
     because:
-      /missing the following properties from type 'CommandLog': #private, trimTo, record, undo, redo/u,
+      /missing the following properties from type 'CommandLog': #private, imageIsCurrent, trimTo, record, and 2 more/u,
     notBecause: null,
     source: `
 import type { CommandLog, DocumentContext } from '@monstera/kernel';

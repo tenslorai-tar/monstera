@@ -67,6 +67,7 @@ import {
   type FlatFieldCandidate,
   type FoundBarcode,
   DocumentNotOpenError,
+  type DocumentContext,
   type DocumentService,
   type PageGeometry,
   type Destination,
@@ -3146,6 +3147,25 @@ export class DocumentCommands {
    * @throws `DocumentNotOpenError`, `DocumentBusyError`, {@link DocumentPoisonedError},
    *   {@link MissingSessionError}.
    */
+  /**
+   * The rebuild's second half after an engine host died, run by the supervisor INSIDE the lane entry that reopened
+   * the document ([ADR-0115](../../../docs/DECISIONS/0115-a-rebuilt-session-replays-what-the-image-does-not-hold.md),
+   * invariant 18 clause (ii)) — so it takes the lane's context rather than entering the lane, which would wait on
+   * itself.
+   *
+   * The reopened session is the canonical image; this re-applies every applied entry that image does not include,
+   * with `redo`'s inputs for them. No version moves: the renderer's image never changed.
+   *
+   * @returns how many entries were re-applied
+   * @throws {@link MissingSessionError} when the reopen held nothing, and whatever an entry's apply throws — the
+   *   supervisor's clause (i)
+   */
+  async replayAfterRebuild(docId: DocId, context: DocumentContext): Promise<number> {
+    const sessions = this.#engine.sessions(docId);
+    if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+    return this.#bus.replayPastImage(sessions, context, this.#byteImage(docId, this.#bus.pendingReplaySources(context)));
+  }
+
   async redo(docId: DocId): Promise<Applied | undefined> {
     const stepped = { yes: false };
 

@@ -811,6 +811,10 @@ export interface ReadonlyCommandLog {
   readonly canUndo: boolean;
   readonly canRedo: boolean;
   peekRedo(): LogEntry | undefined;
+  /** How many applied entries the canonical image includes (ADR-0115). */
+  readonly imageHolds: number;
+  /** The applied entries the canonical image does not include, oldest first (ADR-0115). */
+  readonly pastImage: readonly LogEntry[];
 }
 
 /**
@@ -827,9 +831,40 @@ export class CommandLog implements ReadonlyCommandLog {
   /** How many entries are currently applied. */
   #applied = 0;
 
+  /**
+   * How many of the applied entries `main`'s canonical image already includes — THE BASE a rebuilt session replays
+   * from ([ADR-0115](../../../docs/DECISIONS/0115-a-rebuilt-session-replays-what-the-image-does-not-hold.md)).
+   *
+   * Here and not beside the log, because {@link trimTo} sheds the oldest entries and shifts every position: a base
+   * kept elsewhere would point at a different entry after the first trim, and nothing would say so. Never above
+   * `#applied`: the bus refreshes the image on an undo that would step below it, and a trim never sheds past it.
+   */
+  #imageHolds = 0;
+
   /** Entries that are applied right now, oldest first. */
   get entries(): readonly LogEntry[] {
     return this.#entries.slice(0, this.#applied);
+  }
+
+  /** How many applied entries the canonical image includes. See {@link #imageHolds}. */
+  get imageHolds(): number {
+    return this.#imageHolds;
+  }
+
+  /**
+   * The applied entries the canonical image does NOT include, oldest first — exactly what a session opened from that
+   * image must re-apply to agree with this log again.
+   */
+  get pastImage(): readonly LogEntry[] {
+    return this.#entries.slice(this.#imageHolds, this.#applied);
+  }
+
+  /**
+   * The canonical image now includes every applied entry: called by the bus, after the log has moved, whenever an
+   * operation replaced the image.
+   */
+  imageIsCurrent(): void {
+    this.#imageHolds = this.#applied;
   }
 
   /** How many entries could be redone — the tail the cursor has stepped back over. */
@@ -955,9 +990,14 @@ export class CommandLog implements ReadonlyCommandLog {
       // canonical images alone, which is a different problem with a different
       // answer (refusing the next open) and not one to solve by deleting undo.
       if (oldest === -1) break;
+      // NEVER PAST THE BASE (ADR-0115). An applied entry the canonical image does not include exists nowhere else: shed
+      // it and a host death loses its effect with nothing left to replay. The log stays over its target instead, which
+      // is the case above in a different shape — a budget question, never a correctness one.
+      if (oldest + 1 > this.#imageHolds) break;
       const removed = this.#entries.splice(0, oldest + 1);
       shed(removed);
       this.#applied = Math.max(0, this.#applied - removed.length);
+      this.#imageHolds -= removed.length;
     }
 
     return { droppedEntries, droppedBytes };

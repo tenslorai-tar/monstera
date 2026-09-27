@@ -82,6 +82,7 @@ const CASES = [
   'the first command reached the host',
   'the killed host stopped existing',
   'a NEW host appeared with nothing asked of the shell',
+  'the rebuilt session HOLDS the rotation applied before the death (ADR-0115)',
   'and a command after the first death SUCCEEDS',
   'CONTROL: the second death POISONS rather than rebuilding for ever',
   'CONTROL: and the harness process itself exited CLEANLY',
@@ -246,6 +247,14 @@ if (!runnable) {
   );
 
   check(
+    'the rebuilt session HOLDS the rotation applied before the death (ADR-0115)',
+    seen.rotationAfterRebuild === 90,
+    `page 1 read ${JSON.stringify(seen.rotationAfterRebuild)} from the rebuilt session. The rotate before the kill is a ` +
+      `view-model command, which the canonical image never takes, so a rebuild that reopened from the image and did ` +
+      `not replay the log answers 0 while the log still lists the rotation as applied — invariant 18 clause (ii).`,
+  );
+
+  check(
     'and a command after the first death SUCCEEDS',
     seen.afterFirstDeath?.ok === true,
     `the rotate after the first death answered ${JSON.stringify(seen.afterFirstDeath)}. The ` +
@@ -277,7 +286,8 @@ if (!runnable) {
   // one layer out: there the channel was Electron's `preload-error`, here it is
   // an exit code.
   check(
-    CASES[6] ?? '',
+    // THE LAST CASE BY POSITION, not by a number that the next case added before it would silently repoint.
+    CASES.at(-1) ?? '',
     exited !== undefined && exited.status === 0 && exited.signal === null,
     `the harness exited ${String(exited?.status)}${
       exited?.signal == null ? '' : ` on ${exited.signal}`

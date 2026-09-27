@@ -504,14 +504,23 @@ describe('a host death is reported, and every document is put back through its o
     readonly reported: ShellFailure[];
     readonly rebuilds: number[];
     readonly reopened: DocId[];
+    readonly replayed: DocId[];
   } {
     const reported: ShellFailure[] = [];
     const rebuilds: number[] = [];
     const reopened: DocId[] = [];
+    const replayed: DocId[] = [];
     return {
       reported,
       rebuilds,
       reopened,
+      replayed,
+      // RECORDED, and answering nothing to replay: which documents the rebuild's second half ran for is what these
+      // cases can see; what a replay re-applies is `commandBus.test.ts`' and the killed-host proof's.
+      replay: (docId) => {
+        replayed.push(docId);
+        return Promise.resolve(0);
+      },
       documents: service,
       failures: (failure) => reported.push(failure),
       rebuild: () => {
@@ -626,6 +635,65 @@ describe('a host death is reported, and every document is put back through its o
     expect(engine.poisoned(first)).toBe(2);
     expect(engine.sessions(first)).toStrictEqual({});
     expect(engine.sessions(second)).toStrictEqual(someSessions(`reopened-${second.slice(0, 4)}`));
+  });
+
+  it('THE REPLAY (ADR-0115) runs for each reopened document inside the SAME lane entry, before a later command', async () => {
+    const engine = new EngineSessions();
+    const { service, first } = await twoOpenDocuments(engine);
+    const order: string[] = [];
+    const surface = surfaces(service, {
+      replay: (docId) => {
+        order.push(`replay ${docId === first ? 'first' : 'second'}`);
+        return Promise.resolve(1);
+      },
+    });
+
+    const recovering = onEngineHostEnded(engine, died, surface);
+    // QUEUED AFTER THE DEATH: it can only run once the rebuild's lane entry — reopen AND replay — has finished.
+    const later = service.run(first, () => {
+      order.push('later command on first');
+      return Promise.resolve();
+    });
+    await Promise.all([recovering, later]);
+
+    expect(order.indexOf('replay first')).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf('replay first')).toBeLessThan(order.indexOf('later command on first'));
+    expect(order).toContain('replay second');
+  });
+
+  it('a replay that FAILS is clause (i): refused rather than closed, its session released, the person told', async () => {
+    const engine = new EngineSessions();
+    const { service, first, second } = await twoOpenDocuments(engine);
+    const surface = surfaces(service, {
+      replay: (docId) => (docId === first ? Promise.reject(new Error('rotate would not re-apply')) : Promise.resolve(0)),
+    });
+
+    await onEngineHostEnded(engine, died, surface);
+
+    // REFUSED AT ONCE: a failed replay is deterministic — the same entries onto the same image — so it goes straight
+    // to the bound rather than being retried at the next death.
+    expect(engine.poisoned(first)).toBe(2);
+    expect(engine.sessions(first)).toStrictEqual({});
+    expect(surface.reported.some((failure) => failure.detail.includes('could not be restored'))).toBe(true);
+    // AND ONLY THAT DOCUMENT: the other came back whole.
+    expect(engine.poisoned(second)).toBeUndefined();
+    expect(engine.sessions(second)).toStrictEqual(someSessions(`reopened-${second.slice(0, 4)}`));
+    // THE DOCUMENT IS STILL OPEN — refused, not closed — which is clause (i)'s own word.
+    expect(service.openDocIds()).toContain(first);
+  });
+
+  it('CONTROL: a replay interrupted because the document CLOSED is not a failure, and poisons nothing', async () => {
+    const engine = new EngineSessions();
+    const { service, first } = await twoOpenDocuments(engine);
+    const surface = surfaces(service, {
+      replay: (docId) =>
+        docId === first ? Promise.reject(new DocumentNotOpenError(first, 'replay')) : Promise.resolve(0),
+    });
+
+    await onEngineHostEnded(engine, died, surface);
+
+    expect(engine.poisoned(first)).toBeUndefined();
+    expect(surface.reported.filter((failure) => failure.detail.includes('could not be restored'))).toStrictEqual([]);
   });
 
   it('a document closed in the meantime is skipped by the seam, silently', async () => {

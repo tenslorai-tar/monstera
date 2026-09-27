@@ -190,6 +190,23 @@ async function rotate(handlers, docId) {
   }
 }
 
+/**
+ * Page 1's rotation as the document's session holds it, or what refused the read — `rotate`'s rule for a throw: an
+ * observation to report, never a reason to abandon the run.
+ *
+ * @param {any} handlers
+ * @param {string} docId
+ * @returns {Promise<number | string>}
+ */
+async function firstPageRotation(handlers, docId) {
+  try {
+    const model = await handlers['document.viewModel']({ docId, pages: [0] });
+    return model.ok === true ? Number(model.value.rotations[0]) : `refused:${String(model.error.code)}`;
+  } catch (error) {
+    return `threw:${String(error?.constructor?.name ?? 'Error')}`;
+  }
+}
+
 async function main() {
   if (REPORT_PATH === '') {
     throw new Error(
@@ -298,6 +315,12 @@ async function main() {
     );
     const secondPid = rebuilt.ids.find((id) => id !== firstPid) ?? 0;
 
+    // WHAT THE REBUILT SESSION HOLDS (ADR-0115, invariant 18 clause (ii)). The first rotate was a view-model command:
+    // the canonical image never took it, and the log lists it as applied. A rebuild that reopened from the image alone
+    // hands back page 1 at 0°; one that replayed the log hands it back at 90°. Read through the document's lane, so it
+    // is answered after the rebuild's lane entry — replay included — and before anything else is asked of the session.
+    const rotationAfterRebuild = await firstPageRotation(handlers, docId);
+
     const afterFirstDeath = await rotate(handlers, docId);
 
     // THE SECOND DEATH, which is the other end of Decision 9a. Skipped only if
@@ -327,6 +350,7 @@ async function main() {
       rebuilt: rebuilt.settled,
       rebuiltAfterMs: rebuilt.waitedMs,
       secondPid,
+      rotationAfterRebuild,
       afterFirstDeath,
       secondKillHit,
       afterSecondDeath,

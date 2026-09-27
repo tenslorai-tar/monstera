@@ -660,8 +660,57 @@ export class CommandBus {
     bytes: ByteImageAccess,
     installed: boolean,
   ): Promise<void> {
-    if (declaredCommands[kind].display !== 'image' || installed) return;
+    const log = context.commandLog(COMMAND_WRITER);
+    // THE BASE (ADR-0115), set AFTER the log has moved — this runs after `record`, `undo` and `redo` — so it counts
+    // the entries the image holds together with the one this operation applied or took away.
+    if (installed) {
+      log.imageIsCurrent();
+      return;
+    }
+    // AN UNDO BELOW THE BASE refreshes the image whatever the command's display: the image would otherwise hold a
+    // change the log no longer applies, and a replay only runs forwards, so it could never take that change away.
+    const below = log.entries.length < log.imageHolds;
+    if (declaredCommands[kind].display !== 'image' && !below) return;
     context.replaceCanonicalImage(COMMAND_WRITER, await bytes.current());
+    log.imageIsCurrent();
+  }
+
+  /**
+   * Re-applies, to a session just opened from the canonical image, every applied entry that image does not include —
+   * the second half of rebuilding a document after its engine host died
+   * ([ADR-0115](../../../docs/DECISIONS/0115-a-rebuilt-session-replays-what-the-image-does-not-hold.md), invariant 18
+   * clause (ii)).
+   *
+   * **`redo`'s own route for each entry**: the writer and session picked from the entry, `stored-effect` applying the
+   * value the entry kept and `reapply-intent` re-running the command, the source re-resolved. What differs is what it
+   * leaves alone: the log does not move and no version is bumped, because the renderer's image is the canonical image
+   * and already matched — it is the session that fell behind, and this brings it back.
+   *
+   * **No entry past the base can belong to a byte-image writer**, because such an operation replaces the image and
+   * {@link #show} then moves the base. One arriving here is a defect in that bookkeeping and is said, rather than its
+   * bytes being dropped.
+   *
+   * @returns how many entries were re-applied
+   * @throws whatever an entry's `apply` throws — the caller's clause (i), never a partial silence
+   */
+  async replayPastImage(sessions: SessionsByWriter, context: DocumentContext, inputs: CommandInputs): Promise<number> {
+    const pending = context.log.pastImage;
+    for (const entry of pending) {
+      const spec = declaredCommands[entry.command.kind];
+      if (writerShapes[spec.writer] === 'byte-image') {
+        throw new Error(
+          `${entry.command.kind} is past the canonical image's base and is routed to ${spec.writer}, a byte-image ` +
+            `writer whose operation always replaces the image — the base was not moved when it ran.`,
+        );
+      }
+      const writer = this.#writerFor(entry.command.kind, spec.writer);
+      const session = await this.#sessionFor(entry.command.kind, spec.writer, sessions, inputs);
+      const preRead =
+        spec.replay === 'stored-effect' ? entry.read : await this.#preReadFor(spec, entry.command, inputs);
+      const source = this.#sourceSessionFor(entry.command, inputs.sources);
+      await writer.apply({ session, command: entry.command, source, reads: preRead });
+    }
+    return pending.length;
   }
 
   /**
@@ -1085,6 +1134,11 @@ export class CommandBus {
     const entry = context.commandLog(COMMAND_WRITER).peekRedo();
     if (entry === undefined) return [];
     return sourceIdsOf(entry.command);
+  }
+
+  /** The other documents {@link replayPastImage} will re-apply against — `pendingRedoSources`, for every pending entry. */
+  pendingReplaySources(context: DocumentContext): readonly DocId[] {
+    return [...new Set(context.log.pastImage.flatMap((entry) => sourceIdsOf(entry.command)))];
   }
 
   async redo(

@@ -178,6 +178,7 @@ import {
 } from './engineHostConnection.js';
 import {
   type EngineOpenFromPath,
+  type HostDeathSurfaces,
   type SessionAreaOwner,
   EngineSessions,
   onDocumentOpened,
@@ -799,7 +800,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // the log and half on a handle nobody is reading.
   const failures = log?.failures ?? reportShellFailure;
 
-  const engineHost = engineSessionOpener(enginePlatform, documents, engine, failures);
+  // THE REPLAY IS `commands`', which is built below from this opener's writers: the closure is only called after an
+  // engine host dies, by which time `commands` exists. Passed, never looked up, so the host-death path cannot reach a
+  // replay nothing registered (ADR-0115).
+  const engineHost = engineSessionOpener(enginePlatform, documents, engine, failures, (docId, context) =>
+    commands.replayAfterRebuild(docId, context),
+  );
 
   // THE SECOND HOST, and it is built beside the first rather than inside it.
   // `engineSessionOpener`'s whole subject is *one document's session* — it holds
@@ -1640,6 +1646,8 @@ function engineSessionOpener(
   documents: DocumentService,
   sessions: EngineSessions,
   failures: ShellFailureSink,
+  /** The rebuild's second half after a host death (ADR-0115): `DocumentCommands.replayAfterRebuild`. */
+  replay: HostDeathSurfaces['replay'],
 ): {
   readonly openedDocument: (docId: DocId) => Promise<void>;
   readonly writers: WriterRegistry;
@@ -2185,6 +2193,7 @@ function engineSessionOpener(
             await ensure().catch(() => undefined);
           },
           reopen: create,
+          replay,
         });
       },
     });
