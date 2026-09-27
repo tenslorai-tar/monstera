@@ -61,7 +61,8 @@ const failures = [];
  * not run as **skipped**, and skipped counts toward the total, so the number is
  * the same everywhere and a case that stops being *generated* is still loud.
  */
-const DECLARED_CASES = 33;
+// 34 SINCE THE SCAN SHAPE (2026-09-27): the per-shape pass above is one case a shape, and there are three.
+const DECLARED_CASES = 34;
 
 const roster = createRoster(failures, { cases: DECLARED_CASES });
 
@@ -279,11 +280,13 @@ const thrown = guarded(() => {
     );
   }
 
+  // THE LITERAL IS THE ANCHOR (4c): a derived count agrees with a shape dropped from `runAllShapes`, and the danger
+  // here runs towards shrinkage — the scan joined 2026-09-27 as the founding record's own perf shape.
   check(
-    'both content shapes were measured, not just the easy one',
-    shapes.length === 2 && shapes.some((run) => run.shape === 'object-dense'),
-    `shapes run: ${shapes.map((run) => run.shape).join(', ')}. The two shapes give different ` +
-      `figures for the same role, so one is not evidence about the other.`,
+    'every content shape was measured, not just the easy one',
+    shapes.map((run) => run.shape).join(',') === 'image-heavy,object-dense,scan',
+    `shapes run: ${shapes.map((run) => run.shape).join(', ')}. The shapes give different ` +
+      `figures for the same role, so one is not evidence about another.`,
   );
 
   check(

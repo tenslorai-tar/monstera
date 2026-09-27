@@ -190,6 +190,8 @@ const documentPath = looksLikeAPath ? documentArgument : null;
 /** The host's fixed cost: connect, and hold no document. Implies `--host`. */
 const NO_DOCUMENT = process.argv.includes('--no-document');
 const HOST_MODE = process.argv.includes('--host') || NO_DOCUMENT;
+// OPEN AND NOTHING ELSE, in the real host: see the workload below.
+const OPEN_ONLY = process.argv.includes('--open-only');
 
 /**
  * The document path, or a refusal naming which cell asked for it.
@@ -526,13 +528,33 @@ async function measureHost() {
       return;
     }
 
+    const openStarted = performance.now();
     const opened = await client['engine/open']({
       snapshotDirectory: paths.snapshot,
       snapshotName: SNAPSHOT_NAME,
       outputDirectory: paths.output,
     });
+    const openMs = performance.now() - openStarted;
     if (!opened.ok) throw new Error(`engine/open answered ${opened.error.code}`);
     const session = opened.value.session;
+
+    // `--open-only`: the host holding an OPEN document and nothing else — the founding record's *"memory < 1.5×
+    // file size steady"* (BUILD-PROMPT.md:722). Its PEAK, not its current working set: the peak is an upper bound on
+    // the steady figure, and the current one is trimmed by Windows in the reassuring direction (`peakWorkingSetOf`).
+    if (OPEN_ONLY) {
+      reportPeakOf(pid, {
+        ...common,
+        cell: 'host',
+        workload: 'open',
+        openMs,
+        document: requireDocument(),
+        documentBytes: statSync(requireDocument()).size,
+        harnessPeakBytes: peakRssBytes(),
+      });
+      const shut = await client['engine/close']({ session });
+      if (!shut.ok) throw new Error(`engine/close answered ${shut.error.code}`);
+      return;
+    }
 
     // THE ONLY DECLARED COMMAND. `commandSchema` is a discriminated union of one
     // member, so this is not a representative sample of engine work — it is the

@@ -37,7 +37,7 @@ import { fileURLToPath } from 'node:url';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { assertableBudget, memoryBudgets } from '../lib/memoryBudgets.mjs';
-import { buildDenseFixture, buildLargeFixture } from './largeFixture.mjs';
+import { buildDenseFixture, buildLargeFixture, buildScanFixture } from './largeFixture.mjs';
 import { formatBytes, measurePeak } from './peakRss.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -306,9 +306,12 @@ export function runBudgetGate(options = {}) {
 export function runAllShapes(root = ROOT) {
   const image = buildLargeFixture({ root });
   const dense = buildDenseFixture({ root });
+  // THE SCAN the founding record's perf pass names (BUILD-PROMPT.md:722): many compressed pages, a third shape.
+  const scan = buildScanFixture({ root });
   return [
     { shape: 'image-heavy', ...runBudgetGate({ root, documentPath: image.path, documentBytes: image.bytes }) },
     { shape: 'object-dense', ...runBudgetGate({ root, documentPath: dense.path, documentBytes: dense.bytes }) },
+    { shape: 'scan', ...runBudgetGate({ root, documentPath: scan.path, documentBytes: scan.bytes }) },
   ];
 }
 

@@ -35,6 +35,7 @@ import { createHash } from 'node:crypto';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, writeFileSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { deflateSync } from 'node:zlib';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 
@@ -254,6 +255,215 @@ export function buildDenseFixture(options = {}) {
     'utf8',
   );
   return { path, bytes: position, pages, objects: actualObjects, sha256, generated: true };
+}
+
+/**
+ * A small deterministic generator (mulberry32): the scan's noise comes from a FIXED SEED, never `Math.random`, so the
+ * same seed paints the same pixels on every run.
+ *
+ * @param {number} seed
+ * @returns {() => number} numbers in [0, 1)
+ */
+function seeded(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** The scan's page: A4 at 150 dpi, 8-bit grey — what an office scanner's greyscale setting writes. */
+const SCAN_PAGE = { width: 1240, height: 1754 };
+
+/**
+ * One scanned page's grey samples: paper with sensor noise, and dark bands where lines of text would be.
+ *
+ * **A noise TILE, not a draw per pixel**: 65,521 bytes (a prime, so no row lines up with it) drawn once from the seed
+ * and read at a per-page offset. Two million draws a page for hundreds of pages would make the generator the slow part
+ * of a measurement about the engine; a tile longer than deflate's 32 KB window still leaves the compressor nothing to
+ * repeat, which is what makes the file scan-like rather than trivially small.
+ *
+ * @param {number} page
+ * @param {Uint8Array} tile
+ * @param {() => number} next the page's own generator, for where its lines fall
+ * @returns {Buffer}
+ */
+function scanSamples(page, tile, next) {
+  const { width, height } = SCAN_PAGE;
+  const samples = Buffer.allocUnsafe(width * height);
+  // LINES OF "TEXT": a band every 30 rows, 12 rows tall, broken into words of seeded length, inside the margins.
+  /** @type {Array<[number, number]>[]} */
+  const words = Array.from({ length: height }, () => []);
+  for (let top = 150; top + 12 < height - 150; top += 30) {
+    /** @type {Array<[number, number]>} */
+    const line = [];
+    for (let x = 120; x < width - 120; ) {
+      const length = 20 + Math.floor(next() * 90);
+      line.push([x, Math.min(x + length, width - 120)]);
+      x += length + 12 + Math.floor(next() * 10);
+    }
+    for (let y = top; y < top + 12; y += 1) words[y] = line;
+  }
+  let offset = (page * 7919) % tile.length;
+  for (let y = 0; y < height; y += 1) {
+    const line = words[y] ?? [];
+    let word = 0;
+    for (let x = 0; x < width; x += 1) {
+      while (word < line.length && (line[word]?.[1] ?? 0) <= x) word += 1;
+      const inWord = word < line.length && (line[word]?.[0] ?? width) <= x;
+      const noise = (tile[offset] ?? 128) - 128;
+      offset = offset + 1 === tile.length ? 0 : offset + 1;
+      // ±4 LEVELS OF SENSOR NOISE: measured 2026-09-27 on this generator, ±8 compressed a page to about 1.3 MB and gave
+      // 163 pages for 200 MB, and ±4 gives 212 pages of about 1 MB. Deflate over noisy grey does not go much lower;
+      // an office scanner's JPEG would, and this shape errs towards fewer pages, not more.
+      samples[y * width + x] = Math.max(0, Math.min(255, (inWord ? 40 : 232) + (noise >> 5)));
+    }
+  }
+  return samples;
+}
+
+/**
+ * Writes a SCANNED document of at least `targetBytes` (BUILD-PROMPT.md:722, *"200 MB scan: open < 3 s, tab switch
+ * instant, memory < 1.5× file size steady"*): hundreds of pages, each one Flate-compressed greyscale image, with
+ * noise from a fixed seed.
+ *
+ * ## Why a third shape
+ *
+ * The stream-heavy fixture (`buildLargeFixture`) is forty uncompressed images: large, few, and free to decode. A scan is the shape
+ * the founding record names and neither of the others is — many pages, each image COMPRESSED, so opening walks a long
+ * page tree and showing a page inflates one. The page count is not chosen: pages are written until the file reaches
+ * the target, because a compressed page's size is only known once it is compressed.
+ *
+ * ## What is deterministic, exactly
+ *
+ * The pixels: every sample comes from the seed. The compressed BYTES come from this Node's zlib, so two machines on
+ * different zlib builds can write different files for the same pixels; the stamp records the file's own digest, and
+ * the cache is keyed on the generator and the seed.
+ *
+ * @param {{ targetBytes?: number, seed?: number, name?: string, root?: string }} [options]
+ * @returns {Fixture}
+ */
+export function buildScanFixture(options = {}) {
+  const root = options.root ?? repoRoot();
+  const targetBytes = options.targetBytes ?? 200 * 1024 ** 2;
+  const seed = options.seed ?? 20260927;
+  const name = options.name ?? `perf-scan-${String(Math.round(targetBytes / 1024 ** 2))}mb.pdf`;
+
+  const directory = fixtureDirectory(root);
+  mkdirSync(directory, { recursive: true });
+  const path = join(directory, name);
+  const stamp = `${path}.generator.json`;
+
+  const generatorDigest = createHash('sha256')
+    .update(readFileSync(join(HERE, 'largeFixture.mjs')))
+    .update(`scan:${String(targetBytes)}:${String(seed)}`)
+    .digest('hex');
+
+  if (existsSync(path) && existsSync(stamp)) {
+    /** @type {{ generator?: string, sha256?: string, objects?: number, pages?: number }} */
+    const previous = JSON.parse(readFileSync(stamp, 'utf8'));
+    if (previous.generator === generatorDigest && typeof previous.sha256 === 'string' && typeof previous.pages === 'number') {
+      return {
+        path,
+        bytes: statSync(path).size,
+        pages: previous.pages,
+        objects: previous.objects ?? 2 + previous.pages * 3,
+        sha256: previous.sha256,
+        generated: false,
+      };
+    }
+  }
+
+  const tileNext = seeded(seed);
+  const tile = Uint8Array.from({ length: 65_521 }, () => Math.floor(tileNext() * 256));
+  const layout = seeded(seed ^ 0x5eed);
+
+  /** @type {number[]} */
+  const offsets = [];
+  let position = 0;
+  const digest = createHash('sha256');
+  const handle = openSync(path, 'w');
+
+  /** @param {Buffer | string} chunk */
+  const emit = (chunk) => {
+    const buffer = typeof chunk === 'string' ? Buffer.from(chunk, 'latin1') : chunk;
+    writeSync(handle, buffer);
+    digest.update(buffer);
+    position += buffer.length;
+  };
+
+  /** @param {number} id */
+  const startObject = (id) => {
+    offsets[id] = position;
+    emit(`${String(id)} 0 obj\n`);
+  };
+
+  /** @type {number[]} */
+  const pageIds = [];
+  try {
+    emit('%PDF-1.7\n%âãÏÓ\n');
+    startObject(1);
+    emit('<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+
+    // PAGES UNTIL THE TARGET, each three objects from 3 up; the page tree (object 2) is written last, once the count
+    // is known — an xref locates objects wherever they sit.
+    for (let page = 0; pageIds.length === 0 || position < targetBytes; page += 1) {
+      const id = 3 + page * 3;
+      pageIds.push(id);
+      const compressed = deflateSync(scanSamples(page, tile, layout), { level: 6 });
+
+      startObject(id);
+      emit(
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] ` +
+          `/Resources << /XObject << /Im0 ${String(id + 2)} 0 R >> >> ` +
+          `/Contents ${String(id + 1)} 0 R >>\nendobj\n`,
+      );
+      const content = 'q\n595 0 0 842 0 0 cm\n/Im0 Do\nQ\n';
+      startObject(id + 1);
+      emit(`<< /Length ${String(content.length)} >>\nstream\n${content}endstream\nendobj\n`);
+      startObject(id + 2);
+      emit(
+        `<< /Type /XObject /Subtype /Image /Width ${String(SCAN_PAGE.width)} ` +
+          `/Height ${String(SCAN_PAGE.height)} /ColorSpace /DeviceGray /BitsPerComponent 8 ` +
+          `/Filter /FlateDecode /Length ${String(compressed.length)} >>\nstream\n`,
+      );
+      emit(compressed);
+      emit('\nendstream\nendobj\n');
+    }
+
+    startObject(2);
+    emit(
+      `<< /Type /Pages /Count ${String(pageIds.length)} /Kids [${pageIds
+        .map((id) => `${String(id)} 0 R`)
+        .join(' ')}] >>\nendobj\n`,
+    );
+
+    const highest = 3 + pageIds.length * 3;
+    const xref = position;
+    emit(`xref\n0 ${String(highest)}\n`);
+    emit('0000000000 65535 f \n');
+    for (let id = 1; id < highest; id += 1) {
+      const offset = offsets[id];
+      if (offset === undefined) throw new Error(`scanFixture: object ${String(id)} was never written`);
+      emit(`${String(offset).padStart(10, '0')} 00000 n \n`);
+    }
+    emit(`trailer\n<< /Size ${String(highest)} /Root 1 0 R >>\nstartxref\n${String(xref)}\n%%EOF\n`);
+  } finally {
+    closeSync(handle);
+  }
+
+  const sha256 = digest.digest('hex');
+  const pages = pageIds.length;
+  const objects = 2 + pages * 3;
+  writeFileSync(
+    stamp,
+    `${JSON.stringify({ generator: generatorDigest, sha256, bytes: position, objects, pages, seed }, null, 2)}\n`,
+    'utf8',
+  );
+  return { path, bytes: position, pages, objects, sha256, generated: true };
 }
 
 /**

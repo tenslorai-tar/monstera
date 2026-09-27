@@ -892,6 +892,20 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-27 — A 200 MB scan, and a steady-memory target the shipped engine cannot meet
+
+**The instrument's own warning decided the method.** *Steady* invites reading the current working set after the open
+settles, and `peakRss.mjs` records that Windows trims that figure in the reassuring direction (PPPP-1). So the new cell
+reads the peak over opening alone — an upper bound — and for a WebAssembly heap, which grows and is never given back,
+the bound is the steady figure. It came back at about 4× the file for the host, 5× with `main`'s copy.
+
+**Nothing about this is new, which is the useful part.** The whole-file copy is the constraint the 2026-09-08 reach
+decision named when it chose the native engine; the model cell, reaching the same library natively, costs 0.80× on the
+same scan. The perf pass did not find a defect — it put a number on the cost of a migration that is decided and not
+done.
+
+---
+
 ## 2026-09-27 — WCAG 2.1 AA: the ribbon never said which tool was on
 
 The helper's review was a good draft with the wrong ruler: it read against 2.2, so four of its first findings (drag
