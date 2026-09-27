@@ -892,6 +892,24 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-27 — Correction: the Help centre's commit message (UUUUUU-1), and a typecheck red that was a second sweep
+
+**`f5a66361`'s message is wrong in one sentence.** It lists, among the Help centre's changes, that Settings' keyboard
+note no longer names a key. That edit landed one commit earlier, in `8f41230d`, the commit that recorded TTTTTT. The
+message is public once pushed and is not rewritten (B10); this entry is its correction, as UUUUUU-1 recorded.
+
+**The pre-push for this batch went red on 13 × TS5055** (*"would overwrite input file"* on every
+`packages/shared/dist/*.d.ts` except the tests'), and the cause was not in the tree. A pair run stopped with the
+agent's `TaskStop` at 12:58 had lost only its wrapper; the script ran on, and its check sweep's `proof:boundaries`
+planted `__boundary_probe__.ts` in `packages/shared/src` while the new pre-push compiled at 13:26. That probe imports
+another workspace package, whose declarations import `@monstera/shared`, so shared's own program took its `dist` as
+input. Read from the stopped run's own logs arriving until 13:33, a `.cache/checkLocal-runs` record under a PID the new
+run did not start, and the directory's modification time. Both halves of `npm run typecheck` pass with nothing else
+running, and no build output was deleted. **The tell for next time is the error itself**: TS5055 on a package whose
+configuration did not change means another process was writing in its source directory.
+
+---
+
 ## 2026-09-27 — The three old leftovers, stated; and a Layers toggle that never reached the screen
 
 The 26 September list, item 10: each leftover stated as owed or closed, with its stage. A helper's notes were the draft
