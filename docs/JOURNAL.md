@@ -892,6 +892,85 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-27 — Stage audit of `1e50ee56..7ff18bb9` — findings UUUUUU-1 to UUUUUU-5
+
+6 commits, 198 files, 5 proofs added, 10 modified and none removed, 140 source files added (133 of them Help
+articles) and the rest changed (`npm run audit:scope`). The range is the recording commit of TTTTTT, the Help centre,
+the legal set, the proof locale, WCAG 2.1 AA and the scan shape. The commit gate stopped the Store assets' commit at
+three files past the batch, so this audit rides in its own commit and they follow it.
+
+### 1. Root cause or workaround?
+
+Each fix names its mechanism in its row: `checked` read by one surface (WCAG 4.1.2), a choice drawn by variant alone
+(1.3.1), an outline doing two jobs (2.4.7), a timer on the one message a person must read (2.2.1), a sentence that
+could not say which field (3.3.1). **UUUUUU-1 is a record, not a fix: the Help centre's commit message says Settings'
+keyboard note no longer names a key, and that change landed one commit earlier, in TTTTTT's recording commit.** The
+message is permanent once pushed; this line is its correction.
+
+### 2. Verified against the easy shape only?
+
+**UUUUUU-2, stated.** The Help centre's location check reads three phrasings of *"choose SECTION, then TOOL in the
+GROUP group"*; a place said across two numbered steps is outside it, and one such (`export-text`) was caught only by
+the section check beside it. The scan fixture is the hard shape the perf pass lacked — many compressed pages — and was
+measured beside the two easy ones rather than instead of them.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+`proof:perfbudget` went from *"two shapes, one of them dense"* to a literal list of three names, and its declared count
+from 33 to 34 with the one case the third shape adds. Stronger in both directions.
+
+### 3. Would CI have caught it?
+
+The range is unpushed. `proof:storeassets` joins CI with the next commit; the proof locale, the Help checks and the
+WCAG cases are vitest cases that run on both legs. **UUUUUU-3: the visual baselines will not pass as they stand** — the
+start screen's footer gained *Help centre* and says *"Press F1 for help"*, the shortcuts list gained a row, and *Select
+text* now draws pressed when no tool is on — so `test:visual` owes a reviewed baseline update before the push, and it
+would have gone red in CI had it not.
+
+### 4. Are the proofs non-vacuous?
+
+Every new check carries its own control: the catalogue check a word it must refuse, the location check an exact place
+in and the same tool elsewhere out, the proof-locale scan a planted English sentence, the Store proof an icon's drawn
+centre against a tile's clear side, the toast case the same toast of the other kind leaving on time. Source mutations
+stay refused by this session's classifier, so the controls were written instead of run against mutants.
+
+### 4a. Has every instrument passed a resolution test?
+
+The `--open-only` cell separated the scan's 948 MB from the 116 MB baseline and from the native model's 0.80×, three
+runs each within 1%. The scan generator gave the same digest twice.
+
+### 4b. Is the instrument a search?
+
+Four are — the bold-word, location and section checks over the articles, and the proof-locale scan — and each has a
+floor or a planted positive (over 100 articles, over 80 location claims, the ribbon's tools drawn and marked).
+
+### 4c. Does a check derive its extent from the set it governs?
+
+The Store proof anchors on a literal 73 and three required names rather than on `STORE_ASSETS.length`, and the perf
+proof on a literal list of shapes. **UUUUUU-4:** the Help article check's floor is *over 100* against 133 — a floor, so
+the loss of thirty-two articles would pass; it guards an empty glob, not a shrink.
+
+### 5. Executed, or asserted?
+
+The Help centre's rendered F1 case, the dialog-focus cases and the visual baselines changed and have not run in
+Chromium in this range — asserted until the pre-push run. The scan's first paint and tab switching are unmeasured and
+stated so on the perf row.
+
+### 6. Architecture before the feature?
+
+ADR-0112 had its B4 commit first. `App`'s `onRegistries` is an observer a case passes and composition does not — no
+seam moved. The settings entry has no field for an input's purpose, and adding one is a B4 amendment, so Settings'
+author name was left owed rather than given it inside a WCAG commit.
+
+### 7. Do the documents match the code?
+
+§10.4's claim that axe sees focus order was false and is corrected. **UUUUUU-5, outside the range and found in it:**
+`budgetGate.mjs` reports the renderer unasserted because its budget terms are *"unmeasured until a renderer exists"* —
+a renderer has existed since Stage 0's walking skeleton; the budget is still provisional in §9.17, which is the true
+reason, and the message's clause is stale. Stated, not fixed here.
+
+---
+
 ## 2026-09-27 — A 200 MB scan, and a steady-memory target the shipped engine cannot meet
 
 **The instrument's own warning decided the method.** *Steady* invites reading the current working set after the open
