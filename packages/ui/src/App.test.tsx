@@ -718,6 +718,45 @@ describe('App', () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
+  it('a key a person CHOSE runs the command, and the key it had before no longer does (ADR-0111)', async () => {
+    const { client, calls } = recordingClient({ kind: 'cancelled' });
+    const settings = freshSettings();
+    settings.set('keyboard.shortcuts', { 'document.open': 'ctrl+shift+o' });
+    render(<App client={client} settings={settings} />);
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', ctrlKey: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    // THE OLD KEY FIRST, so an application still answering it cannot pass on the new one's call.
+    expect(commandCalls(calls)).toStrictEqual([]);
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'O', ctrlKey: true, shiftKey: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    expect(commandCalls(calls)).toStrictEqual(['document.open']);
+  });
+
+  it('while a dialog is open the page’s shortcuts do nothing — the key is the dialog’s (ADR-0111)', async () => {
+    const { client, calls } = recordingClient({ version: '1.2.3', installChannel: 'development', userName: 'A. Tester' });
+    render(<App client={client} settings={freshSettings()} />);
+    await act(async () => {
+      screen.getByRole('button', { name: 'About' }).click();
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole('dialog', { name: 'About Monstera' })).toBeDefined();
+
+    const event = new KeyboardEvent('keydown', { key: 'o', ctrlKey: true, cancelable: true });
+    await act(async () => {
+      document.dispatchEvent(event);
+      await Promise.resolve();
+    });
+    // THE SAME KEY the cases above show opening a document, with nothing sent and the key left alone.
+    expect(commandCalls(calls).filter((id) => id === 'document.open')).toStrictEqual([]);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
   it('the claimed chord IS prevented, so the browser does not act on it too', async () => {
     const { client } = recordingClient({ kind: 'cancelled' });
     render(<App client={client} settings={freshSettings()} />);
@@ -2354,7 +2393,10 @@ describe('App', () => {
     });
 
     const table = await screen.findByRole('table', {}, { timeout: 2000 });
-    const rows = [...table.querySelectorAll('tbody tr')].map((row) => row.textContent);
+    // THE COMMAND AND ITS KEY, the row's first two cells: since ADR-0111 each row also carries its Change buttons.
+    const rows = [...table.querySelectorAll('tbody tr')].map(
+      (row) => `${row.querySelector('th')?.textContent ?? ''}${row.querySelector('td')?.textContent ?? ''}`,
+    );
     expect(rows).toContain('Open PDF…Ctrl+O');
     expect(rows).toContain('Keyboard shortcutsF1');
   });

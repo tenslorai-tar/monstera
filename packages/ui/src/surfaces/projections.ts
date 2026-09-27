@@ -704,32 +704,19 @@ export class ShortcutConflict extends Error {
 export function shortcutMapOf(registry: CommandRegistry): ReadonlyMap<string, UiCommand> {
   const map = new Map<string, UiCommand>();
   for (const command of registry.all()) {
-    if (command.shortcut === undefined) continue;
-    const chord = normaliseChord(command.shortcut);
-    const existing = map.get(chord);
-    if (existing !== undefined) throw new ShortcutConflict(chord, existing.id, command.id);
-    map.set(chord, command);
+    for (const declared of chordsOf(command)) {
+      const chord = normaliseChord(declared);
+      const existing = map.get(chord);
+      if (existing !== undefined) throw new ShortcutConflict(chord, existing.id, command.id);
+      map.set(chord, command);
+    }
   }
   return map;
 }
 
-/** One row of the keyboard shortcuts list: the chord as its command spells it, and that command's title. */
-export interface ShortcutEntry {
-  readonly chord: string;
-  readonly title: MessageKey;
-}
-
-/**
- * Every bound chord and what it runs, for the F1 list — over ALL commands, as the map is.
- *
- * Read off {@link shortcutMapOf} rather than re-derived from each command's `shortcut`, because the map is the one place
- * a chord is decided: a list that walked the registry itself would show two rows for a conflict the map refuses.
- * Sorted by the normalised chord, so the order does not follow registration order.
- */
-export function shortcutListModel(registry: CommandRegistry): readonly ShortcutEntry[] {
-  return [...shortcutMapOf(registry)]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([chord, command]) => ({ chord: command.shortcut ?? chord, title: command.title }));
+/** Every chord a command answers: its shortcut, then any it also answers (ADR-0111 Decision 4). */
+export function chordsOf(command: UiCommand): readonly string[] {
+  return [...(command.shortcut === undefined ? [] : [command.shortcut]), ...(command.alsoShortcuts ?? [])];
 }
 
 /**

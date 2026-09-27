@@ -599,6 +599,64 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
+/* THE SHORTCUTS EDITOR (ADR-0111): the list above, with a row header per command, a column of changes, and one
+   *Reset all* at the foot. Several keys of one command sit side by side with the scale's own gap. */
+.m-shortcuts-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.m-shortcuts tbody th {
+  font-weight: 400;
+}
+
+.m-shortcuts td:nth-child(2) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.m-shortcuts__actions {
+  white-space: nowrap;
+}
+
+.m-shortcuts__none {
+  color: var(--muted);
+}
+
+/* THE ONE CONTROL THAT TAKES A KEY PRESS WHOLE: bordered like a field, so it reads as waiting for input, with the
+   focus ring every control carries. */
+.m-shortcuts__capture {
+  padding: var(--space-4) var(--space-8);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-6);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.m-shortcuts__capture:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.m-shortcuts__refused {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text);
+}
+
+.m-shortcuts-editor__note {
+  margin: 0;
+}
+
+.m-shortcuts-editor__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 /*
  * An open that produced no document. `--text` and not a colour of its own for
  * `.m-status-problem`'s reason: the token set declares no error role, and a raw

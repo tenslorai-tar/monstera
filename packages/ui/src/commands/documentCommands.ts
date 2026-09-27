@@ -698,6 +698,9 @@ export function zoomCommand(direction: 'in' | 'out', deps: ZoomDeps): UiCommand 
     icon: direction === 'in' ? 'ZoomIn' : 'ZoomOut',
     title: direction === 'in' ? ZOOM_IN_TITLE : ZOOM_OUT_TITLE,
     shortcut: direction === 'in' ? 'Ctrl+=' : 'Ctrl+-',
+    // THE PLUS KEY TOO (ADR-0111): Ctrl+plus sign on a US keyboard is Ctrl+Shift+=, and on a German or Nordic one the
+    // plus key is its own key, as the numpad's is. Zoom out needs no second chord — minus is minus on every layout.
+    ...(direction === 'in' ? { alsoShortcuts: ['Ctrl+Plus', 'Ctrl+Shift+Plus'] } : {}),
     placements: [
       // ON BOTH, and this is one of the six §10.3 names for the floating pill —
       // "the always-needed tools (select, hand, text selection, zoom in/out,
@@ -2010,6 +2013,8 @@ export function redoCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'Redo2',
     title: REDO_TITLE,
     shortcut: 'Ctrl+Y',
+    // THE OTHER REDO a person's hands know (ADR-0111), from nearly every editor that is not Windows' own.
+    alsoShortcuts: ['Ctrl+Shift+Z'],
     placements: [
       { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 26 },
       { surface: 'menu-bar', menu: 'edit', group: 0, order: 20 },

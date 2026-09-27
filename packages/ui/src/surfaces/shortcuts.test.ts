@@ -22,8 +22,33 @@ function command(id: string, over: Partial<UiCommand> = {}): UiCommand {
 }
 
 function press(key: string, held: Partial<Omit<KeyChord, 'key'>> = {}): KeyChord {
-  return { key, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...held };
+  return { key, code: '', ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...held };
 }
+
+describe('chordOf — the same key is the same chord on every layout (ADR-0111)', () => {
+  it('a letter pressed on a non-Latin layout is spelt from its POSITION: Ctrl+S on Russian is still Ctrl+S', () => {
+    // `ы` IS WHAT THE RUSSIAN LAYOUT GIVES the S key; spelt from the character this chord matched nothing.
+    expect(chordOf(press('ы', { code: 'KeyS', ctrlKey: true }))).toBe('ctrl+s');
+    // AND GREEK, one more script, so the rule is the position and not a table of Cyrillic.
+    expect(chordOf(press('σ', { code: 'KeyS', ctrlKey: true }))).toBe('ctrl+s');
+  });
+
+  it('a digit on AZERTY is spelt from its position: Ctrl+1 gives & and is still Ctrl+1', () => {
+    expect(chordOf(press('&', { code: 'Digit1', ctrlKey: true }))).toBe('ctrl+1');
+  });
+
+  it('CONTROL: a Latin letter keeps the letter its keycap shows — AZERTY’s A, where QWERTY has Q', () => {
+    // A POSITION-ONLY rule would spell this `q`, moving every letter shortcut on a French keyboard.
+    expect(chordOf(press('a', { code: 'KeyQ', ctrlKey: true }))).toBe('ctrl+a');
+  });
+
+  it('the plus key is spelt `plus`, from the character or the numpad, and a key that is neither stays itself', () => {
+    expect(chordOf(press('+', { code: 'Equal', ctrlKey: true, shiftKey: true }))).toBe('ctrl+shift+plus');
+    expect(chordOf(press('+', { code: 'NumpadAdd', ctrlKey: true }))).toBe('ctrl+plus');
+    expect(chordOf(press('=', { code: 'Equal', ctrlKey: true }))).toBe('ctrl+=');
+    expect(chordOf(press('PageDown', { code: 'PageDown' }))).toBe('pagedown');
+  });
+});
 
 describe('chordOf', () => {
   it('spells an event the way a declared shortcut is spelt', () => {

@@ -21,6 +21,8 @@ import { normaliseChord, shortcutMapOf } from './projections.js';
 /** The parts of a `KeyboardEvent` this needs, so a case can construct one. */
 export interface KeyChord {
   readonly key: string;
+  /** The key's POSITION on the keyboard (`KeyS`, `Digit1`, `NumpadAdd`), whatever character the layout gives it. */
+  readonly code: string;
   readonly ctrlKey: boolean;
   readonly altKey: boolean;
   readonly shiftKey: boolean;
@@ -49,8 +51,31 @@ export function chordOf(event: KeyChord): string {
   // flag; including them would spell `ctrl+control`, which matches nothing and
   // would silently swallow the modifier press that precedes every chord.
   const modifierKeys = new Set(['Control', 'Alt', 'Shift', 'Meta']);
-  if (!modifierKeys.has(event.key)) parts.push(event.key.toLowerCase());
+  if (!modifierKeys.has(event.key)) parts.push(keyOf(event));
   return normaliseChord(parts.join('+'));
+}
+
+/**
+ * The key a chord names, spelt so the same key is the same chord on every keyboard layout (ADR-0111 Decision 3).
+ *
+ * `event.key` is the CHARACTER the layout produces, and on a Cyrillic, Greek, Hebrew, Arabic or Thai layout Ctrl+S
+ * produces a character that is not `s` — so every Ctrl+letter chord was dead there — and on French AZERTY Ctrl+1 and
+ * Ctrl+0 produce `&` and `à`. Where the character is not a Latin letter or digit and the key's POSITION is one
+ * (`KeyS`, `Digit1`), the position names it. Where the character IS one it wins, so a layout that moves a letter (the
+ * `A` of AZERTY, where QWERTY has `Q`) keeps the letter its keycap shows.
+ *
+ * **The plus key has a name**, `plus`, from the character or the numpad's key: `+` is the separator every chord is
+ * split on, so a chord ending in it could not be spelt at all — Ctrl+plus sign and numpad plus reached nothing.
+ */
+function keyOf(event: KeyChord): string {
+  if (event.key === '+' || event.code === 'NumpadAdd') return 'plus';
+  // THE SPACE BAR has a name for the same reason: `normaliseChord` trims each part, and a space trimmed is no key.
+  if (event.key === ' ') return 'space';
+  const character = event.key.toLowerCase();
+  if (/^[a-z0-9]$/u.test(character)) return character;
+  const position = /^(?:Key([A-Z])|Digit(\d))$/u.exec(event.code);
+  if (event.key.length === 1 && position !== null) return (position[1] ?? position[2] ?? '').toLowerCase();
+  return character;
 }
 
 /**
@@ -115,6 +140,55 @@ export function isTypingField(target: EventTarget | null): target is HTMLElement
     return !target.readOnly && TYPED_INPUTS.has(target.type);
   }
   return false;
+}
+
+/** The roles of a focused control that moves with the arrow and page keys itself. */
+const ARROW_ROLES: ReadonlySet<string> = new Set([
+  'slider',
+  'spinbutton',
+  'listbox',
+  'option',
+  'menu',
+  'menubar',
+  'menuitem',
+  'menuitemradio',
+  'menuitemcheckbox',
+  'tablist',
+  'tab',
+  'grid',
+  'gridcell',
+  'tree',
+  'treeitem',
+  'radiogroup',
+  'radio',
+]);
+
+/** The keys such a control answers. */
+const ARROW_KEYS: ReadonlySet<string> = new Set([
+  'arrowleft',
+  'arrowright',
+  'arrowup',
+  'arrowdown',
+  'pageup',
+  'pagedown',
+  'home',
+  'end',
+]);
+
+/**
+ * Whether a key press belongs to the focused CONTROL rather than the page — a slider, a select, a list, a menu, a tab
+ * row — because it moves by the arrow and page keys itself. Without this, a selected annotation's nudge commands took
+ * the arrows from the zoom slider and the document's page commands took PageDown from a list, and the control did not
+ * move (ADR-0111 Decision 5). Only unmodified or Shift presses: Ctrl+Home is still the document's.
+ */
+export function controlOwnsChord(target: EventTarget | null, event: KeyChord): boolean {
+  if (event.ctrlKey || event.altKey || event.metaKey) return false;
+  if (!ARROW_KEYS.has(event.key.toLowerCase())) return false;
+  if (typeof HTMLElement === 'undefined' || !(target instanceof HTMLElement)) return false;
+  if (target instanceof HTMLSelectElement) return true;
+  if (target instanceof HTMLInputElement && (target.type === 'range' || target.type === 'radio')) return true;
+  const role = target.getAttribute('role');
+  return role !== null && ARROW_ROLES.has(role);
 }
 
 /** The input types a person types text into, as opposed to ticks, sliders and buttons. */

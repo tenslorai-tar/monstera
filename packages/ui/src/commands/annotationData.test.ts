@@ -163,7 +163,7 @@ describe('pasteAnnotationsCommand — main mints the import from the clipboard i
       }),
     ]);
     const map = shortcutsFor(registry);
-    const ctrlV = { key: 'v', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false };
+    const ctrlV = { key: 'v', code: 'KeyV', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false };
 
     // NOTHING COPIED: the chord is UNCLAIMED, so the browser keeps the key rather than losing it to nothing.
     expect(dispatchChord(registry, map, ctrlV, CONTEXT).kind).toBe('unclaimed');

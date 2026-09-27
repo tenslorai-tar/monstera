@@ -892,6 +892,26 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-27 — Any command can be given a key, and three keyboard defects under it are gone
+
+ADR-0111 (its B4 commit first). What is worth keeping:
+
+**The editor exposed the substrate, not the other way round.** A capture box records a chord through `chordOf`, so the
+three defects the helpers' keyboard audit found — letters dead on non-Latin layouts, `+` unspellable, the page's keys
+running behind a modal dialog — would each have become a stored choice that never fires. They were fixed first, each
+with a control on the other side: a Latin letter on a layout that moves it keeps its keycap's letter, and a plain `=` is
+still `=`.
+
+**One meeting point, and a choice that no longer passes is named, not thrown.** The map's conflict is a render-time
+throw, so a stored key that a later build gave to another command would have taken the window down at every start;
+`withChosenShortcuts` drops it to its default and the dialog says which.
+
+**The ADR was corrected in the commit that built it**, three times, each found by building: F1 cannot open over another
+dialog without losing it; `check:secondwiring` is why the two hints still find their command by its key; and the list
+of component keys belongs to the Help centre. Written as dated corrections below the decision, which stays as taken.
+
+---
+
 ## 2026-09-27 — A file given at launch opens, and the page is told rather than handed it
 
 `main.ts`' `second-instance` listener restored and focused the window and dropped the arguments — so *Open with*

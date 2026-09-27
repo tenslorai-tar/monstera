@@ -72,3 +72,18 @@ those hints would vanish with it. Both look the command up by id and show whatev
   `shortcut` exists to prevent.
 - **Rebinding the keys outside the registry** (the Organize grid's Delete and Enter, F10, a dialog's Escape) — they
   belong to a component's own interaction and are listed on the Keyboard page as fixed.
+
+## Corrections, 2026-09-27, in the commit that built it
+
+Three sentences above said more than was built, each found while building it:
+
+1. **Decision 5's *"F1 still names the reference from anywhere"* is withdrawn.** Every dialog is modal and shown one at
+   a time, so F1 over an open dialog would replace that dialog and lose what was in it. The dispatcher does nothing
+   while any dialog is open, F1 included.
+2. **Decision 6 is not built, and the reason is a check.** `check:secondwiring` refuses a surface that names a command
+   id, so `FocusHint` and `StartFooter` keep finding their command by its key. That is honest rather than stale: each
+   draws its sentence only while that key runs the command, so a person who moves the key loses the hint rather than
+   reading one that has become false.
+3. **The fixed keys are not listed on the Keyboard page.** The list in *Rejected* stands as the decision; the page
+   still carries its one note (press F1, or Ctrl+K), and a listing of the component keys is owed to the Help centre's
+   keyboard article (the 26 September list, item 9).

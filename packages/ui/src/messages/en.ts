@@ -785,6 +785,19 @@ export const KEYBOARD_SHORTCUTS_TITLE = messageKey('dialog.keyboard-shortcuts.ti
 export const KEYBOARD_SHORTCUTS_COMMAND_TITLE = messageKey('command.keyboard-shortcuts.title');
 export const SHORTCUTS_COMMAND_HEADER = messageKey('dialog.keyboard-shortcuts.command');
 export const SHORTCUTS_CHORD_HEADER = messageKey('dialog.keyboard-shortcuts.chord');
+export const SHORTCUTS_ACTIONS_HEADER = messageKey('dialog.keyboard-shortcuts.actions');
+export const SHORTCUTS_CHANGE = messageKey('dialog.keyboard-shortcuts.change');
+export const SHORTCUTS_RESET = messageKey('dialog.keyboard-shortcuts.reset');
+export const SHORTCUTS_REMOVE = messageKey('dialog.keyboard-shortcuts.remove');
+export const SHORTCUTS_RESET_ALL = messageKey('dialog.keyboard-shortcuts.reset-all');
+export const SHORTCUTS_PRESS = messageKey('dialog.keyboard-shortcuts.press');
+export const SHORTCUTS_NONE = messageKey('dialog.keyboard-shortcuts.none');
+export const SHORTCUTS_CONFLICT = messageKey('dialog.keyboard-shortcuts.conflict');
+export const SHORTCUTS_RESERVED = messageKey('dialog.keyboard-shortcuts.reserved');
+export const SHORTCUTS_TYPING = messageKey('dialog.keyboard-shortcuts.typing');
+export const SHORTCUTS_INCOMPLETE = messageKey('dialog.keyboard-shortcuts.incomplete');
+export const SHORTCUTS_DROPPED = messageKey('dialog.keyboard-shortcuts.dropped');
+export const SHORTCUTS_SETTING_TITLE = messageKey('setting.keyboard-shortcuts.title');
 export const FEATURE_ANNOTATE_TITLE = messageKey('command.start-annotate.title');
 export const FEATURE_FORMS_TITLE = messageKey('command.start-forms.title');
 export const FEATURE_OCR_TITLE = messageKey('command.start-ocr.title');
@@ -2428,6 +2441,21 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [KEYBOARD_SHORTCUTS_COMMAND_TITLE]: 'Keyboard shortcuts',
   [SHORTCUTS_COMMAND_HEADER]: 'Command',
   [SHORTCUTS_CHORD_HEADER]: 'Shortcut',
+  [SHORTCUTS_ACTIONS_HEADER]: 'Change',
+  [SHORTCUTS_CHANGE]: 'Change',
+  [SHORTCUTS_RESET]: 'Reset',
+  [SHORTCUTS_REMOVE]: 'Remove',
+  [SHORTCUTS_RESET_ALL]: 'Reset all shortcuts',
+  [SHORTCUTS_PRESS]: 'Press the new keys, or Esc to cancel',
+  [SHORTCUTS_NONE]: 'None',
+  // EACH REFUSAL SAYS WHY, and the remedy where there is one — a person pressing keys needs the next thing to try.
+  [SHORTCUTS_CONFLICT]: '{chord} already runs {command}. Change that one first, or choose other keys.',
+  [SHORTCUTS_RESERVED]: 'Windows or Monstera keeps {chord} for itself. Choose other keys.',
+  [SHORTCUTS_TYPING]: 'Text boxes keep {chord} for typing. Add Ctrl or Alt.',
+  [SHORTCUTS_INCOMPLETE]: 'Press a key with the modifier.',
+  [SHORTCUTS_DROPPED]:
+    'These went back to their usual keys, because another command now uses the keys you chose: {commands}.',
+  [SHORTCUTS_SETTING_TITLE]: 'Keyboard shortcuts',
   // §10.3's six start-screen shortcuts, word for word.
   [FEATURE_ANNOTATE_TITLE]: 'Annotate & mark up',
   [FEATURE_FORMS_TITLE]: 'Fill & create forms',

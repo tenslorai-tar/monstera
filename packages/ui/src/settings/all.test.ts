@@ -46,7 +46,9 @@ describe('the registered settings', () => {
     // THE ANNOTATION COLOUR LEFT THIS LIST 2026-09-15 (ADR-0056's correction): it is
     // a colour kind now. The accent stays, because it can be refused on apply — and since
     // 2026-09-22 the Settings dialog draws it with a control of its own, the design's swatches.
-    expect(excluded).toStrictEqual(['appearance.accent', 'editing.personal-dictionary']);
+    // AND THE CHOSEN KEYS (ADR-0111), a map of command to chord whose control is the keyboard shortcuts dialog (F1),
+    // where each key is changed against the whole list — no generic row could show what a key collides with.
+    expect(excluded).toStrictEqual(['appearance.accent', 'editing.personal-dictionary', 'keyboard.shortcuts']);
 
     // REMEMBERED STATE IS ALSO NOT A ROW (the owner's design pass): a panel's width is stored and
     // exported like any setting, and its control is the splitter rather than a number box here.

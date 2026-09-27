@@ -316,7 +316,8 @@ import {
   selectionPropertiesCommand,
   shapeToolCommands,
 } from './commands/annotationCommands.js';
-import { CommandRegistry, type CommandContext } from './registries/commands.js';
+import { CommandRegistry, type CommandContext, type UiCommand } from './registries/commands.js';
+import { SHORTCUTS_SETTING } from './settings/keyboard.js';
 import { ToolRegistry } from './registries/tools.js';
 import { DialogRegistry } from './registries/dialogs.js';
 import { DialogHost, useDialogHost } from './surfaces/DialogHost.js';
@@ -387,12 +388,12 @@ import { Ribbon } from './surfaces/Ribbon.js';
 import { ContextPanel } from './surfaces/ContextPanel.js';
 import { DocumentBody } from './surfaces/DocumentBody.js';
 import { DocumentPanel, type DocumentPanelProps } from './surfaces/DocumentPanel.js';
-import { dispatchChord, fieldOwnsChord, shortcutsFor } from './surfaces/shortcuts.js';
+import { controlOwnsChord, dispatchChord, fieldOwnsChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
 import { CrashReportOffer } from './CrashReportOffer.js';
 import { DocumentTabs } from './surfaces/DocumentTabs.js';
 import { keyboardShortcutsCommand } from './commands/keyboardShortcuts.js';
-import { shortcutListModel } from './surfaces/projections.js';
+import { shortcutRows, withChosenShortcuts } from './surfaces/shortcutChoice.js';
 import { StartFooter } from './surfaces/StartFooter.js';
 import { TitleBar } from './surfaces/TitleBar.js';
 import { useWindowControlsOverlay } from './windowControlsOverlay.js';
@@ -1220,6 +1221,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
 
   // THE ZOOM A NEW DOCUMENT OPENS AT (Settings › Viewing › *Starting zoom*), read by the opener below.
   const startingZoom = useSetting(settings, STARTING_ZOOM_SETTING);
+  // THE KEYS A PERSON CHOSE in the shortcuts dialog (ADR-0111), applied when the command registry is built below.
+  const chosenShortcuts = useSetting(settings, SHORTCUTS_SETTING);
 
   // HOW MANY TIMES THE RECENT LIST HAS BEEN EMPTIED FROM SETTINGS — its key, so each empty is a fresh read.
   const [recentReads, setRecentReads] = useState(0);
@@ -2253,7 +2256,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
     // THE SHORTCUTS COMMAND LISTS THE REGISTRY THAT CONTAINS IT. The holder is LOCAL to this memo, filled before the
     // memo returns, and read only when the command runs — never during render (the refs rule that refused G1's first
     // layout memory) and never from module state two mounted shells would share.
-    const holder: { registry?: CommandRegistry } = {};
+    const holder: {
+      registry?: CommandRegistry;
+      defaults?: readonly UiCommand[];
+      dropped?: readonly string[];
+    } = {};
     const textDeps: TextSelectionDeps = {
       selection: () => textSelection,
       place: dispatch,
@@ -2276,7 +2283,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
     const marksDelete = deleteSelectionCommand(selectionDeps);
     const marksPaste = pasteAnnotationsCommand({ client, onApplied: applied, ask, stamp, hasCopied: readHasCopied });
     const marksSelectAll = selectAllMarksCommand({ marksOn, selectAll: selectAllOn });
-    const built = new CommandRegistry([
+    const registered: UiCommand[] = [
         // THE MENU BAR'S OWN (ADR-0107): the clipboard verbs on what has focus, the start screen, the window's one
         // close, and the Store's updates page.
         ...editCommands({
@@ -2304,7 +2311,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
         showPanelCommand({ settings }, 'search'),
         keyboardShortcutsCommand({
           ask,
-          shortcuts: () => (holder.registry === undefined ? [] : shortcutListModel(holder.registry)),
+          rows: () =>
+            holder.registry === undefined ? [] : shortcutRows(holder.defaults ?? [], holder.registry),
+          dropped: () => holder.dropped ?? [],
+          settings,
         }),
         openCommand,
         // §10.3's six start-screen shortcuts: the same open, then the feature's section.
@@ -2595,10 +2605,18 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
         historyCommand('back', { navigator }),
         historyCommand('forward', { navigator }),
         goToCommand(),
-      ]);
+      ];
+    // THE KEYS A PERSON CHOSE meet the registered ones HERE, once, before the registry is built (ADR-0111), so every
+    // projection reads one `shortcut`; a stored choice that no longer passes goes back to its default and is named.
+    const chosen = withChosenShortcuts(registered, chosenShortcuts);
+    const built = new CommandRegistry(chosen.commands);
     holder.registry = built;
+    holder.defaults = registered;
+    holder.dropped = chosen.dropped;
     return built;
   }, [
+      // THE KEYS A PERSON CHOSE, so a change in the shortcuts dialog rebuilds the registry and the new key works at once.
+      chosenShortcuts,
       activate,
       aiSetup,
       applied,
@@ -2769,7 +2787,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
     [currentPage, open, pageCount, selectedPages, tabs, textSelection],
   );
 
-  useShortcuts(registry, context);
+  useShortcuts(registry, context, openDialog !== undefined);
   useTheme(settings);
 
   // THE FIRST-RUN AI SETUP (see `settingsLoaded` above), offered once per launch.
@@ -3195,14 +3213,20 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
  * affordance, and one that only worked while a particular element had focus
  * would be a shortcut users report as intermittent.
  */
-function useShortcuts(registry: CommandRegistry, context: CommandContext): void {
+function useShortcuts(registry: CommandRegistry, context: CommandContext, dialogOpen: boolean): void {
   const map = useMemo(() => shortcutsFor(registry), [registry]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
+      // EVERY KEY while a registered dialog is open is the dialog's (ADR-0111 Decision 5): PageDown in the shortcuts
+      // list turned the page behind it, and the list could not capture a key without the old one running. Read from
+      // the dialog host's own state — the command palette is not one of its dialogs, so its own Ctrl+K still closes it.
+      if (dialogOpen) return;
       // A KEY THE FOCUSED FIELD ANSWERS ITSELF is left to it — `fieldOwnsChord`
       // says which, once.
       if (fieldOwnsChord(event.target, event)) return;
+      // AND ONE A FOCUSED CONTROL MOVES BY — a slider, a list, a menu.
+      if (controlOwnsChord(event.target, event)) return;
       if (dispatchChord(registry, map, event, context).kind === 'ran') {
         event.preventDefault();
       }
@@ -3211,7 +3235,7 @@ function useShortcuts(registry: CommandRegistry, context: CommandContext): void 
     return (): void => {
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [context, map, registry]);
+  }, [context, dialogOpen, map, registry]);
 }
 
 /**

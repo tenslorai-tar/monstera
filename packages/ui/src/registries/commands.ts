@@ -202,6 +202,13 @@ export interface UiCommand {
   readonly icon?: IconName;
   /** A chord, e.g. `Ctrl+S`. Normalised by {@link shortcutMapOf}, not here. */
   readonly shortcut?: string;
+  /**
+   * Further chords this command also answers, shown beside the first and never the one a person rebinds
+   * ([ADR-0111](../../../../docs/DECISIONS/0111-a-key-a-person-chose-is-a-setting-applied-before-the-registry-is-built.md)
+   * Decision 4) — Ctrl+Shift+Z for Redo, the plus key for Zoom in. The shortcut map holds them exactly as it holds
+   * the first, so a conflict among them is refused the same way.
+   */
+  readonly alsoShortcuts?: readonly string[];
   /** Where this appears. Empty means palette-only, which is legitimate. */
   readonly placements: readonly Placement[];
   /**
