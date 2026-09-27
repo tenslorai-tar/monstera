@@ -1434,6 +1434,19 @@ the title bar's, the rail's foot, the Properties tab's foot and the menu bar are
 hand-maintained layout file for any of them is the second wiring place this
 registry exists to forbid.**
 
+**A key a person chose is a setting, applied before the registry is built** (amended 2026-09-27,
+[ADR-0111](DECISIONS/0111-a-key-a-person-chose-is-a-setting-applied-before-the-registry-is-built.md)). A
+command's `shortcut` has two writers once a person can rebind it: the registration writes the default, and the
+setting `keyboard.shortcuts` writes the choice. They meet in ONE function, applied to the command list before
+`CommandRegistry` is constructed, so every projection — the shortcut map, the F1 list, the menu bar, the palette,
+context menus — keeps reading `command.shortcut` and none of them learns there are two sources. A choice is
+validated where it is made (a conflict names the other command; a key the platform, the input method or the
+application's own navigation owns is refused) and never reaches the map unvalidated, because the map's conflict is
+a throw at render. A command may declare further chords it also answers (`alsoShortcuts`), which the map holds
+and refuses conflicts among exactly as it does the first. A chord is spelt from the key's POSITION for letters and
+digits (`event.code`) wherever the layout's character is not one, and the plus key is `Plus`. While a modal dialog
+is open the document-level dispatcher does nothing.
+
 **A ribbon placement may be secondary, and the rail has a foot** (amended
 2026-09-24,
 [ADR-0098](DECISIONS/0098-a-ribbon-placement-may-be-secondary-and-the-rail-has-a-foot.md)).
@@ -2742,6 +2755,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-09-27 | **A key a person chose is a setting, applied before the registry is built** (§7's `UiCommand.shortcut` and the shortcut map). The founding record's Part F asks for a shortcut editor that rebinds any registry command with conflict detection (`BUILD-PROMPT.md`:625), and a person's choice is a second writer of `shortcut`. The choice is the setting `keyboard.shortcuts`, applied to the commands before the registry is built so every projection reads one field; it is validated where it is made and never at render; a command may declare further chords (`alsoShortcuts`); chords are spelt from the key's position for letters and digits, the plus key is `Plus`, and the document dispatcher does nothing behind a modal dialog. Rejected: a keymap file, validation at render, chords stored per surface, rebinding the keys outside the registry | — (the founding record asked for it; nothing it said is superseded) | [0111](DECISIONS/0111-a-key-a-person-chose-is-a-setting-applied-before-the-registry-is-built.md) |
 | 2026-09-26 | **A crash report is written here, on by default, and sent only by the person** (§8, Observability). The owner's decision of 2026-09-26: `crashReporter` keeps reports on this computer, is on unless Settings › Privacy turns it off, and the next start offers to share a report through the Share sheet with the address shown and a warning that it can hold document fragments. The consent prompt the founding record asked for protected an upload; with nothing uploaded, what needs the person's choice is the sending, and that is asked every time. | `BUILD-PROMPT.md` C8 (:392-394), *"`crashReporter` opt-in, off by default, consent prompt on first run"* | [ADR-0109](DECISIONS/0109-a-crash-report-is-written-here-and-sent-only-by-the-person.md) |
 | 2026-09-26 | **A command may say it is on, and every ribbon command's menu is a registration rule** (§7's `UiCommand`, ADR-0107's Decision 3). View's themes and layouts are one choice among several and the panels are on or off; a menu that could not mark the current one hides the state it offers to change. `checked?(ctx)` beside `when`, drawn as a checkable item. Decision 3 moves from a set-equality case to `CommandRegistry`, which refuses a command whose only ribbon placements are in Home without a `menu-bar` placement. **Rejected:** a `checked` field on the menu-bar placement (a fact about the command in every surface); the menu reading the setting a command writes | §7's `UiCommand` fields; ADR-0107's *asserted as set equality* | [0107](DECISIONS/0107-the-menu-bar-is-a-projection.md) |
 | 2026-09-26 | **The menu bar is a projection: section menus from the ribbon, the rest from a menu-bar placement** (§7's `Placement`, §10.3's title bar). v5-14 draws a menu bar as the window's top row with the window controls at its end; §7 named menus among the projections and no placement could say *this is in File*. A section's menu is its ribbon section; `menu-bar` places the application menus' items; every ribbon command is reachable through the bar (set equality); an unavailable item is disabled, not hidden; the overlay moves to the menu bar's row. **Rejected:** Electron's application menu built from the registry; a menu file of ids; section menus from their own placements | §10.3's single-row title bar carrying the window controls; §7's placement union without `menu-bar` | [0107](DECISIONS/0107-the-menu-bar-is-a-projection.md) |

@@ -579,6 +579,9 @@ and stay the bar's own the same way. The Properties tab's foot joined it
 [ADR-0102](docs/DECISIONS/0102-a-selection-survives-a-command-that-keeps-the-walk.md),
 for Reply and Delete.) A hand-maintained layout file for
 any surface is exactly the second wiring place the registry exists to forbid.
+**A key a person rebinds is a setting applied to the commands before the
+registry is built** ([ADR-0111](docs/DECISIONS/0111-a-key-a-person-chose-is-a-setting-applied-before-the-registry-is-built.md)),
+so every projection still reads one `shortcut` — never a keymap file.
 
 If a feature cannot be registered into an existing seam → **B4**. Stop and amend
 the architecture first.
