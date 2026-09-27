@@ -373,6 +373,8 @@ export const AUTHOR_NAME_SETTING: SettingDefinition<typeof annotationAuthorSchem
   schema: annotationAuthorSchema,
   fallback: '',
   category: 'editing',
+  // THE PERSON'S OWN NAME (WCAG 1.3.5, ADR-0116): the field says so, so the platform can fill it and say what it is.
+  purpose: 'name',
 };
 
 /** Who a new mark names: the name typed in {@link AUTHOR_NAME_SETTING}, else the Windows user name. */

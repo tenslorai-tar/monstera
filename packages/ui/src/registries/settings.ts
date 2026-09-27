@@ -152,6 +152,12 @@ export interface SettingDefinition<Schema extends z.ZodType = z.ZodType> {
   /** Excluded from export when true. Defaults to false. */
   readonly secret?: boolean;
   /**
+   * What a TEXT setting about the user asks for, from HTML's autofill list — WCAG 1.3.5, *Identify Input Purpose*
+   * ([ADR-0116](../../../../docs/DECISIONS/0116-a-text-setting-may-name-its-input-purpose.md)). The dialog carries it
+   * to the field's `autocomplete`. Absent for anything that is not about the user, which is 1.3.5's own scope.
+   */
+  readonly purpose?: 'name' | 'email';
+  /**
    * State the application remembers FOR a person rather than a choice they come here to make: how
    * wide they dragged a panel, which tab was open, whether the rulers are showing.
    *

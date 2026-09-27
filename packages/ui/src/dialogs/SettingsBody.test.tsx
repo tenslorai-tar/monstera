@@ -11,7 +11,12 @@ import { activateCatalogue, i18n } from '../i18n.js';
 import { EN, STYLE_COLOUR_AUTO } from '../messages/en.js';
 import { ALL_SETTINGS } from '../settings/all.js';
 import { THEME_SETTING } from '../settings/appearance.js';
-import { ANNOTATION_COLOUR_SETTING, ANNOTATION_OPACITY_SETTING, AZURE_DI_KEY_SETTING } from '../settings/editing.js';
+import {
+  ANNOTATION_COLOUR_SETTING,
+  ANNOTATION_OPACITY_SETTING,
+  AUTHOR_NAME_SETTING,
+  AZURE_DI_KEY_SETTING,
+} from '../settings/editing.js';
 import { SETTINGS_PAGES } from '../settings/pages.js';
 import type { SettingsAnswer } from './settings.js';
 import { controlFor, DIALOG_SETTINGS, listedPages } from './settings.js';
@@ -118,6 +123,18 @@ describe('SettingsBody', () => {
 
     expect(reported).toStrictEqual([{ values: { [THEME_SETTING.id]: 'dark' }, secrets: {} }]);
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+  });
+
+  it('YOUR NAME FOR COMMENTS says it asks for a name (WCAG 1.3.5, ADR-0116); a text field about nobody says nothing', () => {
+    opened({});
+    expect(control(AUTHOR_NAME_SETTING).getAttribute('autocomplete')).toBe('name');
+    // THE CONTROL: another text setting, which is not about the user, carries no purpose — the dialog takes it from
+    // each setting rather than stamping every text field.
+    const other = DIALOG_SETTINGS.find(
+      (setting) => controlFor(setting) === 'text' && setting.purpose === undefined && setting.id !== AUTHOR_NAME_SETTING.id,
+    );
+    if (other === undefined) throw new Error('another text setting exists to compare with');
+    expect(control(other).getAttribute('autocomplete')).toBeNull();
   });
 
   it('a value its schema refuses is NOT reported, and the footer names the setting', () => {

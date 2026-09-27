@@ -288,6 +288,8 @@ function SettingControl({
     return (
       <Input
         label={setting.title}
+        // THE SETTING'S OWN PURPOSE (ADR-0116), never decided here from its id.
+        purpose={setting.purpose}
         onValueChange={(value) => {
           onDraft(value);
         }}
