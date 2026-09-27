@@ -10,7 +10,7 @@ contexts: [comment, home]
 
 ## Steps
 
-1. In the rail, choose **Comment**, then **Select** in the **Markup** group (its full name is **Select annotations**). It is also in **Home**, **Quick tools**, and on the floating toolbar.
+1. In the rail, choose **Comment**, then **Select** in the **Markup** group (its full name is **Select annotations**). It is also in **Home**, **Quick tools**, and on the Float bar.
 2. Click a mark to select it, or drag a box to select every mark it touches.
 3. Drag a selected mark to move it; drag its handles to resize it.
 4. Use the arrow keys to nudge it; hold **Shift** for bigger steps.

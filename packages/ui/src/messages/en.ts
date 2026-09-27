@@ -2954,7 +2954,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [STATUS_PAGE_TOTAL]: '/ {count}',
   [STATUS_NAVIGATION]: 'Page navigation',
   [STATUS_ZOOM_GROUP]: 'Zoom',
-  [STATUS_CHROME_GROUP]: 'Panels and toolbars',
+  [STATUS_CHROME_GROUP]: 'Panels and Float bar',
   [STATUS_SAVED_STATE]: 'Saved state',
   [STATUS_PAGES]: '{count, plural, one {# page} other {# pages}}',
   [STATUS_SIZE_KB]: '{size, number} KB',
@@ -3186,12 +3186,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CONTEXT_PANEL_COLLAPSE]: 'Collapse the properties panel',
   [CONTEXT_PANEL_REOPEN]: 'Show the properties panel',
   [CONTEXT_PANEL_OPEN_TITLE]: 'Show the properties panel',
-  [QUICK_TOOLBAR_OPEN_TITLE]: 'Show the floating toolbar',
-  [QUICK_TOOLBAR_EDGE_TITLE]: 'Floating toolbar side',
+  // THE FLOAT BAR, the owner's name for it (27 September list, item 3): one name in every place it is said.
+  [QUICK_TOOLBAR_OPEN_TITLE]: 'Show the Float bar',
+  [QUICK_TOOLBAR_EDGE_TITLE]: 'Float bar side',
   [QUICK_TOOLBAR_EDGE_START]: 'Left side of the pages',
   [QUICK_TOOLBAR_EDGE_END]: 'Right side of the pages',
-  [QUICK_TOOLBAR_TOGGLE_TITLE]: 'Show or hide the floating toolbar',
-  [QUICK_TOOLBAR_TOGGLE_SHORT]: 'Toolbar',
+  [QUICK_TOOLBAR_TOGGLE_TITLE]: 'Show or hide the Float bar',
+  [QUICK_TOOLBAR_TOGGLE_SHORT]: 'Float bar',
   [DOCUMENT_PANEL_TOGGLE_TITLE]: 'Show or hide the document panel',
   [CONTEXT_PANEL_TOGGLE_TITLE]: 'Show or hide the properties panel',
   [CONTEXT_PANEL_WIDTH_TITLE]: 'Properties panel width',
@@ -3819,7 +3820,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [GENERATE_TOC_NO_OUTLINE]:
     'This document has no bookmarks, so there are no headings to build a table of contents ' +
     'from. Your document has not changed.',
-  [DOCUMENT_TOOLS_LABEL]: 'Document tools',
+  [DOCUMENT_TOOLS_LABEL]: 'Float bar',
   [RIBBON_RAIL_LABEL]: 'Sections',
   [RIBBON_TOOLS_LABEL]: 'Tools',
   // A WORD, not a bare ellipsis glyph: the button that holds the tools which did not fit is a named

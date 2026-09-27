@@ -10,7 +10,7 @@ Crop trims space from the edges of pages. The trimmed part is hidden, not delete
 
 ## Steps
 
-1. In the rail, choose **Organize**, then **Crop pages…** in the **Adjust** group. It is also on the floating toolbar.
+1. In the rail, choose **Organize**, then **Crop pages…** in the **Adjust** group. It is also on the Float bar.
 2. Type how much to take off each edge in **Top (points)**, **Bottom (points)**, **Left (points)** and **Right (points)**. Leave an edge empty to keep it.
 3. Choose **This page** or **All pages**, then **Crop**.
 

@@ -10,7 +10,7 @@ Snapshot saves any rectangle of a page, including the comments on it, as a PNG p
 
 ## Steps
 
-1. In the rail, choose **Comment**, then **Snapshot** in the **Markup** group (**Snapshot a region**). It is also on the floating toolbar.
+1. In the rail, choose **Comment**, then **Snapshot** in the **Markup** group (**Snapshot a region**). It is also on the Float bar.
 2. Drag a box over the area.
 3. Choose where to save the PNG file.
 

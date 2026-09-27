@@ -1055,7 +1055,7 @@ test('the FLOATING TOOLBAR is a pill inside the page area, off the rail and the 
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
 
-  const toolbar = page.getByRole('toolbar', { name: 'Document tools' });
+  const toolbar = page.getByRole('toolbar', { name: 'Float bar' });
   await expect(toolbar).toBeVisible();
   const box = await toolbar.boundingBox();
   const area = await page.locator('.m-canvas-area').boundingBox();
@@ -1089,15 +1089,15 @@ test('the FLOATING TOOLBAR is a pill inside the page area, off the rail and the 
 
   // HIDDEN from the status bar's toggle, and RESTORED by the chord — the pill's own controls are gone by then.
   const bar = page.getByRole('status', { name: 'Document status' });
-  await bar.getByRole('button', { name: 'Show or hide the floating toolbar' }).click();
+  await bar.getByRole('button', { name: 'Show or hide the Float bar' }).click();
   await expect(toolbar).toHaveCount(0);
   await page.keyboard.press('Control+Shift+Q');
   await expect(toolbar).toBeVisible();
   // AND FROM THE RAIL (the owner, 2026-09-26): the Toolbar button at the rail's foot hides it and shows it again.
   const rail = page.getByRole('navigation', { name: 'Sections' });
-  await rail.getByRole('button', { name: 'Toolbar' }).click();
+  await rail.getByRole('button', { name: 'Float bar', exact: true }).click();
   await expect(toolbar).toHaveCount(0);
-  await rail.getByRole('button', { name: 'Toolbar' }).click();
+  await rail.getByRole('button', { name: 'Float bar', exact: true }).click();
   await expect(toolbar).toBeVisible();
 });
 
@@ -1274,7 +1274,7 @@ test('FOCUS hides the rail, the ribbon and both side panels, and keeps the statu
   await expect(page.getByRole('separator')).toHaveCount(0);
   // WHAT STAYS.
   await expect(page.getByRole('status', { name: 'Document status' })).toBeVisible();
-  await expect(page.getByRole('toolbar', { name: 'Document tools' })).toBeVisible();
+  await expect(page.getByRole('toolbar', { name: 'Float bar' })).toBeVisible();
 });
 
 test('STUDIO opens the tool strip as an OVERLAY on a rail selection, moves nothing, and Escape dismisses it', async ({

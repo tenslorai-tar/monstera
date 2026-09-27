@@ -3230,7 +3230,7 @@ textarea {
 /*
  * §10.3's floating quick toolbar: a vertical pill FLOATING OVER the page area (v5: 40 wide, radius 20, vertically
  * centred). The strip that reserved room beside the page (2026-09-22) is gone — the owner rejected it on 2026-09-26:
- * the pill floats, and hiding it is the rail's Toolbar button, the status bar's toggle or Ctrl+Shift+Q. ABSOLUTE
+ * the pill floats, and hiding it is the rail's Float bar button, the status bar's toggle or Ctrl+Shift+Q. ABSOLUTE
  * against `.m-canvas-area`, never fixed: fixed placed it against the window, 16 px from its left edge, which is where
  * the section rail and the document panel are (measured 2026-09-15). The edge is `appearance.quick-toolbar-edge`, in
  * physical terms because its option titles say left and right.

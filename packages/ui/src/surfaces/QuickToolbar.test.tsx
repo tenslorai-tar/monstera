@@ -60,7 +60,7 @@ const COMMANDS: readonly UiCommand[] = [
 describe('QuickToolbar', () => {
   it('draws ICON buttons in order, named by their commands, and a click runs the command', () => {
     drawn(COMMANDS);
-    const bar = screen.getByRole('toolbar', { name: 'Document tools' });
+    const bar = screen.getByRole('toolbar', { name: 'Float bar' });
     expect(bar.getAttribute('aria-orientation')).toBe('vertical');
     const buttons = [...bar.querySelectorAll('button')];
     expect(buttons.map((button) => button.getAttribute('aria-label'))).toStrictEqual(['Rotate page', 'Crop pages']);
@@ -86,7 +86,7 @@ describe('QuickToolbar', () => {
       settings.set(QUICK_TOOLBAR_OPEN_SETTING.id, true);
       await Promise.resolve();
     });
-    expect(screen.getByRole('toolbar', { name: 'Document tools' })).toBeDefined();
+    expect(screen.getByRole('toolbar', { name: 'Float bar' })).toBeDefined();
   });
 
   it('sits on the EDGE its setting names', async () => {

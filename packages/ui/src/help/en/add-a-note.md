@@ -10,7 +10,7 @@ A note is a small icon on the page that holds a comment. Readers open it to see 
 
 ## Steps
 
-1. In the rail, choose **Comment**, then **Comment** in the **Markup** group (its full name is **Note**). It is also in **Home**, **Quick tools**, and on the floating toolbar.
+1. In the rail, choose **Comment**, then **Comment** in the **Markup** group (its full name is **Note**). It is also in **Home**, **Quick tools**, and on the Float bar.
 2. Click the page where the note should go.
 3. In the **Note** window, type your **Comment**, then choose **Add note**.
 

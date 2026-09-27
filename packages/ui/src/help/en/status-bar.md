@@ -20,7 +20,7 @@ The status bar runs along the bottom of the window. It shows where you are and l
 
 - The status bar also shows the number of pages and the file's size.
 - If you type a page the document does not have, it says which pages it does have.
-- The button in **Panels and toolbars** shows or hides the floating toolbar.
+- The button in **Panels and Float bar** shows or hides the Float bar.
 
 <!--
 Screenshots to capture:

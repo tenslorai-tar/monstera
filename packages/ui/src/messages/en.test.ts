@@ -95,4 +95,15 @@ describe('the English catalogue', () => {
 
     expect(blank).toStrictEqual([]);
   });
+
+  /**
+   * THE FLOAT BAR HAS ONE NAME (the owner's 27 September list, item 3: *"everywhere"*). A search over every value, so
+   * a string added later that says *toolbar* for it reddens here rather than in a screenshot. The control is the new
+   * name being present at all: an empty catalogue would satisfy *no value says toolbar* too.
+   */
+  it('calls the floating bar the Float bar everywhere, and nowhere the toolbar', () => {
+    const values = Object.values(EN);
+    expect(values.filter((text) => /\btool ?bars?\b/iu.test(text))).toStrictEqual([]);
+    expect(values.filter((text) => text.includes('Float bar')).length).toBeGreaterThanOrEqual(5);
+  });
 });

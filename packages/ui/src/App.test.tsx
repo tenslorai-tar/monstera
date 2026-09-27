@@ -1066,7 +1066,7 @@ describe('App', () => {
 
       await withDocumentOpen();
 
-      expect(screen.getByRole('toolbar', { name: 'Document tools' })).toBeDefined();
+      expect(screen.getByRole('toolbar', { name: 'Float bar' })).toBeDefined();
     });
 
     it('a HIDDEN toolbar is restored by its chord, in the real application (§7)', async () => {
@@ -1076,7 +1076,7 @@ describe('App', () => {
       const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
-      expect(screen.getByRole('toolbar', { name: 'Document tools' })).toBeDefined();
+      expect(screen.getByRole('toolbar', { name: 'Float bar' })).toBeDefined();
 
       const press = async (): Promise<void> => {
         await act(async () => {
@@ -1085,9 +1085,9 @@ describe('App', () => {
         });
       };
       await press();
-      expect(screen.queryByRole('toolbar', { name: 'Document tools' })).toBeNull();
+      expect(screen.queryByRole('toolbar', { name: 'Float bar' })).toBeNull();
       await press();
-      expect(screen.getByRole('toolbar', { name: 'Document tools' })).toBeDefined();
+      expect(screen.getByRole('toolbar', { name: 'Float bar' })).toBeDefined();
     });
 
     it('FOCUS from the keyboard and back: Escape returns to the mode left, and an Escape the palette used does not', async () => {

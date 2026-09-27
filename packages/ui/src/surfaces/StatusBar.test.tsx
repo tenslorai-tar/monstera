@@ -29,7 +29,7 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
     [ZOOM_OUT]: 'Zoom out',
     [ZOOM_IN]: 'Zoom in',
     [FIT]: 'Fit width',
-    [TOGGLE]: 'Show the floating toolbar',
+    [TOGGLE]: 'Show the Float bar',
   });
   return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
 }
@@ -224,14 +224,14 @@ describe('StatusBar', () => {
       const withToggle = drawn({
         commands: [command('view.toggle-x', TOGGLE, { surface: 'status-bar', cluster: 'chrome', order: 1 }, toggled)],
       });
-      const group = withToggle.container.querySelector('[role="group"][aria-label="Panels and toolbars"]');
-      const button = group?.querySelector('button[aria-label="Show the floating toolbar"]');
+      const group = withToggle.container.querySelector('[role="group"][aria-label="Panels and Float bar"]');
+      const button = group?.querySelector('button[aria-label="Show the Float bar"]');
       if (!(button instanceof HTMLButtonElement)) throw new Error('the chrome group holds the toggle');
       fireEvent.click(button);
       expect(toggled).toHaveBeenCalledWith(context);
 
       const without = drawn();
-      expect(without.container.querySelector('[aria-label="Panels and toolbars"]')).toBeNull();
+      expect(without.container.querySelector('[aria-label="Panels and Float bar"]')).toBeNull();
     });
   });
 
