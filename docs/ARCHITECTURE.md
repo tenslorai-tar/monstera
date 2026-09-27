@@ -2002,22 +2002,30 @@ say**.
     for was the author editing the channel table, and an event-keyed claim
     belongs on a `docs/FEATURES.md` row where something reads it.
 
-    **What is chosen here is the mechanism, not the schedule.** When replay runs
-    is the supervisor's question — `onEngineHostEnded` rebuilds inside each
-    document's lane today and hands back a session at the last-saved state — and
-    it is owed a `docs/FEATURES.md` row rather than a paragraph here. Until that
-    row lands the exposure below is live, and stating it is what keeps it from
-    reading as closed.
+    **The base and the schedule are chosen too** (amended 2026-09-27,
+    [ADR-0115](DECISIONS/0115-a-rebuilt-session-replays-what-the-image-does-not-hold.md)).
+    The canonical image is a session's starting point after a host death, and
+    since [ADR-0084](DECISIONS/0084-a-command-the-view-model-cannot-express-refreshes-the-image.md)
+    it holds only what `'image'` operations put there. **The command log records
+    how many of its applied entries the image includes**, set whenever an
+    operation replaced the image and moved by a retention trim with the rest of
+    the log's positions; and it can never be ahead of the cursor, because an
+    undo that steps below it refreshes the image, and a trim never sheds an
+    entry the image lacks. **The replay runs inside the document's lane
+    as the rebuild's second half**, before the lane takes its next entry,
+    re-applying each applied entry past the base through its own writer, and
+    moves no version. **A replay that fails is clause (i)**: the log kept, the
+    file untouched, the document refused rather than closed, and the person told.
 
-    **The exposure that remains.** A host death loses every command since the
-    last save, bounded to that event, with **no refusal available to it**:
-    `recycle` may refuse a document whose log holds entries because recycling is
-    optional, and a dead host must be rebuilt for. `onEngineHostEnded` rebuilds
-    a dead host's sessions in each surviving document's lane
+    **Until 2026-09-27 the exposure was live**, and wider than this clause said:
+    a host death dropped every `'view-model'` and `'nothing-drawn'` command since
+    the image's last refresh — a rotation, and document protection — while the
+    log still listed it as applied, with nothing said. `onEngineHostEnded`
+    rebuilt a dead host's sessions in each surviving document's lane
     ([ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md)
-    Decision 9c) and nothing replays the log onto them (§2, corrected
-    2026-09-01). Clause (i) is unaffected — it is a property of a *poisoned*
-    document and binds whatever the route.
+    Decision 9c) and nothing replayed the log onto them. Clause (i) is
+    unaffected — it is a property of a *poisoned* document and binds whatever
+    the route.
 
     One candidate is already excluded rather than merely unchosen: resurrecting
     the poisoned session is not available, because
@@ -2777,6 +2785,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-09-27 | **A rebuilt session replays what the canonical image does not hold** (invariant 18 clause (ii), §4's log). The owner's list (27 September, item 10): after a host death the rebuild reopened from the canonical image, which since ADR-0084 no `'view-model'` or `'nothing-drawn'` command reaches, so rotations and protection since the last refresh were dropped while the log said applied. The log now records how many applied entries the image includes, moved with the log's own trims and never ahead of the cursor — an undo below it refreshes the image, and a trim never sheds an entry the image lacks; the replay runs in the document's lane as the rebuild's second half; a failed replay is clause (i). Rejected: refreshing the image after every command (ADR-0032's 2.00×), a base kept beside the log, replaying backwards, replaying outside the lane | Invariant 18 (ii)'s *"what is chosen here is the mechanism, not the schedule"* | [0115](DECISIONS/0115-a-rebuilt-session-replays-what-the-image-does-not-hold.md) |
 | 2026-09-27 | **The ground's light follows the accent, computed from its hue at the point of use** (§10.2). The owner's list (27 September, item 6): the glows and tints were fixed greens under any accent. Each is now the design's value turned by the accent's OKLCH hue and scaled by its chroma, lightness and alpha kept, in one `@monstera/shared` function that `applyAccent` and `check:tokencontrast` both call — so the default accent is the design exactly, and the check sweeps every hue and several chroma scales rather than sampling accents. *Background glow* (on by default) turns the glows and grain off. Rejected: CSS relative colour, which the check cannot read; taking lightness from the accent, which makes the family the whole colour space; tinting only the start screen | §10.2's `glow` and `tint` as stored values only | [0114](DECISIONS/0114-the-grounds-light-follows-the-accent.md) |
 | 2026-09-27 | **The application's own commands sit at the centre of the menu row, in their own colours** (§7's `Placement`, §10.3's menu-bar and title-bar clauses). The owner's list (27 September, item 2) moves Donate and Rate Us from the tab row to the menu row, centred, so the tab row keeps its width for many open PDFs; Donate warm gold with dark text, Rate Us soft violet and quieter, neither following the accent. The placement is renamed `menu-bar-commands` and its `emphasis` becomes `tone: 'gold' \| 'violet' \| 'plain'` (the third for the dormant *Update available*), still on the placement. Centred while it fits, else just after the last menu, a drag track always kept, and the buttons draw as icons alone when even that cannot hold them — measured by the row, not a breakpoint. Rejected: drawing a `title-bar` placement in the menu bar, a CSS breakpoint, colours from the accent, hiding them when narrow | ADR-0095 as to where the buttons are drawn and how they look | [0113](DECISIONS/0113-the-applications-own-commands-sit-at-the-centre-of-the-menu-row.md) |
 | 2026-09-27 | **The Help centre is bundled articles in one dialog, and F1 opens the one for where you are** (§10.3's start screen footer). The owner's list (item 9) names F1 for help, against §10.3's *"Press F1 for keyboard shortcuts"*; the later instruction wins and the shortcuts move to Ctrl+/. Articles are Markdown files in the renderer bundle, parsed by this project into elements (no HTML), checked against the registry and the catalogue; *Show me* rings the real control by its command. Screenshots owed. Rejected: a web help site, HTML rendering, keeping F1 for the shortcuts | §10.3's footer line; `BUILD-PROMPT.md` D12's *"keyboard shortcut reference (F1)"* as to which key | [0112](DECISIONS/0112-the-help-centre-is-bundled-articles-and-f1-opens-the-one-for-where-you-are.md) |
