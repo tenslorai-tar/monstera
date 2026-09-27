@@ -15,13 +15,18 @@ const NO_WEB: { answer: string; searched: boolean; sources: { title: string; hos
  */
 
 describe('the event registry', () => {
-  it('declares the assistant’s two events and the window’s close request, and nothing else', () => {
-    expect(EVENT_IDS).toStrictEqual(['ai.delta', 'ai.done', 'window.close-requested']);
+  it('declares the assistant’s two events, the window’s close request and the launch’s waiting opens, and nothing else', () => {
+    expect(EVENT_IDS).toStrictEqual(['ai.delta', 'ai.done', 'window.close-requested', 'document.opens-waiting']);
   });
 
   it('carries nothing on a close request, and refuses anything added to it', () => {
     expect(EVENTS['window.close-requested'].safeParse({}).success).toBe(true);
     expect(EVENTS['window.close-requested'].safeParse({ docId: 'x' }).success).toBe(false);
+  });
+
+  it('carries nothing when a launch’s documents are waiting — a path added to it is refused', () => {
+    expect(EVENTS['document.opens-waiting'].safeParse({}).success).toBe(true);
+    expect(EVENTS['document.opens-waiting'].safeParse({ path: 'C:\\docs\\a.pdf' }).success).toBe(false);
   });
 
   it('bounds a delta’s text and refuses an empty one', () => {

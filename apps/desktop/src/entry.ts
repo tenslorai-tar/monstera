@@ -45,6 +45,7 @@ import { knownRoots } from './displayLocation.js';
 import { pictureDirectory } from './recentPictures.js';
 import { ENGAGEMENT_FILE } from './engagement.js';
 import { UPDATE_RECORD_FILE } from './updateCheck.js';
+import { documentPathsIn } from './launchDocuments.js';
 import { STORE_URIS } from './webPages.js';
 import { createChatHistory } from './chatHistory.js';
 import { type SecretCipher, createSecretStore } from './secretStore.js';
@@ -484,6 +485,9 @@ startShell(() => {
     },
     share,
     crashReports,
+    // THE DOCUMENTS THIS LAUNCH WAS GIVEN — a file association, *Open with*, a PDF dropped on the icon — held for the
+    // page to ask for. A later launch's arrive through `documentsLaunched` (`main.ts`).
+    launchDocuments: documentPathsIn(process.argv, app.isPackaged),
     // WHERE A DIAGNOSTIC GOES WHEN NOBODY IS WATCHING STDERR, which is every
     // packaged run: a Store application has no terminal attached, so until this
     // existed every failure this repository takes care to describe went to a

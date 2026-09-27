@@ -57,6 +57,7 @@ import {
 import type { Assistant } from './assistant.js';
 import type { ChatHistory } from './chatHistory.js';
 import type { CrashReports } from './crashReports.js';
+import type { LaunchDocuments } from './launchDocuments.js';
 import type { UpdateCheck } from './updateCheck.js';
 import { CloudOutcomeRefused, type CloudStorage } from './cloudSession.js';
 import { type KnownRoot, displayLocationOf } from './displayLocation.js';
@@ -253,6 +254,11 @@ export function createContractHandlers(deps: {
    */
   readonly updateCheck?: UpdateCheck;
   /**
+   * The documents launches named on their command line, waiting for the page to ask (`launchDocuments.ts`). Optional
+   * for `crashReports`' reason: a graph built without a launch — every unit test's — has none, and absent answers none.
+   */
+  readonly launchDocuments?: LaunchDocuments;
+  /**
    * Reads a spelling dictionary's two files. `readSpellingDictionary`.
    *
    * Injected for the file's own reason: it resolves a package out of
@@ -311,6 +317,13 @@ export function createContractHandlers(deps: {
     // so the path here is one `webUtils.getPathForFile` resolved from a file the operating system handed
     // to a drop.
     'document.openDropped': openDroppedHandler(deps),
+    // THE COMMAND LINE'S DOCUMENTS, held since their launch and opened here in the order given, each through the same
+    // `openPath` a drop takes — so a file association mints its handle, dedupes, and is recorded exactly as a drop is.
+    'document.openWaiting': async () => {
+      const opened = [];
+      for (const path of deps.launchDocuments?.take() ?? []) opened.push((await openPath(deps, path)).outcome);
+      return ok({ opened });
+    },
     // `Promise.resolve`, not `async`: nothing here awaits, and the contract's
     // handler type is asynchronous because the real document channels are.
     'app.info': () => Promise.resolve(ok({ ...deps.appInfo })),

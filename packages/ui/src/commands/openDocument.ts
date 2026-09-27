@@ -1,5 +1,5 @@
 import type { ChannelResult, ContractClient, DroppedOpenOutcome } from '@monstera/contract';
-import type { DocId, DocVersion, Failure, Result } from '@monstera/shared';
+import { type DocId, type DocVersion, type Failure, type Result, ok } from '@monstera/shared';
 
 import type { DropOpener } from '../bridge.js';
 import { GROUP_FILE, OPEN_DOCUMENT_TITLE, RIBBON_OPEN } from '../messages/en.js';
@@ -147,6 +147,17 @@ export async function openDroppedFiles(
   open: DropOpener,
 ): Promise<void> {
   for (const file of files) settleOpen(deps, await open(file));
+}
+
+/**
+ * Opens the documents a launch named on its command line — a file association, *Open with* — which main has held
+ * since that launch. Main opens them through the same `openPath` a drop takes and answers one outcome each, in the
+ * order given; each is settled here exactly as a drop's is, so a moved file says so and one already open is shown.
+ */
+export async function openWaitingDocuments(deps: OpenDocumentDeps): Promise<void> {
+  const answer = await deps.client['document.openWaiting']({});
+  if (!answer.ok) return;
+  for (const outcome of answer.value.opened) settleOpen(deps, ok(outcome));
 }
 
 /**

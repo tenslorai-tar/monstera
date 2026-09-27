@@ -1956,6 +1956,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // THE UPDATE CHECK'S ANSWER IS WHAT THE CASE SEEDS (ADR-0110), and an acknowledgement is recorded as main
     // records it: only for a security release, after which the status says so.
     'app.updateStatus': () => Promise.resolve(ok({ status: updateStatus })),
+    // NO COMMAND LINE IN A BROWSER: a shim page was launched with no documents named, which is also what a second
+    // ask answers after the first took them.
+    'document.openWaiting': () => Promise.resolve(ok({ opened: [] })),
     'app.acknowledgeSecurityUpdate': () => {
       if (updateStatus.kind !== 'security') return Promise.resolve(ok({ acknowledged: false }));
       updateStatus = { ...updateStatus, acknowledged: true };

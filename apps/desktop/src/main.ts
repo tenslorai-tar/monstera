@@ -2,6 +2,7 @@ import { type IncidentSink, type MainHandlers, type WindowEditAction, checkEvent
 import { Menu, app, ipcMain, session } from 'electron';
 
 import type { TitleBarOverlay } from './contractHandlers.js';
+import { documentPathsIn } from './launchDocuments.js';
 import { registerContractHandlers } from './registerHandlers.js';
 import { type ShellFailureSink, reportProcessFailures } from './shellFailure.js';
 import { quitAfterShutdown } from './shellShutdown.js';
@@ -95,6 +96,11 @@ export interface ShellDependencies {
    * (`windowClose.ts`).
    */
   readonly closeRequested: () => boolean;
+  /**
+   * A later launch named these documents on its command line: hold them until the page asks `document.openWaiting`.
+   * Paths only ever go in here, from main's own argv reader, and never out to the page.
+   */
+  readonly documentsLaunched: (paths: readonly string[]) => void;
 }
 
 /** The part of a `BrowserWindow` the shell's handlers use — structural, so `composition.ts` imports no Electron. */
@@ -184,7 +190,16 @@ export function startShell(build: () => ShellDependencies): void {
     });
     registerContractHandlers(ipcMain, deps.handlers, deps.incidents, senderCheckFor(window));
 
-    app.on('second-instance', () => {
+    // A SECOND LAUNCH IS HANDED OVER HERE: a file association or *Open with* on a running Monstera starts a second
+    // process, which quits at the lock above, and its arguments arrive in this event. Its documents are held and the
+    // page is told — the event carries nothing, and the page asks for the opens by channel (`document.openWaiting`).
+    app.on('second-instance', (_event, argv) => {
+      const paths = documentPathsIn(argv, app.isPackaged);
+      if (paths.length > 0) {
+        deps.documentsLaunched(paths);
+        const contents = window.webContents;
+        if (!contents.isDestroyed()) contents.send('document.opens-waiting', checkEvent('document.opens-waiting', {}));
+      }
       if (window.isMinimized()) window.restore();
       window.focus();
     });

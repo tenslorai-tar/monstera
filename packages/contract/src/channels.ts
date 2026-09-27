@@ -1044,6 +1044,12 @@ const cloudDoneSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('refused'), reason: z.enum(CLOUD_REFUSALS) }),
 ]);
 
+/**
+ * The most documents one launch may name on its command line and have opened — main's `documentPathsIn` takes no
+ * more. A bound, not a measurement: Explorer launches a process per file for a larger selection.
+ */
+export const MAX_LAUNCH_DOCUMENTS = 32;
+
 const openOutcomeSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('opened'),
@@ -1390,6 +1396,19 @@ export const channels = {
    * guard refuses with, because *that address points inside your network* and *that
    * address did not return a PDF* are different sentences with different remedies.
    */
+  /**
+   * Opens the documents a launch named on its command line — a file association, *Open with*, a PDF dropped on the
+   * application's icon — which main has been holding since that launch (`docs/ARCHITECTURE.md` §2: argv and file
+   * association are paths main mints, never the page). **The page names nothing**: it asks when it starts, and when
+   * `document.opens-waiting` says a later launch named more, and main opens each through the one `openPath` a drop
+   * takes, answering an outcome per document in the order given. Asked again with nothing waiting, it answers none.
+   */
+  'document.openWaiting': channel(
+    'Opens the documents a launch named on its command line.',
+    z.object({}).strict(),
+    z.object({ opened: z.array(openOutcomeSchema).max(MAX_LAUNCH_DOCUMENTS) }),
+  ),
+
   'document.openFromUrl': channel(
     'Fetches a PDF from a web address the user gives, saves it where they choose, and opens it.',
     z.object({ url: z.string().trim().min(1).max(MAX_LINK_URI) }),

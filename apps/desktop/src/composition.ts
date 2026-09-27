@@ -133,6 +133,7 @@ import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, type PictureFiles, createRecentPictures } from './recentPictures.js';
 import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
 import { createUpdateCheck, manifestTransport, UPDATE_PROVIDERS } from './updateCheck.js';
+import { createLaunchDocuments } from './launchDocuments.js';
 import {
   lazyBarcodeWriter,
   DocumentCommands,
@@ -681,6 +682,11 @@ export interface ShellComposition {
    * sheet are. Optional for `log`'s reason: every unit test has no dumps folder, and `null` answers *no report*.
    */
   readonly crashReports?: CrashReports | null;
+  /**
+   * The documents the FIRST launch named on its command line (`documentPathsIn(process.argv, …)` in `entry.ts`).
+   * Later launches add theirs through `documentsLaunched`. Absent, none — every unit test's position.
+   */
+  readonly launchDocuments?: readonly string[];
 }
 
 export function createShellDependencies(composition: ShellComposition): ShellDependencies {
@@ -735,7 +741,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     encodePng,
     log = null,
     crashReports = null,
+    launchDocuments = [],
   } = composition;
+  // THE COMMAND LINE'S DOCUMENTS, held until the page asks: the first launch's now, a later launch's when it arrives.
+  const launched = createLaunchDocuments(launchDocuments);
   const capabilities = new CapabilityRegistry();
 
   // Built before the service because the service **registers** it, not after
@@ -1500,6 +1509,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // saying so is the honest answer rather than a silent success.
       revealLog: log === null ? (): Promise<boolean> => Promise.resolve(false) : log.reveal,
       crashReports,
+      launchDocuments: launched,
       // THE UPDATE CHECK (ADR-0110): this build's channel picks the provider, the contract's address decides whether
       // anything is called, and the setting is read when the check runs — once, the first time the page asks.
       updateCheck: createUpdateCheck({
@@ -1550,6 +1560,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       },
     }),
     closeRequested: closeGate.onCloseRequested,
+    documentsLaunched: (paths) => {
+      launched.add(paths);
+    },
     incidents: log?.incidents ?? reportIncident,
     failures,
     attachWindow: (window) => {

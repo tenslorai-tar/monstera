@@ -30,6 +30,7 @@ import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, createRecentPictures } from './recentPictures.js';
 import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
 import type { DocumentCommands } from './documentCommands.js';
+import { type LaunchDocuments, createLaunchDocuments } from './launchDocuments.js';
 import { createRecentFiles } from './recentFiles.js';
 import { createEphemeralSecrets } from './secretStore.js';
 import { createAssistant } from './assistant.js';
@@ -88,7 +89,7 @@ const OPENED_AT = new Date('2026-09-25T08:00:00.000Z');
 /** One known folder, platform-absolute for `displayLocation.test.ts`'s reason. */
 const RECENT_ROOTS: readonly KnownRoot[] = [{ within: 'documents', path: resolve('home', 'Documents'), showsFolder: true }];
 
-function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
+function harness(outcome: OpenOutcome, pickDocument: PickDocument, launchDocuments?: LaunchDocuments) {
   const capabilities = new CapabilityRegistry();
   const { documents, opened } = serviceAnswering(outcome);
   // RECORDED RATHER THAN IGNORED. Whether a document gets an engine session is
@@ -142,6 +143,7 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
     capabilities,
     commands: unusedCommands,
     documents,
+    ...(launchDocuments === undefined ? {} : { launchDocuments }),
     openedDocument: (docId) => {
       sessioned.push(docId);
       return Promise.resolve();
@@ -610,6 +612,35 @@ describe('document.openDropped (ADR-0099)', () => {
     // line above.
     expect(opened).toStrictEqual([]);
     expect(recent.list()).toStrictEqual([]);
+  });
+});
+
+describe('document.openWaiting — the command line’s documents', () => {
+  const LAUNCHED = resolve('launched', 'a.pdf');
+  const OPENED: OpenOutcome = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' };
+  const NO_PICKER: PickDocument = () => Promise.reject(new Error('a launch must never run the picker'));
+
+  it('opens each held path by the ONE route — that handle, the recent list and a session — and hands it over once', async () => {
+    const { capabilities, handlers, opened, recent, sessioned } = harness(OPENED, NO_PICKER, createLaunchDocuments([LAUNCHED]));
+
+    expect(await handlers['document.openWaiting']({})).toStrictEqual({
+      ok: true,
+      value: { opened: [{ kind: 'opened', docId: A_DOC, version: 1, byteLength: 1024, name: 'a.pdf' }] },
+    });
+    // THE HANDLE RESOLVES TO THE LAUNCHED PATH, and it went where a drop's goes.
+    expect(capabilities.resolve(handleOpened(opened))).toBe(LAUNCHED);
+    expect(recent.list()).toStrictEqual([{ path: LAUNCHED, name: 'a.pdf', openedAt: OPENED_AT.toISOString() }]);
+    expect(sessioned).toStrictEqual([A_DOC]);
+
+    // CONTROL: asked again, nothing is waiting and nothing is opened a second time.
+    expect(await handlers['document.openWaiting']({})).toStrictEqual({ ok: true, value: { opened: [] } });
+    expect(opened).toHaveLength(1);
+  });
+
+  it('a graph with no launch queue opens nothing', async () => {
+    const { handlers, opened } = harness(OPENED, NO_PICKER);
+    expect(await handlers['document.openWaiting']({})).toStrictEqual({ ok: true, value: { opened: [] } });
+    expect(opened).toStrictEqual([]);
   });
 });
 

@@ -122,6 +122,8 @@ export {
   REVIEW_PROMPTS_SETTING_ID,
   type MainHandlers,
   MAX_DROPPED_PATH_LENGTH,
+  // How many documents one launch may name on its command line; main's reader takes no more.
+  MAX_LAUNCH_DOCUMENTS,
   type PreloadChannels,
   type PreloadHandlers,
   preloadChannels,

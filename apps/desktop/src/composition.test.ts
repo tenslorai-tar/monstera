@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { RECENT_PREVIEWS_SETTING_ID, REVIEW_PROMPTS_SETTING_ID } from '@monstera/contract';
 import { asDocId } from '@monstera/shared';
@@ -124,6 +124,27 @@ describe('the Store application’s pages, through the assembled handlers', () =
 
     const without = createShellDependencies({ ...harnessSurfaces('the composition test'), appInfo });
     expect(await without.handlers['app.openStore']({ page: 'updates' })).toStrictEqual({ ok: true, value: { opened: false } });
+  });
+});
+
+describe('the command line’s documents, through the assembled handlers', () => {
+  it('the first launch’s paths and a later launch’s reach the ONE queue the page asks, each opened once', async () => {
+    // FILES THAT DO NOT EXIST, so the open route answers `absent` without an engine: what this case is about is that
+    // both entries reach the channel, and in order — not what opening a PDF does, which is contractHandlers.test's.
+    const first = resolve('launch-first', 'missing-one.pdf');
+    const later = resolve('launch-later', 'missing-two.pdf');
+    const deps = createShellDependencies({
+      ...harnessSurfaces('the composition test'),
+      appInfo,
+      launchDocuments: [first],
+    });
+    expect(await deps.handlers['document.openWaiting']({})).toStrictEqual({ ok: true, value: { opened: [{ kind: 'absent' }] } });
+
+    deps.documentsLaunched([later]);
+    expect(await deps.handlers['document.openWaiting']({})).toStrictEqual({ ok: true, value: { opened: [{ kind: 'absent' }] } });
+
+    // CONTROL: nothing left, so nothing is opened again.
+    expect(await deps.handlers['document.openWaiting']({})).toStrictEqual({ ok: true, value: { opened: [] } });
   });
 });
 

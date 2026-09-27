@@ -169,7 +169,13 @@ import {
   recogniseTextCommand,
 } from './commands/recogniseText.js';
 import { featureShortcutCommands } from './commands/featureShortcuts.js';
-import { type OpenProblem, openDocument, openDocumentCommand, openDroppedFiles } from './commands/openDocument.js';
+import {
+  type OpenProblem,
+  openDocument,
+  openDocumentCommand,
+  openDroppedFiles,
+  openWaitingDocuments,
+} from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
 import { donateCommand } from './commands/donate.js';
 import { rateUsCommand } from './commands/rateUs.js';
@@ -2196,6 +2202,23 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
     },
     [dropOpener, openDeps],
   );
+  // THE COMMAND LINE'S DOCUMENTS open through the same dependencies too: asked for ONCE when the window starts (the
+  // first launch's), and again each time main says a later launch named more. Main hands each path over once, so an
+  // extra ask opens nothing twice — but the first is guarded all the same, since these dependencies change identity.
+  const launchAsked = useRef(false);
+  useEffect(() => {
+    const ask = (): void => {
+      openWaitingDocuments(openDeps).catch(() => {
+        // NO ANSWER OPENS NOTHING, and main keeps nothing it did not hand over: a rejected ask is the channel
+        // failing, recorded main-side, and the window it starts is still the start screen a person can open from.
+      });
+    };
+    if (!launchAsked.current) {
+      launchAsked.current = true;
+      ask();
+    }
+    return subscribe('document.opens-waiting', ask);
+  }, [openDeps, subscribe]);
 
   /**
    * *Set up AI…*, held here as well as registered, because the first run starts it by itself —

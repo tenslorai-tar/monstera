@@ -892,6 +892,18 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-27 — A file given at launch opens, and the page is told rather than handed it
+
+`main.ts`' `second-instance` listener restored and focused the window and dropped the arguments — so *Open with*
+Monstera on a running instance did nothing but bring it forward, and the first launch's own command line was read by
+nobody. §2 had already placed argv and file association among the paths main mints, so this registers into that seam:
+main reads the command line with one pure function, holds what it finds, and tells the page with an empty event; the
+page asks and main opens each path through the drop's own `openPath`. **Pull, not push**, so no path and nothing a
+launch supplied crosses in an event, and a second ask with nothing waiting opens nothing twice. The MSIX file-type
+entry that makes Windows *send* a PDF here is the packaging row's, and still unbuilt.
+
+---
+
 ## 2026-09-27 — A provisioned tree must be exactly the one its script pins
 
 The same defect `electron.mjs` fixed for itself on 2026-08-24, still standing in three siblings: an existing output

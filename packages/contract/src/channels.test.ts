@@ -352,6 +352,7 @@ const handlers: ContractHandlers = {
   'app.openWebPage': () => Promise.resolve(ok({ opened: true })),
   'app.openStore': () => Promise.resolve(ok({ opened: true })),
   'app.updateStatus': () => Promise.resolve(ok({ status: { kind: 'dormant' as const } })),
+  'document.openWaiting': () => Promise.resolve(ok({ opened: [] })),
   'app.acknowledgeSecurityUpdate': () => Promise.resolve(ok({ acknowledged: false })),
   'settings.export': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),

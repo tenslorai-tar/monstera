@@ -112,6 +112,12 @@ export const EVENTS = {
    * Cancel leaves the window open. Empty: the renderer knows which documents it holds.
    */
   'window.close-requested': z.object({}).strict(),
+
+  /**
+   * A later launch named documents on its command line — main is holding them. Empty: the page answers by asking
+   * `document.openWaiting`, so no path and nothing a launch supplied crosses in the event itself.
+   */
+  'document.opens-waiting': z.object({}).strict(),
 } as const;
 
 export type EventMap = typeof EVENTS;

@@ -7,7 +7,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App.js';
-import type { DropOpener } from './bridge.js';
+import type { DropOpener, EventSubscriber } from './bridge.js';
 import { reportProblem } from './commands/documentCommands.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
@@ -160,6 +160,9 @@ const OTHER_ANSWERS: Partial<Record<string, unknown>> = {
   // THE UPDATE CHECK asks once per mount (ADR-0110). Dormant is this build's own answer, and every case's position:
   // an indicator or a security notice here would put a control in front of cases about something else.
   'app.updateStatus': { status: { kind: 'dormant' } },
+  // THE COMMAND LINE'S DOCUMENTS are asked for once per mount. None is every case's position: a document here would
+  // open a tab in front of cases that are about something else.
+  'document.openWaiting': { opened: [] },
 };
 
 function recordingClient(answer: unknown): {
@@ -203,6 +206,8 @@ function commandCalls(calls: readonly string[]): readonly string[] {
   // run left a crash report to offer (ADR-0109). What the offer sends is `CrashReportOffer.test.tsx`' subject.
   // `app.updateStatus` joins them the same way: the shell asks main once what this start's update check found
   // (ADR-0110). What the indicator and the notice send is the update cases' subject below.
+  // `document.openWaiting` joins them the same way: the shell asks main once what the launch named on its command line.
+  // What those opens do is the command-line cases' subject below.
   return calls.filter(
     (id) =>
       id !== 'document.recent' &&
@@ -211,7 +216,8 @@ function commandCalls(calls: readonly string[]): readonly string[] {
       id !== 'window.closeListening' &&
       id !== 'app.reviewPrompt' &&
       id !== 'crashReport.pending' &&
-      id !== 'app.updateStatus',
+      id !== 'app.updateStatus' &&
+      id !== 'document.openWaiting',
   );
 }
 
@@ -253,6 +259,7 @@ const OPEN_DOCUMENT_ANSWERS = {
   // `OTHER_ANSWERS`' reason: the shell announces its close subscription on every mount, and these
   // fixtures throw on a channel they have no answer for.
   'window.closeListening': { acknowledged: true },
+  'document.openWaiting': { opened: [] },
   'document.open': {
     kind: 'opened' as const,
     docId: DOC,
@@ -3115,6 +3122,50 @@ describe('the menu bar, in the shell (ADR-0107)', () => {
       { id: 'window.edit', params: { action: 'cut' } },
     ]);
     expect(document.activeElement).toBe(field);
+  });
+});
+
+describe('the command line’s documents (a file association, Open with)', () => {
+  it('the launch’s document opens as a tab at start, and a later launch’s when main says so — each asked for, never pushed', async () => {
+    // THE EVENTS THE CASE DRIVES, as AppClose.test's: `push` delivers to whatever the app subscribed.
+    const handlers = new Map<string, () => void>();
+    const subscribe: EventSubscriber = (id, handler) => {
+      handlers.set(id, handler as () => void);
+      return () => {
+        handlers.delete(id);
+      };
+    };
+    const LATER = asDocId('doc-2');
+    let asks = 0;
+    const sent: Sent[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      if (id === 'document.openWaiting') {
+        asks += 1;
+        const docId = asks === 1 ? DOC : LATER;
+        const name = asks === 1 ? 'launched.pdf' : 'later.pdf';
+        return Promise.resolve(
+          ok({ opened: asks > 2 ? [] : [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: 1024, name }] }),
+        );
+      }
+      return Promise.resolve(ok((OPEN_DOCUMENT_ANSWERS as Record<string, unknown>)[id] ?? OTHER_ANSWERS[id] ?? { kind: 'cancelled' }));
+    });
+    const { container } = render(<App client={client} settings={freshSettings()} subscribe={subscribe} />);
+    await act(async () => {
+      await new Promise((settle) => setTimeout(settle, 0));
+    });
+    // ASKED ONCE AT START, and the answer became a tab — the page named nothing.
+    expect(sent.filter((call) => call.id === 'document.openWaiting')).toStrictEqual([{ id: 'document.openWaiting', params: {} }]);
+    expect(container.querySelector(`[data-tab="${DOC}"]`)).not.toBeNull();
+    // CONTROL: the later document is not there until main says a later launch named it.
+    expect(container.querySelector(`[data-tab="${LATER}"]`)).toBeNull();
+
+    await act(async () => {
+      handlers.get('document.opens-waiting')?.();
+      await new Promise((settle) => setTimeout(settle, 0));
+    });
+    expect(asks).toBe(2);
+    expect(container.querySelector(`[data-tab="${LATER}"]`)).not.toBeNull();
   });
 });
 

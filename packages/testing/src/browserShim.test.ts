@@ -248,6 +248,7 @@ describe('browser shim', () => {
       'document.open',
       'document.openFromUrl',
       'document.openRecent',
+      'document.openWaiting',
       'document.optimize',
       'document.optimizeMeasure',
       'document.pageBarcodes',
