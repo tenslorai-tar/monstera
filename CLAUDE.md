@@ -566,7 +566,7 @@ Registries: commands (with `placements[]`), dialogs, settings, annotation types,
 tools, AI providers, update providers, import/export formats, cloud providers.
 
 The ribbon, floating toolbar, context menus, command palette, shortcut map,
-start-screen shortcuts, the status bar's buttons and the title bar's are all
+start-screen shortcuts, the status bar's buttons and the menu row's are all
 **projections** of the command registry. **There is no second place where a
 feature is wired.** (The status bar joined the list 2026-09-14,
 [ADR-0067](docs/DECISIONS/0067-the-status-bar-is-a-projection-around-two-value-controls.md):
@@ -574,7 +574,10 @@ its page field and zoom slider take values and stay the bar's own controls. The
 title bar joined it 2026-09-23,
 [ADR-0095](docs/DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md),
 for Donate and Rate Us; its tabs, search and layout switcher each hold a value
-and stay the bar's own the same way. The Properties tab's foot joined it
+and stay the bar's own the same way. The two buttons moved to the centre of the
+menu row on 2026-09-27,
+[ADR-0113](docs/DECISIONS/0113-the-applications-own-commands-sit-at-the-centre-of-the-menu-row.md),
+still a projection. The Properties tab's foot joined it
 2026-09-24,
 [ADR-0102](docs/DECISIONS/0102-a-selection-survives-a-command-that-keeps-the-walk.md),
 for Reply and Delete.) A hand-maintained layout file for

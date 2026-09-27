@@ -92,3 +92,10 @@ page directly through `app.review`, the prompt's own channel, so that a rating g
 one given from the prompt are one fact in main's record. A dialog in front of it would have been a
 confirmation of a press that already says what it does. The decision above is unaffected: both are still
 ordinary commands projected by placement, and nothing about the surface depended on what `run` does.
+
+## Superseded in part, 2026-09-27
+
+[ADR-0113](0113-the-applications-own-commands-sit-at-the-centre-of-the-menu-row.md) moves the two buttons to the
+centre of the menu row and gives them fixed gold and violet tones in place of `emphasis`, on the owner's 27 September
+list. **Where they are drawn and how they look** is that ADR's; **why they are a projection** is still this one's, and
+the `title-bar` surface named above no longer exists.

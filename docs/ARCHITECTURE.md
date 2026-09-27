@@ -1363,7 +1363,7 @@ A feature is finished when it is **registered**, not when it is wired.
 
 | Registry | Entry | Derives |
 |---|---|---|
-| **Commands** (`UiCommand`) | id, title (i18n key), icon, shortcut, `when(ctx)`, `checked?(ctx)`, `run(ctx)`, **`placements[]`** | ribbon, floating toolbar, menus, command palette, shortcut map, context menus, start-screen shortcuts, status-bar buttons, title-bar buttons, the rail's foot |
+| **Commands** (`UiCommand`) | id, title (i18n key), icon, shortcut, `when(ctx)`, `checked?(ctx)`, `run(ctx)`, **`placements[]`** | ribbon, floating toolbar, menus, command palette, shortcut map, context menus, start-screen shortcuts, status-bar buttons, menu row's own buttons, the rail's foot |
 | **Dialogs** | id, lazy component, props schema, **result schema** | one mount point, one focus trap, one Escape/backdrop handler, and the promise an opener awaits |
 | **Settings** | id, type, default, category, i18n key, **a title per member of an enumerated setting**, **an unset title for a colour setting**, `secret?`, migration | the entire Settings dialog — **one control per schema kind, a colour as a no-choice checkbox beside a colour input, a secret write-only and never read back** ([ADR-0056](DECISIONS/0056-the-settings-dialog-derives-a-control-from-a-schema-and-a-secret-is-write-only.md)) — persistence, export (secrets excluded) |
 | **Annotation types** | geometry adapter, renderer, kernel writer mapping | overlay, panel, persistence |
@@ -1407,7 +1407,7 @@ type Placement =
   | { surface: 'status-bar';    cluster: 'navigation'; side: 'before' | 'after'; order: number }
   | { surface: 'status-bar';    cluster: 'zoom'; side: 'before' | 'between' | 'after'; order: number }
   | { surface: 'status-bar';    cluster: 'chrome'; order: number }
-  | { surface: 'title-bar';     emphasis: 'primary' | 'normal'; order: number }
+  | { surface: 'menu-bar-commands'; tone: 'gold' | 'violet' | 'plain'; order: number }
   | { surface: 'rail';          order: number }
   | { surface: 'properties';    order: number }
   | { surface: 'menu-bar';      menu: 'file' | 'edit' | 'view' | 'window' | 'help'; group: number; order: number;
@@ -1472,12 +1472,15 @@ Properties tab while a selection exists and its `when` holds: the design's
 *Reply* and *Delete*. The tab's controls edit the selection as they are used, and
 with nothing selected they show the authoring settings.
 
-**The title bar projects the application's own commands** (amended 2026-09-23,
-[ADR-0095](DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md)).
-The owner's design puts Donate and Rate Us in that row, and each is an ordinary
-command — Donate opens a dialog, Rate Us the Store's review page. A placement names its `emphasis` — `primary` for the
-filled accent treatment, `normal` for the outline — because a bar deciding that
-from a command's id is the layout table above, one field narrower. **The
+**The menu row projects the application's own commands at its centre** (amended 2026-09-23,
+[ADR-0095](DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md), and moved 2026-09-27,
+[ADR-0113](DECISIONS/0113-the-applications-own-commands-sit-at-the-centre-of-the-menu-row.md)).
+The owner puts Donate and Rate Us there, centred on the window's top row, and each is an ordinary
+command — Donate opens a dialog, Rate Us the Store's review page. A placement names its `tone` — `gold` for Donate's
+warm fill with a dark label, `violet` for Rate Us's quieter outline, `plain` for the dormant *Update available*
+notice — because a bar deciding that
+from a command's id is the layout table above, one field narrower; the tones are brand tokens and do not follow the
+accent. Until 2026-09-27 these sat in the title bar, between the tabs and the search. **The
 document tabs, the command search and the layout switcher are not commands**,
 for the status bar's reason unchanged: each holds a value — the open set and the
 active tab, the query, the current mode — and a command's `run` takes none. The
@@ -2576,13 +2579,16 @@ them.
 - **Menu bar** (amended 2026-09-26, [ADR-0107](DECISIONS/0107-the-menu-bar-is-a-projection.md)): the window's top
   row, 32 px — the application's mark, File · Edit · View · Organize · Comment · Forms · Review · Protect · Tools ·
   Window · Help, and the system's own window controls (Window Controls Overlay) at its end. Alt and F10 reach it;
-  Electron's application menu stays `null`, so none of its accelerators exist.
-- **Title bar:** below the menu bar — integrated document tabs, the
-  application's own commands as labelled buttons (amended 2026-09-23,
-  [ADR-0095](DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md)
-  — the owner's design places Donate and Rate Us there, projected from the
-  registry between the tabs and the search), the Ctrl+K command search, and the
-  layout switcher.
+  Electron's application menu stays `null`, so none of its accelerators exist. **At its centre, the application's own
+  commands** (amended 2026-09-27,
+  [ADR-0113](DECISIONS/0113-the-applications-own-commands-sit-at-the-centre-of-the-menu-row.md)): Donate in gold and
+  Rate Us in violet, projected from the registry — centred while they fit, otherwise just after the last menu, never
+  over the menus or the window controls, with a drag track always left; drawn as their icons alone when even that
+  cannot hold their labels.
+- **Title bar:** below the menu bar — integrated document tabs, the Ctrl+K command search, and the layout switcher.
+  It gives its whole width to the tabs; the application's own commands left it for the menu row on 2026-09-27
+  (ADR-0113), having been placed here by
+  [ADR-0095](DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md).
 - **Left section rail:** the eight feature sections — Home, Organize, Edit,
   Comment, Forms, Protect, Review, Tools, the owner's v5 order (amended
   2026-09-26, [ADR-0105](DECISIONS/0105-the-section-rails-order-is-the-owners-v5-order.md))
@@ -2763,6 +2769,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-09-27 | **The application's own commands sit at the centre of the menu row, in their own colours** (§7's `Placement`, §10.3's menu-bar and title-bar clauses). The owner's list (27 September, item 2) moves Donate and Rate Us from the tab row to the menu row, centred, so the tab row keeps its width for many open PDFs; Donate warm gold with dark text, Rate Us soft violet and quieter, neither following the accent. The placement is renamed `menu-bar-commands` and its `emphasis` becomes `tone: 'gold' \| 'violet' \| 'plain'` (the third for the dormant *Update available*), still on the placement. Centred while it fits, else just after the last menu, a drag track always kept, and the buttons draw as icons alone when even that cannot hold them — measured by the row, not a breakpoint. Rejected: drawing a `title-bar` placement in the menu bar, a CSS breakpoint, colours from the accent, hiding them when narrow | ADR-0095 as to where the buttons are drawn and how they look | [0113](DECISIONS/0113-the-applications-own-commands-sit-at-the-centre-of-the-menu-row.md) |
 | 2026-09-27 | **The Help centre is bundled articles in one dialog, and F1 opens the one for where you are** (§10.3's start screen footer). The owner's list (item 9) names F1 for help, against §10.3's *"Press F1 for keyboard shortcuts"*; the later instruction wins and the shortcuts move to Ctrl+/. Articles are Markdown files in the renderer bundle, parsed by this project into elements (no HTML), checked against the registry and the catalogue; *Show me* rings the real control by its command. Screenshots owed. Rejected: a web help site, HTML rendering, keeping F1 for the shortcuts | §10.3's footer line; `BUILD-PROMPT.md` D12's *"keyboard shortcut reference (F1)"* as to which key | [0112](DECISIONS/0112-the-help-centre-is-bundled-articles-and-f1-opens-the-one-for-where-you-are.md) |
 | 2026-09-27 | **A key a person chose is a setting, applied before the registry is built** (§7's `UiCommand.shortcut` and the shortcut map). The founding record's Part F asks for a shortcut editor that rebinds any registry command with conflict detection (`BUILD-PROMPT.md`:625), and a person's choice is a second writer of `shortcut`. The choice is the setting `keyboard.shortcuts`, applied to the commands before the registry is built so every projection reads one field; it is validated where it is made and never at render; a command may declare further chords (`alsoShortcuts`); chords are spelt from the key's position for letters and digits, the plus key is `Plus`, and the document dispatcher does nothing behind a modal dialog. Rejected: a keymap file, validation at render, chords stored per surface, rebinding the keys outside the registry | — (the founding record asked for it; nothing it said is superseded) | [0111](DECISIONS/0111-a-key-a-person-chose-is-a-setting-applied-before-the-registry-is-built.md) |
 | 2026-09-26 | **A crash report is written here, on by default, and sent only by the person** (§8, Observability). The owner's decision of 2026-09-26: `crashReporter` keeps reports on this computer, is on unless Settings › Privacy turns it off, and the next start offers to share a report through the Share sheet with the address shown and a warning that it can hold document fragments. The consent prompt the founding record asked for protected an upload; with nothing uploaded, what needs the person's choice is the sending, and that is asked every time. | `BUILD-PROMPT.md` C8 (:392-394), *"`crashReporter` opt-in, off by default, consent prompt on first run"* | [ADR-0109](DECISIONS/0109-a-crash-report-is-written-here-and-sent-only-by-the-person.md) |
