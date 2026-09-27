@@ -9,8 +9,7 @@ import {
   CONTEXT_PANEL_TAB_TITLE,
   CONTEXT_PANEL_TAB_TITLES,
   PANEL_TITLES,
-  QUICK_TOOLBAR_EDGE_TITLE,
-  QUICK_TOOLBAR_EDGE_TITLES,
+  FLOAT_BAR_POSITION_TITLE,
   QUICK_TOOLBAR_OPEN_TITLE,
   LAYOUT_MODE_OPTION_TITLES,
   LAYOUT_MODE_DESCRIPTION,
@@ -173,17 +172,30 @@ export const QUICK_TOOLBAR_OPEN_SETTING: SettingDefinition<z.ZodBoolean> = {
 };
 
 /**
- * Which edge of the page area the floating quick toolbar sits on — §10.3's *"repositionable"*. Left
- * by default, beside the pages a person reads from the left.
+ * Where the Float bar is — §10.3's *"repositionable"*, built to the owner's 27 September list, item 4: *"Drag it
+ * anywhere over the page area … it always stays inside the page area (window resize included); its position is
+ * remembered; a 'Reset Float bar position' command restores the default."*
+ *
+ * `start` or `end` is the bar docked against that edge of the page area, vertically centred; `{ x, y }` is a place a
+ * person moved it to, as a share of the bar's travel in the page area (`floatBarPlace.ts`), so no stored value can put
+ * it outside. **`start` by default**, beside the pages a person reads from the left, where v5-02 draws it.
+ *
+ * It replaced `appearance.quick-toolbar-edge`, which held only the two docked places and which nothing could set;
+ * a stored value under that id is dropped on load, as any id the registry no longer knows is.
  */
-export const QUICK_TOOLBAR_EDGE_SETTING: SettingDefinition<z.ZodEnum<{ start: 'start'; end: 'end' }>> = {
-  id: 'appearance.quick-toolbar-edge',
-  title: QUICK_TOOLBAR_EDGE_TITLE,
-  schema: z.enum(['start', 'end']),
+const FLOAT_BAR_PLACE = z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }).strict();
+const FLOAT_BAR_POSITION = z.union([z.literal('start'), z.literal('end'), FLOAT_BAR_PLACE]);
+
+export type FloatBarPosition = z.infer<typeof FLOAT_BAR_POSITION>;
+
+export const FLOAT_BAR_POSITION_SETTING: SettingDefinition<typeof FLOAT_BAR_POSITION> = {
+  id: 'appearance.float-bar-position',
+  title: FLOAT_BAR_POSITION_TITLE,
+  schema: FLOAT_BAR_POSITION,
   fallback: 'start',
   category: 'appearance',
+  // REMEMBERED: the control for where the bar is, is the bar — its grip — and the reset command.
   remembered: true,
-  optionTitles: QUICK_TOOLBAR_EDGE_TITLES,
 };
 
 /**

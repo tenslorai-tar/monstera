@@ -9,11 +9,13 @@ import {
   CONTEXT_PANEL_OPEN_SETTING,
   CONTEXT_PANEL_TAB_SETTING,
   DOCUMENT_PANEL_OPEN_SETTING,
+  FLOAT_BAR_POSITION_SETTING,
   QUICK_TOOLBAR_OPEN_SETTING,
 } from '../settings/layout.js';
 import { SettingsStore } from '../settingsStore.js';
 import { paletteModel, shortcutMapOf, statusBarModel } from '../surfaces/projections.js';
 import {
+  resetFloatBarCommand,
   showPropertiesCommand,
   themeCommands,
   toggleContextPanelCommand,
@@ -141,5 +143,28 @@ describe('Window › Properties panel (ADR-0107)', () => {
     settings.set(CONTEXT_PANEL_OPEN_SETTING.id, false);
     expect(command.checked?.(withDocument)).toBe(false);
     expect(command.when?.(noDocument)).toBe(false);
+  });
+});
+
+describe('Window › Reset Float bar position (the owner’s list, item 4)', () => {
+  it('puts a moved bar back where it starts, and touches nothing else — not even whether it is shown', () => {
+    const settings = store();
+    settings.set(FLOAT_BAR_POSITION_SETTING.id, { x: 0.7, y: 0.2 });
+    settings.set(QUICK_TOOLBAR_OPEN_SETTING.id, false);
+    const command = resetFloatBarCommand({ settings });
+
+    void command.run(withDocument);
+    expect(settings.get(FLOAT_BAR_POSITION_SETTING.id)).toBe('start');
+    // CONTROL: hidden stays hidden. A reset that also showed the bar would be a second writer of that setting.
+    expect(settings.get(QUICK_TOOLBAR_OPEN_SETTING.id)).toBe(false);
+  });
+
+  it('is in the Window menu and the palette with a document open, and in neither without one', () => {
+    const registry = new CommandRegistry([resetFloatBarCommand({ settings: store() })]);
+    expect(paletteModel(registry, withDocument).map((command) => command.id)).toContain('view.reset-float-bar');
+    expect(paletteModel(registry, noDocument).map((command) => command.id)).not.toContain('view.reset-float-bar');
+    expect(resetFloatBarCommand({ settings: store() }).placements).toStrictEqual([
+      { surface: 'menu-bar', menu: 'window', group: 1, order: 31 },
+    ]);
   });
 });

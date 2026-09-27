@@ -124,6 +124,7 @@ import {
 } from './commands/viewCommands.js';
 import {
   layoutModeCommands,
+  resetFloatBarCommand,
   showPropertiesCommand,
   themeCommands,
   toggleContextPanelCommand,
@@ -2641,6 +2642,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // §7's CHROME VISIBILITY, as commands: a hidden surface is restorable from the palette and
         // a chord because these exist, not because its own control survives being hidden.
         toggleQuickToolbarCommand({ settings }),
+        resetFloatBarCommand({ settings }),
         togglePanelCommand({ settings }),
         toggleContextPanelCommand({ settings }),
         // §7'S LAYOUT-MODE SWITCH and §10.3's "Esc returns": one command per mode, and Leave Focus.

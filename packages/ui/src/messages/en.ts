@@ -1338,13 +1338,11 @@ export const CONTEXT_PANEL_TAB_TITLES = {
   assistant: CONTEXT_PANEL_TAB_ASSISTANT,
 } as const;
 export const QUICK_TOOLBAR_OPEN_TITLE = messageKey('setting.appearance-quick-toolbar-open.title');
-export const QUICK_TOOLBAR_EDGE_TITLE = messageKey('setting.appearance-quick-toolbar-edge.title');
-export const QUICK_TOOLBAR_EDGE_START = messageKey('setting.appearance-quick-toolbar-edge.start');
-export const QUICK_TOOLBAR_EDGE_END = messageKey('setting.appearance-quick-toolbar-edge.end');
-export const QUICK_TOOLBAR_EDGE_TITLES = {
-  start: QUICK_TOOLBAR_EDGE_START,
-  end: QUICK_TOOLBAR_EDGE_END,
-} as const;
+export const FLOAT_BAR_POSITION_TITLE = messageKey('setting.appearance-float-bar-position.title');
+export const FLOAT_BAR_RESET_TITLE = messageKey('command.reset-float-bar.title');
+/** The grip at the Float bar's top: its name, and the words that say how to move it without a mouse. */
+export const FLOAT_BAR_GRIP_LABEL = messageKey('surface.float-bar.grip');
+export const FLOAT_BAR_GRIP_HELP = messageKey('surface.float-bar.grip-help');
 export const QUICK_TOOLBAR_TOGGLE_TITLE = messageKey('command.toggle-quick-toolbar.title');
 /** The same toggle's label at the rail's foot, where a sentence does not fit under an icon. */
 export const QUICK_TOOLBAR_TOGGLE_SHORT = messageKey('command.toggle-quick-toolbar.short');
@@ -3188,9 +3186,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CONTEXT_PANEL_OPEN_TITLE]: 'Show the properties panel',
   // THE FLOAT BAR, the owner's name for it (27 September list, item 3): one name in every place it is said.
   [QUICK_TOOLBAR_OPEN_TITLE]: 'Show the Float bar',
-  [QUICK_TOOLBAR_EDGE_TITLE]: 'Float bar side',
-  [QUICK_TOOLBAR_EDGE_START]: 'Left side of the pages',
-  [QUICK_TOOLBAR_EDGE_END]: 'Right side of the pages',
+  [FLOAT_BAR_POSITION_TITLE]: 'Float bar position',
+  [FLOAT_BAR_RESET_TITLE]: 'Reset Float bar position',
+  [FLOAT_BAR_GRIP_LABEL]: 'Move the Float bar',
+  [FLOAT_BAR_GRIP_HELP]:
+    'Drag to move it. Or click here, then click where it should go. With the keyboard, use the arrow keys; Shift moves further, and Home puts it back.',
   [QUICK_TOOLBAR_TOGGLE_TITLE]: 'Show or hide the Float bar',
   [QUICK_TOOLBAR_TOGGLE_SHORT]: 'Float bar',
   [DOCUMENT_PANEL_TOGGLE_TITLE]: 'Show or hide the document panel',

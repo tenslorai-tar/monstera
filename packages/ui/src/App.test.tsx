@@ -14,7 +14,7 @@ import { HELP_ARTICLES } from './help/articles.js';
 import type { CommandRegistry } from './registries/commands.js';
 import type { DialogRegistry } from './registries/dialogs.js';
 import { SECTION_IDS } from './registries/placement.js';
-import { CONTEXT_PANEL_TAB_SETTING, DOCUMENT_PANEL_SETTING } from './settings/layout.js';
+import { CONTEXT_PANEL_TAB_SETTING, DOCUMENT_PANEL_SETTING, FLOAT_BAR_POSITION_SETTING } from './settings/layout.js';
 import { SECTION_TITLES } from './surfaces/Ribbon.js';
 import type { Article, Inline } from './help/article.js';
 
@@ -1088,6 +1088,23 @@ describe('App', () => {
       expect(screen.queryByRole('toolbar', { name: 'Float bar' })).toBeNull();
       await press();
       expect(screen.getByRole('toolbar', { name: 'Float bar' })).toBeDefined();
+    });
+
+    it('a MOVED Float bar goes home from its grip’s Home key, through the REGISTERED reset command (item 4)', async () => {
+      // The grip runs `view.reset-float-bar` by id; this is the half that proves the shell registered it — a grip
+      // asking a registry without it would do nothing, and every case in the bar's own file would still pass.
+      const settings = freshSettings();
+      settings.set(FLOAT_BAR_POSITION_SETTING.id, { x: 0.6, y: 0.3 });
+      const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
+      render(<App client={client} settings={settings} />);
+      await withDocumentOpen();
+
+      await act(async () => {
+        fireEvent.keyDown(screen.getByRole('button', { name: 'Move the Float bar' }), { key: 'Home' });
+        await Promise.resolve();
+      });
+      expect(settings.get(FLOAT_BAR_POSITION_SETTING.id)).toBe('start');
+      expect(screen.getByRole('toolbar', { name: 'Float bar' }).classList.contains('m-quick-toolbar--start')).toBe(true);
     });
 
     it('FOCUS from the keyboard and back: Escape returns to the mode left, and an Escape the palette used does not', async () => {

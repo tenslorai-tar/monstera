@@ -1093,12 +1093,68 @@ test('the FLOATING TOOLBAR is a pill inside the page area, off the rail and the 
   await expect(toolbar).toHaveCount(0);
   await page.keyboard.press('Control+Shift+Q');
   await expect(toolbar).toBeVisible();
-  // AND FROM THE RAIL (the owner, 2026-09-26): the Toolbar button at the rail's foot hides it and shows it again.
+  // AND FROM THE RAIL (the owner, 2026-09-26): the Float bar button at the rail's foot hides it and shows it again.
   const rail = page.getByRole('navigation', { name: 'Sections' });
   await rail.getByRole('button', { name: 'Float bar', exact: true }).click();
   await expect(toolbar).toHaveCount(0);
   await rail.getByRole('button', { name: 'Float bar', exact: true }).click();
   await expect(toolbar).toBeVisible();
+});
+
+test('the FLOAT BAR moves by its grip — a drag, the arrow keys — and stays INSIDE the page area when the window shrinks (item 4)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const toolbar = page.getByRole('toolbar', { name: 'Float bar' });
+  const grip = page.getByRole('button', { name: 'Move the Float bar' });
+  await expect(grip).toBeVisible();
+
+  type Box = { x: number; y: number; width: number; height: number };
+  const boxOf = async (locator: typeof toolbar): Promise<Box> => {
+    const box = await locator.boundingBox();
+    if (box === null) throw new Error('a box');
+    return box;
+  };
+  const inside = (inner: Box, outer: Box): void => {
+    expect(inner.x).toBeGreaterThanOrEqual(outer.x - 0.5);
+    expect(inner.y).toBeGreaterThanOrEqual(outer.y - 0.5);
+    expect(inner.x + inner.width).toBeLessThanOrEqual(outer.x + outer.width + 0.5);
+    expect(inner.y + inner.height).toBeLessThanOrEqual(outer.y + outer.height + 0.5);
+  };
+
+  // A DRAG, far past the page area's bottom-right corner: it follows the pointer and stops at the edge.
+  const before = await boxOf(toolbar);
+  const handle = await boxOf(grip);
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + 400, handle.y + 60, { steps: 8 });
+  await page.mouse.move(5000, 5000, { steps: 8 });
+  await page.mouse.up();
+  const area = await boxOf(page.locator('.m-canvas-area'));
+  const moved = await boxOf(toolbar);
+  expect(moved.x).toBeGreaterThan(before.x + 100);
+  inside(moved, area);
+  // IN THE CORNER: the far drag was clamped, not dropped — the bar's right and bottom edges meet the area's.
+  expect(area.x + area.width - (moved.x + moved.width)).toBeLessThan(3);
+  expect(area.y + area.height - (moved.y + moved.height)).toBeLessThan(3);
+
+  // THE WINDOW SHRINKS: the remembered place is a share of the room, so the bar is still inside the smaller area.
+  await page.setViewportSize({ width: 1100, height: 760 });
+  await expect.poll(async () => (await boxOf(page.locator('.m-canvas-area'))).width).toBeLessThan(area.width);
+  const smaller = await boxOf(page.locator('.m-canvas-area'));
+  inside(await boxOf(toolbar), smaller);
+
+  // THE KEYBOARD: an arrow key moves it one grid step from where it is drawn.
+  await grip.focus();
+  const atKey = await boxOf(toolbar);
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(async () => Math.round((await boxOf(toolbar)).x)).toBe(Math.round(atKey.x - 8));
+  // AND HOME PUTS IT BACK where it starts, docked on the left, vertically centred.
+  await page.keyboard.press('Home');
+  await expect(toolbar).toHaveClass(/m-quick-toolbar--start/u);
 });
 
 test('the PAGES STRIP keeps every thumbnail inside the panel on a long document, drawn or not yet drawn', async ({

@@ -3,6 +3,7 @@ import type { MessageKey } from '@monstera/shared';
 import {
   CONTEXT_PANEL_TOGGLE_TITLE,
   DOCUMENT_PANEL_TOGGLE_TITLE,
+  FLOAT_BAR_RESET_TITLE,
   LAYOUT_FOCUS_COMMAND_TITLE,
   LAYOUT_RIBBON_COMMAND_TITLE,
   LAYOUT_STUDIO_COMMAND_TITLE,
@@ -23,6 +24,7 @@ import {
   CONTEXT_PANEL_OPEN_SETTING,
   CONTEXT_PANEL_TAB_SETTING,
   DOCUMENT_PANEL_OPEN_SETTING,
+  FLOAT_BAR_POSITION_SETTING,
   LAYOUT_MODE_SETTING,
   type LayoutMode,
   QUICK_TOOLBAR_OPEN_SETTING,
@@ -82,6 +84,25 @@ export function toggleQuickToolbarCommand(deps: { readonly settings: SettingsSto
     run: (): void => {
       // READ THROUGH THE STORE at run time, never a value captured at registration.
       deps.settings.set(QUICK_TOOLBAR_OPEN_SETTING.id, deps.settings.get(QUICK_TOOLBAR_OPEN_SETTING.id) !== true);
+    },
+  };
+}
+
+/**
+ * *Reset Float bar position* (the owner's 27 September list, item 4): the bar goes back to where it starts, docked
+ * against the page area's left edge, vertically centred. A command so that a bar moved somewhere awkward can be put
+ * back from the palette and the Window menu, and from its own grip's Home key, which runs this.
+ *
+ * It resets the position only: whether the bar is shown is its own setting and its own command.
+ */
+export function resetFloatBarCommand(deps: { readonly settings: SettingsStore }): UiCommand {
+  return {
+    id: 'view.reset-float-bar',
+    title: FLOAT_BAR_RESET_TITLE,
+    placements: [{ surface: 'menu-bar', menu: 'window', group: 1, order: 31 }],
+    when: hasDocument,
+    run: (): void => {
+      deps.settings.set(FLOAT_BAR_POSITION_SETTING.id, FLOAT_BAR_POSITION_SETTING.fallback);
     },
   };
 }

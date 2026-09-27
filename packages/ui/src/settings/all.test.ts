@@ -48,7 +48,14 @@ describe('the registered settings', () => {
     // 2026-09-22 the Settings dialog draws it with a control of its own, the design's swatches.
     // AND THE CHOSEN KEYS (ADR-0111), a map of command to chord whose control is the keyboard shortcuts dialog (Ctrl+/),
     // where each key is changed against the whole list — no generic row could show what a key collides with.
-    expect(excluded).toStrictEqual(['appearance.accent', 'editing.personal-dictionary', 'keyboard.shortcuts']);
+    // AND WHERE THE FLOAT BAR IS (item 4, 2026-09-27): a docked edge or a place in the page area, whose control is the
+    // bar's own grip and Window › Reset Float bar position — a pair of number boxes here would place it blind.
+    expect(excluded).toStrictEqual([
+      'appearance.accent',
+      'appearance.float-bar-position',
+      'editing.personal-dictionary',
+      'keyboard.shortcuts',
+    ]);
 
     // REMEMBERED STATE IS ALSO NOT A ROW (the owner's design pass): a panel's width is stored and
     // exported like any setting, and its control is the splitter rather than a number box here.
@@ -70,7 +77,6 @@ describe('the registered settings', () => {
       'appearance.document-panel-width',
       // THE ORGANIZE GRID'S CARD SIZE (ADR-0104): its control is the grid's own Medium / Large.
       'appearance.organize-grid-size',
-      'appearance.quick-toolbar-edge',
       'appearance.quick-toolbar-open',
       'appearance.ribbon-section',
       'editing.style-as-default',
