@@ -6,6 +6,7 @@ import { App } from './App.js';
 import { createDropOpener, createEventSubscriber, createRendererClient } from './bridge.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
+import { PSEUDO_LOCALE, pseudoCatalogue } from './messages/pseudo.js';
 import { SettingsRegistry } from './registries/settings.js';
 import { ALL_SETTINGS } from './settings/all.js';
 import { SettingsStore } from './settingsStore.js';
@@ -61,7 +62,11 @@ if (container === null) {
 // Before the first render, because a control that renders while the catalogue is
 // still loading would throw `MessageMissing` for every key it holds — and the
 // failure would look like a missing translation rather than an ordering bug.
-activateCatalogue('en', EN);
+//
+// THE PROOF LOCALE ONLY IN A BUILD MADE TO SHOW IT (`messages/pseudo.ts`): the switch is read when the bundle is
+// BUILT, so in any other build the condition is a constant and the bundler drops the branch and the catalogue with it.
+if (import.meta.env.VITE_MONSTERA_PSEUDO_LOCALE === 'on') activateCatalogue(PSEUDO_LOCALE, pseudoCatalogue(EN));
+else activateCatalogue('en', EN);
 
 const client = createRendererClient();
 // THE SECOND DIRECTION (ADR-0082), built beside the client and over the same bridge: the

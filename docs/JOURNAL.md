@@ -892,6 +892,21 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-27 — The proof locale, and extraction proven by rendering
+
+`BUILD-PROMPT.md`:721's *"en + one proof locale"*. What is worth keeping:
+
+**Extraction is a claim about the screen, so it is checked on the screen.** A source scan would ask whether strings
+look like they come from the catalogue; rendering the start screen, a document, every command's title and every
+setting in the proof locale asks whether anything on screen did not. It found nothing but key names, which are data by
+the keyboard row's own stated limit, and its control plants an English sentence to show it can see one.
+
+**The switch is read when the bundle is built, and that was measured rather than assumed**: a normal build carries no
+proof-locale text in any file while its English is present, and a build with the switch carries it. What is still owed
+is the packaging step refusing a build made with it set, because no packaging step exists yet.
+
+---
+
 ## 2026-09-27 — The legal set, and two public documents that promised things that do not exist
 
 Item 9's legal half. What is worth keeping:

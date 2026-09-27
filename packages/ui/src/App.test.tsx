@@ -39,6 +39,7 @@ function markdownOf(article: Article): string {
 }
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
+import { PSEUDO_LOCALE, pseudoCatalogue, pseudoMessage } from './messages/pseudo.js';
 import { SettingsRegistry } from './registries/settings.js';
 import { ALL_SETTINGS } from './settings/all.js';
 import { REDUCE_MOTION_SETTING, THEME_SETTING } from './settings/appearance.js';
@@ -3407,5 +3408,112 @@ describe('Settings › Viewing › Starting zoom (Part F)', () => {
       expect(container.querySelector('.m-status-zoom')?.textContent, String(chosen)).toBe(shown);
       unmount();
     }
+  });
+});
+
+describe('the proof locale — every word on screen came through the catalogue (BUILD-PROMPT.md:721)', () => {
+  /**
+   * Every visible text and every named attribute, with what the proof locale marks — `⟦…⟧` — taken out. What is
+   * left and still has a word in it did not come from the catalogue.
+   */
+  function unmarked(): string[] {
+    const found: string[] = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      if (node.parentElement?.closest('script, style') !== null) continue;
+      found.push(node.textContent ?? '');
+    }
+    for (const element of document.body.querySelectorAll('[aria-label], [title], [placeholder], [alt]')) {
+      for (const name of ['aria-label', 'title', 'placeholder', 'alt']) {
+        const value = element.getAttribute(name);
+        if (value !== null) found.push(value);
+      }
+    }
+    return found
+      .map((text) => text.replace(/⟦[^⟧]*⟧/gu, '').trim())
+      .filter((text) => /[A-Za-z]{2}/u.test(text));
+  }
+
+  /**
+   * DATA, not interface: key names, which are English in every language (the keyboard row's stated limit), the
+   * fixture's own file name, and the build's version. Listed, so a word that is not data cannot hide among them.
+   */
+  const DATA =
+    /^(?:(?:Ctrl|Alt|Shift|Win)\+)*(?:[A-Z0-9]|F\d{1,2}|Esc|Escape|Enter|Tab|Delete|Backspace|Insert|Home|End|PageUp|PageDown|Plus|Space|(?:Arrow)?(?:Left|Right|Up|Down)|[=+\-/])$|^annual\.pdf$/u;
+
+  function renderPseudo(client: ContractClient): void {
+    activateCatalogue(PSEUDO_LOCALE, pseudoCatalogue(EN));
+    render(<App client={client} settings={freshSettings()} />);
+  }
+
+  afterEach(() => {
+    activateCatalogue('en', EN);
+  });
+
+  it('the start screen shows no word the catalogue did not give it', async () => {
+    const { client } = recordingClient({ kind: 'cancelled' });
+    renderPseudo(client);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const leaks = unmarked().filter((text) => !DATA.test(text));
+    expect(leaks, `\n${leaks.join('\n')}\n`).toStrictEqual([]);
+  });
+
+  it('a document’s screen — ribbon, panels, status bar, tabs — shows none either', async () => {
+    const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
+    renderPseudo(client);
+    // OPENED BY THE BUTTON'S PROOF-LOCALE NAME, `withDocumentOpen`'s steps: its English name is not on screen here.
+    await act(async () => {
+      screen.getByRole('button', { name: pseudoMessage('Open PDF…') }).click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // CONTROL: the document's screen is the one scanned — its tab carries the file name, and the ribbon's tools are
+    // drawn, each named through the catalogue.
+    expect(screen.getAllByText('annual.pdf').length).toBeGreaterThan(0);
+    const tools = [...document.querySelectorAll('.m-ribbon [data-command]')];
+    expect(tools.length).toBeGreaterThan(5);
+    expect(tools.every((tool) => tool.textContent.includes('⟦'))).toBe(true);
+    const leaks = unmarked().filter((text) => !DATA.test(text));
+    expect(leaks, `\n${leaks.join('\n')}\n`).toStrictEqual([]);
+  });
+
+  it('the keyboard shortcuts list — every command’s title — and Settings — every setting — show none either', async () => {
+    const { client } = answeringClient({ ...OPEN_DOCUMENT_ANSWERS, 'settings.loadSecrets': { stored: [], available: true } });
+    renderPseudo(client);
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: '/', ctrlKey: true, bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    const shortcuts = await screen.findByRole('table', {}, { timeout: 2000 });
+    // CONTROL: the list is the registry's, well over a hundred rows, so an empty table cannot pass.
+    expect(shortcuts.querySelectorAll('tbody tr').length).toBeGreaterThan(100);
+    const inShortcuts = unmarked().filter((text) => !DATA.test(text));
+    expect(inShortcuts, `\n${inShortcuts.join('\n')}\n`).toStrictEqual([]);
+    await act(async () => {
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      screen.getByRole('button', { name: pseudoMessage('Settings') }).click();
+      await Promise.resolve();
+    });
+    await screen.findByRole('dialog', { name: pseudoMessage('Settings') }, { timeout: 2000 });
+    const inSettings = unmarked().filter((text) => !DATA.test(text));
+    expect(inSettings, `\n${inSettings.join('\n')}\n`).toStrictEqual([]);
+  });
+
+  it('CONTROL: the scan sees a word that did not come through the catalogue', () => {
+    const { client } = recordingClient({ kind: 'cancelled' });
+    renderPseudo(client);
+    const stray = document.createElement('p');
+    stray.textContent = 'Plain English';
+    document.body.append(stray);
+    expect(unmarked()).toContain('Plain English');
+    stray.remove();
   });
 });
