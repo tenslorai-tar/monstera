@@ -1458,6 +1458,34 @@ test('the TITLE BAR holds the tabs, the command search and the switcher on one r
   expect(overlay.y).toBeGreaterThanOrEqual(barBox.y + barBox.height - 0.5);
 });
 
+test('with the RULERS on, the first page begins CLEAR of both of them, and the Float bar docks past the vertical one', async ({
+  page,
+}) => {
+  // The rulers lie over the scroller's start edges. With the list's 16 px padding and v5's 18 px ruler the first
+  // page's top was drawn under the ruler (2026-09-27: page at 205, ruler to 207), and the Float bar docked at 12 lay
+  // over the vertical ruler. 1280 wide, so a page at 100% is wider than its pane and starts at the scroller's content
+  // origin — the shape where the inline start is under the vertical ruler too.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, { 'viewing.rulers': true }, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('.m-ruler-h')).toBeVisible();
+  await expect(page.locator('.m-page-slot').first()).toBeVisible();
+
+  const box = async (selector: string): Promise<{ x: number; y: number; width: number; height: number }> => {
+    const found = await page.locator(selector).first().boundingBox();
+    if (found === null) throw new Error(`${selector} is laid out`);
+    return found;
+  };
+  const across = await box('.m-ruler-h');
+  const down = await box('.m-ruler-v');
+  const slot = await box('.m-page-slot');
+  const bar = await box('.m-quick-toolbar');
+  expect(slot.y).toBeGreaterThanOrEqual(across.y + across.height);
+  expect(slot.x).toBeGreaterThanOrEqual(down.x + down.width);
+  expect(bar.x).toBeGreaterThanOrEqual(down.x + down.width);
+});
+
 test('DONATE AND RATE US sit at the MENU ROW’s centre while they fit, and after the last menu — never over it — when not (ADR-0113)', async ({
   page,
 }) => {

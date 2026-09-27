@@ -2845,6 +2845,13 @@ textarea {
  * rather than a rule that draws an edge on a single view nobody asked to
  * divide.
  */
+/* CLEAR OF THE RULERS when they are drawn: they lie over the list's start edges, and a 16 px padding left the first
+   page's top under the 18 px ruler (measured 2026-09-27 in the baselines: page at 205, ruler to 207). */
+.m-page-list:has(> .m-ruler) {
+  padding-block-start: calc(var(--ruler) + var(--space-16));
+  padding-inline-start: var(--ruler);
+}
+
 .m-page-list + .m-page-list {
   border-inline-start: 1px solid var(--border); /* decorative: separates two scrollable regions of one document and bounds neither; each pane's own controls carry their focus rings */
 }
