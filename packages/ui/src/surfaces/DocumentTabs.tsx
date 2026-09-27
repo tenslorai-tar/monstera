@@ -3,6 +3,7 @@ import type { DocId } from '@monstera/shared';
 import type { ReactElement, ReactNode } from 'react';
 
 import { TAB_CLOSE, TAB_OPEN_ANOTHER, TAB_STRIP_LABEL, TAB_UNSAVED } from '../messages/en.js';
+import { Icon } from '../primitives/Icon.js';
 
 /** One open document, as the strip needs to draw it. */
 export interface DocumentTab {
@@ -137,6 +138,9 @@ export function DocumentTabs({
                     is `aria-hidden` with a worded companion beside it: a screen reader hears
                     "Unsaved changes" and never a bullet character, and the pair is what stops
                     the state being carried by colour and shape alone (§10.6). */}
+                {/* v5-02's document glyph at the tab's start; decorative, since the name beside it
+                    is the button's text (`Icon`). */}
+                <Icon name="FileText" size="dense" />
                 {tab.dirty ? (
                   <>
                     <span aria-hidden className="m-tab-dot" />

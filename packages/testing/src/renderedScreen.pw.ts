@@ -383,16 +383,16 @@ test('the document panel is RESIZABLE, and its width is the stored setting, acro
   const handle = page.getByRole('separator', { name: 'Resize the document panel' });
   await expect(handle).toBeVisible();
 
-  // THE PANE IS NOT THE STORED PIXELS EXACTLY, and the gap is the library's rule, measured.
-  // `parsePanelSize` resolves "256px" as 256 / root × 100 %, and `getPanelFlexBoxStyle` lays that
-  // percentage out as a flex-grow share of the root MINUS the handle, written to three significant
-  // figures. Measured 2026-09-14 at this viewport: root 1216.33, handle 6, pane 254.17 — 1.26 px
-  // from the handle's share and 0.57 px from the rounding. So the tolerance is the handle as this
-  // page measures it, plus one pixel for the rounding, and it still separates the stored 300 from
-  // the fallback 260 by forty pixels.
+  // THE PANE IS THE STORED PIXELS, to the library's rounding. `parsePanelSize` resolves "300px" as
+  // 300 / root × 100 %, and `getPanelFlexBoxStyle` lays that percentage out as a flex-grow share of
+  // what the flex row has left, to three significant figures. The handles take no room in the row
+  // (Splitter.tsx, "the handles take no room"), so what is left is the root and the two agree to
+  // under a pixel. The control is the layout before that: with both 8 px handles in the row this
+  // pane drew about 3.7 px narrow here (2026-09-27; 257.9 for 260 at 1920 × 1080), which a one-pixel
+  // bound refuses — the old bound, the handle's width plus one, admitted exactly that defect.
   const handleWidth = (await handle.boundingBox())?.width ?? 0;
   expect(handleWidth).toBeGreaterThan(0);
-  await expect.poll(async () => Math.abs((await panelPaneWidth(page)) - 300)).toBeLessThan(handleWidth + 1);
+  await expect.poll(async () => Math.abs((await panelPaneWidth(page)) - 300)).toBeLessThan(1);
 
   // THE KEYBOARD STEP, the resize every person can perform. The machine's own step is 1 % of the
   // root, so at this viewport it moves the pane by several pixels — well past the rounding the
@@ -476,11 +476,12 @@ test('the RIGHT contextual panel resizes on its own handle, persists, and leaves
   // THE STYLE CONTROLS ARE HERE, out of the row under the status bar — the Properties tab (ADR-0102).
   await expect(page.getByRole('complementary', { name: 'Properties' }).locator('.m-properties')).toBeVisible();
 
-  // Each drawn pane is within its handle's width of its stored width — the library's layout rule,
-  // measured for the left pane in the case above; two handles now share the root.
+  // Each drawn pane is its stored width to the library's rounding, with both handles open — the
+  // case the handles' share of the row once took about 3.7 px from (the case above).
   const handleWidth = (await right.boundingBox())?.width ?? 0;
   expect(handleWidth).toBeGreaterThan(0);
-  await expect.poll(async () => Math.abs((await contextPaneWidth(page)) - 300)).toBeLessThan(2 * handleWidth + 1);
+  await expect.poll(async () => Math.abs((await contextPaneWidth(page)) - 300)).toBeLessThan(1);
+  await expect.poll(async () => Math.abs((await panelPaneWidth(page)) - 280)).toBeLessThan(1);
   const leftBefore = await panelPaneWidth(page);
 
   // THE RIGHT HANDLE, BY KEYBOARD. ArrowLeft moves the handle left, which widens the right pane.
@@ -505,11 +506,12 @@ test('the RIGHT contextual panel resizes on its own handle, persists, and leaves
   await expect(page.getByRole('complementary', { name: 'Properties' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Show the properties panel' })).toBeVisible();
   await expect(page.getByRole('separator', { name: 'Resize the properties panel' })).toHaveCount(0);
-  // THE LEFT'S STORED WIDTH, not its drawn one. The library draws a pane as its share of the root
-  // minus the handles, each share rounded to three figures (`Splitter.tsx`), so removing a handle
-  // moves every drawn width while writing none. Measured 2026-09-24 at 1280 × 800: root 1166.33 px,
-  // 8 px handles, the left drawn 236.23 before and 238.61 after — the freed handle's share plus the
-  // rounded shares summing to 100.3 before and 100.0 after. What a collapse must not do is WRITE the
+  // THE LEFT'S STORED WIDTH, not its drawn one. The library draws a pane as its share of the row,
+  // each share rounded to three figures (`Splitter.tsx`), so shutting a pane can move another's drawn
+  // width while writing none. Measured 2026-09-24 at 1280 × 800, while the handles still took room
+  // in the row: root 1166.33 px, the left drawn 236.23 before and 238.61 after — the freed handle's
+  // share plus the rounded shares summing to 100.3 before and 100.0 after. The handle's part is gone
+  // since 2026-09-27; the rounding's is not. What a collapse must not do is WRITE the
   // other side, and that is in the settings. The collapse's own write is read in the same answer, so
   // an answer from before the click cannot pass.
   await expect
@@ -1124,7 +1126,7 @@ test('the FLOAT BAR moves by its grip — a drag, the arrow keys — and stays I
   const grip = page.getByRole('button', { name: 'Move the Float bar' });
   await expect(grip).toBeVisible();
 
-  type Box = { x: number; y: number; width: number; height: number };
+  interface Box { x: number; y: number; width: number; height: number }
   const boxOf = async (locator: typeof toolbar): Promise<Box> => {
     const box = await locator.boundingBox();
     if (box === null) throw new Error('a box');
@@ -1465,7 +1467,7 @@ test('DONATE AND RATE US sit at the MENU ROW’s centre while they fit, and afte
   const group = page.locator('.m-menu-bar__commands');
   const lastMenu = page.locator('.m-menu-bar__trigger').last();
   const reserve = page.locator('.m-menu-bar__reserve');
-  type Box = { x: number; y: number; width: number; height: number };
+  interface Box { x: number; y: number; width: number; height: number }
   await expect(group.getByRole('button', { name: 'Donate' })).toBeVisible();
   await expect(page.locator('.m-title-bar').getByRole('button', { name: 'Donate' })).toHaveCount(0);
 
@@ -1481,11 +1483,21 @@ test('DONATE AND RATE US sit at the MENU ROW’s centre while they fit, and afte
     return { group: await read(group), menu: await read(lastMenu), reserve: await read(reserve), row: await read(row) };
   };
 
-  // WIDE: centred on the window to the pixel, which is what the equal outer tracks and the equal padding give.
-  for (const width of [1920, 1440]) {
-    const at = await boxes(width);
-    expect(Math.abs(at.group.x + at.group.width / 2 - width / 2)).toBeLessThanOrEqual(1);
-    expect(at.group.x).toBeGreaterThan(at.menu.x + at.menu.width);
+  // WIDE: centred on the window to the pixel, which is what the equal outer tracks and the equal padding give. At
+  // 1920 the centred box clears the last menu — asserted, so this branch is taken rather than assumed.
+  const wide = await boxes(1920);
+  expect(1920 / 2 - wide.group.width / 2).toBeGreaterThan(wide.menu.x + wide.menu.width);
+  expect(Math.abs(wide.group.x + wide.group.width / 2 - 1920 / 2)).toBeLessThanOrEqual(1);
+
+  // BETWEEN, THE RULE ITSELF rather than a width that happened to fit: centred when the centred box clears the last
+  // menu, else after it. v5's menu padding (10, from 8 on 2026-09-27) is what moved 1440 from the first to the second.
+  const middle = await boxes(1440);
+  const menuEnd = middle.menu.x + middle.menu.width;
+  if (1440 / 2 - middle.group.width / 2 >= menuEnd) {
+    expect(Math.abs(middle.group.x + middle.group.width / 2 - 1440 / 2)).toBeLessThanOrEqual(1);
+  } else {
+    expect(middle.group.x).toBeGreaterThanOrEqual(menuEnd);
+    expect(middle.group.x + middle.group.width).toBeLessThanOrEqual(middle.reserve.x + 0.5);
   }
 
   // THE WINDOW'S FLOOR: never over the last menu, never into the reserve (window controls plus the drag minimum).

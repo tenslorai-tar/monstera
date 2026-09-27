@@ -58,12 +58,16 @@ import { pixelsOfRoot } from './splitterSize.js';
  * pane's back into pixels over the same root the inward rule divides by — so a stored width maps
  * back to the same percentage and does not drift across launches.
  *
- * **A drawn pane is narrower than its width by a pixel or two, and that is not this module's to
- * correct.** The inward rule divides by the whole root, while `getPanelFlexBoxStyle` lays the
- * percentage out as a flex-grow share of the root minus the handles, to three significant figures.
- * Measured 2026-09-14 in the production build at 1280 × 800: root 1216.33 px, one 6 px handle, a
- * stored 256 drew a 254.17 px pane. Correcting it here would be a second opinion about the
- * library's layout; the persisted value is exact.
+ * **THE HANDLES TAKE NO ROOM IN THE ROW, so the library's two rules measure one box.** The inward
+ * rule divides by the whole root, while `getPanelFlexBoxStyle` lays the percentage out as a
+ * flex-grow share of whatever the flex row has left — and a handle that is an ordinary flex item
+ * takes its width out of that first. Measured 2026-09-14 at 1280 × 800: root 1216.33 px, one 6 px
+ * handle, a stored 256 drew 254.17; and 2026-09-27 at 1920 × 1080 with two 8 px handles, v5's 260
+ * and 340 drew 257.9 and 337.8. Scaling the stored width up to compensate would be a second opinion
+ * about the library's arithmetic (B3a). Instead each handle carries a negative margin equal to its
+ * width, so it occupies nothing in the flex row and is drawn over the flexible pane's edge, where
+ * the flexible content keeps the same gap as a margin (`m-splitter__middle`). What remains is the
+ * library's three-significant-figure rounding, under a pixel.
  *
  * ## THE FLEXIBLE PANE IS A HOLE IN `size`, and that takes one cast
  *
@@ -120,6 +124,15 @@ type PaneId = 'start' | 'middle' | 'end';
 
 /** A shut pane's size and both its bounds: the machine lays it out at nothing and cannot resize it. */
 const SHUT = '0px';
+
+/** The flexible pane's content box, with the gap on each side where an open fixed pane's handle lies over it. */
+function middleClass(startOpen: boolean, endOpen: boolean): string {
+  return [
+    'm-splitter__middle',
+    ...(startOpen ? ['m-splitter__middle--after-start'] : []),
+    ...(endOpen ? ['m-splitter__middle--before-end'] : []),
+  ].join(' ');
+}
 
 export function Splitter({ start, middle, end }: SplitterProps): ReactElement {
   const { i18n } = useLingui();
@@ -192,13 +205,17 @@ export function Splitter({ start, middle, end }: SplitterProps): ReactElement {
         return (
           <Fragment key={pane.id}>
             <div {...api.getPanelProps({ id: pane.id })} className="m-splitter__pane">
-              {pane.fixed === undefined ? middle : pane.fixed.open ? pane.fixed.content : null}
+              {pane.fixed === undefined ? (
+                <div className={middleClass(start?.open === true, end?.open === true)}>{middle}</div>
+              ) : pane.fixed.open ? (
+                pane.fixed.content
+              ) : null}
             </div>
             {next === undefined || !pairFixed?.open ? null : (
               <div
                 {...api.getResizeTriggerProps({ id: `${pane.id}:${next.id}` })}
                 aria-label={i18n._(pairFixed.label)}
-                className="m-splitter__handle"
+                className={`m-splitter__handle ${next.id === 'middle' ? 'm-splitter__handle--leads' : 'm-splitter__handle--trails'}`}
               />
             )}
           </Fragment>

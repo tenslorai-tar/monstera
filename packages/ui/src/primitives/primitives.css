@@ -259,6 +259,32 @@
   cursor: col-resize;
 }
 
+/* A HANDLE OCCUPIES NOTHING IN THE ROW (Splitter.tsx, "the handles take no room"): its negative margin cancels its
+   width, so the library's percentages are shares of the whole root, as its inward rule assumes, and the handle is
+   drawn over the gap the flexible content leaves as a margin. `position: relative` paints it above that pane. */
+.m-splitter__handle--leads {
+  margin-inline-end: calc(-1 * var(--space-8));
+}
+
+.m-splitter__handle--trails {
+  margin-inline-start: calc(-1 * var(--space-8));
+}
+
+.m-splitter__middle {
+  display: flex;
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+.m-splitter__middle--after-start {
+  margin-inline-start: var(--space-8);
+}
+
+.m-splitter__middle--before-end {
+  margin-inline-end: var(--space-8);
+}
+
 .m-splitter__handle:hover,
 .m-splitter__handle[data-dragging] {
   background: var(--accent-soft);
