@@ -78,6 +78,17 @@ for (const look of LOOKS) {
     await shot(page, look, '4-dialog');
     await page.keyboard.press('Escape');
 
+    // THE HELP CENTRE (ADR-0112): its list, then an article with *Show me* — the one new surface of Stage 10's batch.
+    await page.keyboard.press('F1');
+    const help = page.getByRole('dialog', { name: 'Help centre' });
+    await expect(help).toBeVisible();
+    await page.waitForTimeout(600);
+    await shot(page, look, '6-help-list');
+    await help.locator('[data-article="rotate-pages"]').click();
+    await expect(help.getByRole('group', { name: 'Show me' })).toBeVisible();
+    await shot(page, look, '7-help-article');
+    await page.keyboard.press('Escape');
+
     // ONE BRIDGE PER PAGE, so each scene with its own settings is its own page.
     const assistant = await context.newPage();
     await openApp(assistant, look, 1440, 900, {

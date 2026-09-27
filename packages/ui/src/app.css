@@ -611,11 +611,17 @@ textarea {
   font-weight: 400;
 }
 
-.m-shortcuts td:nth-child(2) {
+/* THE KEYS' OWN BOX inside the cell — never the cell itself, which a `display: flex` would take out of the row's
+   alignment (measured 2026-09-27 in the visual pass: every key sat above its command's name). */
+.m-shortcuts__keys {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-4);
+}
+
+.m-shortcuts :is(th, td) {
+  vertical-align: middle;
 }
 
 .m-shortcuts__actions {

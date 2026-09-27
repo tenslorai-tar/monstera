@@ -144,6 +144,9 @@ export default function KeyboardShortcutsBody({
               <tr key={row.id}>
                 <th scope="row">{_(row.title)}</th>
                 <td>
+                  {/* THE KEYS IN THEIR OWN FLEX BOX, so the cell stays a table cell: a `td` made `display: flex`
+                      leaves the table's row alignment and drew every key above its command's name. */}
+                  <div className="m-shortcuts__keys">
                   {waiting === row.id ? (
                     <button
                       // THE ONE PLACE A KEY PRESS IS TAKEN WHOLE: focused as it appears, so the next key is its.
@@ -172,6 +175,7 @@ export default function KeyboardShortcutsBody({
                       {refused.text}
                     </p>
                   ) : null}
+                  </div>
                 </td>
                 <td className="m-shortcuts__actions">
                   <Button

@@ -32,7 +32,9 @@ test('the ribbon, section by section, at 1920 × 1080', async ({ page }) => {
   await expect(page.locator('.m-ribbon__group').first()).toBeVisible();
 
   const rail = page.getByRole('navigation', { name: 'Sections' });
-  const sections = await rail.getByRole('button').allTextContents();
+  // THE SECTIONS BY THEIR MARK, not every button: the rail's foot holds commands too (ADR-0098), and counting them as
+  // sections made this read ten where the design names eight.
+  const sections = await rail.locator('[data-ribbon-section]').allTextContents();
   // A VACUITY GUARD: the design names eight sections, and an empty rail would write an empty file.
   expect(sections.length).toBe(8);
 
