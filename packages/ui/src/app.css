@@ -721,7 +721,7 @@ textarea {
 }
 
 .m-help__item:hover {
-  border-color: var(--border);
+  border-color: var(--border-control);
   background: var(--accent-soft);
 }
 
@@ -786,7 +786,7 @@ textarea {
 
 .m-help__table :is(th, td) {
   padding: var(--space-4) var(--space-8);
-  border-block-end: 1px solid var(--border);
+  border-block-end: 1px solid var(--border); /* decorative: a rule between table rows in an article, which nothing clicks */
   text-align: start;
   vertical-align: top;
 }
