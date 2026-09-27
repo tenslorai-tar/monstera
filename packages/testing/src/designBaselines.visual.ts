@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
@@ -10,9 +11,10 @@ import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
  * §10.7's visual baselines: the start screen, each ribbon section, one dialog and
  * one panel, in all three themes.
  *
- * ## What is compared, and what is masked
+ * ## What is compared, and what is hidden
  *
- * The chrome — every surface §10.7 names. The PAGE's canvas is masked: a page's
+ * The chrome — every surface §10.7 names. The PAGE's canvas is hidden (`rasterHidden.css`, never a `mask`, which
+ * painted over whatever the canvas's box reached): a page's
  * raster is PDF.js' output at a zoom and a ratio, and §6 gives it its own
  * perceptual proof against reference renders. A chrome baseline that also held a
  * page raster would go red for a rendering change §6 owns, and be ignored.
@@ -33,6 +35,9 @@ import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
  * failure that names this list rather than a baseline nobody captured.
  */
 const SECTIONS = ['home', 'organize', 'edit', 'comment', 'forms', 'protect', 'review', 'tools'] as const;
+
+/** The page rasters hidden during a capture, never masked — `rasterHidden.css` says why. */
+const RASTER_HIDDEN = fileURLToPath(new URL('./rasterHidden.css', import.meta.url));
 
 // THE LOOKS ARE THE BRIDGE'S, not this file's. §10.4's gate checks the same three, and two lists
 // would drift the day one gains a fourth — the second-opinion shape B3a forbids (audit IIIIII-2).
@@ -74,7 +79,7 @@ async function documentDrawn(page: Page): Promise<void> {
 }
 
 /**
- * Parks the pointer over the masked page area.
+ * Parks the pointer over the page area, whose raster is hidden from the capture.
  *
  * A pointer left on the control it clicked holds that control's hover state and,
  * after a delay, its tooltip — a capture that depends on how long a run took.
@@ -109,12 +114,11 @@ for (const look of LOOKS) {
       [...SECTIONS],
     );
 
-    const canvases = page.locator('canvas');
     for (const section of SECTIONS) {
       await page.locator(`[data-ribbon-section="${section}"]`).click();
       await parkPointer(page);
       await documentDrawn(page);
-      await expect(page).toHaveScreenshot(`${look.name}-section-${section}.png`, { mask: [canvases] });
+      await expect(page).toHaveScreenshot(`${look.name}-section-${section}.png`, { stylePath: RASTER_HIDDEN });
     }
 
     // ONE PANEL: the right contextual panel, on its own, so a change inside it is not
@@ -125,12 +129,12 @@ for (const look of LOOKS) {
 
     // THE DOCUMENT-OPEN SCREEN at the design's own size (the owner, 2026-09-26): 1920 × 1080 with Home chosen, so
     // the whole v5 window — the lit ground, the ribbon, the rail, both panels, the floating toolbar, the status bar —
-    // is one baseline per theme. The page's raster is masked for §6's reason above.
+    // is one baseline per theme. The page's raster is hidden for §6's reason above.
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.locator('[data-ribbon-section="home"]').click();
     await parkPointer(page);
     await documentDrawn(page);
-    await expect(page).toHaveScreenshot(`${look.name}-document-open.png`, { mask: [canvases] });
+    await expect(page).toHaveScreenshot(`${look.name}-document-open.png`, { stylePath: RASTER_HIDDEN });
   });
 }
 
@@ -170,4 +174,55 @@ test('CONTROL: a one-word change on the start screen is reported, so a pass mean
   // THE SIZE OF THE SMALLEST CHANGE THIS GATE MUST SEE, printed, because the tolerance is chosen below it and a
   // figure nobody can read back is a guess wearing a measurement's clothes.
   console.log(`CONTROL planted change: ${/(\d+) pixels/u.exec(reported)?.[1] ?? 'unparsed'} pixels differ`);
+});
+
+test('CONTROL: a change in the Properties panel is reported where the page’s box overlaps it', async ({ page }) => {
+  // THE CHROME BESIDE AN OVERFLOWING PAGE IS COMPARED. A `mask` painted the page canvas's whole box, and at 1280 a page
+  // at 100% is wider than its pane, so the Properties panel lay under the paint in every section baseline and a change
+  // there passed (2026-09-27; this case, run against masked captures, fails). With the raster hidden rather than
+  // masked, a control hidden inside the canvas's box must be reported.
+  test.skip(
+    test.info().config.updateSnapshots === 'all' || test.info().config.updateSnapshots === 'changed',
+    'baselines are being regenerated; the planted change would be written as one',
+  );
+  const look = LOOKS[0];
+  const name = `${look.name}-section-protect.png`;
+  const baseline = test.info().snapshotPath(name);
+  expect(existsSync(baseline), `no baseline at ${baseline}; run the theme cases first`).toBe(true);
+
+  await openedOn(page, look);
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await page.locator('[data-ribbon-section="protect"]').click();
+  await parkPointer(page);
+  await documentDrawn(page);
+
+  // THE HARD SHAPE, asserted rather than assumed: the planted change lies WHOLLY inside the page canvas's box, which is
+  // what a mask painted over. A change reaching past that box would be reported under either mechanism, and so would
+  // separate nothing — the first version of this case planted a longer word whose last letter did exactly that.
+  const canvasBox = await page.locator('.m-page-list canvas').first().boundingBox();
+  if (canvasBox === null) throw new Error('the page canvas is laid out');
+  const hidden = await page.evaluate((canvasRight) => {
+    const panel = document.querySelector('.m-context-panel');
+    if (panel === null) return null;
+    const left = panel.getBoundingClientRect().left;
+    for (const element of panel.querySelectorAll<HTMLElement>('button, input, [role="radio"]')) {
+      const box = element.getBoundingClientRect();
+      if (box.left > left && box.right < canvasRight && box.width > 8 && box.height > 8) {
+        element.style.visibility = 'hidden';
+        return { left: box.left, right: box.right };
+      }
+    }
+    return null;
+  }, canvasBox.x + canvasBox.width);
+  if (hidden === null) throw new Error('a control of the Properties panel lies wholly inside the page canvas’s box');
+  expect(hidden.left).toBeGreaterThanOrEqual(canvasBox.x);
+  expect(hidden.right).toBeLessThanOrEqual(canvasBox.x + canvasBox.width);
+
+  let reported = '';
+  try {
+    await expect(page).toHaveScreenshot(name, { stylePath: RASTER_HIDDEN, timeout: 5_000 });
+  } catch (error) {
+    reported = error instanceof Error ? error.message : String(error);
+  }
+  expect(reported, 'a control hidden in the Properties panel passed the comparison').toMatch(/different/u);
 });

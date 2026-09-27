@@ -1,0 +1,12 @@
+/*
+ * Applied only while a design baseline is captured (`designBaselines.visual.ts`): the page rasters are hidden, so the
+ * chrome is compared and §6's perceptual proof keeps the pixels it owns.
+ *
+ * HIDDEN, NOT MASKED. Playwright's `mask` paints a box over each locator's whole bounding box, ignoring the scroller
+ * that clips it, so a page wider than its pane (1280 wide at 100%) was painted over the Properties panel and the status
+ * bar — both then went uncompared in every section baseline (measured 2026-09-27, `hc-section-protect`). Hiding the
+ * canvas takes away its own pixels and nothing else: the page's box, paper and shadow stay, clipped as drawn.
+ */
+canvas {
+  visibility: hidden !important;
+}
