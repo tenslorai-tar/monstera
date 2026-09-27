@@ -917,6 +917,10 @@ describe('App', () => {
     // THE CHANNEL IN WORDS, and the update line that belongs to it (E4).
     expect(await screen.findByText('Development build')).toBeDefined();
     expect(await screen.findByText('A development build. It does not check for updates.')).toBeDefined();
+    // THE COPYRIGHT HOLDER, inside the dialog: the start screen's footer says it too, so a page-wide query would pass
+    // on the footer behind the dialog.
+    const about = screen.getByRole('dialog', { name: 'About Monstera' });
+    expect(within(about).getByText('© Tenslor Inc.')).toBeDefined();
   });
 
   it('About’s two pages are OPENED BY NAME — the source and the third-party licences — and closing opens nothing', async () => {

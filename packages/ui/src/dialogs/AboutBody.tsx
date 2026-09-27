@@ -7,6 +7,7 @@ import {
   ABOUT_CHANNEL_LABEL,
   ABOUT_CHANNEL_STORE,
   ABOUT_CHANNEL_WEB,
+  ABOUT_COPYRIGHT,
   ABOUT_LICENCE,
   ABOUT_LICENCES,
   ABOUT_SOURCE,
@@ -78,6 +79,7 @@ export default function AboutBody({
       </dl>
       <p className="m-about__line">{_(checksForUpdates ? ABOUT_UPDATES_CHECKED : UPDATE_LINES[installChannel])}</p>
       <p className="m-about__line">{_(ABOUT_LICENCE)}</p>
+      <p className="m-about__line">{_(ABOUT_COPYRIGHT)}</p>
       <div className="m-about__actions">
         <Button
           label={ABOUT_SOURCE}

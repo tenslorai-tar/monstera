@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/brand/logo-256.png" alt="Monstera" width="132">
+<img src="assets/brand/logo-256.png" alt="Monstera PDF Editor" width="132">
 
 # Monstera PDF Editor
 
@@ -15,45 +15,50 @@ A free, open-source, professional-grade PDF editor for Windows.
 
 ---
 
-## Status: in early development — not yet usable
+## Status: nearly there, not yet released
 
-**There is no release yet.** The project is building its architecture before its
-features, deliberately, and that work is public from the first commit.
+**There is no release yet.** Almost every feature is built, and the project is in
+its last stage: accessibility, visual checks, performance and getting ready for
+the Microsoft Store. All of that work is public, as every stage before it was.
 
-This section is the honest picture and it is kept current. If you are looking
-for a PDF editor to use today, this is not one yet.
+This section is the honest picture and it is kept current. Until the release, you
+can build and run it yourself (see below) — and please tell us what breaks.
 
 | Stage | Scope | State |
 |---|---|---|
-| 0 | Walking skeleton — the whole architecture, end to end | **in progress** |
-| 1 | Viewer core: render, search, tabs, zoom quality | not started |
-| 2 | Page management | not started |
-| 3 | Annotations and markup | not started |
-| 4 | Forms | not started |
-| — | **1.0 ships here** | — |
-| 5–10 | Text editing, OCR, security and signatures, import/export, AI, ship | not started |
+| 0–4 | The architecture, the viewer, page management, annotations, forms | **done** |
+| 5–9 | Text editing, OCR, security and signatures, import/export and conversion, AI and cloud | **done** |
+| 10 | Ship: accessibility, visual QA, performance, the Store | **in progress** |
 
-Feature-by-feature status lives in [`docs/FEATURES.md`](docs/FEATURES.md).
+Feature-by-feature status, including what each stage left for later and why,
+lives in [`docs/FEATURES.md`](docs/FEATURES.md).
 
-## What it is meant to be
+## What it is
 
 A PDF editor that is genuinely professional-grade — the benchmark is PDF-XChange
-Editor parity or better — and genuinely free. Viewer, page management,
-annotation, forms, in-place text editing, OCR, redaction and digital signatures,
-export and conversion, in a dense, calm Windows desktop UI with light, dark and
-high-contrast themes.
+Editor parity or better — and genuinely free. View, organise pages, annotate,
+fill and create forms, edit text in place, OCR, redact, sign and verify, convert
+and export, with an optional AI assistant and OneDrive and Google Drive, in a
+calm Windows desktop interface with light, dark and high-contrast themes. Help is
+built in and works offline: press F1.
 
-It will be distributed through the **Microsoft Store** and from
-**monsterapdf.com**.
+It will be available from the **Microsoft Store** only; monsterapdf.com links to
+the Store listing.
 
 ### Things it will not do
 
-- **No telemetry.** None. The only network call the app makes on its own is the
-  update check, and the About panel says so.
-- **No silent cloud upload.** Document content reaches an AI provider only on an
-  explicit user action, and the consent copy names the provider receiving it.
-- **No plaintext secret storage.** API keys go to the OS keychain, or the app
-  says it cannot store them and refuses. There is no silent fallback.
+- **No telemetry.** None. Today the app makes no network call on its own. The
+  one it is built to make — the Store build asking whether an update is
+  available, one plain request that reads version numbers back — is off until
+  its address is live, and the About window says how updates reach you.
+- **No silent cloud upload.** Document content reaches an AI provider, an online
+  reading service or a cloud drive only when you ask, and the window you ask from
+  names who receives it.
+- **No automatic crash uploads.** A crash report is written on your computer and
+  leaves it only if you choose to share it.
+- **No plaintext secret storage.** API keys are kept encrypted with Windows' own
+  protection, or the app says it cannot store them and refuses. There is no
+  silent fallback.
 
 ## Why the codebase looks the way it does
 
@@ -81,9 +86,18 @@ a proof with a control case, meaning the proof fails if the fix is removed.
 If that sounds like the kind of codebase you want to work in, see
 [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
+## Help us
+
+**Bug reports are the most helpful thing you can send.**
+[Open an issue](https://github.com/tenslorai-tar/monstera/issues) and say what
+you did, what you expected and what happened. Please never attach a PDF with
+personal or confidential content. Code is welcome too:
+[`CONTRIBUTING.md`](CONTRIBUTING.md) explains how, including that code
+contributions are assigned to Tenslor Inc. and that you are credited for them.
+
 ## Building from source
 
-Requires Node.js 22.19 or newer and Git.
+Requires **Windows**, Node.js 22.19 or newer and Git.
 
 ```bash
 git clone https://github.com/tenslorai-tar/monstera.git
@@ -96,13 +110,22 @@ and reject binaries and oversized files before they can enter the permanent
 public history. If a commit is rejected because the scanner is not installed,
 run `node scripts/provision/gitleaks.mjs` — **do not bypass the hook.**
 
-To run it, fetch the pinned Electron runtime, build, and start:
+To run it, fetch the pinned Electron runtime, let the contained engine host run
+it, build, and start:
 
 ```bash
 npm run provision:electron
+npm run provision:grants
 npm run build
 npm start
 ```
+
+Some features need a further tool, each fetched and hash-checked by its own
+command — `provision:pdfium` (editing text in place), `provision:tessdata`
+(OCR), `provision:poppler` (text export with layout), `provision:ghostscript`
+(PDF/A) and `provision:mupdf` (Optimize; needs Visual Studio's C++ tools). The
+app starts without them; a feature whose tool is absent is either not offered
+(OCR) or refused with a message that says so (editing text in place).
 
 `provision:electron` downloads the pinned build and verifies it against a
 recorded SHA-256; it is a separate step because importing the `electron`
@@ -115,9 +138,10 @@ otherwise the window shows the previous version of the app and looks identical.
 
 **[AGPL-3.0-or-later](LICENSE).**
 
-Monstera builds **MuPDF from source and statically links it** into a shared
-library we produce and ship. That is a combined work by any reading, and MuPDF
-is AGPL, so Monstera is AGPL. In plain terms: you may use, study, modify and
+Monstera PDF Editor is built on **MuPDF**: the `mupdf` package (MuPDF compiled
+to WebAssembly) opens and edits documents, and a native library we build **from
+MuPDF's source and statically link** runs Optimize. Either is a combined work by
+any reading, and MuPDF is AGPL, so Monstera PDF Editor is AGPL. In plain terms: you may use, study, modify and
 redistribute this software, and if you distribute it — or run a modified version
 as a network service — you must offer the corresponding source under the same
 licence.
@@ -137,15 +161,22 @@ actually ships, at the exact versions shipped:
 - **the separately AGPL-licensed components inside MuPDF's own tree** —
   `extract` and `jbig2dec`, both AGPL-3.0-or-later. These arrive within MuPDF, so
   "the MuPDF version" arguably covers them already. Naming them costs a line and
-  removes the argument.
+  removes the argument;
+- **the `mupdf` package 1.28.0**, the WebAssembly build, from its published
+  release.
 
-That list is the same one [`NOTICE`](NOTICE) states, because both come from
+Ghostscript (AGPL) and Poppler (GPL) run as separate programs, never linked; their
+written source offers are in [`NOTICE`](NOTICE), with every other third-party
+component's terms.
+
+[`NOTICE`](NOTICE) is generated from
 [`scripts/release/nativeComponents.json`](scripts/release/nativeComponents.json)
-rather than being written twice.
+and the lockfile. This list is a summary written by hand; if the two ever differ,
+`NOTICE` is right.
 
-**To request it:** open an issue, or write to the address in
-[`SECURITY.md`](SECURITY.md). We will send a copy for at least three years after
-the last distribution of the corresponding binary.
+**To request it:** [open an issue](https://github.com/tenslorai-tar/monstera/issues)
+in this repository. We will send a copy for at least three years after the last
+distribution of the corresponding binary.
 
 ### Third-party notices
 
@@ -163,9 +194,11 @@ binary-distribution clause requires a disclaimer that this software is based in
 part on the work of the FreeType Team; and **zint** is BSD only for its backend,
 which is the only part compiled here.
 
-The **brand assets** in [`assets/brand/`](assets/brand/) are owned by Tenslor
-Inc. and are not covered by the code licence — a fork must use its own, so users
-can tell whose build they are running.
+The **name and the brand assets** in [`assets/brand/`](assets/brand/) are owned
+by Tenslor Inc. and are not covered by the code licence — a fork must use its
+own, so users can tell whose build they are running. What you may do with them
+without asking is in [`TRADEMARKS.md`](TRADEMARKS.md) (a draft, for legal review
+before launch).
 
 ## Security
 

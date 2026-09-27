@@ -533,6 +533,7 @@ export const ABOUT_UPDATES_WEB = messageKey('dialog.about.updates-web');
 export const ABOUT_UPDATES_DEVELOPMENT = messageKey('dialog.about.updates-development');
 export const ABOUT_UPDATES_CHECKED = messageKey('dialog.about.updates-checked');
 export const ABOUT_LICENCE = messageKey('dialog.about.licence');
+export const ABOUT_COPYRIGHT = messageKey('dialog.about.copyright');
 export const ABOUT_SOURCE = messageKey('dialog.about.source');
 export const ABOUT_LICENCES = messageKey('dialog.about.licences');
 export const ROTATE_PAGE_TITLE = messageKey('command.rotate-page.title');
@@ -2146,6 +2147,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Updates are installed by the Microsoft Store. Monstera also asks monsterapdf.com when it starts whether a newer version is out.',
   [ABOUT_LICENCE]:
     'Monstera is free software under the GNU Affero General Public License, version 3 or later. You can read and build its source code.',
+  [ABOUT_COPYRIGHT]: '© Tenslor Inc.',
   [ABOUT_SOURCE]: 'Source code',
   [ABOUT_LICENCES]: 'Third-party licences',
   // "Rotate page" and not "Rotate": the command rotates the page on screen, and

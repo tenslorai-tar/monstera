@@ -892,6 +892,21 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-27 — The legal set, and two public documents that promised things that do not exist
+
+Item 9's legal half. What is worth keeping:
+
+**The owner's condition — confirm each template's licence on its own site — decided one of the two documents.**
+Harmony's template carries CC BY 3.0 on its own page, so the contributor agreement adapts it with the credit. The Model
+Trademark Guidelines' site failed its certificate check, so their licence could not be read there, and the trademark
+policy uses none of their text rather than text whose terms were taken on a helper's word.
+
+**README and SECURITY each pointed at something absent.** README sent source-offer requests to *"the address in
+SECURITY.md"*, and SECURITY.md deliberately has none; SECURITY put *"the website NSIS and portable builds"* out of scope,
+which ADR-0018 had withdrawn. Neither is caught by a link check, because both links resolve.
+
+---
+
 ## 2026-09-27 — The Help centre: 133 articles, F1 for where you are, and checks that found the drafts wrong
 
 ADR-0112 (its B4 commit first; the stage audit of the range before it rides in the commit between). What is worth
