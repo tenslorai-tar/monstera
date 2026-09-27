@@ -59,6 +59,16 @@ export interface InputProps {
    * (ADR-0055).
    */
   secret?: boolean;
+  /**
+   * Whether what is in the field is refused — too long, not a number. Base UI's field writes `aria-invalid` on the
+   * control, so the field that is wrong is announced as wrong, beside the sentence that says why (WCAG 3.3.1).
+   */
+  invalid?: boolean | undefined;
+  /**
+   * What the field holds, for the browser's own fill-in (WCAG 1.3.5) — `name` for a person's name, `email`. A token
+   * from the HTML list, never free text; absent for a field whose purpose is not one of them.
+   */
+  purpose?: 'name' | 'email' | undefined;
 }
 
 export function Input({
@@ -68,14 +78,17 @@ export function Input({
   disabled = false,
   placeholder,
   secret = false,
+  invalid,
+  purpose,
 }: InputProps): ReactElement {
   // Subscribed rather than resolved once — see `Button`.
   const { _ } = useLingui();
 
   return (
-    <Field.Root className="m-field" disabled={disabled}>
+    <Field.Root className="m-field" disabled={disabled} invalid={invalid}>
       <Field.Label className="m-field__label">{_(label)}</Field.Label>
       <BaseInput
+        autoComplete={purpose}
         className="m-input"
         onValueChange={(next): void => {
           onValueChange(next);

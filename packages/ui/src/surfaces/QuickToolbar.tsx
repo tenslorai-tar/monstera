@@ -70,6 +70,7 @@ export function QuickToolbar({ registry, context, settings }: QuickToolbarProps)
             icon={ICONS[icon]}
             label={entry.command.title}
             size="control"
+            pressed={entry.command.checked?.(context)}
             onClick={() => {
               // Not awaited: a click handler returning a promise would make React's event handling
               // wait on IPC, and nothing here reads the result — the command reports through its

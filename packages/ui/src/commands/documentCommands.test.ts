@@ -1115,12 +1115,33 @@ describe('delete pages — the mutation-dialog gate', () => {
 
   it('TEXT SELECTION turns whatever tool is on OFF, since selecting text is what no tool does', () => {
     let active: string | undefined = HAND_TOOL_ID;
-    void selectTextCommand({
+    const command = selectTextCommand({
       onSelect: (id) => {
         active = id;
       },
-    }).run(CONTEXT);
+      activeTool: () => active,
+    });
+    // PRESSED EXACTLY WHEN NO TOOL IS ON (WCAG 4.1.2's state), read when asked rather than when made.
+    expect(command.checked?.(CONTEXT)).toBe(false);
+    void command.run(CONTEXT);
     expect(active).toBeUndefined();
+    expect(command.checked?.(CONTEXT)).toBe(true);
+  });
+
+  it('a TOOL reports itself pressed while it is the one on, and only then', () => {
+    let active: string | undefined;
+    const hand = handToolCommand({
+      activeTool: () => active,
+      onSelect: (id) => {
+        active = id;
+      },
+    });
+    expect(hand.checked?.(CONTEXT)).toBe(false);
+    void hand.run(CONTEXT);
+    expect(hand.checked?.(CONTEXT)).toBe(true);
+    // CONTROL: another tool on is not this one.
+    active = 'annotate.rectangle';
+    expect(hand.checked?.(CONTEXT)).toBe(false);
   });
 
   /**

@@ -167,9 +167,19 @@ export default function SignDocumentBody({
   const [font, setFont] = useState<(typeof SIGNATURE_FONTS)[number]>('times-italic');
   const [strokes, setStrokes] = useState<readonly PadStroke[]>([]);
 
-  const over =
-    passphrase.length > DOCUMENT_PASSWORD_MAX_CHARS ||
-    [name, reason, location, contactInfo, text].some((value) => value.length > MAX_SIGNATURE_FIELD);
+  // WHICH FIELD IS TOO LONG, not only whether one is (WCAG 3.3.1): the first, by its own label, which the sentence
+  // names and whose field is marked invalid.
+  const tooLong = (
+    [
+      [SIGN_DOCUMENT_PASSPHRASE, passphrase.length > DOCUMENT_PASSWORD_MAX_CHARS],
+      [SIGN_DOCUMENT_TEXT, text.length > MAX_SIGNATURE_FIELD],
+      [SIGN_DOCUMENT_NAME, name.length > MAX_SIGNATURE_FIELD],
+      [SIGN_DOCUMENT_REASON, reason.length > MAX_SIGNATURE_FIELD],
+      [SIGN_DOCUMENT_LOCATION, location.length > MAX_SIGNATURE_FIELD],
+      [SIGN_DOCUMENT_CONTACT, contactInfo.length > MAX_SIGNATURE_FIELD],
+    ] as const
+  ).find(([, long]) => long)?.[0];
+  const over = tooLong !== undefined;
 
   /** The look as the channel carries it, or `undefined` when it has nothing to draw. */
   const mark = ((): RequestedSignatureMark | undefined => {
@@ -216,7 +226,7 @@ export default function SignDocumentBody({
 
           {look === 'typed' ? (
             <>
-              <Input label={SIGN_DOCUMENT_TEXT} onValueChange={setText} value={text} />
+              <Input invalid={tooLong === SIGN_DOCUMENT_TEXT} label={SIGN_DOCUMENT_TEXT} onValueChange={setText} value={text} />
               <label className="m-document-choice" htmlFor={fontId}>
                 {_(SIGN_DOCUMENT_FONT)}
                 <select
@@ -257,15 +267,33 @@ export default function SignDocumentBody({
       ) : null}
 
       <Input
+        invalid={tooLong === SIGN_DOCUMENT_PASSPHRASE}
         label={SIGN_DOCUMENT_PASSPHRASE}
         onValueChange={setPassphrase}
         secret
         value={passphrase}
       />
-      <Input label={SIGN_DOCUMENT_NAME} onValueChange={setName} value={name} />
-      <Input label={SIGN_DOCUMENT_REASON} onValueChange={setReason} value={reason} />
-      <Input label={SIGN_DOCUMENT_LOCATION} onValueChange={setLocation} value={location} />
-      <Input label={SIGN_DOCUMENT_CONTACT} onValueChange={setContactInfo} value={contactInfo} />
+      {/* THE SIGNER'S OWN NAME, so the browser's fill-in can offer it (WCAG 1.3.5). */}
+      <Input
+        invalid={tooLong === SIGN_DOCUMENT_NAME}
+        label={SIGN_DOCUMENT_NAME}
+        onValueChange={setName}
+        purpose="name"
+        value={name}
+      />
+      <Input invalid={tooLong === SIGN_DOCUMENT_REASON} label={SIGN_DOCUMENT_REASON} onValueChange={setReason} value={reason} />
+      <Input
+        invalid={tooLong === SIGN_DOCUMENT_LOCATION}
+        label={SIGN_DOCUMENT_LOCATION}
+        onValueChange={setLocation}
+        value={location}
+      />
+      <Input
+        invalid={tooLong === SIGN_DOCUMENT_CONTACT}
+        label={SIGN_DOCUMENT_CONTACT}
+        onValueChange={setContactInfo}
+        value={contactInfo}
+      />
 
       <label className="m-document-choice" htmlFor={certifyId}>
         {_(SIGN_DOCUMENT_CERTIFY)}
@@ -310,7 +338,11 @@ export default function SignDocumentBody({
       <p className="m-sign-document__note">{_(SIGN_DOCUMENT_TIMESTAMP_NOTE)}</p>
 
       <p className="m-sign-document__problem" role="status">
-        {over ? _(SIGN_DOCUMENT_TOO_LONG) : missing ? _(SIGN_DOCUMENT_MARK_MISSING) : ''}
+        {tooLong !== undefined
+          ? _(SIGN_DOCUMENT_TOO_LONG, { field: _(tooLong) })
+          : missing
+            ? _(SIGN_DOCUMENT_MARK_MISSING)
+            : ''}
       </p>
       <Button
         disabled={over || missing}

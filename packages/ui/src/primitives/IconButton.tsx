@@ -49,6 +49,8 @@ export interface IconButtonProps {
    * colour is then SOLVED against the fill by `useOnColor`, exactly as `Button`'s primary does, never stored.
    */
   variant?: 'primary' | undefined;
+  /** `ToolButton`'s `pressed`: the state a toggle sets, written as `aria-pressed`, and nothing for a plain button. */
+  pressed?: boolean | undefined;
 }
 
 export function IconButton({
@@ -58,6 +60,7 @@ export function IconButton({
   disabled = false,
   onClick,
   variant,
+  pressed,
 }: IconButtonProps): ReactElement {
   // Subscribed rather than resolved once — see `Button` for why the module
   // function is the wrong call here.
@@ -77,6 +80,7 @@ export function IconButton({
     <Tooltip label={label}>
       <BaseButton
         aria-label={_(label)}
+        aria-pressed={pressed}
         className={
           variant === 'primary'
             ? `m-icon-button m-icon-button--${size} m-icon-button--primary`

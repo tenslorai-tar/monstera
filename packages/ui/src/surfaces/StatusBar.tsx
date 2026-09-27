@@ -145,6 +145,7 @@ export function StatusBar({
           icon={ICONS[icon]}
           label={entry.command.title}
           size="dense"
+          pressed={entry.command.checked?.(context)}
           onClick={() => {
             // Not awaited, for `QuickToolbar`'s reason: nothing here reads the result.
             void entry.command.run(context);

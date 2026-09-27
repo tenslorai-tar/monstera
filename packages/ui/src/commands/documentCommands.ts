@@ -3283,6 +3283,7 @@ export function editTextCommand(deps: {
     ribbonTitle: RIBBON_EDIT_TEXT,
     placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 10 }],
     when: hasDocument,
+    checked: () => deps.activeTool() === EDIT_TEXT_TOOL_ID,
     run: (): void => {
       // READ THROUGH THE FUNCTION, `toolCommand`'s rule: the command is built
       // once, and a captured id would toggle against whatever was active then.
@@ -3315,6 +3316,7 @@ export function handToolCommand(deps: {
       { surface: 'menu-bar', menu: 'view', group: 4, order: 10 },
     ],
     when: hasDocument,
+    checked: () => deps.activeTool() === HAND_TOOL_ID,
     run: (): void => {
       deps.onSelect(deps.activeTool() === HAND_TOOL_ID ? undefined : HAND_TOOL_ID);
     },
@@ -3327,7 +3329,11 @@ export function handToolCommand(deps: {
  * a mode of its own — a *text* tool that was a second way of having no tool would be two states that
  * behave the same.
  */
-export function selectTextCommand(deps: { readonly onSelect: (id: string | undefined) => void }): UiCommand {
+export function selectTextCommand(deps: {
+  readonly onSelect: (id: string | undefined) => void;
+  /** The tool that is on: this command is pressed exactly when none is, which is what it makes true. */
+  readonly activeTool: () => string | undefined;
+}): UiCommand {
   return {
     id: 'view.select-text',
     icon: 'TextCursor',
@@ -3339,6 +3345,7 @@ export function selectTextCommand(deps: { readonly onSelect: (id: string | undef
       { surface: 'menu-bar', menu: 'view', group: 4, order: 20 },
     ],
     when: hasDocument,
+    checked: () => deps.activeTool() === undefined,
     run: (): void => {
       deps.onSelect(undefined);
     },

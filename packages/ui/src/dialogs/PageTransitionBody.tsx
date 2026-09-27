@@ -12,9 +12,11 @@ import {
   PAGE_TRANSITION_NOT_A_NUMBER,
   PAGE_TRANSITION_REPLACE,
   PAGE_TRANSITION_REPLACE_NOTE,
+  PAGE_TRANSITION_STYLE,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { Input } from '../primitives/Input.js';
+import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
 import type { PageTransitionAnswer } from './pageTransitionResult.js';
@@ -67,18 +69,14 @@ export default function PageTransitionBody({
 
   return (
     <div className="m-page-transition">
-      <fieldset className="m-page-transition__style">
-        {STYLES.map(({ key, label }) => (
-          <Button
-            key={key}
-            label={label}
-            variant={style === key ? 'primary' : 'default'}
-            onClick={() => {
-              setStyle(key);
-            }}
-          />
-        ))}
-      </fieldset>
+      {/* A NAMED GROUP WHOSE CHOICE IS ANNOUNCED (WCAG 1.3.1, 4.1.2), `BatesNumberBody`'s rule. */}
+      <SegmentedControl
+        label={PAGE_TRANSITION_STYLE}
+        options={STYLES.map(({ key, label }) => ({ value: key, label }))}
+        value={style}
+        onChange={setStyle}
+        wrap
+      />
       <p className="m-page-transition__note">{_(PAGE_TRANSITION_REPLACE_NOTE)}</p>
       <Input
         label={PAGE_TRANSITION_DURATION}

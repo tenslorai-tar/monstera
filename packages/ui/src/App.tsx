@@ -2554,7 +2554,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // tool's command does, and `editing` below is what the mode draws.
         editTextCommand({ activeTool: readTool, onSelect: setToolId }),
         handToolCommand({ activeTool: readTool, onSelect: setToolId }),
-        selectTextCommand({ onSelect: setToolId }),
+        selectTextCommand({ onSelect: setToolId, activeTool: readTool }),
         editPageObjectCommand({ client, onApplied: applied, ask, stamp }),
         // NO DEPS: it takes the caret to the find bar and searches nothing, so
         // there is no client for it to hold. A command needing none is what a

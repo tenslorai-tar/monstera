@@ -892,6 +892,23 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-27 — WCAG 2.1 AA: the ribbon never said which tool was on
+
+The helper's review was a good draft with the wrong ruler: it read against 2.2, so four of its first findings (drag
+alternatives, 24 px targets) are criteria 2.1 does not have. They are recorded as a 2.2 pass's work rather than
+counted, because an audit that reports failures of a standard nobody asked about reads as rigour and changes nothing.
+
+**The finding worth keeping is one nobody had asked about.** `checked` existed on the command and exactly one surface
+read it — the menu bar, built last. The ribbon, where every tool lives, showed no active tool to anyone, sighted or
+not: a person who pressed Rectangle had nothing on the button to say it was on. The fix is where the state already
+was; the tools simply had never declared it, because nothing drew it.
+
+**One finding was already fixed** (the page-scope choice is a segmented control now), and the pattern it named — a
+choice drawn only by which button is filled — was found in three other dialogs by searching for the shape rather
+than trusting the list.
+
+---
+
 ## 2026-09-27 — The proof locale, and extraction proven by rendering
 
 `BUILD-PROMPT.md`:721's *"en + one proof locale"*. What is worth keeping:

@@ -277,6 +277,9 @@ function toolCommand(
     placements: [{ surface: 'ribbon', section: where.section, group: where.group, order }],
     // A page to draw on is what this needs, which is what `hasDocument` says.
     when: also === undefined ? hasDocument : (context) => hasDocument(context) && also(),
+    // THE TOOL THAT IS ON, which every surface draws and announces as pressed (WCAG 4.1.2), read through the function
+    // for `run`'s reason below.
+    checked: () => deps.activeTool() === id,
     run: (): void => {
       // READ THROUGH THE FUNCTION, not from a captured value: the command is
       // built once, and a captured id would toggle against whatever was active

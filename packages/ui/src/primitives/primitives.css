@@ -291,6 +291,24 @@
   outline-offset: 1px;
 }
 
+/* PRESSED — the tool that is on, a panel that is shown — as `SegmentedControl` draws it: `--accent-soft` with
+   `--text`, the state surface and its permitted foreground, and an edge twice the width of any other, so the state
+   never rests on hue alone (WCAG 1.4.1). The edge is a box-shadow, not an outline, so the focus ring above stays its
+   own (2.4.7); and it is also a border colour, so `forced-colors`, which discards the ground, still shows it. */
+.m-tool-button[aria-pressed='true'],
+.m-icon-button[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+@media (forced-colors: active) {
+  .m-tool-button[aria-pressed='true'],
+  .m-icon-button[aria-pressed='true'] {
+    border-color: Highlight;
+  }
+}
+
 .m-tool-button__label {
   color: var(--text);
   font-size: var(--font-chrome-11);

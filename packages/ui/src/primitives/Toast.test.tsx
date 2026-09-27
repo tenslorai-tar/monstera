@@ -16,8 +16,8 @@ activateCatalogue('en', { [SAVED]: 'Saved', [DISMISS]: 'Dismiss' });
 const LIFETIME = 4_000;
 
 /** The strip with a real queue behind it: a dismissal removes the toast, as `toasts.ts` does. */
-function Strip(): ReactElement {
-  const [toasts, setToasts] = useState<readonly ToastMessage[]>([{ id: 1, kind: 'done', message: SAVED }]);
+function Strip({ kind = 'done' }: { readonly kind?: ToastMessage['kind'] }): ReactElement {
+  const [toasts, setToasts] = useState<readonly ToastMessage[]>([{ id: 1, kind, message: SAVED }]);
   const onDismiss = useCallback((id: number) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
@@ -61,6 +61,15 @@ describe('ToastStrip', () => {
     advance(LIFETIME - 1);
     expect(screen.queryByText('Saved')).not.toBeNull();
     advance(1);
+    expect(screen.queryByText('Saved')).toBeNull();
+  });
+
+  it('a PROBLEM has no time limit: untouched, it outlives any lifetime and leaves when its × is pressed', () => {
+    // WCAG 2.2.1: the case above is its control — the same untouched toast, one kind different, leaves on time.
+    render(<Strip kind="problem" />);
+    advance(LIFETIME * 50);
+    expect(screen.queryByText('Saved')).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     expect(screen.queryByText('Saved')).toBeNull();
   });
 

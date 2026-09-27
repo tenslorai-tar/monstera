@@ -47,6 +47,13 @@ export interface ToastMessage {
  * timer runs only while the toast has neither the pointer over it nor focus inside it, and on
  * leaving it resumes with what was LEFT rather than starting again, so hovering on the way past
  * does not make a toast stay twice as long.
+ *
+ * ## A PROBLEM has no timer at all
+ *
+ * Pausing on hover and focus extends the time only for someone who reaches the toast before it goes, and a problem is
+ * the message a person most needs to read at their own pace (WCAG 2.2.1: a time limit can be turned off). So a problem
+ * stays until its × is pressed or newer messages push it out of the three kept; a confirmation, which repeats what
+ * the person can see happened, keeps its lifetime.
  */
 function ToastRow({
   toast,
@@ -67,9 +74,10 @@ function ToastRow({
   // something the toast re-renders for.
   const remaining = useRef(lifetime);
   const held = hovered || focused;
+  const timed = toast.kind !== 'problem';
 
   useEffect(() => {
-    if (held) return undefined;
+    if (held || !timed) return undefined;
     const started = Date.now();
     const timer = setTimeout(() => {
       onDismiss(id);
@@ -78,7 +86,7 @@ function ToastRow({
       clearTimeout(timer);
       remaining.current = Math.max(0, remaining.current - (Date.now() - started));
     };
-  }, [held, id, onDismiss]);
+  }, [held, timed, id, onDismiss]);
 
   return (
     <div

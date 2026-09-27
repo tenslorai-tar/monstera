@@ -186,6 +186,29 @@ describe('the ribbon’s section and modes', () => {
   });
 });
 
+describe('a toggle’s state, as the ribbon announces it (WCAG 4.1.2)', () => {
+  it('a command that sets a state is pressed exactly while it is on; one that sets none is not a toggle', () => {
+    let on = false;
+    const toggle: UiCommand = { ...ROTATE, id: 'b.toggle', checked: () => on };
+    const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+    settings.hydrate({ [RIBBON_SECTION_SETTING.id]: 'organize' });
+    const tree = (): ReactElement => (
+      <Wrapped>
+        <Ribbon registry={new CommandRegistry([SAVE, ROTATE, toggle])} context={CONTEXT} settings={settings} />
+      </Wrapped>
+    );
+    const { rerender } = render(tree());
+    const pressed = (): string | null | undefined =>
+      document.querySelector('[data-command="b.toggle"]')?.getAttribute('aria-pressed');
+    expect(pressed()).toBe('false');
+    on = true;
+    rerender(tree());
+    expect(pressed()).toBe('true');
+    // CONTROL: a plain command carries no `aria-pressed` at all, so it is not announced as a toggle that is off.
+    expect(document.querySelector('[data-command="b.rotate"]')?.hasAttribute('aria-pressed')).toBe(false);
+  });
+});
+
 describe('SHOW ME, as the ribbon rings it (ADR-0112 Decision 4)', () => {
   // A SECONDARY beside Rotate, so it is drawn inside the group's More: the ring must land on the trigger.
   const SECONDARY = commandOf('b.flip', 'test.modes.rotate', [

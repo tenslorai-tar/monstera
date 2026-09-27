@@ -12,6 +12,7 @@ import {
   OCR_UNAVAILABLE,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { OcrAnswer } from './ocrResult.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
@@ -72,19 +73,14 @@ export default function OcrBody({
 
   return (
     <div className="m-ocr">
-      <fieldset className="m-ocr__language">
-        <legend>{_(OCR_LANGUAGE)}</legend>
-        {languages.map((name) => (
-          <Button
-            key={name}
-            label={OCR_LANGUAGE_NAMES[name]}
-            variant={language === name ? 'primary' : 'default'}
-            onClick={() => {
-              setLanguage(name);
-            }}
-          />
-        ))}
-      </fieldset>
+      {/* A NAMED GROUP WHOSE CHOICE IS ANNOUNCED (WCAG 4.1.2), `BatesNumberBody`'s rule. */}
+      <SegmentedControl
+        label={OCR_LANGUAGE}
+        options={languages.map((name) => ({ value: name, label: OCR_LANGUAGE_NAMES[name] }))}
+        value={language}
+        onChange={setLanguage}
+        wrap
+      />
       <PageScopeChoice className="m-ocr__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
       <Button
         label={OCR_START}

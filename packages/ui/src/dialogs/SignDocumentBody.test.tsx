@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { activateCatalogue, i18n } from '../i18n.js';
 import { EN } from '../messages/en.js';
+import { MAX_SIGNATURE_FIELD } from '@monstera/contract';
 import type { SignDocumentAnswer } from './signDocument.js';
 import SignDocumentBody from './SignDocumentBody.js';
 
@@ -91,6 +92,32 @@ describe('SignDocumentBody', () => {
     // THE NOTE IS ON SCREEN, which is where ADR-0058 Decision 1 put the promise:
     // the person choosing is the one who needs to know what leaves the machine.
     expect(screen.getByText(/Only a fingerprint of the signature is sent/u)).not.toBeNull();
+  });
+
+  it('a field too long for the document is NAMED and marked invalid, and only that field (WCAG 3.3.1)', () => {
+    opened(false);
+    const location = screen.getByLabelText('Location (optional)');
+    fireEvent.change(location, { target: { value: 'x'.repeat(MAX_SIGNATURE_FIELD + 1) } });
+
+    expect(screen.getByRole('status').textContent).toBe(
+      '“Location (optional)” is longer than the document can carry. Shorten it to sign.',
+    );
+    expect(location.getAttribute('aria-invalid')).toBe('true');
+    // CONTROL: a field within the bound is not marked, so the mark separates the one field from the rest.
+    expect(screen.getByLabelText('Reason (optional)').getAttribute('aria-invalid')).not.toBe('true');
+    expect(SIGN()).toHaveProperty('disabled', true);
+
+    // BACK WITHIN THE BOUND: the sentence and the mark both go.
+    fireEvent.change(location, { target: { value: 'Rome' } });
+    expect(screen.getByRole('status').textContent).toBe('');
+    expect(location.getAttribute('aria-invalid')).not.toBe('true');
+  });
+
+  it('the signer’s name field offers the browser’s name fill-in (WCAG 1.3.5)', () => {
+    opened(false);
+    expect(screen.getByLabelText('Signed by (optional)').getAttribute('autocomplete')).toBe('name');
+    // CONTROL: a field that is not the signer's own name carries no purpose.
+    expect(screen.getByLabelText('Reason (optional)').getAttribute('autocomplete')).toBeNull();
   });
 
   it('PLACED and typed: Sign waits for text, then answers it trimmed in the chosen face', () => {

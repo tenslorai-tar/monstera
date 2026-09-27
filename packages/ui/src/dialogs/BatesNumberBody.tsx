@@ -5,11 +5,13 @@ import { useState } from 'react';
 import {
   BATES_NUMBER_APPLY,
   BATES_NUMBER_DIGITS,
+  BATES_NUMBER_EDGE,
   BATES_NUMBER_EDGE_FOOTER,
   BATES_NUMBER_EDGE_HEADER,
   BATES_NUMBER_NOT_A_NUMBER,
   BATES_NUMBER_PREFIX,
   BATES_NUMBER_PREVIEW,
+  BATES_NUMBER_SLOT,
   BATES_NUMBER_SLOT_CENTRE,
   BATES_NUMBER_SLOT_LEFT,
   BATES_NUMBER_SLOT_RIGHT,
@@ -18,6 +20,7 @@ import {
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { Input } from '../primitives/Input.js';
+import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { BatesNumberAnswer } from './batesNumberResult.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
@@ -123,30 +126,20 @@ export default function BatesNumberBody({
       <p className="m-bates-number__preview">
         {ready ? previewOf(prefix, suffix, startValue, digitsValue) : _(BATES_NUMBER_PREVIEW)}
       </p>
-      <fieldset className="m-bates-number__edge">
-        {EDGES.map(({ key, label }) => (
-          <Button
-            key={key}
-            label={label}
-            variant={edge === key ? 'primary' : 'default'}
-            onClick={() => {
-              setEdge(key);
-            }}
-          />
-        ))}
-      </fieldset>
-      <fieldset className="m-bates-number__slot">
-        {SLOTS.map(({ key, label }) => (
-          <Button
-            key={key}
-            label={label}
-            variant={slot === key ? 'primary' : 'default'}
-            onClick={() => {
-              setSlot(key);
-            }}
-          />
-        ))}
-      </fieldset>
+      {/* A NAMED GROUP WHOSE CHOICE IS ANNOUNCED (WCAG 1.3.1, 4.1.2): the segmented control, not a row of buttons
+          that showed the choice only by which one was filled. */}
+      <SegmentedControl
+        label={BATES_NUMBER_EDGE}
+        options={EDGES.map(({ key, label }) => ({ value: key, label }))}
+        value={edge}
+        onChange={setEdge}
+      />
+      <SegmentedControl
+        label={BATES_NUMBER_SLOT}
+        options={SLOTS.map(({ key, label }) => ({ value: key, label }))}
+        value={slot}
+        onChange={setSlot}
+      />
       <PageScopeChoice className="m-bates-number__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
       <p className="m-bates-number__problem" role="status">
         {ready ? '' : _(BATES_NUMBER_NOT_A_NUMBER)}

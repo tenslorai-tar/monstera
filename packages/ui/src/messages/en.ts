@@ -179,6 +179,8 @@ export const BATES_NUMBER_START = messageKey('dialog.bates-number.start');
 export const BATES_NUMBER_DIGITS = messageKey('dialog.bates-number.digits');
 export const BATES_NUMBER_PREVIEW = messageKey('dialog.bates-number.preview');
 export const BATES_NUMBER_EDGE_HEADER = messageKey('dialog.bates-number.edge-header');
+export const BATES_NUMBER_EDGE = messageKey('dialog.bates-number.edge');
+export const BATES_NUMBER_SLOT = messageKey('dialog.bates-number.slot');
 export const BATES_NUMBER_EDGE_FOOTER = messageKey('dialog.bates-number.edge-footer');
 export const BATES_NUMBER_SLOT_LEFT = messageKey('dialog.bates-number.slot-left');
 export const BATES_NUMBER_SLOT_CENTRE = messageKey('dialog.bates-number.slot-centre');
@@ -199,6 +201,7 @@ export const IMPORT_FORM_DATA_TOO_LARGE = messageKey('dialog.import-form-data.to
 export const PAGE_TRANSITION_TITLE = messageKey('dialog.page-transition.title');
 export const PAGE_TRANSITION_REPLACE = messageKey('dialog.page-transition.replace');
 export const PAGE_TRANSITION_DISSOLVE = messageKey('dialog.page-transition.dissolve');
+export const PAGE_TRANSITION_STYLE = messageKey('dialog.page-transition.style');
 export const PAGE_TRANSITION_FADE = messageKey('dialog.page-transition.fade');
 export const PAGE_TRANSITION_BOX = messageKey('dialog.page-transition.box');
 export const PAGE_TRANSITION_BLINDS = messageKey('dialog.page-transition.blinds');
@@ -3410,6 +3413,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Nothing was changed. Monstera reads form data files up to {megabytes} MB, and that one is larger.',
   [PAGE_TRANSITION_TITLE]: 'Page transition',
   [PAGE_TRANSITION_REPLACE]: 'None',
+  [PAGE_TRANSITION_STYLE]: 'Transition',
   [PAGE_TRANSITION_DISSOLVE]: 'Dissolve',
   [PAGE_TRANSITION_FADE]: 'Fade',
   [PAGE_TRANSITION_BOX]: 'Box',
@@ -3955,7 +3959,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_DOCUMENT_REASON]: 'Reason (optional)',
   [SIGN_DOCUMENT_LOCATION]: 'Location (optional)',
   [SIGN_DOCUMENT_CONTACT]: 'Contact (optional)',
-  [SIGN_DOCUMENT_TOO_LONG]: 'One of these is longer than the document can carry.',
+  // NAMES THE FIELD (WCAG 3.3.1): "one of these" left a person to find it among six.
+  [SIGN_DOCUMENT_TOO_LONG]: '“{field}” is longer than the document can carry. Shorten it to sign.',
   [SIGN_DOCUMENT_APPLY]: 'Choose certificate and sign',
   [SIGN_DOCUMENT_CERTIFY]: 'This signature says',
   [SIGN_DOCUMENT_CERTIFY_NONE]: 'I approve this document',
@@ -4249,6 +4254,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [BATES_NUMBER_START]: 'Start at',
   [BATES_NUMBER_DIGITS]: 'Digits',
   [BATES_NUMBER_PREVIEW]: 'Fill in the fields to see the first number.',
+  [BATES_NUMBER_EDGE]: 'Edge of the page',
+  [BATES_NUMBER_SLOT]: 'Position on that edge',
   [BATES_NUMBER_EDGE_HEADER]: 'Top',
   [BATES_NUMBER_EDGE_FOOTER]: 'Bottom',
   [BATES_NUMBER_SLOT_LEFT]: 'Left',

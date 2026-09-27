@@ -2686,9 +2686,13 @@ them.
   declares no ESLint 10 support, so it is not adopted. The mandated gate is
   axe-core running on every Playwright-rendered screen from Stage 0, with zero
   serious violations — which is the stronger check anyway: it sees composed
-  screens, focus order and real contrast, where a static rule sees one element's
-  props. Revisit if jsx-a11y resumes releases; it would be a useful second layer,
-  never the primary one.
+  screens and real contrast, where a static rule sees one element's props.
+  **It does not see focus order**, which this read *"focus order"* among what
+  axe sees until 2026-09-27: axe-core 4.13.0 checks a positive `tabindex` and,
+  experimentally, the role of what is focusable (`focus-order-semantics`), and
+  no rule checks the order focus moves in — that is the Playwright cases' own
+  (`dialogFocus.pw.ts` and the rendered screens). Revisit if jsx-a11y resumes
+  releases; it would be a useful second layer, never the primary one.
 - Behavior comes from a headless primitive library skinned with our tokens.
   Accessible focus traps, menus and comboboxes are exactly the class of solved
   problem Rule 0 says not to re-derive by hand. The specific library is chosen

@@ -58,6 +58,12 @@ export interface ToolButtonProps {
    * marks its items this way.
    */
   readonly command?: string | undefined;
+  /**
+   * Whether the state this button sets is on — the active tool, a panel shown — for a command that declares one
+   * (`UiCommand.checked`). Written as `aria-pressed`, so the state is announced as well as drawn (WCAG 4.1.2), and
+   * `undefined` writes nothing: a button that sets no state is not a toggle.
+   */
+  readonly pressed?: boolean | undefined;
 }
 
 /**
@@ -71,12 +77,13 @@ export function ribbonCaption(text: string): string {
   return text.endsWith('…') ? text.slice(0, -1).trimEnd() : text;
 }
 
-export function ToolButton({ label, description, icon, onClick, command }: ToolButtonProps): ReactElement {
+export function ToolButton({ label, description, icon, onClick, command, pressed }: ToolButtonProps): ReactElement {
   const { _ } = useLingui();
   const describedBy = useId();
   const button = (
     <BaseButton
       aria-describedby={description === undefined ? undefined : describedBy}
+      aria-pressed={pressed}
       className="m-tool-button"
       data-command={command}
       nativeButton
