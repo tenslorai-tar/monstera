@@ -1,6 +1,7 @@
 /**
- * Where the Float bar sits in the page area, and the one conversion between what is stored and what is drawn
- * (the owner's 27 September list, item 4).
+ * Where the Float bar sits in the page area: the conversion from where a person put it to what is stored (the owner's
+ * 27 September list, item 4). What is stored is also what is drawn — the stylesheet resolves the share against the
+ * area as laid out, so there is no conversion back to pixels here to fall out of date.
  *
  * ## Stored as a share of the bar's TRAVEL, never as pixels
  *
@@ -8,7 +9,9 @@
  * `{ x: 0, y: 0 }` is the top-left corner with the bar wholly inside, `{ x: 1, y: 1 }` the bottom-right, and **no
  * stored value can put the bar outside the page area at any window size**: a window that shrinks shrinks the travel,
  * and the same share lands inside the smaller room. A pixel position would have to be clamped on every resize and
- * would drift each time it was; this is B5, the out-of-bounds state not being expressible.
+ * would drift each time it was; this is B5, the out-of-bounds state not being expressible. (One reach it does not
+ * make: an area SHORTER than the bar, which the window's minimum size keeps from arising — there the travel is
+ * negative, and a share stored at a larger size is drawn overhanging both ends by that share.)
  *
  * `start` and `end` are the two docked places — against an edge, vertically centred, as v5 draws it — and `start`
  * is the default. A docked bar is placed by the stylesheet; a move starts from where it is DRAWN, which the bar reads
@@ -61,12 +64,14 @@ function travel(area: number, bar: number): number {
 
 const unit = (value: number): number => Math.min(1, Math.max(0, value));
 
-/** The top-left corner a stored free position draws at. */
-export function pointOf(position: { readonly x: number; readonly y: number }, room: FloatBarRoom): FloatBarPoint {
-  return {
-    left: unit(position.x) * travel(room.areaWidth, room.barWidth),
-    top: unit(position.y) * travel(room.areaHeight, room.barHeight),
-  };
+/**
+ * A free position: each axis a share in [0, 1] of the bar's travel. What is stored, and what is DRAWN — the stylesheet
+ * turns it into a place against the page area as it is laid out at that moment (`.m-quick-toolbar--free`: `left` at
+ * the share of the area, less the same share of the bar), so no copy of the area's size is ever drawn from.
+ */
+export interface FloatBarShare {
+  readonly x: number;
+  readonly y: number;
 }
 
 /**
@@ -74,7 +79,7 @@ export function pointOf(position: { readonly x: number; readonly y: number }, ro
  * the room. A room with no travel on an axis answers 0 there: the bar is pinned to that edge, which is the only place
  * it can be.
  */
-export function positionAt(point: FloatBarPoint, room: FloatBarRoom): { readonly x: number; readonly y: number } {
+export function positionAt(point: FloatBarPoint, room: FloatBarRoom): FloatBarShare {
   const across = travel(room.areaWidth, room.barWidth);
   const down = travel(room.areaHeight, room.barHeight);
   return {

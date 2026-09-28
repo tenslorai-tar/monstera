@@ -104,28 +104,13 @@ describe('QuickToolbar', () => {
 
   describe('MOVABLE by its grip (the owner’s list, item 4)', () => {
     /**
-     * happy-dom lays nothing out, so the room is given: a 1000 × 600 page area and a 40 × 400 bar, reported by an
-     * observer that answers as soon as it is asked, as a real one does. Where the bar lands on a real screen is the
-     * rendered test's.
+     * happy-dom lays nothing out, so the room is given: a 1000 × 600 page area and a 40 × 400 bar, read by the bar at
+     * the moment a press or a key needs them. Where the bar lands on a real screen is the rendered test's.
      */
     const ROOM = { area: [1000, 600], bar: [40, 400] } as const;
     let restore: (() => void) | undefined;
 
     beforeEach(() => {
-      const original = globalThis.ResizeObserver;
-      class Immediate {
-        readonly #callback: () => void;
-        constructor(callback: () => void) {
-          this.#callback = callback;
-        }
-        observe(): void {
-          this.#callback();
-        }
-        disconnect(): void {
-          /* nothing to stop: it only ever answers when asked */
-        }
-      }
-      vi.stubGlobal('ResizeObserver', Immediate);
       const sized = (name: 'clientWidth' | 'clientHeight' | 'offsetWidth' | 'offsetHeight', index: 0 | 1) =>
         vi.spyOn(HTMLElement.prototype, name, 'get').mockImplementation(function (this: HTMLElement): number {
           if (this.classList.contains('m-quick-toolbar')) return ROOM.bar[index];
@@ -135,7 +120,6 @@ describe('QuickToolbar', () => {
       const spies = [sized('clientWidth', 0), sized('clientHeight', 1), sized('offsetWidth', 0), sized('offsetHeight', 1)];
       restore = (): void => {
         for (const spy of spies) spy.mockRestore();
-        vi.stubGlobal('ResizeObserver', original);
       };
     });
 
@@ -173,14 +157,17 @@ describe('QuickToolbar', () => {
       expect(settings.get(FLOAT_BAR_POSITION_SETTING.id)).toStrictEqual({ x: 0, y: 32 / 200 });
     });
 
-    it('draws a moved bar at its stored place, with no centring on top', () => {
+    it('draws a moved bar at its stored SHARE, for the stylesheet to resolve against the area as laid out', () => {
       const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
       settings.set(FLOAT_BAR_POSITION_SETTING.id, { x: 0.5, y: 1 });
       inArea(COMMANDS, settings);
       const bar = screen.getByRole('toolbar');
       expect(bar.classList.contains('m-quick-toolbar--free')).toBe(true);
-      expect(bar.style.left).toBe('480px');
-      expect(bar.style.top).toBe('200px');
+      expect(bar.style.getPropertyValue('--float-x')).toBe('0.5');
+      expect(bar.style.getPropertyValue('--float-y')).toBe('1');
+      // NO PIXELS: a pixel position is a copy of the area's size, stale for as long as a resize takes to reach it.
+      expect(bar.style.left).toBe('');
+      expect(bar.style.top).toBe('');
     });
 
     it('HOME runs Reset Float bar position — the same command the Window menu runs', () => {
@@ -222,6 +209,26 @@ describe('QuickToolbar', () => {
       fireEvent.pointerUp(grip(), { clientX: 120, clientY: 55, pointerId: 1 });
       expect(settings.get(FLOAT_BAR_POSITION_SETTING.id)).toStrictEqual({ x: 100 / 960, y: 50 / 200 });
       // A DRAG IS NOT A CLICK: it does not also arm the click-to-place.
+      expect(grip().getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('THE RELEASE DECIDES where a drag lands, even when the moves before it stopped short', () => {
+      // A browser coalesces moves, and the last one it delivers need not be where the button came up: measured in
+      // Chromium 2026-09-28, a fast drag to the corner landed 37 px short one run in twelve. Here the only move is
+      // 100 px across and the release is 500 — stored from the move, this reads 100/960.
+      const settings = inArea(COMMANDS);
+      fireEvent.pointerDown(grip(), { button: 0, clientX: 20, clientY: 5, pointerId: 1 });
+      fireEvent.pointerMove(grip(), { clientX: 120, clientY: 5, pointerId: 1 });
+      fireEvent.pointerUp(grip(), { clientX: 520, clientY: 5000, pointerId: 1 });
+      expect(settings.get(FLOAT_BAR_POSITION_SETTING.id)).toStrictEqual({ x: 500 / 960, y: 1 });
+    });
+
+    it('a release far from the press is a DRAG even with no move delivered at all', () => {
+      const settings = inArea(COMMANDS);
+      fireEvent.pointerDown(grip(), { button: 0, clientX: 20, clientY: 5, pointerId: 1 });
+      fireEvent.pointerUp(grip(), { clientX: 320, clientY: 5, pointerId: 1 });
+      expect(settings.get(FLOAT_BAR_POSITION_SETTING.id)).toStrictEqual({ x: 300 / 960, y: 0 });
+      // NOT ARMED: nothing about a release 300 px away is a click.
       expect(grip().getAttribute('aria-pressed')).toBe('false');
     });
   });

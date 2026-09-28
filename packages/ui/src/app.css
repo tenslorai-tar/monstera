@@ -3288,8 +3288,12 @@ textarea {
 /* MOVED (item 4): the corner comes from the stored share of the page area, as inline `left` and `top` — genuinely
    dynamic values — so the centring transform the docked places use must not apply on top of it. */
 .m-quick-toolbar--free {
-  inset-block-start: auto;
-  transform: none;
+  /* THE SHARE, RESOLVED HERE against the page area as it is laid out now: `left` is the share of the area and the
+     translate takes back the same share of the bar, which is the share of the travel — (area − bar) × share — on every
+     frame, a shrinking window's first included. The bar sets `--float-x` and `--float-y`, two numbers in [0, 1]. */
+  inset-block-start: calc(var(--float-y) * 100%);
+  left: calc(var(--float-x) * 100%);
+  transform: translate(calc(var(--float-x) * -100%), calc(var(--float-y) * -100%));
 }
 
 /* THE GRIP, the tile v5 draws at the bar's top: the handle a person drags, clicks to place, or moves with the arrow

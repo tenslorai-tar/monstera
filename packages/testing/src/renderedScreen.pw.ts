@@ -1125,6 +1125,10 @@ test('the FLOAT BAR moves by its grip — a drag, the arrow keys — and stays I
   const toolbar = page.getByRole('toolbar', { name: 'Float bar' });
   const grip = page.getByRole('button', { name: 'Move the Float bar' });
   await expect(grip).toBeVisible();
+  // THE RULERS FIRST: they mount once the page is measured, and the docked bar then moves 18 px to clear the vertical
+  // one. Measured before that, the press below landed beside the grip and nothing was dragged (1 run in 20,
+  // 2026-09-28) — the layout this case acts on has to be the one it measured.
+  await expect(page.locator('.m-ruler-v')).toBeVisible();
 
   interface Box { x: number; y: number; width: number; height: number }
   const boxOf = async (locator: typeof toolbar): Promise<Box> => {
@@ -1154,6 +1158,24 @@ test('the FLOAT BAR moves by its grip — a drag, the arrow keys — and stays I
   // IN THE CORNER: the far drag was clamped, not dropped — the bar's right and bottom edges meet the area's.
   expect(area.x + area.width - (moved.x + moved.width)).toBeLessThan(3);
   expect(area.y + area.height - (moved.y + moved.height)).toBeLessThan(3);
+
+  // IN THE SAME FRAME: the area narrows and both boxes are read in one task, before any observer, effect or render can
+  // run. Only a place the stylesheet resolves against the live layout can pass this; a pixel position computed from a
+  // measured room is drawn from the old size until a render catches up — 3 px outside on both CI runners, 2026-09-28.
+  const sameFrame = await page.evaluate(() => {
+    const narrowed = document.querySelector<HTMLElement>('.m-canvas-area');
+    const pill = document.querySelector('.m-quick-toolbar');
+    if (narrowed === null || pill === null) return null;
+    narrowed.style.marginInlineEnd = '300px';
+    const areaBox = narrowed.getBoundingClientRect();
+    const pillBox = pill.getBoundingClientRect();
+    narrowed.style.marginInlineEnd = '';
+    return { areaRight: areaBox.right, areaWidth: areaBox.width, pillRight: pillBox.right };
+  });
+  if (sameFrame === null) throw new Error('the page area and the Float bar are drawn');
+  // THE PREMISE: the area really narrowed, by the margin, in that task.
+  expect(sameFrame.areaWidth).toBeLessThan(area.width - 250);
+  expect(sameFrame.pillRight).toBeLessThanOrEqual(sameFrame.areaRight + 0.5);
 
   // THE WINDOW SHRINKS: the remembered place is a share of the room, so the bar is still inside the smaller area.
   await page.setViewportSize({ width: 1100, height: 760 });

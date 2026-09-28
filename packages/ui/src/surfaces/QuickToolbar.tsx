@@ -1,11 +1,11 @@
 import { useLingui } from '@lingui/react';
 import {
+  type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
   type ReactElement,
   useEffect,
   useId,
-  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
@@ -18,7 +18,7 @@ import type { CommandContext, CommandRegistry } from '../registries/commands.js'
 import { FLOAT_BAR_POSITION_SETTING, QUICK_TOOLBAR_OPEN_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import { useSetting } from '../useSetting.js';
-import { type FloatBarPoint, type FloatBarRoom, nudged, pointOf, positionAt } from './floatBarPlace.js';
+import { type FloatBarPoint, type FloatBarRoom, type FloatBarShare, nudged, positionAt } from './floatBarPlace.js';
 import { quickToolbarModel } from './projections.js';
 
 /** The reset command, run by the grip's Home key so the key and the Window menu are one action. */
@@ -70,6 +70,22 @@ export interface QuickToolbarProps {
   readonly settings: SettingsStore;
 }
 
+/**
+ * The page area's size and the bar's, read NOW, at the moment a press or a key needs them. Never held in state: a copy
+ * of a layout is stale for as long as it takes to be refreshed, and the only readers of this are events, which run
+ * against the layout the person is looking at.
+ */
+function roomOf(element: HTMLElement | null): FloatBarRoom | null {
+  const area = element?.parentElement;
+  if (element === null || area === null || area === undefined) return null;
+  return {
+    areaWidth: area.clientWidth,
+    areaHeight: area.clientHeight,
+    barWidth: element.offsetWidth,
+    barHeight: element.offsetHeight,
+  };
+}
+
 export function QuickToolbar({ registry, context, settings }: QuickToolbarProps): ReactElement | null {
   const { i18n } = useLingui();
   const open = useSetting(settings, QUICK_TOOLBAR_OPEN_SETTING);
@@ -77,41 +93,17 @@ export function QuickToolbar({ registry, context, settings }: QuickToolbarProps)
   const entries = quickToolbarModel(registry, context);
   const shown = open && entries.length > 0;
   const bar = useRef<HTMLDivElement | null>(null);
-  /** A press on the grip: where it began, where the bar was, whether it has become a drag, and where it would land. */
+  /** A press on the grip: where it began, where the bar was, the room at that moment, and whether it became a drag. */
   const press = useRef<{
     readonly x: number;
     readonly y: number;
     readonly from: FloatBarPoint;
+    readonly room: FloatBarRoom;
     moved: boolean;
-    at: { readonly x: number; readonly y: number } | null;
   } | null>(null);
-  const [room, setRoom] = useState<FloatBarRoom | null>(null);
-  const [dragged, setDragged] = useState<FloatBarPoint | null>(null);
+  const [dragged, setDragged] = useState<FloatBarShare | null>(null);
   const [placing, setPlacing] = useState(false);
   const helpId = useId();
-
-  // THE ROOM: the page area's size and the bar's, re-read whenever either changes — a window resize, a panel
-  // collapsing, a command arriving on the bar. The observer reports once when it starts, which is the first reading.
-  useLayoutEffect(() => {
-    const element = bar.current;
-    const area = element?.parentElement;
-    if (!shown || element === null || area === null || area === undefined || typeof ResizeObserver === 'undefined') {
-      return undefined;
-    }
-    const observer = new ResizeObserver(() => {
-      setRoom({
-        areaWidth: area.clientWidth,
-        areaHeight: area.clientHeight,
-        barWidth: element.offsetWidth,
-        barHeight: element.offsetHeight,
-      });
-    });
-    observer.observe(area);
-    observer.observe(element);
-    return (): void => {
-      observer.disconnect();
-    };
-  }, [shown]);
 
   // CLICK-TO-PLACE: the next press in the page area puts the bar there, centred on the press, and goes no further —
   // a press meant to place the bar must not also select an annotation under it. Escape cancels.
@@ -120,6 +112,7 @@ export function QuickToolbar({ registry, context, settings }: QuickToolbarProps)
     if (!placing || area === null || area === undefined) return undefined;
     const place = (event: globalThis.PointerEvent): void => {
       const element = bar.current;
+      const room = roomOf(element);
       if (element === null || room === null) return;
       if (element.contains(event.target as Node)) return;
       event.preventDefault();
@@ -146,7 +139,7 @@ export function QuickToolbar({ registry, context, settings }: QuickToolbarProps)
       area.removeEventListener('pointerdown', place, true);
       window.removeEventListener('keydown', cancel);
     };
-  }, [placing, room, settings]);
+  }, [placing, settings]);
 
   if (!shown) return null;
 
@@ -161,35 +154,45 @@ export function QuickToolbar({ registry, context, settings }: QuickToolbarProps)
   };
 
   const store = (point: FloatBarPoint): void => {
+    const room = roomOf(bar.current);
     if (room !== null) settings.set(FLOAT_BAR_POSITION_SETTING.id, positionAt(point, room));
   };
 
+  /** Where the pointer at (x, y) puts the bar during a press, through the clamp — a share of the room. */
+  const shareAt = (
+    start: NonNullable<typeof press.current>,
+    event: { readonly clientX: number; readonly clientY: number },
+  ): FloatBarShare =>
+    positionAt({ left: start.from.left + event.clientX - start.x, top: start.from.top + event.clientY - start.y }, start.room);
+
   const onPointerDown = (event: PointerEvent<HTMLButtonElement>): void => {
     const from = drawn();
-    if (from === null || event.button !== 0) return;
+    const room = roomOf(bar.current);
+    if (from === null || room === null || event.button !== 0) return;
     event.currentTarget.setPointerCapture(event.pointerId);
-    press.current = { x: event.clientX, y: event.clientY, from, moved: false, at: null };
+    press.current = { x: event.clientX, y: event.clientY, from, room, moved: false };
   };
 
   const onPointerMove = (event: PointerEvent<HTMLButtonElement>): void => {
     const start = press.current;
-    if (start === null || room === null) return;
-    const dx = event.clientX - start.x;
-    const dy = event.clientY - start.y;
-    if (!start.moved && Math.hypot(dx, dy) <= CLICK_SLOP) return;
+    if (start === null) return;
+    if (!start.moved && Math.hypot(event.clientX - start.x, event.clientY - start.y) <= CLICK_SLOP) return;
     start.moved = true;
-    // THROUGH THE CLAMP while dragging, so the bar never shows outside the page area even for one frame — and the
-    // clamped share is what is stored on release, never a point read back from it.
-    start.at = positionAt({ left: start.from.left + dx, top: start.from.top + dy }, room);
-    setDragged(pointOf(start.at, room));
+    // THROUGH THE CLAMP while dragging, so the bar never shows outside the page area even for one frame.
+    setDragged(shareAt(start, event));
   };
 
-  const onPointerUp = (): void => {
+  // THE RELEASE DECIDES, from its own coordinates: a browser coalesces pointer moves and may deliver none after the
+  // last it drew, so the last MOVE is not where the person let go. Stored from the last move, a fast drag to the
+  // corner landed 37 px short of it, one run in twelve (measured 2026-09-28). A press that never passed the click slop
+  // — by its moves or its release — is a click, and arms click-to-place.
+  const onPointerUp = (event: PointerEvent<HTMLButtonElement>): void => {
     const start = press.current;
     press.current = null;
     if (start === null) return;
-    if (!start.moved) setPlacing((was) => !was);
-    else if (start.at !== null) settings.set(FLOAT_BAR_POSITION_SETTING.id, start.at);
+    const moved = start.moved || Math.hypot(event.clientX - start.x, event.clientY - start.y) > CLICK_SLOP;
+    if (!moved) setPlacing((was) => !was);
+    else settings.set(FLOAT_BAR_POSITION_SETTING.id, shareAt(start, event));
     setDragged(null);
   };
 
@@ -211,8 +214,11 @@ export function QuickToolbar({ registry, context, settings }: QuickToolbarProps)
     store(to);
   };
 
-  // DRAWN: while dragging, at the pointer; moved, at its stored share of the room; docked, by the stylesheet.
-  const free = dragged ?? (typeof position === 'string' || room === null ? null : pointOf(position, room));
+  // DRAWN: while dragging, at the pointer; moved, at its stored share; docked, by the stylesheet. A share, NEVER
+  // pixels: the stylesheet resolves it against the page area as laid out now (`.m-quick-toolbar--free`), so the bar
+  // cannot be drawn from a stale measurement of the area. A pixel position computed from a measured room lagged a
+  // shrinking window by a render, and was drawn 3 px outside the area on both CI runners (2026-09-28).
+  const free = dragged ?? (typeof position === 'string' ? null : position);
   const docked = typeof position === 'string' ? position : 'start';
   const placement = free === null ? `m-quick-toolbar--${docked}` : 'm-quick-toolbar--free';
 
@@ -220,7 +226,7 @@ export function QuickToolbar({ registry, context, settings }: QuickToolbarProps)
     <div
       ref={bar}
       className={`m-quick-toolbar ${placement}`}
-      style={free === null ? undefined : { left: free.left, top: free.top }}
+      style={free === null ? undefined : ({ '--float-x': String(free.x), '--float-y': String(free.y) } as CSSProperties)}
       role="toolbar"
       aria-orientation="vertical"
       aria-label={i18n._(DOCUMENT_TOOLS_LABEL)}
