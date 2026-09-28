@@ -59,6 +59,8 @@ export function observedHandlers(
 ): MainHandlers {
   const observed = Object.entries(handlers).map(([channel, handler]) => {
     const answer = handler as (params: unknown) => Promise<{ ok: true } | { ok: false; error: { code: string } }>;
+    // A TUPLE, so `fromEntries` below answers a typed map rather than `any` — an untyped entry list would make the
+    // cast a cast of `any`, which checks nothing.
     return [
       channel,
       async (params: unknown) => {
@@ -72,7 +74,7 @@ export function observedHandlers(
           throw thrown;
         }
       },
-    ];
+    ] as const;
   });
   // THE SAME KEYS, each answering what its handler answered: the map's type is the input's.
   return Object.fromEntries(observed) as unknown as MainHandlers;
