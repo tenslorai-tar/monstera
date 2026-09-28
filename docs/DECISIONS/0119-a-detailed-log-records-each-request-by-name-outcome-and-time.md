@@ -54,3 +54,23 @@ Two constraints decide the shape:
 - `shellLog.ts`' note that the log *"is not a general logger and must not become one"* is narrowed: it stays
   synchronous, and the detailed lines are opt-in, bounded by the same cap, and carry no content.
 - §8's *Observability* clause names the setting; the amendment log and the ADR index carry the row.
+
+## Correction, 2026-09-28 — WHERE the observer is applied
+
+Decision 3 placed it in `registerContractHandlers`, around the wrapped handler, and the first build did that with a
+fifth argument. That argument had to be passed at every registration site, and one of them is `pickerProbe.ts`,
+whose bytes are digested by the record of a person driving the real file dialog: the build expired that record, and
+`check:docs` refused the tree. It is the fourth time an argument unrelated to the dialog has done so, and
+9cf27e94 had already drawn the rule — a shell surface is added to the composition and never to a harness.
+
+So the observer is applied **in the composition root, to the handler map it builds** (`observedHandlers`), and the
+registration is unchanged. What moves with it:
+
+- **The span is the handler's**, measured inside the boundary's wrapper, so a params parse is not in it. The parse
+  is microseconds against handlers measured in milliseconds; the line still says what `main` took to do the work.
+- **A request refused at the parse is not a detailed line.** It was never answered by a handler; the boundary
+  records it as an incident, which the problems log already carries.
+- **A handler that throws is told as `internal`**, the code the wrapper turns it into, and the throw goes on to the
+  wrapper unchanged.
+
+Decisions 1, 2, 4, 5 and 6 are unchanged.

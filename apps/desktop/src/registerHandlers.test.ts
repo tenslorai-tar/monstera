@@ -8,7 +8,6 @@ import { unconfiguredCloud } from './cloudSession.js';
 import { type AppInfo, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
 import { NO_RECENT_PICTURES } from './recentPictures.js';
-import { NO_REQUEST_LOG, type RequestObserver } from './requestLog.js';
 import { unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT } from './engagement.js';
 import {
@@ -205,7 +204,7 @@ function handlers() {
 describe('main-process contract registration', () => {
   it('registers EVERY declared channel, and each exactly once', () => {
     const ipc = recorder();
-    registerContractHandlers(ipc, handlers(), () => undefined, trustAll, NO_REQUEST_LOG);
+    registerContractHandlers(ipc, handlers(), () => undefined, trustAll);
 
     // Compared against the registry, not against a list written here. A literal
     // list would be the second place a channel is written down, which is the
@@ -216,7 +215,7 @@ describe('main-process contract registration', () => {
 
   it('answers app.info with the values it was built with', async () => {
     const ipc = recorder();
-    registerContractHandlers(ipc, handlers(), () => undefined, trustAll, NO_REQUEST_LOG);
+    registerContractHandlers(ipc, handlers(), () => undefined, trustAll);
 
     const listener = ipc.seen.get('app.info');
     expect(listener).toBeDefined();
@@ -246,7 +245,6 @@ describe('main-process contract registration', () => {
         seen.push(incident);
       },
       trustAll,
-      NO_REQUEST_LOG,
     );
 
     const listener = ipc.seen.get('app.info');
@@ -270,7 +268,6 @@ describe('main-process contract registration', () => {
         seen.push(incident);
       },
       trustAll,
-      NO_REQUEST_LOG,
     );
 
     const listener = ipc.seen.get('document.execute');
@@ -293,50 +290,12 @@ describe('main-process contract registration', () => {
 
   it('CONTROL: a well-formed call is not refused by the same path', async () => {
     const ipc = recorder();
-    registerContractHandlers(ipc, handlers(), () => undefined, trustAll, NO_REQUEST_LOG);
+    registerContractHandlers(ipc, handlers(), () => undefined, trustAll);
 
     // Without this, every case above is satisfied by a registration that refuses
     // everything — the failure mode a "does it reject?" assertion cannot see.
     const envelope = (await ipc.seen.get('app.info')?.({}, {})) as { ok: boolean };
     expect(envelope.ok).toBe(true);
-  });
-
-  describe('every answered request reaches the request observer (ADR-0119)', () => {
-    /** A clock that moves 7 ms between reads, so the time handed on is the handler's span and nothing else. */
-    function ticking(): () => number {
-      let at = 100;
-      return () => {
-        at += 7;
-        return at;
-      };
-    }
-
-    it('by its channel, its raw params, the outcome the renderer receives, and the span main took', async () => {
-      const told: unknown[] = [];
-      const observe: RequestObserver = (...args) => told.push(args);
-      const ipc = recorder();
-      registerContractHandlers(ipc, handlers(), () => undefined, trustAll, observe, ticking());
-
-      await ipc.seen.get('app.info')?.({}, {});
-      const refused = (await ipc.seen.get('document.execute')?.({}, { docId: '', command: null })) as {
-        error: { code: string };
-      };
-
-      expect(told).toStrictEqual([
-        ['app.info', {}, 'ok', 7],
-        // THE REFUSAL'S OWN CODE, from the envelope the renderer receives — not a word this file made up.
-        ['document.execute', { docId: '', command: null }, refused.error.code, 7],
-      ]);
-    });
-
-    it('CONTROL: a sender refused before the parse is told to nobody', () => {
-      const told: unknown[] = [];
-      const ipc = recorder();
-      registerContractHandlers(ipc, handlers(), () => undefined, () => false, (...args) => told.push(args));
-
-      expect(() => ipc.seen.get('app.info')?.({ senderId: 2 }, {})).toThrow(UntrustedSenderError);
-      expect(told).toStrictEqual([]);
-    });
   });
 });
 
@@ -346,7 +305,7 @@ describe('sender check', () => {
 
   it('refuses EVERY channel when the sender is not the shell’s own frame', () => {
     const ipc = recorder();
-    registerContractHandlers(ipc, handlers(), () => undefined, check, NO_REQUEST_LOG);
+    registerContractHandlers(ipc, handlers(), () => undefined, check);
 
     // Every channel, from the registry. A check applied to one channel and
     // forgotten on the next is exactly the "loop that already looks finished"
@@ -358,7 +317,7 @@ describe('sender check', () => {
 
   it('CONTROL: the trusted sender is not refused on any channel', async () => {
     const ipc = recorder();
-    registerContractHandlers(ipc, handlers(), () => undefined, check, NO_REQUEST_LOG);
+    registerContractHandlers(ipc, handlers(), () => undefined, check);
 
     // Without this, the case above is satisfied by a listener that throws for
     // every event — "it rejected" and "it rejects everything" are the same
@@ -377,7 +336,6 @@ describe('sender check', () => {
         seen.push(incident);
       },
       check,
-      NO_REQUEST_LOG,
     );
 
     // `'not an object'` is the payload that produces a schema incident on the

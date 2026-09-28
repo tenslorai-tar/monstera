@@ -8,8 +8,6 @@ import {
   wrapHandlers,
 } from '@monstera/contract';
 
-import type { RequestObserver } from './requestLog.js';
-
 /**
  * The part of `ipcMain` this needs, and nothing else.
  *
@@ -94,31 +92,16 @@ export class UntrustedSenderError extends Error {
  * @param handlers the assembled main-process side
  * @param sink receives every diagnostic that did not cross
  * @param senderCheck decides whether an event came from the shell's own frame
- * @param requests told of every answered request, by name, outcome and time (ADR-0119). **Required**, for
- * `senderCheck`'s reason: a default that recorded nothing would be a detailed log that is quietly empty.
- * @param now the clock the time is read from, injected so a case can name the milliseconds.
  */
 export function registerContractHandlers(
   target: IpcHandleTarget,
   handlers: MainHandlers,
   sink: IncidentSink,
   senderCheck: IpcSenderCheck,
-  requests: RequestObserver,
-  now: () => number = () => performance.now(),
 ): void {
   // THE PRELOAD'S CHANNEL IN THE SAME WRAP (ADR-0099), so it shares the one incident log and the one
   // sender check rather than getting a second registration with a second counter.
   const wrapped = wrapHandlers({ ...channels, ...preloadChannels }, handlers, sink);
-
-  // TIMED AROUND THE WRAPPED CALL, so the milliseconds are the parse, the handler and the answer's check — what
-  // `main` took — and the outcome is the one the renderer receives (ADR-0119). After the sender check, which stays
-  // synchronous: a refused event is thrown before anything is timed or recorded.
-  const timed = async (id: (typeof channelIds)[number] | (typeof PRELOAD_CHANNEL_IDS)[number], params: unknown): Promise<unknown> => {
-    const started = now();
-    const answer = await wrapped[id](params);
-    requests(id, params, answer.ok ? 'ok' : answer.error.code, now() - started);
-    return answer;
-  };
 
   for (const id of [...channelIds, ...PRELOAD_CHANNEL_IDS]) {
     // `args[0]`, and the params are NOT trusted here. `wrapHandler` parses them
@@ -130,7 +113,7 @@ export function registerContractHandlers(
     // neither the handler nor the parse.
     target.handle(id, (event, ...args) => {
       if (!senderCheck(event)) throw new UntrustedSenderError(id);
-      return timed(id, args[0]);
+      return wrapped[id](args[0]);
     });
   }
 }
