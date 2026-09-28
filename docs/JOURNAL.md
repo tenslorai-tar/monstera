@@ -953,13 +953,17 @@ with two lint errors in its new cases — the cases ran and their mutations bit,
 The pre-commit hook does not lint, and the pre-push sweep would have refused the push; closed in the commit after this
 audit, before anything reached the board.
 
-### 4a/4b. Instruments
+### 4a. Has every instrument passed a resolution test?
 
 New: `pageSpan` and `dialogsOpen` in the canvas harness (the symbol-colour control above), `floatBarPlace` and
-`menuRowFit` (pure, tested at their edges), `lights.ts`, `storeAssets.mjs` (its proof anchors on a literal count),
-`rasterHidden.css` (a Properties case asserts the chrome is still captured while the raster is hidden), and
-`en.test.ts`' search for *toolbar* whose control is the new name's presence. `tokenContrast.mjs` loads the shared barrel
-once, and a freshness edge refuses a stale turning rule rather than reading it.
+`menuRowFit` (pure, tested at their edges), `lights.ts`, `storeAssets.mjs` (its proof anchors on a literal count), and
+`rasterHidden.css` (a Properties case asserts the chrome is still captured while the raster is hidden).
+`tokenContrast.mjs` loads the shared barrel once, and a freshness edge refuses a stale turning rule rather than
+reading it.
+
+### 4b. Is the instrument a search?
+
+`en.test.ts`' search for *toolbar* over every English value, whose positive control is the new name's presence.
 
 ### 4c. Does a check derive its extent from the set it governs?
 
