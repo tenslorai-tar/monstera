@@ -5,6 +5,7 @@ import type { ReactElement } from 'react';
 import {
   SIGN_PROBLEM_IMAGE_TOO_LARGE,
   SIGN_PROBLEM_IMAGE_UNREADABLE,
+  SIGN_PROBLEM_SAVED_MISSING,
   SIGN_PROBLEM_SIGNATURE_TOO_LARGE,
   SIGN_PROBLEM_TIMESTAMP_REFUSED,
   SIGN_PROBLEM_TIMESTAMP_UNREACHABLE,
@@ -32,6 +33,7 @@ const SENTENCES: Readonly<Record<(typeof SIGN_PROBLEMS)[number], MessageKey>> = 
   'timestamp-refused': SIGN_PROBLEM_TIMESTAMP_REFUSED,
   'timestamp-unverifiable': SIGN_PROBLEM_TIMESTAMP_UNVERIFIABLE,
   'image-too-large': SIGN_PROBLEM_IMAGE_TOO_LARGE,
+  'saved-signature-missing': SIGN_PROBLEM_SAVED_MISSING,
 };
 
 /**

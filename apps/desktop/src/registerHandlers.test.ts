@@ -8,6 +8,7 @@ import { unconfiguredCloud } from './cloudSession.js';
 import { type AppInfo, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
 import { NO_RECENT_PICTURES } from './recentPictures.js';
+import { unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT } from './engagement.js';
 import {
   type IpcHandleTarget,
@@ -129,7 +130,7 @@ function handlers() {
       onDropped: () => undefined,
     },
     recentRoots: [],
-    recentPictures: NO_RECENT_PICTURES,
+    recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
     reviewPrompt: NO_REVIEW_PROMPT,
     settings: {
       read: () => {

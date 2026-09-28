@@ -457,6 +457,7 @@ export const INSERT_IMAGE_PROBLEM_TITLE = messageKey('dialog.insert-image-proble
 export const INSERT_IMAGE_UNREADABLE = messageKey('dialog.insert-image-problem.unreadable');
 export const INSERT_IMAGE_TOO_LARGE = messageKey('dialog.insert-image-problem.too-large');
 export const INSERT_IMAGE_TOO_MANY_PIXELS = messageKey('dialog.insert-image-problem.too-many-pixels');
+export const INSERT_IMAGE_ABSENT = messageKey('dialog.insert-image-problem.absent');
 /** TOOLS › Create, where D9's import rows land. */
 export const GROUP_CREATE = messageKey('surface.ribbon.group.create');
 export const NEW_FROM_MARKDOWN_COMMAND_TITLE = messageKey('command.new-from-markdown.title');
@@ -1112,6 +1113,11 @@ export const STAMP_TOOL_TITLE = messageKey('tool.annotate.stamp');
 export const STAMP_DIALOG_TITLE = messageKey('dialog.stamp.title');
 export const STAMP_DIALOG_CHOICES = messageKey('dialog.stamp.choices');
 export const STAMP_DIALOG_APPLY = messageKey('dialog.stamp.apply');
+export const STAMP_DIALOG_MINE = messageKey('dialog.stamp.mine');
+export const STAMP_DIALOG_MINE_EMPTY = messageKey('dialog.stamp.mine-empty');
+export const STAMP_DIALOG_ADD_PICTURE = messageKey('dialog.stamp.add-picture');
+export const STAMP_DIALOG_REMOVE = messageKey('dialog.stamp.remove');
+export const LIBRARY_FULL = messageKey('dialog.insert-image-problem.library-full');
 /** Each built-in stamp's name in the chooser — the word it puts on the page, as a person reads it. */
 export const STAMP_TITLES = {
   approved: messageKey('dialog.stamp.approved'),
@@ -1887,6 +1893,7 @@ export const SIGN_PROBLEM_UNREADABLE = messageKey('dialog.sign-problem.unreadabl
 export const SIGN_PROBLEM_UNENCODABLE_TEXT = messageKey('dialog.sign-problem.unencodable-text');
 export const SIGN_PROBLEM_IMAGE_UNREADABLE = messageKey('dialog.sign-problem.image-unreadable');
 export const SIGN_PROBLEM_IMAGE_TOO_LARGE = messageKey('dialog.sign-problem.image-too-large');
+export const SIGN_PROBLEM_SAVED_MISSING = messageKey('dialog.sign-problem.saved-missing');
 export const SIGN_PROBLEM_SIGNATURE_TOO_LARGE = messageKey('dialog.sign-problem.signature-too-large');
 export const SIGN_PROBLEM_TIMESTAMP_UNREACHABLE = messageKey(
   'dialog.sign-problem.timestamp-unreachable',
@@ -1899,6 +1906,12 @@ export const SIGN_DOCUMENT_LOOK = messageKey('dialog.sign-document.look');
 export const SIGN_DOCUMENT_LOOK_TYPED = messageKey('dialog.sign-document.look-typed');
 export const SIGN_DOCUMENT_LOOK_DRAWN = messageKey('dialog.sign-document.look-drawn');
 export const SIGN_DOCUMENT_LOOK_IMAGE = messageKey('dialog.sign-document.look-image');
+export const SIGN_DOCUMENT_LOOK_KEPT = messageKey('dialog.sign-document.look-kept');
+export const SIGN_DOCUMENT_KEEP = messageKey('dialog.sign-document.keep');
+export const SIGN_DOCUMENT_KEPT_EMPTY = messageKey('dialog.sign-document.kept-empty');
+export const SIGN_DOCUMENT_KEPT_ADD = messageKey('dialog.sign-document.kept-add');
+export const SIGN_DOCUMENT_KEPT_REMOVE = messageKey('dialog.sign-document.kept-remove');
+export const SIGN_DOCUMENT_KEPT_DRAWN = messageKey('dialog.sign-document.kept-drawn');
 export const SIGN_DOCUMENT_TEXT = messageKey('dialog.sign-document.text');
 export const SIGN_DOCUMENT_FONT = messageKey('dialog.sign-document.font');
 export const SIGN_DOCUMENT_FONT_HELVETICA = messageKey('dialog.sign-document.font-helvetica');
@@ -2925,6 +2938,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [STAMP_DIALOG_TITLE]: 'Choose a stamp',
   [STAMP_DIALOG_CHOICES]: 'Stamps',
   [STAMP_DIALOG_APPLY]: 'Add stamp',
+  [STAMP_DIALOG_MINE]: 'Your stamps',
+  [STAMP_DIALOG_MINE_EMPTY]: 'Pictures you add are kept here for next time.',
+  [STAMP_DIALOG_ADD_PICTURE]: 'Add a picture…',
+  [STAMP_DIALOG_REMOVE]: 'Remove {name}',
+  [LIBRARY_FULL]: 'Your library holds {limit} already. Remove one to keep another. Nothing was added.',
   [STAMP_TITLES.approved]: 'APPROVED',
   [STAMP_TITLES['not-approved']]: 'NOT APPROVED',
   [STAMP_TITLES.draft]: 'DRAFT',
@@ -4166,6 +4184,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_PROBLEM_IMAGE_UNREADABLE]:
     'That picture could not be read. Choose a PNG or JPEG file. Nothing has been changed.',
   [SIGN_PROBLEM_IMAGE_TOO_LARGE]: 'That picture is too large to place. Nothing has been changed.',
+  [SIGN_PROBLEM_SAVED_MISSING]:
+    'That kept signature is no longer in your library. Choose another look and sign again. Nothing has been changed.',
+  [INSERT_IMAGE_ABSENT]: 'That stamp is no longer in your library, so nothing was added.',
   [SIGN_PROBLEM_SIGNATURE_TOO_LARGE]:
     'The signature is too large to fit in the document. A certificate with a long chain can cause this. Nothing has been changed.',
   [SIGN_PROBLEM_TIMESTAMP_UNREACHABLE]:
@@ -4178,6 +4199,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_DOCUMENT_LOOK_TYPED]: 'Type it',
   [SIGN_DOCUMENT_LOOK_DRAWN]: 'Draw it',
   [SIGN_DOCUMENT_LOOK_IMAGE]: 'Use a picture of it',
+  [SIGN_DOCUMENT_LOOK_KEPT]: 'Use one of my signatures',
+  [SIGN_DOCUMENT_KEEP]: 'Keep this signature for next time',
+  [SIGN_DOCUMENT_KEPT_EMPTY]: 'Signatures you keep appear here. Tick “Keep this signature” when you type or draw one, or add a picture.',
+  [SIGN_DOCUMENT_KEPT_ADD]: 'Add a picture…',
+  [SIGN_DOCUMENT_KEPT_REMOVE]: 'Remove',
+  [SIGN_DOCUMENT_KEPT_DRAWN]: 'Drawn signature {number}',
   [SIGN_DOCUMENT_TEXT]: 'Signature',
   [SIGN_DOCUMENT_FONT]: 'Font',
   [SIGN_DOCUMENT_FONT_HELVETICA]: 'Helvetica',

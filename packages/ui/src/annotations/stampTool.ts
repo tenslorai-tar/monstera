@@ -1,8 +1,8 @@
-import type { AnnotationColour, BuiltInStamp, DispatchableCommand } from '@monstera/contract';
+import type { AnnotationColour, AnnotationRect, BuiltInStamp, DispatchableCommand } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 
 import { STAMP_DIALOG_ID } from '../dialogs/stamp.js';
-import { STAMP_RESULT } from '../dialogs/stampResult.js';
+import { STAMP_RESULT, type StampPicture } from '../dialogs/stampResult.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
@@ -10,6 +10,24 @@ import type { TextToolDeps } from './textTools.js';
 
 /** The registry id, shared with the command that selects this tool. */
 export const STAMP_TOOL_ID = 'annotate.stamp';
+
+/** The kept pictures the chooser shows, and how to let go of their `blob:` addresses once it has closed. */
+export interface StampPictures {
+  readonly pictures: readonly StampPicture[];
+  readonly release: () => void;
+}
+
+/** What the stamp tool needs beyond asking: the person's stamp library, and where a kept picture is placed. */
+export interface StampDeps {
+  /** The kept stamp pictures, read afresh each time the chooser opens. */
+  readonly stampPictures: () => Promise<StampPictures>;
+  /** Keeps a picture the person picks. Settles once any problem has been shown, so the chooser opens after it. */
+  readonly addStampPicture: () => Promise<void>;
+  /** Removes a kept picture. */
+  readonly removeStampPicture: (id: string) => Promise<void>;
+  /** Places a kept picture in the box — main reads the file and mints the command, as it does for a picked image. */
+  readonly onPlaceStampPicture: (page: number, rect: AnnotationRect, picture: string) => void;
+}
 
 /**
  * Each built-in stamp's own colour, used when a person has chosen none (`AnnotationStyle.colour`'s rule): a stamp that
@@ -43,30 +61,54 @@ function drawn(gesture: Gesture): ToolPreview | undefined {
 /**
  * The stamp tool — drag a box, choose a stamp from the library.
  *
- * The text box's shape exactly (`textTools.ts`): the rectangle is built from the transform at pointer-up, BEFORE the
- * dialog opens, so a zoom while the person chooses does not move it; a dismissed chooser or an answer of the wrong
- * shape sends nothing. It takes the text tools' dependencies — `ask` and the style — because it needs exactly those.
+ * The text box's shape (`textTools.ts`): the rectangle is built from the transform at pointer-up, BEFORE the chooser
+ * opens, so a zoom while the person chooses does not move it; a dismissed chooser or an answer of the wrong shape sends
+ * nothing. A built-in stamp is a command built here; a kept picture is main's to place, like any picture, so it is
+ * handed on and nothing is returned for the bus.
+ *
+ * ## Adding or removing a picture ASKS AGAIN
+ *
+ * The chooser's props are fixed while it is open, so a change to the library is its answer: the tool makes the change,
+ * reads the library afresh and opens the chooser again, for as long as the person keeps changing it. Each round lets
+ * go of the previous round's `blob:` addresses, so a long session of adding holds one set of pictures at a time.
  */
-export function stampTool(deps: TextToolDeps): UiTool {
+export function stampTool(deps: TextToolDeps & StampDeps): UiTool {
   const controller: ToolController = {
     ...pointerPath,
     commit: async (gesture: Gesture, page: number, transform: PageTransform): Promise<DispatchableCommand | undefined> => {
       if (drawn(gesture) === undefined) return undefined;
       const rect = draggedRect(startOf(gesture), endOf(gesture), transform);
-      const answered = STAMP_RESULT.safeParse(await deps.ask(STAMP_DIALOG_ID, {}));
-      if (!answered.success) return undefined;
-      const { stamp } = answered.data;
-      return {
-        kind: 'addAnnotation',
-        page,
-        annotation: {
-          type: 'stamp',
-          stamp,
-          rect,
-          colour: deps.style.colour(OWN_COLOUR[stamp]),
-          opacity: deps.style.opacity,
-        },
-      };
+      for (;;) {
+        const { pictures, release } = await deps.stampPictures();
+        let raw: unknown;
+        try {
+          raw = await deps.ask(STAMP_DIALOG_ID, { pictures });
+        } finally {
+          release();
+        }
+        const answered = STAMP_RESULT.safeParse(raw);
+        if (!answered.success) return undefined;
+        const answer = answered.data;
+        if ('stamp' in answer) {
+          return {
+            kind: 'addAnnotation',
+            page,
+            annotation: {
+              type: 'stamp',
+              stamp: answer.stamp,
+              rect,
+              colour: deps.style.colour(OWN_COLOUR[answer.stamp]),
+              opacity: deps.style.opacity,
+            },
+          };
+        }
+        if ('picture' in answer) {
+          deps.onPlaceStampPicture(page, rect, answer.picture);
+          return undefined;
+        }
+        if (answer.library === 'add') await deps.addStampPicture();
+        else await deps.removeStampPicture(answer.id);
+      }
     },
     preview: drawn,
   };

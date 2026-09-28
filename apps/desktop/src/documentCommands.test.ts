@@ -98,6 +98,7 @@ import { unconfiguredCloud } from './cloudSession.js';
 import { createContractHandlers } from './contractHandlers.js';
 import { createRecentFiles } from './recentFiles.js';
 import { NO_RECENT_PICTURES } from './recentPictures.js';
+import { unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT } from './engagement.js';
 import {
   DocumentCommands,
@@ -115,6 +116,7 @@ import {
   type DocumentPageLinksReader,
   type CopySource,
   type CertificateSource,
+  type LibraryReader,
   type ImageFilesSource,
   type ImageSource,
   type ImportSource,
@@ -668,6 +670,8 @@ type Varying = Pick<DocumentCommandsParts, 'documents' | 'bus' | 'engine'>;
  */
 const INERT = {
   save: noSaving,
+  // AN EMPTY LIBRARY: nothing kept, so a kept picture or signature named here is absent.
+  library: { picture: () => null, lookup: () => undefined },
   // DOCUSIGN REFUSES BY NAME here, like every inert surface: a case that reached it
   // without meaning to fails at the call rather than sending anything anywhere.
   docusign: {
@@ -1117,7 +1121,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           pickDocument: () => Promise.resolve(null),
           recent: createRecentFiles({ read: () => ({}), write: () => undefined }),
           recentRoots: [],
-          recentPictures: NO_RECENT_PICTURES,
+          recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
           reviewPrompt: NO_REVIEW_PROMPT,
           settings: { read: () => ({}), write: () => undefined },
           secrets: { available: () => false, read: () => ({}), write: () => undefined },
@@ -1667,7 +1671,7 @@ describe('search is E2s first consumer, through the composition point', () => {
         pickDocument: () => Promise.resolve(null),
         recent: createRecentFiles({ read: () => ({}), write: () => undefined }),
         recentRoots: [],
-        recentPictures: NO_RECENT_PICTURES,
+        recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
         reviewPrompt: NO_REVIEW_PROMPT,
         settings: { read: () => ({}), write: () => undefined },
         secrets: { available: () => false, read: () => ({}), write: () => undefined },
@@ -3600,6 +3604,82 @@ describe('sign — a visible signature', () => {
     expect(certificate.asked).toStrictEqual(['pick']);
   });
 
+  describe('a KEPT signature (the signature library)', () => {
+    const KEPT_TYPED = '00000000-0000-4000-8000-00000000000a';
+    const KEPT_PICTURE = '00000000-0000-4000-8000-00000000000b';
+    const KEPT_STAMP = '00000000-0000-4000-8000-00000000000c';
+    const PICTURE_BYTES = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 7);
+    const library: LibraryReader = {
+      lookup: (id) =>
+        id === KEPT_TYPED
+          ? { id, kind: 'signature', look: { kind: 'typed', text: 'Grace Hopper', font: 'courier' } }
+          : id === KEPT_PICTURE
+            ? { id, kind: 'signature', look: { kind: 'picture', name: 'ink' } }
+            : id === KEPT_STAMP
+              ? { id, kind: 'stamp', look: { kind: 'picture', name: 'paid' } }
+              : undefined,
+      picture: (id) => (id === KEPT_PICTURE || id === KEPT_STAMP ? { mediaType: 'image/png', bytes: PICTURE_BYTES } : null),
+    };
+
+    /** Signs with a kept look and answers the mark that reached the signer, or the outcome where none did. */
+    const signingWith = async (id: string): Promise<{ outcome: unknown; mark: unknown; certificate: string[] }> => {
+      const certificate = recordingCertificate();
+      let mark: unknown;
+      const recording: RegisteredWriter<'signpdf'> = {
+        serialise: (session) => Promise.resolve(session),
+        apply: (request) => {
+          const command: unknown = request.command;
+          mark = (command as { readonly appearance?: { readonly mark?: unknown } }).appearance?.mark;
+          return Promise.reject(new SignatureCredentialRefusedError());
+        },
+        capture: () => Promise.resolve({ captured: false as const, reason: 'the recording signer records nothing' }),
+        invert: () => Promise.reject(new Error('never inverted')),
+      };
+      const commands = new DocumentCommands({
+        ...INERT,
+        library,
+        documents: service,
+        bus: new CommandBus({ mupdf: localMupdfWriter, signpdf: recording }),
+        engine: engine(),
+        // NO PICTURE IS PICKED for a kept one: the picker refusing makes reaching it a failure of the case.
+        image: {
+          pick: () => Promise.reject(new Error('a kept signature opens no picture picker')),
+          read: () => Promise.reject(new Error('a kept signature reads no picked file')),
+        },
+        certificate: certificate.source,
+        save: {
+          ...noSaving,
+          flush: (_docId, sessions) => {
+            const held = sessions.mupdf;
+            if (held === undefined) throw new Error('the fixture holds a session');
+            return mupdfWriter.serialise(held);
+          },
+        },
+      });
+      const outcome = await commands.sign(docId, { passphrase: '', appearance: { ...placement, mark: { kind: 'saved', id } } });
+      return { outcome, mark, certificate: certificate.asked };
+    };
+
+    it('a kept TYPED signature signs as itself', async () => {
+      const signed = await signingWith(KEPT_TYPED);
+      expect(signed.mark).toStrictEqual({ kind: 'typed', text: 'Grace Hopper', font: 'courier' });
+    });
+
+    it('a kept PICTURE signs with the library’s bytes, and no picker opens', async () => {
+      const signed = await signingWith(KEPT_PICTURE);
+      expect(signed.mark).toStrictEqual({ kind: 'image', bytes: PICTURE_BYTES, mediaType: 'image/png' });
+    });
+
+    it('one no longer kept is REFUSED before any credential is asked — and a kept STAMP is not a signature', async () => {
+      for (const id of ['00000000-0000-4000-8000-0000000000ff', KEPT_STAMP]) {
+        const signed = await signingWith(id);
+        expect(signed.outcome, id).toStrictEqual({ kind: 'saved-signature-missing' });
+        expect(signed.certificate, id).toStrictEqual([]);
+        expect(signed.mark, id).toBeUndefined();
+      }
+    });
+  });
+
   it('names each refusal by its CLASS, and CONTROL: an unnamed failure is not called a wrong password', async () => {
     // THE FIXTURE REACHES THE SIGNER, which the first draft of this case did
     // not: a byte-image command's bytes come from the save source's `flush`,
@@ -3665,6 +3745,59 @@ describe('sign — a visible signature', () => {
     await expect(signing(new Error('an install that failed'))).rejects.toThrow(
       'an install that failed',
     );
+  });
+});
+
+describe('placeImage — a KEPT stamp picture (the stamp library)', () => {
+  beforeAll(openDocument);
+
+  const KEPT = '00000000-0000-4000-8000-0000000000d1';
+  const BYTES = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 42);
+
+  /** Places a picture by library id, recording the bytes the command carried to the writer. */
+  const placing = async (picture: string): Promise<{ outcome: unknown; carried: unknown[] }> => {
+    const carried: unknown[] = [];
+    const recording: RegisteredWriter<'mupdf'> = {
+      ...localMupdfWriter,
+      apply: (request) => {
+        const command: unknown = request.command;
+        carried.push((command as { readonly bytes?: unknown }).bytes);
+        return Promise.reject(new Error('the recording writer applies nothing'));
+      },
+    };
+    const commands = new DocumentCommands({
+      ...INERT,
+      library: {
+        picture: (id) => (id === KEPT ? { mediaType: 'image/png', bytes: BYTES } : null),
+        lookup: () => undefined,
+      },
+      documents: service,
+      bus: new CommandBus({ mupdf: recording }),
+      engine: engine(),
+      // THE PICKER REFUSES, so a kept picture that opened it would fail the case.
+      image: {
+        pick: () => Promise.reject(new Error('a kept picture opens no picker')),
+        read: () => Promise.reject(new Error('a kept picture reads no picked file')),
+      },
+    });
+    const outcome = await commands.placeImage(docId, {
+      pages: [0],
+      rect: { x0: 10, y0: 10, x1: 60, y1: 40 },
+      stamp: { author: 'A. Tester', created: '2026-09-28T12:00:00Z' },
+      picture,
+    });
+    return { outcome, carried };
+  };
+
+  it('carries the LIBRARY’S bytes to the engine, and no picker opens', async () => {
+    const placed = await placing(KEPT);
+    expect(placed.carried).toStrictEqual([BYTES]);
+  });
+
+  it('answers ABSENT for one no longer kept, and reaches no writer', async () => {
+    const placed = await placing('00000000-0000-4000-8000-0000000000ff');
+    expect(placed.outcome).toStrictEqual({ kind: 'absent' });
+    expect(placed.carried).toStrictEqual([]);
   });
 });
 

@@ -4285,6 +4285,99 @@ textarea {
   gap: var(--space-8);
 }
 
+/* KEEP THIS SIGNATURE, a box and its words on one line. */
+.m-sign-document__keep {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+/*
+ * THE SIGNATURE LIBRARY: one row per kept signature — the choice and what it looks like, then its Remove — and Add a
+ * picture after them. A kept signature is shown at a fixed height and its own width, so a typed name, a drawing and a
+ * picture read as three of one kind of thing.
+ */
+.m-sign-document__kept {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.m-sign-document__kept-row,
+.m-stamp-chooser__mine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.m-sign-document__kept-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-inline-size: 0;
+}
+
+.m-sign-document__kept-drawn,
+.m-sign-document__kept-picture,
+.m-stamp-chooser__picture {
+  block-size: calc(var(--space-32) * 1.5);
+  max-inline-size: 100%;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--surface);
+}
+
+.m-sign-document__kept-drawn {
+  aspect-ratio: 2 / 1;
+  color: var(--text);
+}
+
+.m-sign-document__kept-drawn path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 0.012;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.m-sign-document__kept-typed {
+  color: var(--text);
+  font-size: var(--font-content-20);
+}
+
+/* A KEPT TYPED SIGNATURE in the face it will be drawn in: the four standard faces the signing look offers. */
+.m-sign-font--helvetica {
+  font-family: Helvetica, Arial, sans-serif;
+}
+
+.m-sign-font--times-roman {
+  font-family: 'Times New Roman', Times, serif;
+}
+
+.m-sign-font--times-italic {
+  font-family: 'Times New Roman', Times, serif;
+  font-style: italic;
+}
+
+.m-sign-font--courier {
+  font-family: 'Courier New', Courier, monospace;
+}
+
+.m-stamp-chooser__empty {
+  color: var(--muted);
+  grid-column: 1 / -1;
+}
+
+.m-stamp-chooser__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-8);
+}
+
 /*
  * The drawing surface. `touch-action: none` is what lets a finger or a pen draw
  * rather than scroll the dialog; without it the browser claims the gesture

@@ -36,7 +36,13 @@ import {
   SIGN_DOCUMENT_LOOK,
   SIGN_DOCUMENT_LOOK_DRAWN,
   SIGN_DOCUMENT_LOOK_IMAGE,
+  SIGN_DOCUMENT_LOOK_KEPT,
   SIGN_DOCUMENT_LOOK_TYPED,
+  SIGN_DOCUMENT_KEEP,
+  SIGN_DOCUMENT_KEPT_ADD,
+  SIGN_DOCUMENT_KEPT_DRAWN,
+  SIGN_DOCUMENT_KEPT_EMPTY,
+  SIGN_DOCUMENT_KEPT_REMOVE,
   SIGN_DOCUMENT_MARK_MISSING,
   SIGN_DOCUMENT_NAME,
   SIGN_DOCUMENT_PASSPHRASE,
@@ -47,7 +53,7 @@ import {
 import { Button } from '../primitives/Button.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
-import type { SignDocumentAnswer } from './signDocument.js';
+import type { KeptSignature, SignDocumentAnswers } from './signDocument.js';
 import type { PadStroke } from './SignaturePad.js';
 import { SignaturePad } from './SignaturePad.js';
 
@@ -104,7 +110,7 @@ const TIMESTAMP_TITLES: Readonly<Record<TimestampChoice, MessageKey>> = {
  * **Typed first**, because it is the one a person can complete from the
  * keyboard alone; the pad has no keyboard equivalent.
  */
-const LOOKS = ['typed', 'drawn', 'image'] as const satisfies readonly RequestedSignatureMark['kind'][];
+const LOOKS = ['typed', 'drawn', 'image', 'saved'] as const satisfies readonly RequestedSignatureMark['kind'][];
 
 type Look = (typeof LOOKS)[number];
 
@@ -112,7 +118,18 @@ const LOOK_TITLES: Readonly<Record<Look, MessageKey>> = {
   typed: SIGN_DOCUMENT_LOOK_TYPED,
   drawn: SIGN_DOCUMENT_LOOK_DRAWN,
   image: SIGN_DOCUMENT_LOOK_IMAGE,
+  saved: SIGN_DOCUMENT_LOOK_KEPT,
 };
+
+/**
+ * A drawn signature's strokes as one SVG path in the pad's own unit (0–1 across, y down), so a kept drawing shows as it
+ * was drawn at any size — the viewBox scales it, and the stroke's colour is the text's token.
+ */
+function strokesPath(strokes: readonly (readonly (readonly [number, number])[])[]): string {
+  return strokes
+    .map((stroke) => stroke.map(([across, down], index) => `${index === 0 ? 'M' : 'L'}${String(across)} ${String(down)}`).join(' '))
+    .join(' ');
+}
 
 /** Each face's name, keyed on the contract's own list. */
 const FONT_TITLES: Readonly<Record<(typeof SIGNATURE_FONTS)[number], MessageKey>> = {
@@ -145,8 +162,9 @@ const FONT_TITLES: Readonly<Record<(typeof SIGNATURE_FONTS)[number], MessageKey>
  */
 export default function SignDocumentBody({
   placed,
+  kept,
   resolve,
-}: { readonly placed: boolean } & DialogAnswering<SignDocumentAnswer>): ReactElement {
+}: { readonly placed: boolean; readonly kept: readonly KeptSignature[] } & DialogAnswering<SignDocumentAnswers>): ReactElement {
   const { _ } = useLingui();
   const certifyId = useId();
   const lookId = useId();
@@ -162,10 +180,14 @@ export default function SignDocumentBody({
   const [reason, setReason] = useState('');
   const [location, setLocation] = useState('');
   const [contactInfo, setContactInfo] = useState('');
-  const [look, setLook] = useState<Look>('typed');
+  // A KEPT SIGNATURE FIRST when there is one: a person who kept one kept it to use it.
+  const [look, setLook] = useState<Look>(kept.length > 0 ? 'saved' : 'typed');
   const [text, setText] = useState('');
   const [font, setFont] = useState<(typeof SIGNATURE_FONTS)[number]>('times-italic');
   const [strokes, setStrokes] = useState<readonly PadStroke[]>([]);
+  const [chosenKept, setChosenKept] = useState<string | undefined>(kept[0]?.id);
+  const [keep, setKeep] = useState(false);
+  const keepId = useId();
 
   // WHICH FIELD IS TOO LONG, not only whether one is (WCAG 3.3.1): the first, by its own label, which the sentence
   // names and whose field is marked invalid.
@@ -184,6 +206,7 @@ export default function SignDocumentBody({
   /** The look as the channel carries it, or `undefined` when it has nothing to draw. */
   const mark = ((): RequestedSignatureMark | undefined => {
     if (look === 'image') return { kind: 'image' };
+    if (look === 'saved') return chosenKept === undefined ? undefined : { kind: 'saved', id: chosenKept };
     if (look === 'drawn') {
       return strokes.length > 0
         ? {
@@ -262,6 +285,68 @@ export default function SignDocumentBody({
 
           {look === 'image' ? (
             <p className="m-sign-document__note">{_(SIGN_DOCUMENT_IMAGE_NOTE)}</p>
+          ) : null}
+
+          {look === 'typed' || look === 'drawn' ? (
+            <label className="m-sign-document__keep" htmlFor={keepId}>
+              <input
+                id={keepId}
+                type="checkbox"
+                data-sign-keep=""
+                checked={keep}
+                onChange={(event) => {
+                  setKeep(event.target.checked);
+                }}
+              />
+              {_(SIGN_DOCUMENT_KEEP)}
+            </label>
+          ) : null}
+
+          {look === 'saved' ? (
+            <fieldset className="m-sign-document__kept">
+              <legend>{_(SIGN_DOCUMENT_LOOK_KEPT)}</legend>
+              {kept.length === 0 ? <p className="m-sign-document__note">{_(SIGN_DOCUMENT_KEPT_EMPTY)}</p> : null}
+              {kept.map((entry, index) => (
+                <div key={entry.id} className="m-sign-document__kept-row">
+                  <label className="m-sign-document__kept-choice" data-sign-kept={entry.id}>
+                    <input
+                      type="radio"
+                      name="sign-kept"
+                      checked={chosenKept === entry.id}
+                      onChange={() => {
+                        setChosenKept(entry.id);
+                      }}
+                    />
+                    {entry.look.kind === 'typed' ? (
+                      <span className={`m-sign-document__kept-typed m-sign-font--${entry.look.font}`}>{entry.look.text}</span>
+                    ) : entry.look.kind === 'drawn' ? (
+                      <svg
+                        className="m-sign-document__kept-drawn"
+                        viewBox="0 0 1 0.5"
+                        role="img"
+                        aria-label={_(SIGN_DOCUMENT_KEPT_DRAWN, { number: index + 1 })}
+                      >
+                        <path d={strokesPath(entry.look.strokes)} />
+                      </svg>
+                    ) : (
+                      <img className="m-sign-document__kept-picture" src={entry.look.src} alt={entry.look.name} />
+                    )}
+                  </label>
+                  <Button
+                    label={SIGN_DOCUMENT_KEPT_REMOVE}
+                    onClick={() => {
+                      resolve({ library: 'remove', id: entry.id });
+                    }}
+                  />
+                </div>
+              ))}
+              <Button
+                label={SIGN_DOCUMENT_KEPT_ADD}
+                onClick={() => {
+                  resolve({ library: 'add' });
+                }}
+              />
+            </fieldset>
           ) : null}
         </div>
       ) : null}
@@ -373,6 +458,8 @@ export default function SignDocumentBody({
             // nowhere to draw one, and answering the default look anyway would
             // hand the command a field it has no rectangle for.
             ...(placed && mark !== undefined ? { mark } : {}),
+            // KEEP ONLY WHAT THIS DIALOG MADE: a typed or drawn look, with the box ticked.
+            ...(placed && keep && (look === 'typed' || look === 'drawn') ? { keep: true as const } : {}),
           });
         }}
         variant="primary"

@@ -3,6 +3,7 @@ import {
   type AnnotationDataFormat,
   type AnnotationRect,
   type AnnotationStamp,
+  type LibraryEntry,
   MAX_ANNOTATION_DATA_BYTES,
   type CommandKind,
   type CommandOfKind,
@@ -649,7 +650,18 @@ export type PlaceImageOutcome =
   | ({ readonly kind: 'placed' } & Applied)
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'unreadable' }
-  | { readonly kind: 'too-large'; readonly limitBytes: number };
+  | { readonly kind: 'too-large'; readonly limitBytes: number }
+  /** The library picture named is no longer kept. */
+  | { readonly kind: 'absent' };
+
+/**
+ * What placing and signing need from the person's library (`personalLibrary.ts`): a kept picture's bytes, and a kept
+ * entry. Its own narrow surface, so this module reaches the library to READ it and never to change it.
+ */
+export interface LibraryReader {
+  picture(id: string): { readonly mediaType: 'image/png' | 'image/jpeg'; readonly bytes: Uint8Array } | null;
+  lookup(id: string): LibraryEntry | undefined;
+}
 
 /**
  * Which decoder an extension routes to, or `null` for one this build has none for.
@@ -1964,6 +1976,8 @@ export interface DocumentCommandsParts {
   /** A picker and a contested-destination check, bundled — see {@link CopySource}. */
   readonly copy: CopySource;
   readonly image: ImageSource;
+  /** The person's library, read when a kept picture is placed or a kept signature signs. See {@link LibraryReader}. */
+  readonly library: LibraryReader;
   /** Each import format's picker and bounded read. See {@link ImportSource}. */
   readonly imports: Readonly<Record<ImportFormat, ImportSource>>;
   /**
@@ -2139,6 +2153,7 @@ export class DocumentCommands {
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
   readonly #image: ImageSource;
+  readonly #library: LibraryReader;
   readonly #imports: Readonly<Record<ImportFormat, ImportSource>>;
   readonly #compose: ComposeImport;
   readonly #imageFiles: ImageFilesSource;
@@ -2204,6 +2219,7 @@ export class DocumentCommands {
     this.#duplicates = parts.duplicates;
     this.#copy = parts.copy;
     this.#image = parts.image;
+    this.#library = parts.library;
     this.#imports = parts.imports;
     this.#compose = parts.compose;
     this.#imageFiles = parts.imageFiles;
@@ -5135,24 +5151,42 @@ export class DocumentCommands {
    */
   async placeImage(
     docId: DocId,
-    pages: readonly number[],
-    rect: AnnotationRect,
-    stamp: AnnotationStamp,
+    /**
+     * ONE NAMED REQUEST, every field required — `picture` included, as `string | undefined` — so a delegate that
+     * forwards this cannot drop the library's id and compile (ADR-0069's lesson: a function ignoring a trailing
+     * argument is assignable to one that passes it). `picture` names a kept stamp; `undefined` opens the picker.
+     */
+    request: {
+      readonly pages: readonly number[];
+      readonly rect: AnnotationRect;
+      readonly stamp: AnnotationStamp;
+      readonly picture: string | undefined;
+    },
   ): Promise<PlaceImageOutcome> {
+    const { pages, rect, stamp, picture } = request;
     // READ BEFORE THE DIALOG, `insertImage`'s ordering and its reason.
     if (this.#documents.nameOf(docId) === undefined) {
       throw new DocumentNotOpenError(docId, 'place an image');
     }
 
-    const picked = await this.#image.pick();
-    if (picked === null) return { kind: 'cancelled' };
+    let bytes: Uint8Array;
+    if (picture === undefined) {
+      const picked = await this.#image.pick();
+      if (picked === null) return { kind: 'cancelled' };
 
-    const read = await this.#image.read(picked);
-    if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_IMAGE_BYTES };
-    if (read.kind === 'unreadable') return { kind: 'unreadable' };
+      const read = await this.#image.read(picked);
+      if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_IMAGE_BYTES };
+      if (read.kind === 'unreadable') return { kind: 'unreadable' };
+      bytes = read.bytes;
+    } else {
+      // A KEPT PICTURE, read from the library rather than picked: it was checked and bounded when it was kept.
+      const kept = this.#library.picture(picture);
+      if (kept === null) return { kind: 'absent' };
+      bytes = kept.bytes;
+    }
 
     try {
-      const applied = await this.execute(docId, { kind: 'placeImage', pages, rect, bytes: read.bytes, stamp });
+      const applied = await this.execute(docId, { kind: 'placeImage', pages, rect, bytes, stamp });
       return { kind: 'placed', ...applied };
     } catch (error) {
       // `insertImage`'s catch and its reason: a decoder refusing is an outcome,
@@ -5291,9 +5325,21 @@ export class DocumentCommands {
     | { readonly kind: 'cancelled' }
     | { readonly kind: 'image-unreadable' }
     | { readonly kind: 'image-too-large' }
+    | { readonly kind: 'saved-signature-missing' }
   > {
     if (requested === undefined) return { kind: 'ready', value: undefined };
     const { mark, page, rect } = requested;
+    if (mark.kind === 'saved') {
+      // A KEPT SIGNATURE, looked up by id: a typed or drawn one is its own look, and a picture's bytes come from the
+      // library — so a kept picture never travels to the page and back. Gone since the dialog opened is its own
+      // refusal rather than a picture that would not decode.
+      const entry = this.#library.lookup(mark.id);
+      if (entry?.kind !== 'signature') return { kind: 'saved-signature-missing' };
+      if (entry.look.kind !== 'picture') return { kind: 'ready', value: { page, rect, mark: entry.look } };
+      const kept = this.#library.picture(mark.id);
+      if (kept === null) return { kind: 'saved-signature-missing' };
+      return { kind: 'ready', value: { page, rect, mark: { kind: 'image', bytes: kept.bytes, mediaType: kept.mediaType } } };
+    }
     if (mark.kind !== 'image') return { kind: 'ready', value: { page, rect, mark } };
 
     const picked = await this.#image.pick();

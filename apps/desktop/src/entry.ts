@@ -409,6 +409,8 @@ startShell(() => {
     // THE RECENT CARDS' PICTURES (ADR-0100), beside the recent list under `userData`: they are about
     // the same entries and go with them.
     recentPictureFiles: pictureDirectory(join(app.getPath('userData'), 'recent-pictures')),
+    // THE PERSON'S STAMP AND SIGNATURE LIBRARY, in its own folder beside it: pictures named by UUID and one index.
+    libraryFiles: pictureDirectory(join(app.getPath('userData'), 'library')),
     // THE RATING PROMPT'S RECORD (E3), in its own document under `userData`, and this build's one way to the
     // Store application's pages: `shell.openExternal` of a constant from `STORE_URIS`, never of anything a page
     // supplied — a page names `review` or `updates`, and the table is the only place a URI is.

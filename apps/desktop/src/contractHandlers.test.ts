@@ -2,6 +2,7 @@ import {
   ACCESSIBILITY_HUMAN_CHECKS,
   BARCODE_FORMATS,
   MAX_BARCODE_TEXT,
+  MAX_LIBRARY_PICTURE_BYTES,
   MAX_PAGE_BARCODES,
   RECENT_PREVIEWS_SETTING_ID,
 } from '@monstera/contract';
@@ -28,6 +29,7 @@ import { CloudOutcomeRefused, unconfiguredCloud } from './cloudSession.js';
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, createRecentPictures } from './recentPictures.js';
+import { unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
 import type { DocumentCommands } from './documentCommands.js';
 import { type LaunchDocuments, createLaunchDocuments } from './launchDocuments.js';
@@ -89,7 +91,16 @@ const OPENED_AT = new Date('2026-09-25T08:00:00.000Z');
 /** One known folder, platform-absolute for `displayLocation.test.ts`'s reason. */
 const RECENT_ROOTS: readonly KnownRoot[] = [{ within: 'documents', path: resolve('home', 'Documents'), showsFolder: true }];
 
-function harness(outcome: OpenOutcome, pickDocument: PickDocument, launchDocuments?: LaunchDocuments) {
+function harness(
+  outcome: OpenOutcome,
+  pickDocument: PickDocument,
+  launchDocuments?: LaunchDocuments,
+  /** The library surface and the document commands, for the cases about them; the unused ones otherwise. */
+  overrides: {
+    readonly library?: ReturnType<typeof unusedLibrarySurface>;
+    readonly commands?: DocumentCommands;
+  } = {},
+) {
   const capabilities = new CapabilityRegistry();
   const { documents, opened } = serviceAnswering(outcome);
   // RECORDED RATHER THAN IGNORED. Whether a document gets an engine session is
@@ -141,7 +152,7 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument, launchDocumen
     assistant: INERT_ASSISTANT,
     appInfo,
     capabilities,
-    commands: unusedCommands,
+    commands: overrides.commands ?? unusedCommands,
     documents,
     ...(launchDocuments === undefined ? {} : { launchDocuments }),
     openedDocument: (docId) => {
@@ -155,6 +166,7 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument, launchDocumen
     recent,
     recentRoots: RECENT_ROOTS,
     recentPictures: pictures,
+    library: overrides.library ?? unusedLibrarySurface(),
     reviewPrompt: prompt,
     // RETURNED, so cases about persistence read the same object the handlers
     // wrote rather than a second copy. `settings.save` answering `stored: true`
@@ -274,6 +286,78 @@ describe('the Store rating prompt (E3)', () => {
     expect(await handlers['app.review']({ action: 'later' })).toStrictEqual({ ok: true, value: { opened: false } });
     expect(storeOpened).toStrictEqual([]);
     expect(await handlers['app.reviewPrompt']({})).toStrictEqual({ ok: true, value: { due: false } });
+  });
+});
+
+describe('the person’s library (library.*, and document.placeImage with a kept picture)', () => {
+  const PNG = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 5);
+
+  /** A library surface over a memory folder whose picker answers `picked` and whose reads are recorded. */
+  function libraryPicking(picked: string | null, size: number): {
+    readonly surface: ReturnType<typeof unusedLibrarySurface>;
+    readonly read: string[];
+  } {
+    const read: string[] = [];
+    const surface = {
+      ...unusedLibrarySurface(),
+      pick: () => Promise.resolve(picked),
+      size: () => Promise.resolve(size),
+      read: (path: string) => {
+        read.push(path);
+        return Promise.resolve({ kind: 'read' as const, bytes: PNG });
+      },
+    } as unknown as ReturnType<typeof unusedLibrarySurface>;
+    return { surface, read };
+  }
+
+  it('KEEPS a picked picture, named from the FILE’S name alone — never its folder', async () => {
+    const { surface } = libraryPicking(join('C:', 'Users', 'someone', 'Pictures', 'Paid in full.png'), PNG.byteLength);
+    const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { library: surface });
+    const added = await handlers['library.addPicture']({ kind: 'stamp' });
+    expect(added.ok && added.value.kind === 'added' ? added.value.entry.look : undefined).toStrictEqual({
+      kind: 'picture',
+      name: 'Paid in full',
+    });
+    const listed = await handlers['library.list']({ kind: 'stamp' });
+    expect(listed.ok ? listed.value.entries : undefined).toHaveLength(1);
+  });
+
+  it('refuses a picture past the library’s bound by its SIZE, before reading it — CONTROL: one within it is read', async () => {
+    const large = libraryPicking('big.png', MAX_LIBRARY_PICTURE_BYTES + 1);
+    const refused = await harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
+      library: large.surface,
+    }).handlers['library.addPicture']({ kind: 'stamp' });
+    expect(refused.ok ? refused.value : undefined).toStrictEqual({ kind: 'too-large', limitBytes: MAX_LIBRARY_PICTURE_BYTES });
+    expect(large.read).toStrictEqual([]);
+
+    const small = libraryPicking('small.png', MAX_LIBRARY_PICTURE_BYTES);
+    await harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { library: small.surface }).handlers[
+      'library.addPicture'
+    ]({ kind: 'stamp' });
+    expect(small.read).toStrictEqual(['small.png']);
+  });
+
+  it('FORWARDS a kept picture’s id to the placement — the delegate that could drop it, asserted at the handler', async () => {
+    const requested: unknown[] = [];
+    const commands = {
+      placeImage: (_docId: DocId, request: unknown) => {
+        requested.push(request);
+        return Promise.resolve({ kind: 'absent' as const });
+      },
+    } as unknown as DocumentCommands;
+    const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+    const picture = '00000000-0000-4000-8000-0000000000e1';
+    const answer = await handlers['document.placeImage']({
+      docId: asDocId('00000000-0000-4000-8000-0000000000e2'),
+      pages: [0],
+      rect: { x0: 1, y0: 1, x1: 20, y1: 20 },
+      stamp: { author: 'A. Tester', created: '2026-09-28T12:00:00Z' },
+      picture,
+    });
+    expect(answer.ok ? answer.value : undefined).toStrictEqual({ kind: 'absent' });
+    expect(requested).toStrictEqual([
+      { pages: [0], rect: { x0: 1, y0: 1, x1: 20, y1: 20 }, stamp: { author: 'A. Tester', created: '2026-09-28T12:00:00Z' }, picture },
+    ]);
   });
 });
 
@@ -484,7 +568,7 @@ describe('document.open', () => {
           pickDocument: () => Promise.resolve(null),
           recent: createRecentFiles(createEphemeralSettings()),
           recentRoots: [],
-          recentPictures: NO_RECENT_PICTURES,
+          recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
           reviewPrompt: NO_REVIEW_PROMPT,
           settings: createEphemeralSettings(),
           secrets: createEphemeralSecrets(),
@@ -828,7 +912,7 @@ describe('the recent list', () => {
       pickDocument: () => Promise.resolve(null),
       recent,
       recentRoots: [],
-      recentPictures: NO_RECENT_PICTURES,
+      recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
       settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
@@ -889,7 +973,7 @@ describe('log.reveal', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
-      recentPictures: NO_RECENT_PICTURES,
+      recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
 settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
@@ -944,7 +1028,7 @@ describe('ai.checkKey', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
-      recentPictures: NO_RECENT_PICTURES,
+      recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
 settings: createEphemeralSettings(),
       secrets,
@@ -1064,7 +1148,7 @@ describe('ai.translatePage (ADR-0097)', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
-      recentPictures: NO_RECENT_PICTURES,
+      recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
 settings: createEphemeralSettings(),
       secrets,
@@ -1191,7 +1275,7 @@ describe('ai.history (ADR-0093)', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
-      recentPictures: NO_RECENT_PICTURES,
+      recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
 settings,
       secrets: createEphemeralSecrets(),
@@ -1272,7 +1356,7 @@ describe('cloud.saveBack', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
-      recentPictures: NO_RECENT_PICTURES,
+      recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
 settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),

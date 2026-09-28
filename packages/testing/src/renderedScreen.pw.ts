@@ -2665,6 +2665,63 @@ for (const look of LOOKS) {
   });
 }
 
+// THE STAMP LIBRARY'S OWN PICTURES: *Add a picture…* keeps the one main's picker answers, the chooser opens again
+// showing it, and choosing it sends `document.placeImage` naming it — no picker, no command built on this side.
+// CONTROL: before the add, the chooser shows no picture of the person's.
+test('a KEPT stamp picture is added from the chooser, shown in it, and placed by its id', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const bytes = await onePagePdf();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000cc');
+  // A 1 × 1 PNG, so the chooser's <img> has real pixels to decode.
+  const png = new Uint8Array(
+    Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64'),
+  );
+  const sent: { channel: string; params: unknown }[] = [];
+  await bridge(
+    page,
+    {
+      opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'kept.pdf' }],
+      documentBytes: new Map([[docId, bytes]]),
+      library: { pick: { name: 'Paid', bytes: png } },
+    },
+    (channel, params) => {
+      sent.push({ channel, params });
+    },
+  );
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+
+  await page.keyboard.press('Control+K');
+  await page.keyboard.type('Stamp');
+  await page.keyboard.press('Enter');
+  const box = await page.getByLabel('Draw on page 1').boundingBox();
+  const x = (box?.x ?? 0) + 60;
+  const y = (box?.y ?? 0) + 60;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 200, y + 60, { steps: 4 });
+  await page.mouse.up();
+
+  const dialog = page.getByRole('dialog', { name: 'Choose a stamp' });
+  await expect(dialog.getByRole('img', { name: 'Paid' })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Add a picture…' }).click();
+  // ASKED AGAIN, with the library as it now is: the picture decoded, not a broken image.
+  const kept = dialog.getByRole('img', { name: 'Paid' });
+  await expect(kept).toBeVisible();
+  expect(await kept.evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBe(1);
+  await dialog.locator('[data-stamp-picture] input').check();
+  await dialog.getByRole('button', { name: 'Add stamp' }).click();
+
+  const placed = (): unknown[] =>
+    sent
+      .filter((call) => call.channel === 'document.placeImage')
+      .map((call) => (call.params as { readonly picture?: unknown }).picture);
+  await expect.poll(placed).toStrictEqual([expect.stringMatching(/^[0-9a-f-]{36}$/u)]);
+  // AND NOTHING WAS BUILT HERE: no addAnnotation for a picture.
+  expect(sent.filter((call) => call.channel === 'document.execute')).toStrictEqual([]);
+});
+
 // EDIT TEXT IN PLACE (ADR-0096), in every theme: the outlines sit over their words on the drawn
 // page, the editor opens over a block, and nothing on that screen fails the gate.
 for (const look of LOOKS) {

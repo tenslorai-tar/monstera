@@ -2,9 +2,11 @@ import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
 
 import {
+  INSERT_IMAGE_ABSENT,
   INSERT_IMAGE_TOO_LARGE,
   INSERT_IMAGE_TOO_MANY_PIXELS,
   INSERT_IMAGE_UNREADABLE,
+  LIBRARY_FULL,
 } from '../messages/en.js';
 
 /**
@@ -31,7 +33,9 @@ export default function InsertImageProblemBody(
   props:
     | { readonly reason: 'unreadable' }
     | { readonly reason: 'too-large'; readonly limitBytes: number }
-    | { readonly reason: 'too-many-pixels'; readonly limitPixels: number },
+    | { readonly reason: 'too-many-pixels'; readonly limitPixels: number }
+    | { readonly reason: 'absent' }
+    | { readonly reason: 'library-full'; readonly limit: number },
 ): ReactElement {
   const { _ } = useLingui();
 
@@ -52,6 +56,18 @@ export default function InsertImageProblemBody(
       return (
         <div className="m-insert-image-problem">
           <p>{_(INSERT_IMAGE_TOO_MANY_PIXELS, { megapixels: Math.floor(props.limitPixels / 1_000_000) })}</p>
+        </div>
+      );
+    case 'absent':
+      return (
+        <div className="m-insert-image-problem">
+          <p>{_(INSERT_IMAGE_ABSENT)}</p>
+        </div>
+      );
+    case 'library-full':
+      return (
+        <div className="m-insert-image-problem">
+          <p>{_(LIBRARY_FULL, { limit: props.limit })}</p>
         </div>
       );
   }

@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { activateCatalogue, i18n } from '../i18n.js';
 import { EN } from '../messages/en.js';
 import { MAX_SIGNATURE_FIELD } from '@monstera/contract';
-import type { SignDocumentAnswer } from './signDocument.js';
+import type { KeptSignature, SignDocumentAnswer } from './signDocument.js';
 import SignDocumentBody from './SignDocumentBody.js';
 
 /**
@@ -28,20 +28,27 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
 }
 
 /** Renders the body and collects what it resolves with. */
-function opened(placed: boolean): { readonly answers: SignDocumentAnswer[] } {
+function opened(
+  placed: boolean,
+  kept: readonly KeptSignature[] = [],
+): { readonly answers: SignDocumentAnswer[]; readonly library: unknown[] } {
   const answers: SignDocumentAnswer[] = [];
+  // A CHANGE TO THE LIBRARY is an answer too, kept apart so the signing cases read only signing answers.
+  const library: unknown[] = [];
   render(
     <Wrapped>
       <SignDocumentBody
         placed={placed}
+        kept={kept}
         resolve={(answer) => {
-          answers.push(answer);
+          if ('library' in answer) library.push(answer);
+          else answers.push(answer);
         }}
         update={() => undefined}
       />
     </Wrapped>,
   );
-  return { answers };
+  return { answers, library };
 }
 
 const SIGN = (): HTMLElement => screen.getByRole('button', { name: 'Choose certificate and sign' });
@@ -208,5 +215,53 @@ describe('SignDocumentBody', () => {
     fireEvent.click(SIGN());
 
     expect(answers).toStrictEqual([{ passphrase: '', mark: { kind: 'image' } }]);
+  });
+
+  describe('the signature library', () => {
+    const TYPED: KeptSignature = {
+      id: '00000000-0000-4000-8000-0000000000a1',
+      look: { kind: 'typed', text: 'Grace Hopper', font: 'courier' },
+    };
+    const DRAWN: KeptSignature = {
+      id: '00000000-0000-4000-8000-0000000000a2',
+      look: { kind: 'drawn', strokes: [[[0.1, 0.1], [0.4, 0.3]]] },
+    };
+
+    it('KEEP asks to keep a typed look once signed (the case after is its control)', () => {
+      const ticked = opened(true);
+      fireEvent.change(screen.getByLabelText('Signature'), { target: { value: 'Grace Hopper' } });
+      fireEvent.click(screen.getByLabelText('Keep this signature for next time'));
+      fireEvent.click(SIGN());
+      expect(ticked.answers[0]?.keep).toBe(true);
+    });
+
+    it('CONTROL: an unticked look is not kept', () => {
+      const plain = opened(true);
+      fireEvent.change(screen.getByLabelText('Signature'), { target: { value: 'Grace Hopper' } });
+      fireEvent.click(SIGN());
+      expect(plain.answers[0]).not.toHaveProperty('keep');
+    });
+
+    it('with kept signatures it OPENS ON THEM and signs with the one chosen, by id', () => {
+      const { answers } = opened(true, [TYPED, DRAWN]);
+      expect(document.querySelector<HTMLSelectElement>('[data-sign-look]')?.value).toBe('saved');
+      expect(screen.getByText('Grace Hopper')).toBeTruthy();
+      expect(screen.getByRole('img', { name: 'Drawn signature 2' })).toBeTruthy();
+      const second = document.querySelector(`[data-sign-kept="${DRAWN.id}"] input`);
+      if (second === null) throw new Error('no second kept signature');
+      fireEvent.click(second);
+      fireEvent.click(SIGN());
+      expect(answers).toStrictEqual([{ passphrase: '', mark: { kind: 'saved', id: DRAWN.id } }]);
+    });
+
+    it('REMOVE and ADD answer a change to the library rather than signing', () => {
+      const { answers, library } = opened(true, [TYPED]);
+      const [remove] = screen.getAllByRole('button', { name: 'Remove' });
+      if (remove === undefined) throw new Error('no Remove button');
+      fireEvent.click(remove);
+      fireEvent.click(screen.getByRole('button', { name: 'Add a picture…' }));
+      expect(library).toStrictEqual([{ library: 'remove', id: TYPED.id }, { library: 'add' }]);
+      expect(answers).toStrictEqual([]);
+    });
   });
 });

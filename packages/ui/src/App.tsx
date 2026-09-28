@@ -289,6 +289,7 @@ import { CALLOUT_DIALOG } from './dialogs/callout.js';
 import { TYPEWRITER_DIALOG } from './dialogs/typewriter.js';
 import { ANNOTATION_TEXT_DIALOG } from './dialogs/annotationText.js';
 import { STAMP_DIALOG } from './dialogs/stamp.js';
+import { BLOB_URLS, stampLibrary } from './commands/stampLibrary.js';
 import { FORM_FIELD_DIALOGS } from './dialogs/formField.js';
 import { DELETE_PAGES_DIALOG } from './dialogs/deletePages.js';
 import { DUPLICATE_PAGES_DIALOG } from './dialogs/duplicatePages.js';
@@ -2090,6 +2091,25 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         activeId,
         imagePagesFor(imagePages, page, pageCount),
         rect,
+        // THE FILE PICKER: this is the Image tool.
+        undefined,
+      );
+    },
+    [activeId, applied, ask, client, imagePages, pageCount, stamp],
+  );
+  /**
+   * A kept stamp picture placed from the stamp chooser — `onPlaceImage`'s route with the library's id, so main reads
+   * the kept file instead of opening a picker, and the pages follow the same *this page or every page* setting.
+   */
+  const onPlaceStampPicture = useCallback(
+    (page: number, rect: AnnotationRect, picture: string): void => {
+      if (activeId === undefined) return;
+      void placeImage(
+        { client, ask, onApplied: applied, stamp },
+        activeId,
+        imagePagesFor(imagePages, page, pageCount),
+        rect,
+        picture,
       );
     },
     [activeId, applied, ask, client, imagePages, pageCount, stamp],
@@ -2210,15 +2230,21 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onPlaceImage,
           onPlaceSignature,
           onPlaceBarcode,
+          // THE STAMP LIBRARY: the kept pictures for the chooser, keeping and removing one, and placing one.
+          ...stampLibrary({ client, ask, urls: BLOB_URLS }),
+          onPlaceStampPicture,
         }),
       ),
     [
       ask,
+      // THE STAMP LIBRARY'S CHANNELS go through it.
+      client,
       listAnnotations,
       ocrLanguage,
       onPlaceBarcode,
       onPlaceImage,
       onPlaceSignature,
+      onPlaceStampPicture,
       onSnapshot,
       readSelection,
       scale,

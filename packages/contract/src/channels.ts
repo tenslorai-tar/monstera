@@ -42,6 +42,12 @@ import {
   renderableCommandSchema,
 } from './commands.js';
 import {
+  MAX_LIBRARY_ENTRIES,
+  MAX_LIBRARY_PICTURE_BYTES,
+  keepableSignatureSchema,
+  libraryEntrySchema,
+  libraryIdSchema,
+  libraryKindSchema,
   MAX_SIGNATURE_FIELD,
   requestedSignatureMarkSchema,
   SIGN_REFUSALS,
@@ -3117,13 +3123,18 @@ export const channels = {
   ),
 
   'document.placeImage': channel(
-    'Places an image on pages of an open document, from a file the user picks.',
+    'Places an image on pages of an open document, from a file the user picks or a picture in their stamp library.',
     z.object({
       docId: docIdSchema,
       pages: z.array(z.number().int().nonnegative()).min(1).max(MAX_IMAGE_PAGES).readonly(),
       rect: annotationRectSchema,
       /** Who placed it and when — the renderer's to say, main's to write (ADR-0103). */
       stamp: annotationStampSchema,
+      /**
+       * A picture from the person's stamp library, by id — then no picker opens and main reads the kept file. Absent
+       * is the file picker, as before. An id, never bytes: the picture is main's, like any picked file.
+       */
+      picture: libraryIdSchema.optional(),
     }),
     z.discriminatedUnion('kind', [
       z.object({
@@ -3137,8 +3148,72 @@ export const channels = {
       z.object({ kind: z.literal('unreadable') }),
       /** Past {@link MAX_IMAGE_BYTES} — refused before it is read into memory. */
       z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+      /** The library picture named is no longer kept — removed since the chooser opened. */
+      z.object({ kind: z.literal('absent') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * THE PERSON'S LIBRARY (`libraryEntrySchema`): what it holds of one kind, oldest first. Read from main's own folder
+   * each time, so two windows never disagree about it.
+   */
+  'library.list': channel(
+    'Lists the stamps or signatures the person has kept.',
+    z.object({ kind: libraryKindSchema }).strict(),
+    z.object({ entries: z.array(libraryEntrySchema).max(MAX_LIBRARY_ENTRIES).readonly() }),
+  ),
+
+  /** A kept picture's bytes, to show it in a chooser — bounded by what the library keeps. */
+  'library.picture': channel(
+    'Answers the picture of one kept stamp or signature.',
+    z.object({ id: libraryIdSchema }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('found'),
+        mediaType: z.enum(['image/jpeg', 'image/png']),
+        bytes: z.custom<Uint8Array>(
+          (value) => value instanceof Uint8Array && value.byteLength <= MAX_LIBRARY_PICTURE_BYTES,
+          { message: `not a picture of at most ${String(MAX_LIBRARY_PICTURE_BYTES)} bytes` },
+        ),
+      }),
+      z.object({ kind: z.literal('absent') }),
+    ]),
+  ),
+
+  /**
+   * Keeps a picture the person picks, as a stamp or a signature. Main runs the picker, reads the file and checks it
+   * is a PNG or a JPEG by its own bytes — the extension is a hint to the picker, not a check.
+   */
+  'library.addPicture': channel(
+    'Keeps a picture the user picks in their stamp or signature library.',
+    z.object({ kind: libraryKindSchema }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('added'), entry: libraryEntrySchema }),
+      z.object({ kind: z.literal('cancelled') }),
+      /** Not a PNG or a JPEG by its bytes. */
+      z.object({ kind: z.literal('unreadable') }),
+      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+      /** The library holds {@link MAX_LIBRARY_ENTRIES} of this kind already. */
+      z.object({ kind: z.literal('full'), limit: z.number().int().positive() }),
+    ]),
+  ),
+
+  /** Keeps a typed or drawn signature as the person made it, so it need not be made again. */
+  'library.keepSignature': channel(
+    'Keeps a typed or drawn signature in the signature library.',
+    z.object({ mark: keepableSignatureSchema }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('added'), entry: libraryEntrySchema }),
+      z.object({ kind: z.literal('full'), limit: z.number().int().positive() }),
+    ]),
+  ),
+
+  /** Removes one kept entry, and its picture file with it. Answers whether there was one to remove. */
+  'library.remove': channel(
+    'Removes a kept stamp or signature.',
+    z.object({ id: libraryIdSchema }).strict(),
+    z.object({ removed: z.boolean() }),
   ),
 
   /**

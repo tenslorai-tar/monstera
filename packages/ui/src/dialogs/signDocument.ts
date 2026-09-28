@@ -1,6 +1,8 @@
 import {
   DOCUMENT_PASSWORD_MAX_CHARS,
   MAX_SIGNATURE_FIELD,
+  keepableSignatureSchema,
+  libraryIdSchema,
   requestedSignatureMarkSchema,
   TIMESTAMP_AUTHORITY_IDS,
 } from '@monstera/contract';
@@ -71,11 +73,42 @@ export const SIGN_DOCUMENT_RESULT = z
      * body before it gets here, for the descriptive fields' reason.
      */
     mark: requestedSignatureMarkSchema.optional(),
+    /**
+     * Keep the typed or drawn look in the signature library once the document is signed — the library's route in
+     * for a signature made here. Absent keeps nothing; a kept or picture look has nothing to keep.
+     */
+    keep: z.literal(true).optional(),
   })
   .strict();
 
-/** What the signing dialog answers with. */
+/** What the signing dialog answers with to SIGN. */
 export type SignDocumentAnswer = z.infer<typeof SIGN_DOCUMENT_RESULT>;
+
+/**
+ * Everything the signing dialog may answer: signing, or a change to the signature library — after which the opener
+ * makes the change and asks again with the library as it then is (the stamp chooser's reason: props are fixed while
+ * the dialog is open).
+ */
+export const SIGN_DOCUMENT_ANSWERS = z.union([
+  SIGN_DOCUMENT_RESULT,
+  z.object({ library: z.literal('add') }).strict(),
+  z.object({ library: z.literal('remove'), id: libraryIdSchema }).strict(),
+]);
+
+export type SignDocumentAnswers = z.infer<typeof SIGN_DOCUMENT_ANSWERS>;
+
+/** A kept signature as the dialog shows it: typed and drawn ones as themselves, a picture by a `blob:` address. */
+export const KEPT_SIGNATURE = z
+  .object({
+    id: libraryIdSchema,
+    look: z.union([
+      keepableSignatureSchema,
+      z.object({ kind: z.literal('picture'), name: z.string().min(1), src: z.string().startsWith('blob:') }).strict(),
+    ]),
+  })
+  .strict();
+
+export type KeptSignature = z.infer<typeof KEPT_SIGNATURE>;
 
 export const SIGN_DOCUMENT_DIALOG = declareDialog({
   id: SIGN_DOCUMENT_DIALOG_ID,
@@ -84,9 +117,9 @@ export const SIGN_DOCUMENT_DIALOG = declareDialog({
    * `placed` is whether a rectangle was drawn first. The ribbon's *Sign
    * document* opens this without one, for an invisible signature; the place
    * signature tool opens it with one, and only then does the body ask how the
-   * signature looks.
+   * signature looks. `kept` is the signature library, offered as a look.
    */
-  props: z.object({ placed: z.boolean() }).strict(),
-  result: SIGN_DOCUMENT_RESULT,
+  props: z.object({ placed: z.boolean(), kept: z.array(KEPT_SIGNATURE).readonly() }).strict(),
+  result: SIGN_DOCUMENT_ANSWERS,
   component: lazy(() => import('./SignDocumentBody.js')),
 });

@@ -15,6 +15,8 @@ import {
   MAX_FORM_DATA_BYTES,
   ACCESSIBILITY_HUMAN_CHECKS,
   MAX_IMAGE_BYTES,
+  MAX_LIBRARY_ENTRIES,
+  type LibraryEntry,
   SECRET_SETTING_IDS,
   channels,
   createClient,
@@ -284,6 +286,17 @@ export interface BrowserShimOptions {
    * insert and exercise the placement.
    */
   readonly placedImage?: 'unreadable' | 'too-large' | { readonly byteLength: number };
+
+  /**
+   * The person's library, as main would hold it: the entries it starts with, their pictures by id, and what the picker
+   * answers for `library.addPicture` — a picture's name and bytes, or `null` for a cancelled picker. Held in memory for
+   * the page's life, so a case that keeps or removes one sees the next `library.list` change.
+   */
+  readonly library?: {
+    readonly entries?: readonly LibraryEntry[];
+    readonly pictures?: ReadonlyMap<string, { readonly mediaType: 'image/png' | 'image/jpeg'; readonly bytes: Uint8Array }>;
+    readonly pick?: { readonly name: string; readonly bytes: Uint8Array } | null;
+  };
 
   /**
    * What `document.placeBarcode` answers — its own switch for `placedImage`'s reason: the bytes
@@ -727,6 +740,10 @@ const SHIM_OPTIMIZED = { high: 90_000, medium: 80_000, low: 50_000 } as const;
  */
 export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim {
   const versions = new Map<string, number>();
+  /** The person's library, as main would hold it for this page's life (`BrowserShimOptions.library`). */
+  let libraryEntries: readonly LibraryEntry[] = options.library?.entries ?? [];
+  const libraryPictures = new Map(options.library?.pictures ?? []);
+  let libraryMinted = 900;
   /** How many marks main's clipboard would hold — `document.copyAnnotations`' count, nothing more. */
   let clipboardCount = 0;
   /** How many entries each document's log would have to step back through. */
@@ -1209,10 +1226,19 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      * which channel the control reached and with what arguments, and whether a
      * `/Stamp` appears on those pages is the kernel's case.
      */
-    'document.placeImage': ({ docId }) => {
+    'document.placeImage': ({ docId, picture }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      // A KEPT PICTURE is placed from the library, as main would: absent when it is not kept.
+      if (picture !== undefined) {
+        const kept = libraryPictures.get(picture);
+        if (kept === undefined) return Promise.resolve(ok({ kind: 'absent' as const }));
+        const version = asDocVersion(current + 1);
+        versions.set(docId, version);
+        return Promise.resolve(ok({ kind: 'placed' as const, version, byteLength: kept.bytes.byteLength, historyDropped: 0 }));
+      }
 
       const chosen = options.placedImage;
       if (chosen === undefined) return Promise.resolve(ok({ kind: 'cancelled' as const }));
@@ -1230,6 +1256,44 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           historyDropped: 0,
         }),
       );
+    },
+    'library.list': ({ kind }) =>
+      Promise.resolve(ok({ entries: libraryEntries.filter((entry) => entry.kind === kind) })),
+    'library.picture': ({ id }) => {
+      const kept = libraryPictures.get(id);
+      return Promise.resolve(
+        ok(kept === undefined ? { kind: 'absent' as const } : { kind: 'found' as const, mediaType: kept.mediaType, bytes: kept.bytes }),
+      );
+    },
+    'library.addPicture': ({ kind }) => {
+      const picked = options.library?.pick ?? null;
+      if (picked === null) return Promise.resolve(ok({ kind: 'cancelled' as const }));
+      if (libraryEntries.filter((entry) => entry.kind === kind).length >= MAX_LIBRARY_ENTRIES) {
+        return Promise.resolve(ok({ kind: 'full' as const, limit: MAX_LIBRARY_ENTRIES }));
+      }
+      libraryMinted += 1;
+      const id = `00000000-0000-4000-8000-${String(libraryMinted).padStart(12, '0')}`;
+      const look = { kind: 'picture' as const, name: picked.name };
+      const entry: LibraryEntry = kind === 'stamp' ? { id, kind, look } : { id, kind, look };
+      libraryEntries = [...libraryEntries, entry];
+      libraryPictures.set(id, { mediaType: 'image/png', bytes: picked.bytes });
+      return Promise.resolve(ok({ kind: 'added' as const, entry }));
+    },
+    'library.keepSignature': ({ mark }) => {
+      libraryMinted += 1;
+      const entry: LibraryEntry = {
+        id: `00000000-0000-4000-8000-${String(libraryMinted).padStart(12, '0')}`,
+        kind: 'signature',
+        look: mark,
+      };
+      libraryEntries = [...libraryEntries, entry];
+      return Promise.resolve(ok({ kind: 'added' as const, entry }));
+    },
+    'library.remove': ({ id }) => {
+      const before = libraryEntries.length;
+      libraryEntries = libraryEntries.filter((entry) => entry.id !== id);
+      libraryPictures.delete(id);
+      return Promise.resolve(ok({ removed: libraryEntries.length < before }));
     },
     'document.placeBarcode': ({ docId }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));

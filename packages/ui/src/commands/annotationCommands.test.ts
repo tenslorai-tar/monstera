@@ -209,6 +209,10 @@ describe('rectangleToolCommand', () => {
       onPlaceImage: () => undefined,
       onPlaceSignature: () => undefined,
       onPlaceBarcode: () => undefined,
+      stampPictures: () => Promise.resolve({ pictures: [], release: () => undefined }),
+      addStampPicture: () => Promise.resolve(),
+      removeStampPicture: () => Promise.resolve(),
+      onPlaceStampPicture: () => undefined,
     }).map((tool) => tool.id);
     const commandIds = shapeToolCommands({
       activeTool: () => undefined,

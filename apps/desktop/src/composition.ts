@@ -135,6 +135,7 @@ import {
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, type PictureFiles, createRecentPictures } from './recentPictures.js';
+import { createPersonalLibrary, memoryPictureFiles } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
 import { createUpdateCheck, manifestTransport, UPDATE_PROVIDERS } from './updateCheck.js';
 import { createLaunchDocuments } from './launchDocuments.js';
@@ -582,6 +583,11 @@ export interface ShellComposition {
    */
   readonly recentPictureFiles?: PictureFiles;
   /**
+   * Where the person's stamp and signature library is kept, a directory under `userData` resolved in `entry.ts`.
+   * Absent, the library lives in memory for the run — every unit test's position, and never the product's.
+   */
+  readonly libraryFiles?: PictureFiles;
+  /**
    * The rating prompt's record (E3), `engagement.json` under `userData`, resolved in `entry.ts`. Absent, no
    * prompt is ever due — every unit test's position, since a test that launched twice would be asked.
    */
@@ -732,6 +738,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     recent,
     recentRoots = [],
     recentPictureFiles,
+    libraryFiles,
     engagementFile,
     openStore,
     updateRecordFile,
@@ -906,6 +913,15 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       throw new Error('this graph was composed with no secret store, so nothing was written');
     },
   };
+
+  // THE PERSON'S LIBRARY — their image stamps and kept signatures — in its folder under `userData`, or in memory for a
+  // graph composed with none, which keeps nothing past the run. An index it cannot read is reported and set aside.
+  const library = createPersonalLibrary({
+    files: libraryFiles ?? memoryPictureFiles(),
+    unreadable: (detail) => {
+      log?.write('library', `index unreadable, set aside: ${detail}`);
+    },
+  });
 
   const commands = new DocumentCommands({
     documents,
@@ -1239,6 +1255,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // reason: the picker needs Electron and the read needs Node's filesystem,
     // and this file imports neither.
     image: { pick: pickImage, read: readImage },
+    // A KEPT PICTURE OR SIGNATURE, read — never changed — when one is placed or signs.
+    library,
     // EDITING A PAGE ELSEWHERE, and every member is a parameter for `image`'s reason:
     // `shell` is Electron's and `fs.watch` is Node's, and this file imports neither (ADR-0062).
     externalEdit: { pick: pickDestination, open: openExternalEditor, watch: editWatch },
@@ -1436,6 +1454,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       capabilities,
       commands,
       documents,
+      // THE LIBRARY'S CHANNELS: the image picker, and a size before the bounded read, as the image import takes them.
+      library: { store: library, pick: pickImage, size: sizeImage, read: readImage },
       // THE ASSISTANT (ADR-0081, ADR-0082). It reads keys from the same store every other
       // network feature reads, and pushes its answers through the shell's `sendEvent` —
       // `null` where there is no window to push to, which is every unit test, and then

@@ -1,4 +1,4 @@
-import { type AnnotationStamp, type ContractClient, channels, createClient } from '@monstera/contract';
+import { type AnnotationStamp, type ContractClient, type LibraryEntry, channels, createClient } from '@monstera/contract';
 import { type DocId, type DocVersion, asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -1836,6 +1836,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       DOC,
       [3],
       { x0: 10, y0: 20, x1: 110, y1: 70 },
+      undefined,
     );
 
     expect(sent).toStrictEqual([
@@ -1872,6 +1873,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       DOC,
       [3],
       { x0: 10, y0: 20, x1: 110, y1: 70 },
+      undefined,
     );
 
     expect(applied).toStrictEqual([]);
@@ -1900,6 +1902,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       DOC,
       [3],
       { x0: 10, y0: 20, x1: 110, y1: 70 },
+      undefined,
     );
 
     expect(opened).toStrictEqual([
@@ -3544,16 +3547,34 @@ describe('protectDocumentCommand', () => {
 
   describe('signDocumentCommand', () => {
     /** A client answering `document.sign` and recording what it was sent. */
-    function signingClient(answer: unknown): {
+    function signingClient(
+      answer: unknown,
+      kept: readonly LibraryEntry[] = [],
+    ): {
       readonly client: ContractClient;
       readonly sent: { id: string; params: unknown }[];
+      /** What the signature library was asked, kept apart so the signing cases read only the signing channel. */
+      readonly library: { id: string; params: unknown }[];
     } {
       const sent: { id: string; params: unknown }[] = [];
+      const library: { id: string; params: unknown }[] = [];
       const client = createClient(channels, (id, params) => {
+        if (id.startsWith('library.')) {
+          library.push({ id, params });
+          if (id === 'library.list') return Promise.resolve(ok({ entries: kept }));
+          if (id === 'library.picture') {
+            return Promise.resolve(ok({ kind: 'found', mediaType: 'image/png', bytes: Uint8Array.of(0x89, 0x50) }));
+          }
+          if (id === 'library.addPicture') return Promise.resolve(ok({ kind: 'cancelled' }));
+          if (id === 'library.keepSignature') {
+            return Promise.resolve(ok({ kind: 'added', entry: { id: '00000000-0000-4000-8000-0000000000b9', kind: 'signature', look: (params as { mark: unknown }).mark } }));
+          }
+          return Promise.resolve(ok({ removed: true }));
+        }
         sent.push({ id, params });
         return Promise.resolve(ok(answer));
       });
-      return { client, sent };
+      return { client, sent, library };
     }
 
     it('calls document.sign — never document.execute — with the dialog’s fields', async () => {
@@ -3718,7 +3739,7 @@ describe('protectDocumentCommand', () => {
         PLACEMENT,
       );
 
-      expect(asked).toStrictEqual([{ id: 'dialog.sign-document', props: { placed: true } }]);
+      expect(asked).toStrictEqual([{ id: 'dialog.sign-document', props: { placed: true, kept: [] } }]);
       expect(sent).toStrictEqual([
         {
           id: 'document.sign',
@@ -3744,7 +3765,7 @@ describe('protectDocumentCommand', () => {
         },
       }).run(CONTEXT);
 
-      expect(asked).toStrictEqual([{ id: 'dialog.sign-document', props: { placed: false } }]);
+      expect(asked).toStrictEqual([{ id: 'dialog.sign-document', props: { placed: false, kept: [] } }]);
       expect(sent).toStrictEqual([{ id: 'document.sign', params: { docId: DOC, passphrase: '' } }]);
     });
 
@@ -3758,6 +3779,108 @@ describe('protectDocumentCommand', () => {
       );
 
       expect(sent).toStrictEqual([]);
+    });
+
+    describe('the signature library', () => {
+      const KEPT_TYPED: LibraryEntry = { id: '00000000-0000-4000-8000-0000000000c1', kind: 'signature', look: TYPED };
+      const KEPT_PICTURE: LibraryEntry = {
+        id: '00000000-0000-4000-8000-0000000000c2',
+        kind: 'signature',
+        look: { kind: 'picture', name: 'ink' },
+      };
+      /** `blob:` addresses counted, so a case can see each one let go. */
+      const counting = (): { readonly urls: { make: () => string; revoke: (url: string) => void }; readonly revoked: string[] } => {
+        const revoked: string[] = [];
+        let made = 0;
+        return {
+          revoked,
+          urls: {
+            make: () => {
+              made += 1;
+              return `blob:kept-${String(made)}`;
+            },
+            revoke: (url) => revoked.push(url),
+          },
+        };
+      };
+
+      it('offers the kept signatures — a typed one as itself, a picture by a blob: address — and lets go after', async () => {
+        const { client } = signingClient({ kind: 'cancelled' }, [KEPT_TYPED, KEPT_PICTURE]);
+        const asked: unknown[] = [];
+        const { urls, revoked } = counting();
+        await signDocument(
+          {
+            client,
+            onApplied: () => undefined,
+            ask: (_id, props) => {
+              asked.push(props);
+              return Promise.resolve(undefined);
+            },
+          },
+          DOC,
+          PLACEMENT,
+          urls,
+        );
+        expect(asked).toStrictEqual([
+          {
+            placed: true,
+            kept: [
+              { id: KEPT_TYPED.id, look: TYPED },
+              { id: KEPT_PICTURE.id, look: { kind: 'picture', name: 'ink', src: 'blob:kept-1' } },
+            ],
+          },
+        ]);
+        expect(revoked).toStrictEqual(['blob:kept-1']);
+      });
+
+      it('ADD and REMOVE change the library and ASK AGAIN before anything is signed', async () => {
+        const { client, sent, library } = signingClient({ kind: 'cancelled' }, [KEPT_TYPED]);
+        const answers = [{ library: 'add' }, { library: 'remove', id: KEPT_TYPED.id }, undefined];
+        let asked = 0;
+        await signDocument(
+          {
+            client,
+            onApplied: () => undefined,
+            ask: () => {
+              asked += 1;
+              return Promise.resolve(answers[asked - 1]);
+            },
+          },
+          DOC,
+          PLACEMENT,
+          counting().urls,
+        );
+        expect(asked).toBe(3);
+        expect(library.map((call) => call.id)).toStrictEqual([
+          'library.list',
+          'library.addPicture',
+          'library.list',
+          'library.remove',
+          'library.list',
+        ]);
+        expect(sent).toStrictEqual([]);
+      });
+
+      it('KEEPS a typed look once it has SIGNED — CONTROL: a refused signing keeps nothing', async () => {
+        const keeping = async (outcome: unknown): Promise<unknown[]> => {
+          const { client, library } = signingClient(outcome);
+          await signDocument(
+            {
+              client,
+              onApplied: () => undefined,
+              ask: (id) => Promise.resolve(id === 'dialog.sign-document' ? { passphrase: '', mark: TYPED, keep: true } : undefined),
+            },
+            DOC,
+            PLACEMENT,
+            counting().urls,
+          );
+          return library.filter((call) => call.id === 'library.keepSignature').map((call) => call.params);
+        };
+        expect(await keeping({ kind: 'signed', version: asDocVersion(2), byteLength: 10, historyDropped: 0 })).toStrictEqual([
+          { mark: TYPED },
+        ]);
+        expect(await keeping({ kind: 'wrong-passphrase' })).toStrictEqual([]);
+      });
     });
 
     it.each(['unencodable-text', 'image-unreadable', 'image-too-large'] as const)(

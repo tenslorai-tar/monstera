@@ -15,7 +15,7 @@ import type { OcrRegionDeps } from './ocrRegionTool.js';
 import { claudeRegionTool, cloudRegionTool, ocrRegionTool } from './ocrRegionTool.js';
 import type { SnapshotDeps } from './snapshotTool.js';
 import { snapshotTool } from './snapshotTool.js';
-import { stampTool } from './stampTool.js';
+import { type StampDeps, stampTool } from './stampTool.js';
 import { textMarkupTools } from './textMarkupTools.js';
 import { shapeTools } from './shapeTools.js';
 import type { TextToolDeps } from './textTools.js';
@@ -126,4 +126,5 @@ export type AnnotationToolDeps = TextToolDeps &
   OcrRegionDeps &
   PlaceImageDeps &
   PlaceSignatureDeps &
-  PlaceBarcodeDeps;
+  PlaceBarcodeDeps &
+  StampDeps;

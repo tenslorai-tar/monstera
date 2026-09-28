@@ -3018,6 +3018,8 @@ export const SIGN_REFUSALS = [
   'timestamp-refused',
   /** The authority answered with a token that failed verification (ADR-0058 Decision 3). */
   'timestamp-unverifiable',
+  /** A kept signature was named that the library no longer holds — removed since the dialog opened. */
+  'saved-signature-missing',
 ] as const;
 
 /** One of {@link SIGN_REFUSALS}. */
@@ -3065,15 +3067,79 @@ const drawnSignatureMarkSchema = z
   .strict();
 
 /**
+ * THE PERSON'S LIBRARY — their own image stamps and the signatures they keep (Part F, `BUILD-PROMPT.md`:616).
+ *
+ * `main` keeps it, under the application's own data folder: a picture is a file main picked and read, and its bytes
+ * cross only as the picture of an entry, bounded. A signature typed or drawn is the signing look itself, kept so it
+ * need not be made again. **A stamp is only ever a picture** — the built-in stamps are words (`BUILT_IN_STAMPS`) and
+ * are never stored — so the kind decides the looks an entry may carry, and a stamp that is a typed signature cannot be
+ * written (B5).
+ */
+export const LIBRARY_KINDS = ['stamp', 'signature'] as const;
+
+export const libraryKindSchema = z.enum(LIBRARY_KINDS);
+
+export type LibraryKind = z.infer<typeof libraryKindSchema>;
+
+/**
+ * How many entries each library keeps. Sixteen: a drawn signature may carry 65,536 points, so a list of these is
+ * bounded at about 21 MB of numbers — past what a chooser can show a person anyway, and short of a payload that a
+ * hostile file on disk could inflate without limit.
+ */
+export const MAX_LIBRARY_ENTRIES = 16;
+
+/**
+ * The largest picture the library keeps: 2 MiB. A stamp or a signature is small by nature, and every entry's picture
+ * crosses to the page whenever its chooser opens — {@link MAX_LIBRARY_ENTRIES} of them — so the bound is the library's
+ * own rather than the 64 MiB a placed page image may be.
+ */
+export const MAX_LIBRARY_PICTURE_BYTES = 2 * 1024 * 1024;
+
+/** A picture's name, as main takes it from the file's own name: bounded, and shown as text. */
+export const MAX_LIBRARY_NAME = 64;
+
+/**
+ * An entry's identity: a UUID main mints, never a file name or a path. `.max(36)` states the bound a UUID's format
+ * already implies, so the payload check (invariant L11) reads it rather than inferring it from a pattern.
+ */
+export const libraryIdSchema = z.uuid().max(36);
+
+export type LibraryId = z.infer<typeof libraryIdSchema>;
+
+const libraryPictureSchema = z
+  .object({ kind: z.literal('picture'), name: z.string().min(1).max(MAX_LIBRARY_NAME) })
+  .strict();
+
+/** One kept entry, as the library lists it. A picture's bytes are asked for separately (`library.picture`). */
+export const libraryEntrySchema = z.discriminatedUnion('kind', [
+  z.object({ id: libraryIdSchema, kind: z.literal('stamp'), look: libraryPictureSchema }).strict(),
+  z
+    .object({
+      id: libraryIdSchema,
+      kind: z.literal('signature'),
+      look: z.discriminatedUnion('kind', [libraryPictureSchema, typedSignatureMarkSchema, drawnSignatureMarkSchema]),
+    })
+    .strict(),
+]);
+
+export type LibraryEntry = z.infer<typeof libraryEntrySchema>;
+
+/** A signature a person may keep as it is made: typed or drawn. A picture is added by main's picker. */
+export const keepableSignatureSchema = z.discriminatedUnion('kind', [typedSignatureMarkSchema, drawnSignatureMarkSchema]);
+
+/**
  * How a visible signature looks, as a RENDERER may ask for it.
  *
  * `image` carries nothing, for `placeImage`'s reason: the picture is a file main
- * picks and reads, so this side has no field to put one in.
+ * picks and reads, so this side has no field to put one in. `saved` names a
+ * signature the person kept, by its library id — main looks it up, so a kept
+ * picture's bytes never have to travel back.
  */
 export const requestedSignatureMarkSchema = z.discriminatedUnion('kind', [
   typedSignatureMarkSchema,
   drawnSignatureMarkSchema,
   z.object({ kind: z.literal('image') }).strict(),
+  z.object({ kind: z.literal('saved'), id: libraryIdSchema }).strict(),
 ]);
 
 /** One of {@link requestedSignatureMarkSchema}'s three looks. */

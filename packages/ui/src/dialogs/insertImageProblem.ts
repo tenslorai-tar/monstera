@@ -43,6 +43,10 @@ export const INSERT_IMAGE_PROBLEM_DIALOG = declareDialog({
     z.object({ reason: z.literal('unreadable') }),
     z.object({ reason: z.literal('too-large'), limitBytes: z.number().int().positive() }),
     z.object({ reason: z.literal('too-many-pixels'), limitPixels: z.number().int().positive() }),
+    /** A stamp chosen from the library was removed before it could be placed. */
+    z.object({ reason: z.literal('absent') }),
+    /** The stamp or signature library holds as many as it keeps. */
+    z.object({ reason: z.literal('library-full'), limit: z.number().int().positive() }),
   ]),
   component: lazy(() => import('./InsertImageProblemBody.js')),
 });

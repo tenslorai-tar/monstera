@@ -18,6 +18,7 @@ import { type AppInfo, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
 import { createRecentFiles } from './recentFiles.js';
 import { NO_RECENT_PICTURES } from './recentPictures.js';
+import { unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT } from './engagement.js';
 import { createEphemeralSecrets } from './secretStore.js';
 import { createEphemeralSettings } from './settingsFile.js';
@@ -156,7 +157,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     pickDocument: () => Promise.resolve(null),
     recent: createRecentFiles(createEphemeralSettings()),
     recentRoots: [],
-    recentPictures: NO_RECENT_PICTURES,
+    recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
     reviewPrompt: NO_REVIEW_PROMPT,
     settings: createEphemeralSettings(),
     secrets: createEphemeralSecrets(),
@@ -270,6 +271,13 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // a thousand-page document's picture is the same size as a one-page one's.
   'document.recentPreview': 'answers one picture of page 1, bounded by MAX_RECENT_PREVIEW_BYTES',
   'document.clearRecent': 'takes nothing and answers a count bounded by the recent list’s cap',
+  // THE PERSON'S LIBRARY names no document: what it answers is bounded by the library's own caps — sixteen entries of
+  // a kind, a picture's 2 MiB — which the sweep above reads from the schemas, whatever the document open.
+  'library.list': 'answers the library, at most sixteen entries of a kind, whatever the document',
+  'library.picture': 'answers one kept picture, bounded at the library’s 2 MiB',
+  'library.addPicture': 'answers one entry, and its picture is main’s picker’s, never a document’s',
+  'library.keepSignature': 'answers one entry, the signature the renderer sent',
+  'library.remove': 'answers a boolean',
   // THE RATING PROMPT (E3): booleans and a three-way choice, about the application and never a document.
   'app.reviewPrompt': 'takes nothing and answers a boolean',
   'app.review': 'takes one of three answers and answers a boolean',
@@ -503,7 +511,10 @@ function unboundedMembers(schema: z.ZodType, path: string): readonly string[] {
     // would be a second statement of the same fact — and requiring one would
     // put `.max()` on every `kind` discriminant in the contract.
     const enumerated = held['const'] !== undefined || held['enum'] !== undefined;
-    if (held['type'] === 'array' && held['maxItems'] === undefined) found.push(`array  ${at}`);
+    // A TUPLE WITH NO REST IS ITS OWN BOUND. zod writes `z.tuple([a, b])` as `prefixItems` with no `items`, and its
+    // own parse refuses a third member; a tuple WITH a rest writes `items`, and is read as unbounded like any array.
+    const fixedTuple = Array.isArray(held['prefixItems']) && held['items'] === undefined;
+    if (held['type'] === 'array' && held['maxItems'] === undefined && !fixedTuple) found.push(`array  ${at}`);
     if (held['type'] === 'string' && held['maxLength'] === undefined && !enumerated) {
       found.push(`string ${at}`);
     }
@@ -634,11 +645,16 @@ describe('invariant L11: no channel answers with a payload that scales', () => {
     const loose = z.object({
       rows: z.array(z.string()),
       bounded: z.array(z.string().max(8)).max(4),
+      // A PAIR IS BOUNDED by its own length; a tuple WITH A REST is not, and is reported — the control that keeps the
+      // tuple rule from reading as *every tuple passes*.
+      pair: z.tuple([z.number(), z.number()]),
+      spread: z.tuple([z.number()], z.number()),
     });
 
     expect(unboundedMembers(loose, 'fixture')).toStrictEqual([
       'array  fixture.properties.rows',
       'string fixture.properties.rows.items',
+      'array  fixture.properties.spread',
     ]);
     // AND IT DOES NOT REPORT THE BOUNDED PAIR, which is what separates *this
     // walk can see* from *this walk reports everything*.

@@ -32,7 +32,8 @@ import type { RedactMatchesAnswer } from '../dialogs/redactMatches.js';
 import { SANITIZE_DOCUMENT_DIALOG_ID } from '../dialogs/sanitizeDocument.js';
 import type { SanitizeDocumentAnswer } from '../dialogs/sanitizeDocument.js';
 import { SIGN_DOCUMENT_DIALOG_ID } from '../dialogs/signDocument.js';
-import type { SignDocumentAnswer } from '../dialogs/signDocument.js';
+import type { SignDocumentAnswer, SignDocumentAnswers } from '../dialogs/signDocument.js';
+import { BLOB_URLS, type LibraryPageDeps, keepPicture, keptEntries } from './stampLibrary.js';
 import { SIGN_PROBLEM_DIALOG_ID } from '../dialogs/signProblem.js';
 import { DOCUSIGN_NOTICE_DIALOG_ID } from '../dialogs/docusignNotice.js';
 import { DOCUSIGN_SEND_DIALOG_ID } from '../dialogs/docusignSend.js';
@@ -587,15 +588,30 @@ export async function placeImage(
   docId: DocId,
   pages: readonly number[],
   rect: AnnotationRect,
+  /**
+   * A kept stamp picture's library id, or `undefined` for the file picker. REQUIRED and `| undefined`, so a caller
+   * says which on purpose rather than a stamp placement falling through to the picker by omission.
+   */
+  picture: string | undefined,
 ): Promise<void> {
   // THE STAMP TRAVELS WITH THE REQUEST: main builds the `placeImage` command from the picked file,
   // and who placed it and when are this side's to say (ADR-0103).
-  const answer = await deps.client['document.placeImage']({ docId, pages, rect, stamp: deps.stamp() });
+  const answer = await deps.client['document.placeImage']({
+    docId,
+    pages,
+    rect,
+    stamp: deps.stamp(),
+    ...(picture === undefined ? {} : { picture }),
+  });
   if (!answer.ok) {
     reportProblem(deps, answer.error);
     return;
   }
   if (answer.value.kind === 'cancelled') return;
+  if (answer.value.kind === 'absent') {
+    void deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, { reason: 'absent' as const });
+    return;
+  }
   if (answer.value.kind === 'unreadable') {
     void deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, { reason: 'unreadable' as const });
     return;
@@ -3613,11 +3629,32 @@ export async function signDocument(
   deps: Pick<DocumentCommandDeps, 'ask' | 'client' | 'onApplied'>,
   docId: DocId,
   placement?: SignaturePlacement,
+  /** `blob:` addresses for kept pictures — the browser's own unless a case counts them. */
+  urls: LibraryPageDeps['urls'] = BLOB_URLS,
 ): Promise<void> {
-  const answer = (await deps.ask(SIGN_DOCUMENT_DIALOG_ID, {
-    placed: placement !== undefined,
-  })) as SignDocumentAnswer | undefined;
-  if (answer === undefined) return;
+  const library: LibraryPageDeps = { client: deps.client, ask: deps.ask, urls };
+  // THE SIGNATURE LIBRARY, offered only where a signature is SEEN — a placement. Adding or removing a kept one is an
+  // answer, after which the library is read again and the dialog asked again (`SIGN_DOCUMENT_ANSWERS`).
+  let answer: SignDocumentAnswer | undefined;
+  for (;;) {
+    const { kept, release } =
+      placement === undefined ? { kept: [], release: (): void => undefined } : await keptEntries(library, 'signature');
+    let answered: SignDocumentAnswers | undefined;
+    try {
+      answered = (await deps.ask(SIGN_DOCUMENT_DIALOG_ID, { placed: placement !== undefined, kept })) as
+        | SignDocumentAnswers
+        | undefined;
+    } finally {
+      release();
+    }
+    if (answered === undefined) return;
+    if (!('library' in answered)) {
+      answer = answered;
+      break;
+    }
+    if (answered.library === 'add') await keepPicture(library, 'signature');
+    else await deps.client['library.remove']({ id: answered.id });
+  }
   if (placement !== undefined && answer.mark === undefined) return;
 
   const signed = await deps.client['document.sign']({
@@ -3640,6 +3677,11 @@ export async function signDocument(
   if (signed.value.kind === 'cancelled') return;
   if (signed.value.kind === 'signed') {
     deps.onApplied({ version: signed.value.version, byteLength: signed.value.byteLength });
+    // KEPT ONCE IT HAS SIGNED, so a look that failed to sign is not kept as though it had worked. Only a typed or drawn
+    // look is kept here; a picture is kept through the library's own picker, and a kept one already is.
+    if (answer.keep === true && (answer.mark?.kind === 'typed' || answer.mark?.kind === 'drawn')) {
+      await deps.client['library.keepSignature']({ mark: answer.mark });
+    }
     // THE TRIM IS TOLD, exactly as `applyDocumentCommand` tells it: the log
     // has a ceiling, and a person whose earliest undo went away finds out
     // here or not at all.

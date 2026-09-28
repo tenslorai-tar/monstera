@@ -7,6 +7,8 @@ import {
   type AskSent,
   CLOUD_PROVIDER_IDS,
   MAX_ASK_CONTEXT,
+  MAX_LIBRARY_ENTRIES,
+  MAX_LIBRARY_PICTURE_BYTES,
   MAX_RASTER_BYTES,
   MAX_RASTER_PIXELS,
   MAX_REPLACED_TEXT,
@@ -43,7 +45,7 @@ import {
   translationRequest,
 } from '@monstera/kernel';
 import { writeFile } from 'node:fs/promises';
-import { isAbsolute } from 'node:path';
+import { basename, isAbsolute } from 'node:path';
 
 import { type DocId, err, lineText, ok } from '@monstera/shared';
 
@@ -52,6 +54,8 @@ import {
   type DocumentCommands,
   DocumentPoisonedError,
   EngineUnavailableError,
+  type ImageSource,
+  type PickImage,
   type ComposeImportOutcome,
   type ImportFormat,
   InvalidSearchPatternError,
@@ -66,6 +70,7 @@ import type { UpdateCheck } from './updateCheck.js';
 import { CloudOutcomeRefused, type CloudStorage } from './cloudSession.js';
 import { type KnownRoot, displayLocationOf } from './displayLocation.js';
 import type { RecentPictures } from './recentPictures.js';
+import type { PersonalLibrary } from './personalLibrary.js';
 import type { ReviewPrompt } from './engagement.js';
 import type { RecentFiles } from './recentFiles.js';
 import type { SecretStoreSurface } from './secretStore.js';
@@ -223,6 +228,16 @@ export function createContractHandlers(deps: {
   readonly recentRoots: readonly KnownRoot[];
   /** The recent list's pictures of first pages (ADR-0100). REQUIRED, for `recentRoots`' reason. */
   readonly recentPictures: RecentPictures;
+  /**
+   * The person's stamp and signature library, and how a picture reaches it: the image picker, a size taken before any
+   * read, and the bounded read. REQUIRED, for `recentRoots`' reason.
+   */
+  readonly library: {
+    readonly store: PersonalLibrary;
+    readonly pick: PickImage;
+    readonly size: (path: string) => Promise<number | null>;
+    readonly read: ImageSource['read'];
+  };
   /** The Store rating prompt (E3). REQUIRED, for `recentRoots`' reason. */
   readonly reviewPrompt: ReviewPrompt;
   readonly settings: SettingsSurface;
@@ -397,6 +412,16 @@ export function createContractHandlers(deps: {
     'document.awaitExternalEdit': awaitExternalEditHandler(deps.commands),
     'document.reimportExternalEdit': reimportExternalEditHandler(deps),
     'document.placeImage': placeImageHandler(deps.commands),
+    'library.list': ({ kind }) => Promise.resolve(ok({ entries: deps.library.store.list(kind) })),
+    'library.picture': ({ id }) => {
+      const kept = deps.library.store.picture(id);
+      return Promise.resolve(
+        ok(kept === null ? ({ kind: 'absent' } as const) : ({ kind: 'found', mediaType: kept.mediaType, bytes: kept.bytes } as const)),
+      );
+    },
+    'library.addPicture': addLibraryPictureHandler(deps.library),
+    'library.keepSignature': ({ mark }) => Promise.resolve(ok(deps.library.store.keepSignature(mark))),
+    'library.remove': ({ id }) => Promise.resolve(ok({ removed: deps.library.store.remove(id) })),
     'document.placeBarcode': placeBarcodeHandler(deps.commands),
     'document.pageBarcodes': pageBarcodesHandler(deps.commands),
     'document.accessibilityCheck': accessibilityCheckHandler(deps.commands),
@@ -1105,11 +1130,13 @@ function placeImageHandler(commands: DocumentCommands): ContractHandlers['docume
     pages,
     rect,
     stamp,
+    picture,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.placeImage']>>> => {
     try {
-      const outcome = await commands.placeImage(docId, pages, rect, stamp);
+      const outcome = await commands.placeImage(docId, { pages, rect, stamp, picture });
       if (outcome.kind === 'cancelled') return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'unreadable') return ok({ kind: 'unreadable' } as const);
+      if (outcome.kind === 'absent') return ok({ kind: 'absent' } as const);
       if (outcome.kind === 'too-large') {
         return ok({ kind: 'too-large', limitBytes: outcome.limitBytes } as const);
       }
@@ -1125,6 +1152,38 @@ function placeImageHandler(commands: DocumentCommands): ContractHandlers['docume
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
       throw thrown;
     }
+  };
+}
+
+/**
+ * Keeps a picture in the person's library: the picker, then the SIZE before any read — a picture past the library's
+ * bound is refused without loading it — then the bounded read, and the store decides from the bytes whether it is a
+ * picture at all. Only the file's own name reaches the store, never its folder.
+ */
+function addLibraryPictureHandler(library: {
+  readonly store: PersonalLibrary;
+  readonly pick: PickImage;
+  readonly size: (path: string) => Promise<number | null>;
+  readonly read: ImageSource['read'];
+}): ContractHandlers['library.addPicture'] {
+  return async ({ kind }) => {
+    if (library.store.list(kind).length >= MAX_LIBRARY_ENTRIES) {
+      return ok({ kind: 'full', limit: MAX_LIBRARY_ENTRIES } as const);
+    }
+    const picked = await library.pick();
+    if (picked === null) return ok({ kind: 'cancelled' } as const);
+    const size = await library.size(picked);
+    if (size === null) return ok({ kind: 'unreadable' } as const);
+    if (size > MAX_LIBRARY_PICTURE_BYTES) return ok({ kind: 'too-large', limitBytes: MAX_LIBRARY_PICTURE_BYTES } as const);
+    const read = await library.read(picked);
+    if (read.kind !== 'read' || read.bytes.byteLength > MAX_LIBRARY_PICTURE_BYTES) {
+      return ok(
+        read.kind === 'unreadable'
+          ? ({ kind: 'unreadable' } as const)
+          : ({ kind: 'too-large', limitBytes: MAX_LIBRARY_PICTURE_BYTES } as const),
+      );
+    }
+    return ok(library.store.addPicture(kind, basename(picked), read.bytes));
   };
 }
 
