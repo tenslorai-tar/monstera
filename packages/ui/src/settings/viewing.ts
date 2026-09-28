@@ -9,6 +9,8 @@ import {
   LOUPE_TITLE,
   PAGE_BADGES_DESCRIPTION,
   PAGE_BADGES_TITLE,
+  SMOOTH_SCROLL_DESCRIPTION,
+  SMOOTH_SCROLL_TITLE,
   SPLIT_VIEW_TITLE,
   RULERS_DESCRIPTION,
   RULERS_TITLE,
@@ -95,6 +97,24 @@ export const LOUPE_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: 'viewing.loupe',
   title: LOUPE_TITLE,
   description: LOUPE_DESCRIPTION,
+  schema: z.boolean(),
+  fallback: false,
+  category: 'viewing',
+};
+
+/**
+ * Whether going to a page GLIDES there — Part F's *"smooth scroll"* (`BUILD-PROMPT.md`:610).
+ *
+ * **Navigation only**: going to a page, the next or the previous, a citation's jump. A reader's own scrolling is the
+ * browser's, and the hand tool sets the position directly, which a smooth behaviour would make lag behind the pointer.
+ * **Reduced motion always wins**, read from the one attribute `applyMotion` writes, so this setting cannot move what
+ * the platform or the reader asked to keep still. **Off by default**: a jump is the behaviour readers had, and a glide
+ * across three hundred pages is a delay in arriving.
+ */
+export const SMOOTH_SCROLL_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'viewing.smooth-scroll',
+  title: SMOOTH_SCROLL_TITLE,
+  description: SMOOTH_SCROLL_DESCRIPTION,
   schema: z.boolean(),
   fallback: false,
   category: 'viewing',

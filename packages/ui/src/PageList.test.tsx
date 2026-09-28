@@ -309,7 +309,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
         pageMenu={undefined}
       />,
     );
@@ -343,7 +343,7 @@ describe('PageList', () => {
           showGrid={false}
           unit="in"
           search={undefined}
-          secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
+          secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
           pageMenu={undefined}
           panning={panning}
         />,
@@ -402,7 +402,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
         pageMenu={undefined}
       />,
     );
@@ -444,6 +444,7 @@ describe('PageList', () => {
         tileAbove={2}
         quality={2}
         pageBadges={false}
+        smoothScroll={false}
         pageMenu={undefined}
       />,
     );
@@ -483,6 +484,7 @@ describe('PageList', () => {
           tileAbove={2}
           quality={1}
           pageBadges={pageBadges}
+          smoothScroll={false}
           pageMenu={undefined}
         />,
       );
@@ -527,6 +529,7 @@ describe('PageList', () => {
           tileAbove={1.5}
           quality={quality}
           pageBadges={false}
+          smoothScroll={false}
           pageMenu={undefined}
         />,
       );
@@ -583,7 +586,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
         pageMenu={undefined}
       />,
     );
@@ -619,7 +622,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
         pageMenu={undefined}
       />,
     );
@@ -662,7 +665,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
         pageMenu={undefined}
       />,
     );
@@ -696,7 +699,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
         pageMenu={undefined}
       />,
     );
@@ -726,7 +729,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
         pageMenu={undefined}
       />,
     );
@@ -768,7 +771,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
         pageMenu={undefined}
       />,
     );
@@ -801,7 +804,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
         pageMenu={undefined}
       />,
     );
@@ -847,7 +850,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
         pageMenu={undefined}
       />,
     );
@@ -912,6 +915,7 @@ describe('PageList', () => {
       tileAbove: 2,
       quality: 1,
       pageBadges: false,
+      smoothScroll: false,
       pageMenu: undefined,
     };
     const { rerender } = render(<PageList {...props} view={viewDrawing()} version={VERSION} />);
@@ -953,7 +957,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
         pageMenu={undefined}
       />,
     );
@@ -996,6 +1000,7 @@ describe('PageList', () => {
       tileAbove: 2,
       quality: 1,
       pageBadges: false,
+      smoothScroll: false,
       pageMenu: undefined,
     };
     const { container, rerender } = render(<PageList {...props} startAt={2} />);
@@ -1032,6 +1037,7 @@ describe('PageList', () => {
       tileAbove: 2,
       quality: 1,
       pageBadges: false,
+      smoothScroll: false,
       pageMenu: undefined,
     };
     const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
@@ -1078,6 +1084,7 @@ describe('PageList', () => {
       tileAbove: 2,
       quality: 1,
       pageBadges: false,
+      smoothScroll: false,
       pageMenu: undefined,
     };
     const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
@@ -1099,6 +1106,59 @@ describe('PageList', () => {
     // only checked the scroll would pass for a component that re-fired the
     // request for ever.
     expect(wentTo).toHaveBeenCalledTimes(1);
+  });
+
+  it('SMOOTH SCROLLING glides to a requested page — and never while motion is reduced', async () => {
+    /** The behaviour each go-to asked `scrollIntoView` for, given the setting and the root's motion. */
+    const behaviourFor = async (smoothScroll: boolean, motion: 'full' | 'reduced'): Promise<unknown> => {
+      document.documentElement.dataset['motion'] = motion;
+      const { client } = clientAnswering();
+      const props = {
+        startAt: FIRST_PAGE.kernel,
+        client,
+        view: viewDrawing(),
+        pageCount: 5,
+        docId: DOC,
+        version: VERSION,
+        onCurrentPage: vi.fn(),
+        mode: SCALE_1,
+        onZoomStep: vi.fn(),
+        onShownZoom: vi.fn(),
+        onWentTo: vi.fn(),
+        loupe: false,
+        rulers: false,
+        showGrid: false,
+        unit: 'in' as const,
+        search: undefined,
+        secondRasteriser: undefined,
+        tileAbove: 2,
+        quality: 1,
+        pageBadges: false,
+        smoothScroll,
+        pageMenu: undefined,
+      };
+      const { container, rerender, unmount } = render(<PageList {...props} goTo={undefined} />);
+      await settle();
+      const asked: unknown[] = [];
+      for (const slot of container.querySelectorAll<HTMLElement>('.m-page-slot')) {
+        slot.scrollIntoView = (options?: boolean | ScrollIntoViewOptions): void => {
+          asked.push(typeof options === 'object' ? options.behavior : options);
+        };
+      }
+      await act(async () => {
+        rerender(<PageList {...props} goTo={2} />);
+        await Promise.resolve();
+      });
+      unmount();
+      return asked[0];
+    };
+
+    expect(await behaviourFor(true, 'full')).toBe('smooth');
+    // REDUCED MOTION WINS over the reader's choice, which is the platform's or the reader's own request for stillness.
+    expect(await behaviourFor(true, 'reduced')).toBe('auto');
+    // CONTROL: the setting off jumps whatever the motion — so the first line is the setting's doing.
+    expect(await behaviourFor(false, 'full')).toBe('auto');
+    delete document.documentElement.dataset['motion'];
   });
 
   describe('two-tier zoom', () => {
@@ -1136,7 +1196,7 @@ describe('PageList', () => {
           showGrid={false}
           unit="in"
           search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
         pageMenu={undefined}
         />,
       );
@@ -1165,7 +1225,7 @@ describe('PageList', () => {
             showGrid={false}
             unit="in"
             search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
         pageMenu={undefined}
           />,
         );
@@ -1205,7 +1265,7 @@ describe('PageList', () => {
             showGrid={false}
             unit="in"
             search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
         pageMenu={undefined}
           />,
         );
@@ -1232,7 +1292,7 @@ describe('PageList', () => {
             showGrid={false}
             unit="in"
             search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
         pageMenu={undefined}
           />,
         );
@@ -1277,7 +1337,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
         pageMenu={undefined}
       />,
     );

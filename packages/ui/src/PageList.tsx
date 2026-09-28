@@ -17,6 +17,7 @@ import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY, PAGE_LIST_LABEL } from './me
 import type { UiTool } from './registries/tools.js';
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
+import { motionReduced } from './settings/appearance.js';
 import { RenderCancelledError, type SecondRasteriser, pageGeometry, renderPage, renderRegion } from './renderPage.js';
 import { type Tile, tilesCovering } from './tiles.js';
 import type { SearchHighlight } from './searchHighlight.js';
@@ -259,6 +260,8 @@ export interface PageListProps {
   readonly quality: number;
   /** Whether each page carries its number at its foot (`viewing.page-badges`). */
   readonly pageBadges: boolean;
+  /** Whether going to a page glides there (`viewing.smooth-scroll`); reduced motion overrides it. */
+  readonly smoothScroll: boolean;
   /**
    * Wraps one page's slot in the page context menu for THAT page (§7), or `undefined` for a pane
    * with no document commands behind it. Per slot rather than around the scroller, because the
@@ -357,6 +360,7 @@ export function PageList({
   tileAbove,
   quality,
   pageBadges,
+  smoothScroll,
   pageMenu,
   onActivate,
 }: PageListProps): ReactElement {
@@ -616,9 +620,11 @@ export function PageList({
    */
   useEffect(() => {
     if (goTo === undefined) return;
-    slotFor(Math.min(goTo, pageCount - 1))?.scrollIntoView({ block: 'start' });
+    // A GLIDE only where the reader chose one AND nothing asked for stillness (`viewing.smooth-scroll`).
+    const glide = smoothScroll && !motionReduced(document.documentElement);
+    slotFor(Math.min(goTo, pageCount - 1))?.scrollIntoView({ block: 'start', behavior: glide ? 'smooth' : 'auto' });
     onWentTo();
-  }, [goTo, onWentTo, pageCount, slotFor]);
+  }, [goTo, onWentTo, pageCount, slotFor, smoothScroll]);
 
   /**
    * The page this scroller MOUNTS at, revealed once — the scroll half of `startAt`.

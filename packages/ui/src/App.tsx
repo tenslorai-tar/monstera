@@ -349,6 +349,7 @@ import {
   LOUPE_SETTING,
   PAGE_BADGES_SETTING,
   RULERS_SETTING,
+  SMOOTH_SCROLL_SETTING,
   RULER_UNIT_SETTING,
   SECOND_RENDERER_SETTING,
   SPLIT_VIEW_SETTING,
@@ -2214,6 +2215,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   // E1's EXPLICIT `renderQuality`, as a factor on the drawing scale — 1 unless the reader chose otherwise.
   const quality = RENDER_QUALITY_FACTOR[useSetting(settings, RENDER_QUALITY_SETTING)];
   const pageBadges = useSetting(settings, PAGE_BADGES_SETTING);
+  const smoothScroll = useSetting(settings, SMOOTH_SCROLL_SETTING);
 
   /**
    * The updater the zoom commands are given.
@@ -3071,7 +3073,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           search={search ?? undefined}
           secondRenderer={secondRenderer}
           tileAbove={tileAbove}
-          quality={quality} pageBadges={pageBadges}
+          quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll}
           requestPassword={requestPassword}
           settings={settings}
           // §10.3's RIGHT CONTEXTUAL PANEL, built here where its state lives, and hosted by
@@ -3465,6 +3467,7 @@ function PageCanvas({
   tileAbove,
   quality,
   pageBadges,
+  smoothScroll,
   settings,
   panels,
   contextPanel,
@@ -3544,6 +3547,8 @@ function PageCanvas({
   readonly quality: number;
   /** Whether each page carries its number (`viewing.page-badges`). */
   readonly pageBadges: boolean;
+  /** Whether going to a page glides (`viewing.smooth-scroll`). */
+  readonly smoothScroll: boolean;
   /** The settings store, for the document panel's which-panel and open state. */
   readonly settings: SettingsStore;
   /** The document panels other than Pages, built by `App` where their state lives. */
@@ -3815,7 +3820,7 @@ function PageCanvas({
         // reach the same code and neither can leave a page blank.
         secondRasteriser={secondRenderer ? secondRasteriser : undefined}
         tileAbove={tileAbove}
-        quality={quality} pageBadges={pageBadges}
+        quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll}
         pageMenu={pageMenu}
       />
       {/* THE SECOND VIEWPORT, over the SAME parser.
@@ -3867,7 +3872,7 @@ function PageCanvas({
             showGrid={showGrid}
             unit={unit}
             tileAbove={tileAbove}
-            quality={quality} pageBadges={pageBadges}
+            quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll}
           />
           {compare === undefined ? (
             <PageList
@@ -3910,7 +3915,7 @@ function PageCanvas({
               // document does not have.
               secondRasteriser={secondRenderer ? secondRasteriser : undefined}
               tileAbove={tileAbove}
-              quality={quality} pageBadges={pageBadges}
+              quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll}
               // THE SAME DOCUMENT, so the same page menu: a page right-clicked in either pane is a
               // page of this document.
               pageMenu={pageMenu}

@@ -70,6 +70,7 @@ export function ComparePane({
   tileAbove,
   quality,
   pageBadges,
+  smoothScroll,
 }: {
   readonly client: ContractClient;
   /** The document to show here, or `undefined` for a second view of the first. */
@@ -100,6 +101,7 @@ export function ComparePane({
   readonly quality: number;
   /** Whether each page carries its number, the reader's preference in this pane as in the first. */
   readonly pageBadges: boolean;
+  readonly smoothScroll: boolean;
 }): ReactElement {
   const { _ } = useLingui();
   const pickerId = useId();
@@ -141,7 +143,7 @@ export function ComparePane({
           showGrid={showGrid}
           unit={unit}
           tileAbove={tileAbove}
-          quality={quality} pageBadges={pageBadges}
+          quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll}
         />
       )}
     </div>
@@ -176,6 +178,7 @@ function CompareView({
   tileAbove,
   quality,
   pageBadges,
+  smoothScroll,
 }: {
   readonly client: ContractClient;
   readonly against: ComparableDocument;
@@ -191,6 +194,7 @@ function CompareView({
   readonly tileAbove: number;
   readonly quality: number;
   readonly pageBadges: boolean;
+  readonly smoothScroll: boolean;
 }): ReactElement {
   const { _ } = useLingui();
   // THE MODULE CONSTANT DIRECTLY, not wrapped in `useCallback`. Its identity is
@@ -259,7 +263,7 @@ function CompareView({
       // about how the reader's document is drawn, and this pane is not that.
       secondRasteriser={undefined}
       tileAbove={tileAbove}
-      quality={quality} pageBadges={pageBadges}
+      quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll}
       // NO PAGE MENU: this pane shows ANOTHER document, and every page item acts on the document
       // whose context it is handed — rotating page 3 here would rotate the reader's page 3.
       pageMenu={undefined}

@@ -118,6 +118,7 @@ function pane(against: DocId | undefined, onPick = vi.fn(), onCurrentPage = vi.f
         tileAbove={2}
         quality={1}
         pageBadges={false}
+        smoothScroll={false}
       />
     </Wrapped>,
   );

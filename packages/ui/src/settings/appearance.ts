@@ -189,6 +189,14 @@ export function applyMotion(root: HTMLElement, settingReduces: boolean): void {
   root.dataset['motion'] = settingReduces || platformReduces ? 'reduced' : 'full';
 }
 
+/**
+ * Whether movement is reduced, as {@link applyMotion} last wrote it — the one reading of that attribute for a motion a
+ * script makes (a glide to a page), as the stylesheet reads it for the ones CSS makes.
+ */
+export function motionReduced(root: HTMLElement): boolean {
+  return root.dataset['motion'] === 'reduced';
+}
+
 export const HIGH_CONTRAST_QUERIES = [
   '(forced-colors: active)',
   '(prefers-contrast: more)',
