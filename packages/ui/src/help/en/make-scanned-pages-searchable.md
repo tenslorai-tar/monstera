@@ -11,11 +11,11 @@ A scanned page is only a picture, so its words cannot be searched or selected. T
 ## Steps
 
 1. In the rail, choose **Tools**, then **OCR pages** in the **OCR** group (its full name is **Make scanned pages searchable**).
-2. In **Languages of the text**, tick the language. If a page mixes languages, tick up to three; they are read together.
+2. In **Languages of the text (up to three)**, tick the language. If a page mixes languages, tick each of them; they are read together.
 3. Choose **This page** or **All pages**, then **Recognise**.
 4. Progress shows in the status bar. When it finishes, the **Recognition** window says how many pages were read.
 
-![The Recognise text window with Languages of the text and This page / All pages](screenshot:make-scanned-pages-searchable-1)
+![The Recognise text window with its languages and This page / All pages](screenshot:make-scanned-pages-searchable-1)
 
 ## Good to know
 
