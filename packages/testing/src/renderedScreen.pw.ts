@@ -2156,6 +2156,36 @@ for (const [quality, factor] of [
   });
 }
 
+// PAGE NUMBERS ON PAGES from the stored setting, in every look: the badge sits at the page's foot, centred and inside
+// it. Its colours are `--text` on `--surface`, the pair `check:tokencontrast` holds in every theme — axe is not asked,
+// because the badge is aria-hidden and a contrast rule that skips hidden text would pass it having read nothing.
+for (const look of LOOKS) {
+  test(`${look.name}: PAGE NUMBERS ON PAGES sit at each page’s foot, centred and inside it`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const bytes = await inkedPdf([612, 792]);
+    const docId = asDocId('00000000-0000-4000-8000-0000000000e7');
+    await bridgeUnder(page, look, {
+      opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'badges.pdf' }],
+      documentBytes: new Map([[docId, bytes]]),
+      settings: { 'viewing.page-badges': true },
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    const badge = page.locator('[data-page-badge="0"]');
+    await expect(badge).toHaveText('1');
+    const placed = await badge.evaluate((element) => {
+      const slot = element.parentElement?.getBoundingClientRect();
+      const own = element.getBoundingClientRect();
+      return slot === undefined
+        ? null
+        : { inside: own.left >= slot.left && own.right <= slot.right && own.bottom <= slot.bottom, fromFoot: slot.bottom - own.bottom, centre: own.left + own.width / 2 - (slot.left + slot.width / 2) };
+    });
+    expect(placed?.inside).toBe(true);
+    expect(placed?.fromFoot).toBeLessThanOrEqual(12);
+    expect(Math.abs(placed?.centre ?? 99)).toBeLessThanOrEqual(1);
+  });
+}
+
 // A TILE IS THE PAGE, CUT — never a different drawing of it. The same page at 300% drawn whole (threshold 300%) and in
 // tiles (threshold 200%), and the pixels either side of a seam between two tiles compared with the whole page's.
 test('a TILE SEAM draws exactly what the whole page draws there: no line, no shift, no resampling', async ({ browser }) => {

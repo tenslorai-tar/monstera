@@ -257,6 +257,8 @@ export interface PageListProps {
    * drawing scale and never the shown size, and counts toward the tile threshold, since that bounds the canvas.
    */
   readonly quality: number;
+  /** Whether each page carries its number at its foot (`viewing.page-badges`). */
+  readonly pageBadges: boolean;
   /**
    * Wraps one page's slot in the page context menu for THAT page (§7), or `undefined` for a pane
    * with no document commands behind it. Per slot rather than around the scroller, because the
@@ -354,6 +356,7 @@ export function PageList({
   secondRasteriser,
   tileAbove,
   quality,
+  pageBadges,
   pageMenu,
   onActivate,
 }: PageListProps): ReactElement {
@@ -847,6 +850,7 @@ export function PageList({
           secondRasteriser={secondRasteriser}
           tiled={renderZoom * quality > tileAbove}
           quality={quality}
+          badge={pageBadges}
           scroller={scroller}
         />
         );
@@ -912,6 +916,7 @@ function PageSlot({
   secondRasteriser,
   tiled,
   quality,
+  badge,
   scroller,
 }: {
   readonly page: number;
@@ -943,6 +948,8 @@ function PageSlot({
   readonly tiled: boolean;
   /** The page-sharpness factor on the drawing scale (`rendering.quality`). */
   readonly quality: number;
+  /** Whether the page's number is drawn at its foot. */
+  readonly badge: boolean;
   /** The scroller the slot sits in, whose box decides which tiles are wanted. */
   readonly scroller: React.RefObject<HTMLElement | null>;
 }): ReactElement {
@@ -1094,6 +1101,13 @@ function PageSlot({
           otherwise — the substrate simply returned no lines. It is a `<p>` in
           the page's own flow rather than an overlay, so it is in the reading
           order a screen reader takes and carries no geometry to get wrong. */}
+      {/* THE PAGE'S NUMBER AT ITS FOOT, as the status bar counts it. Hidden from assistive technology: the page's
+          place is what the status bar announces, and a second reading of it on every page would be noise. */}
+      {badge ? (
+        <span aria-hidden="true" className="m-page-badge" data-page-badge={String(page)}>
+          {pdfjsPageOf(page)}
+        </span>
+      ) : null}
       {kind === 'image-only' ? (
         <p className="m-page-note" data-page-note={String(page)}>
           {i18n._(PAGE_IMAGE_ONLY)}

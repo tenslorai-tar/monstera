@@ -7,6 +7,8 @@ import {
   GRID_TITLE,
   LOUPE_DESCRIPTION,
   LOUPE_TITLE,
+  PAGE_BADGES_DESCRIPTION,
+  PAGE_BADGES_TITLE,
   SPLIT_VIEW_TITLE,
   RULERS_DESCRIPTION,
   RULERS_TITLE,
@@ -93,6 +95,22 @@ export const LOUPE_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: 'viewing.loupe',
   title: LOUPE_TITLE,
   description: LOUPE_DESCRIPTION,
+  schema: z.boolean(),
+  fallback: false,
+  category: 'viewing',
+};
+
+/**
+ * Whether each page carries its number at its foot — Part F's *"page number badges"* (`BUILD-PROMPT.md`:611).
+ *
+ * **Off by default**: the status bar already says which page is current, and v5-02 draws the pages clean. The
+ * number is the page's place in the document, as the status bar counts it — never a label the file declares — so the
+ * two can never name one page differently.
+ */
+export const PAGE_BADGES_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'viewing.page-badges',
+  title: PAGE_BADGES_TITLE,
+  description: PAGE_BADGES_DESCRIPTION,
   schema: z.boolean(),
   fallback: false,
   category: 'viewing',

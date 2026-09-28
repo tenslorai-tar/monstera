@@ -309,7 +309,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
         pageMenu={undefined}
       />,
     );
@@ -343,7 +343,7 @@ describe('PageList', () => {
           showGrid={false}
           unit="in"
           search={undefined}
-          secondRasteriser={undefined} tileAbove={2} quality={1}
+          secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
           pageMenu={undefined}
           panning={panning}
         />,
@@ -402,7 +402,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
         pageMenu={undefined}
       />,
     );
@@ -443,6 +443,7 @@ describe('PageList', () => {
         secondRasteriser={undefined}
         tileAbove={2}
         quality={2}
+        pageBadges={false}
         pageMenu={undefined}
       />,
     );
@@ -454,6 +455,50 @@ describe('PageList', () => {
     // took the bitmap's width would show the page twice as large.
     const canvas = container.querySelector<HTMLCanvasElement>('canvas.m-page');
     expect(canvas?.style.width).toBe('100px');
+  });
+
+  it('PAGE NUMBERS ON PAGES: each slot carries its page’s place, 1-based as the status bar counts, and none when off', async () => {
+    const drawnWith = async (pageBadges: boolean): Promise<HTMLElement> => {
+      const { client } = clientAnswering();
+      const { container, unmount } = render(
+        <PageList
+          client={client}
+          view={viewDrawing()}
+          pageCount={5}
+          docId={DOC}
+          version={VERSION}
+          onCurrentPage={vi.fn()}
+          mode={SCALE_1}
+          onZoomStep={vi.fn()}
+          onShownZoom={vi.fn()}
+          goTo={undefined}
+          startAt={FIRST_PAGE.kernel}
+          onWentTo={vi.fn()}
+          loupe={false}
+          rulers={false}
+          showGrid={false}
+          unit="in"
+          search={undefined}
+          secondRasteriser={undefined}
+          tileAbove={2}
+          quality={1}
+          pageBadges={pageBadges}
+          pageMenu={undefined}
+        />,
+      );
+      await settle();
+      const copy = container.cloneNode(true) as HTMLElement;
+      unmount();
+      return copy;
+    };
+
+    const on = await drawnWith(true);
+    const badges = [...on.querySelectorAll('[data-page-badge]')];
+    // EVERY SLOT, drawn or not — the number is the page's place, not a property of its bitmap.
+    expect(badges.map((badge) => badge.textContent)).toStrictEqual(['1', '2', '3', '4', '5']);
+    expect(badges.every((badge) => badge.getAttribute('aria-hidden') === 'true')).toBe(true);
+    // CONTROL: off draws none.
+    expect((await drawnWith(false)).querySelector('[data-page-badge]')).toBeNull();
   });
 
   it('PAGE SHARPNESS counts toward the TILE THRESHOLD, which bounds the canvas, not the zoom', async () => {
@@ -481,6 +526,7 @@ describe('PageList', () => {
           secondRasteriser={undefined}
           tileAbove={1.5}
           quality={quality}
+          pageBadges={false}
           pageMenu={undefined}
         />,
       );
@@ -537,7 +583,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
         pageMenu={undefined}
       />,
     );
@@ -573,7 +619,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
         pageMenu={undefined}
       />,
     );
@@ -616,7 +662,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
         pageMenu={undefined}
       />,
     );
@@ -650,7 +696,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
         pageMenu={undefined}
       />,
     );
@@ -680,7 +726,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
         pageMenu={undefined}
       />,
     );
@@ -722,7 +768,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
         pageMenu={undefined}
       />,
     );
@@ -755,7 +801,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
         pageMenu={undefined}
       />,
     );
@@ -801,7 +847,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
         pageMenu={undefined}
       />,
     );
@@ -865,6 +911,7 @@ describe('PageList', () => {
       secondRasteriser: undefined,
       tileAbove: 2,
       quality: 1,
+      pageBadges: false,
       pageMenu: undefined,
     };
     const { rerender } = render(<PageList {...props} view={viewDrawing()} version={VERSION} />);
@@ -906,7 +953,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
         pageMenu={undefined}
       />,
     );
@@ -948,6 +995,7 @@ describe('PageList', () => {
       secondRasteriser: undefined,
       tileAbove: 2,
       quality: 1,
+      pageBadges: false,
       pageMenu: undefined,
     };
     const { container, rerender } = render(<PageList {...props} startAt={2} />);
@@ -983,6 +1031,7 @@ describe('PageList', () => {
       secondRasteriser: undefined,
       tileAbove: 2,
       quality: 1,
+      pageBadges: false,
       pageMenu: undefined,
     };
     const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
@@ -1028,6 +1077,7 @@ describe('PageList', () => {
       secondRasteriser: undefined,
       tileAbove: 2,
       quality: 1,
+      pageBadges: false,
       pageMenu: undefined,
     };
     const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
@@ -1086,7 +1136,7 @@ describe('PageList', () => {
           showGrid={false}
           unit="in"
           search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
         pageMenu={undefined}
         />,
       );
@@ -1115,7 +1165,7 @@ describe('PageList', () => {
             showGrid={false}
             unit="in"
             search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
         pageMenu={undefined}
           />,
         );
@@ -1155,7 +1205,7 @@ describe('PageList', () => {
             showGrid={false}
             unit="in"
             search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
         pageMenu={undefined}
           />,
         );
@@ -1182,7 +1232,7 @@ describe('PageList', () => {
             showGrid={false}
             unit="in"
             search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
         pageMenu={undefined}
           />,
         );
@@ -1227,7 +1277,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false}
         pageMenu={undefined}
       />,
     );

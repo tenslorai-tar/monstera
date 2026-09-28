@@ -1430,6 +1430,8 @@ export const LAYOUT_MODE_DESCRIPTION = messageKey('setting.appearance.layout-mod
 export const RULERS_DESCRIPTION = messageKey('setting.viewing.rulers.description');
 export const DARK_PAGE_DESCRIPTION = messageKey('setting.viewing.dark-page.description');
 export const LOUPE_DESCRIPTION = messageKey('setting.viewing.loupe.description');
+export const PAGE_BADGES_TITLE = messageKey('setting.viewing.page-badges.title');
+export const PAGE_BADGES_DESCRIPTION = messageKey('setting.viewing.page-badges.description');
 export const GRID_DESCRIPTION = messageKey('setting.viewing.grid.description');
 export const RULER_UNIT_DESCRIPTION = messageKey('setting.viewing.ruler-unit.description');
 export const AI_SETUP_AT_START_DESCRIPTION = messageKey('setting.ai.setup-at-start.description');
@@ -3287,6 +3289,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RULERS_DESCRIPTION]: 'Rulers along the top and left of the page.',
   [DARK_PAGE_DESCRIPTION]: 'Dims the pages for reading at night: white turns dark and colours stay recognisable. The document is not changed.',
   [LOUPE_DESCRIPTION]: 'A magnifier that follows the pointer.',
+  [PAGE_BADGES_TITLE]: 'Page numbers on pages',
+  [PAGE_BADGES_DESCRIPTION]: 'Shows each page’s number at its foot, so you can tell where you are while you scroll.',
   [GRID_DESCRIPTION]: 'A grid over the page, for lining marks up.',
   [RULER_UNIT_DESCRIPTION]: 'The unit the rulers and the measuring tools show.',
   [AI_SETUP_AT_START_DESCRIPTION]: 'Offers the one-step setup while no provider key is stored.',

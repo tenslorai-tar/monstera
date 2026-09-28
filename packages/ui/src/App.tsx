@@ -347,6 +347,7 @@ import {
   DARK_PAGE_SETTING,
   GRID_SETTING,
   LOUPE_SETTING,
+  PAGE_BADGES_SETTING,
   RULERS_SETTING,
   RULER_UNIT_SETTING,
   SECOND_RENDERER_SETTING,
@@ -2212,6 +2213,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const tileAbove = TILE_THRESHOLD_ZOOM[useSetting(settings, TILE_THRESHOLD_SETTING)];
   // E1's EXPLICIT `renderQuality`, as a factor on the drawing scale — 1 unless the reader chose otherwise.
   const quality = RENDER_QUALITY_FACTOR[useSetting(settings, RENDER_QUALITY_SETTING)];
+  const pageBadges = useSetting(settings, PAGE_BADGES_SETTING);
 
   /**
    * The updater the zoom commands are given.
@@ -3069,7 +3071,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           search={search ?? undefined}
           secondRenderer={secondRenderer}
           tileAbove={tileAbove}
-          quality={quality}
+          quality={quality} pageBadges={pageBadges}
           requestPassword={requestPassword}
           settings={settings}
           // §10.3's RIGHT CONTEXTUAL PANEL, built here where its state lives, and hosted by
@@ -3462,6 +3464,7 @@ function PageCanvas({
   secondRenderer,
   tileAbove,
   quality,
+  pageBadges,
   settings,
   panels,
   contextPanel,
@@ -3539,6 +3542,8 @@ function PageCanvas({
   readonly tileAbove: number;
   /** The page-sharpness factor (E1's `renderQuality`). `rendering.quality`. */
   readonly quality: number;
+  /** Whether each page carries its number (`viewing.page-badges`). */
+  readonly pageBadges: boolean;
   /** The settings store, for the document panel's which-panel and open state. */
   readonly settings: SettingsStore;
   /** The document panels other than Pages, built by `App` where their state lives. */
@@ -3810,7 +3815,7 @@ function PageCanvas({
         // reach the same code and neither can leave a page blank.
         secondRasteriser={secondRenderer ? secondRasteriser : undefined}
         tileAbove={tileAbove}
-        quality={quality}
+        quality={quality} pageBadges={pageBadges}
         pageMenu={pageMenu}
       />
       {/* THE SECOND VIEWPORT, over the SAME parser.
@@ -3862,7 +3867,7 @@ function PageCanvas({
             showGrid={showGrid}
             unit={unit}
             tileAbove={tileAbove}
-            quality={quality}
+            quality={quality} pageBadges={pageBadges}
           />
           {compare === undefined ? (
             <PageList
@@ -3905,7 +3910,7 @@ function PageCanvas({
               // document does not have.
               secondRasteriser={secondRenderer ? secondRasteriser : undefined}
               tileAbove={tileAbove}
-              quality={quality}
+              quality={quality} pageBadges={pageBadges}
               // THE SAME DOCUMENT, so the same page menu: a page right-clicked in either pane is a
               // page of this document.
               pageMenu={pageMenu}

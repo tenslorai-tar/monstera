@@ -3033,6 +3033,23 @@ textarea {
  * `pointer-events: none`, because there is nothing here to press and a person
  * dragging a selection across the page must not be interrupted by a label.
  */
+/* A PAGE'S NUMBER AT ITS FOOT (`viewing.page-badges`): a small pill centred on the page's bottom edge, over the paper
+   in the chrome's own colours so it reads on any page, and never in the pointer's way. */
+.m-page-badge {
+  position: absolute;
+  inset-block-end: var(--space-8);
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  padding: var(--space-2) var(--space-8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-6);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--font-chrome-11);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
 .m-page-note {
   position: absolute;
   inset-block-start: 0;
