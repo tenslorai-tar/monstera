@@ -43,6 +43,7 @@ import {
   OCR_REGION_TOOL_ID,
 } from '../annotations/ocrRegionTool.js';
 import { SNAPSHOT_TOOL_ID } from '../annotations/snapshotTool.js';
+import { STAMP_TOOL_ID } from '../annotations/stampTool.js';
 import {
   HIGHLIGHT_TOOL_ID,
   STRIKEOUT_TOOL_ID,
@@ -83,6 +84,7 @@ import {
   GROUP_STAMPS,
   GROUP_TEXT,
   PLACE_BARCODE_TOOL_TITLE,
+  STAMP_TOOL_TITLE,
   RIBBON_SNAPSHOT,
   RIBBON_STRIKEOUT,
   RIBBON_REDACT_MARK,
@@ -1050,6 +1052,11 @@ export function snapshotToolCommand(deps: ToolCommandDeps): UiCommand {
  * snapshot is something a reader does to LOOK at a document, and this puts an
  * object into it that survives the save.
  */
+export function stampToolCommand(deps: ToolCommandDeps): UiCommand {
+  // COMMENT › STAMPS, first in the group: the library's built-ins, then a picture of one's own beside it.
+  return toolCommand(STAMP_TOOL_ID, STAMP_TOOL_TITLE, 'Stamp', 50, deps, STAMPS);
+}
+
 export function placeImageToolCommand(deps: ToolCommandDeps): UiCommand {
   return toolCommand(
     PLACE_IMAGE_TOOL_ID,
@@ -1209,6 +1216,7 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     measureAreaToolCommand(deps),
     measurePerimeterToolCommand(deps),
     snapshotToolCommand(deps),
+    stampToolCommand(deps),
     placeImageToolCommand(deps),
     placeSignatureToolCommand(deps),
     placeBarcodeToolCommand(deps),

@@ -2605,6 +2605,66 @@ for (const [stored, expected] of [
   });
 }
 
+// THE STAMP LIBRARY'S BUILT-INS, in every look: the Stamp tool, a drag, the chooser — each stamp shown as its word, and
+// nothing on that screen failing axe — and the chosen stamp on the command the page SENDS. The kernel's case proves the
+// word lands in the document; this crosses the tool, the dialog and the App's composition, which no unit case holds.
+for (const look of LOOKS) {
+  test(`${look.name}: the STAMP tool asks which stamp, passes axe, and sends the one chosen`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const bytes = await onePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000cb');
+    const sent: unknown[] = [];
+    await bridgeUnder(
+      page,
+      look,
+      {
+        opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'stamp.pdf' }],
+        documentBytes: new Map([[docId, bytes]]),
+      },
+      (channel, params) => {
+        if (channel === 'document.execute') sent.push(params);
+      },
+    );
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('Stamp');
+    await page.keyboard.press('Enter');
+    const surface = page.getByLabel('Draw on page 1');
+    const box = await surface.boundingBox();
+    const x = (box?.x ?? 0) + 60;
+    const y = (box?.y ?? 0) + 60;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + 200, y + 60, { steps: 4 });
+    await page.mouse.up();
+
+    const dialog = page.getByRole('dialog', { name: 'Choose a stamp' });
+    await expect(dialog.getByRole('radio')).toHaveCount(8);
+    // EXACT: *APPROVED* is inside *NOT APPROVED*.
+    await expect(dialog.getByRole('radio', { name: 'APPROVED', exact: true })).toBeChecked();
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+
+    await dialog.getByRole('radio', { name: 'VOID', exact: true }).check();
+    await dialog.getByRole('button', { name: 'Add stamp' }).click();
+    const stamps = (): unknown[] =>
+      sent.flatMap((params) => {
+        const command = (params as { readonly command?: { readonly kind?: string; readonly annotation?: { readonly stamp?: unknown } } })
+          .command;
+        return command?.kind === 'addAnnotation' ? [command.annotation?.stamp] : [];
+      });
+    // VOID, not the APPROVED the chooser started on: the choice reached the command.
+    await expect.poll(stamps).toStrictEqual(['void']);
+  });
+}
+
 // EDIT TEXT IN PLACE (ADR-0096), in every theme: the outlines sit over their words on the drawn
 // page, the editor opens over a block, and nothing on that screen fails the gate.
 for (const look of LOOKS) {

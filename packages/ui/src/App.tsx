@@ -288,6 +288,7 @@ import { ANNOTATION_REPLY_DIALOG } from './dialogs/annotationReply.js';
 import { CALLOUT_DIALOG } from './dialogs/callout.js';
 import { TYPEWRITER_DIALOG } from './dialogs/typewriter.js';
 import { ANNOTATION_TEXT_DIALOG } from './dialogs/annotationText.js';
+import { STAMP_DIALOG } from './dialogs/stamp.js';
 import { FORM_FIELD_DIALOGS } from './dialogs/formField.js';
 import { DELETE_PAGES_DIALOG } from './dialogs/deletePages.js';
 import { DUPLICATE_PAGES_DIALOG } from './dialogs/duplicatePages.js';
@@ -819,6 +820,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         HISTORY_TRIMMED_DIALOG,
         DELETE_PAGES_DIALOG,
         ANNOTATION_TEXT_DIALOG,
+        STAMP_DIALOG,
         ANNOTATION_NOTE_DIALOG,
         ANNOTATION_EDIT_DIALOG,
         ANNOTATION_REPLY_DIALOG,

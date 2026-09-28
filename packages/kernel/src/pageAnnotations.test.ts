@@ -5,16 +5,20 @@ import {
   PDFHexString,
   PDFName,
   PDFNumber,
+  PDFRawStream,
   PDFRef,
   PDFStream,
   PDFString,
   StandardFonts,
+  decodePDFRawStream,
 } from '@cantoo/pdf-lib';
 import {
   KEEPS_THE_ANNOTATION_WALK,
   type AnnotationDraft,
   type AnnotationFont,
   type AnnotationRect,
+  BUILT_IN_STAMPS,
+  type BuiltInStamp,
   type CommandOfKind,
 } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
@@ -2315,6 +2319,47 @@ describe('applyAddAnnotation writes the opacity it was given', () => {
  * only the typewriter's shape would pass on a build where the two are the same
  * thing twice, which is the defect this row exists to have found.
  */
+describe('applyAddAnnotation writes the stamp library’s built-in stamps', () => {
+  /** Each stamp's /Name and the words its appearance shows, read back with pdf-lib. */
+  async function stamped(stamp: BuiltInStamp): Promise<{ name: string; shown: string; listed: string }> {
+    const drawn = await drawnOn(
+      await fixture(),
+      command({ annotation: { type: 'stamp', stamp, rect: { x0: 20, y0: 200, x1: 260, y1: 260 }, colour: [0.8, 0.1, 0.1], opacity: 1 } }),
+    );
+    const loaded = await PDFDocument.load(drawn, { updateMetadata: false });
+    const annots = loaded.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    const [first] = annots instanceof PDFArray ? annots.asArray() : [];
+    const dict = first instanceof PDFRef ? loaded.context.lookup(first, PDFDict) : undefined;
+    const name = dict?.lookup(PDFName.of('Name'));
+    const normal = dict?.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N'));
+    const shown =
+      normal instanceof PDFRawStream ? new TextDecoder().decode(decodePDFRawStream(normal).decode()) : '';
+    const listed = await onSession(drawn, (session) => readAnnotations(session));
+    return {
+      name: name instanceof PDFName ? decodeURIComponent(name.asString().replace(/#/gu, '%')) : '',
+      shown: [...shown.matchAll(/\(([^)]*)\)\s*Tj/gu)].map((match) => match[1]).join(' '),
+      listed: listed.annotations[0]?.kind ?? '',
+    };
+  }
+
+  it('writes each of the eight as a /Stamp whose appearance SHOWS its word — and lists it as a stamp', async () => {
+    const expected: Readonly<Record<BuiltInStamp, readonly [string, string]>> = {
+      approved: ['/Approved', 'APPROVED'],
+      'not-approved': ['/NotApproved', 'NOT APPROVED'],
+      draft: ['/Draft', 'DRAFT'],
+      final: ['/Final', 'FINAL'],
+      confidential: ['/Confidential', 'CONFIDENTIAL'],
+      'for-review': ['/FOR REVIEW', 'FOR REVIEW'],
+      void: ['/VOID', 'VOID'],
+      copy: ['/COPY', 'COPY'],
+    };
+    for (const stamp of BUILT_IN_STAMPS) {
+      // CONTROL BY CONSTRUCTION: eight different words, so a writer that named every stamp alike fails seven.
+      expect(await stamped(stamp), stamp).toStrictEqual({ name: expected[stamp][0], shown: expected[stamp][1], listed: 'stamp' });
+    }
+  });
+});
+
 describe('applyAddAnnotation tells a typewriter from a text box', () => {
   const PLAIN: AnnotationDraft = {
     type: 'text-box',

@@ -3,6 +3,7 @@ import {
   type AnnotationDraft,
   type AnnotationFont,
   type AnnotationKindName,
+  type BuiltInStamp,
   type AnnotationPoint,
   type AnnotationRect,
   type AnnotationStamp,
@@ -702,6 +703,24 @@ function measureDictionary(draft: MeasureDraft, document: PDFDocument): PDFObjec
  */
 const BASE14_FACE: Readonly<Record<AnnotationFont, string>> = { sans: 'Helv', serif: 'TiRo', mono: 'Cour' };
 
+/**
+ * Each built-in stamp's `/Name`. Five are the format's standard names (PDF 32000 §12.5.6.12), which MuPDF draws in
+ * capitals — `NotApproved` as NOT APPROVED; the other three have none, and MuPDF draws a non-standard name as its own
+ * text, so they are spelt as the words to show. Measured 2026-09-28 on MuPDF 1.28.0: each draws its word in Times-Bold
+ * inside a bordered box in the annotation's colour. A record over the contract's list, so a stamp added there arrives
+ * owing its name here.
+ */
+const STAMP_NAME: Readonly<Record<BuiltInStamp, string>> = {
+  approved: 'Approved',
+  'not-approved': 'NotApproved',
+  draft: 'Draft',
+  final: 'Final',
+  confidential: 'Confidential',
+  'for-review': 'FOR REVIEW',
+  void: 'VOID',
+  copy: 'COPY',
+};
+
 const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T>> } = {
   square: outlineKind('Square'),
   circle: outlineKind('Circle'),
@@ -884,6 +903,19 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
       // colour comes from `/DA`. A fill nobody asked for is a text box that
       // hides what is under it.
       annotation.setBorderWidth(1);
+    },
+  },
+  stamp: {
+    subtype: 'Stamp',
+    bounds: (draft, transform) => placedRect(draft.rect, transform),
+    degenerate: (draft) => draft.rect.x0 === draft.rect.x1 || draft.rect.y0 === draft.rect.y1,
+    write: (annotation, draft, transform): void => {
+      annotation.setRect(placedRect(draft.rect, transform));
+      // THE NAME IS THE STAMP: MuPDF draws the word from it when the appearance is made (`redraw`), and fits it into
+      // the rectangle keeping the stamp's proportions — measured, a 240 × 60 box came back 228 × 60, centred.
+      annotation.setIcon(STAMP_NAME[draft.stamp]);
+      // `/C` IS THE WORD'S AND THE BORDER'S COLOUR on a stamp — MuPDF strokes and fills both with it (measured).
+      annotation.setColor([...draft.colour]);
     },
   },
   typewriter: {
@@ -1628,6 +1660,8 @@ const NAMED: Readonly<Record<string, AnnotationKindName>> = {
   Highlight: 'highlight',
   Underline: 'underline',
   StrikeOut: 'strikeout',
+  // A WORD STAMP AND A PLACED IMAGE BOTH, since both are `/Stamp` — the contract's name says why one name serves.
+  Stamp: 'stamp',
 };
 
 /**

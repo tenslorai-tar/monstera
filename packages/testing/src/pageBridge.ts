@@ -68,9 +68,11 @@ export async function bridgeUnder(
   page: Page,
   look: Look,
   options: Parameters<typeof createBrowserShim>[0] = {},
+  /** `bridge`'s observer, passed through: what the page asked main, for a case about what it sent. */
+  observe?: (channel: string, params: unknown) => void,
 ): Promise<void> {
   await page.emulateMedia({ contrast: look.contrast, reducedMotion: 'reduce' });
-  await bridge(page, { ...options, settings: { ...options.settings, 'appearance.theme': look.theme } });
+  await bridge(page, { ...options, settings: { ...options.settings, 'appearance.theme': look.theme } }, observe);
 }
 
 /**

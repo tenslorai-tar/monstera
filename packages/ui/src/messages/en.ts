@@ -1107,6 +1107,22 @@ export const ANNOTATIONS_KIND_TYPEWRITER = messageKey('surface.annotations.kind.
 export const ANNOTATIONS_KIND_MEASURE_DISTANCE = messageKey('surface.annotations.kind.measure-distance');
 export const ANNOTATIONS_KIND_MEASURE_AREA = messageKey('surface.annotations.kind.measure-area');
 export const ANNOTATIONS_KIND_MEASURE_PERIMETER = messageKey('surface.annotations.kind.measure-perimeter');
+export const ANNOTATIONS_KIND_STAMP = messageKey('surface.annotations.kind.stamp');
+export const STAMP_TOOL_TITLE = messageKey('tool.annotate.stamp');
+export const STAMP_DIALOG_TITLE = messageKey('dialog.stamp.title');
+export const STAMP_DIALOG_CHOICES = messageKey('dialog.stamp.choices');
+export const STAMP_DIALOG_APPLY = messageKey('dialog.stamp.apply');
+/** Each built-in stamp's name in the chooser — the word it puts on the page, as a person reads it. */
+export const STAMP_TITLES = {
+  approved: messageKey('dialog.stamp.approved'),
+  'not-approved': messageKey('dialog.stamp.not-approved'),
+  draft: messageKey('dialog.stamp.draft'),
+  final: messageKey('dialog.stamp.final'),
+  confidential: messageKey('dialog.stamp.confidential'),
+  'for-review': messageKey('dialog.stamp.for-review'),
+  void: messageKey('dialog.stamp.void'),
+  copy: messageKey('dialog.stamp.copy'),
+} as const;
 export const MEASURE_DISTANCE_TOOL_TITLE = messageKey('command.annotate.measure-distance');
 export const MEASURE_AREA_TOOL_TITLE = messageKey('command.annotate.measure-area');
 export const MEASURE_PERIMETER_TOOL_TITLE = messageKey('command.annotate.measure-perimeter');
@@ -2904,6 +2920,19 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ANNOTATIONS_KIND_MEASURE_DISTANCE]: 'Distance',
   [ANNOTATIONS_KIND_MEASURE_AREA]: 'Area',
   [ANNOTATIONS_KIND_MEASURE_PERIMETER]: 'Perimeter',
+  [ANNOTATIONS_KIND_STAMP]: 'Stamp',
+  [STAMP_TOOL_TITLE]: 'Stamp',
+  [STAMP_DIALOG_TITLE]: 'Choose a stamp',
+  [STAMP_DIALOG_CHOICES]: 'Stamps',
+  [STAMP_DIALOG_APPLY]: 'Add stamp',
+  [STAMP_TITLES.approved]: 'APPROVED',
+  [STAMP_TITLES['not-approved']]: 'NOT APPROVED',
+  [STAMP_TITLES.draft]: 'DRAFT',
+  [STAMP_TITLES.final]: 'FINAL',
+  [STAMP_TITLES.confidential]: 'CONFIDENTIAL',
+  [STAMP_TITLES['for-review']]: 'FOR REVIEW',
+  [STAMP_TITLES.void]: 'VOID',
+  [STAMP_TITLES.copy]: 'COPY',
   [MEASURE_DISTANCE_TOOL_TITLE]: 'Measure distance',
   [MEASURE_AREA_TOOL_TITLE]: 'Measure area',
   [MEASURE_PERIMETER_TOOL_TITLE]: 'Measure perimeter',

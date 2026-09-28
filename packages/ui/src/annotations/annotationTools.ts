@@ -15,6 +15,7 @@ import type { OcrRegionDeps } from './ocrRegionTool.js';
 import { claudeRegionTool, cloudRegionTool, ocrRegionTool } from './ocrRegionTool.js';
 import type { SnapshotDeps } from './snapshotTool.js';
 import { snapshotTool } from './snapshotTool.js';
+import { stampTool } from './stampTool.js';
 import { textMarkupTools } from './textMarkupTools.js';
 import { shapeTools } from './shapeTools.js';
 import type { TextToolDeps } from './textTools.js';
@@ -60,6 +61,8 @@ export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
     ...measureTools(deps),
     ...linkTools(deps),
     calloutTool(deps),
+    // THE STAMP LIBRARY'S BUILT-INS: a box, then which word.
+    stampTool(deps),
     eraserTool(deps),
     selectTool(deps),
     // NOT AN ANNOTATION TOOL, and it is composed here anyway: this list is what

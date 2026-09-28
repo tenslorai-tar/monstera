@@ -993,6 +993,28 @@ export const annotationFontSchema = z.enum(ANNOTATION_FONTS);
 export type AnnotationFont = z.infer<typeof annotationFontSchema>;
 
 /**
+ * The stamp library's built-in stamps — the owner's eight (2026-09-28), each a WORD the engine draws in a bordered box,
+ * so none carries artwork. The kernel names each for `/Name`: five are the format's standard stamp names (PDF 32000
+ * §12.5.6.12), which MuPDF draws in capitals; `for-review`, `void` and `copy` have none, and MuPDF draws a non-standard
+ * name as its own text, so they are written in capitals (measured 2026-09-28, MuPDF 1.28.0 — Times-Bold, 20 or 30 pt).
+ * The words on the page are the stamp's, in English as a rubber stamp's are, not the interface's language.
+ */
+export const BUILT_IN_STAMPS = [
+  'approved',
+  'not-approved',
+  'draft',
+  'final',
+  'confidential',
+  'for-review',
+  'void',
+  'copy',
+] as const;
+
+export const builtInStampSchema = z.enum(BUILT_IN_STAMPS);
+
+export type BuiltInStamp = z.infer<typeof builtInStampSchema>;
+
+/**
  * How many points one ink stroke may carry.
  *
  * The renderer keeps points two CSS pixels apart, so this is over eight
@@ -1898,6 +1920,22 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       font: annotationFontSchema,
     })
     .strict(),
+  z
+    .object({
+      /**
+       * `/Subtype /Stamp` with a word on it — one of the {@link BUILT_IN_STAMPS}, drawn by the engine from the name
+       * alone, so the library needs no artwork (the owner's decision of 2026-09-28; B10 bans committing binaries).
+       *
+       * A person's own image stamp is NOT this member: its bytes are main's, and it is placed by `placeImage`.
+       */
+      type: z.literal('stamp'),
+      stamp: builtInStampSchema,
+      /** The box the stamp is fitted into, in PDF user space. The engine keeps the stamp's own proportions inside it. */
+      rect: annotationRectSchema,
+      colour: annotationColourSchema,
+      opacity: annotationOpacitySchema,
+    })
+    .strict(),
 ]);
 
 /** One annotation, as the tool that drew it describes it. */
@@ -1973,6 +2011,9 @@ export const annotationKindNameSchema = z.enum([
   'measure-distance',
   'measure-area',
   'measure-perimeter',
+  // EVERY `/Stamp`: a built-in word stamp and a placed image are one subtype, and a reader is told what the object
+  // is — a stamp — whichever tool made it.
+  'stamp',
   'other',
 ]);
 

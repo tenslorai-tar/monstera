@@ -71,5 +71,6 @@ export const ANNOTATION_RENDERERS: Readonly<Record<AnnotationKindName, Annotatio
   'measure-distance': null,
   'measure-area': null,
   'measure-perimeter': null,
+  stamp: null,
   other: null,
 };
