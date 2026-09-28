@@ -1,8 +1,11 @@
-import { MAX_RECENT_ENTRIES } from '@monstera/contract';
+import { MAX_RECENT_ENTRIES, RECENT_LENGTHS, RECENT_LENGTH_SETTING_ID, type RecentLength } from '@monstera/contract';
 import { asDocId } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import { MAX_RECENT, createRecentFiles } from './recentFiles.js';
+import { DEFAULT_RECENT_LENGTH, createRecentFiles, recentLengthIn } from './recentFiles.js';
+
+/** The default length under its old name in these cases: what a store with no choice keeps. */
+const MAX_RECENT = DEFAULT_RECENT_LENGTH;
 import type { SettingsSurface } from './settingsFile.js';
 
 /**
@@ -41,7 +44,33 @@ describe('the recent list', () => {
     // boundary's bound are two numbers, and this is the only thing that can
     // notice them parting. Raise one alone and every recent-files read is
     // refused at the boundary, at run time, with nothing red at build time.
-    expect(MAX_RECENT).toBe(MAX_RECENT_ENTRIES);
+    //
+    // SINCE 2026-09-28 THE CAP IS A PERSON'S CHOICE: the longest they can choose must be what the boundary carries, and
+    // a store at that length must keep exactly that many — asserted on the STORE, not on the table, since the table
+    // and the bound are derived from one another and would agree whatever the store did.
+    const longest = Math.max(...Object.values(RECENT_LENGTHS));
+    expect(longest).toBe(MAX_RECENT_ENTRIES);
+    const recent = createRecentFiles(aFile(), undefined, () => longest);
+    for (let index = 0; index < longest + 3; index += 1) recent.record({ path: `C:/${String(index)}.pdf`, name: 'x.pdf' });
+    expect(recent.list()).toHaveLength(MAX_RECENT_ENTRIES);
+  });
+
+  it('keeps the CHOSEN length, read at each use — longer than the old cap, then shorter — and says what it dropped', () => {
+    let chosen: RecentLength = 'twenty';
+    const recent = createRecentFiles(aFile(), undefined, () => recentLengthIn({ [RECENT_LENGTH_SETTING_ID]: chosen }));
+    const left: string[][] = [];
+    recent.onDropped((paths) => left.push([...paths]));
+    for (let index = 0; index < 25; index += 1) recent.record({ path: `C:/${String(index)}.pdf`, name: `${String(index)}.pdf` });
+
+    // TWENTY, which the old fixed cap of ten could not hold.
+    expect(recent.list()).toHaveLength(20);
+    chosen = 'five';
+    // SHORTENED: the next reading keeps the five newest, and the fifteen past them leave, pictures and all.
+    expect(recent.list().map((entry) => entry.name)).toStrictEqual(['24.pdf', '23.pdf', '22.pdf', '21.pdf', '20.pdf']);
+    expect(left.at(-1)).toHaveLength(15);
+    // AN UNKNOWN VALUE, a hand-edited file, is the default rather than nothing.
+    expect(recentLengthIn({ [RECENT_LENGTH_SETTING_ID]: 'eleventy' })).toBe(DEFAULT_RECENT_LENGTH);
+    expect(recentLengthIn({})).toBe(DEFAULT_RECENT_LENGTH);
   });
 
   it('keeps what was recorded, newest first', () => {

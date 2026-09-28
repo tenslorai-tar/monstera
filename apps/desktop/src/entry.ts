@@ -40,7 +40,7 @@ import {
 } from './engineHostPlatform.js';
 import { removeRetiredCaches } from './retiredCaches.js';
 import { readCloudClients } from './cloudClients.js';
-import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
+import { RECENT_FILE, createRecentFiles, recentLengthIn } from './recentFiles.js';
 import { knownRoots } from './displayLocation.js';
 import { pictureDirectory } from './recentPictures.js';
 import { ENGAGEMENT_FILE } from './engagement.js';
@@ -116,7 +116,12 @@ startShell(() => {
   // launch starts nothing. Off in Settings › Privacy: not started, and the reports already written are deleted. A
   // started reporter cannot be stopped, so the setting takes effect at the next start, which its text says.
   const crashDumps = app.getPath('crashDumps');
-  const reportsOn = crashReportsOn(createSettingsFile(app.getPath('userData')).read());
+  // ONE SURFACE OVER THE SETTINGS DOCUMENT, for the crash check here, the graph, and the recent list's length below.
+  // `userData` and not `sessionData` or `temp`: settings outlive every document and every session, and the two other
+  // directories are ones the application and the OS respectively are entitled to empty. Resolved here because only
+  // this file may ask Electron where the user's data lives.
+  const settings = createSettingsFile(app.getPath('userData'));
+  const reportsOn = crashReportsOn(settings.read());
   if (reportsOn) crashReporter.start({ uploadToServer: false });
 
   // NAMED, BECAUSE PDFIUM'S PLATFORM IS DERIVED FROM IT. `createPdfiumHostPlatform`
@@ -363,11 +368,7 @@ startShell(() => {
         return null;
       }
     },
-    // `userData` and not `sessionData` or `temp`: settings outlive every
-    // document and every session, and the two other directories are ones the
-    // application and the OS respectively are entitled to empty. Resolved here
-    // because only this file may ask Electron where the user's data lives.
-    settings: createSettingsFile(app.getPath('userData')),
+    settings,
     // THE SECRETS, in their own document beside the settings and encrypted by
     // the OS through `OS_CIPHER` — the same trade `nativeImage` makes below.
     secrets: createSecretStore(app.getPath('userData'), OS_CIPHER),
@@ -392,7 +393,10 @@ startShell(() => {
     // `settings.load` hands the renderer everything that file holds, so a path
     // stored there would be a path in the renderer with nothing having decided
     // to send it.
-    recent: createRecentFiles(createJsonFile(app.getPath('userData'), RECENT_FILE)),
+    // ITS LENGTH IS THE PERSON'S CHOICE, read from the settings document at each use (`recentLengthIn`).
+    recent: createRecentFiles(createJsonFile(app.getPath('userData'), RECENT_FILE), undefined, () =>
+      recentLengthIn(settings.read()),
+    ),
     // WHERE a recent file is, for display (ADR-0100): the known folders are Electron's answers and the
     // environment's, resolved here for the working directory's reason.
     recentRoots: knownRoots({

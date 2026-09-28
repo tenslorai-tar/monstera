@@ -1,4 +1,10 @@
-import { annotationInstantSchema } from '@monstera/contract';
+import {
+  MAX_RECENT_ENTRIES,
+  RECENT_LENGTHS,
+  RECENT_LENGTH_SETTING_ID,
+  type RecentLength,
+  annotationInstantSchema,
+} from '@monstera/contract';
 import type { DocId } from '@monstera/shared';
 
 import type { SettingsSurface } from './settingsFile.js';
@@ -115,14 +121,26 @@ export interface RecentFiles {
 }
 
 /**
- * How many documents are remembered.
+ * How many documents are remembered when nobody has chosen — Part F's *"recent-files length"*, `RECENT_LENGTHS`.
  *
  * Ten is what a menu can show without becoming a file browser, and the list is
  * a convenience rather than a history — a reader looking for a file they opened
  * three weeks ago is looking in the wrong place, and a longer list mostly grows
- * the number of paths this build keeps on disk about a person.
+ * the number of paths this build keeps on disk about a person. A person may choose
+ * five, twenty or thirty instead.
  */
-export const MAX_RECENT = 10;
+export const DEFAULT_RECENT_LENGTH: number = RECENT_LENGTHS.ten;
+
+/**
+ * The length a person chose, read from the settings document — or ten for a missing or unknown value, which is what a
+ * first launch and a hand-edited file both are. The table is the contract's, so no count is spelt here.
+ */
+export function recentLengthIn(settings: Readonly<Record<string, unknown>>): number {
+  const chosen = settings[RECENT_LENGTH_SETTING_ID];
+  return typeof chosen === 'string' && Object.hasOwn(RECENT_LENGTHS, chosen)
+    ? RECENT_LENGTHS[chosen as RecentLength]
+    : DEFAULT_RECENT_LENGTH;
+}
 
 /** The document's file name inside `userData`. */
 export const RECENT_FILE = 'recent.json';
@@ -134,8 +152,14 @@ export const RECENT_FILE = 'recent.json';
  *   here for `SettingsSurface`'s reason: the directory is Electron's question
  *   and this module answers a different one.
  * @param now the clock an opening is stamped from, injected so a case can assert the instant recorded
+ * @param length how many are kept, READ AT EACH USE (the application passes `recentLengthIn` over the settings
+ *   document), so a length chosen a moment ago is the one the next opening and the next reading keep
  */
-export function createRecentFiles(file: SettingsSurface, now: () => Date = () => new Date()): RecentFiles {
+export function createRecentFiles(
+  file: SettingsSurface,
+  now: () => Date = () => new Date(),
+  length: () => number = () => DEFAULT_RECENT_LENGTH,
+): RecentFiles {
   /** Who is told when entries leave; see {@link RecentFiles.onDropped}. */
   let dropped: (paths: readonly string[]) => void = () => undefined;
   const stored = file.read();
@@ -174,7 +198,7 @@ export function createRecentFiles(file: SettingsSurface, now: () => Date = () =>
       // a policy about how much we keep — the distinction the layers finding
       // in this range's audit turns on. An offer with more rows than the
       // recent list is not an offer.
-      session: [...live.values()].slice(0, MAX_RECENT),
+      session: [...live.values()].slice(0, length()),
     });
   };
 
@@ -184,7 +208,18 @@ export function createRecentFiles(file: SettingsSurface, now: () => Date = () =>
   persist(false);
 
   return {
-    list: () => entries,
+    list: () => {
+      // A LENGTH MADE SHORTER takes effect here, the next time anything reads the list: what is past it leaves the
+      // document, and its pictures with it (`dropped`), rather than staying on disk behind a shorter display.
+      const kept = length();
+      if (entries.length > kept) {
+        const evicted = entries.slice(kept).map((held) => held.path);
+        entries = entries.slice(0, kept);
+        persist(false);
+        dropped(evicted);
+      }
+      return entries;
+    },
     record: (entry) => {
       // DEDUPED BY PATH AND MOVED TO THE FRONT. Reopening the same file twice
       // must not fill the list with one document, and an entry whose name has
@@ -194,10 +229,11 @@ export function createRecentFiles(file: SettingsSurface, now: () => Date = () =>
         { path: entry.path, name: entry.name, openedAt: now().toISOString() },
         ...entries.filter((held) => held.path !== entry.path),
       ];
-      entries = ordered.slice(0, MAX_RECENT);
+      const kept = length();
+      entries = ordered.slice(0, kept);
       persist(false);
       // PUSHED PAST THE CAP is leaving too, and the quietest way to: nobody asked for it.
-      const evicted = ordered.slice(MAX_RECENT).map((held) => held.path);
+      const evicted = ordered.slice(kept).map((held) => held.path);
       if (evicted.length > 0) dropped(evicted);
     },
     forget: (path) => {
@@ -259,5 +295,6 @@ function readEntries(value: unknown): readonly ListedRecent[] {
     const instant = annotationInstantSchema.safeParse(openedAt);
     entries.push({ path, name, openedAt: instant.success ? instant.data : null });
   }
-  return entries.slice(0, MAX_RECENT);
+  // THE WIDEST A PERSON CAN CHOOSE, which is what the boundary carries; the chosen length applies when the list is read.
+  return entries.slice(0, MAX_RECENT_ENTRIES);
 }

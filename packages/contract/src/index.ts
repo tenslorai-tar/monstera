@@ -108,6 +108,10 @@ export {
   // A recent card's picture: main's store refuses to keep one past the bound, and both sides read the setting.
   MAX_RECENT_PREVIEW_BYTES,
   RECENT_PREVIEWS_SETTING_ID,
+  // THE RECENT LIST'S LENGTH: main's store caps at the chosen one, the renderer declares the choice, one table.
+  RECENT_LENGTHS,
+  RECENT_LENGTH_SETTING_ID,
+  type RecentLength,
   CRASH_REPORTS_SETTING_ID,
   crashReportIdSchema,
   // THE UPDATE CHECK (ADR-0110): main parses the manifest and answers the status; the page reads the status, and

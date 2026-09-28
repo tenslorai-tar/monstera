@@ -1430,6 +1430,12 @@ export const LAYOUT_MODE_DESCRIPTION = messageKey('setting.appearance.layout-mod
 export const RULERS_DESCRIPTION = messageKey('setting.viewing.rulers.description');
 export const DARK_PAGE_DESCRIPTION = messageKey('setting.viewing.dark-page.description');
 export const LOUPE_DESCRIPTION = messageKey('setting.viewing.loupe.description');
+export const RECENT_LENGTH_TITLE = messageKey('setting.viewing.recent-length.title');
+export const RECENT_LENGTH_DESCRIPTION = messageKey('setting.viewing.recent-length.description');
+export const RECENT_LENGTH_5 = messageKey('setting.viewing.recent-length.5');
+export const RECENT_LENGTH_10 = messageKey('setting.viewing.recent-length.10');
+export const RECENT_LENGTH_20 = messageKey('setting.viewing.recent-length.20');
+export const RECENT_LENGTH_30 = messageKey('setting.viewing.recent-length.30');
 export const SMOOTH_SCROLL_TITLE = messageKey('setting.viewing.smooth-scroll.title');
 export const SMOOTH_SCROLL_DESCRIPTION = messageKey('setting.viewing.smooth-scroll.description');
 export const PAGE_BADGES_TITLE = messageKey('setting.viewing.page-badges.title');
@@ -3291,6 +3297,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RULERS_DESCRIPTION]: 'Rulers along the top and left of the page.',
   [DARK_PAGE_DESCRIPTION]: 'Dims the pages for reading at night: white turns dark and colours stay recognisable. The document is not changed.',
   [LOUPE_DESCRIPTION]: 'A magnifier that follows the pointer.',
+  [RECENT_LENGTH_TITLE]: 'Recent files to keep',
+  [RECENT_LENGTH_DESCRIPTION]: 'How many documents the start screen lists. A shorter list forgets the oldest ones.',
+  [RECENT_LENGTH_5]: '5',
+  [RECENT_LENGTH_10]: '10',
+  [RECENT_LENGTH_20]: '20',
+  [RECENT_LENGTH_30]: '30',
   [SMOOTH_SCROLL_TITLE]: 'Smooth scrolling',
   [SMOOTH_SCROLL_DESCRIPTION]:
     'Going to another page glides there instead of jumping. Off whenever reduced motion is on.',

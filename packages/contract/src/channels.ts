@@ -869,8 +869,20 @@ export type DisplayLocation = z.infer<typeof displayLocationSchema>;
  * both in this file. `recentFiles.test.ts` now holds it. A sentence describing
  * a mechanism reads exactly like one, which is why the audit that found this
  * looked for the case rather than for a disagreement.
+ *
+ * **Since 2026-09-28 the store's cap is a person's choice** (`RECENT_LENGTHS`), so the boundary's bound is the
+ * largest of them — derived from that one table, which the renderer's setting and `main`'s store both read, so a
+ * length a person can choose is never one the boundary refuses.
  */
-export const MAX_RECENT_ENTRIES = 10;
+export const RECENT_LENGTHS = { five: 5, ten: 10, twenty: 20, thirty: 30 } as const;
+
+/** One of {@link RECENT_LENGTHS}' choices. */
+export type RecentLength = keyof typeof RECENT_LENGTHS;
+
+/** Part F's *"recent-files length"* (`BUILD-PROMPT.md`:611): one id, read by `main`'s store and declared by the renderer. */
+export const RECENT_LENGTH_SETTING_ID = 'viewing.recent-length';
+
+export const MAX_RECENT_ENTRIES: number = Math.max(...Object.values(RECENT_LENGTHS));
 
 /**
  * The largest recent-card picture that is kept or crosses (ADR-0100). A bound on the message, not a size
