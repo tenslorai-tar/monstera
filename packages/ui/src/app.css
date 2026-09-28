@@ -3290,10 +3290,11 @@ textarea {
 .m-quick-toolbar--free {
   /* THE SHARE, RESOLVED HERE against the page area as it is laid out now: `left` is the share of the area and the
      translate takes back the same share of the bar, which is the share of the travel — (area − bar) × share — on every
-     frame, a shrinking window's first included. The bar sets `--float-x` and `--float-y`, two numbers in [0, 1]. */
-  inset-block-start: calc(var(--float-y) * 100%);
-  left: calc(var(--float-x) * 100%);
-  transform: translate(calc(var(--float-x) * -100%), calc(var(--float-y) * -100%));
+     frame, a shrinking window's first included. The bar sets `--float-x` and `--float-y`, two numbers in [0, 1], inline;
+     the fallbacks are the start corner, a share of 0 — without one an unset property voids the whole declaration. */
+  inset-block-start: calc(var(--float-y, 0) * 100%);
+  left: calc(var(--float-x, 0) * 100%);
+  transform: translate(calc(var(--float-x, 0) * -100%), calc(var(--float-y, 0) * -100%));
 }
 
 /* THE GRIP, the tile v5 draws at the bar's top: the handle a person drags, clicks to place, or moves with the arrow
