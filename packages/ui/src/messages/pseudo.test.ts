@@ -13,6 +13,11 @@ import { PSEUDO_LOCALE, SHIPPED_LOCALES, pseudoCatalogue, pseudoMessage } from '
  * placeholders, which the compiler knows are text, and reported a correct message as broken.
  */
 function argumentsOf(message: string): string[] {
+  return namesIn(compileMessage(message));
+}
+
+/** {@link argumentsOf} over a message already compiled, so a case that compiles each message compiles it ONCE. */
+function namesIn(compiled: unknown): string[] {
   const names: string[] = [];
   const walk = (node: unknown): void => {
     if (!Array.isArray(node)) return;
@@ -23,20 +28,23 @@ function argumentsOf(message: string): string[] {
       if (typeof branches === 'object' && branches !== null) for (const branch of Object.values(branches)) walk(branch);
     }
   };
-  walk(compileMessage(message));
+  walk(compiled);
   return names;
 }
 
 describe('the proof locale', () => {
   it('keeps every message’s ICU syntax: it compiles, and names the same arguments', () => {
+    // EACH MESSAGE COMPILED ONCE, and its English read by key. This compiled every message three times and found its
+    // English by scanning the whole catalogue for each key — 1.4 s alone on 2026-09-29, past five under a full run.
+    const english: Readonly<Record<string, string | undefined>> = EN;
     const broken = Object.entries(pseudoCatalogue(EN)).flatMap(([key, message]) => {
+      let compiled: unknown;
       try {
-        compileMessage(message);
+        compiled = compileMessage(message);
       } catch (error) {
         return [`${key}: ${String(error)}`];
       }
-      const english = Object.entries(EN).find(([id]) => id === key)?.[1] ?? '';
-      return argumentsOf(message).join(',') === argumentsOf(english).join(',') ? [] : [`${key}: arguments`];
+      return namesIn(compiled).join(',') === argumentsOf(english[key] ?? '').join(',') ? [] : [`${key}: arguments`];
     });
     expect(broken, `\n${broken.join('\n')}\n`).toStrictEqual([]);
   });
