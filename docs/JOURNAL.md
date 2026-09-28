@@ -892,6 +892,23 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-28 — Commit `0333d069`'s message says documentation, and it carried five source files
+
+`0333d069` (*ADR-0119 corrected: the observer is applied in the composition root*) describes itself as the
+correction's own commit, B4's documentation half. It also carried the reversal of the registration argument in
+`registerHandlers.ts`, its test, `main.ts`, `canvasHarness.ts` and `pickerProbe.ts`.
+
+**The mechanism:** I restored those five files with `git checkout <sha> -- <paths>`, which writes the index as well
+as the working tree, and then staged only the documents by path — so the commit took the index as it stood, the five
+reversals included. Its tree does not compile alone: `composition.ts` there still returned a `requests` member the
+reverted `ShellDependencies` no longer declares. `b940f31d`, the next commit, completes it, and is the one to read
+for the change.
+
+The ordering B4 asks for held in intent and not in the tree. Restoring a file from another commit stages it; the
+check before a documentation-only commit is `git diff --cached --stat`, which would have listed seven files.
+
+---
+
 ## 2026-09-28 — Saving a signed document broke its signature; ADR-0008 rule 2 was decided and never built
 
 Found while building Part F's *warn before signature-breaking save*: to know when a save breaks a signature, I
