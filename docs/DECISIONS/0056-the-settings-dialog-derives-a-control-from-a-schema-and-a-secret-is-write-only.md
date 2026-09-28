@@ -178,3 +178,44 @@ is about what the SCHEMA derives.
 **And a third clause is now narrower than the dialog**: every renderable setting used to be a row.
 State the application remembers for a person — a panel's width, which tab was open — is marked
 `remembered` and is not drawn, because its control is the splitter or the tab.
+
+## Correction, 2026-09-28 — a SET of an enum's members is a schema kind
+
+Part F asks for *OCR default language(s)*: a person who reads German and English documents wants
+both models run together, which Tesseract does when it is handed `eng+deu`. So the setting holds a
+**set** of the contract's language enum — one to three of them, no repeats — and Decision 3 excluded
+every array by kind.
+
+**Decision 3's reason does not reach this kind.** It excluded an array because no control is honest
+for every member of *arrays*: a personal dictionary is words anyone may type, and a text field
+offering them would satisfy the schema and say nothing. An array **of an enum's members** is a
+closed set, and a box per member is honest for every such setting — the same argument that made an
+enum a select.
+
+### Corrected decisions
+
+**Decision 2 gains a row.**
+
+| Schema | Control |
+|---|---|
+| array of an enum (read through `.readonly()`) | a named group with one checkbox per member, labelled by `optionTitles` |
+
+- **One reading of *enumerated*.** The registry's title check and the dialog's choice of control
+  take it from one function, so a set's members cannot be titled in one place and left without a
+  control in the other. Decision 1's both-directions check covers a set's members unchanged.
+- **The count is the schema's, asked, never read.** A box is disabled when ticking or clearing it
+  would produce a value the schema refuses — the last one ticked, or one more than the maximum.
+  Reading a maximum out of zod's internals would be a second opinion about a bound the schema
+  already enforces; asking it is the accent's *refused in the offer* rule applied to a count.
+
+**Decision 3 narrows again.** An array of an enum's members is drawn. `editing.personal-dictionary`
+stays excluded: its members are words, not an enum's, and the pinned list keeps it.
+
+### Rejected
+
+- **A select that takes one language, with the others kept in the OCR dialog.** Two surfaces
+  holding two halves of one answer — which the region tool, reading only the setting, could not see.
+- **A text field for `eng+deu`.** Tesseract's own spelling, and Decision 3's objection exactly: it
+  satisfies a pattern and offers no language.
+- **A control declared by the setting, as `ai-models` is.** That escape exists for a list the dialog
+  is handed at run time. This list is the schema's, so the schema decides.
