@@ -87,6 +87,17 @@ export const STARTING_ZOOM_150 = messageKey('setting.viewing-starting-zoom.150')
 export const STARTING_ZOOM_200 = messageKey('setting.viewing-starting-zoom.200');
 export const STARTING_ZOOM_300 = messageKey('setting.viewing-starting-zoom.300');
 export const STARTING_ZOOM_400 = messageKey('setting.viewing-starting-zoom.400');
+export const ZOOM_STEP_TITLE = messageKey('setting.viewing-zoom-step.title');
+export const ZOOM_STEP_DESCRIPTION = messageKey('setting.viewing-zoom-step.description');
+export const ZOOM_STEP_LADDER = messageKey('setting.viewing-zoom-step.ladder');
+export const ZOOM_STEP_10 = messageKey('setting.viewing-zoom-step.10');
+export const ZOOM_STEP_25 = messageKey('setting.viewing-zoom-step.25');
+/** `viewing.zoom-step`'s members, each its own exported key as the other option sets are. */
+export const ZOOM_STEP_OPTION_TITLES = {
+  ladder: ZOOM_STEP_LADDER,
+  '10pct': ZOOM_STEP_10,
+  '25pct': ZOOM_STEP_25,
+} as const;
 /** `viewing.starting-zoom`'s members, each its own exported key as the other option sets are. */
 export const STARTING_ZOOM_OPTION_TITLES = {
   'fit-width': STARTING_ZOOM_FIT_WIDTH,
@@ -2099,6 +2110,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [STARTING_ZOOM_OPTION_TITLES['200pct']]: '200%',
   [STARTING_ZOOM_OPTION_TITLES['300pct']]: '300%',
   [STARTING_ZOOM_OPTION_TITLES['400pct']]: '400%',
+  [ZOOM_STEP_TITLE]: 'Zoom step',
+  [ZOOM_STEP_DESCRIPTION]: 'How far zoom in and zoom out move each time, from the buttons, the keys or Ctrl and the mouse wheel.',
+  [ZOOM_STEP_OPTION_TITLES.ladder]: 'Standard steps (50, 75, 100, 125, 150, 200, 300, 400%)',
+  [ZOOM_STEP_OPTION_TITLES['10pct']]: 'By 10%',
+  [ZOOM_STEP_OPTION_TITLES['25pct']]: 'By 25%',
   [AUTOSAVE_OPTION_TITLES.off]: 'Off',
   [AUTOSAVE_OPTION_TITLES['1min']]: 'Every minute',
   [AUTOSAVE_OPTION_TITLES['2min']]: 'Every 2 minutes',

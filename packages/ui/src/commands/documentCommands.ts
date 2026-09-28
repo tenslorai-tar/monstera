@@ -227,7 +227,7 @@ import { DOCUMENT_PANEL_OPEN_SETTING, DOCUMENT_PANEL_SETTING } from '../settings
 import { SPLIT_VIEW_SETTING } from '../settings/viewing.js';
 import type { SettingsStore } from '../settingsStore.js';
 import type { ShowToast } from '../toasts.js';
-import { type ZoomMode, zoomInFrom, zoomOutFrom } from '../zoom.js';
+import type { ZoomDirection, ZoomMode } from '../zoom.js';
 
 /**
  * The three commands that act on the open document.
@@ -280,6 +280,14 @@ import { type ZoomMode, zoomInFrom, zoomOutFrom } from '../zoom.js';
  */
 interface ZoomDeps {
   readonly onZoom: (next: (shown: number) => ZoomMode) => void;
+}
+
+/**
+ * What `+` and `−` need: a DIRECTION, which the shell turns into a mode by the reader's *Zoom step*. The command holds
+ * no step of its own, so it cannot step by one the reader did not choose; Ctrl+wheel asks the same function.
+ */
+interface StepDeps {
+  readonly onZoomStep: (direction: ZoomDirection) => void;
 }
 
 /** What replaced the view, as the renderer needs to rebuild it. */
@@ -692,7 +700,7 @@ export async function placeImage(
  * the control at 400% would make it vanish from the toolbar and the palette
  * mid-session — which reads as a bug rather than a limit.
  */
-export function zoomCommand(direction: 'in' | 'out', deps: ZoomDeps): UiCommand {
+export function zoomCommand(direction: 'in' | 'out', deps: StepDeps): UiCommand {
   return {
     id: direction === 'in' ? 'view.zoom-in' : 'view.zoom-out',
     icon: direction === 'in' ? 'ZoomIn' : 'ZoomOut',
@@ -725,11 +733,9 @@ export function zoomCommand(direction: 'in' | 'out', deps: ZoomDeps): UiCommand 
     ],
     when: hasDocument,
     run: (): void => {
-      // STEPPED FROM WHAT IS SHOWN, not from the mode. A reader at fit-width is
-      // in a mode with no number of its own, and the ladder has to start
-      // somewhere a person can see — the scale on screen. `shownScale` is the
-      // resolved one, which for a fit is what the scroller computed.
-      deps.onZoom(direction === 'in' ? zoomInFrom : zoomOutFrom);
+      // A DIRECTION ONLY: the shell steps from the scale shown, by the reader's
+      // *Zoom step* (`stepZoom`), the same function Ctrl+wheel reaches.
+      deps.onZoomStep(direction);
     },
   };
 }

@@ -110,7 +110,7 @@ function pane(against: DocId | undefined, onPick = vi.fn(), onCurrentPage = vi.f
         others={DOCUMENTS}
         onPick={onPick}
         mode={{ kind: 'scale', scale: 1 }}
-        onZoom={vi.fn()}
+        onZoomStep={vi.fn()}
         loupe={false}
         rulers={false}
         showGrid={false}

@@ -1480,6 +1480,32 @@ test('the TITLE BAR holds the tabs, the command search and the switcher on one r
   expect(overlay.y).toBeGreaterThanOrEqual(barBox.y + barBox.height - 0.5);
 });
 
+// A REAL wheel with Control held, which only a browser can send: happy-dom's WheelEvent carries no `ctrlKey`, so the
+// component suite proves the button and this proves the wheel reaches the same step (`stepZoom`, one function). From
+// 100%, one notch in is 110% by tens and 125% on the ladder — the pair that separates a wheel ignoring the setting.
+for (const [chosen, expected] of [
+  ['10pct', '110%'],
+  [undefined, '125%'],
+] as const) {
+  test(`Ctrl+WHEEL over the pages steps by the reader’s Zoom step (${chosen ?? 'CONTROL: none chosen, the ladder'})`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await bridgeWithDocument(page, chosen === undefined ? {} : { 'viewing.zoom-step': chosen }, 1);
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    const percentage = page.locator('.m-status-bar .m-status-zoom');
+    await expect(percentage).toHaveText('100%');
+    const scroller = await page.locator('.m-page-list').first().boundingBox();
+    if (scroller === null) throw new Error('the page list is laid out');
+    await page.mouse.move(scroller.x + scroller.width / 2, scroller.y + scroller.height / 2);
+    await page.keyboard.down('Control');
+    await page.mouse.wheel(0, -100);
+    await page.keyboard.up('Control');
+    await expect(percentage, String(chosen)).toHaveText(expected);
+  });
+}
+
 test('the status bar’s DOCUMENT LINE gives up its name first and never runs under the controls beside it', async ({
   page,
 }) => {

@@ -23,7 +23,7 @@ import { Loupe } from './Loupe.js';
 import { Rulers } from './Rulers.js';
 import { type RulerUnit, gridSpacing } from './rulerGeometry.js';
 import { useVisiblePages } from './useVisiblePages.js';
-import { type Box, type ZoomMode, resolveZoom, zoomInFrom, zoomOutFrom } from './zoom.js';
+import { type Box, type ZoomDirection, type ZoomMode, resolveZoom } from './zoom.js';
 
 /**
  * Continuous scroll, with each page rasterised only while it is near the
@@ -103,8 +103,8 @@ export interface PageListProps {
    * component has measured its own box and a page's. See `zoom.ts`.
    */
   readonly mode: ZoomMode;
-  /** Asks for a new mode, given the scale currently shown. */
-  readonly onZoom: (next: (shown: number) => ZoomMode) => void;
+  /** Asks the shell to zoom one step in or out — by the reader's *Zoom step*, which the shell holds (`stepZoom`). */
+  readonly onZoomStep: (direction: ZoomDirection) => void;
   /**
    * Reports the scale a fit resolved to.
    *
@@ -325,7 +325,7 @@ export function PageList({
   onCurrentPage,
   onPageBox,
   mode,
-  onZoom,
+  onZoomStep,
   onShownZoom,
   goTo,
   onWentTo,
@@ -659,10 +659,10 @@ export function PageList({
       event.preventDefault();
       // DIRECTION ONLY. A wheel's `deltaY` is in units that differ by device
       // and by `deltaMode`, so treating its magnitude as an amount makes a
-      // trackpad and a mouse zoom at different rates. The ladder is the amount.
-      onZoom(event.deltaY < 0 ? zoomInFrom : zoomOutFrom);
+      // trackpad and a mouse zoom at different rates. The reader's step is the amount.
+      onZoomStep(event.deltaY < 0 ? 'in' : 'out');
     },
-    [onZoom],
+    [onZoomStep],
   );
   // THE SHARED READ, which the strip and the loupe take too. Presence means
   // answered for THIS version; see `usePageRotations` for the three states.

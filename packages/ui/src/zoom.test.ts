@@ -7,9 +7,11 @@ import {
   type ZoomMode,
   resolveZoom,
   startingZoomMode,
-  zoomInFrom,
-  zoomOutFrom,
+  stepZoom,
 } from './zoom.js';
+
+const zoomInFrom = stepZoom('in', 'ladder');
+const zoomOutFrom = stepZoom('out', 'ladder');
 
 /**
  * The zoom vocabulary, tested as arithmetic rather than through a component.
@@ -111,6 +113,38 @@ describe('the ladder', () => {
     );
     expect(ascending).toBe(true);
     expect(new Set(ZOOM_STEPS).size).toBe(ZOOM_STEPS.length);
+  });
+});
+
+describe('a fixed Zoom step (Part F’s *zoom step*; the ladder stays the default)', () => {
+  const scaleOf = (mode: ZoomMode): number => (mode.kind === 'scale' ? mode.scale : Number.NaN);
+
+  it('steps by whole points from what is shown, landing ON the step — never 1.1000000000000001', () => {
+    expect(scaleOf(stepZoom('in', '10pct')(1))).toBe(1.1);
+    expect(scaleOf(stepZoom('out', '10pct')(1))).toBe(0.9);
+    expect(scaleOf(stepZoom('in', '25pct')(1))).toBe(1.25);
+    expect(scaleOf(stepZoom('out', '25pct')(1))).toBe(0.75);
+    // TEN IN AND TEN OUT RETURN EXACTLY: repeated float addition would not (0.1 * 10 is not 1 in doubles).
+    let shown = 1;
+    for (let step = 0; step < 10; step += 1) shown = scaleOf(stepZoom('in', '10pct')(shown));
+    expect(shown).toBe(2);
+    for (let step = 0; step < 10; step += 1) shown = scaleOf(stepZoom('out', '10pct')(shown));
+    expect(shown).toBe(1);
+  });
+
+  it('steps out of a fit onto the next multiple, not onto the fit’s own number', () => {
+    // 133.6% by tens: `+` is 140%, `−` is 130% — the SEPARATING input, since the ladder answers 150% and 125%.
+    expect(scaleOf(stepZoom('in', '10pct')(1.336))).toBe(1.4);
+    expect(scaleOf(stepZoom('out', '10pct')(1.336))).toBe(1.3);
+    expect(scaleOf(stepZoom('in', 'ladder')(1.336))).toBe(1.5);
+  });
+
+  it('holds at the ladder’s ends, where a fit is clamped too', () => {
+    const top = ZOOM_STEPS[ZOOM_STEPS.length - 1] ?? 4;
+    expect(scaleOf(stepZoom('in', '25pct')(top))).toBe(top);
+    expect(scaleOf(stepZoom('out', '10pct')(ZOOM_STEPS[0]))).toBe(ZOOM_STEPS[0]);
+    // A step that would pass an end stops AT it rather than holding short: 385% by 25 is 400%.
+    expect(scaleOf(stepZoom('in', '25pct')(3.85))).toBe(top);
   });
 });
 

@@ -18,9 +18,12 @@ import {
   STARTING_ZOOM_OPTION_TITLES,
   STARTING_ZOOM_TITLE,
   UNIT_TITLES,
+  ZOOM_STEP_DESCRIPTION,
+  ZOOM_STEP_OPTION_TITLES,
+  ZOOM_STEP_TITLE,
 } from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
-import { STARTING_ZOOMS, type StartingZoom } from '../zoom.js';
+import { STARTING_ZOOMS, type StartingZoom, ZOOM_STEP_CHOICES, type ZoomStep } from '../zoom.js';
 
 /**
  * What a reader sees over the page, as opposed to how the shell is painted.
@@ -242,4 +245,19 @@ export const STARTING_ZOOM_SETTING: SettingDefinition<z.ZodEnum<{ [K in Starting
   fallback: '100pct',
   category: 'viewing',
   optionTitles: STARTING_ZOOM_OPTION_TITLES,
+};
+
+/**
+ * How far `+`, `−` and Ctrl+wheel move the zoom — Part F's *"zoom step"*. The ladder is the default, as the owner
+ * answered on 2026-09-27: the steps every viewer this one replaces offers, closer together near 100%. The others move
+ * by a fixed number of percentage points, within the ladder's ends (`stepZoom`).
+ */
+export const ZOOM_STEP_SETTING: SettingDefinition<z.ZodEnum<{ [K in ZoomStep]: K }>> = {
+  id: 'viewing.zoom-step',
+  title: ZOOM_STEP_TITLE,
+  description: ZOOM_STEP_DESCRIPTION,
+  schema: z.enum(ZOOM_STEP_CHOICES),
+  fallback: 'ladder',
+  category: 'viewing',
+  optionTitles: ZOOM_STEP_OPTION_TITLES,
 };

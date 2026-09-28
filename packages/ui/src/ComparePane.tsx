@@ -8,7 +8,7 @@ import { COMPARE_PICK, COMPARE_SAME, COMPARE_SECOND_LABEL } from './messages/en.
 import { FIRST_PAGE } from './pageNumbering.js';
 import type { RulerUnit } from './rulerGeometry.js';
 import { useDocumentView } from './useDocumentView.js';
-import type { ZoomMode } from './zoom.js';
+import type { ZoomDirection, ZoomMode } from './zoom.js';
 
 /** One open document, as the picker needs to name it. */
 export interface ComparableDocument {
@@ -62,7 +62,7 @@ export function ComparePane({
   others,
   onPick,
   mode,
-  onZoom,
+  onZoomStep,
   loupe,
   rulers,
   showGrid,
@@ -83,7 +83,7 @@ export function ComparePane({
   readonly others: readonly ComparableDocument[];
   readonly onPick: (docId: DocId | undefined) => void;
   readonly mode: ZoomMode;
-  readonly onZoom: (next: (shown: number) => ZoomMode) => void;
+  readonly onZoomStep: (direction: ZoomDirection) => void;
   readonly loupe: boolean;
   readonly rulers: boolean;
   readonly showGrid: boolean;
@@ -123,7 +123,7 @@ export function ComparePane({
           goTo={goTo}
           onWentTo={onWentTo}
           mode={mode}
-          onZoom={onZoom}
+          onZoomStep={onZoomStep}
           loupe={loupe}
           rulers={rulers}
           showGrid={showGrid}
@@ -154,7 +154,7 @@ function CompareView({
   goTo,
   onWentTo,
   mode,
-  onZoom,
+  onZoomStep,
   loupe,
   rulers,
   showGrid,
@@ -166,7 +166,7 @@ function CompareView({
   readonly goTo: number | undefined;
   readonly onWentTo: () => void;
   readonly mode: ZoomMode;
-  readonly onZoom: (next: (shown: number) => ZoomMode) => void;
+  readonly onZoomStep: (direction: ZoomDirection) => void;
   readonly loupe: boolean;
   readonly rulers: boolean;
   readonly showGrid: boolean;
@@ -205,7 +205,7 @@ function CompareView({
       version={against.version}
       onCurrentPage={reportPage}
       mode={mode}
-      onZoom={onZoom}
+      onZoomStep={onZoomStep}
       onShownZoom={ignoreZoom}
       goTo={goTo}
       startAt={FIRST_PAGE.kernel}

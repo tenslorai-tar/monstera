@@ -294,7 +294,7 @@ describe('PageList', () => {
         version={VERSION}
         onCurrentPage={vi.fn()}
         mode={SCALE_1}
-        onZoom={vi.fn()}
+        onZoomStep={vi.fn()}
         onShownZoom={vi.fn()}
         goTo={undefined}
         startAt={FIRST_PAGE.kernel}
@@ -328,7 +328,7 @@ describe('PageList', () => {
           version={VERSION}
           onCurrentPage={vi.fn()}
           mode={SCALE_1}
-          onZoom={vi.fn()}
+          onZoomStep={vi.fn()}
           onShownZoom={vi.fn()}
           goTo={undefined}
           startAt={FIRST_PAGE.kernel}
@@ -387,7 +387,7 @@ describe('PageList', () => {
         version={VERSION}
         onCurrentPage={vi.fn()}
         mode={SCALE_1}
-        onZoom={vi.fn()}
+        onZoomStep={vi.fn()}
         onShownZoom={vi.fn()}
         goTo={undefined}
         startAt={FIRST_PAGE.kernel}
@@ -439,7 +439,7 @@ describe('PageList', () => {
         version={VERSION}
         onCurrentPage={vi.fn()}
         mode={SCALE_1}
-        onZoom={vi.fn()}
+        onZoomStep={vi.fn()}
         onShownZoom={vi.fn()}
         goTo={undefined}
         startAt={FIRST_PAGE.kernel}
@@ -475,7 +475,7 @@ describe('PageList', () => {
         version={VERSION}
         onCurrentPage={vi.fn()}
         mode={SCALE_1}
-        onZoom={vi.fn()}
+        onZoomStep={vi.fn()}
         onShownZoom={vi.fn()}
         goTo={undefined}
         startAt={FIRST_PAGE.kernel}
@@ -518,7 +518,7 @@ describe('PageList', () => {
         version={VERSION}
         onCurrentPage={vi.fn()}
         mode={SCALE_1}
-        onZoom={vi.fn()}
+        onZoomStep={vi.fn()}
         onShownZoom={vi.fn()}
         goTo={undefined}
         startAt={FIRST_PAGE.kernel}
@@ -552,7 +552,7 @@ describe('PageList', () => {
         version={VERSION}
         onCurrentPage={vi.fn()}
         mode={SCALE_1}
-        onZoom={vi.fn()}
+        onZoomStep={vi.fn()}
         onShownZoom={vi.fn()}
         goTo={undefined}
         startAt={FIRST_PAGE.kernel}
@@ -582,7 +582,7 @@ describe('PageList', () => {
         version={VERSION}
         onCurrentPage={vi.fn()}
         mode={SCALE_1}
-        onZoom={vi.fn()}
+        onZoomStep={vi.fn()}
         onShownZoom={vi.fn()}
         goTo={undefined}
         startAt={FIRST_PAGE.kernel}
@@ -624,7 +624,7 @@ describe('PageList', () => {
         version={VERSION}
         onCurrentPage={vi.fn()}
         mode={SCALE_1}
-        onZoom={vi.fn()}
+        onZoomStep={vi.fn()}
         onShownZoom={vi.fn()}
         goTo={undefined}
         startAt={FIRST_PAGE.kernel}
@@ -657,7 +657,7 @@ describe('PageList', () => {
         version={VERSION}
         onCurrentPage={vi.fn()}
         mode={SCALE_1}
-        onZoom={vi.fn()}
+        onZoomStep={vi.fn()}
         onShownZoom={vi.fn()}
         goTo={undefined}
         startAt={FIRST_PAGE.kernel}
@@ -703,7 +703,7 @@ describe('PageList', () => {
         version={VERSION}
         onCurrentPage={vi.fn()}
         mode={SCALE_1}
-        onZoom={vi.fn()}
+        onZoomStep={vi.fn()}
         onShownZoom={vi.fn()}
         goTo={undefined}
         startAt={FIRST_PAGE.kernel}
@@ -764,7 +764,7 @@ describe('PageList', () => {
       docId: DOC,
       onCurrentPage: vi.fn(),
       mode: SCALE_1,
-      onZoom: vi.fn(),
+      onZoomStep: vi.fn(),
       onShownZoom: vi.fn(),
       goTo: undefined,
       startAt: FIRST_PAGE.kernel,
@@ -807,7 +807,7 @@ describe('PageList', () => {
         version={VERSION}
         onCurrentPage={vi.fn()}
         mode={SCALE_1}
-        onZoom={vi.fn()}
+        onZoomStep={vi.fn()}
         onShownZoom={vi.fn()}
         goTo={undefined}
         onWentTo={vi.fn()}
@@ -846,7 +846,7 @@ describe('PageList', () => {
       version: VERSION,
       onCurrentPage: vi.fn(),
       mode: SCALE_1,
-      onZoom: vi.fn(),
+      onZoomStep: vi.fn(),
       onShownZoom: vi.fn(),
       goTo: undefined,
       onWentTo: vi.fn(),
@@ -880,7 +880,7 @@ describe('PageList', () => {
       version: VERSION,
       onCurrentPage: vi.fn(),
       mode: SCALE_1,
-      onZoom: vi.fn(),
+      onZoomStep: vi.fn(),
       onShownZoom: vi.fn(),
       onWentTo: vi.fn(),
       loupe: false,
@@ -923,7 +923,7 @@ describe('PageList', () => {
       version: VERSION,
       onCurrentPage: vi.fn(),
       mode: SCALE_1,
-      onZoom: vi.fn(),
+      onZoomStep: vi.fn(),
       onShownZoom: vi.fn(),
       onWentTo: wentTo,
       loupe: false,
@@ -980,7 +980,7 @@ describe('PageList', () => {
           version={VERSION}
           onCurrentPage={vi.fn()}
           mode={SCALE_1}
-          onZoom={vi.fn()}
+          onZoomStep={vi.fn()}
           onShownZoom={vi.fn()}
           goTo={undefined}
         startAt={FIRST_PAGE.kernel}
@@ -1009,7 +1009,7 @@ describe('PageList', () => {
             version={VERSION}
             onCurrentPage={vi.fn()}
             mode={SCALE_2}
-            onZoom={vi.fn()}
+            onZoomStep={vi.fn()}
             onShownZoom={vi.fn()}
             goTo={undefined}
         startAt={FIRST_PAGE.kernel}
@@ -1049,7 +1049,7 @@ describe('PageList', () => {
             version={VERSION}
             onCurrentPage={vi.fn()}
             mode={SCALE_1}
-            onZoom={vi.fn()}
+            onZoomStep={vi.fn()}
             onShownZoom={vi.fn()}
             goTo={undefined}
         startAt={FIRST_PAGE.kernel}
@@ -1076,7 +1076,7 @@ describe('PageList', () => {
             version={VERSION}
             onCurrentPage={vi.fn()}
             mode={SCALE_2}
-            onZoom={vi.fn()}
+            onZoomStep={vi.fn()}
             onShownZoom={vi.fn()}
             goTo={undefined}
         startAt={FIRST_PAGE.kernel}
@@ -1121,7 +1121,7 @@ describe('PageList', () => {
         version={VERSION}
         onCurrentPage={current}
         mode={SCALE_1}
-        onZoom={vi.fn()}
+        onZoomStep={vi.fn()}
         onShownZoom={vi.fn()}
         goTo={undefined}
         startAt={FIRST_PAGE.kernel}

@@ -145,28 +145,54 @@ export function resolveZoom(mode: ZoomMode, viewport?: Box, page?: Box): number 
 }
 
 /**
- * The mode one step in from `mode`, given the scale currently shown.
- *
- * **Stepping out of a fit lands on the ladder, not on the fit's own number.** A
- * reader at *fit width* who presses `+` wants a preset, and a ladder that
- * started from 1.37 would offer 1.5 — correct — while one that kept the fit
- * would leave them in a mode that jumps on the next resize. `shown` is what
- * makes the step relative to what is on screen rather than to what was last
- * asked for.
- *
- * **It takes the shown scale and NOT the mode**, which is the whole point: the
- * mode a reader is stepping out of tells you nothing about where the ladder
- * should start, and a signature that accepted it would invite a caller to pass
- * the mode's own scale for a fit — where there is none.
- *
- * @param shown the scale actually being displayed, which for a fit is the
- *   resolved number and not the mode
+ * The *Zoom step* setting's members (Part F's *"zoom step"*, the owner's 2026-09-27 answer: the ladder as default).
+ * The ladder is {@link ZOOM_STEPS}; the others step by a fixed number of percentage points.
  */
-export function zoomInFrom(shown: number): ZoomMode {
-  return { kind: 'scale', scale: ZOOM_STEPS.find((step) => step > shown) ?? shown };
-}
+export const ZOOM_STEP_CHOICES = ['ladder', '10pct', '25pct'] as const;
 
-/** The step below what is shown. See {@link zoomInFrom}. */
-export function zoomOutFrom(shown: number): ZoomMode {
-  return { kind: 'scale', scale: [...ZOOM_STEPS].reverse().find((step) => step < shown) ?? shown };
+export type ZoomStep = (typeof ZOOM_STEP_CHOICES)[number];
+
+/** Which way `+`, `−` and Ctrl+wheel ask to go; the shell turns it into a mode by the reader's step. */
+export type ZoomDirection = 'in' | 'out';
+
+/** A fixed step's size in whole percentage points — whole, so stepping out and back lands where it started. */
+const FIXED_STEP_POINTS: Readonly<Record<Exclude<ZoomStep, 'ladder'>, number>> = { '10pct': 10, '25pct': 25 };
+
+/**
+ * The mode one step in or out from the scale currently shown, by the reader's chosen step.
+ *
+ * **Stepping out of a fit lands on a step, not on the fit's own number.** A reader at *fit width* who presses `+`
+ * wants a preset, and a ladder that started from 1.37 would offer 1.5 — correct — while one that kept the fit would
+ * leave them in a mode that jumps on the next resize. A fixed step does the same: from 137% by tens, `+` is 140%.
+ *
+ * **It takes the shown scale and NOT the mode**, which is the whole point: the mode a reader is stepping out of tells
+ * you nothing about where the step should start, and a signature that accepted it would invite a caller to pass the
+ * mode's own scale for a fit — where there is none.
+ *
+ * **The step is an argument, never a default**: there is no function that steps by the ladder without being asked
+ * to, so a caller cannot forget the reader's choice (B5). Both kinds stay within the ladder's ends, which is where a
+ * fit is clamped too, so there is no scale one control reaches and another cannot step out of.
+ *
+ * @returns a function of the shown scale, which is what `onZoom` takes
+ */
+export function stepZoom(direction: ZoomDirection, step: ZoomStep): (shown: number) => ZoomMode {
+  return (shown) => {
+    if (step === 'ladder') {
+      const found = direction === 'in' ? ZOOM_STEPS.find((each) => each > shown) : [...ZOOM_STEPS].reverse().find((each) => each < shown);
+      return { kind: 'scale', scale: found ?? shown };
+    }
+    const points = FIXED_STEP_POINTS[step];
+    // IN WHOLE PERCENTAGE POINTS, so 1.1 is reached as 110 / 100 and not as 1 + 0.1: repeated float addition drifts
+    // off a value a reader can read, which is the ladder's own reason for being a list. The epsilon lets a shown
+    // 1.1 that arrived as 1.1000000000000001 count as ON the step rather than just past it.
+    const shownPoints = shown * 100;
+    const target =
+      direction === 'in'
+        ? (Math.floor(shownPoints / points + 1e-9) + 1) * points
+        : (Math.ceil(shownPoints / points - 1e-9) - 1) * points;
+    const bounded = Math.min(MAX_SCALE * 100, Math.max(MIN_SCALE * 100, target));
+    // AT AN END, the reader stays where they are — the ladder's own behaviour at 50% and 400%.
+    if (direction === 'in' ? bounded <= shownPoints : bounded >= shownPoints) return { kind: 'scale', scale: shown };
+    return { kind: 'scale', scale: bounded / 100 };
+  };
 }

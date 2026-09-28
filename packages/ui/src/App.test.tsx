@@ -3504,6 +3504,55 @@ describe('Settings › Viewing › Starting zoom (Part F)', () => {
   });
 });
 
+describe('Settings › Viewing › Zoom step (Part F)', () => {
+  it('Zoom in steps by the chosen step — and CONTROL: by the ladder when nothing was chosen', async () => {
+    // THE SEPARATING VALUES: from 100%, a 10-point step reads 110% and the ladder 125%, so a control that ignored
+    // the setting would show the ladder's answer here. Ctrl+wheel is proven in `renderedScreen.pw.ts`: happy-dom's
+    // WheelEvent carries no `ctrlKey` (measured 2026-09-28, `undefined`), so no wheel here can ask to zoom.
+    for (const [chosen, button] of [
+      ['10pct', '110%'],
+      [undefined, '125%'],
+    ] as const) {
+      const settings = freshSettings();
+      if (chosen !== undefined) settings.set('viewing.zoom-step', chosen);
+      const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
+      const { container, unmount } = render(<App client={client} settings={settings} />);
+      await withDocumentOpen();
+      const zoom = (): string | null | undefined => container.querySelector('.m-status-zoom')?.textContent;
+      expect(zoom(), String(chosen)).toBe('100%');
+
+      const bar = container.querySelector('.m-status-bar');
+      if (!(bar instanceof HTMLElement)) throw new Error('the status bar is drawn');
+      await act(async () => {
+        fireEvent.click(within(bar).getByRole('button', { name: 'Zoom in' }));
+        await new Promise((settle) => setTimeout(settle, 0));
+      });
+      expect(zoom(), `${String(chosen)}: the button`).toBe(button);
+      unmount();
+    }
+  });
+
+  it('a step CHANGED while a document is open takes effect on the next Zoom in', async () => {
+    // The commands are built once per registry; a registry not rebuilt on a new step keeps stepping by the old one.
+    // Chosen before render, the case above cannot see that — this one changes it after the registry exists.
+    const settings = freshSettings();
+    const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
+    const { container } = render(<App client={client} settings={settings} />);
+    await withDocumentOpen();
+    await act(async () => {
+      settings.set('viewing.zoom-step', '10pct');
+      await new Promise((settle) => setTimeout(settle, 0));
+    });
+    const bar = container.querySelector('.m-status-bar');
+    if (!(bar instanceof HTMLElement)) throw new Error('the status bar is drawn');
+    await act(async () => {
+      fireEvent.click(within(bar).getByRole('button', { name: 'Zoom in' }));
+      await new Promise((settle) => setTimeout(settle, 0));
+    });
+    expect(container.querySelector('.m-status-zoom')?.textContent).toBe('110%');
+  });
+});
+
 describe('the proof locale — every word on screen came through the catalogue (BUILD-PROMPT.md:721)', () => {
   /**
    * Every visible text and every named attribute, with what the proof locale marks — `⟦…⟧` — taken out. What is

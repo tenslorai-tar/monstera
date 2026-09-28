@@ -113,7 +113,7 @@ import { checkForUpdatesCommand } from './commands/checkForUpdates.js';
 import { createTypingFocus, type TypingFocus } from './typingFocus.js';
 import { MenuBar } from './surfaces/MenuBar.js';
 import { usePageAnnotations } from './usePageAnnotations.js';
-import { DEFAULT_ZOOM, startingZoomMode, type ZoomMode } from './zoom.js';
+import { DEFAULT_ZOOM, startingZoomMode, stepZoom, type ZoomDirection, type ZoomMode } from './zoom.js';
 import {
   commandPaletteCommand,
   toggleDarkPageCommand,
@@ -346,6 +346,7 @@ import {
   SECOND_RENDERER_SETTING,
   SPLIT_VIEW_SETTING,
   STARTING_ZOOM_SETTING,
+  ZOOM_STEP_SETTING,
   applyDarkPage,
 } from './settings/viewing.js';
 import {
@@ -2216,6 +2217,15 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     },
     [shownZoom, store],
   );
+  // ONE STEP IN OR OUT BY THE READER'S *ZOOM STEP*, read here once: `+`, `−` and Ctrl+wheel all ask this with a
+  // direction, so none of them holds a step of its own to disagree with the setting.
+  const zoomStep = useSetting(settings, ZOOM_STEP_SETTING);
+  const stepZoomBy = useCallback(
+    (direction: ZoomDirection): void => {
+      changeZoom(stepZoom(direction, zoomStep));
+    },
+    [changeZoom, zoomStep],
+  );
 
   /**
    * The open command, built once and read by two things.
@@ -2604,8 +2614,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             ...assistantSelectionCommands({ selection: () => textSelection, ask: askAssistant }),
           ];
         })(),
-        zoomCommand('in', { onZoom: changeZoom }),
-        zoomCommand('out', { onZoom: changeZoom }),
+        zoomCommand('in', { onZoomStep: stepZoomBy }),
+        zoomCommand('out', { onZoomStep: stepZoomBy }),
         fitCommand('width', { onZoom: changeZoom }),
         fitCommand('page', { onZoom: changeZoom }),
         // STAGE 3's SHAPE TOOLS, registered in both registries under one id
@@ -2671,6 +2681,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   }, [
       // THE KEYS A PERSON CHOSE, so a change in the shortcuts dialog rebuilds the registry and the new key works at once.
       chosenShortcuts,
+      // THE ZOOM STEP, through the function `+` and `−` ask: a changed step rebuilds them, or they would step by the old.
+      stepZoomBy,
       activate,
       aiSetup,
       applied,
@@ -3009,7 +3021,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onCurrentPage={viewed}
           onPageBox={pageBoxed}
           mode={zoomMode}
-          onZoom={changeZoom}
+          onZoomStep={stepZoomBy}
           onShownZoom={setShownZoom}
           goTo={goTo}
           onWentTo={wentTo}
@@ -3203,7 +3215,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           // THE SAME `jumpTo` a key, a thumbnail and an outline entry dispatch,
           // so a typed page is recorded in the history exactly as those are.
           onGoTo={navigator.jumpTo}
-          // THE SAME setter the zoom commands take, so the slider has no second owner.
+          // THE SAME setter the fit commands take, so the slider has no second owner.
           onZoom={changeZoom}
           // The bar's buttons are projected from here (ADR-0067).
           registry={registry}
@@ -3402,7 +3414,7 @@ function PageCanvas({
   onCurrentPage,
   onPageBox,
   mode,
-  onZoom,
+  onZoomStep,
   onShownZoom,
   goTo,
   onWentTo,
@@ -3447,7 +3459,7 @@ function PageCanvas({
   readonly pageMenu: (page: number, element: ReactElement) => ReactNode;
   readonly onCurrentPage: (page: number) => void;
   readonly mode: ZoomMode;
-  readonly onZoom: (next: (shown: number) => ZoomMode) => void;
+  readonly onZoomStep: (direction: ZoomDirection) => void;
   readonly onShownZoom: (shown: number) => void;
   readonly goTo: number | undefined;
   readonly onWentTo: () => void;
@@ -3749,7 +3761,7 @@ function PageCanvas({
         onCurrentPage={reporting === 'first' ? onCurrentPage : ignorePage}
         onPageBox={onPageBox}
         mode={mode}
-        onZoom={onZoom}
+        onZoomStep={onZoomStep}
         onShownZoom={reporting === 'first' ? onShownZoom : ignoreZoom}
         goTo={reporting === 'first' ? goTo : undefined}
         onActivate={split && compare === undefined ? activateFirst : undefined}
@@ -3816,7 +3828,7 @@ function PageCanvas({
             others={others}
             onPick={onCompare}
             mode={mode}
-            onZoom={onZoom}
+            onZoomStep={onZoomStep}
             loupe={loupe}
             rulers={rulers}
             showGrid={showGrid}
@@ -3832,7 +3844,7 @@ function PageCanvas({
               onCurrentPage={reporting === 'second' ? onCurrentPage : ignorePage}
               onPageBox={onPageBox}
               mode={mode}
-              onZoom={onZoom}
+              onZoomStep={onZoomStep}
               onShownZoom={reporting === 'second' ? onShownZoom : ignoreZoom}
               goTo={reporting === 'second' ? goTo : undefined}
               // The same page the first pane starts at, so a split opens on
