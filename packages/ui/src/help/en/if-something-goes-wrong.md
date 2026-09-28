@@ -20,6 +20,7 @@ When something cannot be done, Monstera tells you in plain words and says what h
 ## Good to know
 
 - A message may show a **Reference** code. Include it if you report the problem.
+- The log records problems. To report something slow or unexpected, open **Settings**, choose **Advanced**, set **Diagnostics log** to **Detailed**, and do it again: the log then also records each thing Monstera was asked to do and how long it took. It never records names, text or where your files are.
 - If Monstera says it can no longer work on a document, your changes are still open: save them somewhere else with **Save a copy…**, or close and reopen the file.
 - Messages that appear briefly at the bottom of the window can be dismissed with **Dismiss**, and they pause while you point at them.
 

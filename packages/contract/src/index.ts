@@ -118,6 +118,8 @@ export {
   RECENT_LENGTH_SETTING_ID,
   type RecentLength,
   CRASH_REPORTS_SETTING_ID,
+  LOG_DETAIL_SETTING_ID,
+  LOG_DETAILS,
   crashReportIdSchema,
   // THE UPDATE CHECK (ADR-0110): main parses the manifest and answers the status; the page reads the status, and
   // registers the check's switch only while the address is live.

@@ -775,6 +775,15 @@ export const EDITING_PERSONAL_DICTIONARY_TITLE = messageKey(
 );
 export const EDITING_OCR_LANGUAGE_TITLE = messageKey('setting.editing.ocr-language.title');
 export const EDITING_OCR_LANGUAGE_DESCRIPTION = messageKey('setting.editing.ocr-language.description');
+export const LOG_DETAIL_TITLE = messageKey('setting.advanced.log-detail.title');
+export const LOG_DETAIL_DESCRIPTION = messageKey('setting.advanced.log-detail.description');
+export const LOG_DETAIL_PROBLEMS = messageKey('setting.advanced.log-detail.problems');
+export const LOG_DETAIL_DETAILED = messageKey('setting.advanced.log-detail.detailed');
+/** `advanced.log-detail`'s members, each its own exported key as the other option sets are. */
+export const LOG_DETAIL_OPTION_TITLES = {
+  problems: LOG_DETAIL_PROBLEMS,
+  detailed: LOG_DETAIL_DETAILED,
+} as const;
 export const RECOGNISE_ON_EXPORT_TITLE = messageKey('setting.ocr.recognise-on-export.title');
 export const RECOGNISE_ON_EXPORT_DESCRIPTION = messageKey('setting.ocr.recognise-on-export.description');
 export const EDITING_AZURE_ENDPOINT_DESCRIPTION = messageKey('setting.editing.azure-di-endpoint.description');
@@ -2541,6 +2550,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EDITING_OCR_LANGUAGE_TITLE]: 'Recognition languages',
   [EDITING_OCR_LANGUAGE_DESCRIPTION]:
     'Up to three, read together, for pages that mix them. Used unless you choose others for that run.',
+  [LOG_DETAIL_TITLE]: 'Diagnostics log',
+  [LOG_DETAIL_DESCRIPTION]:
+    'Detailed also records each thing Monstera is asked to do and how long it took — never names, text or where files are.',
+  [LOG_DETAIL_PROBLEMS]: 'Problems only',
+  [LOG_DETAIL_DETAILED]: 'Detailed',
   [RECOGNISE_ON_EXPORT_TITLE]: 'Recognise scanned pages when exporting',
   [RECOGNISE_ON_EXPORT_DESCRIPTION]:
     'Text, Word and PDF/A exports read scanned pages first. The text is also added to the open document; Ctrl+Z undoes it.',

@@ -136,6 +136,7 @@ import {
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, type PictureFiles, createRecentPictures } from './recentPictures.js';
+import { NO_REQUEST_LOG, createRequestLog } from './requestLog.js';
 import { createPersonalLibrary, memoryPictureFiles } from './personalLibrary.js';
 import { saveNamesFor } from './backupCopies.js';
 import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
@@ -1601,6 +1602,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       launched.add(paths);
     },
     incidents: log?.incidents ?? reportIncident,
+    // THE DETAILED LOG'S LINES (ADR-0119), into the same file through the same write; no log, no lines.
+    requests: log === null ? NO_REQUEST_LOG : createRequestLog(settings, log.write),
     failures,
     attachWindow: (window) => {
       shellWindow = window;

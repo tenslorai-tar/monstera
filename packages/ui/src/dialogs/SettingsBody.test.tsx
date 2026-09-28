@@ -485,8 +485,21 @@ describe('SettingsBody', () => {
     opened({});
     goTo('privacy');
     expect(screen.getByLabelText('Ask me to rate Monstera')).toBeDefined();
-    // Advanced had no other row, so it is not listed at all — a page with nothing on it would be a dead one.
-    expect(screen.queryByRole('button', { name: 'Advanced' })).toBeNull();
+    // AND NOT ON ADVANCED, which is listed since the diagnostics log's row arrived there (ADR-0119) — so the row that
+    // is there is the control that this page was reached, and the rating's absence is not an unlisted page's.
+    goTo('advanced');
+    expect(screen.getByLabelText('Diagnostics log')).toBeDefined();
+    expect(screen.queryByLabelText('Ask me to rate Monstera')).toBeNull();
+  });
+
+  it('the DIAGNOSTICS LOG is a choice of two on Advanced, Problems only by default, and a choice is reported', () => {
+    const { reported } = opened({});
+    goTo('advanced');
+    const group = screen.getByLabelText('Diagnostics log');
+    expect(within(group).getByRole('radio', { name: 'Problems only' }).getAttribute('aria-checked')).toBe('true');
+
+    fireEvent.click(within(group).getByRole('radio', { name: 'Detailed' }));
+    expect(reported).toStrictEqual([{ values: { 'advanced.log-detail': 'detailed' }, secrets: {} }]);
   });
 
   it('every listed page INTRODUCES ITSELF with a line under its title (the owner’s design)', () => {

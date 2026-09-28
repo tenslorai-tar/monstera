@@ -679,7 +679,7 @@ export async function reportCanvasPixels(
       window.webContents[action]();
     },
   });
-  registerContractHandlers(ipcMain, deps.handlers, deps.incidents, senderCheckFor(window));
+  registerContractHandlers(ipcMain, deps.handlers, deps.incidents, senderCheckFor(window), deps.requests);
 
   const contents = window.webContents;
   await new Promise<void>((resolve) => {

@@ -16,6 +16,7 @@ import { claudeModel, createShellDependencies } from './composition.js';
 import { harnessSurfaces } from './harnessComposition.js';
 import { type PictureFiles, pictureName } from './recentPictures.js';
 import { createEphemeralSettings } from './settingsFile.js';
+import type { ShellLog } from './shellLog.js';
 import type { AppInfo } from './contractHandlers.js';
 
 /**
@@ -62,6 +63,50 @@ function aDocument(name: string): string {
   writeFileSync(path, '%PDF-1.7\n');
   return path;
 }
+
+describe('the detailed log, as the composition root assembles it (ADR-0119)', () => {
+  /** A log that records the lines written to it, in the shape `createShellLog` answers. */
+  function recordingLog(lines: string[]): ShellLog {
+    return {
+      directory: 'no directory: the lines are held here',
+      failures: () => undefined,
+      incidents: () => undefined,
+      reveal: () => Promise.resolve(false),
+      write: (kind, detail) => {
+        lines.push(`${kind} ${detail}`);
+      },
+    };
+  }
+
+  it('reads the GRAPH’S OWN settings, is turned on by the graph’s own save, and writes through the graph’s log', async () => {
+    // The unit cases hand the observer a store and a writer; this is the one place the root's choice of WHICH store
+    // and WHICH writer is crossed. A root that built it over a store of its own, or wrote to stderr, passes those.
+    const lines: string[] = [];
+    const settings = createEphemeralSettings();
+    const deps = createShellDependencies({
+      ...harnessSurfaces('the composition test'),
+      appInfo,
+      settings,
+      log: recordingLog(lines),
+    });
+
+    deps.requests('app.info', {}, 'ok', 2);
+    expect(lines).toStrictEqual([]);
+
+    const saved = { values: { 'advanced.log-detail': 'detailed' } };
+    expect(await deps.handlers['settings.save'](saved)).toStrictEqual({ ok: true, value: { stored: true } });
+    deps.requests('settings.save', saved, 'ok', 3);
+    deps.requests('app.info', {}, 'ok', 2);
+    expect(lines).toStrictEqual(['REQUEST settings.save ok 3ms', 'REQUEST app.info ok 2ms']);
+  });
+
+  it('CONTROL: a graph with no log records nothing and does not fail', () => {
+    const deps = createShellDependencies({ ...harnessSurfaces('the composition test'), appInfo });
+    expect(() => {
+      deps.requests('app.info', {}, 'ok', 2);
+    }).not.toThrow();
+  });
+});
 
 describe('the title bar overlay, through the assembled handlers', () => {
   it('answers applied:false before a window is attached, then paints the attached window with exactly what crossed', async () => {

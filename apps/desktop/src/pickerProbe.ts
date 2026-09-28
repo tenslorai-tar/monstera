@@ -172,7 +172,7 @@ export async function reportPickerProbe(): Promise<void> {
     },
   });
   const window = createMainWindow(session.defaultSession, deps.failures);
-  registerContractHandlers(ipcMain, deps.handlers, deps.incidents, senderCheckFor(window));
+  registerContractHandlers(ipcMain, deps.handlers, deps.incidents, senderCheckFor(window), deps.requests);
 
   const contents = window.webContents;
   await new Promise<void>((resolve) => {

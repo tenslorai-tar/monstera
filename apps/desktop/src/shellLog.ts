@@ -36,7 +36,10 @@ import type { ShellFailure, ShellFailureSink } from './shellFailure.js';
  *
  * The cost is bounded by what it is used for. This is not a general logger and
  * must not become one: it takes lifecycle failures and incidents, both of which
- * are rare by construction, and neither is on a path that renders a page.
+ * are rare by construction, and neither is on a path that renders a page. The
+ * one addition is the person's own choice: *Detailed* (ADR-0119) writes a line
+ * per renderer request — its name, outcome and time, never its content — off
+ * by default, never for the byte ranges PDF.js reads, and under the same cap.
  *
  * ## A sink must not throw, so this one cannot
  *

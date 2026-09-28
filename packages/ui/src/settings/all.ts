@@ -10,6 +10,7 @@ import {
 } from './ai.js';
 import { DOCUSIGN_ENVIRONMENT_SETTING, DOCUSIGN_INTEGRATION_KEY_SETTING } from './integrations.js';
 import { CRASH_REPORTS_SETTING, RECENT_PREVIEWS_SETTING, REVIEW_PROMPTS_SETTING } from './privacy.js';
+import { LOG_DETAIL_SETTING } from './advanced.js';
 import {
   AUTOSAVE_SETTING,
   BACKUP_COPIES_SETTING,
@@ -172,6 +173,7 @@ export const ALL_SETTINGS: readonly SettingDefinition[] = [
   WARN_SIGNATURE_BREAK_SETTING,
   CONFIRM_REDACTION_SETTING,
   SHORTCUTS_SETTING,
+  LOG_DETAIL_SETTING,
   // THE UPDATE CHECK'S SWITCH, present only while the manifest has an address (ADR-0110): a switch for a check that
   // cannot run would read ON while nothing is ever asked.
   ...UPDATES_SETTINGS,

@@ -4,6 +4,7 @@ import { Menu, app, ipcMain, session } from 'electron';
 import type { TitleBarOverlay } from './contractHandlers.js';
 import { documentPathsIn } from './launchDocuments.js';
 import { registerContractHandlers } from './registerHandlers.js';
+import type { RequestObserver } from './requestLog.js';
 import { type ShellFailureSink, reportProcessFailures } from './shellFailure.js';
 import { quitAfterShutdown } from './shellShutdown.js';
 import { createMainWindow, senderCheckFor } from './window.js';
@@ -57,6 +58,8 @@ import { createMainWindow, senderCheckFor } from './window.js';
 export interface ShellDependencies {
   readonly handlers: MainHandlers;
   readonly incidents: IncidentSink;
+  /** Told of every answered request — the detailed log's lines (ADR-0119). */
+  readonly requests: RequestObserver;
   readonly failures: ShellFailureSink;
   /**
    * Closes what the shell holds, before the process ends.
@@ -188,7 +191,7 @@ export function startShell(build: () => ShellDependencies): void {
     window.on('query-session-end', (event) => {
       if (!deps.closeRequested()) event.preventDefault();
     });
-    registerContractHandlers(ipcMain, deps.handlers, deps.incidents, senderCheckFor(window));
+    registerContractHandlers(ipcMain, deps.handlers, deps.incidents, senderCheckFor(window), deps.requests);
 
     // A SECOND LAUNCH IS HANDED OVER HERE: a file association or *Open with* on a running Monstera starts a second
     // process, which quits at the lock above, and its arguments arrive in this event. Its documents are held and the

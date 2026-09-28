@@ -932,6 +932,15 @@ export const RECENT_PREVIEWS_SETTING_ID = 'privacy.recent-previews';
  */
 export const CRASH_REPORTS_SETTING_ID = 'privacy.crash-reports';
 
+/**
+ * How much the diagnostics log records (ADR-0119): problems only, or also one line per request. `main` reads it and
+ * the renderer declares its control — one id, two readers, as {@link CRASH_REPORTS_SETTING_ID} is.
+ */
+export const LOG_DETAIL_SETTING_ID = 'advanced.log-detail';
+
+/** {@link LOG_DETAIL_SETTING_ID}'s two values, the first the default. */
+export const LOG_DETAILS = ['problems', 'detailed'] as const;
+
 /** A crash report's id: its file's NAME, never a path (ADR-0109). */
 export const crashReportIdSchema = z.string().min(1).max(128).regex(/^[A-Za-z0-9._-]+$/u);
 
