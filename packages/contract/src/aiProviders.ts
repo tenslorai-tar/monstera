@@ -222,6 +222,15 @@ export function servesVision(model: AiModel): boolean {
 }
 
 /**
+ * Whether a provider's CHOSEN model must read images: Anthropic's, because it is also the Claude recogniser's
+ * whatever provider the Assistant is on (ADR-0117 Decisions 2 and 4). One rule for every picker that offers a
+ * choice — the Assistant's and the Settings row — so a model one lists disabled the other cannot offer.
+ */
+export function choiceReadsImages(provider: AiProviderId): boolean {
+  return provider === 'anthropic';
+}
+
+/**
  * The model a use gets when no one has chosen one: the first listed that the use can take (ADR-0117 Decision 5). ONE
  * rule, which the Assistant's picker shows and `main` sends for the recogniser, so the two cannot disagree about what
  * *the default* is; `undefined` when the list offers nothing the use can take.

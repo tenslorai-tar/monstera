@@ -425,6 +425,30 @@ export const MAX_CHAT_TEXT = 16_384;
 export const MAX_CHAT_TURNS = 64;
 
 /**
+ * One provider's model list as it crosses: where it came from, what went wrong asking, and the models. The ONE
+ * shape `ai.models` answers and the Settings dialog opens with (ADR-0117), so the two surfaces cannot disagree
+ * about what a list is.
+ */
+export const aiModelListSchema = z.object({
+  source: z.enum(['fetched', 'fallback', 'no-list']),
+  problem: z.enum(['unauthorised', 'unreachable', 'rejected', 'unreadable']).optional(),
+  models: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(MAX_MODEL_ID),
+        label: z.string().min(1).max(MAX_MODEL_ID),
+        capabilities: z.object({
+          vision: z.boolean().nullable(),
+          streaming: z.boolean().nullable(),
+        }),
+      }),
+    )
+    .max(MAX_MODELS),
+});
+
+export type AiModelListAnswer = z.infer<typeof aiModelListSchema>;
+
+/**
  * One turn of a SAVED conversation (ADR-0093): who said it, what, and what an asked turn sent —
  * never a reply target or a *posted* mark, which belong to one session's document version. Also
  * what `main` validates a decrypted conversation against, so one schema says what a saved turn is.
@@ -4670,22 +4694,19 @@ export const channels = {
   'ai.models': channel(
     'Which models a provider offers, and whether the list was fetched or is this build’s own.',
     z.object({ provider: z.enum(AI_PROVIDER_IDS) }).strict(),
-    z.object({
-      source: z.enum(['fetched', 'fallback', 'no-list']),
-      problem: z.enum(['unauthorised', 'unreachable', 'rejected', 'unreadable']).optional(),
-      models: z
-        .array(
-          z.object({
-            id: z.string().min(1).max(MAX_MODEL_ID),
-            label: z.string().min(1).max(MAX_MODEL_ID),
-            capabilities: z.object({
-              vision: z.boolean().nullable(),
-              streaming: z.boolean().nullable(),
-            }),
-          }),
-        )
-        .max(MAX_MODELS),
-    }),
+    aiModelListSchema,
+  ),
+
+  /**
+   * Every provider's list as `main` ALREADY HOLDS it — the one it last fetched this session, or else this build's
+   * fallback — and **never a request to a provider** ([ADR-0117](../../../docs/DECISIONS/0117-an-ai-model-is-chosen-per-provider-from-the-fetched-list.md),
+   * corrected 2026-09-28). The Settings dialog is props-only (ADR-0038), so it opens with this; a query that fetched
+   * would hold the dialog on the network, and an exhaustive record means a provider cannot be missing from it.
+   */
+  'ai.models.held': channel(
+    'Every provider’s model list as main holds it now, fetched this session or the fallback; asks no provider.',
+    z.object({}).strict(),
+    z.record(z.enum(AI_PROVIDER_IDS), aiModelListSchema),
   ),
 
   /**

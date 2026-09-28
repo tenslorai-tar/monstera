@@ -197,6 +197,12 @@ export interface SettingDefinition<Schema extends z.ZodType = z.ZodType> {
    * at construction in both directions, as `optionTitles` is.
    */
   readonly unsetTitle?: MessageKey;
+  /**
+   * A control DECLARED by the setting where no schema shape can say what it is — `ai-models`, a model per provider
+   * chosen from a list the dialog is handed ([ADR-0117](../../../../docs/DECISIONS/0117-an-ai-model-is-chosen-per-provider-from-the-fetched-list.md)
+   * Decision 3). Absent for every setting whose schema decides, which is all the others.
+   */
+  readonly control?: 'ai-models';
   /** Reads a stored value written by an older build. */
   readonly migrate?: (stored: unknown) => unknown;
 }

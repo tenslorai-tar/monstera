@@ -1,5 +1,8 @@
 import {
   AI_PROVIDERS,
+  AI_PROVIDER_IDS,
+  type AiModelListAnswer,
+  type AiProviderId,
   CHAT_HISTORY_SETTING_ID,
   type AskSent,
   CLOUD_PROVIDER_IDS,
@@ -20,6 +23,7 @@ import {
   type WindowEditAction,
 } from '@monstera/contract';
 import {
+  type AiModelList,
   type AskWindow,
   askInstruction,
   askPairInstruction,
@@ -443,18 +447,18 @@ export function createContractHandlers(deps: {
     // and `settings.saveSecret` accepts nothing else.
     // THE ASSISTANT (ADR-0081, ADR-0082). `ai.ask` answers that the request started; the
     // answer itself arrives on the event channels, so nothing here awaits it.
-    'ai.models': async ({ provider }) => {
-      const list = await deps.assistant.models(provider);
-      return ok({
-        source: list.source,
-        ...(list.problem === undefined ? {} : { problem: list.problem }),
-        models: list.models.map((model) => ({
-          id: model.id,
-          label: model.label,
-          capabilities: model.capabilities,
-        })),
-      });
-    },
+    'ai.models': async ({ provider }) => ok(listAnswer(await deps.assistant.models(provider))),
+    // ASKS NO PROVIDER: the Settings dialog opens on this, and a dialog held on the network is the defect
+    // ADR-0117's correction records.
+    'ai.models.held': () =>
+      Promise.resolve(
+        ok(
+          Object.fromEntries(AI_PROVIDER_IDS.map((provider) => [provider, listAnswer(deps.assistant.held(provider))])) as Record<
+            AiProviderId,
+            AiModelListAnswer
+          >,
+        ),
+      ),
     'ai.checkKey': async ({ provider, key, endpoint }) => {
       // ASKED BEFORE THE CHECK, so a machine with no keyring is told so before a request is made
       // with a key that could not have been kept anyway.
@@ -619,6 +623,15 @@ export function createContractHandlers(deps: {
     'app.updateStatus': async () => ok({ status: (await deps.updateCheck?.status()) ?? { kind: 'none' as const } }),
     'app.acknowledgeSecurityUpdate': async () => ok({ acknowledged: (await deps.updateCheck?.acknowledge()) ?? false }),
     'window.closeListening': () => Promise.resolve(ok({ acknowledged: deps.closeListening() })),
+  };
+}
+
+/** A model list as it crosses: the channel's fields, and nothing else the kernel's list carries. */
+function listAnswer(list: AiModelList): AiModelListAnswer {
+  return {
+    source: list.source,
+    ...(list.problem === undefined ? {} : { problem: list.problem }),
+    models: list.models.map((model) => ({ id: model.id, label: model.label, capabilities: model.capabilities })),
   };
 }
 

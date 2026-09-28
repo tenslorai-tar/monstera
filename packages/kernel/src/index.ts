@@ -250,6 +250,7 @@ export {
   type AiModelRequest,
   type AiModelSource,
   listModels,
+  unaskedList,
 } from './aiModels.js';
 export type { SessionAssets } from './host/remoteEngine.js';
 export type { SessionsByWriter } from './engineSeam.js';

@@ -40,11 +40,11 @@ Azure OpenAI is one of the providers the AI assistant can use.
 ### Paste a key into Monstera
 
 1. Open **Settings**: in the rail, choose **Settings**, or in the rail choose **Tools**, then **Settings** in the **Application** group.
-2. For **Claude** or **Azure OpenAI** (and the other assistant providers): choose the **AI** page. In **Provider**, pick the provider, then paste the key into its key field, for example **Anthropic API key** or **Azure OpenAI key**. For Azure OpenAI, also fill in **Azure OpenAI endpoint**.
+2. For **Claude** or **Azure OpenAI** (and the other assistant providers): choose the **AI** page. In **AI provider**, pick the provider, then paste the key into its key field, for example **Anthropic API key** or **Azure OpenAI key**. For Azure OpenAI, also fill in **Azure OpenAI endpoint**. The provider you pick here is also the one the assistant asks. Under **AI model**, choose the model; the line beneath it says whether the list came from the provider this session or is Monstera's own.
 3. For **Azure Document Intelligence**: choose the **OCR** page and fill in both **Azure Document Intelligence endpoint** and **Azure Document Intelligence key**.
 4. Changes save as you make them. Choose **Done** to close Settings.
 
-![The Settings window on the AI page, with Provider set to Anthropic and the Anthropic API key field showing that a key is stored](screenshot:ai-keys-and-pricing-1)
+![The Settings window on the AI page, with AI provider set to Anthropic and the Anthropic API key field showing that a key is stored](screenshot:ai-keys-and-pricing-1)
 
 You can also add an assistant key with a check first: in the rail choose **Review**, then **Set up AI…** in the **AI** group. Pick a **Provider**, paste the **API key**, and choose **Check and save**. Monstera asks the provider whether it accepts the key and stores it only if it does. **Skip** closes the window without storing anything.
 
@@ -52,7 +52,7 @@ You can also add an assistant key with a check first: in the rail choose **Revie
 
 ## Other AI providers
 
-The assistant can use any of these providers. Each needs its own key, pasted on the **AI** page of Settings after choosing it in **Provider**. Pricing is set by each provider; follow their own pages. Links were checked on 2026-09-26.
+The assistant can use any of these providers. Each needs its own key, pasted on the **AI** page of Settings after choosing it in **AI provider**. Pricing is set by each provider; follow their own pages. Links were checked on 2026-09-26.
 
 | Provider | Where to create a key | Provider's pricing |
 |---|---|---|
@@ -77,6 +77,6 @@ The assistant can use any of these providers. Each needs its own key, pasted on 
 
 <!--
 Screenshots to capture:
-1. ai-keys-and-pricing-1 — Settings dialog (dialog.settings), AI page selected. State: an Anthropic key already stored. Frame the Provider dropdown and the "Anthropic API key" row showing "A key is stored. Type a new one to replace it." and "Remove the stored key".
+1. ai-keys-and-pricing-1 — Settings dialog (dialog.settings), AI page selected. State: an Anthropic key already stored. Frame the AI provider dropdown and the "Anthropic API key" row showing "A key is stored. Type a new one to replace it." and "Remove the stored key".
 2. ai-keys-and-pricing-2 — "Set up the AI assistant" dialog (dialog.ai-setup), opened from Review › AI › Set up AI…. State: Provider = Azure OpenAI so the "Azure OpenAI endpoint" field shows; key field empty. Frame the whole dialog including "Check and save" and "Skip".
 -->

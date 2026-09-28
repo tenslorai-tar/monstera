@@ -139,7 +139,7 @@ describe('listModels', () => {
     const silent = ((_url: string, init?: { signal?: AbortSignal }) =>
       new Promise((_resolve, reject) => {
         init?.signal?.addEventListener('abort', () => {
-          reject(init.signal?.reason);
+          reject(new DOMException('The operation was aborted.', 'AbortError'));
         });
       })) as unknown as typeof fetch;
 
@@ -177,7 +177,7 @@ describe('listModels', () => {
       const slow = ((_url: string, init?: { signal?: AbortSignal }) =>
         new Promise((resolve, reject) => {
           init?.signal?.addEventListener('abort', () => {
-            reject(init.signal?.reason);
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
           });
           setTimeout(() => {
             resolve(new Response(JSON.stringify({ data: [{ id: 'gpt-x' }] }), { status: 200 }));

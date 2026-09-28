@@ -60,6 +60,9 @@ export function showSettingsCommand(deps: {
     ],
     run: async (): Promise<void> => {
       const secrets = await deps.client['settings.loadSecrets']({});
+      // THE LISTS MAIN ALREADY HOLDS, asked of `main` and never of a provider: the dialog is props-only (ADR-0038), and
+      // this query answers without the network, so opening Settings never waits on one (ADR-0117, corrected 2026-09-28).
+      const held = await deps.client['ai.models.held']({});
       const values = Object.fromEntries(
         DIALOG_SETTINGS.filter((setting) => controlFor(setting) !== 'secret').map((setting) => [
           setting.id,
@@ -112,6 +115,8 @@ export function showSettingsCommand(deps: {
           // A LOAD THAT FAILED IS NOT AVAILABLE STORAGE. Offering a field whose save cannot be known
           // to work would be the control that looks saved.
           secretsAvailable: secrets.ok && secrets.value.available,
+          // A QUERY THAT FAILED IS NO LIST, and the row says so rather than offering nothing as though it were one.
+          models: held.ok ? held.value : {},
         },
         (reported) => {
           void apply(reported as SettingsAnswer);

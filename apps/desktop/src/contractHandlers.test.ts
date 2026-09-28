@@ -980,6 +980,24 @@ settings: createEphemeralSettings(),
     expect(result).toEqual({ ok: true, value: { accepted: true } });
     expect(secrets.read()['ai.openai-key']).toBe('a-new-key');
   });
+
+  it('ai.models.held answers every provider from what main holds, and asks no provider (ADR-0117)', async () => {
+    const { handlers, asked } = checking(200);
+
+    const before = await handlers['ai.models.held']({});
+    // NOTHING FETCHED YET, and nothing asked to answer: the unasked list, with no request made.
+    expect(before.ok && before.value.openai).toStrictEqual({ source: 'fallback', models: [] });
+    expect(asked).toStrictEqual([]);
+
+    await handlers['ai.checkKey']({ provider: 'openai', key: 'a-new-key' });
+    const after = await handlers['ai.models.held']({});
+
+    expect(after.ok && after.value.openai.source).toBe('fetched');
+    expect(after.ok && after.value.openai.models.map((model) => model.id)).toStrictEqual(['gpt-x']);
+    expect(after.ok && Object.keys(after.value).length).toBe(10);
+    // ONE REQUEST, the check's: the held query itself reached nobody.
+    expect(asked).toHaveLength(1);
+  });
 });
 
 describe('ai.translatePage (ADR-0097)', () => {

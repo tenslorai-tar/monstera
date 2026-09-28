@@ -128,14 +128,15 @@ export const ALL_SETTINGS: readonly SettingDefinition[] = [
   OCR_LANGUAGE_SETTING,
   AZURE_DI_ENDPOINT_SETTING,
   AZURE_DI_KEY_SETTING,
-  // THE PROVIDER THE ASSISTANT ASKS, and each provider's chosen model (ADR-0117).
+  // THE PROVIDER THE ASSISTANT ASKS (ADR-0117) — first, because the AI page shows that provider's key and model.
   AI_PROVIDER_SETTING,
-  AI_MODELS_SETTING,
   // EVERY AI PROVIDER'S KEY, from the registry's own order (ADR-0081), and Azure
   // OpenAI's address beside them. Spread rather than listed: a provider added to the
   // registry with no field here would be one whose key nobody can enter.
   ...AI_PROVIDER_KEY_SETTINGS,
   AZURE_OPENAI_ENDPOINT_SETTING,
+  // EACH PROVIDER'S CHOSEN MODEL, after what its list is asked with (ADR-0117 Decision 3).
+  AI_MODELS_SETTING,
   AI_SETUP_AT_START_SETTING,
   CHAT_HISTORY_SETTING,
   DOCUSIGN_INTEGRATION_KEY_SETTING,

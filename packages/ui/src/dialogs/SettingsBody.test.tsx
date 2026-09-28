@@ -1,6 +1,12 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { AI_PROVIDERS, ANTHROPIC_KEY_SETTING_ID, AZURE_KEY_SETTING_ID } from '@monstera/contract';
+import {
+  AI_PROVIDERS,
+  type AiModelListAnswer,
+  type AiProviderId,
+  ANTHROPIC_KEY_SETTING_ID,
+  AZURE_KEY_SETTING_ID,
+} from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -9,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 import { STARTING_STYLE_COLOUR } from '../annotations/annotationStyle.js';
 import { activateCatalogue, i18n } from '../i18n.js';
 import { EN, STYLE_COLOUR_AUTO } from '../messages/en.js';
+import { AZURE_OPENAI_ENDPOINT_SETTING } from '../settings/ai.js';
 import { ALL_SETTINGS } from '../settings/all.js';
 import { THEME_SETTING } from '../settings/appearance.js';
 import {
@@ -59,6 +66,7 @@ function opened(options: {
   readonly storedSecrets?: readonly (typeof AZURE_KEY_SETTING_ID | typeof ANTHROPIC_KEY_SETTING_ID)[];
   readonly secretsAvailable?: boolean;
   readonly values?: Readonly<Record<string, unknown>>;
+  readonly models?: Readonly<Partial<Record<AiProviderId, AiModelListAnswer>>>;
 }): { readonly reported: SettingsAnswer[]; readonly answers: SettingsAnswer[] } {
   const reported: SettingsAnswer[] = [];
   const answers: SettingsAnswer[] = [];
@@ -68,6 +76,7 @@ function opened(options: {
         resolve={(answer) => {
           answers.push(answer);
         }}
+        models={options.models ?? {}}
         secretsAvailable={options.secretsAvailable ?? true}
         storedSecrets={options.storedSecrets ?? []}
         update={(answer) => {
@@ -104,11 +113,14 @@ describe('SettingsBody', () => {
         expect(screen.queryByLabelText(english(setting.title)), setting.id).toBeNull();
         continue;
       }
-      // A PROVIDER'S KEY appears when its provider is the one chosen; anthropic is the default.
-      if (setting.category === 'ai' && setting.secret === true && setting.id !== AI_PROVIDERS.anthropic.keySetting) {
-        continue;
-      }
       goTo(setting.category);
+      // A PROVIDER'S OWN ROW — its key, or Azure OpenAI's address — appears while that provider is chosen, so it is
+      // chosen first: every one is reached, rather than the default provider's alone.
+      const owner =
+        setting.id === AZURE_OPENAI_ENDPOINT_SETTING.id
+          ? 'azure-openai'
+          : Object.entries(AI_PROVIDERS).find(([, entry]) => entry.keySetting === setting.id)?.[0];
+      if (owner !== undefined) fireEvent.change(screen.getByLabelText('AI provider'), { target: { value: owner } });
       expect(screen.queryByLabelText(english(setting.title)), setting.id).not.toBeNull();
     }
   });
@@ -241,7 +253,7 @@ describe('SettingsBody', () => {
       goTo(setting.category);
       const provider = Object.entries(AI_PROVIDERS).find(([, entry]) => entry.keySetting === setting.id)?.[0];
       if (provider !== undefined) {
-        fireEvent.change(screen.getByLabelText('Provider'), { target: { value: provider } });
+        fireEvent.change(screen.getByLabelText('AI provider'), { target: { value: provider } });
       }
       const field = screen.getByLabelText<HTMLInputElement>(english(setting.title));
       expect(field.disabled, setting.id).toBe(true);
@@ -257,7 +269,7 @@ describe('SettingsBody', () => {
       const fields = document.querySelectorAll('.m-settings-row__secret');
       expect(fields).toHaveLength(1);
 
-      const chooser = screen.getByLabelText<HTMLSelectElement>('Provider');
+      const chooser = screen.getByLabelText<HTMLSelectElement>('AI provider');
       const stored = [...chooser.options].filter((option) => option.textContent.includes('key stored'));
       expect(stored.map((option) => option.value)).toStrictEqual(['anthropic']);
 
@@ -265,6 +277,109 @@ describe('SettingsBody', () => {
       fireEvent.change(chooser, { target: { value: 'openai' } });
       expect(document.querySelectorAll('.m-settings-row__secret')).toHaveLength(1);
       expect(screen.getByLabelText('OpenAI API key')).toBeDefined();
+    });
+
+    it('asks it ONCE: the provider whose key is shown is the provider the Assistant asks', () => {
+      // Two drop-downs put two answers to *which provider* on one page. The page's chooser is `ai.provider` itself.
+      const { reported } = opened({});
+      goTo('ai');
+
+      expect(document.querySelectorAll('.m-settings__page select')).toHaveLength(2);
+      expect(screen.getAllByLabelText(/provider/iu)).toHaveLength(1);
+      fireEvent.change(screen.getByLabelText('AI provider'), { target: { value: 'gemini' } });
+      expect(reported.at(-1)?.values).toStrictEqual({ 'ai.provider': 'gemini' });
+      expect(screen.getByLabelText('Google Gemini API key')).toBeDefined();
+    });
+
+    it('shows Azure OpenAI’s address only while Azure OpenAI is the provider', () => {
+      opened({});
+      goTo('ai');
+      expect(screen.queryByLabelText('Azure OpenAI endpoint')).toBeNull();
+
+      fireEvent.change(screen.getByLabelText('AI provider'), { target: { value: 'azure-openai' } });
+      expect(screen.getByLabelText('Azure OpenAI endpoint')).toBeDefined();
+    });
+  });
+
+  describe('the AI MODEL row lists what main held when the dialog opened (ADR-0117 Decision 3)', () => {
+    const vision = (id: string, sees: boolean | null): AiModelListAnswer['models'][number] => ({
+      id,
+      label: `${id} label`,
+      capabilities: { vision: sees, streaming: null },
+    });
+    /** Anthropic's list with a BLIND model first, so a default ignoring the use would pick it. */
+    const ANTHROPIC: AiModelListAnswer = { source: 'fetched', models: [vision('blind', false), vision('sees', true)] };
+    const OPENAI: AiModelListAnswer = { source: 'fallback', models: [vision('gpt-a', null), vision('gpt-b', null)] };
+
+    it('selects the default the use can take, lists the blind model DISABLED, and says the list was fetched', () => {
+      const { reported } = opened({ models: { anthropic: ANTHROPIC, openai: OPENAI } });
+      goTo('ai');
+
+      const row = screen.getByLabelText<HTMLSelectElement>('AI model');
+      expect(row.value).toBe('sees');
+      const blind = [...row.options].find((option) => option.value === 'blind');
+      expect(blind?.disabled).toBe(true);
+      expect(blind?.textContent).toBe('blind label (cannot read images)');
+      expect(screen.getByText('Listed by Anthropic this session.')).toBeDefined();
+      // SHOWING THE DEFAULT STORES NOTHING: a choice is stored only when a person makes one.
+      expect(reported.map((report) => report.values)).not.toContainEqual(
+        expect.objectContaining({ 'ai.models': expect.anything() as unknown }),
+      );
+    });
+
+    it('follows the provider row: OpenAI’s list, its source in words, and the blind rule off where nothing reads images', () => {
+      opened({ models: { anthropic: ANTHROPIC, openai: { source: 'fetched', models: [vision('gpt-blind', false)] } } });
+      goTo('ai');
+      fireEvent.change(screen.getByLabelText('AI provider'), { target: { value: 'openai' } });
+
+      const row = screen.getByLabelText<HTMLSelectElement>('AI model');
+      expect([...row.options].map((option) => option.value)).toStrictEqual(['gpt-blind']);
+      expect(row.options[0]?.disabled).toBe(false);
+      expect(row.value).toBe('gpt-blind');
+    });
+
+    it('a choice writes ONLY the shown provider’s entry, keeping the others', () => {
+      const { reported } = opened({
+        models: { anthropic: ANTHROPIC, openai: OPENAI },
+        values: { 'ai.models': { anthropic: 'sees' } },
+      });
+      goTo('ai');
+      fireEvent.change(screen.getByLabelText('AI provider'), { target: { value: 'openai' } });
+      fireEvent.change(screen.getByLabelText('AI model'), { target: { value: 'gpt-b' } });
+
+      expect(reported.at(-1)?.values).toStrictEqual({ 'ai.models': { anthropic: 'sees', openai: 'gpt-b' } });
+      expect(
+        screen.getByText(
+          'OpenAI has not been asked this session, so this is this build’s own list. Choosing OpenAI in the Assistant asks it.',
+        ),
+      ).toBeDefined();
+    });
+
+    it('a stored model the list no longer names stays selected, marked, never replaced', () => {
+      opened({ models: { anthropic: ANTHROPIC }, values: { 'ai.models': { anthropic: 'retired' } } });
+      goTo('ai');
+
+      const row = screen.getByLabelText<HTMLSelectElement>('AI model');
+      expect(row.value).toBe('retired');
+      expect(row.selectedOptions[0]?.textContent).toBe('retired (not offered now)');
+    });
+
+    it('a list main could not answer says so, and offers nothing as though it were a list', () => {
+      opened({ models: {} });
+      goTo('ai');
+
+      const row = screen.getByLabelText<HTMLSelectElement>('AI model');
+      expect(row.disabled).toBe(true);
+      expect(row.selectedOptions[0]?.textContent).toBe('No models to choose from');
+      expect(screen.getByText('The list of models could not be read.')).toBeDefined();
+    });
+
+    it('a provider that publishes no list says so, by name', () => {
+      opened({ models: { perplexity: { source: 'no-list', models: [] } } });
+      goTo('ai');
+      fireEvent.change(screen.getByLabelText('AI provider'), { target: { value: 'perplexity' } });
+
+      expect(screen.getByText('Perplexity publishes no list of models to choose from.')).toBeDefined();
     });
   });
 

@@ -12,7 +12,9 @@ import {
   type ChatImage,
   type ChatMessage,
   type ChatRefusal,
+  type AiModelList,
   listModels,
+  unaskedList,
   streamChat,
   type WebSource,
 } from '@monstera/kernel';
@@ -86,6 +88,11 @@ export interface Assistant {
   readonly models: (provider: AiProviderId) => Promise<Awaited<ReturnType<typeof listModels>>>;
   /** The model list asked with a CANDIDATE key and address, never the stored ones — `ai.checkKey`'s check. */
   readonly check: (provider: AiProviderId, key: string, endpoint: string) => Promise<Awaited<ReturnType<typeof listModels>>>;
+  /**
+   * The list this process already holds for a provider, **asking nobody**: the last one `models` or `check` fetched
+   * this session, or else the unasked list (ADR-0117, corrected 2026-09-28). What the Settings dialog opens with.
+   */
+  readonly held: (provider: AiProviderId) => AiModelList;
   /** `started: false` means the subscription is already streaming. */
   readonly ask: (request: AskRequest) => { readonly started: boolean };
   /** `stopped: false` means nothing was streaming to that subscription. */
@@ -154,6 +161,16 @@ export function createAssistant(parts: AssistantParts): Assistant {
     );
   };
 
+  /**
+   * The last list each provider ANSWERED this session. Only a fetched list is kept: a fallback answered because a
+   * request failed is what `unaskedList` says anyway, and keeping it would let a failure overwrite a good list.
+   */
+  const fetched = new Map<AiProviderId, AiModelList>();
+  const holding = (list: AiModelList): AiModelList => {
+    if (list.source === 'fetched') fetched.set(list.provider, list);
+    return list;
+  };
+
   return {
     models: (provider) =>
       listModels({
@@ -161,7 +178,7 @@ export function createAssistant(parts: AssistantParts): Assistant {
         key: keyFor(provider),
         endpoint: endpointFor(provider),
         ...(parts.fetchImpl === undefined ? {} : { fetchImpl: parts.fetchImpl }),
-      }),
+      }).then(holding),
 
     check: (provider, key, endpoint) =>
       listModels({
@@ -169,7 +186,9 @@ export function createAssistant(parts: AssistantParts): Assistant {
         key,
         endpoint,
         ...(parts.fetchImpl === undefined ? {} : { fetchImpl: parts.fetchImpl }),
-      }),
+      }).then(holding),
+
+    held: (provider) => fetched.get(provider) ?? unaskedList(provider),
 
     ask: ({ subscription, provider, model, messages, system, image, web }) => {
       if (live.has(subscription)) return { started: false };

@@ -1,4 +1,4 @@
-import { SECRET_SETTING_IDS } from '@monstera/contract';
+import { AI_PROVIDER_IDS, SECRET_SETTING_IDS, aiModelListSchema } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -13,7 +13,7 @@ import { SETTINGS_PAGES, type SettingsPage } from '../settings/pages.js';
 export const SETTINGS_DIALOG_ID = 'dialog.settings';
 
 /** The control a setting's schema derives ([ADR-0056](../../../../docs/DECISIONS/0056-the-settings-dialog-derives-a-control-from-a-schema-and-a-secret-is-write-only.md) Decision 2). */
-export type SettingControl = 'boolean' | 'enum' | 'number' | 'text' | 'secret' | 'colour';
+export type SettingControl = 'boolean' | 'enum' | 'number' | 'text' | 'secret' | 'colour' | 'ai-models';
 
 /**
  * Which control a setting gets, or `undefined` for a kind with none.
@@ -30,6 +30,8 @@ export type SettingControl = 'boolean' | 'enum' | 'number' | 'text' | 'secret' |
  * colour.
  */
 export function controlFor(setting: SettingDefinition): SettingControl | undefined {
+  // A DECLARED CONTROL IS ASKED FIRST: it exists because no schema shape could say it (ADR-0117 Decision 3).
+  if (setting.control !== undefined) return setting.control;
   const { schema } = setting;
   if (colourKindOf(schema) !== undefined) return 'colour';
   if (schema instanceof z.ZodBoolean) return 'boolean';
@@ -110,6 +112,12 @@ export const SETTINGS_DIALOG = declareDialog({
       values: z.record(z.string(), z.unknown()),
       storedSecrets: z.array(z.enum(SECRET_SETTING_IDS)),
       secretsAvailable: z.boolean(),
+      /**
+       * Each provider's model list as `main` held it when the dialog opened — fetched this session or the fallback,
+       * never fetched for the dialog (ADR-0117, corrected 2026-09-28). A provider is absent only when that query
+       * failed, and its row then says the list could not be read.
+       */
+      models: z.partialRecord(z.enum(AI_PROVIDER_IDS), aiModelListSchema),
     })
     .strict(),
   result: SETTINGS_RESULT,

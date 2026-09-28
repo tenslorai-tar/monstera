@@ -13,6 +13,7 @@ import {
   MAX_CHAT_TEXT,
   type DispatchableCommand,
   type WebSearchAbsence,
+  choiceReadsImages,
   citationsIn,
   defaultModel,
   servesVision,
@@ -329,8 +330,8 @@ export function AssistantPanel({
   // WITH THE CAPABILITIES, because a model that cannot see is not offered a picture (ADR-0090):
   // `false` where the provider says so, `null` where it does not say.
   const [models, setModels] = useState<readonly AiModel[]>([]);
-  // WHERE THE CHOICE READS IMAGES: Anthropic's model is also the recogniser's (ADR-0117 Decision 4).
-  const readsImages = provider === 'anthropic';
+  // WHERE THE CHOICE READS IMAGES: the contract's rule, which the Settings row takes too (ADR-0117 Decision 4).
+  const readsImages = choiceReadsImages(provider);
   const stored = chosenModels[provider];
   // THE PERSON'S CHOICE, or the contract's one default for this use — the rule `main` takes for the recogniser.
   const model = stored ?? defaultModel(models, { vision: readsImages })?.id ?? '';

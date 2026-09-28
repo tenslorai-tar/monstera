@@ -344,6 +344,23 @@ const handlers: ContractHandlers = {
   // and it is the reassuring shape for every question here. An id and never a
   // value, which is all this channel can carry since ADR-0056.
   'ai.models': () => Promise.resolve(ok({ source: 'fallback' as const, models: [] })),
+  'ai.models.held': () => {
+    const none = { source: 'fallback' as const, models: [] };
+    return Promise.resolve(
+      ok({
+        anthropic: none,
+        openai: none,
+        gemini: none,
+        mistral: none,
+        xai: none,
+        'azure-openai': none,
+        openrouter: none,
+        groq: none,
+        perplexity: none,
+        deepseek: none,
+      }),
+    );
+  },
   'ai.checkKey': () => Promise.resolve(ok({ accepted: false as const, problem: 'unauthorised' as const })),
   'ai.history.load': () => Promise.resolve(ok({ turns: [] })),
   'ai.history.save': () => Promise.resolve(ok({ saved: false })),

@@ -86,6 +86,9 @@ export {
   MAX_CHAT_TEXT,
   MAX_CHAT_TURNS,
   MAX_MODEL_ID,
+  // ONE LIST SHAPE for `ai.models` and the Settings dialog's props (ADR-0117).
+  type AiModelListAnswer,
+  aiModelListSchema,
   type SavedTurn,
   savedTurnSchema,
   savedTurnsSchema,
@@ -418,6 +421,7 @@ export {
   AZURE_OPENAI_ENDPOINT_SETTING_ID,
   CHAT_HISTORY_SETTING_ID,
   WEB_SEARCH_ABSENCES,
+  choiceReadsImages,
   defaultModel,
   servesVision,
   webSearchOf,

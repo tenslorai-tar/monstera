@@ -1,4 +1,7 @@
 import {
+  AI_PROVIDER_IDS,
+  type AiModelListAnswer,
+  type AiProviderId,
   type AnnotationKindName,
   CLOUD_PROVIDER_IDS,
   type ChannelResult,
@@ -514,6 +517,8 @@ export interface BrowserShimOptions {
   readonly translation?: ChannelResult<'ai.translatePage'>;
   /** What `ai.models` answers. Absent is an empty list, what a build with no provider offers. */
   readonly aiModels?: ChannelResult<'ai.models'>;
+  /** What `ai.models.held` answers per provider. A provider absent here answers `aiModels`, or the empty list. */
+  readonly aiHeldModels?: Partial<Record<AiProviderId, AiModelListAnswer>>;
   /**
    * The objects `document.pageObjects` answers.
    *
@@ -1940,6 +1945,17 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // surface must already handle — it is the answer a real `main` gives when the
     // subscription is in use or the provider has no key.
     'ai.models': () => Promise.resolve(ok(options.aiModels ?? { source: 'fallback' as const, models: [] })),
+    'ai.models.held': () =>
+      Promise.resolve(
+        ok(
+          Object.fromEntries(
+            AI_PROVIDER_IDS.map((provider) => [
+              provider,
+              options.aiHeldModels?.[provider] ?? options.aiModels ?? { source: 'fallback' as const, models: [] },
+            ]),
+          ) as Record<AiProviderId, AiModelListAnswer>,
+        ),
+      ),
     // REFUSED, because the shim has no provider to ask and a key it cannot check is not one it may keep.
     'ai.checkKey': () => Promise.resolve(ok({ accepted: false as const, problem: 'unreachable' as const })),
     // NOTHING SAVED, the setting's default: the shim keeps no conversation between pages.

@@ -1,5 +1,14 @@
 import { useLingui } from '@lingui/react';
-import { AI_PROVIDERS, AI_PROVIDER_IDS, type AiProviderId, type SecretSettingId } from '@monstera/contract';
+import {
+  AI_PROVIDERS,
+  AI_PROVIDER_IDS,
+  type AiModelListAnswer,
+  type AiProviderId,
+  type SecretSettingId,
+  choiceReadsImages,
+  defaultModel,
+  servesVision,
+} from '@monstera/contract';
 import { type MessageKey, channels } from '@monstera/shared';
 import type { ReactElement } from 'react';
 import { useId, useMemo, useState } from 'react';
@@ -10,14 +19,19 @@ import {
   ACCENT_REJECTED,
   ACCENT_TITLE,
   AI_PROVIDER_NAMES,
+  ASSISTANT_MODEL_NO_VISION,
+  ASSISTANT_MODEL_NOT_OFFERED,
   SETTINGS_ACTION_CLEAR_HISTORY,
   SETTINGS_ACTION_CLEAR_HISTORY_DESCRIPTION,
   SETTINGS_ACTION_CLEAR_RECENT,
   SETTINGS_ACTION_CLEAR_RECENT_DESCRIPTION,
   SETTINGS_ACTION_CLEARED,
+  SETTINGS_AI_MODELS_FALLBACK,
+  SETTINGS_AI_MODELS_FETCHED,
+  SETTINGS_AI_MODELS_NO_LIST,
+  SETTINGS_AI_MODELS_NONE,
+  SETTINGS_AI_MODELS_UNREAD,
   SETTINGS_AI_NOTE,
-  SETTINGS_AI_PROVIDER,
-  SETTINGS_AI_PROVIDER_DESCRIPTION,
   SETTINGS_AI_PROVIDER_STORED,
   SETTINGS_APPEARANCE_NOTE,
   SETTINGS_DONE,
@@ -51,6 +65,7 @@ import type { SettingCategory, SettingDefinition } from '../registries/settings.
 import { colourKindOf } from '../registries/settings.js';
 import { ACCENT_SETTING } from '../settings/accent.js';
 import { ACCENT_PRESETS, accentUsable } from '../settings/accentPresets.js';
+import { AI_MODELS_SETTING, AI_PROVIDER_SETTING, AZURE_OPENAI_ENDPOINT_SETTING } from '../settings/ai.js';
 import type { SettingsAnswer } from './settings.js';
 import { controlFor, DIALOG_SETTINGS, listedPages } from './settings.js';
 
@@ -81,6 +96,11 @@ import { controlFor, DIALOG_SETTINGS, listedPages } from './settings.js';
  * Ten providers with ten key fields is the wall the owner found here. One drop-down chooses the
  * provider, and the page then shows that provider's key and nothing else — progressive disclosure,
  * and the drop-down marks which providers already have a key so the choice is informed.
+ *
+ * **That drop-down IS `ai.provider`**, the provider the Assistant asks (ADR-0117 Decision 1), and the
+ * provider's model follows its key. Two drop-downs — one for the Assistant, one for which key to show —
+ * put two answers to *which provider* on one page, and a person reading the key of one while the
+ * Assistant asked the other.
  */
 
 /** One secret field's edit: text typed to replace it, or a request to remove it. */
@@ -369,6 +389,124 @@ function SettingRow(props: {
   );
 }
 
+/** The provider row: `ai.provider`, each provider marked where its key is stored. */
+function ProviderRow({
+  chosen,
+  storedSecrets,
+  onChoose,
+}: {
+  readonly chosen: AiProviderId;
+  readonly storedSecrets: readonly SecretSettingId[];
+  readonly onChoose: (provider: string) => void;
+}): ReactElement {
+  const { _, i18n } = useLingui();
+  const labelId = useId();
+  return (
+    <div className="m-settings-row">
+      <div className="m-settings-row__text">
+        <span className="m-settings-row__label" id={labelId}>
+          {_(AI_PROVIDER_SETTING.title)}
+        </span>
+        {AI_PROVIDER_SETTING.description === undefined ? null : (
+          <span className="m-settings-row__note">{_(AI_PROVIDER_SETTING.description)}</span>
+        )}
+      </div>
+      <div className="m-settings-row__control">
+        <select
+          aria-labelledby={labelId}
+          data-setting={AI_PROVIDER_SETTING.id}
+          onChange={(event) => {
+            onChoose(event.target.value);
+          }}
+          value={chosen}
+        >
+          {AI_PROVIDER_IDS.map((id) => (
+            <option key={id} value={id}>
+              {keyStored(id, storedSecrets)
+                ? i18n._(SETTINGS_AI_PROVIDER_STORED, { provider: _(AI_PROVIDER_NAMES[id]) })
+                : _(AI_PROVIDER_NAMES[id])}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+/** Where a held list came from, in words — ADR-0117 Decision 3's *"with the source said"*. */
+const LIST_SOURCE_WORDS: Readonly<Record<AiModelListAnswer['source'], MessageKey>> = {
+  fetched: SETTINGS_AI_MODELS_FETCHED,
+  fallback: SETTINGS_AI_MODELS_FALLBACK,
+  'no-list': SETTINGS_AI_MODELS_NO_LIST,
+};
+
+/**
+ * The model row (ADR-0117 Decision 3): the chosen provider's list as `main` held it when the dialog opened, the stored
+ * choice or the contract's one default selected, and only that provider's entry written.
+ *
+ * The same three rules as the Assistant's picker, taken from the same places: which choice reads images
+ * (`choiceReadsImages`), the default (`defaultModel`), and a model without vision listed disabled, never dropped. A
+ * stored id the list does not name stays selected and marked, never silently replaced.
+ */
+function ModelRow({
+  provider,
+  list,
+  chosen,
+  onChoose,
+}: {
+  readonly provider: AiProviderId;
+  /** `undefined` when the query for the held lists failed. */
+  readonly list: AiModelListAnswer | undefined;
+  readonly chosen: Readonly<Partial<Record<AiProviderId, string>>>;
+  readonly onChoose: (next: Readonly<Partial<Record<AiProviderId, string>>>) => void;
+}): ReactElement {
+  const { _, i18n } = useLingui();
+  const labelId = useId();
+  const models = list?.models ?? [];
+  const readsImages = choiceReadsImages(provider);
+  const stored = chosen[provider];
+  const selected = stored ?? defaultModel(models, { vision: readsImages })?.id ?? '';
+  const offered = stored === undefined || models.some((entry) => entry.id === stored);
+  const name = _(AI_PROVIDER_NAMES[provider]);
+  return (
+    <div className="m-settings-row">
+      <div className="m-settings-row__text">
+        <span className="m-settings-row__label" id={labelId}>
+          {_(AI_MODELS_SETTING.title)}
+        </span>
+        {AI_MODELS_SETTING.description === undefined ? null : (
+          <span className="m-settings-row__note">{_(AI_MODELS_SETTING.description)}</span>
+        )}
+        <span className="m-settings-row__note" data-model-source={list?.source ?? 'unread'}>
+          {list === undefined ? _(SETTINGS_AI_MODELS_UNREAD) : i18n._(LIST_SOURCE_WORDS[list.source], { provider: name })}
+        </span>
+      </div>
+      <div className="m-settings-row__control">
+        <select
+          aria-labelledby={labelId}
+          data-setting={AI_MODELS_SETTING.id}
+          disabled={models.length === 0 && stored === undefined}
+          onChange={(event) => {
+            onChoose({ ...chosen, [provider]: event.target.value });
+          }}
+          value={selected}
+        >
+          {models.length === 0 && stored === undefined ? <option value="">{_(SETTINGS_AI_MODELS_NONE)}</option> : null}
+          {offered ? null : <option value={stored}>{i18n._(ASSISTANT_MODEL_NOT_OFFERED, { name: stored })}</option>}
+          {models.map((entry) => {
+            const blind = readsImages && !servesVision(entry);
+            return (
+              <option disabled={blind} key={entry.id} value={entry.id}>
+                {blind ? i18n._(ASSISTANT_MODEL_NO_VISION, { name: entry.label }) : entry.label}
+              </option>
+            );
+          })}
+        </select>
+      </div>
+    </div>
+  );
+}
+
 /**
  * The accent row: the design's swatches, each checked before it is offered.
  *
@@ -461,14 +599,16 @@ export default function SettingsBody({
   values,
   storedSecrets,
   secretsAvailable,
+  models,
   resolve,
   update,
 }: {
   readonly values: Readonly<Record<string, unknown>>;
   readonly storedSecrets: readonly SecretSettingId[];
   readonly secretsAvailable: boolean;
+  readonly models: Readonly<Partial<Record<AiProviderId, AiModelListAnswer>>>;
 } & DialogAnswering<SettingsAnswer>): ReactElement {
-  const { _, i18n } = useLingui();
+  const { _ } = useLingui();
   const [drafts, setDrafts] = useState<Readonly<Record<string, unknown>>>(() =>
     Object.fromEntries(
       DIALOG_SETTINGS.filter((setting) => controlFor(setting) !== 'secret').map((setting) => {
@@ -479,16 +619,26 @@ export default function SettingsBody({
   );
   const [secrets, setSecrets] = useState<Readonly<Record<string, SecretDraft>>>({});
   const [query, setQuery] = useState('');
-  const [provider, setProvider] = useState<AiProviderId>('anthropic');
   const [cleared, setCleared] = useState(false);
   const [clearedRecent, setClearedRecent] = useState(false);
   const searchId = useId();
 
-  /** The settings each page draws: the AI page shows one provider's key, never all ten. */
+  // THE PROVIDER IS THE SETTING'S DRAFT, so the page shows the key and model of the provider the Assistant asks.
+  const providerDraft = AI_PROVIDER_SETTING.schema.safeParse(drafts[AI_PROVIDER_SETTING.id]);
+  const provider: AiProviderId = providerDraft.success ? providerDraft.data : AI_PROVIDER_SETTING.fallback;
+  const modelsDraft = AI_MODELS_SETTING.schema.safeParse(drafts[AI_MODELS_SETTING.id]);
+  const chosenModels = modelsDraft.success ? modelsDraft.data : AI_MODELS_SETTING.fallback;
+
+  /**
+   * The settings each page draws: the AI page shows one provider's key, never all ten, and Azure OpenAI's address only
+   * while Azure OpenAI is the provider.
+   */
   const onPage = (page: SettingCategory): readonly SettingDefinition[] =>
     DIALOG_SETTINGS.filter((setting) => {
       if (setting.category !== page) return false;
-      if (page !== 'ai' || controlFor(setting) !== 'secret') return true;
+      if (page !== 'ai') return true;
+      if (setting.id === AZURE_OPENAI_ENDPOINT_SETTING.id) return provider === 'azure-openai';
+      if (controlFor(setting) !== 'secret') return true;
       return setting.id === AI_PROVIDERS[provider].keySetting;
     });
 
@@ -532,7 +682,27 @@ export default function SettingsBody({
     (setting.description !== undefined && _(setting.description).toLocaleLowerCase().includes(wanted));
   const found = wanted === '' ? [] : DIALOG_SETTINGS.filter((setting) => matches(setting));
 
-  const rowFor = (setting: SettingDefinition): ReactElement => (
+  const rowFor = (setting: SettingDefinition): ReactElement =>
+    setting.id === AI_PROVIDER_SETTING.id ? (
+      <ProviderRow
+        chosen={provider}
+        key={setting.id}
+        onChoose={(value) => {
+          changeValue(setting, value);
+        }}
+        storedSecrets={storedSecrets}
+      />
+    ) : controlFor(setting) === 'ai-models' ? (
+      <ModelRow
+        chosen={chosenModels}
+        key={setting.id}
+        list={models[provider]}
+        onChoose={(next) => {
+          changeValue(setting, next);
+        }}
+        provider={provider}
+      />
+    ) : (
     <SettingRow
       available={secretsAvailable}
       draft={draftFor(setting)}
@@ -547,7 +717,7 @@ export default function SettingsBody({
       setting={setting}
       stored={storedSecrets.some((id) => id === setting.id)}
     />
-  );
+    );
 
   const page = pages.find((entry) => entry.id === chosen) ?? pages[0];
   const note = page === undefined ? undefined : PAGE_NOTES[page.id];
@@ -593,34 +763,6 @@ export default function SettingsBody({
             <>
               <h3 className="m-settings__page-title">{page === undefined ? '' : _(page.title)}</h3>
               {note === undefined ? null : <p className="m-settings__page-note">{_(note)}</p>}
-
-              {page?.id === 'ai' && (
-                // WHICH PROVIDER, before anything about a key: the owner's order, replacing ten fields.
-                <div className="m-settings-row">
-                  <div className="m-settings-row__text">
-                    <span className="m-settings-row__label">{_(SETTINGS_AI_PROVIDER)}</span>
-                    <span className="m-settings-row__note">{_(SETTINGS_AI_PROVIDER_DESCRIPTION)}</span>
-                  </div>
-                  <div className="m-settings-row__control">
-                    <select
-                      aria-label={_(SETTINGS_AI_PROVIDER)}
-                      data-settings-provider=""
-                      onChange={(event) => {
-                        setProvider(event.target.value as AiProviderId);
-                      }}
-                      value={provider}
-                    >
-                      {AI_PROVIDER_IDS.map((id) => (
-                        <option key={id} value={id}>
-                          {keyStored(id, storedSecrets)
-                            ? i18n._(SETTINGS_AI_PROVIDER_STORED, { provider: _(AI_PROVIDER_NAMES[id]) })
-                            : _(AI_PROVIDER_NAMES[id])}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              )}
 
               {page?.id === 'appearance' && (
                 <AccentRow

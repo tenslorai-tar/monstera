@@ -72,3 +72,37 @@ Settings row and the Assistant's picker; `ai.models` is written by the Assistant
 marked `remembered` until a Settings row exists for it; the picker lists a model without vision disabled where the
 choice reads images and keeps a stored model the list no longer names; the recogniser reads Anthropic's choice or
 `defaultModel`, and `CLAUDE_OCR_MODEL` is gone.
+
+## Correction, 2026-09-28 (later) — the owner answered from the record, and neither route was taken
+
+The question above offered two routes and both bent something. The owner's answer took neither, and pointed at this
+ADR's own words: Decision 3 already says the list is *"fetched, or the fallback, with the source said"*. So the row
+shows **the list `main` already holds when the dialog opens** — the one it last fetched this session for that provider,
+or else the fallback — with its source stated in words. Nothing is fetched on open, so ADR-0038's seam does not change;
+the Assistant's picker stays the live list; both write the one setting.
+
+**The premise the two routes shared was that the dialog's list had to be FRESH** — fetched for the dialog — which
+Decision 3 never said. That is CLAUDE.md Rule 0's *state whether the question is the right one*, arriving from the
+owner rather than from the author.
+
+Built:
+
+- **`ai.models.held`**, a query that asks no provider: every provider's list from what `main` holds, an exhaustive
+  record. `main` keeps the last list `ai.models` or a key check FETCHED, per provider, for the session; a failed ask
+  never replaces a fetched list, and a provider not fetched answers `unaskedList` — the same function `listModels`
+  answers with no key, so the two cannot describe an unasked list differently. The Settings command asks it before
+  opening, as it already asks for the stored secrets' ids, and a failed query opens the dialog with no lists, each row
+  saying so.
+- **The row**, declared by the setting (`control: 'ai-models'`) as Decision 3 said: the chosen provider's held list,
+  the stored choice or `defaultModel` selected, a blind model disabled where the choice reads images, a stored id the
+  list no longer names kept and marked, and a line saying where the list came from — fetched this session, this
+  build's own list because the provider has not been asked, a provider that publishes none, or a list that could not
+  be read. `ai.models` is no longer `remembered`.
+- **One provider drop-down on the AI page.** Decision 1's row and the page's own chooser of which key to show were two
+  answers to *which provider* on one page; the page's chooser is now `ai.provider` itself, and the page shows that
+  provider's key, its address where it has one (Azure OpenAI), and its model.
+- **`choiceReadsImages(provider)`**, in the contract: which provider's choice must read images was spelt
+  `provider === 'anthropic'` in the Assistant, and the row would have been the second spelling (B3a).
+- **`listModels` is bounded** (`MODEL_LIST_TIMEOUT_MS`, ten seconds, one signal over the request and the body): the gap
+  the correction above named. A provider that never answers is outside this repository, so a stated bound is the
+  correct response; on expiry the answer is the fallback with `unreachable`.

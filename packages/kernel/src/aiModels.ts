@@ -179,6 +179,16 @@ export function readModels(shape: ListEndpoint['shape'], body: unknown): readonl
 }
 
 /**
+ * What a provider's list is when nobody asks it: this build's fallback, and `no-list` where the provider publishes
+ * none — told apart by the provider's own declaration. `listModels` answers it with no key, and `main` answers it for
+ * a provider it has not fetched this session (ADR-0117), so the two cannot describe an unasked list differently.
+ */
+export function unaskedList(provider: AiProviderId): AiModelList {
+  const noList = LIST_ENDPOINTS[provider].url === null && provider !== 'azure-openai';
+  return { provider, models: FALLBACK_MODELS[provider], source: noList ? 'no-list' : 'fallback' };
+}
+
+/**
  * The provider's models, or what this build knows when it cannot ask.
  *
  * **Never throws.** A list is a thing a surface shows, and a provider that is down must
@@ -194,11 +204,8 @@ export async function listModels({
 }: AiModelRequest): Promise<AiModelList> {
   const fallback = FALLBACK_MODELS[provider];
   const asked = key === '' ? null : request(provider, key, endpoint);
-  if (asked === null) {
-    // NO KEY, no list endpoint, or no Azure resource: all three are "nothing to ask",
-    // and they are told apart by the provider's own declaration rather than here.
-    return { provider, models: fallback, source: LIST_ENDPOINTS[provider].url === null && provider !== 'azure-openai' ? 'no-list' : 'fallback' };
-  }
+  // NO KEY, no list endpoint, or no Azure resource: all three are "nothing to ask".
+  if (asked === null) return unaskedList(provider);
 
   // ONE SIGNAL FOR THE REQUEST AND THE BODY: a provider can send its headers and then stall, and
   // a bound on the headers alone would leave `json()` waiting for ever.

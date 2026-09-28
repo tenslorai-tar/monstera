@@ -1318,6 +1318,17 @@ export const AI_MODELS_DESCRIPTION = messageKey('setting.ai.models.description')
 export const ASSISTANT_MODEL_NO_VISION = messageKey('assistant.model.no-vision');
 /** A stored choice the provider's list no longer names — shown, never silently replaced. */
 export const ASSISTANT_MODEL_NOT_OFFERED = messageKey('assistant.model.not-offered');
+/**
+ * Where the Settings model row's list came from, in words (ADR-0117 Decision 3): fetched this session, this build's own
+ * because the provider has not been asked, a provider that publishes none, or a query that failed. `{provider}` is the
+ * provider's name.
+ */
+export const SETTINGS_AI_MODELS_FETCHED = messageKey('dialog.settings.ai-models.fetched');
+export const SETTINGS_AI_MODELS_FALLBACK = messageKey('dialog.settings.ai-models.fallback');
+export const SETTINGS_AI_MODELS_NO_LIST = messageKey('dialog.settings.ai-models.no-list');
+export const SETTINGS_AI_MODELS_UNREAD = messageKey('dialog.settings.ai-models.unread');
+/** The one choice of a model row with nothing to offer, so the control is not an empty box. */
+export const SETTINGS_AI_MODELS_NONE = messageKey('dialog.settings.ai-models.none');
 export const AI_SAVE_HISTORY_TITLE = messageKey('setting.ai.save-history.title');
 export const ASSISTANT_ABOUT_NOTHING = messageKey('assistant.about.nothing');
 /** v5-03's "Asking about" choices, as short buttons over the message box; the sentence under them says the rest. */
@@ -1429,8 +1440,6 @@ export const SETTINGS_FOOTER_NOTE = messageKey('dialog.settings.footer-note');
 export const SETTINGS_EXPORT = messageKey('dialog.settings.export');
 export const SETTINGS_RESET = messageKey('dialog.settings.reset');
 export const SETTINGS_DONE = messageKey('dialog.settings.done');
-export const SETTINGS_AI_PROVIDER = messageKey('dialog.settings.ai-provider');
-export const SETTINGS_AI_PROVIDER_DESCRIPTION = messageKey('dialog.settings.ai-provider.description');
 export const SETTINGS_AI_PROVIDER_STORED = messageKey('dialog.settings.ai-provider.stored');
 export const SETTINGS_ACTION_CLEAR_HISTORY = messageKey('dialog.settings.clear-history');
 export const SETTINGS_ACTION_CLEAR_HISTORY_DESCRIPTION = messageKey('dialog.settings.clear-history.description');
@@ -3272,12 +3281,19 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RULER_UNIT_DESCRIPTION]: 'The unit the rulers and the measuring tools show.',
   [AI_SETUP_AT_START_DESCRIPTION]: 'Offers the one-step setup while no provider key is stored.',
   [AI_PROVIDER_TITLE]: 'AI provider',
-  [AI_PROVIDER_DESCRIPTION]: 'Which service the Assistant asks. You need that service’s key.',
-  [AI_MODELS_TITLE]: 'AI models',
+  [AI_PROVIDER_DESCRIPTION]:
+    'Which service the Assistant asks, using that service’s key. Nothing from a document is sent until you press Send.',
+  [AI_MODELS_TITLE]: 'AI model',
   [AI_MODELS_DESCRIPTION]:
-    'The model you chose for each provider. Anthropic’s is also the one that reads handwriting and scans.',
+    'The model the Assistant asks for the provider above. Anthropic’s model also reads handwriting and scans.',
   [ASSISTANT_MODEL_NO_VISION]: '{name} (cannot read images)',
   [ASSISTANT_MODEL_NOT_OFFERED]: '{name} (not offered now)',
+  [SETTINGS_AI_MODELS_FETCHED]: 'Listed by {provider} this session.',
+  [SETTINGS_AI_MODELS_FALLBACK]:
+    '{provider} has not been asked this session, so this is this build’s own list. Choosing {provider} in the Assistant asks it.',
+  [SETTINGS_AI_MODELS_NO_LIST]: '{provider} publishes no list of models to choose from.',
+  [SETTINGS_AI_MODELS_UNREAD]: 'The list of models could not be read.',
+  [SETTINGS_AI_MODELS_NONE]: 'No models to choose from',
   [AI_SAVE_HISTORY_DESCRIPTION]:
     'Off by default. Conversations are discarded when the document closes; saved ones are encrypted on this computer.',
   [AI_AZURE_OPENAI_ENDPOINT_DESCRIPTION]: 'Your own Azure OpenAI resource address. Needed only for that provider.',
@@ -3300,8 +3316,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SETTINGS_EXPORT]: 'Export settings…',
   [SETTINGS_RESET]: 'Reset to defaults',
   [SETTINGS_DONE]: 'Done',
-  [SETTINGS_AI_PROVIDER]: 'Provider',
-  [SETTINGS_AI_PROVIDER_DESCRIPTION]: 'Document content is sent only when you press Send.',
   [SETTINGS_AI_PROVIDER_STORED]: '{provider} — key stored',
   [SETTINGS_ACTION_CLEAR_HISTORY]: 'Clear chat history',
   [SETTINGS_ACTION_CLEAR_HISTORY_DESCRIPTION]: 'Removes every saved conversation from this computer.',

@@ -8,6 +8,7 @@ import {
   ANTHROPIC_KEY_SETTING_ID,
   AZURE_OPENAI_ENDPOINT_SETTING_ID,
   CHAT_HISTORY_SETTING_ID,
+  MAX_MODEL_ID,
 } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import { z } from 'zod';
@@ -130,17 +131,15 @@ export const AI_PROVIDER_SETTING: SettingDefinition<z.ZodEnum<{ [K in AiProvider
   optionTitles: AI_PROVIDER_NAMES,
 };
 
-/** The longest model id a provider's list may name — the contract's own bound on `ai.models`. */
-const MAX_MODEL_ID = 200;
-
 /**
- * One chosen model id per provider (ADR-0117 Decision 2), written by the Assistant's model picker — only when a
- * person chooses, so an updated list moves the default (`defaultModel`) with it. `main` reads Anthropic's entry for the
- * Claude recogniser whatever the Assistant is on.
+ * One chosen model id per provider (ADR-0117 Decision 2), written by the Assistant's model picker and by the Settings
+ * row — only when a person chooses, so an updated list moves the default (`defaultModel`) with it. `main` reads
+ * Anthropic's entry for the Claude recogniser whatever the Assistant is on. Bounded by the contract's `MAX_MODEL_ID`,
+ * the bound every list that offers an id is held to.
  *
- * **REMEMBERED, not a Settings row yet**: ADR-0117 Decision 3's row lists models fetched while the dialog is open, and a
- * dialog is props-only (ADR-0038) — it can report outward and cannot ask. That is the owner's question, recorded with
- * both routes; until it is answered the choice is made in the Assistant, which fetches the list itself.
+ * **Its control is DECLARED** (`ai-models`, Decision 3): no schema shape says *a model per provider, chosen from a
+ * list*, and the row lists what `main` already holds rather than anything fetched on open (the correction of
+ * 2026-09-28), because the dialog is props-only (ADR-0038).
  */
 const AI_MODELS_SCHEMA = z.partialRecord(z.enum(AI_PROVIDER_IDS), z.string().min(1).max(MAX_MODEL_ID));
 
@@ -151,7 +150,7 @@ export const AI_MODELS_SETTING: SettingDefinition<typeof AI_MODELS_SCHEMA> = {
   schema: AI_MODELS_SCHEMA,
   fallback: {},
   category: 'ai',
-  remembered: true,
+  control: 'ai-models',
 };
 
 export const AI_SETUP_AT_START_SETTING: SettingDefinition<z.ZodBoolean> = {

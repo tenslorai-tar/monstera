@@ -271,6 +271,62 @@ describe('an answer’s web sources (ADR-0108)', () => {
   });
 });
 
+describe('the model lists main holds (ADR-0117, corrected 2026-09-28)', () => {
+  /** A list endpoint answering OpenAI-format ids, or a status, and counting the requests it was sent. */
+  function listing(answers: ({ ids: string[] } | { status: number })[]): { readonly fetchImpl: typeof fetch; readonly asked: () => number } {
+    let asked = 0;
+    const fetchImpl = (() => {
+      const answer = answers[Math.min(asked, answers.length - 1)];
+      asked += 1;
+      if (answer === undefined || 'status' in answer) return Promise.resolve(new Response('no', { status: answer?.status ?? 500 }));
+      return Promise.resolve(new Response(JSON.stringify({ data: answer.ids.map((id) => ({ id })) }), { status: 200 }));
+    }) as unknown as typeof fetch;
+    return { fetchImpl, asked: () => asked };
+  }
+
+  it('holds nothing fetched before anything asks, and answers the unasked list WITHOUT a request', () => {
+    const { fetchImpl, asked } = listing([{ ids: ['gpt-x'] }]);
+    const { assistant } = assistantWith(fetchImpl);
+
+    // Anthropic's unasked list is its read-spec fallback: a list with a model in it, so this is not an empty answer.
+    expect(assistant.held('anthropic')).toMatchObject({ source: 'fallback', models: [{ id: 'claude-opus-5' }] });
+    expect(assistant.held('perplexity').source).toBe('no-list');
+    expect(asked()).toBe(0);
+  });
+
+  it('holds the list the Assistant FETCHED, for the rest of the session', async () => {
+    const { fetchImpl, asked } = listing([{ ids: ['gpt-fetched'] }]);
+    const { assistant } = assistantWith(fetchImpl);
+
+    await assistant.models('openai');
+
+    expect(assistant.held('openai')).toMatchObject({ source: 'fetched', models: [{ id: 'gpt-fetched' }] });
+    // HELD, not asked again: one request, made by the Assistant.
+    expect(asked()).toBe(1);
+  });
+
+  it('a later FAILED fetch does not replace a list that was fetched', async () => {
+    const { fetchImpl } = listing([{ ids: ['gpt-fetched'] }, { status: 503 }]);
+    const { assistant } = assistantWith(fetchImpl);
+
+    await assistant.models('openai');
+    const failed = await assistant.models('openai');
+
+    // THE PREMISE: the second ask really did fail, so the held list below is the kept one, not the latest answer.
+    expect(failed.problem).toBe('rejected');
+    expect(assistant.held('openai')).toMatchObject({ source: 'fetched', models: [{ id: 'gpt-fetched' }] });
+  });
+
+  it('a key CHECK that lists models is held too, since it asked the same provider', async () => {
+    const { fetchImpl } = listing([{ ids: ['gpt-checked'] }]);
+    const { assistant } = assistantWith(fetchImpl, '');
+
+    await assistant.check('openai', 'candidate', '');
+
+    expect(assistant.held('openai')).toMatchObject({ source: 'fetched', models: [{ id: 'gpt-checked' }] });
+  });
+});
+
 describe('splitDelta', () => {
   it('keeps a short piece whole and splits a long one in order', () => {
     expect(splitDelta('abc', 4)).toStrictEqual(['abc']);

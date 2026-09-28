@@ -1,4 +1,4 @@
-import { AZURE_KEY_SETTING_ID, channels, createClient } from '@monstera/contract';
+import { AI_PROVIDER_IDS, AZURE_KEY_SETTING_ID, channels, createClient } from '@monstera/contract';
 import { err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -19,10 +19,17 @@ import { showSettingsCommand } from './showSettings.js';
  * value is not something this file could construct, which is the point of
  * ADR-0056 Decision 5.
  */
+const HELD_OPENAI = {
+  source: 'fetched' as const,
+  models: [{ id: 'gpt-held', label: 'GPT held', capabilities: { vision: null, streaming: null } }],
+};
+const HELD_FALLBACK = { source: 'fallback' as const, models: [] };
+
 function harness(options: {
   readonly stored?: readonly (typeof AZURE_KEY_SETTING_ID)[];
   readonly available?: boolean;
   readonly loadRefuses?: boolean;
+  readonly heldRefuses?: boolean;
   readonly saveRefuses?: boolean;
   readonly answer?: unknown;
   /** What the dialog reports while it is open, each delivered before it answers (ADR-0094). */
@@ -53,6 +60,18 @@ function harness(options: {
         options.saveRefuses === true
           ? err({ code: 'secret-storage-unavailable' })
           : ok({ stored: true }),
+      );
+    }
+    // THE LISTS MAIN HOLDS: OpenAI's fetched, every other provider its fallback — two sources, so a case can see
+    // that the one handed to the dialog is this answer and not something built beside it.
+    if (id === 'ai.models.held') {
+      if (options.heldRefuses === true) return Promise.resolve(err({ code: 'internal', incident: 'test' }));
+      return Promise.resolve(
+        ok(
+          Object.fromEntries(
+            AI_PROVIDER_IDS.map((provider) => [provider, provider === 'openai' ? HELD_OPENAI : HELD_FALLBACK]),
+          ),
+        ),
       );
     }
     // THE FOOTER'S TWO CHANNELS, answered so a case can see which of them an action reached.
@@ -201,7 +220,29 @@ describe('showSettingsCommand', () => {
     await run();
 
     expect(settings.get(THEME_SETTING.id)).toBe(before);
-    expect(sent.map((call) => call.id)).toStrictEqual(['settings.loadSecrets']);
+    expect(sent.map((call) => call.id)).toStrictEqual(['settings.loadSecrets', 'ai.models.held']);
     expect(secretsChanged()).toBe(0);
+  });
+
+  it('opens with the model lists main HOLDS, and asks no channel that fetches one (ADR-0117)', async () => {
+    const { run, asked, sent } = harness({});
+
+    await run();
+
+    const props = asked[0]?.props as { models: Record<string, unknown> };
+    // OPENAI'S IS THE FETCHED ONE main answered, so this is the query's answer handed through, not a list made here.
+    expect(props.models['openai']).toStrictEqual(HELD_OPENAI);
+    expect(Object.keys(props.models).sort()).toStrictEqual([...AI_PROVIDER_IDS].sort());
+    // THE DECISION: nothing that reaches a provider is called to open Settings.
+    expect(sent.map((call) => call.id)).not.toContain('ai.models');
+  });
+
+  it('a held query that FAILED opens with no lists, which each model row reports, rather than refusing to open', async () => {
+    const { run, asked } = harness({ heldRefuses: true });
+
+    await run();
+
+    expect(asked[0]?.id).toBe(SETTINGS_DIALOG_ID);
+    expect((asked[0]?.props as { models: unknown }).models).toStrictEqual({});
   });
 });

@@ -1367,6 +1367,10 @@ export const handlers: ContractHandlers = {
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
   'ai.models': () => Promise.resolve(ok({ source: 'fallback', models: [] })),
+  'ai.models.held': () => {
+    const none = { source: 'fallback' as const, models: [] };
+    return Promise.resolve(ok({ anthropic: none, openai: none, gemini: none, mistral: none, xai: none, 'azure-openai': none, openrouter: none, groq: none, perplexity: none, deepseek: none }));
+  },
   'ai.checkKey': () => Promise.resolve(ok({ accepted: false, problem: 'unauthorised' })),
   'ai.history.load': () => Promise.resolve(ok({ turns: [] })),
   'ai.history.save': () => Promise.resolve(ok({ saved: false })),
@@ -1536,6 +1540,10 @@ export const handlers: ContractHandlers = {
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
   'ai.models': () => Promise.resolve(ok({ source: 'fallback', models: [] })),
+  'ai.models.held': () => {
+    const none = { source: 'fallback' as const, models: [] };
+    return Promise.resolve(ok({ anthropic: none, openai: none, gemini: none, mistral: none, xai: none, 'azure-openai': none, openrouter: none, groq: none, perplexity: none, deepseek: none }));
+  },
   'ai.checkKey': () => Promise.resolve(ok({ accepted: false, problem: 'unauthorised' })),
   'ai.history.load': () => Promise.resolve(ok({ turns: [] })),
   'ai.history.save': () => Promise.resolve(ok({ saved: false })),
@@ -1780,6 +1788,10 @@ export const shim: ContractClient = {
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
   'ai.models': () => Promise.resolve(ok({ source: 'fallback', models: [] })),
+  'ai.models.held': () => {
+    const none = { source: 'fallback' as const, models: [] };
+    return Promise.resolve(ok({ anthropic: none, openai: none, gemini: none, mistral: none, xai: none, 'azure-openai': none, openrouter: none, groq: none, perplexity: none, deepseek: none }));
+  },
   'ai.checkKey': () => Promise.resolve(ok({ accepted: false, problem: 'unauthorised' })),
   'ai.history.load': () => Promise.resolve(ok({ turns: [] })),
   'ai.history.save': () => Promise.resolve(ok({ saved: false })),

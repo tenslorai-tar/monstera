@@ -209,6 +209,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // The keys and values are bounded in the schema, which is the other half of
   // L11's requirement.
   'ai.models': 'names a provider from the registry and answers a bounded list of bounded model ids',
+  'ai.models.held': 'carries nothing in; one bounded list per registered provider out, whatever the document',
   'ai.ask': 'every field is bounded: the subscription id, the model id, and the conversation’s turns',
   'ai.stop': 'one bounded subscription id',
   'ai.openSource': 'a bounded answer id and a place below the sources’ bound',
