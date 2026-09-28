@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
-import { AUTOSAVE_DESCRIPTION, AUTOSAVE_OPTION_TITLES, AUTOSAVE_TITLE } from '../messages/en.js';
+import {
+  AUTOSAVE_DESCRIPTION,
+  AUTOSAVE_OPTION_TITLES,
+  AUTOSAVE_TITLE,
+  CONFIRM_REDACTION_DESCRIPTION,
+  CONFIRM_REDACTION_TITLE,
+} from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
 
 /**
@@ -31,3 +37,19 @@ export const AUTOSAVE_SETTING: SettingDefinition<
 };
 
 export type AutosaveInterval = z.infer<(typeof AUTOSAVE_SETTING)['schema']>;
+
+/**
+ * Whether *Apply redactions* asks first — Part F's *"confirm redaction"* (`BUILD-PROMPT.md`:618), ON by default as
+ * the owner answered on 2026-09-27. A burn-in removes content and the only way back is undo in this session, so the
+ * confirmation is where the person sees the scope and what is removed. Off, the burn-in applies the choices the dialog
+ * would have started on (`applyRedactionsDefaults`): this page, a solid cover, the covered pixels removed, the title
+ * removed — never a wider scope than the one a person would have been shown.
+ */
+export const CONFIRM_REDACTION_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'saving.confirm-redaction',
+  title: CONFIRM_REDACTION_TITLE,
+  description: CONFIRM_REDACTION_DESCRIPTION,
+  schema: z.boolean(),
+  fallback: true,
+  category: 'saving',
+};

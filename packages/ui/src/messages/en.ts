@@ -67,6 +67,8 @@ export const ORGANIZE_GRID_LABEL = messageKey('surface.organize.label');
 export const ORGANIZE_GRID_COUNT = messageKey('surface.organize.count');
 export const ORGANIZE_GRID_SELECTED = messageKey('surface.organize.selected');
 export const ORGANIZE_GRID_HINT = messageKey('surface.organize.hint');
+export const CONFIRM_REDACTION_TITLE = messageKey('setting.saving-confirm-redaction.title');
+export const CONFIRM_REDACTION_DESCRIPTION = messageKey('setting.saving-confirm-redaction.description');
 export const AUTOSAVE_TITLE = messageKey('setting.saving-autosave.title');
 export const AUTOSAVE_DESCRIPTION = messageKey('setting.saving-autosave.description');
 export const AUTOSAVE_OFF = messageKey('setting.saving-autosave.off');
@@ -2098,6 +2100,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AUTOSAVE_TITLE]: 'Save automatically',
   [AUTOSAVE_DESCRIPTION]:
     'Saves each document with unsaved changes to its own file on a timer. Off unless you turn it on, because a save replaces the file.',
+  [CONFIRM_REDACTION_TITLE]: 'Confirm before redacting',
+  [CONFIRM_REDACTION_DESCRIPTION]:
+    'Shows what Apply redactions will remove before it removes it. Turned off, it removes marked content on the current page straight away, with a solid cover, and removes the document title too. Undo still works until you close the document.',
   [STARTING_ZOOM_TITLE]: 'Starting zoom',
   [STARTING_ZOOM_DESCRIPTION]: 'How large a document is shown when you open it. You can still zoom each one as you read.',
   [STARTING_ZOOM_OPTION_TITLES['fit-width']]: 'Fit width',

@@ -27,7 +27,7 @@ import {
 import { Button } from '../primitives/Button.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
-import type { ApplyRedactionsAnswer } from './applyRedactions.js';
+import { type ApplyRedactionsAnswer, applyRedactionsDefaults } from './applyRedactions.js';
 
 /** Each cover's own words, exhaustive over the contract's list. */
 const COVER_TITLES: Readonly<Record<PdfRedactCover, MessageKey>> = {
@@ -69,12 +69,14 @@ export default function ApplyRedactionsBody({
   const coverId = useId();
   const imagesId = useId();
   const titleId = useId();
-  const [scope, setScope] = useState<'all' | 'page'>('page');
-  const [cover, setCover] = useState<PdfRedactCover>('solid');
-  const [images, setImages] = useState<PdfRedactImages>('pixels');
-  // OFF. ADR-0079's answer: removal is the side that cannot leak, so keeping the
-  // title is something a person asks for rather than something they have to notice.
-  const [keepTitle, setKeepTitle] = useState(false);
+  // FROM THE ONE DEFINITION a burn-in without asking applies (`applyRedactionsDefaults`), so what this dialog starts
+  // on and what *Confirm before redacting: off* does cannot drift apart. The title is removed by default — ADR-0079:
+  // removal is the side that cannot leak, so keeping it is something a person asks for.
+  const start = applyRedactionsDefaults(page);
+  const [scope, setScope] = useState<'all' | 'page'>(start.pages === 'all' ? 'all' : 'page');
+  const [cover, setCover] = useState<PdfRedactCover>(start.cover);
+  const [images, setImages] = useState<PdfRedactImages>(start.images);
+  const [keepTitle, setKeepTitle] = useState(start.keepTitle);
 
   return (
     <div className="m-apply-redactions">

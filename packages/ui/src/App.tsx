@@ -375,7 +375,7 @@ import { PageGrid } from './surfaces/PageGrid.js';
 import { FocusHint } from './surfaces/FocusHint.js';
 import { isDirty, savedState, savedTick, windowTitle } from './savedState.js';
 import { autosaveEvery, createAutosave } from './autosave.js';
-import { AUTOSAVE_SETTING } from './settings/saving.js';
+import { AUTOSAVE_SETTING, CONFIRM_REDACTION_SETTING } from './settings/saving.js';
 import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { PageList, type PageListProps } from './PageList.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
@@ -2450,7 +2450,14 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           docusignReady: () => docusignKeyStored,
         }),
         redactMatchesCommand({ client, onApplied: applied, ask, stamp }),
-        applyRedactionsCommand({ client, onApplied: applied, ask, stamp }),
+        applyRedactionsCommand({
+          client,
+          onApplied: applied,
+          ask,
+          stamp,
+          // ANYTHING BUT AN EXPLICIT OFF ASKS: an unread or unexpected value lands on the safe side.
+          confirm: () => settings.get(CONFIRM_REDACTION_SETTING.id) !== false,
+        }),
         watermarkPagesCommand({ client, onApplied: applied, ask, stamp }),
         headerFooterCommand({ client, onApplied: applied, ask, stamp }),
         batesNumberCommand({ client, onApplied: applied, ask, stamp }),

@@ -22,8 +22,11 @@ import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/co
 import { CROP_PAGES_DIALOG_ID } from '../dialogs/cropPages.js';
 import { PROTECT_DOCUMENT_DIALOG_ID } from '../dialogs/protectDocument.js';
 import type { ProtectDocumentAnswer } from '../dialogs/protectDocument.js';
-import { APPLY_REDACTIONS_DIALOG_ID } from '../dialogs/applyRedactions.js';
-import type { ApplyRedactionsAnswer } from '../dialogs/applyRedactions.js';
+import {
+  APPLY_REDACTIONS_DIALOG_ID,
+  type ApplyRedactionsAnswer,
+  applyRedactionsDefaults,
+} from '../dialogs/applyRedactions.js';
 import { REDACT_MATCHES_DIALOG_ID } from '../dialogs/redactMatches.js';
 import type { RedactMatchesAnswer } from '../dialogs/redactMatches.js';
 import { SANITIZE_DOCUMENT_DIALOG_ID } from '../dialogs/sanitizeDocument.js';
@@ -3828,7 +3831,15 @@ export function redactMatchesCommand(deps: DocumentCommandDeps): UiCommand {
  * else in this file: the undo is a checkpoint, and a checkpoint is dropped when
  * the document closes.
  */
-export function applyRedactionsCommand(deps: DocumentCommandDeps): UiCommand {
+export function applyRedactionsCommand(
+  deps: DocumentCommandDeps & {
+    /**
+     * Whether to ask first — *Confirm before redacting*, read when the command RUNS so a changed setting applies to
+     * the next burn-in. Required: a burn-in that skipped the dialog by default would be the unsafe side.
+     */
+    readonly confirm: () => boolean;
+  },
+): UiCommand {
   return {
     id: 'document.apply-redactions',
     icon: 'ShieldAlert',
@@ -3837,9 +3848,11 @@ export function applyRedactionsCommand(deps: DocumentCommandDeps): UiCommand {
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;
-      const answer = (await deps.ask(APPLY_REDACTIONS_DIALOG_ID, { page: context.page })) as
-        | ApplyRedactionsAnswer
-        | undefined;
+      // UNASKED ONLY WHEN THE PERSON TURNED THE CONFIRMATION OFF, and then with exactly what the dialog would have
+      // started on — this page, never the whole document (`applyRedactionsDefaults`).
+      const answer = deps.confirm()
+        ? ((await deps.ask(APPLY_REDACTIONS_DIALOG_ID, { page: context.page })) as ApplyRedactionsAnswer | undefined)
+        : applyRedactionsDefaults(context.page);
       if (answer === undefined) return;
 
       await applyDocumentCommand(deps, context.docId, {

@@ -54,6 +54,16 @@ export const APPLY_REDACTIONS_RESULT = z
 /** What the burn-in dialog answers with. */
 export type ApplyRedactionsAnswer = z.infer<typeof APPLY_REDACTIONS_RESULT>;
 
+/**
+ * What the dialog starts on, and what a burn-in applies when *Confirm before redacting* is off — ONE definition, so
+ * the choices a person would have been shown are exactly the ones applied without asking. The page in front of them,
+ * a solid cover, the covered image pixels removed, and the title removed with the rest (ADR-0079: removal is the side
+ * that cannot leak).
+ */
+export function applyRedactionsDefaults(page: number): ApplyRedactionsAnswer {
+  return { pages: [page], cover: 'solid', images: 'pixels', keepTitle: false };
+}
+
 export const APPLY_REDACTIONS_DIALOG = declareDialog({
   id: APPLY_REDACTIONS_DIALOG_ID,
   title: APPLY_REDACTIONS_TITLE,

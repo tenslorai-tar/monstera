@@ -31,6 +31,7 @@ Redaction removes content from the document itself, not just covers it. It happe
 - Applying removes the text, pictures and drawings under the marks, plus any comments and form fields there. The document's author, subject and other properties are removed too.
 - A title can itself contain what you are redacting, which is why keeping it is off by default.
 - The only way back is **Undo**, while the document is still open.
+- **Apply redactions** asks first. If you turn off **Confirm before redacting** in **Settings**, **Saving** page, it removes marked content on the current page straight away, with a filled box, and removes the title too.
 
 <!--
 Screenshots to capture:

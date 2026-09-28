@@ -8,7 +8,7 @@ import {
 } from './ai.js';
 import { DOCUSIGN_ENVIRONMENT_SETTING, DOCUSIGN_INTEGRATION_KEY_SETTING } from './integrations.js';
 import { CRASH_REPORTS_SETTING, RECENT_PREVIEWS_SETTING, REVIEW_PROMPTS_SETTING } from './privacy.js';
-import { AUTOSAVE_SETTING } from './saving.js';
+import { AUTOSAVE_SETTING, CONFIRM_REDACTION_SETTING } from './saving.js';
 import { SHORTCUTS_SETTING } from './keyboard.js';
 import { PRINT_QUALITY_SETTING } from './rendering.js';
 import { UPDATES_SETTINGS } from './updates.js';
@@ -139,6 +139,7 @@ export const ALL_SETTINGS: readonly SettingDefinition[] = [
   CRASH_REPORTS_SETTING,
   REVIEW_PROMPTS_SETTING,
   AUTOSAVE_SETTING,
+  CONFIRM_REDACTION_SETTING,
   SHORTCUTS_SETTING,
   // THE UPDATE CHECK'S SWITCH, present only while the manifest has an address (ADR-0110): a switch for a check that
   // cannot run would read ON while nothing is ever asked.

@@ -3504,6 +3504,37 @@ describe('Settings › Viewing › Starting zoom (Part F)', () => {
   });
 });
 
+describe('Settings › Saving › Confirm before redacting (Part F)', () => {
+  it('OFF, Apply redactions burns in this page at once; CONTROL: on by default, it opens the confirmation and sends nothing', async () => {
+    for (const confirmOff of [true, false]) {
+      const settings = freshSettings();
+      if (confirmOff) settings.set('saving.confirm-redaction', false);
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+      });
+      const { unmount } = render(<App client={client} settings={settings} />);
+      await withDocumentOpen();
+      await pressCommand('Apply redactions', 'Protect');
+      await act(async () => {
+        await new Promise((settle) => setTimeout(settle, 0));
+      });
+      const executed = sent.filter((call) => call.id === 'document.execute');
+      const dialog = screen.queryByRole('dialog', { name: 'Apply redactions' });
+      if (confirmOff) {
+        expect(dialog, 'no confirmation when it is off').toBeNull();
+        expect(executed.map((call) => call.params)).toStrictEqual([
+          { docId: DOC, command: { kind: 'applyRedactions', pages: [0], cover: 'solid', images: 'pixels', keepTitle: false } },
+        ]);
+      } else {
+        expect(dialog, 'the confirmation, by default').not.toBeNull();
+        expect(executed).toStrictEqual([]);
+      }
+      unmount();
+    }
+  });
+});
+
 describe('Settings › Viewing › Zoom step (Part F)', () => {
   it('Zoom in steps by the chosen step — and CONTROL: by the ladder when nothing was chosen', async () => {
     // THE SEPARATING VALUES: from 100%, a 10-point step reads 110% and the ladder 125%, so a control that ignored

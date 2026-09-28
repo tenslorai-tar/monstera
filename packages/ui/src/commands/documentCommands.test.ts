@@ -3461,6 +3461,7 @@ describe('protectDocumentCommand', () => {
           opened.push({ id, props });
           return Promise.resolve({ pages: 'all', cover: 'none', images: 'remove', keepTitle: true });
         },
+        confirm: () => true,
       }).run(CONTEXT);
 
       // THE PAGE WENT IN, so the dialog can offer *this page* by number.
@@ -3503,9 +3504,41 @@ describe('protectDocumentCommand', () => {
         stamp,
         onApplied: () => undefined,
         ask: () => Promise.resolve(undefined),
+        confirm: () => true,
       }).run(CONTEXT);
 
       expect(sent).toStrictEqual([]);
+    });
+
+    it('with *Confirm before redacting* OFF, asks nothing and burns in THIS PAGE with the dialog’s own defaults', async () => {
+      // The decision is whether the dialog opens, so the call not made is asserted, not only the dispatch — and the
+      // dispatch is the dialog's starting choices, from the one definition both read (`applyRedactionsDefaults`).
+      const { client, sent } = recordingClient();
+      const opened: string[] = [];
+
+      await applyRedactionsCommand({
+        client,
+        stamp,
+        onApplied: () => undefined,
+        ask: (id) => {
+          opened.push(id);
+          return Promise.resolve(undefined);
+        },
+        confirm: () => false,
+      }).run(CONTEXT);
+
+      expect(opened).toStrictEqual([]);
+      expect(sent).toStrictEqual([
+        {
+          id: 'document.execute',
+          params: {
+            docId: DOC,
+            // THIS PAGE, never the whole document: an unasked burn-in never reaches further than the dialog would
+            // have offered first.
+            command: { kind: 'applyRedactions', pages: [CONTEXT.page], cover: 'solid', images: 'pixels', keepTitle: false },
+          },
+        },
+      ]);
     });
   });
 
