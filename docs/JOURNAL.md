@@ -892,6 +892,46 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-28 — `proof:shim`'s three-hour hang is Node's `process.exit` deadlock, and 289 calls share it
+
+**The mechanism, read off the stuck process's own stacks.** On 2026-09-27 `proof:shim` printed its pass and never
+exited — 0.7 s of CPU, every thread waiting, three hours. Reproduced 2026-09-28 in a loop: the proof's own `node`
+process (not the runner) held **6 threads where every live node beside it held 13–14**, so it was part-way through
+tearing down. Its main thread's native stack, walked with System32's `dbghelp` and named from export tables only
+(`scratchpad/stackwalk.ps1`; small offsets are exact, large ones name a region):
+
+```
+NtWaitForSingleObject+0x14 ← WaitForSingleObjectEx+0xaf ← uv_thread_join+0x16 ← … ← node::DefaultProcessExitHandler+0xce
+```
+
+and the one Node-created thread left was asleep in `SleepConditionVariableSRW` inside V8. That is
+[nodejs/node#54918](https://github.com/nodejs/node/issues/54918) / [#64274](https://github.com/nodejs/node/issues/64274):
+`process.exit()` disposes the platform while the isolate is alive and joins its workers, and a V8 background job
+(a concurrent Sparkplug or Maglev compile at the heap limit) is parked waiting for a GC the exiting main thread never
+runs. The fix upstream, [nodejs/node#66171](https://github.com/nodejs/node/pull/66171), is **unmerged** and not
+backported; this machine runs **Node 24.12.0**. The frames of the parked worker cannot be named without Node's PDB, so
+*which* job it was is inferred from the upstream report, not read.
+
+**The separating measurement, not the story.** 30 alternating pairs, same launch (`node` directly, output to a file,
+90 s counted a hang), the machine busy with captures and builds:
+
+| arm | runs | hung after printing its pass |
+|---|---|---|
+| the proof as shipped — `main().then((status) => process.exit(status))` | 30 | **13** |
+| the same file, imported by a wrapper that makes `process.exit` set `process.exitCode` | 30 | **0** |
+
+Ending by an empty loop tears the isolate down before the platform, which is the release the parked job waits for.
+The rate follows load, which is why a sweep met it and a lone rerun (3 s) did not.
+
+**The cause is outside this repository, and no timeout is the answer.** The scratch runner's 30-minute bound turned a
+three-hour silence into a reported failure; it does not touch the mechanism and is not a fix. **The class is
+289 `process.exit(` calls in 147 script files**, plus the engine host entries (`hostEntry.ts`, `pdfiumHostEntry.ts`,
+`composeHostEntry.ts`) and the harness mains. Converting them is its own unit — a script that relies on `process.exit`
+to cut an open handle would trade this hang for a leak-shaped one, so each needs its handles read, and a named
+`finish(status)` in `scripts/lib` is the shape, so the next script cannot spell the old exit.
+
+---
+
 ## 2026-09-28 — Stage audit of `7ff18bb9..2ff522a1` — findings VVVVVV-1 to VVVVVV-7
 
 37 commits, 189 files, 7 proofs added, 32 modified and none removed, 9 source files added, 87 changed and 2 removed
