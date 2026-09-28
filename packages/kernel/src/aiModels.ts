@@ -112,7 +112,19 @@ export interface AiModelRequest {
   readonly endpoint?: string;
   /** Injected so a case drives the answer. The application passes the real one. */
   readonly fetchImpl?: typeof fetch;
+  /** Injected so a case need not wait {@link MODEL_LIST_TIMEOUT_MS}. The application passes nothing. */
+  readonly timeoutMs?: number;
 }
+
+/**
+ * How long one list request may take, the answer's body included, before it is *unreachable*.
+ *
+ * **A bound, not a measurement.** A provider that never answers is outside this repository, and
+ * without one the Assistant's picker and the recogniser's model both wait on it for ever. A list
+ * endpoint answers in well under this; the figure caps the worst case and costs the ordinary one
+ * nothing, as `MANIFEST_TIMEOUT_MS` does for the update check.
+ */
+export const MODEL_LIST_TIMEOUT_MS = 10_000;
 
 /** The request's URL and headers, or `null` where this provider has no list. */
 function request(provider: AiProviderId, key: string, endpoint: string): { url: string; headers: Record<string, string> } | null {
@@ -173,7 +185,13 @@ export function readModels(shape: ListEndpoint['shape'], body: unknown): readonl
  * leave the assistant usable — so every failure answers a `fallback` list with the
  * problem named, and the surface says which it is showing.
  */
-export async function listModels({ provider, key, endpoint = '', fetchImpl = fetch }: AiModelRequest): Promise<AiModelList> {
+export async function listModels({
+  provider,
+  key,
+  endpoint = '',
+  fetchImpl = fetch,
+  timeoutMs = MODEL_LIST_TIMEOUT_MS,
+}: AiModelRequest): Promise<AiModelList> {
   const fallback = FALLBACK_MODELS[provider];
   const asked = key === '' ? null : request(provider, key, endpoint);
   if (asked === null) {
@@ -182,9 +200,12 @@ export async function listModels({ provider, key, endpoint = '', fetchImpl = fet
     return { provider, models: fallback, source: LIST_ENDPOINTS[provider].url === null && provider !== 'azure-openai' ? 'no-list' : 'fallback' };
   }
 
+  // ONE SIGNAL FOR THE REQUEST AND THE BODY: a provider can send its headers and then stall, and
+  // a bound on the headers alone would leave `json()` waiting for ever.
+  const signal = AbortSignal.timeout(timeoutMs);
   let response: Response;
   try {
-    response = await fetchImpl(asked.url, { method: 'GET', headers: asked.headers });
+    response = await fetchImpl(asked.url, { method: 'GET', headers: asked.headers, signal });
   } catch {
     return { provider, models: fallback, source: 'fallback', problem: 'unreachable' };
   }
@@ -197,7 +218,9 @@ export async function listModels({ provider, key, endpoint = '', fetchImpl = fet
   try {
     body = await response.json();
   } catch {
-    return { provider, models: fallback, source: 'fallback', problem: 'unreadable' };
+    // A BODY CUT OFF BY THE BOUND is a provider that stopped answering, not one that answered
+    // something unreadable.
+    return { provider, models: fallback, source: 'fallback', problem: signal.aborted ? 'unreachable' : 'unreadable' };
   }
   const models = readModels(LIST_ENDPOINTS[provider].shape, body);
   if (models === null || models.length === 0) {

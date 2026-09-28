@@ -134,6 +134,75 @@ describe('listModels', () => {
     expect(list).toStrictEqual({ provider: 'openai', models: [], source: 'fallback', problem: 'unreachable' });
   });
 
+  describe('a provider that never answers is bounded', () => {
+    /** A fetch that answers nothing until its signal ends it, as a stalled connection does. */
+    const silent = ((_url: string, init?: { signal?: AbortSignal }) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(init.signal?.reason);
+        });
+      })) as unknown as typeof fetch;
+
+    it('answers the fallback as unreachable when the request is never answered', async () => {
+      // Without the bound this promise never settles and the case fails on vitest's own timeout.
+      const list = await listModels({ provider: 'anthropic', key: 'k', fetchImpl: silent, timeoutMs: 30 });
+
+      expect(list).toStrictEqual({
+        provider: 'anthropic',
+        models: [{ id: 'claude-opus-5', label: 'claude-opus-5', capabilities: { vision: true, streaming: true } }],
+        source: 'fallback',
+        problem: 'unreachable',
+      });
+    });
+
+    it('answers unreachable, not unreadable, when the headers arrive and the body stalls', async () => {
+      const stalling = ((_url: string, init?: { signal?: AbortSignal }) => {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"data": ['));
+            init?.signal?.addEventListener('abort', () => {
+              controller.error(init.signal?.reason);
+            });
+          },
+        });
+        return Promise.resolve(new Response(body, { status: 200 }));
+      }) as unknown as typeof fetch;
+
+      const list = await listModels({ provider: 'openai', key: 'k', fetchImpl: stalling, timeoutMs: 30 });
+
+      expect(list.problem).toBe('unreachable');
+    });
+
+    it('CONTROL: a provider slower than instant but inside the bound is still fetched', async () => {
+      const slow = ((_url: string, init?: { signal?: AbortSignal }) =>
+        new Promise((resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(init.signal?.reason);
+          });
+          setTimeout(() => {
+            resolve(new Response(JSON.stringify({ data: [{ id: 'gpt-x' }] }), { status: 200 }));
+          }, 20);
+        })) as unknown as typeof fetch;
+
+      const list = await listModels({ provider: 'openai', key: 'k', fetchImpl: slow, timeoutMs: 2_000 });
+
+      expect(list.source).toBe('fetched');
+    });
+
+    it('the application’s call carries a live signal when it names no bound', async () => {
+      let seen: AbortSignal | undefined;
+      const recording = ((_url: string, init?: { signal?: AbortSignal }) => {
+        seen = init?.signal;
+        return Promise.resolve(new Response(JSON.stringify({ data: [{ id: 'gpt-x' }] }), { status: 200 }));
+      }) as unknown as typeof fetch;
+
+      await listModels({ provider: 'openai', key: 'k', fetchImpl: recording });
+
+      expect(seen).toBeInstanceOf(AbortSignal);
+      expect(seen?.aborted).toBe(false);
+    });
+  });
+
   it('CONTROL: an EMPTY list is not a list, and is answered as a problem', async () => {
     // A picker with nothing in it reads as the feature being broken; the provider told us
     // nothing a person can choose.
