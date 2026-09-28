@@ -23,6 +23,8 @@ Pages scroll continuously, one after another. You can also jump straight to a pa
 
 - Scrolling does not add to the Back history; jumps do (going to a page number, clicking a page picture, a link, a bookmark or a search result).
 - Each document remembers its own page and history while it is open.
+- To glide to a page instead of jumping, open **Settings**, choose the **Viewing** page and turn on **Smooth scrolling**. It stays off while **Reduce motion** is on.
+- To see each page's number at its foot while you scroll, turn on **Page numbers on pages** on the same page.
 
 <!--
 Screenshots to capture:

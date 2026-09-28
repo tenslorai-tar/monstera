@@ -1614,11 +1614,11 @@ export const channels = {
        * application would be offered the last file they touched and told
        * nothing about the other two.
        *
-       * Empty after a clean exit — a run that finished has nothing to recover —
-       * so a renderer reads this as *the offer*, and `lastExitClean` as
-       * *whether to make one*. The two are separate because an unclean exit
-       * with nothing recorded is a real state: a run that died before opening
-       * anything.
+       * Kept after a clean exit too (since 2026-09-28): after a clean one it is
+       * what `viewing.restore-session` reopens, and after an unclean one it is
+       * *the offer*. `lastExitClean` says which — so a renderer never reads this
+       * alone. The two are separate because an unclean exit with nothing
+       * recorded is a real state: a run that died before opening anything.
        */
       lastSession: z
         .array(

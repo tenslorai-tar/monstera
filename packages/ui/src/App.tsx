@@ -177,6 +177,7 @@ import {
   openDocumentCommand,
   openDroppedFiles,
   openWaitingDocuments,
+  restoreLastSession,
 } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
 import { donateCommand } from './commands/donate.js';
@@ -348,6 +349,7 @@ import {
   GRID_SETTING,
   LOUPE_SETTING,
   PAGE_BADGES_SETTING,
+  RESTORE_SESSION_SETTING,
   RULERS_SETTING,
   SMOOTH_SCROLL_SETTING,
   RULER_UNIT_SETTING,
@@ -2276,10 +2278,15 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     };
     if (!launchAsked.current) {
       launchAsked.current = true;
-      ask();
+      // THE LAST SESSION FIRST, when the reader asked for it, and then the command line's documents: a file opened
+      // by double-click lands as the newest tab, over the documents the reader left open.
+      const restore = settings.get(RESTORE_SESSION_SETTING.id) === true ? restoreLastSession(openDeps) : Promise.resolve();
+      // A REJECTED ASK is the channel failing, which main records; what it may not do is keep the command line's
+      // documents from opening, so the second ask follows either way.
+      void restore.catch(() => undefined).finally(ask);
     }
     return subscribe('document.opens-waiting', ask);
-  }, [openDeps, subscribe]);
+  }, [openDeps, settings, subscribe]);
 
   /**
    * *Set up AI…*, held here as well as registered, because the first run starts it by itself —

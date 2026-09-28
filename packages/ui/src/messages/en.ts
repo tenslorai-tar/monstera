@@ -1430,6 +1430,8 @@ export const LAYOUT_MODE_DESCRIPTION = messageKey('setting.appearance.layout-mod
 export const RULERS_DESCRIPTION = messageKey('setting.viewing.rulers.description');
 export const DARK_PAGE_DESCRIPTION = messageKey('setting.viewing.dark-page.description');
 export const LOUPE_DESCRIPTION = messageKey('setting.viewing.loupe.description');
+export const RESTORE_SESSION_TITLE = messageKey('setting.viewing.restore-session.title');
+export const RESTORE_SESSION_DESCRIPTION = messageKey('setting.viewing.restore-session.description');
 export const RECENT_LENGTH_TITLE = messageKey('setting.viewing.recent-length.title');
 export const RECENT_LENGTH_DESCRIPTION = messageKey('setting.viewing.recent-length.description');
 export const RECENT_LENGTH_5 = messageKey('setting.viewing.recent-length.5');
@@ -3297,6 +3299,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RULERS_DESCRIPTION]: 'Rulers along the top and left of the page.',
   [DARK_PAGE_DESCRIPTION]: 'Dims the pages for reading at night: white turns dark and colours stay recognisable. The document is not changed.',
   [LOUPE_DESCRIPTION]: 'A magnifier that follows the pointer.',
+  [RESTORE_SESSION_TITLE]: 'Reopen my documents at start',
+  [RESTORE_SESSION_DESCRIPTION]:
+    'Opens the documents that were open when Monstera last closed. After a crash you are asked instead.',
   [RECENT_LENGTH_TITLE]: 'Recent files to keep',
   [RECENT_LENGTH_DESCRIPTION]: 'How many documents the start screen lists. A shorter list forgets the oldest ones.',
   [RECENT_LENGTH_5]: '5',

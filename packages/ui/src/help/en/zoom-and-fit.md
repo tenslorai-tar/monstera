@@ -22,6 +22,8 @@ Zoom changes how large the pages look on screen. It never changes the document.
 - **Fit width** and **Fit page** keep fitting as you resize the window.
 - In a document with pages of different sizes, fitting uses the first page Monstera measures.
 - Pages are redrawn sharply a moment after you stop zooming.
+- Zoomed far in, a page is drawn only where you are looking, in pieces, so a very large page does not fill the memory. **Draw pages in pieces above** in **Settings**, on the **Rendering** page, sets the zoom where that starts.
+- **Page sharpness** on the same page draws more pixels than the screen has and shrinks them to fit, which smooths fine line drawings. **Exact** keeps text crispest and uses least memory.
 
 <!--
 Screenshots to capture:

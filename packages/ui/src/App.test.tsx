@@ -141,12 +141,15 @@ const DOC = asDocId('doc-1');
  * `SettingsStore` is not React state and does not reset between renders, so a
  * case that assumed the default would pass in file order and fail alone.
  */
-function freshSettings(): SettingsStore {
+function freshSettings(values: Readonly<Record<string, unknown>> = {}): SettingsStore {
   // THE SHIPPED LIST, not a hand-picked subset. `App` reads four settings and
   // `SettingsStore.get` throws for an unregistered id, so a subset here is a
   // store the component under test cannot run against — and a subset that
   // happened to be enough today is one that silently stops matching `main.tsx`.
-  return new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+  const store = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+  // THROUGH `set`, so a value a case supplies is validated by its own setting's schema as a stored one would be.
+  for (const [id, value] of Object.entries(values)) store.set(id, value);
+  return store;
 }
 
 // The root element is shared by every case in this file, and the theme cases
@@ -3229,10 +3232,10 @@ describe('App', () => {
       // Without this, the case above passes for a surface that offers recovery
       // on every launch — which is the version a reader would learn to dismiss.
       // A SESSION IS SUPPLIED HERE, which is what makes this a control over
-      // `lastExitClean` rather than over emptiness. Main clears the record on
-      // a clean exit, so this fixture is one main would not produce — and that
-      // is deliberate: a control whose input the correct build also refuses
-      // for a second reason separates nothing.
+      // `lastExitClean` rather than over emptiness — and since 2026-09-28 it is
+      // exactly what main produces after a clean close, which KEEPS the session
+      // for `viewing.restore-session`. So this is now the ordinary clean start,
+      // and the flag is the only thing standing between it and an offer.
       const { client } = withRecent({
         entries: [row('handle-a', 'annual.pdf')],
         lastExitClean: true,
@@ -3247,6 +3250,41 @@ describe('App', () => {
       // AND THE ROW IS STILL THERE, so the case is not passing because the list
       // failed to render at all.
       expect(screen.getByRole('button', { name: 'annual.pdf' })).toBeDefined();
+    });
+
+    describe('REOPEN MY DOCUMENTS AT START (viewing.restore-session)', () => {
+      const SESSION = {
+        entries: [row('handle-a', 'annual.pdf')],
+        lastSession: [
+          { handle: 'handle-b', name: 'draft.pdf' },
+          { handle: 'handle-c', name: 'notes.pdf' },
+        ],
+      };
+      /** The handles a start reopened, in the order it asked for them. */
+      const reopened = (sent: readonly Sent[]): unknown[] =>
+        sent.filter((call) => call.id === 'document.openRecent').map((call) => (call.params as { handle: unknown }).handle);
+      const started = async (restore: boolean, lastExitClean: boolean): Promise<Sent[]> => {
+        const { client, sent } = withRecent({ ...SESSION, lastExitClean });
+        render(<App client={client} settings={freshSettings({ 'viewing.restore-session': restore })} />);
+        await act(async () => {
+          for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
+        });
+        return sent;
+      };
+
+      it('ON, after a clean close: every document that was open is reopened, in the order it was open', async () => {
+        expect(reopened(await started(true, true))).toStrictEqual(['handle-b', 'handle-c']);
+      });
+
+      it('CONTROL: OFF, the same clean start reopens nothing — the start screen is where the launch lands', async () => {
+        expect(reopened(await started(false, true))).toStrictEqual([]);
+      });
+
+      it('ON, after a CRASH: nothing is reopened unasked — the offer asks instead', async () => {
+        const sent = await started(true, false);
+        expect(reopened(sent)).toStrictEqual([]);
+        expect(screen.getByRole('button', { name: 'Reopen draft.pdf' })).toBeDefined();
+      });
     });
 
     it('CONTROL: an unclean run with NOTHING to reopen offers nothing', async () => {

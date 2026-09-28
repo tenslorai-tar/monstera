@@ -8,6 +8,8 @@ import {
   RECENT_LENGTH_5,
   RECENT_LENGTH_DESCRIPTION,
   RECENT_LENGTH_TITLE,
+  RESTORE_SESSION_DESCRIPTION,
+  RESTORE_SESSION_TITLE,
   DARK_PAGE_DESCRIPTION,
   DARK_PAGE_TITLE,
   GRID_DESCRIPTION,
@@ -104,6 +106,20 @@ export const LOUPE_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: 'viewing.loupe',
   title: LOUPE_TITLE,
   description: LOUPE_DESCRIPTION,
+  schema: z.boolean(),
+  fallback: false,
+  category: 'viewing',
+};
+
+/**
+ * Whether the documents open when Monstera last closed are opened again at start — Part F's *"restore last session"*
+ * (`BUILD-PROMPT.md`:611). **After a clean close only** (`restoreLastSession`): after a run that died, the start screen
+ * offers them one by one instead. **Off by default**, the start screen being where a launch has always landed.
+ */
+export const RESTORE_SESSION_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'viewing.restore-session',
+  title: RESTORE_SESSION_TITLE,
+  description: RESTORE_SESSION_DESCRIPTION,
   schema: z.boolean(),
   fallback: false,
   category: 'viewing',

@@ -19,6 +19,7 @@ If Monstera stops unexpectedly, the next time you start it the start screen list
 
 - This reopens the files as they are on disk. Changes you had not saved before the crash are not brought back. Save often, or turn on autosave (see "Save automatically").
 - The offer appears only after an unexpected close, never after you quit normally.
+- To have your documents open again by themselves after a normal close, turn on **Reopen my documents at start** in **Settings**, on the **Viewing** page. After a crash it still asks, with this offer, rather than reopening whatever was open when Monstera stopped.
 
 <!--
 Screenshots to capture:

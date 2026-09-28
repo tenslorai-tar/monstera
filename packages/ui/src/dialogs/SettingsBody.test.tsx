@@ -25,6 +25,7 @@ import {
   AZURE_DI_KEY_SETTING,
 } from '../settings/editing.js';
 import { SETTINGS_PAGES } from '../settings/pages.js';
+import type { SettingDefinition } from '../registries/settings.js';
 import type { SettingsAnswer } from './settings.js';
 import { controlFor, DIALOG_SETTINGS, listedPages } from './settings.js';
 import SettingsBody from './SettingsBody.js';
@@ -106,22 +107,33 @@ describe('SettingsBody', () => {
   it('every derivable setting is reachable on its page, and a setting with no control is nowhere', () => {
     opened({});
 
-    for (const setting of ALL_SETTINGS) {
-      if (controlFor(setting) === undefined || setting.remembered === true) {
-        // REMEMBERED STATE AND UNRENDERABLE KINDS are not rows: a panel's width is not a question.
-        goTo(setting.category === 'general' ? 'appearance' : setting.category);
-        expect(screen.queryByLabelText(english(setting.title)), setting.id).toBeNull();
-        continue;
+    // ONE VISIT PER PAGE, every setting of that page checked there. Visiting the page once per SETTING re-rendered the
+    // dialog as many times as there are settings, and the case crossed vitest's five seconds under a busy parallel run
+    // (5.1 s beside App.test, 0.97 s alone, 2026-09-28) — a cost that grew with every setting registered.
+    const pageOf = (setting: SettingDefinition): string => (setting.category === 'general' ? 'appearance' : setting.category);
+    /** The provider whose own row a setting is — its key, or Azure OpenAI's address — shown only while it is chosen. */
+    const ownerOf = (setting: SettingDefinition): string | undefined =>
+      setting.id === AZURE_OPENAI_ENDPOINT_SETTING.id
+        ? 'azure-openai'
+        : Object.entries(AI_PROVIDERS).find(([, entry]) => entry.keySetting === setting.id)?.[0];
+    const pages = [...new Set(ALL_SETTINGS.map(pageOf))];
+
+    for (const page of pages) {
+      goTo(page);
+      const here = ALL_SETTINGS.filter((setting) => pageOf(setting) === page);
+      // THE PROVIDER-OWNED ROWS LAST, since choosing a provider changes what the page shows.
+      for (const setting of [...here.filter((s) => ownerOf(s) === undefined), ...here.filter((s) => ownerOf(s) !== undefined)]) {
+        if (controlFor(setting) === undefined || setting.remembered === true) {
+          // REMEMBERED STATE AND UNRENDERABLE KINDS are not rows: a panel's width is not a question.
+          expect(screen.queryByLabelText(english(setting.title)), setting.id).toBeNull();
+          continue;
+        }
+        // A PROVIDER'S OWN ROW appears while that provider is chosen, so it is chosen first: every one is reached,
+        // rather than the default provider's alone.
+        const owner = ownerOf(setting);
+        if (owner !== undefined) fireEvent.change(screen.getByLabelText('AI provider'), { target: { value: owner } });
+        expect(screen.queryByLabelText(english(setting.title)), setting.id).not.toBeNull();
       }
-      goTo(setting.category);
-      // A PROVIDER'S OWN ROW — its key, or Azure OpenAI's address — appears while that provider is chosen, so it is
-      // chosen first: every one is reached, rather than the default provider's alone.
-      const owner =
-        setting.id === AZURE_OPENAI_ENDPOINT_SETTING.id
-          ? 'azure-openai'
-          : Object.entries(AI_PROVIDERS).find(([, entry]) => entry.keySetting === setting.id)?.[0];
-      if (owner !== undefined) fireEvent.change(screen.getByLabelText('AI provider'), { target: { value: owner } });
-      expect(screen.queryByLabelText(english(setting.title)), setting.id).not.toBeNull();
     }
   });
 

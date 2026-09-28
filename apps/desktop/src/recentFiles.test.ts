@@ -337,19 +337,19 @@ describe('the recent list', () => {
       ).toStrictEqual(['notes.pdf']);
     });
 
-    it('CONTROL: a run that ended cleanly leaves nothing to recover', () => {
-      // A run that finished has nothing to offer, and the offer is driven by
-      // this list rather than by `lastExitClean` alone. `markCleanExit` clears
-      // it explicitly, because the shutdown path closes documents through the
-      // service rather than through this surface — so the live set is NOT
-      // emptied by the closes a clean exit performs.
+    it('a run that ended cleanly KEEPS its session for restoring, and says it ended cleanly', () => {
+      // SINCE 2026-09-28 (`viewing.restore-session`): what was open at a clean close is what a reader asked to have
+      // reopened. It is not an offer to recover, because the offer is gated on `lastExitClean` — asserted here as
+      // true, since that flag is now the only thing separating the two readings of the same list.
       const file = aFile();
       const first = createRecentFiles(file);
 
       first.opened(DRAFT, { path: 'C:/draft.pdf', name: 'draft.pdf' });
       first.markCleanExit();
 
-      expect(createRecentFiles(file).lastSession()).toStrictEqual([]);
+      const next = createRecentFiles(file);
+      expect(next.lastSession().map((entry) => entry.name)).toStrictEqual(['draft.pdf']);
+      expect(next.lastExitClean()).toBe(true);
     });
 
     it('is EMPTY on a first launch, where no previous run recorded anything', () => {

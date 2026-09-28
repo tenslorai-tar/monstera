@@ -161,6 +161,23 @@ export async function openWaitingDocuments(deps: OpenDocumentDeps): Promise<void
 }
 
 /**
+ * Reopens what was open when the previous run ENDED CLEANLY — Part F's *"restore last session"*
+ * (`BUILD-PROMPT.md`:611), asked once at start while `viewing.restore-session` is on.
+ *
+ * **A clean end only.** After a run that died, the start screen OFFERS the same documents one by one
+ * (`RecentFiles`), and reopening them unasked would reopen whatever the crash was about. Each goes through
+ * `document.openRecent`, the offer's own route, in the order they were open, and is settled as any open is — so a
+ * file moved since says so and does not stop the rest.
+ */
+export async function restoreLastSession(deps: OpenDocumentDeps): Promise<void> {
+  const recent = await deps.client['document.recent']({});
+  if (!recent.ok || !recent.value.lastExitClean) return;
+  for (const entry of recent.value.lastSession) {
+    settleOpen(deps, await deps.client['document.openRecent']({ handle: entry.handle }));
+  }
+}
+
+/**
  * What an open's answer does on screen — the ONE place, for a pick and a drop alike, because main opens
  * both through the same `openPath` and the page must not hold two opinions about the same outcomes.
  */

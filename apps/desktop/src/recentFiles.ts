@@ -111,11 +111,12 @@ export interface RecentFiles {
   closed(docId: DocId): void;
 
   /**
-   * What was open when the PREVIOUS run ended, newest first.
+   * What was open when the PREVIOUS run ended, newest LAST — the order the
+   * documents were opened in, which is the order their tabs stood in.
    *
-   * Empty after a clean exit, which is the honest reading rather than an
-   * optimisation: a run that finished has nothing to recover, and
-   * {@link markCleanExit} says so by clearing the list.
+   * **Kept after a clean exit too, since 2026-09-28**: it is what
+   * `viewing.restore-session` reopens. Whether it is an OFFER to recover is
+   * `lastExitClean`'s to say, and a clean exit makes that true.
    */
   lastSession(): readonly RecentEntry[];
 }
@@ -255,11 +256,10 @@ export function createRecentFiles(
     },
     lastExitClean: () => wasClean,
     markCleanExit: () => {
-      // CLEARED FIRST. `composition.ts`'s shutdown closes every document
-      // through the service rather than through this surface, so the live map
-      // is not emptied by the closes it performs — and a clean exit that left
-      // a session behind would offer to recover from a run that finished.
-      live.clear();
+      // THE SESSION IS KEPT, and that is `viewing.restore-session`'s whole input: what was open at a clean close is
+      // what a reader asked to have reopened. `composition.ts`' shutdown closes every document through the service
+      // rather than through this surface, so the live map still holds them here. It cannot become an offer to
+      // recover a run that finished: the offer is gated on `cleanExit` being false, which this write makes true.
       persist(true);
     },
     opened: (docId, entry) => {
