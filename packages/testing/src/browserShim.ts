@@ -2059,6 +2059,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'app.review': () => Promise.resolve(ok({ opened: false })),
     // NO PICKER IN A BROWSER: the export is cancelled, which is what main answers with no path.
     'settings.export': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+    // A BROWSER HAS NO FILE TO IMPORT, which is main's answer for a picker dismissed.
+    'settings.import': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
     'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),
     'ai.stop': () => Promise.resolve(ok({ stopped: false })),
     // NO ANSWER HERE HOLDS A SOURCE, because no answer here streams (`ai.ask` answers not-started).

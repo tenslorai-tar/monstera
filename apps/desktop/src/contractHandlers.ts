@@ -12,6 +12,7 @@ import {
   MAX_RASTER_BYTES,
   MAX_RASTER_PIXELS,
   MAX_REPLACED_TEXT,
+  MAX_SETTINGS_FILE_BYTES,
   SECRET_SETTING_IDS,
   TRANSLATION_LANGUAGES,
   type ChannelResult,
@@ -44,7 +45,7 @@ import {
   translationInstruction,
   translationRequest,
 } from '@monstera/kernel';
-import { writeFile } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, isAbsolute } from 'node:path';
 
 import { type DocId, err, lineText, ok } from '@monstera/shared';
@@ -253,6 +254,8 @@ export function createContractHandlers(deps: {
   readonly chatHistory: ChatHistory;
   /** Where a settings export goes, or `null` when the person cancelled the picker. */
   readonly pickSettingsFile: () => Promise<string | null>;
+  /** The settings file a person chose to import, or `null` when they cancelled the picker. */
+  readonly openSettingsFile: () => Promise<string | null>;
   /**
    * Shows the diagnostics log.
    *
@@ -605,6 +608,28 @@ export function createContractHandlers(deps: {
         return ok({ kind: 'write-failed' } as const);
       }
       return ok({ kind: 'written', settings: Object.keys(stored).length } as const);
+    },
+    'settings.import': async () => {
+      const path = await deps.openSettingsFile();
+      if (path === null) return ok({ kind: 'cancelled' } as const);
+      // THE SIZE BEFORE THE BYTES, so a file that is not a settings file is refused without being read. A file that
+      // cannot be read or parsed is the declared `unreadable`, which the renderer says in words — the outcome the
+      // export's `write-failed` is on the other side.
+      let parsed: unknown;
+      try {
+        if ((await stat(path)).size > MAX_SETTINGS_FILE_BYTES) return ok({ kind: 'unreadable' } as const);
+        parsed = JSON.parse(await readFile(path, 'utf8'));
+      } catch {
+        return ok({ kind: 'unreadable' } as const);
+      }
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        return ok({ kind: 'unreadable' } as const);
+      }
+      // A SECRET NEVER ARRIVES BY A FILE. An export carries none; a file that names one was written by hand, and
+      // `settings.save` would refuse the whole write that carried it.
+      const secret = new Set<string>(SECRET_SETTING_IDS);
+      const values = Object.fromEntries(Object.entries(parsed).filter(([id]) => !secret.has(id)));
+      return ok({ kind: 'read', values } as const);
     },
     'settings.saveSecret': ({ id, value }) => {
       // ASKED BEFORE WRITING rather than caught after. The store throws for the

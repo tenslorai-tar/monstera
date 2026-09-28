@@ -21,11 +21,12 @@ Settings holds everything you can adjust in Monstera. Changes take effect as you
 
 - There is no Save button: every change is saved as you make it. If one cannot be stored, Monstera tells you it is in effect now but will not be remembered.
 - **Export settings…** saves your settings to a file. Keys and other secrets are never exported.
+- **Import settings…** reads a file saved that way, for example on another computer, and Settings opens again with its values. Settings this version does not use are left out, and keys are never imported: enter them on the **AI** page.
 - **Reset to defaults** puts every setting back.
 - Keys for AI and online services are write-only; see "Get and add keys for AI and online reading services".
 - **Privacy** holds **Show previews of recent files**, **Ask me to rate Monstera**, **Clear chat history** and **Clear recent files**.
 
 <!--
 Screenshots to capture:
-1. settings-1 — dialog.settings on the Appearance page. Frame the whole window including the footer (Export settings…, Reset to defaults, Done).
+1. settings-1 — dialog.settings on the Appearance page. Frame the whole window including the footer (Export settings…, Import settings…, Reset to defaults, Done).
 -->

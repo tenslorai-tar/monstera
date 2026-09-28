@@ -6,8 +6,13 @@ import { SETTINGS_DIALOG_ID } from '../dialogs/settings.js';
 import { SETTINGS_PROBLEM_DIALOG_ID } from '../dialogs/settingsProblem.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
-import { THEME_SETTING } from '../settings/appearance.js';
-import { AZURE_DI_KEY_SETTING } from '../settings/editing.js';
+import { THEME_SETTING, THUMBNAIL_SIZE_SETTING } from '../settings/appearance.js';
+import { AZURE_DI_KEY_SETTING, OCR_LANGUAGE_SETTING } from '../settings/editing.js';
+import {
+  TOAST_SETTINGS_IMPORTED,
+  TOAST_SETTINGS_IMPORTED_PARTLY,
+  TOAST_SETTINGS_UNREADABLE,
+} from '../messages/en.js';
 import { SettingsStore } from '../settingsStore.js';
 import { showSettingsCommand } from './showSettings.js';
 
@@ -34,6 +39,8 @@ function harness(options: {
   readonly answer?: unknown;
   /** What the dialog reports while it is open, each delivered before it answers (ADR-0094). */
   readonly reports?: readonly unknown[];
+  /** What `settings.import` answers — a file's values, a dismissed picker, or a file that is not one. */
+  readonly imported?: { kind: 'read'; values: Record<string, unknown> } | { kind: 'cancelled' } | { kind: 'unreadable' };
 }): {
   readonly run: () => Promise<void>;
   readonly settings: SettingsStore;
@@ -41,7 +48,12 @@ function harness(options: {
   readonly asked: { id: string; props: unknown }[];
   readonly secretsChanged: () => number;
   readonly recentCleared: () => number;
+  readonly toasts: string[];
 } {
+  const toasts: string[] = [];
+  // THE DIALOG ANSWERS ITS FIRST OPENING ONLY. An import opens Settings again, and a fixture answering `import` every
+  // time would loop; the second opening is dismissed, which is a person closing it.
+  let opened = 0;
   const sent: { id: string; params: unknown }[] = [];
   const asked: { id: string; props: unknown }[] = [];
   let changed = 0;
@@ -78,6 +90,7 @@ function harness(options: {
     if (id === 'ai.history.clear') return Promise.resolve(ok({ cleared: 2 }));
     if (id === 'settings.export') return Promise.resolve(ok({ kind: 'cancelled' as const }));
     if (id === 'document.clearRecent') return Promise.resolve(ok({ cleared: 3 }));
+    if (id === 'settings.import') return Promise.resolve(ok(options.imported ?? { kind: 'cancelled' as const }));
     throw new Error(`this fixture answers only the secret and footer channels, not ${id}`);
   });
   const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
@@ -86,14 +99,20 @@ function harness(options: {
     settings,
     ask: (id, props, onUpdate) => {
       asked.push({ id, props });
-      if (id === SETTINGS_DIALOG_ID) for (const report of options.reports ?? []) onUpdate?.(report);
-      return Promise.resolve(id === SETTINGS_DIALOG_ID ? options.answer : undefined);
+      if (id !== SETTINGS_DIALOG_ID) return Promise.resolve(undefined);
+      opened += 1;
+      if (opened > 1) return Promise.resolve(undefined);
+      for (const report of options.reports ?? []) onUpdate?.(report);
+      return Promise.resolve(options.answer);
     },
     onSecretsChanged: () => {
       changed += 1;
     },
     onRecentCleared: () => {
       recentCleared += 1;
+    },
+    toast: (kind, message) => {
+      toasts.push(`${kind} ${message}`);
     },
   });
   return {
@@ -114,6 +133,7 @@ function harness(options: {
     asked,
     secretsChanged: () => changed,
     recentCleared: () => recentCleared,
+    toasts,
   };
 }
 
@@ -244,5 +264,65 @@ describe('showSettingsCommand', () => {
 
     expect(asked[0]?.id).toBe(SETTINGS_DIALOG_ID);
     expect((asked[0]?.props as { models: unknown }).models).toStrictEqual({});
+  });
+
+  describe('IMPORT SETTINGS (BUILD-PROMPT.md:630)', () => {
+    const IMPORT = { values: {}, secrets: {}, action: 'import' as const };
+
+    it('applies each value this build reads — an OLD single language migrated — leaves out the rest, and reopens on it', async () => {
+      const { run, settings, asked, toasts } = harness({
+        answer: IMPORT,
+        imported: {
+          kind: 'read',
+          values: {
+            [THEME_SETTING.id]: 'dark',
+            // AN OLDER BUILD'S SHAPE: one language, which this build reads as a set of one — through the registry's
+            // one reading, so an import cannot accept what a restart would then replace with the fallback.
+            [OCR_LANGUAGE_SETTING.id]: 'deu',
+            'no.such-setting': 1,
+            [THUMBNAIL_SIZE_SETTING.id]: 'enormous',
+          },
+        },
+      });
+      await run();
+
+      expect(settings.get(THEME_SETTING.id)).toBe('dark');
+      expect(settings.get(OCR_LANGUAGE_SETTING.id)).toStrictEqual(['deu']);
+      expect(settings.get(THUMBNAIL_SIZE_SETTING.id)).toBe(THUMBNAIL_SIZE_SETTING.fallback);
+      expect(toasts).toStrictEqual([`done ${TOAST_SETTINGS_IMPORTED_PARTLY}`]);
+      // OPENED AGAIN, on what the file changed.
+      const openings = asked.filter((entry) => entry.id === SETTINGS_DIALOG_ID);
+      expect(openings).toHaveLength(2);
+      expect((openings[1]?.props as { values: Record<string, unknown> }).values[THEME_SETTING.id]).toBe('dark');
+    });
+
+    it('a file whose every value is read says so plainly', async () => {
+      const { run, toasts } = harness({ answer: IMPORT, imported: { kind: 'read', values: { [THEME_SETTING.id]: 'light' } } });
+      await run();
+      expect(toasts).toStrictEqual([`done ${TOAST_SETTINGS_IMPORTED}`]);
+    });
+
+    it('a SECRET in the file is never set, whatever main let through', async () => {
+      const { run, settings } = harness({
+        answer: IMPORT,
+        imported: { kind: 'read', values: { [AZURE_DI_KEY_SETTING.id]: 'a-key-from-a-file' } },
+      });
+      await run();
+      expect(settings.get(AZURE_DI_KEY_SETTING.id)).toBe(AZURE_DI_KEY_SETTING.fallback);
+    });
+
+    it('a file that is not a settings file changes nothing, says so, and returns to Settings', async () => {
+      const { run, settings, asked, toasts } = harness({ answer: IMPORT, imported: { kind: 'unreadable' } });
+      await run();
+      expect(settings.get(THEME_SETTING.id)).toBe(THEME_SETTING.fallback);
+      expect(toasts).toStrictEqual([`problem ${TOAST_SETTINGS_UNREADABLE}`]);
+      expect(asked.filter((entry) => entry.id === SETTINGS_DIALOG_ID)).toHaveLength(2);
+    });
+
+    it('CONTROL: an answer that is not an import asks for no file', async () => {
+      const { run, sent } = harness({ answer: { values: {}, secrets: {} } });
+      await run();
+      expect(sent.some((call) => call.id === 'settings.import')).toBe(false);
+    });
   });
 });

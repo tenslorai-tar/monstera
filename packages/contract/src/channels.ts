@@ -938,6 +938,13 @@ export const CRASH_REPORTS_SETTING_ID = 'privacy.crash-reports';
  */
 export const LOG_DETAIL_SETTING_ID = 'advanced.log-detail';
 
+/**
+ * The largest settings file `settings.import` reads: 1 MiB, checked against the file's size before a byte is read.
+ * Chosen, not derived from a measured export: it bounds a file that is not one — a picture renamed `.json` — rather
+ * than sizing a real one.
+ */
+export const MAX_SETTINGS_FILE_BYTES = 1_048_576;
+
 /** {@link LOG_DETAIL_SETTING_ID}'s two values, the first the default. */
 export const LOG_DETAILS = ['problems', 'detailed'] as const;
 
@@ -5089,6 +5096,29 @@ export const channels = {
       z.object({ kind: z.literal('written'), settings: z.number().int().nonnegative() }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('write-failed') }),
+    ]),
+  ),
+
+  /**
+   * Reads a settings file a person picks — *Export settings…*' JSON — for the renderer to apply (`BUILD-PROMPT.md`:630,
+   * *"settings export/import (JSON, secrets excluded)"*).
+   *
+   * ## The values are the REGISTRY's to read, as `settings.load`'s are
+   *
+   * Main does not know which settings this build registers or what each accepts; the renderer's registry does, and it
+   * migrates and validates each value on the way in, leaving out any it cannot read. So the answer is the file's
+   * top-level object as it is, less two things main can refuse on its own: a file over
+   * {@link MAX_SETTINGS_FILE_BYTES}, read no further than its size, and any **secret** id — a key never arrives by a
+   * file, and `settings.save` would refuse the whole write that carried one.
+   */
+  'settings.import': channel(
+    'Reads a settings file the user picks, secrets left out, for the renderer to apply.',
+    z.object({}).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('read'), values: z.record(z.string(), z.unknown()) }),
+      z.object({ kind: z.literal('cancelled') }),
+      /** Not a JSON object, larger than the bound, or not readable. */
+      z.object({ kind: z.literal('unreadable') }),
     ]),
   ),
 

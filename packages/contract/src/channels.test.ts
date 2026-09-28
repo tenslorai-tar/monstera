@@ -377,6 +377,7 @@ const handlers: ContractHandlers = {
   'document.openWaiting': () => Promise.resolve(ok({ opened: [] })),
   'app.acknowledgeSecurityUpdate': () => Promise.resolve(ok({ acknowledged: false })),
   'settings.export': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'settings.import': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),
   'ai.stop': () => Promise.resolve(ok({ stopped: false })),
   'ai.openSource': () => Promise.resolve(ok({ opened: false })),

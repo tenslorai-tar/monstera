@@ -90,6 +90,26 @@ export class SettingsStore {
   }
 
   /**
+   * Applies a settings file a person imported (`BUILD-PROMPT.md`:630): each value this build reads — migrated and
+   * validated by the registry's one reading — is set, and the rest are left out and counted. A secret is never set
+   * here, whatever the file says: a key is entered in its own field, and `settings.save` refuses a write carrying one.
+   */
+  importValues(values: Readonly<Record<string, unknown>>): { readonly applied: number; readonly skipped: number } {
+    let applied = 0;
+    let skipped = 0;
+    for (const [id, value] of Object.entries(values)) {
+      const accepted = this.#registry.get(id)?.secret === true ? undefined : this.#registry.accept(id, value);
+      if (accepted === undefined) {
+        skipped += 1;
+        continue;
+      }
+      this.set(id, accepted.value);
+      applied += 1;
+    }
+    return { applied, skipped };
+  }
+
+  /**
    * Changes one setting.
    *
    * **Validates before storing**, so an invalid write is refused at the door

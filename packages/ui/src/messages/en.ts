@@ -1553,6 +1553,10 @@ export const SETTINGS_PAGES_LABEL = messageKey('dialog.settings.pages-label');
 export const SETTINGS_NO_MATCH = messageKey('dialog.settings.no-match');
 export const SETTINGS_FOOTER_NOTE = messageKey('dialog.settings.footer-note');
 export const SETTINGS_EXPORT = messageKey('dialog.settings.export');
+export const SETTINGS_IMPORT = messageKey('dialog.settings.import');
+export const TOAST_SETTINGS_IMPORTED = messageKey('toast.settings-imported');
+export const TOAST_SETTINGS_IMPORTED_PARTLY = messageKey('toast.settings-imported-partly');
+export const TOAST_SETTINGS_UNREADABLE = messageKey('toast.settings-unreadable');
 export const SETTINGS_RESET = messageKey('dialog.settings.reset');
 export const SETTINGS_DONE = messageKey('dialog.settings.done');
 export const SETTINGS_AI_PROVIDER_STORED = messageKey('dialog.settings.ai-provider.stored');
@@ -3510,6 +3514,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SETTINGS_NO_MATCH]: 'Nothing matches “{query}”.',
   [SETTINGS_FOOTER_NOTE]: 'Changes save as you make them. Secrets are never exported.',
   [SETTINGS_EXPORT]: 'Export settings…',
+  [SETTINGS_IMPORT]: 'Import settings…',
+  [TOAST_SETTINGS_IMPORTED]: 'Settings imported.',
+  [TOAST_SETTINGS_IMPORTED_PARTLY]: 'Settings imported. Some in the file are not used by this version and were left out.',
+  [TOAST_SETTINGS_UNREADABLE]: 'That file is not a Monstera settings file. Nothing was changed.',
   [SETTINGS_RESET]: 'Reset to defaults',
   [SETTINGS_DONE]: 'Done',
   [SETTINGS_AI_PROVIDER_STORED]: '{provider} — key stored',

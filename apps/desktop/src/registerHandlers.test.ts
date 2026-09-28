@@ -154,6 +154,9 @@ function handlers() {
     pickSettingsFile: () => {
       throw new Error('registration cases must not reach the file picker');
     },
+    openSettingsFile: () => {
+      throw new Error('registration cases must not reach the file picker');
+    },
     // EVERY OPERATION THROWS, this fixture's rule; `noChatHistory()` would answer a load quietly.
     chatHistory: {
       ...noChatHistory(),

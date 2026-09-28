@@ -2,9 +2,17 @@ import { type ContractClient, SECRET_SETTING_IDS } from '@monstera/contract';
 
 import { SETTINGS_DIALOG_ID, type SettingsAnswer, DIALOG_SETTINGS, controlFor } from '../dialogs/settings.js';
 import { SETTINGS_PROBLEM_DIALOG_ID } from '../dialogs/settingsProblem.js';
-import { GROUP_APPLICATION, SETTINGS_COMMAND_TITLE } from '../messages/en.js';
+import {
+  GROUP_APPLICATION,
+  SETTINGS_COMMAND_TITLE,
+  TOAST_SETTINGS_IMPORTED,
+  TOAST_SETTINGS_IMPORTED_PARTLY,
+  TOAST_SETTINGS_UNREADABLE,
+} from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 import type { SettingsStore } from '../settingsStore.js';
+import type { ShowToast } from '../toasts.js';
+import { reportProblem } from './documentCommands.js';
 
 /**
  * Opens the Settings dialog and writes what it reports
@@ -43,6 +51,8 @@ export function showSettingsCommand(deps: {
   readonly onSecretsChanged: () => void;
   /** Told when the Privacy page emptied the Recent list, so a start screen behind the dialog reads it again. */
   readonly onRecentCleared: () => void;
+  /** Says what an import did — imported, partly, or a file that was not a settings file. */
+  readonly toast: ShowToast;
 }): UiCommand {
   return {
     id: 'app.settings',
@@ -59,6 +69,15 @@ export function showSettingsCommand(deps: {
       { surface: 'menu-bar', menu: 'window', group: 2, order: 10 },
     ],
     run: async (): Promise<void> => {
+      await open();
+    },
+  };
+
+  /**
+   * Opens the dialog, applies what it reports, and — where it answered *Import settings…* — imports and opens it again
+   * on the result, since its values are props fixed while it is open.
+   */
+  async function open(): Promise<void> {
       const secrets = await deps.client['settings.loadSecrets']({});
       // THE LISTS MAIN ALREADY HOLDS, asked of `main` and never of a provider: the dialog is props-only (ADR-0038), and
       // this query answers without the network, so opening Settings never waits on one (ADR-0117, corrected 2026-09-28).
@@ -125,6 +144,21 @@ export function showSettingsCommand(deps: {
       // DONE, or dismissed. Everything has been applied as it was reported; the answer carries what
       // a body reports at the moment it closes, which is nothing for this dialog.
       if (answer !== undefined) await apply(answer);
-    },
-  };
+      if (answer?.action !== 'import') return;
+
+      // IMPORT SETTINGS (`BUILD-PROMPT.md`:630): main reads the file the person picks, secrets left out, and the
+      // store applies each value the registry can read — migrated and validated — leaving out the rest. Settings then
+      // opens again, so what changed is what the person sees; a dismissed picker returns them to it unchanged.
+      const read = await deps.client['settings.import']({});
+      if (!read.ok) {
+        reportProblem(deps, read.error);
+        return;
+      }
+      if (read.value.kind === 'unreadable') deps.toast('problem', TOAST_SETTINGS_UNREADABLE);
+      if (read.value.kind === 'read') {
+        const { skipped } = deps.settings.importValues(read.value.values);
+        deps.toast('done', skipped === 0 ? TOAST_SETTINGS_IMPORTED : TOAST_SETTINGS_IMPORTED_PARTLY);
+      }
+      await open();
+  }
 }

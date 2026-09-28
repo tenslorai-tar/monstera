@@ -163,6 +163,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     secrets: createEphemeralSecrets(),
     chatHistory: noChatHistory(),
     pickSettingsFile: () => Promise.resolve(null),
+    openSettingsFile: () => Promise.resolve(null),
     revealLog: () => Promise.resolve(false),
     titleBarOverlay: () => false,
     confirmClose: () => false,
@@ -254,6 +255,9 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // it writes is this build's own registered set and holds no secret and nothing a document
   // contributes to, which is `settings.load`'s answer above.
   'settings.export': 'drives a picker and answers an outcome; the settings it writes hold nothing a document contributes to',
+  // THE IMPORT'S ANSWER IS A FILE THE PERSON PICKED, never a document: main refuses one over
+  // `MAX_SETTINGS_FILE_BYTES` by its size before reading it, so what crosses is bounded by that.
+  'settings.import': 'answers a settings file the person picked, refused by its size over MAX_SETTINGS_FILE_BYTES before it is read',
   'window.closeListening': 'carries nothing and answers a boolean',
   'document.unsaved': 'one DocId in, one boolean out',
   // A DICTIONARY IS LARGE ON PURPOSE and no document contributes to it. Its
@@ -546,6 +550,9 @@ function unboundedMembers(schema: z.ZodType, path: string): readonly string[] {
  */
 const UNBOUNDED_BY_DESIGN: Readonly<Record<string, string>> = {
   'settings.load': 'stored values are the registry’s to validate, not the boundary’s',
+  // THE SAME ARGUMENT for a file the person chose: its values are the registry's to migrate and validate. Its SIZE is
+  // bounded in main, by `MAX_SETTINGS_FILE_BYTES` against the file's size before a byte is read.
+  'settings.import': 'imported values are the registry’s to validate; the file is refused by size in main first',
 };
 
 describe('invariant L11: no channel answers with a payload that scales', () => {

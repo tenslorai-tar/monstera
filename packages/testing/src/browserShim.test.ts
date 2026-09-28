@@ -290,6 +290,7 @@ describe('browser shim', () => {
       'library.remove',
       'log.reveal',
       'settings.export',
+      'settings.import',
       'settings.load',
       'settings.loadSecrets',
       'settings.save',

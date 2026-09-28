@@ -119,6 +119,7 @@ export {
   type RecentLength,
   CRASH_REPORTS_SETTING_ID,
   LOG_DETAIL_SETTING_ID,
+  MAX_SETTINGS_FILE_BYTES,
   LOG_DETAILS,
   crashReportIdSchema,
   // THE UPDATE CHECK (ADR-0110): main parses the manifest and answers the status; the page reads the status, and

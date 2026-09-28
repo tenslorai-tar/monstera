@@ -1,11 +1,15 @@
 import {
   ACCESSIBILITY_HUMAN_CHECKS,
+  AZURE_KEY_SETTING_ID,
   BARCODE_FORMATS,
   MAX_BARCODE_TEXT,
   MAX_LIBRARY_PICTURE_BYTES,
   MAX_PAGE_BARCODES,
+  MAX_SETTINGS_FILE_BYTES,
   RECENT_PREVIEWS_SETTING_ID,
 } from '@monstera/contract';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import {
   HUMAN_CHECKS,
   CapabilityRegistry,
@@ -99,6 +103,8 @@ function harness(
   overrides: {
     readonly library?: ReturnType<typeof unusedLibrarySurface>;
     readonly commands?: DocumentCommands;
+    /** The settings file to import, for the import's cases; a dismissed picker otherwise. */
+    readonly openSettingsFile?: () => Promise<string | null>;
   } = {},
 ) {
   const capabilities = new CapabilityRegistry();
@@ -179,6 +185,7 @@ function harness(
     secrets,
     chatHistory: NO_HISTORY,
     pickSettingsFile: () => Promise.resolve(null),
+    openSettingsFile: overrides.openSettingsFile ?? (() => Promise.resolve(null)),
     // COUNTED, so a case can assert the handler asked exactly once rather than
     // that it answered something.
     titleBarOverlay: () => false,
@@ -573,7 +580,7 @@ describe('document.open', () => {
           settings: createEphemeralSettings(),
           secrets: createEphemeralSecrets(),
           chatHistory: NO_HISTORY,
-          pickSettingsFile: () => Promise.resolve(null),
+          pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
           revealLog: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
@@ -917,7 +924,7 @@ describe('the recent list', () => {
       settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
       chatHistory: NO_HISTORY,
-      pickSettingsFile: () => Promise.resolve(null),
+      pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
       revealLog: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
@@ -978,7 +985,7 @@ describe('log.reveal', () => {
 settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
       chatHistory: NO_HISTORY,
-      pickSettingsFile: () => Promise.resolve(null),
+      pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
       revealLog: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
@@ -1033,7 +1040,7 @@ describe('ai.checkKey', () => {
 settings: createEphemeralSettings(),
       secrets,
       chatHistory: NO_HISTORY,
-      pickSettingsFile: () => Promise.resolve(null),
+      pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
       revealLog: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
@@ -1153,7 +1160,7 @@ describe('ai.translatePage (ADR-0097)', () => {
 settings: createEphemeralSettings(),
       secrets,
       chatHistory: NO_HISTORY,
-      pickSettingsFile: () => Promise.resolve(null),
+      pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
       revealLog: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
@@ -1280,7 +1287,7 @@ describe('ai.history (ADR-0093)', () => {
 settings,
       secrets: createEphemeralSecrets(),
       chatHistory: history,
-      pickSettingsFile: () => Promise.resolve(null),
+      pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
       revealLog: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
@@ -1325,6 +1332,42 @@ settings,
  * `cloud.saveBack`'s half of the save-back pair: main answers the version it saved, whenever it
  * saved. The renderer's half — that the version clears the tab's dot — is `cloudStorage.test.ts`'.
  */
+describe('settings.import (BUILD-PROMPT.md:630)', () => {
+  /** A real file in a folder of its own, so the handler reads and sizes what is on disk. */
+  function fileHolding(content: string | Uint8Array): string {
+    const folder = mkdtempSync(join(tmpdir(), 'monstera-settings-import-'));
+    const path = join(folder, 'settings.json');
+    writeFileSync(path, content);
+    return path;
+  }
+
+  const importing = (path: string | null) =>
+    harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
+      openSettingsFile: () => Promise.resolve(path),
+    }).handlers['settings.import']({});
+
+  it('answers the file’s values, and leaves out a SECRET id — a key never arrives by a file', async () => {
+    const path = fileHolding(JSON.stringify({ 'appearance.theme': 'dark', [AZURE_KEY_SETTING_ID]: 'a-key' }));
+    expect(await importing(path)).toStrictEqual({ ok: true, value: { kind: 'read', values: { 'appearance.theme': 'dark' } } });
+  });
+
+  it('a file that is not a JSON OBJECT is unreadable — an array, and text that is not JSON', async () => {
+    expect(await importing(fileHolding('[1, 2]'))).toStrictEqual({ ok: true, value: { kind: 'unreadable' } });
+    expect(await importing(fileHolding('not json'))).toStrictEqual({ ok: true, value: { kind: 'unreadable' } });
+  });
+
+  it('a file over the bound is refused BY ITS SIZE — valid JSON, one byte past it', async () => {
+    // VALID JSON on purpose: a file refused because it failed to parse would pass this case without the size check.
+    const padding = 'x'.repeat(MAX_SETTINGS_FILE_BYTES);
+    const path = fileHolding(JSON.stringify({ 'appearance.theme': padding }));
+    expect(await importing(path)).toStrictEqual({ ok: true, value: { kind: 'unreadable' } });
+  });
+
+  it('CONTROL: a dismissed picker is cancelled, and reads nothing', async () => {
+    expect(await importing(null)).toStrictEqual({ ok: true, value: { kind: 'cancelled' } });
+  });
+});
+
 describe('cloud.saveBack', () => {
   const DOC = asDocId('00000000-0000-4000-8000-0000000000b1');
 
@@ -1361,7 +1404,7 @@ describe('cloud.saveBack', () => {
 settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
       chatHistory: NO_HISTORY,
-      pickSettingsFile: () => Promise.resolve(null),
+      pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
       revealLog: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,

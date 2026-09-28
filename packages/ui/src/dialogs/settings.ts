@@ -93,11 +93,13 @@ export const SETTINGS_RESULT = z
     /**
      * A button on a page, rather than a setting — reported to the command that opened the dialog
      * (ADR-0094), because the body has no client and the command is the writer. `reset` is the
-     * footer's *Reset to defaults*; `export` writes the settings to a file a person picks; and
+     * footer's *Reset to defaults*; `export` writes the settings to a file a person picks; `import` is the one
+     * ANSWERED rather than reported — it closes the dialog, whose values are props fixed while it is open, and the
+     * command reopens it on what was imported; and
      * `clear-chat-history` and `clear-recent` empty the saved conversations and the Recent list from the
      * Privacy page.
      */
-    action: z.enum(['reset', 'export', 'clear-chat-history', 'clear-recent']).optional(),
+    action: z.enum(['reset', 'export', 'import', 'clear-chat-history', 'clear-recent']).optional(),
   })
   .strict();
 

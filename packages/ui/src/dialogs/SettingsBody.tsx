@@ -38,6 +38,7 @@ import {
   SETTINGS_EDITING_NOTE,
   SETTINGS_EXPORT,
   SETTINGS_FOOTER_NOTE,
+  SETTINGS_IMPORT,
   SETTINGS_INTEGRATIONS_NOTE,
   SETTINGS_INVALID,
   SETTINGS_KEYBOARD_NOTE,
@@ -854,6 +855,14 @@ export default function SettingsBody({
             label={SETTINGS_EXPORT}
             onClick={() => {
               report({ action: 'export' });
+            }}
+          />
+          <Button
+            label={SETTINGS_IMPORT}
+            onClick={() => {
+              // ANSWERED, NOT REPORTED: the values on this page are props, fixed while it is open (ADR-0038), so the
+              // dialog closes and the command opens it again on what the file changed.
+              resolve({ values: {}, secrets: {}, action: 'import' });
             }}
           />
           <Button

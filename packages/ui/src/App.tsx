@@ -2506,6 +2506,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onRecentCleared: () => {
             setRecentReads((reads) => reads + 1);
           },
+          toast,
         }),
         aiSetup,
         showWordCountCommand({ client, ask, track }),

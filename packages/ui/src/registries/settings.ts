@@ -335,17 +335,30 @@ export class SettingsRegistry {
       );
     }
     if (stored === undefined) return setting.fallback;
+    return this.accept(id, stored)?.value ?? setting.fallback;
+  }
 
+  /**
+   * A value from outside this run — a previous run's file, or a settings file a person imported — as this build reads
+   * it: migrated, then validated. `undefined` where it is not a value of this setting, or no setting has the id.
+   *
+   * **The one reading**, which {@link read} falls back from and an import leaves out on: two spellings would let an
+   * imported value through that a restart would then replace with the fallback.
+   */
+  accept(id: string, stored: unknown): { readonly value: unknown } | undefined {
+    const setting = this.#byId.get(id);
+    if (setting === undefined) return undefined;
     let candidate: unknown = stored;
     if (setting.migrate !== undefined) {
       try {
         candidate = setting.migrate(stored);
       } catch {
-        return setting.fallback;
+        // A MIGRATION THAT THROWS is a value this build cannot read — `read`'s fallback, an import's leaving out.
+        return undefined;
       }
     }
     const parsed = setting.schema.safeParse(candidate);
-    return parsed.success ? parsed.data : setting.fallback;
+    return parsed.success ? { value: parsed.data } : undefined;
   }
 
   /**

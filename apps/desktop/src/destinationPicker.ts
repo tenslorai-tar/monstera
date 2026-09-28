@@ -187,6 +187,22 @@ export function createSettingsPicker(): () => Promise<string | null> {
 }
 
 /**
+ * The settings file to import — the export's counterpart, an open dialog filtered to JSON. Kept beside the export's
+ * picker so the pair is read together; the filter is a convenience, and `settings.import` is what refuses a file that
+ * is not a settings object.
+ */
+export function createSettingsOpener(): () => Promise<string | null> {
+  return async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'dontAddToRecent'],
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (result.canceled) return null;
+    return result.filePaths[0] ?? null;
+  };
+}
+
+/**
  * Where an Office export goes: the save dialog narrowed to the one format asked
  * for, offered under the document's name with that format's extension.
  */
