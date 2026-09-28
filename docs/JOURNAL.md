@@ -892,6 +892,102 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-28 — Stage audit of `7ff18bb9..2ff522a1` — findings VVVVVV-1 to VVVVVV-7
+
+37 commits, 189 files, 7 proofs added, 32 modified and none removed, 9 source files added, 87 changed and 2 removed
+(`npm run audit:scope`). The range is the 27 September list's design pass (the shell's areas measured against v5-02,
+the Float bar, the menu row's centre, the status bar's three regions, the glow), F6, a rebuilt session's replay, the
+Settings rows of Part F built so far, and ADR-0117's first build. The commit gate stopped the Settings model row's
+commit one batch past the watermark, so this audit rides in its own commit and that one follows it.
+
+Every modified proof's deletions were read per commit, not net. Each is a rename (`onZoom` to `onZoomStep`, *Document
+tools* to *Float bar*, `advanced.js` to `privacy.js`), a case MOVED with its control (the title bar's three projection
+cases to the menu row under ADR-0113, the Layers dispatch to `App.test.tsx` where the version it moves is asserted to
+reach the panel, the status bar's tool case renamed for its new region), a constant replaced by the value it stood for
+(`CLAUDE_OCR_MODEL`), a count raised by a new control, or the one change of meaning in VVVVVV-5. The two files removed
+are `floating-toolbar.md`, moved whole to `float-bar.md`, and `settings/advanced.ts`, whose one setting moved to
+`privacy.ts` with its id kept.
+
+### 1. Root cause or workaround?
+
+Each fix names its mechanism: proportional shrink (e2a653ed), a placement read from a copy of the layout one render
+old (9964f570), a proof that compared one pixel of a gradient (72df17c9), a first-run dialog open over the ground the
+check read (72df17c9), CMaps absent from the bundle (74a71419). `MODEL_LIST_TIMEOUT_MS` is a bound and says why: the
+provider that never answers is outside this repository. **VVVVVV-2, two second opinions, both introduced by 565b10cc
+and closed in the commit after this audit:** `settings/ai.ts` spelt `MAX_MODEL_ID = 200` under a comment calling it
+*the contract's own bound*, which is 128; and which provider's chosen model must read images was spelt
+`provider === 'anthropic'` in the Assistant, which the Settings row was about to spell again. The contract's constant
+and a named `choiceReadsImages` replace them (B3a — the comment named the authority and the line beneath it disagreed).
+
+### 2. Verified against the easy shape only?
+
+The shell's sizes were measured at 1920 × 1080 and in the pseudo-locale at 1024; the status bar's order is asserted by
+where each item's text ends, not by a width that font metrics move. **VVVVVV-3:** 565b10cc drew TWO provider drop-downs
+on the AI page — `ai.provider` as a generic enum row, and the page's own chooser of which key to show — and each had a
+case that found it by its own label, so neither case could see the other. Two answers to *which provider* on one page;
+closed in the next commit by making the chooser `ai.provider` itself, with a case that there is one.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+**VVVVVV-5:** `proof:canvaspixels` went from *the overlay equals one pixel beneath the controls* to *the overlay lies
+within the span the page shows there* — looser by construction, because the ground is a gradient under grain and the
+one pixel had equalled the overlay only by where the stops fell. It is bounded two ways that did not exist before: a
+control that the same span REFUSES the overlay's symbol colour, and a case asserting the harness read the ground with no
+dialog open, since the first-run setup's backdrop had been dimming what the check read. The span read R 6–9, G 10–13,
+B 7–10 on 2026-09-28.
+
+### 3. Would CI have caught it?
+
+It did, twice, and **VVVVVV-1** is that both were defects this machine could not see. 72df17c9 went red on both legs at
+*Accessibility gate — axe on the rendered screen* (`npm run board:why`): the Float bar's placement came from a state copy
+of the layout that lagged a render, and a drag's release was ignored. a3660b8c went red on Linux alone: flex shrink is
+proportional, so with the runner's font metrics the file name did not give way first. Both fixed at the root (the bar
+placed by CSS from the stored share; a zero basis for the name), and e2a653ed is green on both legs. The tell for the
+class: a layout assertion that depends on a measured value — a render's timing, a font's advance — which differs
+between this machine and the runner. The rest of the range, b365f7cd..2ff522a1, is unpushed at this audit.
+
+### 4. Are the proofs non-vacuous?
+
+Each unit's message names the mutations run against it; this audit re-ran none. **VVVVVV-4:** 2ff522a1 was committed
+with two lint errors in its new cases — the cases ran and their mutations bit, and lint was not run before the commit.
+The pre-commit hook does not lint, and the pre-push sweep would have refused the push; closed in the commit after this
+audit, before anything reached the board.
+
+### 4a/4b. Instruments
+
+New: `pageSpan` and `dialogsOpen` in the canvas harness (the symbol-colour control above), `floatBarPlace` and
+`menuRowFit` (pure, tested at their edges), `lights.ts`, `storeAssets.mjs` (its proof anchors on a literal count),
+`rasterHidden.css` (a Properties case asserts the chrome is still captured while the raster is hidden), and
+`en.test.ts`' search for *toolbar* whose control is the new name's presence. `tokenContrast.mjs` loads the shared barrel
+once, and a freshness edge refuses a stale turning rule rather than reading it.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+`proof:canvaspixels` counts `RUNTIME_CASES.length`, a literal array in the same file under a provisioning condition —
+the sanctioned shape. The others changed in the range take literal counts.
+
+### 5. Executed, or asserted?
+
+The Settings model row, `ai.models.held` and the list bound are executed in happy-dom, the handler and the kernel, and
+not in the running application; no provider was asked live in this range. The design pass's areas were measured in
+the running renderer against v5-02, and the rendered cases ran in CI at e2a653ed.
+
+### 6. Architecture before the feature?
+
+Five B4 commits, each before its feature (ADR-0113, 0114, 0115, 0116, 0117). **VVVVVV-6:** ADR-0117 Decision 3 was
+accepted without asking where a props-only dialog's list would come from at open, and the build found it blocked the
+same day. The owner answered from the ADR's own words — the list `main` already holds — so no seam moved. A B4 that
+places a control in a dialog owes a sentence on where the control's data is at the moment the dialog opens.
+
+### 7. Do the documents match the code?
+
+**VVVVVV-7, stated:** 3af0c4c6 renamed every place a PERSON reads *floating toolbar*; `CLAUDE.md`:568, §7's commands
+row, §10's two layout lines and two FEATURES rows' histories keep the phrase as the generic noun for the kind of
+surface. Not false, and not changed here. FEATURES rows 254 and 265 were stale about the recogniser's model and the
+Settings row, and are corrected in the commit after this audit.
+
+---
+
 ## 2026-09-27 — Correction: the Help centre's commit message (UUUUUU-1), and a typecheck red that was a second sweep
 
 **`f5a66361`'s message is wrong in one sentence.** It lists, among the Help centre's changes, that Settings' keyboard
