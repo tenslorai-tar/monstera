@@ -115,6 +115,7 @@ import { MenuBar } from './surfaces/MenuBar.js';
 import { usePageAnnotations } from './usePageAnnotations.js';
 import { DEFAULT_ZOOM, startingZoomMode, stepZoom, type ZoomDirection, type ZoomMode } from './zoom.js';
 import {
+  autoscrollCommand,
   commandPaletteCommand,
   toggleDarkPageCommand,
   toggleGridCommand,
@@ -351,6 +352,8 @@ import {
   PAGE_BADGES_SETTING,
   PAGE_LAYOUT_SETTING,
   type PageLayout,
+  AUTOSCROLL_PIXELS_PER_SECOND,
+  AUTOSCROLL_SPEED_SETTING,
   RESTORE_SESSION_SETTING,
   RULERS_SETTING,
   SMOOTH_SCROLL_SETTING,
@@ -1689,6 +1692,18 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const togglePalette = useCallback(() => {
     setPalette((shown) => !shown);
   }, []);
+  /**
+   * The document AUTOSCROLL was started on, or `undefined` while it is not running (`view.autoscroll`). A document and
+   * not a flag, so bringing another tab forward does not start that one moving; it is passed only to the pane of the
+   * document it names.
+   */
+  const [autoscrollOn, setAutoscrollOn] = useState<DocId | undefined>(undefined);
+  const toggleAutoscroll = useCallback(() => {
+    setAutoscrollOn((running) => (running === undefined ? activeId : undefined));
+  }, [activeId]);
+  const stopAutoscroll = useCallback(() => {
+    setAutoscrollOn(undefined);
+  }, []);
   const closePalette = useCallback(() => {
     setPalette(false);
   }, []);
@@ -2221,6 +2236,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const pageBadges = useSetting(settings, PAGE_BADGES_SETTING);
   const smoothScroll = useSetting(settings, SMOOTH_SCROLL_SETTING);
   const layout = useSetting(settings, PAGE_LAYOUT_SETTING);
+  const autoscrollSpeed = useSetting(settings, AUTOSCROLL_SPEED_SETTING);
 
   /**
    * The updater the zoom commands are given.
@@ -2683,6 +2699,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         toggleLoupeCommand({ settings }),
         toggleSplitViewCommand({ settings }),
         commandPaletteCommand({ onToggle: togglePalette }),
+        autoscrollCommand({ autoscrolling: () => autoscrollOn !== undefined && autoscrollOn === readActiveId(), onToggle: toggleAutoscroll }),
         // §7's CHROME VISIBILITY, as commands: a hidden surface is restorable from the palette and
         // a chord because these exist, not because its own control survives being hidden.
         toggleQuickToolbarCommand({ settings }),
@@ -2742,6 +2759,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       openDeps,
       requestClose,
       togglePalette,
+      // AUTOSCROLL'S TICK reads which document it runs on, and the toggle starts it on the one in front.
+      autoscrollOn,
+      toggleAutoscroll,
       opened,
       readTool,
       // THE SETTINGS COMMAND'S `onSecretsChanged` closes over it, so a key
@@ -3084,6 +3104,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           secondRenderer={secondRenderer}
           tileAbove={tileAbove}
           quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll} layout={layout}
+          autoscroll={autoscrollOn === open.docId ? AUTOSCROLL_PIXELS_PER_SECOND[autoscrollSpeed] : undefined}
+          onAutoscrollEnd={stopAutoscroll}
           requestPassword={requestPassword}
           settings={settings}
           // §10.3's RIGHT CONTEXTUAL PANEL, built here where its state lives, and hosted by
@@ -3479,6 +3501,8 @@ function PageCanvas({
   pageBadges,
   smoothScroll,
   layout,
+  autoscroll,
+  onAutoscrollEnd,
   settings,
   panels,
   contextPanel,
@@ -3562,6 +3586,9 @@ function PageCanvas({
   readonly smoothScroll: boolean;
   /** How the pages are laid out (`viewing.page-layout`). */
   readonly layout: PageLayout;
+  /** Autoscroll's pace while it runs on this document, `PageList.autoscroll`. */
+  readonly autoscroll: number | undefined;
+  readonly onAutoscrollEnd: () => void;
   /** The settings store, for the document panel's which-panel and open state. */
   readonly settings: SettingsStore;
   /** The document panels other than Pages, built by `App` where their state lives. */
@@ -3834,6 +3861,9 @@ function PageCanvas({
         secondRasteriser={secondRenderer ? secondRasteriser : undefined}
         tileAbove={tileAbove}
         quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll} layout={layout}
+        // AUTOSCROLL MOVES THIS PANE, the document's first; the second is a place a reader looks across to.
+        autoscroll={autoscroll}
+        onAutoscrollEnd={onAutoscrollEnd}
         pageMenu={pageMenu}
       />
       {/* THE SECOND VIEWPORT, over the SAME parser.

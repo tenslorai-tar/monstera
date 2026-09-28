@@ -1,4 +1,5 @@
 import {
+  AUTOSCROLL_TITLE,
   DARK_PAGE_TITLE,
   GRID_TITLE,
   GROUP_DISPLAY,
@@ -195,6 +196,33 @@ export function toggleSplitViewCommand(deps: { readonly settings: SettingsStore 
     checked: () => deps.settings.get(SPLIT_VIEW_SETTING.id) === true,
     run: (): void => {
       deps.settings.set(SPLIT_VIEW_SETTING.id, deps.settings.get(SPLIT_VIEW_SETTING.id) !== true);
+    },
+  };
+}
+
+/**
+ * AUTOSCROLL: the pages move down by themselves at the reader's *Autoscroll speed* until Esc, a press on the page, a
+ * turn of the wheel, the end of the document — or this command again.
+ *
+ * **Not a setting**, unlike its neighbours above: it is something happening now, and a stored *on* would start moving
+ * the pages under a reader at the next launch. The state is the shell's; `onToggle` flips it with an updater, the
+ * palette's rule. `Ctrl+Shift+H` is the chord the viewer this one replaces uses for the same thing.
+ */
+export function autoscrollCommand(deps: {
+  readonly autoscrolling: () => boolean;
+  readonly onToggle: () => void;
+}): UiCommand {
+  return {
+    id: 'view.autoscroll',
+    icon: 'MoveDown',
+    title: AUTOSCROLL_TITLE,
+    shortcut: 'Ctrl+Shift+H',
+    // VIEW, with Hand and Select text: the ways the pages move under a reader (ADR-0107).
+    placements: [{ surface: 'menu-bar', menu: 'view', group: 4, order: 30 }],
+    when: hasDocument,
+    checked: () => deps.autoscrolling(),
+    run: (): void => {
+      deps.onToggle();
     },
   };
 }

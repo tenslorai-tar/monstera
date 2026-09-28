@@ -1,9 +1,9 @@
 ---
 id: move-between-pages
 title: Move between pages
-summary: Scroll, jump to a page, use page thumbnails, drag with the hand, and go back to where you were.
-keywords: [navigate, next page, previous page, go to page, page up, page down, first page, last page, back, forward, thumbnails, hand tool, scroll, pan]
-commands: [view.page-next, view.page-previous, view.page-first, view.page-last, view.go-to, view.go-back, view.go-forward, view.hand]
+summary: Scroll, jump to a page, use page thumbnails, drag with the hand, let the pages scroll by themselves, and go back to where you were.
+keywords: [navigate, next page, previous page, go to page, page up, page down, first page, last page, back, forward, thumbnails, hand tool, scroll, pan, autoscroll, automatic scrolling, teleprompter]
+commands: [view.page-next, view.page-previous, view.page-first, view.page-last, view.go-to, view.go-back, view.go-forward, view.hand, view.autoscroll]
 contexts: [home, panel.pages]
 ---
 Pages scroll continuously, one after another. You can also jump straight to a page, and step back to where you were before a jump.
@@ -16,6 +16,7 @@ Pages scroll continuously, one after another. You can also jump straight to a pa
 4. In the document panel, choose the **Pages** tab and click a page picture to jump to it.
 5. After a jump, press **Alt+Left** to go **Back** and **Alt+Right** to go **Forward**.
 6. To drag the pages around with the mouse, in the rail choose **Home**, then **Hand** in the **Quick tools** group, and drag.
+7. To let the pages scroll by themselves, press **Ctrl+Shift+H**, or choose **Autoscroll** in the **View** menu. Press **Esc**, click the page or turn the mouse wheel to stop.
 
 ![The Pages tab of the document panel with page pictures, the current page highlighted](screenshot:move-between-pages-1)
 
@@ -25,6 +26,7 @@ Pages scroll continuously, one after another. You can also jump straight to a pa
 - Each document remembers its own page and history while it is open.
 - To glide to a page instead of jumping, open **Settings**, choose the **Viewing** page and turn on **Smooth scrolling**. It stays off while **Reduce motion** is on.
 - To see each page's number at its foot while you scroll, turn on **Page numbers on pages** on the same page.
+- **Autoscroll speed** on the same page sets how fast Autoscroll moves: **Slow**, **Medium** or **Fast**. It stops by itself at the end of the document; with **Single page** chosen, it turns each page when it reaches the page's end.
 
 <!--
 Screenshots to capture:

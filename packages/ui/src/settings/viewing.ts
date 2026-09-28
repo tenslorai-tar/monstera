@@ -18,6 +18,9 @@ import {
   LOUPE_TITLE,
   PAGE_BADGES_DESCRIPTION,
   PAGE_BADGES_TITLE,
+  AUTOSCROLL_SPEED_DESCRIPTION,
+  AUTOSCROLL_SPEED_OPTION_TITLES,
+  AUTOSCROLL_SPEED_TITLE,
   PAGE_LAYOUT_DESCRIPTION,
   PAGE_LAYOUT_OPTION_TITLES,
   PAGE_LAYOUT_TITLE,
@@ -180,6 +183,37 @@ export const PAGE_LAYOUT_SETTING: SettingDefinition<z.ZodEnum<{ [K in PageLayout
   fallback: 'continuous',
   category: 'viewing',
   optionTitles: PAGE_LAYOUT_OPTION_TITLES,
+};
+
+/** How fast Autoscroll moves — Part F's *"autoscroll speed"* (`BUILD-PROMPT.md`:610). */
+export const AUTOSCROLL_SPEEDS = ['slow', 'medium', 'fast'] as const;
+
+export type AutoscrollSpeed = (typeof AUTOSCROLL_SPEEDS)[number];
+
+/**
+ * Each speed in CSS pixels a second, on screen — so a zoomed-in page moves its words past at the same pace a reader's
+ * eye does, rather than faster in proportion to the zoom. CHOSEN, not measured: slow is roughly one line of body text
+ * every half second at 100%, and each step doubles.
+ */
+export const AUTOSCROLL_PIXELS_PER_SECOND: Readonly<Record<AutoscrollSpeed, number>> = {
+  slow: 30,
+  medium: 60,
+  fast: 120,
+};
+
+/**
+ * The speed `view.autoscroll` moves at. A preference about reading, stored per install; *Medium* by default.
+ * The command itself is not a setting — scrolling is something happening now, and a stored *on* would start moving the
+ * pages under a reader at the next launch.
+ */
+export const AUTOSCROLL_SPEED_SETTING: SettingDefinition<z.ZodEnum<{ [K in AutoscrollSpeed]: K }>> = {
+  id: 'viewing.autoscroll-speed',
+  title: AUTOSCROLL_SPEED_TITLE,
+  description: AUTOSCROLL_SPEED_DESCRIPTION,
+  schema: z.enum(AUTOSCROLL_SPEEDS),
+  fallback: 'medium',
+  category: 'viewing',
+  optionTitles: AUTOSCROLL_SPEED_OPTION_TITLES,
 };
 
 /**

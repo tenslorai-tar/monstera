@@ -1442,6 +1442,15 @@ export const SMOOTH_SCROLL_TITLE = messageKey('setting.viewing.smooth-scroll.tit
 export const SMOOTH_SCROLL_DESCRIPTION = messageKey('setting.viewing.smooth-scroll.description');
 export const PAGE_BADGES_TITLE = messageKey('setting.viewing.page-badges.title');
 export const PAGE_BADGES_DESCRIPTION = messageKey('setting.viewing.page-badges.description');
+export const AUTOSCROLL_TITLE = messageKey('command.view.autoscroll');
+export const AUTOSCROLL_SPEED_TITLE = messageKey('setting.viewing.autoscroll-speed.title');
+export const AUTOSCROLL_SPEED_DESCRIPTION = messageKey('setting.viewing.autoscroll-speed.description');
+/** `viewing.autoscroll-speed`'s members, each its own exported key as the other option sets are. */
+export const AUTOSCROLL_SPEED_OPTION_TITLES = {
+  slow: messageKey('setting.viewing.autoscroll-speed.slow'),
+  medium: messageKey('setting.viewing.autoscroll-speed.medium'),
+  fast: messageKey('setting.viewing.autoscroll-speed.fast'),
+} as const;
 export const PAGE_LAYOUT_TITLE = messageKey('setting.viewing.page-layout.title');
 export const PAGE_LAYOUT_DESCRIPTION = messageKey('setting.viewing.page-layout.description');
 /** `viewing.page-layout`'s members, each its own exported key as the other option sets are. */
@@ -3321,6 +3330,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Going to another page glides there instead of jumping. Off whenever reduced motion is on.',
   [PAGE_BADGES_TITLE]: 'Page numbers on pages',
   [PAGE_BADGES_DESCRIPTION]: 'Shows each page’s number at its foot, so you can tell where you are while you scroll.',
+  [AUTOSCROLL_TITLE]: 'Autoscroll',
+  [AUTOSCROLL_SPEED_TITLE]: 'Autoscroll speed',
+  [AUTOSCROLL_SPEED_DESCRIPTION]:
+    'How fast Autoscroll moves down the pages. Press Esc, click the page or turn the mouse wheel to stop.',
+  [AUTOSCROLL_SPEED_OPTION_TITLES.slow]: 'Slow',
+  [AUTOSCROLL_SPEED_OPTION_TITLES.medium]: 'Medium',
+  [AUTOSCROLL_SPEED_OPTION_TITLES.fast]: 'Fast',
   [PAGE_LAYOUT_TITLE]: 'Page layout',
   [PAGE_LAYOUT_DESCRIPTION]:
     'Continuous shows pages one after another. Single page shows one at a time, and scrolling past its end turns to the next. Facing pages shows them in pairs, like an open book.',

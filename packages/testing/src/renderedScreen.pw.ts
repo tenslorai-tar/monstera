@@ -2219,6 +2219,30 @@ test('FACING PAGES pair side by side, and SINGLE PAGE shows one page that a whee
   await expect(singleSlot(0)).toBeHidden();
 });
 
+// AUTOSCROLL through the shell: Ctrl+Shift+H — the command's own chord, projected from the registry — starts the pages
+// moving at the stored speed, and Esc stops them. CONTROL: the same wait with nothing pressed moves nothing.
+test('AUTOSCROLL: its chord moves the pages at the chosen speed, and Esc stops them', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openAt(page, await threePagePdf(), { 'viewing.autoscroll-speed': 'fast' });
+  const list = page.locator('.m-page-list').first();
+  await expect(page.locator('[data-page="0"] canvas.m-page')).toBeVisible({ timeout: 20_000 });
+  const top = async (): Promise<number> => list.evaluate((element) => element.scrollTop);
+  await page.waitForTimeout(1000);
+  expect(await top()).toBe(0);
+
+  await page.keyboard.press('Control+Shift+H');
+  await page.waitForTimeout(1000);
+  const moved = await top();
+  // FAST is 120 px a second; a second of it, allowing for the frames either side of the wait.
+  expect(moved).toBeGreaterThan(60);
+  expect(moved).toBeLessThan(200);
+
+  await page.keyboard.press('Escape');
+  const stopped = await top();
+  await page.waitForTimeout(600);
+  expect(await top()).toBe(stopped);
+});
+
 // A TILE IS THE PAGE, CUT — never a different drawing of it. The same page at 300% drawn whole (threshold 300%) and in
 // tiles (threshold 200%), and the pixels either side of a seam between two tiles compared with the whole page's.
 test('a TILE SEAM draws exactly what the whole page draws there: no line, no shift, no resampling', async ({ browser }) => {

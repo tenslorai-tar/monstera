@@ -9,7 +9,7 @@ import {
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { render as renderBare, act, fireEvent } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PageList } from './PageList.js';
 import { FIRST_PAGE } from './pageNumbering.js';
@@ -1472,6 +1472,108 @@ describe('PageList', () => {
       await settle();
       fireEvent.wheel(scrollerOf(continuous.container), { deltaY: 100 });
       expect(shownPages(continuous.container)).toStrictEqual([0, 1, 2, 3, 4]);
+    });
+
+    describe('AUTOSCROLL (view.autoscroll at viewing.autoscroll-speed)', () => {
+      /** Frames are run by hand, at times the case chooses, so the distance is the pace's and nothing else's. */
+      let frames: FrameRequestCallback[] = [];
+      beforeEach(() => {
+        frames = [];
+        vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback));
+        vi.stubGlobal('cancelAnimationFrame', () => undefined);
+      });
+      afterEach(() => {
+        vi.unstubAllGlobals();
+      });
+      const runFrame = (at: number): void => {
+        const next = frames.shift();
+        if (next === undefined) throw new Error('no frame was asked for');
+        act(() => {
+          next(at);
+        });
+      };
+      /** A scroller `height` tall over content `total` tall — happy-dom lays nothing out. */
+      const sized = (scroller: HTMLElement, height: number, total: number): void => {
+        Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: height });
+        Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: total });
+      };
+      const mount = async (
+        layout: PageLayout,
+        onEnd: () => void,
+        // NO DEFAULT: an explicit `undefined` would take it, and the idle control below would run at 60.
+        pace: number | undefined,
+      ): Promise<{ scroller: HTMLElement; container: HTMLElement; rerender: (pace: number | undefined) => void }> => {
+        const props = layoutProps(layout);
+        const { container, rerender } = render(
+          <PageList {...props} goTo={undefined} autoscroll={undefined} onAutoscrollEnd={onEnd} />,
+        );
+        await settle();
+        const scroller = scrollerOf(container);
+        sized(scroller, 500, 5000);
+        const again = (next: number | undefined): void => {
+          rerender(<PageList {...props} goTo={undefined} autoscroll={next} onAutoscrollEnd={onEnd} />);
+        };
+        // THIS MOUNT'S FRAMES ONLY: an earlier list in the same case is still mounted and still asking.
+        frames = [];
+        act(() => {
+          again(pace);
+        });
+        return { scroller, container, rerender: again };
+      };
+
+      it('moves the pace times the time, carrying the fraction — CONTROL: not running, nothing moves', async () => {
+        const end = vi.fn();
+        const { scroller } = await mount('continuous', end, 60);
+        runFrame(1000);
+        runFrame(1500);
+        // 60 px a second for half a second.
+        expect(scroller.scrollTop).toBe(30);
+        runFrame(1525);
+        runFrame(1550);
+        // 1.5 px a frame: one pixel, then the carried half and the next 1.5 make two. A scroller that dropped the
+        // remainder after a move would be at 32 — with 0.6 px frames it was not separable, since a remainder kept
+        // only below one pixel and one dropped only above it agree there (a mutation run found that).
+        expect(scroller.scrollTop).toBe(33);
+        expect(end).not.toHaveBeenCalled();
+
+        const idle = await mount('continuous', vi.fn(), undefined);
+        expect(frames).toHaveLength(0);
+        expect(idle.scroller.scrollTop).toBe(0);
+      });
+
+      it('stops on Esc, a press and a wheel in the pane, and at the end of the last page', async () => {
+        for (const stop of [
+          () => fireEvent.keyDown(window, { key: 'Escape' }),
+          (scroller: HTMLElement) => fireEvent.pointerDown(scroller),
+          (scroller: HTMLElement) => fireEvent.wheel(scroller, { deltaY: 10 }),
+        ]) {
+          const end = vi.fn();
+          const { scroller } = await mount('continuous', end, 60);
+          stop(scroller);
+          expect(end).toHaveBeenCalledTimes(1);
+        }
+        // CONTROL: another key is not Esc.
+        const kept = vi.fn();
+        await mount('continuous', kept, 60);
+        fireEvent.keyDown(window, { key: 'a' });
+        expect(kept).not.toHaveBeenCalled();
+
+        const atEnd = vi.fn();
+        const { scroller } = await mount('continuous', atEnd, 60);
+        scroller.scrollTop = 4500;
+        runFrame(0);
+        expect(atEnd).toHaveBeenCalledTimes(1);
+      });
+
+      it('in SINGLE PAGE the end of a page turns to the next, and it carries on', async () => {
+        const end = vi.fn();
+        const { scroller, container } = await mount('single', end, 60);
+        scroller.scrollTop = 4500;
+        runFrame(0);
+        expect(shownPages(container)).toStrictEqual([1]);
+        expect(scroller.scrollTop).toBe(0);
+        expect(end).not.toHaveBeenCalled();
+      });
     });
 
     it('FACING PAGES lays out in pairs and FITS A SPREAD — CONTROL: continuous fits one page', async () => {

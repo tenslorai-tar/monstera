@@ -269,6 +269,16 @@ export interface PageListProps {
    */
   readonly layout: PageLayout;
   /**
+   * AUTOSCROLL's pace in CSS pixels a second while it runs (`view.autoscroll`, at `viewing.autoscroll-speed`), or
+   * `undefined` while it does not. Only the pane in front is given one.
+   */
+  readonly autoscroll?: number | undefined;
+  /**
+   * Told that autoscroll stopped here — Esc, a press or a wheel in this pane, or the last page's end — so the shell's
+   * state follows. Stable across renders: the running scroll's effect depends on it.
+   */
+  readonly onAutoscrollEnd?: (() => void) | undefined;
+  /**
    * Wraps one page's slot in the page context menu for THAT page (§7), or `undefined` for a pane
    * with no document commands behind it. Per slot rather than around the scroller, because the
    * reader can see several pages at once: a menu over the whole list would act on the current page
@@ -371,6 +381,8 @@ export function PageList({
   pageBadges,
   smoothScroll,
   layout,
+  autoscroll,
+  onAutoscrollEnd,
   pageMenu,
   onActivate,
 }: PageListProps): ReactElement {
@@ -735,6 +747,59 @@ export function PageList({
     revealedStart.current = true;
     slotFor(startPage)?.scrollIntoView({ block: 'start' });
   }, [anyMeasured, mountedAt, slotFor, startPage]);
+
+  /**
+   * AUTOSCROLL, one frame at a time: the distance is the pace times the time since the last frame, so a slow frame
+   * does not slow the reading. Whole pixels move and the remainder is carried, because a scroll position set to a
+   * fraction is rounded by the browser and a pace below one pixel a frame would otherwise never move at all.
+   *
+   * It stops on Esc, a press or a wheel in this pane — the reader taking the page back — and at the end of the last
+   * page. In single page the end of a page turns to the next, where it carries on.
+   */
+  useEffect(() => {
+    const box = scroller.current;
+    if (autoscroll === undefined || box === null) return;
+    let frame = 0;
+    let last: number | undefined;
+    let carry = 0;
+    const stop = (): void => {
+      onAutoscrollEnd?.();
+    };
+    const step = (now: number): void => {
+      if (last !== undefined) {
+        carry += (autoscroll * (now - last)) / 1000;
+        const whole = Math.floor(carry);
+        if (whole > 0) {
+          box.scrollTop += whole;
+          carry -= whole;
+        }
+      }
+      last = now;
+      if (box.scrollTop + box.clientHeight >= box.scrollHeight - 1) {
+        if (layout === 'single' && onShow < pageCount - 1) {
+          box.scrollTop = 0;
+          setSingle((current) => ({ ...current, page: onShow + 1 }));
+          return;
+        }
+        stop();
+        return;
+      }
+      frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') stop();
+    };
+    window.addEventListener('keydown', onKey);
+    box.addEventListener('pointerdown', stop);
+    box.addEventListener('wheel', stop);
+    return (): void => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('keydown', onKey);
+      box.removeEventListener('pointerdown', stop);
+      box.removeEventListener('wheel', stop);
+    };
+  }, [autoscroll, layout, onAutoscrollEnd, onShow, pageCount]);
 
   const onWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>): void => {
