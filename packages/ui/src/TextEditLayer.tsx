@@ -301,13 +301,16 @@ export function TextEditPage({
   page,
   geometry,
   editing,
-  canvas,
+  paperAt,
 }: {
   readonly page: number;
   readonly geometry: OverlayPage;
   readonly editing: TextEditing;
-  /** The page's drawn canvas, read for the paper colour behind an open block. */
-  readonly canvas: React.RefObject<HTMLCanvasElement | null>;
+  /**
+   * The paper's colour at a point, in CSS pixels from the page's corner — read by the slot from whatever it drew
+   * there, a whole page or a tile (E1). `undefined` where nothing is drawn yet.
+   */
+  readonly paperAt: (x: number, y: number) => string | undefined;
 }): ReactElement {
   const [answer, setAnswer] = useState<{ readonly version: DocVersion; readonly blocks: PageBlocks | undefined }>();
   const { read, version } = editing;
@@ -320,20 +323,6 @@ export function TextEditPage({
       current = false;
     };
   }, [page, read, version]);
-
-  const paperAt = (x: number, y: number): string | undefined => {
-    const element = canvas.current;
-    if (element === null || element.clientWidth === 0) return undefined;
-    // THE BACKING STORE IS NOT THE CSS BOX: the bitmap is drawn at the device's
-    // pixel ratio and at the last settled zoom, so a CSS point is scaled into it
-    // before it is read.
-    const ratio = element.width / element.clientWidth;
-    const pixel = element
-      .getContext('2d', { willReadFrequently: true })
-      ?.getImageData(Math.max(0, Math.round(x * ratio)), Math.max(0, Math.round(y * ratio)), 1, 1).data;
-    if (pixel === undefined) return undefined;
-    return `rgb(${String(pixel[0] ?? 255)}, ${String(pixel[1] ?? 255)}, ${String(pixel[2] ?? 255)})`;
-  };
 
   return (
     <TextEditLayer

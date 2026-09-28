@@ -2,7 +2,7 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { describe, expect, it, vi } from 'vitest';
 
-import { RenderCancelledError, renderPage } from './renderPage.js';
+import { RenderCancelledError, pageGeometry, renderPage, renderRegion } from './renderPage.js';
 
 /** A signal nothing aborts, for the cases about what a draw does rather than whether it is superseded. */
 const LIVE = new AbortController().signal;
@@ -267,6 +267,76 @@ describe('renderPage', () => {
     // page to PDF.js would leave a render running against a canvas nobody can
     // draw on, and the rejection alone cannot tell the two apart.
     expect(sizeAtRender).toStrictEqual([]);
+  });
+});
+
+/**
+ * A REGION of a page — a tile, the loupe's window (E1). Asserted on what reaches PDF.js, since happy-dom draws nothing:
+ * the canvas's size when `render` is called, and the `transform` it is handed.
+ */
+describe('renderRegion', () => {
+  /** A page that records every render's canvas size and options. */
+  function recordingPage(): {
+    readonly document: PDFDocumentProxy;
+    readonly calls: { width: number; height: number; transform: unknown; viewport: unknown }[];
+  } {
+    const calls: { width: number; height: number; transform: unknown; viewport: unknown }[] = [];
+    const page = {
+      view: VIEW,
+      getViewport: (options: Record<string, unknown>) => ({ width: 2000, height: 3000, rotation: options['rotation'] ?? 0, options }),
+      render: ({ canvas, transform, viewport }: { canvas: HTMLCanvasElement; transform?: unknown; viewport: unknown }) => {
+        calls.push({ width: canvas.width, height: canvas.height, transform, viewport });
+        return { promise: Promise.resolve(), cancel: () => undefined };
+      },
+    };
+    return { document: { getPage: () => Promise.resolve(page) } as unknown as PDFDocumentProxy, calls };
+  }
+
+  it('sizes the canvas to the REGION before drawing, and moves the region’s corner to the origin', async () => {
+    const { document, calls } = recordingPage();
+    const region = { x: 1024, y: 512, width: 512, height: 300 };
+
+    await renderRegion(document, 1, canvasWithContext(), 4, 90, region, LIVE);
+
+    // A corner that is not the page's origin, so a transform that ignored the region would be told apart.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.width).toBe(512);
+    expect(calls[0]?.height).toBe(300);
+    expect(calls[0]?.transform).toStrictEqual([1, 0, 0, 1, -1024, -512]);
+    // THE WHOLE PAGE'S VIEWPORT, at the scale and rotation asked — the tile is that page, cut, never a smaller page.
+    expect((calls[0]?.viewport as { options: unknown }).options).toStrictEqual({ scale: 4, rotation: 90 });
+  });
+
+  it('never touches the canvas when superseded before the page arrives', async () => {
+    const { document, calls } = recordingPage();
+    const canvas = canvasWithContext();
+    const before = { width: canvas.width, height: canvas.height };
+    const superseded = new AbortController();
+    superseded.abort();
+
+    await expect(renderRegion(document, 1, canvas, 4, 0, { x: 0, y: 0, width: 64, height: 64 }, superseded.signal)).rejects.toBeInstanceOf(
+      RenderCancelledError,
+    );
+    expect({ width: canvas.width, height: canvas.height }).toStrictEqual(before);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('CONTROL: a whole page is drawn with NO transform, so the region case above is not the only shape', async () => {
+    const { document, calls } = recordingPage();
+
+    await renderPage(document, 1, canvasWithContext(), 1, 0, LIVE);
+
+    expect(calls[0]?.transform).toBeUndefined();
+  });
+
+  it('pageGeometry answers the whole-page device size without drawing', async () => {
+    const { document, calls } = recordingPage();
+
+    const geometry = await pageGeometry(document, 1, 4, undefined);
+
+    expect({ width: geometry.width, height: geometry.height }).toStrictEqual({ width: 2000, height: 3000 });
+    expect(geometry.crop).toStrictEqual(VIEW);
+    expect(calls).toHaveLength(0);
   });
 });
 

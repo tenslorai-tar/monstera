@@ -323,6 +323,8 @@ export const PRINT_DPI_150 = messageKey('dialog.print.dpi-150');
 export const PRINT_DPI_300 = messageKey('dialog.print.dpi-300');
 export const PRINT_DPI_600 = messageKey('dialog.print.dpi-600');
 export const PRINT_QUALITY_DESCRIPTION = messageKey('setting.rendering-print-quality.description');
+export const TILE_THRESHOLD_TITLE = messageKey('setting.rendering-tile-threshold.title');
+export const TILE_THRESHOLD_DESCRIPTION = messageKey('setting.rendering-tile-threshold.description');
 export const PRINT_APPLY = messageKey('dialog.print.apply');
 export const GROUP_COMPARE = messageKey('surface.ribbon.group.compare');
 export const GROUP_COMMENT_FILES = messageKey('surface.ribbon.group.comment-files');
@@ -3621,6 +3623,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PRINT_DPI_300]: 'Standard — 300 dots per inch',
   [PRINT_DPI_600]: 'High — up to 600 dots per inch, lower on a large page',
   [PRINT_QUALITY_DESCRIPTION]: 'The quality the Print dialog starts on. You can still choose another each time you print.',
+  [TILE_THRESHOLD_TITLE]: 'Draw pages in pieces above',
+  [TILE_THRESHOLD_DESCRIPTION]:
+    'Zoomed in past this, a page is drawn only where you are looking, which keeps memory low on large pages. Lower uses less memory.',
   [PRINT_APPLY]: 'Choose a printer…',
   [GROUP_COMPARE]: 'Compare',
   [GROUP_COMMENT_FILES]: 'Comment files',

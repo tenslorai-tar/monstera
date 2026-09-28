@@ -156,16 +156,13 @@ export async function renderPage(
   // BEFORE THE CANVAS IS TOUCHED: sizing it clears it, so a superseded draw that got this far
   // would wipe the newer one's pixels.
   if (superseded()) throw new RenderCancelledError(pageNumber);
-  // OMITTED rather than defaulted to zero when the caller has no model. PDF.js
-  // falls back to the page's own rotation, which is right for a document nothing
-  // has rotated; passing `0` would flatten every document that arrives already
-  // turned, and it would do it silently on the first render.
-  const at = (factor: number): ReturnType<typeof page.getViewport> =>
-    page.getViewport(rotation === undefined ? { scale: factor } : { scale: factor, rotation });
   // A WIDTH TO FIT is answered from PDF.js' own viewport at scale 1, which sizes the page without
   // drawing it. The thumbnail strip drew the whole page at full size to learn this, and that
   // first pass is what a superseded draw left on its canvas (2026-09-18).
-  const viewport = typeof scale === 'number' ? at(scale) : at(scale.fitWidth / at(1).width);
+  const viewport =
+    typeof scale === 'number'
+      ? viewportOf(page, scale, rotation)
+      : viewportOf(page, scale.fitWidth / viewportOf(page, 1, rotation).width, rotation);
 
   canvas.width = Math.ceil(viewport.width);
   canvas.height = Math.ceil(viewport.height);
@@ -185,20 +182,7 @@ export async function renderPage(
     throw new RenderCancelledError(pageNumber);
   }
   if (drawn === null) {
-    const task = page.render({ canvas, canvasContext: context, viewport });
-    const cancel = (): void => {
-      task.cancel();
-    };
-    signal.addEventListener('abort', cancel, { once: true });
-    try {
-      await task.promise;
-    } catch (error) {
-      // THE CANCELLATION IS OURS, so it is reported as ours; anything else is the page's.
-      if (superseded()) throw new RenderCancelledError(pageNumber);
-      throw error;
-    } finally {
-      signal.removeEventListener('abort', cancel);
-    }
+    await drawWithPdfjs(page, canvas, context, viewport, undefined, signal, pageNumber);
   } else {
     // `drawImage` AT 0,0 WITH NO SCALE. The raster was asked for at exactly this
     // canvas's device size, so any scaling here would be resampling a bitmap
@@ -207,14 +191,108 @@ export async function renderPage(
     context.drawImage(drawn, 0, 0);
     drawn.close();
   }
+  return geometryOf(page, viewport, { width: canvas.width, height: canvas.height });
+}
+
+type PdfPage = Awaited<ReturnType<PDFDocumentProxy['getPage']>>;
+type Viewport = ReturnType<PdfPage['getViewport']>;
+
+/**
+ * The page's viewport at `scale`: the caller's rotation, or the page's own.
+ *
+ * OMITTED rather than defaulted to zero when the caller has no model. PDF.js falls back to the page's own rotation,
+ * which is right for a document nothing has rotated; passing `0` would flatten every document that arrives already
+ * turned, and it would do it silently on the first render. ONE place builds it, so a whole page, a tile and a size
+ * asked for without drawing cannot disagree about the box.
+ */
+function viewportOf(page: PdfPage, scale: number, rotation: number | undefined): Viewport {
+  return page.getViewport(rotation === undefined ? { scale } : { scale, rotation });
+}
+
+/** What a page came out as: its device size at the viewport's scale, its visible box and the rotation drawn. */
+function geometryOf(page: PdfPage, viewport: Viewport, size: { width: number; height: number }): RasterisedPage {
   const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = page.view;
   return {
-    width: canvas.width,
-    height: canvas.height,
+    width: size.width,
+    height: size.height,
     crop: [x0, y0, x1, y1],
     // THE VIEWPORT'S, not the parameter's. They differ exactly when the caller
     // passed nothing and PDF.js fell back to the page's own `/Rotate`, which is
     // the case an overlay must not get wrong.
     rotation: viewport.rotation,
   };
+}
+
+/**
+ * PDF.js draws the page into `canvas`, cancelled by `signal`. `transform` is PDF.js' own extra matrix, applied BEFORE
+ * the viewport's — a translation by a region's corner moves that corner to the canvas origin, which is how a tile is
+ * drawn by the same viewport a whole page is.
+ */
+async function drawWithPdfjs(
+  page: PdfPage,
+  canvas: HTMLCanvasElement,
+  context: CanvasRenderingContext2D,
+  viewport: Viewport,
+  transform: [number, number, number, number, number, number] | undefined,
+  signal: AbortSignal,
+  pageNumber: number,
+): Promise<void> {
+  const task = page.render({ canvas, canvasContext: context, viewport, ...(transform === undefined ? {} : { transform }) });
+  const cancel = (): void => {
+    task.cancel();
+  };
+  signal.addEventListener('abort', cancel, { once: true });
+  try {
+    await task.promise;
+  } catch (error) {
+    // THE CANCELLATION IS OURS, so it is reported as ours; anything else is the page's.
+    if (signal.aborted) throw new RenderCancelledError(pageNumber);
+    throw error;
+  } finally {
+    signal.removeEventListener('abort', cancel);
+  }
+}
+
+/**
+ * A page's size, box and rotation at `scale`, drawing nothing — what a page drawn in tiles is laid out from, since no
+ * one canvas holds the whole of it. The size is the device size a whole-page canvas would have: `ceil` of the
+ * viewport's, as `renderPage` sizes one.
+ */
+export async function pageGeometry(
+  document: PDFDocumentProxy,
+  pageNumber: number,
+  scale: number,
+  rotation: number | undefined,
+): Promise<RasterisedPage> {
+  const page = await document.getPage(pageNumber);
+  const viewport = viewportOf(page, scale, rotation);
+  return geometryOf(page, viewport, { width: Math.ceil(viewport.width), height: Math.ceil(viewport.height) });
+}
+
+/**
+ * Draws one REGION of page `pageNumber` at `scale` into `canvas`, sized to the region — a tile (`tiles.ts`) or the
+ * loupe's window. The region is in the page's device pixels at `scale`, origin top-left, as the canvas counts.
+ *
+ * PDF.js only: the second rasteriser answers whole pages, and a page drawn in pieces is one too large to ask it for.
+ *
+ * @throws {@link RenderCancelledError} when `signal` aborted, `renderPage`'s rule.
+ */
+export async function renderRegion(
+  document: PDFDocumentProxy,
+  pageNumber: number,
+  canvas: HTMLCanvasElement,
+  scale: number,
+  rotation: number | undefined,
+  region: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+  signal: AbortSignal,
+): Promise<void> {
+  const page = await document.getPage(pageNumber);
+  // BEFORE THE CANVAS IS TOUCHED, `renderPage`'s reason.
+  if (signal.aborted) throw new RenderCancelledError(pageNumber);
+  const viewport = viewportOf(page, scale, rotation);
+  canvas.width = region.width;
+  canvas.height = region.height;
+  const context = canvas.getContext('2d');
+  if (context === null) throw new Error('the page canvas has no 2d context to draw into');
+  await drawWithPdfjs(page, canvas, context, viewport, [1, 0, 0, 1, -region.x, -region.y], signal, pageNumber);
 }

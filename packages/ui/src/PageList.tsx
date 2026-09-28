@@ -17,7 +17,8 @@ import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY, PAGE_LIST_LABEL } from './me
 import type { UiTool } from './registries/tools.js';
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
-import { RenderCancelledError, type SecondRasteriser, renderPage } from './renderPage.js';
+import { RenderCancelledError, type SecondRasteriser, pageGeometry, renderPage, renderRegion } from './renderPage.js';
+import { type Tile, tilesCovering } from './tiles.js';
 import type { SearchHighlight } from './searchHighlight.js';
 import { Loupe } from './Loupe.js';
 import { Rulers } from './Rulers.js';
@@ -247,6 +248,11 @@ export interface PageListProps {
    */
   readonly secondRasteriser: SecondRasteriser | undefined;
   /**
+   * The zoom above which a page is drawn in tiles (E1; `rendering.tile-threshold`), as a scale. Required for
+   * `secondRasteriser`'s reason: a threshold dropped between the setting and the slot would draw whole pages at 400%.
+   */
+  readonly tileAbove: number;
+  /**
    * Wraps one page's slot in the page context menu for THAT page (§7), or `undefined` for a pane
    * with no document commands behind it. Per slot rather than around the scroller, because the
    * reader can see several pages at once: a menu over the whole list would act on the current page
@@ -341,6 +347,7 @@ export function PageList({
   panning = false,
   search,
   secondRasteriser,
+  tileAbove,
   pageMenu,
   onActivate,
 }: PageListProps): ReactElement {
@@ -832,6 +839,8 @@ export function PageList({
           annotations={sizes.has(page) ? pageAnnotations.get(page) : undefined}
           search={search}
           secondRasteriser={secondRasteriser}
+          tiled={renderZoom > tileAbove}
+          scroller={scroller}
         />
         );
         // THE KEY ON THE OUTERMOST ELEMENT, `Thumbnails`' reason.
@@ -894,6 +903,8 @@ function PageSlot({
   annotations,
   search,
   secondRasteriser,
+  tiled,
+  scroller,
 }: {
   readonly page: number;
   readonly ref: (element: HTMLElement | null) => void;
@@ -920,9 +931,25 @@ function PageSlot({
    * render of the list.
    */
   readonly secondRasteriser: SecondRasteriser | undefined;
+  /** Whether this page is drawn in tiles (E1): the settled zoom is above the reader's threshold. */
+  readonly tiled: boolean;
+  /** The scroller the slot sits in, whose box decides which tiles are wanted. */
+  readonly scroller: React.RefObject<HTMLElement | null>;
 }): ReactElement {
   const { i18n } = useLingui();
   const canvas = useRef<HTMLCanvasElement>(null);
+  // THE SLOT'S OWN ELEMENT, beside the visible-pages ref it hands on: tiles measure it against the scroller, and the
+  // paper colour is read from whichever canvas lies under a point in it. `ref` is minted once per page, so this is
+  // stable.
+  const own = useRef<HTMLDivElement | null>(null);
+  const slotRef = useCallback(
+    (element: HTMLDivElement | null): void => {
+      own.current = element;
+      ref(element);
+    },
+    [ref],
+  );
+  const paperAt = useCallback((x: number, y: number): string | undefined => paperIn(own.current, x, y), []);
 
   /**
    * What the page occupies on screen, in CSS pixels, at the CURRENT zoom.
@@ -950,15 +977,21 @@ function PageSlot({
     const superseded = new AbortController();
 
     const drawPage = async (): Promise<void> => {
-      const target = canvas.current;
-      if (target === null) return;
       // EXACTLY `devicePixelRatio × zoom`, which is E1's first rule: one bitmap
       // pixel per device pixel. Supersampling and letting CSS shrink the result
       // is what blurs text, and E1 allows it only as an explicit `renderQuality`
-      // setting — which is NOT registered: a multiplier squares a canvas that
-      // tiling, unbuilt, exists to bound at high zoom (the Settings row). So
-      // nothing here multiplies it.
+      // setting — which is NOT registered yet. So nothing here multiplies it.
       const scale = devicePixels() * renderZoom;
+      if (tiled) {
+        // A PAGE DRAWN IN TILES IS MEASURED, NOT DRAWN, here: no one canvas holds it, so its size, box and rotation
+        // come from PDF.js' viewport alone and each tile draws its own piece.
+        const measured = await pageGeometry(view.document, pdfjsPageOf(page), scale, rotation);
+        if (superseded.signal.aborted) return;
+        onMeasured(page, { ...measured, drawnAt: scale });
+        return;
+      }
+      const target = canvas.current;
+      if (target === null) return;
       const drawn = await renderPage(
         view.document,
         pdfjsPageOf(page),
@@ -1002,15 +1035,33 @@ function PageSlot({
     return (): void => {
       superseded.abort();
     };
-  }, [draw, onMeasured, page, renderZoom, rotation, secondRasteriser, view]);
+  }, [draw, onMeasured, page, renderZoom, rotation, secondRasteriser, tiled, view]);
 
   return (
     <div
       className="m-page-slot"
-      ref={ref}
+      ref={slotRef}
       style={shown === undefined ? undefined : { width: shown.width, height: shown.height }}
     >
-      {draw ? (
+      {draw && tiled ? (
+        size === undefined || view === undefined ? null : (
+          <PageTiles
+            page={page}
+            // THE PAGE'S DEVICE SIZE AT THE SCALE TILES DRAW AT, from the measured size and the scale it was measured
+            // at — the same ratio `shown` places the slot by, so the tiles and the slot cannot disagree about the page.
+            pageSize={{
+              width: Math.ceil((size.width / size.drawnAt) * devicePixels() * renderZoom),
+              height: Math.ceil((size.height / size.drawnAt) * devicePixels() * renderZoom),
+            }}
+            rotation={rotation}
+            scale={devicePixels() * renderZoom}
+            scroller={scroller}
+            slot={own}
+            view={view}
+            zoom={zoom}
+          />
+        )
+      ) : draw ? (
         <canvas
           className="m-page"
           data-page-canvas={String(page)}
@@ -1061,7 +1112,7 @@ function PageSlot({
           the pointer — the two modes share one slot and never mount together. */}
       {editing === undefined || size === undefined ? null : (
         <TextEditPage
-          canvas={canvas}
+          paperAt={paperAt}
           editing={editing}
           geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
           page={page}
@@ -1094,5 +1145,182 @@ function PageSlot({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * The paper's colour at a point in a slot, in CSS pixels from the slot's corner — read from whichever drawn canvas lies
+ * under it: the whole page's, or the tile holding that point. ONE reader for both, so the text editor's background
+ * cannot depend on how the page happens to be drawn.
+ *
+ * THE BACKING STORE IS NOT THE CSS BOX: a bitmap is drawn at the device's pixel ratio and at the last settled zoom, so
+ * a CSS point is scaled into it before it is read.
+ */
+function paperIn(slot: HTMLElement | null, x: number, y: number): string | undefined {
+  if (slot === null) return undefined;
+  const corner = slot.getBoundingClientRect();
+  for (const drawn of slot.querySelectorAll<HTMLCanvasElement>('canvas.m-page, canvas.m-page-tile')) {
+    const box = drawn.getBoundingClientRect();
+    const left = box.left - corner.left;
+    const top = box.top - corner.top;
+    if (box.width === 0 || x < left || y < top || x >= left + box.width || y >= top + box.height) continue;
+    const ratio = drawn.width / box.width;
+    const pixel = drawn
+      .getContext('2d', { willReadFrequently: true })
+      ?.getImageData(Math.max(0, Math.round((x - left) * ratio)), Math.max(0, Math.round((y - top) * ratio)), 1, 1).data;
+    if (pixel === undefined) return undefined;
+    return `rgb(${String(pixel[0] ?? 255)}, ${String(pixel[1] ?? 255)}, ${String(pixel[2] ?? 255)})`;
+  }
+  return undefined;
+}
+
+/**
+ * A page drawn in tiles (E1): the cells the scroller shows and a margin, each its own canvas placed over the slot.
+ *
+ * ## What is visible is asked of the SCROLLER, on its own events
+ *
+ * The slot's rectangle against the scroller's, in CSS pixels, converted to the page's device pixels at the drawing
+ * scale — `scale / zoom` per CSS pixel, since the slot is SHOWN at `zoom` and DRAWN at `scale`. Measured on a scroll or
+ * a resize, once a frame, and set only when the tiles change, so a scroll inside a cell draws nothing.
+ */
+function PageTiles({
+  view,
+  page,
+  rotation,
+  scale,
+  zoom,
+  pageSize,
+  scroller,
+  slot,
+}: {
+  readonly view: DocumentView;
+  readonly page: number;
+  readonly rotation: number | undefined;
+  readonly scale: number;
+  readonly zoom: number;
+  /** The page's size in device pixels at `scale`. */
+  readonly pageSize: { readonly width: number; readonly height: number };
+  readonly scroller: React.RefObject<HTMLElement | null>;
+  readonly slot: React.RefObject<HTMLElement | null>;
+}): ReactElement {
+  const [tiles, setTiles] = useState<readonly Tile[]>([]);
+  const { width, height } = pageSize;
+
+  useEffect(() => {
+    const box = scroller.current;
+    const own = slot.current;
+    if (box === null || own === null) return;
+    let frame = 0;
+    const measure = (): void => {
+      frame = 0;
+      const shown = box.getBoundingClientRect();
+      const at = own.getBoundingClientRect();
+      const perCss = scale / zoom;
+      const next = tilesCovering(
+        { width, height },
+        {
+          x: (shown.left - at.left) * perCss,
+          y: (shown.top - at.top) * perCss,
+          width: shown.width * perCss,
+          height: shown.height * perCss,
+        },
+      );
+      setTiles((current) => (sameTiles(current, next) ? current : next));
+    };
+    const schedule = (): void => {
+      if (frame === 0) frame = requestAnimationFrame(measure);
+    };
+    measure();
+    box.addEventListener('scroll', schedule, { passive: true });
+    const resized = new ResizeObserver(schedule);
+    resized.observe(box);
+    return (): void => {
+      box.removeEventListener('scroll', schedule);
+      resized.disconnect();
+      if (frame !== 0) cancelAnimationFrame(frame);
+    };
+  }, [height, scale, scroller, slot, width, zoom]);
+
+  return (
+    <div className="m-page-tiles" data-page-tiles={String(page)}>
+      {tiles.map((tile) => (
+        <PageTile key={tile.key} page={page} rotation={rotation} scale={scale} tile={tile} view={view} zoom={zoom} />
+      ))}
+    </div>
+  );
+}
+
+/** Whether two tile lists are the same cells over the same pixels — a scroll inside a cell changes neither. */
+function sameTiles(a: readonly Tile[], b: readonly Tile[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((tile, at) => {
+      const other = b[at];
+      return (
+        other?.key === tile.key &&
+        other.x === tile.x &&
+        other.y === tile.y &&
+        other.width === tile.width &&
+        other.height === tile.height
+      );
+    })
+  );
+}
+
+/**
+ * One tile. It keeps the rectangle and scale it was LAST drawn at and places itself from those, so while a new scale is
+ * settling the old bitmap is stretched into its place — E1's two tiers, per tile — rather than drawn in the wrong one.
+ * Hidden until its first draw, so a cell never shows an empty box where the page is.
+ */
+function PageTile({
+  view,
+  page,
+  rotation,
+  tile,
+  scale,
+  zoom,
+}: {
+  readonly view: DocumentView;
+  readonly page: number;
+  readonly rotation: number | undefined;
+  readonly tile: Tile;
+  readonly scale: number;
+  readonly zoom: number;
+}): ReactElement {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [drawn, setDrawn] = useState<{ readonly x: number; readonly y: number; readonly width: number; readonly height: number; readonly scale: number }>();
+  const { x, y, width, height } = tile;
+
+  useEffect(() => {
+    const target = canvas.current;
+    if (target === null) return;
+    const superseded = new AbortController();
+    const region = { x, y, width, height };
+    void renderRegion(view.document, pdfjsPageOf(page), target, scale, rotation, region, superseded.signal)
+      .then(() => {
+        if (!superseded.signal.aborted) setDrawn({ ...region, scale });
+      })
+      .catch((error: unknown) => {
+        if (error instanceof RenderCancelledError || superseded.signal.aborted) return;
+        // A TILE THAT WILL NOT DRAW SAYS SO, on the element, as a whole page does.
+        target.dataset['failed'] = 'true';
+      });
+    return (): void => {
+      superseded.abort();
+    };
+  }, [height, page, rotation, scale, view, width, x, y]);
+
+  const per = drawn === undefined ? 0 : zoom / drawn.scale;
+  return (
+    <canvas
+      className="m-page-tile"
+      data-tile={tile.key}
+      ref={canvas}
+      style={
+        drawn === undefined
+          ? { visibility: 'hidden' }
+          : { left: drawn.x * per, top: drawn.y * per, width: drawn.width * per, height: drawn.height * per }
+      }
+    />
   );
 }

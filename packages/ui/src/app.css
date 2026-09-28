@@ -1010,6 +1010,23 @@ textarea {
 }
 
 /*
+ * A PAGE DRAWN IN TILES (E1): the slot is sized to the whole page as always, and the tiles are placed in it from the
+ * rectangle each was drawn for. The container stands where the whole-page canvas stood — the whole page's box, so it
+ * carries the page's shadow once rather than a shadow per tile — and a tile not yet drawn leaves the slot's own ground.
+ */
+.m-page-tiles {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  box-shadow: var(--page-shadow);
+}
+
+.m-page-tile {
+  position: absolute;
+  display: block;
+}
+
+/*
  * Continuous scroll. The list scrolls, not the surface: a scrollable landmark
  * that also holds the toolbar and the find bar would scroll those out of reach,
  * which is the bug every viewer with a floating control has had once.
@@ -2725,6 +2742,7 @@ textarea {
  * are untouched — they belong to the shell, and the shell has a theme.
  */
 [data-dark-page='true'] canvas.m-page,
+[data-dark-page='true'] canvas.m-page-tile,
 [data-dark-page='true'] canvas.m-thumb-canvas {
   filter: invert(1) hue-rotate(180deg);
 }

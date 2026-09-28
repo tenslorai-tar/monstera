@@ -67,6 +67,7 @@ export function ComparePane({
   rulers,
   showGrid,
   unit,
+  tileAbove,
 }: {
   readonly client: ContractClient;
   /** The document to show here, or `undefined` for a second view of the first. */
@@ -88,6 +89,8 @@ export function ComparePane({
   readonly rulers: boolean;
   readonly showGrid: boolean;
   readonly unit: RulerUnit;
+  /** The reader's tile threshold (E1), which bounds this pane's memory as it does the first's. */
+  readonly tileAbove: number;
 }): ReactElement {
   const { _ } = useLingui();
   const pickerId = useId();
@@ -128,6 +131,7 @@ export function ComparePane({
           rulers={rulers}
           showGrid={showGrid}
           unit={unit}
+          tileAbove={tileAbove}
         />
       )}
     </div>
@@ -159,6 +163,7 @@ function CompareView({
   rulers,
   showGrid,
   unit,
+  tileAbove,
 }: {
   readonly client: ContractClient;
   readonly against: ComparableDocument;
@@ -171,6 +176,7 @@ function CompareView({
   readonly rulers: boolean;
   readonly showGrid: boolean;
   readonly unit: RulerUnit;
+  readonly tileAbove: number;
 }): ReactElement {
   const { _ } = useLingui();
   // THE MODULE CONSTANT DIRECTLY, not wrapped in `useCallback`. Its identity is
@@ -238,6 +244,7 @@ function CompareView({
       // `undefined` rather than passing the setting through: the setting is
       // about how the reader's document is drawn, and this pane is not that.
       secondRasteriser={undefined}
+      tileAbove={tileAbove}
       // NO PAGE MENU: this pane shows ANOTHER document, and every page item acts on the document
       // whose context it is handed — rotating page 3 here would rotate the reader's page 3.
       pageMenu={undefined}

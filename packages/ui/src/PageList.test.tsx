@@ -304,7 +304,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined}
+        secondRasteriser={undefined} tileAbove={2}
         pageMenu={undefined}
       />,
     );
@@ -338,7 +338,7 @@ describe('PageList', () => {
           showGrid={false}
           unit="in"
           search={undefined}
-          secondRasteriser={undefined}
+          secondRasteriser={undefined} tileAbove={2}
           pageMenu={undefined}
           panning={panning}
         />,
@@ -397,7 +397,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined}
+        secondRasteriser={undefined} tileAbove={2}
         pageMenu={undefined}
       />,
     );
@@ -449,7 +449,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined}
+        secondRasteriser={undefined} tileAbove={2}
         pageMenu={undefined}
       />,
     );
@@ -485,7 +485,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined}
+        secondRasteriser={undefined} tileAbove={2}
         pageMenu={undefined}
       />,
     );
@@ -528,7 +528,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined}
+        secondRasteriser={undefined} tileAbove={2}
         pageMenu={undefined}
       />,
     );
@@ -562,7 +562,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined}
+        secondRasteriser={undefined} tileAbove={2}
         pageMenu={undefined}
       />,
     );
@@ -592,7 +592,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined}
+        secondRasteriser={undefined} tileAbove={2}
         pageMenu={undefined}
       />,
     );
@@ -634,7 +634,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined}
+        secondRasteriser={undefined} tileAbove={2}
         pageMenu={undefined}
       />,
     );
@@ -667,7 +667,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined}
+        secondRasteriser={undefined} tileAbove={2}
         pageMenu={undefined}
       />,
     );
@@ -713,7 +713,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined}
+        secondRasteriser={undefined} tileAbove={2}
         pageMenu={undefined}
       />,
     );
@@ -775,6 +775,7 @@ describe('PageList', () => {
       unit: 'in' as const,
       search: undefined,
       secondRasteriser: undefined,
+      tileAbove: 2,
       pageMenu: undefined,
     };
     const { rerender } = render(<PageList {...props} view={viewDrawing()} version={VERSION} />);
@@ -816,7 +817,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined}
+        secondRasteriser={undefined} tileAbove={2}
         pageMenu={undefined}
       />,
     );
@@ -856,6 +857,7 @@ describe('PageList', () => {
       unit: 'in' as const,
       search: undefined,
       secondRasteriser: undefined,
+      tileAbove: 2,
       pageMenu: undefined,
     };
     const { container, rerender } = render(<PageList {...props} startAt={2} />);
@@ -889,6 +891,7 @@ describe('PageList', () => {
       unit: 'in' as const,
       search: undefined,
       secondRasteriser: undefined,
+      tileAbove: 2,
       pageMenu: undefined,
     };
     const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
@@ -932,6 +935,7 @@ describe('PageList', () => {
       unit: 'in' as const,
       search: undefined,
       secondRasteriser: undefined,
+      tileAbove: 2,
       pageMenu: undefined,
     };
     const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
@@ -990,7 +994,7 @@ describe('PageList', () => {
           showGrid={false}
           unit="in"
           search={undefined}
-        secondRasteriser={undefined}
+        secondRasteriser={undefined} tileAbove={2}
         pageMenu={undefined}
         />,
       );
@@ -1019,7 +1023,7 @@ describe('PageList', () => {
             showGrid={false}
             unit="in"
             search={undefined}
-        secondRasteriser={undefined}
+        secondRasteriser={undefined} tileAbove={2}
         pageMenu={undefined}
           />,
         );
@@ -1059,7 +1063,7 @@ describe('PageList', () => {
             showGrid={false}
             unit="in"
             search={undefined}
-        secondRasteriser={undefined}
+        secondRasteriser={undefined} tileAbove={2}
         pageMenu={undefined}
           />,
         );
@@ -1086,7 +1090,7 @@ describe('PageList', () => {
             showGrid={false}
             unit="in"
             search={undefined}
-        secondRasteriser={undefined}
+        secondRasteriser={undefined} tileAbove={2}
         pageMenu={undefined}
           />,
         );
@@ -1131,7 +1135,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined}
+        secondRasteriser={undefined} tileAbove={2}
         pageMenu={undefined}
       />,
     );

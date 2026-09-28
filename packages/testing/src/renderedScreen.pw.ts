@@ -3,7 +3,7 @@
 // `verbatimModuleSyntax` the default import resolves to the namespace rather
 // than the class — "this expression is not constructable", at compile time.
 import { AxeBuilder } from '@axe-core/playwright';
-import { PDFDocument } from '@cantoo/pdf-lib';
+import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { AI_SETUP_AT_START_SETTING_ID, displayLocationSchema } from '@monstera/contract';
 import { MINIMUM_WINDOW, asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
@@ -1210,9 +1210,10 @@ test('the PAGES STRIP keeps every thumbnail inside the panel on a long document,
   // first thumbnail started at x −87, off the panel. Six pages drew at once and never showed it, which is why the
   // document here is long: the defect needs thumbnails that are not drawn when the strip is laid out.
   await page.setViewportSize({ width: 1920, height: 1080 });
-  const document = await PDFDocument.create();
-  for (let at = 0; at < 24; at += 1) document.addPage([612, 792]);
-  const bytes = await document.save();
+  // NOT `document`: that name is the page's inside `evaluate` below, and shadowing it typed every call there as pdf-lib's.
+  const pdf = await PDFDocument.create();
+  for (let at = 0; at < 24; at += 1) pdf.addPage([612, 792]);
+  const bytes = await pdf.save();
   const docId = asDocId('00000000-0000-4000-8000-0000000000c9');
   await bridge(page, {
     opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'long.pdf' }],
@@ -2070,13 +2071,145 @@ for (const look of LOOKS) {
   });
 }
 
+/** A page covered in lines of text, so any region of it holds ink — a seam anywhere has pixels to disagree about. */
+async function inkedPdf(size: readonly [number, number]): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const page = document.addPage([size[0], size[1]]);
+  for (let y = size[1] - 20; y > 10; y -= 11) {
+    page.drawText('Tenant shall pay the Base Rent monthly in advance; a seam must not show. '.repeat(Math.ceil(size[0] / 330)), {
+      x: 4,
+      y,
+      size: 9,
+      font,
+    });
+  }
+  page.drawLine({ start: { x: 0, y: 0 }, end: { x: size[0], y: size[1] }, thickness: 1.5 });
+  return document.save();
+}
+
+/** Opens `bytes` with `settings`, and waits until the first page's slot has something drawn in it. */
+async function openAt(page: Page, bytes: Uint8Array, settings: Record<string, unknown>): Promise<void> {
+  const docId = asDocId('00000000-0000-4000-8000-0000000000e6');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'sheet.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    settings,
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+}
+
+// E1's TILES (BUILD-PROMPT.md:533): above the threshold a page is drawn in pieces, and the memory follows the WINDOW.
+// A canvas's backing store is width × height × 4 bytes whatever it holds, so the canvases' pixel count is the bound.
+test('above the tile threshold a page is drawn in TILES, whose pixels follow the window and not the sheet', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  // A0, 841 × 1189 mm: at 400% on a display at 1× a whole-page canvas would be 9,536 × 13,480 — 128 million pixels.
+  await openAt(page, await inkedPdf([2384, 3370]), { 'viewing.starting-zoom': '400pct' });
+  const tiles = page.locator('[data-page-tiles="0"] canvas.m-page-tile');
+  await expect(tiles.first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('canvas[data-page-canvas="0"]')).toHaveCount(0);
+
+  const drawn = await page.evaluate(() => {
+    const canvases = [...document.querySelectorAll<HTMLCanvasElement>('.m-page-list canvas')];
+    const slot = document.querySelector('[data-page-tiles="0"]')?.parentElement?.getBoundingClientRect();
+    return {
+      pixels: canvases.reduce((sum, canvas) => sum + canvas.width * canvas.height, 0),
+      tiles: canvases.filter((canvas) => canvas.classList.contains('m-page-tile')).length,
+      wholePage: slot === undefined ? 0 : slot.width * slot.height * window.devicePixelRatio ** 2,
+    };
+  });
+  // THE BOUND: a 1280 × 800 window touches at most 4 × 3 cells of 512, plus a margin of one each side — 6 × 5 tiles.
+  expect(drawn.tiles).toBeGreaterThan(0);
+  expect(drawn.pixels, `${String(drawn.tiles)} tiles hold ${String(drawn.pixels)} px`).toBeLessThanOrEqual(6 * 5 * 512 * 512);
+  // THE CONTROL FOR THE BOUND: the sheet itself is over a hundred million pixels, so the figure above is the window's.
+  expect(drawn.wholePage).toBeGreaterThan(100_000_000);
+});
+
+test('CONTROL: at or below the threshold the same sheet is ONE whole-page canvas, as before tiles', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openAt(page, await inkedPdf([2384, 3370]), { 'viewing.starting-zoom': '100pct' });
+  await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('canvas.m-page-tile')).toHaveCount(0);
+});
+
+// A TILE IS THE PAGE, CUT — never a different drawing of it. The same page at 300% drawn whole (threshold 300%) and in
+// tiles (threshold 200%), and the pixels either side of a seam between two tiles compared with the whole page's.
+test('a TILE SEAM draws exactly what the whole page draws there: no line, no shift, no resampling', async ({ browser }) => {
+  const bytes = await inkedPdf([612, 792]);
+  const readTiled = async (): Promise<{ seams: { x: number; y: number }[]; pixels: number[][] }> => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
+    const page = await context.newPage();
+    await openAt(page, bytes, { 'viewing.starting-zoom': '300pct', 'rendering.tile-threshold': 'above-200' });
+    await expect(page.locator('[data-page-tiles="0"] canvas.m-page-tile').first()).toBeVisible({ timeout: 20_000 });
+    await page.waitForTimeout(1500);
+    const result = await page.evaluate(() => {
+      const at = (canvas: HTMLCanvasElement, x: number, y: number): number[] => [
+        ...(canvas.getContext('2d')?.getImageData(x, y, 1, 1).data ?? []),
+      ];
+      // THE SEAMS OF THE TILED DRAWING, chosen from tiles actually drawn: a vertical boundary between two drawn
+      // neighbours, sampled 8 px either side, down 40 rows of its row of cells.
+      const drawnTiles = [...document.querySelectorAll<HTMLCanvasElement>('[data-page-tiles="0"] canvas.m-page-tile')].filter(
+        (tile) => tile.style.visibility !== 'hidden',
+      );
+      const byKey = new Map(drawnTiles.map((tile) => [tile.dataset['tile'] ?? '', tile]));
+      {
+        const pair = drawnTiles.find((tile) => {
+          const [c, r] = (tile.dataset['tile'] ?? '').split(',').map(Number);
+          return byKey.has(`${String((c ?? 0) + 1)},${String(r ?? 0)}`);
+        });
+        if (pair === undefined) return { seams: [], pixels: [] };
+        const [c = 0, r = 0] = (pair.dataset['tile'] ?? '').split(',').map(Number);
+        const right = byKey.get(`${String(c + 1)},${String(r)}`);
+        if (right === undefined) return { seams: [], pixels: [] };
+        const seams: { x: number; y: number }[] = [];
+        const pixels: number[][] = [];
+        for (let dy = 0; dy < 40; dy += 1) {
+          for (let dx = -8; dx < 8; dx += 1) {
+            const x = (c + 1) * 512 + dx;
+            const y = r * 512 + 100 + dy;
+            seams.push({ x, y });
+            pixels.push(dx < 0 ? at(pair, 512 + dx, 100 + dy) : at(right, dx, 100 + dy));
+          }
+        }
+        return { seams, pixels };
+      }
+    });
+    await context.close();
+    return result;
+  };
+  const tiled = await readTiled();
+  expect(tiled.seams.length, 'two drawn tiles side by side were found').toBeGreaterThan(0);
+
+  // THE WHOLE PAGE, read at the same device pixels.
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
+  const whole = await context.newPage();
+  await openAt(whole, bytes, { 'viewing.starting-zoom': '300pct', 'rendering.tile-threshold': 'above-300' });
+  await expect(whole.locator('canvas[data-page-canvas="0"]')).toBeVisible({ timeout: 20_000 });
+  await whole.waitForTimeout(1500);
+  const reference = await whole.evaluate((points) => {
+    const canvas = document.querySelector<HTMLCanvasElement>('canvas[data-page-canvas="0"]');
+    const context2d = canvas?.getContext('2d');
+    return points.map(({ x, y }) => [...(context2d?.getImageData(x, y, 1, 1).data ?? [])]);
+  }, tiled.seams);
+  await context.close();
+
+  // INK AT THE SEAM, or the comparison below is white against white and proves nothing.
+  expect(reference.some((pixel) => (pixel[0] ?? 255) < 160), 'the sampled region holds ink').toBe(true);
+  const worst = Math.max(
+    ...reference.map((pixel, at) => Math.max(...pixel.map((channel, index) => Math.abs(channel - (tiled.pixels[at]?.[index] ?? -999))))),
+  );
+  expect(worst, 'the largest channel difference between a tile and the whole page at the same pixel').toBeLessThanOrEqual(0);
+});
+
 // THE ORGANIZE GRID SPANS THE PAGE AREA (v5-09): measured 2026-09-28, it was a row flexbox's item with no grow, as wide
 // as its content — 631 of 1215 px at 1920, four columns and an empty half.
 test('the ORGANIZE GRID spans the whole page area at 1920 × 1080, as many columns as fit', async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
-  const document = await PDFDocument.create();
-  for (let at = 0; at < 24; at += 1) document.addPage([612, 792]);
-  const bytes = await document.save();
+  // NOT `document`: that name is the page's inside `evaluate` below, and shadowing it typed every call there as pdf-lib's.
+  const pdf = await PDFDocument.create();
+  for (let at = 0; at < 24; at += 1) pdf.addPage([612, 792]);
+  const bytes = await pdf.save();
   const docId = asDocId('00000000-0000-4000-8000-0000000000e5');
   await bridge(page, {
     opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'lease.pdf' }],

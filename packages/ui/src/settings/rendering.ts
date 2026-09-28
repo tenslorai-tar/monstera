@@ -1,6 +1,17 @@
 import { z } from 'zod';
 
-import { PRINT_DPI, PRINT_DPI_150, PRINT_DPI_300, PRINT_DPI_600, PRINT_QUALITY_DESCRIPTION } from '../messages/en.js';
+import {
+  PRINT_DPI,
+  PRINT_DPI_150,
+  PRINT_DPI_300,
+  PRINT_DPI_600,
+  PRINT_QUALITY_DESCRIPTION,
+  STARTING_ZOOM_150,
+  STARTING_ZOOM_200,
+  STARTING_ZOOM_300,
+  TILE_THRESHOLD_DESCRIPTION,
+  TILE_THRESHOLD_TITLE,
+} from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
 
 /**
@@ -22,6 +33,35 @@ export const PRINT_QUALITY_SETTING: SettingDefinition<z.ZodEnum<{ draft: 'draft'
   };
 
 export type PrintQuality = z.infer<(typeof PRINT_QUALITY_SETTING)['schema']>;
+
+/**
+ * The zoom above which a page is drawn in TILES — Part F's *"tile threshold"* (`BUILD-PROMPT.md`:613), E1's *"above a
+ * zoom threshold, render tiles, not whole pages, to keep memory bounded at 400%+"* (:533).
+ *
+ * **Every member tiles at 400%**, the ladder's top, so no choice here can put back the whole-page canvas the rule
+ * exists to bound. **200% by default**: below it a whole page is at most about 32 MB on a display at 2×, and it is drawn
+ * once, where tiles are drawn as a person scrolls. Members are words, not numbers — the registry refuses a member that
+ * reads as an array index.
+ */
+export const TILE_THRESHOLD_SETTING: SettingDefinition<
+  z.ZodEnum<{ 'above-150': 'above-150'; 'above-200': 'above-200'; 'above-300': 'above-300' }>
+> = {
+  id: 'rendering.tile-threshold',
+  title: TILE_THRESHOLD_TITLE,
+  description: TILE_THRESHOLD_DESCRIPTION,
+  schema: z.enum(['above-150', 'above-200', 'above-300']),
+  fallback: 'above-200',
+  category: 'rendering',
+  // THE STARTING ZOOM'S OWN WORDS for the same three percentages, so one figure is never spelt twice.
+  optionTitles: { 'above-150': STARTING_ZOOM_150, 'above-200': STARTING_ZOOM_200, 'above-300': STARTING_ZOOM_300 },
+};
+
+/** Each member's zoom, as the scale the page list compares `renderZoom` against. */
+export const TILE_THRESHOLD_ZOOM: Readonly<Record<z.infer<(typeof TILE_THRESHOLD_SETTING)['schema']>, number>> = {
+  'above-150': 1.5,
+  'above-200': 2,
+  'above-300': 3,
+};
 
 /** Each quality's resolution — `document.print`'s three values, which the dialog's answer also carries. */
 export const PRINT_QUALITY_DPI: Readonly<Record<PrintQuality, 150 | 300 | 600>> = {

@@ -337,6 +337,7 @@ import {
   highContrastWanted,
 } from './settings/appearance.js';
 import { ACCENT_SETTING, applyAccent } from './settings/accent.js';
+import { TILE_THRESHOLD_SETTING, TILE_THRESHOLD_ZOOM } from './settings/rendering.js';
 import {
   DARK_PAGE_SETTING,
   GRID_SETTING,
@@ -2202,6 +2203,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   /** The document the second pane compares against, while it is still open. */
   const compared = tabs.find((tab) => tab.docId === compareId);
   const secondRenderer = useSetting(settings, SECOND_RENDERER_SETTING);
+  // E1's TILE THRESHOLD, as the scale a page list compares its settled zoom against.
+  const tileAbove = TILE_THRESHOLD_ZOOM[useSetting(settings, TILE_THRESHOLD_SETTING)];
 
   /**
    * The updater the zoom commands are given.
@@ -3058,6 +3061,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onCompare={setCompareId}
           search={search ?? undefined}
           secondRenderer={secondRenderer}
+          tileAbove={tileAbove}
           requestPassword={requestPassword}
           settings={settings}
           // §10.3's RIGHT CONTEXTUAL PANEL, built here where its state lives, and hosted by
@@ -3448,6 +3452,7 @@ function PageCanvas({
   panning,
   search,
   secondRenderer,
+  tileAbove,
   settings,
   panels,
   contextPanel,
@@ -3521,6 +3526,8 @@ function PageCanvas({
   readonly search: SearchHighlight | undefined;
   /** Whether §6.1's second engine draws the pages. `viewing.second-renderer`. */
   readonly secondRenderer: boolean;
+  /** The zoom above which pages draw in tiles (E1), as a scale. `rendering.tile-threshold`. */
+  readonly tileAbove: number;
   /** The settings store, for the document panel's which-panel and open state. */
   readonly settings: SettingsStore;
   /** The document panels other than Pages, built by `App` where their state lives. */
@@ -3791,6 +3798,7 @@ function PageCanvas({
         // absent rasteriser and for one that answers `null`, so the two states
         // reach the same code and neither can leave a page blank.
         secondRasteriser={secondRenderer ? secondRasteriser : undefined}
+        tileAbove={tileAbove}
         pageMenu={pageMenu}
       />
       {/* THE SECOND VIEWPORT, over the SAME parser.
@@ -3841,6 +3849,7 @@ function PageCanvas({
             rulers={rulers}
             showGrid={showGrid}
             unit={unit}
+            tileAbove={tileAbove}
           />
           {compare === undefined ? (
             <PageList
@@ -3882,6 +3891,7 @@ function PageCanvas({
               // halves were rasterised differently would show a difference the
               // document does not have.
               secondRasteriser={secondRenderer ? secondRasteriser : undefined}
+              tileAbove={tileAbove}
               // THE SAME DOCUMENT, so the same page menu: a page right-clicked in either pane is a
               // page of this document.
               pageMenu={pageMenu}

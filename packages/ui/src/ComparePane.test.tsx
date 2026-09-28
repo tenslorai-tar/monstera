@@ -115,6 +115,7 @@ function pane(against: DocId | undefined, onPick = vi.fn(), onCurrentPage = vi.f
         rulers={false}
         showGrid={false}
         unit="in"
+        tileAbove={2}
       />
     </Wrapped>,
   );
