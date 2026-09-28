@@ -97,3 +97,44 @@
 - Stage 10's packaging owes `oauth-clients.json` and a check that it is not in the repository.
 - Each provider's live run is sign in, open, edit, save back, reopen — and it needs the owner's
   browser, so it is theirs to perform or watch.
+
+## Correction, 2026-09-29 — Google's Picker is part of the sign-in, and needs no key and no page
+
+Decision 7 said the Picker *"needs an API key and a web page of Google's script"*, and the owner's list of
+28 September asked for it on the loopback browser page with the API key and project number from build
+configuration. That was the web Picker's shape. **Google's desktop Picker is a different mechanism**, it is what a
+desktop client is offered, and the owner chose it on 2026-09-29 when the two were put side by side.
+
+### Source read, 2026-09-29
+
+Google for Developers, *Integrate the Google Picker into desktop and mobile apps* (last updated 2026-09-14, general
+availability): the Picker opens in the system browser as part of the OAuth authorization request. `prompt=consent`
+and `trigger_onepick=true` are added to `accounts.google.com/o/oauth2/v2/auth`; optional `allow_multiple`,
+`mimetypes`, `file_ids`, `allow_folder_selection`. The redirect carries `picked_file_ids` — a comma-separated list —
+beside `code` and `scope`, or `error` when the person cancels. **Only `drive.file` is permitted, and it cannot be
+combined with any other scope.** The Picker *"imposes no additional restrictions"* on the redirect URI. The Cloud
+project must have the **Google Picker API** enabled. The page names no API key and no project number for desktop
+clients.
+
+### Corrected decision
+
+7. **Google's scope is `drive.file`, and a person reaches any PDF in their Drive through the Picker, which is the
+   sign-in with two parameters more.** *Choose a file in Google Drive…* runs ADR-0059's loopback sign-in with
+   `trigger_onepick=true` and `mimetypes=application/pdf` (the provider's extras already send `prompt=consent`); the
+   redirect's `picked_file_ids` names the file, the code is exchanged as for any sign-in, and the file opens as a
+   local working copy by Decision 6. No API key, no project number, no Google script and no page of this
+   application's: the browser shows Google's own Picker, and what returns to `main` is the redirect it already takes.
+
+- **The loopback sign-in hands back the redirect parameters its caller names**, beside the code: `picked_file_ids`
+  for this caller, nothing for the others. One function still, ADR-0059's.
+- **A picked id is an opaque string from a redirect**, checked against Drive's id alphabet and length before it is
+  used in a request path, and only the first is opened — no `allow_multiple`.
+- **A Picker that returns no file** is its own refusal, `nothing-picked`, said by name.
+
+### Rejected
+
+- **The web Picker on a loopback page** — the route as first asked. It needs an API key and the project number in
+  the package, Google's `apis.google.com` script loaded by a page this application serves, and the sign-in's token
+  handed into that page: three things this route needs none of, for the same Picker.
+- **`drive.readonly` or `drive`** to list every file: restricted scopes needing Google's verification, and more access
+  than choosing one file needs.
