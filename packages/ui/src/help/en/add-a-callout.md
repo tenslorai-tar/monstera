@@ -20,7 +20,7 @@ A callout is a text box joined by a line to the spot it describes.
 ## Good to know
 
 - The line is straight; a bent line is not available yet.
-- Colour, opacity and font size come from the **Properties** tab.
+- Colour, opacity and font size come from the **Properties** tab. The typeface is **Annotation font** in **Settings**, on the **Editing defaults** page.
 - Undo with **Ctrl+Z**.
 
 <!--

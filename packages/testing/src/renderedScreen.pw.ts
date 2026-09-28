@@ -2553,6 +2553,58 @@ for (const [typed, expected] of [
   });
 }
 
+// THE FACE A NEW TEXT BOX IS SET IN, as the App composes it: `editing.annotation-font` read into the tools' style and
+// carried on the command the page SENDS. The kernel's case proves each face lands in the document; this one crosses
+// the join between the stored setting and the tool, which no unit case holds. The first row is the control — nothing
+// stored, the sans default.
+for (const [stored, expected] of [
+  [undefined, 'sans'],
+  ['mono', 'mono'],
+] as const) {
+  test(`a new text box is set in ${expected} when the font setting is ${stored ?? 'unset'}`, async ({ page }) => {
+    const bytes = await onePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000ca');
+    const sent: unknown[] = [];
+    await bridge(
+      page,
+      {
+        settings: stored === undefined ? {} : { 'editing.annotation-font': stored },
+        opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'font.pdf' }],
+        documentBytes: new Map([[docId, bytes]]),
+      },
+      (channel, params) => {
+        if (channel === 'document.execute') sent.push(params);
+      },
+    );
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('Text box');
+    await page.keyboard.press('Enter');
+    const surface = page.getByLabel('Draw on page 1');
+    const box = await surface.boundingBox();
+    const x = (box?.x ?? 0) + 60;
+    const y = (box?.y ?? 0) + 60;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + 160, y + 60, { steps: 4 });
+    await page.mouse.up();
+    const dialog = page.getByRole('dialog', { name: 'Text box' });
+    await dialog.getByLabel('Text').fill('see figure 3');
+    await dialog.getByRole('button', { name: 'Add text box' }).click();
+
+    const fonts = (): unknown[] =>
+      sent.flatMap((params) => {
+        const command = (params as { readonly command?: { readonly kind?: string; readonly annotation?: { readonly font?: unknown } } })
+          .command;
+        return command?.kind === 'addAnnotation' ? [command.annotation?.font] : [];
+      });
+    await expect.poll(fonts).toStrictEqual([expected]);
+  });
+}
+
 // EDIT TEXT IN PLACE (ADR-0096), in every theme: the outlines sit over their words on the drawn
 // page, the editor opens over a block, and nothing on that screen fails the gate.
 for (const look of LOOKS) {

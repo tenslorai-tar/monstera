@@ -1064,6 +1064,14 @@ export const EDITING_AUTHOR_NAME_DESCRIPTION = messageKey('setting.editing.autho
 export const EDITING_OPACITY_TITLE = messageKey('setting.editing.annotation-opacity');
 export const EDITING_LINE_WIDTH_TITLE = messageKey('setting.editing.annotation-line-width');
 export const EDITING_FONT_SIZE_TITLE = messageKey('setting.editing.annotation-font-size');
+export const EDITING_FONT_TITLE = messageKey('setting.editing.annotation-font.title');
+export const EDITING_FONT_DESCRIPTION = messageKey('setting.editing.annotation-font.description');
+/** `editing.annotation-font`'s members, each its own exported key as the other option sets are. */
+export const EDITING_FONT_OPTION_TITLES = {
+  sans: messageKey('setting.editing.annotation-font.sans'),
+  serif: messageKey('setting.editing.annotation-font.serif'),
+  mono: messageKey('setting.editing.annotation-font.mono'),
+} as const;
 export const EDITING_IMAGE_PAGES_TITLE = messageKey('setting.editing.image-pages');
 export const STYLE_PANEL_LABEL = messageKey('surface.style.label');
 export const COMMENT_STYLES_NO_WIDTH = messageKey('surface.comment-styles.no-width');
@@ -2843,6 +2851,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EDITING_OPACITY_TITLE]: 'Annotation opacity',
   [EDITING_LINE_WIDTH_TITLE]: 'Annotation line width',
   [EDITING_FONT_SIZE_TITLE]: 'Annotation font size',
+  [EDITING_FONT_TITLE]: 'Annotation font',
+  [EDITING_FONT_DESCRIPTION]:
+    'The typeface new text boxes, callouts and typed text are set in. All three are built into every PDF reader, so the words look the same wherever the file is opened.',
+  [EDITING_FONT_OPTION_TITLES.sans]: 'Sans serif (Helvetica)',
+  [EDITING_FONT_OPTION_TITLES.serif]: 'Serif (Times)',
+  [EDITING_FONT_OPTION_TITLES.mono]: 'Monospace (Courier)',
   [EDITING_IMAGE_PAGES_TITLE]: 'Place images on',
   [STYLE_PANEL_LABEL]: 'Annotation style',
   // SAID RATHER THAN SHOWN AS ZERO. Six subtypes have no `/BS` at all, and a 0

@@ -95,6 +95,7 @@ describe('calloutTool', () => {
         colour: [0.85, 0.15, 0.15],
         opacity: 1,
         fontSize: 12,
+        font: 'sans',
       },
     });
     expect(asked).toStrictEqual([CALLOUT_DIALOG_ID]);

@@ -18,7 +18,7 @@ The Typewriter adds your text straight onto the page with no border, which is ha
 
 ## Good to know
 
-- Font size and colour come from the **Properties** tab. The font itself cannot be chosen yet.
+- Font size and colour come from the **Properties** tab. The typeface is **Annotation font** in **Settings**, on the **Editing defaults** page.
 - For text inside a bordered box, use "Add a text box".
 - Undo with **Ctrl+Z**.
 

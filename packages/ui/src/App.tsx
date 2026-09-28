@@ -367,6 +367,7 @@ import {
 import {
   ANNOTATION_COLOUR_SETTING,
   ANNOTATION_FONT_SIZE_SETTING,
+  ANNOTATION_FONT_SETTING,
   ANNOTATION_LINE_WIDTH_SETTING,
   ANNOTATION_OPACITY_SETTING,
   IMAGE_PAGES_SETTING,
@@ -1913,6 +1914,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const styleOpacity = useSetting(settings, ANNOTATION_OPACITY_SETTING);
   const styleLineWidth = useSetting(settings, ANNOTATION_LINE_WIDTH_SETTING);
   const styleFontSize = useSetting(settings, ANNOTATION_FONT_SIZE_SETTING);
+  const styleFont = useSetting(settings, ANNOTATION_FONT_SETTING);
   // THE RESOLUTION IS `styleFrom`'s, where its cases are — a stored value it cannot
   // read, `'auto'` among them, hands each tool its own colour.
   const style = useMemo<AnnotationStyle>(
@@ -1922,8 +1924,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         opacity: styleOpacity,
         lineWidth: styleLineWidth,
         fontSize: styleFontSize,
+        font: styleFont,
       }),
-    [styleColour, styleFontSize, styleLineWidth, styleOpacity],
+    [styleColour, styleFont, styleFontSize, styleLineWidth, styleOpacity],
   );
 
   /**

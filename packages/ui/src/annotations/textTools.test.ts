@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ANNOTATION_TEXT_DIALOG_ID } from '../dialogs/annotationText.js';
 import { overlayTransform } from './annotationSpace.js';
-import { PLAIN_STYLE } from './annotationStyle.js';
+import { type AnnotationStyle, PLAIN_STYLE } from './annotationStyle.js';
 import { TEXT_BOX_TOOL_ID, textBoxTool } from './textTools.js';
 
 /**
@@ -26,7 +26,10 @@ const PAGE: Parameters<typeof overlayTransform>[0] = {
 };
 
 /** A tool whose dialog answers `answer`, and the record of what it was asked. */
-function toolAnswering(answer: unknown): {
+function toolAnswering(
+  answer: unknown,
+  style: AnnotationStyle = PLAIN_STYLE,
+): {
   readonly tool: ReturnType<typeof textBoxTool>;
   readonly asked: { id: string; props: unknown }[];
 } {
@@ -36,7 +39,7 @@ function toolAnswering(answer: unknown): {
       asked.push({ id, props });
       return Promise.resolve(answer);
     },
-    style: PLAIN_STYLE,
+    style,
   });
   return { tool, asked };
 }
@@ -78,8 +81,17 @@ describe('textBoxTool', () => {
         colour: [0.1, 0.1, 0.1],
         opacity: 1,
         fontSize: 12,
+        font: 'sans',
       },
     });
+  });
+
+  it('sets the words in the reader’s chosen FACE (`editing.annotation-font`) — the case above, on sans, is the control', async () => {
+    const { tool } = toolAnswering({ text: 'see figure 3' }, { ...PLAIN_STYLE, font: 'serif' });
+    const command = await drag(tool, [20, 20], [120, 80]);
+    expect(command?.kind === 'addAnnotation' && command.annotation.type === 'text-box' ? command.annotation.font : undefined).toBe(
+      'serif',
+    );
   });
 
   it('sends NOTHING when the dialog is dismissed', async () => {

@@ -1,4 +1,4 @@
-import type { AnnotationColour, AnnotationOpacity } from '@monstera/contract';
+import type { AnnotationColour, AnnotationFont, AnnotationOpacity } from '@monstera/contract';
 
 // A VALUE IMPORT FROM A TOOL MODULE, and not a cycle: `shapeTools.ts` takes
 // `AnnotationStyle` from here as a type only, which the compiler erases.
@@ -37,6 +37,8 @@ export interface AnnotationStyle {
   readonly lineWidth: number;
   /** Point size, for the tools that set text. */
   readonly fontSize: number;
+  /** Typeface, for the tools that set text (`editing.annotation-font`). */
+  readonly font: AnnotationFont;
 }
 
 /**
@@ -54,6 +56,7 @@ export const PLAIN_STYLE: AnnotationStyle = {
   opacity: 1,
   lineWidth: 2,
   fontSize: 12,
+  font: 'sans',
 };
 
 /**
@@ -124,6 +127,7 @@ export function styleFrom(stored: {
   readonly opacity: AnnotationOpacity;
   readonly lineWidth: number;
   readonly fontSize: number;
+  readonly font: AnnotationFont;
 }): AnnotationStyle {
   const chosen = colourFromHex(stored.colour);
   return {
@@ -131,5 +135,6 @@ export function styleFrom(stored: {
     opacity: stored.opacity,
     lineWidth: stored.lineWidth,
     fontSize: stored.fontSize,
+    font: stored.font,
   };
 }

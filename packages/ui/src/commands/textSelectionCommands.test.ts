@@ -46,7 +46,7 @@ function recording(selection: TextSelection | undefined): { deps: TextSelectionD
     deps: {
       selection: () => selection,
       place: (command) => placed.push(command),
-      style: () => styleFrom({ colour: 'auto', opacity: 1, lineWidth: 1, fontSize: 12 }),
+      style: () => styleFrom({ colour: 'auto', opacity: 1, lineWidth: 1, fontSize: 12, font: 'sans' }),
       search: (text) => searched.push(text),
       copy: () => copies.push(1),
     },

@@ -168,6 +168,7 @@ function boxTextTool(
           colour: deps.style.colour(TEXT_COLOUR),
           opacity: deps.style.opacity,
           fontSize: deps.style.fontSize,
+          font: deps.style.font,
         },
       };
     },

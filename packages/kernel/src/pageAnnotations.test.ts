@@ -13,6 +13,7 @@ import {
 import {
   KEEPS_THE_ANNOTATION_WALK,
   type AnnotationDraft,
+  type AnnotationFont,
   type AnnotationRect,
   type CommandOfKind,
 } from '@monstera/contract';
@@ -459,7 +460,7 @@ describe('applyAddAnnotation writes a text box as the format defines one', () =>
     text: 'see figure 3',
     colour: [0.1, 0.1, 0.1],
     opacity: 1,
-    fontSize: 12,
+    fontSize: 12, font: 'sans',
   };
 
   it('puts the words in /Contents, which is where a FreeText keeps them', async () => {
@@ -482,6 +483,26 @@ describe('applyAddAnnotation writes a text box as the format defines one', () =>
     const { appearance } = await freeTextIn(drawn);
     expect(appearance).toMatch(/Helv/u);
     expect(appearance).toMatch(/\b12\b/u);
+  });
+
+  it('sets it in the FACE ASKED FOR: each of the three lands in /DA and as its own base-14 font in the appearance', async () => {
+    // READ BACK WITH A SECOND LIBRARY (pdf-lib), not the writer's getter: a getter answering what the setter was
+    // given proves nothing about what was stored. The appearance's `/Font` is what a viewer paints with.
+    const faces = { sans: ['Helv', 'Helvetica'], serif: ['TiRo', 'Times-Roman'], mono: ['Cour', 'Courier'] } as const;
+    for (const [font, [resource, base]] of Object.entries(faces) as [AnnotationFont, readonly [string, string]][]) {
+      const drawn = await drawnOn(await fixture(), command({ annotation: { ...TEXT_BOX, font } }));
+      expect((await freeTextIn(drawn)).appearance, font).toContain(`/${resource} 12 Tf`);
+      const loaded = await PDFDocument.load(drawn, { updateMetadata: false });
+      const annots = loaded.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+      const [first] = annots instanceof PDFArray ? annots.asArray() : [];
+      const dict = first instanceof PDFRef ? loaded.context.lookup(first, PDFDict) : undefined;
+      const normal = dict?.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N'));
+      const resources = normal instanceof PDFStream ? normal.dict.lookup(PDFName.of('Resources'), PDFDict) : undefined;
+      const face = resources?.lookup(PDFName.of('Font'), PDFDict).lookup(PDFName.of(resource), PDFDict);
+      // CONTROL by construction: three faces, three different base fonts — a mapping that sent every face to
+      // Helvetica, which is what MuPDF does to a name outside the base 14, fails the second and third.
+      expect(face?.lookup(PDFName.of('BaseFont'))?.toString(), font).toBe(`/${base}`);
+    }
   });
 
   it('gives it an appearance stream, so a viewer draws the words rather than a box', async () => {
@@ -2301,7 +2322,7 @@ describe('applyAddAnnotation tells a typewriter from a text box', () => {
     text: 'in a box',
     colour: [0.1, 0.1, 0.1],
     opacity: 1,
-    fontSize: 12,
+    fontSize: 12, font: 'sans',
   };
   const TYPED: AnnotationDraft = {
     type: 'typewriter',
@@ -2309,7 +2330,7 @@ describe('applyAddAnnotation tells a typewriter from a text box', () => {
     text: 'on the page',
     colour: [0.1, 0.1, 0.1],
     opacity: 1,
-    fontSize: 12,
+    fontSize: 12, font: 'sans',
   };
 
   async function both(): Promise<Uint8Array> {
@@ -2373,7 +2394,7 @@ describe('applyAddAnnotation writes a callout the format recognises', () => {
     text: 'see this',
     colour: [0.85, 0.15, 0.15],
     opacity: 1,
-    fontSize: 12,
+    fontSize: 12, font: 'sans',
   };
 
   /** The `/FreeText`'s raw entries, read with pdf-lib. */
@@ -2431,7 +2452,7 @@ describe('applyAddAnnotation writes a callout the format recognises', () => {
       text: 'plain',
       colour: [0, 0, 0],
       opacity: 1,
-      fontSize: 12,
+      fontSize: 12, font: 'sans',
     };
     const both = await drawnOn(
       await drawnOn(await fixture(), command({ annotation: plain })),

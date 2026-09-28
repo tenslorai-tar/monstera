@@ -978,6 +978,21 @@ export const MIN_ANNOTATION_FONT = 1;
 export const MAX_ANNOTATION_FONT = 1296;
 
 /**
+ * The typeface a text box, callout or typewriter is set in — Part F's *"font"* among the editing defaults.
+ *
+ * **Three, each a base-14 face**, named by what a reader sees rather than by the engine's resource name: every viewer
+ * has these, so nothing is embedded and nothing can go missing on another machine. The kernel maps each to the name
+ * MuPDF writes (`Helv`, `TiRo`, `Cour`); measured 2026-09-28 on MuPDF 1.28.0, each lands in `/DA` and in the
+ * appearance's `/Font` as `Helvetica`, `Times-Roman` and `Courier` Type1, and a name outside the base 14 is silently
+ * rewritten to `Helv` — which is why the choice is an enum here rather than a string passed through.
+ */
+export const ANNOTATION_FONTS = ['sans', 'serif', 'mono'] as const;
+
+export const annotationFontSchema = z.enum(ANNOTATION_FONTS);
+
+export type AnnotationFont = z.infer<typeof annotationFontSchema>;
+
+/**
  * How many points one ink stroke may carry.
  *
  * The renderer keeps points two CSS pixels apart, so this is over eight
@@ -1624,6 +1639,8 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
        * that has to grow later is the one it rejected.
        */
       fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
+      /** The typeface, {@link ANNOTATION_FONTS}. */
+      font: annotationFontSchema,
     })
     .strict(),
   z
@@ -1844,6 +1861,8 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       colour: annotationColourSchema,
       opacity: annotationOpacitySchema,
       fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
+      /** The typeface, {@link ANNOTATION_FONTS}. */
+      font: annotationFontSchema,
     })
     .strict(),
   z
@@ -1875,6 +1894,8 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       colour: annotationColourSchema,
       opacity: annotationOpacitySchema,
       fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
+      /** The typeface, {@link ANNOTATION_FONTS}. */
+      font: annotationFontSchema,
     })
     .strict(),
 ]);

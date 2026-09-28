@@ -1,6 +1,7 @@
 import {
   type AnnotationBlend,
   type AnnotationDraft,
+  type AnnotationFont,
   type AnnotationKindName,
   type AnnotationPoint,
   type AnnotationRect,
@@ -694,6 +695,13 @@ function measureDictionary(draft: MeasureDraft, document: PDFDocument): PDFObjec
   return measure;
 }
 
+/**
+ * Each typeface a text mark may be set in, as the base-14 resource name MuPDF writes into `/DA` and the appearance's
+ * `/Font` — Helvetica, Times-Roman and Courier (measured 2026-09-28, MuPDF 1.28.0). A record over the contract's list,
+ * so a face added there is a compile error here rather than a name MuPDF rewrites to `Helv` in silence.
+ */
+const BASE14_FACE: Readonly<Record<AnnotationFont, string>> = { sans: 'Helv', serif: 'TiRo', mono: 'Cour' };
+
 const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T>> } = {
   square: outlineKind('Square'),
   circle: outlineKind('Circle'),
@@ -836,11 +844,9 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
       // resource dictionary the font name resolves through, and a `/DA` naming
       // a font no `/DR` carries renders as nothing.
       //
-      // `Helv` is the base-14 Helvetica every viewer has. A chosen font is the
-      // style controls' to supply, and until then a face that needs no
-      // embedding is the one that cannot produce a document whose text is
-      // missing on another machine.
-      annotation.setDefaultAppearance('Helv', draft.fontSize, [...draft.colour]);
+      // THE FACE A PERSON CHOSE, as the base-14 name MuPDF writes (`BASE14_FACE`): a face every viewer has, so
+      // nothing is embedded and nothing can go missing on another machine.
+      annotation.setDefaultAppearance(BASE14_FACE[draft.font], draft.fontSize, [...draft.colour]);
       // NOTHING SETS A BORDER HERE, AND THE OBJECT HAS ONE. Measured
       // 2026-09-06: `createAnnotation('FreeText')` on MuPDF 1.28.0 produces
       // `/AP /BS /CL /Contents /DA /F /P /RD /Rect /Subtype /Type` — so a `/BS`
@@ -887,7 +893,7 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
     write: (annotation, draft, transform, on): void => {
       annotation.setRect(placedRect(draft.rect, transform));
       annotation.setContents(draft.text);
-      annotation.setDefaultAppearance('Helv', draft.fontSize, [...draft.colour]);
+      annotation.setDefaultAppearance(BASE14_FACE[draft.font], draft.fontSize, [...draft.colour]);
       // NO BORDER, which is the whole difference from the row above and is why
       // that row now sets one. MuPDF's own default is already this, so nothing
       // is called — stated rather than left as an absence somebody removes.
@@ -906,7 +912,7 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
     write: (annotation, draft, transform, on): void => {
       annotation.setRect(placedRect(draft.rect, transform));
       annotation.setContents(draft.text);
-      annotation.setDefaultAppearance('Helv', draft.fontSize, [...draft.colour]);
+      annotation.setDefaultAppearance(BASE14_FACE[draft.font], draft.fontSize, [...draft.colour]);
       const [at] = placedPoints([draft.at], transform);
       if (at === undefined) throw new Error('a callout has a point it leads from');
       // `setCalloutPoint` RATHER THAN `setCalloutLine`, and the difference is a

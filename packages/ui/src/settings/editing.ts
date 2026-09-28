@@ -1,5 +1,7 @@
 import {
+  type AnnotationFont,
   annotationAuthorSchema,
+  annotationFontSchema,
   annotationOpacitySchema,
   MAX_ANNOTATION_BORDER,
   MAX_ANNOTATION_FONT,
@@ -16,7 +18,10 @@ import {
   EDITING_AUTHOR_NAME_DESCRIPTION,
   EDITING_AUTHOR_NAME_TITLE,
   EDITING_COLOUR_TITLE,
+  EDITING_FONT_DESCRIPTION,
+  EDITING_FONT_OPTION_TITLES,
   EDITING_FONT_SIZE_TITLE,
+  EDITING_FONT_TITLE,
   EDITING_IMAGE_PAGES_TITLE,
   EDITING_LINE_WIDTH_TITLE,
   EDITING_OPACITY_TITLE,
@@ -357,6 +362,21 @@ export const ANNOTATION_FONT_SIZE_SETTING: SettingDefinition<z.ZodNumber> = {
   schema: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
   fallback: 12,
   category: 'editing',
+};
+
+/**
+ * What typeface a new text box, callout or typewriter is set in — Part F's *"font"* (`BUILD-PROMPT.md`:614). One of the
+ * contract's three base-14 faces, so what a person picks is what every viewer draws; *Sans serif* by default, the
+ * Helvetica every text mark was set in before this was a choice.
+ */
+export const ANNOTATION_FONT_SETTING: SettingDefinition<z.ZodEnum<{ [K in AnnotationFont]: K }>> = {
+  id: 'editing.annotation-font',
+  title: EDITING_FONT_TITLE,
+  description: EDITING_FONT_DESCRIPTION,
+  schema: annotationFontSchema,
+  fallback: 'sans',
+  category: 'editing',
+  optionTitles: EDITING_FONT_OPTION_TITLES,
 };
 
 /**
