@@ -972,6 +972,13 @@ export type UpdateStatus = z.infer<typeof updateStatusSchema>;
 export const REVIEW_PROMPTS_SETTING_ID = 'advanced.review-prompts';
 
 /**
+ * Whether the first-run AI setup is offered at start; a Skip stores `false`. Named here because more than the
+ * renderer spells it: every harness that drives the shipped shell starts past the first run by storing this, and the
+ * first run is its own case — two spellings of one id is a harness that silently starts on the first run again.
+ */
+export const AI_SETUP_AT_START_SETTING_ID = 'ai.setup-at-start';
+
+/**
  * A link's rectangle, in the page's own units.
  *
  * ## `z.number()` ALREADY refuses `Infinity` and `NaN` here, and that matters

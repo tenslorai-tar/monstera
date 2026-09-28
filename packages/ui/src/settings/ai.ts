@@ -1,6 +1,7 @@
 import {
   AI_PROVIDERS,
   AI_PROVIDER_IDS,
+  AI_SETUP_AT_START_SETTING_ID,
   type AiProviderId,
   ANTHROPIC_KEY_SETTING_ID,
   AZURE_OPENAI_ENDPOINT_SETTING_ID,
@@ -108,7 +109,7 @@ export const AZURE_OPENAI_ENDPOINT_SETTING: SettingDefinition<z.ZodString> = {
  * is not asked again.
  */
 export const AI_SETUP_AT_START_SETTING: SettingDefinition<z.ZodBoolean> = {
-  id: 'ai.setup-at-start',
+  id: AI_SETUP_AT_START_SETTING_ID,
   title: AI_SETUP_AT_START_TITLE,
   description: AI_SETUP_AT_START_DESCRIPTION,
   schema: z.boolean(),

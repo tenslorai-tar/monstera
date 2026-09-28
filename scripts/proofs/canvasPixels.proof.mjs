@@ -181,7 +181,9 @@ const RUNTIME_CASES = [
   'the canvas is EXACTLY the page at the zoom, which is the rasteriser honouring the scale',
   'the zoomed canvas CARRIES A DRAWN PAGE, so the bigger bitmap is not a stretched empty one',
   'the window shows the CONTROLS OVERLAY, and leaves the menu bar a narrower area than the window',
-  'main PAINTED the overlay in the colour the page shows beneath the controls, read off the same running window',
+  'the ground is read with NO DIALOG over the page, the state the controls sit on in use',
+  'main PAINTED the overlay in a colour the page shows beneath the controls, read off the same running window',
+  'CONTROL: the span beneath the controls REFUSES the overlay’s symbol colour, so a pass above means something',
   "the overlay SETTLES at the menu bar's own height, so the two do not grow each other",
 ];
 
@@ -194,6 +196,21 @@ const roster = createRoster(failures, {
 
 /** @type {string[]} */
 const recorded = [];
+
+/**
+ * Whether `hex` lies within `span` on every channel: a colour the page itself shows somewhere in the rectangle.
+ *
+ * @param {string} hex `#rrggbb`
+ * @param {{ low: readonly number[], high: readonly number[] }} span
+ */
+function withinSpan(hex, span) {
+  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/iu.exec(hex);
+  if (match === null) return false;
+  return [match[1], match[2], match[3]].every((pair, channel) => {
+    const value = Number.parseInt(pair ?? '', 16);
+    return value >= (span.low[channel] ?? 256) && value <= (span.high[channel] ?? -1);
+  });
+}
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -408,22 +425,50 @@ try {
         `over its end.`,
     );
 
-    const last = overlay.painted.at(-1);
+    // THE STATE THE GROUND IS READ IN, asserted on what the harness passes rather than on what the read produces: the
+    // colour case below passed with the first-run AI setup open over the page, its backdrop dimming and blurring the
+    // ground, because the dimmed span still held the overlay's colour (2026-09-28). The harness starts past the first
+    // run; this is what says it did.
     check(
-      'main PAINTED the overlay in the colour the page shows beneath the controls, read off the same running window',
-      last !== undefined &&
-        overlay.groundBeneathControls !== null &&
-        last.color === overlay.groundBeneathControls,
+      'the ground is read with NO DIALOG over the page, the state the controls sit on in use',
+      overlay.dialogsOpen === 0,
+      `${String(overlay.dialogsOpen)} dialog(s) were open when the ground beneath the controls was read. A fresh ` +
+        `profile has no AI key, so the first-run setup opens over everything unless the harness stores what a Skip ` +
+        `stores (\`AI_SETUP_AT_START_SETTING_ID\`, false).`,
+    );
+
+    const last = overlay.painted.at(-1);
+    const span = overlay.groundBeneathControls;
+    const spanText =
+      span === null ? 'nothing (an empty capture)' : `R ${String(span.low[0])}–${String(span.high[0])}, G ` +
+        `${String(span.low[1])}–${String(span.high[1])}, B ${String(span.low[2])}–${String(span.high[2])} over ` +
+        `${String(span.pixels)} pixel(s)`;
+    check(
+      'main PAINTED the overlay in a colour the page shows beneath the controls, read off the same running window',
+      last !== undefined && span !== null && withinSpan(last.color, span),
       `the attached window was asked to paint ${String(overlay.painted.length)} overlay(s), the last ` +
-        `${JSON.stringify(last ?? null)}; the page's pixel beneath the controls is ` +
-        `${String(overlay.groundBeneathControls)}.\n      ` +
+        `${JSON.stringify(last ?? null)}; beneath the controls the page shows ${spanText}.\n      ` +
+        `A SPAN, NOT A PIXEL: the ground there is a gradient under a grain texture, so no one colour equals it ` +
+        `everywhere, and the overlay can take only one. Until 2026-09-28 this compared one pixel, which equalled the ` +
+        `overlay only by where the gradient's stops fell; the surface's height changed and it read #060a08 against ` +
+        `#060b09, inside a span of R 6–9, G 10–13, B 7–10.\n      ` +
         `NONE means the renderer never reported, or the shell never attached — the channel answers \`applied: false\` ` +
         `for the second, which the renderer does not surface. A DIFFERENT colour means the renderer read something ` +
         `other than what shows there, or reported before the theme applied and never again.\n      ` +
-        `THE PIXEL, NOT THE BAR'S STYLE: v5's bar is transparent, so its computed background names a colour no ` +
+        `THE PAGE, NOT THE BAR'S STYLE: v5's bar is transparent, so its computed background names a colour no ` +
         `overlay can take, and a comparison against it would share the renderer's own choice of box. ` +
         `The capture excludes the controls themselves — with nothing reported it read the ground (#050a08) while ` +
         `the buttons wore the system's colours, measured 2026-09-25.`,
+    );
+
+    // THE SPAN'S OWN CONTROL: it must separate a wrong colour, or `within` passes anything. The symbol colour is the
+    // renderer's own other answer in the same request — the bar's text, which the ground is chosen to contrast with —
+    // so a span wide enough to hold it would hold every overlay this case exists to refuse.
+    check(
+      'CONTROL: the span beneath the controls REFUSES the overlay’s symbol colour, so a pass above means something',
+      last !== undefined && span !== null && !withinSpan(last.symbolColor, span),
+      `the symbol colour ${String(last?.symbolColor)} lies within ${spanText}. A span that wide — the controls' own ` +
+        `pixels captured, or a capture of the wrong rectangle — makes the colour case above unable to fail.`,
     );
 
     check(

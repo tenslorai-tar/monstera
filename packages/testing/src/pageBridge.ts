@@ -1,4 +1,4 @@
-import { BRIDGE_KEY, type MonsteraBridge } from '@monstera/contract';
+import { AI_SETUP_AT_START_SETTING_ID, BRIDGE_KEY, type MonsteraBridge } from '@monstera/contract';
 import type { Page } from '@playwright/test';
 
 import { createBrowserShim } from './browserShim.js';
@@ -119,11 +119,10 @@ export async function bridge(
     ...options,
     // A MACHINE WHOSE FIRST RUN IS ANSWERED, unless a case says otherwise. A fresh shim has no AI
     // key, so the first-run AI setup (E5) opens a modal over every screen these cases drive;
-    // `'ai.setup-at-start': false` is what a Skip stores. The first run itself is its own case in
-    // `renderedScreen.pw.ts`, which seeds `true`. The id is spelt here because this package may
-    // not import `packages/ui`; if it is renamed there, this seed is dropped as unknown and the
-    // dialog opens over every case, which fails them all rather than passing quietly.
-    settings: { 'ai.setup-at-start': false, ...options.settings },
+    // `false` is what a Skip stores. The first run itself is its own case in `renderedScreen.pw.ts`,
+    // which seeds `true`. The id is the contract's, which the setting and the Electron canvas harness
+    // take too — one spelling, so no harness can start on the first run by a rename it did not see.
+    settings: { [AI_SETUP_AT_START_SETTING_ID]: false, ...options.settings },
   });
 
   // The client is keyed by channel; the bridge is keyed by string. The cast is

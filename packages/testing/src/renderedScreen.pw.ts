@@ -4,7 +4,7 @@
 // than the class — "this expression is not constructable", at compile time.
 import { AxeBuilder } from '@axe-core/playwright';
 import { PDFDocument } from '@cantoo/pdf-lib';
-import { displayLocationSchema } from '@monstera/contract';
+import { AI_SETUP_AT_START_SETTING_ID, displayLocationSchema } from '@monstera/contract';
 import { MINIMUM_WINDOW, asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
@@ -158,7 +158,7 @@ for (const look of LOOKS) {
   test(`${look.name}: the FIRST-RUN AI SETUP opens by itself and has no serious a11y violations`, async ({
     page,
   }) => {
-    await bridgeUnder(page, look, { settings: { 'ai.setup-at-start': true } });
+    await bridgeUnder(page, look, { settings: { [AI_SETUP_AT_START_SETTING_ID]: true } });
 
     await expectNoSeriousViolations(page, look, 'Everything else in Monstera works without one');
     const dialog = page.getByRole('dialog', { name: 'Set up the AI assistant' });

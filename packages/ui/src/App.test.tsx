@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { AI_SETUP_AT_START_SETTING_ID, type ContractClient, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { act, cleanup, fireEvent, render as renderBare, screen, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -3362,7 +3362,7 @@ describe('the first-run AI setup (E5 onboarding)', () => {
   });
 
   it('CONTROL: a person who SKIPPED — the stored false — is not asked again', async () => {
-    await started([], { 'ai.setup-at-start': false });
+    await started([], { [AI_SETUP_AT_START_SETTING_ID]: false });
     expect(screen.queryByRole('dialog', { name: 'Set up the AI assistant' })).toBeNull();
   });
 

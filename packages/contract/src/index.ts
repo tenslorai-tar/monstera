@@ -120,6 +120,8 @@ export {
   updateStatusSchema,
   // The rating prompt's opt-out (E3): main reads it, the page declares its control.
   REVIEW_PROMPTS_SETTING_ID,
+  // The first-run AI setup's switch: the page declares it, and every harness starts past it.
+  AI_SETUP_AT_START_SETTING_ID,
   type MainHandlers,
   MAX_DROPPED_PATH_LENGTH,
   // How many documents one launch may name on its command line; main's reader takes no more.

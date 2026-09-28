@@ -122,8 +122,9 @@ export function controlName(key) {
  *     visible: boolean | null,
  *     areaWidth: number | null,
  *     innerWidth: number,
- *     groundBeneathControls: string | null,
+ *     groundBeneathControls: { low: [number, number, number], high: [number, number, number], pixels: number } | null,
  *     barHeight: number | null,
+ *     dialogsOpen: number,
  *     painted: { color: string, symbolColor: string, height: number }[],
  *   },
  * }}

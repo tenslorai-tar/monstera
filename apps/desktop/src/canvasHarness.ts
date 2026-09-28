@@ -1,10 +1,12 @@
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { AI_SETUP_AT_START_SETTING_ID } from '@monstera/contract';
 import { app, ipcMain, nativeImage, session } from 'electron';
 
 import { createShellDependencies } from './composition.js';
 import { harnessSurfaces } from './harnessComposition.js';
+import { createEphemeralSettings } from './settingsFile.js';
 import { createMainWindow, senderCheckFor } from './window.js';
 import type { TitleBarOverlay } from './contractHandlers.js';
 import { registerContractHandlers } from './registerHandlers.js';
@@ -156,18 +158,37 @@ export interface CanvasReadback {
   readonly overlay: OverlayReadback;
 }
 
+/** Each channel's lowest and highest value over a captured rectangle, and how many pixels were read. */
+export interface GroundSpan {
+  readonly low: readonly [number, number, number];
+  readonly high: readonly [number, number, number];
+  readonly pixels: number;
+}
+
 /** The overlay half of a readback. `null` where the page has no `windowControlsOverlay` or no menu bar. */
 export interface OverlayReadback {
   readonly visible: boolean | null;
   readonly areaWidth: number | null;
   readonly innerWidth: number;
   /**
-   * The page's own pixel under the window controls, as `#rrggbb` — what the three buttons sit on, read off the
+   * What the page itself shows under the window controls — the rectangle from the menu bar's area to the window's
+   * edge, the bar's height tall — as each channel's lowest and highest value over every pixel there, read off the
    * composited page rather than off any stylesheet. `null` when the capture came back empty.
+   *
+   * A SPAN, NOT A PIXEL. v5's ground there is a gradient under a grain texture, so no single colour equals it at
+   * every point; the overlay can take one colour, and the property is that it is a colour the ground shows there.
+   * One pixel equalled the overlay only by where a gradient's stops happened to fall: measured 2026-09-28, the
+   * corner read #060a08 against #060b09 once the surface's height changed, with the span R 6–9, G 10–13, B 7–10.
    */
-  readonly groundBeneathControls: string | null;
+  readonly groundBeneathControls: GroundSpan | null;
   /** The bar's laid-out height in CSS pixels, unrounded — what the overlay's height has to settle on. */
   readonly barHeight: number | null;
+  /**
+   * How many dialogs the page held when the ground was read. A modal's backdrop dims and blurs everything beneath
+   * it, so a ground read under one is not the ground the controls sit on in use — and the dimmed span happened to hold
+   * the overlay's colour anyway (measured 2026-09-28), so only this count can say the read was made in the right state.
+   */
+  readonly dialogsOpen: number;
   readonly painted: readonly TitleBarOverlay[];
 }
 
@@ -315,11 +336,26 @@ async function writePixels(
  * system's colours (measured 2026-09-25 with the renderer reporting nothing, see `canvasPixels.proof.mjs`).
  * `toBitmap` is BGRA, so the channels are taken 2, 1, 0.
  */
-async function pagePixel(contents: Electron.WebContents, x: number, y: number): Promise<string | null> {
-  const image = await contents.capturePage({ x: Math.max(0, x), y: Math.max(0, y), width: 1, height: 1 });
-  const bgra = image.toBitmap();
-  if (bgra.length < 4) return null;
-  return `#${[bgra[2], bgra[1], bgra[0]].map((channel) => (channel ?? 0).toString(16).padStart(2, '0')).join('')}`;
+/** The span of the page's own colours over a rectangle, or `null` when the capture came back empty. */
+async function pageSpan(
+  contents: Electron.WebContents,
+  rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+): Promise<GroundSpan | null> {
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  const bgra = (await contents.capturePage(rect)).toBitmap();
+  const low: [number, number, number] = [255, 255, 255];
+  const high: [number, number, number] = [0, 0, 0];
+  let pixels = 0;
+  for (let at = 0; at + 3 < bgra.length; at += 4) {
+    // BGRA, which is `toBitmap`'s order.
+    const rgb = [bgra[at + 2] ?? 0, bgra[at + 1] ?? 0, bgra[at] ?? 0] as const;
+    for (let channel = 0; channel < 3; channel += 1) {
+      low[channel] = Math.min(low[channel] ?? 255, rgb[channel] ?? 0);
+      high[channel] = Math.max(high[channel] ?? 0, rgb[channel] ?? 0);
+    }
+    pixels += 1;
+  }
+  return pixels === 0 ? null : { low, high, pixels };
 }
 
 /**
@@ -607,8 +643,15 @@ export async function reportCanvasPixels(
   // before registering, because the sender check needs a real `WebContents` id
   // to compare against; reproducing that order matters, since a harness that
   // registered first would be exercising a configuration the product never runs.
+  // PAST THE FIRST RUN, as a Skip leaves it. The settings are ephemeral, so every launch is a first run with no AI
+  // key, and the first-run setup's modal then covered the page this harness reads: its backdrop dims and blurs every
+  // pixel beneath it, including the ground under the window controls (measured 2026-09-28). The first run is its own
+  // case, in the browser harness (`renderedScreen.pw.ts`).
+  const settings = createEphemeralSettings();
+  settings.write({ [AI_SETUP_AT_START_SETTING_ID]: false });
   const deps = createShellDependencies({
     ...harnessSurfaces('the canvas harness'),
+    settings,
     // A FIXED NAME in the harness, so what it stamps does not depend on who ran it.
     appInfo: { version: app.getVersion(), installChannel: 'development', userName: 'Canvas Harness' },
     // THE ONE SUBSTITUTION, and it is a function returning a path because that
@@ -711,13 +754,22 @@ export async function reportCanvasPixels(
          areaWidth: controls === undefined ? null : controls.getTitlebarAreaRect().width,
          innerWidth: window.innerWidth,
          barHeight: bar === null ? null : bar.getBoundingClientRect().height,
+         dialogsOpen: document.querySelectorAll('[role="dialog"], [role="alertdialog"]').length,
        };
      })()`,
     (value): value is Omit<OverlayReadback, 'painted' | 'groundBeneathControls'> =>
-      typeof value === 'object' && value !== null && 'innerWidth' in value,
+      typeof value === 'object' && value !== null && 'innerWidth' in value && 'dialogsOpen' in value,
     'overlay',
   );
-  const groundBeneathControls = await pagePixel(contents, overlayPage.innerWidth - 2, 2);
+  // THE CONTROLS' OWN RECTANGLE: from where the menu bar's area ends to the window's edge, the bar's height tall.
+  // `capturePage` reads the page alone, so the buttons drawn over it are not in what it answers.
+  const controlsStart = Math.ceil(overlayPage.areaWidth ?? overlayPage.innerWidth);
+  const groundBeneathControls = await pageSpan(contents, {
+    x: controlsStart,
+    y: 0,
+    width: overlayPage.innerWidth - controlsStart,
+    height: Math.floor(overlayPage.barHeight ?? 0),
+  });
 
   const readback: CanvasReadback = {
     dispatched,
