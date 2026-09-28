@@ -18,7 +18,7 @@ A rating in the Microsoft Store helps other people find Monstera.
 ## Good to know
 
 - The note never appears more than five times, and never covers your work.
-- To stop it, choose **Don't ask again**, or turn off **Ask me to rate Monstera** in **Settings**, **Advanced** page.
+- To stop it, choose **Don't ask again**, or turn off **Ask me to rate Monstera** in **Settings**, **Privacy** page.
 - If the Store's page does not open, a message says so.
 
 <!--

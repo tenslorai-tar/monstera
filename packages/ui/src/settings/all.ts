@@ -7,8 +7,7 @@ import {
   CHAT_HISTORY_SETTING,
 } from './ai.js';
 import { DOCUSIGN_ENVIRONMENT_SETTING, DOCUSIGN_INTEGRATION_KEY_SETTING } from './integrations.js';
-import { CRASH_REPORTS_SETTING, RECENT_PREVIEWS_SETTING } from './privacy.js';
-import { REVIEW_PROMPTS_SETTING } from './advanced.js';
+import { CRASH_REPORTS_SETTING, RECENT_PREVIEWS_SETTING, REVIEW_PROMPTS_SETTING } from './privacy.js';
 import { AUTOSAVE_SETTING } from './saving.js';
 import { SHORTCUTS_SETTING } from './keyboard.js';
 import { PRINT_QUALITY_SETTING } from './rendering.js';

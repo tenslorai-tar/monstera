@@ -303,6 +303,15 @@ describe('SettingsBody', () => {
     expect(answers).toStrictEqual([{ values: {}, secrets: {} }]);
   });
 
+  it('the RATING opt-out is on the Privacy page, where Part F lists it, and Advanced holds no row for it', () => {
+    // `BUILD-PROMPT.md`:626 lists the review-prompt opt-out under Privacy; the owner moved it there 2026-09-27.
+    opened({});
+    goTo('privacy');
+    expect(screen.getByLabelText('Ask me to rate Monstera')).toBeDefined();
+    // Advanced had no other row, so it is not listed at all — a page with nothing on it would be a dead one.
+    expect(screen.queryByRole('button', { name: 'Advanced' })).toBeNull();
+  });
+
   it('every listed page INTRODUCES ITSELF with a line under its title (the owner’s design)', () => {
     opened({});
     for (const page of SETTINGS_PAGES) {

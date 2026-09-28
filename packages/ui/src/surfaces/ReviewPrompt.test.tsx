@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { activateCatalogue, i18n } from '../i18n.js';
 import { EN, REVIEW_STORE_NOT_OPENED } from '../messages/en.js';
 import { SettingsRegistry } from '../registries/settings.js';
-import { REVIEW_PROMPTS_SETTING } from '../settings/advanced.js';
+import { REVIEW_PROMPTS_SETTING } from '../settings/privacy.js';
 import { ALL_SETTINGS } from '../settings/all.js';
 import { SettingsStore } from '../settingsStore.js';
 import type { ToastKind } from '../primitives/Toast.js';

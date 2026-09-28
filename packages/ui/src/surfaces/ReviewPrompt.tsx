@@ -12,7 +12,7 @@ import {
   REVIEW_PROMPT_REVIEWED,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
-import { REVIEW_PROMPTS_SETTING } from '../settings/advanced.js';
+import { REVIEW_PROMPTS_SETTING } from '../settings/privacy.js';
 import type { SettingsStore } from '../settingsStore.js';
 
 /**

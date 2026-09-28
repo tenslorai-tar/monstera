@@ -11,7 +11,7 @@ Settings holds everything you can adjust in Monstera. Changes take effect as you
 ## Steps
 
 1. In the rail, choose **Settings**. Or choose **Tools**, then **Settings** in the **Application** group, or **Settings** at the foot of the start screen.
-2. Choose a page on the left: **Appearance**, **Viewing**, **Rendering**, **Editing defaults**, **Saving**, **OCR**, **AI**, **Integrations**, **Keyboard**, **Privacy**, **Updates** or **Advanced**.
+2. Choose a page on the left: **Appearance**, **Viewing**, **Rendering**, **Editing defaults**, **Saving**, **OCR**, **AI**, **Integrations**, **Keyboard**, **Privacy** or **Updates**.
 3. Or type in **Search settings** to find a setting by name.
 4. Choose **Done** to close.
 
@@ -23,7 +23,7 @@ Settings holds everything you can adjust in Monstera. Changes take effect as you
 - **Export settings…** saves your settings to a file. Keys and other secrets are never exported.
 - **Reset to defaults** puts every setting back.
 - Keys for AI and online services are write-only; see "Get and add keys for AI and online reading services".
-- **Privacy** holds **Show previews of recent files** and **Clear chat history**. **Advanced** holds **Ask me to rate Monstera**.
+- **Privacy** holds **Show previews of recent files**, **Ask me to rate Monstera**, **Clear chat history** and **Clear recent files**.
 
 <!--
 Screenshots to capture:

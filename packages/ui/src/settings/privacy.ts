@@ -1,4 +1,4 @@
-import { CRASH_REPORTS_SETTING_ID, RECENT_PREVIEWS_SETTING_ID } from '@monstera/contract';
+import { CRASH_REPORTS_SETTING_ID, RECENT_PREVIEWS_SETTING_ID, REVIEW_PROMPTS_SETTING_ID } from '@monstera/contract';
 import { z } from 'zod';
 
 import {
@@ -6,6 +6,8 @@ import {
   PRIVACY_CRASH_REPORTS_TITLE,
   PRIVACY_RECENT_PREVIEWS_DESCRIPTION,
   PRIVACY_RECENT_PREVIEWS_TITLE,
+  REVIEW_PROMPTS_SETTING_DESCRIPTION,
+  REVIEW_PROMPTS_SETTING_TITLE,
 } from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
 
@@ -38,6 +40,27 @@ export const CRASH_REPORTS_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: CRASH_REPORTS_SETTING_ID,
   title: PRIVACY_CRASH_REPORTS_TITLE,
   description: PRIVACY_CRASH_REPORTS_DESCRIPTION,
+  schema: z.boolean(),
+  fallback: true,
+  category: 'privacy',
+};
+
+/**
+ * Whether Monstera may ask for a Store rating — E3's *"a Settings toggle surfaces `optedOut` so the choice is
+ * reversible and visible"*.
+ *
+ * **This value IS the opt-out**: main reads it before every prompt, and the prompt's *Don't ask again* writes
+ * it through this same store. So the choice has one home and one writer, and turning it back on here is the
+ * whole of reversing it.
+ *
+ * **On Privacy, where Part F lists it** (`BUILD-PROMPT.md`:626, *"review-prompt opt-out"*; the owner, 2026-09-27).
+ * The id keeps its `advanced.` prefix: it is the key a person's choice is stored under, a `migrate` converts values
+ * and never keys, and a renamed id would forget every stored opt-out while reading as the default.
+ */
+export const REVIEW_PROMPTS_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: REVIEW_PROMPTS_SETTING_ID,
+  title: REVIEW_PROMPTS_SETTING_TITLE,
+  description: REVIEW_PROMPTS_SETTING_DESCRIPTION,
   schema: z.boolean(),
   fallback: true,
   category: 'privacy',
