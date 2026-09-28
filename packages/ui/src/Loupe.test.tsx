@@ -11,25 +11,31 @@ const rasterised: [number, number][] = [];
 /** The rotation each rasterisation was handed, in the same order. */
 const drawnAt: (number | undefined)[] = [];
 
+/** The region each rasterisation drew, in device pixels at its scale. */
+const regions: { x: number; y: number; width: number; height: number }[] = [];
+
 vi.mock('./renderPage.js', async (importOriginal) => ({
   // THE REAL MODULE UNDER THE STUB, so `RenderCancelledError` is the class callers test against.
   ...(await importOriginal<typeof import('./renderPage.js')>()),
-  renderPage: (
+  renderRegion: (
     _document: unknown,
     pdfjsPage: number,
     _canvas: unknown,
     scale: number,
     rotation: number | undefined,
+    region: { x: number; y: number; width: number; height: number },
   ) => {
     rasterised.push([pdfjsPage, scale]);
     drawnAt.push(rotation);
-    return Promise.resolve({ width: 600 * scale, height: 800 * scale });
+    regions.push(region);
+    return Promise.resolve();
   },
 }));
 
 beforeEach(() => {
   rasterised.length = 0;
   drawnAt.length = 0;
+  regions.length = 0;
 });
 
 function view(): DocumentView {
@@ -58,15 +64,34 @@ describe('Loupe', () => {
     expect(rasterised[0]?.[0]).toBe(1);
   });
 
-  it('does NOT re-rasterise when only the pointer moves', () => {
+  it('does NOT re-rasterise when the pointer moves WITHIN its cell', () => {
     // Moving the pointer must be a transform, not a render — otherwise the
-    // loupe re-draws the page on every mouse event, which is the cost that
-    // makes a magnifier unusable rather than merely slow.
+    // loupe re-draws on every mouse event, which is the cost that makes a
+    // magnifier unusable rather than merely slow. At 2× a cell is 90 page pixels.
     const held = view();
     const { rerender } = render(<Loupe view={held} page={0} zoom={1} rotation={undefined} at={{ x: 10, y: 10 }} />);
-    rerender(<Loupe view={held} page={0} zoom={1} rotation={undefined} at={{ x: 90, y: 40 }} />);
+    rerender(<Loupe view={held} page={0} zoom={1} rotation={undefined} at={{ x: 80, y: 40 }} />);
 
     expect(rasterised).toHaveLength(1);
+  });
+
+  it('CONTROL: crossing into the next cell draws the square round THAT cell, which holds the window', () => {
+    const held = view();
+    const { rerender } = render(<Loupe view={held} page={0} zoom={1} rotation={undefined} at={{ x: 10, y: 10 }} />);
+    rerender(<Loupe view={held} page={0} zoom={1} rotation={undefined} at={{ x: 100, y: 10 }} />);
+
+    expect(rasterised).toHaveLength(2);
+    // Pointer at 200 magnified px is cell 1: the square runs from cell 0 to cell 2, 0 to 540, and the window —
+    // 110 to 290 — is inside it.
+    expect(regions[1]).toStrictEqual({ x: 0, y: -180, width: 540, height: 540 });
+  });
+
+  it('THE BOUND: at 400% it draws a square three windows wide, never the whole magnified page', () => {
+    // The whole page at 400% × 2 is 600 × 8 by 800 × 8 here; the square is 540 on a side at any zoom.
+    render(<Loupe view={view()} page={0} zoom={4} rotation={undefined} at={{ x: 300, y: 400 }} />);
+
+    expect(rasterised[0]?.[1]).toBe(8);
+    expect({ width: regions[0]?.width, height: regions[0]?.height }).toStrictEqual({ width: 540, height: 540 });
   });
 
   it('re-rasterises when the ZOOM changes, because the magnified page changed', () => {

@@ -2202,6 +2202,54 @@ test('a TILE SEAM draws exactly what the whole page draws there: no line, no shi
   expect(worst, 'the largest channel difference between a tile and the whole page at the same pixel').toBeLessThanOrEqual(0);
 });
 
+// THE LOUPE DRAWS A SQUARE ROUND THE POINTER, not the whole page at twice the zoom — and the square must lie under
+// the window, which only the running layout can show: the arithmetic places a bitmap, and a wrong sign shows paper.
+test('the LOUPE at 400% draws a square three windows wide, lying under its window, with the page’s ink in it', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openAt(page, await inkedPdf([612, 792]), { 'viewing.starting-zoom': '400pct', 'viewing.loupe': true });
+  const slot = page.locator('[data-page-tiles="0"]');
+  await expect(slot.locator('canvas.m-page-tile').first()).toBeVisible({ timeout: 20_000 });
+  const box = await slot.boundingBox();
+  if (box === null) throw new Error('the first page has no box');
+  await page.mouse.move(box.x + 300, box.y + 300);
+  await page.mouse.move(box.x + 330, box.y + 320);
+  const canvas = page.locator('.m-loupe-canvas');
+  await expect(canvas).toHaveCSS('width', '540px', { timeout: 10_000 });
+
+  const seen = await page.evaluate(() => {
+    const window = document.querySelector('.m-loupe')?.getBoundingClientRect();
+    const drawn = document.querySelector<HTMLCanvasElement>('.m-loupe-canvas');
+    const square = drawn?.getBoundingClientRect();
+    if (window === undefined || drawn === null || square === undefined) return null;
+    // THE WINDOW'S PIXELS in the square's bitmap, and whether any of them is ink.
+    const ratio = drawn.width / square.width;
+    const data = drawn
+      .getContext('2d')
+      ?.getImageData(
+        Math.round((window.left - square.left) * ratio),
+        Math.round((window.top - square.top) * ratio),
+        Math.round(window.width * ratio),
+        Math.round(window.height * ratio),
+      ).data;
+    let ink = 0;
+    for (let at = 0; data !== undefined && at < data.length; at += 4) if ((data[at] ?? 255) < 128 && (data[at + 3] ?? 0) > 0) ink += 1;
+    return {
+      backing: drawn.width * drawn.height,
+      inside:
+        square.left <= window.left + 0.5 &&
+        square.top <= window.top + 0.5 &&
+        square.right >= window.right - 0.5 &&
+        square.bottom >= window.bottom - 0.5,
+      ink,
+    };
+  });
+  expect(seen).not.toBeNull();
+  expect(seen?.inside, 'the square lies under the whole window').toBe(true);
+  expect(seen?.ink, 'the window shows the page’s ink').toBeGreaterThan(20);
+  // THE BOUND: 540 × 540 at a density of 1 — where the whole A4 page at 800% would be 4,896 × 6,336.
+  expect(seen?.backing).toBeLessThanOrEqual(540 * 540);
+});
+
 // THE ORGANIZE GRID SPANS THE PAGE AREA (v5-09): measured 2026-09-28, it was a row flexbox's item with no grow, as wide
 // as its content — 631 of 1215 px at 1920, four columns and an empty half.
 test('the ORGANIZE GRID spans the whole page area at 1920 × 1080, as many columns as fit', async ({ page }) => {

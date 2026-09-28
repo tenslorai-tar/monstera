@@ -2,7 +2,7 @@ import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import type { DocumentView } from './documentView.js';
 import { pdfjsPageOf } from './pageNumbering.js';
-import { renderPage } from './renderPage.js';
+import { renderRegion } from './renderPage.js';
 
 /**
  * A magnified window on the page under the pointer.
@@ -27,16 +27,15 @@ import { renderPage } from './renderPage.js';
  * multiplies the error — so it is read here, on every draw, rather than passed
  * in from a component that read it earlier.
  *
- * ## The whole page is drawn and the window is a TRANSFORM
+ * ## A REGION round the pointer is drawn, and the window is a TRANSFORM over it
  *
- * PDF.js renders a page, not a region. Drawing the whole page at the magnified
- * scale and translating the canvas under a small viewport is what turns that
- * into a window — and it means moving the pointer costs a transform rather than
- * a render, which is what keeps the loupe smooth while the reader moves it.
- *
- * The cost is real and bounded: one bitmap at `MAGNIFICATION` times the page's
- * area, held while the loupe is open and dropped when it closes. §9.17's
- * renderer term is what will measure it.
+ * The whole page at the magnified scale was the bitmap until 2026-09-28, and its
+ * cost was not bounded by anything the loupe shows: at 400% on a display at 2× an
+ * A4 page is 9,520 × 13,472 device pixels — 513 MB — for a window 180 pixels
+ * square. So it draws a square THREE windows wide round the cell of the grid the
+ * pointer is in (`renderRegion`, E1's tile route), whose middle cell always holds
+ * the window: moving within a cell is still a transform, and crossing into the next
+ * draws the square round that one. The bitmap is 540 CSS pixels square at any zoom.
  */
 export function Loupe({
   view,
@@ -71,7 +70,11 @@ export function Loupe({
   readonly at: { readonly x: number; readonly y: number };
 }): ReactElement {
   const canvas = useRef<HTMLCanvasElement | null>(null);
-  const [drawn, setDrawn] = useState<{ width: number; height: number } | undefined>(undefined);
+  // THE SQUARE LAST DRAWN, in the magnified bitmap's CSS pixels — where it sits is what the transform below needs.
+  const [drawn, setDrawn] = useState<{ readonly x: number; readonly y: number } | undefined>(undefined);
+  // THE CELL THE POINTER IS IN, in the magnified page's CSS pixels: the draw is keyed on it, never on `at` itself.
+  const column = Math.floor((at.x * MAGNIFICATION) / WINDOW);
+  const row = Math.floor((at.y * MAGNIFICATION) / WINDOW);
 
   useEffect(() => {
     const element = canvas.current;
@@ -81,16 +84,32 @@ export function Loupe({
     const superseded = new AbortController();
 
     const ratio = typeof window === 'undefined' ? 1 : window.devicePixelRatio;
-    void renderPage(
+    // THE SQUARE: the cell before, the cell, the cell after, both ways — so the window, never more than half a
+    // window from its cell's edges, lies wholly inside it.
+    const square = { x: (column - 1) * WINDOW, y: (row - 1) * WINDOW };
+    // DRAWN OFF SCREEN AND COPIED WHEN DONE: sizing a canvas clears it, so drawing into the shown one would blank the
+    // loupe at every cell the pointer crosses. Two 540-pixel squares cost nothing beside the page they replaced.
+    const offscreen = element.ownerDocument.createElement('canvas');
+    void renderRegion(
       view.document,
       pdfjsPageOf(page),
-      element,
+      offscreen,
       ratio * zoom * MAGNIFICATION,
       rotation,
+      {
+        x: Math.round(square.x * ratio),
+        y: Math.round(square.y * ratio),
+        width: Math.round(SQUARE * ratio),
+        height: Math.round(SQUARE * ratio),
+      },
       superseded.signal,
     )
-      .then((size) => {
-        if (!superseded.signal.aborted) setDrawn(size);
+      .then(() => {
+        if (superseded.signal.aborted) return;
+        element.width = offscreen.width;
+        element.height = offscreen.height;
+        element.getContext('2d')?.drawImage(offscreen, 0, 0);
+        setDrawn(square);
       })
       .catch(() => {
         // A loupe that cannot draw shows nothing. The page underneath is
@@ -102,18 +121,16 @@ export function Loupe({
     return (): void => {
       superseded.abort();
     };
-    // NOT keyed on `at`: moving the pointer must not re-rasterise. The bitmap
-    // is the page at this magnification, and where the window sits on it is a
-    // transform below.
-  }, [page, rotation, view, zoom]);
+    // KEYED ON THE CELL, NOT `at`: moving the pointer within a cell must not
+    // re-rasterise; where the window sits on the square is a transform below.
+  }, [column, page, rotation, row, view, zoom]);
 
-  // WHERE THE BITMAP SITS under the window, so the point the reader is over
-  // lands in the middle. In the bitmap's own CSS pixels, which are the page's
-  // multiplied by the magnification.
+  // WHERE THE SQUARE SITS under the window, so the point the reader is over
+  // lands in the middle. In the magnified page's CSS pixels.
   const offset =
     drawn === undefined
       ? { x: 0, y: 0 }
-      : { x: at.x * MAGNIFICATION - WINDOW / 2, y: at.y * MAGNIFICATION - WINDOW / 2 };
+      : { x: at.x * MAGNIFICATION - WINDOW / 2 - drawn.x, y: at.y * MAGNIFICATION - WINDOW / 2 - drawn.y };
 
   return (
     <div
@@ -130,10 +147,9 @@ export function Loupe({
           drawn === undefined
             ? undefined
             : {
-                // The bitmap shown at its own magnified CSS size — dividing by
-                // the device ratio undoes the density, leaving the page's
-                // pixels times the magnification.
-                width: `${String(drawn.width / (typeof window === 'undefined' ? 1 : window.devicePixelRatio))}px`,
+                // The square shown at its magnified CSS size, whatever density it was drawn at.
+                width: `${String(SQUARE)}px`,
+                height: `${String(SQUARE)}px`,
                 transform: `translate(${String(-offset.x)}px, ${String(-offset.y)}px)`,
               }
         }
@@ -155,3 +171,6 @@ const MAGNIFICATION = 2;
 
 /** The window's side, in CSS pixels. */
 const WINDOW = 180;
+
+/** The drawn square's side, in the magnified page's CSS pixels: three windows. */
+const SQUARE = WINDOW * 3;
