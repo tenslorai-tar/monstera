@@ -14,7 +14,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { applySignDocument, withSignaturePlaceholder } from './documentSign.js';
 import type { ByteImage } from './engineSeam.js';
 import { PngPixelsRefused } from './imageDimensions.js';
-import { mupdfWriter } from './mupdfWriter.js';
+import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import {
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
@@ -321,6 +321,61 @@ describe('readSignatures', () => {
     } finally {
       await mupdfWriter.close(session);
     }
+  }, 60_000);
+
+  /**
+   * ADR-0008 RULE 2, through the SAVE'S OWN FLUSH — `composition.ts`' `currentBytes` is `mupdfWriter.serialise` of the
+   * session the signed bytes were opened into, so what comes out is what the file on disk holds. Before the rule was
+   * built a signed document came back from that flush with different bytes and a signature that no longer covered it.
+   */
+  const flushed = async (bytes: Uint8Array, markAdded: boolean): Promise<Uint8Array> => {
+    const session = await mupdfWriter.open(bytes);
+    try {
+      if (markAdded) {
+        await withDocument(session, (document) => {
+          const annotation = document.loadPage(0).createAnnotation('Square');
+          annotation.setRect([10, 10, 60, 60]);
+          annotation.update();
+        });
+      }
+      return await mupdfWriter.serialise(session);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  };
+  const coverage = async (bytes: Uint8Array): Promise<{ covers: boolean | undefined; whole: boolean | undefined }> => {
+    const session = await mupdfWriter.open(bytes);
+    try {
+      const [read] = await readSignatures(session, bytes);
+      return { covers: read?.coversDocument, whole: read?.coversWholeFile };
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  };
+  /** Whether `after` is `before` with bytes appended — an incremental save — rather than a file written anew. */
+  const appended = (before: Uint8Array, after: Uint8Array): boolean =>
+    after.byteLength >= before.byteLength && Buffer.from(after.subarray(0, before.byteLength)).equals(Buffer.from(before));
+
+  it('SAVING A SIGNED DOCUMENT KEEPS ITS SIGNATURE: untouched, the file is unchanged and still wholly covered', async () => {
+    const signed = await applySignDocument(unsigned, { ...command, bytes: certificate });
+    const saved = await flushed(signed, false);
+    expect(Buffer.from(saved).equals(Buffer.from(signed))).toBe(true);
+    expect(await coverage(saved)).toStrictEqual({ covers: true, whole: true });
+  }, 60_000);
+
+  it('a mark added AFTER signing is APPENDED, and the signature still covers its revision', async () => {
+    const signed = await applySignDocument(unsigned, { ...command, bytes: certificate });
+    const saved = await flushed(signed, true);
+    expect(appended(signed, saved)).toBe(true);
+    // COVERS ITS REVISION, not the whole file: what a reader shows as *signed, changed since*.
+    expect(await coverage(saved)).toStrictEqual({ covers: true, whole: false });
+  }, 60_000);
+
+  it('CONTROL: an UNSIGNED document is still written anew — the rule is keyed on a signature, not on every save', async () => {
+    // THE DECISION, asserted rather than the state: without a signature a save is ADR-0008's full rewrite, so the
+    // output is not the input with bytes appended.
+    const saved = await flushed(unsigned, true);
+    expect(appended(unsigned, saved)).toBe(false);
   }, 60_000);
 
   it('THE CONTROL: a document CHANGED after signing reports coversDocument FALSE', async () => {

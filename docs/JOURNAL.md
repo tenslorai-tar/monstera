@@ -892,6 +892,39 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-28 — Saving a signed document broke its signature; ADR-0008 rule 2 was decided and never built
+
+Found while building Part F's *warn before signature-breaking save*: to know when a save breaks a signature, I
+measured what the ordinary save does to one. **Every save did.** The save's flush is `mupdfWriter.serialise` of the
+session (`composition.ts`' `currentBytes`), which called `saveToBuffer('')` — MuPDF's plain save, a full rewrite. A
+freshly signed document flushed that way came back with different bytes and `coversDocument: false`
+(`documentSign.test.ts`, a one-off measuring case). So *Sign document*, then *Save*, wrote a file whose signature
+no longer covered it.
+
+**The mechanism in one sentence:** a full rewrite re-serialises every object and moves the bytes a PKCS#7 signature's
+`/ByteRange` covers, and nothing routed a signed document to MuPDF's `incremental` save.
+
+**It was decided on 2026-08-16 and stated as done.** ADR-0008 rule 2 (*always incremental when a digital signature
+must survive*); `docs/ARCHITECTURE.md` §4's table carries it as a row; and §4's L5 paragraph (line 1075) said a
+signature-bearing save *"is already routed to an incremental one"* — a sentence ahead of the code, the digest-ahead
+shape one document over. `engineSeam.ts` said the rule *"arrives when Stage 7 has a signature to preserve"*; Stage 7
+shipped signing and its proofs — a signature read back from the bytes `applySignDocument` returns — never passed the
+signed bytes through the flush a save uses. **The pair's second blind spot, again**: the kernel proof held the signing
+end, and nothing held the save end.
+
+**Measured before building:** MuPDF's `incremental` on the signed document returned the SAME bytes, still wholly
+covered; with a mark added it appended 658 bytes and the signature still covered its revision.
+
+**Built:** `mupdfWriter.serialise` writes `incremental` when the save is ordinary, no protection change is pending, the
+document carries a signature (`signatureFields.ts`, the one walk the verifier also uses) and MuPDF can append.
+Removal and encryption changes still rewrite (rule 1 wins), and those are the saves that break a signature — the ones
+the Part F warning is about. Proof: saved untouched, the file is unchanged and wholly covered; a mark added after
+signing is appended and still covered; CONTROL, an unsigned document is still written anew. The incremental term
+removed turns the first two red; applied to every document, the control. **Not measured, and stated:** ADR-0008 item
+3's growth over a long session, now live for signed documents only.
+
+---
+
 ## 2026-09-28 — `proof:shim`'s three-hour hang is Node's `process.exit` deadlock, and 289 calls share it
 
 **The mechanism, read off the stuck process's own stacks.** On 2026-09-27 `proof:shim` printed its pass and never

@@ -473,9 +473,15 @@ export type CommandTargets = 'none' | 'annotation' | 'field' | 'text-object' | '
  * signature* are both in that table, and only the first is a property of what a
  * command's bytes CONTAIN. The second is a property of how a **file is
  * written** — a full rewrite changes the byte ranges a PKCS#7 signature covers
- * — and nothing here writes files. It arrives when Stage 7 has a signature to
- * preserve; declaring a member nothing can produce is the shape `kindOf`'s
- * unreachable `'other'` already cost this build a reading of.
+ * — so it is not a member here: `mupdfWriter.serialise` reads it off the
+ * DOCUMENT, whether it carries a signature, at the moment it writes.
+ *
+ * *Corrected 2026-09-28:* this said the second *"arrives when Stage 7 has a
+ * signature to preserve"*. Stage 7 shipped signing and it did not arrive: a
+ * signed document saved through the ordinary flush was re-serialised and its
+ * signature no longer covered it (measured, `documentSign.test.ts`). It is
+ * built there now, keyed on the document rather than on a purpose, which is
+ * why this union still has two members.
  *
  * ## A purpose, not a mechanism
  *
