@@ -1,7 +1,7 @@
-import { LOG_DETAIL_SETTING_ID } from '@monstera/contract';
+import { LOG_DETAIL_SETTING_ID, type MainHandlers } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
-import { createRequestLog } from './requestLog.js';
+import { createRequestLog, observedHandlers } from './requestLog.js';
 
 /**
  * The detailed log's lines (ADR-0119): what is written, at which level, and what never is.
@@ -87,5 +87,52 @@ describe('the detailed log', () => {
     observe('settings.save', { values: DETAILED }, 'internal', 4);
     observe('app.info', {}, 'ok', 1);
     expect(lines).toStrictEqual([]);
+  });
+});
+
+describe('the graph’s handlers, each telling the observer what it answered', () => {
+  /** A clock that moves 7 ms between reads, so the span handed on is the handler's and nothing else. */
+  function ticking(): () => number {
+    let at = 100;
+    return () => {
+      at += 7;
+      return at;
+    };
+  }
+
+  /** Two handlers of the real map's shape: one answering, one refusing with a declared code, one throwing. */
+  const HANDLERS = {
+    'app.info': () => Promise.resolve({ ok: true, value: { version: '0' } }),
+    'document.save': () => Promise.resolve({ ok: false, error: { code: 'document-busy' } }),
+    'document.close': () => Promise.reject(new Error('the handler failed')),
+  } as unknown as MainHandlers;
+
+  it('by its channel, its params, the outcome it answered and the span it took — and answers the same', async () => {
+    const told: unknown[] = [];
+    const handlers = observedHandlers(HANDLERS, (...args) => told.push(args), ticking()) as unknown as Record<
+      string,
+      (params: unknown) => Promise<unknown>
+    >;
+
+    expect(await handlers['app.info']?.({})).toStrictEqual({ ok: true, value: { version: '0' } });
+    await handlers['document.save']?.({ docId: 'x' });
+    expect(told).toStrictEqual([
+      ['app.info', {}, 'ok', 7],
+      ['document.save', { docId: 'x' }, 'document-busy', 7],
+    ]);
+  });
+
+  it('a handler that THROWS is told as internal, and the throw still reaches the boundary’s wrapper', async () => {
+    const told: unknown[] = [];
+    const handlers = observedHandlers(HANDLERS, (...args) => told.push(args), ticking()) as unknown as Record<
+      string,
+      (params: unknown) => Promise<unknown>
+    >;
+    await expect(handlers['document.close']?.({})).rejects.toThrow('the handler failed');
+    expect(told).toStrictEqual([['document.close', {}, 'internal', 7]]);
+  });
+
+  it('CONTROL: every channel of the map is still there', () => {
+    expect(Object.keys(observedHandlers(HANDLERS, () => undefined))).toStrictEqual(Object.keys(HANDLERS));
   });
 });

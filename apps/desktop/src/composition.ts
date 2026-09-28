@@ -136,7 +136,7 @@ import {
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, type PictureFiles, createRecentPictures } from './recentPictures.js';
-import { NO_REQUEST_LOG, createRequestLog } from './requestLog.js';
+import { NO_REQUEST_LOG, createRequestLog, observedHandlers } from './requestLog.js';
 import { createPersonalLibrary, memoryPictureFiles } from './personalLibrary.js';
 import { saveNamesFor } from './backupCopies.js';
 import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
@@ -1448,6 +1448,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     },
   });
 
+  // THE DETAILED LOG'S LINES (ADR-0119), into the same file through the same write; no log, no lines.
+  const requests = log === null ? NO_REQUEST_LOG : createRequestLog(settings, log.write);
+
   return {
     // `pickDocument` is a PARAMETER, not an import, and that is what keeps this
     // file's stated property true: nothing here imports Electron, so the whole
@@ -1455,7 +1458,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // one part of opening that genuinely needs a runtime, so it is the one part
     // that arrives from `entry.ts` — the same trade this file already makes for
     // `AppInfo`, which is a value rather than a call to `app.getVersion()`.
-    handlers: createContractHandlers({
+    // EVERY HANDLER TELLS THE DETAILED LOG WHAT IT ANSWERED (ADR-0119): wrapped here, once, so no registration site
+    // changes — the digested picker probe among them.
+    handlers: observedHandlers(createContractHandlers({
       appInfo,
       capabilities,
       commands,
@@ -1596,14 +1601,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         closeGate.listening();
         return true;
       },
-    }),
+    }), requests),
     closeRequested: closeGate.onCloseRequested,
     documentsLaunched: (paths) => {
       launched.add(paths);
     },
     incidents: log?.incidents ?? reportIncident,
-    // THE DETAILED LOG'S LINES (ADR-0119), into the same file through the same write; no log, no lines.
-    requests: log === null ? NO_REQUEST_LOG : createRequestLog(settings, log.write),
     failures,
     attachWindow: (window) => {
       shellWindow = window;

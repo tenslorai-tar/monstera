@@ -1,21 +1,23 @@
-import { LOG_DETAIL_SETTING_ID, channels } from '@monstera/contract';
+import { LOG_DETAIL_SETTING_ID, type MainHandlers, channels } from '@monstera/contract';
 
 import type { SettingsSurface } from './settingsFile.js';
 
 /**
  * The detailed log's lines: one per renderer request, by its name, its outcome and `main`'s time
- * ([ADR-0119](../../../docs/DECISIONS/0119-a-detailed-log-records-each-request-by-name-outcome-and-time.md)).
+ * ([ADR-0119](../../../docs/DECISIONS/0119-a-detailed-log-records-each-request-by-name-outcome-and-time.md),
+ * corrected 2026-09-28).
  *
- * ## Called for every request, from the one place every request crosses
+ * ## Called for every request, from the handlers the composition root builds
  *
- * `registerContractHandlers` times the wrapped handler and hands this the channel, the raw params, the outcome and
- * the milliseconds. A channel registered tomorrow is logged by being registered; nothing here names a feature.
+ * {@link observedHandlers} wraps the graph's whole handler map once, so a channel registered tomorrow is logged by
+ * being registered; nothing here names a feature. It is applied in the GRAPH rather than in `registerContractHandlers`
+ * so that no call site changes: `pickerProbe.ts` registers the graph too, and its bytes are digested by the record of
+ * a person driving the real file dialog — an argument added there expires that record (9cf27e94's reason).
  *
  * ## Nothing from the parameters, except a command's kind — read by the channel's own schema
  *
- * The params are the renderer's and carry what a person typed. The one field written is `document.execute`'s
- * `command.kind`, a member of a closed enum, and it is read by parsing the params with that channel's schema — the
- * same parse the handler's wrapper made — never by a cast of the untrusted value.
+ * The params carry what a person typed. The one field written is `document.execute`'s `command.kind`, a member of a
+ * closed enum, read by the channel's own schema, never by a cast.
  */
 export type RequestObserver = (channel: string, params: unknown, outcome: string, milliseconds: number) => void;
 
@@ -40,6 +42,40 @@ export function logIsDetailed(stored: Readonly<Record<string, unknown>>): boolea
 function commandKindOf(params: unknown): string | undefined {
   const parsed = channels['document.execute'].params.safeParse(params);
   return parsed.success ? parsed.data.command.kind : undefined;
+}
+
+/**
+ * The graph's handlers, each telling `requests` its channel, params, outcome and span when it answers.
+ *
+ * A handler that THROWS is told as `internal`, the code the boundary's wrapper turns a throw into, and the throw goes
+ * on to that wrapper unchanged — it records the incident, which is the problems log's line.
+ *
+ * @param now the clock the span is read from, injected so a case can name the milliseconds.
+ */
+export function observedHandlers(
+  handlers: MainHandlers,
+  requests: RequestObserver,
+  now: () => number = () => performance.now(),
+): MainHandlers {
+  const observed = Object.entries(handlers).map(([channel, handler]) => {
+    const answer = handler as (params: unknown) => Promise<{ ok: true } | { ok: false; error: { code: string } }>;
+    return [
+      channel,
+      async (params: unknown) => {
+        const started = now();
+        try {
+          const result = await answer(params);
+          requests(channel, params, result.ok ? 'ok' : result.error.code, now() - started);
+          return result;
+        } catch (thrown) {
+          requests(channel, params, 'internal', now() - started);
+          throw thrown;
+        }
+      },
+    ];
+  });
+  // THE SAME KEYS, each answering what its handler answered: the map's type is the input's.
+  return Object.fromEntries(observed) as unknown as MainHandlers;
 }
 
 /**

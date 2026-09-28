@@ -90,21 +90,22 @@ describe('the detailed log, as the composition root assembles it (ADR-0119)', ()
       log: recordingLog(lines),
     });
 
-    deps.requests('app.info', {}, 'ok', 2);
+    // THROUGH THE GRAPH'S OWN HANDLERS, which is where the observer is applied: the save the renderer makes is what
+    // turns it on, and the request after it is written.
+    await deps.handlers['app.info']({});
     expect(lines).toStrictEqual([]);
 
     const saved = { values: { 'advanced.log-detail': 'detailed' } };
     expect(await deps.handlers['settings.save'](saved)).toStrictEqual({ ok: true, value: { stored: true } });
-    deps.requests('settings.save', saved, 'ok', 3);
-    deps.requests('app.info', {}, 'ok', 2);
-    expect(lines).toStrictEqual(['REQUEST settings.save ok 3ms', 'REQUEST app.info ok 2ms']);
+    await deps.handlers['app.info']({});
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatch(/^REQUEST settings\.save ok \d+ms$/u);
+    expect(lines[1]).toMatch(/^REQUEST app\.info ok \d+ms$/u);
   });
 
-  it('CONTROL: a graph with no log records nothing and does not fail', () => {
+  it('CONTROL: a graph with no log answers as before', async () => {
     const deps = createShellDependencies({ ...harnessSurfaces('the composition test'), appInfo });
-    expect(() => {
-      deps.requests('app.info', {}, 'ok', 2);
-    }).not.toThrow();
+    expect((await deps.handlers['app.info']({})).ok).toBe(true);
   });
 });
 
