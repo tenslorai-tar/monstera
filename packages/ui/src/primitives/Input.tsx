@@ -69,6 +69,12 @@ export interface InputProps {
    * from the HTML list, never free text; absent for a field whose purpose is not one of them.
    */
   purpose?: 'name' | 'email' | undefined;
+  /**
+   * Where the field sits in a row that already SHOWS its label — the Settings dialog's, whose bold words beside the
+   * control are that label. The field keeps its own `<label>` for its accessible name, drawn visually hidden, so the
+   * name is still one string for both populations and the screen shows it once.
+   */
+  labelShownBeside?: boolean;
 }
 
 export function Input({
@@ -80,13 +86,14 @@ export function Input({
   secret = false,
   invalid,
   purpose,
+  labelShownBeside = false,
 }: InputProps): ReactElement {
   // Subscribed rather than resolved once — see `Button`.
   const { _ } = useLingui();
 
   return (
     <Field.Root className="m-field" disabled={disabled} invalid={invalid}>
-      <Field.Label className="m-field__label">{_(label)}</Field.Label>
+      <Field.Label className={labelShownBeside ? 'm-visually-hidden' : 'm-field__label'}>{_(label)}</Field.Label>
       <BaseInput
         autoComplete={purpose}
         className="m-input"

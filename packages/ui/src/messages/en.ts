@@ -1327,8 +1327,11 @@ export const SETTINGS_AI_MODELS_FETCHED = messageKey('dialog.settings.ai-models.
 export const SETTINGS_AI_MODELS_FALLBACK = messageKey('dialog.settings.ai-models.fallback');
 export const SETTINGS_AI_MODELS_NO_LIST = messageKey('dialog.settings.ai-models.no-list');
 export const SETTINGS_AI_MODELS_UNREAD = messageKey('dialog.settings.ai-models.unread');
-/** The one choice of a model row with nothing to offer, so the control is not an empty box. */
-export const SETTINGS_AI_MODELS_NONE = messageKey('dialog.settings.ai-models.none');
+/**
+ * The one choice of a model picker with nothing to offer — the Settings row's and the Assistant's — so the control is
+ * not an empty box.
+ */
+export const AI_MODELS_NONE = messageKey('ai.models.none');
 export const AI_SAVE_HISTORY_TITLE = messageKey('setting.ai.save-history.title');
 export const ASSISTANT_ABOUT_NOTHING = messageKey('assistant.about.nothing');
 /** v5-03's "Asking about" choices, as short buttons over the message box; the sentence under them says the rest. */
@@ -3293,7 +3296,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     '{provider} has not been asked this session, so this is this build’s own list. Choosing {provider} in the Assistant asks it.',
   [SETTINGS_AI_MODELS_NO_LIST]: '{provider} publishes no list of models to choose from.',
   [SETTINGS_AI_MODELS_UNREAD]: 'The list of models could not be read.',
-  [SETTINGS_AI_MODELS_NONE]: 'No models to choose from',
+  [AI_MODELS_NONE]: 'No models to choose from',
   [AI_SAVE_HISTORY_DESCRIPTION]:
     'Off by default. Conversations are discarded when the document closes; saved ones are encrypted on this computer.',
   [AI_AZURE_OPENAI_ENDPOINT_DESCRIPTION]: 'Your own Azure OpenAI resource address. Needed only for that provider.',

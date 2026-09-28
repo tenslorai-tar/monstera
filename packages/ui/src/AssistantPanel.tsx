@@ -65,6 +65,7 @@ import {
   ASSISTANT_COMPOSER_LABEL,
   ASSISTANT_CONVERSATION_LABEL,
   ASSISTANT_EMPTY,
+  AI_MODELS_NONE,
   ASSISTANT_MODEL_LABEL,
   ASSISTANT_MODEL_NOT_OFFERED,
   ASSISTANT_MODEL_NO_VISION,
@@ -1139,6 +1140,8 @@ export function AssistantPanel({
             >
               {/* A STORED CHOICE THE LIST NO LONGER NAMES stays shown and selected, marked, never silently swapped for
                   another model (ADR-0117 Decision 3). */}
+              {/* NOTHING TO LIST SAYS SO, as the Settings row does, rather than drawing an empty box. */}
+              {models.length === 0 ? <option value="">{i18n._(AI_MODELS_NONE)}</option> : null}
               {stored !== undefined && models.length > 0 && chosenEntry === undefined ? (
                 <option value={stored}>{i18n._(ASSISTANT_MODEL_NOT_OFFERED, { name: stored })}</option>
               ) : null}

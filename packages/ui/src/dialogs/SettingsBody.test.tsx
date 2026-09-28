@@ -291,6 +291,18 @@ describe('SettingsBody', () => {
       expect(screen.getByLabelText('Google Gemini API key')).toBeDefined();
     });
 
+    it('a key field says its name ONCE on screen — the row’s bold label — and keeps it as its accessible name', () => {
+      opened({});
+      goTo('ai');
+
+      const field = screen.getByLabelText('Anthropic API key');
+      const own = document.querySelector(`label[for="${field.id}"]`);
+      expect(own?.className).toBe('m-visually-hidden');
+      // THE VISIBLE ONE is the row's, so hiding the field's did not leave the row unnamed.
+      const row = field.closest('.m-settings-row');
+      expect(row?.querySelector('.m-settings-row__label')?.textContent).toBe('Anthropic API key');
+    });
+
     it('shows Azure OpenAI’s address only while Azure OpenAI is the provider', () => {
       opened({});
       goTo('ai');

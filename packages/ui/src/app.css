@@ -2350,7 +2350,9 @@ textarea {
   flex-direction: column;
   gap: var(--space-4);
   block-size: 100%;
-  padding: var(--space-4);
+  /* THE PROPERTIES TAB'S INSET, the tab beside it in the same panel (v5-03 insets both alike): at 4 px the no-key line
+     sat against the panel's edge while the next tab's words sat 16 px in. */
+  padding: var(--space-16);
 }
 
 .m-assistant__state,
@@ -3491,7 +3493,10 @@ textarea {
   font-size: var(--font-chrome-12);
 }
 
-.m-document-choice select {
+/* THE SETTINGS ROWS' DROP-DOWNS TOO (v5-10 draws them as fields): they were browser-default boxes beside styled segmented
+   controls and text fields, so one dialog read as two families. */
+.m-document-choice select,
+.m-settings-row__control select {
   padding: var(--space-8);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-4);
@@ -3500,7 +3505,8 @@ textarea {
   font-size: var(--font-chrome-13);
 }
 
-.m-document-choice select:focus-visible {
+.m-document-choice select:focus-visible,
+.m-settings-row__control select:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
@@ -5168,6 +5174,11 @@ body {
  * cards out across the canvas instead of down the panel.
  */
 .m-page-grid {
+  /* THE WHOLE WIDTH, which the comment above always said and nothing made so: the canvas area is a ROW flexbox, and
+     an item with no grow is as wide as its content — measured 2026-09-28 at 631 of 1215 px, four columns and an
+     empty half, where v5-09 draws six. A zero minimum lets the columns, not the item, give way. */
+  flex: 1 1 auto;
+  min-inline-size: 0;
   display: flex;
   flex-direction: column;
   min-block-size: 0;

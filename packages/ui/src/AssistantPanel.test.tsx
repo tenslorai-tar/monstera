@@ -334,6 +334,10 @@ describe('the assistant tab', () => {
   it('says so when a provider lists no models, rather than showing an empty picker', async () => {
     await drawn({ models: [] });
     expect(screen.getByText(/No models are listed/u)).toBeTruthy();
+    // AND THE PICKER ITSELF SAYS IT, where it used to draw an empty box with an arrow.
+    const picker = document.querySelector<HTMLSelectElement>('[data-assistant-model]');
+    expect(picker?.disabled).toBe(true);
+    expect(picker?.selectedOptions[0]?.textContent).toBe('No models to choose from');
   });
 
   it('CONTROL: an ask that never started leaves the typed text where it was', async () => {

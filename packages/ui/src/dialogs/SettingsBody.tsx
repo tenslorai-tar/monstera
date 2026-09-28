@@ -18,6 +18,7 @@ import {
   ACCENT_DESCRIPTION,
   ACCENT_REJECTED,
   ACCENT_TITLE,
+  AI_MODELS_NONE,
   AI_PROVIDER_NAMES,
   ASSISTANT_MODEL_NO_VISION,
   ASSISTANT_MODEL_NOT_OFFERED,
@@ -29,7 +30,6 @@ import {
   SETTINGS_AI_MODELS_FALLBACK,
   SETTINGS_AI_MODELS_FETCHED,
   SETTINGS_AI_MODELS_NO_LIST,
-  SETTINGS_AI_MODELS_NONE,
   SETTINGS_AI_MODELS_UNREAD,
   SETTINGS_AI_NOTE,
   SETTINGS_AI_PROVIDER_STORED,
@@ -308,6 +308,8 @@ function SettingControl({
     return (
       <Input
         label={setting.title}
+        // THE ROW SHOWS THE LABEL, in bold beside the field; drawing it again above the box said it twice.
+        labelShownBeside
         // THE SETTING'S OWN PURPOSE (ADR-0116), never decided here from its id.
         purpose={setting.purpose}
         onValueChange={(value) => {
@@ -327,6 +329,7 @@ function SettingControl({
         <Input
           disabled={!available || secret.remove}
           label={setting.title}
+          labelShownBeside
           onValueChange={(value) => {
             onSecret({ ...secret, replace: value });
           }}
@@ -491,7 +494,7 @@ function ModelRow({
           }}
           value={selected}
         >
-          {models.length === 0 && stored === undefined ? <option value="">{_(SETTINGS_AI_MODELS_NONE)}</option> : null}
+          {models.length === 0 && stored === undefined ? <option value="">{_(AI_MODELS_NONE)}</option> : null}
           {offered ? null : <option value={stored}>{i18n._(ASSISTANT_MODEL_NOT_OFFERED, { name: stored })}</option>}
           {models.map((entry) => {
             const blind = readsImages && !servesVision(entry);

@@ -2061,6 +2061,41 @@ for (const look of LOOKS) {
   });
 }
 
+// THE ORGANIZE GRID SPANS THE PAGE AREA (v5-09): measured 2026-09-28, it was a row flexbox's item with no grow, as wide
+// as its content — 631 of 1215 px at 1920, four columns and an empty half.
+test('the ORGANIZE GRID spans the whole page area at 1920 × 1080, as many columns as fit', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const document = await PDFDocument.create();
+  for (let at = 0; at < 24; at += 1) document.addPage([612, 792]);
+  const bytes = await document.save();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000e5');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'lease.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    settings: { 'appearance.ribbon-section': 'organize' },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const grid = page.getByRole('region', { name: 'Pages to organize' });
+  await expect(grid.locator('[data-thumb-page="23"]')).toBeAttached();
+
+  const measured = await page.evaluate(() => {
+    const area = document.querySelector('.m-canvas-area')?.getBoundingClientRect();
+    const region = document.querySelector('.m-page-grid')?.getBoundingClientRect();
+    const tops = [...document.querySelectorAll('.m-page-grid [data-thumb-page]')].map((card) =>
+      Math.round(card.getBoundingClientRect().top),
+    );
+    const firstRow = tops.filter((top) => top === tops[0]).length;
+    return { area: area?.width ?? 0, region: region?.width ?? 0, firstRow };
+  });
+  expect(measured.area, 'the page area was measured').toBeGreaterThan(1000);
+  expect(measured.region, `the grid is ${String(measured.region)} px of a ${String(measured.area)} px page area`).toBeGreaterThanOrEqual(
+    measured.area - 2,
+  );
+  // SIX, v5-09's count at this window with the Medium cards — and more than the four a content-wide grid laid.
+  expect(measured.firstRow).toBeGreaterThanOrEqual(6);
+});
+
 // THE MENU BAR (ADR-0107), in every theme: the window's top row above the title bar, reached from the keyboard by F10,
 // walked with the arrows, an open menu marking the current theme and disabling what cannot run — and passing the gate
 // with a menu OPEN, which is the state a screen reader meets it in.
