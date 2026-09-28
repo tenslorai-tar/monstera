@@ -419,7 +419,12 @@
   cursor: pointer;
 }
 
+/* A WRAPPING GROUP MAY BE NARROWER THAN ITS CHOICES — that is what wrapping is. `.m-segmented` is `flex: none`, and a
+   group that can never shrink below its content never reaches a width at which its choices would wrap: the
+   Assistant's *Asking about* ran past its panel's edge once the panel was inset like its neighbour (2026-09-28). */
 .m-segmented--wrap {
+  flex: 0 1 auto;
+  min-inline-size: 0;
   flex-wrap: wrap;
 }
 

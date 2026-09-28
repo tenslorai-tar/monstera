@@ -585,14 +585,23 @@ test('the ASSISTANT fits its panel: the hint under Send is inside it and nothing
     const body = document.querySelector('.m-assistant')?.parentElement;
     const hint = document.querySelector('.m-assistant__hint');
     if (body === null || body === undefined || hint === null) return null;
+    // AND NOTHING RUNS PAST ITS SIDE: the widest row is *Asking about*'s choices, which ran past the panel's inner
+    // edge once the panel was inset like the Properties tab — a group that could not shrink could not wrap.
+    const panel = document.querySelector('.m-assistant');
+    const inner = panel === null ? 0 : panel.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(panel).paddingRight);
+    const rights = [...document.querySelectorAll('.m-assistant .m-segmented__item')].map((item) => item.getBoundingClientRect().right);
     return {
       overflow: body.scrollHeight - body.clientHeight,
       past: hint.getBoundingClientRect().bottom - body.getBoundingClientRect().bottom,
+      sideways: Math.max(...rights) - inner,
+      choices: rights.length,
     };
   });
   expect(fit).not.toBeNull();
   expect(fit?.overflow).toBeLessThanOrEqual(0);
   expect(fit?.past).toBeLessThanOrEqual(0);
+  expect(fit?.choices, 'the choices were found').toBeGreaterThan(4);
+  expect(fit?.sideways, 'the farthest choice ends past the panel’s inner edge by this many px').toBeLessThanOrEqual(0.5);
 });
 
 test('the page list FITS its pane: nothing of it sits above the pane or under the status bar', async ({
