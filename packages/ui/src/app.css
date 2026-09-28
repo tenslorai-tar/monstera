@@ -5090,18 +5090,23 @@ body {
   white-space: nowrap;
 }
 
-/* EVERY FACT IN THE LINE MAY SHORTEN, THE NAME FAR FIRST. Only the name could, so once it was spent the page count,
-   the size and *Saved* kept their width and the line ran under the controls beside it — measured 2026-09-27 in the
-   proof locale at 1024 x 720, *Saved* drawn under the panel toggle. A shrink weight of 1000 against 1 spends the
-   name (which has its `title`) before any other fact loses a letter; past that each ellipsises, and none overlaps. */
+/* EVERY FACT IN THE LINE MAY SHORTEN, THE NAME FIRST. Only the name could, so once it was spent the page count, the
+   size and *Saved* kept their width and the line ran under the controls beside it — measured 2026-09-27 in the proof
+   locale at 1024 x 720, *Saved* drawn under the panel toggle.
+
+   THE NAME'S BASIS IS ZERO, so it never SHRINKS: it only grows into what the other facts leave, and they shorten only
+   once it has nothing left. That is sequential by construction. A shrink WEIGHT is not — flex shrinking is
+   proportional, so 1000 against 1 still took a sub-pixel share from *Saved*, which Linux's fonts rounded to a clipped
+   word (CI, ubuntu-latest, a3660b8c) while this machine's did not. */
 .m-status-document > * {
+  flex: 0 1 auto;
   min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .m-status-document > .m-status-name {
-  flex-shrink: 1000;
+  flex: 1 1 0;
 }
 
 /* THE HAND TOOL (§10.3's floating toolbar): a grab cursor over the page area, a grabbing one while a

@@ -1525,7 +1525,13 @@ test('the status bar’s DOCUMENT LINE gives up its name first and never runs un
         element.textContent = `${element.textContent} ${'longer words '.repeat(6)}`;
       }
     }, selector);
-  const measure = (): Promise<{ lineEnd: number; nextStart: number; nameClipped: boolean; savedClipped: boolean }> =>
+  const measure = (): Promise<{
+    lineEnd: number;
+    nextStart: number;
+    nameClipped: boolean;
+    nameWidth: number;
+    shortest: number;
+  }> =>
     page.evaluate(() => {
       const document_ = document.querySelector('.m-status-document');
       const next = document_?.nextElementSibling;
@@ -1538,15 +1544,28 @@ test('the status bar’s DOCUMENT LINE gives up its name first and never runs un
         lineEnd: Math.max(...[...document_.children].map((child) => child.getBoundingClientRect().right)),
         nextStart: next.getBoundingClientRect().left,
         nameClipped: name.scrollWidth > name.clientWidth,
-        savedClipped: saved.scrollWidth > saved.clientWidth,
+        nameWidth: name.getBoundingClientRect().width,
+        // EACH OTHER FACT'S BOX AGAINST ITS OWN TEXT: a box narrower than the text it holds has given up width.
+        shortest: Math.min(
+          ...[...document_.children]
+            .filter((child) => child !== name)
+            .map((child) => {
+              const range = document.createRange();
+              range.selectNodeContents(child);
+              return child.getBoundingClientRect().width - range.getBoundingClientRect().width;
+            }),
+        ),
       };
     });
 
-  // THE NAME FIRST: a long name alone is ellipsed and *Saved* keeps every letter.
+  // THE NAME FIRST, AS AN ORDER: while the name has any width left, no other fact is narrower than its own text.
+  // Not "Saved keeps every letter" — whether the facts fit at all at 1024 depends on the fonts, and ubuntu-latest's did
+  // not (a3660b8c) — but the order holds on every machine. A proportional shrink (a weight of 1000 against 1) breaks
+  // it by a sub-pixel share, measured here 2026-09-28: the name at 6.83 px while *Saved* was 0.03 px under its text.
   await lengthen('.m-status-name');
   const named = await measure();
   expect(named.nameClipped).toBe(true);
-  expect(named.savedClipped).toBe(false);
+  if (named.nameWidth > 0.5) expect(named.shortest).toBeGreaterThan(-0.01);
   expect(named.lineEnd).toBeLessThanOrEqual(named.nextStart + 0.5);
 
   // AND NEVER UNDER THE CONTROLS: with every fact long, the line still ends before the next cluster begins.
