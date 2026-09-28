@@ -8,7 +8,7 @@ import {
 } from '../annotationInterchange.js';
 import { readPageBarcodes } from '../barcodeReader.js';
 import { localMupdfExecution } from '../mupdfSpecs.js';
-import { accessFor, mupdfWriter } from '../mupdfWriter.js';
+import { accessFor, mupdfWriter, signaturesKeptBySave } from '../mupdfWriter.js';
 import { readSignatures } from '../signatureRead.js';
 import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
@@ -109,6 +109,7 @@ const engineHandlers = createEngineHandlers({
   writer: mupdfWriter,
   access: accessFor,
   signatures: readSignatures,
+  signaturesKept: signaturesKeptBySave,
   files: hostFilesystem,
   probe: probeContainment,
   geometry: readPageGeometry,

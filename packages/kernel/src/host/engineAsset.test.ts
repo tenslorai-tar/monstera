@@ -192,6 +192,7 @@ async function joined(): Promise<{
       accessibility: () => {
         throw new Error('unused');
       },
+      signaturesKept: () => Promise.reject(new Error('this case asks nothing about keeping signatures')),
       annotationRecords: () => {
         throw new Error('unused');
       },

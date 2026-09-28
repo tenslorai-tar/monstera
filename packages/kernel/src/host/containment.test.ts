@@ -572,6 +572,7 @@ describe('the engine host answers a containment probe', () => {
     accessibility: () => {
       throw new Error('a containment probe must not check accessibility');
     },
+    signaturesKept: () => Promise.reject(new Error('this case asks nothing about keeping signatures')),
     annotationRecords: () => {
       throw new Error('a containment probe must not read annotation records');
     },

@@ -115,6 +115,7 @@ import {
   remoteMupdfFormFields,
   remoteMupdfLayers,
   remoteMupdfSignatures,
+  remoteMupdfSignaturesKept,
   type ReadSignature,
   remoteMupdfOcr,
   remoteMupdfPageFills,
@@ -1084,6 +1085,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // session for the bytes a `/ByteRange` indexes into, so this side never
     // holds or sends them.
     signatures: (session) => engineHost.signatures(session),
+    signaturesKept: (session) => engineHost.signaturesKept(session),
     // THE CHECKPOINT RESTORE, and it is `recycle` with a different source of
     // bytes rather than a new operation. `EngineSessions.recycle` already
     // releases a document's sessions and opens them again while KEEPING its
@@ -1695,6 +1697,8 @@ function engineSessionOpener(
   readonly layers: HostLayersReader;
   /** The document's signatures, verified in the contained host. */
   readonly signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
+  /** How many signatures, and whether the next save keeps them — the writer's own decision, in the host. */
+  readonly signaturesKept: (session: MupdfSession) => Promise<{ readonly signatures: number; readonly kept: boolean }>;
   /** Every annotation in the document, from whichever host is live. */
   readonly annotations: HostAnnotationsReader;
   /** Named marks serialised for the clipboard, from whichever host is live. */
@@ -1989,6 +1993,22 @@ function engineSessionOpener(
     return signatures(session);
   };
 
+  /** The save's question about signatures, the same registration. See {@link pageText}. */
+  let signaturesKept: ((session: MupdfSession) => Promise<{ readonly signatures: number; readonly kept: boolean }>) | null =
+    null;
+
+  const readSignaturesKeptThroughHost = (
+    session: MupdfSession,
+  ): Promise<{ readonly signatures: number; readonly kept: boolean }> => {
+    if (signaturesKept === null) {
+      throw new Error(
+        'A save asked about signatures with no host reader registered. A session was resolved for this document, so ' +
+          'one was issued by a host — the supervisor and the host connection have diverged.',
+      );
+    }
+    return signaturesKept(session);
+  };
+
   /** The annotation list's half of the same registration. See {@link pageText}. */
   let annotations: HostAnnotationsReader | null = null;
 
@@ -2271,6 +2291,7 @@ function engineSessionOpener(
     ocr = remoteMupdfOcr(client, remote);
     layers = remoteMupdfLayers(client, remote);
     signatures = remoteMupdfSignatures(client, remote);
+    signaturesKept = remoteMupdfSignaturesKept(client, remote);
     annotations = remoteMupdfAnnotations(client, remote);
     annotationCopy = remoteMupdfAnnotationRecords(client, remote);
     formFields = remoteMupdfFormFields(client, remote);
@@ -2547,6 +2568,7 @@ function engineSessionOpener(
     ocr: recogniseThroughHost,
     layers: readLayersThroughHost,
     signatures: readSignaturesThroughHost,
+    signaturesKept: readSignaturesKeptThroughHost,
     annotations: readAnnotationsThroughHost,
     annotationCopy: copyAnnotationsThroughHost,
     formFields: readFormFieldsThroughHost,

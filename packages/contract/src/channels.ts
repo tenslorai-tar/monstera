@@ -2018,9 +2018,22 @@ export const channels = {
    */
   'document.save': channel(
     'Writes an open document’s current content to the file it was opened from.',
-    z.object({ docId: docIdSchema }),
+    z.object({
+      docId: docIdSchema,
+      /**
+       * Whether this save may break the document's signatures (Part F's warning, `BUILD-PROMPT.md`:618). REQUIRED,
+       * so every caller decides: `false` asks main to answer `breaks-signatures` instead of writing, `true` is a person
+       * who has been told and agreed — or who turned the warning off.
+       */
+      breakSignatures: z.boolean(),
+    }),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('saved'), version: docVersionSchema }),
+      /**
+       * NOTHING WAS WRITTEN: the save would rewrite the file and so break this many signatures — a removal or a change
+       * of protection is pending, or the file cannot be appended to. Asked with `breakSignatures: false` only.
+       */
+      z.object({ kind: z.literal('breaks-signatures'), signatures: z.number().int().positive().max(MAX_SIGNATURES) }),
       z.object({
         kind: z.literal('refused'),
         reason: z.enum(['contested', 'replaced', 'target-absent', 'unverifiable']),

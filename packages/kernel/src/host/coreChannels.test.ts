@@ -90,6 +90,9 @@ const MUPDF_READS = [
   // that finds the signature fields is MuPDF's object model; node-forge is what
   // reads the blob it finds.
   'engine/signatures',
+  // WHETHER THE NEXT SAVE KEEPS THEM is one of MuPDF's reads too: the answer is its writer's own decision about the
+  // save's terms (`saveTermsOf`), and a second engine writes no such file.
+  'engine/signatures-kept',
 ] as const;
 
 /**
@@ -259,7 +262,7 @@ describe('the core channel set', () => {
 });
 
 describe('MuPDF’s channel map', () => {
-  it('is the core six, the live-session one, and its own twenty reads', () => {
+  it('is the core six, the live-session one, and its own reads — the list above, by name', () => {
     expect(Object.keys(engineChannels).sort()).toStrictEqual(
       [...CORE, ...LIVE_SESSION, ...MUPDF_READS].sort(),
     );

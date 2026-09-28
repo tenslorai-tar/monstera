@@ -84,6 +84,7 @@ import {
   serialiseFormData,
   rasterisePageImage,
   snapshotRegion,
+  signaturesKeptBySave,
   withDocument,
 } from '@monstera/kernel/engine';
 import { type DocId, type DocVersion, asDocId, asDocVersion } from '@monstera/shared';
@@ -692,6 +693,7 @@ const INERT = {
   ocr: noOcr,
   layers: noLayers,
   signatures: () => Promise.reject(new Error('this case does not read signatures')),
+  signaturesKept: () => Promise.reject(new Error('this case does not ask whether a save keeps signatures')),
   restore: noRestore,
   annotations: noAnnotations,
   annotationCopy: noAnnotationCopy,
@@ -1290,7 +1292,10 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
      * fixture quietly replaced mid-file is the kind of coupling that surfaces
      * as an unrelated case going red weeks later.
      */
-    async function aSavableDocument(): Promise<{
+    async function aSavableDocument(
+      /** What the writer says about the next save and the signatures — the real decision unless a case says otherwise. */
+      signaturesKept: DocumentCommandsParts['signaturesKept'] = signaturesKeptBySave,
+    ): Promise<{
       commands: DocumentCommands;
       saved: DocId;
       path: string;
@@ -1315,6 +1320,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         saved: outcome.docId,
         commands: new DocumentCommands({
           ...LOCAL_READS,
+          signaturesKept,
           documents: own,
           bus: bus(),
           engine: held,
@@ -1340,10 +1346,33 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       };
     }
 
+    it('HOLDS BACK a save that would break signatures — the file untouched — and writes it once the person agreed', async () => {
+      const asked: unknown[] = [];
+      const { commands, saved, path, before } = await aSavableDocument((session) => {
+        asked.push(session);
+        return Promise.resolve({ signatures: 2, kept: false });
+      });
+
+      expect(await commands.save(saved, { breakSignatures: false })).toStrictEqual({ kind: 'breaks-signatures', signatures: 2 });
+      // NOTHING WRITTEN: the file is the bytes the case wrote.
+      expect(Buffer.from(readFileSync(path)).equals(Buffer.from(before))).toBe(true);
+      expect(asked).toHaveLength(1);
+
+      // AGREED: the writer is not asked again, and the save lands.
+      expect((await commands.save(saved, { breakSignatures: true })).kind).toBe('saved');
+      expect(asked).toHaveLength(1);
+      expect(Buffer.from(readFileSync(path)).equals(Buffer.from(before))).toBe(false);
+    });
+
+    it('CONTROL: a save that KEEPS them is written without being held — the real decision, on an unsigned document', async () => {
+      const { commands, saved } = await aSavableDocument();
+      expect((await commands.save(saved, { breakSignatures: false })).kind).toBe('saved');
+    });
+
     it('writes the engine bytes to the document own file, and leaves a .bak', async () => {
       const { commands, saved, path, before } = await aSavableDocument();
 
-      const outcome = await commands.save(saved);
+      const outcome = await commands.save(saved, { breakSignatures: true });
 
       expect(outcome.kind).toBe('saved');
       if (outcome.kind !== 'saved') throw new Error('the save did not happen');
@@ -1380,7 +1409,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       const { commands, saved, path } = await aSavableDocument();
       rmSync(path);
 
-      const outcome = await commands.save(saved);
+      const outcome = await commands.save(saved, { breakSignatures: true });
 
       expect(outcome.kind).toBe('refused');
       if (outcome.kind !== 'refused') throw new Error('the save should have been refused');
@@ -4579,7 +4608,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
       version: t.version,
     });
 
-    const saved = await t.commands.save(t.target);
+    const saved = await t.commands.save(t.target, { breakSignatures: true });
     expect(saved.kind).toBe('saved');
 
     // THE FILE, NOT THE SESSION: a save that wrote the original bytes back would leave the
@@ -4610,11 +4639,11 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
       at: 1,
       version: t.version,
     });
-    expect((await t.commands.save(t.target)).kind).toBe('saved');
+    expect((await t.commands.save(t.target, { breakSignatures: true })).kind).toBe('saved');
 
     const { version } = await t.documents.run(t.target, () => Promise.resolve(null));
     await t.commands.execute(t.target, { kind: 'importPageAsLayer', source: t.source, name: 'Second', at: 0, version });
-    const second = await t.commands.save(t.target);
+    const second = await t.commands.save(t.target, { breakSignatures: true });
     expect(second.kind).toBe('saved');
 
     // AND THE FILE HOLDS THE SECOND EDIT: a refusal reported as a save would leave it out.
@@ -4636,7 +4665,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
       at: 1,
       version: t.version,
     });
-    expect((await t.commands.save(t.target)).kind).toBe('saved');
+    expect((await t.commands.save(t.target, { breakSignatures: true })).kind).toBe('saved');
 
     // ANOTHER PROGRAM'S SAVE: its own temporary file renamed over the target.
     const outside = `${t.targetPath}.outside`;
@@ -4645,7 +4674,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
 
     const { version } = await t.documents.run(t.target, () => Promise.resolve(null));
     await t.commands.execute(t.target, { kind: 'importPageAsLayer', source: t.source, name: 'Second', at: 0, version });
-    const refused = await t.commands.save(t.target);
+    const refused = await t.commands.save(t.target, { breakSignatures: true });
     expect(refused).toMatchObject({ kind: 'refused', verdict: { kind: 'replaced' } });
   });
 

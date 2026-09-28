@@ -393,7 +393,8 @@ import { PageGrid } from './surfaces/PageGrid.js';
 import { FocusHint } from './surfaces/FocusHint.js';
 import { isDirty, savedState, savedTick, windowTitle } from './savedState.js';
 import { autosaveEvery, createAutosave } from './autosave.js';
-import { AUTOSAVE_SETTING, CONFIRM_REDACTION_SETTING } from './settings/saving.js';
+import { AUTOSAVE_SETTING, CONFIRM_REDACTION_SETTING, WARN_SIGNATURE_BREAK_SETTING } from './settings/saving.js';
+import { SIGNATURE_BREAK_DIALOG } from './dialogs/signatureBreak.js';
 import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { PageList, type PageListProps } from './PageList.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
@@ -822,6 +823,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         DELETE_PAGES_DIALOG,
         ANNOTATION_TEXT_DIALOG,
         STAMP_DIALOG,
+        SIGNATURE_BREAK_DIALOG,
         ANNOTATION_NOTE_DIALOG,
         ANNOTATION_EDIT_DIALOG,
         ANNOTATION_REPLY_DIALOG,
@@ -884,6 +886,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     [],
   );
   const { open: openDialog, ask, close, resolve: resolveDialog, report: reportDialog } = useDialogHost(dialogs);
+  // WHETHER A SAVE THAT BREAKS SIGNATURES ASKS FIRST, read through the store at each save rather than captured, so a
+  // change on the Saving page applies to the next save.
+  const warnSignatureBreak = useCallback(() => settings.get(WARN_SIGNATURE_BREAK_SETTING.id) !== false, [settings]);
 
   // AUTOSAVE (`autosave.ts`), off unless the Saving page turns it on. The pass reads the tabs through a ref, so a
   // version moving does not restart the timer; the ref is written in an effect, never during render.
@@ -899,7 +904,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     const autosave = createAutosave({
       dirty: () => tabsNow.current.filter((tab) => isDirty(tab.version, tab.savedVersion)).map((tab) => tab.docId),
       // SAVE'S OWN PATH, with no toast: the status bar says *Saved just now*, and a toast every few minutes is noise.
-      save: (docId) => saveDocument({ client, ask, toast: () => undefined, onSaved }, docId),
+      // UNATTENDED: a timer never breaks a signature; such a save waits for a person to press Save.
+      save: (docId) => saveDocument({ client, ask, toast: () => undefined, onSaved, warnSignatureBreak }, docId, 'unattended'),
     });
     const timer = setInterval(() => {
       void autosave.tick();
@@ -907,7 +913,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     return (): void => {
       clearInterval(timer);
     };
-  }, [ask, autosaveInterval, client, onSaved]);
+  }, [ask, autosaveInterval, client, onSaved, warnSignatureBreak]);
 
   // A FAILED WRITE NEEDS A DIALOG, so the subscription lives where `ask` does.
   //
@@ -1510,7 +1516,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           // save that landed is still worth confirming — and the toast outlives the tab.
           if (
             choice.data === 'save' &&
-            !(await saveDocument({ client, ask, toast, onSaved }, docId))
+            !(await saveDocument({ client, ask, toast, onSaved, warnSignatureBreak }, docId, 'attended'))
           ) {
             return false;
           }
@@ -1521,7 +1527,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         setClosing(false);
       }
     },
-    [activate, ask, client, closing, onSaved, releaseTabs, tabs, toast],
+    [activate, ask, client, closing, onSaved, releaseTabs, tabs, toast, warnSignatureBreak],
   );
 
   // THE WINDOW'S CLOSE, held by main until this answers (`windowClose.ts`): every open
@@ -2636,7 +2642,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         findDuplicatePagesCommand({ client, onApplied: applied, ask, stamp }),
         undoCommand({ client, onApplied: applied, ask, stamp }),
         redoCommand({ client, onApplied: applied, ask, stamp }),
-        saveCommand({ client, ask, toast, onSaved }),
+        saveCommand({ client, ask, toast, onSaved, warnSignatureBreak }),
         closeTabCommand({ close: (docId) => requestClose([docId]) }),
         closeOthersCommand({ close: requestClose }),
         // THE SHELL'S OWN `activeId` AND `setCompareId`, which is what keeps this a second ROUTE
@@ -2792,6 +2798,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       togglePalette,
       // AUTOSCROLL'S TICK reads which document it runs on, and the toggle starts it on the one in front.
       autoscrollOn,
+      // SAVE'S SIGNATURE WARNING, a reader of the store — stable while the store is.
+      warnSignatureBreak,
       toggleAutoscroll,
       opened,
       readTool,

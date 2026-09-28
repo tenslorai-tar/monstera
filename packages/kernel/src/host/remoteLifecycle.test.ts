@@ -273,6 +273,7 @@ function joined(
       annotationRecords: () => {
         throw new Error('the lifecycle half must not read annotation records');
       },
+      signaturesKept: () => Promise.reject(new Error('the lifecycle half asks nothing about keeping signatures')),
     }),
     (incident) => incidents.push(incident),
   );
@@ -615,6 +616,7 @@ describe('remoteMupdfLifecycle', () => {
         accessibility: () => {
           throw new Error('the byte-size case must not check accessibility');
         },
+        signaturesKept: () => Promise.reject(new Error('this case asks nothing about keeping signatures')),
         annotationRecords: () => {
           throw new Error('the byte-size case must not read annotation records');
         },

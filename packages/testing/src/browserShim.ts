@@ -287,6 +287,9 @@ export interface BrowserShimOptions {
    */
   readonly placedImage?: 'unreadable' | 'too-large' | { readonly byteLength: number };
 
+  /** Documents whose next save would break this many signatures — `document.save` answers so until agreed. */
+  readonly saveBreaksSignatures?: ReadonlyMap<string, number>;
+
   /**
    * The person's library, as main would hold it: the entries it starts with, their pictures by id, and what the picker
    * answers for `library.addPicture` — a picture's name and bytes, or `null` for a cancelled picker. Held in memory for
@@ -1154,11 +1157,17 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      * document is already at. A shim that incremented would teach a test that
      * saving dirties the document it just cleaned.
      */
-    'document.save': ({ docId }) => {
+    'document.save': ({ docId, breakSignatures }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
 
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      // A SAVE THAT WOULD BREAK SIGNATURES, as main answers it: held back until the page says the person agreed.
+      const breaking = options.saveBreaksSignatures?.get(docId);
+      if (breaking !== undefined && !breakSignatures) {
+        return Promise.resolve(ok({ kind: 'breaks-signatures' as const, signatures: breaking }));
+      }
 
       const refusal = options.saveRefusals?.get(docId);
       if (refusal !== undefined) {

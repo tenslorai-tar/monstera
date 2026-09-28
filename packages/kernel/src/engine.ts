@@ -1,4 +1,4 @@
-export { mupdfWriter, withDocument } from './mupdfWriter.js';
+export { mupdfWriter, signaturesKeptBySave, withDocument } from './mupdfWriter.js';
 export {
   applyRotatePages,
   captureRotatePages,

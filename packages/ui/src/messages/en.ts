@@ -69,6 +69,11 @@ export const ORGANIZE_GRID_SELECTED = messageKey('surface.organize.selected');
 export const ORGANIZE_GRID_HINT = messageKey('surface.organize.hint');
 export const CONFIRM_REDACTION_TITLE = messageKey('setting.saving-confirm-redaction.title');
 export const BACKUP_COPIES_TITLE = messageKey('setting.saving-backup-copies.title');
+export const WARN_SIGNATURE_BREAK_TITLE = messageKey('setting.saving-warn-signature-break.title');
+export const WARN_SIGNATURE_BREAK_DESCRIPTION = messageKey('setting.saving-warn-signature-break.description');
+export const SIGNATURE_BREAK_TITLE = messageKey('dialog.signature-break.title');
+export const SIGNATURE_BREAK_EXPLAINS = messageKey('dialog.signature-break.explains');
+export const SIGNATURE_BREAK_APPLY = messageKey('dialog.signature-break.apply');
 export const BACKUP_COPIES_DESCRIPTION = messageKey('setting.saving-backup-copies.description');
 /** `saving.backup-copies`' members, each its own exported key as the other option sets are. */
 export const BACKUP_COPIES_OPTION_TITLES = {
@@ -2204,6 +2209,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Saves each document with unsaved changes to its own file on a timer. Off unless you turn it on, because a save replaces the file.',
   [CONFIRM_REDACTION_TITLE]: 'Confirm before redacting',
   [BACKUP_COPIES_TITLE]: 'Backup copies to keep',
+  [WARN_SIGNATURE_BREAK_TITLE]: 'Warn before a save breaks a signature',
+  [WARN_SIGNATURE_BREAK_DESCRIPTION]:
+    'Asks first when saving would make a digital signature stop verifying — after a redaction, a flatten or a new password. Other changes are saved without breaking signatures.',
+  [SIGNATURE_BREAK_TITLE]: 'This save will break signatures',
+  [SIGNATURE_BREAK_EXPLAINS]:
+    '{count, plural, one {This document is digitally signed.} other {This document carries # digital signatures.}} Saving it now rewrites the whole file, so {count, plural, one {the signature} other {the signatures}} will no longer verify. Close this window to keep {count, plural, one {it} other {them}}: your changes stay open and unsaved.',
+  [SIGNATURE_BREAK_APPLY]: 'Save anyway',
   [BACKUP_COPIES_DESCRIPTION]:
     'Each save keeps the version it replaces beside the file, as report.pdf.bak, then .bak2 and so on, newest first. Choosing fewer removes the extra copies at the next save. At least one is always kept.',
   [BACKUP_COPIES_OPTION_TITLES.one]: '1',

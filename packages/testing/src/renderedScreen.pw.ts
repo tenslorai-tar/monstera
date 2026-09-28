@@ -2722,6 +2722,47 @@ test('a KEPT stamp picture is added from the chooser, shown in it, and placed by
   expect(sent.filter((call) => call.channel === 'document.execute')).toStrictEqual([]);
 });
 
+// A SAVE THAT WOULD BREAK SIGNATURES, in every look: Ctrl+S on such a document opens the warning — axe clean — and
+// *Save anyway* sends the save again saying so. CONTROL in the same case: until the person agrees, only the held-back
+// save was sent.
+for (const look of LOOKS) {
+  test(`${look.name}: a save that breaks signatures ASKS first, passes axe, and saves once agreed`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const bytes = await onePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000cd');
+    const saves: unknown[] = [];
+    await bridgeUnder(
+      page,
+      look,
+      {
+        opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'signed.pdf' }],
+        documentBytes: new Map([[docId, bytes]]),
+        saveBreaksSignatures: new Map([[docId, 1]]),
+      },
+      (channel, params) => {
+        if (channel === 'document.save') saves.push((params as { readonly breakSignatures?: unknown }).breakSignatures);
+      },
+    );
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+
+    await page.keyboard.press('Control+S');
+    const dialog = page.getByRole('dialog', { name: 'This save will break signatures' });
+    await expect(dialog).toBeVisible();
+    expect(saves).toStrictEqual([false]);
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+
+    await dialog.getByRole('button', { name: 'Save anyway' }).click();
+    await expect.poll(() => saves).toStrictEqual([false, true]);
+  });
+}
+
 // EDIT TEXT IN PLACE (ADR-0096), in every theme: the outlines sit over their words on the drawn
 // page, the editor opens over a block, and nothing on that screen fails the gate.
 for (const look of LOOKS) {

@@ -425,6 +425,8 @@ export interface EngineHandlerParts {
   readonly access: (session: MupdfSession) => DocumentAccess;
   /** Reads and verifies the document's signatures. `readSignatures`. */
   readonly signatures: HostSignaturesReader;
+  /** How many signatures, and whether the next save keeps them. `signaturesKeptBySave`. */
+  readonly signaturesKept: (session: MupdfSession) => Promise<{ readonly signatures: number; readonly kept: boolean }>;
   readonly files: HostFilesystem;
   readonly probe: HostContainmentProbe;
   readonly geometry: PageGeometryReader;
@@ -463,6 +465,7 @@ export function createEngineHandlers({
   writer,
   access,
   signatures,
+  signaturesKept,
   files,
   probe,
   geometry,
@@ -804,6 +807,13 @@ export function createEngineHandlers({
         }
         return failed('signatures-failed', error);
       }
+    },
+
+    // WHETHER THE NEXT SAVE KEEPS THE SIGNATURES, from the writer's own decision about that save — nothing serialised.
+    'engine/signatures-kept': async ({ session }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      return { ok: true, value: await signaturesKept(held.session) };
     },
 
     'engine/annotations': async ({ session }) => {

@@ -364,6 +364,63 @@ export function decodedImage(bytes: Uint8Array): mupdf.Image {
   return new mupdf.Image(bytes);
 }
 
+/**
+ * THE ONE PLACE A SAVE'S TERMS ARE DECIDED (B3): the option string `serialise` hands MuPDF, and what it means for the
+ * document's signatures — which {@link signaturesKeptBySave} answers from the same decision, so *will this save keep
+ * the signatures* can never disagree with what the save then writes.
+ */
+function saveTermsOf(session: MupdfSession): {
+  readonly document: mupdf.PDFDocument;
+  readonly terms: string;
+  readonly signatures: number;
+  readonly appends: boolean;
+} {
+  const document = documentFor(session);
+  // EXHAUSTIVE OVER THE UNION rather than an `if`, so a third purpose is a
+  // compile error here instead of an option string silently defaulting to the
+  // one that keeps what a command removed.
+  const options: Record<SavePurpose, string> = { ordinary: '', removal: 'garbage' };
+  const purpose: SavePurpose = removals.has(session) ? 'removal' : 'ordinary';
+  // COMPOSED, and the protection goes LAST so a reader of the string meets
+  // the purpose first. The two are independent terms of one option list —
+  // `garbage` decides what is written, `encrypt=` decides how — and joining
+  // them here is what keeps this the one place a save's terms are decided (B3).
+  //
+  // Absent, the string is exactly what it was: an unprotected document saves
+  // with no encryption term, and a document opened from encrypted bytes keeps
+  // its encryption by MuPDF's own default. So a session nothing protected is
+  // unaffected by this line.
+  const protection = protections.get(session);
+  // ADR-0008 RULE 2 — ALWAYS INCREMENTAL WHEN A SIGNATURE MUST SURVIVE — built 2026-09-28. A plain save
+  // re-serialises the file and moves the bytes a PKCS#7 signature covers: measured that day, a freshly signed document
+  // flushed as a save flushes came back with different bytes and a signature that no longer covered it, so Sign then
+  // Save broke the signature just made. An incremental save of the same document returned the SAME bytes, and with a
+  // mark added it appended 658 bytes and the signature still covered its revision (`documentSign.test.ts`).
+  //
+  // ONLY FOR AN ORDINARY SAVE WITH NO PROTECTION CHANGE: a removal must leave no prior revision (rule 1, which wins),
+  // and a change of encryption re-encrypts every object — both rewrite the file, and so break a signature by the
+  // format's own rule. And only where MuPDF says it can append: a document it repaired on opening has no intact
+  // original to append to.
+  const signatures = signatureValues(document).length;
+  const appends =
+    purpose === 'ordinary' && protection === undefined && signatures > 0 && document.canBeSavedIncrementally();
+  const terms = appends ? 'incremental' : [options[purpose], protection ?? ''].filter((term) => term !== '').join(',');
+  return { document, terms, signatures, appends };
+}
+
+/**
+ * How many signatures the document carries, and whether the next save keeps them — Part F's *warn before a
+ * signature-breaking save* (`BUILD-PROMPT.md`:618). A save keeps a signature only by appending; so it breaks them
+ * exactly where there are any and {@link saveTermsOf} chose not to append — a removal, a change of protection, or a
+ * document MuPDF repaired.
+ */
+export function signaturesKeptBySave(session: MupdfSession): Promise<{ readonly signatures: number; readonly kept: boolean }> {
+  return promised(() => {
+    const { signatures, appends } = saveTermsOf(session);
+    return { signatures, kept: signatures === 0 || appends };
+  });
+}
+
 export const mupdfWriter: EngineWriter<MupdfSession> = {
   /**
    * Parses `image` into a session.
@@ -467,45 +524,10 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
    * garbage collection, no re-encryption.
    */
   serialise(session: MupdfSession): Promise<ByteImage> {
-    // EXHAUSTIVE OVER THE UNION rather than an `if`, so a third purpose is a
-    // compile error here instead of an option string silently defaulting to the
-    // one that keeps what a command removed.
-    const options: Record<SavePurpose, string> = { ordinary: '', removal: 'garbage' };
-    const purpose: SavePurpose = removals.has(session) ? 'removal' : 'ordinary';
-    // COMPOSED, and the protection goes LAST so a reader of the string meets
-    // the purpose first. The two are independent terms of one option list —
-    // `garbage` decides what is written, `encrypt=` decides how — and joining
-    // them here is what keeps `serialise` the one place a save's terms are
-    // decided (B3).
-    //
-    // Absent, the string is exactly what it was: an unprotected document saves
-    // with no encryption term, and a document opened from encrypted bytes keeps
-    // its encryption by MuPDF's own default. So a session nothing protected is
-    // unaffected by this line.
-    const protection = protections.get(session);
     // INSIDE `promised`, as the lookup always was: a session from elsewhere is refused as a REJECTION, never a
     // synchronous throw from a method that answers a promise (the writer's CONTROL cases).
     return promised(() => {
-      const document = documentFor(session);
-    // ADR-0008 RULE 2 — ALWAYS INCREMENTAL WHEN A SIGNATURE MUST SURVIVE — built 2026-09-28, where this comment's
-    // neighbour in `engineSeam.ts` said it would arrive. A plain save re-serialises the file and moves the bytes a
-    // PKCS#7 signature covers: measured that day, a freshly signed document flushed as a save flushes came back with
-    // different bytes and a signature that no longer covered it, so Sign then Save broke the signature just made. An
-    // incremental save of the same document returned the SAME bytes, and with a mark added it appended 658 bytes and
-    // the signature still covered its revision (`documentSign.test.ts`).
-    //
-    // ONLY FOR AN ORDINARY SAVE WITH NO PROTECTION CHANGE: a removal must leave no prior revision (rule 1, which wins),
-    // and a change of encryption re-encrypts every object — both rewrite the file, and so break a signature by the
-    // format's own rule. And only where MuPDF says it can append: a document it repaired on opening has no intact
-    // original to append to.
-      const incremental =
-        purpose === 'ordinary' &&
-        protection === undefined &&
-        signatureValues(document).length > 0 &&
-        document.canBeSavedIncrementally();
-      const terms = incremental
-        ? 'incremental'
-        : [options[purpose], protection ?? ''].filter((term) => term !== '').join(',');
+      const { document, terms } = saveTermsOf(session);
       return copiedOut(document.saveToBuffer(terms));
     });
   },

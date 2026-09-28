@@ -185,6 +185,7 @@ function start(stream: HostByteStream) {
     accessibility: () => {
       throw new Error('no case here checks accessibility');
     },
+    signaturesKept: () => Promise.reject(new Error('this case asks nothing about keeping signatures')),
     annotationRecords: () => {
       throw new Error('no case here reads annotation records');
     },

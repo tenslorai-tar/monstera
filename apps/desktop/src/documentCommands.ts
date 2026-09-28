@@ -654,6 +654,9 @@ export type PlaceImageOutcome =
   /** The library picture named is no longer kept. */
   | { readonly kind: 'absent' };
 
+/** What a save came to: the pipeline's outcomes, or a save held back because it would break signatures. */
+export type SaveRequestOutcome = SaveOutcome | { readonly kind: 'breaks-signatures'; readonly signatures: number };
+
 /**
  * What placing and signing need from the person's library (`personalLibrary.ts`): a kept picture's bytes, and a kept
  * entry. Its own narrow surface, so this module reaches the library to READ it and never to change it.
@@ -1942,6 +1945,8 @@ export interface DocumentCommandsParts {
    * side has to hold or send them.
    */
   readonly signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
+  /** How many signatures, and whether the next save keeps them — the writer's own decision. See {@link save}. */
+  readonly signaturesKept: (session: MupdfSession) => Promise<{ readonly signatures: number; readonly kept: boolean }>;
   readonly restore: DocumentRestore;
   /**
    * THE SIXTEENTH DEPENDENCY, and the first added since this became an options
@@ -2125,6 +2130,7 @@ export class DocumentCommands {
   readonly #ocr: DocumentOcrReader;
   readonly #layers: DocumentLayersReader;
   readonly #signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
+  readonly #signaturesKept: (session: MupdfSession) => Promise<{ readonly signatures: number; readonly kept: boolean }>;
   readonly #restore: DocumentRestore;
   readonly #annotations: DocumentAnnotationsReader;
   readonly #annotationCopy: DocumentAnnotationCopyReader;
@@ -2205,6 +2211,7 @@ export class DocumentCommands {
     this.#ocr = parts.ocr;
     this.#layers = parts.layers;
     this.#signatures = parts.signatures;
+    this.#signaturesKept = parts.signaturesKept;
     this.#restore = parts.restore;
     this.#annotations = parts.annotations;
     this.#annotationCopy = parts.annotationCopy;
@@ -5355,13 +5362,28 @@ export class DocumentCommands {
     };
   }
 
-  async save(docId: DocId): Promise<SaveOutcome> {
-    const { value } = await this.#documents.run(docId, async (context) => {
+  /**
+   * Saves the document to its own file.
+   *
+   * **A save that would break a signature is ASKED, not written** (Part F's *warn before signature-breaking save*):
+   * unless the request says the person agreed, the writer is asked first whether its next save keeps the document's
+   * signatures — the same decision that save then takes (`signaturesKeptBySave`) — and a *no* answers
+   * `breaks-signatures` with nothing written. In the lane, so no command can land between the question and the write.
+   */
+  async save(docId: DocId, request: { readonly breakSignatures: boolean }): Promise<SaveRequestOutcome> {
+    const { value } = await this.#documents.run(docId, async (context): Promise<SaveRequestOutcome> => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      if (!request.breakSignatures) {
+        const session = sessions.mupdf;
+        if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+        const kept = await this.#signaturesKept(session);
+        if (!kept.kept) return { kind: 'breaks-signatures', signatures: kept.signatures };
+      }
 
       return await saveDocument(this.#save.deps, context, () =>
         this.#save.flush(docId, sessions),

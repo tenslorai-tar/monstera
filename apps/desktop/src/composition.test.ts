@@ -304,7 +304,8 @@ describe('the composition root, with no engine host platform', () => {
     expect(opened.ok).toBe(true);
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
 
-    const saved = await handlers['document.save']({ docId: opened.value.docId });
+    // `false`: the path that asks the host about signatures first — so a poisoned document is refused before it.
+    const saved = await handlers['document.save']({ docId: opened.value.docId, breakSignatures: false });
 
     // A DECLARED code, not the order. This case was written asserting that
     // poison is read before the session and does not prove it: mutating the

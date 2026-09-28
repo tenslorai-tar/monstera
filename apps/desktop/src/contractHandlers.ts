@@ -725,10 +725,13 @@ function readRangeHandler(documents: DocumentService): ContractHandlers['documen
  * silently absorb a fifth verdict the kernel grows later.
  */
 function saveHandler(commands: DocumentCommands): ContractHandlers['document.save'] {
-  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.save']>>> => {
+  return async ({ docId, breakSignatures }): Promise<Awaited<ReturnType<ContractHandlers['document.save']>>> => {
     try {
-      const outcome = await commands.save(docId);
+      const outcome = await commands.save(docId, { breakSignatures });
       if (outcome.kind === 'saved') return ok({ kind: 'saved', version: outcome.version } as const);
+      if (outcome.kind === 'breaks-signatures') {
+        return ok({ kind: 'breaks-signatures', signatures: outcome.signatures } as const);
+      }
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       return ok({ kind: 'refused', reason: refusalReason(outcome.verdict) } as const);
     } catch (thrown) {
@@ -2843,7 +2846,9 @@ function cloudHandlers(
     'cloud.saveBack': async ({ docId }) => {
       if (deps.cloud.originOf(docId) === null) return ok({ kind: 'not-from-cloud' as const });
       try {
-        const saved = await deps.commands.save(docId);
+        // NEVER BREAKING A SIGNATURE UNASKED: a save-back is not the place a person is told, so a save that would break
+        // one is not written and the save-back answers that it failed.
+        const saved = await deps.commands.save(docId, { breakSignatures: false });
         if (saved.kind !== 'saved') return ok({ kind: 'save-failed' as const });
         // THE UPLOAD'S REFUSAL IS CAUGHT HERE, where the saved version is in scope, so a refusal
         // after the working copy was written still says which version it holds.

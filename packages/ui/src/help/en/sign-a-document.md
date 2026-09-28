@@ -25,6 +25,7 @@ A digital signature proves who signed a document and shows whether it has change
 - If the timestamp service cannot be reached or refuses, the document is not signed; try another service or sign without one.
 - This signature is invisible on the page. To show one, see "Add a visible signature".
 - Sign last: changes made after signing show up as changes when the signature is checked.
+- Saving after you sign keeps the signature. A redaction, a flattened form or a new password rewrites the whole file and breaks it; Monstera asks before saving one of those (see "Save your changes").
 
 <!--
 Screenshots to capture:

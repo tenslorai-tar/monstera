@@ -23,6 +23,7 @@ Your changes stay in Monstera until you save. Saving writes them into the file y
 - To keep the original file unchanged, use "Save a copy" instead.
 - Each save keeps the version it replaces beside the file, named like `report.pdf.bak`. To keep more earlier versions (up to 10), open **Settings**, choose **Saving** and pick a number under **Backup copies to keep**: the newest is `.bak`, then `.bak2` and so on. To go back to an earlier version, rename its copy to end in `.pdf` and open it.
 - Saving can happen on a timer if you turn on autosave. See "Save automatically".
+- Saving a digitally signed document keeps its signatures: your changes are added after them. A few changes need the whole file rewritten — a redaction, flattening a form, or a new password — and that breaks the signatures. Monstera asks first, in **This save will break signatures**: choose **Save anyway**, or close the window to keep them. Autosave never breaks a signature; such a save waits for you. To stop being asked, turn off **Warn before a save breaks a signature** in **Settings**, on the **Saving** page.
 
 <!--
 Screenshots to capture:

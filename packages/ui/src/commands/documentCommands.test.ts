@@ -76,6 +76,7 @@ import {
   rotatePageCommand,
   deletePageCommand,
   saveCommand,
+  saveDocument,
   undoCommand,
 } from './documentCommands.js';
 
@@ -211,12 +212,15 @@ function askRecording(
 function saving(): {
   toast: ShowToast;
   onSaved: (docId: DocId, version: DocVersion) => void;
+  warnSignatureBreak: () => boolean;
   said: { kind: string; message: string }[];
   wrote: { docId: DocId; version: DocVersion }[];
 } {
   const said: { kind: string; message: string }[] = [];
   const wrote: { docId: DocId; version: DocVersion }[] = [];
   return {
+    // THE SHIPPED DEFAULT: a save that would break a signature asks.
+    warnSignatureBreak: () => true,
     toast: (kind, message) => {
       said.push({ kind, message });
     },
@@ -463,7 +467,7 @@ describe('save', () => {
 
     const shown: { id: string; props: unknown }[] = [];
     const { toast, onSaved, said, wrote } = saving();
-    await saveCommand({ client, ask: askRecording(shown), toast, onSaved }).run(CONTEXT);
+    await saveCommand({ client, ask: askRecording(shown), toast, onSaved, warnSignatureBreak: () => true }).run(CONTEXT);
 
     expect(asked).toBe('document.save');
     // ASSERT THE CALL THAT WAS NOT MADE. A dialog on the successful path is one
@@ -481,6 +485,75 @@ describe('save', () => {
     expect(wrote).toStrictEqual([{ docId: CONTEXT.docId, version: asDocVersion(2) }]);
   });
 
+  describe('a save that would BREAK SIGNATURES (saving.warn-signature-break)', () => {
+    /** Main answers `breaks-signatures` to a save that has not agreed, and `saved` to one that has. */
+    const signedClient = (): { client: ContractClient; sent: unknown[] } => {
+      const sent: unknown[] = [];
+      const client = createClient(channels, (_id, params) => {
+        sent.push(params);
+        const agreed = (params as { breakSignatures: boolean }).breakSignatures;
+        return Promise.resolve(
+          ok(agreed ? { kind: 'saved', version: asDocVersion(3) } : { kind: 'breaks-signatures', signatures: 2 }),
+        );
+      });
+      return { client, sent };
+    };
+    const agreeing = (answer: unknown) => (id: string, props: unknown): Promise<unknown> => {
+      shownHere.push({ id, props });
+      return Promise.resolve(answer);
+    };
+    let shownHere: { id: string; props: unknown }[] = [];
+
+    it('ASKS, and saves saying so once the person agrees', async () => {
+      shownHere = [];
+      const { client, sent } = signedClient();
+      const { toast, onSaved, wrote } = saving();
+      const saved = await saveDocument(
+        { client, ask: agreeing({ save: true }), toast, onSaved, warnSignatureBreak: () => true },
+        CONTEXT.docId ?? DOC,
+        'attended',
+      );
+      expect(saved).toBe(true);
+      expect(shownHere).toStrictEqual([{ id: 'dialog.signature-break', props: { signatures: 2 } }]);
+      expect(sent).toStrictEqual([
+        { docId: CONTEXT.docId, breakSignatures: false },
+        { docId: CONTEXT.docId, breakSignatures: true },
+      ]);
+      expect(wrote).toStrictEqual([{ docId: CONTEXT.docId, version: asDocVersion(3) }]);
+    });
+
+    it('CONTROL: DISMISSED keeps the signatures — nothing saved, the document still unsaved', async () => {
+      shownHere = [];
+      const { client, sent } = signedClient();
+      const { toast, onSaved, wrote } = saving();
+      expect(
+        await saveDocument({ client, ask: agreeing(undefined), toast, onSaved, warnSignatureBreak: () => true }, CONTEXT.docId ?? DOC, 'attended'),
+      ).toBe(false);
+      expect(sent).toStrictEqual([{ docId: CONTEXT.docId, breakSignatures: false }]);
+      expect(wrote).toStrictEqual([]);
+    });
+
+    it('with the warning OFF it saves without asking', async () => {
+      shownHere = [];
+      const { client, sent } = signedClient();
+      expect(
+        await saveDocument({ client, ask: agreeing(undefined), ...saving(), warnSignatureBreak: () => false }, CONTEXT.docId ?? DOC, 'attended'),
+      ).toBe(true);
+      expect(shownHere).toStrictEqual([]);
+      expect(sent).toHaveLength(2);
+    });
+
+    it('UNATTENDED — autosave — never breaks one and never asks, whatever the setting', async () => {
+      shownHere = [];
+      const { client, sent } = signedClient();
+      expect(
+        await saveDocument({ client, ask: agreeing({ save: true }), ...saving(), warnSignatureBreak: () => false }, CONTEXT.docId ?? DOC, 'unattended'),
+      ).toBe(false);
+      expect(shownHere).toStrictEqual([]);
+      expect(sent).toStrictEqual([{ docId: CONTEXT.docId, breakSignatures: false }]);
+    });
+  });
+
   it('a refused save CONFIRMS NOTHING and records no saved version', async () => {
     // THE CONTROL for the case above, and it is the load-bearing half. A `saveDocument` that
     // raised its toast before reading `kind` passes every assertion up there — the toast is
@@ -491,7 +564,7 @@ describe('save', () => {
     const shown: { id: string; props: unknown }[] = [];
     const { toast, onSaved, said, wrote } = saving();
 
-    await saveCommand({ client, ask: askRecording(shown), toast, onSaved }).run(CONTEXT);
+    await saveCommand({ client, ask: askRecording(shown), toast, onSaved, warnSignatureBreak: () => true }).run(CONTEXT);
 
     expect(said).toStrictEqual([]);
     expect(wrote).toStrictEqual([]);

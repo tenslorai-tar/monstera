@@ -398,6 +398,18 @@ export function remoteMupdfSignatures(
     ).signatures;
 }
 
+/** Whether the next save keeps the document's signatures, over the boundary. `signaturesKeptBySave` in the host. */
+export function remoteMupdfSignaturesKept(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): (session: MupdfSession) => Promise<{ readonly signatures: number; readonly kept: boolean }> {
+  return async (session) =>
+    answered(
+      'engine/signatures-kept',
+      await client['engine/signatures-kept']({ session: sessions.handleFor(session) }),
+    );
+}
+
 /**
  * The document's annotations, over the boundary.
  *

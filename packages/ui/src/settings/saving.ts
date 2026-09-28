@@ -10,6 +10,8 @@ import {
   AUTOSAVE_TITLE,
   CONFIRM_REDACTION_DESCRIPTION,
   CONFIRM_REDACTION_TITLE,
+  WARN_SIGNATURE_BREAK_DESCRIPTION,
+  WARN_SIGNATURE_BREAK_TITLE,
 } from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
 
@@ -55,6 +57,21 @@ export const BACKUP_COPIES_SETTING: SettingDefinition<z.ZodEnum<{ [K in BackupCo
   fallback: 'one',
   category: 'saving',
   optionTitles: BACKUP_COPIES_OPTION_TITLES,
+};
+
+/**
+ * Whether a save that would break the document's signatures asks first — Part F's *"warn before signature-breaking
+ * save"* (`BUILD-PROMPT.md`:618), ON by default: a signature that stops verifying is not something a person can see
+ * happen, and most saves of a signed document keep it (they append). Off, such a save goes ahead; a timer's save never
+ * breaks one either way.
+ */
+export const WARN_SIGNATURE_BREAK_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'saving.warn-signature-break',
+  title: WARN_SIGNATURE_BREAK_TITLE,
+  description: WARN_SIGNATURE_BREAK_DESCRIPTION,
+  schema: z.boolean(),
+  fallback: true,
+  category: 'saving',
 };
 
 /**

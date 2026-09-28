@@ -6,7 +6,7 @@ import { type CommandOfKind, createClient, type Incident, wrapHandlers } from '@
 
 import { localMupdfExecution } from '../commandSpecs.js';
 import type { ByteImage, MupdfSession } from '../engineSeam.js';
-import { accessFor, mupdfWriter, withDocument } from '../mupdfWriter.js';
+import { accessFor, mupdfWriter, signaturesKeptBySave, withDocument } from '../mupdfWriter.js';
 import { readSignatures } from '../signatureRead.js';
 import { extractPages } from '../pageExtract.js';
 import { rasterisePageImage } from '../pageImages.js';
@@ -344,6 +344,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       // THE REAL READER, as its neighbours here are: this file drives the remote half against a
       // host that reads, so the clipboard's copy is exercised over the pipe below.
       annotationRecords: copyAnnotationData,
+      signaturesKept: signaturesKeptBySave,
     }),
     (incident) => incidents.push(incident),
   );
@@ -785,6 +786,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         accessibility: () => {
           throw new Error('unused');
         },
+        signaturesKept: () => Promise.reject(new Error('this case asks nothing about keeping signatures')),
         annotationRecords: () => {
           throw new Error('unused');
         },
@@ -914,6 +916,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         accessibility: () => {
           throw new Error('the rotation-refusal case must not check accessibility');
         },
+        signaturesKept: () => Promise.reject(new Error('this case asks nothing about keeping signatures')),
         annotationRecords: () => {
           throw new Error('the rotation-refusal case must not read annotation records');
         },

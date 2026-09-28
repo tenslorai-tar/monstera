@@ -14,7 +14,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { applySignDocument, withSignaturePlaceholder } from './documentSign.js';
 import type { ByteImage } from './engineSeam.js';
 import { PngPixelsRefused } from './imageDimensions.js';
-import { mupdfWriter, withDocument } from './mupdfWriter.js';
+import { mupdfWriter, signaturesKeptBySave, withDocument, withDocumentRemoving } from './mupdfWriter.js';
 import {
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
@@ -369,6 +369,27 @@ describe('readSignatures', () => {
     expect(appended(signed, saved)).toBe(true);
     // COVERS ITS REVISION, not the whole file: what a reader shows as *signed, changed since*.
     expect(await coverage(saved)).toStrictEqual({ covers: true, whole: false });
+  }, 60_000);
+
+  it('SAYS WHETHER THE NEXT SAVE KEEPS THE SIGNATURES — from the same decision the save then takes', async () => {
+    const signed = await applySignDocument(unsigned, { ...command, bytes: certificate });
+    const asked = async (bytes: Uint8Array, removing: boolean): Promise<unknown> => {
+      const session = await mupdfWriter.open(bytes);
+      try {
+        // A REMOVAL on the session — what a flatten or a redaction marks — so the next save must rewrite (rule 1).
+        if (removing) await withDocumentRemoving(session, () => undefined);
+        const said = await signaturesKeptBySave(session);
+        // AND THE SAVE AGREES: what it says is what the flush then does.
+        const written = await mupdfWriter.serialise(session);
+        return { ...said, appended: appended(bytes, written) };
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    };
+    expect(await asked(unsigned, false)).toStrictEqual({ signatures: 0, kept: true, appended: false });
+    expect(await asked(signed, false)).toStrictEqual({ signatures: 1, kept: true, appended: true });
+    // THE SAVE THE WARNING IS FOR: a signed document whose next save rewrites it.
+    expect(await asked(signed, true)).toStrictEqual({ signatures: 1, kept: false, appended: false });
   }, 60_000);
 
   it('CONTROL: an UNSIGNED document is still written anew — the rule is keyed on a signature, not on every save', async () => {

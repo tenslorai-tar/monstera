@@ -83,6 +83,7 @@ import type { PageTransitionAnswer } from '../dialogs/pageTransitionResult.js';
 import { RESIZE_PAGES_DIALOG_ID } from '../dialogs/resizePages.js';
 import type { ResizePagesAnswer } from '../dialogs/resizePagesResult.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
+import { SIGNATURE_BREAK_DIALOG_ID, SIGNATURE_BREAK_RESULT } from '../dialogs/signatureBreak.js';
 import { WATERMARK_PAGES_DIALOG_ID } from '../dialogs/watermarkPages.js';
 import type { WatermarkPagesAnswer } from '../dialogs/watermarkPagesResult.js';
 import {
@@ -2097,6 +2098,8 @@ export function redoCommand(deps: DocumentCommandDeps): UiCommand {
  */
 export function saveCommand(deps: {
   readonly client: ContractClient;
+  /** Whether a save that would break signatures asks first. `saveDocument`'s. */
+  readonly warnSignatureBreak: () => boolean;
   /**
    * Opens a registered dialog and awaits its answer (ADR-0038).
    *
@@ -2118,7 +2121,7 @@ export function saveCommand(deps: {
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
-      await saveDocument(deps, context.docId);
+      await saveDocument(deps, context.docId, 'attended');
     },
   };
 }
@@ -2252,10 +2255,29 @@ export async function saveDocument(
   deps: {
     readonly client: ContractClient;
     readonly ask: (id: string, props: unknown) => Promise<unknown>;
+    /** Whether a save that would break signatures asks first (`saving.warn-signature-break`), read at each save. */
+    readonly warnSignatureBreak: () => boolean;
   } & WritesItsOwnFile,
   docId: DocId,
+  /**
+   * Whether a person is there to be asked. REQUIRED, so each caller says: *Save* and the close path's *Save* are
+   * `attended`; autosave is `unattended`, and a timer never breaks a signature — the save waits for a person.
+   */
+  attendance: 'attended' | 'unattended',
 ): Promise<boolean> {
-  const answer = await deps.client['document.save']({ docId });
+  // A SIGNATURE IS NEVER BROKEN UNASKED: main answers `breaks-signatures` rather than writing, and only a person who
+  // agreed — or who turned the warning off — sends the save again saying so.
+  let answer = await deps.client['document.save']({ docId, breakSignatures: false });
+  if (answer.ok && answer.value.kind === 'breaks-signatures') {
+    if (attendance === 'unattended') return false;
+    if (deps.warnSignatureBreak()) {
+      const agreed = SIGNATURE_BREAK_RESULT.safeParse(
+        await deps.ask(SIGNATURE_BREAK_DIALOG_ID, { signatures: answer.value.signatures }),
+      );
+      if (!agreed.success) return false;
+    }
+    answer = await deps.client['document.save']({ docId, breakSignatures: true });
+  }
   if (!answer.ok) {
     reportProblem(deps, answer.error);
     return false;
@@ -2268,6 +2290,9 @@ export async function saveDocument(
     deps.toast('done', TOAST_SAVED);
     return true;
   }
+  // NOT REACHABLE from a save that said `breakSignatures: true`, and narrowed rather than cast: an answer this
+  // function did not expect saves nothing and reports nothing it cannot name.
+  if (answer.value.kind === 'breaks-signatures') return false;
   // FLATTENED HERE, where both fields exist, rather than in the dialog. The
   // channel answers two shapes describing one thing; the dialog's schema
   // takes one enum, so its body switches once and a sixth outcome is a

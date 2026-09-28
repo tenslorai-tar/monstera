@@ -323,6 +323,7 @@ export {
   remoteMupdfFormFields,
   remoteMupdfLayers,
   remoteMupdfSignatures,
+  remoteMupdfSignaturesKept,
   remoteMupdfOcr,
   remoteMupdfPageFills,
   remoteMupdfPageLinks,

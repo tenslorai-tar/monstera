@@ -180,6 +180,7 @@ async function joined(ocr: HostOcrReader): Promise<{
       accessibility: () => {
         throw new Error('a recognition must not check accessibility');
       },
+      signaturesKept: () => Promise.reject(new Error('this case asks nothing about keeping signatures')),
       annotationRecords: () => {
         throw new Error('a recognition must not read annotation records');
       },
