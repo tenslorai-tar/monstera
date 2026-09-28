@@ -1,6 +1,12 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { AI_SETUP_AT_START_SETTING_ID, type ContractClient, channels, createClient } from '@monstera/contract';
+import {
+  AI_PROVIDER_IDS,
+  AI_SETUP_AT_START_SETTING_ID,
+  type ContractClient,
+  channels,
+  createClient,
+} from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { act, cleanup, fireEvent, render as renderBare, screen, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -282,6 +288,15 @@ function answeringClient(answers: Readonly<Record<string, unknown>>): {
   });
   return { client, sent };
 }
+
+/**
+ * What opening Settings asks main before the dialog shows: the stored keys' ids, and every provider's model list as
+ * main holds it (ADR-0117) — the unasked fallback here, an empty list each.
+ */
+const SETTINGS_OPEN_ANSWERS = {
+  'settings.loadSecrets': { stored: [], available: true },
+  'ai.models.held': Object.fromEntries(AI_PROVIDER_IDS.map((provider) => [provider, { source: 'fallback', models: [] }])),
+};
 
 /** The answers a case needs to reach a document with the toolbar showing. */
 const OPEN_DOCUMENT_ANSWERS = {
@@ -2096,10 +2111,7 @@ describe('App', () => {
     });
 
     it('the RAIL’S FOOT carries Settings, and pressing it opens the Settings dialog (ADR-0098)', async () => {
-      const { client, sent } = answeringClient({
-        ...OPEN_DOCUMENT_ANSWERS,
-        'settings.loadSecrets': { stored: [], available: true },
-      });
+      const { client, sent } = answeringClient({ ...OPEN_DOCUMENT_ANSWERS, ...SETTINGS_OPEN_ANSWERS });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
@@ -3655,7 +3667,7 @@ describe('the proof locale — every word on screen came through the catalogue (
   });
 
   it('the keyboard shortcuts list — every command’s title — and Settings — every setting — show none either', async () => {
-    const { client } = answeringClient({ ...OPEN_DOCUMENT_ANSWERS, 'settings.loadSecrets': { stored: [], available: true } });
+    const { client } = answeringClient({ ...OPEN_DOCUMENT_ANSWERS, ...SETTINGS_OPEN_ANSWERS });
     renderPseudo(client);
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: '/', ctrlKey: true, bubbles: true, cancelable: true }));
