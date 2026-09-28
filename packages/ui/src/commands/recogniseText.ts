@@ -1,8 +1,8 @@
 import { MAX_TEXT_LAYER_LINES, type OcrLanguages } from '@monstera/contract';
 import type { DocId } from '@monstera/shared';
 
-import { OCR_DIALOG_ID } from '../dialogs/ocr.js';
-import { OCR_OUTCOME_DIALOG_ID } from '../dialogs/ocrOutcome.js';
+import { OCR_DIALOG_ID, openingLanguages } from '../dialogs/ocr.js';
+import { OCR_OUTCOME_DIALOG_ID, type RecognisedWalk } from '../dialogs/ocrOutcome.js';
 import { OCR_RESULT } from '../dialogs/ocrResult.js';
 import { ENHANCE_OUTCOME_DIALOG_ID } from '../dialogs/enhanceOutcome.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
@@ -270,13 +270,6 @@ export function straightenScansCommand(
   };
 }
 
-/** What a walk did, and the shape `dialog.ocr-outcome` renders. */
-export interface RecognisedWalk {
-  readonly recognised: number;
-  readonly skipped: number;
-  readonly stopped: boolean;
-}
-
 /**
  * Recognises the image-only pages of a scope, one command each.
  *
@@ -346,6 +339,40 @@ export async function recogniseScope(
     task.end();
   }
   return { recognised, skipped, stopped: aborted() };
+}
+
+/**
+ * Recognises the scanned pages before an export, where the person has turned that on — Part F's *auto-OCR scanned
+ * pages on export* ([ADR-0118](../../../../docs/DECISIONS/0118-recognition-on-export-is-a-setting-applied-as-the-searchable-export-applies-it.md)).
+ *
+ * **{@link recogniseScope}, called**: the same pages, the same one command each, the same progress and cancel, so an
+ * export recognising first and the searchable export cannot disagree about which pages needed it. The languages are
+ * the ones the OCR dialog opens on (`openingLanguages`).
+ *
+ * Answers `undefined` where nothing ran — the setting off, or no model on this machine, where the export goes ahead
+ * as it would with the setting off (Decision 5).
+ */
+export async function recogniseBeforeExport(
+  deps: DocumentCommandDeps & {
+    readonly track: TrackTask;
+    /** The stored `RECOGNISE_ON_EXPORT_SETTING`, read when an export runs. */
+    readonly recogniseOnExport: () => boolean;
+    readonly ocrLanguages: () => OcrLanguages;
+  },
+  docId: DocId,
+  pageCount: number,
+): Promise<RecognisedWalk | undefined> {
+  if (!deps.recogniseOnExport()) return undefined;
+  const models = await deps.client['app.ocrLanguages']({});
+  if (!models.ok) return undefined;
+  const languages = openingLanguages(deps.ocrLanguages(), models.value.languages);
+  if (languages === undefined) return undefined;
+  return await recogniseScope(
+    deps,
+    docId,
+    Array.from({ length: pageCount }, (_unused, index) => index),
+    languages,
+  );
 }
 
 /**

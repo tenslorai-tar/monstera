@@ -19,9 +19,9 @@ Export text writes every page's words into one text file. **Export text with lay
 ## Good to know
 
 - Pages are separated by a page-break character in the file.
-- Scanned pages have no text until it is recognised; see "Make scanned pages searchable".
+- Scanned pages have no text until it is recognised; see "Make scanned pages searchable", or "Recognise scanned pages when exporting" to have exports do it first.
 - If this copy of Monstera cannot export with layout, it says so; **Export text…** still works.
-- The document itself is not changed.
+- The document itself is not changed, unless scanned pages are recognised first.
 
 <!--
 Screenshots to capture:

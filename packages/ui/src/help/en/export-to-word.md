@@ -22,8 +22,8 @@ Export to Word turns the document's text into a Word (.docx) file you can edit.
 ## Good to know
 
 - Pictures are not carried into the Word file in any of the three choices.
-- Scanned pages have no text until it is recognised; see "Make scanned pages searchable".
-- The document itself is not changed.
+- Scanned pages have no text until it is recognised; see "Make scanned pages searchable", or "Recognise scanned pages when exporting" to have exports do it first.
+- The document itself is not changed, unless scanned pages are recognised first.
 
 <!--
 Screenshots to capture:

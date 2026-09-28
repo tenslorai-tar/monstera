@@ -1,4 +1,10 @@
-import { OCR_LANGUAGES, ocrLanguageSchema, ocrLanguagesSchema } from '@monstera/contract';
+import {
+  OCR_LANGUAGES,
+  type OcrLanguage,
+  type OcrLanguages,
+  ocrLanguageSchema,
+  ocrLanguagesSchema,
+} from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -6,6 +12,23 @@ import { OCR_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
 import { OCR_RESULT } from './ocrResult.js';
 import { TARGET_PAGES } from './pageScope.js';
+
+/**
+ * The languages a recognition starts on: the stored set's members this machine has a model for, in the stored order,
+ * else its first model — or `undefined` where it has none.
+ *
+ * **One rule for the two places that start a recognition without asking a language first**: the OCR dialog opens on
+ * it, and an export that recognises first (ADR-0118) reads with it. A second spelling in the export would recognise
+ * a document in a language the dialog would never have offered.
+ */
+export function openingLanguages(
+  chosen: readonly OcrLanguage[],
+  provisioned: readonly OcrLanguage[],
+): OcrLanguages | undefined {
+  const held = chosen.filter((language) => provisioned.includes(language));
+  const parsed = ocrLanguagesSchema.safeParse(held.length > 0 ? held : provisioned.slice(0, 1));
+  return parsed.success ? parsed.data : undefined;
+}
 
 /** The id the OCR command opens to collect languages and a scope. */
 export const OCR_DIALOG_ID = 'dialog.ocr';

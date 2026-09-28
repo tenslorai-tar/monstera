@@ -1267,6 +1267,57 @@ describe('App', () => {
       expect(asked[0]?.params).toStrictEqual({ docId: DOC, pages: [0] });
     });
 
+    describe('RECOGNISE SCANNED PAGES WHEN EXPORTING, through the composition that wires it (ADR-0118)', () => {
+      /** Two picture pages, the models `eng` and `deu`, and an export that lands. */
+      const SCANNED = {
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.pageTextLayer': { version: asDocVersion(1), lines: [], truncated: false, kind: 'image-only' as const },
+        'app.ocrLanguages': { languages: ['eng', 'deu'] },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+        'document.exportText': { kind: 'copied' as const, bytes: 10 },
+      };
+
+      it('with the setting on, Export text recognises every picture page in the STORED language, then exports', async () => {
+        // The unit cases inject the walk; this is the one place App's own composition is crossed — the setting read,
+        // the stored languages handed on, the walk reaching the bus. `deu` rather than the fallback `eng`, so a
+        // composition that dropped the languages could not pass.
+        const { client, sent } = answeringClient(SCANNED);
+        render(
+          <App
+            client={client}
+            settings={freshSettings({ 'ocr.recognise-on-export': true, 'editing.ocr-language': ['deu'] })}
+          />,
+        );
+        await withDocumentOpen();
+
+        await pressCommand('Export text…');
+        await vi.waitFor(() => {
+          expect(sent.some((call) => call.id === 'document.exportText')).toBe(true);
+        });
+
+        const order = sent
+          .filter((call) => call.id === 'document.execute' || call.id === 'document.exportText')
+          .map((call) => (call.id === 'document.execute' ? (call.params as { command: unknown }).command : call.id));
+        expect(order).toStrictEqual([
+          { kind: 'ocrPage', page: 0, languages: ['deu'], engine: 'tesseract' },
+          { kind: 'ocrPage', page: 1, languages: ['deu'], engine: 'tesseract' },
+          'document.exportText',
+        ]);
+      });
+
+      it('CONTROL: with it off — the default — the same export recognises nothing', async () => {
+        const { client, sent } = answeringClient(SCANNED);
+        render(<App client={client} settings={freshSettings({ 'editing.ocr-language': ['deu'] })} />);
+        await withDocumentOpen();
+
+        await pressCommand('Export text…');
+        await vi.waitFor(() => {
+          expect(sent.some((call) => call.id === 'document.exportText')).toBe(true);
+        });
+        expect(sent.filter((call) => call.id === 'document.execute')).toStrictEqual([]);
+      });
+    });
+
     it('the TAB MENU opens on a right-click with the registered tab commands, and Close tab closes (§7)', async () => {
       // THROUGH THE REAL APPLICATION, because the registration lives here: a command that was never
       // registered, or a strip handed the wrong document, passes every unit case and shows no menu.

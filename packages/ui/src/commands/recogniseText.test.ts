@@ -12,6 +12,7 @@ import { type TrackTask, UNTRACKED } from '../runningTask.js';
 import {
   enhanceScansCommand,
   exportSearchableCommand,
+  recogniseBeforeExport,
   recogniseTextCommand,
   straightenScansCommand,
 } from './recogniseText.js';
@@ -548,5 +549,53 @@ describe('the recognise-text command', () => {
     expect(dispatched).toStrictEqual([
       { kind: 'ocrPage', page: 0, languages: ['eng'], engine: 'tesseract' },
     ]);
+  });
+});
+
+describe('recognising before an export (ADR-0118)', () => {
+  const run = (
+    on: boolean,
+    stored: OcrLanguages,
+    clientParts: ReturnType<typeof clientOver>,
+  ): ReturnType<typeof recogniseBeforeExport> =>
+    recogniseBeforeExport(
+      {
+        client: clientParts.client,
+        onApplied: () => undefined,
+        stamp: STAMP,
+        ask: () => Promise.resolve(undefined),
+        track: UNTRACKED,
+        recogniseOnExport: () => on,
+        ocrLanguages: () => stored,
+      },
+      DOC,
+      3,
+    );
+
+  it('with the setting ON, walks every page and reads with the languages the OCR dialog would open on', async () => {
+    // `fra` is stored and not provisioned, `deu` is both: the walk must read in `deu` alone — the dialog's rule, not
+    // the stored set as it stands and not the machine's first model.
+    const parts = clientOver(['image-only', 'text', 'image-only'], { languages: ['eng', 'deu'] });
+    const walked = await run(true, ['fra', 'deu'], parts);
+
+    expect(parts.read).toStrictEqual([0, 1, 2]);
+    expect(parts.dispatched).toStrictEqual([
+      { kind: 'ocrPage', page: 0, languages: ['deu'], engine: 'tesseract' },
+      { kind: 'ocrPage', page: 2, languages: ['deu'], engine: 'tesseract' },
+    ]);
+    expect(walked).toStrictEqual({ recognised: 2, skipped: 1, stopped: false });
+  });
+
+  it('CONTROL: with it OFF nothing is read, nothing recognised, and nothing answered', async () => {
+    const parts = clientOver(['image-only', 'image-only', 'image-only'], { languages: ['eng'] });
+    expect(await run(false, ['eng'], parts)).toBeUndefined();
+    expect(parts.read).toStrictEqual([]);
+    expect(parts.dispatched).toStrictEqual([]);
+  });
+
+  it('with no model on this machine the export goes ahead unrecognised, rather than refused (Decision 5)', async () => {
+    const parts = clientOver(['image-only', 'image-only', 'image-only'], { languages: [] });
+    expect(await run(true, ['eng'], parts)).toBeUndefined();
+    expect(parts.dispatched).toStrictEqual([]);
   });
 });

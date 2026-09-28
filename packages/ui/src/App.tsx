@@ -169,6 +169,7 @@ import {
   enhanceScansCommand,
   exportSearchableCommand,
   straightenScansCommand,
+  recogniseBeforeExport,
   recogniseTextCommand,
 } from './commands/recogniseText.js';
 import { featureShortcutCommands } from './commands/featureShortcuts.js';
@@ -377,6 +378,7 @@ import {
   MEASURE_UNIT_SETTING,
   AZURE_DI_ENDPOINT_SETTING,
   OCR_LANGUAGE_SETTING,
+  RECOGNISE_ON_EXPORT_SETTING,
   AUTHOR_NAME_SETTING,
   authorFor,
 } from './settings/editing.js';
@@ -2410,6 +2412,29 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     const marksDelete = deleteSelectionCommand(selectionDeps);
     const marksPaste = pasteAnnotationsCommand({ client, onApplied: applied, ask, stamp, hasCopied: readHasCopied });
     const marksSelectAll = selectAllMarksCommand({ marksOn, selectAll: selectAllOn });
+    // RECOGNISING FIRST, for the exports whose output is the text (ADR-0118): the searchable export's walk, composed
+    // here because `recogniseText.ts` imports the module the exports live in. Both settings are read when an export
+    // RUNS, from the store — the registry is not rebuilt for them.
+    const exportDeps = {
+      client,
+      onApplied: applied,
+      ask,
+      stamp,
+      recogniseFirst: (docId: DocId, pageCount: number) =>
+        recogniseBeforeExport(
+          {
+            client,
+            onApplied: applied,
+            ask,
+            stamp,
+            track,
+            recogniseOnExport: () => settings.get(RECOGNISE_ON_EXPORT_SETTING.id) === true,
+            ocrLanguages: storedOcrLanguages,
+          },
+          docId,
+          pageCount,
+        ),
+    };
     const registered: UiCommand[] = [
         // THE MENU BAR'S OWN (ADR-0107): the clipboard verbs on what has focus, the start screen, the window's one
         // close, and the Store's updates page.
@@ -2625,9 +2650,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         extractPagesCommand({ client, onApplied: applied, ask, stamp, toast }),
         splitDocumentCommand({ client, onApplied: applied, ask, stamp }),
         exportPageImagesCommand({ client, onApplied: applied, ask, stamp }),
-        exportTextCommand({ client, onApplied: applied, ask, stamp }),
-        exportLayoutTextCommand({ client, onApplied: applied, ask, stamp }),
-        exportWordCommand({ client, onApplied: applied, ask, stamp }),
+        exportTextCommand(exportDeps),
+        exportLayoutTextCommand(exportDeps),
+        exportWordCommand(exportDeps),
         exportPowerPointCommand({ client, onApplied: applied, ask, stamp }),
         exportExcelCommand({
           client,
@@ -2644,7 +2669,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         }),
         printCommand({ client, onApplied: applied, ask, stamp, settings }),
         emailCommand({ client, onApplied: applied, ask, stamp }),
-        exportPdfaCommand({ client, onApplied: applied, ask, stamp }),
+        exportPdfaCommand(exportDeps),
         optimizeCommand({ client, onApplied: applied, ask, stamp, track, toast }),
         generateTocCommand({ client, onApplied: applied, ask, stamp }),
         findDuplicatePagesCommand({ client, onApplied: applied, ask, stamp }),

@@ -21,7 +21,7 @@ PDF/A is a kind of PDF meant to look the same for decades. Some archives and cou
 - The copy does not keep tags that help screen readers follow the document. If your document had them, Monstera says so.
 - If a document cannot be converted, no file is written; **Save a copy…** still works.
 - If this copy of Monstera cannot make PDF/A files, it says so before asking where to save.
-- The open document is not changed.
+- The open document is not changed, unless scanned pages are recognised first; see "Recognise scanned pages when exporting".
 
 <!--
 Screenshots to capture:

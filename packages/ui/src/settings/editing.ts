@@ -29,6 +29,8 @@ import {
   EDITING_AZURE_KEY_DESCRIPTION,
   EDITING_OCR_LANGUAGE_DESCRIPTION,
   EDITING_OCR_LANGUAGE_TITLE,
+  RECOGNISE_ON_EXPORT_DESCRIPTION,
+  RECOGNISE_ON_EXPORT_TITLE,
   EDITING_AZURE_ENDPOINT_TITLE,
   EDITING_AZURE_KEY_TITLE,
   EDITING_PERSONAL_DICTIONARY_TITLE,
@@ -306,6 +308,23 @@ export const OCR_LANGUAGE_SETTING: SettingDefinition<typeof ocrLanguagesSchema> 
   // on the contract's language list, so a fifteenth language is a compile error
   // there and a construction refusal here, never a blank option.
   optionTitles: OCR_LANGUAGE_NAMES,
+};
+
+/**
+ * Whether the text exports and PDF/A recognise the scanned pages first — Part F's *auto-OCR scanned pages on export*
+ * ([ADR-0118](../../../../docs/DECISIONS/0118-recognition-on-export-is-a-setting-applied-as-the-searchable-export-applies-it.md)).
+ *
+ * **Off by default**, because recognition is applied to the open document, as the searchable export applies it: on,
+ * an export changes what the person has open, and that is theirs to choose rather than a default to find out about.
+ * The description says so.
+ */
+export const RECOGNISE_ON_EXPORT_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'ocr.recognise-on-export',
+  title: RECOGNISE_ON_EXPORT_TITLE,
+  schema: z.boolean(),
+  fallback: false,
+  category: 'ocr',
+  description: RECOGNISE_ON_EXPORT_DESCRIPTION,
 };
 
 /**

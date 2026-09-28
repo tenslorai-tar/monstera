@@ -73,6 +73,7 @@ import { SERVICE_REFUSED_DIALOG_ID } from '../dialogs/serviceRefused.js';
 import { OPTIMIZE_DIALOG_ID, type OptimizeAnswer } from '../dialogs/optimize.js';
 import type { TrackTask } from '../runningTask.js';
 import { PDFA_REMOVALS_DIALOG_ID } from '../dialogs/pdfaRemovals.js';
+import { OCR_OUTCOME_DIALOG_ID, type RecognisedWalk } from '../dialogs/ocrOutcome.js';
 import { PRINT_DIALOG_ID, type PrintAnswer } from '../dialogs/print.js';
 import { PRINT_QUALITY_DPI, PRINT_QUALITY_SETTING } from '../settings/rendering.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
@@ -334,6 +335,49 @@ export interface DocumentCommandDeps {
    * the send's and not the moment this bag was built.
    */
   readonly stamp: () => AnnotationStamp;
+}
+
+/**
+ * What an export whose output is the page's TEXT needs: recognising the scanned pages first, where the person has
+ * turned that on ([ADR-0118](../../../../docs/DECISIONS/0118-recognition-on-export-is-a-setting-applied-as-the-searchable-export-applies-it.md)).
+ *
+ * **A dependency, composed where the commands are registered**, because the walk is `recogniseText.ts`' and that
+ * module imports this one. It answers what the walk did, or `undefined` where nothing ran. A named type rather than a
+ * field per command, so an export that should recognise first cannot be assembled without it — plain text, text with
+ * its layout, Word and PDF/A take it, and the picture exports do not.
+ */
+export interface RecognisesFirst {
+  readonly recogniseFirst: (docId: DocId, pageCount: number) => Promise<RecognisedWalk | undefined>;
+}
+
+/**
+ * Runs the recognition an export asks for first, and answers what it did — or `false` where the person stopped it,
+ * and nothing is to be written: half a document's scanned pages recognised in a file meant to carry the text is the
+ * searchable export's refused pair, and the pages already done are in the open document, which the outcome says.
+ */
+async function recognisedBeforeExport(
+  deps: DocumentCommandDeps & RecognisesFirst,
+  context: CommandContext,
+): Promise<RecognisedWalk | undefined | false> {
+  if (context.docId === undefined || context.pageCount === undefined) return undefined;
+  const walked = await deps.recogniseFirst(context.docId, context.pageCount);
+  if (walked?.stopped === true) {
+    void deps.ask(OCR_OUTCOME_DIALOG_ID, walked);
+    return false;
+  }
+  return walked;
+}
+
+/**
+ * Says the open document gained text, when recognising first recognised anything — whatever became of the export,
+ * since the pages changed either way. AWAITED, and before the export's own report, because a second dialog asked
+ * while this one is open would close it unread.
+ */
+async function reportRecognisedBeforeExport(
+  deps: DocumentCommandDeps,
+  walked: RecognisedWalk | undefined,
+): Promise<void> {
+  if (walked !== undefined && walked.recognised > 0) await deps.ask(OCR_OUTCOME_DIALOG_ID, walked);
 }
 
 /**
@@ -2441,7 +2485,7 @@ export function splitDocumentCommand(deps: DocumentCommandDeps): UiCommand {
  * single-file destination path — `copied` and `cancelled` say nothing, and the
  * two failures reach the save problem dialog.
  */
-export function exportTextCommand(deps: DocumentCommandDeps): UiCommand {
+export function exportTextCommand(deps: DocumentCommandDeps & RecognisesFirst): UiCommand {
   return {
     id: 'document.export-text',
     icon: 'FileText',
@@ -2463,7 +2507,7 @@ export function exportTextCommand(deps: DocumentCommandDeps): UiCommand {
  * the two exports differ in which engine reads the page and in nothing a person
  * does, so one outcome handler serves both.
  */
-export function exportLayoutTextCommand(deps: DocumentCommandDeps): UiCommand {
+export function exportLayoutTextCommand(deps: DocumentCommandDeps & RecognisesFirst): UiCommand {
   return {
     id: 'document.export-layout-text',
     icon: 'FileText',
@@ -2482,7 +2526,7 @@ export function exportLayoutTextCommand(deps: DocumentCommandDeps): UiCommand {
  * A dismissed mode dialog dispatches nothing. The outcomes are a copy's, reported
  * the way {@link exportTextCommand}'s are.
  */
-export function exportWordCommand(deps: DocumentCommandDeps): UiCommand {
+export function exportWordCommand(deps: DocumentCommandDeps & RecognisesFirst): UiCommand {
   return {
     id: 'document.export-word',
     icon: 'FileText',
@@ -2499,7 +2543,11 @@ export function exportWordCommand(deps: DocumentCommandDeps): UiCommand {
       const chosen = (await deps.ask(EXPORT_WORD_DIALOG_ID, {})) as ExportWordAnswer | undefined;
       if (chosen === undefined) return;
 
+      // AFTER THE MODE, so a dismissed mode dialog recognises nothing (ADR-0118).
+      const walked = await recognisedBeforeExport(deps, context);
+      if (walked === false) return;
       const answer = await deps.client['document.exportWord']({ docId: context.docId, mode: chosen.mode });
+      await reportRecognisedBeforeExport(deps, walked);
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;
@@ -2669,7 +2717,7 @@ export function exportExcelCommand(
  *
  * **No dialog of its own before the save dialog**, `exportPowerPointCommand`'s reason.
  */
-export function exportPdfaCommand(deps: DocumentCommandDeps): UiCommand {
+export function exportPdfaCommand(deps: DocumentCommandDeps & RecognisesFirst): UiCommand {
   return {
     id: 'document.export-pdfa',
     icon: 'FileCheck',
@@ -2680,7 +2728,10 @@ export function exportPdfaCommand(deps: DocumentCommandDeps): UiCommand {
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
 
+      const walked = await recognisedBeforeExport(deps, context);
+      if (walked === false) return;
       const answer = await deps.client['document.exportPdfa']({ docId: context.docId });
+      await reportRecognisedBeforeExport(deps, walked);
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;
@@ -2888,13 +2939,16 @@ export function emailCommand(deps: DocumentCommandDeps): UiCommand {
 }
 
 async function runTextExport(
-  deps: DocumentCommandDeps,
+  deps: DocumentCommandDeps & RecognisesFirst,
   context: CommandContext,
   mode: 'plain' | 'layout',
 ): Promise<void> {
   if (context.docId === undefined) return;
 
+  const walked = await recognisedBeforeExport(deps, context);
+  if (walked === false) return;
   const answer = await deps.client['document.exportText']({ docId: context.docId, mode });
+  await reportRecognisedBeforeExport(deps, walked);
   if (!answer.ok) {
     reportProblem(deps, answer.error);
     return;

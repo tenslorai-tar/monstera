@@ -101,6 +101,10 @@ import {
  */
 
 const DOC = asDocId('doc-1');
+
+/** Recognising first where the setting is off, which is every export case that is not about it (ADR-0118). */
+const NOTHING_RECOGNISED = (): Promise<undefined> => Promise.resolve(undefined);
+
 const CONTEXT: CommandContext = {
   selectedPages: [],
   docId: DOC,
@@ -2394,6 +2398,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const asked: unknown[] = [];
 
     await exportTextCommand({
+      recogniseFirst: NOTHING_RECOGNISED,
       client,
       stamp,
       onApplied: () => undefined,
@@ -2416,6 +2421,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       const asked: unknown[] = [];
 
       await exportWordCommand({
+      recogniseFirst: NOTHING_RECOGNISED,
         client,
         stamp,
         onApplied: () => undefined,
@@ -2459,6 +2465,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         const asked: unknown[] = [];
 
         await exportPdfaCommand({
+      recogniseFirst: NOTHING_RECOGNISED,
           client,
           stamp,
           onApplied: () => undefined,
@@ -2485,6 +2492,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         const asked: unknown[] = [];
 
         await exportPdfaCommand({
+      recogniseFirst: NOTHING_RECOGNISED,
           client,
           stamp,
           onApplied: () => undefined,
@@ -3036,6 +3044,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const { client, sent } = recording();
 
     await exportWordCommand({
+      recogniseFirst: NOTHING_RECOGNISED,
       client,
       stamp,
       onApplied: () => undefined,
@@ -3052,6 +3061,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const { client, sent } = recording({ 'document.exportText': { kind: 'copied', bytes: 12 } });
 
     await exportLayoutTextCommand({
+      recogniseFirst: NOTHING_RECOGNISED,
       client,
       stamp,
       onApplied: () => undefined,
@@ -3070,6 +3080,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       const spoken: unknown[] = [];
 
       await exportLayoutTextCommand({
+      recogniseFirst: NOTHING_RECOGNISED,
         client,
         stamp,
         onApplied: () => undefined,
@@ -3088,6 +3099,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const spoken: unknown[] = [];
 
     await exportTextCommand({
+      recogniseFirst: NOTHING_RECOGNISED,
       client,
       stamp,
       onApplied: () => undefined,
@@ -3098,6 +3110,85 @@ describe('delete pages — the mutation-dialog gate', () => {
     }).run(CONTEXT);
 
     expect(spoken).toStrictEqual([{ id: 'dialog.save-problem', props: { outcome: 'contested' } }]);
+  });
+
+  describe('recognising the scanned pages first, where the person turned it on (ADR-0118)', () => {
+    /** One timeline for the walk, the channels and the dialogs, so a case can assert their ORDER. */
+    function timeline(walked: { recognised: number; skipped: number; stopped: boolean } | undefined): {
+      readonly deps: Parameters<typeof exportTextCommand>[0];
+      readonly events: string[];
+      readonly walks: unknown[];
+    } {
+      const events: string[] = [];
+      const walks: unknown[] = [];
+      const client = createClient(channels, (id) => {
+        events.push(`channel ${id}`);
+        return Promise.resolve(ok({ kind: 'copied', bytes: 12, removed: [], tagsDropped: false }));
+      });
+      return {
+        deps: {
+          client,
+          stamp,
+          onApplied: () => undefined,
+          ask: (id) => {
+            events.push(`dialog ${id}`);
+            return Promise.resolve(id === 'dialog.export-word' ? { mode: 'rich' } : undefined);
+          },
+          recogniseFirst: (docId, pageCount) => {
+            walks.push({ docId, pageCount });
+            events.push('walk');
+            return Promise.resolve(walked);
+          },
+        },
+        events,
+        walks,
+      };
+    }
+
+    it.each([
+      ['text', exportTextCommand, 'document.exportText'],
+      ['layout text', exportLayoutTextCommand, 'document.exportText'],
+      ['PDF/A', exportPdfaCommand, 'document.exportPdfa'],
+    ] as const)('%s: the walk runs FIRST, over the whole document, and what it recognised is said before the export’s own report', async (_name, build, channel) => {
+      const { deps, events, walks } = timeline({ recognised: 2, skipped: 1, stopped: false });
+
+      await build(deps).run(CONTEXT);
+
+      // THE DOCUMENT AND ITS PAGE COUNT, not the page on show: the setting recognises the document the export writes.
+      expect(walks).toStrictEqual([{ docId: DOC, pageCount: 10 }]);
+      expect(events).toStrictEqual(['walk', `channel ${channel}`, 'dialog dialog.ocr-outcome']);
+    });
+
+    it('Word: AFTER the mode is chosen, so a dismissed mode dialog recognises nothing', async () => {
+      const { deps, events } = timeline({ recognised: 1, skipped: 0, stopped: false });
+      await exportWordCommand(deps).run(CONTEXT);
+      expect(events).toStrictEqual([
+        'dialog dialog.export-word',
+        'walk',
+        'channel document.exportWord',
+        'dialog dialog.ocr-outcome',
+      ]);
+
+      const dismissed = timeline({ recognised: 1, skipped: 0, stopped: false });
+      await exportWordCommand({ ...dismissed.deps, ask: () => Promise.resolve(undefined) }).run(CONTEXT);
+      expect(dismissed.walks).toStrictEqual([]);
+    });
+
+    it('a walk the person STOPPED writes no file, and says what it did', async () => {
+      const { deps, events } = timeline({ recognised: 1, skipped: 0, stopped: true });
+      await exportTextCommand(deps).run(CONTEXT);
+      expect(events).toStrictEqual(['walk', 'dialog dialog.ocr-outcome']);
+    });
+
+    it('CONTROL: a walk that recognised nothing says nothing, and where none ran the export is as before', async () => {
+      const nothing = timeline({ recognised: 0, skipped: 3, stopped: false });
+      await exportTextCommand(nothing.deps).run(CONTEXT);
+      expect(nothing.events).toStrictEqual(['walk', 'channel document.exportText']);
+
+      const off = timeline(undefined);
+      await exportTextCommand(off.deps).run(CONTEXT);
+      expect(off.events).toStrictEqual(['walk', 'channel document.exportText']);
+    });
   });
 
   it('CONTROL: a DISMISSED export-pages-as-images dialog dispatches nothing', async () => {

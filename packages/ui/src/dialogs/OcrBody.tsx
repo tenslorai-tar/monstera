@@ -14,6 +14,7 @@ import {
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
+import { openingLanguages } from './ocr.js';
 import { KEYS_ARTICLE, type OcrAnswer } from './ocrResult.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
 
@@ -53,12 +54,10 @@ export default function OcrBody({
   readonly servicesReady: boolean;
 } & DialogAnswering<OcrAnswer>): ReactElement {
   const { _ } = useLingui();
-  // THE STORED LANGUAGES THIS MACHINE CAN READ, else its first model: a setting naming a model since removed opens on
-  // one that is there rather than on nothing, and a machine with none opens on the no-models sentence below.
-  const [held, setHeld] = useState<readonly OcrLanguage[]>(() => {
-    const provisioned = chosen.filter((language) => languages.includes(language));
-    return provisioned.length > 0 ? provisioned : languages.slice(0, 1);
-  });
+  // THE STORED LANGUAGES THIS MACHINE CAN READ, else its first model — `openingLanguages`, which an export recognising
+  // first reads with too. A setting naming a model since removed opens on one that is there rather than on nothing, and
+  // a machine with none opens on the no-models sentence below.
+  const [held, setHeld] = useState<readonly OcrLanguage[]>(() => openingLanguages(chosen, languages) ?? []);
   const [everyPage, setEveryPage] = useState(true);
 
   // IN BOTH BRANCHES: the network engines need no installed model, so a machine

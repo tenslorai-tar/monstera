@@ -29,18 +29,23 @@ export const OCR_OUTCOME_DIALOG_ID = 'dialog.ocr-outcome';
  * It answers nothing — `declareDialog` gives an entry no result unless it declares
  * one (ADR-0038), so this is informational by construction.
  */
+const OCR_OUTCOME_PROPS = z
+  .object({
+    /** How many pages gained a text layer. */
+    recognised: z.number().int().nonnegative(),
+    /** How many were left alone because they already carried text. */
+    skipped: z.number().int().nonnegative(),
+    /** Whether the reader stopped it. */
+    stopped: z.boolean(),
+  })
+  .strict();
+
+/** What a recognition walk did — the outcome's props, so the walk and its report cannot name different things. */
+export type RecognisedWalk = z.infer<typeof OCR_OUTCOME_PROPS>;
+
 export const OCR_OUTCOME_DIALOG = declareDialog({
   id: OCR_OUTCOME_DIALOG_ID,
   title: OCR_OUTCOME_TITLE,
-  props: z
-    .object({
-      /** How many pages gained a text layer. */
-      recognised: z.number().int().nonnegative(),
-      /** How many were left alone because they already carried text. */
-      skipped: z.number().int().nonnegative(),
-      /** Whether the reader stopped it. */
-      stopped: z.boolean(),
-    })
-    .strict(),
+  props: OCR_OUTCOME_PROPS,
   component: lazy(() => import('./OcrOutcomeBody.js')),
 });
