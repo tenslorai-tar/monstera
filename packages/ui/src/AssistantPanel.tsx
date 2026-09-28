@@ -1,6 +1,7 @@
 import {
   AI_PROVIDERS,
   AI_PROVIDER_IDS,
+  type AiModel,
   type AiProviderId,
   type AskAbout,
   type AskSent,
@@ -13,6 +14,8 @@ import {
   type DispatchableCommand,
   type WebSearchAbsence,
   citationsIn,
+  defaultModel,
+  servesVision,
   webSearchOf,
 } from '@monstera/contract';
 import type { DocId, MessageKey } from '@monstera/shared';
@@ -62,6 +65,8 @@ import {
   ASSISTANT_CONVERSATION_LABEL,
   ASSISTANT_EMPTY,
   ASSISTANT_MODEL_LABEL,
+  ASSISTANT_MODEL_NOT_OFFERED,
+  ASSISTANT_MODEL_NO_VISION,
   ASSISTANT_NO_KEY,
   ASSISTANT_SEARCHES_THE_WEB,
   ASSISTANT_WEB_ALWAYS,
@@ -128,6 +133,9 @@ import { pdfjsPageOf } from './pageNumbering.js';
 import { Button } from './primitives/Button.js';
 import { IconButton } from './primitives/IconButton.js';
 import { SegmentedControl } from './primitives/SegmentedControl.js';
+import { AI_MODELS_SETTING, AI_PROVIDER_SETTING } from './settings/ai.js';
+import type { SettingsStore } from './settingsStore.js';
+import { useSetting } from './useSetting.js';
 
 /**
  * The assistant, as a tab of the right contextual panel
@@ -180,6 +188,8 @@ export interface AssistantPanelProps {
   readonly subscribe: EventSubscriber;
   /** Which provider keys this machine has stored, from `settings.loadSecrets`. */
   readonly storedSecrets: readonly string[];
+  /** Where the provider and each provider's model are kept (ADR-0117) — the picker below writes them. */
+  readonly settings: SettingsStore;
   /** The focused document, or `undefined` on the start screen. */
   readonly focused?: AssistantDocument | undefined;
   /** Goes to a page an answer cited, zero-based. */
@@ -296,6 +306,7 @@ export function AssistantPanel({
   client,
   subscribe,
   storedSecrets,
+  settings,
   focused,
   onGoTo,
   request,
@@ -311,11 +322,24 @@ export function AssistantPanel({
   const modelId = useId();
   const aboutId = useId();
   const sidesName = useId();
-  const [provider, setProvider] = useState<AiProviderId>('anthropic');
-  // WITH THE VISION FLAG, because a model that cannot see is not offered a picture (ADR-0090):
+  // THE PROVIDER AND EACH PROVIDER'S MODEL ARE SETTINGS (ADR-0117): this picker writes them, `main` reads Anthropic's for
+  // the recogniser, and a choice survives the panel closing. The list itself is fetched here, per provider.
+  const provider = useSetting(settings, AI_PROVIDER_SETTING);
+  const chosenModels = useSetting(settings, AI_MODELS_SETTING);
+  // WITH THE CAPABILITIES, because a model that cannot see is not offered a picture (ADR-0090):
   // `false` where the provider says so, `null` where it does not say.
-  const [models, setModels] = useState<readonly { id: string; label: string; vision: boolean | null }[]>([]);
-  const [model, setModel] = useState('');
+  const [models, setModels] = useState<readonly AiModel[]>([]);
+  // WHERE THE CHOICE READS IMAGES: Anthropic's model is also the recogniser's (ADR-0117 Decision 4).
+  const readsImages = provider === 'anthropic';
+  const stored = chosenModels[provider];
+  // THE PERSON'S CHOICE, or the contract's one default for this use — the rule `main` takes for the recogniser.
+  const model = stored ?? defaultModel(models, { vision: readsImages })?.id ?? '';
+  const setProvider = (next: AiProviderId): void => {
+    settings.set(AI_PROVIDER_SETTING.id, next);
+  };
+  const setModel = (next: string): void => {
+    settings.set(AI_MODELS_SETTING.id, { ...chosenModels, [provider]: next });
+  };
   const [draft, setDraft] = useState('');
   const [streaming, setStreaming] = useState<string | null>(null);
   const [problem, setProblem] = useState<keyof typeof PROBLEMS | null>(null);
@@ -357,10 +381,8 @@ export function AssistantPanel({
     let cancelled = false;
     void client['ai.models']({ provider }).then((result) => {
       if (cancelled || !result.ok) return;
-      setModels(
-        result.value.models.map((entry) => ({ id: entry.id, label: entry.label, vision: entry.capabilities.vision })),
-      );
-      setModel(result.value.models[0]?.id ?? '');
+      // NO MODEL IS WRITTEN HERE: a choice is stored only when a person makes one, so the default follows the list.
+      setModels(result.value.models);
     });
     return () => {
       cancelled = true;
@@ -397,7 +419,8 @@ export function AssistantPanel({
   const waitingForSides = pairable && sides === undefined;
   // A MODEL THAT SAYS IT CANNOT SEE is not offered a picture; one that does not say is, and a
   // provider's refusal is then worded like any other (ADR-0090 Decision 5).
-  const canSee = models.find((entry) => entry.id === model)?.vision !== false;
+  const chosenEntry = models.find((entry) => entry.id === model);
+  const canSee = chosenEntry === undefined || servesVision(chosenEntry);
   const blindForPicture = scope === 'page-image' && !canSee;
 
   // WHETHER THIS PROVIDER AND MODEL CAN SEARCH — `webSearchOf`, the one reading `main` also takes (ADR-0108).
@@ -1113,11 +1136,21 @@ export function AssistantPanel({
               }}
               value={model}
             >
-              {models.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.label}
-                </option>
-              ))}
+              {/* A STORED CHOICE THE LIST NO LONGER NAMES stays shown and selected, marked, never silently swapped for
+                  another model (ADR-0117 Decision 3). */}
+              {stored !== undefined && models.length > 0 && chosenEntry === undefined ? (
+                <option value={stored}>{i18n._(ASSISTANT_MODEL_NOT_OFFERED, { name: stored })}</option>
+              ) : null}
+              {/* DISABLED, NEVER DROPPED (ADR-0081, ADR-0117 Decision 4): where this choice reads images — Anthropic's,
+                  which the recogniser uses — a model that says it has no vision is listed and cannot be chosen. */}
+              {models.map((entry) => {
+                const blind = readsImages && !servesVision(entry);
+                return (
+                  <option disabled={blind} key={entry.id} value={entry.id}>
+                    {blind ? i18n._(ASSISTANT_MODEL_NO_VISION, { name: entry.label }) : entry.label}
+                  </option>
+                );
+              })}
             </select>
           </label>
           {/* THE SEND ARROW at the bottom-right, which becomes Stop while an answer arrives (v5-03). NOT A DEAD

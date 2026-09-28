@@ -1310,6 +1310,14 @@ export const AI_SETUP_REJECTED = messageKey('dialog.ai-setup.rejected');
 export const AI_SETUP_UNREADABLE = messageKey('dialog.ai-setup.unreadable');
 export const AI_SETUP_NOT_STORED = messageKey('dialog.ai-setup.not-stored');
 export const AI_SETUP_AT_START_TITLE = messageKey('setting.ai.setup-at-start.title');
+export const AI_PROVIDER_TITLE = messageKey('setting.ai.provider.title');
+export const AI_PROVIDER_DESCRIPTION = messageKey('setting.ai.provider.description');
+export const AI_MODELS_TITLE = messageKey('setting.ai.models.title');
+export const AI_MODELS_DESCRIPTION = messageKey('setting.ai.models.description');
+/** A model the Assistant's picker lists and cannot offer for this use, and why. `{name}` is the model's own label. */
+export const ASSISTANT_MODEL_NO_VISION = messageKey('assistant.model.no-vision');
+/** A stored choice the provider's list no longer names — shown, never silently replaced. */
+export const ASSISTANT_MODEL_NOT_OFFERED = messageKey('assistant.model.not-offered');
 export const AI_SAVE_HISTORY_TITLE = messageKey('setting.ai.save-history.title');
 export const ASSISTANT_ABOUT_NOTHING = messageKey('assistant.about.nothing');
 /** v5-03's "Asking about" choices, as short buttons over the message box; the sentence under them says the rest. */
@@ -3263,6 +3271,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [GRID_DESCRIPTION]: 'A grid over the page, for lining marks up.',
   [RULER_UNIT_DESCRIPTION]: 'The unit the rulers and the measuring tools show.',
   [AI_SETUP_AT_START_DESCRIPTION]: 'Offers the one-step setup while no provider key is stored.',
+  [AI_PROVIDER_TITLE]: 'AI provider',
+  [AI_PROVIDER_DESCRIPTION]: 'Which service the Assistant asks. You need that service’s key.',
+  [AI_MODELS_TITLE]: 'AI models',
+  [AI_MODELS_DESCRIPTION]:
+    'The model you chose for each provider. Anthropic’s is also the one that reads handwriting and scans.',
+  [ASSISTANT_MODEL_NO_VISION]: '{name} (cannot read images)',
+  [ASSISTANT_MODEL_NOT_OFFERED]: '{name} (not offered now)',
   [AI_SAVE_HISTORY_DESCRIPTION]:
     'Off by default. Conversations are discarded when the document closes; saved ones are encrypted on this computer.',
   [AI_AZURE_OPENAI_ENDPOINT_DESCRIPTION]: 'Your own Azure OpenAI resource address. Needed only for that provider.',

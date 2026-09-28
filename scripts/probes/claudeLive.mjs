@@ -120,6 +120,13 @@ async function rasterOfDrawnWord() {
 }
 
 /**
+ * The model this probe reads with: the owner's standing rule for every live AI call (27 September list, *"Live AI
+ * tests use the cheapest Claude model (Haiku 4.5), never Fable or Opus"*). The recogniser sends whatever model its
+ * credentials name (ADR-0117), so a probe must name one; the product's own choice is the person's, in Settings.
+ */
+const PROBE_MODEL = 'claude-haiku-4-5-20251001';
+
+/**
  * The one real call. A refusal is reported BY ITS REASON and nothing else.
  *
  * @param {Awaited<ReturnType<typeof rasterOfDrawnWord>>} raster
@@ -127,7 +134,7 @@ async function rasterOfDrawnWord() {
 async function recognise(raster) {
   try {
     return await recogniseThroughClaude(
-      { key },
+      { key, model: PROBE_MODEL },
       {
         png: raster.png,
         crop: raster.crop,

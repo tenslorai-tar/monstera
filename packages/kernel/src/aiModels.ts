@@ -72,9 +72,11 @@ const AZURE_API_VERSION = '2024-10-21';
  * What each provider answers when nothing can be fetched.
  *
  * **Anthropic's is the one model this repository has read a specification for** —
- * `claude-opus-5`, from Anthropic's models overview on 2026-09-13, which D6's recogniser
- * runs against and whose vision support is the reason it was chosen. Every other provider
- * is empty **on purpose**: filling it would mean writing model ids from memory.
+ * `claude-opus-5`, from Anthropic's models overview on 2026-09-13, with the vision the
+ * recogniser needs. It is what `defaultModel` finds for the recogniser when Anthropic cannot
+ * be asked and nobody chose a model ([ADR-0117](../../../docs/DECISIONS/0117-an-ai-model-is-chosen-per-provider-from-the-fetched-list.md));
+ * the recogniser itself names none. Every other provider is empty **on purpose**: filling
+ * it would mean writing model ids from memory.
  */
 const FALLBACK_MODELS: Readonly<Record<AiProviderId, readonly AiModel[]>> = {
   anthropic: [

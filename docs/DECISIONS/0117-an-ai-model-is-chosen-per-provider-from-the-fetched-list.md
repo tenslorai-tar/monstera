@@ -53,3 +53,22 @@ Two properties decide the shape, and neither fits a control ADR-0056 knows:
 - **Dropping models without vision.** ADR-0081 Decision 4: a filtered list cannot be told from a broken one.
 - **A model id written as the recogniser's fallback.** ADR-0081's own rule; the fallback list is where a read-spec id
   lives, and `defaultModel` reads it from there.
+
+## Correction, 2026-09-28 — Decision 3 cannot be built on the dialog seam as it stands
+
+Found while building, the same day. Decision 3 puts the model list in the Settings dialog, fetched for the provider
+chosen there. A dialog is **props-only** ([ADR-0038](0038-a-dialog-answers-the-command-that-opened-it.md)): its props are
+validated data given when it opens — a function is refused, which is that ADR's own rule — and `update`
+([ADR-0094](0094-a-dialog-may-report-before-it-answers.md)) reports outward only. So an open dialog cannot ask for a
+list, and fetching every provider's list before opening would hold Settings on network calls with no bound of their
+own (`listModels` sets none; the Assistant carries the same gap).
+
+The two ways forward are not this ADR's to take, since each bends something recorded: a dialog able to query after it
+opens is a change to ADR-0038's seam, and a model chosen only in the Assistant moves a row Part F places in Settings
+(`BUILD-PROMPT.md`:622). **Put to the owner.**
+
+**Built meanwhile**, everything that does not depend on the answer: Decisions 1, 2, 4, 5 and 6. `ai.provider` is a
+Settings row and the Assistant's picker; `ai.models` is written by the Assistant's model picker, per provider, and is
+marked `remembered` until a Settings row exists for it; the picker lists a model without vision disabled where the
+choice reads images and keeps a stored model the list no longer names; the recogniser reads Anthropic's choice or
+`defaultModel`, and `CLAUDE_OCR_MODEL` is gone.

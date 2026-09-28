@@ -6,6 +6,9 @@ import {
   AI_PROVIDER_KEY_SETTING_IDS,
   ANTHROPIC_KEY_SETTING_ID,
   AZURE_OPENAI_ENDPOINT_SETTING_ID,
+  type AiModel,
+  defaultModel,
+  servesVision,
   webSearchOf,
 } from './aiProviders.js';
 import { SECRET_SETTING_IDS } from './schemas.js';
@@ -90,5 +93,31 @@ describe('webSearchOf — which provider and model can search the web (ADR-0108)
     expect(webSearchOf('openai', 'gpt-5.5').kind).toBe('optional');
     expect(webSearchOf('perplexity', 'sonar-pro').kind).toBe('optional');
     expect(webSearchOf('groq', 'openai/gpt-oss-20b').kind).toBe('optional');
+  });
+});
+
+describe('the default model (ADR-0117 Decision 5)', () => {
+  const model = (id: string, vision: boolean | null): AiModel => ({
+    id,
+    label: id,
+    capabilities: { vision, streaming: null },
+  });
+
+  it('is the first listed model the use can take — skipping one that SAYS it has no vision, for a use that reads images', () => {
+    const list = [model('text-only', false), model('unknown', null), model('sees', true)];
+    // THE SEPARATING LIST: its first entry is refused for vision and taken for text, so a rule ignoring the use
+    // answers `text-only` both times.
+    expect(defaultModel(list, { vision: true })?.id).toBe('unknown');
+    expect(defaultModel(list, { vision: false })?.id).toBe('text-only');
+  });
+
+  it('offers a model whose capabilities are UNKNOWN, since a list endpoint describes none', () => {
+    expect(servesVision(model('fetched', null))).toBe(true);
+    expect(servesVision(model('said-no', false))).toBe(false);
+  });
+
+  it('answers undefined when nothing listed can serve — never a model the use cannot take', () => {
+    expect(defaultModel([model('text-only', false)], { vision: true })).toBeUndefined();
+    expect(defaultModel([], { vision: false })).toBeUndefined();
   });
 });

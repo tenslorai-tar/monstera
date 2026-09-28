@@ -16,6 +16,9 @@ import {
 } from './messages/en.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
+import { SettingsRegistry } from './registries/settings.js';
+import { ALL_SETTINGS } from './settings/all.js';
+import { SettingsStore } from './settingsStore.js';
 
 /**
  * The assistant tab: the UI half of the wired pair (ADR-0081, ADR-0083).
@@ -126,8 +129,10 @@ async function drawn(options: {
   readonly beside?: AssistantPanelProps['beside'];
   readonly onNote?: AssistantPanelProps['onNote'];
   readonly onGoToBeside?: (page: number) => void;
+  readonly settings?: SettingsStore;
 } = {}) {
   const wire = events();
+  const settings = options.settings ?? new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
   const { client, sent } = recording(
     options.models ?? [{ id: 'm-1', label: 'Model one' }],
     options.started ?? true,
@@ -146,6 +151,7 @@ async function drawn(options: {
         onNote={options.onNote}
         request={options.request}
         storedSecrets={options.stored ?? [ANTHROPIC_KEY]}
+        settings={settings}
         subscribe={wire.subscribe}
         {...props}
       />
@@ -1070,5 +1076,73 @@ describe('the chat extras (the owner’s design, 2026-09-15)', () => {
     const { store } = await answered();
     fireEvent.click(screen.getByRole('button', { name: 'New chat' }));
     expect(store.getState().conversation).toStrictEqual([]);
+  });
+});
+
+describe('the provider and each provider’s model are SETTINGS (ADR-0117)', () => {
+  const modelSelect = (): HTMLSelectElement => {
+    const select = document.querySelector('[data-assistant-model]');
+    if (!(select instanceof HTMLSelectElement)) throw new Error('the model picker is drawn');
+    return select;
+  };
+  const providerSelect = (): HTMLSelectElement => {
+    const select = document.querySelector('[data-assistant-provider]');
+    if (!(select instanceof HTMLSelectElement)) throw new Error('the provider picker is drawn');
+    return select;
+  };
+
+  it('with nothing chosen shows the first model the use can take; one that SAYS it cannot see is listed, disabled', async () => {
+    // THE SEPARATING LIST: its first model says it has no vision, so a default ignoring the use selects it — and
+    // Anthropic's choice reads images, being the recogniser's too.
+    const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+    await drawn({
+      settings,
+      models: [
+        { id: 'blind', label: 'Blind', vision: false },
+        { id: 'sees', label: 'Sees', vision: null },
+      ],
+    });
+    expect(modelSelect().value).toBe('sees');
+    const blind = screen.getByRole('option', { name: 'Blind (cannot read images)' });
+    expect((blind as HTMLOptionElement).disabled).toBe(true);
+    // NOTHING WAS STORED: a default is shown, never written, so an updated list moves it.
+    expect(settings.get('ai.models')).toStrictEqual({});
+  });
+
+  it('a choice is stored PER PROVIDER — another provider’s choice leaves Anthropic’s, the recogniser’s, in place', async () => {
+    const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+    await drawn({
+      settings,
+      models: [
+        { id: 'm-1', label: 'Model one' },
+        { id: 'm-2', label: 'Model two' },
+      ],
+    });
+    fireEvent.change(modelSelect(), { target: { value: 'm-2' } });
+    expect(settings.get('ai.models')).toStrictEqual({ anthropic: 'm-2' });
+
+    await act(async () => {
+      fireEvent.change(providerSelect(), { target: { value: 'openai' } });
+      await Promise.resolve();
+    });
+    expect(settings.get('ai.provider')).toBe('openai');
+    fireEvent.change(modelSelect(), { target: { value: 'm-1' } });
+    // ONE STRING would now read `m-1` for both — and the recogniser would send an OpenAI choice to Anthropic.
+    expect(settings.get('ai.models')).toStrictEqual({ anthropic: 'm-2', openai: 'm-1' });
+  });
+
+  it('a stored model the list no longer names stays chosen, MARKED, and is what an ask sends — never silently swapped', async () => {
+    const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+    settings.set('ai.models', { anthropic: 'retired-model' });
+    const { sent } = await drawn({ settings });
+    expect(modelSelect().value).toBe('retired-model');
+    expect(screen.getByRole('option', { name: 'retired-model (not offered now)' })).toBeTruthy();
+
+    type('Still there?');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sent.find((entry) => entry.id === 'ai.ask')?.params).toMatchObject({ model: 'retired-model' });
   });
 });

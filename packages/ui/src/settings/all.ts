@@ -1,7 +1,9 @@
 import type { SettingDefinition } from '../registries/settings.js';
 import { ACCENT_SETTING } from './accent.js';
 import {
+  AI_MODELS_SETTING,
   AI_PROVIDER_KEY_SETTINGS,
+  AI_PROVIDER_SETTING,
   AI_SETUP_AT_START_SETTING,
   AZURE_OPENAI_ENDPOINT_SETTING,
   CHAT_HISTORY_SETTING,
@@ -126,6 +128,9 @@ export const ALL_SETTINGS: readonly SettingDefinition[] = [
   OCR_LANGUAGE_SETTING,
   AZURE_DI_ENDPOINT_SETTING,
   AZURE_DI_KEY_SETTING,
+  // THE PROVIDER THE ASSISTANT ASKS, and each provider's chosen model (ADR-0117).
+  AI_PROVIDER_SETTING,
+  AI_MODELS_SETTING,
   // EVERY AI PROVIDER'S KEY, from the registry's own order (ADR-0081), and Azure
   // OpenAI's address beside them. Spread rather than listed: a provider added to the
   // registry with no field here would be one whose key nobody can enter.

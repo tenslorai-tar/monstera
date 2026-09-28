@@ -198,3 +198,37 @@ export interface AiModel {
   readonly label: string;
   readonly capabilities: AiModelCapabilities;
 }
+
+/**
+ * The provider the Assistant asks ([ADR-0117](../../../docs/DECISIONS/0117-an-ai-model-is-chosen-per-provider-from-the-fetched-list.md)).
+ * Named here because the renderer's setting and nothing else writes it, and a contract id is where every other AI
+ * setting a surface and `main` share is spelt.
+ */
+export const AI_PROVIDER_SETTING_ID = 'ai.provider';
+
+/**
+ * One chosen model id per provider (ADR-0117 Decision 2). `main` reads Anthropic's entry for the Claude recogniser,
+ * whatever provider the Assistant is on — which is why this is a record and not one string.
+ */
+export const AI_MODELS_SETTING_ID = 'ai.models';
+
+/**
+ * Whether `model` can serve a use that must read an image. `false` only where the provider SAID it has no vision; a
+ * model whose capabilities are unknown (`null`, what a list endpoint answers) can — refusing everything a provider
+ * does not describe would refuse every fetched model (ADR-0117 Decision 4).
+ */
+export function servesVision(model: AiModel): boolean {
+  return model.capabilities.vision !== false;
+}
+
+/**
+ * The model a use gets when no one has chosen one: the first listed that the use can take (ADR-0117 Decision 5). ONE
+ * rule, which the Assistant's picker shows and `main` sends for the recogniser, so the two cannot disagree about what
+ * *the default* is; `undefined` when the list offers nothing the use can take.
+ */
+export function defaultModel(
+  models: readonly AiModel[],
+  use: { readonly vision: boolean },
+): AiModel | undefined {
+  return models.find((model) => !use.vision || servesVision(model));
+}

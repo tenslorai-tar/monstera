@@ -410,12 +410,16 @@ export {
   type TranslationLanguage,
 } from './translationLanguages.js';
 export {
+  AI_MODELS_SETTING_ID,
   AI_PROVIDERS,
   AI_PROVIDER_IDS,
   AI_PROVIDER_KEY_SETTING_IDS,
+  AI_PROVIDER_SETTING_ID,
   AZURE_OPENAI_ENDPOINT_SETTING_ID,
   CHAT_HISTORY_SETTING_ID,
   WEB_SEARCH_ABSENCES,
+  defaultModel,
+  servesVision,
   webSearchOf,
   type AiModel,
   type AiModelCapabilities,

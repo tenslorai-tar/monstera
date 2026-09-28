@@ -40,21 +40,14 @@ import { type RecognisedTable, recognisedTable } from './recognisedTables.js';
  * `recogniseThroughAzure` uses for a missing one.
  */
 
-/**
- * The model, read from Anthropic's models overview on 2026-09-13: vision, the
- * high-resolution image tier, and structured outputs, at $5 / $25 per million
- * input / output tokens. **A constant until Stage 9's model setting exists**, which
- * the D6 row names as this constant's expiry.
- */
-export const CLAUDE_OCR_MODEL = 'claude-opus-5';
-
 const MESSAGES_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 
 /**
  * The high-resolution tier's image limits (*Vision*, read 2026-09-13): a long edge
- * of 2576 px and 4784 visual tokens, one token per 28×28 patch. `claude-opus-5` is
- * on that tier, as every Claude 4.7-or-later model is.
+ * of 2576 px and 4784 visual tokens, one token per 28×28 patch, as every Claude
+ * 4.7-or-later model is. The model is the person's choice (ADR-0117); an older one on a
+ * smaller tier refuses a raster sized for this one, which reaches them as *rejected*.
  */
 export const CLAUDE_MAX_EDGE = 2576;
 export const CLAUDE_MAX_VISUAL_TOKENS = 4784;
@@ -86,9 +79,14 @@ export class ClaudeRecognitionRefused extends Error {
   }
 }
 
-/** The key, from `secretStore.ts`. Never logged, and sent only in a header. */
+/**
+ * The key, from `secretStore.ts` — never logged, and sent only in a header — and the model to read with: Anthropic's
+ * entry of `ai.models`, or `defaultModel` of Anthropic's list when none was chosen ([ADR-0117](../../../docs/DECISIONS/0117-an-ai-model-is-chosen-per-provider-from-the-fetched-list.md)).
+ * Required, so no caller can send a model this module chose.
+ */
 export interface ClaudeCredentials {
   readonly key: string;
+  readonly model: string;
 }
 
 /** One raster, and the frame the host says it sits in. `AzureRequest`'s fields. */
@@ -459,7 +457,7 @@ async function askClaudeAboutImage(
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: CLAUDE_OCR_MODEL,
+        model: credentials.model,
         max_tokens: MAX_OUTPUT_TOKENS,
         messages: [
           {

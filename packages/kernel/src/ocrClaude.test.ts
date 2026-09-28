@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   CLAUDE_MAX_EDGE,
   CLAUDE_MAX_IMAGE_ENCODED_BYTES,
-  CLAUDE_OCR_MODEL,
   ClaudeRecognitionRefused,
   claudeAcceptsBytes,
   claudeRasterScale,
@@ -31,7 +30,8 @@ import {
  * the right answer for the wrong reason.
  */
 
-const CREDENTIALS = { key: 'k' };
+// A MODEL NO DEFAULT COULD PRODUCE, so a request body naming it proves the caller's choice was sent (ADR-0117).
+const CREDENTIALS = { key: 'k', model: 'the-model-a-person-chose' };
 
 /** The frame a 200×300 raster of an upright page carries, at scale 1 and origin zero. */
 const FRAME = {
@@ -179,7 +179,7 @@ describe('recogniseThroughClaude', () => {
       messages: { content: { type: string; transformations?: unknown }[] }[];
       output_config: { format: { type: string } };
     };
-    expect(body.model).toBe(CLAUDE_OCR_MODEL);
+    expect(body.model).toBe(CREDENTIALS.model);
     expect(body.messages[0]?.content[0]).toMatchObject({
       type: 'image',
       transformations: { oversized_image: 'error' },
@@ -384,7 +384,7 @@ describe('readTablesThroughClaude (ADR-0086)', () => {
       output_config: { format: { schema: { properties: Record<string, unknown> } } };
     };
     expect(Object.keys(body.output_config.format.schema.properties)).toStrictEqual(['tables']);
-    expect(body.model).toBe(CLAUDE_OCR_MODEL);
+    expect(body.model).toBe(CREDENTIALS.model);
   });
 
   it('CONTROL: the word recogniser asks its own schema, so the two questions are told apart', async () => {

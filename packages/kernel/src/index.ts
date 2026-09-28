@@ -207,7 +207,6 @@ export {
   CLAUDE_MAX_EDGE,
   CLAUDE_MAX_IMAGE_ENCODED_BYTES,
   CLAUDE_MAX_VISUAL_TOKENS,
-  CLAUDE_OCR_MODEL,
   type ClaudeCredentials,
   ClaudeRecognitionRefused,
   type ClaudeRefusal,

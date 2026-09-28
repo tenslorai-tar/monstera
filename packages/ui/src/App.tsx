@@ -3094,6 +3094,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                 // jump takes, so Back returns from it.
                 <AssistantPanel
                   client={client}
+                  settings={settings}
                   focused={
                     activeId === undefined || store === undefined
                       ? undefined

@@ -2,11 +2,17 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { RECENT_PREVIEWS_SETTING_ID, REVIEW_PROMPTS_SETTING_ID } from '@monstera/contract';
+import {
+  AI_MODELS_SETTING_ID,
+  AI_PROVIDER_SETTING_ID,
+  type AiModel,
+  RECENT_PREVIEWS_SETTING_ID,
+  REVIEW_PROMPTS_SETTING_ID,
+} from '@monstera/contract';
 import { asDocId } from '@monstera/shared';
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { createShellDependencies } from './composition.js';
+import { claudeModel, createShellDependencies } from './composition.js';
 import { harnessSurfaces } from './harnessComposition.js';
 import { type PictureFiles, pictureName } from './recentPictures.js';
 import { createEphemeralSettings } from './settingsFile.js';
@@ -472,5 +478,35 @@ describe('the recent cards’ pictures, as the root wires them (ADR-0100)', () =
 
     await deps.handlers['settings.save']({ values: { [RECENT_PREVIEWS_SETTING_ID]: false } });
     expect(folder.held.size).toBe(0);
+  });
+});
+
+describe('the Claude recogniser’s model (ADR-0117)', () => {
+  const model = (id: string, vision: boolean | null): AiModel => ({ id, label: id, capabilities: { vision, streaming: null } });
+
+  it('is Anthropic’s CHOSEN entry — whatever provider the Assistant is on — and nothing is listed to find it', async () => {
+    const settings = createEphemeralSettings();
+    settings.write({ [AI_PROVIDER_SETTING_ID]: 'openai', [AI_MODELS_SETTING_ID]: { openai: 'gpt-x', anthropic: 'chosen-one' } });
+    let listed = 0;
+    const answer = await claudeModel(settings, 'k', () => {
+      listed += 1;
+      return Promise.resolve({ models: [model('listed-first', true)] });
+    });
+    expect(answer).toBe('chosen-one');
+    expect(listed).toBe(0);
+  });
+
+  it('with none chosen, is defaultModel of ANTHROPIC’S list for a use that reads images — no id written here', async () => {
+    // THE SEPARATING LIST: its first entry says it has no vision, so a rule ignoring the use would answer it.
+    const answer = await claudeModel(createEphemeralSettings(), 'k', () =>
+      Promise.resolve({ models: [model('blind', false), model('sees', null)] }),
+    );
+    expect(answer).toBe('sees');
+  });
+
+  it('refuses as `unavailable` when Anthropic lists nothing that reads images, rather than sending one that cannot', async () => {
+    await expect(
+      claudeModel(createEphemeralSettings(), 'k', () => Promise.resolve({ models: [model('blind', false)] })),
+    ).rejects.toMatchObject({ reason: 'unavailable' });
   });
 });

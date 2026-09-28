@@ -50,7 +50,10 @@ describe('the registered settings', () => {
     // where each key is changed against the whole list — no generic row could show what a key collides with.
     // AND WHERE THE FLOAT BAR IS (item 4, 2026-09-27): a docked edge or a place in the page area, whose control is the
     // bar's own grip and Window › Reset Float bar position — a pair of number boxes here would place it blind.
+    // AND EACH PROVIDER'S CHOSEN MODEL (ADR-0117, 2026-09-28): a choice from a list the provider answers, which a
+    // props-only dialog cannot fetch (ADR-0038) — chosen in the Assistant's picker until the owner answers where.
     expect(excluded).toStrictEqual([
+      'ai.models',
       'appearance.accent',
       'appearance.float-bar-position',
       'editing.personal-dictionary',

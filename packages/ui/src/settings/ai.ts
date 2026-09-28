@@ -1,6 +1,8 @@
 import {
   AI_PROVIDERS,
+  AI_MODELS_SETTING_ID,
   AI_PROVIDER_IDS,
+  AI_PROVIDER_SETTING_ID,
   AI_SETUP_AT_START_SETTING_ID,
   type AiProviderId,
   ANTHROPIC_KEY_SETTING_ID,
@@ -11,6 +13,11 @@ import type { MessageKey } from '@monstera/shared';
 import { z } from 'zod';
 
 import {
+  AI_MODELS_DESCRIPTION,
+  AI_MODELS_TITLE,
+  AI_PROVIDER_DESCRIPTION,
+  AI_PROVIDER_NAMES,
+  AI_PROVIDER_TITLE,
   AI_ANTHROPIC_KEY_TITLE,
   AI_AZURE_OPENAI_ENDPOINT_DESCRIPTION,
   AI_AZURE_OPENAI_ENDPOINT_TITLE,
@@ -108,6 +115,45 @@ export const AZURE_OPENAI_ENDPOINT_SETTING: SettingDefinition<z.ZodString> = {
  * setup is offered only while no provider's key is stored, so a person who added one in Settings
  * is not asked again.
  */
+/**
+ * The provider the Assistant asks — Part F's *"AI: provider"* ([ADR-0117](../../../../docs/DECISIONS/0117-an-ai-model-is-chosen-per-provider-from-the-fetched-list.md)
+ * Decision 1). Anthropic by default, as the Assistant has opened on since ADR-0081. Its picker and this row write the
+ * same value, so a choice made in either is the other's.
+ */
+export const AI_PROVIDER_SETTING: SettingDefinition<z.ZodEnum<{ [K in AiProviderId]: K }>> = {
+  id: AI_PROVIDER_SETTING_ID,
+  title: AI_PROVIDER_TITLE,
+  description: AI_PROVIDER_DESCRIPTION,
+  schema: z.enum(AI_PROVIDER_IDS),
+  fallback: 'anthropic',
+  category: 'ai',
+  optionTitles: AI_PROVIDER_NAMES,
+};
+
+/** The longest model id a provider's list may name — the contract's own bound on `ai.models`. */
+const MAX_MODEL_ID = 200;
+
+/**
+ * One chosen model id per provider (ADR-0117 Decision 2), written by the Assistant's model picker — only when a
+ * person chooses, so an updated list moves the default (`defaultModel`) with it. `main` reads Anthropic's entry for the
+ * Claude recogniser whatever the Assistant is on.
+ *
+ * **REMEMBERED, not a Settings row yet**: ADR-0117 Decision 3's row lists models fetched while the dialog is open, and a
+ * dialog is props-only (ADR-0038) — it can report outward and cannot ask. That is the owner's question, recorded with
+ * both routes; until it is answered the choice is made in the Assistant, which fetches the list itself.
+ */
+const AI_MODELS_SCHEMA = z.partialRecord(z.enum(AI_PROVIDER_IDS), z.string().min(1).max(MAX_MODEL_ID));
+
+export const AI_MODELS_SETTING: SettingDefinition<typeof AI_MODELS_SCHEMA> = {
+  id: AI_MODELS_SETTING_ID,
+  title: AI_MODELS_TITLE,
+  description: AI_MODELS_DESCRIPTION,
+  schema: AI_MODELS_SCHEMA,
+  fallback: {},
+  category: 'ai',
+  remembered: true,
+};
+
 export const AI_SETUP_AT_START_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: AI_SETUP_AT_START_SETTING_ID,
   title: AI_SETUP_AT_START_TITLE,

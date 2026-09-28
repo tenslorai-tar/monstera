@@ -303,6 +303,16 @@ describe('SettingsBody', () => {
     expect(answers).toStrictEqual([{ values: {}, secrets: {} }]);
   });
 
+  it('the AI PROVIDER is a row on the AI page, Anthropic by default, and a change reports the value the Assistant reads', () => {
+    // ADR-0117 Decision 1: Part F's *"AI: provider"*. The Assistant's picker writes the same `ai.provider`.
+    const { reported } = opened({});
+    goTo('ai');
+    const row = screen.getByLabelText('AI provider');
+    expect((row as HTMLSelectElement).value).toBe('anthropic');
+    fireEvent.change(row, { target: { value: 'openai' } });
+    expect(reported.at(-1)?.values).toMatchObject({ 'ai.provider': 'openai' });
+  });
+
   it('the RATING opt-out is on the Privacy page, where Part F lists it, and Advanced holds no row for it', () => {
     // `BUILD-PROMPT.md`:626 lists the review-prompt opt-out under Privacy; the owner moved it there 2026-09-27.
     opened({});

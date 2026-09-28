@@ -26,7 +26,10 @@ import {
   UPDATE_CHECK_SETTING_ID,
   UPDATE_MANIFEST,
   type UpdateManifest,
+  AI_MODELS_SETTING_ID,
+  type AiModel,
   createClient,
+  defaultModel,
 } from '@monstera/contract';
 import {
   CapabilityRegistry,
@@ -48,6 +51,7 @@ import {
   azureAcceptsBytes,
   claudeAcceptsBytes,
   claudeRasterScale,
+  listModels,
   recogniseThroughClaude,
   readTablesThroughClaude,
   readTablesThroughAzure,
@@ -3209,6 +3213,30 @@ const TABLE_BOUNDS = { maxCells: MAX_TABLE_CELLS, maxText: MAX_TABLE_CELL_TEXT }
  * without an entry here is a compile error rather than a request that reaches the
  * wrong service — the defect the pre-read's old ternary carried (ADR-0057).
  */
+/**
+ * The model the Claude recogniser reads with ([ADR-0117](../../../docs/DECISIONS/0117-an-ai-model-is-chosen-per-provider-from-the-fetched-list.md)):
+ * Anthropic's entry of `ai.models` when a person chose one — whatever provider the Assistant is on — and otherwise
+ * `defaultModel` of Anthropic's own list, fetched or the fallback, for a use that reads images. The contract's rule,
+ * so the Assistant's picker and this answer the same *default*; no model id is written here.
+ */
+export async function claudeModel(
+  settings: SettingsSurface,
+  key: string,
+  list: (key: string) => Promise<{ readonly models: readonly AiModel[] }> = (anthropicKey) =>
+    listModels({ provider: 'anthropic', key: anthropicKey }),
+): Promise<string> {
+  const chosen = settings.read()[AI_MODELS_SETTING_ID];
+  const stored =
+    typeof chosen === 'object' && chosen !== null ? (chosen as Readonly<Record<string, unknown>>)['anthropic'] : undefined;
+  if (typeof stored === 'string' && stored !== '') return stored;
+  const listed = await list(key);
+  const model = defaultModel(listed.models, { vision: true });
+  if (model === undefined) {
+    throw new ClaudeRecognitionRefused('unavailable', 'Anthropic lists no model that reads images');
+  }
+  return model.id;
+}
+
 function networkRecognisers(
   settings: SettingsSurface,
   secrets: SecretStoreSurface | undefined,
@@ -3251,8 +3279,11 @@ function networkRecognisers(
         return {
           scale,
           accepts: claudeAcceptsBytes,
-          recognise: (raster) => recogniseThroughClaude({ key }, raster),
-          readTables: (png) => readTablesThroughClaude({ key }, { png }, TABLE_BOUNDS),
+          // THE MODEL WHEN A READ IS MADE, so a choice made in Settings a moment ago is the one that reads.
+          recognise: async (raster) =>
+            recogniseThroughClaude({ key, model: await claudeModel(settings, key) }, raster),
+          readTables: async (png) =>
+            readTablesThroughClaude({ key, model: await claudeModel(settings, key) }, { png }, TABLE_BOUNDS),
         };
       },
     },
