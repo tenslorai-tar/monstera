@@ -39,7 +39,7 @@ describe('the recognition dialog', () => {
   it('says where handwriting is read when models are installed', () => {
     render(
       <Wrapped>
-        <OcrBody pages={[0]} languages={['eng']} servicesReady={false} resolve={() => undefined} update={() => undefined} />
+        <OcrBody pages={[0]} languages={['eng']} chosen={['eng']} servicesReady={false} resolve={() => undefined} update={() => undefined} />
       </Wrapped>,
     );
     // THE CONTROL that this is the installed branch: its start button is there.
@@ -52,7 +52,7 @@ describe('the recognition dialog', () => {
   it('and when none are, beside the sentence saying so', () => {
     render(
       <Wrapped>
-        <OcrBody pages={[0]} languages={[]} servicesReady={false} resolve={() => undefined} update={() => undefined} />
+        <OcrBody pages={[0]} languages={[]} chosen={['eng']} servicesReady={false} resolve={() => undefined} update={() => undefined} />
       </Wrapped>,
     );
     expect(screen.getByText(english(OCR_UNAVAILABLE))).toBeDefined();
@@ -63,7 +63,7 @@ describe('the recognition dialog', () => {
   it('with a service’s key STORED it says where the tool is, and not "add a key" (§10.5)', () => {
     render(
       <Wrapped>
-        <OcrBody pages={[0]} languages={['eng']} servicesReady resolve={() => undefined} update={() => undefined} />
+        <OcrBody pages={[0]} languages={['eng']} chosen={['eng']} servicesReady resolve={() => undefined} update={() => undefined} />
       </Wrapped>,
     );
     expect(screen.getByText(english(OCR_HANDWRITING_READY))).toBeDefined();
@@ -77,7 +77,7 @@ describe('the recognition dialog', () => {
       <Wrapped>
         <OcrBody
           pages={[0]}
-          languages={['eng']}
+          languages={['eng']} chosen={['eng']}
           servicesReady={false}
           resolve={(answer) => answers.push(answer)}
           update={() => undefined}
@@ -91,7 +91,7 @@ describe('the recognition dialog', () => {
   it('CONTROL: with a key stored there is no such link — the person it is for has one', () => {
     render(
       <Wrapped>
-        <OcrBody pages={[0]} languages={['eng']} servicesReady resolve={() => undefined} update={() => undefined} />
+        <OcrBody pages={[0]} languages={['eng']} chosen={['eng']} servicesReady resolve={() => undefined} update={() => undefined} />
       </Wrapped>,
     );
     expect(screen.queryByRole('button', { name: 'How to get a key, and what it costs' })).toBeNull();
@@ -101,5 +101,74 @@ describe('the recognition dialog', () => {
     expect(handwritingLine).toMatch(/Azure/u);
     expect(handwritingLine).toMatch(/Anthropic/u);
     expect(handwritingLine).toMatch(/Settings/u);
+  });
+});
+
+/** The box for one language, by the value it carries rather than its label, which is the catalogue's. */
+function box(language: string): HTMLInputElement {
+  const found = document.querySelector<HTMLInputElement>(`input[data-ocr-language="${language}"]`);
+  if (found === null) throw new Error(`no box for ${language}`);
+  return found;
+}
+
+/** Renders the dialog over four provisioned models and a stored setting, recording what it answers. */
+function opened(chosen: readonly ('eng' | 'deu' | 'fra' | 'spa' | 'heb')[]): unknown[] {
+  const answers: unknown[] = [];
+  render(
+    <Wrapped>
+      <OcrBody
+        pages={[0]}
+        languages={['eng', 'spa', 'fra', 'deu']}
+        chosen={chosen}
+        servicesReady={false}
+        resolve={(answer) => answers.push(answer)}
+        update={() => undefined}
+      />
+    </Wrapped>,
+  );
+  return answers;
+}
+
+const ticked = (): string[] =>
+  ['eng', 'spa', 'fra', 'deu'].filter((language) => box(language).checked);
+
+describe('the recognition dialog’s languages', () => {
+  it('OPENS ON THE SETTING — those of its languages this machine has a model for', () => {
+    // `heb` is stored and not provisioned; `deu` is both. NOT the first provisioned model, which is what a dialog
+    // ignoring the setting would tick.
+    opened(['heb', 'deu']);
+    expect(ticked()).toStrictEqual(['deu']);
+  });
+
+  it('CONTROL: and on the first provisioned model where the machine has none of the stored ones', () => {
+    opened(['heb']);
+    expect(ticked()).toStrictEqual(['eng']);
+  });
+
+  it('answers EVERY ticked language, in the order ticked', () => {
+    const answers = opened(['deu']);
+    fireEvent.click(box('eng'));
+    fireEvent.click(screen.getByRole('button', { name: english(OCR_START) }));
+    expect(answers).toStrictEqual([{ pages: 'all', languages: ['deu', 'eng'] }]);
+  });
+
+  it('the LAST ticked box cannot be cleared, so the offer never holds an empty set', () => {
+    opened(['deu']);
+    expect(box('deu').disabled).toBe(true);
+    // CONTROL: with a second ticked, either may go.
+    fireEvent.click(box('eng'));
+    expect(box('deu').disabled).toBe(false);
+    expect(box('eng').disabled).toBe(false);
+  });
+
+  it('at THREE, the unticked boxes are refused in the offer; below it they are not', () => {
+    opened(['eng', 'fra']);
+    // CONTROL FIRST: two ticked, and the others may still be added.
+    expect(box('spa').disabled).toBe(false);
+    fireEvent.click(box('deu'));
+    expect(ticked()).toStrictEqual(['eng', 'fra', 'deu']);
+    expect(box('spa').disabled).toBe(true);
+    // AND THE TICKED ONES MAY STILL BE CLEARED at the maximum.
+    expect(box('fra').disabled).toBe(false);
   });
 });

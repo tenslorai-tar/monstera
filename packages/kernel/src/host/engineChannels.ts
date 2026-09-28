@@ -33,7 +33,7 @@ import {
   insertBlankPageSchema,
   mergeDocumentSchema,
   movePageSchema,
-  ocrLanguageSchema,
+  ocrLanguagesSchema,
   PAGE_IMAGE_FORMATS,
   placeAnnotationSchema,
   styleAnnotationSchema,
@@ -2144,7 +2144,8 @@ export const engineChannels = {
         session: sessionSchema,
         /** Zero-based index, as `commands.ts` declares them. */
         page: z.number().int().nonnegative(),
-        language: ocrLanguageSchema,
+        /** The models to read with, together (`eng+deu`). The contract's one list schema. */
+        languages: ocrLanguagesSchema,
         /**
          * A rectangle of the page to read instead of all of it, in PDF user space.
          *
@@ -2187,7 +2188,7 @@ export const engineChannels = {
           .max(ENGINE_OCR_LINES_MAX)
           .readonly(),
         confidence: z.number().min(0).max(100),
-        language: ocrLanguageSchema,
+        languages: ocrLanguagesSchema,
       })
       .strict(),
     // A MODEL THAT CANNOT BE READ IS ITS OWN STATE, and not `ocr-failed`: the

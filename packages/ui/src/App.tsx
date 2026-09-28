@@ -1983,10 +1983,16 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const scalePerPoint = useSetting(settings, MEASURE_SCALE_SETTING);
   const scaleUnit = useSetting(settings, MEASURE_UNIT_SETTING);
   const imagePages = useSetting(settings, IMAGE_PAGES_SETTING);
-  // THE REGION TOOL'S LANGUAGE, read here because this is where settings are read
-  // and handed to the registries. The OCR dialog offers the provisioned list and
-  // writes this value; the tool has no dialog and reads it.
-  const ocrLanguage = useSetting(settings, OCR_LANGUAGE_SETTING);
+  // THE REGION TOOL'S LANGUAGES, read here because this is where settings are read
+  // and handed to the registries. The OCR dialog opens on this value and offers the
+  // provisioned list; the tool has no dialog and reads it.
+  const ocrLanguages = useSetting(settings, OCR_LANGUAGE_SETTING);
+  // THE SAME VALUE for the two OCR commands, read from the store when one runs, as `warnSignatureBreak` is: the
+  // command registry is not rebuilt for a setting it reads only at run time.
+  const storedOcrLanguages = useCallback(
+    () => OCR_LANGUAGE_SETTING.schema.parse(settings.get(OCR_LANGUAGE_SETTING.id)),
+    [settings],
+  );
   /**
    * Whether the cloud engine can be OFFERED: an endpoint in the settings, and a
    * key stored in the credential store.
@@ -2226,13 +2232,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           // THE SETTING IS A DEPENDENCY, and the callback shape alone is not
           // enough — which `react-hooks/exhaustive-deps` is what said so. A
           // thunk closing over a render value reads that render's value for
-          // ever if the memo does not re-run, so `() => ocrLanguage` without
+          // ever if the memo does not re-run, so `() => ocrLanguages` without
           // the dependency below would have recognised in whatever language was
           // stored when the document opened while the tool's own case proved it
           // reads at commit. The tool keeps the thunk because that is what makes
           // a stale capture unrepresentable on its side; this list is what keeps
           // the value it reads current.
-          language: () => ocrLanguage,
+          languages: () => ocrLanguages,
           onPlaceImage,
           onPlaceSignature,
           onPlaceBarcode,
@@ -2246,7 +2252,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // THE STAMP LIBRARY'S CHANNELS go through it.
       client,
       listAnnotations,
-      ocrLanguage,
+      ocrLanguages,
       onPlaceBarcode,
       onPlaceImage,
       onPlaceSignature,
@@ -2555,6 +2561,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           stamp,
           track,
           servicesReady: () => azureReady || claudeKeyStored,
+          ocrLanguages: storedOcrLanguages,
         }),
         // THE SAME WALK AND ONE MORE CHANNEL. D6 row 5 is *export searchable PDF*,
         // and once rows 2 and 3 landed there was nothing left but the sequence —
@@ -2567,6 +2574,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           stamp,
           track,
           servicesReady: () => azureReady || claudeKeyStored,
+          ocrLanguages: storedOcrLanguages,
         }),
         // D2's ENHANCE-SCANS ROW, whose trigger fires in this stage. It needs no
         // dialog — the levels come from each image's own histogram — and it reads the
@@ -2800,6 +2808,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       autoscrollOn,
       // SAVE'S SIGNATURE WARNING, a reader of the store — stable while the store is.
       warnSignatureBreak,
+      // THE OCR COMMANDS' STORED LANGUAGES, the same kind of reader.
+      storedOcrLanguages,
       toggleAutoscroll,
       opened,
       readTool,

@@ -743,7 +743,7 @@ export function createEngineHandlers({
           ok: true,
           value: await ocr(held.session, {
             page: request.page,
-            language: request.language,
+            languages: request.languages,
             // SPREAD, for the reason `remoteMupdfOcr` gives at the other end of the
             // wire: an explicit `undefined` is a present key, and *the whole page* is
             // the absence of this one rather than a value of it.

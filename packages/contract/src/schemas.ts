@@ -159,6 +159,23 @@ export type OcrLanguage = (typeof OCR_LANGUAGES)[number];
  */
 export const ocrLanguageSchema = z.enum(OCR_LANGUAGES);
 
+/** How many languages one recognition may read in at once: each is a model loaded for the call. */
+export const MAX_OCR_LANGUAGES = 3;
+
+/**
+ * The languages a recognition reads in — one or a few, each named once. ONE SCHEMA for the command, the host's
+ * request, the dialog's answer and the setting, so none of them can accept a list another refuses.
+ */
+export const ocrLanguagesSchema = z
+  .array(ocrLanguageSchema)
+  .min(1)
+  .max(MAX_OCR_LANGUAGES)
+  .refine((languages) => new Set(languages).size === languages.length, { message: 'each language is named once' })
+  .readonly();
+
+/** What {@link ocrLanguagesSchema} accepts. */
+export type OcrLanguages = z.infer<typeof ocrLanguagesSchema>;
+
 /**
  * Which recogniser answers — **the request names it, and nothing else chooses**.
  *

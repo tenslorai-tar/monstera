@@ -1,4 +1,4 @@
-import type { OcrEngine, OcrLanguage, DispatchableCommand } from '@monstera/contract';
+import type { OcrEngine, OcrLanguages, DispatchableCommand } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
@@ -67,9 +67,9 @@ const MINIMUM_REGION = 4;
 
 export interface OcrRegionDeps {
   /**
-   * Which language to read in — the stored `OCR_LANGUAGE_SETTING`.
+   * Which languages to read in — the stored `OCR_LANGUAGE_SETTING`, one to three read together.
    *
-   * **A function rather than a value, so that holding a stale language is
+   * **A function rather than a value, so that holding stale languages is
    * unrepresentable on this side**: the registry outlives a gesture, and a tool
    * constructed with the value would read whatever was stored when it was built.
    *
@@ -79,7 +79,7 @@ export interface OcrRegionDeps {
    * `react-hooks/exhaustive-deps` while this file's own case was green, which is the
    * shape where a tested tool sits beside an untested call site.
    */
-  readonly language: () => OcrLanguage;
+  readonly languages: () => OcrLanguages;
 }
 
 /** The region a drag describes, in the overlay's own pixels. */
@@ -124,7 +124,7 @@ function regionTool(id: string, engine: OcrEngine, deps: OcrRegionDeps): UiTool 
       return {
         kind: 'ocrPage',
         page,
-        language: deps.language(),
+        languages: deps.languages(),
         // THE REGISTRATION'S OWN ENGINE, a literal per id. The reader chose it
         // by choosing the tool, so there is nothing here to read late.
         engine,
@@ -140,7 +140,7 @@ function regionTool(id: string, engine: OcrEngine, deps: OcrRegionDeps): UiTool 
   return { id, controller };
 }
 
-/** Drag a box; Tesseract reads it, in the language the setting names. */
+/** Drag a box; Tesseract reads it, in the languages the setting names. */
 export function ocrRegionTool(deps: OcrRegionDeps): UiTool {
   return regionTool(OCR_REGION_TOOL_ID, 'tesseract', deps);
 }

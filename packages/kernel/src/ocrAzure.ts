@@ -631,6 +631,6 @@ export async function recogniseThroughAzure(
     // something from a closed set of fourteen, and claiming the language the
     // reader's OCR setting happens to hold would be inventing a fact about a
     // service that was never asked.
-    language: 'eng' satisfies OcrLanguage,
+    languages: ['eng' satisfies OcrLanguage],
   };
 }

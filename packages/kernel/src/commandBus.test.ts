@@ -1534,7 +1534,7 @@ describe('CommandBus and a parameterised pre-read', () => {
       },
     ],
     confidence: 90,
-    language: 'eng',
+    languages: ['eng'],
   };
 
   /**
@@ -1573,7 +1573,7 @@ describe('CommandBus and a parameterised pre-read', () => {
         // engine-scoped refusal look testable when it is not.
         return Promise.resolve({
           ...recognised,
-          language: request.engine === 'tesseract' ? request.language : 'eng',
+          languages: request.engine === 'tesseract' ? request.languages : ['eng'],
         });
       },
       sources: new Map(),
@@ -1590,14 +1590,14 @@ describe('CommandBus and a parameterised pre-read', () => {
     await bus.execute(
       {},
       context,
-      { kind: 'ocrPage', page: 1, language: 'deu', engine: 'tesseract' },
+      { kind: 'ocrPage', page: 1, languages: ['deu'], engine: 'tesseract' },
       inputs,
     );
 
     // THE REQUEST, not the count. A resolver called once with `page: 0` is the
     // defect this case exists for, and a count of one cannot see it.
     expect(inputs.requests()).toStrictEqual([
-      { engine: 'tesseract', page: 1, language: 'deu' },
+      { engine: 'tesseract', page: 1, languages: ['deu'] },
     ]);
   });
 
@@ -1620,7 +1620,7 @@ describe('CommandBus and a parameterised pre-read', () => {
         {
           kind: 'ocrPage',
           page: 2,
-          language: 'deu',
+          languages: ['deu'],
           engine,
           region: { x0: 10, y0: 20, x1: 30, y1: 40 },
         },
@@ -1638,7 +1638,7 @@ describe('CommandBus and a parameterised pre-read', () => {
     const command = {
       kind: 'ocrPage',
       page: 0,
-      language: 'eng',
+      languages: ['eng'],
       engine: 'tesseract',
     } as const;
 
@@ -1688,7 +1688,7 @@ describe('CommandBus and a parameterised pre-read', () => {
       bus.execute(
         {},
         context,
-        { kind: 'ocrPage', page: 0, language: 'heb', engine: 'tesseract' },
+        { kind: 'ocrPage', page: 0, languages: ['heb'], engine: 'tesseract' },
         inputs,
       ),
     ).rejects.toThrow(/read with eng and the command asked for heb/u);
@@ -1714,7 +1714,7 @@ describe('CommandBus and a parameterised pre-read', () => {
         {
           kind: 'ocrPage',
           page: 0,
-          language: 'heb',
+          languages: ['heb'],
           engine: 'azure',
           region: { x0: 10, y0: 20, x1: 30, y1: 40 },
         },

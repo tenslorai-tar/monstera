@@ -1035,7 +1035,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     const claudeRegion: Command = {
       kind: 'ocrPage',
       page: 0,
-      language: 'eng',
+      languages: ['eng'],
       engine: 'claude',
       region: { x0: 72, y0: 72, x1: 300, y1: 200 },
     };

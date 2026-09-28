@@ -66,7 +66,7 @@ const ANSWER: RecognisedPage = {
     },
   ],
   confidence: 96,
-  language: 'eng',
+  languages: ['eng'],
 };
 
 /** The two halves joined over a JSON round trip, with the reader injected. */
@@ -216,7 +216,7 @@ describe('engine/ocr-page', () => {
   it('CARRIES LINES, WORDS AND BOXES over a real JSON round trip', async () => {
     const { session, read, close } = await joined(() => Promise.resolve(ANSWER));
     try {
-      const answer = await read(session, { page: 0, language: 'eng', modelDirectory: MODELS });
+      const answer = await read(session, { page: 0, languages: ['eng'], modelDirectory: MODELS });
       // STRICT EQUALITY against the whole shape, which is what makes the tuple
       // the assertion: a box that arrived as an object, or as a three-member
       // array, fails here rather than at the first consumer to index it.
@@ -236,8 +236,8 @@ describe('engine/ocr-page', () => {
       // NOT PAGE 0 AND NOT `eng`. A page of zero and the first language would
       // both be produced by a handler that dropped the field and let a default
       // stand — which is the shape the rotate shipped with.
-      await read(session, { page: 4, language: 'heb', modelDirectory: MODELS });
-      expect(asked).toStrictEqual([{ page: 4, language: 'heb', modelDirectory: MODELS }]);
+      await read(session, { page: 4, languages: ['heb'], modelDirectory: MODELS });
+      expect(asked).toStrictEqual([{ page: 4, languages: ['heb'], modelDirectory: MODELS }]);
     } finally {
       await close();
     }
@@ -249,7 +249,7 @@ describe('engine/ocr-page', () => {
     });
     try {
       await expect(
-        read(stranger, { page: 0, language: 'eng', modelDirectory: MODELS }),
+        read(stranger, { page: 0, languages: ['eng'], modelDirectory: MODELS }),
         // THE PROSE, NOT THE STATE NAME. `answered` turns the failure into the
         // sentence the supervisor reads, and it names the channel — so this
         // asserts that the miss was answered for THIS channel rather than that
@@ -269,7 +269,7 @@ describe('engine/ocr-page', () => {
     });
     try {
       await expect(
-        read(session, { page: 0, language: 'eng', modelDirectory: MODELS }),
+        read(session, { page: 0, languages: ['eng'], modelDirectory: MODELS }),
       ).rejects.toThrow(/ocr-model-unreadable/u);
     } finally {
       await close();
@@ -285,7 +285,7 @@ describe('engine/ocr-page', () => {
       throw new Error('Tesseract would not read the rasterised page');
     });
     try {
-      const refusal = read(session, { page: 0, language: 'eng', modelDirectory: MODELS });
+      const refusal = read(session, { page: 0, languages: ['eng'], modelDirectory: MODELS });
       await expect(refusal).rejects.toThrow(/ocr-failed/u);
       await expect(refusal).rejects.not.toThrow(/ocr-model-unreadable/u);
     } finally {
@@ -302,7 +302,7 @@ describe('engine/ocr-page', () => {
     );
     try {
       await expect(
-        read(session, { page: 0, language: 'eng', modelDirectory: MODELS }),
+        read(session, { page: 0, languages: ['eng'], modelDirectory: MODELS }),
       ).rejects.toThrow();
     } finally {
       await close();
@@ -338,7 +338,7 @@ describe('engine/ocr-page', () => {
       session: 'h1',
       page: 0,
       region: [30, 180, 370, 230],
-      language: 'eng',
+      languages: ['eng'],
       modelDirectory: MODELS,
     };
     expect(params.safeParse(tesseract).success).toBe(true);

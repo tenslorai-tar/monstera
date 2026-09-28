@@ -338,7 +338,7 @@ export function remoteMupdfOcr(
         engine: 'tesseract',
         session: sessions.handleFor(session),
         page: request.page,
-        language: request.language,
+        languages: request.languages,
         // SPREAD RATHER THAN `region: request.region`, because the channel's schema
         // is `.strict()` and an explicit `undefined` is a key present with no value —
         // which `exactOptionalPropertyTypes` refuses here and zod refuses on the wire.

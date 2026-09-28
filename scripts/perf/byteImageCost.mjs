@@ -250,7 +250,7 @@ const COMMANDS = [
     run: (image) =>
       applyOcrPage(
         image,
-        { kind: 'ocrPage', page: 0, language: 'eng', engine: 'tesseract' },
+        { kind: 'ocrPage', page: 0, languages: ['eng'], engine: 'tesseract' },
         {
           lines: [
             {
@@ -260,7 +260,7 @@ const COMMANDS = [
             },
           ],
           confidence: 90,
-          language: 'eng',
+          languages: ['eng'],
         },
       ),
   },

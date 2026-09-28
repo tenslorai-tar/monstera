@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react';
-import type { OcrLanguage } from '@monstera/contract';
+import { type OcrLanguage, ocrLanguagesSchema } from '@monstera/contract';
 import type { ReactElement } from 'react';
 import { useState } from 'react';
 
@@ -13,13 +13,12 @@ import {
   OCR_UNAVAILABLE,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
-import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { KEYS_ARTICLE, type OcrAnswer } from './ocrResult.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
 
 /**
- * The recognition dialog's body — a language, and a scope.
+ * The recognition dialog's body — up to three languages read together, and a scope.
  *
  * ## NO MODELS IS A DESIGNED STATE, and it is this component's first branch
  *
@@ -28,31 +27,38 @@ import { PageScopeChoice } from './PageScopeChoice.js';
  * control to start**: a disabled button invites a reader to hunt for what would
  * enable it, where a feature that plainly is not installed yet should say so.
  *
- * ## The language list is the MACHINE's, and the first entry is the default
+ * ## The language list is the MACHINE's, and the SETTING is the default
  *
- * Ordered by `OCR_LANGUAGES` before it arrives here, so the default is the first
- * provisioned model rather than whichever download finished first. `eng` is what
- * CI provisions and the usual first entry, and nothing here hard-codes it — a
- * machine with only `heb` installed opens on Hebrew.
+ * Ordered by `OCR_LANGUAGES` before it arrives here. The dialog opens on the stored
+ * `OCR_LANGUAGE_SETTING` — those of its languages this machine has a model for —
+ * and, where none of them is, on the first provisioned model rather than whichever
+ * download finished first. Nothing here hard-codes `eng`: a machine with only `heb`
+ * installed opens on Hebrew.
  *
- * Buttons rather than a `<select>`, which is `PageTransitionBody`'s choice for
- * this application's only list-of-names control and keeps the dialog to the
- * primitives that exist.
+ * A box per language, since 2026-09-28: Tesseract reads a page mixing two languages
+ * best with both models at once, and a choice of one was a radio group.
  *
  * A default export because `declareDialog` takes a `lazy()` component.
  */
 export default function OcrBody({
   pages,
   languages,
+  chosen,
   servicesReady,
   resolve,
 }: {
   readonly pages: readonly number[];
   readonly languages: readonly OcrLanguage[];
+  readonly chosen: readonly OcrLanguage[];
   readonly servicesReady: boolean;
 } & DialogAnswering<OcrAnswer>): ReactElement {
   const { _ } = useLingui();
-  const [language, setLanguage] = useState<OcrLanguage | null>(languages[0] ?? null);
+  // THE STORED LANGUAGES THIS MACHINE CAN READ, else its first model: a setting naming a model since removed opens on
+  // one that is there rather than on nothing, and a machine with none opens on the no-models sentence below.
+  const [held, setHeld] = useState<readonly OcrLanguage[]>(() => {
+    const provisioned = chosen.filter((language) => languages.includes(language));
+    return provisioned.length > 0 ? provisioned : languages.slice(0, 1);
+  });
   const [everyPage, setEveryPage] = useState(true);
 
   // IN BOTH BRANCHES: the network engines need no installed model, so a machine
@@ -77,7 +83,13 @@ export default function OcrBody({
     </div>
   );
 
-  if (language === null) {
+  // THE SCHEMA THE COMMAND ENFORCES decides which boxes may change — the last one ticked may not be cleared, and none
+  // may be ticked past the maximum — so the offer never holds a set the result would refuse.
+  const toggled = (language: OcrLanguage): OcrLanguage[] =>
+    held.includes(language) ? held.filter((each) => each !== language) : [...held, language];
+  const run = ocrLanguagesSchema.safeParse(held);
+
+  if (!run.success) {
     return (
       <div className="m-ocr">
         <p className="m-ocr__unavailable">{_(OCR_UNAVAILABLE)}</p>
@@ -88,20 +100,30 @@ export default function OcrBody({
 
   return (
     <div className="m-ocr">
-      {/* A NAMED GROUP WHOSE CHOICE IS ANNOUNCED (WCAG 4.1.2), `BatesNumberBody`'s rule. */}
-      <SegmentedControl
-        label={OCR_LANGUAGE}
-        options={languages.map((name) => ({ value: name, label: OCR_LANGUAGE_NAMES[name] }))}
-        value={language}
-        onChange={setLanguage}
-        wrap
-      />
+      {/* A NAMED GROUP (WCAG 4.1.2): a fieldset whose legend says what the boxes choose. */}
+      <fieldset className="m-ocr__languages">
+        <legend>{_(OCR_LANGUAGE)}</legend>
+        {languages.map((language) => (
+          <label className="m-ocr__language" key={language}>
+            <input
+              checked={held.includes(language)}
+              data-ocr-language={language}
+              disabled={!ocrLanguagesSchema.safeParse(toggled(language)).success}
+              onChange={() => {
+                setHeld(toggled(language));
+              }}
+              type="checkbox"
+            />
+            {_(OCR_LANGUAGE_NAMES[language])}
+          </label>
+        ))}
+      </fieldset>
       <PageScopeChoice className="m-ocr__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
       <Button
         label={OCR_START}
         variant="primary"
         onClick={() => {
-          resolve({ pages: everyPage ? 'all' : [...pages], language });
+          resolve({ pages: everyPage ? 'all' : [...pages], languages: run.data });
         }}
       />
       {handwriting}

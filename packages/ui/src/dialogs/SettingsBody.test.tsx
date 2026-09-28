@@ -8,7 +8,7 @@ import {
   AZURE_KEY_SETTING_ID,
 } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 
@@ -23,6 +23,7 @@ import {
   ANNOTATION_OPACITY_SETTING,
   AUTHOR_NAME_SETTING,
   AZURE_DI_KEY_SETTING,
+  OCR_LANGUAGE_SETTING,
 } from '../settings/editing.js';
 import { SETTINGS_PAGES } from '../settings/pages.js';
 import type { SettingDefinition } from '../registries/settings.js';
@@ -168,6 +169,33 @@ describe('SettingsBody', () => {
 
     expect(reported).toStrictEqual([]);
     expect(screen.getByRole('status').textContent).toContain(english(ANNOTATION_OPACITY_SETTING.title));
+  });
+
+  it('a SET of an enum’s members is a named group of boxes, and a tick reports the whole set (ADR-0056, 2026-09-28)', () => {
+    const { reported } = opened({ values: { [OCR_LANGUAGE_SETTING.id]: ['deu'] } });
+    const group = control(OCR_LANGUAGE_SETTING);
+    expect(group.getAttribute('role')).toBe('group');
+
+    fireEvent.click(within(group).getByRole('checkbox', { name: 'English' }));
+
+    // THE WHOLE SET, the stored member first: a control reporting only the member ticked would drop German.
+    expect(reported).toStrictEqual([{ values: { [OCR_LANGUAGE_SETTING.id]: ['deu', 'eng'] }, secrets: {} }]);
+  });
+
+  it('the SCHEMA decides which boxes may change: the last one ticked, and any past three, are refused in the offer', () => {
+    opened({ values: { [OCR_LANGUAGE_SETTING.id]: ['deu'] } });
+    const group = control(OCR_LANGUAGE_SETTING);
+    const box = (name: string): HTMLInputElement => within(group).getByRole<HTMLInputElement>('checkbox', { name });
+
+    expect(box('German').disabled).toBe(true);
+    // CONTROL: an unticked box below the maximum is offered.
+    expect(box('English').disabled).toBe(false);
+
+    fireEvent.click(box('English'));
+    fireEvent.click(box('French'));
+    // AT THREE: the rest are refused, and the ticked ones may still be cleared.
+    expect(box('Spanish').disabled).toBe(true);
+    expect(box('German').disabled).toBe(false);
   });
 
   it('a COLOUR is a pair: unticking the no-choice box offers the starting colour, and the choice is reported', () => {
@@ -412,7 +440,7 @@ describe('SettingsBody', () => {
     const search = screen.getByLabelText('Search settings');
 
     fireEvent.change(search, { target: { value: 'recognition language' } });
-    expect(screen.getByLabelText('Recognition language')).toBeDefined();
+    expect(screen.getByLabelText('Recognition languages')).toBeDefined();
 
     // BY DESCRIPTION: the words under the label, which is where a person's own wording lands.
     fireEvent.change(search, { target: { value: 'PDFium' } });

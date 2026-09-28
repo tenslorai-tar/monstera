@@ -1,14 +1,14 @@
-import { ocrLanguageSchema } from '@monstera/contract';
+import { ocrLanguagesSchema } from '@monstera/contract';
 import { z } from 'zod';
 
 /** The Help centre's article on getting an Azure or Anthropic key and what each costs (ADR-0112). */
 export const KEYS_ARTICLE = 'ai-keys-and-pricing';
 
-/** Recognise these pages in this language. */
+/** Recognise these pages in these languages, read together. */
 const OCR_RUN = z
   .object({
     pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
-    language: ocrLanguageSchema,
+    languages: ocrLanguagesSchema,
   })
   .strict();
 

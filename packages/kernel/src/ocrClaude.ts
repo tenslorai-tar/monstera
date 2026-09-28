@@ -578,6 +578,6 @@ function pageFrom(data: z.infer<typeof answerSchema>, request: ClaudeRequest): R
     confidence: 0,
     // `recogniseThroughAzure`'s reason: the service detects the language, and a
     // `RecognisedPage` must name one of a closed set.
-    language: 'eng' satisfies OcrLanguage,
+    languages: ['eng' satisfies OcrLanguage],
   };
 }

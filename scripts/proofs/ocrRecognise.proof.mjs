@@ -153,6 +153,9 @@ const CASES = /** @type {const} */ ([
   'A ROTATED PAGE READS INTO THE PAGE’S OWN SPACE, not the raster’s',
   'CONTROL: and the box does NOT contain the point with its coordinates SWAPPED',
   'A REGION ON A ROTATED PAGE excludes the other word, which is the same fix the other way',
+  // PART F's SEVERAL LANGUAGES (2026-09-28), appended for the positional reason above.
+  'SEVERAL MODELS READ TOGETHER: English and German read the German word with its own letters',
+  'CONTROL: and English alone does not, so the second model is what read them',
 ]);
 
 /**
@@ -177,7 +180,7 @@ const CASES = /** @type {const} */ ([
  * **15, a literal, measured 2026-09-11 by running this file.** Adding a case is a
  * two-line diff — the label and this number — and removing one is red.
  */
-const DECLARED_CASES = 18;
+const DECLARED_CASES = 20;
 
 // AND THE LIST IS HELD TO THE SAME NUMBER, because the labels are indexed
 // POSITIONALLY by the calls below: a label added without a call, or removed from
@@ -286,20 +289,36 @@ async function rotatedTwoWordPage() {
  * Recognises page 0 of `bytes` through a real session.
  *
  * @param {Uint8Array} bytes
- * @param {{ page?: number, models?: string, region?: [number, number, number, number] }} options
+ * @param {{ page?: number, models?: string, region?: [number, number, number, number], languages?: readonly string[] }} options
  */
 async function recognise(bytes, options = {}) {
   const session = await mupdfWriter.open(bytes);
   try {
     return await recognisePage(session, {
       page: options.page ?? 0,
-      language: 'eng',
+      languages: /** @type {any} */ (options.languages ?? ['eng']),
       ...(options.region === undefined ? {} : { region: options.region }),
       modelDirectory: options.models ?? MODELS,
     });
   } finally {
     await mupdfWriter.close(session);
   }
+}
+
+/** A German word with letters the English model has no glyph class for. */
+const GERMAN_WORD = 'Größe';
+
+/**
+ * A page with the German word drawn large — Helvetica's WinAnsi carries ö and ß.
+ *
+ * @returns {Promise<Uint8Array>}
+ */
+async function germanPage() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  page.drawText(GERMAN_WORD, { x: DRAWN_X, y: DRAWN_BASELINE, size: DRAWN_SIZE, font });
+  return document.save();
 }
 
 /**
@@ -592,6 +611,30 @@ try {
       'the conversion this replaced did on every rotated page.',
   );
 
+  // SEVERAL MODELS AT ONCE: a word only German spells — its umlaut and sharp s — beside an English one. Read with
+  // English and German together it comes back with those letters; read with English alone it cannot, since the
+  // English model has no ß. The German model is provisioned on a developer's machine and not on every runner, so
+  // without it both cases are recorded as not applicable rather than passed.
+  if (existsSync(join(MODELS, 'deu.traineddata.gz'))) {
+    const mixed = await germanPage();
+    const both = (await recognise(mixed, { languages: ['eng', 'deu'] })).lines.map((line) => line.text).join(' ');
+    const english = (await recognise(mixed, { languages: ['eng'] })).lines.map((line) => line.text).join(' ');
+    check(
+      CASES[18],
+      both.includes(GERMAN_WORD),
+      `read with English and German, the page came back as ${JSON.stringify(both)}; it must contain ` +
+        `${GERMAN_WORD}. Without it the second model was not loaded, or not used.`,
+    );
+    check(
+      CASES[19],
+      !english.includes(GERMAN_WORD),
+      `read with English ALONE the page also produced ${GERMAN_WORD}, so the case above cannot tell the ` +
+        'second model from its absence.',
+    );
+  } else {
+    for (const label of CASES.slice(18, 20)) roster.record(roster.mark(), label, false);
+  }
+
   process.stdout.write('## The supplied corpus\n\n');
   const corpus = openCorpus();
   if (!corpus.available) {
@@ -610,7 +653,7 @@ try {
       try {
         const answer = await recognisePage(session, {
           page: 0,
-          language: 'eng',
+          languages: ['eng'],
           modelDirectory: MODELS,
         });
         // A PAGE THIS BUILD CAN ALREADY READ IS NOT WHAT OCR IS FOR, and the

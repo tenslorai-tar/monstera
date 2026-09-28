@@ -531,10 +531,10 @@ export const applyOcrPage: Apply<'pdf-lib', 'ocrPage', 'none', 'ocr'> = async (
   // check is for — a resolver answering a different request — is covered for
   // them by the region: `commandDeclarations` builds their request from this
   // command's own rectangle, and the answer is placed at that rectangle's box.
-  if (command.engine === 'tesseract' && read.language !== command.language) {
+  if (command.engine === 'tesseract' && read.languages.join('+') !== command.languages.join('+')) {
     throw new Error(
-      `the recognition handed to ocrPage was read with ${read.language} and the command asked ` +
-        `for ${command.language}. A pre-read that answers a different request than the command ` +
+      `the recognition handed to ocrPage was read with ${read.languages.join('+')} and the command asked ` +
+        `for ${command.languages.join('+')}. A pre-read that answers a different request than the command ` +
         'made is a resolver defect; nothing about the document can cause it.',
     );
   }

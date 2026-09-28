@@ -11,11 +11,11 @@ A scanned page is only a picture, so its words cannot be searched or selected. T
 ## Steps
 
 1. In the rail, choose **Tools**, then **OCR pages** in the **OCR** group (its full name is **Make scanned pages searchable**).
-2. In **Language of the text**, choose the language.
+2. In **Languages of the text**, tick the language. If a page mixes languages, tick up to three; they are read together.
 3. Choose **This page** or **All pages**, then **Recognise**.
 4. Progress shows in the status bar. When it finishes, the **Recognition** window says how many pages were read.
 
-![The Recognise text window with Language of the text and This page / All pages](screenshot:make-scanned-pages-searchable-1)
+![The Recognise text window with Languages of the text and This page / All pages](screenshot:make-scanned-pages-searchable-1)
 
 ## Good to know
 
@@ -24,8 +24,7 @@ A scanned page is only a picture, so its words cannot be searched or selected. T
 - A page that is a picture shows **This page is a picture, so there is no text to select or search.**
 - If you stop it early, the pages already done keep their text.
 - Each page can be undone with **Ctrl+Z**.
-- The default language is in **Settings**, **OCR** page, **Recognition language**.
-- If the window says no recognition models are installed, text recognition is not available in this copy of Monstera.
+- The window opens with the languages set in **Settings**, **OCR** page, **Recognition languages**. Choosing others in the window changes that run only.- If the window says no recognition models are installed, text recognition is not available in this copy of Monstera.
 - Handwriting is not read this way. See "Read handwriting with Azure or Claude".
 
 <!--

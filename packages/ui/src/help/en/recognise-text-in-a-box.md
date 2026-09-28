@@ -18,7 +18,7 @@ Instead of reading a whole page, you can read the text in one area of a scanned 
 
 ## Good to know
 
-- The language used is the one in **Settings**, **OCR** page, **Recognition language**.
+- The languages used are the ones in **Settings**, **OCR** page, **Recognition languages**.
 - Recognition runs on this computer. Nothing is sent anywhere.
 - Undo with **Ctrl+Z**.
 - For handwriting, see "Read handwriting with Azure or Claude".

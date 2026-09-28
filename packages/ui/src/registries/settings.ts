@@ -208,6 +208,26 @@ export interface SettingDefinition<Schema extends z.ZodType = z.ZodType> {
 }
 
 /**
+ * The members an ENUMERATED setting chooses from, and whether it holds one of them or a set of them.
+ *
+ * **One reading of *enumerated*, for the two places that ask**: the registry's check that every member has a title,
+ * and the dialog's choice of control. A second reading in the dialog that knew only a bare enum would title a set's
+ * members here and draw no control for them there. A set is an array of an enum, read through `.readonly()`, which is
+ * how the contract spells a list the renderer must not mutate; how many it may hold is left to the schema, which the
+ * control asks rather than reads (`SettingsBody`).
+ */
+export function enumeratedOf(
+  schema: z.ZodType,
+): { readonly members: readonly string[]; readonly several: boolean } | null {
+  if (schema instanceof z.ZodEnum) return { members: schema.options.map(String), several: false };
+  const inner = schema instanceof z.ZodReadonly ? schema.unwrap() : schema;
+  if (inner instanceof z.ZodArray && inner.element instanceof z.ZodEnum) {
+    return { members: inner.element.options.map(String), several: true };
+  }
+  return null;
+}
+
+/**
  * The composed set of settings.
  *
  * ## The fallback is validated at CONSTRUCTION, and that is not belt-and-braces
@@ -244,7 +264,7 @@ export class SettingsRegistry {
       // titles. Both directions are checked, because iterating either set alone
       // makes it the universe: the titles alone pass a missing member, and the
       // members alone pass a title for one that does not exist.
-      const members = setting.schema instanceof z.ZodEnum ? setting.schema.options.map(String) : null;
+      const members = enumeratedOf(setting.schema)?.members ?? null;
       // A MEMBER THAT READS AS AN ARRAY INDEX LOSES ITS PLACE. zod keeps an enum's members as an object's keys, and
       // JavaScript orders integer-like keys first, ascending, whatever order they were declared in — so the dialog,
       // which draws `options` in order, showed *Save automatically*'s *Off* LAST (measured: `['off', '1', '5', '10']`

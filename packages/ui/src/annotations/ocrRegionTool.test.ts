@@ -1,4 +1,4 @@
-import type { OcrLanguage, DispatchableCommand } from '@monstera/contract';
+import type { OcrLanguages, DispatchableCommand } from '@monstera/contract';
 import { viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -48,25 +48,26 @@ const PAGE: Parameters<typeof overlayTransform>[0] = {
 };
 
 /**
- * The language every case below drags in.
+ * The languages every case below drags in.
  *
- * **NOT `'eng'`, deliberately.** `OCR_LANGUAGE_SETTING`'s fallback is `'eng'`,
+ * **NOT `['eng']`, deliberately.** `OCR_LANGUAGE_SETTING`'s fallback is `['eng']`,
  * so a tool that ignored the dep and named the default would satisfy a case
  * written with it — the fixture would contain none of the thing the defect keys
- * on. German is a value only a read of the dep can produce.
+ * on. German with English is a value only a read of the dep can produce, and two
+ * of them is what a tool keeping only the first would lose.
  */
-const LANGUAGE: OcrLanguage = 'deu';
+const LANGUAGES: OcrLanguages = ['deu', 'eng'];
 
-/** The deps, with the language every case drags in unless it says otherwise. */
-const deps = (language: () => OcrLanguage = () => LANGUAGE): OcrRegionDeps => ({ language });
+/** The deps, with the languages every case drags in unless it says otherwise. */
+const deps = (languages: () => OcrLanguages = () => LANGUAGES): OcrRegionDeps => ({ languages });
 
 /** The command one drag answered, or `undefined` if it answered none. */
 function dragged(
   from: readonly [number, number],
   to: readonly [number, number],
-  language: () => OcrLanguage = () => LANGUAGE,
+  languages: () => OcrLanguages = () => LANGUAGES,
 ): DispatchableCommand | undefined {
-  const { controller } = ocrRegionTool(deps(language));
+  const { controller } = ocrRegionTool(deps(languages));
   const started = controller.begin(viewportPoint(from[0], from[1]));
   const moved = controller.update(started, viewportPoint(to[0], to[1]));
   // The cast every file in this directory makes: `commit` may answer a promise
@@ -83,19 +84,19 @@ describe('the OCR region tool', () => {
     expect(dragged([20, 20], [120, 80])).toStrictEqual({
       kind: 'ocrPage',
       page: 3,
-      language: LANGUAGE,
+      languages: LANGUAGES,
       engine: 'tesseract',
       region: { x0: 60, y0: 390, x1: 110, y1: 360 },
     });
   });
 
-  it('reads the language at COMMIT, not when the tool was composed', () => {
+  it('reads the languages at COMMIT, not when the tool was composed', () => {
     // The dep is a function for exactly this: the registry is built once, and a
-    // reader who changes the language in the OCR dialog must not reopen the
+    // reader who changes the languages in Settings must not reopen the
     // document for the tool to agree. A tool that captured the value would pass
     // the case above and fail this one.
-    let language: OcrLanguage = 'eng';
-    const tool = ocrRegionTool(deps(() => language));
+    let languages: OcrLanguages = ['eng'];
+    const tool = ocrRegionTool(deps(() => languages));
     const drag = (): DispatchableCommand | undefined => {
       const started = tool.controller.begin(viewportPoint(20, 20));
       const moved = tool.controller.update(started, viewportPoint(120, 80));
@@ -103,9 +104,9 @@ describe('the OCR region tool', () => {
         | DispatchableCommand
         | undefined;
     };
-    expect(drag()).toMatchObject({ language: 'eng' });
-    language = 'deu';
-    expect(drag()).toMatchObject({ language: 'deu' });
+    expect(drag()).toMatchObject({ languages: ['eng'] });
+    languages = ['deu'];
+    expect(drag()).toMatchObject({ languages: ['deu'] });
   });
 
   it('refuses a drag that did not travel in BOTH axes', () => {
@@ -187,7 +188,7 @@ describe('the network region tools', () => {
     expect(draggedWith(build(deps()))).toStrictEqual({
       kind: 'ocrPage',
       page: 3,
-      language: LANGUAGE,
+      languages: LANGUAGES,
       engine,
       region: { x0: 60, y0: 390, x1: 110, y1: 360 },
     });

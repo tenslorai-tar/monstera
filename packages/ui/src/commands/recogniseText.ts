@@ -1,4 +1,4 @@
-import { MAX_TEXT_LAYER_LINES, type OcrLanguage } from '@monstera/contract';
+import { MAX_TEXT_LAYER_LINES, type OcrLanguages } from '@monstera/contract';
 import type { DocId } from '@monstera/shared';
 
 import { OCR_DIALOG_ID } from '../dialogs/ocr.js';
@@ -84,6 +84,8 @@ export function recogniseTextCommand(
     readonly track: TrackTask;
     /** Whether a recognition service's key is stored — the dialog's handwriting sentence. */
     readonly servicesReady: () => boolean;
+    /** The stored `OCR_LANGUAGE_SETTING`, which the dialog opens on — read when the command runs. */
+    readonly ocrLanguages: () => OcrLanguages;
   },
 ): UiCommand {
   return {
@@ -110,6 +112,7 @@ export function recogniseTextCommand(
       const answered = await deps.ask(OCR_DIALOG_ID, {
         pages: [...pages],
         languages: models.value.languages,
+        chosen: deps.ocrLanguages(),
         servicesReady: deps.servicesReady(),
       });
       // A DISMISSAL ANSWERS NOTHING, which is the mutation-dialog gate (ADR-0038):
@@ -127,7 +130,7 @@ export function recogniseTextCommand(
           ? Array.from({ length: pageCount }, (_unused, index) => index)
           : parsed.data.pages;
 
-      const walked = await recogniseScope(deps, docId, targets, parsed.data.language);
+      const walked = await recogniseScope(deps, docId, targets, parsed.data.languages);
 
       // REPORTED EVEN WHEN IT DID NOTHING, because *nothing needed recognising* is
       // the one outcome a reader cannot see in their document — and reported after
@@ -290,7 +293,7 @@ export async function recogniseScope(
   deps: DocumentCommandDeps & { readonly track: TrackTask },
   docId: DocId,
   targets: readonly number[],
-  language: OcrLanguage,
+  languages: OcrLanguages,
 ): Promise<RecognisedWalk> {
   const task = deps.track(OCR_PROGRESS, targets.length);
   // A FUNCTION rather than a read of `signal.aborted` at each site, which is
@@ -324,7 +327,7 @@ export async function recogniseScope(
       const applied = await applyDocumentCommand(deps, docId, {
         kind: 'ocrPage',
         page: target,
-        language,
+        languages,
         // TESSERACT, AND NOT A SETTING. This is the page and document scope, and
         // the contract refuses a network engine without a region: a page-scoped
         // send would upload a whole page where a reader asked about a box.
@@ -375,7 +378,11 @@ export async function recogniseScope(
  * has undo.
  */
 export function exportSearchableCommand(
-  deps: DocumentCommandDeps & { readonly track: TrackTask; readonly servicesReady: () => boolean },
+  deps: DocumentCommandDeps & {
+    readonly track: TrackTask;
+    readonly servicesReady: () => boolean;
+    readonly ocrLanguages: () => OcrLanguages;
+  },
 ): UiCommand {
   return {
     id: 'document.export-searchable',
@@ -396,10 +403,11 @@ export function exportSearchableCommand(
       // THE SAME DIALOG, and the scope it answers is ignored deliberately: an
       // export is the whole document by definition, and a second dialog differing
       // only in the absence of two buttons would be a second place the language
-      // list is rendered. The answer's `language` is what this command needs.
+      // list is rendered. The answer's `languages` is what this command needs.
       const answered = await deps.ask(OCR_DIALOG_ID, {
         pages: [...pages],
         languages: models.value.languages,
+        chosen: deps.ocrLanguages(),
         servicesReady: deps.servicesReady(),
       });
       const parsed = OCR_RESULT.safeParse(answered);
@@ -414,7 +422,7 @@ export function exportSearchableCommand(
         deps,
         docId,
         Array.from({ length: pageCount }, (_unused, index) => index),
-        parsed.data.language,
+        parsed.data.languages,
       );
       // A CANCELLED WALK WRITES NO COPY. Half a document's pages recognised and a
       // file on disk called *searchable* is the pair this build must not produce —

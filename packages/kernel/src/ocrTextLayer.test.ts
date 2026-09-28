@@ -355,13 +355,13 @@ describe('writeRecognisedText', () => {
 
     const written = await applyOcrPage(
       await blank.save(),
-      { kind: 'ocrPage', page: 1, language: 'eng', engine: 'tesseract' },
+      { kind: 'ocrPage', page: 1, languages: ['eng'], engine: 'tesseract' },
       {
         lines: [
           recognised([72, 700, 152, 716], [{ text: 'Monstera', box: [72, 700, 152, 716] }]),
         ],
         confidence: 90,
-        language: 'eng',
+        languages: ['eng'],
       },
     );
 
@@ -379,8 +379,8 @@ describe('writeRecognisedText', () => {
     await expect(
       applyOcrPage(
         await blank.save(),
-        { kind: 'ocrPage', page: 4, language: 'eng', engine: 'tesseract' },
-        { lines: [], confidence: 0, language: 'eng' },
+        { kind: 'ocrPage', page: 4, languages: ['eng'], engine: 'tesseract' },
+        { lines: [], confidence: 0, languages: ['eng'] },
       ),
     ).rejects.toThrow(/Page 4 is outside this document, which has 1 page/u);
   });
@@ -394,8 +394,8 @@ describe('writeRecognisedText', () => {
     // way, so a refusal here would be an undo entry for nothing.
     const written = await applyOcrPage(
       await blank.save(),
-      { kind: 'ocrPage', page: 0, language: 'eng', engine: 'tesseract' },
-      { lines: [], confidence: 0, language: 'eng' },
+      { kind: 'ocrPage', page: 0, languages: ['eng'], engine: 'tesseract' },
+      { lines: [], confidence: 0, languages: ['eng'] },
     );
 
     expect(layerOf(written).kind).toBe('empty');
@@ -408,7 +408,7 @@ describe('writeRecognisedText', () => {
     const captured = await captureOcrPage(await blank.save(), {
       kind: 'ocrPage',
       page: 0,
-      language: 'eng',
+      languages: ['eng'],
       engine: 'tesseract',
     });
 

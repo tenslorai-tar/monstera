@@ -1,4 +1,4 @@
-import { type Command, type ContractClient, channels, createClient } from '@monstera/contract';
+import { type Command, type ContractClient, type OcrLanguages, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -18,6 +18,12 @@ import {
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000000fe');
 const STAMP = () => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' });
+
+/**
+ * The stored `OCR_LANGUAGE_SETTING` every case hands the command. NOT the dialog's answers below (`eng`, and `eng`
+ * with `deu`), so a command dispatching the stored value where it should dispatch the answer could not pass.
+ */
+const STORED: OcrLanguages = ['fra'];
 
 /**
  * The UI half of the wired pair for D6 rows 2 and 3.
@@ -154,9 +160,9 @@ function recordingTrack(): { track: TrackTask; steps: number[]; totals: number[]
 }
 
 describe('the recognise-text command', () => {
-  it('dispatches ocrPage for the scanned pages only, in the language chosen', async () => {
+  it('dispatches ocrPage for the scanned pages only, in the languages chosen — two of them here, read together', async () => {
     const { client, dispatched, read } = clientOver(['image-only', 'text', 'image-only']);
-    const { ask } = recordingAsk({ pages: 'all', language: 'deu' });
+    const { ask } = recordingAsk({ pages: 'all', languages: ['eng', 'deu'] });
 
     await recogniseTextCommand({
       client,
@@ -165,6 +171,7 @@ describe('the recognise-text command', () => {
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
+      ocrLanguages: () => STORED,
     }).run(contextWith(3));
 
     // EVERY PAGE IS READ and two are recognised: the read is how the command knows
@@ -175,14 +182,14 @@ describe('the recognise-text command', () => {
       // `engine: 'tesseract'` on every one of these, and it is not noise: the
       // network engines are offered on a region only, so a page walk that
       // acquired a choice would upload whole pages nobody asked to send.
-      { kind: 'ocrPage', page: 0, language: 'deu', engine: 'tesseract' },
-      { kind: 'ocrPage', page: 2, language: 'deu', engine: 'tesseract' },
+      { kind: 'ocrPage', page: 0, languages: ['eng', 'deu'], engine: 'tesseract' },
+      { kind: 'ocrPage', page: 2, languages: ['eng', 'deu'], engine: 'tesseract' },
     ]);
   });
 
   it('recognises ONE page for the this-page scope', async () => {
     const { client, dispatched, read } = clientOver(['image-only', 'image-only', 'image-only']);
-    const { ask } = recordingAsk({ pages: [1], language: 'eng' });
+    const { ask } = recordingAsk({ pages: [1], languages: ['eng'] });
 
     await recogniseTextCommand({
       client,
@@ -191,6 +198,7 @@ describe('the recognise-text command', () => {
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
+      ocrLanguages: () => STORED,
     }).run(contextWith(3, 1));
 
     // THE SCOPE THE DIALOG ANSWERED, not the page the context held: they agree
@@ -198,7 +206,7 @@ describe('the recognise-text command', () => {
     // single-page case while ignoring the choice.
     expect(read).toStrictEqual([1]);
     expect(dispatched).toStrictEqual([
-      { kind: 'ocrPage', page: 1, language: 'eng', engine: 'tesseract' },
+      { kind: 'ocrPage', page: 1, languages: ['eng'], engine: 'tesseract' },
     ]);
   });
 
@@ -213,6 +221,7 @@ describe('the recognise-text command', () => {
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
+      ocrLanguages: () => STORED,
     }).run(contextWith(1));
 
     // THE MUTATION-DIALOG GATE (ADR-0038): a dismissal produces no value, so
@@ -233,6 +242,7 @@ describe('the recognise-text command', () => {
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
+      ocrLanguages: () => STORED,
     }).run(contextWith(1));
 
     expect(opened.map((each) => each.id)).toStrictEqual([OCR_DIALOG_ID, HELP_DIALOG_ID]);
@@ -253,17 +263,43 @@ describe('the recognise-text command', () => {
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
+      ocrLanguages: () => STORED,
     }).run(contextWith(1));
 
     // AN EMPTY LIST REACHES THE DIALOG, which is what makes the no-models state
     // the dialog's to design rather than this command's to hide. A command that
     // returned early would leave the control doing nothing at all.
-    expect(opened).toStrictEqual([{ id: OCR_DIALOG_ID, props: { pages: [0], languages: [], servicesReady: false } }]);
+    expect(opened).toStrictEqual([
+      { id: OCR_DIALOG_ID, props: { pages: [0], languages: [], chosen: STORED, servicesReady: false } },
+    ]);
+  });
+
+  it('opens the dialog on the STORED languages, read when the command runs rather than when it was built', async () => {
+    // Two runs of ONE command with the store changed between them. A command that captured the setting when the
+    // registry was built would open both runs on the first value.
+    const { client } = clientOver(['text'], { languages: ['eng', 'deu', 'fra'] });
+    const { ask, opened } = recordingAsk(undefined);
+    let stored: OcrLanguages = ['fra'];
+    const command = recogniseTextCommand({
+      client,
+      onApplied: () => undefined,
+      stamp: STAMP,
+      ask,
+      track: UNTRACKED,
+      servicesReady: () => false,
+      ocrLanguages: () => stored,
+    });
+
+    await command.run(contextWith(1));
+    stored = ['deu', 'eng'];
+    await command.run(contextWith(1));
+
+    expect(opened.map((each) => (each.props as { chosen: unknown }).chosen)).toStrictEqual([['fra'], ['deu', 'eng']]);
   });
 
   it('reports what it did, including when there was nothing to do', async () => {
     const { client, dispatched } = clientOver(['text', 'empty', 'text']);
-    const { ask, opened } = recordingAsk({ pages: 'all', language: 'eng' });
+    const { ask, opened } = recordingAsk({ pages: 'all', languages: ['eng'] });
 
     await recogniseTextCommand({
       client,
@@ -272,6 +308,7 @@ describe('the recognise-text command', () => {
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
+      ocrLanguages: () => STORED,
     }).run(contextWith(3));
 
     expect(dispatched).toStrictEqual([]);
@@ -286,10 +323,10 @@ describe('the recognise-text command', () => {
 
   it('steps the progress once per page and ends the task', async () => {
     const { client } = clientOver(['image-only', 'text', 'image-only']);
-    const { ask } = recordingAsk({ pages: 'all', language: 'eng' });
+    const { ask } = recordingAsk({ pages: 'all', languages: ['eng'] });
     const { track, steps, totals, ended } = recordingTrack();
 
-    await recogniseTextCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, track, servicesReady: () => false }).run(
+    await recogniseTextCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, track, servicesReady: () => false, ocrLanguages: () => STORED }).run(
       contextWith(3),
     );
 
@@ -305,7 +342,7 @@ describe('the recognise-text command', () => {
 
   it('stops when the reader cancels, and says the finished pages keep their text', async () => {
     const { client, dispatched } = clientOver(['image-only', 'image-only', 'image-only']);
-    const { ask, opened } = recordingAsk({ pages: 'all', language: 'eng' });
+    const { ask, opened } = recordingAsk({ pages: 'all', languages: ['eng'] });
     const controller = new AbortController();
     // ABORTED AFTER THE FIRST STEP, which is the only interleaving that separates
     // *stops* from *never started*: a command checking the signal once, before the
@@ -318,12 +355,12 @@ describe('the recognise-text command', () => {
       end: () => undefined,
     });
 
-    await recogniseTextCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, track, servicesReady: () => false }).run(
+    await recogniseTextCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, track, servicesReady: () => false, ocrLanguages: () => STORED }).run(
       contextWith(3),
     );
 
     expect(dispatched).toStrictEqual([
-      { kind: 'ocrPage', page: 0, language: 'eng', engine: 'tesseract' },
+      { kind: 'ocrPage', page: 0, languages: ['eng'], engine: 'tesseract' },
     ]);
     // A CANCELLED RUN IS REPORTED, which is this command's own rule rather than
     // the spell check's: the page already recognised carries real text, so saying
@@ -338,7 +375,7 @@ describe('the recognise-text command', () => {
     const { client, dispatched, read } = clientOver(['image-only', 'image-only', 'image-only'], {
       refuseExecute: true,
     });
-    const { ask } = recordingAsk({ pages: 'all', language: 'eng' });
+    const { ask } = recordingAsk({ pages: 'all', languages: ['eng'] });
 
     await recogniseTextCommand({
       client,
@@ -347,6 +384,7 @@ describe('the recognise-text command', () => {
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
+      ocrLanguages: () => STORED,
     }).run(contextWith(3));
 
     // ONE DISPATCH AND ONE READ. The refusals this channel declares are about the
@@ -358,7 +396,7 @@ describe('the recognise-text command', () => {
 
   it('EXPORT: recognises every scanned page and then writes a copy', async () => {
     const { client, dispatched, read, copies } = clientOver(['image-only', 'text', 'image-only']);
-    const { ask } = recordingAsk({ pages: [0], language: 'eng' });
+    const { ask } = recordingAsk({ pages: [0], languages: ['eng'] });
 
     await exportSearchableCommand({
       client,
@@ -367,6 +405,7 @@ describe('the recognise-text command', () => {
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
+      ocrLanguages: () => STORED,
     }).run(contextWith(3));
 
     // THE WHOLE DOCUMENT, whatever scope the dialog answered — an export is every
@@ -374,15 +413,15 @@ describe('the recognise-text command', () => {
     // its scope. The answer above says page 0 only, and all three are read.
     expect(read).toStrictEqual([0, 1, 2]);
     expect(dispatched).toStrictEqual([
-      { kind: 'ocrPage', page: 0, language: 'eng', engine: 'tesseract' },
-      { kind: 'ocrPage', page: 2, language: 'eng', engine: 'tesseract' },
+      { kind: 'ocrPage', page: 0, languages: ['eng'], engine: 'tesseract' },
+      { kind: 'ocrPage', page: 2, languages: ['eng'], engine: 'tesseract' },
     ]);
     expect(copies()).toBe(1);
   });
 
   it('EXPORT: writes NO copy when the reader cancels', async () => {
     const { client, copies } = clientOver(['image-only', 'image-only']);
-    const { ask, opened } = recordingAsk({ pages: 'all', language: 'eng' });
+    const { ask, opened } = recordingAsk({ pages: 'all', languages: ['eng'] });
     const controller = new AbortController();
     const track: TrackTask = () => ({
       signal: controller.signal,
@@ -392,7 +431,7 @@ describe('the recognise-text command', () => {
       end: () => undefined,
     });
 
-    await exportSearchableCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, track, servicesReady: () => false }).run(
+    await exportSearchableCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, track, servicesReady: () => false, ocrLanguages: () => STORED }).run(
       contextWith(2),
     );
 
@@ -493,7 +532,7 @@ describe('the recognise-text command', () => {
 
   it('stops when a page’s kind cannot be read', async () => {
     const { client, dispatched, read } = clientOver(['image-only', 'refused', 'image-only']);
-    const { ask } = recordingAsk({ pages: 'all', language: 'eng' });
+    const { ask } = recordingAsk({ pages: 'all', languages: ['eng'] });
 
     await recogniseTextCommand({
       client,
@@ -502,11 +541,12 @@ describe('the recognise-text command', () => {
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
+      ocrLanguages: () => STORED,
     }).run(contextWith(3));
 
     expect(read).toStrictEqual([0, 1]);
     expect(dispatched).toStrictEqual([
-      { kind: 'ocrPage', page: 0, language: 'eng', engine: 'tesseract' },
+      { kind: 'ocrPage', page: 0, languages: ['eng'], engine: 'tesseract' },
     ]);
   });
 });

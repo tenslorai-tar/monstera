@@ -4,9 +4,9 @@ import { z } from 'zod';
 import {
   DOCUMENT_PASSWORD_MAX_CHARS,
   OCR_ENGINES,
-  OCR_LANGUAGES,
   docIdSchema,
   docVersionSchema,
+  ocrLanguagesSchema,
 } from './schemas.js';
 
 /**
@@ -1131,7 +1131,7 @@ export type AnnotationRect = z.infer<typeof annotationRectSchema>;
  *
  * ## The language is a closed enum, which is ADR-0014's constraint 1
  *
- * A name from {@link OCR_LANGUAGES} supplies no path and no file: the models are
+ * A name from `OCR_LANGUAGES` supplies no path and no file: the models are
  * provisioned by digest and the datadir is main's. A string here would be a
  * document-influenced or user-supplied datadir, which is the route both of
  * Tesseract's live advisories are reached through.
@@ -1140,7 +1140,12 @@ export const ocrPageSchema = z.object({
   kind: z.literal('ocrPage'),
   /** Zero-based, like every page index that crosses this boundary. */
   page: z.number().int().nonnegative(),
-  language: z.enum(OCR_LANGUAGES),
+  /**
+   * The languages the page is read in — Part F's *"default language(s)"* (`BUILD-PROMPT.md`:619): one, or a few for a
+   * page that mixes them. Tesseract reads with every named model at once (`eng+deu`). Distinct and at most
+   * `MAX_OCR_LANGUAGES`, because each named model is loaded for the call.
+   */
+  languages: ocrLanguagesSchema,
   /**
    * A rectangle to read instead of the whole page — **D6 row 6's OCR region**.
    *

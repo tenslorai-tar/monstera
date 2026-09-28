@@ -2431,7 +2431,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // dialog reading "unavailable" tells a reader nothing they can act on.
   [OCR_UNAVAILABLE]:
     'No recognition models are installed, so nothing can be read from a scan yet.',
-  [OCR_LANGUAGE]: 'Language of the text',
+  [OCR_LANGUAGE]: 'Languages of the text (up to three)',
   [PAGE_SCOPE_LABEL]: 'Pages',
   [PAGE_SCOPE_TARGET]: '{count, plural, one {This page} other {These # pages}}',
   [PAGE_SCOPE_ALL]: 'All pages',
@@ -2515,8 +2515,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TRANSLATION_LANGUAGE_NAMES.ms]: 'Malay',
   [TRANSLATION_LANGUAGE_NAMES.sw]: 'Swahili',
   [EDITING_PERSONAL_DICTIONARY_TITLE]: 'Personal dictionary',
-  [EDITING_OCR_LANGUAGE_TITLE]: 'Recognition language',
-  [EDITING_OCR_LANGUAGE_DESCRIPTION]: 'Used when you recognise text, unless you choose another for that run.',
+  [EDITING_OCR_LANGUAGE_TITLE]: 'Recognition languages',
+  [EDITING_OCR_LANGUAGE_DESCRIPTION]:
+    'Up to three, read together, for pages that mix them. Used unless you choose others for that run.',
   [EDITING_AZURE_ENDPOINT_DESCRIPTION]: 'Optional. Your own Azure resource address, for tables and difficult scans.',
   [EDITING_AZURE_KEY_DESCRIPTION]: 'Stored in the Windows credential vault. Never exported or logged.',
   [SECOND_RENDERER_DESCRIPTION]: 'Draws pages with PDFium instead of PDF.js. Slower; useful when a page looks wrong.',

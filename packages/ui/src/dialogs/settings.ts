@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { SETTINGS_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
 import type { SettingCategory, SettingDefinition } from '../registries/settings.js';
-import { colourKindOf } from '../registries/settings.js';
+import { colourKindOf, enumeratedOf } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
 import { SETTINGS_PAGES, type SettingsPage } from '../settings/pages.js';
 
@@ -13,7 +13,7 @@ import { SETTINGS_PAGES, type SettingsPage } from '../settings/pages.js';
 export const SETTINGS_DIALOG_ID = 'dialog.settings';
 
 /** The control a setting's schema derives ([ADR-0056](../../../../docs/DECISIONS/0056-the-settings-dialog-derives-a-control-from-a-schema-and-a-secret-is-write-only.md) Decision 2). */
-export type SettingControl = 'boolean' | 'enum' | 'number' | 'text' | 'secret' | 'colour' | 'ai-models';
+export type SettingControl = 'boolean' | 'enum' | 'choices' | 'number' | 'text' | 'secret' | 'colour' | 'ai-models';
 
 /**
  * Which control a setting gets, or `undefined` for a kind with none.
@@ -25,9 +25,10 @@ export type SettingControl = 'boolean' | 'enum' | 'number' | 'text' | 'secret' |
  *
  * **A colour is the registry's answer, asked first**: a schema `colourSchema`
  * built, never a union recognised by its shape (ADR-0056, corrected 2026-09-15).
- * Any other union with a pattern, and an array, have no honest generic control
- * (Decision 3): a colour typed into a text box satisfies the schema and offers no
- * colour.
+ * Any other union with a pattern, and an array of anything but an enum's members,
+ * have no honest generic control (Decision 3): a colour typed into a text box
+ * satisfies the schema and offers no colour. A SET of an enum's members does — a
+ * box per member (ADR-0056, corrected 2026-09-28).
  */
 export function controlFor(setting: SettingDefinition): SettingControl | undefined {
   // A DECLARED CONTROL IS ASKED FIRST: it exists because no schema shape could say it (ADR-0117 Decision 3).
@@ -35,7 +36,10 @@ export function controlFor(setting: SettingDefinition): SettingControl | undefin
   const { schema } = setting;
   if (colourKindOf(schema) !== undefined) return 'colour';
   if (schema instanceof z.ZodBoolean) return 'boolean';
-  if (schema instanceof z.ZodEnum) return 'enum';
+  // THE REGISTRY'S READING OF *ENUMERATED*, so a set whose members it titles is a set this draws (ADR-0056,
+  // corrected 2026-09-28).
+  const enumerated = enumeratedOf(schema);
+  if (enumerated !== null) return enumerated.several ? 'choices' : 'enum';
   if (schema instanceof z.ZodNumber) return 'number';
   if (schema instanceof z.ZodString) return setting.secret === true ? 'secret' : 'text';
   return undefined;

@@ -62,7 +62,7 @@ import { Icon } from '../primitives/Icon.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { SettingCategory, SettingDefinition } from '../registries/settings.js';
-import { colourKindOf } from '../registries/settings.js';
+import { colourKindOf, enumeratedOf } from '../registries/settings.js';
 import { ACCENT_SETTING } from '../settings/accent.js';
 import { ACCENT_PRESETS, accentUsable } from '../settings/accentPresets.js';
 import { AI_MODELS_SETTING, AI_PROVIDER_SETTING, AZURE_OPENAI_ENDPOINT_SETTING } from '../settings/ai.js';
@@ -300,6 +300,35 @@ function SettingControl({
           type="color"
           value={chosen ? draft : kind.starting}
         />
+      </div>
+    );
+  }
+
+  if (control === 'choices') {
+    const members = enumeratedOf(setting.schema)?.members ?? [];
+    const held = Array.isArray(draft) ? draft.map(String) : [];
+    // A SET OF THE ENUM'S MEMBERS (ADR-0056, corrected 2026-09-28): a box per member, in the enum's order. How many
+    // it may hold is the SCHEMA's, asked rather than read — a box is disabled when changing it would produce a value
+    // the schema refuses, which is the last one ticked and any beyond the maximum. Refused in the offer, never on
+    // apply.
+    const toggled = (member: string): string[] =>
+      held.includes(member) ? held.filter((each) => each !== member) : [...held, member];
+    return (
+      <div aria-labelledby={labelledBy} className="m-settings-row__choices" data-setting={setting.id} role="group">
+        {members.map((member) => (
+          <label className="m-settings-row__choice" key={member}>
+            <input
+              checked={held.includes(member)}
+              data-setting-member={member}
+              disabled={!setting.schema.safeParse(toggled(member)).success}
+              onChange={() => {
+                onDraft(toggled(member));
+              }}
+              type="checkbox"
+            />
+            {_(memberTitle(setting, member))}
+          </label>
+        ))}
       </div>
     );
   }

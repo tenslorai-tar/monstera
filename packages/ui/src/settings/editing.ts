@@ -8,7 +8,7 @@ import {
   MIN_ANNOTATION_FONT,
   measurePerPointSchema,
   measureUnitSchema,
-  ocrLanguageSchema,
+  ocrLanguagesSchema,
   AZURE_ENDPOINT_SETTING_ID,
   AZURE_KEY_SETTING_ID,
 } from '@monstera/contract';
@@ -261,7 +261,15 @@ export const PERSONAL_DICTIONARY_SETTING: SettingDefinition<
 };
 
 /**
- * Which language a recognition reads in.
+ * Which languages a recognition reads in — one to three, read together.
+ *
+ * ## A SET since 2026-09-28, and the id kept on purpose
+ *
+ * Part F's *OCR default language(s)*: a page mixing German and English is read best by both models at once, which
+ * Tesseract does when handed `eng+deu`. The schema is the contract's own `ocrLanguagesSchema`, so the bound the
+ * Settings dialog offers and the bound the command enforces are one value. The id is unchanged because it is the key
+ * a person's choice is stored under: a value an older build wrote is a single language, and `migrate` reads it as a
+ * set of one rather than letting the fallback replace a choice somebody made.
  *
  * ## Why a setting, when the OCR dialog already asks
  *
@@ -273,8 +281,8 @@ export const PERSONAL_DICTIONARY_SETTING: SettingDefinition<
  *
  * So the dialog and the tool read one value, which is what keeps *what language is
  * this document in* a single answer rather than one per surface (B3a). The dialog
- * writes it back when a reader chooses something else, the way `checkSpelling`'s
- * result writes the personal dictionary.
+ * OPENS on it — the stored languages this machine has models for — and a run in
+ * others is that run's choice, not a change to the setting.
  *
  * **`eng` by default, and that is a fact about the models rather than a guess about
  * the reader**: it is the one model CI provisions and the first entry in
@@ -282,14 +290,16 @@ export const PERSONAL_DICTIONARY_SETTING: SettingDefinition<
  * the list offered is always what is provisioned — and this value is what a tool
  * uses when nobody has chosen.
  */
-export const OCR_LANGUAGE_SETTING: SettingDefinition<typeof ocrLanguageSchema> = {
+export const OCR_LANGUAGE_SETTING: SettingDefinition<typeof ocrLanguagesSchema> = {
   id: 'editing.ocr-language',
   title: EDITING_OCR_LANGUAGE_TITLE,
-  // THE CONTRACT'S OWN ENUM, for `MEASURE_SCALE_SETTING`'s reason: a stored value
+  // THE CONTRACT'S OWN SCHEMA, for `MEASURE_SCALE_SETTING`'s reason: a stored value
   // the command would refuse is one that fails on apply, and ADR-0014's constraint 1
   // is that the language reaching the engine comes from a closed set.
-  schema: ocrLanguageSchema,
-  fallback: 'eng',
+  schema: ocrLanguagesSchema,
+  fallback: ['eng'],
+  // ONE LANGUAGE, as an older build stored it, is a set of one.
+  migrate: (stored) => (typeof stored === 'string' ? [stored] : stored),
   category: 'ocr',
   description: EDITING_OCR_LANGUAGE_DESCRIPTION,
   // THE OCR DIALOG'S OWN NAMES, not a second set: `OCR_LANGUAGE_NAMES` is keyed

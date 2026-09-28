@@ -1,4 +1,4 @@
-import { OCR_LANGUAGES, ocrLanguageSchema } from '@monstera/contract';
+import { OCR_LANGUAGES, ocrLanguageSchema, ocrLanguagesSchema } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -7,11 +7,11 @@ import { declareDialog } from '../registries/dialogs.js';
 import { OCR_RESULT } from './ocrResult.js';
 import { TARGET_PAGES } from './pageScope.js';
 
-/** The id the OCR command opens to collect a language and a scope. */
+/** The id the OCR command opens to collect languages and a scope. */
 export const OCR_DIALOG_ID = 'dialog.ocr';
 
 /**
- * Which pages to recognise, and in which language.
+ * Which pages to recognise, and in which languages.
  *
  * ## THE LANGUAGES TRAVEL IN, and the list is the machine's rather than the build's
  *
@@ -51,6 +51,11 @@ export const OCR_DIALOG = declareDialog({
        * the list is a subset of a closed enum.
        */
       languages: z.array(ocrLanguageSchema).max(OCR_LANGUAGES.length),
+      /**
+       * The stored `OCR_LANGUAGE_SETTING`, which the dialog opens on — those of them this machine has a model for.
+       * A run in others is that run's choice: the setting is changed in Settings.
+       */
+      chosen: ocrLanguagesSchema,
       /**
        * Whether a recognition service — Azure's endpoint and key, or an Anthropic key — is
        * stored, so the handwriting sentence can say where to go rather than always saying *add a

@@ -952,7 +952,7 @@ const declarations = {
       return access.ocr({
         engine: 'tesseract',
         page: command.page,
-        language: command.language,
+        languages: command.languages,
         ...(region === undefined ? {} : { region }),
       });
     },

@@ -301,12 +301,12 @@ export interface RecognisedPage {
   /** The engine's mean confidence across what it read, 0 to 100. */
   readonly confidence: number;
   /**
-   * The language that actually read it.
+   * The languages that actually read it.
    *
-   * Tesseract echoes the request, because the request names one of its fourteen
-   * models; a network engine answers what its service detected, mapped into the set.
+   * Tesseract echoes the request, because the request names models from its
+   * fourteen; a network engine answers what its service detected, mapped into the set.
    */
-  readonly language: OcrLanguage;
+  readonly languages: readonly OcrLanguage[];
 }
 
 /** Tesseract's box, as its JSON renderer writes it: raster pixels, y-down. */
@@ -435,7 +435,8 @@ interface JsonTree {
 export interface OcrRequest {
   /** Zero-based, like every page index that crosses a boundary here. */
   readonly page: number;
-  readonly language: OcrLanguage;
+  /** The models to read with, together — one, or a few for a page that mixes them. */
+  readonly languages: readonly OcrLanguage[];
   /**
    * A rectangle to read instead of the whole page, in **PDF user space**.
    *
@@ -493,7 +494,8 @@ export async function recognisePage(
   request: OcrRequest & { readonly modelDirectory: string },
 ): Promise<RecognisedPage> {
   const loaded = await loadedCore();
-  ensureModel(loaded, request.modelDirectory, request.language);
+  // EVERY MODEL NAMED, each made available before the core is initialised with them all.
+  for (const language of request.languages) ensureModel(loaded, request.modelDirectory, language);
 
   const scale = OCR_DPI / 72;
   const raster = await withDocument(session, (document) => {
@@ -550,11 +552,11 @@ export async function recognisePage(
 
   const api = new loaded.TessBaseAPI();
   try {
-    const status = api.Init(CORE_DATA_DIRECTORY, request.language, LSTM_ONLY);
+    // TESSERACT'S OWN SPELLING for several models at once: their names joined by `+`, read together.
+    const models = request.languages.join('+');
+    const status = api.Init(CORE_DATA_DIRECTORY, models, LSTM_ONLY);
     if (status !== 0) {
-      throw new Error(
-        `Tesseract refused to initialise for ${request.language} with status ${String(status)}`,
-      );
+      throw new Error(`Tesseract refused to initialise for ${models} with status ${String(status)}`);
     }
     loaded.FS.writeFile(CORE_IMAGE_PATH, raster.png);
     const set = api.SetImageFile(1, 0);
@@ -602,7 +604,7 @@ export async function recognisePage(
         }
       }
     }
-    return { lines, confidence: api.MeanTextConf(), language: request.language };
+    return { lines, confidence: api.MeanTextConf(), languages: request.languages };
   } finally {
     // ENDED IN A FINALLY, because `End` releases the native image and the
     // adapted page. A throw between `SetImageFile` and here would otherwise
