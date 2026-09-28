@@ -128,3 +128,12 @@ and by **Claude asked for structured output**, and Tesseract is dropped for tabl
 only table would be the grid over word boxes this ADR and ADR-0034 refuse
 ([ADR-0086](0086-a-scanned-table-is-read-by-a-service-that-answers-tables.md)). Decisions 1–4 —
 the automatic engine and its `table` read — are unchanged.
+
+## Correction, 2026-09-28 — recognition inside an export, when a person has chosen it
+
+The rejected *"Recognising image-only pages automatically inside the export"* is narrowed by
+[ADR-0118](0118-recognition-on-export-is-a-setting-applied-as-the-searchable-export-applies-it.md):
+Part F's *auto-OCR scanned pages on export* is a setting, off by default, and while a person has
+it on the text exports and PDF/A recognise first and report it. The rejection's reason — a
+**silent** mutation — still holds everywhere else, and it still holds for **this** export: point
+5's measurement is why the setting does not reach Excel.
