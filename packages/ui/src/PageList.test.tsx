@@ -16,7 +16,8 @@ import { FIRST_PAGE } from './pageNumbering.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 import type { DocumentView } from './documentView.js';
-import type { ZoomMode } from './zoom.js';
+import type { PageLayout } from './settings/viewing.js';
+import { type ZoomMode, resolveZoom } from './zoom.js';
 
 /**
  * The scroller, driven through a stubbed `IntersectionObserver`.
@@ -309,7 +310,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         pageMenu={undefined}
       />,
     );
@@ -343,7 +344,7 @@ describe('PageList', () => {
           showGrid={false}
           unit="in"
           search={undefined}
-          secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
+          secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
           pageMenu={undefined}
           panning={panning}
         />,
@@ -402,7 +403,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         pageMenu={undefined}
       />,
     );
@@ -444,7 +445,7 @@ describe('PageList', () => {
         tileAbove={2}
         quality={2}
         pageBadges={false}
-        smoothScroll={false}
+        smoothScroll={false} layout="continuous"
         pageMenu={undefined}
       />,
     );
@@ -484,7 +485,7 @@ describe('PageList', () => {
           tileAbove={2}
           quality={1}
           pageBadges={pageBadges}
-          smoothScroll={false}
+          smoothScroll={false} layout="continuous"
           pageMenu={undefined}
         />,
       );
@@ -529,7 +530,7 @@ describe('PageList', () => {
           tileAbove={1.5}
           quality={quality}
           pageBadges={false}
-          smoothScroll={false}
+          smoothScroll={false} layout="continuous"
           pageMenu={undefined}
         />,
       );
@@ -586,7 +587,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         pageMenu={undefined}
       />,
     );
@@ -622,7 +623,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         pageMenu={undefined}
       />,
     );
@@ -665,7 +666,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         pageMenu={undefined}
       />,
     );
@@ -699,7 +700,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         pageMenu={undefined}
       />,
     );
@@ -729,7 +730,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         pageMenu={undefined}
       />,
     );
@@ -771,7 +772,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         pageMenu={undefined}
       />,
     );
@@ -804,7 +805,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         pageMenu={undefined}
       />,
     );
@@ -850,7 +851,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         pageMenu={undefined}
       />,
     );
@@ -916,6 +917,7 @@ describe('PageList', () => {
       quality: 1,
       pageBadges: false,
       smoothScroll: false,
+      layout: 'continuous' as const,
       pageMenu: undefined,
     };
     const { rerender } = render(<PageList {...props} view={viewDrawing()} version={VERSION} />);
@@ -957,7 +959,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         pageMenu={undefined}
       />,
     );
@@ -1001,6 +1003,7 @@ describe('PageList', () => {
       quality: 1,
       pageBadges: false,
       smoothScroll: false,
+      layout: 'continuous' as const,
       pageMenu: undefined,
     };
     const { container, rerender } = render(<PageList {...props} startAt={2} />);
@@ -1038,6 +1041,7 @@ describe('PageList', () => {
       quality: 1,
       pageBadges: false,
       smoothScroll: false,
+      layout: 'continuous' as const,
       pageMenu: undefined,
     };
     const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
@@ -1085,6 +1089,7 @@ describe('PageList', () => {
       quality: 1,
       pageBadges: false,
       smoothScroll: false,
+      layout: 'continuous' as const,
       pageMenu: undefined,
     };
     const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
@@ -1135,6 +1140,7 @@ describe('PageList', () => {
         quality: 1,
         pageBadges: false,
         smoothScroll,
+        layout: 'continuous' as const,
         pageMenu: undefined,
       };
       const { container, rerender, unmount } = render(<PageList {...props} goTo={undefined} />);
@@ -1196,7 +1202,7 @@ describe('PageList', () => {
           showGrid={false}
           unit="in"
           search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         pageMenu={undefined}
         />,
       );
@@ -1225,7 +1231,7 @@ describe('PageList', () => {
             showGrid={false}
             unit="in"
             search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         pageMenu={undefined}
           />,
         );
@@ -1265,7 +1271,7 @@ describe('PageList', () => {
             showGrid={false}
             unit="in"
             search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         pageMenu={undefined}
           />,
         );
@@ -1292,7 +1298,7 @@ describe('PageList', () => {
             showGrid={false}
             unit="in"
             search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         pageMenu={undefined}
           />,
         );
@@ -1337,7 +1343,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         pageMenu={undefined}
       />,
     );
@@ -1358,5 +1364,158 @@ describe('PageList', () => {
     // batched them, and a component that took the last would report the page a
     // reader is scrolling towards rather than the one they are on.
     expect(current).toHaveBeenLastCalledWith(2);
+  });
+
+  describe('PAGE LAYOUT (viewing.page-layout)', () => {
+    /** The props every layout case shares, at five pages and scale 1. */
+    const layoutProps = (layout: PageLayout, extra: { onWentTo?: () => void; onShownZoom?: (z: number) => void; mode?: ZoomMode } = {}) => ({
+      startAt: FIRST_PAGE.kernel,
+      client: clientAnswering().client,
+      view: viewDrawing(),
+      pageCount: 5,
+      docId: DOC,
+      version: VERSION,
+      onCurrentPage: vi.fn(),
+      mode: extra.mode ?? SCALE_1,
+      onZoomStep: vi.fn(),
+      onShownZoom: extra.onShownZoom ?? vi.fn(),
+      onWentTo: extra.onWentTo ?? vi.fn(),
+      loupe: false,
+      rulers: false,
+      showGrid: false,
+      unit: 'in' as const,
+      search: undefined,
+      secondRasteriser: undefined,
+      tileAbove: 2,
+      quality: 1,
+      pageBadges: false,
+      smoothScroll: false,
+      layout,
+      pageMenu: undefined,
+    });
+    /** The pages whose slots are in the layout — not hidden. */
+    const shownPages = (container: HTMLElement): number[] =>
+      [...container.querySelectorAll<HTMLElement>('.m-page-slot')]
+        .filter((slot) => !slot.hidden)
+        .map((slot) => Number(slot.dataset['page']));
+    const scrollerOf = (container: HTMLElement): HTMLElement => {
+      const scroller = container.querySelector<HTMLElement>('.m-page-list');
+      if (scroller === null) throw new Error('no scroller');
+      return scroller;
+    };
+
+    it('SINGLE PAGE shows one page, and a request chooses which — CONTROL: continuous shows every page', async () => {
+      const wentTo = vi.fn();
+      const props = layoutProps('single', { onWentTo: wentTo });
+      const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
+      await settle();
+      expect(shownPages(container)).toStrictEqual([0]);
+
+      await act(async () => {
+        rerender(<PageList {...props} goTo={3} />);
+        await Promise.resolve();
+      });
+      expect(shownPages(container)).toStrictEqual([3]);
+      // CONSUMED, as a continuous request is.
+      expect(wentTo).toHaveBeenCalledTimes(1);
+
+      const continuous = render(<PageList {...layoutProps('continuous')} goTo={undefined} />);
+      await settle();
+      expect(shownPages(continuous.container)).toStrictEqual([0, 1, 2, 3, 4]);
+    });
+
+    it('SINGLE PAGE keeps the page the reader was on when the layout is chosen, not the first', async () => {
+      const props = layoutProps('continuous');
+      const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
+      await settle();
+      await act(async () => {
+        report([
+          { page: 0, visible: false },
+          { page: 2, visible: true },
+          { page: 3, visible: true },
+        ]);
+        await Promise.resolve();
+      });
+      await act(async () => {
+        rerender(<PageList {...props} layout="single" goTo={undefined} />);
+        await Promise.resolve();
+      });
+      expect(shownPages(container)).toStrictEqual([2]);
+    });
+
+    it('SINGLE PAGE turns with a wheel past the page’s edge, once per gesture — CONTROL: continuous never turns', async () => {
+      // happy-dom lays nothing out, so every scroll position is 0 of 0: the page is at its top AND its end, which is a
+      // page shorter than the pane — where a wheel either way is past an edge.
+      const { container } = render(<PageList {...layoutProps('single')} goTo={undefined} />);
+      await settle();
+      const scroller = scrollerOf(container);
+
+      fireEvent.wheel(scroller, { deltaY: 100 });
+      expect(shownPages(container)).toStrictEqual([1]);
+      // THE SAME GESTURE'S NEXT EVENT does not turn again.
+      fireEvent.wheel(scroller, { deltaY: 100 });
+      expect(shownPages(container)).toStrictEqual([1]);
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 450));
+      });
+      fireEvent.wheel(scroller, { deltaY: -100 });
+      expect(shownPages(container)).toStrictEqual([0]);
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 450));
+      });
+      // AND NOT BEFORE THE FIRST PAGE.
+      fireEvent.wheel(scroller, { deltaY: -100 });
+      expect(shownPages(container)).toStrictEqual([0]);
+
+      const continuous = render(<PageList {...layoutProps('continuous')} goTo={undefined} />);
+      await settle();
+      fireEvent.wheel(scrollerOf(continuous.container), { deltaY: 100 });
+      expect(shownPages(continuous.container)).toStrictEqual([0, 1, 2, 3, 4]);
+    });
+
+    it('FACING PAGES lays out in pairs and FITS A SPREAD — CONTROL: continuous fits one page', async () => {
+      // NARROW ENOUGH THAT NEITHER FIT CLAMPS: at 848 wide both reached the 400% maximum and agreed, which the last
+      // line below caught — the spread's 1.5 and the single page's 3 are both inside the range.
+      const PANE = { width: 332, height: 600 };
+      /** The scale a fit-width resolves to, with a pane that reports its size. */
+      const fitFor = async (layout: PageLayout): Promise<{ scale: number | undefined; facing: boolean }> => {
+        const resize: { ResizeObserver: typeof ResizeObserver } = globalThis;
+        resize.ResizeObserver = class {
+          constructor(private readonly callback: ResizeObserverCallback) {}
+          observe(element: Element): void {
+            this.callback(
+              [{ target: element, contentRect: PANE } as unknown as ResizeObserverEntry],
+              this,
+            );
+          }
+          unobserve(): void {
+            // Not called.
+          }
+          disconnect(): void {
+            // Nothing to release.
+          }
+        };
+        const shown = vi.fn();
+        const { container, unmount } = render(
+          <PageList {...layoutProps(layout, { onShownZoom: shown, mode: { kind: 'fit-width' } })} goTo={undefined} />,
+        );
+        await settle();
+        const facing = scrollerOf(container).classList.contains('m-page-list--facing');
+        const last = shown.mock.calls.at(-1)?.[0] as number | undefined;
+        unmount();
+        return { scale: last, facing };
+      };
+
+      // THE PAGE IS 100 × 200 at scale 1 (the mock above): a spread is 200 wide, and happy-dom resolves no stylesheet,
+      // so the gap read from it is 0 — the arithmetic is the spread's, which is what separates the two layouts.
+      const facing = await fitFor('facing');
+      expect(facing.facing).toBe(true);
+      expect(facing.scale).toBe(resolveZoom({ kind: 'fit-width' }, PANE, { width: 200, height: 200 }));
+      const continuous = await fitFor('continuous');
+      expect(continuous.facing).toBe(false);
+      expect(continuous.scale).toBe(resolveZoom({ kind: 'fit-width' }, PANE, { width: 100, height: 200 }));
+      expect(facing.scale).not.toBe(continuous.scale);
+    });
   });
 });

@@ -2873,6 +2873,25 @@ textarea {
   padding-inline-start: var(--ruler);
 }
 
+/*
+ * FACING PAGES (`viewing.page-layout`): two columns, so the pages pair 1–2, 3–4 as spreads print, with the list's own
+ * gap as the spine. `max-content` keeps each column the page's own width, and `safe` keeps a spread wider than the
+ * pane reachable from its left edge for the reason the column's `align-items` gives. Rows start at their top, so a
+ * shorter page beside a taller one sits level with it rather than centred.
+ */
+.m-page-list--facing {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  justify-content: safe center;
+  align-content: start;
+  align-items: start;
+}
+
+/* SINGLE PAGE hides every other slot; stated so no display rule on the slot can bring one back. */
+.m-page-slot[hidden] {
+  display: none;
+}
+
 .m-page-list + .m-page-list {
   border-inline-start: 1px solid var(--border); /* decorative: separates two scrollable regions of one document and bounds neither; each pane's own controls carry their focus rings */
 }

@@ -119,6 +119,7 @@ function pane(against: DocId | undefined, onPick = vi.fn(), onCurrentPage = vi.f
         quality={1}
         pageBadges={false}
         smoothScroll={false}
+        layout="continuous"
       />
     </Wrapped>,
   );

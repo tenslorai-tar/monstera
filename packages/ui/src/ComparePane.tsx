@@ -7,6 +7,7 @@ import { PageList } from './PageList.js';
 import { COMPARE_PICK, COMPARE_SAME, COMPARE_SECOND_LABEL } from './messages/en.js';
 import { FIRST_PAGE } from './pageNumbering.js';
 import type { RulerUnit } from './rulerGeometry.js';
+import type { PageLayout } from './settings/viewing.js';
 import { useDocumentView } from './useDocumentView.js';
 import type { ZoomDirection, ZoomMode } from './zoom.js';
 
@@ -71,6 +72,7 @@ export function ComparePane({
   quality,
   pageBadges,
   smoothScroll,
+  layout,
 }: {
   readonly client: ContractClient;
   /** The document to show here, or `undefined` for a second view of the first. */
@@ -102,6 +104,8 @@ export function ComparePane({
   /** Whether each page carries its number, the reader's preference in this pane as in the first. */
   readonly pageBadges: boolean;
   readonly smoothScroll: boolean;
+  /** The reader's page layout, in this pane as in the first. */
+  readonly layout: PageLayout;
 }): ReactElement {
   const { _ } = useLingui();
   const pickerId = useId();
@@ -143,7 +147,7 @@ export function ComparePane({
           showGrid={showGrid}
           unit={unit}
           tileAbove={tileAbove}
-          quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll}
+          quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll} layout={layout}
         />
       )}
     </div>
@@ -179,6 +183,7 @@ function CompareView({
   quality,
   pageBadges,
   smoothScroll,
+  layout,
 }: {
   readonly client: ContractClient;
   readonly against: ComparableDocument;
@@ -195,6 +200,8 @@ function CompareView({
   readonly quality: number;
   readonly pageBadges: boolean;
   readonly smoothScroll: boolean;
+  /** The reader's page layout, in this pane as in the first. */
+  readonly layout: PageLayout;
 }): ReactElement {
   const { _ } = useLingui();
   // THE MODULE CONSTANT DIRECTLY, not wrapped in `useCallback`. Its identity is
@@ -263,7 +270,7 @@ function CompareView({
       // about how the reader's document is drawn, and this pane is not that.
       secondRasteriser={undefined}
       tileAbove={tileAbove}
-      quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll}
+      quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll} layout={layout}
       // NO PAGE MENU: this pane shows ANOTHER document, and every page item acts on the document
       // whose context it is handed — rotating page 3 here would rotate the reader's page 3.
       pageMenu={undefined}

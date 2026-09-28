@@ -2186,6 +2186,39 @@ for (const look of LOOKS) {
   });
 }
 
+// PAGE LAYOUT from the stored setting, in Chromium's own layout: FACING pairs pages 1–2 on one row with page 3 below
+// the first, and SINGLE PAGE shows one page, which a wheel past its end turns — the grid and the hidden slots are the
+// stylesheet's, which happy-dom does not lay out.
+test('FACING PAGES pair side by side, and SINGLE PAGE shows one page that a wheel turns', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const bytes = await threePagePdf();
+  await openAt(page, bytes, { 'viewing.page-layout': 'facing', 'viewing.starting-zoom': '50pct' });
+  const slot = (n: number) => page.locator(`.m-page-slot[data-page="${String(n)}"]`);
+  // PAGE 2 DRAWN, which a single column at 50% also draws — so the control (the grid removed) fails on the geometry
+  // below, not on a page that was never reached.
+  await expect(slot(1).locator('canvas.m-page')).toBeVisible({ timeout: 20_000 });
+  const boxes = await Promise.all([0, 1, 2].map(async (n) => slot(n).boundingBox()));
+  const [first, second, third] = boxes;
+  expect(Math.abs((first?.y ?? 0) - (second?.y ?? 99))).toBeLessThanOrEqual(1);
+  expect(second?.x ?? 0).toBeGreaterThan((first?.x ?? 0) + (first?.width ?? 0));
+  expect(third?.y ?? 0).toBeGreaterThan((first?.y ?? 0) + (first?.height ?? 0));
+  expect(Math.abs((third?.x ?? 0) - (first?.x ?? 99))).toBeLessThanOrEqual(1);
+
+  const single = await page.context().newPage();
+  await single.setViewportSize({ width: 1280, height: 800 });
+  await openAt(single, bytes, { 'viewing.page-layout': 'single', 'viewing.starting-zoom': '50pct' });
+  const singleSlot = (n: number) => single.locator(`.m-page-slot[data-page="${String(n)}"]`);
+  await expect(singleSlot(0).locator('canvas.m-page')).toBeVisible({ timeout: 20_000 });
+  await expect(singleSlot(1)).toBeHidden();
+  await expect(singleSlot(2)).toBeHidden();
+  const list = single.locator('.m-page-list').first();
+  const at = await list.boundingBox();
+  await single.mouse.move((at?.x ?? 0) + (at?.width ?? 0) / 2, (at?.y ?? 0) + (at?.height ?? 0) / 2);
+  await single.mouse.wheel(0, 300);
+  await expect(singleSlot(1)).toBeVisible();
+  await expect(singleSlot(0)).toBeHidden();
+});
+
 // A TILE IS THE PAGE, CUT — never a different drawing of it. The same page at 300% drawn whole (threshold 300%) and in
 // tiles (threshold 200%), and the pixels either side of a seam between two tiles compared with the whole page's.
 test('a TILE SEAM draws exactly what the whole page draws there: no line, no shift, no resampling', async ({ browser }) => {

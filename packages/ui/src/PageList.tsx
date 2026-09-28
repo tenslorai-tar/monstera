@@ -18,6 +18,7 @@ import type { UiTool } from './registries/tools.js';
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
 import { motionReduced } from './settings/appearance.js';
+import type { PageLayout } from './settings/viewing.js';
 import { RenderCancelledError, type SecondRasteriser, pageGeometry, renderPage, renderRegion } from './renderPage.js';
 import { type Tile, tilesCovering } from './tiles.js';
 import type { SearchHighlight } from './searchHighlight.js';
@@ -263,6 +264,11 @@ export interface PageListProps {
   /** Whether going to a page glides there (`viewing.smooth-scroll`); reduced motion overrides it. */
   readonly smoothScroll: boolean;
   /**
+   * How the pages are laid out (`viewing.page-layout`): one column, one page at a time, or facing pairs. Required for
+   * `secondRasteriser`'s reason.
+   */
+  readonly layout: PageLayout;
+  /**
    * Wraps one page's slot in the page context menu for THAT page (§7), or `undefined` for a pane
    * with no document commands behind it. Per slot rather than around the scroller, because the
    * reader can see several pages at once: a menu over the whole list would act on the current page
@@ -291,6 +297,9 @@ const RERENDER_AFTER_MS = 150;
 
 /** How much either side of the viewport counts as *about to be seen*. */
 const MARGIN = '100%';
+
+/** How long after one page turn by the wheel, in single page, the next may come (see `onWheel`). */
+const TURN_AFTER_MS = 400;
 
 /**
  * A page's bitmap, and the scale it was drawn at.
@@ -361,6 +370,7 @@ export function PageList({
   quality,
   pageBadges,
   smoothScroll,
+  layout,
   pageMenu,
   onActivate,
 }: PageListProps): ReactElement {
@@ -374,6 +384,35 @@ export function PageList({
   // question of a different container, and a second implementation here would
   // be two opinions about what *near the viewport* means (B3a).
   const { visible, slotRef, slotFor } = useVisiblePages(MARGIN, startAt);
+  /**
+   * SINGLE PAGE's page on show, with the request and the layout it was last settled against.
+   *
+   * **Adjusted while rendering, when either moves** — React's own form for state that follows a prop — rather than in
+   * an effect, which would paint the old page once first. A request (`goTo`) chooses the page; entering the layout
+   * keeps the page the reader was on (the topmost visible, as `onCurrentPage` reports it); a wheel past an edge turns
+   * it. Every other page's slot is hidden, so the observer sees only this one and reports it as current.
+   */
+  const [single, setSingle] = useState<{
+    readonly page: number;
+    readonly request: number | undefined;
+    readonly layout: PageLayout;
+  }>({ page: startAt, request: goTo, layout });
+  if (single.request !== goTo || single.layout !== layout) {
+    const [topmost] = [...visible].sort((a, b) => a - b);
+    setSingle({
+      page:
+        goTo !== undefined && goTo !== single.request
+          ? goTo
+          : layout === 'single' && single.layout !== 'single' && topmost !== undefined
+            ? topmost
+            : single.page,
+      request: goTo,
+      layout,
+    });
+  }
+  // A PAGE PAST THE END MEANS THE LAST PAGE, the request's rule below: a delete can leave the page on show beyond it.
+  const onShow = Math.min(single.page, pageCount - 1);
+  const lastTurn = useRef(Number.NEGATIVE_INFINITY);
   // THE SELECTABLE TEXT FOR WHAT IS ON SCREEN. Held here rather than lifted to
   // a caller because `visible` is this component's answer and it changes on
   // every scroll — a caller owning the fetch would re-render on scroll to hand
@@ -396,6 +435,11 @@ export function PageList({
    * answer yet* rather than as a box of zero.
    */
   const [viewport, setViewport] = useState<Box | undefined>(undefined);
+  /**
+   * The gap between two pages side by side, READ from the stylesheet — the token is `app.css`' to set, and a number
+   * here would be a second opinion about it. Only facing pages use it: a fit there spans two pages and this.
+   */
+  const [spreadGap, setSpreadGap] = useState(0);
 
   useEffect(() => {
     const element = scroller.current;
@@ -403,6 +447,8 @@ export function PageList({
     const seen = new ResizeObserver((entries) => {
       const box = entries[entries.length - 1]?.contentRect;
       if (box !== undefined) setViewport({ width: box.width, height: box.height });
+      const gap = Number.parseFloat(getComputedStyle(element).columnGap);
+      setSpreadGap(Number.isFinite(gap) ? gap : 0);
     });
     seen.observe(element);
     return (): void => {
@@ -449,7 +495,15 @@ export function PageList({
    * the frames before the first page has been measured — a fit needs a page,
    * and a page has to be drawn once at some scale for there to be one.
    */
-  const shown = resolveZoom(mode, viewport, pageBox) ?? 1;
+  // FACING PAGES FIT A SPREAD, two pages and the gap between them: fitting one page's width would push its partner
+  // off the pane. The gap is taken from the pane rather than added to the pages, because it does not scale with them.
+  const spread = layout === 'facing';
+  const shown =
+    resolveZoom(
+      mode,
+      spread && viewport !== undefined ? { width: viewport.width - spreadGap, height: viewport.height } : viewport,
+      spread && pageBox !== undefined ? { width: pageBox.width * 2, height: pageBox.height } : pageBox,
+    ) ?? 1;
 
   /**
    * The zoom the pages are actually rasterised at, which lags `shown`.
@@ -620,11 +674,18 @@ export function PageList({
    */
   useEffect(() => {
     if (goTo === undefined) return;
-    // A GLIDE only where the reader chose one AND nothing asked for stillness (`viewing.smooth-scroll`).
-    const glide = smoothScroll && !motionReduced(document.documentElement);
-    slotFor(Math.min(goTo, pageCount - 1))?.scrollIntoView({ block: 'start', behavior: glide ? 'smooth' : 'auto' });
+    const box = scroller.current;
+    // SINGLE PAGE: the request already chose the page on show (`single`, adjusted as the request arrived), so going
+    // there is starting at its top.
+    if (layout === 'single') {
+      if (box !== null) box.scrollTop = 0;
+    } else {
+      // A GLIDE only where the reader chose one AND nothing asked for stillness (`viewing.smooth-scroll`).
+      const glide = smoothScroll && !motionReduced(document.documentElement);
+      slotFor(Math.min(goTo, pageCount - 1))?.scrollIntoView({ block: 'start', behavior: glide ? 'smooth' : 'auto' });
+    }
     onWentTo();
-  }, [goTo, onWentTo, pageCount, slotFor, smoothScroll]);
+  }, [goTo, layout, onWentTo, pageCount, slotFor, smoothScroll]);
 
   /**
    * The page this scroller MOUNTS at, revealed once — the scroll half of `startAt`.
@@ -677,14 +738,31 @@ export function PageList({
 
   const onWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>): void => {
-      if (!event.ctrlKey) return;
+      if (!event.ctrlKey) {
+        // SINGLE PAGE: a wheel that would scroll past the page's end turns to the next, and past its top to the one
+        // before, which lands at that page's top.
+        const box = scroller.current;
+        if (layout !== 'single' || box === null) return;
+        const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 1;
+        const next =
+          event.deltaY > 0 && atEnd ? onShow + 1 : event.deltaY < 0 && box.scrollTop <= 0 ? onShow - 1 : undefined;
+        if (next === undefined || next < 0 || next >= pageCount) return;
+        // ONE TURN PER GESTURE: a wheel sends a burst of events, and every one after the first arrives at the new
+        // page's edge too. The interval is chosen, not measured — long enough to span a notch's burst, short enough
+        // that a reader turning deliberately never waits on it.
+        if (event.timeStamp - lastTurn.current < TURN_AFTER_MS) return;
+        lastTurn.current = event.timeStamp;
+        box.scrollTop = 0;
+        setSingle((current) => ({ ...current, page: next }));
+        return;
+      }
       event.preventDefault();
       // DIRECTION ONLY. A wheel's `deltaY` is in units that differ by device
       // and by `deltaMode`, so treating its magnitude as an amount makes a
       // trackpad and a mouse zoom at different rates. The reader's step is the amount.
       onZoomStep(event.deltaY < 0 ? 'in' : 'out');
     },
-    [onZoomStep],
+    [layout, onShow, onZoomStep, pageCount],
   );
   // THE SHARED READ, which the strip and the loupe take too. Presence means
   // answered for THIS version; see `usePageRotations` for the three states.
@@ -734,6 +812,7 @@ export function PageList({
       tabIndex={0}
       className={[
         'm-page-list',
+        layout === 'facing' ? 'm-page-list--facing' : '',
         grid === undefined ? '' : 'm-page-list-grid',
         panning ? 'm-page-list--panning' : '',
         grab === undefined ? '' : 'is-grabbing',
@@ -858,6 +937,7 @@ export function PageList({
           quality={quality}
           badge={pageBadges}
           scroller={scroller}
+          hidden={layout === 'single' && page !== onShow}
         />
         );
         // THE KEY ON THE OUTERMOST ELEMENT, `Thumbnails`' reason.
@@ -924,6 +1004,7 @@ function PageSlot({
   quality,
   badge,
   scroller,
+  hidden,
 }: {
   readonly page: number;
   readonly ref: (element: HTMLElement | null) => void;
@@ -958,6 +1039,8 @@ function PageSlot({
   readonly badge: boolean;
   /** The scroller the slot sits in, whose box decides which tiles are wanted. */
   readonly scroller: React.RefObject<HTMLElement | null>;
+  /** Out of the layout: single page shows only the page on show, and a hidden slot is never visible, so never drawn. */
+  readonly hidden: boolean;
 }): ReactElement {
   const { i18n } = useLingui();
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -1063,6 +1146,7 @@ function PageSlot({
   return (
     <div
       className="m-page-slot"
+      hidden={hidden}
       ref={slotRef}
       style={shown === undefined ? undefined : { width: shown.width, height: shown.height }}
     >

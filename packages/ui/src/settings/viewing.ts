@@ -18,6 +18,9 @@ import {
   LOUPE_TITLE,
   PAGE_BADGES_DESCRIPTION,
   PAGE_BADGES_TITLE,
+  PAGE_LAYOUT_DESCRIPTION,
+  PAGE_LAYOUT_OPTION_TITLES,
+  PAGE_LAYOUT_TITLE,
   SMOOTH_SCROLL_DESCRIPTION,
   SMOOTH_SCROLL_TITLE,
   SPLIT_VIEW_TITLE,
@@ -156,6 +159,27 @@ export const SMOOTH_SCROLL_SETTING: SettingDefinition<z.ZodBoolean> = {
   schema: z.boolean(),
   fallback: false,
   category: 'viewing',
+};
+
+/** How pages are laid out on the page area — Part F's *"page layout (continuous / single / facing)"*. */
+export const PAGE_LAYOUTS = ['continuous', 'single', 'facing'] as const;
+
+export type PageLayout = (typeof PAGE_LAYOUTS)[number];
+
+/**
+ * The page layout (`BUILD-PROMPT.md`:609-610), read live by every page list: *Continuous* is the one column every
+ * document has always had, and stays the default; *Single page* shows only the page a reader is on, and a wheel past
+ * its end turns to the next; *Facing pages* pairs them, 1–2, 3–4, as the spreads print. A way of reading rather than a
+ * property of the document, so it is stored per install, like the rulers.
+ */
+export const PAGE_LAYOUT_SETTING: SettingDefinition<z.ZodEnum<{ [K in PageLayout]: K }>> = {
+  id: 'viewing.page-layout',
+  title: PAGE_LAYOUT_TITLE,
+  description: PAGE_LAYOUT_DESCRIPTION,
+  schema: z.enum(PAGE_LAYOUTS),
+  fallback: 'continuous',
+  category: 'viewing',
+  optionTitles: PAGE_LAYOUT_OPTION_TITLES,
 };
 
 /**

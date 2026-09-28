@@ -1442,6 +1442,14 @@ export const SMOOTH_SCROLL_TITLE = messageKey('setting.viewing.smooth-scroll.tit
 export const SMOOTH_SCROLL_DESCRIPTION = messageKey('setting.viewing.smooth-scroll.description');
 export const PAGE_BADGES_TITLE = messageKey('setting.viewing.page-badges.title');
 export const PAGE_BADGES_DESCRIPTION = messageKey('setting.viewing.page-badges.description');
+export const PAGE_LAYOUT_TITLE = messageKey('setting.viewing.page-layout.title');
+export const PAGE_LAYOUT_DESCRIPTION = messageKey('setting.viewing.page-layout.description');
+/** `viewing.page-layout`'s members, each its own exported key as the other option sets are. */
+export const PAGE_LAYOUT_OPTION_TITLES = {
+  continuous: messageKey('setting.viewing.page-layout.continuous'),
+  single: messageKey('setting.viewing.page-layout.single'),
+  facing: messageKey('setting.viewing.page-layout.facing'),
+} as const;
 export const GRID_DESCRIPTION = messageKey('setting.viewing.grid.description');
 export const RULER_UNIT_DESCRIPTION = messageKey('setting.viewing.ruler-unit.description');
 export const AI_SETUP_AT_START_DESCRIPTION = messageKey('setting.ai.setup-at-start.description');
@@ -3313,6 +3321,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Going to another page glides there instead of jumping. Off whenever reduced motion is on.',
   [PAGE_BADGES_TITLE]: 'Page numbers on pages',
   [PAGE_BADGES_DESCRIPTION]: 'Shows each page’s number at its foot, so you can tell where you are while you scroll.',
+  [PAGE_LAYOUT_TITLE]: 'Page layout',
+  [PAGE_LAYOUT_DESCRIPTION]:
+    'Continuous shows pages one after another. Single page shows one at a time, and scrolling past its end turns to the next. Facing pages shows them in pairs, like an open book.',
+  [PAGE_LAYOUT_OPTION_TITLES.continuous]: 'Continuous',
+  [PAGE_LAYOUT_OPTION_TITLES.single]: 'Single page',
+  [PAGE_LAYOUT_OPTION_TITLES.facing]: 'Facing pages',
   [GRID_DESCRIPTION]: 'A grid over the page, for lining marks up.',
   [RULER_UNIT_DESCRIPTION]: 'The unit the rulers and the measuring tools show.',
   [AI_SETUP_AT_START_DESCRIPTION]: 'Offers the one-step setup while no provider key is stored.',
