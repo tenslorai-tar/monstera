@@ -6,6 +6,11 @@ import {
   PRINT_DPI_300,
   PRINT_DPI_600,
   PRINT_QUALITY_DESCRIPTION,
+  RENDER_QUALITY_DESCRIPTION,
+  RENDER_QUALITY_DOUBLE,
+  RENDER_QUALITY_EXACT,
+  RENDER_QUALITY_ONE_AND_A_HALF,
+  RENDER_QUALITY_TITLE,
   STARTING_ZOOM_150,
   STARTING_ZOOM_200,
   STARTING_ZOOM_300,
@@ -54,6 +59,32 @@ export const TILE_THRESHOLD_SETTING: SettingDefinition<
   category: 'rendering',
   // THE STARTING ZOOM'S OWN WORDS for the same three percentages, so one figure is never spelt twice.
   optionTitles: { 'above-150': STARTING_ZOOM_150, 'above-200': STARTING_ZOOM_200, 'above-300': STARTING_ZOOM_300 },
+};
+
+/**
+ * How many pixels a page is drawn with per pixel of the screen — Part F's *"render quality multiplier"*
+ * (`BUILD-PROMPT.md`:612), which E1 keeps *"an explicit user setting only"* (:529).
+ *
+ * **Exact by default, and exact is not the low setting.** E1's first rule is one bitmap pixel per device pixel,
+ * because drawing more and letting CSS shrink it is a low-pass filter: text comes out SOFTER, not sharper. The higher
+ * members exist for what that trades well — fine line art and hatching, which the resample smooths — and they cost
+ * the square of the factor in memory, which is why the factor counts toward the tile threshold.
+ */
+export const RENDER_QUALITY_SETTING: SettingDefinition<z.ZodEnum<{ exact: 'exact'; 'one-and-a-half': 'one-and-a-half'; double: 'double' }>> = {
+  id: 'rendering.quality',
+  title: RENDER_QUALITY_TITLE,
+  description: RENDER_QUALITY_DESCRIPTION,
+  schema: z.enum(['exact', 'one-and-a-half', 'double']),
+  fallback: 'exact',
+  category: 'rendering',
+  optionTitles: { exact: RENDER_QUALITY_EXACT, 'one-and-a-half': RENDER_QUALITY_ONE_AND_A_HALF, double: RENDER_QUALITY_DOUBLE },
+};
+
+/** Each member's factor on the device scale. */
+export const RENDER_QUALITY_FACTOR: Readonly<Record<z.infer<(typeof RENDER_QUALITY_SETTING)['schema']>, number>> = {
+  exact: 1,
+  'one-and-a-half': 1.5,
+  double: 2,
 };
 
 /** Each member's zoom, as the scale the page list compares `renderZoom` against. */

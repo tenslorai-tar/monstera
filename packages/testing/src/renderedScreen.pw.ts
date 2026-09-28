@@ -2133,6 +2133,29 @@ test('CONTROL: at or below the threshold the same sheet is ONE whole-page canvas
   await expect(page.locator('canvas.m-page-tile')).toHaveCount(0);
 });
 
+// PAGE SHARPNESS (E1's explicit renderQuality) from the stored setting, through the real application: the canvas holds
+// twice the pixels its box shows at 2×, and exactly the box's at Exact — the default.
+for (const [quality, factor] of [
+  ['double', 2],
+  ['exact', 1],
+] as const) {
+  test(`PAGE SHARPNESS ${quality} draws ${String(factor)} backing pixel(s) per CSS pixel, at the same size on screen`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openAt(page, await inkedPdf([612, 792]), { 'viewing.starting-zoom': '100pct', 'rendering.quality': quality });
+    const canvas = page.locator('canvas[data-page-canvas="0"]');
+    await expect(canvas).toBeVisible({ timeout: 20_000 });
+    await page.waitForTimeout(800);
+    const measured = await canvas.evaluate((element: HTMLCanvasElement) => ({
+      backing: element.width,
+      shown: element.getBoundingClientRect().width,
+      density: window.devicePixelRatio,
+    }));
+    // US LETTER at 100% is 612 CSS pixels wide whatever the sharpness — the setting moves pixels, never the page.
+    expect(Math.round(measured.shown)).toBe(612);
+    expect(measured.backing).toBe(Math.ceil(612 * measured.density * factor));
+  });
+}
+
 // A TILE IS THE PAGE, CUT — never a different drawing of it. The same page at 300% drawn whole (threshold 300%) and in
 // tiles (threshold 200%), and the pixels either side of a seam between two tiles compared with the whole page's.
 test('a TILE SEAM draws exactly what the whole page draws there: no line, no shift, no resampling', async ({ browser }) => {

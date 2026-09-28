@@ -253,6 +253,11 @@ export interface PageListProps {
    */
   readonly tileAbove: number;
   /**
+   * The reader's page-sharpness factor (E1's `renderQuality`; `rendering.quality`), 1 by default. It multiplies the
+   * drawing scale and never the shown size, and counts toward the tile threshold, since that bounds the canvas.
+   */
+  readonly quality: number;
+  /**
    * Wraps one page's slot in the page context menu for THAT page (§7), or `undefined` for a pane
    * with no document commands behind it. Per slot rather than around the scroller, because the
    * reader can see several pages at once: a menu over the whole list would act on the current page
@@ -348,6 +353,7 @@ export function PageList({
   search,
   secondRasteriser,
   tileAbove,
+  quality,
   pageMenu,
   onActivate,
 }: PageListProps): ReactElement {
@@ -839,7 +845,8 @@ export function PageList({
           annotations={sizes.has(page) ? pageAnnotations.get(page) : undefined}
           search={search}
           secondRasteriser={secondRasteriser}
-          tiled={renderZoom > tileAbove}
+          tiled={renderZoom * quality > tileAbove}
+          quality={quality}
           scroller={scroller}
         />
         );
@@ -904,6 +911,7 @@ function PageSlot({
   search,
   secondRasteriser,
   tiled,
+  quality,
   scroller,
 }: {
   readonly page: number;
@@ -933,6 +941,8 @@ function PageSlot({
   readonly secondRasteriser: SecondRasteriser | undefined;
   /** Whether this page is drawn in tiles (E1): the settled zoom is above the reader's threshold. */
   readonly tiled: boolean;
+  /** The page-sharpness factor on the drawing scale (`rendering.quality`). */
+  readonly quality: number;
   /** The scroller the slot sits in, whose box decides which tiles are wanted. */
   readonly scroller: React.RefObject<HTMLElement | null>;
 }): ReactElement {
@@ -977,11 +987,11 @@ function PageSlot({
     const superseded = new AbortController();
 
     const drawPage = async (): Promise<void> => {
-      // EXACTLY `devicePixelRatio × zoom`, which is E1's first rule: one bitmap
-      // pixel per device pixel. Supersampling and letting CSS shrink the result
-      // is what blurs text, and E1 allows it only as an explicit `renderQuality`
-      // setting — which is NOT registered yet. So nothing here multiplies it.
-      const scale = devicePixels() * renderZoom;
+      // `devicePixelRatio × zoom`, which is E1's first rule: one bitmap pixel per
+      // device pixel. Supersampling and letting CSS shrink the result is what
+      // blurs text, and E1 allows it only as the explicit `renderQuality` setting,
+      // which is the one factor here — 1 unless a reader chose otherwise.
+      const scale = devicePixels() * renderZoom * quality;
       if (tiled) {
         // A PAGE DRAWN IN TILES IS MEASURED, NOT DRAWN, here: no one canvas holds it, so its size, box and rotation
         // come from PDF.js' viewport alone and each tile draws its own piece.
@@ -1035,7 +1045,7 @@ function PageSlot({
     return (): void => {
       superseded.abort();
     };
-  }, [draw, onMeasured, page, renderZoom, rotation, secondRasteriser, tiled, view]);
+  }, [draw, onMeasured, page, quality, renderZoom, rotation, secondRasteriser, tiled, view]);
 
   return (
     <div
@@ -1050,11 +1060,11 @@ function PageSlot({
             // THE PAGE'S DEVICE SIZE AT THE SCALE TILES DRAW AT, from the measured size and the scale it was measured
             // at — the same ratio `shown` places the slot by, so the tiles and the slot cannot disagree about the page.
             pageSize={{
-              width: Math.ceil((size.width / size.drawnAt) * devicePixels() * renderZoom),
-              height: Math.ceil((size.height / size.drawnAt) * devicePixels() * renderZoom),
+              width: Math.ceil((size.width / size.drawnAt) * devicePixels() * renderZoom * quality),
+              height: Math.ceil((size.height / size.drawnAt) * devicePixels() * renderZoom * quality),
             }}
             rotation={rotation}
-            scale={devicePixels() * renderZoom}
+            scale={devicePixels() * renderZoom * quality}
             scroller={scroller}
             slot={own}
             view={view}

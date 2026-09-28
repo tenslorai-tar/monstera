@@ -112,6 +112,11 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
       rotation: 0,
     });
   },
+  // A TILED PAGE IS MEASURED, NOT DRAWN: the same viewport as above, with nothing rasterised.
+  pageGeometry: (_document: unknown, _pdfjsPage: number, scale: number) =>
+    Promise.resolve({ width: 100 * scale, height: 200 * scale, crop: [0, 0, 100, 200] as const, rotation: 0 }),
+  // A TILE'S DRAW, which happy-dom cannot perform; nothing here asserts a tile's pixels.
+  renderRegion: () => Promise.resolve(),
 }));
 
 /** Every observer built during a case, with the callback it was given. */
@@ -304,7 +309,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2}
+        secondRasteriser={undefined} tileAbove={2} quality={1}
         pageMenu={undefined}
       />,
     );
@@ -338,7 +343,7 @@ describe('PageList', () => {
           showGrid={false}
           unit="in"
           search={undefined}
-          secondRasteriser={undefined} tileAbove={2}
+          secondRasteriser={undefined} tileAbove={2} quality={1}
           pageMenu={undefined}
           panning={panning}
         />,
@@ -397,7 +402,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2}
+        secondRasteriser={undefined} tileAbove={2} quality={1}
         pageMenu={undefined}
       />,
     );
@@ -412,6 +417,89 @@ describe('PageList', () => {
     // this build has shipped that off-by-one once.
     expect(rasterised).toStrictEqual([[1, 1]]);
     expect(container.querySelectorAll('canvas.m-page')).toHaveLength(1);
+  });
+
+  it('PAGE SHARPNESS multiplies the DRAWING scale and never the shown size (E1’s explicit renderQuality)', async () => {
+    const { client } = clientAnswering();
+    const { container } = render(
+      <PageList
+        client={client}
+        view={viewDrawing()}
+        pageCount={5}
+        docId={DOC}
+        version={VERSION}
+        onCurrentPage={vi.fn()}
+        mode={SCALE_1}
+        onZoomStep={vi.fn()}
+        onShownZoom={vi.fn()}
+        goTo={undefined}
+        startAt={FIRST_PAGE.kernel}
+        onWentTo={vi.fn()}
+        loupe={false}
+        rulers={false}
+        showGrid={false}
+        unit="in"
+        search={undefined}
+        secondRasteriser={undefined}
+        tileAbove={2}
+        quality={2}
+        pageMenu={undefined}
+      />,
+    );
+    await settle();
+
+    // TWICE THE PIXELS, at zoom 1 on a density of 1 — the factor and nothing else.
+    expect(rasterised).toStrictEqual([[1, 2]]);
+    // THE SAME SIZE ON SCREEN: the mock's page is 100 CSS pixels wide at zoom 1, whatever it was drawn at. A slot that
+    // took the bitmap's width would show the page twice as large.
+    const canvas = container.querySelector<HTMLCanvasElement>('canvas.m-page');
+    expect(canvas?.style.width).toBe('100px');
+  });
+
+  it('PAGE SHARPNESS counts toward the TILE THRESHOLD, which bounds the canvas, not the zoom', async () => {
+    const drawnWith = async (quality: number): Promise<HTMLElement> => {
+      const { client } = clientAnswering();
+      const { container, unmount } = render(
+        <PageList
+          client={client}
+          view={viewDrawing()}
+          pageCount={5}
+          docId={DOC}
+          version={VERSION}
+          onCurrentPage={vi.fn()}
+          mode={SCALE_1}
+          onZoomStep={vi.fn()}
+          onShownZoom={vi.fn()}
+          goTo={undefined}
+          startAt={FIRST_PAGE.kernel}
+          onWentTo={vi.fn()}
+          loupe={false}
+          rulers={false}
+          showGrid={false}
+          unit="in"
+          search={undefined}
+          secondRasteriser={undefined}
+          tileAbove={1.5}
+          quality={quality}
+          pageMenu={undefined}
+        />,
+      );
+      await settle();
+      const copy = container.cloneNode(true) as HTMLElement;
+      unmount();
+      return copy;
+    };
+
+    // ZOOM 1 × SHARPNESS 2 is above 1.5: the page is measured, not drawn whole, and its slot holds the tiles.
+    rasterised.length = 0;
+    const sharp = await drawnWith(2);
+    expect(sharp.querySelector('[data-page-tiles="0"]')).not.toBeNull();
+    expect(sharp.querySelector('canvas.m-page')).toBeNull();
+    expect(rasterised).toStrictEqual([]);
+    // CONTROL: the same zoom at sharpness 1 is below 1.5, and draws the whole page — so the case above is the factor.
+    const exact = await drawnWith(1);
+    expect(exact.querySelector('canvas.m-page')).not.toBeNull();
+    expect(exact.querySelector('[data-page-tiles]')).toBeNull();
   });
 
   /**
@@ -449,7 +537,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2}
+        secondRasteriser={undefined} tileAbove={2} quality={1}
         pageMenu={undefined}
       />,
     );
@@ -485,7 +573,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2}
+        secondRasteriser={undefined} tileAbove={2} quality={1}
         pageMenu={undefined}
       />,
     );
@@ -528,7 +616,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2}
+        secondRasteriser={undefined} tileAbove={2} quality={1}
         pageMenu={undefined}
       />,
     );
@@ -562,7 +650,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2}
+        secondRasteriser={undefined} tileAbove={2} quality={1}
         pageMenu={undefined}
       />,
     );
@@ -592,7 +680,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2}
+        secondRasteriser={undefined} tileAbove={2} quality={1}
         pageMenu={undefined}
       />,
     );
@@ -634,7 +722,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2}
+        secondRasteriser={undefined} tileAbove={2} quality={1}
         pageMenu={undefined}
       />,
     );
@@ -667,7 +755,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2}
+        secondRasteriser={undefined} tileAbove={2} quality={1}
         pageMenu={undefined}
       />,
     );
@@ -713,7 +801,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2}
+        secondRasteriser={undefined} tileAbove={2} quality={1}
         pageMenu={undefined}
       />,
     );
@@ -776,6 +864,7 @@ describe('PageList', () => {
       search: undefined,
       secondRasteriser: undefined,
       tileAbove: 2,
+      quality: 1,
       pageMenu: undefined,
     };
     const { rerender } = render(<PageList {...props} view={viewDrawing()} version={VERSION} />);
@@ -817,7 +906,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2}
+        secondRasteriser={undefined} tileAbove={2} quality={1}
         pageMenu={undefined}
       />,
     );
@@ -858,6 +947,7 @@ describe('PageList', () => {
       search: undefined,
       secondRasteriser: undefined,
       tileAbove: 2,
+      quality: 1,
       pageMenu: undefined,
     };
     const { container, rerender } = render(<PageList {...props} startAt={2} />);
@@ -892,6 +982,7 @@ describe('PageList', () => {
       search: undefined,
       secondRasteriser: undefined,
       tileAbove: 2,
+      quality: 1,
       pageMenu: undefined,
     };
     const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
@@ -936,6 +1027,7 @@ describe('PageList', () => {
       search: undefined,
       secondRasteriser: undefined,
       tileAbove: 2,
+      quality: 1,
       pageMenu: undefined,
     };
     const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
@@ -994,7 +1086,7 @@ describe('PageList', () => {
           showGrid={false}
           unit="in"
           search={undefined}
-        secondRasteriser={undefined} tileAbove={2}
+        secondRasteriser={undefined} tileAbove={2} quality={1}
         pageMenu={undefined}
         />,
       );
@@ -1023,7 +1115,7 @@ describe('PageList', () => {
             showGrid={false}
             unit="in"
             search={undefined}
-        secondRasteriser={undefined} tileAbove={2}
+        secondRasteriser={undefined} tileAbove={2} quality={1}
         pageMenu={undefined}
           />,
         );
@@ -1063,7 +1155,7 @@ describe('PageList', () => {
             showGrid={false}
             unit="in"
             search={undefined}
-        secondRasteriser={undefined} tileAbove={2}
+        secondRasteriser={undefined} tileAbove={2} quality={1}
         pageMenu={undefined}
           />,
         );
@@ -1090,7 +1182,7 @@ describe('PageList', () => {
             showGrid={false}
             unit="in"
             search={undefined}
-        secondRasteriser={undefined} tileAbove={2}
+        secondRasteriser={undefined} tileAbove={2} quality={1}
         pageMenu={undefined}
           />,
         );
@@ -1135,7 +1227,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
-        secondRasteriser={undefined} tileAbove={2}
+        secondRasteriser={undefined} tileAbove={2} quality={1}
         pageMenu={undefined}
       />,
     );

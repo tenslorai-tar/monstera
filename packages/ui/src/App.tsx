@@ -337,7 +337,12 @@ import {
   highContrastWanted,
 } from './settings/appearance.js';
 import { ACCENT_SETTING, applyAccent } from './settings/accent.js';
-import { TILE_THRESHOLD_SETTING, TILE_THRESHOLD_ZOOM } from './settings/rendering.js';
+import {
+  RENDER_QUALITY_FACTOR,
+  RENDER_QUALITY_SETTING,
+  TILE_THRESHOLD_SETTING,
+  TILE_THRESHOLD_ZOOM,
+} from './settings/rendering.js';
 import {
   DARK_PAGE_SETTING,
   GRID_SETTING,
@@ -2205,6 +2210,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const secondRenderer = useSetting(settings, SECOND_RENDERER_SETTING);
   // E1's TILE THRESHOLD, as the scale a page list compares its settled zoom against.
   const tileAbove = TILE_THRESHOLD_ZOOM[useSetting(settings, TILE_THRESHOLD_SETTING)];
+  // E1's EXPLICIT `renderQuality`, as a factor on the drawing scale — 1 unless the reader chose otherwise.
+  const quality = RENDER_QUALITY_FACTOR[useSetting(settings, RENDER_QUALITY_SETTING)];
 
   /**
    * The updater the zoom commands are given.
@@ -3062,6 +3069,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           search={search ?? undefined}
           secondRenderer={secondRenderer}
           tileAbove={tileAbove}
+          quality={quality}
           requestPassword={requestPassword}
           settings={settings}
           // §10.3's RIGHT CONTEXTUAL PANEL, built here where its state lives, and hosted by
@@ -3453,6 +3461,7 @@ function PageCanvas({
   search,
   secondRenderer,
   tileAbove,
+  quality,
   settings,
   panels,
   contextPanel,
@@ -3528,6 +3537,8 @@ function PageCanvas({
   readonly secondRenderer: boolean;
   /** The zoom above which pages draw in tiles (E1), as a scale. `rendering.tile-threshold`. */
   readonly tileAbove: number;
+  /** The page-sharpness factor (E1's `renderQuality`). `rendering.quality`. */
+  readonly quality: number;
   /** The settings store, for the document panel's which-panel and open state. */
   readonly settings: SettingsStore;
   /** The document panels other than Pages, built by `App` where their state lives. */
@@ -3799,6 +3810,7 @@ function PageCanvas({
         // reach the same code and neither can leave a page blank.
         secondRasteriser={secondRenderer ? secondRasteriser : undefined}
         tileAbove={tileAbove}
+        quality={quality}
         pageMenu={pageMenu}
       />
       {/* THE SECOND VIEWPORT, over the SAME parser.
@@ -3850,6 +3862,7 @@ function PageCanvas({
             showGrid={showGrid}
             unit={unit}
             tileAbove={tileAbove}
+            quality={quality}
           />
           {compare === undefined ? (
             <PageList
@@ -3892,6 +3905,7 @@ function PageCanvas({
               // document does not have.
               secondRasteriser={secondRenderer ? secondRasteriser : undefined}
               tileAbove={tileAbove}
+              quality={quality}
               // THE SAME DOCUMENT, so the same page menu: a page right-clicked in either pane is a
               // page of this document.
               pageMenu={pageMenu}
