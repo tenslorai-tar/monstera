@@ -21,6 +21,7 @@ Your changes stay in Monstera until you save. Saving writes them into the file y
 - A dot on a document's tab, and a dot (●) in the window title, mean it has unsaved changes. The status bar shows **Unsaved changes**.
 - If the file cannot be saved (for example it is open in another program, it was replaced on disk, or it is gone), Monstera tells you why. Your changes stay open and nothing is lost. Try **Save a copy…** to write them somewhere else.
 - To keep the original file unchanged, use "Save a copy" instead.
+- Each save keeps the version it replaces beside the file, named like `report.pdf.bak`. To keep more earlier versions (up to 10), open **Settings**, choose **Saving** and pick a number under **Backup copies to keep**: the newest is `.bak`, then `.bak2` and so on. To go back to an earlier version, rename its copy to end in `.pdf` and open it.
 - Saving can happen on a timer if you turn on autosave. See "Save automatically".
 
 <!--

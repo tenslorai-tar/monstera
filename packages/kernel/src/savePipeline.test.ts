@@ -32,7 +32,7 @@ import {
 
 const DOC = asDocId('doc-under-save');
 const TARGET = '/docs/report.pdf';
-const NAMES = { temp: '/docs/report.pdf.tmp', backup: '/docs/report.pdf.bak' };
+const NAMES = { temp: '/docs/report.pdf.tmp', backups: ['/docs/report.pdf.bak'], retired: [] as string[] };
 const NEW_BYTES = new TextEncoder().encode('saved contents');
 
 /** A file the fake surface holds, so a case can assert what survived. */
@@ -222,7 +222,7 @@ describe('saveDocument', () => {
     expect(flushes.count).toBe(1);
     expect(files.get(TARGET)).toBe('saved contents');
     // §4's `.bak`: the user's previous version, surviving a successful save.
-    expect(files.get(NAMES.backup)).toBe('original');
+    expect(files.get('/docs/report.pdf.bak')).toBe('original');
     expect(document.stamped()).not.toBeNull();
   });
 
@@ -382,7 +382,8 @@ describe('saveDocument', () => {
 const ELSEWHERE = '/elsewhere/report copy.pdf';
 const COPY_NAMES = {
   temp: '/elsewhere/report copy.pdf.tmp',
-  backup: '/elsewhere/report copy.pdf.bak',
+  backups: ['/elsewhere/report copy.pdf.bak'],
+  retired: [] as string[],
 };
 
 /** The copy's dependencies: the same surface, naming derived from the destination. */

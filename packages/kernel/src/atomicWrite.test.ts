@@ -104,7 +104,7 @@ function fake(
   };
 }
 
-const NAMES = { temp: '/doc.pdf.tmp', backup: '/doc.pdf.bak' };
+const NAMES = { temp: '/doc.pdf.tmp', backups: ['/doc.pdf.bak'], retired: [] as string[] };
 const BYTES = new TextEncoder().encode('new contents');
 
 describe('atomicWrite', () => {
@@ -172,6 +172,80 @@ describe('atomicWrite', () => {
     // resulting state — a `/doc.pdf` that exists — is indistinguishable from a
     // successful save by looking at the files alone.
     expect(f.calls.some((call) => call.startsWith('rename:'))).toBe(false);
+  });
+
+  describe('BACKUP COPIES TO KEEP (saving.backup-copies)', () => {
+    const THREE = {
+      temp: '/doc.pdf.tmp',
+      backups: ['/doc.pdf.bak', '/doc.pdf.bak2', '/doc.pdf.bak3'],
+      retired: ['/doc.pdf.bak4'],
+    };
+
+    it('ROTATES: each kept copy moves one older, the oldest kept is overwritten, and the newest is the file replaced', async () => {
+      const files: Files = new Map([
+        ['/doc.pdf', 'v3'],
+        ['/doc.pdf.bak', 'v2'],
+        ['/doc.pdf.bak2', 'v1'],
+        ['/doc.pdf.bak3', 'v0'],
+      ]);
+      const f = fake(files);
+      const result = await atomicWrite(f.surface, '/doc.pdf', (temp) => f.surface.write(temp, BYTES), THREE, () => Promise.resolve());
+      expect(result.ok).toBe(true);
+      expect([...files.entries()].sort()).toStrictEqual([
+        ['/doc.pdf', 'new contents'],
+        ['/doc.pdf.bak', 'v3'],
+        ['/doc.pdf.bak2', 'v2'],
+        ['/doc.pdf.bak3', 'v1'],
+      ]);
+    });
+
+    it('steps over a GAP rather than filling it with something older', async () => {
+      const files: Files = new Map([
+        ['/doc.pdf', 'v3'],
+        ['/doc.pdf.bak', 'v2'],
+      ]);
+      const f = fake(files);
+      await atomicWrite(f.surface, '/doc.pdf', (temp) => f.surface.write(temp, BYTES), THREE, () => Promise.resolve());
+      expect([...files.entries()].sort()).toStrictEqual([
+        ['/doc.pdf', 'new contents'],
+        ['/doc.pdf.bak', 'v3'],
+        ['/doc.pdf.bak2', 'v2'],
+      ]);
+    });
+
+    it('NONE copies nothing — CONTROL: the default one still copies (the first case)', async () => {
+      const files: Files = new Map([['/doc.pdf', 'original']]);
+      const f = fake(files);
+      const result = await atomicWrite(
+        f.surface,
+        '/doc.pdf',
+        (temp) => f.surface.write(temp, BYTES),
+        { temp: '/doc.pdf.tmp', backups: [], retired: ['/doc.pdf.bak'] },
+        () => Promise.resolve(),
+      );
+      expect(result.ok ? result.value.backedUp : undefined).toBe(false);
+      expect(f.calls.some((call) => call.startsWith('copy:'))).toBe(false);
+    });
+
+    it('RETIRES the copies a shorter choice no longer keeps, only once the save has landed', async () => {
+      const saved: Files = new Map([
+        ['/doc.pdf', 'v3'],
+        ['/doc.pdf.bak4', 'old'],
+      ]);
+      const f = fake(saved);
+      await atomicWrite(f.surface, '/doc.pdf', (temp) => f.surface.write(temp, BYTES), THREE, () => Promise.resolve());
+      expect(saved.has('/doc.pdf.bak4')).toBe(false);
+
+      // CONTROL: a save that did not land leaves every copy where it was.
+      const failed: Files = new Map([
+        ['/doc.pdf', 'v3'],
+        ['/doc.pdf.bak4', 'old'],
+      ]);
+      const g = fake(failed, { rename: { times: 99, code: 'ENOSPC' } });
+      const result = await atomicWrite(g.surface, '/doc.pdf', (temp) => g.surface.write(temp, BYTES), THREE, () => Promise.resolve());
+      expect(result.ok).toBe(false);
+      expect(failed.get('/doc.pdf.bak4')).toBe('old');
+    });
   });
 
   it('REFUSES rather than renaming when the backup cannot be taken', async () => {

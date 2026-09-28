@@ -27,6 +27,11 @@ export {
   // this file's comment and nothing else, which is what the audit of
   // `87540a5..HEAD` found it to be.
   MAX_RECENT_ENTRIES,
+  // PART F's BACKUP COPIES, one table for the setting and `main`'s save.
+  BACKUP_COPIES,
+  type BackupCopies,
+  BACKUP_COPIES_SETTING_ID,
+  MAX_BACKUP_COPIES,
   MAX_SIGNATURES,
   // The text layer's two bounds. Exported because the caller that sizes a read
   // under the line limit is the renderer, and the per-line cap is what the

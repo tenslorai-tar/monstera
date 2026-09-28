@@ -86,7 +86,10 @@ export type WriteTargetCheck = (docId: DocId) => Promise<WriteTargetVerdict>;
  */
 export type SaveFileNames = (target: string) => {
   readonly temp: string;
-  readonly backup: string;
+  /** The backups to keep, newest first — empty where a person keeps none (`saving.backup-copies`). */
+  readonly backups: readonly string[];
+  /** Backup names a longer choice would have kept, removed after a successful save. */
+  readonly retired: readonly string[];
 };
 
 /** Everything the pipeline needs that is not the document itself. */

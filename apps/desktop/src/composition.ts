@@ -136,6 +136,7 @@ import { type AppInfo, type PickDocument, createContractHandlers } from './contr
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, type PictureFiles, createRecentPictures } from './recentPictures.js';
 import { createPersonalLibrary, memoryPictureFiles } from './personalLibrary.js';
+import { saveNamesFor } from './backupCopies.js';
 import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
 import { createUpdateCheck, manifestTransport, UPDATE_PROVIDERS } from './updateCheck.js';
 import { createLaunchDocuments } from './launchDocuments.js';
@@ -931,7 +932,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       deps: {
         checkWriteTarget: (docId) => documents.checkWriteTarget(docId),
         surface: nodeFileSurface,
-        names: siblingNames,
+        // THE BACKUPS A PERSON KEEPS (`saving.backup-copies`), read from the settings file at each save, so a change
+        // in Settings applies to the next save with nothing restarted.
+        names: saveNamesFor(settings),
         wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       },
       flush: currentBytes,
@@ -1512,7 +1515,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
                 const written = await writeStreamedDocument(
                   {
                     surface: nodeFileSurface,
-                    names: siblingNames,
+                    // ONE BACKUP, as before the count was a choice: a working copy is the application's own file,
+                    // and a person's backup setting is about THEIR documents.
+                    names: (target) => siblingNames(target, 1),
                     wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
                   },
                   (destination) => documents.checkCopyTarget(destination),

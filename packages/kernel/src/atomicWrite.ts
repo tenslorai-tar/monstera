@@ -145,7 +145,7 @@ export async function atomicWrite(
   surface: AtomicWriteSurface,
   target: string,
   writeTemp: (temp: string) => Promise<void>,
-  names: { readonly temp: string; readonly backup: string },
+  names: { readonly temp: string; readonly backups: readonly string[]; readonly retired: readonly string[] },
   wait: (ms: number) => Promise<void>,
 ): Promise<Result<{ readonly backedUp: boolean }, AtomicWriteFailure>> {
   try {
@@ -169,10 +169,21 @@ export async function atomicWrite(
   // absence is an outcome rather than a failure: a save that creates a file has
   // no prior contents to preserve, and treating that as an error would refuse
   // the one case where nothing can be lost.
+  //
+  // AND ONLY WHERE A PERSON KEEPS ANY (`saving.backup-copies`): none is a choice, and then nothing is copied.
   const hadOriginal = await surface.exists(target);
-  if (hadOriginal) {
+  const [newest] = names.backups;
+  if (hadOriginal && newest !== undefined) {
     try {
-      await surface.copy(target, names.backup);
+      // ROTATED FIRST, OLDEST END FIRST: each kept backup moves one name older, so the oldest name is overwritten by
+      // the one before it and the newest name is free for the file about to be replaced. A gap — `.bak2` missing while
+      // `.bak` exists — is stepped over, never filled with something older.
+      for (let index = names.backups.length - 1; index > 0; index -= 1) {
+        const newer = names.backups[index - 1];
+        const older = names.backups[index];
+        if (newer !== undefined && older !== undefined && (await surface.exists(newer))) await surface.rename(newer, older);
+      }
+      await surface.copy(target, newest);
     } catch (cause) {
       // REFUSED, not continued — and NOT because the rename needs something to
       // roll back to. Nothing here reads the backup, no case asserts a recovery
@@ -194,7 +205,10 @@ export async function atomicWrite(
     attempts += 1;
     try {
       await surface.rename(names.temp, target);
-      return ok({ backedUp: hadOriginal });
+      // THE BACKUPS A SHORTER CHOICE NO LONGER KEEPS go once the save has landed — best-effort, since the save itself
+      // succeeded and a copy that could not be removed is still a copy of the person's document, not a failure.
+      for (const retired of names.retired) await surface.remove(retired).catch(() => undefined);
+      return ok({ backedUp: hadOriginal && newest !== undefined });
     } catch (cause) {
       last = cause;
       // ONLY THE HOLDING ERRORS ARE RETRIED. `ENOENT` means the temp is gone

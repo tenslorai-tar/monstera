@@ -891,6 +891,27 @@ export const RECENT_LENGTH_SETTING_ID = 'viewing.recent-length';
 export const MAX_RECENT_ENTRIES: number = Math.max(...Object.values(RECENT_LENGTHS));
 
 /**
+ * Part F's *"backup copies to keep"* (`BUILD-PROMPT.md`:617): how many earlier versions a save leaves beside the file —
+ * `report.pdf.bak`, then `.bak2`, `.bak3` — the newest first. ONE TABLE, read by the renderer's setting and by `main`'s
+ * save, so a choice a person can make is always one the save understands. One is the default: §4's one `.bak`, which
+ * every save wrote before this was a choice.
+ *
+ * **No `none`, and the law is why**: `docs/ARCHITECTURE.md` §4 writes the pipeline as *temp, fsync, rename, `.bak`*,
+ * so a choice that took the `.bak` away would drop a step the law names. Offering it would be a B4 amendment; more
+ * copies than one extends the step and changes nothing it promises.
+ */
+export const BACKUP_COPIES = { one: 1, three: 3, five: 5, ten: 10 } as const;
+
+/** One of {@link BACKUP_COPIES}' choices. */
+export type BackupCopies = keyof typeof BACKUP_COPIES;
+
+/** The id `main`'s save reads and the renderer's setting declares. */
+export const BACKUP_COPIES_SETTING_ID = 'saving.backup-copies';
+
+/** The most backups any choice keeps — how far a save looks for ones a shorter choice no longer keeps. */
+export const MAX_BACKUP_COPIES: number = Math.max(...Object.values(BACKUP_COPIES));
+
+/**
  * The largest recent-card picture that is kept or crosses (ADR-0100). A bound on the message, not a size
  * aimed at: measured 2026-09-25 over the 11-file corpus, page 1 at quality 60 is at most 73,186 bytes, and a
  * page larger than Letter grows with its area — A3 is about twice as many pixels. A picture over this is not

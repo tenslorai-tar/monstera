@@ -68,6 +68,15 @@ export const ORGANIZE_GRID_COUNT = messageKey('surface.organize.count');
 export const ORGANIZE_GRID_SELECTED = messageKey('surface.organize.selected');
 export const ORGANIZE_GRID_HINT = messageKey('surface.organize.hint');
 export const CONFIRM_REDACTION_TITLE = messageKey('setting.saving-confirm-redaction.title');
+export const BACKUP_COPIES_TITLE = messageKey('setting.saving-backup-copies.title');
+export const BACKUP_COPIES_DESCRIPTION = messageKey('setting.saving-backup-copies.description');
+/** `saving.backup-copies`' members, each its own exported key as the other option sets are. */
+export const BACKUP_COPIES_OPTION_TITLES = {
+  one: messageKey('setting.saving-backup-copies.one'),
+  three: messageKey('setting.saving-backup-copies.three'),
+  five: messageKey('setting.saving-backup-copies.five'),
+  ten: messageKey('setting.saving-backup-copies.ten'),
+} as const;
 export const CONFIRM_REDACTION_DESCRIPTION = messageKey('setting.saving-confirm-redaction.description');
 export const AUTOSAVE_TITLE = messageKey('setting.saving-autosave.title');
 export const AUTOSAVE_DESCRIPTION = messageKey('setting.saving-autosave.description');
@@ -2194,6 +2203,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AUTOSAVE_DESCRIPTION]:
     'Saves each document with unsaved changes to its own file on a timer. Off unless you turn it on, because a save replaces the file.',
   [CONFIRM_REDACTION_TITLE]: 'Confirm before redacting',
+  [BACKUP_COPIES_TITLE]: 'Backup copies to keep',
+  [BACKUP_COPIES_DESCRIPTION]:
+    'Each save keeps the version it replaces beside the file, as report.pdf.bak, then .bak2 and so on, newest first. Choosing fewer removes the extra copies at the next save. At least one is always kept.',
+  [BACKUP_COPIES_OPTION_TITLES.one]: '1',
+  [BACKUP_COPIES_OPTION_TITLES.three]: '3',
+  [BACKUP_COPIES_OPTION_TITLES.five]: '5',
+  [BACKUP_COPIES_OPTION_TITLES.ten]: '10',
   [CONFIRM_REDACTION_DESCRIPTION]:
     'Shows what Apply redactions will remove before it removes it. Turned off, it removes marked content on the current page straight away, with a solid cover, and removes the document title too. Undo still works until you close the document.',
   [STARTING_ZOOM_TITLE]: 'Starting zoom',

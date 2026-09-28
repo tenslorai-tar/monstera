@@ -1,6 +1,10 @@
+import { BACKUP_COPIES, BACKUP_COPIES_SETTING_ID, type BackupCopies } from '@monstera/contract';
 import { z } from 'zod';
 
 import {
+  BACKUP_COPIES_DESCRIPTION,
+  BACKUP_COPIES_OPTION_TITLES,
+  BACKUP_COPIES_TITLE,
   AUTOSAVE_DESCRIPTION,
   AUTOSAVE_OPTION_TITLES,
   AUTOSAVE_TITLE,
@@ -37,6 +41,21 @@ export const AUTOSAVE_SETTING: SettingDefinition<
 };
 
 export type AutosaveInterval = z.infer<(typeof AUTOSAVE_SETTING)['schema']>;
+
+/**
+ * How many earlier versions a save leaves beside the file — Part F's *"backup copies to keep"* (`BUILD-PROMPT.md`:617).
+ * `main`'s save reads the same id from the settings document at each save (`backupCopiesIn`), through the contract's
+ * one table; one is the default, the one `.bak` every save wrote before this was a choice.
+ */
+export const BACKUP_COPIES_SETTING: SettingDefinition<z.ZodEnum<{ [K in BackupCopies]: K }>> = {
+  id: BACKUP_COPIES_SETTING_ID,
+  title: BACKUP_COPIES_TITLE,
+  description: BACKUP_COPIES_DESCRIPTION,
+  schema: z.enum(Object.keys(BACKUP_COPIES) as [BackupCopies, ...BackupCopies[]]),
+  fallback: 'one',
+  category: 'saving',
+  optionTitles: BACKUP_COPIES_OPTION_TITLES,
+};
 
 /**
  * Whether *Apply redactions* asks first — Part F's *"confirm redaction"* (`BUILD-PROMPT.md`:618), ON by default as

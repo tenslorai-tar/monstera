@@ -1,5 +1,7 @@
 import { copyFile, open, rename, rm, stat, writeFile } from 'node:fs/promises';
 
+import { MAX_BACKUP_COPIES } from '@monstera/contract';
+
 import type { AtomicWriteSurface } from './atomicWrite.js';
 import type { SaveFileNames } from './savePipeline.js';
 
@@ -55,7 +57,7 @@ export const nodeFileSurface: AtomicWriteSurface = {
 };
 
 /**
- * `<target>.monstera-tmp` and `<target>.bak`, beside the target.
+ * `<target>.monstera-tmp` and the backups — `<target>.bak`, `.bak2` … as many as `copies` — beside the target.
  *
  * **Beside, because a rename across volumes is a copy**, and a copy has a
  * window in which neither file is whole — which is the one thing the atomic
@@ -66,7 +68,15 @@ export const nodeFileSurface: AtomicWriteSurface = {
  * attributable: a file this application failed to clean up should say which
  * application it belonged to, in a directory that is the user's.
  */
-export const siblingNames: SaveFileNames = (target) => ({
-  temp: `${target}.monstera-tmp`,
-  backup: `${target}.bak`,
-});
+export function siblingNames(target: string, copies: number): ReturnType<SaveFileNames> {
+  // `.bak` FIRST, then `.bak2`, `.bak3`: the newest keeps the one name every save wrote before this was a choice.
+  const backup = (index: number): string => `${target}.bak${index === 0 ? '' : String(index + 1)}`;
+  const kept = Math.max(0, Math.min(copies, MAX_BACKUP_COPIES));
+  return {
+    temp: `${target}.monstera-tmp`,
+    backups: Array.from({ length: kept }, (_unused, index) => backup(index)),
+    // THE ONES A SHORTER CHOICE NO LONGER KEEPS, up to the longest choice: a person who keeps three after keeping ten
+    // is not left with seven copies nothing will ever update or remove.
+    retired: Array.from({ length: MAX_BACKUP_COPIES - kept }, (_unused, index) => backup(kept + index)),
+  };
+}

@@ -268,7 +268,7 @@ const noSaving: SaveSource = {
       remove: () => Promise.reject(new Error('this case does not save')),
       exists: () => Promise.reject(new Error('this case does not save')),
     },
-    names: (target) => ({ temp: `${target}.tmp`, backup: `${target}.bak` }),
+    names: (target) => ({ temp: `${target}.tmp`, backups: [`${target}.bak`], retired: [] }),
     wait: () => Promise.resolve(),
   },
   flush: () => Promise.reject(new Error('this case does not save')),
@@ -1327,7 +1327,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
             deps: {
               checkWriteTarget: (id) => own.checkWriteTarget(id),
               surface: nodeFileSurface,
-              names: siblingNames,
+              names: (target) => siblingNames(target, 1),
               wait: () => Promise.resolve(),
             },
             flush: (_docId, sessions) => {
@@ -1362,7 +1362,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       expect(after.subarray(0, 5).toString('latin1')).toBe('%PDF-');
 
       // §4's `.bak`: the user's previous version, surviving a successful save.
-      const backup = readFileSync(siblingNames(path).backup);
+      const backup = readFileSync(`${path}.bak`);
       expect(Buffer.from(backup).equals(Buffer.from(before))).toBe(true);
     });
 
@@ -2018,7 +2018,7 @@ describe('the form data export carries the format all the way to the file', () =
         deps: {
           checkWriteTarget: (id) => formService.checkWriteTarget(id),
           surface: nodeFileSurface,
-          names: siblingNames,
+          names: (target) => siblingNames(target, 1),
           wait: () => Promise.resolve(),
         },
         flush: () => Promise.reject(new Error('an export does not flush the document')),
@@ -2136,7 +2136,7 @@ describe('annotations exported to a file and imported from it, through the lane 
         deps: {
           checkWriteTarget: (id) => exchangeService.checkWriteTarget(id),
           surface: nodeFileSurface,
-          names: siblingNames,
+          names: (target) => siblingNames(target, 1),
           wait: () => Promise.resolve(),
         },
         flush: (docId, sessions) => {
@@ -2348,7 +2348,7 @@ describe('exportPageImages — one image per page, in a folder, all or nothing',
         deps: {
           checkWriteTarget: (id) => service.checkWriteTarget(id),
           surface: nodeFileSurface,
-          names: siblingNames,
+          names: (target) => siblingNames(target, 1),
           wait: () => Promise.resolve(),
         },
         flush: () => Promise.reject(new Error('an image export does not flush the document')),
@@ -2524,7 +2524,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         deps: {
           checkWriteTarget: (id) => textService.checkWriteTarget(id),
           surface: options.surface ?? nodeFileSurface,
-          names: siblingNames,
+          names: (target) => siblingNames(target, 1),
           wait: () => Promise.resolve(),
         },
         flush:
@@ -3108,7 +3108,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
         deps: {
           checkWriteTarget: (id) => service.checkWriteTarget(id),
           surface: nodeFileSurface,
-          names: siblingNames,
+          names: (target) => siblingNames(target, 1),
           wait: () => Promise.resolve(),
         },
         flush: () => Promise.reject(new Error('an Excel export does not flush the document')),
@@ -4197,7 +4197,7 @@ describe('DocumentCommands — a page edited in another application (ADR-0062)',
       deps: {
         checkWriteTarget: () => Promise.reject(new Error('a page sent out writes a copy, never a save')),
         surface: nodeFileSurface,
-        names: siblingNames,
+        names: (target) => siblingNames(target, 1),
         wait: () => Promise.resolve(),
       },
       flush: (docId, sessions) => {
@@ -4492,7 +4492,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
         deps: {
           checkWriteTarget: (id) => documents.checkWriteTarget(id),
           surface: nodeFileSurface,
-          names: siblingNames,
+          names: (target) => siblingNames(target, 1),
           wait: () => Promise.resolve(),
         },
         flush: (docId, sessions) => {
@@ -4693,7 +4693,7 @@ describe('DocumentCommands.openFromUrl', () => {
       deps: {
         checkWriteTarget: () => Promise.reject(new Error('a fetch writes a copy, never a save')),
         surface: nodeFileSurface,
-        names: siblingNames,
+        names: (target) => siblingNames(target, 1),
         wait: () => Promise.resolve(),
       },
       flush: () => Promise.reject(new Error('a fetch flushes no document')),
@@ -4783,7 +4783,7 @@ describe('DocumentCommands.openFromUrl', () => {
       reason: 'too-large',
     });
     expect(existsSync(destination)).toBe(false);
-    expect(existsSync(siblingNames(destination).temp)).toBe(false);
+    expect(existsSync(siblingNames(destination, 1).temp)).toBe(false);
   });
 
   it('CONTROL: a failure that is NOT the guard’s propagates, rather than blaming the address', async () => {
