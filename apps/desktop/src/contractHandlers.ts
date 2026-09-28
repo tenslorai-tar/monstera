@@ -2823,7 +2823,14 @@ function cloudHandlers(
   deps: OpenPathParts & { readonly cloud: CloudStorage; readonly commands: DocumentCommands },
 ): Pick<
   ContractHandlers,
-  'cloud.status' | 'cloud.signIn' | 'cloud.signOut' | 'cloud.list' | 'cloud.open' | 'cloud.saveBack' | 'cloud.uploadCopy'
+  | 'cloud.status'
+  | 'cloud.signIn'
+  | 'cloud.signOut'
+  | 'cloud.list'
+  | 'cloud.open'
+  | 'cloud.pick'
+  | 'cloud.saveBack'
+  | 'cloud.uploadCopy'
 > {
   /** The document refusals every per-document cloud channel declares, by class. */
   const documentRefusal = (thrown: unknown) => {
@@ -2861,6 +2868,18 @@ function cloudHandlers(
       let path: string;
       try {
         path = await deps.cloud.download(provider, fileId);
+      } catch (thrown) {
+        return ok(cloudRefusal(thrown));
+      }
+      const { outcome } = await openPath(deps, path);
+      if (outcome.kind === 'opened' || outcome.kind === 'already-open') deps.cloud.link(outcome.docId, path);
+      return ok(outcome);
+    },
+    // THE PICKER'S FILE opens as a listed one does: the same working copy, the same open, the same link.
+    'cloud.pick': async ({ provider }) => {
+      let path: string;
+      try {
+        path = await deps.cloud.pick(provider);
       } catch (thrown) {
         return ok(cloudRefusal(thrown));
       }

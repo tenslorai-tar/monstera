@@ -7,6 +7,7 @@ import {
   MAX_PAGE_BARCODES,
   MAX_SETTINGS_FILE_BYTES,
   RECENT_PREVIEWS_SETTING_ID,
+  channels,
 } from '@monstera/contract';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -29,7 +30,7 @@ import {
 import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
-import { CloudOutcomeRefused, unconfiguredCloud } from './cloudSession.js';
+import { CloudOutcomeRefused, type CloudStorage, unconfiguredCloud } from './cloudSession.js';
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, createRecentPictures } from './recentPictures.js';
@@ -105,6 +106,8 @@ function harness(
     readonly commands?: DocumentCommands;
     /** The settings file to import, for the import's cases; a dismissed picker otherwise. */
     readonly openSettingsFile?: () => Promise<string | null>;
+    /** Cloud storage, for the cases about it; a build with no provider configured otherwise. */
+    readonly cloud?: CloudStorage;
   } = {},
 ) {
   const capabilities = new CapabilityRegistry();
@@ -198,7 +201,7 @@ function harness(
     },
     openStore: () => Promise.resolve(false),
     closeListening: () => false,
-    cloud: unconfiguredCloud(),
+    cloud: overrides.cloud ?? unconfiguredCloud(),
     revealLog: () => {
       revealed.push(true);
       return Promise.resolve(true);
@@ -1332,6 +1335,54 @@ settings,
  * `cloud.saveBack`'s half of the save-back pair: main answers the version it saved, whenever it
  * saved. The renderer's half — that the version clears the tab's dot — is `cloudStorage.test.ts`'.
  */
+describe('cloud.pick (ADR-0091, corrected 2026-09-29)', () => {
+  /** A cloud whose Picker answers a working copy's path, or refuses; every link recorded. */
+  function cloudPicking(answer: string | CloudOutcomeRefused): { cloud: CloudStorage; links: unknown[] } {
+    const links: unknown[] = [];
+    return {
+      links,
+      cloud: {
+        ...unconfiguredCloud(),
+        pick: () => (typeof answer === 'string' ? Promise.resolve(answer) : Promise.reject(answer)),
+        link: (docId, path) => {
+          links.push([docId, path]);
+        },
+      },
+    };
+  }
+
+  it('opens the chosen working copy through the one open, and LINKS it to its cloud file for Save back', async () => {
+    const { cloud, links } = cloudPicking('C:/work/google-drive/abc/chosen.pdf');
+    const opened = { kind: 'opened' as const, docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'chosen.pdf' };
+    const { handlers } = harness(opened, () => Promise.resolve(null), undefined, { cloud });
+
+    expect(await handlers['cloud.pick']({ provider: 'google-drive' })).toStrictEqual({ ok: true, value: opened });
+    expect(links).toStrictEqual([[A_DOC, 'C:/work/google-drive/abc/chosen.pdf']]);
+  });
+
+  it('CONTROL: a Picker that chose nothing is refused by name, and opens and links nothing', async () => {
+    const { cloud, links } = cloudPicking(new CloudOutcomeRefused('nothing-picked'));
+    const { handlers, opened } = harness(
+      { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'x.pdf' },
+      () => Promise.resolve(null),
+      undefined,
+      { cloud },
+    );
+    expect(await handlers['cloud.pick']({ provider: 'google-drive' })).toStrictEqual({
+      ok: true,
+      value: { kind: 'refused', reason: 'nothing-picked' },
+    });
+    expect(opened).toStrictEqual([]);
+    expect(links).toStrictEqual([]);
+  });
+
+  it('the channel refuses a provider with no Picker, and CONTROL: accepts Google', () => {
+    const params = channels['cloud.pick'].params;
+    expect(params.safeParse({ provider: 'onedrive' }).success).toBe(false);
+    expect(params.safeParse({ provider: 'google-drive' }).success).toBe(true);
+  });
+});
+
 describe('settings.import (BUILD-PROMPT.md:630)', () => {
   /** A real file in a folder of its own, so the handler reads and sizes what is on disk. */
   function fileHolding(content: string | Uint8Array): string {

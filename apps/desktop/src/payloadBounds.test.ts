@@ -230,6 +230,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'cloud.signOut': 'names a provider and answers its state',
   'cloud.list': 'answers at most MAX_CLOUD_FILES files of bounded ids and names; no document contributes',
   'cloud.open': 'names a provider and a bounded file id, and answers an open outcome',
+  'cloud.pick': 'names a provider and answers an open outcome; the chosen id never crosses',
   'cloud.saveBack': 'names a document and answers an outcome; the bytes stay in main',
   'cloud.uploadCopy': 'names a document and a provider, and answers done or a refusal; the bytes stay in main',
   'settings.loadSecrets': 'answers which declared secret ids are stored, never a value; no document contributes',

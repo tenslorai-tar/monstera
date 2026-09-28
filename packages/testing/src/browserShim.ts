@@ -2079,6 +2079,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'cloud.signOut': () => Promise.resolve(ok({ state: 'not-configured' as const })),
     'cloud.list': () => Promise.resolve(ok({ kind: 'refused' as const, reason: 'not-configured' as const })),
     'cloud.open': () => Promise.resolve(ok({ kind: 'refused' as const, reason: 'not-configured' as const })),
+    'cloud.pick': () => Promise.resolve(ok({ kind: 'refused' as const, reason: 'not-configured' as const })),
     'cloud.saveBack': () => Promise.resolve(ok({ kind: 'not-from-cloud' as const })),
     'cloud.uploadCopy': () => Promise.resolve(ok({ kind: 'refused' as const, reason: 'not-configured' as const })),
     'settings.loadSecrets': () =>

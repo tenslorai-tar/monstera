@@ -1,5 +1,12 @@
 import { useLingui } from '@lingui/react';
-import type { CloudFile, CloudProviderId, CloudRefusal, CloudState } from '@monstera/contract';
+import {
+  CLOUD_PICKER_PROVIDER_IDS,
+  type CloudFile,
+  type CloudPickerProviderId,
+  type CloudProviderId,
+  type CloudRefusal,
+  type CloudState,
+} from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
 
@@ -12,6 +19,7 @@ import {
   CLOUD_NOTE_SIGNED_OUT,
   CLOUD_NOTE_UPLOADED,
   CLOUD_OPEN,
+  CLOUD_PICK,
   CLOUD_PROBLEMS,
   CLOUD_PROVIDER_NAMES,
   CLOUD_SIGN_IN,
@@ -24,6 +32,11 @@ import { Button } from '../primitives/Button.js';
 import { cloudFileLine } from '../recentLine.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { CloudAnswer } from './cloudStorage.js';
+
+/** Whether a provider has a Picker — the contract's list, so the offer and the channel name the same providers. */
+function hasPicker(provider: CloudProviderId): provider is CloudPickerProviderId {
+  return (CLOUD_PICKER_PROVIDER_IDS as readonly CloudProviderId[]).includes(provider);
+}
 
 const NOTE_TEXT: Readonly<Record<'signed-in' | 'signed-out' | 'uploaded', MessageKey>> = {
   'signed-in': CLOUD_NOTE_SIGNED_IN,
@@ -110,6 +123,15 @@ export default function CloudStorageBody({
                     />
                   </>
                 )}
+                {/* THE PICKER, signed in or out: choosing signs in as it goes (ADR-0091, corrected 2026-09-29). */}
+                {hasPicker(provider) ? (
+                  <Button
+                    label={CLOUD_PICK}
+                    onClick={() => {
+                      resolve({ kind: 'pick', provider });
+                    }}
+                  />
+                ) : null}
               </div>
             )}
             {listing?.provider === provider ? (

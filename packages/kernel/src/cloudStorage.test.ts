@@ -8,9 +8,11 @@ import {
   exchangeCloudCode,
   fetchCloudPdf,
   listCloudPdfs,
+  pickedFileId,
   refreshCloudTokens,
   replaceCloudPdf,
 } from './cloudStorage.js';
+import { MAX_CLOUD_FILE_ID } from '@monstera/contract';
 
 /**
  * The cloud providers' protocol (ADR-0091), with no network: every case reads the REQUEST a
@@ -58,6 +60,31 @@ describe('signing in (ADR-0059, ADR-0091)', () => {
     expect(google.searchParams.get('access_type')).toBe('offline');
     expect(microsoft.host).toBe('login.microsoftonline.com');
     expect(google.host).toBe('accounts.google.com');
+  });
+
+  it('GOOGLE’S PICKER is the same request with trigger_onepick and PDFs only, and drive.file ALONE (ADR-0091, 2026-09-29)', () => {
+    const request = { clientId: 'client', redirectUri: 'http://127.0.0.1:5000/google', state: 's', challenge: 'c' };
+    const picker = new URL(cloudAuthorizationUrl(CLOUD_PROVIDERS['google-drive'], { ...request, picker: true }));
+    expect(picker.searchParams.get('trigger_onepick')).toBe('true');
+    expect(picker.searchParams.get('mimetypes')).toBe('application/pdf');
+    expect(picker.searchParams.get('prompt')).toBe('consent');
+    // THE PICKER REFUSES ANY SCOPE BESIDE drive.file, by Google's guide.
+    expect(picker.searchParams.get('scope')).toBe('https://www.googleapis.com/auth/drive.file');
+    // CONTROL: the ordinary sign-in is not a Picker.
+    const plain = new URL(cloudAuthorizationUrl(CLOUD_PROVIDERS['google-drive'], request));
+    expect(plain.searchParams.get('trigger_onepick')).toBeNull();
+    // AND A PROVIDER WITH NO PICKER cannot be asked for one.
+    expect(() => cloudAuthorizationUrl(CLOUD_PROVIDERS.onedrive, { ...request, picker: true })).toThrow(/no Picker/u);
+  });
+
+  it('reads the FIRST picked id, held to Drive’s id alphabet — never a path, a query or nothing', () => {
+    expect(pickedFileId('1AbC_d-9,2XyZ')).toBe('1AbC_d-9');
+    expect(pickedFileId('1AbC_d-9')).toBe('1AbC_d-9');
+    for (const refused of [undefined, '', ',', '../etc', 'a/b', 'a?b=1', 'a b', 'x'.repeat(MAX_CLOUD_FILE_ID + 1)]) {
+      expect(pickedFileId(refused), String(refused)).toBeNull();
+    }
+    // CONTROL at the bound: an id exactly as long as the contract allows is read.
+    expect(pickedFileId('x'.repeat(MAX_CLOUD_FILE_ID))).toBe('x'.repeat(MAX_CLOUD_FILE_ID));
   });
 
   it('sends a client secret ONLY where the build carries one — Google’s — and CONTROL: never for Microsoft', async () => {

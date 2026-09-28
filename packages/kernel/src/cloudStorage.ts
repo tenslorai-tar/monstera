@@ -81,6 +81,11 @@ export interface CloudProviderSpec {
    * with a redirect to a pre-authorised address on another host; nothing else is followed.
    */
   readonly downloadHostSuffixes: readonly string[];
+  /**
+   * A Picker the sign-in can open (ADR-0091, corrected 2026-09-29): the parameters that turn the authorization
+   * request into one, and the redirect parameter that names the chosen files. Absent for a provider with none.
+   */
+  readonly picker?: { readonly extras: Readonly<Record<string, string>>; readonly picked: string };
 }
 
 export const CLOUD_PROVIDERS: Readonly<Record<CloudProviderId, CloudProviderSpec>> = {
@@ -109,6 +114,10 @@ export const CLOUD_PROVIDERS: Readonly<Record<CloudProviderId, CloudProviderSpec
     redirect: { host: '127.0.0.1', path: '/google' },
     apiHosts: ['www.googleapis.com'],
     downloadHostSuffixes: [],
+    // GOOGLE'S DESKTOP PICKER, their guide of 2026-09-14: the sign-in with `trigger_onepick`, narrowed to PDFs; the
+    // chosen ids come back as `picked_file_ids`. `prompt=consent` is already above, and `drive.file` is the one scope
+    // the Picker allows.
+    picker: { extras: { trigger_onepick: 'true', mimetypes: 'application/pdf' }, picked: 'picked_file_ids' },
   },
 };
 
@@ -130,10 +139,29 @@ const MAX_JSON_BYTES = 4 * 1024 * 1024;
  */
 export const MAX_SIMPLE_UPLOAD_BYTES = 250 * 1024 * 1024;
 
+/**
+ * The file a Picker chose, from its redirect's parameter — the first id of the comma-separated list, or `null` where
+ * there is none or it is not an id (ADR-0091, corrected 2026-09-29).
+ *
+ * **An opaque string from a redirect**, so it is held to Drive's id alphabet — letters, digits, `-` and `_` — and to
+ * the contract's id bound before it names a request path. Only the first is taken: the Picker is asked for one file.
+ */
+export function pickedFileId(value: string | undefined): string | null {
+  const first = value?.split(',')[0]?.trim() ?? '';
+  return first.length > 0 && first.length <= MAX_CLOUD_FILE_ID && /^[A-Za-z0-9_-]+$/u.test(first) ? first : null;
+}
+
 /** The authorization URL the person's browser is sent to. */
 export function cloudAuthorizationUrl(
   spec: CloudProviderSpec,
-  request: { readonly clientId: string; readonly redirectUri: string; readonly state: string; readonly challenge: string },
+  request: {
+    readonly clientId: string;
+    readonly redirectUri: string;
+    readonly state: string;
+    readonly challenge: string;
+    /** The provider's Picker parameters, for a sign-in that picks a file (ADR-0091, corrected 2026-09-29). */
+    readonly picker?: boolean;
+  },
 ): string {
   const url = new URL(spec.authorizeUrl);
   url.searchParams.set('client_id', request.clientId);
@@ -144,6 +172,10 @@ export function cloudAuthorizationUrl(
   url.searchParams.set('code_challenge', request.challenge);
   url.searchParams.set('code_challenge_method', 'S256');
   for (const [name, value] of Object.entries(spec.authorizeExtras)) url.searchParams.set(name, value);
+  if (request.picker === true) {
+    if (spec.picker === undefined) throw new Error(`${spec.id} has no Picker to ask for`);
+    for (const [name, value] of Object.entries(spec.picker.extras)) url.searchParams.set(name, value);
+  }
   return url.toString();
 }
 

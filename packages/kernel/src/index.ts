@@ -622,6 +622,7 @@ export {
   exchangeCloudCode,
   fetchCloudPdf,
   listCloudPdfs,
+  pickedFileId,
   refreshCloudTokens,
   replaceCloudPdf,
 } from './cloudStorage.js';

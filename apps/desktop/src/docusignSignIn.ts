@@ -139,6 +139,14 @@ export interface SignInCode {
   readonly code: string;
   /** The redirect URI the code was issued for — the exchange must send it too. */
   readonly redirectUri: string;
+  /** The redirect parameters the caller named in `keep`, those the redirect carried — nothing else of it. */
+  readonly kept: Readonly<Record<string, string>>;
+}
+
+/** What the one redirect brought: its code, and the parameters the caller asked to keep. */
+interface Arrived {
+  readonly code: string;
+  readonly kept: Readonly<Record<string, string>>;
 }
 
 /**
@@ -173,11 +181,16 @@ export async function signInThroughLoopback(options: {
    * not end the sign-in.
    */
   readonly ports?: readonly number[];
+  /**
+   * Redirect parameters to hand back beside the code — Google's Picker's `picked_file_ids` (ADR-0091, corrected
+   * 2026-09-29). Named by the caller, so nothing else a redirect carries crosses into `main`'s answer.
+   */
+  readonly keep?: readonly string[];
 }): Promise<SignInCode> {
   const path = options.path ?? SIGN_IN_PATH;
-  let settle: { resolve: (code: string) => void; reject: (error: SignInRefused) => void } | null =
+  let settle: { resolve: (arrived: Arrived) => void; reject: (error: SignInRefused) => void } | null =
     null;
-  const outcome = new Promise<string>((resolve, reject) => {
+  const outcome = new Promise<Arrived>((resolve, reject) => {
     settle = { resolve, reject };
   });
   // MARKED HANDLED AT BIRTH, and it swallows nothing: `await outcome` below still
@@ -216,7 +229,13 @@ export async function signInThroughLoopback(options: {
     } else if (code === null || code === '') {
       settle?.reject(new SignInRefused('denied', 'the redirect carried no code'));
     } else {
-      settle?.resolve(code);
+      const kept = Object.fromEntries(
+        (options.keep ?? []).flatMap((name) => {
+          const value = url.searchParams.get(name);
+          return value === null ? [] : [[name, value] as const];
+        }),
+      );
+      settle?.resolve({ code, kept });
     }
   });
 
@@ -266,7 +285,8 @@ export async function signInThroughLoopback(options: {
     }
     if (options.signal?.aborted === true) onAbort();
 
-    return { code: await outcome, redirectUri };
+    const { code, kept } = await outcome;
+    return { code, redirectUri, kept };
   } finally {
     clearTimeout(timer);
     options.signal?.removeEventListener('abort', onAbort);

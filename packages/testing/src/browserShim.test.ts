@@ -207,6 +207,7 @@ describe('browser shim', () => {
       'app.updateStatus',
       'cloud.list',
       'cloud.open',
+      'cloud.pick',
       'cloud.saveBack',
       'cloud.signIn',
       'cloud.signOut',

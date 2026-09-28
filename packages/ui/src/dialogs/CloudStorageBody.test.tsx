@@ -41,4 +41,37 @@ describe('CloudStorageBody', () => {
     // And each Open button is still named by its file.
     expect(screen.getAllByRole('button', { name: /lease\.pdf/u })).toHaveLength(2);
   });
+
+  it('GOOGLE’S PICKER is offered signed in and signed out, answers pick — and CONTROL: never for OneDrive or unconfigured', () => {
+    activateCatalogue('en', EN);
+    const answers: unknown[] = [];
+    const shown = (state: 'signed-in' | 'signed-out' | 'not-configured'): HTMLElement[] => {
+      const { unmount } = render(
+        <I18nProvider i18n={i18n}>
+          <CloudStorageBody
+            providers={[
+              { provider: 'onedrive', state: 'signed-in' },
+              { provider: 'google-drive', state },
+            ]}
+            documentOpen={false}
+            resolve={(answer) => answers.push(answer)}
+            update={() => undefined}
+          />
+        </I18nProvider>,
+      );
+      const buttons = screen.queryAllByRole('button', { name: 'Choose a file in Google Drive…' });
+      buttons[0]?.click();
+      unmount();
+      return buttons;
+    };
+
+    expect(shown('signed-out')).toHaveLength(1);
+    expect(shown('signed-in')).toHaveLength(1);
+    expect(answers).toStrictEqual([
+      { kind: 'pick', provider: 'google-drive' },
+      { kind: 'pick', provider: 'google-drive' },
+    ]);
+    // ONE BUTTON with OneDrive signed in beside it, so OneDrive has none; and none where Google is not configured.
+    expect(shown('not-configured')).toHaveLength(0);
+  });
 });

@@ -9,6 +9,7 @@ import {
   MAX_CLOUD_FILE_ID,
   MAX_CLOUD_FILES,
   cloudFileSchema,
+  cloudPickerProviderSchema,
   cloudProviderSchema,
   cloudStateSchema,
 } from './cloudProviders.js';
@@ -1554,6 +1555,20 @@ export const channels = {
   'cloud.open': channel(
     'Downloads a cloud PDF into a working copy and opens it.',
     z.object({ provider: cloudProviderSchema, fileId: z.string().min(1).max(MAX_CLOUD_FILE_ID) }).strict(),
+    z.discriminatedUnion('kind', [
+      ...openOutcomeSchema.options,
+      z.object({ kind: z.literal('refused'), reason: z.enum(CLOUD_REFUSALS) }),
+    ]),
+  ),
+
+  /**
+   * Opens the file a person chooses in the provider's own Picker — Google's desktop Picker, which is the loopback
+   * sign-in with two parameters more (ADR-0091, corrected 2026-09-29). The file's id comes back in the redirect and
+   * never crosses this channel; the answer is `cloud.open`'s, and a Picker that returned nothing is `nothing-picked`.
+   */
+  'cloud.pick': channel(
+    'Opens the file a person chooses in the provider’s Picker.',
+    z.object({ provider: cloudPickerProviderSchema }).strict(),
     z.discriminatedUnion('kind', [
       ...openOutcomeSchema.options,
       z.object({ kind: z.literal('refused'), reason: z.enum(CLOUD_REFUSALS) }),

@@ -2178,6 +2178,9 @@ export const CLOUD_PROBLEM_UNEXPECTED_ANSWER = messageKey('cloud.problem.unexpec
 export const CLOUD_PROBLEM_CHANGED_ELSEWHERE = messageKey('cloud.problem.changed-elsewhere');
 export const CLOUD_PROBLEM_TOO_LARGE = messageKey('cloud.problem.too-large');
 export const CLOUD_PROBLEM_NOT_A_PDF = messageKey('cloud.problem.not-a-pdf');
+export const CLOUD_PROBLEM_NOTHING_PICKED = messageKey('cloud.problem.nothing-picked');
+export const CLOUD_PICK = messageKey('dialog.cloud.pick');
+export const CLOUD_CHOOSING = messageKey('surface.busy.cloud-choosing');
 /** Each provider's name. `satisfies` makes a third provider a compile error until it has one. */
 export const CLOUD_PROVIDER_NAMES = {
   onedrive: CLOUD_PROVIDER_ONEDRIVE,
@@ -2203,6 +2206,7 @@ export const CLOUD_PROBLEMS = {
   'changed-elsewhere': CLOUD_PROBLEM_CHANGED_ELSEWHERE,
   'too-large': CLOUD_PROBLEM_TOO_LARGE,
   'not-a-pdf': CLOUD_PROBLEM_NOT_A_PDF,
+  'nothing-picked': CLOUD_PROBLEM_NOTHING_PICKED,
 } as const satisfies Record<CloudRefusal, MessageKey>;
 
 /**
@@ -3309,7 +3313,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CLOUD_FILES_LABEL]: 'PDFs in cloud storage',
   [CLOUD_FILES_EMPTY]: 'No PDFs were found here.',
   [CLOUD_GOOGLE_NOTE]:
-    'Monstera can see only the Google Drive files it put there. To open one of your other PDFs from Monstera, upload it with Upload this document first.',
+    'Monstera can see only the Google Drive files it put there, or that you choose. To open any other PDF, choose it in Google Drive.',
+  [CLOUD_PICK]: 'Choose a file in Google Drive…',
+  [CLOUD_CHOOSING]: 'Waiting for your choice in Google Drive…',
+  [CLOUD_PROBLEM_NOTHING_PICKED]: 'No file was chosen in Google Drive. Nothing was opened.',
   [CLOUD_NOTE_SIGNED_IN]: 'Signed in.',
   [CLOUD_NOTE_SIGNED_OUT]: 'Signed out on this computer. Nothing in your cloud storage changed.',
   [CLOUD_NOTE_UPLOADED]: 'Uploaded. Save back to cloud now sends this document to that copy.',

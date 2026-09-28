@@ -172,6 +172,101 @@ describe('cloud storage in main (ADR-0091)', () => {
     expect(provider.uploads[1]?.ifMatch).toBe('"v2"');
   });
 
+  describe('GOOGLE’S PICKER (ADR-0091, corrected 2026-09-29)', () => {
+    /** Google's token endpoint and one file, `g1`, answering by path; every request recorded. */
+    function google(): { readonly fetchImpl: typeof fetch; readonly asked: string[] } {
+      const asked: string[] = [];
+      return {
+        asked,
+        fetchImpl: (input: string | URL | Request): Promise<Response> => {
+          const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
+          asked.push(`${url.host}${url.pathname}`);
+          const json = (value: unknown): Response => new Response(JSON.stringify(value), { status: 200 });
+          if (url.host === 'oauth2.googleapis.com') {
+            return Promise.resolve(json({ access_token: 'g-access', refresh_token: 'g-refresh', expires_in: 3600 }));
+          }
+          if (url.pathname === '/drive/v3/files/g1' && url.searchParams.get('alt') === 'media') {
+            return Promise.resolve(new Response('%PDF-1.7\n%%EOF\n', { status: 200 }));
+          }
+          if (url.pathname === '/drive/v3/files/g1') return Promise.resolve(json({ name: 'chosen.pdf', version: '7' }));
+          throw new Error(`the fake has no answer for ${url.href}`);
+        },
+      };
+    }
+
+    /** The browser, where the person chooses `picked` in Google's Picker — or chooses nothing. */
+    function picking(picked: string | null): { readonly openInBrowser: (url: string) => Promise<void>; readonly asked: URL[] } {
+      const asked: URL[] = [];
+      return {
+        asked,
+        openInBrowser: async (authorizationUrl) => {
+          const url = new URL(authorizationUrl);
+          asked.push(url);
+          const redirect = new URL(url.searchParams.get('redirect_uri') ?? '');
+          redirect.searchParams.set('code', 'the-code');
+          redirect.searchParams.set('state', url.searchParams.get('state') ?? '');
+          if (picked !== null) redirect.searchParams.set('picked_file_ids', picked);
+          await fetch(redirect);
+        },
+      };
+    }
+
+    function googleStorage(shown: ReturnType<typeof picking>, fake: ReturnType<typeof google>) {
+      const written: string[] = [];
+      const secrets = memorySecrets();
+      const cloud = createCloudStorage({
+        secrets,
+        clients: { onedrive: null, 'google-drive': { clientId: 'made-up-google-id', clientSecret: 'made-up' } },
+        openInBrowser: shown.openInBrowser,
+        workingDirectory: 'C:/work',
+        maxBytes: 1_000_000,
+        fetchImpl: fake.fetchImpl,
+        writeWorkingCopy: async (path, open) => {
+          for await (const chunk of await open()) void chunk;
+          written.push(path);
+          return 'written';
+        },
+      });
+      return { cloud, secrets, written };
+    }
+
+    it('opens the Picker as the sign-in, downloads the file it CHOSE with that sign-in, and keeps the sign-in', async () => {
+      const shown = picking('g1,g2');
+      const fake = google();
+      const { cloud, secrets, written } = googleStorage(shown, fake);
+
+      const path = await cloud.pick('google-drive');
+
+      expect(shown.asked).toHaveLength(1);
+      expect(shown.asked[0]?.searchParams.get('trigger_onepick')).toBe('true');
+      // THE FIRST CHOSEN FILE, described and fetched — and nothing listed, since the Picker named it.
+      expect(fake.asked).toStrictEqual([
+        'oauth2.googleapis.com/token',
+        'www.googleapis.com/drive/v3/files/g1',
+        'www.googleapis.com/drive/v3/files/g1',
+      ]);
+      expect(written).toStrictEqual([path]);
+      expect(path.replaceAll('\\', '/')).toMatch(/\/google-drive\/[0-9a-f]{24}\/chosen\.pdf$/u);
+      expect(secrets.held.has(cloudSessionSecretId('google-drive'))).toBe(true);
+      expect(cloud.state('google-drive')).toBe('signed-in');
+    });
+
+    it('a Picker that came back with NO file is nothing-picked, and downloads nothing', async () => {
+      const fake = google();
+      const { cloud, written } = googleStorage(picking(null), fake);
+      await expect(cloud.pick('google-drive')).rejects.toMatchObject({ reason: 'nothing-picked' });
+      expect(written).toStrictEqual([]);
+      expect(fake.asked).toStrictEqual(['oauth2.googleapis.com/token']);
+    });
+
+    it('an id that is not one — a path — is refused before any request names it', async () => {
+      const fake = google();
+      const { cloud } = googleStorage(picking('../../drive/v3/about'), fake);
+      await expect(cloud.pick('google-drive')).rejects.toMatchObject({ reason: 'nothing-picked' });
+      expect(fake.asked).toStrictEqual(['oauth2.googleapis.com/token']);
+    });
+  });
+
   it('CONTROL: a document never opened from the cloud has no origin, and a path this session did not download links nothing', () => {
     const { cloud } = storage(onedrive());
     const doc = asDocId('00000000-0000-4000-8000-0000000000c2');

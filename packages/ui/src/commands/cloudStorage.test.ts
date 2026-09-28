@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { CLOUD_OUTCOME_DIALOG_ID } from '../dialogs/cloudOutcome.js';
 import { CLOUD_DIALOG_ID, type CloudAnswer } from '../dialogs/cloudStorage.js';
 import type { ShowBusy } from '../busyNote.js';
-import { CLOUD_DOWNLOADING_FILE, TOAST_SAVED_BACK } from '../messages/en.js';
+import { CLOUD_CHOOSING, CLOUD_DOWNLOADING_FILE, TOAST_SAVED_BACK } from '../messages/en.js';
 import type { CommandContext } from '../registries/commands.js';
 import type { ShowToast } from '../toasts.js';
 import { cloudStorageCommand, saveBackCommand } from './cloudStorage.js';
@@ -107,6 +107,48 @@ describe('Cloud storage…', () => {
     }).run(START);
 
     expect(log).toStrictEqual(['raised file contract.pdf', 'cloud.open sent', 'ended', 'opened']);
+  });
+
+  it('CHOOSE A FILE IN GOOGLE DRIVE sends cloud.pick, says it is WAITING before it goes, and opens the chosen file as a tab', async () => {
+    const log: string[] = [];
+    const built = createClient(channels, (id, params) => {
+      if (id === 'cloud.pick') log.push(`cloud.pick sent ${JSON.stringify(params)}`);
+      const answers: Record<string, unknown> = {
+        'cloud.status': { providers: [{ provider: 'onedrive', state: 'not-configured' }, { provider: 'google-drive', state: 'signed-out' }] },
+        'cloud.pick': { kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: 9, name: 'chosen.pdf' },
+      };
+      return Promise.resolve(ok(answers[id]));
+    });
+    const { ask } = dialogs([{ kind: 'pick', provider: 'google-drive' }]);
+    await cloudStorageCommand({
+      client: built,
+      ask,
+      onOpened: (document) => log.push(`opened ${document.name}`),
+      onAlreadyOpen: () => undefined,
+      busy: (message) => {
+        log.push(`raised ${message === CLOUD_CHOOSING ? 'choosing' : 'other'}`);
+        return () => log.push('ended');
+      },
+    }).run(START);
+
+    expect(log).toStrictEqual([
+      'raised choosing',
+      'cloud.pick sent {"provider":"google-drive"}',
+      'ended',
+      'opened chosen.pdf',
+    ]);
+  });
+
+  it('a Picker that chose NOTHING is said on the next showing, and opens nothing', async () => {
+    const { client: built } = client({
+      'cloud.status': STATUS,
+      'cloud.pick': { kind: 'refused', reason: 'nothing-picked' },
+    });
+    const { ask, shown } = dialogs([{ kind: 'pick', provider: 'google-drive' }, undefined]);
+    const opened: unknown[] = [];
+    await cloudStorageCommand({ client: built, ask, onOpened: (document) => opened.push(document), onAlreadyOpen: () => undefined, busy: NO_BUSY }).run(START);
+    expect((shown[1]?.props as { problem?: string }).problem).toBe('nothing-picked');
+    expect(opened).toStrictEqual([]);
   });
 
   it('a refused sign-in is SAID on the next showing, by name', async () => {

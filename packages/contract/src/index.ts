@@ -465,9 +465,11 @@ export {
   type WebSearchSupport,
 } from './aiProviders.js';
 export {
+  CLOUD_PICKER_PROVIDER_IDS,
   CLOUD_PROVIDER_IDS,
   CLOUD_REFUSALS,
   type CloudFile,
+  type CloudPickerProviderId,
   type CloudProviderId,
   type CloudRefusal,
   type CloudState,
@@ -475,6 +477,7 @@ export {
   MAX_CLOUD_FILE_ID,
   MAX_CLOUD_FILE_NAME,
   cloudFileSchema,
+  cloudPickerProviderSchema,
   cloudProviderSchema,
   cloudStateSchema,
 } from './cloudProviders.js';

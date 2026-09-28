@@ -387,6 +387,7 @@ const handlers: ContractHandlers = {
   'cloud.signOut': () => Promise.resolve(ok({ state: 'signed-out' as const })),
   'cloud.list': () => Promise.resolve(ok({ kind: 'listed' as const, files: [] })),
   'cloud.open': () => Promise.resolve(ok({ kind: 'refused' as const, reason: 'not-configured' as const })),
+  'cloud.pick': () => Promise.resolve(ok({ kind: 'refused' as const, reason: 'not-configured' as const })),
   'cloud.saveBack': () => Promise.resolve(ok({ kind: 'not-from-cloud' as const })),
   'cloud.uploadCopy': () => Promise.resolve(ok({ kind: 'done' as const })),
   'settings.loadSecrets': () =>

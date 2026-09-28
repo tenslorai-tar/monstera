@@ -3,6 +3,7 @@ import {
   CLOUD_REFUSALS,
   MAX_CLOUD_FILES,
   cloudFileSchema,
+  cloudPickerProviderSchema,
   cloudProviderSchema,
   cloudStateSchema,
 } from '@monstera/contract';
@@ -28,6 +29,9 @@ export const CLOUD_RESULT = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('list'), provider: cloudProviderSchema }).strict(),
   z.object({ kind: z.literal('upload'), provider: cloudProviderSchema }).strict(),
   z.object({ kind: z.literal('open'), provider: cloudProviderSchema, fileId: z.string().min(1) }).strict(),
+  // THE PROVIDER'S PICKER (ADR-0091, corrected 2026-09-29), offered only where a provider has one — the schema says
+  // which, so a body cannot answer it for OneDrive.
+  z.object({ kind: z.literal('pick'), provider: cloudPickerProviderSchema }).strict(),
 ]);
 
 export type CloudAnswer = z.infer<typeof CLOUD_RESULT>;

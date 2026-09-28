@@ -68,6 +68,18 @@ export const CLOUD_REFUSALS = [
   'too-large',
   /** The file is not a PDF, or is larger than a document may be. */
   'not-a-pdf',
+  /** The provider's Picker came back without a file (ADR-0091, corrected 2026-09-29). */
+  'nothing-picked',
 ] as const;
+
+/**
+ * The providers whose sign-in can open a Picker — Google's desktop Picker (ADR-0091, corrected 2026-09-29). A channel
+ * taking one of these cannot be asked of a provider that has none.
+ */
+export const CLOUD_PICKER_PROVIDER_IDS = ['google-drive'] as const;
+
+export const cloudPickerProviderSchema = z.enum(CLOUD_PICKER_PROVIDER_IDS);
+
+export type CloudPickerProviderId = z.infer<typeof cloudPickerProviderSchema>;
 
 export type CloudRefusal = (typeof CLOUD_REFUSALS)[number];

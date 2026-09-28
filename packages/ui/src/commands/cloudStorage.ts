@@ -6,6 +6,7 @@ import { CLOUD_DIALOG_ID, CLOUD_RESULT } from '../dialogs/cloudStorage.js';
 import type { ShowBusy } from '../busyNote.js';
 import {
   CLOUD_COMMAND_TITLE,
+  CLOUD_CHOOSING,
   CLOUD_DOWNLOADING,
   CLOUD_DOWNLOADING_FILE,
   SAVE_BACK_TITLE,
@@ -103,9 +104,21 @@ export function cloudStorageCommand(deps: {
 
         // A LINE ON SCREEN FOR THE DOWNLOAD: the dialog has closed and the tab arrives only when main has the
         // whole file, which the Stage 9 run measured at about sixteen seconds of nothing (see `busyNote.ts`).
-        const name = listing?.files.find((file) => file.id === choice.fileId)?.name;
-        const done = name === undefined ? deps.busy(CLOUD_DOWNLOADING, {}) : deps.busy(CLOUD_DOWNLOADING_FILE, { name });
-        const opened = await deps.client['cloud.open']({ provider: choice.provider, fileId: choice.fileId }).finally(done);
+        // THE PICKER'S TOO (ADR-0091, corrected 2026-09-29): the choice is made in the browser, so the line says the
+        // application is waiting for it, and the chosen file then opens exactly as a listed one does.
+        // THE LINE IS RAISED BEFORE THE REQUEST GOES — `done` first, then the call — and ended after its answer.
+        const name = choice.kind === 'open' ? listing?.files.find((file) => file.id === choice.fileId)?.name : undefined;
+        const done =
+          choice.kind === 'pick'
+            ? deps.busy(CLOUD_CHOOSING, {})
+            : name === undefined
+              ? deps.busy(CLOUD_DOWNLOADING, {})
+              : deps.busy(CLOUD_DOWNLOADING_FILE, { name });
+        const opened = await (
+          choice.kind === 'pick'
+            ? deps.client['cloud.pick']({ provider: choice.provider })
+            : deps.client['cloud.open']({ provider: choice.provider, fileId: choice.fileId })
+        ).finally(done);
         if (!opened.ok) return;
         const result = opened.value;
         if (result.kind === 'opened') {

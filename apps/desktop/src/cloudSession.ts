@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
 
-import type { CloudFile, CloudProviderId, CloudRefusal, CloudState } from '@monstera/contract';
+import type { CloudFile, CloudPickerProviderId, CloudProviderId, CloudRefusal, CloudState } from '@monstera/contract';
 import {
   CLOUD_PROVIDERS,
   type CloudClient,
@@ -15,6 +15,7 @@ import {
   fetchCloudPdf,
   listCloudPdfs,
   oauthState,
+  pickedFileId,
   pkcePair,
   refreshCloudTokens,
   replaceCloudPdf,
@@ -154,6 +155,11 @@ export interface CloudStorage {
   list(provider: CloudProviderId): Promise<readonly CloudFile[]>;
   /** Downloads a file into its working copy and answers the path to open. */
   download(provider: CloudProviderId, fileId: string): Promise<string>;
+  /**
+   * Runs the provider's Picker — a sign-in that chooses a file (ADR-0091, corrected 2026-09-29) — and downloads the
+   * chosen file into its working copy, answering the path to open. `nothing-picked` where the Picker chose none.
+   */
+  pick(provider: CloudPickerProviderId): Promise<string>;
   /** Links an opened working copy's document to its cloud file. */
   link(docId: DocId, path: string): void;
   /** Which provider a document came from, or `null`. */
@@ -213,36 +219,64 @@ export function createCloudStorage(deps: {
     deps.secrets.write(cloudSessionSecretId(provider), JSON.stringify(tokens));
   }
 
-  async function signIn(provider: CloudProviderId): Promise<CloudTokens> {
+  /**
+   * One sign-in — or, with `picker`, the provider's Picker, which IS a sign-in with two parameters more (ADR-0091,
+   * corrected 2026-09-29). Answers the tokens, kept, and the file the Picker chose when it was asked.
+   */
+  async function signIn(
+    provider: CloudProviderId,
+    picker = false,
+  ): Promise<{ readonly tokens: CloudTokens; readonly picked: string | null }> {
     const spec = CLOUD_PROVIDERS[provider];
     const values = client(provider);
     const pair = pkcePair();
     const state = oauthState();
-    const { code, redirectUri } = await signInThroughLoopback({
+    const picked = picker ? spec.picker?.picked : undefined;
+    const { code, redirectUri, kept } = await signInThroughLoopback({
       authorize: (redirect) => ({
         url: cloudAuthorizationUrl(spec, {
           clientId: values.clientId,
           redirectUri: redirect,
           state,
           challenge: pair.challenge,
+          picker,
         }),
         state,
       }),
       openInBrowser: deps.openInBrowser,
       path: spec.redirect.path,
       redirectHost: spec.redirect.host,
+      ...(picked === undefined ? {} : { keep: [picked] }),
       ...(deps.signInTimeoutMs === undefined ? {} : { timeoutMs: deps.signInTimeoutMs }),
     });
     const tokens = await exchangeCloudCode(spec, values, { code, verifier: pair.verifier, redirectUri }, fetchImpl, now);
     keep(provider, tokens);
-    return tokens;
+    return { tokens, picked: picked === undefined ? null : pickedFileId(kept[picked]) };
+  }
+
+  /**
+   * Downloads one file into its working copy and answers the path to open — the one route for a file opened from a
+   * listing and a file chosen in a Picker, so the two cannot differ in what a working copy is.
+   */
+  async function downloadInto(provider: CloudProviderId, fileId: string, access: string): Promise<string> {
+    const { name, version } = await describeCloudFile(provider, access, fileId, fetchImpl);
+    const path = workingPath(provider, fileId, name);
+    const written = await deps.writeWorkingCopy(path, () =>
+      fetchCloudPdf(provider, access, fileId, deps.maxBytes, fetchImpl),
+    );
+    // A WORKING COPY ALREADY OPEN is contested by the save pipeline's own check: the person has
+    // this file open, and a fresh download would replace a document under them.
+    if (written === 'contested') throw new CloudOutcomeRefused('changed-elsewhere');
+    if (written === 'write-failed') throw new CloudOutcomeRefused('rejected');
+    downloaded.set(path, { provider, fileId, version });
+    return path;
   }
 
   /** An access token good for the next request, refreshing — or signing in again — as needed. */
   async function token(provider: CloudProviderId): Promise<string> {
     const values = client(provider);
     const session = kept(deps.secrets.read()[cloudSessionSecretId(provider)]);
-    if (session === null) return (await signIn(provider)).accessToken;
+    if (session === null) return (await signIn(provider)).tokens.accessToken;
     if (session.expiresAt - now() > EXPIRY_MARGIN_MS) return session.accessToken;
     try {
       const refreshed = await refreshCloudTokens(CLOUD_PROVIDERS[provider], values, session.refreshToken, fetchImpl, now);
@@ -253,7 +287,7 @@ export function createCloudStorage(deps: {
       // removed first so a failed new sign-in does not leave it behind.
       if (error instanceof CloudStorageRefused && error.reason === 'unauthorised') {
         deps.secrets.write(cloudSessionSecretId(provider), '');
-        return (await signIn(provider)).accessToken;
+        return (await signIn(provider)).tokens.accessToken;
       }
       throw error;
     }
@@ -278,20 +312,14 @@ export function createCloudStorage(deps: {
       deps.secrets.write(cloudSessionSecretId(provider), '');
     },
     list: (provider) => named(async () => listCloudPdfs(provider, await token(provider), fetchImpl)),
-    download: (provider, fileId) =>
+    download: (provider, fileId) => named(async () => downloadInto(provider, fileId, await token(provider))),
+    pick: (provider) =>
       named(async () => {
-        const access = await token(provider);
-        const { name, version } = await describeCloudFile(provider, access, fileId, fetchImpl);
-        const path = workingPath(provider, fileId, name);
-        const written = await deps.writeWorkingCopy(path, () =>
-          fetchCloudPdf(provider, access, fileId, deps.maxBytes, fetchImpl),
-        );
-        // A WORKING COPY ALREADY OPEN is contested by the save pipeline's own check: the person has
-        // this file open, and a fresh download would replace a document under them.
-        if (written === 'contested') throw new CloudOutcomeRefused('changed-elsewhere');
-        if (written === 'write-failed') throw new CloudOutcomeRefused('rejected');
-        downloaded.set(path, { provider, fileId, version });
-        return path;
+        // THE PICKER SIGNS IN AS IT CHOOSES, so its tokens are the ones the download takes and are kept as any
+        // sign-in's are: a person signed out is signed in by choosing, and is never asked twice for one file.
+        const { tokens, picked } = await signIn(provider, true);
+        if (picked === null) throw new CloudOutcomeRefused('nothing-picked');
+        return downloadInto(provider, picked, tokens.accessToken);
       }),
     link: (docId, path) => {
       const origin = downloaded.get(path);

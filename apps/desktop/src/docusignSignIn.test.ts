@@ -59,7 +59,8 @@ describe('signInThroughLoopback', () => {
       },
     });
 
-    expect(signedIn).toStrictEqual({ code: 'the-code', redirectUri: redirect });
+    // NOTHING KEPT, for a caller that named nothing to keep.
+    expect(signedIn).toStrictEqual({ code: 'the-code', redirectUri: redirect, kept: {} });
     const parsed = new URL(redirect);
     expect(parsed.hostname).toBe('127.0.0.1');
     expect(parsed.pathname).toBe(SIGN_IN_PATH);
@@ -187,6 +188,22 @@ describe('signInThroughLoopback', () => {
     expect(strayStatus).toBe(404);
     expect(signedIn.code).toBe('the-code');
     expect(signedIn.redirectUri).toBe(redirect);
+  });
+
+  it('hands back the redirect parameters the caller NAMED, and no others (the Picker’s picked_file_ids)', async () => {
+    const signedIn = await signInThroughLoopback({
+      authorize,
+      keep: ['picked_file_ids', 'absent_one'],
+      openInBrowser: async (url) => {
+        const page = await fetch(
+          `${redirectOf(url)}?code=the-code&state=the-state&picked_file_ids=1Abc,2Def&scope=drive.file&other=x`,
+        );
+        expect(page.status).toBe(200);
+      },
+    });
+    // `scope` and `other` arrived and were not named, so they are not here; a named parameter the redirect did not
+    // carry is absent rather than empty.
+    expect(signedIn.kept).toStrictEqual({ picked_file_ids: '1Abc,2Def' });
   });
 
   it('refuses a redirect whose state is not this sign-in’s', async () => {
