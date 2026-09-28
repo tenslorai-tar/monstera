@@ -254,7 +254,9 @@ describe('a tab’s ×', () => {
     await clickTabClose(container, SECOND);
     await answer('Save');
 
-    expect(called(sent, 'document.save')).toStrictEqual([{ docId: SECOND }]);
+    // FIRST ASKED WITHOUT BREAKING A SIGNATURE: the close's Save is the attended one, so a document it would break
+    // is answered `breaks-signatures` and the warning asks — the same save the Save command sends.
+    expect(called(sent, 'document.save')).toStrictEqual([{ docId: SECOND, breakSignatures: false }]);
     expect(called(sent, 'document.close')).toStrictEqual([{ docId: SECOND }]);
     // THE ORDER is the property: a close before the save lands would drop the work it saved.
     const order = sent.map((call) => call.id).filter((id) => id === 'document.save' || id === 'document.close');
@@ -269,7 +271,9 @@ describe('a tab’s ×', () => {
     await clickTabClose(container, SECOND);
     await answer('Save');
 
-    expect(called(sent, 'document.save')).toStrictEqual([{ docId: SECOND }]);
+    // FIRST ASKED WITHOUT BREAKING A SIGNATURE: the close's Save is the attended one, so a document it would break
+    // is answered `breaks-signatures` and the warning asks — the same save the Save command sends.
+    expect(called(sent, 'document.save')).toStrictEqual([{ docId: SECOND, breakSignatures: false }]);
     expect(called(sent, 'document.close')).toStrictEqual([]);
   });
 });

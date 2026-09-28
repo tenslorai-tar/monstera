@@ -4,8 +4,28 @@ import { describe, expect, it } from 'vitest';
 import { EN } from './en.js';
 import { PSEUDO_LOCALE, SHIPPED_LOCALES, pseudoCatalogue, pseudoMessage } from './pseudo.js';
 
-/** Every argument a message names — placeholders and plural or select subjects — in order. */
-const argumentsOf = (message: string): string[] => [...message.matchAll(/\{\s*(\w+)\s*[,}]/gu)].map((match) => match[1] ?? '');
+/**
+ * Every argument a message names — placeholders and plural or select subjects — in order, READ FROM LINGUI'S OWN
+ * COMPILER. A token is `[name]` or `[name, kind, branches]`; anything else is text.
+ *
+ * It was a pattern over the source, `{word}` or `{word,`, and that is a second opinion about ICU beside the one the
+ * application runs: it read a plural branch whose whole text is one word — `one {it} other {them}` — as two
+ * placeholders, which the compiler knows are text, and reported a correct message as broken.
+ */
+function argumentsOf(message: string): string[] {
+  const names: string[] = [];
+  const walk = (node: unknown): void => {
+    if (!Array.isArray(node)) return;
+    for (const token of node as unknown[]) {
+      if (!Array.isArray(token)) continue;
+      const [name, , branches] = token as [unknown, unknown, unknown];
+      if (typeof name === 'string') names.push(name);
+      if (typeof branches === 'object' && branches !== null) for (const branch of Object.values(branches)) walk(branch);
+    }
+  };
+  walk(compileMessage(message));
+  return names;
+}
 
 describe('the proof locale', () => {
   it('keeps every message’s ICU syntax: it compiles, and names the same arguments', () => {
@@ -19,6 +39,12 @@ describe('the proof locale', () => {
       return argumentsOf(message).join(',') === argumentsOf(english).join(',') ? [] : [`${key}: arguments`];
     });
     expect(broken, `\n${broken.join('\n')}\n`).toStrictEqual([]);
+  });
+
+  it('reads a message’s arguments as the compiler does — a one-word branch is text, a placeholder in a branch is not', () => {
+    expect(argumentsOf('Keep {count, plural, one {it} other {them}} now')).toStrictEqual(['count']);
+    // CONTROL: the walk does reach inside a branch, so the case above is not an empty walk passing.
+    expect(argumentsOf('{kind, select, a {A {name}} other {B}} of {total}')).toStrictEqual(['kind', 'name', 'total']);
   });
 
   it('transforms text, and copies placeholders, selectors and # exactly', () => {

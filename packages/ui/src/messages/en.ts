@@ -76,11 +76,15 @@ export const SIGNATURE_BREAK_EXPLAINS = messageKey('dialog.signature-break.expla
 export const SIGNATURE_BREAK_APPLY = messageKey('dialog.signature-break.apply');
 export const BACKUP_COPIES_DESCRIPTION = messageKey('setting.saving-backup-copies.description');
 /** `saving.backup-copies`' members, each its own exported key as the other option sets are. */
+export const BACKUP_COPIES_ONE = messageKey('setting.saving-backup-copies.one');
+export const BACKUP_COPIES_THREE = messageKey('setting.saving-backup-copies.three');
+export const BACKUP_COPIES_FIVE = messageKey('setting.saving-backup-copies.five');
+export const BACKUP_COPIES_TEN = messageKey('setting.saving-backup-copies.ten');
 export const BACKUP_COPIES_OPTION_TITLES = {
-  one: messageKey('setting.saving-backup-copies.one'),
-  three: messageKey('setting.saving-backup-copies.three'),
-  five: messageKey('setting.saving-backup-copies.five'),
-  ten: messageKey('setting.saving-backup-copies.ten'),
+  one: BACKUP_COPIES_ONE,
+  three: BACKUP_COPIES_THREE,
+  five: BACKUP_COPIES_FIVE,
+  ten: BACKUP_COPIES_TEN,
 } as const;
 export const CONFIRM_REDACTION_DESCRIPTION = messageKey('setting.saving-confirm-redaction.description');
 export const AUTOSAVE_TITLE = messageKey('setting.saving-autosave.title');
@@ -771,6 +775,8 @@ export const EDITING_PERSONAL_DICTIONARY_TITLE = messageKey(
 );
 export const EDITING_OCR_LANGUAGE_TITLE = messageKey('setting.editing.ocr-language.title');
 export const EDITING_OCR_LANGUAGE_DESCRIPTION = messageKey('setting.editing.ocr-language.description');
+export const RECOGNISE_ON_EXPORT_TITLE = messageKey('setting.ocr.recognise-on-export.title');
+export const RECOGNISE_ON_EXPORT_DESCRIPTION = messageKey('setting.ocr.recognise-on-export.description');
 export const EDITING_AZURE_ENDPOINT_DESCRIPTION = messageKey('setting.editing.azure-di-endpoint.description');
 export const EDITING_AZURE_KEY_DESCRIPTION = messageKey('setting.editing.azure-di-key.description');
 export const SECOND_RENDERER_DESCRIPTION = messageKey('setting.viewing.second-renderer.description');
@@ -1082,10 +1088,13 @@ export const EDITING_FONT_SIZE_TITLE = messageKey('setting.editing.annotation-fo
 export const EDITING_FONT_TITLE = messageKey('setting.editing.annotation-font.title');
 export const EDITING_FONT_DESCRIPTION = messageKey('setting.editing.annotation-font.description');
 /** `editing.annotation-font`'s members, each its own exported key as the other option sets are. */
+export const EDITING_FONT_SANS = messageKey('setting.editing.annotation-font.sans');
+export const EDITING_FONT_SERIF = messageKey('setting.editing.annotation-font.serif');
+export const EDITING_FONT_MONO = messageKey('setting.editing.annotation-font.mono');
 export const EDITING_FONT_OPTION_TITLES = {
-  sans: messageKey('setting.editing.annotation-font.sans'),
-  serif: messageKey('setting.editing.annotation-font.serif'),
-  mono: messageKey('setting.editing.annotation-font.mono'),
+  sans: EDITING_FONT_SANS,
+  serif: EDITING_FONT_SERIF,
+  mono: EDITING_FONT_MONO,
 } as const;
 export const EDITING_IMAGE_PAGES_TITLE = messageKey('setting.editing.image-pages');
 export const STYLE_PANEL_LABEL = messageKey('surface.style.label');
@@ -1132,16 +1141,24 @@ export const STAMP_DIALOG_MINE_EMPTY = messageKey('dialog.stamp.mine-empty');
 export const STAMP_DIALOG_ADD_PICTURE = messageKey('dialog.stamp.add-picture');
 export const STAMP_DIALOG_REMOVE = messageKey('dialog.stamp.remove');
 export const LIBRARY_FULL = messageKey('dialog.insert-image-problem.library-full');
+export const STAMP_APPROVED = messageKey('dialog.stamp.approved');
+export const STAMP_NOT_APPROVED = messageKey('dialog.stamp.not-approved');
+export const STAMP_DRAFT = messageKey('dialog.stamp.draft');
+export const STAMP_FINAL = messageKey('dialog.stamp.final');
+export const STAMP_CONFIDENTIAL = messageKey('dialog.stamp.confidential');
+export const STAMP_FOR_REVIEW = messageKey('dialog.stamp.for-review');
+export const STAMP_VOID = messageKey('dialog.stamp.void');
+export const STAMP_COPY = messageKey('dialog.stamp.copy');
 /** Each built-in stamp's name in the chooser — the word it puts on the page, as a person reads it. */
 export const STAMP_TITLES = {
-  approved: messageKey('dialog.stamp.approved'),
-  'not-approved': messageKey('dialog.stamp.not-approved'),
-  draft: messageKey('dialog.stamp.draft'),
-  final: messageKey('dialog.stamp.final'),
-  confidential: messageKey('dialog.stamp.confidential'),
-  'for-review': messageKey('dialog.stamp.for-review'),
-  void: messageKey('dialog.stamp.void'),
-  copy: messageKey('dialog.stamp.copy'),
+  approved: STAMP_APPROVED,
+  'not-approved': STAMP_NOT_APPROVED,
+  draft: STAMP_DRAFT,
+  final: STAMP_FINAL,
+  confidential: STAMP_CONFIDENTIAL,
+  'for-review': STAMP_FOR_REVIEW,
+  void: STAMP_VOID,
+  copy: STAMP_COPY,
 } as const;
 export const MEASURE_DISTANCE_TOOL_TITLE = messageKey('command.annotate.measure-distance');
 export const MEASURE_AREA_TOOL_TITLE = messageKey('command.annotate.measure-area');
@@ -1490,18 +1507,24 @@ export const AUTOSCROLL_TITLE = messageKey('command.view.autoscroll');
 export const AUTOSCROLL_SPEED_TITLE = messageKey('setting.viewing.autoscroll-speed.title');
 export const AUTOSCROLL_SPEED_DESCRIPTION = messageKey('setting.viewing.autoscroll-speed.description');
 /** `viewing.autoscroll-speed`'s members, each its own exported key as the other option sets are. */
+export const AUTOSCROLL_SPEED_SLOW = messageKey('setting.viewing.autoscroll-speed.slow');
+export const AUTOSCROLL_SPEED_MEDIUM = messageKey('setting.viewing.autoscroll-speed.medium');
+export const AUTOSCROLL_SPEED_FAST = messageKey('setting.viewing.autoscroll-speed.fast');
 export const AUTOSCROLL_SPEED_OPTION_TITLES = {
-  slow: messageKey('setting.viewing.autoscroll-speed.slow'),
-  medium: messageKey('setting.viewing.autoscroll-speed.medium'),
-  fast: messageKey('setting.viewing.autoscroll-speed.fast'),
+  slow: AUTOSCROLL_SPEED_SLOW,
+  medium: AUTOSCROLL_SPEED_MEDIUM,
+  fast: AUTOSCROLL_SPEED_FAST,
 } as const;
 export const PAGE_LAYOUT_TITLE = messageKey('setting.viewing.page-layout.title');
 export const PAGE_LAYOUT_DESCRIPTION = messageKey('setting.viewing.page-layout.description');
 /** `viewing.page-layout`'s members, each its own exported key as the other option sets are. */
+export const PAGE_LAYOUT_CONTINUOUS = messageKey('setting.viewing.page-layout.continuous');
+export const PAGE_LAYOUT_SINGLE = messageKey('setting.viewing.page-layout.single');
+export const PAGE_LAYOUT_FACING = messageKey('setting.viewing.page-layout.facing');
 export const PAGE_LAYOUT_OPTION_TITLES = {
-  continuous: messageKey('setting.viewing.page-layout.continuous'),
-  single: messageKey('setting.viewing.page-layout.single'),
-  facing: messageKey('setting.viewing.page-layout.facing'),
+  continuous: PAGE_LAYOUT_CONTINUOUS,
+  single: PAGE_LAYOUT_SINGLE,
+  facing: PAGE_LAYOUT_FACING,
 } as const;
 export const GRID_DESCRIPTION = messageKey('setting.viewing.grid.description');
 export const RULER_UNIT_DESCRIPTION = messageKey('setting.viewing.ruler-unit.description');
@@ -2518,6 +2541,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EDITING_OCR_LANGUAGE_TITLE]: 'Recognition languages',
   [EDITING_OCR_LANGUAGE_DESCRIPTION]:
     'Up to three, read together, for pages that mix them. Used unless you choose others for that run.',
+  [RECOGNISE_ON_EXPORT_TITLE]: 'Recognise scanned pages when exporting',
+  [RECOGNISE_ON_EXPORT_DESCRIPTION]:
+    'Text, Word and PDF/A exports read scanned pages first. The text is also added to the open document; Ctrl+Z undoes it.',
   [EDITING_AZURE_ENDPOINT_DESCRIPTION]: 'Optional. Your own Azure resource address, for tables and difficult scans.',
   [EDITING_AZURE_KEY_DESCRIPTION]: 'Stored in the Windows credential vault. Never exported or logged.',
   [SECOND_RENDERER_DESCRIPTION]: 'Draws pages with PDFium instead of PDF.js. Slower; useful when a page looks wrong.',
