@@ -54,7 +54,7 @@ import {
   byName,
   familyLicence,
   licenceFileIn,
-  normaliseEndings,
+  normaliseLayout,
   renderBundledAssets,
   renderCompiledIntoPackages,
   renderNotice,
@@ -301,10 +301,19 @@ try {
   );
 
   check(
-    'normaliseEndings converts CRLF and a lone CR, and leaves LF alone',
-    normaliseEndings('a\r\nb\rc\nd') === 'a\nb\nc\nd',
+    'normaliseLayout converts CRLF and a lone CR, and leaves LF alone',
+    normaliseLayout('a\r\nb\rc\nd') === 'a\nb\nc\nd',
     `The lone CR is not a convention anything still emits; including it is the difference ` +
       `between a rule that is complete and one that happens to be.`,
+  );
+
+  check(
+    'normaliseLayout drops a GNU page break, and CONTROL: a text differing in a word still differs',
+    normaliseLayout('pages.\n\f\nNext') === 'pages.\n\nNext' &&
+      normaliseLayout('may copy\n\f\n') !== normaliseLayout('may not copy\n\f\n'),
+    `x265's COPYING carries five form feeds and the guard refuses any C0 byte in a committed text, ` +
+      `so the committed copy has none. A rule that dropped more than the break would let a changed ` +
+      `word compare equal, which is what the second half refuses.`,
   );
 
   check(

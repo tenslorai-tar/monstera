@@ -226,6 +226,14 @@ jobs:
       - name: Prove a provisioned tree must be exactly the one its script pins
         run: node scripts/ci/annotate.mjs scripts/proofs/pinnedTree.proof.mjs
 
+      # ONE TREE'S FILES ARE GENERATED, not extracted: x2t's font cache is
+      # written by Document Builder over the staging directory and rewritten to
+      # hold wherever the tree lands (ADR-0120). x2t converts from a cache whose
+      # paths do not resolve, so a wrong rewrite is silent — this proves the
+      # rewrite is byte-exact or refused, and that a machine font is refused.
+      - name: Prove the ONLYOFFICE font cache is rewritten whole or refused
+        run: node scripts/ci/annotate.mjs scripts/proofs/onlyofficeFontCache.proof.mjs
+
       # A detached OpenPGP signature is accepted only under a key pinned by its
       # computed fingerprint (ADR-0063). The signatures are built in the process,
       # so every refusal case asserts WHICH rule refused: a verifier that refused

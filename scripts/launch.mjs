@@ -53,6 +53,7 @@ import { shimBuildState, shimPath } from './lib/shimBinary.mjs';
 import { electronBinaryPath } from './provision/electron.mjs';
 import { pdfiumLibrary } from './provision/pdfium.mjs';
 import { gswin64cPath } from './provision/ghostscript.mjs';
+import { x2tPath } from './provision/onlyoffice.mjs';
 import { pdftotextPath } from './provision/poppler.mjs';
 import { tessdataDirectory, tessdataPath } from './provision/tessdata.mjs';
 import { formatError } from './lib/reportError.mjs';
@@ -188,6 +189,18 @@ async function ghostscriptEnvironment() {
   return { MONSTERA_GHOSTSCRIPT_EXECUTABLE: executable };
 }
 
+/**
+ * ONLYOFFICE's `x2t`, passed the same way and for the same reasons (ADR-0120).
+ * Absent is a decided state — Office import says it is unavailable.
+ *
+ * @returns {Promise<Record<string, string>>}
+ */
+async function onlyofficeEnvironment() {
+  const executable = x2tPath(REPO_ROOT);
+  if (!(await fileExists(executable))) return {};
+  return { MONSTERA_ONLYOFFICE_EXECUTABLE: executable };
+}
+
 async function main() {
   refuseStaleBuild(REPO_ROOT, SHELL_LAUNCH, 7);
   const binary = await resolveRuntime();
@@ -204,6 +217,7 @@ async function main() {
       ...(await tessdataEnvironment()),
       ...(await popplerEnvironment()),
       ...(await ghostscriptEnvironment()),
+      ...(await onlyofficeEnvironment()),
     },
     // No shell. The path is composed from a pinned version and a platform key,
     // but a shell would reinterpret whatever the repository root happens to

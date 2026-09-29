@@ -14,7 +14,7 @@ import { join } from 'node:path';
 
 import { extract } from '../lib/extract.mjs';
 import { downloadVerified } from '../lib/fetchVerified.mjs';
-import { normaliseEndings } from '../release/generateNotice.mjs';
+import { normaliseLayout } from '../release/generateNotice.mjs';
 
 export const CONDA_HOST = 'conda.anaconda.org';
 export const CONDA_CHANNEL = `https://${CONDA_HOST}/conda-forge/win-64`;
@@ -90,10 +90,11 @@ export async function sameAsCommitted(licenceRoot, actual, into) {
   }
   // LINE ENDINGS ARE NOT TERMS. Git normalises a committed text's endings, so the
   // checkout and the package can differ in nothing but CR bytes — the MSVC runtime's
-  // text ships CRLF. Compared through the notice's own normaliser, the one rule for
-  // what the rendered text is (B3a); every other byte must match.
+  // text ships CRLF — and a GNU text's page breaks cannot be committed at all. Compared
+  // through the notice's own normaliser, the one rule for what the rendered text is
+  // (B3a); every other byte must match.
   const [left, right] = await Promise.all([readFile(actual, 'utf8'), readFile(committed, 'utf8')]);
-  if (normaliseEndings(left) !== normaliseEndings(right)) {
+  if (normaliseLayout(left) !== normaliseLayout(right)) {
     throw new Error(
       `${into} differs from the text the pinned build carries. The committed copy is what NOTICE renders, ` +
         `so it must be the build's own — read the new text before replacing it.`,

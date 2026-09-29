@@ -347,11 +347,11 @@ export function licenceFileIn(listing) {
 function licenceText(directory) {
   const found = licenceFileIn(readdirSync(directory));
   if (found === null) return null;
-  return normaliseEndings(readFileSync(join(directory, found), 'utf8')).trim();
+  return normaliseLayout(readFileSync(join(directory, found), 'utf8')).trim();
 }
 
 /**
- * One line ending, because a licence text is pasted into NOTICE verbatim.
+ * One line ending and no page breaks, because a licence text is pasted into NOTICE verbatim.
  *
  * `renderNotice` joins its own lines with `\n`, so the document's structure is
  * LF — and then each package's terms arrive **as that package wrote them**. Most
@@ -375,11 +375,19 @@ function licenceText(directory) {
  * convention anything still emits, and leaving it out would be a rule that
  * happens to be complete rather than one that is.
  *
+ * **AND PAGE BREAKS ARE NOT TERMS EITHER.** The GNU licences are distributed with
+ * a form feed (0x0C) between pages — x265's `COPYING` carries five — and this
+ * repository's guard refuses any C0 byte in a committed text, rightly, because
+ * one is nearly always a mangled escape. Loosening the guard for licences would
+ * be the workaround; the committed copy and the rendered notice drop the break
+ * instead, by this one rule, so a text that differs from its source only in its
+ * page breaks compares equal and one that differs in a word does not.
+ *
  * @param {string} text
  * @returns {string}
  */
-export function normaliseEndings(text) {
-  return text.replace(/\r\n?/gu, '\n');
+export function normaliseLayout(text) {
+  return text.replace(/\r\n?/gu, '\n').replaceAll('\f', '');
 }
 
 /**
@@ -728,7 +736,7 @@ export function renderProgram(program, root = ROOT) {
       }
       lines.push(`  ── ${component.name} ${component.version}: ${text}`);
       lines.push('');
-      lines.push(normaliseEndings(body).trimEnd());
+      lines.push(normaliseLayout(body).trimEnd());
       lines.push('');
     }
   }
@@ -819,7 +827,7 @@ export function renderBundledAssets(declared, root = ROOT) {
           `${asset.name}: ${text.committed} is not the text its pin records (${pinned} against ${text.sha256}).`,
         );
       }
-      lines.push(normaliseEndings(body).trimEnd());
+      lines.push(normaliseLayout(body).trimEnd());
       lines.push('');
     }
   }
@@ -879,7 +887,7 @@ export function renderCompiledIntoPackages(declared, shipped, root = ROOT) {
             );
           }
         }
-        lines.push(normaliseEndings(body).trimEnd());
+        lines.push(normaliseLayout(body).trimEnd());
         lines.push('');
       }
     }

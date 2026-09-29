@@ -84,6 +84,7 @@ import { electronRoot } from './electron.mjs';
 import { libreOfficeRoot } from './libreoffice.mjs';
 import { pdfiumLibrary } from './pdfium.mjs';
 import { ghostscriptRoot } from './ghostscript.mjs';
+import { onlyofficeRoot } from './onlyoffice.mjs';
 import { popplerRoot } from './poppler.mjs';
 import { tessdataDirectory } from './tessdata.mjs';
 import {
@@ -232,6 +233,16 @@ export function grantSet(root = repoRoot()) {
       path: ghostscriptRoot(root),
       rights: 'RX',
       why: 'the pinned Ghostscript tree gswin64c runs from inside the container',
+      required: false,
+    },
+    // THE PINNED ONLYOFFICE TREE, which ADR-0120 runs `x2t` from: the program, its twenty DLLs, the scripts it
+    // interprets under `sdkjs/`, and the bundled fonts its cache names relative to the tree. The tree ROOT, for
+    // LibreOffice's reason. `RX` and NOT REQUIRED — a checkout that has not run `provision:onlyoffice` offers no
+    // Office import, a decided state.
+    {
+      path: onlyofficeRoot(root),
+      rights: 'RX',
+      why: 'the pinned ONLYOFFICE tree x2t runs from inside the container',
       required: false,
     },
     // THE APPLICATION'S OWN CODE, which the four-path set omitted entirely and
