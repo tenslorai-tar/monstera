@@ -165,6 +165,37 @@ describe('the ribbon’s section and modes', () => {
     }
   });
 
+  it('STUDIO: FOCUS moving outside dismisses the overlay; into a MENU it opened, or onto the rail, does not', () => {
+    // WCAG 2.4.3 / 2.4.7: Tabbing past the overlay's last tool left it open over the panels (2026-09-29). A More the
+    // overlay opens is a portal outside it, so focus entering a `role="menu"` is not leaving — that is the exception
+    // the second assertion holds, and the first is its control.
+    const { container } = draw({ [LAYOUT_MODE_SETTING.id]: 'studio' });
+    press(railButton(container, 'home'));
+    const menu = document.createElement('div');
+    menu.setAttribute('role', 'menu');
+    const item = document.createElement('button');
+    menu.append(item);
+    const elsewhere = document.createElement('button');
+    document.body.append(menu, elsewhere);
+    try {
+      act(() => {
+        item.focus();
+      });
+      expect(screen.queryByRole('toolbar')).not.toBeNull();
+      act(() => {
+        railButton(container, 'organize').focus();
+      });
+      expect(screen.queryByRole('toolbar')).not.toBeNull();
+      act(() => {
+        elsewhere.focus();
+      });
+      expect(screen.queryByRole('toolbar')).toBeNull();
+    } finally {
+      menu.remove();
+      elsewhere.remove();
+    }
+  });
+
   it('STUDIO: a press OUTSIDE dismisses the overlay; a press on the RAIL does not', () => {
     const { container } = draw({ [LAYOUT_MODE_SETTING.id]: 'studio' });
     press(railButton(container, 'home'));

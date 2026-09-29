@@ -75,7 +75,7 @@ import { useRibbonFold } from './useRibbonFold.js';
  *
  * - **Ribbon** — the tools strip is in the grid, always.
  * - **Studio** — the strip is hidden; selecting a section opens it as a temporary overlay, dismissed on a tool choice,
- *   Escape, or a press outside both the overlay and the rail.
+ *   Escape, a press outside both the overlay and the rail, or focus moving outside both.
  * - **Focus** — neither rail nor strip is drawn. Capability stays: every command is still in the palette and on its
  *   chord.
  *
@@ -176,11 +176,24 @@ export function Ribbon({ registry, context, settings, showing }: RibbonProps): R
     const escape = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') close();
     };
+    // FOCUS LEAVING IS "AWAY" TOO (WCAG 2.4.3 and 2.4.7). Tabbing past the overlay's last tool left it open, measured
+    // 2026-09-29 by the live check in `renderedScreen.pw.ts` — and the overlay lies over the panels, so the next stop
+    // could be a control it hides. A menu the overlay opened is in a portal, outside it in the tree and not away from
+    // it: focus moving into one keeps the overlay, or its More would close as it opened.
+    const leave = (event: FocusEvent): void => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (overlayRef.current?.contains(target) === true || railRef.current?.contains(target) === true) return;
+      if (target.closest('[role="menu"]') !== null) return;
+      close();
+    };
     document.addEventListener('pointerdown', away);
     document.addEventListener('keydown', escape);
+    document.addEventListener('focusin', leave);
     return (): void => {
       document.removeEventListener('pointerdown', away);
       document.removeEventListener('keydown', escape);
+      document.removeEventListener('focusin', leave);
     };
   }, [mode, open, stamp]);
   // MEMOISED, and the fold is why. `ribbonModel` builds a fresh object graph on every render, and an

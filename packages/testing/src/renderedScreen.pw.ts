@@ -1848,6 +1848,169 @@ test('BELOW THE FLOOR whole groups fold into the row’s More, nothing scrolls s
   expect(hidden).toBeGreaterThan(0);
 });
 
+// THE LIVE CHECKS (the owner's list of 28 September, item 3). The WCAG review of 2026-09-27 named nine checks that
+// need the running application and was never saved; FEATURES names three. These are the criteria of that kind,
+// reconstructed, run on the BUILT renderer in Chromium — the bundle `npm start` loads, not the Electron shell around it,
+// which the desktop-control tool here cannot reach (JOURNAL 2026-09-29).
+
+test('LIVE CHECK 1.4.13: a tooltip shows on hover and on keyboard focus, stays while the pointer is on it, and Escape dismisses it', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await page.locator('.m-ribbon__tab[data-ribbon-section="tools"]').click();
+  // A BUTTON WHOSE CAPTION ABBREVIATES ITS TITLE, which is exactly where the ribbon draws a tooltip.
+  const trigger = page.locator('.m-ribbon__tools [data-command="document.new-from-office"]');
+  await expect(trigger).toBeVisible();
+  const tip = page.locator('.m-tooltip');
+
+  await trigger.hover();
+  await expect(tip).toHaveText('New PDF from Word, Excel or PowerPoint…');
+  // HOVERABLE: the pointer moves onto the tooltip itself and it stays.
+  const box = await tip.boundingBox();
+  if (box === null) throw new Error('the tooltip has no box');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 5 });
+  await expect(tip).toBeVisible();
+  // DISMISSIBLE without moving the pointer.
+  await trigger.hover();
+  await expect(tip).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(tip).toHaveCount(0);
+
+  // AND ON KEYBOARD FOCUS, not only on hover: the pointer is parked away first.
+  await page.mouse.move(5, 600);
+  await trigger.focus();
+  await page.keyboard.press('Shift');
+  await expect(tip).toHaveText('New PDF from Word, Excel or PowerPoint…');
+});
+
+test('LIVE CHECK 1.4.12: under WCAG’s text spacing the ribbon still scrolls nothing and every caption keeps its text', async ({
+  page,
+}) => {
+  // The success criterion's own values, applied before the first paint — the fold measures what it draws, so spacing
+  // applied later would test a re-measure the criterion does not ask about.
+  await page.addInitScript(() => {
+    document.addEventListener('DOMContentLoaded', () => {
+      const style = document.createElement('style');
+      style.textContent =
+        '* { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } ' +
+        'p { margin-block-end: 2em !important; }';
+      document.head.append(style);
+    });
+  });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const tools = page.locator('.m-ribbon__tools');
+  const sections = page.locator('.m-ribbon__tab[data-ribbon-section]:not([disabled])');
+  // CONTROL: the spacing is on the page. A style that never landed would pass every assertion below.
+  await expect(tools.locator('.m-tool-button__label').first()).not.toHaveCSS('letter-spacing', 'normal');
+  for (let index = 0; index < (await sections.count()); index += 1) {
+    await sections.nth(index).click();
+    await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
+    await expect.poll(() => tools.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+    // A CAPTION CUT SHORT WITHOUT AN ELLIPSIS is text lost; one with an ellipsis carries its whole text as the button's
+    // name, which is the design's own answer for a long label.
+    const clipped = await tools.evaluate((element) =>
+      [...element.querySelectorAll('.m-tool-button__label, .m-ribbon__caption')]
+        .filter((label) => label instanceof HTMLElement && label.scrollWidth > label.clientWidth + 1)
+        .filter((label) => getComputedStyle(label).textOverflow !== 'ellipsis')
+        .map((label) => label.textContent),
+    );
+    expect(clipped, `section ${String(index)}`).toStrictEqual([]);
+  }
+});
+
+test('LIVE CHECK 2.1.2, 2.4.3 and 2.4.7: Tab walks the document screen in reading order, shows a ring at every stop, and traps nothing', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('.m-page-list .m-page').first()).toBeVisible();
+  await page.locator('body').click({ position: { x: 2, y: 2 } });
+
+  const REGIONS = ['.m-title-bar', '.m-menu-bar', '.m-ribbon', '.m-document-panel', '.m-page-list', '.m-context-panel', '.m-status-bar'];
+  const stops: { region: string; ring: boolean; visible: boolean; key: string }[] = [];
+  for (let press = 0; press < 160; press += 1) {
+    await page.keyboard.press('Tab');
+    stops.push(
+      await page.evaluate((regions) => {
+        const focused = document.activeElement;
+        if (!(focused instanceof HTMLElement) || focused === document.body) return { region: 'none', ring: false, visible: false, key: 'body' };
+        const style = getComputedStyle(focused);
+        const ring =
+          (style.outlineStyle !== 'none' && Number.parseFloat(style.outlineWidth) > 0) || style.boxShadow !== 'none';
+        const box = focused.getBoundingClientRect();
+        const region = regions.find((selector) => focused.closest(selector) !== null) ?? 'other';
+        const key = `${focused.tagName}|${focused.className}|${focused.getAttribute('aria-label') ?? ''}|${focused.textContent.slice(0, 30)}|${String(Math.round(box.x))},${String(Math.round(box.y))}`;
+        return { region, ring, visible: box.width > 0 && box.height > 0, key };
+      }, REGIONS),
+    );
+  }
+  const focused = stops.filter((stop) => stop.key !== 'body');
+  // CONTROL: a walk that met a handful of controls would pass the rest; the document screen has many more.
+  expect(new Set(focused.map((stop) => stop.key)).size).toBeGreaterThan(20);
+  // 2.4.7: every stop is on screen and draws a ring.
+  expect(focused.filter((stop) => !stop.visible || !stop.ring).map((stop) => stop.key)).toStrictEqual([]);
+  // 2.1.2: focus MOVES — no stop repeats on the next press — and the walk comes round again, so nothing holds it.
+  expect(stops.filter((stop, index) => index > 0 && stop.key === stops[index - 1]?.key && stop.key !== 'body')).toStrictEqual([]);
+  const first = focused[0]?.key;
+  expect(focused.slice(1).some((stop) => stop.key === first), 'the walk never returned to its first stop').toBe(true);
+  // 2.4.3: the regions are met in the screen's reading order — top chrome, ribbon, the panels and page, status bar.
+  const order = [...new Set(focused.map((stop) => stop.region))].filter((region) => region !== 'other');
+  const top = order.findIndex((region) => region === '.m-title-bar' || region === '.m-menu-bar');
+  const status = order.indexOf('.m-status-bar');
+  expect(top, JSON.stringify(order)).toBe(0);
+  expect(status, JSON.stringify(order)).toBe(order.length - 1);
+});
+
+test('LIVE CHECK toasts: a toast never covers the assistant’s Send button', async ({ page }) => {
+  // The review's "toasts over Send": the toast strip sits at the window's bottom-right, which is where the assistant's
+  // composer ends. A save's toast is the one this screen raises on its own.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('.m-page-list .m-page').first()).toBeVisible();
+  await page.locator('.m-context-panel__tab[data-context-tab="assistant"]').click();
+  const send = page.getByRole('button', { name: 'Send', exact: true });
+  await expect(send).toBeVisible();
+  await page.keyboard.press('Control+S');
+  const toast = page.locator('.m-toast').first();
+  await expect(toast).toBeVisible();
+  const [a, b] = [await toast.boundingBox(), await send.boundingBox()];
+  if (a === null || b === null) throw new Error('a box is missing');
+  const overlaps = a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  expect(overlaps, `toast ${JSON.stringify(a)} against Send ${JSON.stringify(b)}`).toBe(false);
+});
+
+test('LIVE CHECK Studio: the overlay goes when focus leaves it for another part of the window', async ({ page }) => {
+  // The named check the review listed: Studio's overlay on focus loss. Escape and a press on the page are held by the
+  // cases above; this is focus moving on without either — a person Tabbing past the overlay's last tool. (A click on
+  // the panel beside it cannot happen: the overlay lies over the panel's tabs, measured 2026-09-29.)
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, { 'appearance.layout-mode': 'studio' }, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('.m-page-list .m-page').first()).toBeVisible();
+  const overlay = page.locator('.m-ribbon__tools--overlay');
+  await page.locator('[data-ribbon-section="home"]').click();
+  await expect(overlay).toBeVisible();
+  const last = overlay.locator('button:visible').last();
+  await last.focus();
+  await expect(last).toBeFocused();
+  await page.keyboard.press('Tab');
+  // WHEREVER FOCUS WENT, it is not in the overlay any more — and the overlay is gone with it, so nothing it covers
+  // is being focused behind it (2.4.3).
+  expect(await page.evaluate(() => document.activeElement?.closest('.m-ribbon__tools--overlay') === null)).toBe(true);
+  await expect(overlay).toHaveCount(0);
+});
+
 test('the START SCREEN draws the supplied logo, the hero lines, one primary Open with its chord, and a footer', async ({
   page,
 }) => {

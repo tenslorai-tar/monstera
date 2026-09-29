@@ -922,9 +922,24 @@ every section still fits with each group at its floor; 640 is what runs the seco
 that never hides a group — sideways overflow; a floor built from a 4000 × 4000 work area — the 200% case, reading
 `{"minimum":[1024,720],"workArea":{"width":800,"height":426}}`.
 
-**Not done here:** the helper's nine live checks against `npm start`. Its review was never saved — FEATURES names
-three of the nine — so the set is reconstructed from the criteria that need a running application, in the entry that
-records them.
+**The live checks.** The 2026-09-27 review's nine were never saved — FEATURES names three (Studio's overlay on focus
+loss, toasts over *Send*, text spacing) — so the set is reconstructed from the criteria that need a running
+application. They run on the BUILT renderer in Chromium through `renderedScreen.pw.ts`, which is the bundle
+`npm start` loads, and not in the Electron window: the desktop-control tool cannot be granted a development
+`electron.exe` (it resolves installed applications, and the installed *Monstera PDF Editor* is a different build).
+Each is a case named *LIVE CHECK*:
+
+| check | result |
+|---|---|
+| 1.4.13 — a tooltip on hover and on keyboard focus, hoverable, dismissed by Escape | passes |
+| 1.4.12 — the criterion's spacing applied before first paint: no sideways scroll, no caption cut without an ellipsis, in every section at 1280 | passes; control asserts the spacing landed |
+| 2.1.2, 2.4.3, 2.4.7 — 160 Tabs: every stop on screen with a ring, focus always moves and comes round, regions met top chrome first and status bar last | passes; control asserts more than 20 distinct stops |
+| Studio's overlay on focus loss | **FAILED, fixed**: Tabbing past the overlay's last tool left it open over the panels, whose tabs it covers; it now closes when focus lands outside it and the rail, except in a menu it opened (`RibbonModes.test.tsx` holds the exception, and dropping it reddens the case) |
+| toasts over *Send* — a save's toast against the assistant's Send at 1280 × 800 | passes |
+| 1.4.4 — above | emulated |
+
+Not reached by this route, and said so: anything that needs the shell's own window — focus leaving to another
+application, and the real DPI scaling of a physical 150% or 200% screen. Those go on the owner's manual checklist.
 
 ## 2026-09-29 — Stage audit of `2ff522a1..0cc33126` — findings WWWWWW-1 to WWWWWW-8
 
