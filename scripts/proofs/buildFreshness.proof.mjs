@@ -59,6 +59,7 @@ const CASES = [
   'a test file is not an input, so touching one does not refuse',
   'a source directory the walk can date NOTHING in throws rather than reading as fresh',
   'CONTROL: and a directory holding one ordinary file is dated, not refused',
+  'an EMPTY SUBDIRECTORY beside a source file is dated by the file — only the root may be empty-refused',
   'a missing artefact is reported as missing rather than as fresh',
   'a pair count that disagrees with the call site is refused',
   'a TSC pair whose source is newer is ACCEPTED when the compiler says it is current',
@@ -264,6 +265,29 @@ try {
       `a directory with one ordinary source file ${threw ? 'threw' : `dated to ${String(dated)}`}. ` +
         `Without this the case above passes for a walk that refuses every directory, which is ` +
         `the same reading as a walk that can see none of them.`,
+    );
+  }
+
+  {
+    // THE STATE A WORKING TREE ACTUALLY REACHES: git carries no empty directory, so one exists
+    // only where a tool emptied it — the Help screenshots folder, 2026-09-29, which stopped three
+    // proofs while `packages/ui/src` held hundreds of datable files.
+    const root = tree();
+    writeAt(join(root, 'src', 'a.ts'), 'source\n', OLD);
+    mkdirSync(join(root, 'src', 'emptied'), { recursive: true });
+    let dated = 0;
+    let message = '';
+    try {
+      dated = newestMtime(join(root, 'src'));
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    check(
+      'an EMPTY SUBDIRECTORY beside a source file is dated by the file — only the root may be empty-refused',
+      message === '' && dated > 0,
+      `a source tree with one file and one empty folder ${message === '' ? `dated to ${String(dated)}` : `threw: ${message}`}. ` +
+        `The empty-walk refusal is the ROOT's question; asked of every subdirectory, one emptied ` +
+        `folder anywhere stops every proof that checks freshness.`,
     );
   }
 

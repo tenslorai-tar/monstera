@@ -461,6 +461,48 @@ export const SHELL_LAUNCH = [
  * @returns {number}
  */
 export function newestMtime(path) {
+  const newest = newestFileMtime(path);
+  // AN EMPTY WALK IS A BROKEN LOOKUP, NOT A FRESH BUILD (finding KKKKK-2).
+  //
+  // `statSync` is loud about a path that does not exist. What is silent is
+  // a directory that EXISTS and yields nothing — every entry skipped as
+  // `node_modules`, `dist`, `.git` or a test, or simply empty. This used to
+  // return 0, and 0 never exceeds an artefact's timestamp, so the pair passed.
+  // The reassuring answer here is *the build is current*, and an exclusion list
+  // that grew until it swallowed a whole tree would produce it on every run
+  // while the guard reported nothing wrong.
+  //
+  // Latent when it was found — `packages/ui/src` holds plenty of ordinary files
+  // — and closed anyway, because the skip list is the thing that gets widened
+  // and this is the check two proofs now trust before reading a bundle.
+  //
+  // **THE ROOT'S QUESTION, NEVER A SUBDIRECTORY'S.** It was asked at every level
+  // of the walk, so one empty folder anywhere under a source tree — which git
+  // never carries, and a working tree acquires whenever a tool empties one —
+  // stopped every proof that checks freshness, while the tree around it held
+  // hundreds of datable files. An empty subdirectory contributes nothing to
+  // "the newest source", which is the true answer for it.
+  if (newest === 0) {
+    throw new Error(
+      `${path} contains no file this walk can date. Everything under it was skipped as ` +
+        `node_modules, dist, .git or a test, or the directory is empty.\n` +
+        `That is a broken lookup, not a current build: a walk returning nothing compares as ` +
+        `"not newer than the artefact", so the freshness check would pass without having ` +
+        `looked at anything. Point it at a directory that holds source, or narrow the skip ` +
+        `list back.`,
+    );
+  }
+  return newest;
+}
+
+/**
+ * {@link newestMtime}'s walk: the newest file's mtime at or under `path`, and 0 where
+ * there is none — which only the root may refuse.
+ *
+ * @param {string} path
+ * @returns {number}
+ */
+function newestFileMtime(path) {
   const entry = statSync(path);
   if (!entry.isDirectory()) return entry.mtimeMs;
 
@@ -479,32 +521,8 @@ export function newestMtime(path) {
     // stops dead on a build that is current. A guard that cries wolf is one
     // somebody turns off, which would cost the real staleness it was added for.
     if (/\.test\.tsx?$/u.test(name)) continue;
-    const at = newestMtime(join(path, name));
+    const at = newestFileMtime(join(path, name));
     if (at > newest) newest = at;
-  }
-
-  // AN EMPTY WALK IS A BROKEN LOOKUP, NOT A FRESH BUILD (finding KKKKK-2).
-  //
-  // `statSync` above is loud about a path that does not exist. What is silent is
-  // a directory that EXISTS and yields nothing — every entry skipped as
-  // `node_modules`, `dist`, `.git` or a test, or simply empty. This used to
-  // return 0, and 0 never exceeds an artefact's timestamp, so the pair passed.
-  // The reassuring answer here is *the build is current*, and an exclusion list
-  // that grew until it swallowed a whole tree would produce it on every run
-  // while the guard reported nothing wrong.
-  //
-  // Latent when it was found — `packages/ui/src` holds plenty of ordinary files
-  // — and closed anyway, because the skip list is the thing that gets widened
-  // and this is the check two proofs now trust before reading a bundle.
-  if (newest === 0) {
-    throw new Error(
-      `${path} contains no file this walk can date. Everything under it was skipped as ` +
-        `node_modules, dist, .git or a test, or the directory is empty.\n` +
-        `That is a broken lookup, not a current build: a walk returning nothing compares as ` +
-        `"not newer than the artefact", so the freshness check would pass without having ` +
-        `looked at anything. Point it at a directory that holds source, or narrow the skip ` +
-        `list back.`,
-    );
   }
   return newest;
 }

@@ -10,10 +10,17 @@
  * Usage: node pdfLibHostStandIn.mjs <image-in> <result-out> <command-json>
  */
 import { readFile, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-// A LITERAL SPECIFIER, so `proof:electronimports` can read what this process loads. The parent role checks the build's
-// freshness before it spawns this, which is the one reason a sibling script imports dynamically.
-import { applyPdfLibImage } from '../../packages/kernel/dist/pdfLibWriter.js';
+import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
+
+// ITS OWN FRESHNESS CHECK, before the import: the parent role guards the modules IT measures (`ROLE_MAIN_SERVICE`),
+// which do not include pdf-lib's writer, so a stale `pdfLibWriter.js` would run here under this build's name.
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+refuseStaleBuild(root, [['packages/kernel/src/pdfLibWriter.ts', 'packages/kernel/dist/pdfLibWriter.js', 'tsc']], 1);
+// A LITERAL SPECIFIER, dynamic only so it runs after the check: `proof:electronimports` reads it.
+const { applyPdfLibImage } = await import('../../packages/kernel/dist/pdfLibWriter.js');
 
 const [input, output, commandJson] = process.argv.slice(2);
 if (input === undefined || output === undefined || commandJson === undefined) {
