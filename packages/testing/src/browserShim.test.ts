@@ -198,6 +198,7 @@ describe('browser shim', () => {
       'ai.stop',
       'ai.translatePage',
       'app.acknowledgeSecurityUpdate',
+      'app.components',
       'app.info',
       'app.ocrLanguages',
       'app.openStore',
