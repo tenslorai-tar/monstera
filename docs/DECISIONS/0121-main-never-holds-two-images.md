@@ -84,3 +84,19 @@ is **not** decided here: it trades the budget against key custody, and that trad
 
 Decision 1, then 2, then 3. Each is its own commit and moves `roleMainByteImage.mjs`' readings, which are recorded in
 the row. The budget is met when the peak is at or under 1.5× — expected only after all three.
+
+## Addendum, 2026-09-29 — the save flush is cause 2's shape, and Decision 2 covers it
+
+Found while building Decision 1, by reading the flush Decision 2 changes rather than by a measurement: a **save**
+asks the host to serialise its session, reads the result into `main` (`takeOutput`), and writes it to a temporary
+file beside the user's — so for the length of a save `main` holds the canonical image and the flushed one. So does
+*Save a copy*. Neither is a *replacement*, which is why Decision 2's list does not name them; both are the
+co-residence that decision exists to end.
+
+**Decision 2 therefore also covers every write of the session's bytes to a file**: the flush fills the file it is
+given (`serialiseInto`) and `main` never reads it. `atomicWrite` already hands its writer the temporary path, so the
+seam is unchanged and only what fills it moves. A temporary file beside the user's document can be on another volume
+than `main`'s own storage; a move there is a copy and a delete, which is what a move across volumes is.
+
+Also found, and the same class: `takeOutput` returned `new Uint8Array(bytes)` of a buffer the read already owned — a
+second whole image for as long as both lived.
