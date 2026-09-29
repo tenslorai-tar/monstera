@@ -80,6 +80,8 @@ const RUNTIME_CASES = [
   'a launch that LOSES the lock never calls the dependency factory',
   'the losing launch started at all, so the absence above is a decision',
   'the losing launch ended itself rather than being killed at the bound',
+  'NO APPLICATION MENU once the window is up — Electron’s default, with Ctrl+W closing the window, never lands',
+  'CONTROL: with setApplicationMenu ignoring null, the same reading finds Electron’s default menu',
 ];
 
 // THE ANCHOR, BECAUSE THE LINE BELOW IS NOT ONE (finding EEEEE-1). `passRoster`
@@ -90,9 +92,9 @@ const RUNTIME_CASES = [
 // Every other proof in this repository declares a literal; this one derived, and
 // the derivation is what removed the anchor. 4c's danger here runs toward
 // shrinkage, and a derived count agrees with any shrink.
-if (RUNTIME_CASES.length !== 14) {
+if (RUNTIME_CASES.length !== 16) {
   throw new Error(
-    `This proof names ${String(RUNTIME_CASES.length)} runtime cases and the anchor says 14. ` +
+    `This proof names ${String(RUNTIME_CASES.length)} runtime cases and the anchor says 16. ` +
       `Raise or lower the literal in the same commit and say why: a case that leaves takes its ` +
       `label and the total with it, and nothing else here would notice.`,
   );
@@ -308,10 +310,11 @@ function quitRun(binary) {
  * Runs the harness and returns what the renderer saw.
  *
  * @param {string} binary
- * @returns {{ appInfo: unknown, execute: unknown, bridgePresent: boolean, picker: unknown }}
+ * @param {string[]} [extra] harness switches — `--keep-default-menu` for the menu's control launch
+ * @returns {{ appInfo: unknown, execute: unknown, bridgePresent: boolean, picker: unknown, applicationMenu: unknown }}
  */
-function readback(binary) {
-  const [command, args] = launch(binary, []);
+function readback(binary, extra = []) {
+  const [command, args] = launch(binary, extra);
   const result = spawnSync(command, args, {
     cwd: REPO_ROOT,
     encoding: 'utf8',
@@ -535,6 +538,24 @@ try {
         `the lock branch quits in the turn it starts; one that fell through builds a graph and ` +
         `opens a window, and is killed at the bound — which would otherwise satisfy the ` +
         `absence above by never getting far enough to write the marker.`,
+    );
+
+    // THE APPLICATION MENU (`main.ts` sets `null` before `ready`). Read from the same readback launch above, and
+    // from a second launch whose harness ignores the `null` — the control that the reading can see a menu, so
+    // `none` above is a decision rather than a read that sees nothing.
+    check(
+      'NO APPLICATION MENU once the window is up — Electron’s default, with Ctrl+W closing the window, never lands',
+      seen.applicationMenu === 'none',
+      `the shell reported ${JSON.stringify(seen.applicationMenu)}. Electron installs its default menu at ready when ` +
+        `none was set, and its accelerators close the window with every document in it, reload the page and open ` +
+        `the developer tools.`,
+    );
+    const control = readback(ELECTRON_BINARY, ['--keep-default-menu']);
+    check(
+      'CONTROL: with setApplicationMenu ignoring null, the same reading finds Electron’s default menu',
+      control.applicationMenu === 'present',
+      `the control launch reported ${JSON.stringify(control.applicationMenu)}; without a menu here the reading ` +
+        `above cannot tell a shell that removed the menu from a read that sees none.`,
     );
 
     process.stdout.write(

@@ -1,6 +1,6 @@
 import { appendFileSync } from 'node:fs';
 
-import { app, dialog } from 'electron';
+import { Menu, app, dialog } from 'electron';
 
 import { createShellDependencies } from './composition.js';
 import { createDocumentPicker } from './documentPicker.js';
@@ -48,6 +48,12 @@ interface Readback {
   readonly bridgePresent: boolean;
   /** What {@link exercisePicker} observed. */
   readonly picker: PickerReadback;
+  /**
+   * Whether an application menu exists once the window is up — `none` is the shipped state, `main.ts` setting
+   * `null` before `ready` so Electron never installs its default (Ctrl+W closing the WINDOW, Ctrl+R and F5
+   * reloading the page, Ctrl+Shift+I). Read off Electron itself, after `ready`, when its default would be in place.
+   */
+  readonly applicationMenu: 'none' | 'present';
 }
 
 /** What the picker asked Electron for, and what it answered. */
@@ -183,6 +189,7 @@ app.on('browser-window-created', (_event, window) => {
           // Main-side, not from the page: the picker is main's and the renderer
           // must never be able to reach it.
           picker: await exercisePicker(),
+          applicationMenu: Menu.getApplicationMenu() === null ? 'none' : 'present',
         });
       } catch (error) {
         process.stderr.write(
@@ -342,6 +349,18 @@ const markInstance = instanceMarker();
 // that never started. Without it, "no FACTORY_RAN" is also what a harness that
 // crashed on load produces, and the case would pass for the wrong reason.
 markInstance?.('MONSTERA_SHELL_STARTED');
+
+// THE MENU'S CONTROL LAUNCH (`--keep-default-menu`): `Menu.setApplicationMenu` ignores a `null` before `startShell`
+// runs, so `main.ts`' removal never lands and Electron installs its default at `ready`. The readback must then say
+// `present` — the proof that the reading can see a menu at all, without which `none` is also what a broken read
+// produces. ONLY THE NULL is swallowed: Electron installs its default through this same call, so a stub that swallowed
+// everything reads `none` too (measured 2026-09-29 on Electron 43.4.1). `startShell` runs unchanged.
+if (process.argv.includes('--keep-default-menu')) {
+  const setMenu = Menu.setApplicationMenu.bind(Menu);
+  Reflect.set(Menu, 'setApplicationMenu', (menu: Electron.Menu | null) => {
+    if (menu !== null) setMenu(menu);
+  });
+}
 
 startShell(() => {
   markInstance?.('MONSTERA_FACTORY_RAN');
