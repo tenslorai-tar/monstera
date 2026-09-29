@@ -892,6 +892,109 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-30 — Stage audit of `0cc33126..4af180ff` — findings XXXXXX-1 to XXXXXX-8
+
+Owed at one batch of files (200, 31 commits). The range is the 28 September afternoon list: the Organize grid fix,
+ONLYOFFICE's x2t for Office import (ADR-0120), WCAG 1.4.4 and the ribbon fold, ADR-0121 (main never holds two
+images), ADR-0122 (native components), the Help screenshot harness, ADR-0123 (the MSIX) and the fixes the MSIX build
+found. The 43 modified proofs were read diff by diff, the two with deletions hidden inside the range by `git log -p`.
+
+### 1. Root cause or workaround?
+
+Each fix states a mechanism and none is a workaround. The nearest candidate is `proof:hostload`'s *never reaches
+pdfLibWriter* becoming *does not reach it at start* (`32fa0fa8`), which is a loosened check by its shape; ADR-0121
+Decision 3 is the ruling that the host loads pdf-lib, and the commit carries a control (the whole-life walk must reach
+the writer). Stated as XXXXXX-6 so it is not read as a quiet loosening.
+
+### 2. Verified against the easy shape only?
+
+Once, and CI paid for it: the ribbon fold was measured under this machine's fonts and failed on ubuntu by 2 px. The
+fix (`c4b6618e`) was verified against the hard shape — four substitute fonts, 1,760 rows, seven over before and none
+after.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Yes, four times, and three of them were not stated — XXXXXX-1 to XXXXXX-3. `documentCommands.test.ts`' flush
+counter moved to `stage` when saves began to stage; `commandBus.test.ts`' undo assertion moved from an equality to a
+difference when the undo began to install a rebuilt session; a redo-tail case was deleted when checkpoints became
+files. Each move followed a real change of mechanism, and each left the new observable narrower than the property.
+
+### 3. Would CI have caught it?
+
+It did catch the fold (CI #996 red on `dc05c78f`, ubuntu only). The six commits after `dc05c78f` have never run in
+CI: they are unpushed by the owner's order and go out with the next push milestone.
+
+### 4. Are the proofs non-vacuous?
+
+Four findings (XXXXXX-1 to XXXXXX-4), each repaired in the commit after this one with a mutation that turns its case
+red: a direct `flush` added to *Export annotations* reddens the three export cases; `checkpointPaths` walking only the
+applied entries reddens the redo-tail case; drawing a figure for an uncaptured screenshot reddens the Help case. The
+undo case now asserts byte equality with the pre-command document as a session serialises it (1,105 bytes against
+the recognised 2,811). The hidden deletions are mechanical: `commandBus.test.ts`' five are a helper call rewritten
+into `hostModel(image)` and an import widened; `shell.proof.mjs`' three are its case anchor raised 16 → 18.
+Four weaker controls are recorded as XXXXXX-7.
+
+### 4a. Has every instrument passed a resolution test?
+
+`roleMainByteImage.mjs` separated 2.00× from 1.00× on one 200 MB file and `pdfLibHostStandIn.mjs` is a stand-in whose
+own freshness is refused (`dc05c78f`). The Help capture harness is hand-run and measures nothing.
+
+### 4b. Is the instrument a search?
+
+The packager's resolution check is, and its first form read prose as imports (eleven false *missing packages*). It
+failed safe and now uses the compiler's `preProcessFile`; its proof includes a module that must be found.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+New literals are independent (`onlyofficeFontCache` 12, `packageMsix` 9, `hostLoad` 14, `shell` 18, `lintRules` 3).
+`buildFreshness.proof.mjs` counts `cases: CASES.length`, which predates the range and grew in it — XXXXXX-8.
+
+### 5. Executed, or asserted?
+
+Executed: the live watermark and Bates check through the real host, the x2t conversions inside the AppContainer, the
+two-image peak, the manifest read back out of the MSIX. **Asserted, and it was the one that failed:** that the
+installed app's containment was the question ADR-0023 Decision 16 described. The owner's install ran and every
+document was refused by the startup check; that is item 1 of the 29 September night list and has its own entry.
+
+### 6. Architecture before the feature?
+
+Yes each time: ADR-0120 before x2t's build, ADR-0121 before each of its three decisions, ADR-0122 and ADR-0123 each
+in their own commit before the build.
+
+### 7. Do the documents match the code?
+
+Row 337 was caught late (`4af180ff`). The claim that fails item 7 is outside this range's diff: ADR-0023's P1
+correction says a Store-installed host *"dies before its first line"*, and the owner's install measured it running.
+The correction is item 1a's.
+
+### Findings
+
+- **XXXXXX-1 — *an export flushes nothing* could no longer see a flush** (`66d83cdc`). Both harnesses in
+  `documentCommands.test.ts` moved the counter from `flush` to `stage` when saves began to stage, and `flush` became
+  uncounted. Two negative assertions read that counter, so a path calling `flush` directly passed them. Repaired by
+  counting both routes.
+- **XXXXXX-2 — the undo's assertion became *differs from the recognised image*** (`86819141`). Any other bytes
+  satisfied it. Repaired: equal to the pre-command document as a rebuilt session serialises it.
+- **XXXXXX-3 — the redo-tail case was deleted, not ported** (`9006f447`). *A checkpoint the cursor has stepped back
+  over still counts* now also decides which files the sweep keeps, and no case undid before either. Restored against
+  both the retained bytes and the sweep, with a stray checkpoint as the control that the sweep ran.
+- **XXXXXX-4 — the screenshot drop moved to `HelpBody.tsx` with no case** (`336f6a93`). Covered, with the
+  precondition that an article names an uncaptured screenshot as its control.
+- **XXXXXX-5 — the interrupted push left `testResolution.proof`'s poison in `packages/shared/dist/index.js`.** The
+  owner stopped the session while the pre-push set was running, which killed the proof between its write and its
+  `finally`; the next build failed on the first import. The proof refuses a leaked marker by design and named the
+  repair (`tsc --build --force`), which is what was run. No defect in the proof; the class is already on record
+  (*a killed check skips its cleanup*).
+- **XXXXXX-6 — `proof:hostload` narrowed by ruling** (`32fa0fa8`), with the whole-life walk as its control.
+- **XXXXXX-7 — four weaker controls, open and low:** `compositionHost.test.ts`' *no Office converter* control is the
+  result an unwired composition gives too; `componentStatus.test.ts` rejects with a bare `toThrow()`;
+  `showComponents.test.ts`' title says *offers no download anywhere* and asserts placements only;
+  `onlyofficeFontCache.proof.mjs` cases 3 and 6 match a prefix three refusals share.
+- **XXXXXX-8 — `buildFreshness.proof.mjs` derives its case count from its case list** and gained two cases in the
+  range: it catches a duplicate and agrees with a case removed together with its check.
+
+---
+
 ## 2026-09-29 — The test MSIX (item 14), a live check through the real host, and five defects found on the way
 
 **The live check the owner asked for before the MSIX, PASSED.** `npm start` at dc05c78f — pdf-lib's commands run in
