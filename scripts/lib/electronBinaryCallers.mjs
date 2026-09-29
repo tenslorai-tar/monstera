@@ -98,6 +98,8 @@ const RESOLVERS = Object.freeze(
     pdftotextPath: 'converter',
     // ADR-0075: Ghostscript's gswin64c, provisioned by scripts/provision/ghostscript.mjs.
     gswin64cPath: 'converter',
+    // ADR-0120: ONLYOFFICE's x2t, provisioned by scripts/provision/onlyoffice.mjs.
+    x2tPath: 'converter',
   }),
 );
 

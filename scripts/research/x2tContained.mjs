@@ -25,7 +25,11 @@
  * `.pptx` 36,498, each `%PDF-1.7`, each read back by Poppler. With the tree's grant removed, the contained `.docx`
  * cell wrote nothing while its uncontained twin converted — the control that the contained cells were contained.
  *
- * Usage: MONSTERA_X2T_ROOT=<tree> MONSTERA_X2T_INPUTS=<folder> node scripts/research/x2tContained.mjs [--only <cell>]
+ * That reading was taken on a scratch extraction before `provision:onlyoffice` existed. The script now runs the
+ * provisioned tree, named through `x2tPath()` — the converter resolver `check:electronbinary` sanctions — so it
+ * measures the tree the product runs rather than one somebody unpacked.
+ *
+ * Usage: MONSTERA_X2T_INPUTS=<folder> node scripts/research/x2tContained.mjs [--only <cell>]
  */
 
 import { spawnSync } from 'node:child_process';
@@ -36,9 +40,10 @@ import { pathToFileURL } from 'node:url';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { onlyofficeRoot, x2tPath } from '../provision/onlyoffice.mjs';
 
 const ROOT = repoRoot();
-const TREE = process.env['MONSTERA_X2T_ROOT'] ?? '';
+const TREE = onlyofficeRoot(ROOT);
 const INPUTS = process.env['MONSTERA_X2T_INPUTS'] ?? '';
 
 /** Its own profile name: two instruments sharing one container share whatever either leaves. */
@@ -51,8 +56,8 @@ if (process.platform !== 'win32') {
   process.stderr.write('x2tContained: Win32 only; this platform has no AppContainer.\n');
   process.exit(69);
 }
-if (TREE === '' || !existsSync(join(TREE, 'x2t.exe'))) {
-  process.stderr.write('x2tContained: MONSTERA_X2T_ROOT must name a tree holding x2t.exe.\n');
+if (!existsSync(x2tPath(ROOT))) {
+  process.stderr.write('x2tContained: run npm run provision:onlyoffice first.\n');
   process.exit(69);
 }
 if (INPUTS === '') {
@@ -157,7 +162,7 @@ function convert(cell, contained, format, cellIndex) {
 
   const logPath = join(scratch, `${cell}.log`);
   const surface = hostSurface.createWin32HostSurface({
-    program: { runs: 'converter', executablePath: join(TREE, 'x2t.exe'), commandArguments: [params] },
+    program: { runs: 'converter', executablePath: x2tPath(ROOT), commandArguments: [params] },
     workingDirectory: TREE,
     containerName: contained ? CONTAINER : null,
     diagnosticPath: logPath,
@@ -195,7 +200,7 @@ function convert(cell, contained, format, cellIndex) {
 }
 
 try {
-  process.stdout.write(`x2t: ${join(TREE, 'x2t.exe')}\ncontainer: ${CONTAINER}\n\n`);
+  process.stdout.write(`x2t: ${x2tPath(ROOT)}\ncontainer: ${CONTAINER}\n\n`);
   const onlyIndex = process.argv.indexOf('--only');
   const only = onlyIndex === -1 ? undefined : process.argv[onlyIndex + 1];
   let index = 0;

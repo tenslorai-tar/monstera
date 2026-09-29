@@ -500,6 +500,30 @@ try {
       },
     ],
     [
+      'scripts/research/x2tContained.mjs',
+      {
+        sites: 1,
+        reason:
+          'ONE helper loads four built modules through file:// URLs — the Win32 pipe, directory and ' +
+          'host surfaces and the session-directory pair — for ghostscriptContained.mjs\'s reason: ' +
+          'ADR-0120\'s measurement, that x2t converts inside the container holding only its tree and a ' +
+          'session pair, is asked of the SHIPPED surfaces. Plain Node; it starts x2t through x2tPath(), ' +
+          'a converter resolver check:electronbinary sanctions, and never imports the electron package.',
+      },
+    ],
+    [
+      'scripts/research/officeLive.mjs',
+      {
+        sites: 1,
+        reason:
+          'ONE helper loads the built office platform, office source, pipe and directory surfaces ' +
+          'through file:// URLs, because the whole subject is the PRODUCT code — createOfficePlatform ' +
+          'and createOfficeSource, and through them createContainedHost — run on real documents ' +
+          '(ADR-0120\'s correction). A copy would measure a harness. Plain Node; x2t reaches it through ' +
+          'x2tPath() handed down as the launcher hands it, and it never imports the electron package.',
+      },
+    ],
+    [
       'scripts/research/printRoute.mjs',
       {
         sites: 2,
