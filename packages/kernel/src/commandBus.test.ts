@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { copyFile, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -23,14 +23,14 @@ import {
   type LogEntryFor,
   type LogTrim,
 } from './commandLog.js';
-import type { CommandWriter, DocumentContext } from './documentService.js';
+import type { CommandWriter, DocumentContext, HeldFile } from './documentService.js';
 import { serialiseIntoFile } from './checkpointFile.js';
 import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { localMupdfWriter } from './localEngine.js';
 import type { RecognisedPage, RecognitionRequest } from './ocrRecognise.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { applyAddAnnotation } from './pageAnnotations.js';
-import { localPdfLibWriter } from './pdfLibWriter.js';
+import { localPdfLibWriter } from './localEngine.js';
 import { shownOn } from './shownText.js';
 
 /**
@@ -46,15 +46,22 @@ import { shownOn } from './shownText.js';
 let flat: ByteImage;
 let checkpointRoot: string;
 let stored = 0;
+/**
+ * The MuPDF session a HOSTED pdf-lib command runs beside (ADR-0121 Decision 3). Opened from `flat` and never changed:
+ * a pdf-lib apply reads it and `hostModel` stands for the rebuild, so one session serves every such case.
+ */
+let hosting: MupdfSession;
 
 beforeAll(async () => {
   const document = await PDFDocument.create();
   for (let index = 0; index < 3; index += 1) document.addPage([612, 792]);
   flat = await document.save();
   checkpointRoot = await mkdtemp(join(tmpdir(), 'monstera-bus-checkpoints-'));
+  hosting = await mupdfWriter.open(flat);
 });
 
 afterAll(async () => {
+  await mupdfWriter.close(hosting);
   await rm(checkpointRoot, { recursive: true, force: true });
 });
 
@@ -122,13 +129,17 @@ function contextStub(acceptsImages = false): DocumentContext & {
     // WHICH bytes, so the recorder keeps them for a case to compare against the
     // entry's own checkpoint. Writing to a temporary directory would measure the
     // filesystem and prove nothing about the choice.
-    writeCheckpoint(
+    // RECORDED, and COPIED where the destination is a real path: a checkpoint is a file since ADR-0121, and a host
+    // model that rebuilds from what a restore wrote needs the bytes there. The stub restores elsewhere name paths
+    // nothing reads, and a copy to one of those would fail, so only a path under this file's root is copied.
+    async writeCheckpoint(
       _writer: CommandWriter,
       checkpoint: Checkpoint,
       destination: string,
     ): Promise<number> {
       written.push({ destination, bytes: checkpoint });
-      return Promise.resolve(checkpoint.byteLength);
+      if (destination.startsWith(checkpointRoot)) await copyFile(checkpoint.path, destination);
+      return checkpoint.byteLength;
     },
     // A REAL FILE, because a checkpoint is one (ADR-0121) and the cases below read back what the writer put there —
     // which bytes the bus chose is the decision, and a stub that invented a path would hold none. What the service
@@ -137,6 +148,16 @@ function contextStub(acceptsImages = false): DocumentContext & {
       const path = join(checkpointRoot, `${String(stored)}.pdf`);
       stored += 1;
       return { path, byteLength: await write(path) };
+    },
+    // THE SAME, for a hosted result held across its session's rebuild (ADR-0121 Decision 3).
+    async holdFile(_writer: CommandWriter, fill: (destination: string) => Promise<number>) {
+      const path = join(checkpointRoot, `held-${String(stored)}.pdf`);
+      stored += 1;
+      return { path, byteLength: await fill(path) } as HeldFile;
+    },
+    async writeHeld(_writer: CommandWriter, held: HeldFile, destination: string) {
+      await copyFile(held.path, destination);
+      return held.byteLength;
     },
     // BOTH THROW BY DEFAULT, for `noByteImageExpected`'s reason. Almost every
     // command in this file routes to MuPDF, so a bus that installed a byte
@@ -228,6 +249,32 @@ function restoreStub(): {
       calls.push({ destination, bytes: await write(destination) });
     },
     calls: () => calls,
+  };
+}
+
+/**
+ * The host a HOSTED pdf-lib command runs beside, modelled at the bus's edge (ADR-0121 Decision 3).
+ *
+ * What the bus asks of it, and what a real host answers: `adopt` rebuilds the session from the file the apply staged,
+ * so later reads of the session are those bytes; `currentInto` writes the session's bytes; `restore` rebuilds it from
+ * a checkpoint. The document starts as `image`. Files go under this file's temporary directory, never the working
+ * directory — `adopt`'s write places a real file now.
+ */
+function hostModel(image: ByteImage): Pick<CommandInputs, 'current' | 'currentInto' | 'adopt'> & {
+  readonly restore: CheckpointRestore;
+} {
+  let held: ByteImage = image;
+  const rebuildFrom = async (write: SnapshotWrite): Promise<void> => {
+    const path = join(checkpointRoot, `rebuilt-${String(stored)}.pdf`);
+    stored += 1;
+    await write(path);
+    held = new Uint8Array(await readFile(path));
+  };
+  return {
+    current: () => Promise.resolve(held),
+    currentInto: (destination) => serialiseIntoFile(() => Promise.resolve(held))(held, destination),
+    adopt: rebuildFrom,
+    restore: rebuildFrom,
   };
 }
 
@@ -1459,16 +1506,13 @@ describe('CommandBus and the reads axis', () => {
   function recordingInputs(image: ByteImage): CommandInputs & {
     readonly outlineCalls: () => number;
     readonly installed: () => readonly ByteImage[];
+    readonly restore: CheckpointRestore;
   } {
     let outlineCalls = 0;
     const installed: ByteImage[] = [];
+    const host = hostModel(image);
     return {
-      current: () => Promise.resolve(image),
-      // An UNDO refreshes the image from the session (ADR-0084), so this answers with what `current` does.
-      currentInto: (destination) => serialiseIntoFile(() => Promise.resolve(image))(image, destination),
-      adopt: async (write) => {
-        await write('granted/toc');
-      },
+      ...host,
       outline: () => {
         outlineCalls += 1;
         return Promise.resolve([
@@ -1497,7 +1541,7 @@ describe('CommandBus and the reads axis', () => {
     const context = contextStub(true);
     const inputs = recordingInputs(flat);
 
-    await bus.execute({}, context, { kind: 'generateToc', at: 0 }, inputs);
+    await bus.execute({ mupdf: hosting }, context, { kind: 'generateToc', at: 0 }, inputs);
 
     expect(inputs.outlineCalls()).toBe(1);
     // AND THE VALUE REACHED THE APPLY, which the count alone does not say: a
@@ -1545,9 +1589,9 @@ describe('CommandBus and the reads axis', () => {
     const context = contextStub(true);
     const inputs = recordingInputs(flat);
 
-    await bus.execute({}, context, { kind: 'generateToc', at: 0 }, inputs);
-    await bus.undo({}, context, () => Promise.resolve(), inputs);
-    await bus.redo({}, context, inputs);
+    await bus.execute({ mupdf: hosting }, context, { kind: 'generateToc', at: 0 }, inputs);
+    await bus.undo({ mupdf: hosting }, context, inputs.restore, inputs);
+    await bus.redo({ mupdf: hosting }, context, inputs);
 
     expect(inputs.outlineCalls()).toBe(2);
   });
@@ -1588,16 +1632,13 @@ describe('CommandBus and a parameterised pre-read', () => {
   function recordingOcr(image: ByteImage): CommandInputs & {
     readonly requests: () => readonly RecognitionRequest[];
     readonly installed: () => readonly ByteImage[];
+    readonly restore: CheckpointRestore;
   } {
     const requests: RecognitionRequest[] = [];
     const installed: ByteImage[] = [];
+    const host = hostModel(image);
     return {
-      current: () => Promise.resolve(image),
-      // An UNDO refreshes the image from the session (ADR-0084), so this answers with what `current` does.
-      currentInto: (destination) => serialiseIntoFile(() => Promise.resolve(image))(image, destination),
-      adopt: async (write) => {
-        await write('granted/ocr');
-      },
+      ...host,
       outline: () => {
         throw new Error('no command in this block declares reads: outline');
       },
@@ -1629,7 +1670,7 @@ describe('CommandBus and a parameterised pre-read', () => {
     const inputs = recordingOcr(flat);
 
     await bus.execute(
-      {},
+      { mupdf: hosting },
       context,
       { kind: 'ocrPage', page: 1, languages: ['deu'], engine: 'tesseract' },
       inputs,
@@ -1656,7 +1697,7 @@ describe('CommandBus and a parameterised pre-read', () => {
       const inputs = recordingOcr(flat);
 
       await bus.execute(
-        {},
+        { mupdf: hosting },
         context,
         {
           kind: 'ocrPage',
@@ -1683,34 +1724,31 @@ describe('CommandBus and a parameterised pre-read', () => {
       engine: 'tesseract',
     } as const;
 
-    await bus.execute({}, context, command, inputs);
-    await bus.undo({}, context, () => Promise.resolve(), inputs);
-    await bus.redo({}, context, inputs);
+    await bus.execute({ mupdf: hosting }, context, command, inputs);
+    await bus.undo({ mupdf: hosting }, context, inputs.restore, inputs);
+    await bus.redo({ mupdf: hosting }, context, inputs);
 
     // ONE READ FOR TWO APPLIES. `replay: 'stored-effect'` is what says the second
     // apply may not ask again: recognition is 3.8–4.4 s per page, and a model
     // upgrade between the undo and the redo would answer differently — a redone
     // document that differs from the one that was undone.
     expect(inputs.requests()).toHaveLength(1);
-    // FIVE FOR TWO APPLIES AND AN UNDO. Installing a byte image is two calls this
-    // stub records — the checkpoint-directory write and the canonical
-    // replacement — so the pairs are `(0, 1)` from the execute and `(3, 4)` from
-    // the redo. Index 2 is the UNDO's (ADR-0084): restoring a terminal entry
-    // rebuilds only the session, so the bus makes the session's bytes main's image
-    // — and it was four until 2026-09-18, which is main's image left at the
-    // post-command bytes after an undo, measured.
+    // THREE FOR TWO APPLIES AND AN UNDO — one replacement of main's image each. A HOSTED apply installs by rebuilding
+    // the session from the staged file and taking main's image from the rebuilt session (ADR-0121 Decision 3), which
+    // this stub records once; it was five while pdf-lib ran in `main`, a byte-image write and a replacement per apply.
+    // Index 1 is the UNDO's (ADR-0084): restoring a terminal entry rebuilds only the session, so the bus makes the
+    // session's bytes main's image.
     const images = context.images();
-    expect(images).toHaveLength(5);
-    // THE UNDO INSTALLED WHAT THE SESSION HOLDS AFTER THE RESTORE — this stub's
-    // `current`, the pre-command document — and not the recognised one.
-    expect(images[2]).toStrictEqual(flat);
-    expect(images[2]).not.toStrictEqual(images[0]);
+    expect(images).toHaveLength(3);
+    // THE UNDO INSTALLED WHAT THE SESSION HOLDS AFTER THE RESTORE — the checkpoint, the pre-command document — and
+    // not the recognised one.
+    expect(images[1]).not.toStrictEqual(images[0]);
     // AND THE STORED VALUE REACHED THE SECOND APPLY, which the count alone does
     // not say. Byte equality is the assertion available here: the apply's input
     // is the same image both times, so identical output means the same text was
     // written — and an apply handed `undefined` instead throws on the language
     // check rather than producing these bytes at all.
-    expect(images[3]).toStrictEqual(images[0]);
+    expect(images[2]).toStrictEqual(images[0]);
   });
 
   it('refuses a recognition read in a language the command did not ask for', async () => {
@@ -1727,7 +1765,7 @@ describe('CommandBus and a parameterised pre-read', () => {
 
     await expect(
       bus.execute(
-        {},
+        { mupdf: hosting },
         context,
         { kind: 'ocrPage', page: 0, languages: ['heb'], engine: 'tesseract' },
         inputs,
@@ -1750,7 +1788,7 @@ describe('CommandBus and a parameterised pre-read', () => {
 
     await expect(
       bus.execute(
-        {},
+        { mupdf: hosting },
         context,
         {
           kind: 'ocrPage',

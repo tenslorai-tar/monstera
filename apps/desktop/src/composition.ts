@@ -90,7 +90,7 @@ import {
   createRemoteSessions,
   engineChannels,
   groupIntoBlocks,
-  localPdfLibWriter,
+  hostedPdfLibExecution,
   nodeFileSurface,
   signpdfWriterWith,
   parsePageStructure,
@@ -1885,20 +1885,16 @@ function engineSessionOpener(
       // A CHECKPOINT MOVES THE HOST'S FILE, and `main` never reads it (ADR-0121).
       serialiseInto: (session, destination) => liveWriter().serialiseInto(session, destination),
     },
-    // REGISTERED DIRECTLY, with no late binding and no holder, because there is
-    // no host to wait for
-    // ([ADR-0039](../../../docs/DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)).
-    // The `mupdf` entry above is written the way it is because its writer does
-    // not exist until a host does; this one is pure JavaScript operating on
-    // bytes, so it is complete at composition and there is nothing for a
-    // `live()` to be `null` about.
-    //
-    // Importing it here is what invariant 20 permits and forbids in one line:
-    // `@monstera/kernel`'s barrel may not export a value whose module graph
-    // binds native code, and `localPdfLibWriter` binds none. `localMupdfWriter`
-    // is behind `@monstera/kernel/engine` for exactly that reason, and this
-    // file must never name it.
-    'pdf-lib': localPdfLibWriter,
+    // HOSTED IN THE MuPDF HOST since ADR-0121 Decision 3, so it is written the way `mupdf` is: late-bound through
+    // `liveWriter()`, because its apply runs in a host that does not exist until one does. It was registered
+    // directly as pure JavaScript on bytes in `main` — the serialised document arriving here and parsed here, 4.0×
+    // the file against a 1.5× budget. The session it is handed is the MuPDF session (`hostedOn`), its checkpoint is
+    // that session's serialise, moved, and its result is a file the host wrote.
+    'pdf-lib': {
+      serialise: (session) => liveWriter().serialise(session),
+      serialiseInto: (session, destination) => liveWriter().serialiseInto(session, destination),
+      ...hostedPdfLibExecution((session, command, reads) => liveWriter().pdfLib(session, command, reads)),
+    },
     // THE SIGNER, registered directly for `pdf-lib`'s reason: a byte-image writer
     // of pure JavaScript, complete at composition, with no host to wait for. It
     // was absent until 2026-09-13, and `compositionHost.test.ts`' signing case is

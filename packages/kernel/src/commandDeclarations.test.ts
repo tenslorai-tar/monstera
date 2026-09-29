@@ -142,7 +142,8 @@ describe('the declaration table', () => {
     // satisfy the case below by having nothing to check — the reassuring answer
     // arriving through an empty set.
     const shapes = new Set(KINDS.map((kind) => writerShapes[declaredCommands[kind].writer]));
-    expect([...shapes].sort()).toStrictEqual(['byte-image', 'live-session']);
+    // THREE since ADR-0121 Decision 3: pdf-lib's commands are `hosted-image`, run in the MuPDF host.
+    expect([...shapes].sort()).toStrictEqual(['byte-image', 'hosted-image', 'live-session']);
   });
 
   it('an INVERTIBLE byte-image command retains no document-scaled bytes, which is what ADR-0039 now prices', () => {
@@ -213,13 +214,15 @@ describe('the declaration table', () => {
     // Without this, a table that had made every byte-image command invertible
     // would satisfy the case above by listing them all — and the retention
     // rule it states would be about a distinction the table no longer draws.
-    // The seven pdf-lib content commands are what keep both sides populated.
+    // The pdf-lib content commands kept both sides populated until ADR-0121
+    // Decision 3 hosted them; PDFium's `deletePageObjects` and the signer keep
+    // the terminal side now.
     const terminalByteImage = KINDS.filter(
       (kind) =>
         writerShapes[declaredCommands[kind].writer] === 'byte-image' &&
         !declaredCommands[kind].invertible,
     );
-    expect(terminalByteImage).toContain('watermarkPages');
+    expect(terminalByteImage).toContain('deletePageObjects');
   });
 
   it('CONTROL: the sources derivation names a kind, so the type equality is not two empty sets', () => {

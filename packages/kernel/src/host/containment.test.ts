@@ -551,6 +551,9 @@ describe('the engine host answers a containment probe', () => {
     extract: () => {
       throw new Error('a containment probe must not build a document');
     },
+    applyPdfLib: () => {
+      throw new Error('a containment probe must not run pdf-lib');
+    },
     snapshot: () => {
       throw new Error('a containment probe must not rasterise a page');
     },

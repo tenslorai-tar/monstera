@@ -106,7 +106,7 @@ export type CommandDisplay = 'view-model' | 'image' | 'nothing-drawn';
  * Its `apply` returns the new image and the bus installs it, so a byte-image command is drawn
  * from bytes by construction, and any other declaration would be a claim the path cannot keep.
  */
-export type DisplayFor<W extends WriterOfRecord> = WriterShapeOf[W] extends 'byte-image'
+export type DisplayFor<W extends WriterOfRecord> = WriterShapeOf[W] extends 'byte-image' | 'hosted-image'
   ? 'image'
   : CommandDisplay;
 
@@ -987,7 +987,10 @@ const declarations = {
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
-    asset: 'none',
+    // 'none' WHILE pdf-lib RAN IN `main`, where the picture was already in the payload's process. It runs in the
+    // MuPDF host since ADR-0121 Decision 3, and a JSON wire cannot carry the bytes — so they cross as an asset,
+    // `placeImage`'s route (ADR-0044).
+    asset: 'bytes',
     purpose: 'ordinary',
   },
   generateToc: {

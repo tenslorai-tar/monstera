@@ -177,6 +177,9 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
       extract: () => {
         throw new Error('a field read must not build a document');
       },
+      applyPdfLib: () => {
+        throw new Error('a field read must not run pdf-lib');
+      },
       snapshot: () => {
         throw new Error('a field read must not rasterise');
       },

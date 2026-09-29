@@ -5,10 +5,12 @@ import type { WriterOf, WriterOfRecord } from './commandDeclarations.js';
 import type {
   ByteImage,
   EngineWriter,
+  ExecutionSession,
   PreReadValue,
   WriterSession,
   WriterShapeOf,
 } from './engineSeam.js';
+import type { StagedImage } from './savePipeline.js';
 
 /**
  * **How a command reaches a writer** — the types, with no table and no
@@ -118,8 +120,11 @@ export type KindsRoutedTo<W extends WriterOfRecord> = {
  * @template K the kind being applied.
  */
 export interface ApplyRequest<W extends WriterOfRecord, K extends CommandKind> {
-  /** The session the command runs against — for a byte-image writer, its bytes. */
-  readonly session: WriterSession[W];
+  /**
+   * The session the command runs against — for a byte-image writer, its bytes; for a hosted one, the session of the
+   * writer whose host runs it (ADR-0121 Decision 3).
+   */
+  readonly session: ExecutionSession<W>;
 
   /** The command, whole: a `capture` takes the same value and half a command is not one. */
   readonly command: CommandOfKind<K>;
@@ -208,13 +213,11 @@ export interface CommandExecution<W extends WriterOfRecord> {
    * `pageToc.test.ts` — the wired-tools rule's own burden, unchanged. The
    * difference is that the value now arrives.
    */
-  apply<K extends KindsRoutedTo<W>>(
-    request: ApplyRequest<W, K>,
-  ): WriterShapeOf[W] extends 'byte-image' ? Promise<ByteImage> : Promise<void>;
+  apply<K extends KindsRoutedTo<W>>(request: ApplyRequest<W, K>): Applied<W>;
 
   /** Runs the declared `capture` for `command.kind`, before any apply. */
   capture<K extends KindsRoutedTo<W>>(
-    session: WriterSession[W],
+    session: ExecutionSession<W>,
     command: CommandOfKind<K>,
   ): Promise<CaptureResult<CommandPrior[K]>>;
 
@@ -227,11 +230,22 @@ export interface CommandExecution<W extends WriterOfRecord> {
    * much as across this call.
    */
   invert<K extends KindsRoutedTo<W>>(
-    session: WriterSession[W],
+    session: ExecutionSession<W>,
     kind: K,
     inverse: CommandPrior[K],
-  ): WriterShapeOf[W] extends 'byte-image' ? Promise<ByteImage> : Promise<void>;
+  ): Applied<W>;
 }
+
+/**
+ * What an execution's `apply` and `invert` answer, by shape: the new image for a byte-image writer, nothing for a
+ * live-session one, and for a HOSTED one the new image **staged where the host wrote it** — `main` places it without
+ * reading it ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md) Decision 3).
+ */
+export type Applied<W extends WriterOfRecord> = WriterShapeOf[W] extends 'byte-image'
+  ? Promise<ByteImage>
+  : WriterShapeOf[W] extends 'hosted-image'
+    ? Promise<StagedImage>
+    : Promise<void>;
 
 /**
  * One writer of record, **as `CommandBus` actually calls it**: run a command
@@ -262,10 +276,10 @@ export interface CommandExecution<W extends WriterOfRecord> {
  * that only runs commands against one.
  */
 export type RegisteredWriter<W extends WriterOfRecord> = Pick<
-  EngineWriter<WriterSession[W]>,
+  EngineWriter<ExecutionSession<W>>,
   'serialise'
 > &
-  CheckpointWriter<WriterSession[W]> &
+  CheckpointWriter<ExecutionSession<W>> &
   CommandExecution<W>;
 
 /**

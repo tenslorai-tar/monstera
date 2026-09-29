@@ -91,8 +91,16 @@ import type { RecognisedPage, RecognitionRequest } from './ocrRecognise.js';
  */
 export type ByteImage = Uint8Array;
 
-/** How a writer of record applies a command. */
-export type WriterShape = 'live-session' | 'byte-image';
+/**
+ * How a writer of record applies a command.
+ *
+ * **`hosted-image` since 2026-09-29** ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)
+ * Decision 3): a byte-image writer whose apply runs IN ANOTHER WRITER'S HOST, beside that writer's session — so its
+ * spec is a byte-image one (image in, image out, run where the image is), and what `main` holds and receives is not.
+ * `main` passes the hosting session ({@link hostedOn}) and gets back a staged file, never the bytes: holding them was
+ * two images and a parse in `main`, measured at 4.0× against a 1.5× budget.
+ */
+export type WriterShape = 'live-session' | 'byte-image' | 'hosted-image';
 
 /**
  * A live MuPDF session.
@@ -223,12 +231,38 @@ export const writerShapes = {
   // commands keeps that question unaskable rather than answered under a
   // feature.
   pdfium: 'byte-image',
-  'pdf-lib': 'byte-image',
+  // 'byte-image' IN `main` UNTIL 2026-09-29 (ADR-0121 Decision 3): the bus serialised the session into `main`, and
+  // pdf-lib parsed it there — the parse §9.17's *"never parses"* forbids. Its apply now runs in the MuPDF host.
+  'pdf-lib': 'hosted-image',
+  // STAYS IN `main`, and that is the owner's trade to take: signing needs the private key, and a hostile host must
+  // never hold it (ADR-0121, *What stays in `main`*).
   signpdf: 'byte-image',
 } as const satisfies Readonly<Record<keyof WriterSession, WriterShape>>;
 
 /** Which shape each writer of record is. Derived — see {@link writerShapes}. */
 export type WriterShapeOf = typeof writerShapes;
+
+/** The writers whose apply runs in another writer's host. Derived from {@link writerShapes}. */
+export type HostedWriter = {
+  [W in keyof WriterShapeOf]: WriterShapeOf[W] extends 'hosted-image' ? W : never;
+}[keyof WriterShapeOf];
+
+/**
+ * Whose host each hosted writer runs in — and so whose session `main` hands it
+ * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md) Decision 3). pdf-lib's is MuPDF's: the
+ * image it rewrites is that session's serialise, taken in the process that holds it.
+ */
+export const hostedOn = {
+  'pdf-lib': 'mupdf',
+} as const satisfies Readonly<Record<HostedWriter, keyof WriterSession>>;
+
+/**
+ * The session `main` hands a writer's EXECUTION: its own, or the hosting writer's for a hosted one. The spec-level
+ * {@link WriterSession} is unchanged — a hosted writer's spec still takes the image, in the host.
+ */
+export type ExecutionSession<W extends keyof WriterSession> = W extends HostedWriter
+  ? WriterSession[(typeof hostedOn)[W]]
+  : WriterSession[W];
 
 /**
  * Session lifecycle, shared by both shapes.
@@ -361,10 +395,13 @@ export interface EngineWriter<TSession> {
  * It cannot return a `Checkpoint`. That is one of the three doors ADR-0009 §4's
  * "never by a handler" is held shut by.
  */
-export type Capture<W extends keyof WriterSession, K extends CommandKind> = (
-  session: WriterSession[W],
-  command: CommandOfKind<K>,
-) => Promise<CaptureResult<CommandPrior[K]>>;
+export type Capture<W extends keyof WriterSession, K extends CommandKind> =
+  // A HOSTED writer's capture is not handed the document, because `main` does not hold it (ADR-0121 Decision 3):
+  // it can only report from the command, which is what every pdf-lib capture did anyway — each one's prior state is
+  // `never`. A hosted command that needed a recorded prior state would have to capture in the host.
+  WriterShapeOf[W] extends 'hosted-image'
+    ? (command: CommandOfKind<K>) => Promise<CaptureResult<CommandPrior[K]>>
+    : (session: WriterSession[W], command: CommandOfKind<K>) => Promise<CaptureResult<CommandPrior[K]>>;
 
 /**
  * How many OTHER documents a command's apply is given sessions for
@@ -762,7 +799,8 @@ export type Apply<
   K extends CommandKind,
   S extends CommandSources = 'none',
   R extends CommandReads = 'none',
-> = WriterShapeOf[W] extends 'byte-image'
+  // A HOSTED writer's spec is a byte-image one: it runs in the host, on the image (ADR-0121 Decision 3).
+> = WriterShapeOf[W] extends 'byte-image' | 'hosted-image'
   ? S extends 'one'
     ? never
     : R extends keyof PreRead
@@ -809,6 +847,6 @@ export type Apply<
  * defect needs. *An inverse that restores the rendering is not an inverse.*
  */
 export type Invert<W extends keyof WriterSession, K extends CommandKind> =
-  WriterShapeOf[W] extends 'byte-image'
+  WriterShapeOf[W] extends 'byte-image' | 'hosted-image'
     ? (image: WriterSession[W], inverse: CommandPrior[K]) => Promise<ByteImage>
     : (session: WriterSession[W], inverse: CommandPrior[K]) => Promise<void>;

@@ -892,6 +892,46 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-29 — ADR-0121 Decision 3: pdf-lib runs in the MuPDF host, and `main` peaks at 1.0× through a watermark
+
+**Built:** a third writer shape, `hosted-image`, for pdf-lib. Its SPEC is unchanged — image in, image out, the eight
+commands' applies as they were — and it runs in the MuPDF host through a new channel, `engine/applyPdfLib`: the host
+serialises the session it holds, runs the spec through `applyPdfLibImage` (the one dispatch), and writes the result
+into the session's output directory. In `main` the writer's EXECUTION is `hostedPdfLibExecution`: it is handed the
+MuPDF session (`hostedOn`, derived beside `writerShapes`) and answers a `StagedImage`, never bytes. Its capture reads
+only the command — every pdf-lib capture's prior state is `never`, and the hosted form of `Capture` cannot be handed
+a document. `insertImagePage` now declares `asset: 'bytes'`, because its picture crosses a JSON pipe by
+`placeImage`'s door. Signing stays in `main` as a byte-image writer — the owner's trade, still open.
+
+**Found by the composition-root case, and it is why that case exists.** The first install placed the staged result
+straight into `adopt`'s snapshot — and the move failed with `ENOENT`: rebuilding a session removes its old area,
+which is where the host wrote the result, before the new snapshot is written. Nothing below the root could see it:
+the bus test's host model and the lifecycle test's real host each held one end. The result is now moved into the
+document's own directory first (`DocumentContext.holdFile`, deleted after the lane entry by the checkpoint
+reconcile), and both the rebuild and `main`'s new image are made from that one file — the byte-image rule that the
+session and the image are the same bytes, kept without `main` holding them.
+
+**Measured, `roleMainByteImage.mjs --twice --undo` on `perf-image-200mb.pdf`, 209,105,721 bytes, with the host
+standing in as a SEPARATE PROCESS (`pdfLibHostStandIn.mjs`)** — a stand-in inside the measured process would charge
+`main` for the host's parse. **Peak RSS over baseline 0.98× and 1.02×** (was 4.02–5.03× on the same command before
+Decision 1). ArrayBuffers 1.00× at every step, sampled peaks 1.00× through the second command and the undo. The
+sampler's control is now an allocation of twice the document, which it must see: it read 3.00 (the image plus the
+two). **ADR-0007's 1.5× is met for a byte-image command.** The host's own peak through pdf-lib is not measured here;
+it runs under the host's containment limit (§9.17, 6× and 3 GB), and item 9 re-measures the host.
+
+**Proven:** the compile-fail contract proof carries the new shape in both directions — a hosted execution takes the
+hosting session and answers a staged image (allow), and one answering the image itself is refused (the rejection
+that separates); the two byte-image fixtures moved to the signer, the byte-image writer that stays in `main`. The
+bus cases for a TOC and an OCR text layer run beside a local MuPDF session through a host model whose `adopt`
+rebuilds from what was placed and whose `restore` rebuilds from the checkpoint; the replay case now counts one image
+per install (three for execute, undo and redo) and still requires the undo's image to differ from the recognised
+one and the redo's to equal it. `remoteLifecycle.test.ts` and `remoteEngine.test.ts` wire the real `applyPdfLibImage`
+behind the real handlers. **At the composition root**, a watermark through a fake host that answers a document
+`main` never had: the host received `engine/applyPdfLib`, the session was reopened from exactly the bytes it wrote,
+and the renderer's length is that document's. `coreChannels.test.ts` lists the channel among MuPDF's own.
+
+---
+
 ## 2026-09-29 — ADR-0121 Decision 2: a new image replaces the old without both held, and a save never reads the bytes
 
 **Built:** `DocumentContext.replaceCanonicalImageFrom(writer, fill)`. The service names a file in the document's own

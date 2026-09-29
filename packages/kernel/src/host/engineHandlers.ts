@@ -2,7 +2,7 @@ import type { AnnotationDataFormat, CommandOfKind, FormDataFormat, Handlers } fr
 
 import type { KindsRoutedTo } from '../commandRouting.js';
 import type { CommandExecution } from '../commandSpecs.js';
-import type { ByteImage, DocumentAccess, EngineWriter, MupdfSession } from '../engineSeam.js';
+import type { ByteImage, DocumentAccess, EngineWriter, MupdfSession, PreReadValue } from '../engineSeam.js';
 // A VALUE IMPORT for the same reason the two below it are: `DocumentLocked` is
 // how this handler tells an encrypted document from an unreadable one, and the
 // alternative was keying on the wording of an error message. `engineSeam.ts`
@@ -43,6 +43,7 @@ import {
   type EngineChannels,
   type MupdfWireCommand,
   joinAsset,
+  joinPdfLibAsset,
   taggedPrior,
 } from './engineChannels.js';
 
@@ -444,6 +445,15 @@ export interface EngineHandlerParts {
   readonly formFields: HostFormFieldsReader;
   readonly duplicates: HostDuplicatesReader;
   readonly extract: HostExtract;
+  /**
+   * How this process runs a pdf-lib command on an image. `applyPdfLibImage` — `engine/applyPdfLib`
+   * (ADR-0121 Decision 3).
+   */
+  readonly applyPdfLib: (
+    image: ByteImage,
+    command: CommandOfKind<KindsRoutedTo<'pdf-lib'>>,
+    reads: PreReadValue | undefined,
+  ) => Promise<ByteImage>;
   readonly snapshot: HostSnapshot;
   /** How this process writes the form's data out. `engine/exportFormData`. */
   readonly exportFormData: HostFormDataExport;
@@ -480,6 +490,7 @@ export function createEngineHandlers({
   formFields,
   duplicates,
   extract,
+  applyPdfLib,
   snapshot,
   exportFormData,
   exportAnnotationData,
@@ -658,6 +669,42 @@ export function createEngineHandlers({
         // document cannot satisfy comes back as a distinguishable code so the
         // supervisor declines to count it as a host death.
         return failed('extract-failed', error);
+      }
+    },
+
+    'engine/applyPdfLib': async ({ session, command, asset, reads, into }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // THE ASSET, by `engine/apply`'s door: a name inside this session's own snapshot directory.
+      let bytes: Uint8Array | undefined;
+      if (asset !== undefined) {
+        try {
+          bytes = await files.readSnapshot(held.snapshotDirectory, asset);
+        } catch (error) {
+          return failed('asset-missing', error);
+        }
+      }
+      const whole = joinPdfLibAsset(command, bytes);
+      if (whole === undefined) {
+        return failed(
+          'asset-missing',
+          new Error(`"${command.kind}" and the asset sent with it disagree about whether it carries one`),
+        );
+      }
+      // THE IMAGE IS THIS SESSION'S OWN SERIALISE, taken here — the bytes `main` used to be sent and parse
+      // (ADR-0121 Decision 3). A failure is the session's, reported as a serialise's is.
+      let image: ByteImage;
+      try {
+        image = await writer.serialise(held.session);
+      } catch (error) {
+        return failed('serialise-failed', error);
+      }
+      try {
+        const result = await applyPdfLib(image, whole, reads);
+        const written = await files.writeOutput(held.outputDirectory, into, result);
+        return { ok: true, value: { bytes: written } };
+      } catch (error) {
+        return failed('apply-failed', error);
       }
     },
 

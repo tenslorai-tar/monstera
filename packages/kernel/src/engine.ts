@@ -219,7 +219,7 @@ export {
   type RegionRequest,
   snapshotRegion,
 } from './pageSnapshot.js';
-export { localMupdfWriter } from './localEngine.js';
+export { localMupdfWriter, localPdfLibWriter } from './localEngine.js';
 
 /**
  * `@monstera/kernel/engine` — everything whose import binds a native library

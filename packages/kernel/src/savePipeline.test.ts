@@ -87,6 +87,12 @@ function held(version: number): Held {
       replaceCanonicalImageFrom: (): never => {
         throw new Error('saving does not replace the image');
       },
+      holdFile: (): never => {
+        throw new Error('saving holds no command result');
+      },
+      writeHeld: (): never => {
+        throw new Error('saving holds no command result');
+      },
       // Same treatment again, and for a save it is the sharper claim of the
       // three: a save READS the document's current bytes and must never change
       // what `main` holds. A quiet stub here would let a pipeline that

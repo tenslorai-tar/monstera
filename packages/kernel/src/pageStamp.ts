@@ -2,7 +2,7 @@ import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
-import type { Apply, ByteImage, Invert } from './engineSeam.js';
+import type { Apply, Invert } from './engineSeam.js';
 import { pagesOf } from './pageScope.js';
 
 /**
@@ -89,9 +89,8 @@ export function resolveStampTokens(text: string, page: number, total: number): s
  * success even if it were written to.
  */
 export const captureHeaderFooterPages: (
-  image: ByteImage,
   command: CommandOfKind<'headerFooterPages'>,
-) => Promise<CaptureResult<never>> = (_image, _command) =>
+) => Promise<CaptureResult<never>> = (_command) =>
   Promise.resolve({
     captured: false,
     reason:
@@ -252,9 +251,8 @@ export function batesIdentifier(
  * Capture — which always refuses, exactly as the two above do.
  */
 export const captureBatesNumberPages: (
-  image: ByteImage,
   command: CommandOfKind<'batesNumberPages'>,
-) => Promise<CaptureResult<never>> = (_image, _command) =>
+) => Promise<CaptureResult<never>> = (_command) =>
   Promise.resolve({
     captured: false,
     reason:

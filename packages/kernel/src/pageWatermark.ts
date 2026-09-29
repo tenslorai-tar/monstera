@@ -2,7 +2,7 @@ import { PDFDocument, StandardFonts, degrees, rgb } from '@cantoo/pdf-lib';
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
-import type { Apply, ByteImage, Invert } from './engineSeam.js';
+import type { Apply, Invert } from './engineSeam.js';
 import { pagesOf } from './pageScope.js';
 
 /**
@@ -81,9 +81,8 @@ const WATERMARK_GREY = 0.5;
  * a checkpoint rather than an inverse.
  */
 export const captureWatermarkPages: (
-  image: ByteImage,
   command: CommandOfKind<'watermarkPages'>,
-) => Promise<CaptureResult<never>> = (_image, _command) =>
+) => Promise<CaptureResult<never>> = (_command) =>
   Promise.resolve({
     captured: false,
     reason:

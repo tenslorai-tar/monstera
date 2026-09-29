@@ -3098,8 +3098,9 @@ import type { ByteImage, CommandExecution } from '@monstera/kernel';
 
 // A byte-image writer's execution: apply and invert CONSUME an image and
 // PRODUCE a new one. Capture is the same shape for both kinds, because
-// capture only ever reads.
-export const execution: CommandExecution<'pdf-lib'> = {
+// capture only ever reads. THE SIGNER since ADR-0121 Decision 3 hosted pdf-lib:
+// it is the byte-image writer that stays in main.
+export const execution: CommandExecution<'signpdf'> = {
   // THE COMMAND IS NOT READ AT ALL, and the history is the interesting part.
   // This read the rotation's own pages while one command kind existed, then
   // narrowed to the DISCRIMINANT when a second kind arrived, and now reads
@@ -3141,13 +3142,46 @@ export const execution: CommandExecution<'pdf-lib'> = {
     // `(image: ByteImage, command:` — the two diagnostics agree line for line
     // otherwise, and the harness refuses to certify either verdict while one
     // matcher accepts the other's reason.
-    because: /request: ApplyRequest<"pdf-lib", K>\)[\s\S]*Type 'void' is not assignable to type 'Promise<ByteImage>'/u,
+    because: /request: ApplyRequest<"signpdf", K>\)[\s\S]*Type 'void' is not assignable to type 'Promise<ByteImage>'/u,
+    notBecause: null,
+    source: `
+import type { CommandExecution } from '@monstera/kernel';
+
+export const execution: Pick<CommandExecution<'signpdf'>, 'apply'> = {
+  apply: () => {},
+};
+`,
+  },
+  {
+    name: 'A HOSTED writer’s execution takes the HOSTING session and answers a STAGED image (ADR-0121 Decision 3)',
+    expect: 'allow',
+    // The third shape's own fixture, for the byte-image pair's reason: an unconstructed variant is a vacuous check.
+    // pdf-lib runs in the MuPDF host, so main hands it the MuPDF session and receives a file the host wrote — never
+    // the bytes. NO assertion here either.
+    source: `
+import type { CommandExecution, MupdfSession, StagedImage } from '@monstera/kernel';
+
+declare const staged: (session: MupdfSession) => Promise<StagedImage>;
+export const execution: CommandExecution<'pdf-lib'> = {
+  apply: ({ session }) => staged(session),
+  capture: (_session, _command) => Promise.resolve({ captured: false, reason: 'none' }),
+  invert: (session, _kind, _inverse) => staged(session),
+};
+`,
+  },
+  {
+    name: 'but a HOSTED execution may not answer the image itself — that is main holding it',
+    expect: 'reject',
+    code: 'TS2322',
+    // THE REJECTION THAT SEPARATES: a hosted apply returning bytes is exactly the defect the shape exists to make
+    // unrepresentable — the result arriving in main's memory.
+    because: /Type 'Promise<Uint8Array<ArrayBuffer>>' is not assignable to type 'Promise<StagedImage>'/u,
     notBecause: null,
     source: `
 import type { CommandExecution } from '@monstera/kernel';
 
 export const execution: Pick<CommandExecution<'pdf-lib'>, 'apply'> = {
-  apply: () => {},
+  apply: () => Promise.resolve(new Uint8Array(0)),
 };
 `,
   },

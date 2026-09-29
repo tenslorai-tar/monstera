@@ -1290,6 +1290,59 @@ function documentServingEngine(document: Uint8Array): FakePeer {
   };
 }
 
+describe('the composition root, a HOSTED pdf-lib command (ADR-0121 Decision 3)', () => {
+  it('runs pdf-lib in the MuPDF host, rebuilds the session from its file, and takes the image from the session', async () => {
+    // BOTH ENDS, for the wired pair's second blind spot: `commandBus.test.ts` runs a hosted apply against a local
+    // session and `remoteLifecycle.test.ts` runs the real spec behind the real handler, and neither holds the root
+    // that registers the writer, routes the command down `engine/applyPdfLib` and rebuilds through `adopt`.
+    // The peer answers with a document `main` never had, so each assertion can only hold if that file travelled.
+    const result = new TextEncoder().encode('%PDF-1.7\n% what pdf-lib wrote, in the host\n');
+    const rebuilt: Uint8Array[] = [];
+    let output: string | null = null;
+    const spy = platformAnswering((channel, params) => {
+      if (channel === 'engine/open') {
+        const sent = params as { snapshotDirectory: string; snapshotName: string; outputDirectory: string };
+        output = sent.outputDirectory;
+        rebuilt.push(new Uint8Array(readFileSync(join(sent.snapshotDirectory, sent.snapshotName))));
+        return SESSION;
+      }
+      if (channel === 'engine/applyPdfLib' || channel === 'engine/serialise') {
+        if (output === null) throw new Error(`${channel} before engine/open`);
+        // THE APPLY WRITES pdf-lib's RESULT; a SERIALISE writes what the session now holds — the last document it
+        // was opened from, which is what a rebuilt session serialises to.
+        const bytes = channel === 'engine/applyPdfLib' ? result : (rebuilt.at(-1) ?? new Uint8Array());
+        writeFileSync(join(output, (params as { into: string }).into), bytes);
+        return { ok: true, value: { bytes: bytes.length } };
+      }
+      return ENGINE(channel, params);
+    });
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument('hosted-watermark.pdf')),
+      enginePlatform: spy.platform,
+      checkpointDirectory: join(scratch, 'checkpoints-hosted'),
+    });
+
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+    const executed = await handlers['document.execute']({
+      docId: opened.value.docId,
+      command: { kind: 'watermarkPages', pages: 'all', text: 'DRAFT', opacity: 0.3, rotationDegrees: 45, fontSize: 48 },
+    });
+
+    expect(executed.ok, JSON.stringify(executed)).toBe(true);
+    if (!executed.ok) throw new Error('the watermark should have succeeded');
+    // THE HOST RAN IT — main sent the command, not an image.
+    expect(spy.harness.calls).toContain('peer.request:engine/applyPdfLib');
+    // THE SESSION WAS REBUILT FROM THE HOST'S OWN FILE: a second open, of exactly what the apply wrote.
+    expect(rebuilt).toHaveLength(2);
+    expect(rebuilt[1]).toStrictEqual(result);
+    // AND MAIN'S IMAGE IS THE REBUILT SESSION'S BYTES, by length — the renderer's answer.
+    expect(executed.value.byteLength).toBe(result.length);
+  });
+});
+
 describe('the composition root, SAVING (ADR-0121 addendum)', () => {
   it('saves the host’s bytes into the file by a move, and leaves no copy where the host may read', async () => {
     // BOTH ENDS IN ONE CASE, for the wired pair's second blind spot: `savePipeline.test.ts` stages bytes through a

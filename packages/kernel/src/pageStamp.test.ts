@@ -248,7 +248,7 @@ describe('headerFooterPages', () => {
   });
 
   it('capture always refuses, and names why', async () => {
-    const captured = await captureHeaderFooterPages(await sizedDocument(), STAMP);
+    const captured = await captureHeaderFooterPages(STAMP);
     expect(captured.captured).toBe(false);
     if (captured.captured) throw new Error('capture reported success, which its type forbids');
     expect(captured.reason).toMatch(/content stream/u);
@@ -370,7 +370,7 @@ describe('batesNumberPages', () => {
   });
 
   it('capture always refuses, and invert is unreachable', async () => {
-    const captured = await captureBatesNumberPages(await sizedDocument(), BATES);
+    const captured = await captureBatesNumberPages(BATES);
     expect(captured.captured).toBe(false);
     if (captured.captured) throw new Error('capture reported success, which its type forbids');
     expect(captured.reason).toMatch(/content stream/u);

@@ -8,6 +8,7 @@ import { type ClientApi, createClient, type Incident, wrapHandlers } from '@mons
 
 import { localMupdfExecution } from '../commandSpecs.js';
 import { extractPages } from '../pageExtract.js';
+import { applyPdfLibImage } from '../pdfLibWriter.js';
 import {
   parseAnnotationData,
   readInterchangeAnnotations,
@@ -256,6 +257,8 @@ function joined(
       // same four steps `serialise` takes, and a stub would make the case about
       // the stub.
       extract: extractPages,
+      // THE REAL pdf-lib RUN, for the same reason (ADR-0121 Decision 3): a hosted apply is this trip with a spec in it.
+      applyPdfLib: applyPdfLibImage,
       // AND THE REAL ONE FOR THE SAME REASON: a snapshot takes the identical
       // round trip through the granted area, and this file is where that trip
       // is driven end to end.
@@ -604,6 +607,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         extract: () => {
           throw new Error('the byte-size case must not build a document');
+        },
+        applyPdfLib: () => {
+          throw new Error('the byte-size case must not run pdf-lib');
         },
         snapshot: () => {
           throw new Error('the byte-size case must not rasterise a page');

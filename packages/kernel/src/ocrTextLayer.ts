@@ -20,7 +20,7 @@ import {
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
-import type { Apply, ByteImage, Invert } from './engineSeam.js';
+import type { Apply, Invert } from './engineSeam.js';
 import type { RecognisedLine } from './ocrRecognise.js';
 import { openForWriting } from './pdfLibSession.js';
 
@@ -452,9 +452,8 @@ export function writeRecognisedText(
  * **OCR**.
  */
 export const captureOcrPage: (
-  image: ByteImage,
   command: CommandOfKind<'ocrPage'>,
-) => Promise<CaptureResult<never>> = (_image, _command) =>
+) => Promise<CaptureResult<never>> = (_command) =>
   Promise.resolve({
     captured: false,
     reason:

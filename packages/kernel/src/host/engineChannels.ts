@@ -53,6 +53,14 @@ import {
   rotatePagesSchema,
   setLayerVisibilitySchema,
   swapPagesSchema,
+  watermarkPagesSchema,
+  headerFooterPagesSchema,
+  batesNumberPagesSchema,
+  setPageBackgroundSchema,
+  insertImagePageSchema,
+  createFormFieldSchema,
+  ocrPageSchema,
+  generateTocSchema,
 } from '@monstera/contract/host';
 import { z } from 'zod';
 
@@ -1180,6 +1188,68 @@ export type MupdfChannelCoversEveryRoutedKind = Covers<ChannelKind, KindsRoutedT
 export type MupdfChannelExcludesEveryOtherKind = Excludes<ChannelKind, KindsRoutedTo<'mupdf'>>;
 
 /**
+ * The commands routed to pdf-lib, as `engine/applyPdfLib` carries them to the MuPDF host that runs them
+ * ([ADR-0121](../../../../docs/DECISIONS/0121-main-never-holds-two-images.md) Decision 3). A list, for
+ * {@link mupdfCommandSchema}'s reason, checked against the routing table in both directions below.
+ *
+ * `insertImagePage` travels WITHOUT its image, for `placeImage`'s reason one host over: this wire is JSON, so the
+ * bytes cross as an asset in the session's snapshot directory.
+ */
+const pdfLibCommandSchema = z.discriminatedUnion('kind', [
+  watermarkPagesSchema,
+  headerFooterPagesSchema,
+  batesNumberPagesSchema,
+  setPageBackgroundSchema,
+  insertImagePageSchema.omit({ bytes: true }),
+  createFormFieldSchema,
+  ocrPageSchema,
+  generateTocSchema,
+]);
+
+/** A pdf-lib command, once its asset has been taken out. */
+export type PdfLibWireCommand = z.infer<typeof pdfLibCommandSchema>;
+
+type PdfLibChannelKind = PdfLibWireCommand['kind'];
+export type PdfLibChannelCoversEveryRoutedKind = Covers<PdfLibChannelKind, KindsRoutedTo<'pdf-lib'>>;
+export type PdfLibChannelExcludesEveryOtherKind = Excludes<PdfLibChannelKind, KindsRoutedTo<'pdf-lib'>>;
+
+/**
+ * {@link splitAsset} for a pdf-lib command. The same rule — the declaration's `asset` axis decides — over the other
+ * writer's kinds, so the two cannot disagree about which commands carry bytes.
+ */
+export function splitPdfLibAsset(command: CommandOfKind<KindsRoutedTo<'pdf-lib'>>): {
+  readonly command: PdfLibWireCommand;
+  readonly asset: Uint8Array | undefined;
+} {
+  if (declaredCommands[command.kind].asset === 'none') return { command, asset: undefined };
+  if (!('bytes' in command)) {
+    throw new Error(
+      `"${command.kind}" declares an asset and carries no bytes to send. The declaration and the ` +
+        `payload have diverged, which CommandAsset exists to make impossible.`,
+    );
+  }
+  const { bytes, ...rest } = command;
+  return { command: rest, asset: bytes };
+}
+
+/** {@link joinAsset} for a pdf-lib command: whole again, or `undefined` where the command and asset disagree. */
+export function joinPdfLibAsset(
+  command: PdfLibWireCommand,
+  asset: Uint8Array | undefined,
+): CommandOfKind<KindsRoutedTo<'pdf-lib'>> | undefined {
+  if (!pdfLibCarriesAsset(command)) return asset === undefined ? command : undefined;
+  if (asset === undefined) return undefined;
+  return { ...command, bytes: asset };
+}
+
+/** {@link carriesAsset} over a pdf-lib wire command: both halves from `declaredCommands`, as there. */
+function pdfLibCarriesAsset(
+  command: PdfLibWireCommand,
+): command is Extract<PdfLibWireCommand, { kind: AssetBearingKind }> {
+  return declaredCommands[command.kind].asset !== 'none';
+}
+
+/**
  * How long a handed path may be.
  *
  * Bounded because every field on this wire is, not because a long path is the
@@ -1806,6 +1876,44 @@ export function liveSessionChannels() {
   };
 }
 
+/**
+ * One page's recognised text, as `engine/ocr-page` answers it — and, since ADR-0121 Decision 3, as `main` hands it
+ * back to `engine/applyPdfLib` for the OCR text layer. One schema for both directions, so the value cannot be
+ * accepted leaving the host and refused returning to it.
+ */
+const recognisedPageSchema = z
+  .object({
+    lines: z
+      .array(
+        z
+          .object({
+            text: z.string().max(ENGINE_OCR_LINE_TEXT_MAX),
+            box: ocrBoxSchema,
+            words: z
+              .array(
+                z
+                  .object({
+                    text: z.string().max(ENGINE_OCR_WORD_TEXT_MAX),
+                    box: ocrBoxSchema,
+                    // TESSERACT'S OWN SCALE, 0 to 100, refused outside it.
+                    // A hostile host sending 10,000 would reach a UI that
+                    // renders a confidence as a proportion.
+                    confidence: z.number().min(0).max(100),
+                  })
+                  .strict(),
+              )
+              .max(ENGINE_OCR_WORDS_PER_LINE_MAX)
+              .readonly(),
+          })
+          .strict(),
+      )
+      .max(ENGINE_OCR_LINES_MAX)
+      .readonly(),
+    confidence: z.number().min(0).max(100),
+    languages: ocrLanguagesSchema,
+  })
+  .strict();
+
 export const engineChannels = {
   ...coreEngineChannels({
     command: mupdfCommandSchema,
@@ -1821,6 +1929,36 @@ export const engineChannels = {
   // THE LIVE-SESSION CHANNEL. MuPDF holds a parse between commands, so it owes
   // the channel that hands the parse's bytes back (ADR-0048's correction).
   ...liveSessionChannels(),
+
+  /**
+   * A pdf-lib command, run BESIDE the session it rewrites
+   * ([ADR-0121](../../../../docs/DECISIONS/0121-main-never-holds-two-images.md) Decision 3).
+   *
+   * The host serialises the session it holds, runs the command's pdf-lib spec on that image, and writes the result
+   * into the output directory under the name main chose — answering a count, as `engine/serialise` does. It does not
+   * rebuild its session: main does that through the supervisor's `adopt`, from the file this wrote, which is the one
+   * route a document's session is ever rebuilt by. `main` holds neither the input nor the result, and parses nothing.
+   *
+   * `reads` is the pre-read the bus resolved — the outline a table of contents lists, or the recognition an OCR text
+   * layer draws — because the bus decides what a command is handed, wherever it runs. `asset` is `insertImagePage`'s
+   * picture, by `engine/apply`'s door.
+   */
+  'engine/applyPdfLib': channel(
+    'Runs one pdf-lib command on the image of a session this host holds, and writes the result to the output directory.',
+    z
+      .object({
+        session: sessionSchema,
+        command: pdfLibCommandSchema,
+        asset: outputNameSchema.optional(),
+        reads: z
+          .union([z.array(engineDestinationSchema).max(ENGINE_DESTINATIONS_MAX).readonly(), recognisedPageSchema])
+          .optional(),
+        into: outputNameSchema,
+      })
+      .strict(),
+    z.object({ bytes: z.number().int().nonnegative() }).strict(),
+    ['no-such-session', 'asset-missing', 'apply-failed', 'serialise-failed'],
+  ),
 
   'engine/extract': channel(
     'Writes a NEW document made of the named pages into the output directory.',
@@ -2159,38 +2297,7 @@ export const engineChannels = {
         modelDirectory: pathSchema,
       })
       .strict(),
-    z
-      .object({
-        lines: z
-          .array(
-            z
-              .object({
-                text: z.string().max(ENGINE_OCR_LINE_TEXT_MAX),
-                box: ocrBoxSchema,
-                words: z
-                  .array(
-                    z
-                      .object({
-                        text: z.string().max(ENGINE_OCR_WORD_TEXT_MAX),
-                        box: ocrBoxSchema,
-                        // TESSERACT'S OWN SCALE, 0 to 100, refused outside it.
-                        // A hostile host sending 10,000 would reach a UI that
-                        // renders a confidence as a proportion.
-                        confidence: z.number().min(0).max(100),
-                      })
-                      .strict(),
-                  )
-                  .max(ENGINE_OCR_WORDS_PER_LINE_MAX)
-                  .readonly(),
-              })
-              .strict(),
-          )
-          .max(ENGINE_OCR_LINES_MAX)
-          .readonly(),
-        confidence: z.number().min(0).max(100),
-        languages: ocrLanguagesSchema,
-      })
-      .strict(),
+    recognisedPageSchema,
     // A MODEL THAT CANNOT BE READ IS ITS OWN STATE, and not `ocr-failed`: the
     // two are answered by different people. A grant or a provisioning problem is
     // main's to fix; a page Tesseract will not read is this row's.

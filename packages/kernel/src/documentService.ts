@@ -259,6 +259,12 @@ export type CommandWriter = Brand<'command-writer', 'CommandWriter'>;
 export type EngineSupervisor = Brand<'engine-supervisor', 'EngineSupervisor'>;
 
 /**
+ * A file {@link DocumentContext.holdFile} keeps for one lane entry. Branded so the only way to name one is to have
+ * been handed it — `writeHeld` cannot be pointed at an arbitrary path.
+ */
+export type HeldFile = Brand<{ readonly path: string; readonly byteLength: number }, 'HeldFile'>;
+
+/**
  * Proof that the holder is the save pipeline (rule B3).
  *
  * The third of these, declared beside {@link CommandWriter} and
@@ -472,6 +478,21 @@ export interface DocumentContext {
    * @param write Fills the file at the path it is given, and answers how many bytes it wrote.
    */
   storeCheckpoint(writer: CommandWriter, write: (destination: string) => Promise<number>): Promise<CheckpointFile>;
+
+  /**
+   * Keeps a file in this document's own directory for the rest of this lane entry, and answers it — a hosted
+   * writer's result, moved out of the host's area before the session it came from is rebuilt
+   * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md) Decision 3).
+   *
+   * **Why this exists:** the host writes its result into the session's output directory, and rebuilding the session
+   * removes that directory before it writes the new snapshot — measured by the composition-root case, which failed
+   * with the rename's `ENOENT`. So the result is moved here first, and both the rebuild and the new image are made
+   * from it. Deleted after the lane entry, by the same reconcile that deletes a checkpoint the log does not hold.
+   */
+  holdFile(writer: CommandWriter, fill: (destination: string) => Promise<number>): Promise<HeldFile>;
+
+  /** Copies a {@link holdFile} file to `destination` and answers its length. `main` never reads it. */
+  writeHeld(writer: CommandWriter, held: HeldFile, destination: string): Promise<number>;
 
   /**
    * Writes bytes a byte-image command produced to a destination the session
@@ -1926,6 +1947,13 @@ export class DocumentService {
             return checkpoint.byteLength;
           },
           storeCheckpoint: (_writer, write) => this.#storeCheckpoint(record, write),
+          // THE SAME STORE, a different brand: a held file is in the log's set only by accident of never being
+          // recorded, so the reconcile after this entry deletes it — which is its whole lifetime.
+          holdFile: async (_writer, fill) => (await this.#storeCheckpoint(record, fill)) as HeldFile,
+          writeHeld: async (_writer, held, destination) => {
+            await copyFile(held.path, destination);
+            return held.byteLength;
+          },
           // The token is not read, for `commandLog`'s reason. What confines
           // this one is that a `CommandWriter` cannot be minted outside
           // `commandBus.ts` — there is no brand on `ByteImage` to lean on, so

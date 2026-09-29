@@ -19,6 +19,7 @@ import { readFormFields } from '../formFields.js';
 import { readAnnotations } from '../pageAnnotations.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
 import { extractPages } from '../pageExtract.js';
+import { applyPdfLibImage } from '../pdfLibWriter.js';
 import { rasterisePageImage } from '../pageImages.js';
 import { snapshotRegion } from '../pageSnapshot.js';
 import { recognisePage } from '../ocrRecognise.js';
@@ -134,6 +135,9 @@ const engineHandlers = createEngineHandlers({
   // RUNS HERE, which is the whole reason `engine/extract` is a channel:
   // `extractPages` reaches MuPDF, and invariant 20 keeps that out of `main`.
   extract: extractPages,
+  // pdf-lib, RUN HERE beside the session it rewrites (ADR-0121 Decision 3): pure JavaScript, in the process that
+  // already holds the document, so `main` neither receives the image nor parses it.
+  applyPdfLib: applyPdfLibImage,
   // AND FOR THE SAME REASON, with a second one on top: a raster is the one
   // payload that scales with what the user dragged, so it is built here and
   // written into the granted directory rather than crossing the pipe.

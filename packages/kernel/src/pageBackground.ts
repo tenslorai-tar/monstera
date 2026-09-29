@@ -3,7 +3,7 @@ import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import { COORDINATE_DECIMALS, contentNumber } from './contentNumbers.js';
-import type { Apply, ByteImage, Invert } from './engineSeam.js';
+import type { Apply, Invert } from './engineSeam.js';
 import { pagesOf } from './pageScope.js';
 
 /**
@@ -39,9 +39,8 @@ import { pagesOf } from './pageScope.js';
 
 /** Capture — which always refuses, for `pageWatermark.ts`'s reason. */
 export const captureSetPageBackground: (
-  image: ByteImage,
   command: CommandOfKind<'setPageBackground'>,
-) => Promise<CaptureResult<never>> = (_image, _command) =>
+) => Promise<CaptureResult<never>> = (_command) =>
   Promise.resolve({
     captured: false,
     reason:

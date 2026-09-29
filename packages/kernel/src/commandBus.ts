@@ -52,9 +52,15 @@ import {
   type PreReadAccess,
   type PreReadValue,
   type SessionsByWriter,
+  type ExecutionSession,
+  type HostedWriter,
   type WriterSession,
+  hostedOn,
   writerShapes,
 } from './engineSeam.js';
+// A VALUE IMPORT, and it costs nothing native: `savePipeline.ts` is file writes and `atomicWrite`, and `placeStaged`
+// is how a hosted writer's staged result reaches the directory `adopt` grants (ADR-0121 Decision 3).
+import { type StagedImage, placeStaged } from './savePipeline.js';
 
 /**
  * The one code path from a command to a log entry (ADR-0009 §4).
@@ -144,8 +150,8 @@ function asCheckpoint(file: CheckpointFile): Checkpoint {
  * a byte-image writer's result be dropped.
  */
 interface WriterFor<K extends CommandKind> {
-  serialise(session: WriterSession[WriterOf<K>]): Promise<ByteImage>;
-  serialiseInto(session: WriterSession[WriterOf<K>], destination: string): Promise<number>;
+  serialise(session: ExecutionSession<WriterOf<K>>): Promise<ByteImage>;
+  serialiseInto(session: ExecutionSession<WriterOf<K>>, destination: string): Promise<number>;
   // ONE NAMED REQUEST, mirroring `CommandExecution.apply` — this type is the
   // narrowed view of the same member and cannot be narrower than it. What the
   // bus is obliged to put in it is still decided by `spec.sources` and
@@ -155,16 +161,16 @@ interface WriterFor<K extends CommandKind> {
   // What the request removed is the bus's ability to leave a field out
   // (ADR-0069): every key is required, so `source` and `reads` are decisions
   // taken here rather than arguments that may go unwritten.
-  apply(request: ApplyRequest<WriterOf<K>, K>): Promise<ByteImage | undefined>;
+  apply(request: ApplyRequest<WriterOf<K>, K>): Promise<ByteImage | StagedImage | undefined>;
   capture(
-    session: WriterSession[WriterOf<K>],
+    session: ExecutionSession<WriterOf<K>>,
     command: CommandOfKind<K>,
   ): Promise<CaptureResult<CommandPrior[K]>>;
   invert(
-    session: WriterSession[WriterOf<K>],
+    session: ExecutionSession<WriterOf<K>>,
     kind: K,
     inverse: CommandPrior[K],
-  ): Promise<ByteImage | undefined>;
+  ): Promise<ByteImage | StagedImage | undefined>;
 }
 
 /**
@@ -589,16 +595,21 @@ export class CommandBus {
     writer: WriterOf<K>,
     sessions: SessionsByWriter,
     bytes: ByteImageAccess,
-  ): Promise<WriterSession[WriterOf<K>]> {
-    if (writerShapes[writer] === 'byte-image') {
+  ): Promise<ExecutionSession<WriterOf<K>>> {
+    const shape = writerShapes[writer];
+    if (shape === 'byte-image') {
       // The cast is the same correlation `#writerFor` asserts: `writerShapes`
       // says this writer's session type IS `ByteImage`, and the checker cannot
       // carry that through a generic index.
-      return (await bytes.current()) as WriterSession[WriterOf<K>];
+      return (await bytes.current()) as ExecutionSession<WriterOf<K>>;
     }
-    const session = sessions[writer];
-    if (session === undefined) throw new MissingWriterSessionError(kind, writer);
-    return session;
+    // A HOSTED WRITER RUNS BESIDE ITS HOST'S SESSION, so that is the session it is handed — and `main` never
+    // serialises the document for it (ADR-0121 Decision 3). `hostedOn` names the host; the cast is `#writerFor`'s.
+    const holder: keyof WriterSession =
+      shape === 'hosted-image' ? hostedOn[writer as HostedWriter] : writer;
+    const session = sessions[holder];
+    if (session === undefined) throw new MissingWriterSessionError(kind, holder);
+    return session as ExecutionSession<WriterOf<K>>;
   }
 
   /**
@@ -626,20 +637,38 @@ export class CommandBus {
   async #install<K extends CommandKind>(
     kind: K,
     writer: WriterOf<K>,
-    applied: ByteImage | undefined,
+    applied: ByteImage | StagedImage | undefined,
     context: DocumentContext,
     bytes: ByteImageAccess,
   ): Promise<void> {
-    if (writerShapes[writer] !== 'byte-image') return;
+    const shape = writerShapes[writer];
+    if (shape === 'live-session') return;
     if (applied === undefined) {
       throw new Error(
-        `${kind} is routed to ${writer}, which \`writerShapes\` declares a byte-image writer, ` +
+        `${kind} is routed to ${writer}, which \`writerShapes\` declares a ${shape} writer, ` +
           `so its \`apply\` owes a new document image and returned nothing. The command has run ` +
           `and its result has been discarded.`,
       );
     }
-    await bytes.adopt((destination) => context.writeImage(COMMAND_WRITER, applied, destination));
-    context.replaceCanonicalImage(COMMAND_WRITER, applied);
+    // BY THE DECLARATION, never by the value — the rule this method's header gives. The casts are `#writerFor`'s
+    // correlation: `writerShapes` says which of the two an apply of this writer answers.
+    if (shape === 'byte-image') {
+      const image = applied as ByteImage;
+      await bytes.adopt((destination) => context.writeImage(COMMAND_WRITER, image, destination));
+      context.replaceCanonicalImage(COMMAND_WRITER, image);
+      return;
+    }
+    const staged = applied as StagedImage;
+    // A HOSTED RESULT IS A FILE THE HOST WROTE (ADR-0121 Decision 3), in the session's output directory — which the
+    // rebuild removes before it writes the new snapshot (the composition-root case met it as the move's `ENOENT`).
+    // So it is moved into the document's own directory FIRST, and the rebuild and `main`'s new image are both made
+    // from that one file: the byte-image rule above — the session and the image are the same bytes — kept without
+    // `main` ever holding them. Rebuild first, then replace.
+    const held = await context.holdFile(COMMAND_WRITER, (destination) => placeStaged(staged, destination));
+    await bytes.adopt((destination) => context.writeHeld(COMMAND_WRITER, held, destination));
+    await context.replaceCanonicalImageFrom(COMMAND_WRITER, (destination) =>
+      context.writeHeld(COMMAND_WRITER, held, destination),
+    );
   }
 
   /**
@@ -707,10 +736,11 @@ export class CommandBus {
     const pending = context.log.pastImage;
     for (const entry of pending) {
       const spec = declaredCommands[entry.command.kind];
-      if (writerShapes[spec.writer] === 'byte-image') {
+      if (writerShapes[spec.writer] !== 'live-session') {
         throw new Error(
-          `${entry.command.kind} is past the canonical image's base and is routed to ${spec.writer}, a byte-image ` +
-            `writer whose operation always replaces the image — the base was not moved when it ran.`,
+          `${entry.command.kind} is past the canonical image's base and is routed to ${spec.writer}, a ` +
+            `${writerShapes[spec.writer]} writer whose operation always replaces the image — the base was not moved ` +
+            `when it ran.`,
         );
       }
       const writer = this.#writerFor(entry.command.kind, spec.writer);
@@ -989,7 +1019,7 @@ export class CommandBus {
 
     // THE WINDOW'S BYTES, after the entry and not before it: by here the session has changed,
     // so a serialise that fails must leave the change undoable rather than unlogged.
-    await this.#show(command.kind, context, inputs, writerShapes[spec.writer] === 'byte-image');
+    await this.#show(command.kind, context, inputs, writerShapes[spec.writer] !== 'live-session');
 
     // ENFORCED HERE, because this is the only moment the log grows. §4's budget
     // was consulted at `open` and nowhere else, so checkpoints accumulated for
@@ -1099,7 +1129,7 @@ export class CommandBus {
     await this.#install(entry.command.kind, spec.writer, inverted, context, bytes);
 
     log.undo();
-    await this.#show(entry.command.kind, context, bytes, writerShapes[spec.writer] === 'byte-image');
+    await this.#show(entry.command.kind, context, bytes, writerShapes[spec.writer] !== 'live-session');
     return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
   }
 
@@ -1217,7 +1247,7 @@ export class CommandBus {
     await this.#install(entry.command.kind, spec.writer, applied, context, inputs);
 
     log.redo();
-    await this.#show(entry.command.kind, context, inputs, writerShapes[spec.writer] === 'byte-image');
+    await this.#show(entry.command.kind, context, inputs, writerShapes[spec.writer] !== 'live-session');
     return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
   }
 }

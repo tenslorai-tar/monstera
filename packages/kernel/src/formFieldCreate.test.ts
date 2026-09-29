@@ -417,7 +417,7 @@ describe('createFormField — what it leaves alone', () => {
 
 describe('createFormField — undo, and the schema’s own bounds', () => {
   it('captures nothing, and says why in terms of the /AcroForm rather than the page', async () => {
-    const refused = await captureCreateFormField(await pageOf({}), creating());
+    const refused = await captureCreateFormField(creating());
 
     expect(refused.captured).toBe(false);
     // The REASON, not just the refusal: this command's is measured and differs

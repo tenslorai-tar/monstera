@@ -2,6 +2,8 @@ import { serialiseIntoFile } from './checkpointFile.js';
 import { type RegisteredWriter, localMupdfExecution } from './commandSpecs.js';
 import type { MupdfSession } from './engineSeam.js';
 import { mupdfWriter } from './mupdfWriter.js';
+import { applyPdfLibImage, hostedPdfLibExecution } from './pdfLibWriter.js';
+import { stagedBytes } from './savePipeline.js';
 
 /**
  * The MuPDF writer assembled for a process that holds the session itself
@@ -35,6 +37,22 @@ import { mupdfWriter } from './mupdfWriter.js';
  * the main process. `composition.ts` registers an empty `CommandBus` until a
  * remote writer exists to put there.
  */
+/**
+ * pdf-lib, hosted beside a MuPDF session in THIS process — what the MuPDF host does, run where a test holds the
+ * session ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md) Decision 3).
+ *
+ * The apply serialises the session, runs the spec on the image and stages the result as bytes in hand; the bus then
+ * rebuilds the session from it through `adopt`, as it does for the host. Its checkpoint is the session's serialise,
+ * which is MuPDF's — the same bytes the image was made from.
+ */
+export const localPdfLibWriter: RegisteredWriter<'pdf-lib'> = {
+  serialise: (session) => mupdfWriter.serialise(session),
+  serialiseInto: serialiseIntoFile((session: MupdfSession) => mupdfWriter.serialise(session)),
+  ...hostedPdfLibExecution(async (session, command, reads) =>
+    stagedBytes(await applyPdfLibImage(await mupdfWriter.serialise(session), command, reads)),
+  ),
+};
+
 export const localMupdfWriter: RegisteredWriter<'mupdf'> = {
   ...mupdfWriter,
   // The session is in this process, so a checkpoint is its bytes written out (ADR-0121).

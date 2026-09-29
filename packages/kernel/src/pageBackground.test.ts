@@ -187,7 +187,7 @@ describe('setPageBackground', () => {
   });
 
   it('capture always refuses, and invert is unreachable', async () => {
-    const captured = await captureSetPageBackground(await drawnDocument(), COMMAND);
+    const captured = await captureSetPageBackground(COMMAND);
     expect(captured.captured).toBe(false);
     if (captured.captured) throw new Error('capture reported success, which its type forbids');
     expect(captured.reason).toMatch(/content stream/u);

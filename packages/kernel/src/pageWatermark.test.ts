@@ -298,7 +298,7 @@ describe('watermarkPages', () => {
   });
 
   it('capture always refuses, and names why', async () => {
-    const captured = await captureWatermarkPages(await richDocument(), DRAFT);
+    const captured = await captureWatermarkPages(DRAFT);
 
     // `CommandPrior['watermarkPages']` is `never`, so `{ captured: true }` is
     // not constructible — this cannot report success even if it were written

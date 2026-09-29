@@ -8,12 +8,15 @@ import type { MupdfSession } from '../engineSeam.js';
 import type { DuplicatePageGroup } from '../pageDuplicates.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
 import type { ReadSignature } from '../signatureRead.js';
+import type { PdfLibHost } from '../pdfLibWriter.js';
 import {
   type EngineChannels,
   type MupdfWireCommand,
   splitAsset,
+  splitPdfLibAsset,
   taggedPrior,
 } from './engineChannels.js';
+import { EngineSerialiseMismatch, type SessionAreaSurface } from './remoteLifecycle.js';
 import type {
   HostDestinationsReader,
   HostAnnotationsReader,
@@ -578,6 +581,56 @@ export function remoteMupdfDuplicateReport(
  *   wrapper rather than by a second parse here (B3a).
  * @param sessions main's token registry.
  */
+/**
+ * A pdf-lib command, sent to the MuPDF host that holds `session` and run there, answering the new image STAGED in
+ * the session's output directory ([ADR-0121](../../../../docs/DECISIONS/0121-main-never-holds-two-images.md)
+ * Decision 3). The bus places it where `adopt` rebuilds the session from it; `main` never reads it.
+ *
+ * `insertImagePage`'s picture crosses as an asset, by {@link remoteMupdfExecution}'s `withAsset` rule — written to
+ * the session's snapshot directory for the length of the call and removed whatever it did.
+ *
+ * @param areas the output directory's surface, for placing and discarding what the host wrote
+ */
+export function remotePdfLibHost(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+  areas: Pick<SessionAreaSurface, 'mintName' | 'moveOutput' | 'removeOutput'>,
+  assets: SessionAssets,
+): PdfLibHost {
+  return async (session, command, reads) => {
+    const area = sessions.areaFor(session);
+    const into = areas.mintName();
+    const split = splitPdfLibAsset(command);
+    const asset = split.asset === undefined ? undefined : assets.name();
+    if (asset !== undefined && split.asset !== undefined) {
+      await assets.write(area.snapshotDirectory, asset, split.asset);
+    }
+    let byteLength: number;
+    try {
+      byteLength = answered(
+        'engine/applyPdfLib',
+        await client['engine/applyPdfLib']({
+          session: sessions.handleFor(session),
+          command: split.command,
+          asset,
+          reads,
+          into,
+        }),
+      ).bytes;
+    } finally {
+      if (asset !== undefined) await assets.remove(area.snapshotDirectory, asset);
+    }
+    return {
+      byteLength,
+      place: async (destination) => {
+        const moved = await areas.moveOutput(area, into, destination);
+        if (moved !== byteLength) throw new EngineSerialiseMismatch(byteLength, moved);
+      },
+      discard: () => areas.removeOutput(area, into),
+    };
+  };
+}
+
 export function remoteMupdfExecution(
   client: ClientApi<EngineChannels>,
   sessions: RemoteSessions,

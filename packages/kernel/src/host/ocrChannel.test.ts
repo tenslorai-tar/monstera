@@ -159,6 +159,9 @@ async function joined(ocr: HostOcrReader): Promise<{
       extract: () => {
         throw new Error('a recognition must not build a document');
       },
+      applyPdfLib: () => {
+        throw new Error('a recognition must not run pdf-lib');
+      },
       snapshot: () => {
         throw new Error('a recognition must not write a PNG out');
       },

@@ -402,10 +402,8 @@ describe('writeRecognisedText', () => {
   });
 
   it('captures nothing, and says why undo will cost a checkpoint', async () => {
-    const blank = await PDFDocument.create();
-    blank.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-
-    const captured = await captureOcrPage(await blank.save(), {
+    // NO DOCUMENT: a hosted capture is handed the command alone (ADR-0121 Decision 3).
+    const captured = await captureOcrPage({
       kind: 'ocrPage',
       page: 0,
       languages: ['eng'],

@@ -5,7 +5,7 @@ import type { AnnotationRect, CommandOfKind, CreatedField } from '@monstera/cont
 import { snapRotation } from '@monstera/shared';
 
 import type { CaptureResult } from './commandLog.js';
-import type { Apply, ByteImage, Invert } from './engineSeam.js';
+import type { Apply, Invert } from './engineSeam.js';
 import { openForWriting } from './pdfLibSession.js';
 
 /**
@@ -286,9 +286,8 @@ function put(
  * already holds costs nothing.
  */
 export const captureCreateFormField: (
-  image: ByteImage,
   command: CommandOfKind<'createFormField'>,
-) => Promise<CaptureResult<never>> = (_image, _command) =>
+) => Promise<CaptureResult<never>> = (_command) =>
   Promise.resolve({
     captured: false,
     reason:

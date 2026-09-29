@@ -2,7 +2,8 @@ import type { ClientApi } from '@monstera/contract';
 
 import type { RegisteredWriter } from '../commandSpecs.js';
 import type { EngineChannels } from './engineChannels.js';
-import { remoteMupdfExecution } from './remoteEngine.js';
+import type { PdfLibHost } from '../pdfLibWriter.js';
+import { remoteMupdfExecution, remotePdfLibHost } from './remoteEngine.js';
 import type { RemoteSessions, SessionAssets } from './remoteEngine.js';
 import {
   type RemoteMupdfLifecycle,
@@ -62,7 +63,10 @@ export type RemoteMupdfWriter = RegisteredWriter<'mupdf'> &
   Pick<
     RemoteMupdfLifecycle,
     'close' | 'extract' | 'snapshot' | 'exportFormData' | 'exportAnnotationData' | 'pageImage' | 'stage'
-  >;
+  > & {
+    /** pdf-lib, run in this host beside the session (ADR-0121 Decision 3). `hostedPdfLibExecution` takes it. */
+    readonly pdfLib: PdfLibHost;
+  };
 
 export function remoteMupdfWriter(
   client: ClientApi<EngineChannels>,
@@ -115,6 +119,9 @@ export function remoteMupdfWriter(
     exportFormData,
     exportAnnotationData,
     pageImage,
+    // pdf-lib JOINS for `extract`'s reason: a job needing the same client, sessions, granted areas and assets, and
+    // the one place all four are in hand (ADR-0121 Decision 3).
+    pdfLib: remotePdfLibHost(client, sessions, areas, assets),
     ...remoteMupdfExecution(client, sessions, assets),
   };
 }

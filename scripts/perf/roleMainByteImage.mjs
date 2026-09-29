@@ -14,16 +14,21 @@
  *
  * ## What is real and what stands in
  *
- * REAL: `DocumentService` with the production reader, `CommandBus`, and the shipped local pdf-lib writer
- * (`localPdfLibWriter`, which runs in `main`). STANDING IN: the engine host. `current` is its serialise, and here it
- * is the canonical image written out and read back — a fresh buffer of the document's size, which is what the host's
- * answer is when it reaches `main`. `adopt` writes the new image where the host would reopen it and does no more.
+ * REAL: `DocumentService` with the production reader, `CommandBus`, and the shipped hosted pdf-lib execution
+ * (`hostedPdfLibExecution`, ADR-0121 Decision 3). STANDING IN: the engine host, AS A SEPARATE PROCESS
+ * (`pdfLibHostStandIn.mjs`), because the host's parse is exactly what this role must not charge to `main`. Its
+ * session's image is the canonical image written out; its serialise, moved into place, is the canonical image
+ * written to the destination. `adopt` writes the new image where the host would reopen it and does no more.
+ *
+ * Until Decision 3 this ran pdf-lib in this process through `localPdfLibWriter`, as `main` did — which is how the
+ * 4.0× it recorded was measured.
  *
  * Usage: node scripts/perf/roleMainByteImage.mjs <document-path>
  */
 
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, statSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,7 +44,8 @@ refuseStaleBuild(REPO_ROOT, ROLE_MAIN_SERVICE, 2);
 const { CapabilityRegistry } = await import('../../packages/kernel/dist/capabilityRegistry.js');
 const { DocumentService } = await import('../../packages/kernel/dist/documentService.js');
 const { CommandBus } = await import('../../packages/kernel/dist/commandBus.js');
-const { localPdfLibWriter } = await import('../../packages/kernel/dist/pdfLibWriter.js');
+const { hostedPdfLibExecution } = await import('../../packages/kernel/dist/pdfLibWriter.js');
+const STAND_IN = join(REPO_ROOT, 'scripts', 'perf', 'pdfLibHostStandIn.mjs');
 const { SUPERVISOR_CAPABILITY_FOR_INSTRUMENTS } = await import('../../apps/desktop/dist/engineSessions.js');
 
 const documentPath = process.argv[2];
@@ -126,28 +132,62 @@ const sampledPeak = async (work) => {
   return Math.max(peak, process.memoryUsage().arrayBuffers);
 };
 
+// THE SAMPLER'S CONTROL, run first: an allocation of twice the document, held across a turn. A sampler that could
+// not see this would report every step below as the reassuring one.
+steps['sampler control (2.00 allocated)'] = Number(
+  (
+    (await sampledPeak(async () => {
+      const held = new Uint8Array(size * 2);
+      held[0] = 1;
+      await new Promise((settle) => setTimeout(settle, 20));
+      held[1] = held[0];
+    })) / size
+  ).toFixed(2),
+);
+
+// THE HOST, STANDING IN AS A PROCESS OF ITS OWN (ADR-0121 Decision 3): the session's image written to a file, the
+// pdf-lib spec run by `pdfLibHostStandIn.mjs` in a child, the result left in a file and staged — so what this process
+// holds is what `main` holds.
+let hostRuns = 0;
+/** @type {import('../../packages/kernel/dist/pdfLibWriter.js').PdfLibHost} */
+const standInHost = async (_session, command) => {
+  hostRuns += 1;
+  const input = join(scratch, `host-in-${String(hostRuns)}`);
+  const output = join(scratch, `host-out-${String(hostRuns)}`);
+  await documents.writeCanonicalImage(SUPERVISOR_CAPABILITY_FOR_INSTRUMENTS, outcome.docId, input);
+  const run = spawnSync(process.execPath, [STAND_IN, input, output, JSON.stringify(command)], { stdio: 'inherit' });
+  if (run.status !== 0) throw new Error(`the host stand-in exited ${String(run.status)}`);
+  rmSync(input, { force: true });
+  const byteLength = statSync(output).size;
+  return {
+    byteLength,
+    place: (destination) => rename(output, destination),
+    discard: () => rm(output, { force: true }),
+  };
+};
+const hostSession = /** @type {import('../../packages/kernel/dist/engineSeam.js').MupdfSession} */ (
+  /** @type {unknown} */ ({ engine: 'mupdf' })
+);
+const hosted = hostedPdfLibExecution(standInHost);
+/** @type {import('../../packages/kernel/dist/commandRouting.js').RegisteredWriter<'pdf-lib'>} */
 const writer = {
-  ...localPdfLibWriter,
-  /** @param {Parameters<typeof localPdfLibWriter.capture>} args */
-  capture: async (...args) => {
-    await mark('session (the serialise)');
-    return localPdfLibWriter.capture(...args);
-  },
-  /**
-   * @template {import('../../packages/kernel/dist/commandRouting.js').KindsRoutedTo<'pdf-lib'>} K
-   * @param {import('../../packages/kernel/dist/commandRouting.js').ApplyRequest<'pdf-lib', K>} request
-   */
+  serialise: () => Promise.reject(new Error('the bus serialises nothing into main for a hosted command')),
+  // THE CHECKPOINT, as the host's serialise moved into place: the canonical image is the session's bytes here.
+  serialiseInto: (_session, destination) =>
+    documents.writeCanonicalImage(SUPERVISOR_CAPABILITY_FOR_INSTRUMENTS, outcome.docId, destination),
+  capture: hosted.capture,
+  invert: hosted.invert,
   apply: async (request) => {
     await mark('before apply (with any checkpoint)');
-    const applied = await localPdfLibWriter.apply(request);
-    await mark('after apply (the new image in hand)');
+    const applied = await hosted.apply(request);
+    await mark('after apply (the result staged in the host)');
     return applied;
   },
 };
 const bus = new CommandBus({ 'pdf-lib': writer });
 const executed = await documents.run(outcome.docId, (context) =>
   bus.execute(
-    {},
+    { mupdf: hostSession },
     context,
     { kind: 'watermarkPages', pages: 'all', text: 'DRAFT', opacity: 0.3, rotationDegrees: 45, fontSize: 48 },
     inputs,
@@ -161,14 +201,14 @@ if (process.argv.includes('--twice')) {
   const secondPeak = await sampledPeak(() =>
     documents.run(outcome.docId, (context) =>
       bus.execute(
-        {},
+        { mupdf: hostSession },
         context,
         { kind: 'watermarkPages', pages: 'all', text: 'AGAIN', opacity: 0.3, rotationDegrees: 45, fontSize: 48 },
         inputs,
       ),
     ),
   );
-  steps['sampled peak during the second command (the control)'] = Number((secondPeak / size).toFixed(2));
+  steps['sampled peak during the second command'] = Number((secondPeak / size).toFixed(2));
   steps['service counts after two'] = Number((documents.residentDocumentBytes() / size).toFixed(2));
   await mark('after the second command');
 }
@@ -177,7 +217,7 @@ if (process.argv.includes('--twice')) {
 if (process.argv.includes('--undo')) {
   const undoPeak = await sampledPeak(() =>
     documents.run(outcome.docId, (context) =>
-      bus.undo({}, context, async (write) => {
+      bus.undo({ mupdf: hostSession }, context, async (write) => {
         await write(join(scratch, 'restored'));
       }, inputs),
     ),

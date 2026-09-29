@@ -270,14 +270,18 @@ one engine:
 built without either** ([ADR-0048](DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md),
 2026-09-09).
 
-**A host's reader set is its own engine's.** The twenty-seven channels split
+**A host's reader set is its own engine's.** The twenty-eight channels split
 **six engine-agnostic** — `probe-containment`, `open`, `close`, `apply`,
 `capture`, `invert` — one that belongs to the **live-session shape**,
-`serialise`, and **twenty MuPDF document-model reads**:
+`serialise`, and **twenty-one MuPDF document-model reads**:
 `page-geometry`, `page-text`, `page-links`, `page-fills`, `destinations`, `layers`,
 `annotations`, `annotation-records`, `form-fields`, `exportFormData`, `exportAnnotations`, `flat-fields`,
-`duplicate-pages`, `extract`, `snapshotRegion`, `pageImage`, `ocr-page`,
-`signatures`, `page-barcodes`, `accessibility-check`. **A second engine owes none of the twenty.**
+`duplicate-pages`, `extract`, `applyPdfLib`, `snapshotRegion`, `pageImage`, `ocr-page`,
+`signatures`, `page-barcodes`, `accessibility-check`. **A second engine owes none of the twenty-one.**
+`applyPdfLib` joined on 2026-09-29
+([ADR-0121](DECISIONS/0121-main-never-holds-two-images.md) Decision 3): pdf-lib runs on this session's own
+serialise, in the process that holds it, and writes its result to the output directory — which is `extract`'s
+reason, with a spec in it.
 `page-fills` joined on 2026-09-21 with the Excel row's cell backgrounds: a page's filled shapes,
 which main joins to the table read's cells. `annotation-records` joined the same day with the
 annotation clipboard's copy, which reads the
@@ -292,7 +296,7 @@ and `accessibility-check` with D8's accessibility check
 This paragraph said *twenty* and *thirteen* until the audit of
 `622f794..4971b60`, and *twenty-one* and *fourteen* until the audit of
 `4971b60..09e0f74`, and *twenty-five* and *eighteen* until 2026-09-21, and *twenty-six* and
-*nineteen* until `page-fills` later that day — each time the change that
+*nineteen* until `page-fills` later that day, and *twenty-seven* and *twenty* until `applyPdfLib` — each time the change that
 added the channel updated it in the same commit — the names `coreChannels.test.ts` holds as a
 literal, which is what reddened first.
 

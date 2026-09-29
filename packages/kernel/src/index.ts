@@ -513,7 +513,13 @@ export { type SearchOptions, type TextMatch, findInPages, lineOf } from './textS
 //
 // So the check to run before adding anything beside this is the same one:
 // follow the new module's imports and confirm none of them binds native code.
-export { localPdfLibWriter, pdfLibWriter } from './pdfLibWriter.js';
+export {
+  type PdfLibCommand,
+  type PdfLibHost,
+  applyPdfLibImage,
+  hostedPdfLibExecution,
+  pdfLibWriter,
+} from './pdfLibWriter.js';
 // ON THE MAIN BARREL, for `localPdfLibWriter`'s reason: pdf-lib and `@signpdf` are
 // plain JavaScript, so nothing native enters the graph of the composition root
 // that imports this. Until 2026-09-13 it was exported nowhere a composition could

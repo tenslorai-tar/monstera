@@ -1,21 +1,16 @@
 import type { Command, CommandKind, CommandOfKind } from '@monstera/contract';
 
-import { serialiseIntoFile } from './checkpointFile.js';
 import type { CaptureResult, CommandPrior } from './commandLog.js';
 import { declaredCommands } from './commandDeclarations.js';
-import type {
-  ApplyRequest,
-  CommandExecution,
-  KindsRoutedTo,
-  RegisteredWriter,
-} from './commandRouting.js';
+import type { CommandExecution, KindsRoutedTo } from './commandRouting.js';
 import type {
   ByteImage,
   Capture,
   EngineWriter,
-  Invert,
+  MupdfSession,
   PreReadValue,
 } from './engineSeam.js';
+import type { StagedImage } from './savePipeline.js';
 import {
   applySetPageBackground,
   captureSetPageBackground,
@@ -250,19 +245,19 @@ function specFor(command: Command): (typeof pdfLibSpecs)[PdfLibKind] {
 }
 
 /**
- * Executing pdf-lib commands **in this process**, which for this writer is the
- * only process there is.
+ * Running a pdf-lib command's spec against an IMAGE — what the MuPDF host does with its session's serialise
+ * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md) Decision 3).
  *
- * The MuPDF equivalent is named `local` to distinguish it from the remote one
- * that sends a command to the host holding the session. There is no remote
- * counterpart here and there is not going to be one: a byte-image writer's
- * session is the bytes, so "executing where the session is" means executing
- * where the bytes are, which is `main`.
+ * **This said *"there is no remote counterpart here and there is not going to be one … executing where the bytes
+ * are, which is `main`"* until 2026-09-29.** The premise was that a byte-image writer's session must be in `main`;
+ * the cost was the whole image serialised into `main` and parsed there, measured at 4.0× against §9.17's 1.5× and
+ * *"never parses"*. The bytes are where the host is, so this runs there; `main` registers
+ * {@link hostedPdfLibExecution}.
  *
  * Every member is a lookup and a call. There is no switch — §6's routing does
  * the dispatch, and a switch would be a second routing place.
  */
-export const localPdfLibExecution: CommandExecution<'pdf-lib'> = {
+const pdfLibImageExecution = {
   // METHOD SYNTAX, so `K` is in scope for the assertion — an arrow would put
   // the cast at `CommandKind`, the whole union, which widens `capture`'s prior
   // state to a union too and stops it being assignable to `CommandPrior[K]`.
@@ -282,11 +277,11 @@ export const localPdfLibExecution: CommandExecution<'pdf-lib'> = {
   // resolves byte-image × `sources: 'one'` to `never`, so no pdf-lib command
   // can be handed one; the request still carries the field, because the bus
   // must decide it rather than omit it, and this writer simply does not name it.
-  apply<K extends KindsRoutedTo<'pdf-lib'>>({
-    session: image,
-    command,
-    reads,
-  }: ApplyRequest<'pdf-lib', K>): Promise<ByteImage> {
+  apply<K extends KindsRoutedTo<'pdf-lib'>>(
+    image: ByteImage,
+    command: CommandOfKind<K>,
+    reads: PreReadValue | undefined,
+  ): Promise<ByteImage> {
     // THE CAST NAMES AN OPTIONAL THIRD PARAMETER, and that spelling is the
     // whole of this line's design rather than a convenience.
     //
@@ -324,34 +319,52 @@ export const localPdfLibExecution: CommandExecution<'pdf-lib'> = {
     // are still the only thing between the outline and the floor.
     return (specFor(command).apply as PdfLibApply<K>)(image, command, reads);
   },
-  capture<K extends CommandKind>(
-    image: ByteImage,
-    command: CommandOfKind<K>,
-  ): Promise<CaptureResult<CommandPrior[K]>> {
-    return (specFor(command).capture as Capture<'pdf-lib', K>)(image, command);
-  },
-  invert<K extends CommandKind>(
-    image: ByteImage,
-    kind: K,
-    inverse: CommandPrior[K],
-  ): Promise<ByteImage> {
-    // The same narrowing for the mirror-image reason `localMupdfExecution`
-    // gives: indexing over a generic `kind` yields the union of specs, whose
-    // `invert` parameter is the intersection of every prior-state type.
-    return (specFor({ kind } as Command).invert as Invert<'pdf-lib', K>)(image, inverse);
+  capture<K extends CommandKind>(command: CommandOfKind<K>): Promise<CaptureResult<CommandPrior[K]>> {
+    return (specFor(command).capture as Capture<'pdf-lib', K>)(command);
   },
 };
 
+/** A command routed to pdf-lib. */
+export type PdfLibCommand = CommandOfKind<KindsRoutedTo<'pdf-lib'>>;
+
 /**
- * The pdf-lib writer as the bus registers it.
- *
- * `localEngine.ts`'s shape, and the two halves are intersected for the same
- * reason: a registration missing either is a writer the bus cannot use. The
- * difference is where it may be imported from, which is the whole of this
- * file's header.
+ * A pdf-lib command's spec run against `image`, answering the new image — the host's half of a hosted apply, and the
+ * one place the dispatch over the spec table is written.
  */
-export const localPdfLibWriter: RegisteredWriter<'pdf-lib'> = {
-  ...pdfLibWriter,
-  serialiseInto: serialiseIntoFile((session: ByteImage) => pdfLibWriter.serialise(session)),
-  ...localPdfLibExecution,
-};
+export function applyPdfLibImage(
+  image: ByteImage,
+  command: PdfLibCommand,
+  reads: PreReadValue | undefined,
+): Promise<ByteImage> {
+  return pdfLibImageExecution.apply(image, command, reads);
+}
+
+/**
+ * Runs a pdf-lib command beside `session` — in the process that holds it — and answers the new image staged where
+ * that process wrote it. The MuPDF host's channel in `main`; a local MuPDF session's serialise in a test.
+ */
+export type PdfLibHost = (
+  session: MupdfSession,
+  command: PdfLibCommand,
+  reads: PreReadValue | undefined,
+) => Promise<StagedImage>;
+
+/**
+ * The pdf-lib writer's execution as `main` registers it: the apply runs in the MuPDF host, beside the session it
+ * rewrites, and `main` receives a staged file ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)
+ * Decision 3).
+ *
+ * `capture` answers here, from the command alone, because every pdf-lib capture's prior state is `never` and none
+ * reads the document ({@link Capture}'s hosted form cannot be handed one). `invert` is unreachable for the same
+ * reason — an entry holding a pdf-lib inverse cannot be built — and says so if it is ever called.
+ */
+export function hostedPdfLibExecution(host: PdfLibHost): CommandExecution<'pdf-lib'> {
+  return {
+    apply: ({ session, command, reads }) => host(session, command, reads),
+    capture: (_session, command) => pdfLibImageExecution.capture(command),
+    invert: (_session, kind) =>
+      Promise.reject(
+        new Error(`${kind} is not invertible — its prior state is never — so nothing can hold an inverse to run.`),
+      ),
+  };
+}
