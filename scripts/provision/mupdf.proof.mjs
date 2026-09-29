@@ -234,10 +234,17 @@ async function main() {
   return 0;
 }
 
+// ENDED BY AN EMPTY LOOP, never by `process.exit`. Node's exit disposes the platform while the isolate is alive and
+// joins its workers, and a V8 background job parked on a GC the exiting thread never runs waits for ever
+// (nodejs/node#54918): this proof hung after printing its pass in 13 of 30 loaded runs that way, and in 0 of 30 with
+// the status set and the loop left to empty (`docs/JOURNAL.md`, 2026-09-28). Nothing here holds a handle past `main`,
+// so the process ends on its own when `main` settles.
 main().then(
-  (status) => process.exit(status),
+  (status) => {
+    process.exitCode = status;
+  },
   (error) => {
     process.stderr.write(`\n${formatError(error)}\n`);
-    process.exit(1);
+    process.exitCode = 1;
   },
 );
