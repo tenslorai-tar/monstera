@@ -1,8 +1,10 @@
+// @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 
 import { type MessageKey, messageKey } from '@monstera/shared';
 
 import { foldGroups, foldRow, ribbonUnits, splitFold, type GroupWidths, type RibbonUnit } from './ribbonFolding.js';
+import { innerWidthOf } from './useRibbonFold.js';
 
 /**
  * The ribbon's fold, over widths alone.
@@ -305,5 +307,26 @@ describe('splitFold — nothing is lost when a group folds', () => {
     const narrow = splitFold(mixed, { shown: 2, more: true });
     expect(buttons(narrow.shown)).toStrictEqual(['open', 'save']);
     expect(ids(narrow.folded)).toStrictEqual(['print', 'save-copy', 'pdfa']);
+  });
+});
+
+describe('innerWidthOf', () => {
+  /** A row as the browser reports it: a box width, and the padding and border its computed style carries. */
+  function row(box: number, style: Partial<CSSStyleDeclaration>): HTMLElement {
+    const element = document.createElement('div');
+    Object.assign(element.style, style);
+    element.getBoundingClientRect = () => ({ width: box }) as DOMRect;
+    document.body.append(element);
+    return element;
+  }
+
+  it('is the CONTENT box — the box less its padding AND its border, the case CI measured on Linux', () => {
+    // The failing case's own numbers (2026-09-29): box 972, 8 px padding and a 1 px border each side, groups
+    // summing to 955.97. The room is 954, and 955.97 does not fit it.
+    const bordered = row(972, { paddingLeft: '8px', paddingRight: '8px', borderLeft: '1px solid', borderRight: '1px solid' });
+    expect(innerWidthOf(bordered)).toBe(954);
+    // CONTROL: the same row without a border has the 2 px back, so the case above is the border being subtracted
+    // rather than a constant — and a rule that ignored the border would answer 956 for both.
+    expect(innerWidthOf(row(972, { paddingLeft: '8px', paddingRight: '8px' }))).toBe(956);
   });
 });

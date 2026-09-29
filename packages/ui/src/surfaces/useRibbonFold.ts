@@ -190,7 +190,14 @@ function same(left: readonly GroupFold[], right: readonly GroupFold[]): boolean 
 }
 
 /**
- * The width the row's items may occupy inside `row`: its box less its padding.
+ * The width the row's items may occupy inside `row`: its CONTENT box — its box less its padding and its border.
+ *
+ * **The border was missing until 2026-09-29.** v5 draws the ribbon with a 1 px border on every side
+ * (`app.css`), so a row whose groups summed to within 2 px of its padding box fitted the fold's arithmetic and
+ * scrolled sideways on screen, by exactly 2 px. Measured on the failing case: box 972, padding 16, groups 955.97 —
+ * room 956 by the old rule, 954 in fact. It surfaced only where some font's widths happened to land in that 2 px,
+ * which is why CI's Linux fonts found it and this machine's did not until a sweep under other fonts reproduced it
+ * at seven widths.
  *
  * **Two things the row's own box is not**: its border box includes the padding the groups sit
  * inside, and the flex gaps between items are space no group is charged for. Measuring the border
@@ -202,10 +209,14 @@ function same(left: readonly GroupFold[], right: readonly GroupFold[]): boolean 
  * Read from the computed style rather than restated here: `app.css` owns those numbers, and a copy
  * would be right until somebody changed the padding (B3).
  */
-function innerWidthOf(row: HTMLElement): number {
+export function innerWidthOf(row: HTMLElement): number {
   const style = getComputedStyle(row);
-  const padding = (Number.parseFloat(style.paddingLeft) || 0) + (Number.parseFloat(style.paddingRight) || 0);
-  return row.getBoundingClientRect().width - padding;
+  const sides = (left: string, right: string): number => (Number.parseFloat(left) || 0) + (Number.parseFloat(right) || 0);
+  return (
+    row.getBoundingClientRect().width -
+    sides(style.paddingLeft, style.paddingRight) -
+    sides(style.borderLeftWidth, style.borderRightWidth)
+  );
 }
 
 /** The gap between two items in the row, from the computed style `app.css` owns. */
