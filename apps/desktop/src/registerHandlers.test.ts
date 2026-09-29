@@ -201,6 +201,9 @@ function handlers() {
     ocrLanguages: () => {
       throw new Error('registration cases must not read the model directory');
     },
+    components: () => {
+      throw new Error('registration cases must not read the native components');
+    },
   });
 }
 

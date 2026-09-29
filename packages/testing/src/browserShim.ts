@@ -17,6 +17,7 @@ import {
   MAX_IMAGE_BYTES,
   MAX_LIBRARY_ENTRIES,
   type LibraryEntry,
+  NATIVE_COMPONENT_IDS,
   SECRET_SETTING_IDS,
   channels,
   createClient,
@@ -858,6 +859,23 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      */
     'app.ocrLanguages': () =>
       Promise.resolve(ok({ languages: [...(options.ocrLanguages ?? ['eng'])] })),
+
+    // A BROWSER HOLDS NO NATIVE COMPONENT (ADR-0122), so each is present by name only, and verified when asked — the
+    // dialog's states, with nothing standing for a version the shim does not have.
+    'app.components': ({ verify }) =>
+      Promise.resolve(
+        ok({
+          components: NATIVE_COMPONENT_IDS.map((id) => ({
+            id,
+            name: id,
+            version: 'shim',
+            state: verify ? ('verified' as const) : ('present' as const),
+            missing: 0,
+            altered: 0,
+            extra: 0,
+          })),
+        }),
+      ),
 
     'document.open': () => {
       const answer = queuedOpens.shift() ?? { kind: 'cancelled' as const };

@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 
 import type { EngineHostPlatform } from './composition.js';
 import { providedConverterExecutable } from './containedProgram.js';
+import { nativeComponentPath } from './nativeComponents.js';
 import type { ConverterPlatform } from './converterSession.js';
 import { LAYOUT_TEXT_BOUNDS } from './layoutText.js';
 import { OFFICE_BOUNDS } from './officeConversion.js';
@@ -93,29 +94,20 @@ function hostEntryPath(file: string): string {
  * `electronBinaryPath` for exactly this reason and is the one process that both
  * knows the repository root and starts the shell.
  *
- * ## `null` IS A REAL STATE AND IT IS THE PACKAGED ONE
+ * ## A PACKAGED BUILD asks the same resolver (ADR-0122)
  *
- * A packaged build has no launcher and no `.tools/` tree, and
- * `docs/ARCHITECTURE.md` says a provisioned binary is *"resolved from
- * `app.asar.unpacked` when packaged"* — a mechanism that does not exist yet,
- * because no installer has been built. Guessing at it here would be a resolver
- * written against an unobserved layout, so this answers `null` instead and the
- * PDFium host is simply not created: a command routed to `pdfium` is then
- * refused **by name** at the registry, which is `CommandBus`' existing answer
- * for an unregistered writer rather than a native call into nothing.
- *
- * The `docs/FEATURES.md` HD-render and text-editing rows carry that as owed
- * work with packaging as the trigger, which is where an event-expiring claim
- * belongs.
+ * This answered `null` for every packaged build until 2026-09-29, rather than
+ * guess at a layout no installer had produced. The layout is decided now —
+ * `resources/native/pdfium/pdfium.dll` — and `nativeComponents.ts` is the one
+ * place that knows it. `null` remains a real state: a build without PDFium
+ * creates no PDFium host, and a command routed to `pdfium` is refused **by
+ * name** at the registry rather than a native call into nothing.
  */
 function pdfiumLibraryPath(): string | null {
-  const supplied = process.env['MONSTERA_PDFIUM_LIBRARY'];
-  // EMPTY IS ABSENT. A variable set to nothing is what a shell produces from an
-  // unset variable it expanded, and passing `''` on would make the host's own
-  // refusal — which is correct and loud — fire in a process whose stderr goes to
-  // an inherited handle nobody is reading.
-  if (supplied === undefined || supplied.length === 0) return null;
-  return supplied;
+  // THE ONE RESOLVER (ADR-0122), which keeps EMPTY IS ABSENT: a variable set to nothing is what a shell produces
+  // from an unset variable it expanded, and passing `''` on would make the host's own refusal — correct and loud —
+  // fire in a process whose stderr goes to an inherited handle nobody is reading.
+  return nativeComponentPath('pdfium');
 }
 
 /**
@@ -352,7 +344,7 @@ export const LAYOUT_TEXT_CONTAINER = 'monstera-text-converter';
  * who owns them — and its own container, so its DACLs name nothing a host holds.
  */
 export function createLayoutTextPlatform(base: EngineHostPlatform): ConverterPlatform | null {
-  const executable = providedConverterExecutable('MONSTERA_POPPLER_EXECUTABLE', process.env);
+  const executable = providedConverterExecutable('poppler');
   if (executable === null) return null;
   const container = hostContainerSid(LAYOUT_TEXT_CONTAINER);
   if (!container.ok) return null;
@@ -377,7 +369,7 @@ export const PDFA_CONTAINER = 'monstera-pdfa-converter';
  * executable and bounds (ADR-0075). `null` where no executable was handed down.
  */
 export function createPdfaPlatform(base: EngineHostPlatform): ConverterPlatform | null {
-  const executable = providedConverterExecutable('MONSTERA_GHOSTSCRIPT_EXECUTABLE', process.env);
+  const executable = providedConverterExecutable('ghostscript');
   if (executable === null) return null;
   const container = hostContainerSid(PDFA_CONTAINER);
   if (!container.ok) return null;
@@ -402,7 +394,7 @@ export const OFFICE_CONTAINER = 'monstera-office-converter';
  * executable and bounds (ADR-0120). `null` where no executable was handed down.
  */
 export function createOfficePlatform(base: EngineHostPlatform): ConverterPlatform | null {
-  const executable = providedConverterExecutable('MONSTERA_ONLYOFFICE_EXECUTABLE', process.env);
+  const executable = providedConverterExecutable('onlyoffice');
   if (executable === null) return null;
   const container = hostContainerSid(OFFICE_CONTAINER);
   if (!container.ok) return null;
@@ -422,15 +414,14 @@ export function createOfficePlatform(base: EngineHostPlatform): ConverterPlatfor
 /**
  * Where `monstera_mupdf.dll` is, for Optimize (ADR-0087), or `null`.
  *
- * {@link pdfiumLibraryPath}' shape and its reasons: the launcher answers it, empty is absent, and
- * `null` is the packaged state until packaging resolves the path. Read HERE ONLY, into the compose
+ * {@link pdfiumLibraryPath}' shape and its reasons: the one resolver answers it (ADR-0122), empty is absent, and
+ * `null` is a build without the shim. Read HERE ONLY, into the compose
  * host's command line: the host then answers Optimize `unavailable` itself, so `main` never forms
  * a second opinion about whether the library is there.
  */
 function mupdfShimPath(): string | null {
-  const supplied = process.env['MONSTERA_MUPDF_SHIM'];
-  if (supplied === undefined || supplied.length === 0) return null;
-  return supplied;
+  // THE ONE RESOLVER (ADR-0122): the launcher's variable in development, the package's folder when packaged.
+  return nativeComponentPath('mupdf-shim');
 }
 
 export function createComposeHostPlatform(base: EngineHostPlatform): EngineHostPlatform | null {

@@ -93,7 +93,15 @@ export const noInstallRootWrites = {
         if (node.computed || node.property.type !== 'Identifier') return;
         const name = node.property.name;
 
-        if (name === 'getAppPath' || name === 'resourcesPath') {
+        if (name === 'getAppPath') {
+          context.report({ node: node.property, messageId: 'installRoot', data: { name } });
+          return;
+        }
+
+        // `resourcesPath` is CONFINED, not banned, since ADR-0122: a packaged build must LOAD its native components
+        // from the package, read-only, and `entry.ts` is the one file that asks where that is and hands the folder
+        // to the resolver — `getPath`'s discipline. A write there still fails on every real install.
+        if (name === 'resourcesPath' && !isOwner) {
           context.report({ node: node.property, messageId: 'installRoot', data: { name } });
           return;
         }
@@ -123,6 +131,6 @@ export const PLANTED_INSTALL_ROOT_OFFENDER = [
   "import { app } from 'electron';",
   '',
   'export function where(): readonly string[] {',
-  '  return [app.getAppPath(), app.getPath("userData")];',
+  '  return [app.getAppPath(), app.getPath("userData"), process.resourcesPath];',
   '}',
 ].join('\n');

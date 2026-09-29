@@ -178,6 +178,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     cloud: unconfiguredCloud(),
     readDictionary: () => Promise.resolve(null),
     ocrLanguages: () => Promise.resolve([]),
+    components: () => Promise.resolve([]),
   });
 }
 

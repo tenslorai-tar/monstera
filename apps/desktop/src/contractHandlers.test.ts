@@ -219,6 +219,7 @@ function harness(
     // machine with nothing provisioned is in, and a fixture in it would make
     // every case here exercise that one.
     ocrLanguages: () => Promise.resolve(['eng' as const]),
+    components: () => Promise.resolve([]),
   });
   return {
     capabilities,
@@ -595,6 +596,7 @@ describe('document.open', () => {
     cloud: unconfiguredCloud(),
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
+      components: () => Promise.resolve([]),
         }),
       };
     }
@@ -939,6 +941,7 @@ describe('the recent list', () => {
     cloud: unconfiguredCloud(),
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
+      components: () => Promise.resolve([]),
     });
 
     await handlers['document.openRecent']({ handle });
@@ -1000,6 +1003,7 @@ settings: createEphemeralSettings(),
     cloud: unconfiguredCloud(),
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
+      components: () => Promise.resolve([]),
     });
 
     await expect(handlers['log.reveal']({})).resolves.toEqual({
@@ -1055,6 +1059,7 @@ settings: createEphemeralSettings(),
       cloud: unconfiguredCloud(),
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
+      components: () => Promise.resolve([]),
     });
     return { handlers, secrets, asked };
   }
@@ -1175,6 +1180,7 @@ settings: createEphemeralSettings(),
       cloud: unconfiguredCloud(),
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
+      components: () => Promise.resolve([]),
     });
     return { handlers, asked };
   }
@@ -1302,6 +1308,7 @@ settings,
       cloud: unconfiguredCloud(),
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
+      components: () => Promise.resolve([]),
     });
     return { handlers, saved };
   }
@@ -1467,6 +1474,7 @@ settings: createEphemeralSettings(),
       cloud,
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
+      components: () => Promise.resolve([]),
     });
     return { handlers, uploaded };
   }

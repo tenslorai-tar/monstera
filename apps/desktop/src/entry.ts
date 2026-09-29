@@ -13,6 +13,7 @@ import { sweepCheckpointDirectories } from '@monstera/kernel';
 import { BrowserWindow, app, clipboard, crashReporter, nativeImage, safeStorage, shell } from 'electron';
 
 import { createShellDependencies } from './composition.js';
+import { setNativeSource } from './nativeComponents.js';
 import {
   createAnnotationDataPicker,
   createDestinationPicker,
@@ -139,6 +140,10 @@ startShell(() => {
   // Evaluated inside the lambda, which is the whole of what the lambda is for:
   // everything here reads the single-instance lock as *this process owns the
   // session root*, and `createEngineHostPlatform` sweeps that root.
+  // WHERE THE NATIVE COMPONENTS ARE (ADR-0122), told to the one resolver before anything resolves one: the package's
+  // `resources/native` folder, read-only, when packaged — the one file that may ask Electron that — and otherwise the
+  // launcher's variables, which is the resolver's own default.
+  if (app.isPackaged) setNativeSource({ kind: 'packaged', folder: join(process.resourcesPath, 'native') });
   const enginePlatform = createEngineHostPlatform(
     join(app.getPath('sessionData'), 'engine-sessions'),
   );

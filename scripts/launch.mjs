@@ -44,6 +44,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -57,6 +58,7 @@ import { x2tPath } from './provision/onlyoffice.mjs';
 import { pdftotextPath } from './provision/poppler.mjs';
 import { tessdataDirectory, tessdataPath } from './provision/tessdata.mjs';
 import { formatError } from './lib/reportError.mjs';
+import { nativeManifest } from './release/nativeManifest.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -201,6 +203,18 @@ async function onlyofficeEnvironment() {
   return { MONSTERA_ONLYOFFICE_EXECUTABLE: executable };
 }
 
+/**
+ * THE COMPONENTS' MANIFEST (ADR-0122), generated from the provisioning pins at every launch into `.tools/` — the
+ * package carries its own beside the components; a development shell reads this one, so the Components dialog can
+ * verify the trees the variables above point at.
+ */
+function nativeManifestEnvironment() {
+  const path = resolve(REPO_ROOT, '.tools', 'native-manifest.json');
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(nativeManifest(REPO_ROOT), null, 2)}\n`, 'utf8');
+  return { MONSTERA_NATIVE_MANIFEST: path };
+}
+
 async function main() {
   refuseStaleBuild(REPO_ROOT, SHELL_LAUNCH, 7);
   const binary = await resolveRuntime();
@@ -218,6 +232,7 @@ async function main() {
       ...(await popplerEnvironment()),
       ...(await ghostscriptEnvironment()),
       ...(await onlyofficeEnvironment()),
+      ...nativeManifestEnvironment(),
     },
     // No shell. The path is composed from a pinned version and a platform key,
     // but a shell would reinterpret whatever the repository root happens to

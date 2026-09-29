@@ -1159,6 +1159,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         cloud: unconfiguredCloud(),
           readDictionary: () => Promise.resolve(null),
           ocrLanguages: () => Promise.resolve([]),
+          components: () => Promise.resolve([]),
         })['document.viewModel'],
         new IncidentLog(sink),
       );
@@ -1741,6 +1742,7 @@ describe('search is E2s first consumer, through the composition point', () => {
         cloud: unconfiguredCloud(),
         readDictionary: () => Promise.resolve(null),
         ocrLanguages: () => Promise.resolve([]),
+        components: () => Promise.resolve([]),
       });
       return { bodies, handlers };
     }

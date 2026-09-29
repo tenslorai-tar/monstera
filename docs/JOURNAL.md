@@ -892,6 +892,30 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-29 — ADR-0122 built: one resolver for the native components, and Help › Components shows their status
+
+Six components — PDFium, Poppler, Ghostscript, ONLYOFFICE's converter, the MuPDF shim and the OCR models — were
+found by three modules reading their own environment variables, and a packaged build resolved none of them. One
+module, `apps/desktop/src/nativeComponents.ts`, now answers where each is: `resources/native/<id>/` beside a
+`manifest.json` in a packaged build, the launcher's variables in development. `entry.ts` sets the packaged source
+once and is the only file that reads `process.resourcesPath` (`noInstallRootWrites` confines it there rather than
+banning it). `scripts/release/nativeManifest.mjs` writes the manifest from the pins provisioning already verifies —
+every file's SHA-256, and the shim's from the built DLL — and `launch.mjs` writes one for a development run.
+
+**Status only, by the owner's order of this day**: every component ships inside the MSIX, so the row's *download*
+was withdrawn and no control offers one. `app.components` answers name, version and state per component, and the
+first look only `stat`s; hashing some hundreds of megabytes is *Verify files*. A manifest that does not parse is a
+failure rather than *absent*, because showing a damaged package's components as merely missing is the reassuring
+answer to the question Verify asks. Extra files are counted only in a packaged folder, where the manifest decides the
+set; a development tree legitimately holds a build's own records beside the shim.
+
+Pair: `componentStatus.test.ts` (seven cases against real files; the hash comparison removed, the altered-bytes case
+red) and `showComponents.test.ts` (the first look sends `verify: false` and only *Verify files* sends `true` —
+`verify` forced to `true`, both red; the dialog's props are the channel's own list schema, and a state the channel
+does not declare is refused). Help: *Check Monstera's components*.
+
+---
+
 ## 2026-09-29 — Help centre screenshots: 91 of 138, stopped by the owner, and what capturing them showed
 
 The article parser keeps `![alt](screenshot:id)` as a block and the Help centre draws the bundled capture with that

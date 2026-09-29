@@ -542,13 +542,13 @@ async function main() {
         .filter((message) => message.ruleId === INSTALL);
 
       check(
-        'the install root and a stray app.getPath are BOTH reported, at error severity',
-        found.filter((message) => message.severity === 2).length === 2,
+        'the install root, a stray app.getPath and a stray resourcesPath are ALL reported, at error severity',
+        found.filter((message) => message.severity === 2).length === 3,
         `findings on the planted module: ${
           found.map((m) => `${m.ruleId}(${String(m.severity)})`).join(', ') || 'none'
-        }\n      TWO, not one: the rule has two branches with opposite scopes — an outright ban ` +
-          `on the install root and a confinement of \`app.getPath\` to entry.ts — and a fixture ` +
-          `exercising one leaves the other unproven.`,
+        }\n      THREE: an outright ban on \`getAppPath\`, and two confinements to entry.ts — ` +
+          `\`app.getPath\` and, since ADR-0122, \`process.resourcesPath\` — and a fixture exercising ` +
+          `fewer leaves a branch unproven.`,
       );
 
       // THE CONFINEMENT'S OTHER HALF. Without this the rule passes as an

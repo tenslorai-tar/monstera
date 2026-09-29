@@ -3538,6 +3538,47 @@ textarea {
   margin: 0;
 }
 
+/* COMPONENTS (ADR-0122): a line, the table of components, then Verify. Status only: nothing here downloads. */
+.m-components {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  max-inline-size: 36rem;
+}
+
+.m-components__line {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.m-components__table {
+  border-collapse: collapse;
+  inline-size: 100%;
+}
+
+.m-components__table th,
+.m-components__table td {
+  padding: var(--space-4) var(--space-8);
+  text-align: start;
+  vertical-align: top;
+  border-block-end: 1px solid var(--border-soft); /* decorative: separates rows; nothing in the table is operable */
+}
+
+.m-components__table thead th {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.m-components__detail {
+  display: block;
+  color: var(--muted);
+}
+
+.m-components__actions {
+  display: flex;
+  gap: var(--space-8);
+}
+
 /* CLOUD STORAGE (ADR-0091): a provider per row with where it stands, its actions beneath, and its
    PDFs listed under it when asked for. */
 .m-cloud {

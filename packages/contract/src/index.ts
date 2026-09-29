@@ -77,6 +77,8 @@ export {
   spellingLanguageSchema,
   channelIds,
   channels,
+  NATIVE_COMPONENT_IDS,
+  type NativeComponentId,
   // THE CAMERA'S FRAMES, exported because the capture dialog's result takes the same
   // schema the channel does, so the two cannot disagree about what may be sent.
   capturedFramesSchema,

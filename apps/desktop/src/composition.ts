@@ -225,6 +225,7 @@ import { createAssistant } from './assistant.js';
 import type { PrintDestination } from './printing.js';
 import type { ShareDestination } from './sharing.js';
 import { provisionedModelDirectory, provisionedOcrLanguages } from './ocrModels.js';
+import { componentStatuses } from './componentStatus.js';
 import { type ByteVerdict, rasterWithinLimit } from './rasterWithinLimit.js';
 import { readSpellingDictionary } from './spellingDictionaries.js';
 import type { ShellDependencies, ShellWindow } from './main.js';
@@ -1611,6 +1612,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // way. An empty answer is the state a machine with no provisioned models is
       // in, and the OCR dialog is where that is said.
       ocrLanguages: provisionedOcrLanguages,
+      components: (verify) => componentStatuses({ verify }),
       titleBarOverlay: (overlay) => {
         if (shellWindow === null) return false;
         shellWindow.setTitleBarOverlay(overlay);

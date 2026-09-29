@@ -582,6 +582,20 @@ export const ABOUT_LICENCE = messageKey('dialog.about.licence');
 export const ABOUT_COPYRIGHT = messageKey('dialog.about.copyright');
 export const ABOUT_SOURCE = messageKey('dialog.about.source');
 export const ABOUT_LICENCES = messageKey('dialog.about.licences');
+export const COMPONENTS_TITLE = messageKey('dialog.components.title');
+export const COMPONENTS_COMMAND_TITLE = messageKey('command.show-components.title');
+export const COMPONENTS_INTRO = messageKey('dialog.components.intro');
+export const COMPONENTS_NAME = messageKey('dialog.components.name');
+export const COMPONENTS_VERSION = messageKey('dialog.components.version');
+export const COMPONENTS_STATE = messageKey('dialog.components.state');
+export const COMPONENTS_PRESENT = messageKey('dialog.components.present');
+export const COMPONENTS_VERIFIED = messageKey('dialog.components.verified');
+export const COMPONENTS_ABSENT = messageKey('dialog.components.absent');
+export const COMPONENTS_CHANGED = messageKey('dialog.components.changed');
+export const COMPONENTS_CHANGED_DETAIL = messageKey('dialog.components.changed-detail');
+export const COMPONENTS_VERIFY = messageKey('dialog.components.verify');
+export const COMPONENTS_VERIFIED_NOTE = messageKey('dialog.components.verified-note');
+export const COMPONENTS_REPAIR = messageKey('dialog.components.repair');
 export const ROTATE_PAGE_TITLE = messageKey('command.rotate-page.title');
 export const ROTATE_PAGE_180_TITLE = messageKey('command.rotate-page-180.title');
 export const ROTATE_PAGE_270_TITLE = messageKey('command.rotate-page-270.title');
@@ -2343,6 +2357,23 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ABOUT_LICENCE]:
     'Monstera is free software under the GNU Affero General Public License, version 3 or later. You can read and build its source code.',
   [ABOUT_COPYRIGHT]: '© Tenslor Inc.',
+  [COMPONENTS_TITLE]: 'Components',
+  [COMPONENTS_COMMAND_TITLE]: 'Components',
+  // ADR-0122: status only. Every component is installed with the app, and nothing is downloaded.
+  [COMPONENTS_INTRO]:
+    'The tools Monstera uses to read, convert and recognise documents. All of them are installed with Monstera, and none is downloaded.',
+  [COMPONENTS_NAME]: 'Component',
+  [COMPONENTS_VERSION]: 'Version',
+  [COMPONENTS_STATE]: 'State',
+  [COMPONENTS_PRESENT]: 'Installed',
+  [COMPONENTS_VERIFIED]: 'Verified',
+  [COMPONENTS_ABSENT]: 'Not in this build',
+  [COMPONENTS_CHANGED]: 'Changed',
+  [COMPONENTS_CHANGED_DETAIL]: '{missing} missing, {altered} altered, {extra} unexpected',
+  [COMPONENTS_VERIFY]: 'Verify files',
+  [COMPONENTS_VERIFIED_NOTE]: 'Every file was checked against the list this build of Monstera was made with.',
+  [COMPONENTS_REPAIR]:
+    'If a component has changed, repair or reinstall Monstera from Windows Settings, Apps, Installed apps.',
   [ABOUT_SOURCE]: 'Source code',
   [ABOUT_LICENCES]: 'Third-party licences',
   // "Rotate page" and not "Rotate": the command rotates the page on screen, and

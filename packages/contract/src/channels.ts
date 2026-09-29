@@ -1302,6 +1302,13 @@ const imageImportOutcomeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('images-too-large'), limitBytes: z.number().int().positive() }),
 ]);
 
+/**
+ * The native components a build runs, by the id the manifest, the shell's resolver and the Components dialog share
+ * ([ADR-0122](../../../docs/DECISIONS/0122-native-components-one-resolver-a-pinned-manifest-status-and-verify.md)).
+ */
+export const NATIVE_COMPONENT_IDS = ['pdfium', 'poppler', 'ghostscript', 'onlyoffice', 'mupdf-shim', 'ocr-models'] as const;
+export type NativeComponentId = (typeof NATIVE_COMPONENT_IDS)[number];
+
 export const channels = {
   'app.info': channel(
     'Version and install channel of the running application.',
@@ -1330,6 +1337,38 @@ export const channels = {
        * route to it. Bounded by the author bound, since it is written into `/T` as it is.
        */
       userName: annotationAuthorSchema,
+    }),
+  ),
+
+  /**
+   * The native components this build runs, each with its version and state
+   * ([ADR-0122](../../../docs/DECISIONS/0122-native-components-one-resolver-a-pinned-manifest-status-and-verify.md)).
+   *
+   * `verify: false` answers from what is present — cheap, and what the dialog opens with; `verify: true` re-hashes
+   * every file against the manifest, which is what *Verify* asks. The counts say what was found, and the renderer
+   * words them: `missing` files the manifest names and the folder lacks, `altered` ones whose bytes differ, and
+   * `extra` files a packaged folder holds that nobody pinned (a DLL beside a program is one Windows loads).
+   */
+  'app.components': channel(
+    'The native components this build runs, their versions and whether their files match the manifest.',
+    z.object({ verify: z.boolean() }).strict(),
+    z.object({
+      components: z
+        .array(
+          z
+            .object({
+              id: z.enum(NATIVE_COMPONENT_IDS),
+              /** From the manifest; bounded as every crossing string is. */
+              name: z.string().min(1).max(80),
+              version: z.string().min(1).max(64),
+              state: z.enum(['present', 'verified', 'absent', 'changed']),
+              missing: z.number().int().nonnegative(),
+              altered: z.number().int().nonnegative(),
+              extra: z.number().int().nonnegative(),
+            })
+            .strict(),
+        )
+        .max(NATIVE_COMPONENT_IDS.length),
     }),
   ),
 

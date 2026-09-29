@@ -3,6 +3,8 @@ import { join } from 'node:path';
 
 import { OCR_LANGUAGES, type OcrLanguage } from '@monstera/contract';
 
+import { nativeComponentPath } from './nativeComponents.js';
+
 /**
  * Where the OCR models are, and which of them this machine has.
  *
@@ -36,18 +38,14 @@ function modelPath(directory: string, language: OcrLanguage): string {
 /**
  * Where the provisioned models are, or `null`.
  *
- * **`null` is a real state and it is the packaged one.** No installer has been
- * built, so there is no `.tools/` tree to resolve and nothing to guess an
- * unobserved layout from — and an absent directory is a build that offers no
- * OCR rather than one that is broken.
+ * **`null` is a build with no models** — a development launch that provisioned
+ * none. A packaged build answers its `native/ocr-models` folder (ADR-0122), and
+ * {@link provisionedOcrLanguages} still checks each model rather than trusting it.
  */
 export function provisionedModelDirectory(): string | null {
-  const supplied = process.env['MONSTERA_TESSDATA_DIRECTORY'];
-  // EMPTY IS ABSENT, for `pdfiumLibraryPath`'s measured reason: a shell expanding
-  // an unset variable produces `''`, and passing that on would send a path of
-  // nothing to a reader whose only answer about it is *unreadable*.
-  if (supplied === undefined || supplied.length === 0) return null;
-  return supplied;
+  // THE ONE RESOLVER (ADR-0122): the launcher's variable in development — EMPTY IS ABSENT, for
+  // `pdfiumLibraryPath`'s measured reason — and the package's `native/ocr-models` folder when packaged.
+  return nativeComponentPath('ocr-models');
 }
 
 

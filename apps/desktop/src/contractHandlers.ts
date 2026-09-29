@@ -73,6 +73,7 @@ import { type KnownRoot, displayLocationOf } from './displayLocation.js';
 import type { RecentPictures } from './recentPictures.js';
 import type { PersonalLibrary } from './personalLibrary.js';
 import type { ReviewPrompt } from './engagement.js';
+import type { ComponentStatus } from './componentStatus.js';
 import type { RecentFiles } from './recentFiles.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import type { SettingsSurface } from './settingsFile.js';
@@ -297,6 +298,8 @@ export function createContractHandlers(deps: {
    * need a provisioned `.tools/` tree to say anything.
    */
   readonly ocrLanguages: () => Promise<readonly OcrLanguage[]>;
+  /** The native components and their states (ADR-0122). `componentStatuses`, where the source is the resolver's. */
+  readonly components: (verify: boolean) => Promise<readonly ComponentStatus[]>;
   /**
    * Paints the window controls over the title bar, answering whether a window took it.
    *
@@ -352,6 +355,8 @@ export function createContractHandlers(deps: {
     // AN ARRAY COPY, because the answer crosses a boundary that serialises it and
     // the source is a `readonly` the composition root may hold on to.
     'app.ocrLanguages': async () => ok({ languages: [...(await deps.ocrLanguages())] }),
+    // AN ARRAY COPY, for `app.ocrLanguages`' reason (ADR-0122).
+    'app.components': async ({ verify }) => ok({ components: [...(await deps.components(verify))] }),
     'document.open': openDocumentHandler(deps),
     'document.openFromUrl': openFromUrlHandler(deps),
     'document.unlock': async ({ docId, password }) => {

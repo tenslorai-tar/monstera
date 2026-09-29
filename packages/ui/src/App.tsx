@@ -186,6 +186,7 @@ import { donateCommand } from './commands/donate.js';
 import { rateUsCommand } from './commands/rateUs.js';
 import { updateAvailableCommand } from './commands/updateAvailable.js';
 import { showAboutCommand } from './commands/showAbout.js';
+import { showComponentsCommand } from './commands/showComponents.js';
 import { showSettingsCommand } from './commands/showSettings.js';
 import { SETTINGS_DIALOG } from './dialogs/settings.js';
 import { showWordCountCommand } from './commands/showWordCount.js';
@@ -194,6 +195,7 @@ import { accessibilityCheckCommand } from './commands/accessibilityCheck.js';
 import { ACCESSIBILITY_DIALOG } from './dialogs/accessibilityCheck.js';
 import { placeBarcode, readBarcodesCommand } from './commands/barcodes.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
+import { COMPONENTS_DIALOG } from './dialogs/components.js';
 import { DONATE_DIALOG } from './dialogs/donate.js';
 import { SECURITY_UPDATE_DIALOG } from './dialogs/securityUpdate.js';
 import { AI_SETUP_DIALOG } from './dialogs/aiSetup.js';
@@ -804,6 +806,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     () =>
       new DialogRegistry([
         ABOUT_DIALOG,
+        COMPONENTS_DIALOG,
         AI_SETUP_DIALOG,
         DONATE_DIALOG,
         SECURITY_UPDATE_DIALOG,
@@ -2490,6 +2493,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // §10.3's six start-screen shortcuts: the same open, then the feature's section.
         ...featureShortcutCommands({ open: () => openDocument(openDeps), settings }),
         showAboutCommand({ client, ask }),
+        showComponentsCommand({ client, ask }),
         donateCommand({ client, ask }),
         rateUsCommand({ client, toast }),
         // ADR-0018's INDICATOR, present only while main has offered an update (ADR-0110).

@@ -38,6 +38,8 @@
  * the resolver and the branch from the same config.
  */
 
+import { type NativeSource, nativeComponentPath, nativeSource } from './nativeComponents.js';
+
 declare const electronBinaryBrand: unique symbol;
 declare const converterExecutableBrand: unique symbol;
 
@@ -73,17 +75,17 @@ export type ConverterExecutablePath = string & { readonly [converterExecutableBr
  * searches `PATH` or an install directory, so the only way a path reaches this
  * brand is through the resolver that owns it.
  *
- * **Empty is absent**, for `pdfiumLibraryPath`'s reason, and so is a packaged
- * build, which has no launcher: that is a decided state — the feature says it is
- * unavailable — rather than a guess at a layout no installer has produced.
+ * **Asked of the one resolver since ADR-0122**, which answers from the launcher's
+ * variable in development and from the package's `resources/native/<component>/`
+ * when packaged — so a packaged build finds its converters rather than reporting
+ * each unavailable. Absent is still a decided state: the feature says so.
  */
 export function providedConverterExecutable(
-  variable: string,
-  environment: Readonly<Record<string, string | undefined>>,
+  component: 'poppler' | 'ghostscript' | 'onlyoffice',
+  from: NativeSource = nativeSource(),
 ): ConverterExecutablePath | null {
-  const supplied = environment[variable];
-  if (supplied === undefined || supplied.length === 0) return null;
-  return supplied as ConverterExecutablePath;
+  const path = nativeComponentPath(component, from);
+  return path === null ? null : (path as ConverterExecutablePath);
 }
 
 /**
