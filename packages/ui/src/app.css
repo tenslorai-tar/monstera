@@ -2788,6 +2788,13 @@ textarea {
   background: var(--page);
 }
 
+/* AN UNDRAWN THUMBNAIL IS A PORTRAIT PAGE'S SHAPE, not the canvas default's 2 : 1. Measured 2026-09-29 at 1920 × 1080
+   under load: a drawn card was 168 px tall and an undrawn one 142, so a row changed height as its pictures arrived and
+   the Organize grid's first card stood 13 px above its neighbours. `Thumbnails.tsx` marks the canvas until it draws. */
+.m-thumb-canvas[data-drawn='false'] {
+  aspect-ratio: 612 / 792;
+}
+
 /*
  * DARK PAGE MODE — the document, not the shell.
  *
@@ -5357,6 +5364,10 @@ body {
   grid-template-columns: repeat(var(--m-thumb-columns, 2), max-content);
   justify-content: center;
   align-content: start;
+  /* A ROW'S CARDS SHARE A TOP. The strip's first rule, written for a column flexbox, sets `align-items: center`, and
+     in a grid that centres each card in its row instead — so a card of another height (a landscape page, or one not
+     drawn yet) stood above or below its neighbours. */
+  align-items: start;
   gap: var(--space-8);
   background: transparent;
   border-inline-end: none;

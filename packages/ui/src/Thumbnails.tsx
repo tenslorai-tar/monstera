@@ -339,6 +339,9 @@ function ThumbCanvas({
     <canvas
       ref={canvas}
       className="m-thumb-canvas"
+      // UNDRAWN, the canvas keeps the browser's default 300 × 150, a 2 : 1 ratio no page has; the stylesheet gives
+      // it a portrait page's ratio until the drawing sets its size, so a card is one height drawn or not.
+      data-drawn={size === undefined ? 'false' : 'true'}
       style={
         size === undefined
           ? undefined

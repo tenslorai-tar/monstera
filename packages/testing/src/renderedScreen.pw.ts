@@ -2360,13 +2360,18 @@ test('the LOUPE at 400% draws a square three windows wide, lying under its windo
   expect(seen?.backing).toBeLessThanOrEqual(540 * 540);
 });
 
+/** The one landscape page in the Organize grid's fixture. */
+const LANDSCAPE = 1;
+
 // THE ORGANIZE GRID SPANS THE PAGE AREA (v5-09): measured 2026-09-28, it was a row flexbox's item with no grow, as wide
 // as its content — 631 of 1215 px at 1920, four columns and an empty half.
 test('the ORGANIZE GRID spans the whole page area at 1920 × 1080, as many columns as fit', async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   // NOT `document`: that name is the page's inside `evaluate` below, and shadowing it typed every call there as pdf-lib's.
   const pdf = await PDFDocument.create();
-  for (let at = 0; at < 24; at += 1) pdf.addPage([612, 792]);
+  // PAGE 2 IS LANDSCAPE, and it is the case's control for the row's alignment: a shorter card that must still share
+  // its row's top. With every page portrait, centring and top-alignment place the cards identically.
+  for (let at = 0; at < 24; at += 1) pdf.addPage(at === LANDSCAPE ? [792, 612] : [612, 792]);
   const bytes = await pdf.save();
   const docId = asDocId('00000000-0000-4000-8000-0000000000e5');
   await bridge(page, {
@@ -2378,22 +2383,44 @@ test('the ORGANIZE GRID spans the whole page area at 1920 × 1080, as many colum
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   const grid = page.getByRole('region', { name: 'Pages to organize' });
   await expect(grid.locator('[data-thumb-page="23"]')).toBeAttached();
+  // THE LANDSCAPE CARD DRAWN, so it is genuinely shorter when the row is read — undrawn, it is a portrait slot.
+  await expect(grid.locator(`[data-thumb-page="${String(LANDSCAPE)}"] canvas[data-drawn="true"]`)).toBeAttached();
 
   const measured = await page.evaluate(() => {
     const area = document.querySelector('.m-canvas-area')?.getBoundingClientRect();
     const region = document.querySelector('.m-page-grid')?.getBoundingClientRect();
-    const tops = [...document.querySelectorAll('.m-page-grid [data-thumb-page]')].map((card) =>
-      Math.round(card.getBoundingClientRect().top),
-    );
-    const firstRow = tops.filter((top) => top === tops[0]).length;
-    return { area: area?.width ?? 0, region: region?.width ?? 0, firstRow };
+    const all = [...document.querySelectorAll('.m-page-grid [data-thumb-page]')];
+    const strip = document.querySelector('.m-page-grid .m-thumbnails');
+    const columns = strip === null ? '' : getComputedStyle(strip).gridTemplateColumns;
+    const count = columns.split(' ').filter((track) => track !== '').length;
+    const row = all.slice(0, count);
+    // WHAT THE GRID WAS AT THE MOMENT OF READING, for the failure messages.
+    const state = {
+      tops: row.map((card) => Math.round(card.getBoundingClientRect().top)),
+      heights: row.map((card) => Math.round(card.getBoundingClientRect().height)),
+      drawn: row.map((card) => card.querySelector('canvas')?.dataset['drawn'] ?? 'none'),
+      columns,
+    };
+    return { area: area?.width ?? 0, region: region?.width ?? 0, count, state };
   });
+  const detail = JSON.stringify(measured.state);
   expect(measured.area, 'the page area was measured').toBeGreaterThan(1000);
   expect(measured.region, `the grid is ${String(measured.region)} px of a ${String(measured.area)} px page area`).toBeGreaterThanOrEqual(
     measured.area - 2,
   );
-  // SIX, v5-09's count at this window with the Medium cards — and more than the four a content-wide grid laid.
-  expect(measured.firstRow).toBeGreaterThanOrEqual(6);
+  // SIX, v5-09's count at this window with the Medium cards — and more than the four a content-wide grid laid. Read as
+  // the columns the browser resolved, not from the cards' tops: a card standing out of its row made that reading 1.
+  expect(measured.count, detail).toBeGreaterThanOrEqual(6);
+  // THE ROW SHARES ONE TOP, the landscape card included. `align-items: center` (the strip's column-layout rule) put a
+  // shorter card lower, and an undrawn card beside a drawn one — 142 px against 168, measured 2026-09-29 — the same.
+  expect(new Set(measured.state.tops).size, detail).toBe(1);
+  // AND EVERY PORTRAIT CARD ONE HEIGHT, drawn or not, to within ONE pixel: a drawn canvas is `Math.ceil` of the page's
+  // height (`renderPage.ts`), an undrawn one the exact ratio. This bites where some are still undrawn when read, which a
+  // loaded run produced 5 times in 8.
+  const portrait = measured.state.heights.filter((_height, at) => at !== LANDSCAPE);
+  expect(Math.max(...portrait) - Math.min(...portrait), detail).toBeLessThanOrEqual(1);
+  // CONTROL: the landscape card IS shorter, so the shared top above was a fact about alignment and not about equal cards.
+  expect(measured.state.heights[LANDSCAPE] ?? 0, detail).toBeLessThan(Math.min(...portrait) - 10);
 });
 
 // THE MENU BAR (ADR-0107), in every theme: the window's top row above the title bar, reached from the keyboard by F10,
