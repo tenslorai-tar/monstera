@@ -57,3 +57,16 @@ MSIX build must do.
   the development trees.
 - **Keeping the `resourcesPath` ban and reading the folder through `__dirname`.** A way around the rule, not a
   statement of what is allowed.
+
+## Correction — 2026-09-29 — where Components sits, and the state it opens with
+
+Decision 4 as built differs in three details, recorded here rather than edited above:
+
+- **The command sits in Tools › Application and the Help menu**, not *Tools › Diagnostics*. The ribbon's
+  *Diagnostics* is the caption Reveal log draws in the Application group, not a group of its own, so *Components*
+  joined its neighbours there (`showComponents.ts`, secondary, beside About).
+- **The dialog opens with a fourth state, *Installed***, which the decision did not list. The first look only checks
+  that each pinned file is present; hashing is the second question, asked by *Verify files*, which turns each
+  component to *Verified* or *Changed*.
+- ***Changed* sends a person to Windows' repair and reinstall** (Settings › Apps › Installed apps), which covers a
+  package from the Store and one installed by hand.

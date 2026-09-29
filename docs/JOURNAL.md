@@ -892,6 +892,42 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-29 — The test MSIX (item 14), a live check through the real host, and five defects found on the way
+
+**The live check the owner asked for before the MSIX, PASSED.** `npm start` at dc05c78f — pdf-lib's commands run in
+the real contained MuPDF host since ADR-0121 Decision 3, which no proof had driven — on a copy of one corpus PDF
+(2 pages), driven through Chromium's debugging port. Watermark *LIVECHECK DRAFT* and Bates numbering (*LIVE*, 6
+digits) on all pages, Ctrl+S, window closed. The saved file read by a second library (Poppler `pdftotext -raw`, per
+page): both marks on both pages; the original carried neither. Reopened: the app's own search finds each Bates number
+once and the watermark twice; the control, a number that should not exist, finds nothing. A first text check missed
+the watermark only because rotated text extracts with CR line breaks and the filter stripped LF alone.
+
+**The MSIX (ADR-0123).** `Monstera-PDF-Editor_0.1.0.0_x64_test.msix`, 352.3 MB against the 150 MB target — compressed,
+the runtime's `electron.exe` is 100.8 MB and ONLYOFFICE's converter 79.2 MB, so the two alone exceed it. MakeAppx
+validated the manifest; nothing was downloaded. The install test is the owner's: it needs an elevated PowerShell
+and no Developer Mode.
+
+**Found on the way, each fixed at its mechanism with a case that goes red without it:**
+
+1. **The kernel's run-time packages were declared only at the root.** `@cantoo/pdf-lib` was a root devDependency, so
+   the lockfile marked it and twelve dependencies `dev`: a production tree would drop the library the host runs, and
+   `NOTICE` omitted 13 shipped packages. The kernel now declares all four it imports; `NOTICE` regenerated.
+2. **`npm run clean` did not clean.** It removed `dist/` and left `tsconfig.tsbuildinfo`, so `tsc --build` trusted
+   the record and emitted nothing for three referenced projects — 638 errors. The packager's clean build found it,
+   because it packs from clean output (a research probe from 2026-09-15 was still in the kernel's `dist/`).
+3. **The build-freshness walk refused every empty subdirectory**, not only an empty root: the emptied Help screenshots
+   folder stopped three renderer proofs.
+4. **The MuPDF host loaded pdf-lib at start** (86819141's static import); it now loads on the first pdf-lib command,
+   and `proof:hostload` separates *at start* from *ever*.
+5. **The ribbon fold ignored the row's border** — CI red on ubuntu only, 2 px. Reproduced here by sweeping four
+   substitute fonts (seven rows over, each by exactly 2 px); none of 1,760 after.
+
+The packager's own first run refused the package on eleven "imports" that were prose (`Promise.resolve('ended')`):
+its scanner was text patterns, a second opinion about what a module imports. It failed safe, and now reads imports
+with the compiler's `preProcessFile`.
+
+---
+
 ## 2026-09-29 — ADR-0122 built: one resolver for the native components, and Help › Components shows their status
 
 Six components — PDFium, Poppler, Ghostscript, ONLYOFFICE's converter, the MuPDF shim and the OCR models — were

@@ -4,5 +4,12 @@
     "greater than every one here, so B8's never-reuse-a-number is a check rather than a memory (ADR-0123 Decision 5).",
     "Commit this file after a packaging run."
   ],
-  "packed": []
+  "packed": [
+    {
+      "version": "0.1.0.0",
+      "flavour": "test",
+      "commit": "ef01655a2c6aa61bb6861b98caa210faece460cc",
+      "date": "2026-09-29"
+    }
+  ]
 }

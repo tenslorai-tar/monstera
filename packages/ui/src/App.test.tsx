@@ -58,6 +58,7 @@ import { resetSharedPainter } from './searchHighlight.js';
 import { SPLIT_VIEW_SETTING } from './settings/viewing.js';
 import { AUTOSAVE_SETTING } from './settings/saving.js';
 import { applyFullAppLimits } from './fullAppTestLimit.js';
+import { manualChecklist } from './manualChecklist.js';
 
 // THIS FILE RENDERS THE WHOLE APP, whose tests' measured spread crosses Vitest's default limit and whose dialog bodies
 // arrive by a first import inside Testing Library's wait (`fullAppTestLimit.ts`).
@@ -2613,6 +2614,21 @@ describe('App', () => {
     expect(commands.get('document.rotate-page')).toBeDefined();
     expect(commands.get('document.frobnicate')).toBeUndefined();
     expect(dialogs.get('dialog.help')).toBeDefined();
+  });
+
+  it('the manual test checklist is generated from the registry — docs/manual-test-checklist.md is never edited by hand', async () => {
+    // The owner's list (28 September, item 14). A hand-kept list of tools is the second wiring place the registry
+    // forbids: it names a renamed tool and misses a new one. So the document is this output, held equal here —
+    // regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
+    let commands: CommandRegistry | undefined;
+    const { client } = recordingClient({ kind: 'cancelled' });
+    render(<App client={client} settings={freshSettings()} onRegistries={(registries) => (commands = registries.commands)} />);
+    if (commands === undefined) throw new Error('the shell reported no registries');
+    const text = manualChecklist(commands.all(), HELP_ARTICLES, (key) => i18n._(key), SECTION_TITLES);
+    // CONTROL: every command the shell registers is a line — a generator that listed none would still produce a file.
+    for (const command of commands.all()) expect(text, command.id).toContain(`\`${command.id}\``);
+    expect(text).toContain('`app.components`');
+    await expect(text).toMatchFileSnapshot('../../../docs/manual-test-checklist.md');
   });
 
   it('every Help article’s “choose SECTION, then TOOL in the GROUP group” is where the ribbon puts that tool', () => {
