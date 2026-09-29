@@ -897,21 +897,74 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 Owed when the range reached one batch of files (200, 44 commits): the pre-commit gate refused the next commit, as it
 is meant to. The range is Part F's Viewing, Editing, Saving, OCR and Advanced features (item 2 of the 28 September
 list), the signed-save defect and its warning, the person's library, Push Milestone 1, ADR-0118, ADR-0119, the
-Google Picker (item 6) and `proof:shim` (item 16). Read against CLAUDE.md's items 1-7; the modified-proofs column was
-read diff by diff where the report said deletions were hidden inside the range.
+Google Picker (item 6) and `proof:shim` (item 16). The modified-proofs column was read diff by diff where the report
+said deletions were hidden inside the range. *Restructured into the checklist's headings a minute after it was first
+committed (`86f17f45`), before any push; no finding changed.*
 
-**Item 1 — every fix states a mechanism.** None is a workaround. The two nearest candidates were examined: the
-detailed log was first placed at `registerContractHandlers` and moved (a design correction with its ADR correction,
-not a patch), and the pseudo-locale test's slowness was cut at its cause (a triple compile and a quadratic scan)
-with the timeout untouched.
+### 1. Root cause or workaround?
 
-**Item 4 — proofs modified, read.** `PageList.test.tsx`' 71 hidden deletions are the prop list every render call
-carries, rewritten once per feature that added a prop (six in this range) — no assertion changed.
-`SettingsBody.test.tsx`: the reachability loop was restructured to one visit per page with the same assertions;
-*Advanced is not listed* was replaced by what it protected once Advanced gained a row. `composition.test.ts`: exact
-spans became a pattern because the graph's clock is real; exact spans are asserted with an injected clock in
-`requestLog.test.ts`. `registerHandlers.test.ts`' 52 are an argument added and reverted. Every new guard in the
-range was mutated and turned a case red, recorded in its commit.
+Every fix states a mechanism; none is a workaround. The two nearest candidates were examined: the detailed log was
+first placed at `registerContractHandlers` and moved (a design correction with its ADR correction, not a patch), and
+the pseudo-locale test's slowness was cut at its cause (a triple compile and a quadratic scan) with the timeout
+untouched.
+
+### 2. Verified against the easy shape only?
+
+The hard shapes were the ones tested: a German word with its own letters through two real models, a signed document
+saved untouched and with a mark (bytes compared, coverage read), old single-language settings migrated, and — after
+WWWWWW-2 — a landscape page in the Organize grid's fixture. One easy shape was found: WWWWWW-2's all-portrait fixture.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Yes, once: `composition.test.ts` moved from exact spans to a pattern when the observer moved into the graph, and the
+exact spans are held by `requestLog.test.ts` with an injected clock. Stated here so it is not read as a loosening.
+
+### 3. Would CI have caught it?
+
+It did: Milestone 1 (`0d36ef13`) was red on CI's accessibility gate only, which is WWWWWW-2; Guards green. The other
+way round: WWWWWW-6, a case CI cannot see.
+
+### 4. Are the proofs non-vacuous?
+
+`PageList.test.tsx`' 71 hidden deletions are the prop list every render call carries, rewritten once per feature
+that added a prop (six in this range) — no assertion changed. `SettingsBody.test.tsx`: the reachability loop was
+restructured to one visit per page with the same assertions; *Advanced is not listed* was replaced by what it
+protected once Advanced gained a row. `registerHandlers.test.ts`' 52 are an argument added and reverted. Every new
+guard in the range was mutated and turned a case red, recorded in its commit; one mutation survived at first (the
+grid's alignment), and the fixture was changed until it did not.
+
+### 4a. Has every instrument passed a resolution test?
+
+The request log's spans were read against a clock that moves 7 ms per read, so a span of the handler alone is
+distinguishable from one that includes anything else.
+
+### 4b. Is the instrument a search?
+
+`pickedFileId` reads a redirect parameter; its refusals (a path, a query, empty, over-long) are asserted beside the
+ids it must accept, so a reader that refused everything fails. No new search elsewhere.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+`shell.proof.mjs`' case count stays an independent literal (14 → 16 in the next commits, raised by hand).
+`CLOUD_PICKER_PROVIDER_IDS` is the one list both the offer and the channel read. Nothing derived from its own subject.
+
+### 5. Executed, or asserted?
+
+Executed: the signed-save bytes, the two-language recognition, the settings import on real files, the Picker's
+redirect through a real loopback listener. Asserted and stated so: the Picker's live run (Google's consent screen)
+is the owner's, and layout text and PDF/A carrying recognised text are not separately measured (row text says so).
+
+### 6. Architecture before the feature?
+
+Yes, each time: ADR-0056's correction before the set-of-enum control, ADR-0118 before recognition on export,
+ADR-0119 (and its correction) before the detailed log, ADR-0091's correction before the Picker — each its own commit.
+
+### 7. Do the documents match the code?
+
+FEATURES rows were split rather than overrun (Saving, OCR, Advanced), and each ADR correction carries its index row
+and amendment-log line. The comments found ahead of their code are WWWWWW-7.
+
+### Findings
 
 - **WWWWWW-1 — four reds reached the range because each commit ran its own feature's tests and not its package's.**
   Found by the pre-push sweep and repaired: 21 option-title keys minted inside objects and not exported, beside a
@@ -942,10 +995,6 @@ range was mutated and turned a case red, recorded in its commit.
   card said an undrawn slot is the size its picture will be.
 - **WWWWWW-8 — a decorative border without its reason** (`58cc103a`), found by the pre-push `check:` set and marked
   (`a4dfda2b`).
-
-**Item 3 — CI.** Milestone 1 (`0d36ef13`) was red on CI's accessibility gate only, which is WWWWWW-2; Guards green.
-**Item 7 — documents.** FEATURES rows were split rather than overrun (Saving, OCR, Advanced), and each ADR correction
-carries its index row and amendment-log line.
 
 ---
 
