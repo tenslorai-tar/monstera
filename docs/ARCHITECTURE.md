@@ -2216,27 +2216,33 @@ say**.
     route is what everything else is built on. The hosts are processes this
     application creates (§2).
 
-    **Amended 2026-09-09 — the mechanism holds and IT CANNOT START ON A STORE
-    INSTALL, which is a different sentence and had never been said**
-    ([ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md)'s
-    correction and Decision 16 of that date). An AppContainer's access check
-    grants on the token's own package SID, `ALL APPLICATION PACKAGES`, or a
-    capability the token holds. The host's SID is derived from a moniker **this
-    application mints**, its token is built with `CapabilityCount: 0`, and an
-    elevated read of the install root retired the premise that MSIX grants
-    `ALL APPLICATION PACKAGES` — three packages read, that principal in none of
-    them. So under a Store install root the contained host is granted nothing
-    where its runtime, its FFI and its shim live, and it dies before its first
-    line rather than reporting why (measured twice, ADR-0025 and
-    `containerGrants.mjs`).
+    **Amended 2026-09-30 — IN A STORE INSTALL THE HOST STARTS AND IS NOT
+    CONTAINED, which is the opposite failure of the one written here on
+    2026-09-09** ([ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md)'s
+    corrections of 2026-09-09 and 2026-09-30, and Decision 16). An AppContainer's
+    access check grants on the token's own package SID, `ALL APPLICATION
+    PACKAGES`, or a capability the token holds, and MSIX grants its install root
+    to none of the first two (an elevated read, three packages). What decides
+    the third is **where `main` runs**, measured in the installed 0.1.1.0 by
+    `packagedHostToken.mjs`: with a package identity, the moniker this
+    application mints becomes a **child** container of the package and the
+    host's token carries the package's own capability SID. That one SID opens
+    the install root *and* the package's data folder — settings, secrets, every
+    host's session directory — so the host starts and reads what it was not
+    handed, and the startup check refuses it (the owner's install: every
+    document refused, *containment-absent*). Without a package identity the
+    token carries nothing and is refused the install root, which is P1's
+    failure. A deny ACE naming either SID does not take the reach back.
 
     Nothing above is withdrawn: (c) and (d) are still supplied by an
     AppContainer and by nothing else, and the creation route is still the
     reason. What is added is the half a reader could not get from here — **a
-    containment mechanism that is correct and unreachable is not a shipped
-    containment mechanism**, and which of three routes restores the reach is
-    Decision 16's, undecided and unmeasured. Development is blind to it by
-    construction: a checkout grants the principal production does not.
+    containment mechanism is shipped only when it is measured where it ships**:
+    the 2026-09-09 form of this paragraph was reasoned from development
+    readings and was wrong in the direction that matters. Which route gives the
+    host the install root without the package's data is Decision 16's, open.
+    Development is blind to it by construction: a checkout has no package
+    identity, so its hosts are never child containers.
 
     **The trigger in `docs/security/engine-advisories.json` is therefore aimed at
     a symbol shipped code will no longer name.** Re-pointing it at the creation
@@ -2820,6 +2826,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-09-30 | **Correction: in a Store install the host starts and is not contained** (§5, invariant 25). The owner's install of 0.1.1.0 refused every document at the startup check. Measured inside the package: a packaged `main` mints the host's moniker as a child container of the package, whose token carries the package's capability SID — the install root and the whole data folder, which a deny ACE does not take back. The 2026-09-09 paragraph's *"dies before its first line"* is withdrawn; P1's retirement stands. | this document's 2026-09-09 amendment of §5 | [0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md) |
 | 2026-09-29 | **The MSIX is assembled here and packed by the Windows SDK's MakeAppx** (§8). The owner's list (28 September, item 14). A packaging script, `packageMsix.mjs`, builds ADR-0122's layout from the provisioned runtime, the application's build, npm's production tree and the pinned components, and refuses a package in which a shipped import does not resolve; `makeappx.exe` and `makepri.exe` from the installed SDK pack it, and nothing is downloaded. Two flavours: `test`, whose Publisher carries the unsigned-install OID, and `store`, which refuses it. A version is four parts with the fourth 0 and is never reused. A packaged build reports its install channel as `store` | [ADR-0004](DECISIONS/0004-toolchain-versions.md)'s `electron-builder` 26.15.3 pin, never installed | [0123](DECISIONS/0123-the-msix-is-assembled-here-and-packed-by-the-sdks-makeappx.md) |
 | 2026-09-29 | **Native components: one resolver, a pinned manifest, status and verify — nothing downloaded** (§8). The owner's list (28 September, item 12). Packaged components live read-only under `resources/native/<component>/` with a manifest generated from the provisioning pins; one shell resolver answers every path (packaged folder or the launcher's variables); `entry.ts` alone reads `process.resourcesPath`, and `no-install-root-writes` confines that name there as it confines `getPath`. A **Components** dialog shows each component's version and state and re-hashes on *Verify*. The founding record's *download* half is withdrawn: a Store package's folder is read-only, a fetched component would sit outside what the manifest covers, and the OCR models are bundled | `BUILD-PROMPT.md`:519's *native-binaries manager (status, verify, **download**)*, :403-404's *resolved from `app.asar.unpacked` when packaged* and :801's *native binaries in `app.asar.unpacked`* | [0122](DECISIONS/0122-native-components-one-resolver-a-pinned-manifest-status-and-verify.md) |
 | 2026-09-29 | **`main` never holds two images** (§4, §3's content-composition row, §9.17 unchanged). The owner's list (28 September, item 4): measure, and decide if over 1.5×. `roleMainByteImage.mjs` — the real service, bus and pdf-lib writer, one watermark on the 199.4 MB fixture — read a peak of **4.0–5.0×** and **2.00×** held afterwards, every figure agreeing with the service's own count. Three causes: a checkpoint is a whole image in memory; the old and new images are co-resident at every replacement; pdf-lib parses the document in `main`. So checkpoints are files made from what the host writes, a new image arrives as a file and replaces the old one without both being held, and a byte-image apply runs in the engine host beside its session. Signing stays in `main` for key custody, not decided here. Rejected: a checkpoint cap in memory, pdf-lib in the compose host, a file-backed image always, a larger budget | §4's *"one document plus a few checkpoints"*; the 2026-09-04 amendment's placement of the pdf-lib writer in `main`; ADR-0021's deferred spill | [0121](DECISIONS/0121-main-never-holds-two-images.md) |

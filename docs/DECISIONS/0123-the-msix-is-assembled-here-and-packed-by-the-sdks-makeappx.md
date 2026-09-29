@@ -75,3 +75,10 @@ runtime is already provisioned here, pinned and verified (`scripts/provision/ele
   in CI.
 - **An `asar` archive.** It changes how every path under `resources/app` resolves — the engine host finds its entry
   through `createRequire` — and a Store package's folder is already read-only.
+
+## Correction, 2026-09-30 — the install test answered the first open question the other way
+
+*"ADR-0023 Decision 16 expects it not to"* start: the owner's install of 0.1.1.0 measured the host **starting** under
+the install root and being refused by its own startup check, because a packaged `main` makes it a child container of
+the package, which holds the package's capability and so its whole data folder. ADR-0023's correction of this date has
+the measurement. The packaging itself is unaffected; the containment route is ADR-0023 Decision 16's.

@@ -462,26 +462,30 @@ is wrong** — fix the boundary, not the test.
   per object** — measured at 13.7× over forty replacements, which is exactly the
   document-wide replace-all row.
 
-  **AND IT CANNOT START ON A STORE INSTALL — measured 2026-09-09, and it is a
-  different sentence from any of the above.** ADR-0023 §5 carried premise P1
-  unmeasured: *MSIX-installed files inherit read+execute for `ALL APPLICATION
-  PACKAGES`, and every AppContainer is a member of it.* The owner's elevated
-  read retired it — three packages, that principal in none of them, a
-  per-package `S-1-15-3-…` ACE written instead. An AppContainer is granted on
-  its own package SID, that principal, or a capability it holds; this host's SID
-  comes from a moniker we mint and its token carries `CapabilityCount: 0`, so
-  under the install root — where the runtime, koffi and the shim are — all three
-  routes are closed, and it dies before its first line.
+  **AND IN A STORE INSTALL IT STARTS AND IS NOT CONTAINED — measured
+  2026-09-30 in the owner's install of 0.1.1.0, the opposite of what this
+  paragraph said from 2026-09-09.** P1 (*MSIX grants `ALL APPLICATION
+  PACKAGES`*) is still retired: an elevated read found that principal in no
+  install root, and a host created by a process with no package identity is
+  refused the runtime, `hostEntry.js` and the shim. But `main` in an install
+  HAS a package identity, and then the moniker we mint becomes a **child
+  container of the package**, whose token Windows gives the package's own
+  capability SID — the one principal MSIX grants on the install root *and* on
+  the package's data folder. So the host starts, reads files it was not handed
+  (settings, secrets, other hosts' sessions), and the startup check refuses
+  every document. A deny ACE naming either SID does not take that back.
+  `scripts/research/packagedHostToken.mjs` is the measurement, run through
+  `Invoke-CommandInDesktopPackage`; ADR-0023's 2026-09-30 correction has the
+  table.
 
-  **The diagnostic written to announce exactly this cannot fire**, because the
-  probe runs inside the host. And development is blind by construction: the
-  provisioning grant names `ALL APPLICATION PACKAGES` *because* production was
-  believed to, so the two configurations now differ in the principal that was
-  chosen to hold them identical. **A containment mechanism that is correct and
-  unreachable is not a shipped one**; which of three routes restores the reach
-  is ADR-0023 Decision 16's, undecided and unmeasured. It gates no Stage 5 row —
-  no editing command reaches the install root — and it does gate generalising
-  this branch to a second host.
+  **The 2026-09-09 version was reasoned from development readings and stated as
+  measured**, which is audit item 5 arriving inside the containment branch:
+  *this host's SID comes from a moniker we mint and carries no capability* was
+  true of every run anybody had made, because no run had a package identity.
+  Development is blind to this by construction. **A containment mechanism is
+  shipped only when it is measured where it ships**; which route gives the host
+  the install root without the package's data is ADR-0023 Decision 16's, open,
+  and it is the owner's.
 
   **The rule that got us there is worth more than the decision:** *only
   kernel-enforced mechanisms contain native code.* Node's permission model is

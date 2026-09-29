@@ -3341,3 +3341,71 @@ where the install root cannot be read at all. Whether the development grant's
 principal should change to match production once production's principal is
 known — that is a question for the range that takes A, and changing it now would
 be a second guess at a mechanism that has not been measured.
+
+## Correction, 2026-09-30 — the installed host STARTS, and what contains it is exactly the package
+
+The owner installed MSIX 0.1.1.0 (ADR-0123) on 2026-09-29. Documents opened and
+their pages drew; every command failed with *"Monstera can no longer work on this
+document"*. The installed app's log, five opens, one line each: *"the engine host
+was created and is not contained (containment-absent): The host read 64 bytes of
+…\engine-sessions\containment-negative, which it was not handed."* The host
+started, ran its startup probe, and the probe refused it. The 2026-09-09
+correction had predicted a host that never reaches its first line.
+
+### Measured, two runs one variable apart
+
+`scripts/research/packagedHostToken.mjs` creates the host with the **built**
+`win32HostSurface.js` and the product's moniker, suspended and never resumed, reads
+its token from outside, and answers each access question with a real `CreateFileW`
+under that token. It was run inside the installed package's context
+(`Invoke-CommandInDesktopPackage`, no install and no elevation) and from an
+ordinary shell. Its positive control refuses a run that claims a package and has
+none.
+
+| | parent WITH the package identity | parent WITHOUT it |
+|---|---|---|
+| the host's own package identity | none | none |
+| the host's container SID | `S-1-15-2-367305245-…-3626975993-565450032-1084817220-2583288092-2996711678` — the package's seven sub-authorities, then the moniker's four | `S-1-15-2-99742179-…-2996711678` — seven |
+| the host's capabilities | `S-1-15-3-367305245-…-3626975993` — the package's own capability SID | none |
+| a file in the package's data folder (the negative file's shape) | **opened** | refused (5) |
+| `Monstera.exe`, `hostEntry.js`, `monstera_mupdf.dll` under the install root | **opened** | refused (5) |
+| the app's `settings.json` | **opened** | refused (5) |
+
+**The mechanism, in one sentence:** in the installed app `main` has a package
+identity, so `CreateAppContainerProfile` and
+`DeriveAppContainerSidFromAppContainerName` mint our moniker as a **child
+AppContainer of the package**, and Windows gives a child container's token the
+package's own capability SID — the principal MSIX grants read-and-execute on the
+install root and full control on the package's data folder — so the host reads
+everything the package owns, the negative file included.
+
+A deny does not take it back. An inheritable deny ACE, read back as *Deny
+FullControl* first in the file's order, naming the capability SID in one layout
+and the host's container SID in the other: the host still opened the file in
+both. So the reach cannot be subtracted by the ACL of the folder it reaches.
+
+### What this withdraws, and what it does not
+
+**Withdrawn:** the 2026-09-09 correction's fact 1 (*"the SID is derived from our
+own name, so it is not, and cannot be, the SID the installer's ACE names"*) and
+fact 2 (*"the token holds no capability"*) — both true outside a package and
+false inside one — and its conclusion that the host *"dies before its first
+line"*. That conclusion was reasoned from two facts measured in development and
+never from a package, which is item 5 of the stage audit: asserted, not executed.
+
+**Not withdrawn:** P1's retirement. The run without a package identity is refused
+all three install-root files, which is P1's failure measured rather than read off
+an ACL. **Not withdrawn:** the startup check. It is what turned a host with the
+package's whole reach into a refused document rather than a silent one.
+
+### What it does to Decision 16
+
+Route A — *carry the install root's own ACE in the token's capability list* — is
+**already the installed app's state**, delivered by Windows rather than by us,
+and it is measured to be exactly as broad as the package: the one capability that
+opens the install root opens the data folder, where the settings, the secrets
+file and every host's session directory live. So A as written cannot contain a
+host, and the three hosts and three converters all hold the same capability, so
+each can also read the others' session directories — invariant 25(d)'s
+cross-document half. Decision 16 is still open, now with the premise corrected;
+which route ships is an architecture decision and the owner's.
