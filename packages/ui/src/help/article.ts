@@ -7,8 +7,8 @@
  * Headings (`##`, `###`), paragraphs, numbered and bulleted lists with one nested level, **bold**, `code` and simple
  * tables — everything the articles use and nothing else. The output is plain data the viewer turns into React
  * elements, so no article can put markup in the page: there is no HTML path to take. An image line names a screenshot
- * that has not been captured yet, and is dropped rather than drawn as a placeholder; an HTML comment is the author's
- * note and is dropped too.
+ * by id and is kept as a block — the viewer draws it when a capture with that id is bundled, and nothing otherwise,
+ * never a placeholder; any other image is dropped. An HTML comment is the author's note and is dropped too.
  *
  * ## A malformed article throws
  *
@@ -38,7 +38,12 @@ export type Block =
   | { readonly kind: 'paragraph'; readonly inline: readonly Inline[] }
   | { readonly kind: 'numbered'; readonly items: readonly Item[] }
   | { readonly kind: 'bulleted'; readonly items: readonly Item[] }
-  | { readonly kind: 'table'; readonly header: readonly (readonly Inline[])[]; readonly rows: readonly (readonly (readonly Inline[])[])[] };
+  | { readonly kind: 'table'; readonly header: readonly (readonly Inline[])[]; readonly rows: readonly (readonly (readonly Inline[])[])[] }
+  /**
+   * A screenshot the article names — `![alt](screenshot:id)`. DATA, like every block: the viewer draws it only when a
+   * capture with this id is bundled, and draws nothing otherwise, never a placeholder that looks like a picture.
+   */
+  | { readonly kind: 'screenshot'; readonly id: string; readonly alt: string };
 
 export interface Article {
   readonly id: string;
@@ -130,7 +135,15 @@ export function parseArticle(name: string, source: string): Article {
       flush();
       continue;
     }
-    // A SCREENSHOT NOT YET CAPTURED: dropped, never drawn as a placeholder that looks like a picture.
+    // A SCREENSHOT, kept as data: whether it is drawn is the viewer's question, answered by what was captured.
+    const shot = /^!\[([^\]]*)\]\(screenshot:([a-z0-9-]+)\)$/u.exec(line.trim());
+    if (shot !== null) {
+      flush();
+      blocks.push({ kind: 'screenshot', id: shot[2] ?? '', alt: shot[1] ?? '' });
+      continue;
+    }
+    // ANY OTHER IMAGE is not something an article may draw — there is no path from an article to a file or a web
+    // address — so it is dropped.
     if (/^!\[[^\]]*\]\([^)]*\)$/u.test(line.trim())) continue;
     const heading = /^(#{2,3}) (.+)$/u.exec(line);
     if (heading !== null) {
@@ -204,6 +217,10 @@ export function searchTextOf(article: Article): string {
         return block.items.map((item) => [inline(item.inline), ...item.nested.map(inline)].join(' ')).join(' ');
       case 'table':
         return [...block.header, ...block.rows.flat()].map(inline).join(' ');
+      // A PICTURE IS NOT TEXT A PERSON SEARCHED FOR: its alt describes a screen, and a search matching it would
+      // find an article by the words of a caption the page may not even draw.
+      case 'screenshot':
+        return '';
     }
   };
   return [article.title, article.summary, ...article.keywords, ...article.blocks.map(blockText)].join(' ').toLowerCase();

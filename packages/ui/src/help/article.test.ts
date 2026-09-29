@@ -48,20 +48,37 @@ describe('a Help article', () => {
   });
 
   it('reads the body into blocks: the top title dropped, a wrapped paragraph joined, nested items, a table', () => {
-    expect(article.blocks.map((block) => block.kind)).toStrictEqual(['paragraph', 'heading', 'numbered', 'table']);
+    expect(article.blocks.map((block) => block.kind)).toStrictEqual([
+      'paragraph',
+      'heading',
+      'numbered',
+      'screenshot',
+      'table',
+    ]);
     expect(article.blocks[0]).toStrictEqual({ kind: 'paragraph', inline: [{ kind: 'text', text: 'Rotating changes the page, not just the view.' }] });
     const steps = article.blocks[2];
     expect(steps?.kind === 'numbered' ? steps.items.map((item) => item.nested.length) : undefined).toStrictEqual([2, 0]);
-    const table = article.blocks[3];
+    const table = article.blocks[4];
     expect(table?.kind === 'table' ? table.rows : undefined).toStrictEqual([
       [[{ kind: 'bold', text: 'Ctrl+R' }], [{ kind: 'text', text: 'Rotate right' }]],
     ]);
   });
 
-  it('drops a screenshot not yet captured and the author’s notes, so neither reaches the page', () => {
+  it('keeps a screenshot as DATA — its id and alt — and drops the author’s notes', () => {
+    // THE VIEWER decides whether it is drawn, from what was captured; the parser only records what the article names.
+    expect(article.blocks.filter((each) => each.kind === 'screenshot')).toStrictEqual([
+      { kind: 'screenshot', id: 'rotate-1', alt: 'A rotated page' },
+    ]);
+    // AND NEITHER THE CAPTION NOR THE NOTES ARE SEARCHED: a picture is not text a person looked for.
     const text = searchTextOf(article);
     expect(text).not.toContain('screenshot');
+    expect(text).not.toContain('a rotated page');
     expect(text).not.toContain('never shown');
+  });
+
+  it('drops an image that is not a screenshot, since an article can reach no file or address', () => {
+    const other = parseArticle('other.md', ['---', 'id: other', 'title: Other', '---', '![A picture](https://example.com/a.png)'].join('\n'));
+    expect(other.blocks).toStrictEqual([]);
   });
 
   it('reads bold, code and a web address, and leaves an address as text rather than a link', () => {

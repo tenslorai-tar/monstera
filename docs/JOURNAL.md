@@ -892,6 +892,32 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-29 — Help centre screenshots: 91 of 138, stopped by the owner, and what capturing them showed
+
+The article parser keeps `![alt](screenshot:id)` as a block and the Help centre draws the bundled capture with that
+id, or nothing; `articles.ts` bundles `help/screenshots/*.png`, so a capture added is a picture drawn. The harness
+(`packages/testing/src/helpScreensHarness.ts`, `scripts/test/helpScreens.config.mjs`, run by hand — it writes into
+the tree) takes each picture in the light look at 1280 × 800 against one sample document, framed on what the
+article's own capture note names. Three helper agents wrote the scenes; the owner stopped the work at 91 captures
+(6.3 MB), because the application is going through a manual review and the whole set is recaptured afterwards.
+**The 91 pictures are kept OUTSIDE the repository** (the building seat's scratchpad), not committed: every push is
+permanent (B10), and 6.3 MB of pictures already due to be replaced would stay in the public history for good. The
+scenes are committed, so the recapture is one run of the harness; until then the Help centre draws no picture.
+Skipped honestly rather than faked where the shim cannot produce the state: PDF/A's result, tables and duplicate
+pages it never finds, anything drawn into the document's bytes (the shim's bytes never change), a live camera, and
+the Office and CSV converters' output. The captures from the two stopped groups were not all reviewed.
+
+**Seen while driving the application, for the review** (group B's report, each visible in its PNG): the Search tab's
+fields and buttons look unstyled; the Forms tab cuts field names to one letter at 260 px; Settings › Rendering's
+*Print quality* description wraps a word per line beside its switch; the Float bar covers Organize cards 1 and 5 at
+1280 × 800; several dialogs' radio groups have bare borders and wrap mid-line, and in Merge and Import as layer the
+drop-down touches the button below it. Five articles name a control by words the screen does not show:
+*Blank page* (*Insert blank page*), PowerPoint export's group (it is *Convert*, and the item *Export to
+PowerPoint…*), *From images…* (*New PDF from images…* under Create › More), *Export JSON…* (*Export form data as
+JSON…*), and *Search all pages* described as a switch where it is a button.
+
+---
+
 ## 2026-09-29 — ADR-0121 Decision 3: pdf-lib runs in the MuPDF host, and `main` peaks at 1.0× through a watermark
 
 **Built:** a third writer shape, `hosted-image`, for pdf-lib. Its SPEC is unchanged — image in, image out, the eight

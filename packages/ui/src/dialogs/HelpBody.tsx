@@ -1,9 +1,9 @@
 import { useLingui } from '@lingui/react';
 import type { MessageKey } from '@monstera/shared';
-import { type ReactElement, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, type ReactElement, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Article, Block, Inline } from '../help/article.js';
-import { HELP_ARTICLES, helpArticle, searchHelp } from '../help/articles.js';
+import { HELP_ARTICLES, helpArticle, screenshotUrl, searchHelp } from '../help/articles.js';
 import { HELP_ALL, HELP_ARTICLE_COUNT, HELP_BACK, HELP_HERE, HELP_NONE, HELP_SEARCH, HELP_SHOW_ME } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { Input } from '../primitives/Input.js';
@@ -40,6 +40,15 @@ function block(each: Block, index: number): ReactElement {
       return each.level === 2 ? <h4 key={index}>{inline(each.inline)}</h4> : <h5 key={index}>{inline(each.inline)}</h5>;
     case 'paragraph':
       return <p key={index}>{inline(each.inline)}</p>;
+    case 'screenshot': {
+      // DRAWN ONLY WHEN CAPTURED: a picture that is not bundled is left out, never stood in for.
+      const url = screenshotUrl(each.id);
+      return url === undefined ? <Fragment key={index} /> : (
+        <figure className="m-help__screenshot" key={index}>
+          <img src={url} alt={each.alt} />
+        </figure>
+      );
+    }
     case 'numbered':
     case 'bulleted': {
       const items = each.items.map((item, at) => (

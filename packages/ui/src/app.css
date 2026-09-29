@@ -816,6 +816,18 @@ textarea {
   overflow-x: auto;
 }
 
+/* A CAPTURED SCREEN, at most the article's width and never stretched past its own size. */
+.m-help__screenshot {
+  margin: 0;
+}
+
+.m-help__screenshot img {
+  display: block;
+  max-inline-size: 100%;
+  block-size: auto;
+  border: 1px solid var(--border); /* decorative: frames a picture of the application against the article's ground */
+}
+
 .m-help__table table {
   border-collapse: collapse;
 }

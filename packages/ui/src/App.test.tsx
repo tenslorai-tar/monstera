@@ -39,6 +39,9 @@ function markdownOf(article: Article): string {
           return block.items.flatMap((item) => [line(item.inline), ...item.nested.map(line)]);
         case 'table':
           return [...block.header, ...block.rows.flat()].map(line);
+        // A PICTURE HOLDS NO SENTENCE the checks below read; its alt describes the screen, not a route.
+        case 'screenshot':
+          return [];
       }
     })
     .join('\n');

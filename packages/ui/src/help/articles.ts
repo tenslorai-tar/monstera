@@ -28,6 +28,22 @@ function parseAll(): readonly Article[] {
 
 export const HELP_ARTICLES: readonly Article[] = parseAll();
 
+/**
+ * The captured screenshots, by id — the file name without `.png` — bundled for the Help centre's reason: no network.
+ * The set is the folder, as the articles' is, so a capture added is a picture shown and one removed is a picture that
+ * is simply not drawn. What produces them is `packages/testing/src/helpScreens.capture.ts`.
+ */
+const SCREENSHOTS: ReadonlyMap<string, string> = new Map(
+  Object.entries(
+    import.meta.glob<string>('./screenshots/*.png', { query: '?url', import: 'default', eager: true }),
+  ).map(([path, url]) => [path.slice('./screenshots/'.length, -'.png'.length), url]),
+);
+
+/** Where the bundled capture for this screenshot id is, or `undefined` when none is captured. */
+export function screenshotUrl(id: string): string | undefined {
+  return SCREENSHOTS.get(id);
+}
+
 /** The article with this id, or `undefined`. */
 export function helpArticle(id: string): Article | undefined {
   return HELP_ARTICLES.find((article) => article.id === id);

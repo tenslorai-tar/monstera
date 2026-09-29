@@ -22,6 +22,8 @@ function boldWords(article: (typeof HELP_ARTICLES)[number]): string[] {
         return block.items.flatMap((item) => [...bold(item.inline), ...item.nested.flatMap(bold)]);
       case 'table':
         return [...block.header, ...block.rows.flat()].flatMap(bold);
+      case 'screenshot':
+        return [];
     }
   });
 }
