@@ -65,3 +65,32 @@ the research surface applied the container alone, and the product's `containedPr
 - **A font cache over the machine's fonts** — a container cannot read a user's profile, and a conversion that depended
   on what one machine has installed would differ from the next.
 - **An online converter** — ADR-0063's rejection stands.
+
+## Correction, 2026-09-29 — what the build found
+
+Appended by the build (item 8c), and each paragraph answers a sentence above.
+
+**The cache no longer records absolute paths, so Decision 3's packaging question is closed.** Document Builder writes
+each font path three times — the list in `AllFonts.js`, one record per face in `font_selection.bin`, and that file's
+faces again, base64-encoded, inside `AllFonts.js` — and provisioning rewrites all three to name the fonts relative to
+the tree. The seam starts every converter in its executable's directory, so the relative names resolve wherever the
+tree lives. Two stagings at paths of different lengths produced byte-identical pins; `proof:onlyofficefontcache`
+holds the rewrite byte-exact or refused. The first rewrite left each record's length and the base64 copy stale, and
+still converted: **x2t converts from a cache whose paths do not resolve**, embedding a different Carlito program
+(30,632 bytes in a 31,812-byte PDF, against 30,836 in 53,300). Which file that came from was not established — this
+machine's `C:\Windows\Fonts` holds a byte-identical Carlito, readable from the container.
+
+**The job object and the Low integrity level are measured.** `scripts/research/officeLive.mjs` runs the product code
+— `createOfficePlatform`, `createOfficeSource`, and so `createContainedHost`, which reads back job membership,
+integrity and limits before it resumes the process — on a generated `.docx`, `.xlsx` and `.pptx`: each converted in
+1.1–1.2 s with a job peak of 330–352 MiB, and each sentence read back. A 16 MiB process limit refused the same
+`.docx`, so the limit reaches x2t. A generated deck with no theme stopped x2t's script (exit 80); every deck an
+application writes carries one, and the fixture now does.
+
+**The subset.** Every DLL in the archive is in x2t's import table (each removal: exit `0xC0000135`), so all twenty
+ship; Document Builder's scripting, the dictionaries, the headers, `doctrenderer.lib` and the empty templates do not.
+
+**The licences are wider than "AGPL-3.0 and SIL OFL".** Core's `LICENSE` closes with Additional Terms under Section 7
+(retain notices, mark a modified version, show legal notices in an interactive interface, no trademark licence), and
+core's `3DPARTY.md` at the shipped build 9.4.0.130 declares 26 third-party components; `NOTICE` carries all of them,
+and says which of them are compiled into the Windows build was not established one by one.
