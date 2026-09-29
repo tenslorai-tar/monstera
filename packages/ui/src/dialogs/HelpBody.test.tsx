@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { HELP_ARTICLES } from '../help/articles.js';
+import { HELP_ARTICLES, screenshotUrl } from '../help/articles.js';
 import { activateCatalogue, i18n } from '../i18n.js';
 import { EN, ROTATE_PAGE_180_TITLE, ROTATE_PAGE_TITLE, SAVE_TITLE } from '../messages/en.js';
 import type { HelpAnswer } from './help.js';
@@ -126,5 +126,19 @@ describe('the Help centre’s body', () => {
   it('CONTROL: with nothing showable, no *Show me* at all — a button that rang nothing is the defect', () => {
     drawn({ article: 'rotate-pages', showable: [] });
     expect(screen.queryByRole('group', { name: 'Show me' })).toBeNull();
+  });
+
+  it('a screenshot the article names and nobody captured is left out: no figure, no image, no stand-in', () => {
+    const naming = HELP_ARTICLES.filter((article) =>
+      article.blocks.some((each) => each.kind === 'screenshot' && screenshotUrl(each.id) === undefined),
+    );
+    // THE PRECONDITION IS THE CONTROL: an article that names an uncaptured screenshot exists, so an empty page below
+    // is the branch deciding and not a fixture with no screenshot in it.
+    expect(naming.length).toBeGreaterThan(0);
+    const article = naming[0];
+    if (article === undefined) throw new Error('unreachable: the length was asserted');
+    drawn({ article: article.id });
+    expect(screen.getByRole('heading', { level: 3 })).toBeDefined();
+    expect(document.querySelectorAll('.m-help__screenshot, img')).toHaveLength(0);
   });
 });

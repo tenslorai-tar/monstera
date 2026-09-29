@@ -1549,6 +1549,31 @@ describe('checkpoint files', () => {
     await service.close(docId);
   });
 
+  it('keeps and counts a checkpoint the cursor has stepped back over, because a redo needs it', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    const first = await service.run(docId, async (context) => {
+      const held = await context.storeCheckpoint(COMMAND_WRITER_FOR_TEST, writing('the redo tail'));
+      context.commandLog(COMMAND_WRITER_FOR_TEST).record(storedEntry(held));
+      return held;
+    });
+    const second = await service.run(docId, async (context) => {
+      const log = context.commandLog(COMMAND_WRITER_FOR_TEST);
+      expect(log.undo()).toBeDefined();
+      // A SWEEP IS PROVOKED IN THIS SAME ENTRY, so the redo tail is asked about rather than left alone.
+      const stray = await context.storeCheckpoint(COMMAND_WRITER_FOR_TEST, writing('stray'));
+      return { stray: stray.path, retained: log.retainedBytes() };
+    });
+
+    expect(existsSync(first.value.path)).toBe(true);
+    expect(second.value.retained).toBe(first.value.byteLength);
+    // CONTROL: the sweep ran, so the tail surviving it was a decision and not a sweep that never happened.
+    expect(existsSync(second.value.stray)).toBe(false);
+    await service.close(docId);
+  });
+
   it('deletes a checkpoint the retention rule trimmed', async () => {
     const registry = new CapabilityRegistry();
     const service = newService(registry, { documentBytesCeiling: statSync(original()).size });

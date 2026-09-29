@@ -2195,8 +2195,12 @@ describe('annotations exported to a file and imported from it, through the lane 
           names: (target) => siblingNames(target, 1),
           wait: () => Promise.resolve(),
         },
-        flush: sessionFlush,
-        // A SAVE STAGES (ADR-0121's addendum), so this is where one is counted.
+        // BOTH ROUTES ARE COUNTED. A save stages (ADR-0121's addendum) and a direct flush is still a
+        // member, so counting only `stage` let a path that called `flush` pass *flushes nothing*.
+        flush: (docId, sessions) => {
+          flushes.push(docId);
+          return sessionFlush(docId, sessions);
+        },
         stage: stagingFrom((docId, sessions) => {
           flushes.push(docId);
           return sessionFlush(docId, sessions);
@@ -4265,8 +4269,11 @@ describe('DocumentCommands — a page edited in another application (ADR-0062)',
         names: (target) => siblingNames(target, 1),
         wait: () => Promise.resolve(),
       },
-      flush: sessionFlush,
-      // A SAVE STAGES (ADR-0121's addendum), so this is where one is counted.
+      // BOTH ROUTES ARE COUNTED, for the reason `commandsWith` gives.
+      flush: (docId, sessions) => {
+        flushes.push(docId);
+        return sessionFlush(docId, sessions);
+      },
       stage: stagingFrom((docId, sessions) => {
         flushes.push(docId);
         return sessionFlush(docId, sessions);

@@ -1742,6 +1742,11 @@ describe('CommandBus and a parameterised pre-read', () => {
     expect(images).toHaveLength(3);
     // THE UNDO INSTALLED WHAT THE SESSION HOLDS AFTER THE RESTORE — the checkpoint, the pre-command document — and
     // not the recognised one.
+    // Equal to the pre-command document AS A SESSION SERIALISES IT, because the restore rebuilds the session from the
+    // checkpoint and main's image is that session's bytes — not `flat` itself, which MuPDF rewrites on its first save.
+    // *Differs from the recognised image* alone is satisfied by any bytes but those.
+    const preCommand = await mupdfWriter.serialise(await mupdfWriter.open(flat));
+    expect(images[1]).toStrictEqual(preCommand);
     expect(images[1]).not.toStrictEqual(images[0]);
     // AND THE STORED VALUE REACHED THE SECOND APPLY, which the count alone does
     // not say. Byte equality is the assertion available here: the apply's input
