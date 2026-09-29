@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { createReadStream, mkdirSync } from 'node:fs';
-import { rm, writeFile } from 'node:fs/promises';
+import { createReadStream, existsSync, mkdirSync } from 'node:fs';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import type { ContainedProgram, ConverterExecutablePath } from './containedProgram.js';
@@ -21,11 +21,11 @@ import {
 } from './sessionDirectories.js';
 
 /**
- * One document through one external converter, as §8's seam runs it — the part every
- * converter of a document shares: layout text (ADR-0071) and PDF/A-2b (ADR-0075).
+ * One file through one external converter, as §8's seam runs it — the part every
+ * converter shares: layout text (ADR-0071), PDF/A-2b (ADR-0075) and Office import (ADR-0120).
  *
- * A session pair granted to the converter's own container, the document's current
- * bytes copied in under a fixed name, the converter run to its end under the job's
+ * A session pair granted to the converter's own container, the bytes to convert — a
+ * document's, or a picked file's — copied in under a fixed name, the converter run to its end under the job's
  * bounds, and its output read back as a STREAM, so `main` holds one read buffer's
  * worth of it (ADR-0035).
  *
@@ -53,8 +53,11 @@ export interface ConverterPlatform {
   readonly bounds: ConverterBounds;
 }
 
-/** Why a conversion produced nothing: the seam's own failures, or the session area's. */
-export type ConversionFailure = ConverterFailure | { readonly stage: 'area'; readonly detail: string };
+/** Why a conversion produced nothing: the seam's own failures, the session area's, or an exit with no file. */
+export type ConversionFailure =
+  | ConverterFailure
+  | { readonly stage: 'area'; readonly detail: string }
+  | { readonly stage: 'no-output'; readonly said: string | null };
 
 /** A failure in words, for a converter's error message and the shell log. */
 export function describeConversionFailure(failure: ConversionFailure): string {
@@ -69,17 +72,56 @@ export function describeConversionFailure(failure: ConversionFailure): string {
       return `the converter's exit could not be read: ${failure.detail}`;
     case 'exit-code':
       return `the converter exited ${String(failure.code)}${failure.said === null ? '' : `: ${failure.said}`}`;
+    case 'no-output':
+      return `the converter exited 0 and wrote nothing${failure.said === null ? '' : `: ${failure.said}`}`;
   }
 }
 
-/** What one conversion asks of the converter. */
-export interface Conversion {
+/**
+ * What one conversion asks of the converter: its paths on the command line, or in a file of instructions.
+ *
+ * ## Two kinds, because a converter takes one or the other
+ *
+ * `x2t` takes its paths only from an instructions file — its positional form crashes (ADR-0120) — so the seam writes
+ * that file into the snapshot directory under a fixed name, beside the input, and makes the working directory the
+ * converter writes its intermediate files in. A kind rather than optional fields: a conversion with instructions and
+ * a command line that ignores them is the state this cannot express.
+ */
+export type Conversion = ArgumentConversion | InstructedConversion;
+
+interface ConversionNames {
   /** The input's fixed name in the snapshot directory. A picked file's name never reaches a command line (§8). */
   readonly input: string;
   /** The output's fixed name in the output directory. */
   readonly output: string;
+}
+
+/** A converter told its paths on the command line. */
+export interface ArgumentConversion extends ConversionNames {
+  readonly kind: 'arguments';
   /** The command line, given the two paths. */
   readonly commandArguments: (input: string, output: string) => readonly string[];
+}
+
+/** Where an instructed conversion's paths are, for the instructions that name them. */
+export interface InstructedPaths {
+  readonly input: string;
+  readonly output: string;
+  /** A directory in the output directory, made empty, for the converter's intermediate files. */
+  readonly scratch: string;
+}
+
+/** A converter told its paths in a file. */
+export interface InstructedConversion extends ConversionNames {
+  readonly kind: 'instructions';
+  /** The instructions file's fixed name in the snapshot directory. */
+  readonly instructions: string;
+  /** The scratch directory's fixed name in the output directory. */
+  readonly scratch: string;
+  /** The instructions' text, given the paths. */
+  readonly instructionsText: (paths: InstructedPaths) => string;
+  /** The command line, given the instructions file's path. */
+  readonly commandArguments: (instructions: string) => readonly string[];
 }
 
 /** A conversion that succeeded: what the converter printed, and its output as it is read. */
@@ -96,14 +138,14 @@ function mintName(): ReturnType<typeof sessionDirectoryName> {
 }
 
 /**
- * Runs `conversion` on `pdf`.
+ * Runs `conversion` on `source`.
  *
  * @param failed turns a failure into the error its caller throws, so each converter's
  *   refusal keeps its own name and report
  */
 export async function convertDocument(
   platform: ConverterPlatform,
-  pdf: Uint8Array,
+  source: Uint8Array,
   conversion: Conversion,
   failed: (failure: ConversionFailure) => Error,
 ): Promise<Converted> {
@@ -126,13 +168,24 @@ export async function convertDocument(
   try {
     const input = join(paths.snapshot, conversion.input);
     const output = join(paths.output, conversion.output);
-    await writeFile(input, pdf);
+    await writeFile(input, source);
+
+    let commandArguments: readonly string[];
+    if (conversion.kind === 'arguments') {
+      commandArguments = conversion.commandArguments(input, output);
+    } else {
+      const scratch = join(paths.output, conversion.scratch);
+      const instructions = join(paths.snapshot, conversion.instructions);
+      await mkdir(scratch);
+      await writeFile(instructions, conversion.instructionsText({ input, output, scratch }), 'utf8');
+      commandArguments = conversion.commandArguments(instructions);
+    }
 
     const surface = platform.surfaceFor({
       program: {
         runs: 'converter',
         executablePath: platform.executable,
-        commandArguments: [...conversion.commandArguments(input, output)],
+        commandArguments: [...commandArguments],
       },
       workingDirectory: dirname(platform.executable),
       containerName: platform.containerName,
@@ -140,6 +193,9 @@ export async function convertDocument(
     });
     const ran = await runContainedConverter(surface, platform.bounds);
     if (!ran.ok) throw failed(ran.error);
+    // EXITED 0 IS NOT WROTE ONE. Without this the missing file surfaced as a read error part way into the caller's
+    // write, where it names a path in the session area rather than the converter.
+    if (!existsSync(output)) throw failed({ stage: 'no-output', said: ran.value.said });
 
     // The input has done its work, and a copy of the document in a directory a
     // container may read does not wait for the write to finish.

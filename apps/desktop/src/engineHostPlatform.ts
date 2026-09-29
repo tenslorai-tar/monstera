@@ -7,6 +7,7 @@ import type { EngineHostPlatform } from './composition.js';
 import { providedConverterExecutable } from './containedProgram.js';
 import type { ConverterPlatform } from './converterSession.js';
 import { LAYOUT_TEXT_BOUNDS } from './layoutText.js';
+import { OFFICE_BOUNDS } from './officeConversion.js';
 import { PDFA_BOUNDS } from './pdfaConversion.js';
 import {
   ENGINE_HOST_CONTAINER,
@@ -390,6 +391,31 @@ export function createPdfaPlatform(base: EngineHostPlatform): ConverterPlatform 
     executable,
     surfaceFor: (config) => createWin32HostSurface(config),
     bounds: PDFA_BOUNDS,
+  };
+}
+
+/** The Office converter's own container (ADR-0120): no other converter's grants reach it. */
+export const OFFICE_CONTAINER = 'monstera-office-converter';
+
+/**
+ * ONLYOFFICE `x2t`'s platform: {@link createPdfaPlatform}'s shape with its own container,
+ * executable and bounds (ADR-0120). `null` where no executable was handed down.
+ */
+export function createOfficePlatform(base: EngineHostPlatform): ConverterPlatform | null {
+  const executable = providedConverterExecutable('MONSTERA_ONLYOFFICE_EXECUTABLE', process.env);
+  if (executable === null) return null;
+  const container = hostContainerSid(OFFICE_CONTAINER);
+  if (!container.ok) return null;
+
+  return {
+    sessionRoot: base.sessionRoot,
+    directories: base.directories,
+    user: base.user,
+    container: container.value,
+    containerName: OFFICE_CONTAINER,
+    executable,
+    surfaceFor: (config) => createWin32HostSurface(config),
+    bounds: OFFICE_BOUNDS,
   };
 }
 

@@ -398,6 +398,9 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // `document.newFromMarkdown`'s answer to L11 exactly: the ask is nothing, the file
   // is read in main and parsed in the compose host, and an open's outcome returns.
   'document.newFromCsv': 'needs a compose host, an open dialog and a save dialog',
+  // THE SAME ANSWER FROM A CONVERTER (ADR-0120): the ask is nothing, the file is read in main and
+  // converted by the contained x2t, the PDF streams to disk, and an open's outcome returns.
+  'document.newFromOffice': 'needs the contained x2t, an open dialog and a save dialog',
   // THE SAME ANSWER FOR A SET OF FILES: the ask is nothing, the images are read in main
   // one at a time and decoded in the compose host, and an open's outcome returns — or a
   // file NAME bounded by `MAX_DOCUMENT_NAME_LENGTH`, never a path or a byte of a picture.

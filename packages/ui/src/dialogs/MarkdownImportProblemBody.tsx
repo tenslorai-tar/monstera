@@ -5,6 +5,7 @@ import {
   MARKDOWN_IMPORT_ABSENT,
   MARKDOWN_IMPORT_AT_CAPACITY,
   MARKDOWN_IMPORT_CONTESTED,
+  MARKDOWN_IMPORT_CONVERSION_FAILED,
   MARKDOWN_IMPORT_IMAGES_TOO_LARGE,
   MARKDOWN_IMPORT_IMAGE_UNREADABLE,
   MARKDOWN_IMPORT_IMAGE_UNREADABLE_NO_FILE,
@@ -73,6 +74,8 @@ export default function MarkdownImportProblemBody(props: MarkdownImportProblem):
         return _(MARKDOWN_IMPORT_CONTESTED);
       case 'write-failed':
         return _(MARKDOWN_IMPORT_WRITE_FAILED);
+      case 'conversion-failed':
+        return _(MARKDOWN_IMPORT_CONVERSION_FAILED);
       case 'absent':
         return _(MARKDOWN_IMPORT_ABSENT);
       case 'at-capacity':

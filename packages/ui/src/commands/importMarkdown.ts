@@ -14,8 +14,10 @@ import {
   NEW_FROM_CSV_COMMAND_TITLE,
   NEW_FROM_IMAGES_COMMAND_TITLE,
   NEW_FROM_MARKDOWN_COMMAND_TITLE,
+  NEW_FROM_OFFICE_COMMAND_TITLE,
   RIBBON_NEW_FROM_MARKDOWN,
   RIBBON_NEW_FROM_CSV,
+  RIBBON_NEW_FROM_OFFICE,
   RIBBON_NEW_FROM_IMAGES,
   RIBBON_NEW_FROM_CAMERA,
   RIBBON_APPEND_MARKDOWN,
@@ -56,9 +58,12 @@ export function markdownImportProblem(
   answer:
     | ChannelResult<'document.newFromMarkdown'>
     | ChannelResult<'document.appendMarkdown'>
-    | ChannelResult<'document.newFromImages'>,
+    | ChannelResult<'document.newFromImages'>
+    | ChannelResult<'document.newFromOffice'>,
 ): MarkdownImportProblem | null {
   switch (answer.kind) {
+    case 'conversion-failed':
+      return { reason: 'conversion-failed' };
     case 'unreadable':
       return { reason: 'unreadable' };
     case 'too-large':
@@ -186,6 +191,52 @@ export function newFromCsvCommand(deps: {
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 30 }],
     run: async (): Promise<void> => {
       const answer = await deps.client['document.newFromCsv']({});
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      const result = answer.value;
+      if (result.kind === 'opened') {
+        deps.onOpened({
+          docId: result.docId,
+          version: result.version,
+          byteLength: result.byteLength,
+          name: result.name,
+        });
+        return;
+      }
+      if (result.kind === 'already-open') {
+        deps.onAlreadyOpen(result.docId);
+        return;
+      }
+      const problem = markdownImportProblem(result);
+      if (problem !== null) void deps.ask(MARKDOWN_IMPORT_PROBLEM_DIALOG_ID, problem);
+    },
+  };
+}
+
+/**
+ * A new PDF from a Word, Excel or PowerPoint file, opened as a tab
+ * ([ADR-0120](../../../../docs/DECISIONS/0120-office-import-is-onlyoffices-x2t-contained.md)).
+ *
+ * {@link newFromCsvCommand}'s shape and callbacks exactly. Main picks the file, the contained `x2t`
+ * converts it, and one answer is this import's own — the converter produced no PDF — which the same
+ * dialog states.
+ */
+export function newFromOfficeCommand(deps: {
+  readonly client: DocumentCommandDeps['client'];
+  readonly ask: DocumentCommandDeps['ask'];
+  readonly onOpened: (opened: OpenedDocument) => void;
+  readonly onAlreadyOpen: (docId: DocId) => void;
+}): UiCommand {
+  return {
+    id: 'document.new-from-office',
+    icon: 'FileText',
+    title: NEW_FROM_OFFICE_COMMAND_TITLE,
+    ribbonTitle: RIBBON_NEW_FROM_OFFICE,
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 5 }],
+    run: async (): Promise<void> => {
+      const answer = await deps.client['document.newFromOffice']({});
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;

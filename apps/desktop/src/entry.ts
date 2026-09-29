@@ -7,6 +7,7 @@ import {
   MAX_FORM_DATA_BYTES,
   MAX_IMAGE_BYTES,
   MAX_MARKDOWN_BYTES,
+  MAX_OFFICE_IMPORT_BYTES,
 } from '@monstera/contract';
 import { BrowserWindow, app, clipboard, crashReporter, nativeImage, safeStorage, shell } from 'electron';
 
@@ -31,14 +32,17 @@ import {
   createImagesPicker,
   createCsvPicker,
   createMarkdownPicker,
+  createOfficeImportPicker,
 } from './imagePicker.js';
 import {
   createComposeHostPlatform,
   createEngineHostPlatform,
   createLayoutTextPlatform,
+  createOfficePlatform,
   createPdfaPlatform,
   createPdfiumHostPlatform,
 } from './engineHostPlatform.js';
+import { OFFICE_IMPORT_FORMATS } from './officeConversion.js';
 import { removeRetiredCaches } from './retiredCaches.js';
 import { readCloudClients } from './cloudClients.js';
 import { RECENT_FILE, createRecentFiles, recentLengthIn } from './recentFiles.js';
@@ -137,6 +141,9 @@ startShell(() => {
   const enginePlatform = createEngineHostPlatform(
     join(app.getPath('sessionData'), 'engine-sessions'),
   );
+  // X2T'S PLATFORM, `null` on Ghostscript's roads: no Win32 platform, no `x2t` handed down by the
+  // launcher, or no container SID (ADR-0120).
+  const officePlatform = enginePlatform === null ? null : createOfficePlatform(enginePlatform);
 
   // WHERE A DIAGNOSTIC GOES WHEN NOBODY IS WATCHING STDERR, which is every
   // packaged run: a Store application has no terminal attached, so until this
@@ -447,6 +454,26 @@ startShell(() => {
     // GHOSTSCRIPT'S PLATFORM, `null` on the same roads: no Win32 platform, no `gswin64c`
     // handed down by the launcher, or no container SID (ADR-0075).
     pdfaPlatform: enginePlatform === null ? null : createPdfaPlatform(enginePlatform),
+    // OFFICE IMPORT: x2t's platform, its picker, and the read bounded by the contract's figure before
+    // any byte is in memory — `readCsv`'s shape against its own bound (ADR-0120).
+    officeImport:
+      officePlatform === null
+        ? null
+        : {
+            platform: officePlatform,
+            source: {
+              pick: createOfficeImportPicker(OFFICE_IMPORT_FORMATS),
+              read: async (path: string) => {
+                try {
+                  const { size } = await stat(path);
+                  if (size > MAX_OFFICE_IMPORT_BYTES) return { kind: 'too-large' as const, byteLength: size };
+                  return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
+                } catch {
+                  return { kind: 'unreadable' as const };
+                }
+              },
+            },
+          },
     // THE ENCODER, and it is here because `nativeImage` is Electron's.
     //
     // `composition.ts` imports no Electron — which is what lets

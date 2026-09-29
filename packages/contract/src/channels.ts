@@ -1194,12 +1194,22 @@ const openOutcomeSchema = z.discriminatedUnion('kind', [
  * **Declared once** because the Markdown and CSV imports answer the same outcomes,
  * and two copies of this union would be two opinions about what an import can end in.
  */
+/** Past the format's byte bound — refused before it is read into memory. */
+const importTooLargeSchema = z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() });
+/** The file could not be read. */
+const importUnreadableSchema = z.object({ kind: z.literal('unreadable') });
+/** Another open document reaches the chosen destination. Nothing was written. */
+const importContestedSchema = z.object({
+  kind: z.literal('destination-contested'),
+  openElsewhere: z.number().int().positive(),
+});
+/** The filesystem refused. Nothing at the destination was replaced. */
+const importWriteFailedSchema = z.object({ kind: z.literal('write-failed') });
+
 const composedImportOutcomeSchema = z.discriminatedUnion('kind', [
   ...openOutcomeSchema.options,
-  /** Past the format's byte bound — refused before it is read into memory. */
-  z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
-  /** The file could not be read. */
-  z.object({ kind: z.literal('unreadable') }),
+  importTooLargeSchema,
+  importUnreadableSchema,
   z.object({
     kind: z.literal('composition-refused'),
     reason: z.enum(COMPOSE_REFUSALS),
@@ -1215,10 +1225,26 @@ const composedImportOutcomeSchema = z.discriminatedUnion('kind', [
      */
     file: z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH).nullable(),
   }),
-  /** Another open document reaches the chosen destination. Nothing was written. */
-  z.object({ kind: z.literal('destination-contested'), openElsewhere: z.number().int().positive() }),
-  /** The filesystem refused. Nothing at the destination was replaced. */
-  z.object({ kind: z.literal('write-failed') }),
+  importContestedSchema,
+  importWriteFailedSchema,
+]);
+
+/**
+ * What an Office import answers
+ * ([ADR-0120](../../../docs/DECISIONS/0120-office-import-is-onlyoffices-x2t-contained.md)).
+ *
+ * {@link composedImportOutcomeSchema}'s members from the same named schemas, with the one a
+ * converter has in place of the compose host's: nothing is composed, so no reason or line can
+ * be named — the converter produced no PDF, and its own words go to the shell log.
+ */
+const officeImportOutcomeSchema = z.discriminatedUnion('kind', [
+  ...openOutcomeSchema.options,
+  importTooLargeSchema,
+  importUnreadableSchema,
+  /** The converter produced no PDF from the file. Nothing was written. */
+  z.object({ kind: z.literal('conversion-failed') }),
+  importContestedSchema,
+  importWriteFailedSchema,
 ]);
 
 /**
@@ -2796,6 +2822,21 @@ export const channels = {
     'Sets a CSV file the user picks as a table in a new PDF, saves it where they choose, and opens it.',
     z.object({}),
     composedImportOutcomeSchema,
+    ['engine-unavailable'],
+  ),
+
+  /**
+   * Converts a Word, Excel or PowerPoint file the user picks to a new PDF, saves it where they
+   * choose, and opens it ([ADR-0120](../../../docs/DECISIONS/0120-office-import-is-onlyoffices-x2t-contained.md)).
+   *
+   * `document.newFromCsv`'s shape: the ask carries nothing, main runs both pickers, and ONLYOFFICE's
+   * `x2t` converts the file in its own contained process. `engine-unavailable` where no converter
+   * was provisioned.
+   */
+  'document.newFromOffice': channel(
+    'Converts a Word, Excel or PowerPoint file the user picks to a new PDF, saves it where they choose, and opens it.',
+    z.object({}),
+    officeImportOutcomeSchema,
     ['engine-unavailable'],
   ),
 

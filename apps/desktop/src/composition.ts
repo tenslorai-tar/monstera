@@ -217,6 +217,7 @@ import type { ShellLog } from './shellLog.js';
 import type { CrashReports } from './crashReports.js';
 import type { ConverterPlatform } from './converterSession.js';
 import { createLayoutTextSource } from './layoutText.js';
+import { createOfficeSource } from './officeConversion.js';
 import { createPdfaSource } from './pdfaConversion.js';
 import { createAssistant } from './assistant.js';
 import type { PrintDestination } from './printing.js';
@@ -666,6 +667,13 @@ export interface ShellComposition {
    */
   readonly pdfaPlatform?: ConverterPlatform | null;
   /**
+   * Where an Office file is converted to PDF: ONLYOFFICE's `x2t` through §8's external-converter
+   * seam, with the picker and the bounded read (ADR-0120). `null` where no Win32 platform exists or
+   * no executable was handed down, and the import then answers *unavailable*. One optional part —
+   * `pdfaPlatform`'s shape — so the harnesses, which import nothing, say nothing.
+   */
+  readonly officeImport?: { readonly platform: ConverterPlatform; readonly source: ImportSource } | null;
+  /**
    * The system print dialog and the printer it answers (ADR-0074). `null` where there
    * is none, and a print then answers *unavailable*.
    */
@@ -754,6 +762,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     composePlatform = null,
     layoutTextPlatform = null,
     pdfaPlatform = null,
+    officeImport = null,
     print = null,
     share = null,
     encodePng,
@@ -1391,6 +1400,11 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     layoutText: layoutTextPlatform === null ? null : createLayoutTextSource(layoutTextPlatform, failures),
     // PDF/A-2b, the contained Ghostscript — `null` where it cannot run, for layout text's reason (ADR-0075).
     pdfa: pdfaPlatform === null ? null : createPdfaSource(pdfaPlatform, failures),
+    // OFFICE IMPORT, the contained x2t — `null` where it cannot run, for layout text's reason (ADR-0120).
+    officeImport:
+      officeImport === null
+        ? null
+        : { source: officeImport.source, convert: createOfficeSource(officeImport.platform, failures) },
     // OPTIMIZE, MuPDF's image rewriter in the compose host (ADR-0087). A host started without the
     // native library answers `unavailable` itself, so this is `null` only where there is no host.
     optimizer: composeHost === null ? null : composeHost.optimize,

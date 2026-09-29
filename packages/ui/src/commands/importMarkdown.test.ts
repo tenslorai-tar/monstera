@@ -9,6 +9,7 @@ import {
   newFromCsvCommand,
   newFromImagesCommand,
   newFromMarkdownCommand,
+  newFromOfficeCommand,
 } from './importMarkdown.js';
 
 /**
@@ -299,6 +300,64 @@ describe('newFromCsvCommand', () => {
         { name: 'ask', value: { id: 'dialog.markdown-import-problem', props: { reason, line: 7 } } },
       ]);
     }
+  });
+});
+
+describe('newFromOfficeCommand (ADR-0120)', () => {
+  it('SENDS NOTHING on its OWN channel and adds the converted PDF as a tab', async () => {
+    // THE CHANNEL IS THE DECISION, `newFromCsvCommand`'s reason.
+    const { client, sent } = recording({
+      'document.newFromOffice': ok({
+        kind: 'opened',
+        docId: COMPOSED,
+        version: asDocVersion(1),
+        byteLength: 4096,
+        name: 'Budget.pdf',
+      }),
+    });
+    const { calls, record, ask } = callbacks();
+
+    await newFromOfficeCommand({
+      client,
+      ask,
+      onOpened: record('opened'),
+      onAlreadyOpen: record('already-open'),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([{ id: 'document.newFromOffice', params: {} }]);
+    expect(calls).toStrictEqual([
+      { name: 'opened', value: { docId: COMPOSED, version: 1, byteLength: 4096, name: 'Budget.pdf' } },
+    ]);
+  });
+
+  it('TELLS the person when the converter made no PDF — its own reason, not an unreadable file', async () => {
+    const { client } = recording({ 'document.newFromOffice': ok({ kind: 'conversion-failed' }) });
+    const { calls, record, ask } = callbacks();
+
+    await newFromOfficeCommand({
+      client,
+      ask,
+      onOpened: record('opened'),
+      onAlreadyOpen: record('already-open'),
+    }).run(CONTEXT);
+
+    expect(calls).toStrictEqual([
+      { name: 'ask', value: { id: 'dialog.markdown-import-problem', props: { reason: 'conversion-failed' } } },
+    ]);
+  });
+
+  it('CONTROL: a dismissal asks nothing', async () => {
+    const { client } = recording({ 'document.newFromOffice': ok({ kind: 'cancelled' }) });
+    const { calls, record, ask } = callbacks();
+
+    await newFromOfficeCommand({
+      client,
+      ask,
+      onOpened: record('opened'),
+      onAlreadyOpen: record('already-open'),
+    }).run(CONTEXT);
+
+    expect(calls).toStrictEqual([]);
   });
 });
 

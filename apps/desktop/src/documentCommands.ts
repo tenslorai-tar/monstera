@@ -13,6 +13,7 @@ import {
   MAX_IMAGE_BYTES,
   MAX_MARKDOWN_BYTES,
   MAX_CSV_BYTES,
+  MAX_OFFICE_IMPORT_BYTES,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
   MAX_IMPORT_IMAGE_PIXELS,
@@ -152,6 +153,12 @@ import {
   watchEdits,
 } from './externalEditWatch.js';
 import { type LayoutTextSource, LayoutTextFailedError } from './layoutText.js';
+import {
+  type OfficeConversion,
+  type OfficeSource,
+  OfficeConversionFailedError,
+  officeImportFormatOf,
+} from './officeConversion.js';
 import { type PdfaSource, PdfaFailedError } from './pdfaConversion.js';
 import { type PrintDestination, PrintFailedError } from './printing.js';
 import { type ShareDestination, ShareFailedError, shareTitle } from './sharing.js';
@@ -838,6 +845,25 @@ export type ComposeImportOutcome =
       /** The picked file's NAME, where the import took several — never its path. */
       readonly file: string | null;
     }
+  | { readonly kind: 'destination-contested'; readonly openElsewhere: number }
+  | { readonly kind: 'write-failed' };
+
+/**
+ * Office import (ADR-0120): the picker and bounded read, and x2t's conversion in its container.
+ * {@link ImportSource}'s bundling, for its reason.
+ */
+export interface OfficeImport {
+  readonly source: ImportSource;
+  readonly convert: OfficeSource;
+}
+
+/** What converting a picked Office file into a file on disk answers. {@link ComposeImportOutcome}'s shape. */
+export type OfficeImportOutcome =
+  | { readonly kind: 'written'; readonly destination: string }
+  | { readonly kind: 'cancelled' }
+  | { readonly kind: 'too-large'; readonly limitBytes: number }
+  | { readonly kind: 'unreadable' }
+  | { readonly kind: 'conversion-failed' }
   | { readonly kind: 'destination-contested'; readonly openElsewhere: number }
   | { readonly kind: 'write-failed' };
 
@@ -2029,6 +2055,11 @@ export interface DocumentCommandsParts {
    */
   readonly pdfa: PdfaSource | null;
   /**
+   * Office import through the contained `x2t` (ADR-0120) — or `null` where none can run, and the
+   * import is refused as unavailable before any dialog. Required for `compose`'s reason.
+   */
+  readonly officeImport: OfficeImport | null;
+  /**
    * MuPDF's image rewriter in the compose host (ADR-0087) — or `null` where there is no compose
    * host at all, and Optimize then answers `unavailable` before any work. A host without the
    * native library answers `unavailable` itself.
@@ -2175,6 +2206,7 @@ export class DocumentCommands {
   readonly #pickText: (sourceName: string) => Promise<string | null>;
   readonly #layoutText: LayoutTextSource | null;
   readonly #pdfa: PdfaSource | null;
+  readonly #officeImport: OfficeImport | null;
   readonly #optimizer: OptimizeSource | null;
   readonly #print: PrintDestination | null;
   readonly #share: ShareDestination | null;
@@ -2242,6 +2274,7 @@ export class DocumentCommands {
     this.#pickText = parts.pickText;
     this.#layoutText = parts.layoutText;
     this.#pdfa = parts.pdfa;
+    this.#officeImport = parts.officeImport;
     this.#optimizer = parts.optimizer;
     this.#print = parts.print;
     this.#share = parts.share;
@@ -5060,6 +5093,62 @@ export class DocumentCommands {
       return { kind: 'composition-refused', reason: composed.reason, line: composed.line, file: null };
     }
     return this.#writeComposed(composed.pdf, 'camera.jpg');
+  }
+
+  /**
+   * Converts a Word, Excel or PowerPoint file the person picks to a PDF with the contained `x2t`,
+   * and writes it where they choose ([ADR-0120](../../../docs/DECISIONS/0120-office-import-is-onlyoffices-x2t-contained.md)).
+   *
+   * {@link composeImportFile}'s shape: refused before the picker where nothing can convert, the
+   * file bounded before its read, and a path answered that never crosses.
+   *
+   * ## Converted BEFORE the save dialog
+   *
+   * A file x2t cannot read is told to the person without asking them to name a PDF that will not
+   * exist. The converted PDF waits in the converter's own area and streams to the destination, so
+   * `main` holds one read buffer of it — and a dialog cancelled, or a destination refused before
+   * the stream is read, removes that area unread.
+   */
+  async convertOfficeFile(): Promise<OfficeImportOutcome> {
+    const office = this.#officeImport;
+    if (office === null) throw new EngineUnavailableError('Importing Office files');
+
+    const picked = await office.source.pick();
+    if (picked === null) return { kind: 'cancelled' };
+    // THE DIALOG'S FILTER IS NOT A CHECK: a typed name reaches here with any extension, and the
+    // extension is what names x2t's input.
+    const format = officeImportFormatOf(picked);
+    if (format === null) return { kind: 'unreadable' };
+
+    const read = await office.source.read(picked);
+    if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_OFFICE_IMPORT_BYTES };
+    if (read.kind === 'unreadable') return { kind: 'unreadable' };
+
+    let converted: OfficeConversion;
+    try {
+      converted = await office.convert(format, read.bytes);
+    } catch (error) {
+      // ONLY THE CONVERTER'S REFUSAL IS AN ANSWER — `openFromUrl`'s rule. The reason is in the shell log.
+      if (error instanceof OfficeConversionFailedError) return { kind: 'conversion-failed' };
+      throw error;
+    }
+
+    try {
+      const destination = await this.#copy.pick(suggestedComposedName(picked));
+      if (destination === null) return { kind: 'cancelled' };
+      const written = await writeStreamedDocument(
+        this.#save.deps,
+        this.#copy.checkTarget,
+        () => Promise.resolve(converted.output),
+        destination,
+      );
+      if (written.kind === 'refused') return { kind: 'destination-contested', openElsewhere: written.others.length };
+      if (written.kind === 'write-failed') return { kind: 'write-failed' };
+      return { kind: 'written', destination };
+    } finally {
+      // A STREAM READ TO ITS END HAS REMOVED THE AREA ALREADY; every other path has not.
+      converted.discard();
+    }
   }
 
   /**

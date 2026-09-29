@@ -408,6 +408,7 @@ export function createContractHandlers(deps: {
     'document.insertImage': insertImageHandler(deps.commands),
     'document.newFromMarkdown': newFromImportHandler(deps, 'markdown'),
     'document.newFromCsv': newFromImportHandler(deps, 'csv'),
+    'document.newFromOffice': newFromOfficeHandler(deps),
     'document.newFromImages': newFromImagesHandler(deps),
     'document.newFromCapture': newFromCaptureHandler(deps),
     'document.appendMarkdown': appendMarkdownHandler(deps),
@@ -2627,6 +2628,43 @@ function openFromUrlHandler(
         return ok({ kind: 'write-failed' });
       case 'written':
         return ok((await openPath(deps, fetched.destination)).outcome);
+    }
+  };
+}
+
+/**
+ * Converts a picked Office file to a PDF on disk with the contained `x2t`, and opens it
+ * ([ADR-0120](../../../docs/DECISIONS/0120-office-import-is-onlyoffices-x2t-contained.md)).
+ *
+ * {@link openFromUrlHandler}'s route: the written file opens through {@link openPath}, and every
+ * outcome before the open is answered member by member.
+ */
+function newFromOfficeHandler(
+  deps: OpenPathParts & { readonly commands: DocumentCommands },
+): ContractHandlers['document.newFromOffice'] {
+  return async (): Promise<Awaited<ReturnType<ContractHandlers['document.newFromOffice']>>> => {
+    let converted: Awaited<ReturnType<DocumentCommands['convertOfficeFile']>>;
+    try {
+      converted = await deps.commands.convertOfficeFile();
+    } catch (thrown) {
+      if (thrown instanceof EngineUnavailableError) return err({ code: 'engine-unavailable' });
+      throw thrown;
+    }
+    switch (converted.kind) {
+      case 'cancelled':
+        return ok({ kind: 'cancelled' });
+      case 'too-large':
+        return ok({ kind: 'too-large', limitBytes: converted.limitBytes });
+      case 'unreadable':
+        return ok({ kind: 'unreadable' });
+      case 'conversion-failed':
+        return ok({ kind: 'conversion-failed' });
+      case 'destination-contested':
+        return ok({ kind: 'destination-contested', openElsewhere: converted.openElsewhere });
+      case 'write-failed':
+        return ok({ kind: 'write-failed' });
+      case 'written':
+        return ok((await openPath(deps, converted.destination)).outcome);
     }
   };
 }

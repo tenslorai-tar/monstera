@@ -482,6 +482,7 @@ export const NEW_FROM_MARKDOWN_COMMAND_TITLE = messageKey('command.new-from-mark
 export const APPEND_MARKDOWN_COMMAND_TITLE = messageKey('command.append-markdown.title');
 export const NEW_FROM_CSV_COMMAND_TITLE = messageKey('command.new-from-csv.title');
 export const NEW_FROM_IMAGES_COMMAND_TITLE = messageKey('command.new-from-images.title');
+export const NEW_FROM_OFFICE_COMMAND_TITLE = messageKey('command.new-from-office.title');
 export const OPEN_FROM_URL_COMMAND_TITLE = messageKey('command.open-from-url.title');
 export const NEW_FROM_CAMERA_COMMAND_TITLE = messageKey('command.new-from-camera.title');
 export const CAMERA_CAPTURE_TITLE = messageKey('dialog.camera-capture.title');
@@ -537,6 +538,7 @@ export const MARKDOWN_IMPORT_TOO_MANY_COLUMNS_NO_LINE = messageKey(
   'dialog.markdown-import-problem.too-many-columns-no-line',
 );
 export const MARKDOWN_IMPORT_WRITE_FAILED = messageKey('dialog.markdown-import-problem.write-failed');
+export const MARKDOWN_IMPORT_CONVERSION_FAILED = messageKey('dialog.markdown-import-problem.conversion-failed');
 export const MARKDOWN_IMPORT_ABSENT = messageKey('dialog.markdown-import-problem.absent');
 export const MARKDOWN_IMPORT_AT_CAPACITY = messageKey('dialog.markdown-import-problem.at-capacity');
 export const MARKDOWN_IMPORT_IMAGE_UNREADABLE = messageKey(
@@ -2083,6 +2085,7 @@ export const RIBBON_NEW_FROM_MARKDOWN = messageKey('ribbon.new-from-markdown');
 export const RIBBON_APPEND_MARKDOWN = messageKey('ribbon.append-markdown');
 export const RIBBON_NEW_FROM_CSV = messageKey('ribbon.new-from-csv');
 export const RIBBON_NEW_FROM_IMAGES = messageKey('ribbon.new-from-images');
+export const RIBBON_NEW_FROM_OFFICE = messageKey('ribbon.new-from-office');
 export const RIBBON_OPEN_FROM_URL = messageKey('ribbon.open-from-url');
 export const RIBBON_NEW_FROM_CAMERA = messageKey('ribbon.new-from-camera');
 export const RIBBON_OCR = messageKey('ribbon.ocr');
@@ -3996,6 +3999,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [APPEND_MARKDOWN_COMMAND_TITLE]: 'Add pages from Markdown…',
   [NEW_FROM_CSV_COMMAND_TITLE]: 'New PDF table from CSV…',
   [NEW_FROM_IMAGES_COMMAND_TITLE]: 'New PDF from images…',
+  [NEW_FROM_OFFICE_COMMAND_TITLE]: 'New PDF from Word, Excel or PowerPoint…',
   [OPEN_FROM_URL_COMMAND_TITLE]: 'Open from web address…',
   [NEW_FROM_CAMERA_COMMAND_TITLE]: 'New PDF from camera…',
   [CAMERA_CAPTURE_TITLE]: 'Take pictures',
@@ -4061,6 +4065,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [MARKDOWN_IMPORT_CONTESTED]:
     'That file is open in this app, so nothing was written there. Close it, or choose another name.',
   [MARKDOWN_IMPORT_WRITE_FAILED]: 'The PDF could not be saved there. Nothing was imported.',
+  [MARKDOWN_IMPORT_CONVERSION_FAILED]:
+    'That file could not be turned into a PDF. It may be damaged, or not the kind of file its name says. ' +
+    'Nothing was imported.',
   [MARKDOWN_IMPORT_MALFORMED_CSV]:
     'Line {line} is not valid CSV — a quote is out of place or never closed. Nothing was imported.',
   [MARKDOWN_IMPORT_TOO_MANY_COLUMNS]:
@@ -4444,6 +4451,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_APPEND_MARKDOWN]: 'Append Markdown',
   [RIBBON_NEW_FROM_CSV]: 'From CSV',
   [RIBBON_NEW_FROM_IMAGES]: 'From images',
+  [RIBBON_NEW_FROM_OFFICE]: 'From Office',
   [RIBBON_OPEN_FROM_URL]: 'From URL',
   [RIBBON_NEW_FROM_CAMERA]: 'From camera',
   [RIBBON_OCR]: 'OCR pages',

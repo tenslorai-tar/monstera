@@ -3649,6 +3649,17 @@ export const MAX_MARKDOWN_BYTES = 4 * 1024 * 1024;
 export const MAX_CSV_BYTES = 1024 * 1024;
 
 /**
+ * The largest Office file an import reads, checked before the read
+ * ([ADR-0120](../../../docs/DECISIONS/0120-office-import-is-onlyoffices-x2t-contained.md)).
+ *
+ * **CHOSEN, not measured against the converter.** The converter runs contained under its own
+ * memory and time ceilings, so what this bounds is `main`: the file is read whole and copied into
+ * the converter's session area, and 100 MiB is that transient copy's ceiling. A slide deck of
+ * photographs reaches tens of mebibytes; past this, the person is told the bound.
+ */
+export const MAX_OFFICE_IMPORT_BYTES = 100 * 1024 * 1024;
+
+/**
  * The bounds on an image import, which composes one page per picked image in the
  * compose host.
  *

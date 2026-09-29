@@ -61,6 +61,7 @@ export function createLayoutTextSource(platform: ConverterPlatform, report: Shel
         platform,
         pdf,
         {
+          kind: 'arguments',
           input: 'in.pdf',
           output: 'out.txt',
           commandArguments: (input, output) => ['-layout', '-enc', 'UTF-8', input, output],

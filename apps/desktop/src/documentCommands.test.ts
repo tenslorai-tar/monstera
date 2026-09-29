@@ -26,6 +26,7 @@ import {
   MAX_ASK_CONTEXT,
   MAX_MARKDOWN_BYTES,
   MAX_CSV_BYTES,
+  MAX_OFFICE_IMPORT_BYTES,
   MAX_IMAGE_BYTES,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
@@ -156,6 +157,7 @@ import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.
 import { EngineSessions } from './engineSessions.js';
 import { EDIT_QUIET_MS, type EditWatchSurface } from './externalEditWatch.js';
 import { LayoutTextFailedError, type LayoutTextSource } from './layoutText.js';
+import { OfficeConversionFailedError } from './officeConversion.js';
 import { type PdfaSource, PdfaFailedError } from './pdfaConversion.js';
 import { type PrintDestination, PrintFailedError } from './printing.js';
 import { type ShareDestination, ShareFailedError, type ShareOffer } from './sharing.js';
@@ -737,6 +739,8 @@ const INERT = {
   share: null,
   // NO PDF/A CONVERTER, the state of a machine that has not provisioned one.
   pdfa: null,
+  // NO OFFICE CONVERTER, for the same reason; an Office import case supplies its own.
+  officeImport: null,
   // NO COMPOSE HOST, the state of a platform without one; an Optimize case supplies its own.
   optimizer: null,
   pickOffice: () => Promise.reject(new Error('INERT: this case does not export to Office')),
@@ -4821,6 +4825,160 @@ describe('DocumentCommands.openFromUrl', () => {
       join(directory, 'defect.pdf'),
     );
     await expect(commands.openFromUrl('https://example.com/a.pdf')).rejects.toThrow('a defect in this build');
+  });
+});
+
+describe('DocumentCommands.convertOfficeFile (ADR-0120)', () => {
+  beforeAll(openDocument);
+
+  /** Everything the case records: the source's calls, the conversions, the destinations asked, the discards. */
+  interface Recorded {
+    readonly calls: string[];
+    readonly converted: string[];
+    readonly asked: string[];
+    discards: number;
+  }
+
+  function officeCommands(options: {
+    readonly picked: string | null;
+    readonly read?: Awaited<ReturnType<ImportSource['read']>>;
+    readonly convert?: 'converts' | 'refuses';
+    readonly destination?: string | null;
+    readonly contested?: boolean;
+    readonly unavailable?: boolean;
+  }): { readonly commands: DocumentCommands; readonly recorded: Recorded } {
+    const recorded: Recorded = { calls: [], converted: [], asked: [], discards: 0 };
+    const source: ImportSource = {
+      pick: () => {
+        recorded.calls.push('pick');
+        return Promise.resolve(options.picked);
+      },
+      read: (path) => {
+        recorded.calls.push(`read:${path}`);
+        return Promise.resolve(options.read ?? { kind: 'read', bytes: new TextEncoder().encode('PK office') });
+      },
+    };
+    async function* pdf(): AsyncIterable<Uint8Array> {
+      await Promise.resolve();
+      yield new TextEncoder().encode('%PDF-1.7 from x2t');
+    }
+    const copy: CopySource = {
+      pick: (suggested) => {
+        recorded.asked.push(suggested);
+        return Promise.resolve(options.destination === undefined ? null : options.destination);
+      },
+      checkTarget: () =>
+        Promise.resolve(options.contested === true ? { kind: 'contested', others: [asDocId('other')] } : { kind: 'writable' }),
+    };
+    return {
+      recorded,
+      commands: new DocumentCommands({
+        ...INERT,
+        documents: service,
+        bus: bus(),
+        engine: engine(),
+        save: {
+          deps: {
+            checkWriteTarget: () => Promise.reject(new Error('an import writes a copy, never a save')),
+            surface: nodeFileSurface,
+            names: (target) => siblingNames(target, 1),
+            wait: () => Promise.resolve(),
+          },
+          flush: () => Promise.reject(new Error('an import flushes no document')),
+        },
+        copy,
+        officeImport:
+          options.unavailable === true
+            ? null
+            : {
+                source,
+                convert: (format, file) => {
+                  recorded.converted.push(`${format}:${new TextDecoder().decode(file)}`);
+                  if (options.convert === 'refuses') {
+                    return Promise.reject(new OfficeConversionFailedError({ stage: 'exit-code', code: 80, said: null }));
+                  }
+                  return Promise.resolve({
+                    output: pdf(),
+                    discard: () => {
+                      recorded.discards += 1;
+                    },
+                  });
+                },
+              },
+      }),
+    };
+  }
+
+  it('REFUSES BEFORE THE PICKER where no converter can run', async () => {
+    const { commands, recorded } = officeCommands({ picked: 'C:\\a.docx', unavailable: true });
+    await expect(commands.convertOfficeFile()).rejects.toBeInstanceOf(EngineUnavailableError);
+    expect(recorded.calls).toStrictEqual([]);
+  });
+
+  it('converts the picked file by its extension, streams the PDF where the person chose, and suggests its name', async () => {
+    const destination = join(directory, 'Quarterly.pdf');
+    const { commands, recorded } = officeCommands({ picked: 'C:\\Reports\\Quarterly.PPTX', destination });
+
+    expect(await commands.convertOfficeFile()).toStrictEqual({ kind: 'written', destination });
+    expect(readFileSync(destination, 'latin1')).toBe('%PDF-1.7 from x2t');
+    expect(recorded.converted).toStrictEqual(['pptx:PK office']);
+    expect(recorded.asked).toStrictEqual(['Quarterly.pdf']);
+  });
+
+  it('REFUSES a name that is not one of the three formats, and reads nothing', async () => {
+    const { commands, recorded } = officeCommands({ picked: 'C:\\Reports\\old.doc', destination: 'unused' });
+
+    expect(await commands.convertOfficeFile()).toStrictEqual({ kind: 'unreadable' });
+    // THE DECISION IS THE READ NOT MADE: the extension names x2t's input, so a file of another kind never reaches it.
+    expect(recorded.calls).toStrictEqual(['pick']);
+    expect(recorded.converted).toStrictEqual([]);
+  });
+
+  it('answers the contract’s bound, not the file’s size, and converts nothing', async () => {
+    const { commands, recorded } = officeCommands({
+      picked: 'C:\\big.docx',
+      read: { kind: 'too-large', byteLength: MAX_OFFICE_IMPORT_BYTES + 1 },
+    });
+
+    expect(await commands.convertOfficeFile()).toStrictEqual({ kind: 'too-large', limitBytes: MAX_OFFICE_IMPORT_BYTES });
+    expect(recorded.converted).toStrictEqual([]);
+  });
+
+  it('answers a converter refusal WITHOUT asking for a destination', async () => {
+    const { commands, recorded } = officeCommands({ picked: 'C:\\broken.xlsx', convert: 'refuses', destination: 'unused' });
+
+    expect(await commands.convertOfficeFile()).toStrictEqual({ kind: 'conversion-failed' });
+    expect(recorded.asked).toStrictEqual([]);
+  });
+
+  it('DISCARDS the converted PDF unread when the person cancels the save dialog', async () => {
+    const { commands, recorded } = officeCommands({ picked: 'C:\\a.docx', destination: null });
+
+    expect(await commands.convertOfficeFile()).toStrictEqual({ kind: 'cancelled' });
+    expect(recorded.discards).toBe(1);
+  });
+
+  it('DISCARDS it when another open document holds the destination, and writes nothing', async () => {
+    const destination = join(directory, 'held.pdf');
+    const { commands, recorded } = officeCommands({ picked: 'C:\\a.docx', destination, contested: true });
+
+    expect(await commands.convertOfficeFile()).toStrictEqual({ kind: 'destination-contested', openElsewhere: 1 });
+    expect(existsSync(destination)).toBe(false);
+    expect(recorded.discards).toBe(1);
+  });
+
+  it('CONTROL: a failure that is NOT the converter’s propagates, rather than blaming the file', async () => {
+    const broken = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      officeImport: {
+        source: { pick: () => Promise.resolve('C:\\a.docx'), read: () => Promise.resolve({ kind: 'read', bytes: new Uint8Array(1) }) },
+        convert: () => Promise.reject(new Error('a defect in this build')),
+      },
+    });
+    await expect(broken.convertOfficeFile()).rejects.toThrow('a defect in this build');
   });
 });
 

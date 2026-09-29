@@ -45,6 +45,8 @@ const markdownImportProblemSchema = z.discriminatedUnion('reason', [
     openElsewhere: z.number().int().positive(),
   }),
   z.object({ reason: z.literal('write-failed') }),
+  // AN OFFICE IMPORT'S OWN (ADR-0120): the converter produced no PDF. x2t's words go to the log.
+  z.object({ reason: z.literal('conversion-failed') }),
   z.object({ reason: z.literal('absent') }),
   z.object({ reason: z.literal('at-capacity') }),
   // AN IMAGE IMPORT'S OWN, and the two per-image reasons carry the FILE NAME where the

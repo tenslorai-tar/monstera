@@ -106,6 +106,24 @@ export function createCsvPicker(): PickImportFile {
 }
 
 /**
+ * The open dialog for a Word, Excel or PowerPoint file to convert (ADR-0120).
+ *
+ * `createCsvPicker`'s shape. The filter is a convenience, not a check: `DocumentCommands` reads the
+ * format from the picked name and refuses any other, and x2t is what refuses a file that is not
+ * what its name says.
+ */
+export function createOfficeImportPicker(extensions: readonly string[]): PickImportFile {
+  return async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'dontAddToRecent'],
+      filters: [{ name: 'Word, Excel and PowerPoint', extensions: [...extensions] }],
+    });
+    if (result.canceled) return null;
+    return result.filePaths[0] ?? null;
+  };
+}
+
+/**
  * The open dialog for images to make a new PDF from.
  *
  * `createImagePicker`'s filter and its sentence about it, with `multiSelections`: one

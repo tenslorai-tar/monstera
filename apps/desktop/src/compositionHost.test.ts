@@ -2,12 +2,23 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import {
+  INTEGRITY_LOW,
+  JOB_LIMIT_ACTIVE_PROCESS,
+  JOB_LIMIT_KILL_ON_JOB_CLOSE,
+  JOB_LIMIT_PROCESS_MEMORY,
+} from '@monstera/kernel';
+import { ok } from '@monstera/shared';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 
 import { type EngineHostPlatform, createShellDependencies } from './composition.js';
+import type { ConverterExecutablePath } from './containedProgram.js';
 import type { AppInfo } from './contractHandlers.js';
+import type { ConverterPlatform } from './converterSession.js';
 import {
   FAKE_CONTAINER,
+  FAKE_CREATED,
+  FAKE_JOB,
   FAKE_USER,
   type FakePeer,
   type HostHarness,
@@ -1630,5 +1641,129 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
     if (answer.ok) throw new Error('unreachable');
     expect(answer.error.code).toBe('engine-unavailable');
     expect(picks).toBe(0);
+  });
+});
+
+/** The bytes the fake x2t writes as its PDF. */
+const X2T_BYTES = '%PDF-1.7 from the fake x2t';
+
+/**
+ * A converter platform whose "x2t" does what x2t does with its one argument: reads the instructions
+ * file, and writes where it says. Directories are really made; containment reads as contained.
+ */
+function officeConverter(): { readonly platform: ConverterPlatform; readonly read: string[] } {
+  const read: string[] = [];
+  const root = mkdtempSync(join(scratch, 'office-'));
+  let limit = 0;
+  return {
+    read,
+    platform: {
+      sessionRoot: root,
+      directories: {
+        create: (path) => {
+          mkdirSync(path, { recursive: true });
+          return 'created';
+        },
+        remove: () => true,
+        removeTree: (path) => {
+          rmSync(path, { recursive: true, force: true });
+          return true;
+        },
+        list: () => null,
+        listFiles: () => null,
+        removeFile: () => true,
+        lastError: () => 0,
+      },
+      user: FAKE_USER,
+      container: FAKE_CONTAINER,
+      containerName: 'monstera-office-converter',
+      executable: 'C:\\tools\\x2t.exe' as ConverterExecutablePath,
+      bounds: { processMemoryLimitBytes: 64 * 1024 * 1024, timeoutMs: 5_000 },
+      surfaceFor: (config) => ({
+        createSuspended: () => ok({ pid: 11, process: FAKE_CREATED.process, thread: FAKE_CREATED.thread }),
+        createJob: () => FAKE_JOB,
+        applyLimits: (_job, bytes) => {
+          limit = bytes;
+          return true;
+        },
+        assignToJob: () => true,
+        readJobMembership: () => 'in-job',
+        readIntegrity: () => ({ kind: 'read', rid: INTEGRITY_LOW }),
+        readJobLimits: () => ({
+          kind: 'read',
+          limitFlags: JOB_LIMIT_ACTIVE_PROCESS | JOB_LIMIT_PROCESS_MEMORY | JOB_LIMIT_KILL_ON_JOB_CLOSE,
+          activeProcessLimit: 1,
+          processMemoryLimitBytes: limit,
+        }),
+        resume: () => 1,
+        terminate: () => undefined,
+        close: () => undefined,
+        diagnostics: () => null,
+        discardDiagnostics: () => undefined,
+        waitForExit: () => {
+          const instructions = readFileSync(config.program.commandArguments[0] ?? '', 'utf8');
+          const from = /<m_sFileFrom>([^<]*)<\/m_sFileFrom>/u.exec(instructions)?.[1] ?? '';
+          const to = /<m_sFileTo>([^<]*)<\/m_sFileTo>/u.exec(instructions)?.[1] ?? '';
+          read.push(`${from.slice(-7)}:${existsSync(from) ? readFileSync(from, 'utf8') : '(absent at the call)'}`);
+          writeFileSync(to, X2T_BYTES);
+          return Promise.resolve({ kind: 'exited', code: 0 });
+        },
+      }),
+    },
+  };
+}
+
+describe('the composition root, with the OFFICE converter (ADR-0120)', () => {
+  it('converts the picked file, writes the PDF where the person chose, and opens that file', async () => {
+    // WHAT SITS BETWEEN THE PAIR'S TWO ENDS: the part `entry.ts` hands in, the composition's
+    // `createOfficeSource`, the command, and the channel's open. Neither the command's cases nor
+    // the renderer's reach all four.
+    const mupdf = platformAnswering(serialisingEngine());
+    const office = officeConverter();
+    const destination = join(scratch, 'from-office.pdf');
+    const suggested: string[] = [];
+
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDestination: (name) => {
+        suggested.push(name);
+        return Promise.resolve(destination);
+      },
+      enginePlatform: mupdf.platform,
+      officeImport: {
+        platform: office.platform,
+        source: {
+          pick: () => Promise.resolve(join(scratch, 'Budget.xlsx')),
+          read: () => Promise.resolve({ kind: 'read', bytes: new TextEncoder().encode('PK the workbook') }),
+        },
+      },
+    });
+
+    const answer = await handlers['document.newFromOffice']({});
+    expect(answer.ok, JSON.stringify(answer)).toBe(true);
+    if (!answer.ok) throw new Error('unreachable');
+    expect(answer.value.kind, JSON.stringify(answer.value)).toBe('opened');
+    if (answer.value.kind !== 'opened') throw new Error('unreachable');
+
+    // x2t WAS TOLD THE PICKED FILE'S BYTES, under the fixed name its format gives.
+    expect(office.read).toStrictEqual(['in.xlsx:PK the workbook']);
+    expect(readFileSync(destination, 'utf8')).toBe(X2T_BYTES);
+    expect(answer.value.name).toBe('from-office.pdf');
+    expect(suggested).toStrictEqual(['Budget.pdf']);
+  }, 120_000);
+
+  it('CONTROL: with no Office converter the import is refused as unavailable', async () => {
+    const mupdf = platformAnswering(serialisingEngine());
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      enginePlatform: mupdf.platform,
+    });
+
+    const answer = await handlers['document.newFromOffice']({});
+    expect(answer.ok).toBe(false);
+    if (answer.ok) throw new Error('unreachable');
+    expect(answer.error.code).toBe('engine-unavailable');
   });
 });

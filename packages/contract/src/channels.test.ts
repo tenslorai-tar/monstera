@@ -151,6 +151,7 @@ const handlers: ContractHandlers = {
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.newFromMarkdown': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.newFromCsv': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.newFromOffice': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.newFromImages': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.newFromCapture': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.openFromUrl': () => Promise.resolve(ok({ kind: 'cancelled' as const })),

@@ -609,6 +609,8 @@ export interface BrowserShimOptions {
   readonly markdownNews?: readonly ChannelResult<'document.newFromMarkdown'>[];
   /** What `document.newFromCsv` answers, in order — `markdownNews`' queue and default. */
   readonly csvNews?: readonly ChannelResult<'document.newFromCsv'>[];
+  /** What `document.newFromOffice` answers, in order — `markdownNews`' queue and default. */
+  readonly officeNews?: readonly ChannelResult<'document.newFromOffice'>[];
   /** What `document.newFromImages` answers, in order — `markdownNews`' queue and default. */
   readonly imageNews?: readonly ChannelResult<'document.newFromImages'>[];
   /** What `document.openFromUrl` answers, in order — `markdownNews`' queue and default. */
@@ -761,6 +763,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   const queuedOpens: OpenAnswer[] = [...(options.opens ?? [])];
   const queuedMarkdownNews = [...(options.markdownNews ?? [])];
   const queuedCsvNews = [...(options.csvNews ?? [])];
+  const queuedOfficeNews = [...(options.officeNews ?? [])];
   const queuedImageNews = [...(options.imageNews ?? [])];
   const queuedUrlOpens = [...(options.urlOpens ?? [])];
   const queuedCaptureNews = [...(options.captureNews ?? [])];
@@ -878,6 +881,12 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
 
     'document.newFromCsv': () => {
       const answer = queuedCsvNews.shift() ?? { kind: 'cancelled' as const };
+      if (answer.kind === 'opened') versions.set(answer.docId, answer.version);
+      return Promise.resolve(ok(answer));
+    },
+
+    'document.newFromOffice': () => {
+      const answer = queuedOfficeNews.shift() ?? { kind: 'cancelled' as const };
       if (answer.kind === 'opened') versions.set(answer.docId, answer.version);
       return Promise.resolve(ok(answer));
     },

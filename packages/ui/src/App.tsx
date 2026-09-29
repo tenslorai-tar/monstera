@@ -248,6 +248,7 @@ import {
   newFromCaptureCommand,
   newFromCsvCommand,
   newFromImagesCommand,
+  newFromOfficeCommand,
   newFromMarkdownCommand,
 } from './commands/importMarkdown.js';
 import { EXTRACT_PAGES_DIALOG } from './dialogs/extractPages.js';
@@ -2617,6 +2618,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         newFromMarkdownCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         // D9's CSV ROW, the same callbacks: a composed table arrives as a tab.
         newFromCsvCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
+        // OFFICE IMPORT (ADR-0120), the same callbacks: the converted PDF arrives as a tab.
+        newFromOfficeCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         // D9's IMAGES ROW, the same callbacks: the composed pages arrive as a tab.
         newFromImagesCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         // D9's OPEN FROM URL, the same callbacks: a fetched document arrives as a tab.

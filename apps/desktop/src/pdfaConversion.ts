@@ -125,7 +125,7 @@ export function createPdfaSource(platform: ConverterPlatform, report: ShellFailu
     const converted = await convertDocument(
       platform,
       pdf,
-      { input: 'in.pdf', output: 'out.pdf', commandArguments: pdfaArguments },
+      { kind: 'arguments', input: 'in.pdf', output: 'out.pdf', commandArguments: pdfaArguments },
       failed,
     );
     const said = converted.said ?? '';

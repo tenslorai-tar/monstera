@@ -247,6 +247,7 @@ describe('browser shim', () => {
       'document.newFromCsv',
       'document.newFromImages',
       'document.newFromMarkdown',
+      'document.newFromOffice',
       'document.open',
       'document.openFromUrl',
       'document.openRecent',
