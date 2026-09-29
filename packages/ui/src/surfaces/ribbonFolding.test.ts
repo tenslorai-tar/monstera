@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { type MessageKey, messageKey } from '@monstera/shared';
 
-import { foldGroups, ribbonUnits, splitFold, type GroupWidths, type RibbonUnit } from './ribbonFolding.js';
+import { foldGroups, foldRow, ribbonUnits, splitFold, type GroupWidths, type RibbonUnit } from './ribbonFolding.js';
 
 /**
  * The ribbon's fold, over widths alone.
@@ -160,6 +160,68 @@ describe('foldGroups', () => {
 
   it('an EMPTY row of groups is an empty answer, not a hang', () => {
     expect(foldGroups([], 0, MORE)).toStrictEqual([]);
+  });
+});
+
+describe('foldRow — whole groups into the row’s More, only past every group’s floor', () => {
+  const GAP = 10;
+
+  it('CONTROL: a row the groups can fold into hides no group, and folds exactly as foldGroups does', () => {
+    // Three groups of four: 3 × (10 + 240) = 750 plus two gaps = 770. At 700 the groups fold but all stay.
+    const groups = [group(4), group(4), group(4)];
+
+    const row = foldRow(groups, 700, MORE, GAP);
+
+    expect(row.hiddenFrom).toBe(3);
+    expect(row.groups).toStrictEqual(foldGroups(groups, 700 - 2 * GAP, MORE));
+  });
+
+  it('hides the LAST group once every group is at its floor, and the rest are folded again with the room it freed', () => {
+    // A group of four shows 1, 2 or 3 buttons at 110, 170 or 230 (10 of chrome, the buttons, a 40 More). Three at
+    // their floor with two gaps is 350.
+    // - At 300, two drawn get 300 − 2 × 10 − 40 = 240: two at 170 is over, so both fold to one (220).
+    // - At 355, all three fit at their floor (330 + 20).
+    // - At 349, two drawn get 289: 170 + 110 = 280 fits, so one of them shows TWO — more than the floor it was at
+    //   with three drawn, which only a stage that folds the remaining groups again produces.
+    const groups = [group(4), group(4), group(4)];
+
+    expect(foldRow(groups, 300, MORE, GAP)).toStrictEqual({
+      groups: [
+        { shown: 1, more: true },
+        { shown: 1, more: true },
+        { shown: 4, more: false },
+      ],
+      hiddenFrom: 2,
+    });
+    expect(foldRow(groups, 355, MORE, GAP).hiddenFrom).toBe(3);
+    const refolded = foldRow(groups, 349, MORE, GAP);
+    expect(refolded.hiddenFrom).toBe(2);
+    expect(refolded.groups.slice(0, 2).map((fold) => fold.shown)).toStrictEqual([1, 2]);
+  });
+
+  it('charges the row’s More and its gap: a row that fits only without them hides one group more', () => {
+    // Two groups at their floor, 2 × 110 + one gap = 230, fit at 230 with nothing hidden. At 229 one must go, and
+    // the one left gets 229 − 10 − 40 = 179: room for 10 + 60 + 60 + 40 = 170, two buttons.
+    const groups = [group(4), group(4)];
+
+    expect(foldRow(groups, 230, MORE, GAP).hiddenFrom).toBe(2);
+    expect(foldRow(groups, 229, MORE, GAP)).toStrictEqual({
+      groups: [
+        { shown: 2, more: true },
+        { shown: 4, more: false },
+      ],
+      hiddenFrom: 1,
+    });
+  });
+
+  it('never answers a row wider than its box: at no room, every group is in the More', () => {
+    expect(foldRow([group(4), group(2)], 50, MORE, GAP)).toStrictEqual({
+      groups: [
+        { shown: 4, more: false },
+        { shown: 2, more: false },
+      ],
+      hiddenFrom: 0,
+    });
   });
 });
 

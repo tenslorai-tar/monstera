@@ -32,6 +32,7 @@ export function RibbonMore({
   onChosen,
   named,
   widthFolded,
+  accessibleName,
 }: {
   readonly entries: readonly OrderedEntry[];
   readonly context: CommandContext;
@@ -49,6 +50,12 @@ export function RibbonMore({
    * did not fit* from *this group has secondaries* — the same button either way.
    */
   readonly widthFolded?: number;
+  /**
+   * The row's own *More* (`foldRow`): its name for a screen reader, which begins with the word it shows (WCAG 2.5.3)
+   * and names the groups it holds, so it is told apart from the last group's *More* beside it. The face stays
+   * *More*, because the fold charges the row's *More* at the gauge's width.
+   */
+  readonly accessibleName?: string;
 }): ReactElement {
   const { i18n } = useLingui();
 
@@ -61,6 +68,7 @@ export function RibbonMore({
         // trigger is what a ring for one of them lands on.
         data-holds={entries.map((entry) => entry.command.id).join(' ')}
         data-width-folded={widthFolded === undefined ? undefined : String(widthFolded)}
+        aria-label={accessibleName}
         nativeButton
       >
         <MoreFace icon={named?.icon ?? 'Ellipsis'} label={i18n._(named?.label ?? RIBBON_MORE)} />

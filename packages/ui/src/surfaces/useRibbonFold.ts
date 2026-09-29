@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { foldGroups, ribbonUnits, type GroupFold, type GroupWidths } from './ribbonFolding.js';
+import { foldRow, ribbonUnits, type GroupFold, type GroupWidths } from './ribbonFolding.js';
 import type { RibbonSection } from './projections.js';
 
 /**
@@ -39,12 +39,28 @@ export interface RibbonFold {
   readonly groupRef: (index: number) => (element: HTMLDivElement | null) => void;
   /** What each group draws, or `null` before this section has been measured. */
   readonly folds: readonly GroupFold[] | null;
+  /**
+   * The first group folded WHOLE into the row's own *More* (`foldRow`); the group count when none is, and when the
+   * section has not been measured.
+   */
+  readonly hiddenFrom: number;
 }
 
 /** A measurement, and the row it was taken of. */
 interface Measured {
   readonly section: RibbonSection | undefined;
   readonly folds: readonly GroupFold[];
+  readonly hiddenFrom: number;
+}
+
+/**
+ * A group's measured frame: what it costs besides its buttons, and the gap between them. Kept by the group's
+ * caption key, so a group folded whole into the row's *More* — and so not drawn — still has the numbers it was
+ * measured with while it was.
+ */
+interface GroupFrame {
+  readonly chrome: number;
+  readonly gap: number;
 }
 
 export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
@@ -53,6 +69,8 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
   const groups = useRef<(HTMLDivElement | null)[]>([]);
   /** Each button's natural width by command id, so a folded-away button still has one. */
   const naturals = useRef<Map<string, number>>(new Map());
+  /** Each group's frame by caption key, so a group hidden in the row's More still has one. */
+  const frames = useRef<Map<string, GroupFrame>>(new Map());
 
   const measure = useCallback((): void => {
     const container = row.current;
@@ -67,7 +85,16 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
     const unmeasured = new Set<string>();
     const widths: GroupWidths[] = section.groups.map((group, index) => {
       const element = groups.current[index] ?? null;
-      const chrome = element === null ? 0 : element.getBoundingClientRect().width - buttonsWidth(element);
+      // A DRAWN GROUP IS MEASURED, and its frame kept; one folded whole into the row's More is not drawn and takes
+      // the frame it was last measured with. Never measured is unmeasured, for a button's reason below.
+      if (element !== null) {
+        frames.current.set(group.group, {
+          chrome: Math.max(element.getBoundingClientRect().width - buttonsWidth(element), 0),
+          gap: buttonGap(element),
+        });
+      }
+      const frame = frames.current.get(group.group);
+      if (frame === undefined) unmeasured.add(group.group);
       // THE ROW'S BUTTONS, from the one function that defines them: primaries only, a named menu as
       // one (ADR-0098, ADR-0101). A secondary is never drawn in the row, so it has no width to fold
       // by, and what it costs is the *More* its group then always draws.
@@ -83,8 +110,8 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
       });
       return {
         buttons,
-        chrome: Math.max(chrome, 0),
-        gap: buttonGap(element),
+        chrome: frame?.chrome ?? 0,
+        gap: frame?.gap ?? 0,
         secondaries: group.entries.length - primaries.length,
       };
     });
@@ -95,13 +122,18 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
     // as an unmeasured button: fold nothing yet rather than fold against a guess.
     const more = container.querySelector<HTMLElement>('.m-ribbon__more-gauge')?.getBoundingClientRect().width ?? 0;
     if (more <= 0) return;
-    const folds = foldGroups(widths, availableIn(container, widths.length), more);
+    const { groups: folds, hiddenFrom } = foldRow(widths, innerWidthOf(container), more, rowGapOf(container));
 
     // AN EQUAL ANSWER MUST NOT RE-RENDER. The fold is a pure function of the widths and the row, so
     // a measurement that agrees with the last one has nothing to say, and setting a fresh array
     // anyway would make the observer its own trigger.
     setMeasured((previous) =>
-      previous !== null && previous.section === section && same(previous.folds, folds) ? previous : { section, folds },
+      previous !== null &&
+      previous.section === section &&
+      previous.hiddenFrom === hiddenFrom &&
+      same(previous.folds, folds)
+        ? previous
+        : { section, folds, hiddenFrom },
     );
   }, [section]);
 
@@ -111,6 +143,7 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
     // A DIFFERENT ROW HAS NEVER BEEN MEASURED. Its buttons carry other labels, so their widths and
     // the width of a *More* beside them are somebody else's numbers.
     naturals.current = new Map();
+    frames.current = new Map();
     const observer = new ResizeObserver(() => {
       measure();
     });
@@ -135,9 +168,14 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
   // DERIVED, NEVER RESET. A measurement of a different row is not this row's answer, and comparing
   // here means no effect has to set state back to `null` when the section changes — which is the
   // cascading render the pattern above avoids on the other side.
-  const folds = measured !== null && measured.section === section ? measured.folds : null;
+  const current = measured !== null && measured.section === section ? measured : null;
 
-  return { rowRef, groupRef, folds };
+  return {
+    rowRef,
+    groupRef,
+    folds: current?.folds ?? null,
+    hiddenFrom: current?.hiddenFrom ?? section?.groups.length ?? 0,
+  };
 }
 
 /** Whether two answers say the same thing, so an unchanged measurement renders nothing. */
@@ -152,22 +190,27 @@ function same(left: readonly GroupFold[], right: readonly GroupFold[]): boolean 
 }
 
 /**
- * The width the groups may actually occupy inside `row`.
+ * The width the row's items may occupy inside `row`: its box less its padding.
  *
  * **Two things the row's own box is not**: its border box includes the padding the groups sit
- * inside, and the flex gaps between groups are space no group is charged for. Measuring the border
+ * inside, and the flex gaps between items are space no group is charged for. Measuring the border
  * box alone over-states the room by exactly padding + gaps — 57 px on the shipped ribbon at six
  * groups, measured 2026-09-23 — and the fold then stops one button early on every group and leaves
- * the row scrolling sideways, which is the one thing the design forbids.
+ * the row scrolling sideways, which is the one thing the design forbids. The padding comes off here;
+ * the gaps are `foldRow`'s to charge, because how many there are depends on how many groups it draws.
  *
  * Read from the computed style rather than restated here: `app.css` owns those numbers, and a copy
  * would be right until somebody changed the padding (B3).
  */
-function availableIn(row: HTMLElement, groups: number): number {
+function innerWidthOf(row: HTMLElement): number {
   const style = getComputedStyle(row);
-  const gap = Number.parseFloat(style.columnGap) || 0;
   const padding = (Number.parseFloat(style.paddingLeft) || 0) + (Number.parseFloat(style.paddingRight) || 0);
-  return row.getBoundingClientRect().width - padding - gap * Math.max(groups - 1, 0);
+  return row.getBoundingClientRect().width - padding;
+}
+
+/** The gap between two items in the row, from the computed style `app.css` owns. */
+function rowGapOf(row: HTMLElement): number {
+  return Number.parseFloat(getComputedStyle(row).columnGap) || 0;
 }
 
 /** The gap between a group's buttons, from the computed style `app.css` owns rather than a copy. */

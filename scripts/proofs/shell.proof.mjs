@@ -82,6 +82,8 @@ const RUNTIME_CASES = [
   'the losing launch ended itself rather than being killed at the bound',
   'NO APPLICATION MENU once the window is up — Electron’s default, with Ctrl+W closing the window, never lands',
   'CONTROL: with setApplicationMenu ignoring null, the same reading finds Electron’s default menu',
+  'the WINDOW’S FLOOR is 1024 × 720 or the display’s work area, whichever is smaller, as window.ts reads it',
+  'at 200% SCALING (emulated) the work area is under 1024 wide and the floor GIVES WAY to it',
 ];
 
 // THE ANCHOR, BECAUSE THE LINE BELOW IS NOT ONE (finding EEEEE-1). `passRoster`
@@ -92,9 +94,10 @@ const RUNTIME_CASES = [
 // Every other proof in this repository declares a literal; this one derived, and
 // the derivation is what removed the anchor. 4c's danger here runs toward
 // shrinkage, and a derived count agrees with any shrink.
-if (RUNTIME_CASES.length !== 16) {
+// 18 since 2026-09-29: the window's floor against the display, and its 200% emulation.
+if (RUNTIME_CASES.length !== 18) {
   throw new Error(
-    `This proof names ${String(RUNTIME_CASES.length)} runtime cases and the anchor says 16. ` +
+    `This proof names ${String(RUNTIME_CASES.length)} runtime cases and the anchor says 18. ` +
       `Raise or lower the literal in the same commit and say why: a case that leaves takes its ` +
       `label and the total with it, and nothing else here would notice.`,
   );
@@ -311,7 +314,7 @@ function quitRun(binary) {
  *
  * @param {string} binary
  * @param {string[]} [extra] harness switches — `--keep-default-menu` for the menu's control launch
- * @returns {{ appInfo: unknown, execute: unknown, bridgePresent: boolean, picker: unknown, applicationMenu: unknown }}
+ * @returns {{ appInfo: unknown, execute: unknown, bridgePresent: boolean, picker: unknown, applicationMenu: unknown, floor: unknown }}
  */
 function readback(binary, extra = []) {
   const [command, args] = launch(binary, extra);
@@ -556,6 +559,34 @@ try {
       control.applicationMenu === 'present',
       `the control launch reported ${JSON.stringify(control.applicationMenu)}; without a menu here the reading ` +
         `above cannot tell a shell that removed the menu from a read that sees none.`,
+    );
+
+    // THE WINDOW'S FLOOR (`minimumWindowFor`, the owner's order of 28 September, item 3), read off Electron against
+    // the display the window is on. A floor equal to the chrome's constant proves nothing on a screen with room for
+    // it, which is every screen this runs on at 100% — so the second launch runs the same shell at 200% scaling,
+    // Chromium's own emulation, where the work area is under 1024 wide and a floor that ignored it would be 1024.
+    /** @param {unknown} reading @returns {boolean} */
+    const floorFollows = (reading) => {
+      const floor = /** @type {{ minimum?: number[], workArea?: { width: number, height: number } } | undefined} */ (reading);
+      const area = floor?.workArea;
+      return (
+        area !== undefined &&
+        floor?.minimum?.[0] === Math.min(1024, Math.floor(area.width)) &&
+        floor.minimum[1] === Math.min(720, Math.floor(area.height))
+      );
+    };
+    check(
+      'the WINDOW’S FLOOR is 1024 × 720 or the display’s work area, whichever is smaller, as window.ts reads it',
+      floorFollows(seen.floor),
+      `the shell reported ${JSON.stringify(seen.floor)}.`,
+    );
+    const scaled = readback(ELECTRON_BINARY, ['--force-device-scale-factor=2']);
+    const scaledFloor = /** @type {{ workArea?: { width: number } } | undefined} */ (scaled.floor);
+    check(
+      'at 200% SCALING (emulated) the work area is under 1024 wide and the floor GIVES WAY to it',
+      (scaledFloor?.workArea?.width ?? 1024) < 1024 && floorFollows(scaled.floor),
+      `the scaled launch reported ${JSON.stringify(scaled.floor)}. Under 1024 wide is the premise — a display too ` +
+        `large to shrink below the floor even at 2× could not separate a floor that gives way from one that does not.`,
     );
 
     process.stdout.write(

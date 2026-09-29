@@ -54,7 +54,7 @@ export {
 // the kernel would be re-stated in the shim and the two would agree until one
 // of them changed — which is exactly what happened to the matching rule above.
 export { type WordCount, countWords, wordsOf } from './wordCount.js';
-export { MINIMUM_WINDOW } from './windowSize.js';
+export { MINIMUM_WINDOW, minimumWindowFor } from './windowSize.js';
 export { type LineChange, comparableLine, diffLines } from './lineDiff.js';
 // WHICH RUNS AN EDITED LINE REWRITES, once. The kernel's `editTextBlock` owns
 // the write and the renderer only shows the words; neither may carry a second

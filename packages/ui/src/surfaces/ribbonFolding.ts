@@ -144,6 +144,73 @@ export function foldGroups(
   }));
 }
 
+/** What the ribbon draws for its whole row: each drawn group's fold, and where the row's own *More* begins. */
+export interface RowFold {
+  /**
+   * One fold per group. A group at or past `hiddenFrom` is not drawn in the row, and its entry is its unfolded
+   * count, because every one of its buttons is in the row's *More*.
+   */
+  readonly groups: readonly GroupFold[];
+  /** The first group folded WHOLE into the row's *More*; the group count when none is. */
+  readonly hiddenFrom: number;
+}
+
+/**
+ * How the row fits `available`: each group folded by {@link foldGroups} and — only when that is not enough —
+ * whole groups from the END folded into one *More* at the row's end.
+ *
+ * ## Why a second stage, and why from the end
+ *
+ * `foldGroups` stops at one button and a *More* per group, because below that a group is a caption over an
+ * anonymous control. On a window narrower than the chrome's floor that stop leaves the row wider than its box,
+ * and the owner's order is that the row never scrolls sideways (list of 28 September, item 3) — a floor that a
+ * 1080p screen at 200% scaling cannot meet, because its work area is about 960 px wide. So what gives next is a
+ * whole group, the LAST first: a section's groups run from its most used, which is the reason a group folds its
+ * own buttons from the end too.
+ *
+ * ## The groups that stay are folded AGAIN, from scratch
+ *
+ * Hiding a group frees its width, so the groups still drawn may fit more of their own buttons. Each candidate
+ * count is therefore folded anew rather than reusing the fold that failed: a person at 900 px sees the first
+ * groups as full as they can be, not as crushed as they were before one left.
+ *
+ * ## It never answers a row wider than its box
+ *
+ * At zero groups the row is its *More* alone. No measured window reaches that — one group at its floor is about
+ * 150 px — but a rule that stopped at one group would answer a scrolling row somewhere, and the order is that it
+ * never does.
+ *
+ * @param available the row's inner width: its box less its padding, and NOT less the gaps between items, which
+ *   depend on how many items there are and so are charged here
+ * @param rowGap the gap between two items in the row: two groups, or a group and the row's *More*
+ */
+export function foldRow(
+  groups: readonly GroupWidths[],
+  available: number,
+  moreWidth: number,
+  rowGap: number,
+): RowFold {
+  for (let drawn = groups.length; drawn > 0; drawn -= 1) {
+    const visible = groups.slice(0, drawn);
+    const hidesAny = drawn < groups.length;
+    const items = drawn + (hidesAny ? 1 : 0);
+    const room = available - rowGap * (items - 1) - (hidesAny ? moreWidth : 0);
+    const folds = foldGroups(visible, room, moreWidth);
+    let width = 0;
+    folds.forEach((fold, index) => {
+      const group = visible.at(index);
+      if (group !== undefined) width += widthOf(group, fold.shown, moreWidth);
+    });
+    if (width <= room) return { groups: [...folds, ...unfolded(groups.slice(drawn))], hiddenFrom: drawn };
+  }
+  return { groups: unfolded(groups), hiddenFrom: 0 };
+}
+
+/** Each group's fold when none of it is drawn in the row: every button counted, since all are in the row's More. */
+function unfolded(groups: readonly GroupWidths[]): readonly GroupFold[] {
+  return groups.map((group) => ({ shown: group.buttons.length, more: false }));
+}
+
 /**
  * One button in a group's row: a single tool, or a named menu of tools (ADR-0101).
  *
@@ -227,4 +294,18 @@ export function splitFold<T extends UnitEntry>(
     shown: units.slice(0, fold.shown),
     folded: [...units.slice(fold.shown).flatMap((unit) => unit.entries), ...secondaries],
   };
+}
+
+/**
+ * Every command of the groups folded whole into the row's *More* (`foldRow`), in their order.
+ *
+ * Through {@link splitFold}, the same partition a group's own fold uses: each group's buttons as they would be
+ * drawn, a named menu's members included, then its secondaries. A second rule for what a group holds would be a
+ * second opinion about it — and a command in no *More* at a width is a control that stops existing there.
+ */
+export function restEntries<T extends UnitEntry>(groups: readonly { readonly entries: readonly T[] }[]): readonly T[] {
+  return groups.flatMap((group) => {
+    const whole = splitFold(group.entries, { shown: Number.MAX_SAFE_INTEGER, more: false });
+    return [...whole.shown.flatMap((unit) => unit.entries), ...whole.folded];
+  });
 }

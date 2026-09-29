@@ -1,8 +1,8 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { MINIMUM_WINDOW } from '@monstera/shared';
-import { BrowserWindow, type Session, type WebContents, app } from 'electron';
+import { minimumWindowFor } from '@monstera/shared';
+import { BrowserWindow, type Session, type WebContents, app, screen } from 'electron';
 
 import { type ShellFailureSink, reportRendererFailures } from './shellFailure.js';
 import {
@@ -132,15 +132,17 @@ export function createMainWindow(target: Session, failures: ShellFailureSink): B
   applyPermissionPolicy(target);
   applyContentSecurityPolicy(target);
 
+  const initialFloor = minimumWindowFor(screen.getPrimaryDisplay().workAreaSize);
   const window = new BrowserWindow({
     show: false,
     backgroundColor: WINDOW_BACKGROUND,
-    // THE FLOOR THE CHROME FITS IN (`MINIMUM_WINDOW`, measured 2026-09-23). The ribbon folds each
-    // group down to one button and a More and can go no further, so below this width the row would
-    // scroll sideways — which the design forbids. Refusing the size is the honest answer; the
-    // constant carries the measurement and the margin.
-    minWidth: MINIMUM_WINDOW.width,
-    minHeight: MINIMUM_WINDOW.height,
+    // THE FLOOR THE CHROME FITS IN (`MINIMUM_WINDOW`, measured 2026-09-23), and NEVER MORE THAN THE SCREEN'S
+    // WORK AREA (`minimumWindowFor`, the owner's order of 28 September): a 1080p screen at 200% has about
+    // 960 × 516 to give, and a floor past it is a window that cannot fit. Below 1024 the ribbon folds whole
+    // groups into its More, so nothing scrolls sideways there either. Re-applied below whenever the display
+    // the window is on changes, because the primary display at creation is only where it starts.
+    minWidth: initialFloor.width,
+    minHeight: initialFloor.height,
     // §10.3's title bar is the application's own row, so the native caption goes and Windows keeps only its
     // controls, painted over the row's end (Window Controls Overlay). `true` gives the system's colours until the
     // renderer reports the bar's computed ones through `window.titleBarOverlay` — the frames before that report
@@ -160,6 +162,23 @@ export function createMainWindow(target: Session, failures: ShellFailureSink): B
   // created without one — which is precisely the state that let a preload fail
   // in silence.
   reportRendererFailures(window.webContents, failures);
+
+  // THE FLOOR FOLLOWS THE SCREEN: moved to another display, or the scaling or resolution changed, the work area it
+  // is measured against is a different one. Unsubscribed when the window goes, since `screen` outlives it.
+  const refloor = (): void => {
+    if (window.isDestroyed()) return;
+    const floor = minimumWindowFor(screen.getDisplayMatching(window.getBounds()).workAreaSize);
+    window.setMinimumSize(floor.width, floor.height);
+  };
+  screen.on('display-metrics-changed', refloor);
+  screen.on('display-added', refloor);
+  screen.on('display-removed', refloor);
+  window.on('moved', refloor);
+  window.once('closed', () => {
+    screen.off('display-metrics-changed', refloor);
+    screen.off('display-added', refloor);
+    screen.off('display-removed', refloor);
+  });
 
   lockNavigation(window.webContents, pathToFileURL(RENDERER_HTML).href);
   window.once('ready-to-show', () => {

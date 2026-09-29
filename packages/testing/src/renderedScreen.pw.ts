@@ -1790,6 +1790,64 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every
   await expect.poll(async () => more.count()).toBe(0);
 });
 
+test('BELOW THE FLOOR whole groups fold into the row’s More, nothing scrolls sideways, and every tool is still reachable', async ({
+  page,
+}) => {
+  // The owner's order (28 September, item 3): the window's minimum never exceeds the work area, and below 1024 × 720
+  // the ribbon folds into More and never scrolls sideways. 960 × 516 is a 1080p screen's work area at 200% scaling,
+  // and 640 about a 1366 × 768 screen's at the same scaling. Measured 2026-09-29: every section still fits at 800
+  // with each group at its floor, so it is 640 that runs the second stage.
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const tools = page.locator('.m-ribbon__tools');
+  await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
+  const sections = page.locator('.m-ribbon__tab[data-ribbon-section]:not([disabled])');
+
+  // WHAT A SECTION OFFERS, read the same way at every width: the tools drawn on the row, and every tool a More holds.
+  // The join is asserted as SET EQUALITY against the wide row, so a tool that vanished at a width fails, and so does
+  // one that appeared from nowhere.
+  const reachable = (): Promise<string[]> =>
+    tools.evaluate((element) =>
+      [
+        ...[...element.querySelectorAll('.m-tool-button[data-command]:not(.m-ribbon__menu)')].map(
+          (button) => button.getAttribute('data-command') ?? '',
+        ),
+        ...[...element.querySelectorAll('[data-holds]')].flatMap((more) => (more.getAttribute('data-holds') ?? '').split(' ')),
+      ]
+        .filter((id) => id !== '')
+        .sort(),
+    );
+  const wide: string[][] = [];
+  for (let index = 0; index < (await sections.count()); index += 1) {
+    await sections.nth(index).click();
+    await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
+    wide.push(await reachable());
+  }
+
+  let hidden = 0;
+  for (const width of [960, 800, 640]) {
+    await page.setViewportSize({ width, height: width === 640 ? 360 : 516 });
+    for (let index = 0; index < (await sections.count()); index += 1) {
+      await sections.nth(index).click();
+      await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
+      // A SETTLED row: the overflow is read once the fold has answered for this width.
+      await expect.poll(() => tools.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+      expect(await reachable(), `section ${String(index)} at ${String(width)}`).toStrictEqual(wide[index]);
+      const rest = tools.locator('.m-ribbon__rest .m-ribbon__more');
+      if ((await rest.count()) > 0) {
+        hidden += 1;
+        // ITS NAME BEGINS WITH THE WORD ON ITS FACE, and names what it holds (WCAG 2.5.3).
+        await expect(rest).toHaveAttribute('aria-label', /^More: \S/u);
+      }
+    }
+  }
+  // THE SECOND STAGE RAN. Without this, a ribbon that never hid a group — and so never tested the row's More — would
+  // pass every assertion above wherever the sections happen to fit.
+  expect(hidden).toBeGreaterThan(0);
+});
+
 test('the START SCREEN draws the supplied logo, the hero lines, one primary Open with its chord, and a footer', async ({
   page,
 }) => {

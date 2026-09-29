@@ -892,6 +892,40 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-29 — WCAG 1.4.4: the window's floor gives way to the screen, and the ribbon folds whole groups
+
+The owner's list of 28 September, item 3, decided what the WCAG row had left open: *the window's minimum size never
+exceeds the work area; below 1024 × 720 the ribbon folds into More and never scrolls sideways; B4 first if the floor
+is in the law.* It is not — `MINIMUM_WINDOW` is a constant in `packages/shared/src/windowSize.ts`, and
+`docs/ARCHITECTURE.md` names no window size — so no amendment.
+
+**The floor.** `minimumWindowFor(workArea)` answers 1024 × 720 or the work area, whichever is smaller on each axis.
+`window.ts` applies it for the primary display at creation and again on `display-metrics-changed`, `display-added`,
+`display-removed` and the window's `moved`, from the display the window is on.
+
+**The ribbon's second stage.** `foldGroups` stops at one button and a *More* per group. `foldRow` runs it and, only
+when every group at its floor still does not fit, hides whole groups from the end into one *More* at the row's end,
+folding the groups that stay again from scratch, so they are as full as the freed room allows. It never answers a row
+wider than its box: at zero groups the row is its *More*. The row's *More* is charged at the gauge's width and drawn
+with no frame, so the arithmetic and the row agree; its face stays *More* and its name is *"More: {groups}"* (2.5.3).
+Its menu lists each hidden group's tools through `splitFold`'s partition (`restEntries`). `useRibbonFold` keeps each
+group's chrome and gap by caption, so a hidden group keeps the frame it was measured with.
+
+**Emulated, and said so.** `proof:shell` starts the real shell a second time at `--force-device-scale-factor=2`:
+this machine's work area there is **800 × 426** and the floor read back is 800 × 426; the first launch reads 1024 ×
+720. `renderedScreen.pw.ts` walks every section at 960 × 516, 800 × 516 and 640 × 360 and requires the set of
+reachable tools — buttons plus every *More*'s `data-holds` — to EQUAL the 1920 row's, with no sideways scroll. At 800
+every section still fits with each group at its floor; 640 is what runs the second stage, so the case requires a row
+*More* to have appeared somewhere.
+
+**Mutations, each reddening its case:** not drawing the row's *More* — *section 3 at 640*, tools lost; a `foldRow`
+that never hides a group — sideways overflow; a floor built from a 4000 × 4000 work area — the 200% case, reading
+`{"minimum":[1024,720],"workArea":{"width":800,"height":426}}`.
+
+**Not done here:** the helper's nine live checks against `npm start`. Its review was never saved — FEATURES names
+three of the nine — so the set is reconstructed from the criteria that need a running application, in the entry that
+records them.
+
 ## 2026-09-29 — Stage audit of `2ff522a1..0cc33126` — findings WWWWWW-1 to WWWWWW-8
 
 Owed when the range reached one batch of files (200, 44 commits): the pre-commit gate refused the next commit, as it

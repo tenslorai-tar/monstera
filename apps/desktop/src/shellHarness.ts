@@ -1,6 +1,6 @@
 import { appendFileSync } from 'node:fs';
 
-import { Menu, app, dialog } from 'electron';
+import { Menu, app, dialog, screen } from 'electron';
 
 import { createShellDependencies } from './composition.js';
 import { createDocumentPicker } from './documentPicker.js';
@@ -54,6 +54,11 @@ interface Readback {
    * reloading the page, Ctrl+Shift+I). Read off Electron itself, after `ready`, when its default would be in place.
    */
   readonly applicationMenu: 'none' | 'present';
+  /**
+   * The window's minimum size and the work area of the display it is on, read off Electron after `ready` — so the
+   * floor `window.ts` sets is checked against the screen it was set for (`minimumWindowFor`), not against a constant.
+   */
+  readonly floor: { readonly minimum: readonly number[]; readonly workArea: { readonly width: number; readonly height: number } };
 }
 
 /** What the picker asked Electron for, and what it answered. */
@@ -190,6 +195,10 @@ app.on('browser-window-created', (_event, window) => {
           // must never be able to reach it.
           picker: await exercisePicker(),
           applicationMenu: Menu.getApplicationMenu() === null ? 'none' : 'present',
+          floor: {
+            minimum: window.getMinimumSize(),
+            workArea: screen.getDisplayMatching(window.getBounds()).workAreaSize,
+          },
         });
       } catch (error) {
         process.stderr.write(

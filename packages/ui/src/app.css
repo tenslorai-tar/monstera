@@ -3282,6 +3282,15 @@ textarea {
   border-inline-end: 0;
 }
 
+/* THE ROW'S OWN MORE (`foldRow`): groups folded whole. No padding and no edge, because the fold charges it at the
+   gauge's width and nothing more — a frame here would be width the arithmetic never saw. A column like a group's,
+   its button in the same buttons row, so it sits level with the buttons beside it. */
+.m-ribbon__rest {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+}
+
 .m-ribbon__buttons {
   display: flex;
   flex: 1;

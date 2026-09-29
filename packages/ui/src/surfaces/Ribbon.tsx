@@ -3,6 +3,7 @@ import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   RIBBON_RAIL_LABEL,
+  RIBBON_MORE_GROUPS,
   RIBBON_TOOLS_LABEL,
   SECTION_COMMENT,
   SECTION_EDIT,
@@ -24,7 +25,7 @@ import type { SettingsStore } from '../settingsStore.js';
 import { useSetting } from '../useSetting.js';
 import { type RibbonSection, railModel, ribbonModel } from './projections.js';
 import { RibbonMore, RibbonMoreGauge } from './RibbonMore.js';
-import { splitFold } from './ribbonFolding.js';
+import { restEntries, splitFold } from './ribbonFolding.js';
 import { useRibbonFold } from './useRibbonFold.js';
 
 /**
@@ -314,7 +315,7 @@ export function Ribbon({ registry, context, settings, showing }: RibbonProps): R
       >
         {/* FIRST, so `.m-ribbon__group:last-child` still names the last group. */}
         <RibbonMoreGauge />
-        {groupsOf(sections, active).map((group, index) => (
+        {groupsOf(sections, active).slice(0, fold.hiddenFrom).map((group, index) => (
           <div className="m-ribbon__group" key={group.group} ref={fold.groupRef(index)}>
             <div className="m-ribbon__buttons">
               {splitFold(group.entries, fold.folds?.[index]).shown.map((unit) => {
@@ -390,6 +391,31 @@ export function Ribbon({ registry, context, settings, showing }: RibbonProps): R
             <div className="m-ribbon__caption">{i18n._(group.group)}</div>
           </div>
         ))}
+        {/* THE ROW'S OWN MORE (`foldRow`): the groups that did not fit even at one button each, whole, in their
+            order. Drawn only when a group is hidden, and never instead of a sideways scroll's worth of groups —
+            the fold decided what fits. */}
+        {fold.hiddenFrom < groupsOf(sections, active).length ? (
+          <div className="m-ribbon__rest">
+            <div className="m-ribbon__buttons">
+              <RibbonMore
+                accessibleName={i18n._(RIBBON_MORE_GROUPS, {
+                  groups: groupsOf(sections, active)
+                    .slice(fold.hiddenFrom)
+                    .map((group) => i18n._(group.group))
+                    .join(', '),
+                })}
+                context={context}
+                entries={restEntries(groupsOf(sections, active).slice(fold.hiddenFrom))}
+                onChosen={() => {
+                  if (mode === 'studio') shut();
+                }}
+              />
+            </div>
+            {/* A CAPTION'S ROOM AND NO CAPTION: the groups' buttons sit above theirs, so this keeps the More level
+                with them. Empty, because its name is on the button. */}
+            <div aria-hidden="true" className="m-ribbon__caption" />
+          </div>
+        ) : null}
       </div>
       ) : null}
     </div>
