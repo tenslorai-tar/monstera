@@ -9,6 +9,7 @@ import {
   MAX_MARKDOWN_BYTES,
   MAX_OFFICE_IMPORT_BYTES,
 } from '@monstera/contract';
+import { sweepCheckpointDirectories } from '@monstera/kernel';
 import { BrowserWindow, app, clipboard, crashReporter, nativeImage, safeStorage, shell } from 'electron';
 
 import { createShellDependencies } from './composition.js';
@@ -206,7 +207,14 @@ startShell(() => {
   // shown as its cloud rather than as an internal folder id (ADR-0100).
   const cloudWorkingDirectory = join(app.getPath('userData'), 'cloud');
 
+  // UNDO CHECKPOINTS (ADR-0121), beside the engine's session root so a host's output moves in by a rename, and
+  // swept HERE — synchronously, after the single-instance lock and before the graph exists, so what a crash left
+  // goes and nothing open can meet the sweep.
+  const checkpointDirectory = join(app.getPath('sessionData'), 'checkpoints');
+  sweepCheckpointDirectories(checkpointDirectory);
+
   return createShellDependencies({
+    checkpointDirectory,
     appInfo: {
       version: app.getVersion(),
       installChannel: 'development',

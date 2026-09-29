@@ -892,6 +892,54 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-29 — ADR-0121 Decision 1: a checkpoint is a file, and `main` holds one image after a command
+
+The owner's list of 28 September, item 4: measure the two-image peak and fix it if it is over 1.5×. It was. The
+instrument is `scripts/perf/roleMainByteImage.mjs` — the real `DocumentService`, `CommandBus` and
+`localPdfLibWriter`, running a watermark (a byte-image command) against `perf-image-200mb.pdf`, 209,105,721 bytes,
+with the host's serialise stood in by the canonical image written out and read back into a buffer the read owns.
+`main`'s ArrayBuffer memory is read at each step after two collections with a 50 ms turn between them — one
+collection counted an image nothing held (3.00 where the service held 2), because a large backing store is released
+after the collection that frees it.
+
+**Before, read 2026-09-29 by that script with `--expose-gc --twice`:** peak RSS over baseline 4.02–5.03× the file;
+ArrayBuffers open 1 · session 3 · after apply 4 · after the command **2** · after a second command **3**. The service's
+own count agreed at every step, so this was retention, not a leak: every terminal entry kept a whole image in the
+log.
+
+**Built:** a checkpoint is `{ path, byteLength }` under a per-document directory (fresh lower-case hex, never the
+`DocId`, whose case matters on a filesystem where it does not) in a root `entry.ts` puts beside the engine's session
+root under `sessionData`. The bus mints it from `DocumentContext.storeCheckpoint`, which names the file and has the
+writer fill it through the new `serialiseInto`: a writer whose session is in a host **moves** the host's output there
+(`SessionAreaSurface.moveOutput`, a rename, count-checked against the host's answer); one whose session is bytes in
+`main` writes them (`serialiseIntoFile`, one definition). A restore copies the file. After every lane entry the
+service deletes each stored file the log no longer holds — one rule for a trim, a discarded redo tail and a command
+that failed after its checkpoint — removes the directory at close, and `sweepCheckpointDirectories` removes what a
+crash left, synchronously, before the graph is built. `residentDocumentBytes` counts images only; the retention
+rule still sheds against every image plus every checkpoint on disk, so the disk is bounded by the same ceiling.
+
+**After, same command, two runs:** ArrayBuffers open 1 · session 2 · before apply 2 · after apply 3 · after the
+command **1** · after a second command **1**; peak RSS 4.05× and 4.03×. The steady state is met; the peak is not, and
+was not expected to be — it is the pdf-lib apply parsing in `main` (Decision 3) and the new image arriving while the
+old is held (Decision 2).
+
+**Proven:** the service's cases read the disk — stored in a hex directory holding what the writer wrote; a count
+that disagrees is refused and its file deleted; a file the log does not hold is deleted and one it holds kept (the
+control); a trimmed checkpoint's file goes; a restore copies and keeps; close removes the directory; the sweep takes
+composed names only (controls: a directory it never composes, a file with a composed name). Retention's second term
+is separated by a second document: at `images + 4096` the new checkpoint is shed, at one byte more nothing is — a
+target that forgot other documents' disk bytes sheds nothing at either. The remote lifecycle moves the file out of
+the output directory with the count checked, and refuses a move whose size disagrees. **At the composition root**,
+the existing hard-shape case (a non-numeric `/Rotate` reaching the terminal branch through the remote writer) now
+asserts both ends: the host's output directory no longer holds the file and the one document directory under the
+checkpoint root holds exactly the bytes the host wrote. Mutations, each red: the composition's rename replaced by a
+write (the file stays where the host may read — the case reddens); the reconcile disabled (three cases); the close
+removal disabled (one); the retention target without other documents' checkpoints (one).
+
+**What no case here can see:** whether a checkpoint's bytes passed through `main`'s memory on the way. A
+`serialiseInto` built as a read-then-write satisfies every assertion above; the role script's ArrayBuffer column is
+the instrument for that, and it is the one that moved.
+
 ## 2026-09-29 — WCAG 1.4.4: the window's floor gives way to the screen, and the ribbon folds whole groups
 
 The owner's list of 28 September, item 3, decided what the WCAG row had left open: *the window's minimum size never

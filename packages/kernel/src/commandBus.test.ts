@@ -1,5 +1,9 @@
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { PDFDocument } from '@cantoo/pdf-lib';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { type Command, type CommandOfKind, NETWORK_OCR_ENGINES } from '@monstera/contract';
 import { type DocVersion, asDocVersion } from '@monstera/shared';
@@ -39,11 +43,18 @@ import { shownOn } from './shownText.js';
  */
 
 let flat: ByteImage;
+let checkpointRoot: string;
+let stored = 0;
 
 beforeAll(async () => {
   const document = await PDFDocument.create();
   for (let index = 0; index < 3; index += 1) document.addPage([612, 792]);
   flat = await document.save();
+  checkpointRoot = await mkdtemp(join(tmpdir(), 'monstera-bus-checkpoints-'));
+});
+
+afterAll(async () => {
+  await rm(checkpointRoot, { recursive: true, force: true });
 });
 
 /**
@@ -117,6 +128,14 @@ function contextStub(acceptsImages = false): DocumentContext & {
     ): Promise<number> {
       written.push({ destination, bytes: checkpoint });
       return Promise.resolve(checkpoint.byteLength);
+    },
+    // A REAL FILE, because a checkpoint is one (ADR-0121) and the cases below read back what the writer put there —
+    // which bytes the bus chose is the decision, and a stub that invented a path would hold none. What the service
+    // adds around it (its directory, the count check, the reconcile) is `documentService.test.ts`'.
+    async storeCheckpoint(_writer: CommandWriter, write: (destination: string) => Promise<number>) {
+      const path = join(checkpointRoot, `${String(stored)}.pdf`);
+      stored += 1;
+      return { path, byteLength: await write(path) };
     },
     // BOTH THROW BY DEFAULT, for `noByteImageExpected`'s reason. Almost every
     // command in this file routes to MuPDF, so a bus that installed a byte
@@ -784,7 +803,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       // the wrong moment. The bytes must restore the PRE-command document, and
       // the malformed value is what proves the ordering: it is gone from the
       // live session and present in the checkpoint.
-      expect(await ownRotationIn(entry.checkpoint)).toBe('/Landscape');
+      expect(await ownRotationIn(await readFile(entry.checkpoint.path))).toBe('/Landscape');
       expect(entry.checkpoint.byteLength).toBeGreaterThan(500);
     } finally {
       await mupdfWriter.close(session);
@@ -848,8 +867,8 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
 
   it('CONTROL: a failing CHECKPOINT records nothing and applies nothing', async () => {
     // The failure between capture and apply, which is the window the ordering
-    // in `execute` exists to protect. A writer whose `serialise` throws is the
-    // only way to reach it, and the rest of the writer must be the working one:
+    // in `execute` exists to protect. A writer whose `serialiseInto` throws — the
+    // member a checkpoint is made by since ADR-0121 — is the only way to reach it, and the rest of the writer must be the working one:
     // since ADR-0023 Decision 10 `apply` and `capture` come from the REGISTRY
     // too, so a stub carrying only a lifecycle would fail at the capture before
     // it ever reached the checkpoint, and this case would pass for the wrong
@@ -857,7 +876,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const bus = new CommandBus({
       mupdf: {
         ...localMupdfWriter,
-        serialise: () => Promise.reject(new Error('engine refused to serialise')),
+        serialiseInto: () => Promise.reject(new Error('engine refused to serialise')),
       },
     });
     const session = await malformedSession();
@@ -1085,7 +1104,9 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       await bus.undo({ mupdf: session }, context, supervisor.restore, showingInputs(session));
 
       expect(context.written()).toHaveLength(1);
-      expect(context.written()[0]?.bytes).toStrictEqual(before);
+      const restored = context.written()[0]?.bytes;
+      if (restored === undefined) throw new Error('expected a restore');
+      expect(new Uint8Array(await readFile(restored.path))).toStrictEqual(new Uint8Array(before));
       expect(context.log.entries).toHaveLength(0);
       // MAIN'S IMAGE FOLLOWED BOTH (ADR-0084): the execute installed the session's two-page
       // document and the undo its bytes after the restore. This stub's restore rebuilds nothing,
@@ -1274,7 +1295,7 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
       expect(entry.kind).toBe('terminal');
       expect(entry).toMatchObject({ reason: 'the registered capture ran' });
 
-      // The checkpoint still came from the registry's `serialise`, and apply
+      // The checkpoint still came from the registry's `serialiseInto`, and apply
       // still happened — the capture moved, not the ordering around it.
       expect(await rotationOf(session)).toBe(90);
     } finally {

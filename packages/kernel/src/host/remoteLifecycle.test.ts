@@ -1,5 +1,5 @@
 import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -147,6 +147,10 @@ function realAreas(): FakeAreas {
       // save in a directory the contained host may read.
       await rm(path);
       return new Uint8Array(bytes);
+    },
+    moveOutput: async (area, name, destination) => {
+      await rename(join(area.outputDirectory, name), destination);
+      return (await stat(destination)).size;
     },
     remove: async (area) => {
       removed.push(area);
@@ -793,6 +797,46 @@ describe('remoteMupdfLifecycle', () => {
 
     await lifecycle.close(session);
     await lying.close(other);
+  });
+
+  /**
+   * A CHECKPOINT IS THE HOST'S FILE, MOVED (ADR-0121). What only the move can say: the file at the destination is a
+   * document MuPDF opens, its size is the host's count, and the output directory no longer holds it — so `main`
+   * neither read it nor left a copy where the host may read.
+   */
+  it('moves the serialised document to a destination main chose, with the count checked', async () => {
+    const areas = realAreas();
+    const { lifecycle, open } = joined(areas);
+    const session = await open(flat);
+    const destination = join(await mkdtemp(join(tmpdir(), 'monstera-lifecycle-')), 'checkpoint.pdf');
+    mintedRoots.push(join(destination, '..'));
+
+    const moved = await lifecycle.serialiseInto(session, destination);
+
+    expect(moved).toBe((await stat(destination)).size);
+    const reopened = await mupdfWriter.open(new Uint8Array(await readFile(destination)));
+    await mupdfWriter.close(reopened);
+    expect(await readdir(areas.made[0]?.outputDirectory ?? '')).toStrictEqual([]);
+
+    await lifecycle.close(session);
+  });
+
+  // CONTROL for the case above: without the count check, a move that lost bytes would be a checkpoint that restores
+  // a different document.
+  it('refuses a moved checkpoint whose size disagrees with the host count', async () => {
+    const areas = realAreas();
+    const shortened: FakeAreas = {
+      ...areas,
+      moveOutput: async (area, name, destination) => (await areas.moveOutput(area, name, destination)) - 1,
+    };
+    const { lifecycle, open } = joined(shortened);
+    const session = await open(flat);
+    const destination = join(await mkdtemp(join(tmpdir(), 'monstera-lifecycle-')), 'checkpoint.pdf');
+    mintedRoots.push(join(destination, '..'));
+
+    await expect(lifecycle.serialiseInto(session, destination)).rejects.toThrow(EngineSerialiseMismatch);
+
+    await lifecycle.close(session);
   });
 
   /**

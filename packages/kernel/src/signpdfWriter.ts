@@ -1,5 +1,6 @@
 import type { Command, CommandKind, CommandOfKind } from '@monstera/contract';
 
+import { serialiseIntoFile } from './checkpointFile.js';
 import type { CaptureResult, CommandPrior } from './commandLog.js';
 import { declaredCommands } from './commandDeclarations.js';
 import type {
@@ -119,6 +120,7 @@ export const localSignpdfExecution: CommandExecution<'signpdf'> = {
  */
 export const localSignpdfWriter: RegisteredWriter<'signpdf'> = {
   ...signpdfWriter,
+  serialiseInto: serialiseIntoFile((session: ByteImage) => signpdfWriter.serialise(session)),
   ...localSignpdfExecution,
 };
 

@@ -48,6 +48,9 @@ import type { ShellFailure } from './shellFailure.js';
 /** Large enough that capacity is never what these tests are measuring. */
 const AMPLE_CEILING = 64 * 1024 * 1024;
 
+/** Where this file's services keep checkpoints (ADR-0121): its own, by process, removed after the file. */
+const CHECKPOINTS = join(tmpdir(), `monstera-supervisor-checkpoints-${String(process.pid)}`);
+
 let directory: string;
 let file: string;
 /** A second document, so a per-lane claim is not made against one lane. */
@@ -69,6 +72,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   rmSync(directory, { recursive: true, force: true });
+  rmSync(CHECKPOINTS, { recursive: true, force: true });
 });
 
 /**
@@ -396,7 +400,7 @@ describe('openEngineSession writes the canonical image out and opens it', () => 
 
   beforeAll(async () => {
     const registry = new CapabilityRegistry();
-    service = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+    service = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
     const outcome = await service.open(registry.mint(file));
     if (outcome.kind !== 'opened') throw new Error(`Fixture did not open: ${outcome.kind}`);
     docId = outcome.docId;
@@ -486,6 +490,7 @@ describe('a host death is reported, and every document is put back through its o
     const registry = new CapabilityRegistry();
     const service = new DocumentService(registry, {
       documentBytesCeiling: AMPLE_CEILING,
+      checkpointDirectory: CHECKPOINTS,
       teardown: engine.releaseOnClose,
     });
     const a = await service.open(registry.mint(file));
@@ -773,6 +778,7 @@ describe('the SERVICE releases the entry, because nothing else is told a documen
     const registry = new CapabilityRegistry();
     const service = new DocumentService(registry, {
       documentBytesCeiling: AMPLE_CEILING,
+      checkpointDirectory: CHECKPOINTS,
       teardown: engine.releaseOnClose,
     });
     const outcome = await service.open(registry.mint(file));
@@ -800,7 +806,7 @@ describe('the SERVICE releases the entry, because nothing else is told a documen
     // the mistake worth catching rather than the deletion itself.
     const engine = new EngineSessions();
     const registry = new CapabilityRegistry();
-    const unregistered = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+    const unregistered = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
     const outcome = await unregistered.open(registry.mint(file));
     if (outcome.kind !== 'opened') throw new Error(`Fixture did not open: ${outcome.kind}`);
 
@@ -881,6 +887,7 @@ describe('onDocumentOpened', () => {
     const registry = new CapabilityRegistry();
     const service = new DocumentService(registry, {
       documentBytesCeiling: AMPLE_CEILING,
+      checkpointDirectory: CHECKPOINTS,
       teardown: engine.releaseOnClose,
     });
     const opened = await service.open(registry.mint(file));
@@ -1045,6 +1052,7 @@ describe('onDocumentOpened', () => {
     const registry = new CapabilityRegistry();
     const service = new DocumentService(registry, {
       documentBytesCeiling: AMPLE_CEILING,
+      checkpointDirectory: CHECKPOINTS,
       teardown: engine.releaseOnClose,
     });
 
@@ -1102,6 +1110,7 @@ describe('recycling drops the handle and builds it again, keeping the record', (
     const engine = new EngineSessions();
     const service = new DocumentService(registry, {
       documentBytesCeiling: AMPLE_CEILING,
+      checkpointDirectory: CHECKPOINTS,
       recycleHandle: async (id) => {
         await engine.recycle(id, (forId) => {
           order.push(`rebuild:${forId.slice(0, 4)}`);
@@ -1181,7 +1190,7 @@ describe('recycling drops the handle and builds it again, keeping the record', (
 
   it('says so when there is no recycle surface, rather than reporting success', async () => {
     const plain = new CapabilityRegistry();
-    const service = new DocumentService(plain, { documentBytesCeiling: AMPLE_CEILING });
+    const service = new DocumentService(plain, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
     const outcome = await service.open(plain.mint(file));
     if (outcome.kind !== 'opened') throw new Error('fixture did not open');
 

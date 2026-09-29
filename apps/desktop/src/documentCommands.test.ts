@@ -56,6 +56,7 @@ import {
   TimestampRefusedError,
   TimestampUnreachableError,
   UrlFetchRefused,
+  serialiseIntoFile,
   siblingNames,
   StaleTargetError,
 } from '@monstera/kernel';
@@ -92,6 +93,9 @@ import { type DocId, type DocVersion, asDocId, asDocVersion } from '@monstera/sh
 
 /** Large enough that capacity is never what these tests are measuring. */
 const AMPLE_CEILING = 64 * 1024 * 1024;
+
+/** Where this file's services keep checkpoints (ADR-0121): its own, by process, removed after the file. */
+const CHECKPOINTS = join(tmpdir(), `monstera-commands-checkpoints-${String(process.pid)}`);
 
 import { executeCommandHandler } from './commandHandlers.js';
 import { createAssistant } from './assistant.js';
@@ -192,7 +196,7 @@ async function ownRotation(page: number): Promise<number | null> {
 
 async function openDocument(): Promise<void> {
   const registry = new CapabilityRegistry();
-  service = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+  service = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
   const outcome = await service.open(registry.mint(file));
   if (outcome.kind !== 'opened') throw new Error(`Fixture did not open: ${outcome.kind}`);
   docId = outcome.docId;
@@ -217,6 +221,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   rmSync(directory, { recursive: true, force: true });
+  rmSync(CHECKPOINTS, { recursive: true, force: true });
 });
 
 /**
@@ -1011,7 +1016,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
   }
 
   it('a document that is not open is a DECLARED code, carrying no incident id', async () => {
-    const closed = new DocumentService(new CapabilityRegistry(), { documentBytesCeiling: AMPLE_CEILING });
+    const closed = new DocumentService(new CapabilityRegistry(), { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
     const commands = new DocumentCommands({ ...INERT, documents: closed, bus: bus(), engine: engine() });
     const result = await wrapped(commands)({ docId, command: rotateOnce });
 
@@ -1275,7 +1280,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     const success = await wrapped(commands)(params);
     expect(structuredClone(success)).toStrictEqual(success);
 
-    const closed = new DocumentService(new CapabilityRegistry(), { documentBytesCeiling: AMPLE_CEILING });
+    const closed = new DocumentService(new CapabilityRegistry(), { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
     const declined = await wrapped(
       new DocumentCommands({ ...INERT, documents: closed, bus: bus(), engine: engine() }),
     )(params);
@@ -1311,7 +1316,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       writeFileSync(path, before);
 
       const registry = new CapabilityRegistry();
-      const own = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+      const own = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
       const outcome = await own.open(registry.mint(path));
       if (outcome.kind !== 'opened') throw new Error(`fixture did not open: ${outcome.kind}`);
 
@@ -1467,7 +1472,7 @@ describe('search is E2s first consumer, through the composition point', () => {
       return await document.save({ useObjectStreams: false });
     };
     const registry = new CapabilityRegistry();
-    searchService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+    searchService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
     const opened = async (name: string, bytes: Uint8Array): Promise<DocId> => {
       const path = join(directory, name);
       writeFileSync(path, bytes);
@@ -1939,7 +1944,7 @@ describe('pageStructure — a tagged page’s elements, never its words (ADR-006
 
   beforeAll(async () => {
     const registry = new CapabilityRegistry();
-    structureService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+    structureService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
 
     const taggedBytes = taggedPdf();
     const taggedPath = join(directory, 'tagged.pdf');
@@ -2029,7 +2034,7 @@ describe('the form data export carries the format all the way to the file', () =
     const path = join(directory, 'form.pdf');
     writeFileSync(path, bytes);
     const registry = new CapabilityRegistry();
-    formService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+    formService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
     const outcome = await formService.open(registry.mint(path));
     if (outcome.kind !== 'opened') throw new Error(`Fixture did not open: ${outcome.kind}`);
     formDoc = outcome.docId;
@@ -2137,7 +2142,7 @@ describe('annotations exported to a file and imported from it, through the lane 
     const blankBytes = await blank.save();
 
     const registry = new CapabilityRegistry();
-    exchangeService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+    exchangeService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
     const annotatedPath = join(directory, 'annotated.pdf');
     const blankPath = join(directory, 'blank-for-annotations.pdf');
     writeFileSync(annotatedPath, annotatedBytes);
@@ -2346,7 +2351,7 @@ describe('exportPageImages — one image per page, in a folder, all or nothing',
     const path = join(directory, 'sized.pdf');
     writeFileSync(path, bytes);
     const registry = new CapabilityRegistry();
-    sizedService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+    sizedService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
     const outcome = await sizedService.open(registry.mint(path));
     if (outcome.kind !== 'opened') throw new Error(`Fixture did not open: ${outcome.kind}`);
     sizedDoc = outcome.docId;
@@ -2493,7 +2498,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
     const path = join(directory, 'words.pdf');
     writeFileSync(path, bytes);
     const registry = new CapabilityRegistry();
-    textService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+    textService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
     const outcome = await textService.open(registry.mint(path));
     if (outcome.kind !== 'opened') throw new Error(`Fixture did not open: ${outcome.kind}`);
     textDoc = outcome.docId;
@@ -3078,7 +3083,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
 
 describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () => {
   const registry = new CapabilityRegistry();
-  const service = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+  const service = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
   /** Page 1 prose, pages 2 and 3 each a ruled three-column table. */
   let tablesDoc: DocId;
   /** Page 1 a picture and no text, page 2 blank. */
@@ -3548,6 +3553,7 @@ describe('sign — a visible signature', () => {
   function refusingSigner(error: Error): RegisteredWriter<'signpdf'> {
     return {
       serialise: (session) => Promise.resolve(session),
+      serialiseInto: serialiseIntoFile((session: Uint8Array) => Promise.resolve(session)),
       apply: () => Promise.reject(error),
       capture: () =>
         Promise.resolve({ captured: false as const, reason: 'the refusing signer records nothing' }),
@@ -3660,6 +3666,7 @@ describe('sign — a visible signature', () => {
       let mark: unknown;
       const recording: RegisteredWriter<'signpdf'> = {
         serialise: (session) => Promise.resolve(session),
+        serialiseInto: serialiseIntoFile((session: Uint8Array) => Promise.resolve(session)),
         apply: (request) => {
           const command: unknown = request.command;
           mark = (command as { readonly appearance?: { readonly mark?: unknown } }).appearance?.mark;
@@ -4293,7 +4300,7 @@ describe('DocumentCommands — a page edited in another application (ADR-0062)',
     const path = join(directory, name);
     writeFileSync(path, bytes);
     const registry = new CapabilityRegistry();
-    const documents = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+    const documents = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
     const outcome = await documents.open(registry.mint(path));
     if (outcome.kind !== 'opened') throw new Error(`the target did not open: ${outcome.kind}`);
     const held = new EngineSessions();
@@ -4506,7 +4513,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     writeFileSync(sourcePath, await sourceBytes());
 
     const registry = new CapabilityRegistry();
-    const documents = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+    const documents = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
     const target = await documents.open(registry.mint(targetPath));
     const source = await documents.open(registry.mint(sourcePath));
     if (target.kind !== 'opened' || source.kind !== 'opened') throw new Error('a fixture did not open');

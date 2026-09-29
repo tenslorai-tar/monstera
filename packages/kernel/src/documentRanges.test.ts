@@ -1,3 +1,6 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -67,6 +70,8 @@ async function openCounting(length: number): Promise<{
   const registry = new CapabilityRegistry();
   const service = new DocumentService(registry, {
     documentBytesCeiling: AMPLE_CEILING,
+    // NOTHING HERE STORES A CHECKPOINT, so the directory is never made.
+    checkpointDirectory: join(tmpdir(), 'monstera-ranges-checkpoints'),
     readIdentity: () => Promise.resolve(identity()),
     readBytes: () => Promise.resolve(bytes),
   });

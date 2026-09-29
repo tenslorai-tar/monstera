@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { type Server, connect, createServer } from 'node:net';
 import { dirname, join } from 'node:path';
 
@@ -122,6 +122,7 @@ import {
   remoteMupdfPageLinks,
   remoteMupdfPageText,
   remoteMupdfWriter,
+  serialiseIntoFile,
   siblingNames,
   type CloudClient,
   writeStreamedDocument,
@@ -412,6 +413,13 @@ export type EncodePng = (
 
 export interface ShellComposition {
   readonly appInfo: AppInfo;
+  /**
+   * Where undo checkpoints are kept, one directory per document
+   * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)). `main`'s own storage, granted to no
+   * container, resolved in `entry.ts` beside the session root and swept there before anything opens. Required,
+   * for `DocumentServiceOptions.checkpointDirectory`'s reason.
+   */
+  readonly checkpointDirectory: string;
   /** Which document to open. Electron's open dialog, in the shipped build. */
   readonly pickDocument: PickDocument;
   /** Where a copy goes. Electron's save dialog, in the shipped build. */
@@ -793,6 +801,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
 
   const documents = new DocumentService(capabilities, {
     documentBytesCeiling: MAIN_DOCUMENT_BYTES_CEILING,
+    checkpointDirectory: composition.checkpointDirectory,
     // TWO THINGS END WITH A DOCUMENT, and both are registrations on this one seam rather than
     // calls a close path must remember (finding FFFF-1): its page-out watch (ADR-0062),
     // which is synchronous and cannot fail, and then its engine session. `commands` is built
@@ -1856,6 +1865,8 @@ function engineSessionOpener(
       // is the same one the pipe has.
       invert: (session, kind, inverse) => liveWriter().invert(session, kind, inverse),
       serialise: (session) => liveWriter().serialise(session),
+      // A CHECKPOINT MOVES THE HOST'S FILE, and `main` never reads it (ADR-0121).
+      serialiseInto: (session, destination) => liveWriter().serialiseInto(session, destination),
     },
     // REGISTERED DIRECTLY, with no late binding and no holder, because there is
     // no host to wait for
@@ -2838,6 +2849,8 @@ function pdfiumHostBinding(
       // identity directly rather than delegated, because delegating it would
       // require a host to exist in order to return the argument.
       serialise: (session) => Promise.resolve(session),
+      // THE IDENTITY WRITTEN OUT, for the same reason: a checkpoint of bytes already in hand starts no host.
+      serialiseInto: serialiseIntoFile((session: Uint8Array) => Promise.resolve(session)),
     },
     textRuns: async (image, page) => (await ensure()).textRuns(image, page),
     pageObjects: async (image, page) => (await ensure()).pageObjects(image, page),
@@ -3192,6 +3205,14 @@ function sessionAreas(platform: EngineHostPlatform): SessionAreaSurface {
       const bytes = await readFile(path);
       await rm(path, { force: true });
       return new Uint8Array(bytes);
+    },
+    // A RENAME, so a checkpoint's bytes never pass through `main` (ADR-0121). `entry.ts` puts the checkpoint root
+    // and the session root side by side under `sessionData`, so they are one volume and a rename is a move; one on
+    // another volume would refuse with `EXDEV` rather than copy.
+    moveOutput: async (area, name, destination) => {
+      const path = join(area.outputDirectory, name);
+      await rename(path, destination);
+      return (await stat(destination)).size;
     },
     remove: (area) => {
       removeSessionDirectories(platform.directories, {

@@ -1,7 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
-import { basename } from 'node:path';
+import { readdirSync, rmSync } from 'node:fs';
+import { copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 
 import {
   type Brand,
@@ -15,6 +16,7 @@ import {
 import type { CapabilityRegistry } from './capabilityRegistry.js';
 import {
   type Checkpoint,
+  type CheckpointFile,
   CommandLog,
   type LogTrim,
   type ReadonlyCommandLog,
@@ -24,7 +26,7 @@ import { type FileIdentity, isSameDocument, readFileIdentity } from './documentI
 // is types-plus-one-const, and the second spelling would emit
 // `import {} from './engineSeam.js'` — a side-effect import (ADR-0026).
 import type { ByteImage } from './engineSeam.js';
-import { type TokenBytesSource, cryptoBytes, mintToken } from './token.js';
+import { TOKEN_BYTES, type TokenBytesSource, cryptoBytes, mintToken } from './token.js';
 
 /**
  * The registry of open documents: what is open, which file each one is, and
@@ -446,7 +448,8 @@ export interface DocumentContext {
    * can produce an argument for this parameter.
    *
    * @param writer Proof the caller is the command bus. See {@link CommandWriter}.
-   * @param checkpoint The bytes to write, from a terminal log entry.
+   * @param checkpoint A terminal log entry's checkpoint — a file since ADR-0121, COPIED to the destination so its
+   *   bytes never pass through `main` and it stays for a redo.
    * @param destination Where they go. The supervisor granted it.
    * @returns The number of bytes written.
    */
@@ -455,6 +458,20 @@ export interface DocumentContext {
     checkpoint: Checkpoint,
     destination: string,
   ): Promise<number>;
+
+  /**
+   * Keeps a checkpoint in this document's own directory and answers where and how long
+   * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)).
+   *
+   * **The service names the file and `write` fills it** — the writer's `serialiseInto`, which moves the host's output
+   * there without `main` reading it. The size on disk is checked against the count `write` answered, because a writer
+   * that wrote nothing and one that said it wrote nothing are otherwise the same checkpoint. The bus brands what this
+   * answers; nothing else can.
+   *
+   * @param writer Proof the caller is the command bus.
+   * @param write Fills the file at the path it is given, and answers how many bytes it wrote.
+   */
+  storeCheckpoint(writer: CommandWriter, write: (destination: string) => Promise<number>): Promise<CheckpointFile>;
 
   /**
    * Writes bytes a byte-image command produced to a destination the session
@@ -717,6 +734,24 @@ interface DocumentRecord {
    * which is also what stops a closed document's byte snapshots outliving it.
    */
   readonly log: CommandLog;
+  /**
+   * This document's own checkpoint directory under the service's root, or `null` until its first checkpoint
+   * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)).
+   *
+   * **Since checkpoints became files, the sentence above about the log is true of the log and not of the disk.**
+   * Dropping the record drops the paths and leaves the files, so a closed document's snapshots WOULD outlive it —
+   * which is why {@link DocumentService.close} removes this directory after the lane drains, and why every file
+   * stored here is also in {@link checkpointFiles}.
+   */
+  checkpointDirectory: string | null;
+  /**
+   * Every checkpoint file stored for this document that has not been deleted — what reconciling against
+   * `log.checkpointPaths()` after each lane entry compares, so a file the log let go of is found without reading
+   * the directory.
+   */
+  readonly checkpointFiles: Set<string>;
+  /** Names the next checkpoint file; never reused while the directory lives. */
+  checkpointSerial: number;
 }
 
 /**
@@ -999,6 +1034,40 @@ export type BytesWriter = (destination: string, bytes: Uint8Array) => Promise<vo
 /** The default: the bytes, whole, once. */
 const writeFileBytes: BytesWriter = (destination, bytes) => writeFile(destination, bytes);
 
+/** A document's checkpoint directory's name: {@link TOKEN_BYTES} of fresh randomness, as lower-case hex. */
+const CHECKPOINT_DIRECTORY_NAME = new RegExp(`^[0-9a-f]{${String(TOKEN_BYTES * 2)}}$`);
+
+/**
+ * Removes the checkpoint directories a previous run left under `root`, and answers how many
+ * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)).
+ *
+ * **Called once at start, before any document is open** — which is the whole of what makes it safe: a
+ * {@link DocumentService} removes its documents' directories at close, so a directory present before the first open
+ * belongs to a run that ended without closing, and there is only ever one run (the shell quits without the
+ * single-instance lock). It removes only names a service composes, so a root pointed somewhere wrong loses nothing
+ * else. A root that does not exist yet has nothing to sweep.
+ *
+ * **Synchronous, and that is the property rather than a convenience.** Unawaited, a sweep that listed the root
+ * after a first checkpoint was stored would remove a live document's directory; finished before the composition is
+ * built, there is no document for it to meet.
+ */
+export function sweepCheckpointDirectories(root: string): number {
+  let entries;
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+    throw error;
+  }
+  let removed = 0;
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !CHECKPOINT_DIRECTORY_NAME.test(entry.name)) continue;
+    rmSync(join(root, entry.name), { recursive: true, force: true });
+    removed += 1;
+  }
+  return removed;
+}
+
 export interface DocumentServiceOptions {
   /**
    * Total canonical-image bytes this service may hold across every open
@@ -1021,6 +1090,17 @@ export interface DocumentServiceOptions {
    * service constructed without it does not compile.
    */
   readonly documentBytesCeiling: number;
+  /**
+   * Where checkpoints are kept: one directory per document beneath it, each named by fresh lower-case hex
+   * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)).
+   *
+   * **Required, for the ceiling's reason.** It is `main`'s own storage and granted to no container, and only the
+   * composition root knows where that is; a default here would be a second answer to that question, and the one
+   * that would quietly put a copy of the user's document somewhere nobody chose. The service creates a document's
+   * directory at its first checkpoint and removes it at close; what a crash leaves is
+   * {@link sweepCheckpointDirectories}' job, at start, before anything is open.
+   */
+  readonly checkpointDirectory: string;
   readonly teardown?: DocumentTeardown;
   /**
    * Drops what a document holds outside this index and builds it again, with
@@ -1053,6 +1133,7 @@ export class DocumentService {
   readonly #readBytes: BytesReader;
   readonly #writeBytes: BytesWriter;
   readonly #documentBytesCeiling: number;
+  readonly #checkpointRoot: string;
 
   /**
    * Serialises everything that reads the index and then writes it.
@@ -1107,6 +1188,7 @@ export class DocumentService {
     }
     this.#capabilities = capabilities;
     this.#documentBytesCeiling = options.documentBytesCeiling;
+    this.#checkpointRoot = options.checkpointDirectory;
     this.#teardown = options.teardown ?? noTeardown;
     this.#recycleHandle = options.recycleHandle ?? null;
     this.#randomBytes = options.randomBytesSource ?? cryptoBytes;
@@ -1116,36 +1198,31 @@ export class DocumentService {
   }
 
   /**
-   * **Every document-scaled byte this service is holding**, across every open
-   * document — the one place that answers it.
+   * **Every document-scaled byte this service is holding IN MEMORY**, across every open document — the one place
+   * that answers it, and what `open` compares against the ceiling.
    *
-   * ## Two terms, because two things scale with the document
+   * ## One term since ADR-0121, and the term that left is on disk, not gone
    *
-   * The canonical image is one. **Checkpoints are the other**, and an earlier
-   * version of this method counted only the first. `Checkpoint` is
-   * `Brand<ByteImage, …>` — a whole byte image per terminal entry, uncapped —
-   * so with a 1.5× budget and a 1.00× image, *the first checkpoint written puts
-   * `main` over budget while `open` still reports capacity*. A guard that can be
-   * satisfied while the thing it guards is breached is not a guard.
+   * This added the log's checkpoints to the images, because a checkpoint was a whole byte image held in memory for
+   * as long as its entry lived — so with a 1.5× budget and a 1.00× image the first one put `main` over budget
+   * while `open` still reported capacity. Checkpoints are files now
+   * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)), so adding them here would count
+   * bytes `main` does not hold, and `open` would refuse a document the process has room for.
    *
-   * The checkpoint term is asked of the log rather than computed here, so it
-   * moves on its own the day checkpoint policy changes. A comment naming the
-   * exclusion would have been the weaker form of the same fix, with the failure
-   * mode that the note and the code drift — which is what deriving the roster
-   * count removed one commit earlier.
-   *
-   * **This is accounting, not policy.** How many checkpoints may exist, and what
-   * spills when, is deferred to the Stage 0 performance gate by ADR-0009's
-   * *Left open* and is deliberately not settled here
-   * ([ADR-0021](../../../docs/DECISIONS/0021-the-canonical-image-is-retained.md)).
-   * What this fixes is that the number the ceiling compares against is the whole
-   * number.
+   * **They are still counted — by the retention rule**, which sheds against the same ceiling with every document's
+   * checkpoint bytes included (`enforceRetention`), so undo still ends past the oldest checkpoint the budget keeps.
+   * The disk is bounded by the ceiling the memory is; the memory no longer carries the disk's figure.
    */
   residentDocumentBytes(): number {
     let total = 0;
-    for (const record of this.#records.values()) {
-      total += record.bytes.byteLength + record.log.retainedBytes();
-    }
+    for (const record of this.#records.values()) total += record.bytes.byteLength;
+    return total;
+  }
+
+  /** Every open document's checkpoint bytes, on disk — the retention rule's second term. */
+  #checkpointBytes(): number {
+    let total = 0;
+    for (const record of this.#records.values()) total += record.log.retainedBytes();
     return total;
   }
 
@@ -1374,6 +1451,9 @@ export class DocumentService {
       lane: Promise.resolve(),
       queued: 0,
       log: new CommandLog(),
+      checkpointDirectory: null,
+      checkpointFiles: new Set(),
+      checkpointSerial: 0,
     });
     // `basename`, and the ONE call site. Everything downstream of here holds a
     // name and no path, which is invariant L2 arriving as a value rather than
@@ -1392,7 +1472,7 @@ export class DocumentService {
    * takes no schedule and has no caller inside this package: it is offered.
    *
    * A ceiling-keyed caller was considered and refused. The checkpoint budget
-   * bounds what **main** holds — canonical bytes plus checkpoints — and a
+   * bounds what **main** holds — canonical bytes, and checkpoints on disk since ADR-0121 — and a
    * handle's memory is in the host under the job's own limit, so recycling
    * relieves neither of that budget's terms. Wiring it there would also be the
    * one wiring §2 names and rejects.
@@ -1514,11 +1594,69 @@ export class DocumentService {
     this.#records.delete(docId);
 
     // Half 2. The lane is captured after the removal, so it can only contain
-    // work accepted while the document was open.
-    return record.lane.then(
-      () => this.#teardown(docId),
-      () => this.#teardown(docId),
-    );
+    // work accepted while the document was open. The checkpoint directory goes
+    // LAST and on either outcome of teardown: nothing can store or restore once
+    // the lane has drained, and a teardown that failed still leaves copies of
+    // the document on disk that nothing will ever read (ADR-0121).
+    return record.lane
+      .then(
+        () => this.#teardown(docId),
+        () => this.#teardown(docId),
+      )
+      .finally(() => this.#removeCheckpoints(record));
+  }
+
+  /**
+   * Makes a checkpoint file for `record` and answers where it is and how long — `DocumentContext.storeCheckpoint`.
+   *
+   * The path is recorded BEFORE `write` runs, so a write that fails part-way leaves a file the reconcile after this
+   * lane entry deletes rather than one nothing knows about.
+   */
+  async #storeCheckpoint(
+    record: DocumentRecord,
+    write: (destination: string) => Promise<number>,
+  ): Promise<CheckpointFile> {
+    if (record.checkpointDirectory === null) {
+      // FRESH HEX, never the DocId: a DocId is base64url, whose case matters, on a filesystem where it does not.
+      const directory = join(this.#checkpointRoot, Buffer.from(this.#randomBytes(TOKEN_BYTES)).toString('hex'));
+      await mkdir(directory, { recursive: true });
+      record.checkpointDirectory = directory;
+    }
+    record.checkpointSerial += 1;
+    const path = join(record.checkpointDirectory, `${String(record.checkpointSerial)}.pdf`);
+    record.checkpointFiles.add(path);
+    const written = await write(path);
+    const { size } = await stat(path);
+    if (size !== written) {
+      throw new Error(
+        `A checkpoint's writer answered ${String(written)} bytes and ${String(size)} are on disk. A restore from it ` +
+          `would open a document other than the one this checkpoint records, so it is not kept.`,
+      );
+    }
+    return { path, byteLength: size };
+  }
+
+  /** Runs one lane entry's work, then deletes every checkpoint file `record`'s log no longer holds. */
+  async #withReconciledCheckpoints<T>(record: DocumentRecord, work: () => Promise<T>): Promise<T> {
+    try {
+      return await work();
+    } finally {
+      if (record.checkpointFiles.size > 0) {
+        const held = record.log.checkpointPaths();
+        for (const path of [...record.checkpointFiles]) {
+          if (held.has(path)) continue;
+          await rm(path, { force: true });
+          record.checkpointFiles.delete(path);
+        }
+      }
+    }
+  }
+
+  /** Removes `record`'s checkpoint directory, if it ever made one. */
+  async #removeCheckpoints(record: DocumentRecord): Promise<void> {
+    if (record.checkpointDirectory === null) return;
+    await rm(record.checkpointDirectory, { recursive: true, force: true });
+    record.checkpointFiles.clear();
   }
 
   /**
@@ -1575,7 +1713,10 @@ export class DocumentService {
       this.#executingDocument.run(docId, async () => {
         // Read here, when the work actually runs — not when it was queued.
         const version = record.version;
-        const value = await work({
+        // RECONCILED AFTER EVERY ENTRY, whatever it did and whether it threw (ADR-0121): a checkpoint leaves the log
+        // by a trim, by a redo tail a new command discarded, or by a command that failed after its checkpoint was
+        // stored, and one rule here covers all three rather than a deletion at each place an entry can go.
+        const value = await this.#withReconciledCheckpoints(record, () => work({
           docId: record.docId,
           path: record.path,
           version,
@@ -1595,22 +1736,27 @@ export class DocumentService {
           // arithmetic that joins them belongs here and in one place: the
           // target is whatever the ceiling has left once every other document's
           // image and log are accounted for. A target computed in the bus would
-          // be a second opinion about a budget §9.17 owns (B3a).
+          // be a second opinion about a budget §9.17 owns (B3a). Every image
+          // and every OTHER document's checkpoints: the figure it had when
+          // checkpoints were in memory, kept when they moved to disk (ADR-0121).
           enforceRetention: () =>
             record.log.trimTo(
               Math.max(
                 0,
                 this.#documentBytesCeiling -
-                  (this.residentDocumentBytes() - record.log.retainedBytes()),
+                  (this.residentDocumentBytes() + this.#checkpointBytes() - record.log.retainedBytes()),
               ),
             ),
           // The token is not read, for `commandLog`'s reason. What confines
           // this is the `Checkpoint` brand on the second parameter: the only
-          // mint is module-private to `commandBus.ts`.
+          // mint is module-private to `commandBus.ts`. A COPY of the file, so
+          // the checkpoint's bytes reach the host's snapshot without passing
+          // through `main` (ADR-0121), and the checkpoint stays for a redo.
           writeCheckpoint: async (_writer, checkpoint, destination) => {
-            await this.#writeBytes(destination, checkpoint);
+            await copyFile(checkpoint.path, destination);
             return checkpoint.byteLength;
           },
+          storeCheckpoint: (_writer, write) => this.#storeCheckpoint(record, write),
           // The token is not read, for `commandLog`'s reason. What confines
           // this one is that a `CommandWriter` cannot be minted outside
           // `commandBus.ts` — there is no brand on `ByteImage` to lean on, so
@@ -1646,7 +1792,7 @@ export class DocumentService {
             return record.savedVersion;
           },
           isDirty: () => record.savedVersion !== record.version,
-        });
+        }));
         // Read AGAIN, after the work, still inside the lane. See `Versioned`.
         return { value, version: record.version };
       }),

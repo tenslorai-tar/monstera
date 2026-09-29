@@ -208,6 +208,12 @@ export class EngineSerialiseMismatch extends Error {
 export interface SessionAreaSurface {
   /** Reads back what the host wrote, then deletes it. */
   readonly takeOutput: (area: SessionArea, name: string) => Promise<ByteImage>;
+  /**
+   * Moves what the host wrote to `destination`, which `main` chose, and answers its size — never reading it
+   * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)): a checkpoint is the host's serialise,
+   * and reading it into `main` only to write it out again is the second image the budget exists to refuse.
+   */
+  readonly moveOutput: (area: SessionArea, name: string, destination: string) => Promise<number>;
   /** Removes both directories and everything under them. Must not throw. */
   readonly remove: (area: SessionArea) => Promise<void>;
   /**
@@ -234,6 +240,11 @@ export interface SessionAreaSurface {
 export interface RemoteMupdfLifecycle {
   /** The canonical bytes for the session's current state. */
   readonly serialise: (session: MupdfSession) => Promise<ByteImage>;
+  /**
+   * The session's current bytes at `destination`, moved there from the host's output and never read by `main`
+   * (ADR-0121) — what a checkpoint is made from. The count is the host's, checked against the file that moved.
+   */
+  readonly serialiseInto: (session: MupdfSession, destination: string) => Promise<number>;
   /**
    * The bytes of a NEW document made of the named pages.
    *
@@ -312,6 +323,21 @@ export function remoteMupdfLifecycle(
         throw new EngineSerialiseMismatch(answer.value.bytes, bytes.length);
       }
       return bytes;
+    },
+
+    // `serialise`'s dance with a move where it reads, and the same count check against what moved.
+    serialiseInto: async (session, destination) => {
+      const area = sessions.areaFor(session);
+      const into = areas.mintName();
+      const answer = await client['engine/serialise']({
+        session: sessions.handleFor(session),
+        into,
+      });
+      if (!answer.ok) throw new EngineSerialiseFailed(answer.error.code);
+
+      const moved = await areas.moveOutput(area, into, destination);
+      if (moved !== answer.value.bytes) throw new EngineSerialiseMismatch(answer.value.bytes, moved);
+      return moved;
     },
 
     extract: async (session, pages) => {

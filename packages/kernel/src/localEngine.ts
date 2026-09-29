@@ -1,4 +1,6 @@
+import { serialiseIntoFile } from './checkpointFile.js';
 import { type RegisteredWriter, localMupdfExecution } from './commandSpecs.js';
+import type { MupdfSession } from './engineSeam.js';
 import { mupdfWriter } from './mupdfWriter.js';
 
 /**
@@ -35,5 +37,7 @@ import { mupdfWriter } from './mupdfWriter.js';
  */
 export const localMupdfWriter: RegisteredWriter<'mupdf'> = {
   ...mupdfWriter,
+  // The session is in this process, so a checkpoint is its bytes written out (ADR-0121).
+  serialiseInto: serialiseIntoFile((session: MupdfSession) => mupdfWriter.serialise(session)),
   ...localMupdfExecution,
 };

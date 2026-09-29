@@ -1,8 +1,11 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   unlinkSync,
@@ -10,7 +13,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import { type DocId, asDocId, asFileHandle } from '@monstera/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -29,6 +32,7 @@ import {
   type OpenOutcome,
   type CommandWriter,
   type SaveWriter,
+  sweepCheckpointDirectories,
 } from './documentService.js';
 
 /**
@@ -61,6 +65,7 @@ function newService(
   const synthetic = options.readIdentity !== undefined && options.readBytes === undefined;
   return new DocumentService(capabilities, {
     documentBytesCeiling: AMPLE_CEILING,
+    checkpointDirectory: checkpointRoot(),
     ...(synthetic ? { readBytes: () => Promise.resolve(new Uint8Array(0)) } : {}),
     ...options,
   });
@@ -127,6 +132,7 @@ const original = (): string => join(root, 'annual.pdf');
 const hardLink = (): string => join(root, 'link.pdf');
 const other = (): string => join(root, 'other.pdf');
 const copy = (): string => join(root, 'backup', 'annual.pdf');
+const checkpointRoot = (): string => join(root, 'checkpoints');
 
 beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), 'monstera-docservice-'));
@@ -1143,7 +1149,8 @@ function terminalEntry(size: number): LogEntry {
   return {
     kind: 'terminal',
     command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
-    checkpoint: new Uint8Array(size) as unknown as Checkpoint,
+    // A PATH NOTHING STORED: the service deletes only files it stored itself, so this is never touched.
+    checkpoint: { path: join(root, 'no-such-checkpoint.pdf'), byteLength: size } as Checkpoint,
     reason: 'a checkpoint whose only property under test is its size',
     read: undefined,
   };
@@ -1245,7 +1252,10 @@ describe('the canonical image', () => {
     expect(service.residentDocumentBytes()).toBe(size);
   });
 
-  it('counts a checkpoint, because a checkpoint is a whole byte image', async () => {
+  // A CHECKPOINT IS A FILE (ADR-0121), so the memory figure `open` compares against no longer carries one. JJ-2's
+  // point — the first checkpoint put a 1.00× image over a 1.5× budget — was true of a checkpoint in memory, and
+  // counting a file here would refuse a document the process has room for.
+  it('holds no checkpoint in memory, because a checkpoint is a file', async () => {
     const registry = new CapabilityRegistry();
     const service = newService(registry);
     const docId = mustOpen(await service.open(registry.mint(original())));
@@ -1256,31 +1266,38 @@ describe('the canonical image', () => {
       return Promise.resolve();
     });
 
-    // The whole point of JJ-2: with a 1.5x budget and a 1.00x image, the FIRST
-    // checkpoint puts main over budget. A count that saw only images would
-    // report capacity while the budget was already breached — a guard satisfied
-    // while the thing it guards is not.
-    expect(service.residentDocumentBytes()).toBe(imageOnly + 4096);
+    expect(service.residentDocumentBytes()).toBe(imageOnly);
   });
 
-  it('counts a checkpoint the cursor has stepped back over', async () => {
+  // THE DISK IS STILL BOUNDED BY THE CEILING: retention sheds against every image plus every OTHER document's
+  // checkpoints. What separates it is the second document — a target that forgot the others' disk bytes would
+  // keep this one's checkpoint, and so would a target that counted nothing.
+  it('sheds a checkpoint when another document’s checkpoints fill the ceiling', async () => {
     const registry = new CapabilityRegistry();
-    const service = newService(registry);
-    const docId = mustOpen(await service.open(registry.mint(original())));
+    const images = statSync(original()).size + statSync(other()).size;
+    const trimmedAt = async (ceiling: number): Promise<number> => {
+      const service = newService(registry, { documentBytesCeiling: ceiling });
+      const first = mustOpen(await service.open(registry.mint(original())));
+      const second = mustOpen(await service.open(registry.mint(other())));
+      await service.run(first, (context) => {
+        context.commandLog(COMMAND_WRITER_FOR_TEST).record(terminalEntry(4096));
+        return Promise.resolve();
+      });
+      const { value } = await service.run(second, (context) => {
+        const log = context.commandLog(COMMAND_WRITER_FOR_TEST);
+        log.record(terminalEntry(1));
+        // The bus's order: the image includes the entry before retention runs, which never sheds past it (ADR-0115).
+        log.imageIsCurrent();
+        return Promise.resolve(context.enforceRetention(COMMAND_WRITER_FOR_TEST).droppedBytes);
+      });
+      await service.close(first);
+      await service.close(second);
+      return value;
+    };
 
-    const imageOnly = service.residentDocumentBytes();
-    await service.run(docId, (context) => {
-      const log = context.commandLog(COMMAND_WRITER_FOR_TEST);
-      log.record(terminalEntry(2048));
-      log.undo();
-      return Promise.resolve();
-    });
-
-    // `entries` is the APPLIED view and undo moves a cursor rather than popping,
-    // so summing what the log SHOWS would drop this checkpoint the instant a
-    // user pressed undo — under-reporting by exactly the amount that just became
-    // invisible. Memory does not care about the cursor.
-    expect(service.residentDocumentBytes()).toBe(imageOnly + 2048);
+    expect(await trimmedAt(images + 4096)).toBe(1);
+    // CONTROL: one byte more and both fit, so nothing is shed.
+    expect(await trimmedAt(images + 4097)).toBe(0);
   });
 
   it('refuses a reader that returns a view it does not own', async () => {
@@ -1317,6 +1334,7 @@ describe('the canonical image', () => {
       () =>
         new DocumentService(new CapabilityRegistry(), {
           documentBytesCeiling: Number.NaN,
+          checkpointDirectory: checkpointRoot(),
         }),
     ).toThrow(/finite, non-negative/);
   });
@@ -1445,5 +1463,156 @@ describe('writeCanonicalImage', () => {
     await expect(
       documents.writeCanonicalImage(SUPERVISOR_FOR_TEST, opened.docId, 'nowhere'),
     ).rejects.toThrow(DocumentNotOpenError);
+  });
+});
+
+/**
+ * CHECKPOINTS AS FILES ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)): stored in a
+ * document's own directory, deleted when the log lets go of them, removed at close, swept at start.
+ *
+ * Every case reads the DISK, because what the decision changed is where the bytes are; a case that read the log
+ * would pass for a service that kept its files for ever.
+ */
+describe('checkpoint files', () => {
+  /** A terminal entry for a checkpoint the service stored. */
+  function storedEntry(file: { readonly path: string; readonly byteLength: number }): LogEntry {
+    return {
+      kind: 'terminal',
+      command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
+      checkpoint: file as Checkpoint,
+      reason: 'a stored checkpoint',
+      read: undefined,
+    };
+  }
+
+  const writing =
+    (content: string) =>
+    (destination: string): Promise<number> => {
+      writeFileSync(destination, content);
+      return Promise.resolve(Buffer.byteLength(content));
+    };
+
+  it('stores one in a fresh hex directory under the root, holding what the writer wrote', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    const { value: file } = await service.run(docId, async (context) => {
+      const stored = await context.storeCheckpoint(COMMAND_WRITER_FOR_TEST, writing('checkpoint bytes'));
+      context.commandLog(COMMAND_WRITER_FOR_TEST).record(storedEntry(stored));
+      return stored;
+    });
+
+    expect(file.byteLength).toBe(16);
+    expect(readFileSync(file.path, 'utf8')).toBe('checkpoint bytes');
+    expect(dirname(dirname(file.path))).toBe(checkpointRoot());
+    expect(basename(dirname(file.path))).toMatch(/^[0-9a-f]{64}$/);
+    await service.close(docId);
+  });
+
+  // CONTROL for the count: a writer whose answer disagrees with the file is refused, and the file it left goes with
+  // the lane entry rather than staying where nothing knows about it.
+  it('refuses a writer whose count disagrees with the file, and deletes what it wrote', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+    let path = '';
+
+    await expect(
+      service.run(docId, (context) =>
+        context.storeCheckpoint(COMMAND_WRITER_FOR_TEST, async (destination) => {
+          path = destination;
+          return (await writing('short')(destination)) + 1;
+        }),
+      ),
+    ).rejects.toThrow(/answered 6 bytes and 5 are on disk/);
+    expect(existsSync(path)).toBe(false);
+    await service.close(docId);
+  });
+
+  it('deletes a stored checkpoint the log does not hold, after the lane entry', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    const { value } = await service.run(docId, async (context) => {
+      const kept = await context.storeCheckpoint(COMMAND_WRITER_FOR_TEST, writing('kept'));
+      const dropped = await context.storeCheckpoint(COMMAND_WRITER_FOR_TEST, writing('dropped'));
+      context.commandLog(COMMAND_WRITER_FOR_TEST).record(storedEntry(kept));
+      return { kept: kept.path, dropped: dropped.path };
+    });
+
+    expect(existsSync(value.dropped)).toBe(false);
+    // CONTROL: the one the log holds stays, so this is not a service deleting everything it stored.
+    expect(existsSync(value.kept)).toBe(true);
+    await service.close(docId);
+  });
+
+  it('deletes a checkpoint the retention rule trimmed', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry, { documentBytesCeiling: statSync(original()).size });
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    const { value: path } = await service.run(docId, async (context) => {
+      const stored = await context.storeCheckpoint(COMMAND_WRITER_FOR_TEST, writing('over the ceiling'));
+      const log = context.commandLog(COMMAND_WRITER_FOR_TEST);
+      log.record(storedEntry(stored));
+      log.imageIsCurrent();
+      expect(context.enforceRetention(COMMAND_WRITER_FOR_TEST).droppedBytes).toBe(16);
+      return stored.path;
+    });
+
+    expect(existsSync(path)).toBe(false);
+    await service.close(docId);
+  });
+
+  it('restores by copying the file, and keeps the checkpoint for a redo', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+    const destination = join(root, 'restored.pdf');
+
+    const { value } = await service.run(docId, async (context) => {
+      const stored = await context.storeCheckpoint(COMMAND_WRITER_FOR_TEST, writing('the earlier document'));
+      context.commandLog(COMMAND_WRITER_FOR_TEST).record(storedEntry(stored));
+      const written = await context.writeCheckpoint(COMMAND_WRITER_FOR_TEST, stored as Checkpoint, destination);
+      return { written, path: stored.path };
+    });
+
+    expect(value.written).toBe(20);
+    expect(readFileSync(destination, 'utf8')).toBe('the earlier document');
+    expect(existsSync(value.path)).toBe(true);
+    await service.close(docId);
+  });
+
+  it('removes the document’s directory at close', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    const { value: path } = await service.run(docId, async (context) => {
+      const stored = await context.storeCheckpoint(COMMAND_WRITER_FOR_TEST, writing('held'));
+      context.commandLog(COMMAND_WRITER_FOR_TEST).record(storedEntry(stored));
+      return stored.path;
+    });
+    expect(existsSync(path)).toBe(true);
+
+    await service.close(docId);
+
+    expect(existsSync(dirname(path))).toBe(false);
+  });
+
+  it('sweeps the directories a service composes, and nothing else', () => {
+    const swept = join(root, 'sweep');
+    const leftover = join(swept, 'ab'.repeat(32));
+    mkdirSync(leftover, { recursive: true });
+    writeFileSync(join(leftover, '1.pdf'), 'a crash left this');
+    // CONTROLS: a directory whose name a service never composes, and a FILE with a composed name.
+    mkdirSync(join(swept, 'not-a-checkpoint'));
+    writeFileSync(join(swept, 'cd'.repeat(32)), 'a file');
+
+    expect(sweepCheckpointDirectories(swept)).toBe(1);
+    expect(readdirSync(swept).sort()).toStrictEqual(['cd'.repeat(32), 'not-a-checkpoint']);
+    expect(sweepCheckpointDirectories(join(root, 'never-made'))).toBe(0);
   });
 });

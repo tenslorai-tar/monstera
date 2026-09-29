@@ -362,6 +362,7 @@ export {
   type Versioned,
   type WriteTargetVerdict,
   type CopyTargetVerdict,
+  sweepCheckpointDirectories,
 } from './documentService.js';
 export { readDocumentRange } from './documentRanges.js';
 export {
@@ -516,6 +517,7 @@ export { localPdfLibWriter, pdfLibWriter } from './pdfLibWriter.js';
 // signatures were refused as an unregistered writer in the running application
 // while every test that built its own bus passed.
 export { localSignpdfWriter, signpdfWriterWith } from './signpdfWriter.js';
+export { serialiseIntoFile } from './checkpointFile.js';
 export type { RequestTimestamp } from './documentSign.js';
 export {
   applyWatermarkPages,

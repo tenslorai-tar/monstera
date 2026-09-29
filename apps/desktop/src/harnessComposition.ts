@@ -1,3 +1,6 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import type { ShellComposition } from './composition.js';
 import { createRecentFiles } from './recentFiles.js';
 import { createEphemeralSettings } from './settingsFile.js';
@@ -63,11 +66,19 @@ import { createEphemeralSettings } from './settingsFile.js';
  * surface **is** reached on every launch and a throw would make every harness
  * fail at startup for a reason unrelated to what it measures. The pickers are
  * reached only when a user asks, which in a harness is never.
+ *
+ * ## Checkpoints go under the system's temporary directory, and nothing sweeps it
+ *
+ * Never `userData`, for the stores' reason. A service removes each document's checkpoint directory at close and
+ * names every one by fresh randomness, so harnesses sharing the root cannot meet each other's; the start-time sweep
+ * is `entry.ts`'s alone, because a sweep here would remove a directory another harness in the same process still
+ * holds open.
  */
 export function harnessSurfaces(
   harness: string,
 ): Omit<ShellComposition, 'appInfo'> {
   return {
+    checkpointDirectory: join(tmpdir(), 'monstera-harness-checkpoints'),
     pickDocument: () => {
       throw new Error(`${harness} does not open a document, so nothing may pick one`);
     },

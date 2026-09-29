@@ -13,13 +13,13 @@ import type { Brand } from '@monstera/shared';
 // through a type-only import of a type.
 //
 // Same mechanism as the Electron download one file over, with a different bill.
-import type { ByteImage, PreReadValue } from './engineSeam.js';
+import type { PreReadValue } from './engineSeam.js';
 import type { PriorFieldValue } from './formFields.js';
 import type { PriorAnnotationAuthor, PriorAnnotationText } from './pageAnnotations.js';
 // TYPE-ONLY, and here that is load-bearing rather than habitual: this module is
 // reached from `main` and `pdfiumTextEdit.js` reaches koffi and `pdfium.dll`.
 // The import is erased, so the edge the header above warns about is not
-// created — the same care the `ByteImage` line records, on a second engine.
+// created — the same care the `engineSeam.js` line records, on a second engine.
 import type { PriorFills, PriorPlacement } from './pdfiumObjectEdit.js';
 import type { PriorTextObjects } from './pdfiumTextEdit.js';
 import type { PriorLayerVisibility } from './layers.js';
@@ -75,8 +75,20 @@ import type { PriorPageRotation } from './rotatePages.js';
  * live-session `apply` returns `Promise<void>` and has nowhere to put one, and
  * `capture` returns a {@link CaptureResult} that cannot carry one either. Three
  * doors, all shut, and the compile-fail proof holds each of them.
+ *
+ * **A FILE, since 2026-09-29, and never bytes in memory**
+ * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)). It was the whole image, held for as long
+ * as its entry lived, and one of them took `main` to 2.00× the file against §9.17's 1.5×. It is now where
+ * `DocumentService` stored the image — in a per-document directory of `main`'s own — and how long it is; a restore
+ * copies the file. The brand is unchanged, and so is its one mint.
  */
-export type Checkpoint = Brand<ByteImage, 'Checkpoint'>;
+export type Checkpoint = Brand<CheckpointFile, 'Checkpoint'>;
+
+/** Where a checkpoint's bytes are, and how many. What `DocumentService` answers when it stores one. */
+export interface CheckpointFile {
+  readonly path: string;
+  readonly byteLength: number;
+}
 
 /**
  * The prior state each command's inverse needs, per kind.
@@ -122,9 +134,10 @@ export interface CommandPrior {
    * reaches — content streams, resources, annotations — which is
    * document-scaled and has no serialisable form. Recording it would put
    * unbudgeted document-scaled bytes in the log, where `retainedBytes` counts
-   * **checkpoints only** and would report a figure smaller than what the
-   * process holds. §4's retention would then trim against a number that is
-   * wrong in the direction nobody notices.
+   * **checkpoints only** — files, since ADR-0121 — and `main`'s memory figure
+   * counts images only, so nothing would count them at all. §4's retention
+   * would then trim against a number that is wrong in the direction nobody
+   * notices.
    *
    * So a delete is a checkpoint command, and `never` is what makes that
    * structural rather than a rule: `CaptureResult<never>`'s `{ captured: true }`
@@ -808,6 +821,8 @@ export interface ReadonlyCommandLog {
   readonly redoDepth: number;
   /** Document-scaled bytes retained, cursor position irrelevant. */
   retainedBytes(): number;
+  /** Every checkpoint file retained, by path — `retainedBytes`' set (ADR-0121). */
+  checkpointPaths(): ReadonlySet<string>;
   readonly canUndo: boolean;
   readonly canRedo: boolean;
   peekRedo(): LogEntry | undefined;
@@ -873,7 +888,8 @@ export class CommandLog implements ReadonlyCommandLog {
   }
 
   /**
-   * Document-scaled bytes this log is holding, checkpoints included.
+   * Document-scaled bytes this log is holding, checkpoints included — ON DISK since ADR-0121, so this is what the
+   * retention rule sheds against, and `DocumentService`'s memory figure no longer adds it.
    *
    * ## Why the log answers this rather than the caller summing `entries`
    *
@@ -896,6 +912,22 @@ export class CommandLog implements ReadonlyCommandLog {
       if (entry.kind === 'terminal') total += entry.checkpoint.byteLength;
     }
     return total;
+  }
+
+  /**
+   * Every checkpoint file the log still holds, the redo tail included — `retainedBytes`' set, by path.
+   *
+   * **ON DISK since ADR-0121**, so a checkpoint the log lets go of — trimmed, or discarded with a redo tail a new
+   * command replaced — is a file nothing references. `DocumentService` deletes the files of a document's directory
+   * that are not in this set, after every lane entry: one rule for every way an entry leaves, rather than a deletion
+   * at each place one can.
+   */
+  checkpointPaths(): ReadonlySet<string> {
+    const paths = new Set<string>();
+    for (const entry of this.#entries) {
+      if (entry.kind === 'terminal') paths.add(entry.checkpoint.path);
+    }
+    return paths;
   }
 
   /**

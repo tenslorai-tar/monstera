@@ -103,6 +103,8 @@ const documents = new DocumentService(capabilities, {
   // Generous on purpose: this role measures what holding a document COSTS, and a
   // ceiling that refused the open would measure a refusal.
   documentBytesCeiling: 8 * 1024 * 1024 * 1024,
+  // THIS ROLE RUNS NO COMMAND, so no checkpoint is stored and the directory is never made (ADR-0121).
+  checkpointDirectory: join(tmpdir(), 'monstera-role-main-service-checkpoints'),
 });
 
 const outcome = await documents.open(capabilities.mint(documentPath));

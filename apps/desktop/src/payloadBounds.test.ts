@@ -108,7 +108,10 @@ async function documentOf(pages: number): Promise<Uint8Array> {
 beforeAll(async () => {
   workspace = mkdtempSync(join(tmpdir(), 'monstera-payload-'));
   capabilities = new CapabilityRegistry();
-  service = new DocumentService(capabilities, { documentBytesCeiling: 512 * 1024 * 1024 });
+  service = new DocumentService(capabilities, {
+    documentBytesCeiling: 512 * 1024 * 1024,
+    checkpointDirectory: join(workspace, 'checkpoints'),
+  });
 
   const write = async (name: string, pages: number): Promise<{ id: DocId; bytes: number }> => {
     const bytes = await documentOf(pages);

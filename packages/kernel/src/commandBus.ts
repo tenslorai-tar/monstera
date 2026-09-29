@@ -15,6 +15,7 @@ import type { DocId, DocVersion } from '@monstera/shared';
 import type {
   CaptureResult,
   Checkpoint,
+  CheckpointFile,
   CommandPrior,
   LogEntryFor,
   LogTrim,
@@ -107,8 +108,8 @@ export type WriterRegistry = {
  * than a sentence in a comment — and `scripts/proofs/contract.proof.mjs` holds
  * the door with a case that tries to build one from outside.
  */
-function asCheckpoint(bytes: ByteImage): Checkpoint {
-  return bytes as Checkpoint;
+function asCheckpoint(file: CheckpointFile): Checkpoint {
+  return file as Checkpoint;
 }
 
 /**
@@ -144,6 +145,7 @@ function asCheckpoint(bytes: ByteImage): Checkpoint {
  */
 interface WriterFor<K extends CommandKind> {
   serialise(session: WriterSession[WriterOf<K>]): Promise<ByteImage>;
+  serialiseInto(session: WriterSession[WriterOf<K>], destination: string): Promise<number>;
   // ONE NAMED REQUEST, mirroring `CommandExecution.apply` — this type is the
   // narrowed view of the same member and cannot be narrower than it. What the
   // bus is obliged to put in it is still decided by `spec.sources` and
@@ -939,8 +941,14 @@ export class CommandBus {
           kind: 'terminal',
           command,
           // THE ONLY Checkpoint MINT IN THE KERNEL. Taken because capture said
-          // prior state could not be recorded — never speculatively.
-          checkpoint: asCheckpoint(await writer.serialise(session)),
+          // prior state could not be recorded — never speculatively. A FILE the
+          // service names and the writer fills, so the bytes never pass through
+          // `main` when the session is in a host (ADR-0121).
+          checkpoint: asCheckpoint(
+            await context.storeCheckpoint(COMMAND_WRITER, (destination) =>
+              writer.serialiseInto(session, destination),
+            ),
+          ),
           reason: captured.reason,
           read: stored,
         };

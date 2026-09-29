@@ -149,10 +149,10 @@ export async function openEngineSession(
  *
  * `openEngineSession` above never holds the document, and this must not either.
  * A checkpoint restore has to put a *different* image in the granted directory —
- * the bytes of a terminal log entry — and those live on `DocumentService`'s
- * record, in the command log. `CommandBus` closes over
- * `DocumentContext.writeCheckpoint`, so the bytes go from the record to the disk
- * and this module still never sees one
+ * the bytes of a terminal log entry — and those are a file the command log names,
+ * in `DocumentService`'s checkpoint directory (ADR-0121). `CommandBus` closes over
+ * `DocumentContext.writeCheckpoint`, which copies that file to the destination,
+ * so this module still never sees a byte
  * ([ADR-0037](../../../docs/DECISIONS/0037-checkpoint-restore-and-the-replay-that-is-not-needed.md)).
  *
  * Every failure removes the pair, for the reason `openEngineSession`'s header

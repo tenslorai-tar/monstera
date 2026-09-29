@@ -101,13 +101,12 @@ export function remoteMupdfWriter(
   // three: bytes that are not the session's document, built where the engine
   // is, arriving through the granted area. `pageImage` is the fourth.
   // `exportAnnotationData` is the fifth, for the fourth's reason (ADR-0077).
-  const { serialise, close, extract, snapshot, exportFormData, exportAnnotationData, pageImage } = remoteMupdfLifecycle(
-    client,
-    sessions,
-    areas,
-  );
+  // `serialiseInto` IS ROUTING, not a sixth job: the bus's terminal branch calls it for a checkpoint (ADR-0121).
+  const { serialise, serialiseInto, close, extract, snapshot, exportFormData, exportAnnotationData, pageImage } =
+    remoteMupdfLifecycle(client, sessions, areas);
   return {
     serialise,
+    serialiseInto,
     close,
     extract,
     snapshot,

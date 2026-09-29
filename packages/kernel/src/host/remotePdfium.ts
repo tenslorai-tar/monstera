@@ -6,6 +6,7 @@ import type {
   KindsRoutedTo,
   RegisteredWriter,
 } from '../commandRouting.js';
+import { serialiseIntoFile } from '../checkpointFile.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { ByteImage } from '../engineSeam.js';
 import type { TextRun } from '../pdfiumFfi.js';
@@ -281,8 +282,11 @@ export function remotePdfiumWriter(
   held: () => PdfiumArea,
   transfer: PdfiumTransfer,
 ): RegisteredWriter<'pdfium'> {
+  const serialise = (session: ByteImage): Promise<ByteImage> => Promise.resolve(session);
   return {
-    serialise: (session) => Promise.resolve(session),
+    serialise,
+    // THE SESSION IS BYTES IN `main` for a byte-image writer, so a checkpoint writes them (ADR-0121).
+    serialiseInto: serialiseIntoFile(serialise),
     ...remotePdfiumExecution(client, held, transfer),
   };
 }

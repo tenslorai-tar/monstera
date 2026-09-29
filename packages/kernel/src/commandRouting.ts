@@ -265,4 +265,18 @@ export type RegisteredWriter<W extends WriterOfRecord> = Pick<
   EngineWriter<WriterSession[W]>,
   'serialise'
 > &
+  CheckpointWriter<WriterSession[W]> &
   CommandExecution<W>;
+
+/**
+ * How a writer puts its session's bytes where a checkpoint is kept
+ * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)).
+ *
+ * **The bus's terminal branch calls this and not `serialise`.** A checkpoint is a file, and a writer whose session
+ * lives in the engine host already writes its bytes to a file — so it MOVES that file to `destination` and `main`
+ * never reads it. A writer whose session is bytes in `main` writes them (`serialiseIntoFile`).
+ */
+export interface CheckpointWriter<TSession> {
+  /** Writes the session's current bytes to `destination`, which the caller chose, and answers how many. */
+  serialiseInto(session: TSession, destination: string): Promise<number>;
+}

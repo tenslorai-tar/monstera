@@ -1,5 +1,6 @@
 import type { Command, CommandKind, CommandOfKind } from '@monstera/contract';
 
+import { serialiseIntoFile } from './checkpointFile.js';
 import type { CaptureResult, CommandPrior } from './commandLog.js';
 import { declaredCommands } from './commandDeclarations.js';
 import type {
@@ -351,5 +352,6 @@ export const localPdfLibExecution: CommandExecution<'pdf-lib'> = {
  */
 export const localPdfLibWriter: RegisteredWriter<'pdf-lib'> = {
   ...pdfLibWriter,
+  serialiseInto: serialiseIntoFile((session: ByteImage) => pdfLibWriter.serialise(session)),
   ...localPdfLibExecution,
 };

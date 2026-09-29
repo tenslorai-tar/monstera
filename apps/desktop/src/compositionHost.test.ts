@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -415,6 +415,7 @@ describe('the composition root, with an engine host platform', () => {
     // session the composition root opened. So this case is the one that would
     // have failed, and it fails again if that route returns.
     const written: string[] = [];
+    const checkpoints = join(scratch, 'checkpoints-hard-shape');
     const spy = platformAnswering((channel, params) => {
       if (channel === 'engine/capture') {
         return {
@@ -439,6 +440,8 @@ describe('the composition root, with an engine host platform', () => {
       appInfo,
       pickDocument: () => Promise.resolve(aDocument('malformed.pdf')),
       enginePlatform: spy.platform,
+      // This case's own, so what it finds there is this document's and nothing another case left.
+      checkpointDirectory: checkpoints,
     });
 
     const opened = await handlers['document.open']({});
@@ -460,10 +463,19 @@ describe('the composition root, with an engine host platform', () => {
     expect(spy.harness.calls).toContain('peer.request:engine/serialise');
     expect(written).toHaveLength(1);
 
-    // AND THE BYTES CAME BACK AND WERE DELETED. `takeOutput` removes the file
-    // on the way out: every serialise is another whole copy of the user's
-    // document in a directory the contained host may read.
+    // AND THE FILE MOVED OUT OF THE HOST'S REACH, INTO MAIN'S CHECKPOINTS (ADR-0121). Both ends in one case, because
+    // they are two files a composition root joins: the output directory no longer holds it — every serialise is a
+    // whole copy of the user's document where the contained host may read — and the one document directory under
+    // the checkpoint root holds exactly the bytes the host wrote, which a move that lost them or a checkpoint made
+    // any other way would not.
     expect(existsSync(join(lastOutputDirectory(spy.directories), written[0] ?? ''))).toBe(false);
+    const [documentDirectory, ...others] = readdirSync(checkpoints);
+    expect(others).toStrictEqual([]);
+    const [checkpoint, ...more] = readdirSync(join(checkpoints, documentDirectory ?? ''));
+    expect(more).toStrictEqual([]);
+    expect(readFileSync(join(checkpoints, documentDirectory ?? '', checkpoint ?? ''), 'utf8')).toBe(
+      '%PDF-1.7 checkpoint\n',
+    );
   });
 
   it('CONTROL: a host that read the negative path is CLOSED, and no session is made', async () => {
