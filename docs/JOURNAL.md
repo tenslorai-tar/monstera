@@ -892,6 +892,63 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-29 — Stage audit of `2ff522a1..0cc33126` — findings WWWWWW-1 to WWWWWW-8
+
+Owed when the range reached one batch of files (200, 44 commits): the pre-commit gate refused the next commit, as it
+is meant to. The range is Part F's Viewing, Editing, Saving, OCR and Advanced features (item 2 of the 28 September
+list), the signed-save defect and its warning, the person's library, Push Milestone 1, ADR-0118, ADR-0119, the
+Google Picker (item 6) and `proof:shim` (item 16). Read against CLAUDE.md's items 1-7; the modified-proofs column was
+read diff by diff where the report said deletions were hidden inside the range.
+
+**Item 1 — every fix states a mechanism.** None is a workaround. The two nearest candidates were examined: the
+detailed log was first placed at `registerContractHandlers` and moved (a design correction with its ADR correction,
+not a patch), and the pseudo-locale test's slowness was cut at its cause (a triple compile and a quadratic scan)
+with the timeout untouched.
+
+**Item 4 — proofs modified, read.** `PageList.test.tsx`' 71 hidden deletions are the prop list every render call
+carries, rewritten once per feature that added a prop (six in this range) — no assertion changed.
+`SettingsBody.test.tsx`: the reachability loop was restructured to one visit per page with the same assertions;
+*Advanced is not listed* was replaced by what it protected once Advanced gained a row. `composition.test.ts`: exact
+spans became a pattern because the graph's clock is real; exact spans are asserted with an injected clock in
+`requestLog.test.ts`. `registerHandlers.test.ts`' 52 are an argument added and reverted. Every new guard in the
+range was mutated and turned a case red, recorded in its commit.
+
+- **WWWWWW-1 — four reds reached the range because each commit ran its own feature's tests and not its package's.**
+  Found by the pre-push sweep and repaired: 21 option-title keys minted inside objects and not exported, beside a
+  comment saying each was (`8acbc5eb`); the pseudo-locale check reading ICU with a regex beside lingui's compiler
+  (B3a, same commit); the close's Save asking with `breakSignatures` (same commit); the shim's channel list missing
+  the library's five (`08655327`); a Help label (`1d6d8ef8`); and one commit not linted (`366af96f`). **Open, with
+  the remedy named:** `vitest related` over the staged files would have run every one of those cases — en.test,
+  pseudo.test and AppClose.test all import a changed file — and it is a per-commit cost the owner should weigh.
+- **WWWWWW-2 — a rendered case green here and red on CI on both platforms** (`6b5d52dc`'s Organize grid case). The
+  workflow annotation, which is public where the job log is not, named the line; eight loaded runs here reproduced it
+  three times, and a dump named two mechanisms: an undrawn thumbnail keeps the canvas default 2:1 (142 px against a
+  drawn 168), and the strip's column-layout `align-items: center` leaks into grid rows. Its all-portrait fixture could
+  not separate the second. Fixed in the commit after this one, with a landscape page as the control.
+- **WWWWWW-3 — a person's recorded observation expired by an argument.** `1bba1821` added a fifth argument to the
+  handler registration, one site of which is the digested picker probe. `check:docs` caught it before a push; the
+  rule was already on record (`9cf27e94`) and did not stop it, because it lived in a commit message. Repaired by
+  applying the observer in the composition root (`0333d069`, `b940f31d`).
+- **WWWWWW-4 — a commit message that says documentation carried five source files** (`0333d069`): a restore from
+  another commit stages what it restores. Recorded in its own entry; the memory rule is to read `git diff --cached
+  --stat` before a narrow commit.
+- **WWWWWW-5 — `check:docs` passed before staging and failed after** (`b39f8571` → `18db811a`): it reads the index.
+  A known rule that recurred; the index-reading is correct and the habit is the gap.
+- **WWWWWW-6 — CI is blind to the multi-language recognition case.** `proof:ocrrecognise`'s German-and-English case
+  is NOT APPLICABLE where the German model is not provisioned, and CI provisions English only. A regression that
+  loaded only the first model would pass CI. **Open:** provisioning `deu` in CI's tessdata cache closes it.
+- **WWWWWW-7 — three comments ahead of their code**, each corrected in the range or the next commit: the OCR setting
+  said the dialog wrote it back (it never read it); the option-title sets said each key was exported; the thumbnail
+  card said an undrawn slot is the size its picture will be.
+- **WWWWWW-8 — a decorative border without its reason** (`58cc103a`), found by the pre-push `check:` set and marked
+  (`a4dfda2b`).
+
+**Item 3 — CI.** Milestone 1 (`0d36ef13`) was red on CI's accessibility gate only, which is WWWWWW-2; Guards green.
+**Item 7 — documents.** FEATURES rows were split rather than overrun (Saving, OCR, Advanced), and each ADR correction
+carries its index row and amendment-log line.
+
+---
+
 ## 2026-09-28 — Commit `0333d069`'s message says documentation, and it carried five source files
 
 `0333d069` (*ADR-0119 corrected: the observer is applied in the composition root*) describes itself as the
