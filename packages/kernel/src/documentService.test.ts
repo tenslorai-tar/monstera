@@ -15,7 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 
-import { type DocId, asDocId, asFileHandle } from '@monstera/shared';
+import { type DocId, asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { CapabilityRegistry } from './capabilityRegistry.js';
@@ -31,6 +31,7 @@ import {
   type IdentityReader,
   type OpenOutcome,
   type CommandWriter,
+  type RangeReader,
   type SaveWriter,
   sweepCheckpointDirectories,
 } from './documentService.js';
@@ -1614,5 +1615,156 @@ describe('checkpoint files', () => {
     expect(sweepCheckpointDirectories(swept)).toBe(1);
     expect(readdirSync(swept).sort()).toStrictEqual(['cd'.repeat(32), 'not-a-checkpoint']);
     expect(sweepCheckpointDirectories(join(root, 'never-made'))).toBe(0);
+  });
+});
+
+/**
+ * A NEW IMAGE FROM A FILE ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md) Decision 2): the
+ * old image is let go before the new one is read, and ranges are served from the file in between.
+ *
+ * The moment that matters is INSIDE the read-back, so the cases observe it through the service's own reader: it is
+ * the one call made while the new image is being read into memory.
+ */
+describe('replacing the image from a file', () => {
+  const RANGE_READER_FOR_TEST = 'range-reader' as RangeReader;
+  const OLD = new TextEncoder().encode('the old image, as opened');
+  const NEW = new TextEncoder().encode('the new image, longer than the old one was');
+
+  /** A service holding `OLD`, whose reader runs `during` when it reads anything but the opened file. */
+  async function holding(during: (service: DocumentService, docId: DocId) => void = () => undefined): Promise<{
+    service: DocumentService;
+    docId: DocId;
+  }> {
+    const registry = new CapabilityRegistry();
+    // FILLED ONCE OPEN: the reader is built before the service it reads for, and runs `during` only afterwards.
+    const at: { docId?: DocId } = {};
+    const service = newService(registry, {
+      readIdentity: () => Promise.resolve(identity()),
+      readBytes: (path) => {
+        if (at.docId === undefined) return Promise.resolve(new Uint8Array(OLD));
+        during(service, at.docId);
+        return Promise.resolve(new Uint8Array(readFileSync(path)));
+      },
+    });
+    const docId = mustOpen(await service.open(registry.mint(original())));
+    at.docId = docId;
+    return { service, docId };
+  }
+
+  const fillWith =
+    (bytes: Uint8Array) =>
+    (destination: string): Promise<number> => {
+      writeFileSync(destination, bytes);
+      return Promise.resolve(bytes.byteLength);
+    };
+
+  it('holds nothing else while the new image is read, and serves ranges from the file meanwhile', async () => {
+    const seen: { resident: number; range: string }[] = [];
+    const { service, docId } = await holding((during, id) => {
+      const answer = during.readRange(RANGE_READER_FOR_TEST, id, asDocVersion(1), 4, 7);
+      seen.push({
+        resident: during.residentDocumentBytes(),
+        range: answer.kind === 'bytes' ? new TextDecoder().decode(answer.bytes) : answer.kind,
+      });
+    });
+
+    const { value } = await service.run(docId, (context) =>
+      context.replaceCanonicalImageFrom(COMMAND_WRITER_FOR_TEST, fillWith(NEW)),
+    );
+
+    // THE POINT: during the read the old buffer is gone (0 held) and a range is the NEW image's, from its file. A
+    // service that read before swapping would report the old image's length here and answer `old`.
+    expect(seen).toStrictEqual([{ resident: 0, range: 'new' }]);
+    expect(value).toBe(NEW.byteLength);
+    expect(service.residentDocumentBytes()).toBe(NEW.byteLength);
+    const after = service.readRange(RANGE_READER_FOR_TEST, docId, asDocVersion(1), 0, NEW.byteLength);
+    expect(after.kind === 'bytes' ? new TextDecoder().decode(after.bytes) : after.kind).toBe(
+      new TextDecoder().decode(NEW),
+    );
+    await service.close(docId);
+  });
+
+  it('removes the image file once it is in memory', async () => {
+    const { service, docId } = await holding();
+    let path = '';
+    await service.run(docId, (context) =>
+      context.replaceCanonicalImageFrom(COMMAND_WRITER_FOR_TEST, (destination) => {
+        path = destination;
+        return fillWith(NEW)(destination);
+      }),
+    );
+    expect(path).not.toBe('');
+    expect(existsSync(path)).toBe(false);
+    await service.close(docId);
+  });
+
+  // CONTROL for the count, and for "a failed fill changes nothing": the old image is still the one served.
+  it('refuses a fill whose count disagrees with the file, and keeps the old image', async () => {
+    const { service, docId } = await holding();
+    let path = '';
+    await expect(
+      service.run(docId, (context) =>
+        context.replaceCanonicalImageFrom(COMMAND_WRITER_FOR_TEST, async (destination) => {
+          path = destination;
+          return (await fillWith(NEW)(destination)) + 1;
+        }),
+      ),
+    ).rejects.toThrow(/not made this document's image/);
+    expect(existsSync(path)).toBe(false);
+    expect(service.residentDocumentBytes()).toBe(OLD.byteLength);
+    await service.close(docId);
+  });
+
+  // RELEASED, NOT DROPPED: a dropped buffer stays allocated until a collection, and the new image read meanwhile
+  // overlaps it — measured as 2.00× during an undo. Detached is the observable that only a release produces.
+  it('releases the replaced buffer at once, and not while a snapshot is still writing from it', async () => {
+    const opened = new Uint8Array(OLD);
+    let finishWrite: () => void = () => undefined;
+    const registry = new CapabilityRegistry();
+    let reads = 0;
+    const service = newService(registry, {
+      readIdentity: () => Promise.resolve(identity()),
+      readBytes: (path) => {
+        reads += 1;
+        return Promise.resolve(reads === 1 ? opened : new Uint8Array(readFileSync(path)));
+      },
+      writeBytes: () =>
+        new Promise((settle) => {
+          finishWrite = settle;
+        }),
+    });
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    // A SNAPSHOT IN FLIGHT from the opened image, then a replacement: the buffer must survive the write.
+    const writing = service.writeCanonicalImage(SUPERVISOR_FOR_TEST, docId, join(root, 'in-flight.pdf'));
+    await service.run(docId, (context) => context.replaceCanonicalImageFrom(COMMAND_WRITER_FOR_TEST, fillWith(NEW)));
+    // CONTROL: not released under a write — a release that ignored the count would detach it here.
+    expect(opened.buffer.detached).toBe(false);
+
+    finishWrite();
+    expect(await writing).toBe(OLD.byteLength);
+    expect(opened.buffer.detached).toBe(true);
+    await service.close(docId);
+  });
+
+  // A SNAPSHOT WRITTEN DURING THE READ copies from the file, and the file outlives the swap back until it finishes.
+  it('lets a snapshot copy from the file while the image is read, and removes the file after both', async () => {
+    const destination = join(root, 'snapshot-during-replace.pdf');
+    let copied: Promise<number> | undefined;
+    const { service, docId } = await holding((during, id) => {
+      copied = during.writeCanonicalImage(SUPERVISOR_FOR_TEST, id, destination);
+    });
+    let path = '';
+    await service.run(docId, (context) =>
+      context.replaceCanonicalImageFrom(COMMAND_WRITER_FOR_TEST, (at) => {
+        path = at;
+        return fillWith(NEW)(at);
+      }),
+    );
+
+    expect(await copied).toBe(NEW.byteLength);
+    expect(readFileSync(destination, 'utf8')).toBe(new TextDecoder().decode(NEW));
+    expect(existsSync(path)).toBe(false);
+    await service.close(docId);
   });
 });

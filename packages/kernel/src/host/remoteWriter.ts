@@ -61,7 +61,7 @@ import {
 export type RemoteMupdfWriter = RegisteredWriter<'mupdf'> &
   Pick<
     RemoteMupdfLifecycle,
-    'close' | 'extract' | 'snapshot' | 'exportFormData' | 'exportAnnotationData' | 'pageImage'
+    'close' | 'extract' | 'snapshot' | 'exportFormData' | 'exportAnnotationData' | 'pageImage' | 'stage'
   >;
 
 export function remoteMupdfWriter(
@@ -102,11 +102,13 @@ export function remoteMupdfWriter(
   // is, arriving through the granted area. `pageImage` is the fourth.
   // `exportAnnotationData` is the fifth, for the fourth's reason (ADR-0077).
   // `serialiseInto` IS ROUTING, not a sixth job: the bus's terminal branch calls it for a checkpoint (ADR-0121).
-  const { serialise, serialiseInto, close, extract, snapshot, exportFormData, exportAnnotationData, pageImage } =
+  // `stage` is the save's flush, for `serialise`'s reason one step earlier: it leaves the bytes in the granted area.
+  const { serialise, serialiseInto, stage, close, extract, snapshot, exportFormData, exportAnnotationData, pageImage } =
     remoteMupdfLifecycle(client, sessions, areas);
   return {
     serialise,
     serialiseInto,
+    stage,
     close,
     extract,
     snapshot,

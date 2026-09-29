@@ -278,6 +278,13 @@ export interface ByteImageAccess {
   /** The document's current bytes. The live writer's `serialise`. */
   readonly current: () => Promise<ByteImage>;
   /**
+   * The document's current bytes, written at `destination` and never read by `main` — the live writer's
+   * `serialiseInto`, which a host answers by moving its output there
+   * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md) Decision 2). What refreshing the
+   * canonical image is made from, so the old image and the new one are never both in memory.
+   */
+  readonly currentInto: (destination: string) => Promise<number>;
+  /**
    * Installs new document bytes: rebuilds the live session from them and makes
    * them `main`'s canonical image.
    *
@@ -673,7 +680,8 @@ export class CommandBus {
     // change the log no longer applies, and a replay only runs forwards, so it could never take that change away.
     const below = log.entries.length < log.imageHolds;
     if (declaredCommands[kind].display !== 'image' && !below) return;
-    context.replaceCanonicalImage(COMMAND_WRITER, await bytes.current());
+    // FROM A FILE, so the session's bytes never arrive in `main` beside the image they replace (ADR-0121 Decision 2).
+    await context.replaceCanonicalImageFrom(COMMAND_WRITER, (destination) => bytes.currentInto(destination));
     log.imageIsCurrent();
   }
 

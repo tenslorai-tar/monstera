@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
-import { readdirSync, rmSync } from 'node:fs';
+import { closeSync, openSync, readSync, readdirSync, rmSync } from 'node:fs';
 import { copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
@@ -516,6 +516,23 @@ export interface DocumentContext {
   replaceCanonicalImage(writer: CommandWriter, image: ByteImage): number;
 
   /**
+   * Makes the file `fill` writes this document's canonical image, without the old image and the new one ever being
+   * in memory together, and reports its length
+   * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md) Decision 2).
+   *
+   * **The service names the file and `fill` puts the new image there** — the host's serialise, moved. Then, with no
+   * await between them, the record starts serving ranges from that file and lets the old buffer go; the file is read
+   * into memory; and the record moves back to serving from memory, with no await between those either. So `main`
+   * holds one image at every moment, and a range read in between is answered from the file with the version it is
+   * read with. {@link replaceCanonicalImage}'s reason for enforcing the ceiling afterwards holds here too.
+   *
+   * @param writer Proof the caller is the command bus.
+   * @param fill Writes the new image at the path it is given and answers how many bytes; checked against the file.
+   * @returns The new canonical image's length.
+   */
+  replaceCanonicalImageFrom(writer: CommandWriter, fill: (destination: string) => Promise<number>): Promise<number>;
+
+  /**
    * A read-only view of the log, for work that needs to ask rather than change.
    *
    * "Is there anything to undo" is a query a lane entry may legitimately make.
@@ -693,8 +710,11 @@ interface DocumentRecord {
    * The replacement swaps the **reference** and never writes into the buffer,
    * which is what keeps an off-lane reader safe — see
    * {@link DocumentService.writeCanonicalImage}.
+   *
+   * **In memory or in a file, since ADR-0121 Decision 2** — a union, so a reader cannot take a buffer that is not
+   * there. It is a file only between a new image arriving and its read completing, inside the lane.
    */
-  bytes: Uint8Array;
+  image: CanonicalImage;
   /** Mutable only through {@link DocumentContext.bumpVersion}, inside the lane. */
   version: DocVersion;
   /**
@@ -750,8 +770,50 @@ interface DocumentRecord {
    * the directory.
    */
   readonly checkpointFiles: Set<string>;
-  /** Names the next checkpoint file; never reused while the directory lives. */
-  checkpointSerial: number;
+  /** Names the next file in the directory — a checkpoint or an arriving image; never reused while it lives. */
+  fileSerial: number;
+}
+
+/**
+ * Where a document's canonical image is: a buffer this service solely owns, or the file it is being read from
+ * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md) Decision 2).
+ *
+ * The file state holds an open descriptor, because a range read is synchronous and must not open a file per call.
+ *
+ * **An image that is replaced is RELEASED, not merely dropped.** Dropping the last reference to a buffer leaves its
+ * memory allocated until the next garbage collection, so a new image read straight after overlaps the old one —
+ * measured 2026-09-29 as 2.00× the file during an undo, where the service's own count said one. Detaching the old
+ * buffer frees it at once (199 MiB to 0, no collection), and removing the old file ends it on disk. `writes` counts
+ * {@link DocumentService.writeCanonicalImage} calls still reading the image, which run off the lane: whichever of the
+ * replacement and the last such write finishes second releases it, so a snapshot is never written from a freed buffer.
+ */
+type CanonicalImage =
+  | { readonly kind: 'memory'; readonly bytes: Uint8Array; writes: number; retired: boolean }
+  | {
+      readonly kind: 'file';
+      readonly path: string;
+      readonly fd: number;
+      readonly byteLength: number;
+      writes: number;
+      retired: boolean;
+    };
+
+/** Frees what a retired image holds, once nothing is still writing from it. */
+function releaseIfIdle(image: CanonicalImage): void {
+  if (!image.retired || image.writes > 0) return;
+  if (image.kind === 'file') {
+    rmSync(image.path, { force: true });
+    return;
+  }
+  // DETACHED, which frees the backing store now rather than at a collection. The buffer is solely owned and never
+  // shared (`requireSoleOwnership` refuses both), so no other view is reading it; the test is the checker's.
+  const buffer = image.bytes.buffer;
+  if (buffer instanceof ArrayBuffer) buffer.transfer(0);
+}
+
+/** The image's length, whichever state it is in. */
+function lengthOf(image: CanonicalImage): number {
+  return image.kind === 'memory' ? image.bytes.byteLength : image.byteLength;
 }
 
 /**
@@ -1002,6 +1064,11 @@ export type BytesReader = (path: string) => Promise<Uint8Array>;
  * did, and this is a caller supplying a reader that breaks its contract.
  */
 function requireSoleOwnership(bytes: Uint8Array, path: string): void {
+  // A SHARED buffer is reachable from another thread by construction, which is the same accounting defect as a view,
+  // and it cannot be detached, so a replaced image could not be released (ADR-0121 Decision 2).
+  if (!(bytes.buffer instanceof ArrayBuffer)) {
+    throw new TypeError(`The BytesReader returned a view of a SharedArrayBuffer for ${path}; copy it into an owned one.`);
+  }
   if (bytes.byteOffset === 0 && bytes.buffer.byteLength === bytes.byteLength) return;
   throw new TypeError(
     `The BytesReader returned a VIEW rather than a buffer it owns for ${path}: ` +
@@ -1215,7 +1282,11 @@ export class DocumentService {
    */
   residentDocumentBytes(): number {
     let total = 0;
-    for (const record of this.#records.values()) total += record.bytes.byteLength;
+    // A FILE-BACKED IMAGE HOLDS NOTHING HERE: between a replacement's swap and its read, the old buffer is gone and
+    // the new one not yet made (ADR-0121 Decision 2).
+    for (const record of this.#records.values()) {
+      if (record.image.kind === 'memory') total += record.image.bytes.byteLength;
+    }
     return total;
   }
 
@@ -1264,10 +1335,12 @@ export class DocumentService {
    * place (ADR-0039), so that clause is dead.
    *
    * What holds instead: the replacement swaps the **reference** and never
-   * writes into a buffer. This method reads `record.bytes` once, before its
+   * writes into a buffer. This method reads `record.image` once, before its
    * first `await`, so it writes either the old image or the new one and both
    * are internally consistent. There is still no mutation for this read to
-   * tear, and now there is a reason rather than an absence.
+   * tear, and now there is a reason rather than an absence. **A file-backed
+   * image (ADR-0121 Decision 2) is copied from its file**, which the swap back
+   * does not remove while the copy runs.
    *
    * @param supervisor Proof the caller is the session supervisor.
    * @param docId The open document.
@@ -1291,12 +1364,22 @@ export class DocumentService {
       throw new DocumentNotOpenError(docId, 'write the canonical image');
     }
     // READ ONCE, BEFORE THE AWAIT, and that is the mechanism the doc comment
-    // above rests on rather than a stylistic preference: `record.bytes` is
+    // above rests on rather than a stylistic preference: `record.image` is
     // replaceable since ADR-0039, so reading it a second time after the write
     // could report the length of a different image from the one that landed.
-    const image = record.bytes;
-    await this.#writeBytes(destination, image);
-    return image.byteLength;
+    const image = record.image;
+    const length = lengthOf(image);
+    // COUNTED, so a replacement landing during this write does not release the image under it; whichever finishes
+    // second releases it. From the file while a replacement is reading it into memory.
+    image.writes += 1;
+    try {
+      if (image.kind === 'memory') await this.#writeBytes(destination, image.bytes);
+      else await copyFile(image.path, destination);
+    } finally {
+      image.writes -= 1;
+      releaseIfIdle(image);
+    }
+    return length;
   }
 
   /**
@@ -1350,22 +1433,41 @@ export class DocumentService {
 
     // Both reads, before anything can suspend. See the note above.
     const version = record.version;
-    const bytes = record.bytes;
+    const image = record.image;
+    const length = lengthOf(image);
 
     if (version !== expected) {
-      return { kind: 'stale', version, byteLength: bytes.byteLength };
+      return { kind: 'stale', version, byteLength: length };
     }
 
     // REFUSED RATHER THAN CLAMPED. A read past the end of a document is the
     // caller having got its arithmetic wrong, and a clamped answer is a short
     // read that a parser reports later as a corrupt document — the diagnosis
     // then lands nowhere near the mistake.
-    if (begin < 0 || end < begin || end > bytes.byteLength) {
+    if (begin < 0 || end < begin || end > length) {
       throw new RangeError(
-        `Range [${String(begin)}, ${String(end)}) falls outside a ${String(bytes.byteLength)}-byte ` +
+        `Range [${String(begin)}, ${String(end)}) falls outside a ${String(length)}-byte ` +
           `document at version ${String(expected)}.`,
       );
     }
+
+    // FROM THE FILE, SYNCHRONOUSLY, while a replacement reads it into memory (ADR-0121 Decision 2). `readSync` keeps
+    // the argument above: nothing here suspends, so the file read is the one this version names.
+    if (image.kind === 'file') {
+      const fromFile = new Uint8Array(end - begin);
+      let filled = 0;
+      while (filled < fromFile.byteLength) {
+        const read = readSync(image.fd, fromFile, filled, fromFile.byteLength - filled, begin + filled);
+        if (read === 0) {
+          throw new RangeError(
+            `The image file ended at ${String(begin + filled)} bytes, inside a ${String(length)}-byte document.`,
+          );
+        }
+        filled += read;
+      }
+      return { kind: 'bytes', bytes: fromFile };
+    }
+    const bytes = image.bytes;
 
     // Allocated and filled rather than `slice`d, because the allocation is what
     // the type above promises: `new Uint8Array(n)` owns a plain `ArrayBuffer`,
@@ -1443,7 +1545,7 @@ export class DocumentService {
       handle,
       path,
       openedIdentity: identity,
-      bytes,
+      image: { kind: 'memory', bytes, writes: 0, retired: false },
       version,
       // §5: seeded from the initial version, never from 0. A freshly opened
       // document is clean.
@@ -1453,7 +1555,7 @@ export class DocumentService {
       log: new CommandLog(),
       checkpointDirectory: null,
       checkpointFiles: new Set(),
-      checkpointSerial: 0,
+      fileSerial: 0,
     });
     // `basename`, and the ONE call site. Everything downstream of here holds a
     // name and no path, which is invariant L2 arriving as a value rather than
@@ -1616,14 +1718,9 @@ export class DocumentService {
     record: DocumentRecord,
     write: (destination: string) => Promise<number>,
   ): Promise<CheckpointFile> {
-    if (record.checkpointDirectory === null) {
-      // FRESH HEX, never the DocId: a DocId is base64url, whose case matters, on a filesystem where it does not.
-      const directory = join(this.#checkpointRoot, Buffer.from(this.#randomBytes(TOKEN_BYTES)).toString('hex'));
-      await mkdir(directory, { recursive: true });
-      record.checkpointDirectory = directory;
-    }
-    record.checkpointSerial += 1;
-    const path = join(record.checkpointDirectory, `${String(record.checkpointSerial)}.pdf`);
+    const directory = await this.#documentDirectory(record);
+    record.fileSerial += 1;
+    const path = join(directory, `${String(record.fileSerial)}.pdf`);
     record.checkpointFiles.add(path);
     const written = await write(path);
     const { size } = await stat(path);
@@ -1634,6 +1731,77 @@ export class DocumentService {
       );
     }
     return { path, byteLength: size };
+  }
+
+  /** `record`'s own directory under the root, made at the first file it needs. */
+  async #documentDirectory(record: DocumentRecord): Promise<string> {
+    if (record.checkpointDirectory !== null) return record.checkpointDirectory;
+    // FRESH HEX, never the DocId: a DocId is base64url, whose case matters, on a filesystem where it does not.
+    const directory = join(this.#checkpointRoot, Buffer.from(this.#randomBytes(TOKEN_BYTES)).toString('hex'));
+    await mkdir(directory, { recursive: true });
+    record.checkpointDirectory = directory;
+    return directory;
+  }
+
+  /**
+   * `DocumentContext.replaceCanonicalImageFrom` — see there for the ordering, which is the whole of it.
+   *
+   * A failed `fill` removes what it left and changes nothing. A failed read leaves the record serving from the file,
+   * which is a correct state rather than a torn one: every range is answered and the next replacement retires it.
+   */
+  async #replaceFromFile(record: DocumentRecord, fill: (destination: string) => Promise<number>): Promise<number> {
+    const directory = await this.#documentDirectory(record);
+    record.fileSerial += 1;
+    const path = join(directory, `image-${String(record.fileSerial)}.pdf`);
+    let byteLength: number;
+    try {
+      const written = await fill(path);
+      byteLength = (await stat(path)).size;
+      if (byteLength !== written) {
+        throw new Error(
+          `A new image's writer answered ${String(written)} bytes and ${String(byteLength)} are on disk, so it is ` +
+            `not made this document's image.`,
+        );
+      }
+    } catch (error) {
+      await rm(path, { force: true });
+      throw error;
+    }
+
+    // THE SWAP, with no await before the read begins: from here ranges come from the file and the old buffer is
+    // unreferenced, so `main` never holds both.
+    this.#setImage(record, {
+      kind: 'file',
+      path,
+      fd: openSync(path, 'r'),
+      byteLength,
+      writes: 0,
+      retired: false,
+    });
+
+    const bytes = await this.#readBytes(path);
+    requireSoleOwnership(bytes, path);
+    if (bytes.byteLength !== byteLength) {
+      throw new Error(
+        `The new image read back ${String(bytes.byteLength)} bytes of a ${String(byteLength)}-byte file; the ` +
+          `document keeps serving from the file.`,
+      );
+    }
+    this.#setImage(record, { kind: 'memory', bytes, writes: 0, retired: false });
+    return byteLength;
+  }
+
+  /**
+   * Makes `next` the record's image, and releases the one it replaces now or when the last
+   * {@link writeCanonicalImage} still reading it finishes — see {@link CanonicalImage}. Synchronous, so the swap is one
+   * step with nothing between.
+   */
+  #setImage(record: DocumentRecord, next: CanonicalImage): void {
+    const previous = record.image;
+    record.image = next;
+    if (previous.kind === 'file') closeSync(previous.fd);
+    previous.retired = true;
+    releaseIfIdle(previous);
   }
 
   /** Runs one lane entry's work, then deletes every checkpoint file `record`'s log no longer holds. */
@@ -1652,8 +1820,9 @@ export class DocumentService {
     }
   }
 
-  /** Removes `record`'s checkpoint directory, if it ever made one. */
+  /** Removes `record`'s directory, if it ever made one — its checkpoints and any image file it was serving from. */
   async #removeCheckpoints(record: DocumentRecord): Promise<void> {
+    if (record.image.kind === 'file') closeSync(record.image.fd);
     if (record.checkpointDirectory === null) return;
     await rm(record.checkpointDirectory, { recursive: true, force: true });
     record.checkpointFiles.clear();
@@ -1767,9 +1936,10 @@ export class DocumentService {
           },
           replaceCanonicalImage: (_writer, image) => {
             requireSoleOwnership(image, record.path);
-            record.bytes = image;
-            return record.bytes.byteLength;
+            this.#setImage(record, { kind: 'memory', bytes: image, writes: 0, retired: false });
+            return image.byteLength;
           },
+          replaceCanonicalImageFrom: (_writer, fill) => this.#replaceFromFile(record, fill),
           log: record.log,
           // A GETTER, so it answers about the image the document has NOW rather
           // than the one it had when this entry started. A command rewrites the
@@ -1778,7 +1948,7 @@ export class DocumentService {
           // document the command replaced, which is `Versioned`'s own hazard
           // wearing a different field name.
           get byteLength() {
-            return record.bytes.byteLength;
+            return lengthOf(record.image);
           },
           markSaved: async () => {
             record.savedVersion = record.version;

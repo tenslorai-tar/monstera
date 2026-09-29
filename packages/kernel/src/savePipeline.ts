@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+
 import type { DocId, DocVersion } from '@monstera/shared';
 
 import { type AtomicWriteFailure, type AtomicWriteSurface, atomicWrite } from './atomicWrite.js';
@@ -29,7 +31,11 @@ import type { ByteImage } from './engineSeam.js';
  *    discards something the user has not seen.
  * 2. **Flush, then write.** The bytes are produced before anything on disk is
  *    touched, so an engine that fails to serialise costs a failed save and not
- *    a damaged file.
+ *    a damaged file — and is heard as itself, never as the disk refusing. They
+ *    are produced as a {@link StagedImage} and PLACED in the temporary file, so
+ *    when the session is in a host they never pass through `main`'s memory
+ *    ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)'s
+ *    addendum).
  * 3. **Write atomically.** `atomicWrite` keeps the original intact until the
  *    rename — invariant 18's own sentence.
  * 4. **Stamp last.** {@link DocumentContext.markSaved} runs only after the
@@ -135,18 +141,78 @@ export type SaveOutcome =
   | { readonly kind: 'write-failed'; readonly failure: AtomicWriteFailure };
 
 /**
+ * The document's current bytes, produced and waiting to be put somewhere — never in `main`'s memory when the session
+ * is in a host ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)'s addendum).
+ *
+ * **Two steps, because a save has two kinds of failure and they must stay apart.** Producing is the engine's: a host
+ * that cannot serialise throws there, before anything on disk is touched. Placing is the disk's: it runs inside
+ * `atomicWrite`, which reports it as `temp-write`. One step doing both would make a dead engine read as a full disk.
+ */
+export interface StagedImage {
+  /** How many bytes were produced — the engine's count, which placing checks against the file. */
+  readonly byteLength: number;
+  /** Puts the bytes at `destination`: a move for a host's output, a write for bytes in hand. Once. */
+  readonly place: (destination: string) => Promise<void>;
+  /** Removes what was produced if it was never placed. Harmless after a place, and never throws on absence. */
+  readonly discard: () => Promise<void>;
+}
+
+/** Produces a {@link StagedImage}: composed where the writer and its session are known to be correlated. */
+export type DocumentFlush = () => Promise<StagedImage>;
+
+/**
+ * Places `staged` at `destination` and discards whatever is left, answering the count — the one spelling of *put
+ * the document's bytes in this file*, for a checkpoint, a refreshed image and anything else that is not a save.
+ */
+export async function placeStaged(staged: StagedImage, destination: string): Promise<number> {
+  try {
+    await staged.place(destination);
+  } finally {
+    await staged.discard();
+  }
+  return staged.byteLength;
+}
+
+/** A {@link StagedImage} of bytes already in hand, placed by writing them — a session that is bytes in `main`. */
+export function stagedBytes(bytes: Uint8Array): StagedImage {
+  return {
+    byteLength: bytes.byteLength,
+    place: (destination) => writeFile(destination, bytes),
+    discard: () => Promise.resolve(),
+  };
+}
+
+/**
+ * `atomicWrite` with its temporary file filled by placing `staged`, which is discarded whatever happened — so a
+ * refused or failed write leaves no copy of the document where the host put it. One definition, for a save and a
+ * copy both.
+ */
+async function atomicWriteStaged(
+  deps: Pick<SaveDependencies, 'surface' | 'names' | 'wait'>,
+  target: string,
+  staged: StagedImage,
+): Promise<Awaited<ReturnType<typeof atomicWrite>>> {
+  try {
+    return await atomicWrite(deps.surface, target, (temp) => staged.place(temp), deps.names(target), deps.wait);
+  } finally {
+    await staged.discard();
+  }
+}
+
+/**
  * Runs one save, inside the document's lane.
  *
  * @param deps the filesystem and the write-target check
  * @param context the lane entry's own context — proof this is running in the lane
- * @param flush produces the document's current bytes. Composed where the writer
+ * @param flush stages the document's current bytes. Composed where the writer
  *   and its session are known to be correlated; see the module comment.
  * @returns what happened, never a thrown outcome.
+ * @throws whatever `flush` threw — an engine failure, not an outcome
  */
 export async function saveDocument(
   deps: SaveDependencies,
   context: DocumentContext,
-  flush: () => Promise<ByteImage>,
+  flush: DocumentFlush,
 ): Promise<SaveOutcome> {
   const verdict = await deps.checkWriteTarget(context.docId);
   if (verdict.kind !== 'sole-writer') {
@@ -156,15 +222,9 @@ export async function saveDocument(
     return { kind: 'refused', verdict };
   }
 
-  const bytes = await flush();
-
-  const written = await atomicWrite(
-    deps.surface,
-    context.path,
-    (temp) => deps.surface.write(temp, bytes),
-    deps.names(context.path),
-    deps.wait,
-  );
+  const staged = await flush();
+  const bytes = staged.byteLength;
+  const written = await atomicWriteStaged(deps, context.path, staged);
   if (!written.ok) {
     // THE STAMP IS NOT REACHED, and that is invariant 18 rather than tidiness.
     // The document stays dirty, its command log is untouched, and the original
@@ -176,7 +236,7 @@ export async function saveDocument(
   return {
     kind: 'saved',
     version: await context.markSaved(SAVE_WRITER),
-    bytes: bytes.byteLength,
+    bytes,
     backedUp: written.value.backedUp,
   };
 }
@@ -338,30 +398,24 @@ export async function writeDocumentSplit(
  *
  * @param deps the filesystem, the file naming and the ladder's wait
  * @param check answers whether the destination is contested
- * @param flush produces the document's current bytes
+ * @param flush stages the document's current bytes
  * @param destination the path the picker returned
+ * @throws whatever `flush` threw — an engine failure, not an outcome
  */
 export async function writeDocumentCopy(
   deps: Pick<SaveDependencies, 'surface' | 'names' | 'wait'>,
   check: (destination: string) => Promise<CopyTargetVerdict>,
-  flush: () => Promise<ByteImage>,
+  flush: DocumentFlush,
   destination: string,
 ): Promise<CopyOutcome> {
   const verdict = await check(destination);
   if (verdict.kind === 'contested') return { kind: 'refused', others: verdict.others };
 
-  const bytes = await flush();
-
-  const written = await atomicWrite(
-    deps.surface,
-    destination,
-    (temp) => deps.surface.write(temp, bytes),
-    deps.names(destination),
-    deps.wait,
-  );
+  const staged = await flush();
+  const written = await atomicWriteStaged(deps, destination, staged);
   if (!written.ok) return { kind: 'write-failed', failure: written.error };
 
-  return { kind: 'copied', bytes: bytes.byteLength };
+  return { kind: 'copied', bytes: staged.byteLength };
 }
 
 /**

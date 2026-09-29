@@ -77,6 +77,10 @@ const inputs = {
     const read = await readFile(path);
     return new Uint8Array(read.buffer, read.byteOffset, read.byteLength);
   },
+  // THE HOST'S SERIALISE MOVED INTO PLACE, standing in: the canonical image written straight to the destination, so
+  // nothing of it passes through this process's buffers — what `serialiseInto` does with a host's output.
+  currentInto: (destination) =>
+    documents.writeCanonicalImage(SUPERVISOR_CAPABILITY_FOR_INSTRUMENTS, outcome.docId, destination),
   adopt: async (write) => {
     await write(join(scratch, 'adopted'));
   },
@@ -100,6 +104,28 @@ const mark = async (name) => {
   steps[name] = Number((process.memoryUsage().arrayBuffers / size).toFixed(2));
 };
 await mark('open');
+
+/**
+ * The most ArrayBuffer memory seen while `work` runs, sampled every 2 ms — for a step whose peak is the question, where
+ * `mark` reads only what is left afterwards. A sampler cannot fire during synchronous work, so its CONTROL is the
+ * second command, whose known moment of three images (the canonical, the serialised session, the applied result) it
+ * must see: a blind sampler would read about one.
+ *
+ * @param {() => Promise<unknown>} work
+ */
+const sampledPeak = async (work) => {
+  let peak = process.memoryUsage().arrayBuffers;
+  const timer = setInterval(() => {
+    peak = Math.max(peak, process.memoryUsage().arrayBuffers);
+  }, 2);
+  try {
+    await work();
+  } finally {
+    clearInterval(timer);
+  }
+  return Math.max(peak, process.memoryUsage().arrayBuffers);
+};
+
 const writer = {
   ...localPdfLibWriter,
   /** @param {Parameters<typeof localPdfLibWriter.capture>} args */
@@ -132,16 +158,33 @@ await mark('after the command (image and log)');
 // A SECOND COMMAND, so what is retained can be told apart: a copy held per command grows by one each time, and one
 // held once does not.
 if (process.argv.includes('--twice')) {
-  await documents.run(outcome.docId, (context) =>
-    bus.execute(
-      {},
-      context,
-      { kind: 'watermarkPages', pages: 'all', text: 'AGAIN', opacity: 0.3, rotationDegrees: 45, fontSize: 48 },
-      inputs,
+  const secondPeak = await sampledPeak(() =>
+    documents.run(outcome.docId, (context) =>
+      bus.execute(
+        {},
+        context,
+        { kind: 'watermarkPages', pages: 'all', text: 'AGAIN', opacity: 0.3, rotationDegrees: 45, fontSize: 48 },
+        inputs,
+      ),
     ),
   );
+  steps['sampled peak during the second command (the control)'] = Number((secondPeak / size).toFixed(2));
   steps['service counts after two'] = Number((documents.residentDocumentBytes() / size).toFixed(2));
   await mark('after the second command');
+}
+// AN UNDO, so the refresh path is measured too: a terminal entry's checkpoint is restored and the canonical image is
+// replaced from the session's bytes (ADR-0121 Decision 2) — the replacement that took the old and new image together.
+if (process.argv.includes('--undo')) {
+  const undoPeak = await sampledPeak(() =>
+    documents.run(outcome.docId, (context) =>
+      bus.undo({}, context, async (write) => {
+        await write(join(scratch, 'restored'));
+      }, inputs),
+    ),
+  );
+  steps['service counts after undo'] = Number((documents.residentDocumentBytes() / size).toFixed(2));
+  steps['sampled peak during the undo'] = Number((undoPeak / size).toFixed(2));
+  await mark('after an undo');
 }
 await documents.close(outcome.docId);
 rmSync(scratch, { recursive: true, force: true });

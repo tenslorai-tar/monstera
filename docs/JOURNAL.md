@@ -892,6 +892,55 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-29 — ADR-0121 Decision 2: a new image replaces the old without both held, and a save never reads the bytes
+
+**Built:** `DocumentContext.replaceCanonicalImageFrom(writer, fill)`. The service names a file in the document's own
+directory; `fill` puts the new image there (the host's serialise, moved); then, with no await between, the record
+serves ranges from that file (`readSync` on a held descriptor, so `readRange` keeps its no-await argument) and lets
+the old image go; the file is read in; the record moves back to memory and the file is removed. The bus's image
+refresh (`#show`, every *image*-display command and every undo) takes this route through `ByteImageAccess.currentInto`.
+
+**And a released image is RELEASED, not dropped** — the part the first build missed, found by the instrument. With
+the swap built, the undo's sampled peak still read **2.00×**: the old buffer was unreferenced, and V8 frees an
+ArrayBuffer's memory only at a collection, so the new image arrived while the old was still allocated. Measured with
+a scratch probe on the 199 MiB fixture, no `--expose-gc`: detaching a buffer (`transfer(0)`) took its memory from
+199 MiB to 0 at once. So a replaced image is detached, or its file removed, by whichever of the replacement and the
+last snapshot write still reading it finishes second; `requireSoleOwnership` now also refuses a `SharedArrayBuffer`,
+which could neither be detached nor be solely owned. `ES2024.ArrayBuffer` joins the kernel's `lib` for that one
+method; Node 24 here has it and Electron 43's V8 is newer.
+
+**The save (ADR-0121's addendum):** `saveDocument` and `writeDocumentCopy` take a flush that STAGES — the host
+serialises into its output directory and answers a count — and `atomicWrite` PLACES it in the temporary file (a
+rename, or a copy and a delete where the person's folder is on another volume, `EXDEV`). Two steps, because the
+first attempt had one: a flush that wrote the temp file itself made an engine failure read as the disk refusing, and
+touched the disk before the engine had produced anything — two existing cases (*a flush that throws never reaches
+the filesystem*; the ENOSPC control) went red and named it. What was staged is discarded whatever the disk did.
+Every other copy writer (an extracted page, a snapshot, form data, a signed copy) produces bytes in hand and stages
+them with `stagedBytes`. `takeOutput` no longer copies the buffer its read already owns.
+
+**Measured, `roleMainByteImage.mjs --twice --undo` on the same fixture:** sampled peak during the undo **1.00×**
+(2.00× with the swap and no release; the old route held both by construction). The sampler's control is the second
+watermark, whose known three-image moment it must see: it read **4.06×**. Steady state after two commands and an
+undo, 1.00×. The command's own peak is unchanged at 4.04–4.05× — that is Decision 3's (pdf-lib parsing in `main`).
+
+**Proven:** the service observes the moment inside the read-back through its own reader — resident **0** and a range
+answered with the NEW image's bytes (a service that read before swapping reports the old length and `old`); the file
+is removed; a fill whose count disagrees is refused, its file removed and the old image kept; a snapshot written
+during the read copies from the file, which outlives the swap until it finishes; the replaced buffer is `detached`
+at once, and NOT while a snapshot is writing from it (the control). The save pipeline discards what it staged when
+the write fails and reports the disk as `temp-write`; an engine failure still reaches no file. The remote lifecycle
+stages in the output directory and a discard removes it. **At the composition root** a new case saves through a
+fake host serving a document `main` never had: the file holds exactly the host's bytes and the output directory is
+empty. Mutations, each red: no swap to the file (three cases); a release that ignores in-flight writes (one); no
+discard (one). **One stayed green and is not vacuous:** the composition's rename replaced by a copy leaves the
+save case green, because the discard removes what a copy leaves — the two end the same, and the case says so.
+
+**Stated:** the `EXDEV` branch is exercised by no case (it needs two volumes); a save's memory property — that the
+bytes never pass through `main` — is visible to no assertion here, only to the role script, which does not yet
+measure a save.
+
+---
+
 ## 2026-09-29 — ADR-0121 Decision 1: a checkpoint is a file, and `main` holds one image after a command
 
 The owner's list of 28 September, item 4: measure the two-image peak and fix it if it is over 1.5×. It was. The

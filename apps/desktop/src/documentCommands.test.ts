@@ -57,6 +57,7 @@ import {
   TimestampUnreachableError,
   UrlFetchRefused,
   serialiseIntoFile,
+  stagedBytes,
   siblingNames,
   StaleTargetError,
 } from '@monstera/kernel';
@@ -280,7 +281,16 @@ const noSaving: SaveSource = {
     wait: () => Promise.resolve(),
   },
   flush: () => Promise.reject(new Error('this case does not save')),
+  stage: () => Promise.reject(new Error('this case does not save')),
 };
+
+/**
+ * A fake's `flush`, staged as bytes in hand — what `stagedBytes` does for a session that is bytes in `main`. The
+ * host's move is `remoteLifecycle.test.ts`' and the composition-host test's; these cases are about what is saved.
+ */
+function stagingFrom(flush: DocumentFlush): SaveSource['stage'] {
+  return async (docId, sessions) => stagedBytes(await flush(docId, sessions));
+}
 
 /**
  * The flush a command declared `'image'` now calls (ADR-0084): the document's real MuPDF bytes.
@@ -1062,7 +1072,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         // PDF-LIB AND A REAL FLUSH, because pdf-lib writes the recognised layer from the
         // document's bytes: without either the bus refuses before the pre-read, and the service
         // is never asked — which the count below is there to catch.
-        save: { ...noSaving, flush: sessionFlush },
+        save: { ...noSaving, flush: sessionFlush, stage: stagingFrom(sessionFlush) },
         bus: new CommandBus({ mupdf: localMupdfWriter, 'pdf-lib': localPdfLibWriter }),
         engine: engine(),
       });
@@ -1350,6 +1360,11 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
               if (held_ === undefined) throw new Error('the fixture holds a session');
               return mupdfWriter.serialise(held_);
             },
+            stage: stagingFrom((_docId, sessions) => {
+              const held_ = sessions.mupdf;
+              if (held_ === undefined) throw new Error('the fixture holds a session');
+              return mupdfWriter.serialise(held_);
+            }),
           },
         }),
       };
@@ -1846,7 +1861,7 @@ describe('barcodes — placed from typed text and read back, through the lane (A
     const commands = new DocumentCommands({
       ...LOCAL_READS,
       // A PLACED IMAGE IS DRAWN FROM THE BYTES, so placing one flushes (ADR-0084).
-      save: { ...noSaving, flush: sessionFlush },
+      save: { ...noSaving, flush: sessionFlush, stage: stagingFrom(sessionFlush) },
       writeBarcode: lazyBarcodeWriter,
       documents: service,
       bus: bus(),
@@ -1881,7 +1896,7 @@ describe('barcodes — placed from typed text and read back, through the lane (A
     const commands = new DocumentCommands({
       ...LOCAL_READS,
       // A PLACED IMAGE IS DRAWN FROM THE BYTES, so placing one flushes (ADR-0084).
-      save: { ...noSaving, flush: sessionFlush },
+      save: { ...noSaving, flush: sessionFlush, stage: stagingFrom(sessionFlush) },
       writeBarcode: lazyBarcodeWriter,
       documents: service,
       bus: bus(),
@@ -2060,6 +2075,7 @@ describe('the form data export carries the format all the way to the file', () =
           wait: () => Promise.resolve(),
         },
         flush: () => Promise.reject(new Error('an export does not flush the document')),
+        stage: () => Promise.reject(new Error('an export does not flush the document')),
       },
       copy: {
         pick: () => Promise.reject(new Error('this case does not write a copy')),
@@ -2177,10 +2193,12 @@ describe('annotations exported to a file and imported from it, through the lane 
           names: (target) => siblingNames(target, 1),
           wait: () => Promise.resolve(),
         },
-        flush: (docId, sessions) => {
+        flush: sessionFlush,
+        // A SAVE STAGES (ADR-0121's addendum), so this is where one is counted.
+        stage: stagingFrom((docId, sessions) => {
           flushes.push(docId);
           return sessionFlush(docId, sessions);
-        },
+        }),
       },
       copy: {
         pick: () => Promise.reject(new Error('this case does not write a copy')),
@@ -2390,6 +2408,7 @@ describe('exportPageImages — one image per page, in a folder, all or nothing',
           wait: () => Promise.resolve(),
         },
         flush: () => Promise.reject(new Error('an image export does not flush the document')),
+        stage: () => Promise.reject(new Error('an image export does not flush the document')),
       },
       copy: {
         pick: () => Promise.reject(new Error('an image export picks a folder, not a file')),
@@ -2567,6 +2586,9 @@ describe('exportText — the document’s words, streamed one page at a time', (
         },
         flush:
           options.flush ?? (() => Promise.reject(new Error('a plain text export does not flush the document'))),
+        stage: stagingFrom(
+          options.flush ?? (() => Promise.reject(new Error('a plain text export does not flush the document'))),
+        ),
       },
       copy: {
         pick:
@@ -3150,6 +3172,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
           wait: () => Promise.resolve(),
         },
         flush: () => Promise.reject(new Error('an Excel export does not flush the document')),
+        stage: () => Promise.reject(new Error('an Excel export does not flush the document')),
       },
       copy: {
         pick: () => Promise.reject(new Error('an Excel export uses its own picker')),
@@ -4240,10 +4263,12 @@ describe('DocumentCommands — a page edited in another application (ADR-0062)',
         names: (target) => siblingNames(target, 1),
         wait: () => Promise.resolve(),
       },
-      flush: (docId, sessions) => {
+      flush: sessionFlush,
+      // A SAVE STAGES (ADR-0121's addendum), so this is where one is counted.
+      stage: stagingFrom((docId, sessions) => {
         flushes.push(docId);
         return sessionFlush(docId, sessions);
-      },
+      }),
     };
   }
 
@@ -4523,6 +4548,19 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     held.hold(source.docId, { mupdf: await mupdfWriter.open(readFileSync(sourcePath)) });
 
     let restores = 0;
+    const flushHeld: DocumentFlush = (docId, sessions) => {
+      const mupdf = sessions.mupdf;
+      if (mupdf === undefined) throw new Error('the target holds a session');
+      // A RELEASED SESSION IS REFUSED, as the host's registry refuses its token: *"This
+      // session token was not adopted by this registry, or it has already been
+      // released"*. A local session serialises after a recycle all the same, so without
+      // this the harness passed the flush of a stale set that the application refused
+      // (measured 2026-09-18, undoing a rectangle in the running app).
+      if (held.sessions(docId)?.mupdf !== mupdf) {
+        throw new Error('flushed a session this document no longer holds');
+      }
+      return mupdfWriter.serialise(mupdf);
+    };
     const commands = new DocumentCommands({
       ...LOCAL_READS,
       documents,
@@ -4535,19 +4573,9 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
           names: (target) => siblingNames(target, 1),
           wait: () => Promise.resolve(),
         },
-        flush: (docId, sessions) => {
-          const mupdf = sessions.mupdf;
-          if (mupdf === undefined) throw new Error('the target holds a session');
-          // A RELEASED SESSION IS REFUSED, as the host's registry refuses its token: *"This
-          // session token was not adopted by this registry, or it has already been
-          // released"*. A local session serialises after a recycle all the same, so without
-          // this the harness passed the flush of a stale set that the application refused
-          // (measured 2026-09-18, undoing a rectangle in the running app).
-          if (held.sessions(docId)?.mupdf !== mupdf) {
-            throw new Error('flushed a session this document no longer holds');
-          }
-          return mupdfWriter.serialise(mupdf);
-        },
+        flush: flushHeld,
+        // The refresh after an undo stages (ADR-0121 Decision 2), so the stale-session refusal is on it too.
+        stage: stagingFrom(flushHeld),
       },
       // THE SUPERVISOR'S OWN RECYCLE, with the checkpoint written where a host's granted
       // directory would be: `DocumentRestore`'s contract, composed locally.
@@ -4737,6 +4765,7 @@ describe('DocumentCommands.openFromUrl', () => {
         wait: () => Promise.resolve(),
       },
       flush: () => Promise.reject(new Error('a fetch flushes no document')),
+      stage: () => Promise.reject(new Error('a fetch flushes no document')),
     };
   }
 
@@ -4892,6 +4921,7 @@ describe('DocumentCommands.convertOfficeFile (ADR-0120)', () => {
             wait: () => Promise.resolve(),
           },
           flush: () => Promise.reject(new Error('an import flushes no document')),
+          stage: () => Promise.reject(new Error('an import flushes no document')),
         },
         copy,
         officeImport:

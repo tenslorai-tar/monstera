@@ -373,6 +373,10 @@ export {
 } from './atomicWrite.js';
 export { nodeFileSurface, siblingNames } from './fileSurface.js';
 export {
+  type DocumentFlush as StagedFlush,
+  type StagedImage,
+  placeStaged,
+  stagedBytes,
   type SaveDependencies,
   type SaveFileNames,
   type CopyOutcome,

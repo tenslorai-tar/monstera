@@ -3,6 +3,7 @@ import type { AnnotationDataFormat, ClientApi, FormDataFormat } from '@monstera/
 import type { ByteImage, LockedReason, MupdfSession } from '../engineSeam.js';
 import type { PageImageRequest } from '../pageImages.js';
 import type { RegionRequest, RegionSnapshot } from '../pageSnapshot.js';
+import { type StagedImage, placeStaged } from '../savePipeline.js';
 import type { EngineChannels } from './engineChannels.js';
 import type { RemoteSessions, SessionArea } from './remoteEngine.js';
 
@@ -214,6 +215,8 @@ export interface SessionAreaSurface {
    * and reading it into `main` only to write it out again is the second image the budget exists to refuse.
    */
   readonly moveOutput: (area: SessionArea, name: string, destination: string) => Promise<number>;
+  /** Removes what the host wrote under `name`, if it is still there. Never throws on absence. */
+  readonly removeOutput: (area: SessionArea, name: string) => Promise<void>;
   /** Removes both directories and everything under them. Must not throw. */
   readonly remove: (area: SessionArea) => Promise<void>;
   /**
@@ -245,6 +248,11 @@ export interface RemoteMupdfLifecycle {
    * (ADR-0121) — what a checkpoint is made from. The count is the host's, checked against the file that moved.
    */
   readonly serialiseInto: (session: MupdfSession, destination: string) => Promise<number>;
+  /**
+   * The session's current bytes, serialised by the host and LEFT in its output directory until placed or discarded
+   * (ADR-0121's addendum) — what a save flushes, so an engine failure is heard before the disk is touched.
+   */
+  readonly stage: (session: MupdfSession) => Promise<StagedImage>;
   /**
    * The bytes of a NEW document made of the named pages.
    *
@@ -308,6 +316,30 @@ export function remoteMupdfLifecycle(
   sessions: RemoteSessions,
   areas: SessionAreaSurface,
 ): RemoteMupdfLifecycle {
+  /**
+   * The host serialises into its output directory and answers a count; the bytes stay there until placed. Placing
+   * moves them and checks the count against what moved; discarding removes them if they were never placed — a whole
+   * copy of the document where the contained host may read it, otherwise.
+   */
+  const stage = async (session: MupdfSession): Promise<StagedImage> => {
+    const area = sessions.areaFor(session);
+    const into = areas.mintName();
+    const answer = await client['engine/serialise']({
+      session: sessions.handleFor(session),
+      into,
+    });
+    if (!answer.ok) throw new EngineSerialiseFailed(answer.error.code);
+    const byteLength = answer.value.bytes;
+    return {
+      byteLength,
+      place: async (destination) => {
+        const moved = await areas.moveOutput(area, into, destination);
+        if (moved !== byteLength) throw new EngineSerialiseMismatch(byteLength, moved);
+      },
+      discard: () => areas.removeOutput(area, into),
+    };
+  };
+
   return {
     serialise: async (session) => {
       const area = sessions.areaFor(session);
@@ -325,20 +357,9 @@ export function remoteMupdfLifecycle(
       return bytes;
     },
 
-    // `serialise`'s dance with a move where it reads, and the same count check against what moved.
-    serialiseInto: async (session, destination) => {
-      const area = sessions.areaFor(session);
-      const into = areas.mintName();
-      const answer = await client['engine/serialise']({
-        session: sessions.handleFor(session),
-        into,
-      });
-      if (!answer.ok) throw new EngineSerialiseFailed(answer.error.code);
-
-      const moved = await areas.moveOutput(area, into, destination);
-      if (moved !== answer.value.bytes) throw new EngineSerialiseMismatch(answer.value.bytes, moved);
-      return moved;
-    },
+    // `serialise`'s dance with a MOVE where it reads, and the same count check against what moved.
+    stage: (session) => stage(session),
+    serialiseInto: async (session, destination) => placeStaged(await stage(session), destination),
 
     extract: async (session, pages) => {
       const area = sessions.areaFor(session);

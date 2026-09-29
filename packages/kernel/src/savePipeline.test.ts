@@ -10,6 +10,7 @@ import type {
   WriteTargetVerdict,
 } from './documentService.js';
 import {
+  type DocumentFlush,
   type SaveDependencies,
   saveDocument,
   writeDocumentCopy,
@@ -82,6 +83,9 @@ function held(version: number): Held {
       },
       storeCheckpoint: (): never => {
         throw new Error('saving does not store a checkpoint');
+      },
+      replaceCanonicalImageFrom: (): never => {
+        throw new Error('saving does not replace the image');
       },
       // Same treatment again, and for a save it is the sharper claim of the
       // three: a save READS the document's current bytes and must never change
@@ -201,6 +205,22 @@ async function saveWithoutTheGuard(
   }
 }
 
+/**
+ * A flush whose staged bytes are placed THROUGH the fake surface, as the host's move is on disk (ADR-0121's
+ * addendum) — so the surface's failures and records see the place exactly as they saw a write. `discards` counts.
+ */
+function through(surface: AtomicWriteSurface, bytes: Uint8Array, discards = { count: 0 }): DocumentFlush {
+  return () =>
+    Promise.resolve({
+      byteLength: bytes.byteLength,
+      place: (destination: string) => surface.write(destination, bytes),
+      discard: () => {
+        discards.count += 1;
+        return Promise.resolve();
+      },
+    });
+}
+
 describe('saveDocument', () => {
   it('checks, flushes, writes atomically and stamps', async () => {
     const files: Files = new Map([[TARGET, 'original']]);
@@ -213,7 +233,7 @@ describe('saveDocument', () => {
       document.context,
       () => {
         flushes.count += 1;
-        return Promise.resolve(NEW_BYTES);
+        return through(f.surface, NEW_BYTES)();
       },
     );
 
@@ -245,9 +265,7 @@ describe('saveDocument', () => {
       },
     };
 
-    await saveDocument(deps(f.surface, { kind: 'sole-writer' }), watching, () =>
-      Promise.resolve(NEW_BYTES),
-    );
+    await saveDocument(deps(f.surface, { kind: 'sole-writer' }), watching, through(f.surface, NEW_BYTES));
 
     expect(stampedAfter).toHaveLength(1);
     expect(stampedAfter[0]).toContain(`rename:${NAMES.temp}->${TARGET}`);
@@ -263,7 +281,7 @@ describe('saveDocument', () => {
     const outcome = await saveDocument(
       deps(f.surface, { kind: 'sole-writer' }),
       document.context,
-      () => Promise.resolve(NEW_BYTES),
+      through(f.surface, NEW_BYTES),
     );
 
     expect(outcome.kind).toBe('write-failed');
@@ -289,7 +307,7 @@ describe('saveDocument', () => {
     const outcome = await saveDocument(
       deps(withGuard.surface, { kind: 'sole-writer' }),
       held(4).context,
-      () => Promise.resolve(NEW_BYTES),
+      through(withGuard.surface, NEW_BYTES),
     );
 
     const withoutGuard = fake(unguarded, failure);
@@ -331,7 +349,7 @@ describe('saveDocument', () => {
 
       const outcome = await saveDocument(deps(f.surface, verdict), document.context, () => {
         flushes.count += 1;
-        return Promise.resolve(NEW_BYTES);
+        return through(f.surface, NEW_BYTES)();
       });
 
       expect(outcome).toStrictEqual({ kind: 'refused', verdict });
@@ -355,11 +373,29 @@ describe('saveDocument', () => {
     const outcome = await saveDocument(
       deps(f.surface, { kind: 'target-absent' }),
       held(4).context,
-      () => Promise.resolve(NEW_BYTES),
+      through(f.surface, NEW_BYTES),
     );
 
     expect(outcome.kind).toBe('refused');
     expect(files.has(TARGET)).toBe(false);
+  });
+
+  // WHAT THE ENGINE STAGED GOES, whatever the disk did: a failed rename would otherwise leave a whole copy of the
+  // document in the host's output directory, where the contained host may read it (ADR-0121's addendum).
+  it('discards what was staged when the write fails, and a disk failure stays a disk failure', async () => {
+    const files: Files = new Map([[TARGET, 'original']]);
+    const f = fake(files, { step: 'write', code: 'ENOSPC' });
+    const discards = { count: 0 };
+
+    const outcome = await saveDocument(
+      deps(f.surface, { kind: 'sole-writer' }),
+      held(4).context,
+      through(f.surface, NEW_BYTES, discards),
+    );
+
+    expect(outcome.kind).toBe('write-failed');
+    if (outcome.kind === 'write-failed') expect(outcome.failure.stage).toBe('temp-write');
+    expect(discards.count).toBe(1);
   });
 
   it('a flush that throws never reaches the filesystem', async () => {
@@ -494,7 +530,7 @@ describe('writeDocumentCopy', () => {
     const outcome = await writeDocumentCopy(
       copyDeps(f.surface),
       () => Promise.resolve({ kind: 'writable' }),
-      () => Promise.resolve(NEW_BYTES),
+      through(f.surface, NEW_BYTES),
       ELSEWHERE,
     );
 
@@ -514,7 +550,7 @@ describe('writeDocumentCopy', () => {
     await writeDocumentCopy(
       copyDeps(f.surface),
       () => Promise.resolve({ kind: 'writable' }),
-      () => Promise.resolve(NEW_BYTES),
+      through(f.surface, NEW_BYTES),
       ELSEWHERE,
     );
 
@@ -537,7 +573,7 @@ describe('writeDocumentCopy', () => {
       () => Promise.resolve({ kind: 'contested', others: [asDocId('other-tab')] }),
       () => {
         flushes.count += 1;
-        return Promise.resolve(NEW_BYTES);
+        return through(f.surface, NEW_BYTES)();
       },
       ELSEWHERE,
     );
@@ -562,7 +598,7 @@ describe('writeDocumentCopy', () => {
     const outcome = await writeDocumentCopy(
       copyDeps(f.surface),
       () => Promise.resolve({ kind: 'writable' }),
-      () => Promise.resolve(NEW_BYTES),
+      through(f.surface, NEW_BYTES),
       ELSEWHERE,
     );
 
@@ -579,7 +615,7 @@ describe('writeDocumentCopy', () => {
     await writeDocumentCopy(
       copyDeps(f.surface),
       () => Promise.resolve({ kind: 'writable' }),
-      () => Promise.resolve(NEW_BYTES),
+      through(f.surface, NEW_BYTES),
       ELSEWHERE,
     );
 

@@ -24,6 +24,7 @@ import {
   type LogTrim,
 } from './commandLog.js';
 import type { CommandWriter, DocumentContext } from './documentService.js';
+import { serialiseIntoFile } from './checkpointFile.js';
 import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { localMupdfWriter } from './localEngine.js';
 import type { RecognisedPage, RecognitionRequest } from './ocrRecognise.js';
@@ -159,6 +160,17 @@ function contextStub(acceptsImages = false): DocumentContext & {
       images.push(image);
       return image.byteLength;
     },
+    // A REAL FILE, read back, for `storeCheckpoint`'s reason: what the bus has to get right is which bytes fill it.
+    async replaceCanonicalImageFrom(_writer: CommandWriter, fill: (destination: string) => Promise<number>) {
+      if (!acceptsImages) {
+        throw new Error('this case runs a live-session command, so nothing may replace the image');
+      }
+      const path = join(checkpointRoot, `image-${String(stored)}.pdf`);
+      stored += 1;
+      const written = await fill(path);
+      images.push(new Uint8Array(await readFile(path)));
+      return written;
+    },
     images: () => images,
     written: () => written,
     trims: () => trims,
@@ -246,6 +258,9 @@ const noByteImageExpected: CommandInputs = {
   current: () => {
     throw new Error('this case runs a live-session command and must not mint a byte image');
   },
+  currentInto: () => {
+    throw new Error('this case runs a command whose display is the view model, so nothing refreshes the image');
+  },
   adopt: () => {
     throw new Error('this case runs a live-session command and must not install a byte image');
   },
@@ -280,6 +295,7 @@ function showingInputs(session: MupdfSession): CommandInputs {
   return {
     ...noByteImageExpected,
     current: () => mupdfWriter.serialise(session),
+    currentInto: (destination) => localMupdfWriter.serialiseInto(session, destination),
   };
 }
 
@@ -1448,6 +1464,8 @@ describe('CommandBus and the reads axis', () => {
     const installed: ByteImage[] = [];
     return {
       current: () => Promise.resolve(image),
+      // An UNDO refreshes the image from the session (ADR-0084), so this answers with what `current` does.
+      currentInto: (destination) => serialiseIntoFile(() => Promise.resolve(image))(image, destination),
       adopt: async (write) => {
         await write('granted/toc');
       },
@@ -1575,6 +1593,8 @@ describe('CommandBus and a parameterised pre-read', () => {
     const installed: ByteImage[] = [];
     return {
       current: () => Promise.resolve(image),
+      // An UNDO refreshes the image from the session (ADR-0084), so this answers with what `current` does.
+      currentInto: (destination) => serialiseIntoFile(() => Promise.resolve(image))(image, destination),
       adopt: async (write) => {
         await write('granted/ocr');
       },
@@ -1981,9 +2001,9 @@ describe('CommandBus and what the window is handed', () => {
     try {
       await bus.execute({ mupdf: session }, context, { kind: 'movePage', from: 0, to: 2 }, {
         ...showingInputs(session),
-        current: () => {
+        currentInto: (destination) => {
           bumpsWhenAsked.push(context.bumps());
-          return mupdfWriter.serialise(session);
+          return localMupdfWriter.serialiseInto(session, destination);
         },
       });
 
@@ -2014,8 +2034,8 @@ describe('CommandBus and what the window is handed', () => {
   });
 
   it('a NOTHING-DRAWN command neither serialises nor replaces the image', async () => {
-    // `noByteImageExpected` throws from `current` and `contextStub()` throws from a replacement,
-    // so this passes only if neither is asked for — the call not made is the assertion.
+    // `noByteImageExpected` throws from `current` and `currentInto`, and `contextStub()` from a replacement,
+    // so this passes only if none is asked for — the call not made is the assertion.
     const bus = new CommandBus({ mupdf: localMupdfWriter });
     const session = await mupdfWriter.open(sized);
     try {
@@ -2025,10 +2045,11 @@ describe('CommandBus and what the window is handed', () => {
         { kind: 'setPageTransition', pages: [0], style: 'fade', durationSeconds: 1 },
         noByteImageExpected,
       );
-      // CONTROL: the same two throwing stubs refuse an IMAGE command, so they can see a refresh.
+      // CONTROL: the same throwing stubs refuse an IMAGE command, so they can see a refresh — which asks the context
+      // for a replacement from a file first since ADR-0121 Decision 2, so that is the refusal that answers.
       await expect(
         bus.execute({ mupdf: session }, contextStub(), { kind: 'movePage', from: 0, to: 2 }, noByteImageExpected),
-      ).rejects.toThrow(/must not mint a byte image/u);
+      ).rejects.toThrow(/nothing may replace the image/u);
     } finally {
       await mupdfWriter.close(session);
     }

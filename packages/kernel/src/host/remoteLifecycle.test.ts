@@ -152,6 +152,9 @@ function realAreas(): FakeAreas {
       await rename(join(area.outputDirectory, name), destination);
       return (await stat(destination)).size;
     },
+    removeOutput: async (area, name) => {
+      await rm(join(area.outputDirectory, name), { force: true });
+    },
     remove: async (area) => {
       removed.push(area);
       await rm(area.snapshotDirectory, { recursive: true, force: true });
@@ -817,6 +820,24 @@ describe('remoteMupdfLifecycle', () => {
     const reopened = await mupdfWriter.open(new Uint8Array(await readFile(destination)));
     await mupdfWriter.close(reopened);
     expect(await readdir(areas.made[0]?.outputDirectory ?? '')).toStrictEqual([]);
+
+    await lifecycle.close(session);
+  });
+
+  // A SAVE'S FLUSH STAGES: the bytes stay in the output directory until placed, and a discard removes them — the
+  // case where the disk refused and nothing was placed, which would otherwise leave a copy the host may read.
+  it('stages the serialised document in the output directory, and a discard removes it', async () => {
+    const areas = realAreas();
+    const { lifecycle, open } = joined(areas);
+    const session = await open(flat);
+    const output = areas.made[0]?.outputDirectory ?? '';
+
+    const staged = await lifecycle.stage(session);
+    // CONTROL: staged means ON DISK, so a discard that did nothing could not pass the next assertion by default.
+    expect(await readdir(output)).toHaveLength(1);
+    expect(staged.byteLength).toBeGreaterThan(0);
+    await staged.discard();
+    expect(await readdir(output)).toStrictEqual([]);
 
     await lifecycle.close(session);
   });

@@ -1290,6 +1290,34 @@ function documentServingEngine(document: Uint8Array): FakePeer {
   };
 }
 
+describe('the composition root, SAVING (ADR-0121 addendum)', () => {
+  it('saves the host’s bytes into the file by a move, and leaves no copy where the host may read', async () => {
+    // BOTH ENDS IN ONE CASE, for the wired pair's second blind spot: `savePipeline.test.ts` stages bytes through a
+    // fake surface and `remoteLifecycle.test.ts` moves a real host file, and neither holds the root that joins them.
+    // The host writes a document main never had — so the file can only hold it if the save took the host's file.
+    const hostDocument = new TextEncoder().encode('%PDF-1.7\n% the host serialised this, main never read it\n');
+    const spy = platformAnswering(documentServingEngine(hostDocument));
+    const path = aDocument('saved-by-a-move.pdf');
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(path),
+      enginePlatform: spy.platform,
+      checkpointDirectory: join(scratch, 'checkpoints-saving'),
+    });
+
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+    const saved = await handlers['document.save']({ docId: opened.value.docId, breakSignatures: true });
+
+    expect(saved.ok, JSON.stringify(saved)).toBe(true);
+    expect(new Uint8Array(readFileSync(path))).toStrictEqual(hostDocument);
+    // THE STAGED FILE IS GONE from the host's output directory — moved, or copied and then discarded, which end the
+    // same (measured: a copy in place of the rename leaves this green, because the discard removes what is left).
+    expect(readdirSync(lastOutputDirectory(spy.directories))).toStrictEqual([]);
+  });
+});
+
 describe('the composition root, SIGNING', () => {
   it('signs a document through the writers it registers', async () => {
     // THE SHIPPED ROUTE, END TO END, and the reason this case exists. Every

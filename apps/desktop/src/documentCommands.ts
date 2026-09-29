@@ -107,6 +107,9 @@ import {
   structureOutlineOf,
   textLayerOf,
   saveDocument,
+  placeStaged,
+  type StagedImage,
+  stagedBytes,
   type SplitOutcome,
   type MupdfSession,
   type ReadSignature,
@@ -976,7 +979,16 @@ export interface SaveSource {
   readonly deps: SaveDependencies;
   /** A document's current bytes. */
   readonly flush: DocumentFlush;
+  /**
+   * The same bytes, staged where the engine wrote them and never read into `main` — what a save, a copy of the
+   * document and a refreshed image are made from
+   * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md) Decision 2 and its addendum).
+   */
+  readonly stage: DocumentStage;
 }
+
+/** {@link DocumentFlush}, staged. Composed in the same place, for the same reason. */
+export type DocumentStage = (docId: DocId, sessions: DocumentSessions) => Promise<StagedImage>;
 
 /**
  * The query itself could not be compiled.
@@ -3352,6 +3364,8 @@ export class DocumentCommands {
     };
     return {
       current: () => this.#save.flush(docId, live()),
+      // THE REFRESH'S ROUTE (ADR-0121 Decision 2): the session's bytes placed in the file the service names.
+      currentInto: async (destination) => placeStaged(await this.#save.stage(docId, live()), destination),
       adopt: (write) => this.#restore(docId, write),
       outline: () => this.#destinations(docId, live()),
       // ADR-0051's member, and the one that takes an argument. The request is the
@@ -3487,7 +3501,7 @@ export class DocumentCommands {
       return await writeDocumentCopy(
         this.#save.deps,
         this.#copy.checkTarget,
-        () => this.#save.flush(docId, sessions),
+        () => this.#save.stage(docId, sessions),
         destination,
       );
     });
@@ -3587,7 +3601,7 @@ export class DocumentCommands {
       writeDocumentCopy(
         this.#save.deps,
         this.#copy.checkTarget,
-        () => Promise.resolve(signed),
+        () => Promise.resolve(stagedBytes(signed)),
         destination,
       ),
     );
@@ -3643,7 +3657,7 @@ export class DocumentCommands {
         // THE ONE DIFFERENCE FROM `saveCopy`. Everything downstream — the
         // contested-destination check, the temporary and backup naming, the
         // atomic write — is the same code on the same terms.
-        () => this.#extract(docId, sessions, pages),
+        async () => stagedBytes(await this.#extract(docId, sessions, pages)),
         destination,
       );
     });
@@ -3702,7 +3716,7 @@ export class DocumentCommands {
       return await writeDocumentCopy(
         this.#save.deps,
         this.#copy.checkTarget,
-        () => this.#extract(docId, sessions, [page]),
+        async () => stagedBytes(await this.#extract(docId, sessions, [page])),
         destination,
       );
     });
@@ -3845,7 +3859,7 @@ export class DocumentCommands {
       return await writeDocumentCopy(
         this.#save.deps,
         this.#copy.checkTarget,
-        () => this.#snapshot.region(docId, sessions, request),
+        async () => stagedBytes(await this.#snapshot.region(docId, sessions, request)),
         destination,
       );
     });
@@ -3891,7 +3905,7 @@ export class DocumentCommands {
       return await writeDocumentCopy(
         this.#save.deps,
         this.#copy.checkTarget,
-        () => this.#formData.encode(docId, sessions, format),
+        async () => stagedBytes(await this.#formData.encode(docId, sessions, format)),
         destination,
       );
     });
@@ -3980,7 +3994,7 @@ export class DocumentCommands {
       return await writeDocumentCopy(
         this.#save.deps,
         this.#copy.checkTarget,
-        () => this.#annotationData.encode(docId, sessions, format),
+        async () => stagedBytes(await this.#annotationData.encode(docId, sessions, format)),
         destination,
       );
     });
@@ -5216,7 +5230,7 @@ export class DocumentCommands {
     const written = await writeDocumentCopy(
       this.#save.deps,
       this.#copy.checkTarget,
-      () => Promise.resolve(pdf),
+      () => Promise.resolve(stagedBytes(pdf)),
       destination,
     );
     if (written.kind === 'refused') {
@@ -5474,9 +5488,9 @@ export class DocumentCommands {
         if (!kept.kept) return { kind: 'breaks-signatures', signatures: kept.signatures };
       }
 
-      return await saveDocument(this.#save.deps, context, () =>
-        this.#save.flush(docId, sessions),
-      );
+      // STAGED, so the document's bytes go from the host to the temporary file and never through `main`
+      // (ADR-0121's addendum).
+      return await saveDocument(this.#save.deps, context, () => this.#save.stage(docId, sessions));
     });
 
     return value;

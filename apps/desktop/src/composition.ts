@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { type Server, connect, createServer } from 'node:net';
 import { dirname, join } from 'node:path';
 
@@ -123,6 +123,7 @@ import {
   remoteMupdfPageText,
   remoteMupdfWriter,
   serialiseIntoFile,
+  type StagedImage,
   siblingNames,
   type CloudClient,
   writeStreamedDocument,
@@ -908,6 +909,16 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     }
     return writer.serialise(session);
   };
+  // THE SAME FLUSH, STAGED: the bytes stay where the host wrote them until they are placed, so a save, a copy and a
+  // refreshed image never hold them in `main` (ADR-0121 Decision 2 and its addendum). `currentBytes`' check, the
+  // same writer's session.
+  const stagedBytesOf = (docId: DocId, sessions: DocumentSessions): Promise<StagedImage> => {
+    const session = sessions.mupdf;
+    if (engineHost.writers.mupdf === undefined || session === undefined) {
+      throw new MissingSessionError(docId, 'mupdf');
+    }
+    return engineHost.stage(session);
+  };
 
   // The real supervisor rather than two inline arrows: a stubbed lookup and a
   // stubbed predicate are a second implementation of a rule the supervisor owns
@@ -961,6 +972,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       },
       flush: currentBytes,
+      stage: stagedBytesOf,
     },
     // THE SAME COMPOSITION POINT AS THE FLUSH, and for the same reason: the
     // geometry reader and the session are both in scope here and nowhere else.
@@ -1754,6 +1766,11 @@ function engineSessionOpener(
    * second path from main to the host holding a session (B3a).
    */
   readonly extract: HostExtract;
+  /**
+   * The session's bytes, left in the host's output directory until placed or discarded — a save's flush, so they
+   * never pass through `main` (ADR-0121's addendum). On this surface for {@link extract}'s reason.
+   */
+  readonly stage: (session: MupdfSession) => Promise<StagedImage>;
   /** Rasterises a region of a page. On this surface for {@link extract}'s reason. */
   readonly snapshot: HostSnapshot;
   /** Encodes the form's data. On this surface for {@link extract}'s reason. */
@@ -2612,6 +2629,8 @@ function engineSessionOpener(
     accessibility: checkAccessibilityThroughHost,
     duplicates: readDuplicatesThroughHost,
     extract: extractThroughHost,
+    // THE SAVE'S FLUSH, staged in the host's output directory and moved into place (ADR-0121's addendum).
+    stage: (session) => liveWriter().stage(session),
     snapshot: snapshotThroughHost,
     exportFormData: exportFormDataThroughHost,
     exportAnnotationData: exportAnnotationDataThroughHost,
@@ -3204,15 +3223,27 @@ function sessionAreas(platform: EngineHostPlatform): SessionAreaSurface {
       const path = join(area.outputDirectory, name);
       const bytes = await readFile(path);
       await rm(path, { force: true });
-      return new Uint8Array(bytes);
+      // A VIEW OF THE READ'S OWN BUFFER, never a copy: `readFile` answers an exactly-sized allocation it owns, and
+      // `new Uint8Array(bytes)` made a second whole image for as long as both lived (ADR-0121's addendum).
+      return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     },
-    // A RENAME, so a checkpoint's bytes never pass through `main` (ADR-0121). `entry.ts` puts the checkpoint root
-    // and the session root side by side under `sessionData`, so they are one volume and a rename is a move; one on
-    // another volume would refuse with `EXDEV` rather than copy.
+    // A MOVE, so the bytes never pass through `main` (ADR-0121). A checkpoint or a refreshed image lands beside the
+    // session root under `sessionData`, one volume, so it is a rename. A SAVE's temporary file sits beside the
+    // person's document, which may be on any drive: there `rename` answers `EXDEV`, and a move across volumes is a
+    // copy and a delete — streamed by the operating system, never a buffer here.
     moveOutput: async (area, name, destination) => {
       const path = join(area.outputDirectory, name);
-      await rename(path, destination);
+      try {
+        await rename(path, destination);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error;
+        await copyFile(path, destination);
+        await rm(path, { force: true });
+      }
       return (await stat(destination)).size;
+    },
+    removeOutput: async (area, name) => {
+      await rm(join(area.outputDirectory, name), { force: true });
     },
     remove: (area) => {
       removeSessionDirectories(platform.directories, {
