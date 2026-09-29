@@ -1,4 +1,13 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -207,7 +216,38 @@ describe('createShellLog', () => {
     log.failures({ event: 'unresponsive', detail: 'something to have a log about' });
 
     await expect(log.reveal()).resolves.toBe(true);
-    expect(asked).toEqual([logs]);
+    // Its FINAL path: a runner's temporary directory can carry an 8.3 name, which the reveal resolves.
+    expect(asked).toEqual([realpathSync.native(logs)]);
+  });
+
+  /**
+   * An MSIX install redirects `%APPDATA%` for the package's own processes, and the
+   * file manager is not one of them (measured in 0.1.1.0). A junction is the same
+   * question — a name this process reaches a directory by that is not where the
+   * directory is — asked with no package, and `realpathSync.native` answers both
+   * through the same Windows call.
+   */
+  it('hands the platform the directory’s real location, not the name the log reached it by', async () => {
+    const real = mkdtempSync(join(tmpdir(), 'monstera-shelllog-real-'));
+    const alias = join(userData, 'alias');
+    symlinkSync(real, alias, 'junction');
+    const asked: string[] = [];
+    const log = createShellLog(
+      alias,
+      (directory) => {
+        asked.push(directory);
+        return Promise.resolve(true);
+      },
+      () => AT,
+    );
+    log.failures({ event: 'unresponsive', detail: 'something to have a log about' });
+
+    await expect(log.reveal()).resolves.toBe(true);
+    expect(asked).toEqual([join(realpathSync.native(real), 'logs')]);
+    // CONTROL: the name the log was given is a different string, so the equality above is a resolution and not a
+    // directory that happened to be named the same both ways.
+    expect(asked).not.toContain(join(alias, 'logs'));
+    rmSync(real, { recursive: true, force: true });
   });
 
   /**

@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
+  realpathSync,
   renameSync,
   statSync,
   unlinkSync,
@@ -235,7 +236,16 @@ export function createShellLog(
       // that opened a file manager on a directory that is not there is worse
       // than answering that there is nothing to show.
       if (!existsSync(directory)) return false;
-      return revealDirectory(directory);
+      // THE FILE MANAGER IS HANDED WHERE THE DIRECTORY IS, not the name this
+      // process reaches it by. In an MSIX install `userData` is under
+      // `%APPDATA%`, which Windows redirects for the package's own processes to
+      // `%LOCALAPPDATA%\Packages\<family>\LocalCache\Roaming`. File Explorer is
+      // not one of them, so the name this process sees does not exist for it:
+      // measured 2026-09-30 in 0.1.1.0, *Location is not available*.
+      // `realpathSync.native` asks Windows for the open handle's final path —
+      // measured inside the package to name the LocalCache folder — where the
+      // JavaScript `realpathSync` returned the redirected name unchanged.
+      return revealDirectory(realpathSync.native(directory));
     },
     failures: (failure: ShellFailure): void => {
       write(`FAILURE ${failure.event}`, failure.detail);
