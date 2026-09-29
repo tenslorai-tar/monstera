@@ -32,6 +32,7 @@ import { formatError } from '../lib/reportError.mjs';
 import { electronRoot } from '../provision/electron.mjs';
 import { libreOfficeRoot } from '../provision/libreoffice.mjs';
 import { ghostscriptRoot } from '../provision/ghostscript.mjs';
+import { onlyofficeRoot } from '../provision/onlyoffice.mjs';
 import { popplerRoot } from '../provision/poppler.mjs';
 import { pdfiumLibrary } from '../provision/pdfium.mjs';
 import { tessdataDirectory } from '../provision/tessdata.mjs';
@@ -185,9 +186,10 @@ try {
   // agree with — so this names them, and each new one arrives owing an edit to
   // this line rather than inheriting their exemption. Poppler was the fourth
   // (ADR-0071), Ghostscript the fifth (ADR-0075). ONNX Runtime was a sixth until ADR-0085
-  // removed the engine that loaded it.
+  // removed the engine that loaded it; ONLYOFFICE's x2t tree is the sixth now (ADR-0120),
+  // a converter like Poppler's.
   check(
-    'the entries whose absence is not a failure are exactly the five a host can run without',
+    'the entries whose absence is not a failure are exactly the six a host can run without',
     set
       .filter((entry) => !entry.required)
       .map((entry) => entry.path)
@@ -199,6 +201,7 @@ try {
         libreOfficeRoot(root),
         popplerRoot(root),
         ghostscriptRoot(root),
+        onlyofficeRoot(root),
       ]
         .sort()
         .join('|'),
