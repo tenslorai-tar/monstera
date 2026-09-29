@@ -60,9 +60,12 @@ const HOSTS = ['host/hostEntry.js', 'host/pdfiumHostEntry.js', 'host/composeHost
 /** The other writers' spec tables, which the MuPDF host must not reach. */
 const OTHER_WRITERS = ['pdfLibWriter.js', 'signpdfWriter.js', 'pdfiumSpecs.js'];
 
+/** The one other writer the MuPDF host runs, on demand (ADR-0121 Decision 3). */
+const HOSTED_WRITER = 'pdfLibWriter.js';
+
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 13 });
+const roster = createRoster(failures, { cases: 14 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -76,14 +79,15 @@ function check(label, condition, detail) {
  * bare side-effect imports, and literal dynamic imports.
  *
  * @param {string} file
+ * @param {{ dynamic?: boolean }} [options] `dynamic: false` leaves the literal `import()`s out
  * @returns {string[]}
  */
-function specifiersOf(file) {
+function specifiersOf(file, { dynamic = true } = {}) {
   const source = readFileSync(file, 'utf8');
   return [
     ...[...source.matchAll(/\bfrom\s*'([^']+)'/gu)].map((m) => m[1] ?? ''),
     ...[...source.matchAll(/\bimport\s*'([^']+)'/gu)].map((m) => m[1] ?? ''),
-    ...[...source.matchAll(/\bimport\(\s*'([^']+)'\s*\)/gu)].map((m) => m[1] ?? ''),
+    ...(dynamic ? [...source.matchAll(/\bimport\(\s*'([^']+)'\s*\)/gu)].map((m) => m[1] ?? '') : []),
   ];
 }
 
@@ -91,10 +95,15 @@ function specifiersOf(file) {
  * Walks the relative edges from `entry` inside `dist`, recording which modules name which
  * bare specifiers and the trail to every module reached.
  *
+ * `dynamic: false` walks what the process loads AT START: a literal `import()` is loaded when
+ * that line runs, not when the module is, so it is the one edge a host's fixed cost does not
+ * pay (ADR-0121 Decision 3 loads pdf-lib that way).
+ *
  * @param {string} dist
  * @param {string} entry
+ * @param {{ dynamic?: boolean }} [options]
  */
-function walk(dist, entry) {
+function walk(dist, entry, options = {}) {
   /** @type {Map<string, string[]>} module -> trail from the entry */
   const reached = new Map([[entry, [entry]]]);
   /** @type {Map<string, string[]>} bare specifier -> modules naming it */
@@ -106,7 +115,7 @@ function walk(dist, entry) {
     if (current === undefined) break;
     const absolute = join(dist, current);
     if (!existsSync(absolute)) continue;
-    for (const specifier of specifiersOf(absolute)) {
+    for (const specifier of specifiersOf(absolute, options)) {
       edges += 1;
       if (!specifier.startsWith('.')) {
         bare.set(specifier, [...(bare.get(specifier) ?? []), current]);
@@ -201,17 +210,29 @@ try {
     );
   }
 
-  const mupdfHost = walk(KERNEL_DIST, 'host/hostEntry.js');
+  // AT START, the MuPDF host loads no other writer; over its whole life it loads pdf-lib alone,
+  // because ADR-0121 Decision 3 runs pdf-lib's commands beside the session they rewrite.
+  const mupdfAtStart = walk(KERNEL_DIST, 'host/hostEntry.js', { dynamic: false });
+  const mupdfEver = walk(KERNEL_DIST, 'host/hostEntry.js');
   for (const writer of OTHER_WRITERS) {
+    const ever = writer === HOSTED_WRITER ? mupdfAtStart : mupdfEver;
     check(
-      `host/hostEntry.js does not reach ${writer}`,
-      !mupdfHost.reached.has(writer),
-      `reachable via ${(mupdfHost.reached.get(writer) ?? []).join(' -> ')}.\n` +
-        `      The MuPDF host executes MuPDF's commands and no other writer's; a route to another ` +
-        `writer's table loads that writer's library into a contained process that never calls ` +
-        `it. Take MuPDF's execution from mupdfSpecs.js, as the PDFium host takes pdfiumSpecs.js.`,
+      `host/hostEntry.js does not reach ${writer}${writer === HOSTED_WRITER ? ' at start' : ''}`,
+      !ever.reached.has(writer),
+      `reachable via ${(ever.reached.get(writer) ?? []).join(' -> ')}.\n` +
+        `      The MuPDF host executes MuPDF's commands and, since ADR-0121 Decision 3, pdf-lib's — ` +
+        `loaded on the first one, by a literal import(). A route to another writer's table, or a ` +
+        `static one to pdf-lib's, loads a library into every contained process whether it is called ` +
+        `or not. Take MuPDF's execution from mupdfSpecs.js, as the PDFium host takes pdfiumSpecs.js.`,
     );
   }
+  // CONTROL for the start-only case above: the whole-life walk DOES reach pdf-lib's writer, so
+  // "not at start" is the dynamic edge being excluded, not a walk that cannot see the module.
+  check(
+    `CONTROL: host/hostEntry.js reaches ${HOSTED_WRITER} through its dynamic import`,
+    mupdfEver.reached.has(HOSTED_WRITER),
+    `the whole-life walk does not reach ${HOSTED_WRITER}, so the start-only case proves nothing.`,
+  );
 
   process.stdout.write(
     failures.length > 0

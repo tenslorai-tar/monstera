@@ -10,11 +10,10 @@
  * Usage: node pdfLibHostStandIn.mjs <image-in> <result-out> <command-json>
  */
 import { readFile, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const { applyPdfLibImage } = await import(`file://${resolve(root, 'packages/kernel/dist/pdfLibWriter.js')}`);
+// A LITERAL SPECIFIER, so `proof:electronimports` can read what this process loads. The parent role checks the build's
+// freshness before it spawns this, which is the one reason a sibling script imports dynamically.
+import { applyPdfLibImage } from '../../packages/kernel/dist/pdfLibWriter.js';
 
 const [input, output, commandJson] = process.argv.slice(2);
 if (input === undefined || output === undefined || commandJson === undefined) {
