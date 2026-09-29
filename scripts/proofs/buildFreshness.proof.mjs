@@ -29,7 +29,9 @@
  * Usage: node scripts/proofs/buildFreshness.proof.mjs
  */
 
+import { spawnSync } from 'node:child_process';
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -60,6 +62,7 @@ const CASES = [
   'a source directory the walk can date NOTHING in throws rather than reading as fresh',
   'CONTROL: and a directory holding one ordinary file is dated, not refused',
   'an EMPTY SUBDIRECTORY beside a source file is dated by the file — only the root may be empty-refused',
+  'clean removes the build info with the output, and leaves the source — so the next build emits',
   'a missing artefact is reported as missing rather than as fresh',
   'a pair count that disagrees with the call site is refused',
   'a TSC pair whose source is newer is ACCEPTED when the compiler says it is current',
@@ -288,6 +291,28 @@ try {
       `a source tree with one file and one empty folder ${message === '' ? `dated to ${String(dated)}` : `threw: ${message}`}. ` +
         `The empty-walk refusal is the ROOT's question; asked of every subdirectory, one emptied ` +
         `folder anywhere stops every proof that checks freshness.`,
+    );
+  }
+
+  {
+    // THE WORKSPACE'S CLEAN, run as a workspace runs it: `node ../../scripts/clean.mjs dist` from the package folder.
+    // TypeScript's record of what `dist/` holds must go with `dist/`, or `tsc --build` trusts outputs that are gone —
+    // measured 2026-09-29 as a build that emitted nothing for three referenced projects.
+    const root = tree();
+    writeAt(join(root, 'src', 'a.ts'), 'source\n', OLD);
+    writeAt(join(root, 'dist', 'a.js'), 'built\n', OLD);
+    writeAt(join(root, 'tsconfig.tsbuildinfo'), '{}\n', OLD);
+    const run = spawnSync(process.execPath, [join(REPO_ROOT, 'scripts', 'clean.mjs'), 'dist'], { cwd: root, encoding: 'utf8' });
+    const left = {
+      dist: existsSync(join(root, 'dist')),
+      buildInfo: existsSync(join(root, 'tsconfig.tsbuildinfo')),
+      // CONTROL: the source beside them is untouched — a clean that removed everything would pass the two above.
+      source: existsSync(join(root, 'src', 'a.ts')),
+    };
+    check(
+      'clean removes the build info with the output, and leaves the source — so the next build emits',
+      run.status === 0 && !left.dist && !left.buildInfo && left.source,
+      `exit ${String(run.status)}, left ${JSON.stringify(left)}. ${run.stderr}`,
     );
   }
 

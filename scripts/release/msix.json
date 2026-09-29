@@ -1,0 +1,13 @@
+{
+  "$comment": [
+    "The Store flavour's package identity, as Partner Center reserves it (Product management > Product identity).",
+    "Empty until the name is reserved: scripts/release/packageMsix.mjs refuses the Store flavour while any value is",
+    "empty, and refuses a publisher carrying the unsigned OID. None of these is a secret; they are printed on the Store.",
+    "The test flavour needs none of them (ADR-0123)."
+  ],
+  "store": {
+    "identityName": "",
+    "publisher": "",
+    "publisherDisplayName": ""
+  }
+}

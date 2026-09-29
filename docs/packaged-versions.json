@@ -1,0 +1,8 @@
+{
+  "$comment": [
+    "Every version scripts/release/packageMsix.mjs has packed, appended by the script. It refuses a version not",
+    "greater than every one here, so B8's never-reuse-a-number is a check rather than a memory (ADR-0123 Decision 5).",
+    "Commit this file after a packaging run."
+  ],
+  "packed": []
+}

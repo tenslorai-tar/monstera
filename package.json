@@ -97,6 +97,8 @@
     "proof:brandshape": "node scripts/proofs/brandShape.proof.mjs",
     "brand:store": "node scripts/brand/storeAssets.mjs",
     "proof:storeassets": "node scripts/proofs/storeAssets.proof.mjs",
+    "package:msix": "node scripts/release/packageMsix.mjs",
+    "proof:packagemsix": "node scripts/proofs/packageMsix.proof.mjs",
     "proof:contract": "node scripts/proofs/contract.proof.mjs",
     "proof:composition": "node scripts/proofs/composition.proof.mjs",
     "proof:shell": "node scripts/proofs/shell.proof.mjs",

@@ -102,10 +102,11 @@ const OS_CIPHER: SecretCipher = {
  *
  * `version` from Electron's own `app.getVersion()`, which reads the packaged
  * `package.json` — the artifact's version rather than a constant that can
- * disagree with it. `installChannel` is `development` because nothing packages
- * this yet, and it is **baked rather than detected** (E4): it decides which
- * update provider is active, and a value that could differ between two launches
- * of one package is exactly what an update decision must not be.
+ * disagree with it. `installChannel` is `store` in a package and `development`
+ * otherwise (ADR-0123), and it is **baked rather than detected** (E4): it decides
+ * which update provider is active, and a value that could differ between two
+ * launches of one package is exactly what an update decision must not be —
+ * `app.isPackaged` cannot.
  *
  * ## Why the graph is a lambda and not an argument
  *
@@ -222,7 +223,9 @@ startShell(() => {
     checkpointDirectory,
     appInfo: {
       version: app.getVersion(),
-      installChannel: 'development',
+      // PACKAGED IS THE STORE PACKAGE (ADR-0123 Decision 7): fixed for a package, so still baked rather than detected
+      // between launches. The web flavour ADR-0018 keeps has no build; when it gets one it bakes its own.
+      installChannel: app.isPackaged ? 'store' : 'development',
       userName: windowsUserName(),
     },
     // Built here, for the same reason `AppInfo` is: this is the only file that

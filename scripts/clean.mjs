@@ -56,3 +56,10 @@ for (const target of targets) {
 
   if (existsSync(path)) rmSync(path, { recursive: true, force: true });
 }
+
+// THE BUILD INFO GOES WITH THE OUTPUT. `tsconfig.tsbuildinfo` is TypeScript's record of what the workspace's `dist/`
+// holds, and `tsc --build` trusts it: measured 2026-09-29, `npm run clean --workspaces` then `npm run build` emitted
+// nothing for the referenced projects — the record said they were current — and the desktop package failed with 638
+// errors, every one "cannot find module '@monstera/…'". A clean that removes the output and keeps the record is a clean
+// the next build does not notice.
+rmSync(resolve(cwd, 'tsconfig.tsbuildinfo'), { force: true });

@@ -787,6 +787,11 @@ jobs:
       - name: Prove the Store images are the set and sizes Microsoft names
         run: node scripts/ci/annotate.mjs scripts/proofs/storeAssets.proof.mjs
 
+      # The MSIX packager's decisions, pure (ADR-0123): the test flavour's unsigned OID and the Store flavour's refusal
+      # of it, the version rules, and a resolution check that names a missing package and refuses when blinded.
+      - name: Prove the MSIX packager's flavours, versions and resolution check
+        run: node scripts/ci/annotate.mjs scripts/proofs/packageMsix.proof.mjs
+
       # No --passWithNoTests. The flag's only effect is to turn "no test files
       # found" from exit 1 into exit 0, which is the single signal that would
       # reveal a broken include glob, a renamed src layout, or a vitest config
