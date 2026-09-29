@@ -65,3 +65,10 @@ Any one of:
 3. a converter for these formats that runs inside the container as it stands.
 
 Reopening is a new ADR that reverses this one and a FEATURES row moved back out of *deferred*.
+
+## Correction, 2026-09-29 — reopened by route 3
+
+[ADR-0120](0120-office-import-is-onlyoffices-x2t-contained.md) reopens Office import by this decision's third route:
+ONLYOFFICE's `x2t` converted `.docx`, `.xlsx` and `.pptx` inside the container as it stands, measured with an
+uncontained control and a grant-removed control. LibreOffice stays out for the reason above; the seam,
+`containedProgram` and the research this decision kept are what the reopening builds on.
