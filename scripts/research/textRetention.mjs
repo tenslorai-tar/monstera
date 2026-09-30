@@ -46,10 +46,14 @@ import { mupdfWriter } from '../../packages/kernel/dist/mupdfWriter.js';
 import { findInPages } from '../../packages/kernel/dist/textSearch.js';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
+import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import { formatBytes, peakRssBytes } from '../perf/peakRss.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
 const ROOT = repoRoot();
+
+// The native engine, bound through the one resolver before any engine call (ADR-0124).
+bindNativeEngine(ROOT);
 
 refuseStaleBuild(
   ROOT,

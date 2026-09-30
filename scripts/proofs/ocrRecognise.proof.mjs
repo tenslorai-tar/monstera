@@ -36,11 +36,15 @@ import { loadedCore, recognisePage } from '../../packages/kernel/dist/ocrRecogni
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { corpusCaveat, openCorpus } from '../lib/corpus.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
+import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { tessdataDirectory } from '../provision/tessdata.mjs';
 
 const ROOT = repoRoot();
+
+// The native engine, bound through the one resolver before any engine call (ADR-0124).
+bindNativeEngine(ROOT);
 
 refuseStaleBuild(
   ROOT,

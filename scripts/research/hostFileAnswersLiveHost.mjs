@@ -284,9 +284,13 @@ async function main() {
     const rotateBytes = await manyPages();
     const rotatePath = join(scratch, 'many-pages.pdf');
     writeFileSync(rotatePath, rotateBytes);
+    // AS RUNS, the way the page sends every page list (ADR-0125's decision D): ten thousand single numbers is over
+    // `MAX_PAGE_SET_ENTRIES` and the host's schema refuses it. The capture still holds one prior per page, so the
+    // answer is as large as before.
+    const { pageSetOf } = await built('packages/contract/dist/pageSet.js');
     const rotateAll = /** @type {const} */ ({
       kind: 'rotatePages',
-      pages: Array.from({ length: ROTATED_PAGES }, (_, page) => page),
+      pages: pageSetOf(Array.from({ length: ROTATED_PAGES }, (_, page) => page)),
       quarterTurns: 1,
     });
     const { localMupdfExecution } = await built('packages/kernel/dist/mupdfSpecs.js');

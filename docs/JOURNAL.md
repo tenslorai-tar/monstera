@@ -986,6 +986,29 @@ agreeing today.
 **Repairs:** YYYYYY-1 to -3 and -9 in the commit after decision C; -4 and -7 by decision D; -5 and -6 by decision C;
 -8 by decision E.
 
+### Correction, 2026-10-01 — items 4a, 4b and 4c, each answered
+
+This entry answered 4a and 4b under one heading and never answered 4c. The Guards run at `130ab438` reported it
+(`proof:docscope`'s baseline runs the whole-corpus rules, which pre-commit does not). The text under *4a/4b* above
+stands; this splits it and adds the missing answer.
+
+#### 4a. Resolution test before measuring?
+
+Yes for each new instrument, by the controls named above: each requires an input known to be on the far side of what
+it measures (a heavier peak, an answer over a frame, a redaction that ran) before it reports.
+
+#### 4b. A search with a positive control?
+
+YYYYYY-3 is the one that was not: `glueRoots` answered an empty list when the upstream glue was absent, which is the
+reassuring answer. Repaired: it now throws.
+
+#### 4c. Does a check derive its extent from the set it governs?
+
+YYYYYY-3 is also 4c's shape. The glue roots were derived from the files present, and the feared failure (glue absent)
+makes that set smaller, so the derivation agreed with it. `hostRoutes.test.ts`' `COMMAND_CARRYING` is the right
+direction: a written-out list of the channels that may carry a command past a frame, so a channel added to a host
+arrives owing an entry. Nothing else in the range.
+
 ---
 
 ## 2026-09-30 — The owner's 0.1.6.0 results, and decisions A to E

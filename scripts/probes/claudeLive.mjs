@@ -50,6 +50,7 @@ import {
 import { MIN_SNAPSHOT_SCALE, snapshotRegion } from '../../packages/kernel/dist/pageSnapshot.js';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
+import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import { unverifiableOutcome } from '../lib/unverifiable.mjs';
 
 const KEY_VARIABLE = 'MONSTERA_ANTHROPIC_KEY';
@@ -68,6 +69,9 @@ const REGION = { x0: 20, y0: 150, x1: 380, y1: 290 };
 const SLACK = 2;
 
 const ROOT = repoRoot();
+
+// The native engine, bound through the one resolver before any engine call (ADR-0124).
+bindNativeEngine(ROOT);
 
 refuseStaleBuild(
   ROOT,

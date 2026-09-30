@@ -54,6 +54,7 @@ import {
 import { snapshotRegion } from '../../packages/kernel/dist/pageSnapshot.js';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
+import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import { unverifiableOutcome } from '../lib/unverifiable.mjs';
 
 const ENDPOINT_VARIABLE = 'MONSTERA_AZURE_DI_ENDPOINT';
@@ -84,6 +85,9 @@ const REGION = { x0: 20, y0: 150, x1: 380, y1: 290 };
 const SLACK = 2;
 
 const ROOT = repoRoot();
+
+// The native engine, bound through the one resolver before any engine call (ADR-0124).
+bindNativeEngine(ROOT);
 
 // THE BUILT KERNEL IS THE SUBJECT, so a stale one would send last week's code to
 // the service and print the answer under this week's name.

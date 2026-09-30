@@ -63,8 +63,12 @@ import { acceptTimestampReply } from '../../packages/kernel/dist/timestampToken.
 import { timestampTransport } from '../../apps/desktop/dist/timestampTransport.js';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
+import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 
 const ROOT = repoRoot();
+
+// The native engine, bound through the one resolver before any engine call (ADR-0124).
+bindNativeEngine(ROOT);
 
 // THE BUILT CODE IS THE SUBJECT, so a stale build would send last week's request
 // and print the answer under this week's name.
