@@ -4,16 +4,19 @@ A flat C ABI over MuPDF, bound with koffi. This is the seam
 [ADR-0010](../../docs/DECISIONS/0010-native-mupdf-through-an-ffi-shim.md)
 mandates; it is not a helper or an optimisation.
 
-> **ONE THING IN THE APPLICATION LOADS THIS LIBRARY: Optimize, since 2026-09-19.**
-> The compose host binds it through `packages/kernel/src/mupdfRaw.ts` for
-> `mz_rewrite_images` and `mz_save_compacted`, where the launcher passed its path
-> ([ADR-0087](../../docs/DECISIONS/0087-optimize-is-mupdfs-native-image-rewriter-in-the-compose-host.md)).
-> **The document pipeline does not**: every MuPDF consumer in `packages/kernel`
-> imports the bare specifier `mupdf`, which resolves to the npm package's WASM
-> build. The decision to move the adapters here is taken (ADR-0010's correction
-> of 2026-09-08) and the migration is not built. This note is here because a
-> reader arriving at a seam described as mandated will otherwise assume the
-> whole pipeline runs through it.
+> **THE WHOLE DOCUMENT PIPELINE RUNS THROUGH THIS LIBRARY since 2026-09-30**
+> ([ADR-0124](../../docs/DECISIONS/0124-mupdfs-own-bindings-compiled-native-are-the-shims-abi.md)).
+> Beside the shim's own `mz_*` functions it carries MuPDF's own binding — the
+> flat-C `platform/wasm/lib/mupdf.c`, generated at build time by
+> `scripts/provision/mupdfGlue.mjs` and compiled with `monstera_glue_runtime.c`
+> and `monstera_emscripten.h` — and `packages/kernel/src/mupdfRaw.ts` runs MuPDF's
+> object model on it. Two of that binding's exports are withheld, for invariants
+> 23 and 24 (`WITHHELD` in the generator). Until that date only Optimize loaded it
+> ([ADR-0087](../../docs/DECISIONS/0087-optimize-is-mupdfs-native-image-rewriter-in-the-compose-host.md))
+> and the pipeline ran on the npm package's WASM build.
+>
+> The binding keeps this file's founding rule: each generated wrapper `setjmp`s
+> in its own frame and MuPDF's unwind ends there, so nothing crosses koffi's frames.
 
 ## Why a shim exists at all
 

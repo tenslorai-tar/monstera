@@ -52,6 +52,12 @@
 #include "mupdf/fitz.h"
 #include "mupdf/pdf.h"
 
+/* glibc's name for the size of an allocated block (ADR-0124: the shim builds on Linux too). The counter reads it the
+ * same way on the way in and on the way out, so the totals balance whichever the platform reports. */
+#ifndef _WIN32
+#define _msize malloc_usable_size
+#endif
+
 /*
  * ---------------------------------------------------------------------------
  * Allocator instrumentation

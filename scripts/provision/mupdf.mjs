@@ -251,6 +251,95 @@ export async function writeGlue(root) {
   return { path: destination, exports: generated.exports.map((each) => each.name) };
 }
 
+/**
+ * MuPDF's static libraries through its own Makefile, where there is no MSVC (ADR-0124: Linux builds the shim too, so
+ * the kernel's engine tests run natively on both CI legs). Position-independent, because they are linked into a
+ * shared object; the same document handlers disabled as on Windows, from the same list.
+ *
+ * @param {string} root
+ * @param {boolean} force
+ */
+async function buildMupdfUnix(root, force) {
+  const source = mupdfSourcePath(root);
+  const libraries = join(source, 'build', 'release');
+  if (!force && existsSync(join(libraries, 'libmupdf.a')) && existsSync(join(libraries, 'libmupdf-third.a'))) {
+    process.stderr.write(`  libmupdf.a already built\n`);
+    return;
+  }
+  const disabled = handlerDisableFlags().map((flag) => flag.replace(/^\/D/u, '-D')).join(' ');
+  const { availableParallelism } = await import('node:os');
+  process.stderr.write(`  building MuPDF ${MUPDF_VERSION} static libraries with make (several minutes)\n`);
+  const made = spawnSync(
+    'make',
+    [
+      '-C',
+      source,
+      `-j${String(availableParallelism())}`,
+      'build=release',
+      'HAVE_X11=no',
+      'HAVE_GLUT=no',
+      'HAVE_CURL=no',
+      `XCFLAGS=-fPIC ${disabled}`,
+      'XCXXFLAGS=-fPIC',
+      'libs',
+    ],
+    { stdio: 'inherit' },
+  );
+  if (made.status !== 0) throw new Error(`make exited ${String(made.status)} building MuPDF's libraries`);
+  for (const name of ['libmupdf.a', 'libmupdf-third.a']) {
+    if (!existsSync(join(libraries, name))) {
+      throw new Error(`make reported success but ${join(libraries, name)} does not exist.`);
+    }
+  }
+}
+
+/**
+ * The shim as a shared object: the shim, MuPDF's generated binding and its runtime, linked against the static
+ * libraries. `--no-undefined` makes an unresolved symbol a link error rather than a load failure on first use.
+ *
+ * @param {string} root
+ */
+async function buildShimUnix(root) {
+  const glue = await writeGlue(root);
+  const source = mupdfSourcePath(root);
+  const shim = join(root, 'native', 'mupdf-shim');
+  const out = shimLibraryPath(root);
+  await mkdir(dirname(out), { recursive: true });
+  const compiled = spawnSync(
+    'cc',
+    [
+      '-shared',
+      '-fPIC',
+      '-O2',
+      '-D_FORTIFY_SOURCE=2',
+      '-fstack-protector-strong',
+      '-I',
+      join(source, 'include'),
+      '-I',
+      shim,
+      join(shim, 'monstera_mupdf.c'),
+      join(shim, 'monstera_glue_runtime.c'),
+      glue.path,
+      '-L',
+      join(source, 'build', 'release'),
+      '-lmupdf',
+      '-lmupdf-third',
+      '-lstdc++',
+      '-lm',
+      '-lpthread',
+      '-Wl,--no-undefined',
+      '-Wl,--exclude-libs,ALL',
+      '-Wl,-z,relro,-z,now',
+      '-o',
+      out,
+    ],
+    { stdio: 'inherit' },
+  );
+  if (compiled.status !== 0) throw new Error(`cc exited ${String(compiled.status)} linking the shim`);
+  if (!existsSync(out)) throw new Error(`cc reported success but ${out} does not exist.`);
+  return out;
+}
+
 /** @param {string} root */
 async function buildShim(root) {
   const project = join(root, 'native', 'mupdf-shim', 'monstera_mupdf.vcxproj');
@@ -305,10 +394,19 @@ export async function verifyExports(root, dll) {
     }
   }
 
-  const tool = dumpbin();
+  const tool = process.platform === 'win32' ? dumpbin() : null;
   /** @type {Set<string>} */
   const exported = new Set();
-  if (tool !== null) {
+  if (process.platform !== 'win32') {
+    // The shared object's dynamic symbol table — what a loader can find, which is the table that matters.
+    const probe = spawnSync('nm', ['-D', '--defined-only', dll], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+    if (probe.error === undefined && probe.status === 0) {
+      for (const match of `${probe.stdout}`.matchAll(/\b((?:mz|mzg|wasm)_\w+)\b/g)) {
+        const name = match[1];
+        if (name !== undefined) exported.add(name);
+      }
+    }
+  } else if (tool !== null) {
     const probe = spawnSync(tool.command, ['/exports', dll], {
       encoding: 'utf8',
       env: tool.env,
@@ -357,14 +455,6 @@ async function main() {
   const checkOnly = process.argv.includes('--check');
   const root = repoRoot();
 
-  if (process.platform !== 'win32') {
-    process.stderr.write(
-      `\nmupdf.mjs builds through MuPDF's MSVC solution and is Windows-only today.\n` +
-        `Other platforms need MuPDF's Makefile; that is not yet written (ADR-0010).\n`,
-    );
-    return 0;
-  }
-
   if (checkOnly) {
     const dll = shimLibraryPath(root);
     const present = await fileExists(dll);
@@ -375,8 +465,10 @@ async function main() {
   process.stderr.write(`\nProvisioning MuPDF ${MUPDF_VERSION} and the native shim\n`);
 
   await fetchSource(root, force);
-  if (!process.argv.includes('--skip-mupdf')) await buildMupdf(root, force);
-  const dll = await buildShim(root);
+  // Windows builds through MuPDF's MSVC solution; everything else through its Makefile (ADR-0124).
+  const windows = process.platform === 'win32';
+  if (!process.argv.includes('--skip-mupdf')) await (windows ? buildMupdf(root, force) : buildMupdfUnix(root, force));
+  const dll = windows ? await buildShim(root) : await buildShimUnix(root);
   await verifyExports(root, dll);
 
   // Record what this DLL was built from, AFTER it linked and passed its export

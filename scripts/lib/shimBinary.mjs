@@ -39,6 +39,12 @@ import { digestInputs } from './verdict.mjs';
 const SHIM_SOURCES = [
   'native/mupdf-shim/monstera_mupdf.c',
   'native/mupdf-shim/monstera_mupdf.vcxproj',
+  // MuPDF's own binding and what it is compiled with (ADR-0124): the runtime, the header that replaces emscripten's,
+  // the generator that writes the binding, and the script whose flags build it on each platform.
+  'native/mupdf-shim/monstera_glue_runtime.c',
+  'native/mupdf-shim/monstera_emscripten.h',
+  'scripts/provision/mupdfGlue.mjs',
+  'scripts/provision/mupdf.mjs',
 ];
 
 /**

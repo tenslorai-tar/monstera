@@ -138,6 +138,23 @@ jobs:
       - name: Provision the pinned Electron runtime
         run: node scripts/ci/annotate.mjs scripts/provision/electron.mjs
 
+      # THE KERNEL'S ENGINE, on BOTH legs (ADR-0124, and the owner's answer of
+      # 2026-09-30: the shim is built on Linux too). The document pipeline runs
+      # on the native library, so every unit test and in-process proof that
+      # touches a document needs it; a leg without it would report every engine
+      # case as "not bound" rather than test anything. Windows builds through
+      # MuPDF's MSVC solution, Linux through its Makefile, into the same
+      # `.tools/mupdf` tree, keyed per platform so each leg shares its entry
+      # with the other job on its platform.
+      - name: Cache the MuPDF build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/mupdf
+          key: mupdf-${{ runner.os }}-1.28.0-${{ hashFiles('scripts/provision/mupdf.mjs', 'scripts/provision/mupdfGlue.mjs') }}
+
+      - name: Provision MuPDF and build the shim
+        run: node scripts/ci/annotate.mjs scripts/provision/mupdf.mjs
+
       # Build precedes the proofs that resolve compiled output: the boundary
       # proof lints imports of `@monstera/*`, which resolve through each
       # package's exports map to dist.
@@ -877,7 +894,8 @@ jobs:
       - name: Prove the test suite itself triggered no download
         run: node scripts/ci/annotate.mjs scripts/proofs/electronImports.proof.mjs
 
-  # The native seam, on the only platform that can build it today.
+  # The native seam's Windows-only proofs. The shim itself builds on both
+  # platforms since ADR-0124; what stays here is what only Windows can prove.
   #
   # This job exists because ADR-0010's measurements were produced in a scratch
   # directory that no longer exists, so the decision the whole document pipeline
@@ -892,9 +910,9 @@ jobs:
   # claim costs one runner and a few minutes. If this row is ever judged too
   # expensive, narrow the claim in the same commit that deletes it.
   #
-  # The JS-only half deliberately: install, typecheck, lint, tests. No native
-  # build — the shim is a Windows toolchain matter and not what the floor claim
-  # is about — and no proofs that need a provisioned engine. ubuntu because the
+  # Install, typecheck, lint, tests — and, since ADR-0124, the shim: the
+  # document pipeline's engine is native, so the tests need it built here too.
+  # No proofs that need a provisioned engine beyond that. ubuntu because the
   # question is "does this Node run our JavaScript", which is not a platform
   # question, and one runner is the price.
   #
@@ -969,6 +987,17 @@ jobs:
             exit 1
           fi
 
+      # THE KERNEL'S ENGINE (ADR-0124): this job runs the unit tests, and the
+      # document pipeline's are native. Same key as the Linux matrix leg's.
+      - name: Cache the MuPDF build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/mupdf
+          key: mupdf-${{ runner.os }}-1.28.0-${{ hashFiles('scripts/provision/mupdf.mjs', 'scripts/provision/mupdfGlue.mjs') }}
+
+      - name: Provision MuPDF and build the shim
+        run: node scripts/provision/mupdf.mjs
+
       # The same `build` the matrix job runs. This job exists to prove the
       # declared Node floor can do everything the toolchain asks of it, and
       # bundling the preload is now part of that — a floor that typechecks but
@@ -1033,7 +1062,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .tools/mupdf
-          key: mupdf-windows-latest-1.28.0-${{ hashFiles('scripts/provision/mupdf.mjs') }}
+          key: mupdf-${{ runner.os }}-1.28.0-${{ hashFiles('scripts/provision/mupdf.mjs', 'scripts/provision/mupdfGlue.mjs') }}
 
       # THIS JOB IS THE ONLY PLACE THE ENGINE HOST CAN BE PROVEN, and until now
       # it could not run one (finding RR-1).

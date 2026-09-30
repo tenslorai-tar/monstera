@@ -1294,7 +1294,9 @@ export class Buffer extends Userdata<"fz_buffer"> {
 		else if (arg instanceof ArrayBuffer || arg instanceof Uint8Array) {
 			let data_len = arg.byteLength
 			let data_ptr = Malloc<"char">(data_len)
-			memory.writeU8(data_ptr, new Uint8Array(arg))
+			/* MONSTERA: written from the caller's array as it is. Upstream's `new Uint8Array(arg)` COPIES a Uint8Array
+			 * before the write — a whole document's bytes, twice, for the length of the open. */
+			memory.writeU8(data_ptr, arg instanceof Uint8Array ? arg : new Uint8Array(arg))
 			super(libmupdf._wasm_new_buffer_from_data(data_ptr, data_len))
 		}
 	}

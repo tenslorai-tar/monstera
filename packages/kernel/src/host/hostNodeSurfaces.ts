@@ -72,7 +72,16 @@ export function hostPipeStream(pipeName: string): HostByteStream {
  * already answers (B3a).
  */
 export const hostFilesystem: HostFilesystem = {
-  readSnapshot: async (directory, name) => new Uint8Array(await readFile(join(directory, name))),
+  // A VIEW over the Buffer `readFile` allocated for this file, where that Buffer owns its whole ArrayBuffer — never
+  // `new Uint8Array(buffer)` unconditionally, which COPIES a whole document's bytes for the length of the open
+  // (measured 2026-09-30: 210 MB of the 200 MB scan's peak). A Buffer that is a window onto a larger ArrayBuffer — a
+  // pooled allocation — is copied instead, so what is returned always owns exactly what it spans, as a `ByteImage`
+  // must: its `.buffer` is the document and nothing else.
+  readSnapshot: async (directory, name) => {
+    const bytes = await readFile(join(directory, name));
+    const owns = bytes.byteOffset === 0 && bytes.buffer.byteLength === bytes.byteLength;
+    return owns ? new Uint8Array(bytes.buffer) : new Uint8Array(bytes);
+  },
   writeOutput: async (directory, name, bytes) => {
     await writeFile(join(directory, name), bytes);
     return bytes.length;

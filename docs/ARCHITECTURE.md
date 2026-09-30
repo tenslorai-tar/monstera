@@ -617,108 +617,52 @@ never by spawning `mutool`. `DocumentService` holds a **document handle** across
 mutations, which is the difference between a mutation costing 0.004 ms and
 costing seconds ([ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md)).
 
-**HOW it is reached is DECIDED — native, koffi — and NOT YET BUILT. This
-paragraph asserted the built state until 2026-09-08.** It read *"MuPDF is
-reached natively, as a shared
-library built from source and bound with koffi behind a thin flat-C shim —
-never as WASM"*. Measured: every MuPDF consumer in `packages/kernel` imports the
-bare specifier `mupdf`, which resolves to the npm package's
-`dist/mupdf-wasm.wasm`; **thirty-two non-test modules do so (2026-09-21), and a search for
-`monstera_mupdf` across `packages/` and `apps/` returns zero.** The shim is
-built, is scanned by four security proofs, and was loaded by nothing the product
-runs **until 2026-09-19, when Optimize became its one consumer**: the compose host
-binds it through `mupdfRaw.ts` for `pdf_rewrite_images`, where the launcher passed
-its path, and never in `main`
-([ADR-0087](DECISIONS/0087-optimize-is-mupdfs-native-image-rewriter-in-the-compose-host.md)).
-The document pipeline — every module counted above — still reaches the WASM build.
-
-The clause about the held handle stayed true throughout, which is why the
-sentence survived review: a compound claim whose live half vouches for its dead
-one. So did *never by spawning `mutool`*.
-
-ADR-0010's decision — native FFI, WASM withdrawn — was **not** withdrawn by that
-correction; what it recorded is that the decision was **unbuilt** for the
-document pipeline.
-
-**THE DECISION IS TAKEN, 2026-09-08: native, both engines, koffi.** The kernel's
-adapters move onto `mupdfRaw.ts`; the rejected option was amending ADR-0010 to
-the WASM reach the product has, with the 2 GB cap and the whole-file copy
-re-entered as live constraints
+**HOW it is reached: natively, through koffi — BUILT 2026-09-30**
+([ADR-0124](DECISIONS/0124-mupdfs-own-bindings-compiled-native-are-the-shims-abi.md)).
+The decision was taken on 2026-09-08 — native, both engines, koffi — against the
+WASM reach the product then had, with its 2 GB cap and whole-file copy
 ([ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md), corrected that
 date, which carries the founding-record clauses the ruling was taken against).
 
-**The migration is not done, and this paragraph will be false in the other
-direction until it is.** §9.17's budgets were read against the WASM route, and
-the four security proofs that scan `monstera_mupdf.dll` move with the adapters.
-Until that lands, the engine the product *reaches* is still the npm package —
-which is what the measurement above says and what a reader must not infer their
-way past.
+What was built is MuPDF's own binding rather than a second one. The kernel's MuPDF
+calls are the object model of MuPDF's `platform/wasm/lib/mupdf.ts`, written over
+the flat-C exports of `mupdf.c` in the same source tree — the npm package is built
+from exactly those two files. That C is generated into `monstera_mupdf`
+(`scripts/provision/mupdfGlue.mjs`), with a wrapper per export that ends MuPDF's
+unwind inside the DLL, and the object model runs in `mupdfRaw.ts` with memory
+reached through the shim's accessors. Two exports are withheld: MuPDF's
+JavaScript switch (invariant 24) and its format-string writer dispatcher
+(invariant 23). **No kernel module imports the WASM package**
+(`npm run proof:enginesurface`: 0 importers, every one of the 539 exports the
+object model calls present in the DLL), and it is not in what ships. The shim
+builds on Windows through MuPDF's MSVC solution and on Linux through its
+Makefile, so the kernel's engine tests run natively on both CI legs.
 
-**AND ITS SIZE IS NOT THE IMPORT COUNT, measured 2026-09-09, re-measured
-2026-09-11, 2026-09-13, 2026-09-14, 2026-09-19 and again 2026-09-21** (ADR-0010's correction of the first
-date; `npm run proof:enginesurface`). The thirty-two modules call **135 distinct MuPDF
-members**, of which `PDFAnnotation` declares 41, `PDFObject` 23, `PDFDocument` 20
-and `PDFWidget` 15 — an object model. The shim exports **24** C functions and
-hands back an opaque handle by design, so most of the 135 have nothing to move
-onto and must be written behind an ABI that does not exist yet. Only **eleven** of
-the thirty-two load an engine at all; the other twenty-one spell `import type`,
-are erased by the compiler, and operate on handles those eleven opened. So
-changing the engine changes every one of the thirty-two **bodies** and not one of
-their first lines — the count that reads like the work is a count of the thing
-that does not have to change.
-
-**THE FIGURES MOVED UP AND THE DOCUMENTS DID NOT, 2026-09-11** (finding
-FFFFFF-3's sibling, FFFFFF-4). They read 19 modules, 4 loading, 15 type-only and
-117 members — the 2026-09-09 reading — while Stage 6 added five kernel modules
-that import the engine. Nothing was wrong when written and no commit in between
-opened this paragraph, which is item 7's hole; what makes it worth a sentence
-rather than a silent edit is the **direction**. A migration's size is read as a
-debt being paid down, so a figure that grew while a stage was built on the engine
-is the one a reader will not think to re-run. Re-run it: the command is one line
-and prints the whole table. **It moved again twice**: to 28 and 8 by 2026-09-13
-(GGGGGG-14), and to 30 and 10 by 2026-09-14 (HHHHHH-12), when `pageScan.ts` and
-`pageImages.ts` arrived as value imports. Neither time did the commit reopen this
-paragraph.
-
-**This does not gate Stage 5's editing rows**, and that is written here because
-the opposite was assumed. Those rows are PDFium's by `BUILD-PROMPT.md`:257;
-PDFium's API is already flat C, needs no shim, is provisioned, and is bound by
-koffi in research today. They sit behind `pdfiumFfi.ts` and the second engine
-host, not behind this migration.
+The library is bound where its path is known and never in `main`: each engine
+host takes it as its second argument from the native-components resolver
+(ADR-0122), tests take it from `vitest.config.mjs`, and scripts from
+`scripts/lib/nativeEngine.mjs` — all three through `shimPath`, the one resolver.
 
 **WHERE that engine is instantiated is a separate question, and it is answered:
 the contained host, never `main`.** Measured 2026-09-08 by an observed run
-(`scripts/research/engineReach.mjs`, the JOURNAL that date), not read off the
-module graph, because the barrel is *written* to keep the engine out of its
-importers and whether that holds today is a fact about a running process.
-Importing `packages/kernel/dist/index.js` — the specifier `apps/desktop` uses —
-loads 318 modules, none of them MuPDF's, and instantiates no WebAssembly.
-Importing `packages/kernel/dist/host/hostEntry.js` loads `mupdf.js` and
-`mupdf-wasm.js` and instantiates 10,408,550 bytes. Both controls separated on
-the same run.
+(`scripts/research/engineReach.mjs`, the JOURNAL that date), when the engine was
+WASM: importing `packages/kernel/dist/index.js` — the specifier `apps/desktop`
+uses — loaded no MuPDF, and importing the host's entry did. Since ADR-0124 the
+host's entry binds the native library at its start, and what keeps it out of
+`main` is ADR-0026's barrel discipline, guarded by `proof:kernelload`: the barrel
+does not reach `mupdfRaw.ts`, so importing the kernel from `main` loads no native
+binding. **Invariant 25's containment covers the process the document is parsed
+in**, and with a native engine invariant 20's letter — native code stays out of
+`main` — now describes it exactly, where under WASM it was a proxy the product
+had stepped outside of.
 
-So **invariant 25's containment covers the process the document is parsed in**,
-with a WASM engine rather than the native one ADR-0022 was written against.
-Invariant 20's letter does not reach this: it keeps *native code* out of `main`,
-and a WASM engine is not refused by that wording — what actually holds the line
-is ADR-0026's barrel discipline and placement, guarded statically by
-`proof:kernelload` and now confirmed by a run.
-
-Two consequences a reader needs. The reach decision above is therefore **not a
-containment decision** — it holds under either answer, so it must be taken on
-which engine this project wants to own rather than on security. And the gap in
-invariant 20's *wording* is real even though nothing exploits it today: the
-invariant is about where a document is parsed, and *native* is a proxy for that
-which the product has already stepped outside of.
-
-**One consequence is already closed.** Invariant 24's mechanism —
-`proof:activecontent` — scanned only `monstera_mupdf.dll`, so it was reading a
-binary the shipped pipeline never opens. It now scans **the engine the
-application's own import resolves to** as well, with its target derived from
-that resolution rather than written down, and with both controls. The answer is
-the same on both: no MuJS. That the answer did not change is the reason it is
-recorded rather than quietly fixed — the mechanism would have read exactly as it
-did if the answer had been the opposite.
+**Invariant 24's mechanism reads the engine the application loads.**
+`proof:activecontent` scans the native library the launcher hands the
+application, with its target derived from `shimPath` rather than written down,
+and with both controls: no MuJS, because MuPDF's JavaScript switch is the one
+export the build withholds. Until ADR-0124 the same scan read the WASM engine the
+kernel's import resolved to; the answer was the same, and the principle — derive
+the target the way the application does — is why it moved.
 
 Violating that breeds two specific pathologies, both banned at the root here:
 **sidecar hacks** (data smuggled through unrelated PDF fields so the writer's

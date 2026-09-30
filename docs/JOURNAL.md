@@ -892,6 +892,47 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-30 — The native engine (ADR-0124), and the installed app's containment measured
+
+**Item 1, the owner's install of MSIX 0.1.1.0.** Every document was refused at the host's startup check
+(*containment-absent*). Measured with `packagedHostToken.mjs` through `Invoke-CommandInDesktopPackage`, no install
+and no elevation: a packaged `main` mints the host's moniker as a **child container of the package**, whose token
+carries the package's capability SID — the one principal MSIX grants on the install root and the whole data folder.
+All six monikers alike; a deny ACE does not take it back; a folder the package does not own refuses the child. ADR-0023
+corrected (the 2026-09-09 *"dies before its first line"* withdrawn). The route that separates install root from data is
+the owner's: unvirtualized AppData is closed to a Store app by Microsoft's own documentation (games only), so by the
+owner's condition neither it nor the copy route was built. *Reveal diagnostics log* now hands File Explorer the
+folder's final path (`realpathSync.native`), measured inside the package.
+
+**Item 2, native MuPDF.** The kernel's 140 MuPDF members turned out to be the object model of MuPDF's own
+`platform/wasm/lib/mupdf.ts`, over the 319 flat-C exports of `mupdf.c` in the same tree — the npm package is built
+from those two files. So ADR-0124 compiles that C into the shim and runs that object model on it, rather than writing
+a second binding. What the build found, in the order it found it:
+
+1. **The unwind.** `wasm_rethrow` throws through the WebAssembly stack; native it would return into C that uses unset
+   results. A generated `setjmp` wrapper per export ends it inside the DLL.
+2. **About 170 exports are defined by macros**, several around throwing calls; the first generator saw only `EXPORT` at
+   the start of a line, and a warning (`size_t` to `int` in a macro's body) is what showed the rest.
+3. **`ptr >> 2` truncates**: koffi hands an address back as an exact number, measured at 1.24 × 10¹², so every heap
+   view goes through the shim's accessors. A `size_t` out-parameter is eight bytes native and was four in WASM.
+4. **`getPixels` must stay a view**: Enhance and the scan straightener write into it; a copy reddened their tests.
+5. **Two exports withheld.** Once the scans could see the generated glue, `proof:activecontent` found MuJS linked back
+   in (`wasm_pdf_enable_js`, invariant 24) and `check:pathdispatch` found the writer's format-string dispatcher
+   (`wasm_new_document_writer_with_buffer`, invariant 23). Both were blind to the glue until pointed at it — the
+   generated file is not in the commit — which is item 4b's *where it looks* axis again.
+6. **`new Uint8Array(x)` copies a typed array**, twice on the document's own path: in the object model's `Buffer`
+   (upstream's line) and in the host's snapshot read. 929 MB → 720 MB → 508 MB on the 200 MB scan.
+
+`proof:enginesurface`: 33 WASM importers and 140 members before; **0 and 0 after**, 539 exports called and none missing
+from the DLL's 588. The live run in `npm start` through the real contained host — redaction, OCR of a scanned page, a
+highlight, a watermark, save, exit and reopen — was read back by Poppler and pdf-lib. **Row 302 still fails 1.5×, now
+by construction**: `main` holds one copy for range reads and a host that opens from bytes holds MuPDF's, so steady is
+at least 2×; the remedy is a file-backed copy and is the owner's. **Row 361's window is not empty** (90–108.5 MB; the
+WASM engine re-entering costs 24 MB and 128 misses it); the amendment waits for CI's native sample. The npm package
+leaves what ships: **13.1 MB net**. Linux builds through MuPDF's Makefile and has not run yet — CI is its first run.
+
+---
+
 ## 2026-09-30 — Stage audit of `0cc33126..4af180ff` — findings XXXXXX-1 to XXXXXX-8
 
 Owed at one batch of files (200, 31 commits). The range is the 28 September afternoon list: the Organize grid fix,

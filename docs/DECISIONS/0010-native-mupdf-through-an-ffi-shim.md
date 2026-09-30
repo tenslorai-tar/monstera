@@ -557,3 +557,11 @@ migration: no document-pipeline adapter moved, the thirty-one modules still reac
 the WASM build, and `mupdfRaw.ts` binds the five exports Optimize calls and no more.
 What it does change is that the four security proofs scanning the DLL now read a
 binary the product loads.
+
+## Note, 2026-09-30 — built
+
+The migration this ADR's 2026-09-08 correction decided is built
+([ADR-0124](0124-mupdfs-own-bindings-compiled-native-are-the-shims-abi.md)): MuPDF's
+own binding is generated into the shim and its object model runs in `mupdfRaw.ts`,
+so no kernel module imports the WASM package and it is not in what ships. The
+decision recorded here stands as written; ADR-0124 is how it was built.

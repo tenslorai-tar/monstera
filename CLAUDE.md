@@ -310,100 +310,40 @@ is wrong** — fix the boundary, not the test.
   finds MuPDF's strings and one proving it finds the interpreter in a binary
   that links it.
 
-  **AND UNTIL 2026-09-08 IT SCANNED THE WRONG ARTEFACT.** This line said *"scans
-  the shipped binary"*, and that binary was `monstera_mupdf.dll` — which the
-  document pipeline does not load. Every MuPDF consumer in `packages/kernel` imports
-  the bare specifier `mupdf`, resolving to the npm package's WASM build:
-  thirty-two non-test modules (2026-09-21), against zero references to `monstera_mupdf`
-  anywhere under `packages/` or `apps/` until that date. So the mechanism this paragraph
-  offers as the invariant's evidence was reading a file the document pipeline never opens.
+  **AND FROM 2026-09-08 TO 2026-09-30 IT SCANNED THE WRONG ARTEFACT, THEN THE
+  RIGHT ONE, AND NOW THE TWO ARE ONE FILE.** This line once said *"scans the
+  shipped binary"*, and that binary was `monstera_mupdf.dll` — which the document
+  pipeline did not load: every kernel consumer imported the bare specifier
+  `mupdf`, the npm package's WASM build. The scan could see, its controls passed,
+  and its answer was correct about the artefact it read — which is the
+  transferable part: **a positive control proves an instrument can see the file it
+  was given; it can never say that file is the subject.** Only deriving the target
+  the way the application does can, and that is what the scan has done since.
 
-  **Since 2026-09-19 one thing does load it: Optimize, in the compose host, through
-  `mupdfRaw.ts`** ([ADR-0087](docs/DECISIONS/0087-optimize-is-mupdfs-native-image-rewriter-in-the-compose-host.md)),
-  on runs whose launcher passed its path — never a packaged build yet. So the scan now
-  reads both engines the product loads, and the document pipeline is still WASM.
+  **THE ENGINE IS NATIVE SINCE 2026-09-30**
+  ([ADR-0124](docs/DECISIONS/0124-mupdfs-own-bindings-compiled-native-are-the-shims-abi.md)),
+  the decision of 2026-09-08 — native, both engines, koffi — built. The kernel's
+  MuPDF calls turned out to be MuPDF's own `platform/wasm/lib/mupdf.ts`, over the
+  flat-C `mupdf.c` beside it, so that C is generated into the shim and that object
+  model runs in `mupdfRaw.ts`; no kernel module imports the WASM package, and it
+  is not in what ships. Two exports are withheld, and both were found only once the
+  scans could see the generated glue — it is not in the commit, so a scan of
+  committed files was blind to it: MuPDF's JavaScript switch (invariant 24, MuJS
+  back in the DLL) and its format-string writer dispatcher (invariant 23). **A
+  generated file is shipped code; a scan whose root is the commit does not see it.**
 
-  Nothing about it looked wrong, and that is the transferable part: **a positive
-  control proves an instrument can see the file it was given; it can never say
-  that file is the subject.** The scan could see, its controls passed, its
-  needles were right, and its answer was correct about the artefact it read.
+  **Its size was never the import count, and the figure grew for weeks unseen.**
+  Thirty-two import statements were one line each; what moved was an object model
+  of 135 members, because twenty-one of the thirty-two were type-only and worked on
+  handles eleven opened. *Ask what a count is a count of before it becomes a size.*
+  And the figure rose five times across Stages 6 to 9 while no commit reopened it —
+  a migration's size reads as a debt coming down, so the reading that grows is the
+  one nobody re-runs. `npm run proof:enginesurface` is one command and prints it.
 
-  The scan now also reads the engine the application's own import **resolves
-  to** — derived from that resolution rather than written down, so it cannot
-  drift off the subject in silence — and the answer is the same on both. *Be
-  equally suspicious of things that work*: a mechanism that covered nothing for
-  weeks would have read exactly as it does now had the answer been the opposite.
-
-  **`docs/ARCHITECTURE.md` §3's own claim that MuPDF is reached natively was
-  false in the same way** and is corrected there. ADR-0010 was not withdrawn —
-  it was **unbuilt**, and the reach was recorded as an open decision.
-
-  **THAT DECISION IS TAKEN, 2026-09-08: native, both engines, koffi.** The
-  kernel's adapters move onto `mupdfRaw.ts`; the rejected option was amending
-  ADR-0010 to the WASM reach the product has, with the 2 GB cap and the
-  whole-file copy re-entered as live constraints. Taken against the founding
-  record rather than by preference — `BUILD-PROMPT.md`:115-117 names
-  `mupdfRaw.ts` **and** `pdfiumFfi.ts` as the two native-boundary adapters,
-  :203 draws `pdfiumHost` as *"PDFium via koffi FFI"*, :399 provisions
-  `pdfium.dll`, and :257 assigns in-place text editing to PDFium in both
-  columns. **The migration is not done**: thirty-two non-test kernel modules
-  still import the bare specifier, and §9.17's budgets and the four proofs that
-  scan `monstera_mupdf.dll` move with them.
-
-  **AND THAT COUNT IS NOT ITS SIZE — that sentence was written as what is NOT yet
-  settled, and was then read as the estimate.** Measured 2026-09-09, re-measured
-  2026-09-11, 2026-09-13, 2026-09-14, 2026-09-19 and again 2026-09-21 (`npm run proof:enginesurface`): those
-  modules call **135 distinct MuPDF members**, of which `PDFAnnotation` declares 41,
-  `PDFObject` 23, `PDFDocument` 20 and `PDFWidget` 15 — an object model the shim's
-  **24** exports do not represent, because it hands back an opaque handle on
-  purpose. Only **eleven** of the thirty-two load an engine; the other twenty-one spell
-  `import type`, are erased by the compiler, and work on handles those eleven opened. **A count of import statements measured the thing that does not have to
-  change**, and the shape it produced — one line each — is the wrong shape by an
-  order of magnitude. Ask what a count is a count *of* before it becomes a size.
-
-  **THE FIGURES WENT UP, AND EVERY ONE OF THEM SAID 19/4/15/117 UNTIL 2026-09-11**
-  (finding FFFFFF-4). Stage 6 added five kernel modules that import the engine and
-  no commit among them opened this file or `docs/ARCHITECTURE.md`. The transferable
-  part is the direction: a migration's size reads as a debt coming down, so a
-  figure that **grew** while a whole stage was built on the engine is the one
-  nobody re-runs. It is one command and it prints the table.
-
-  **AND THEY WENT UP AGAIN, 24/7/17/125 → 28/8/20/132 by 2026-09-13** (finding
-  GGGGGG-14): four more importers arrived across Stage 7 and the OCR rows, and
-  again no commit reopened the figure. Twice is the rule, not the exception — re-run
-  it in any range that adds a module importing `mupdf`.
-
-  **AND A THIRD TIME, 28/8 → 30/10 by 2026-09-14** (finding HHHHHH-12): `pageScan.ts`
-  and `pageImages.ts` arrived as value imports in D9 and D10, with the sentence above
-  already on the page, and neither commit reopened it. The members stayed at 132,
-  because both call methods the kernel already reached. The sentence did not stop the
-  third occurrence either, so the re-run belongs to the audit: `audit:scope` names
-  every added kernel module, and this measurement is part of item 7.
-
-  **AND A FOURTH, 30 → 32 → 31 by 2026-09-19** (finding LLLLLL-1): `accessibilityCheck.ts`
-  and `annotationInterchange.ts` arrived as type-only importers inside `fcee46e..e08a99f`,
-  whose audit had this measurement in its own item 7 and did not run it; the removed
-  handwriting artefacts module took one away in the next range. **Making the re-run part
-  of the audit did not make the audit run it** — the same shape one layer up. The member
-  count held at 132 and the value imports at ten, which is why nothing downstream moved.
-
-  **AND A FIFTH, 31/10/132 → 32/11/135 on 2026-09-21**: `pageFills.ts` arrived as a VALUE
-  importer — a tracing device's fills, `ColorSpace`'s three type tests, a stroke-less
-  `Path.getBounds` — and the commit that added it re-ran the measurement, which is the
-  first time in five that the adding commit reopened the figure rather than an audit.
-
-  **It does not gate Stage 5's editing rows either.** Those are PDFium's by
-  :257; PDFium's API is flat C, needs no shim, is provisioned, and koffi binds
-  it in research today — so they sit behind `pdfiumFfi.ts` and the second host.
-
-  **WHERE that engine loads is a different question and it is answered: the
-  contained host, never `main`** (§3, 2026-09-08, measured by an observed run —
-  `scripts/research/engineReach.mjs`). So the reach decision is **not** a
-  containment decision, and invariant 25 covers the process the document is
-  parsed in. What holds `main` clear is ADR-0026's barrel discipline, guarded by
-  `proof:kernelload`; **invariant 20's letter does not**, because it names
-  *native code* and this engine is WASM. A gap in the wording, not a breach —
-  and the same shape that let content generation through in Stage 2.
+  **WHERE the engine loads is the contained host, never `main`** (§3; measured by
+  an observed run on 2026-09-08, `scripts/research/engineReach.mjs`), held by
+  ADR-0026's barrel discipline and `proof:kernelload`. With a native engine,
+  invariant 20's letter — native code stays out of `main` — now says exactly that.
 - **An engine host contains a compromise, not only a crash.** Lowest workable
   integrity level, job object limits, no network, no filesystem beyond what it
   was handed (invariant 25). **All four now have a mechanism, and two of them
