@@ -892,6 +892,102 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-30 — Stage audit of `4af180ff..ba129226` — findings YYYYYY-1 to YYYYYY-9
+
+Owed at one batch of files: decision C's commit would have taken the unaudited range to 209 files against 200, and
+the pre-commit gate refused it, which is what it is for. The range is 33 commits: the last audit's record and its
+repairs, the installed app's containment (ADR-0023 Decisions 16 and 17, route D), the native engine (ADR-0124), MSIX
+0.1.5.0 and 0.1.6.0, ADR-0125 (answers and undo's pair in files, and the route check), the converters measured on
+heavy inputs, and decisions A (a file shared to view) and B (ADR-0126, inline pictures). The 43 modified proofs were
+read diff by diff, and the ones with deletions hidden inside the range by `git log -p`.
+
+### 1. Root cause or workaround?
+
+Each fix states a mechanism. The one workaround is B's, and it meets Rule 0's test: the cause is outside the
+repository — PDFium's `ProcessImage` returns early for an inline image — and ADR-0126 names it and why rewriting the
+picture as an XObject first is the right response. A capture that answers `answer-too-large` being treated as a
+checkpoint (`priorTooLargeToRecord`) reads like a swallowed failure and is not one: it is the bus's declared answer
+for a prior it cannot record, the same one it gives a `/Rotate` it cannot read.
+
+### 2. Verified against the easy shape only?
+
+Once, and it cost rows. **YYYYYY-5**: row 220 closed `.xlsx` import on a one-sentence workbook, converted in 1.1 s.
+The hard shapes were a long sheet and a second sheet: x2t stops at 1,500 pages and prints only the active sheet, both
+in silence — every multi-sheet workbook imported without its other sheets. Found by measuring the converters on heavy
+inputs (`3da8285d`), not by any check; closed by decision C, the commit after this one.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Twice, both when the engine went native (`68937ab7`). **YYYYYY-1**: `mupdfWriter.test.ts`' control used to show that
+the engine's own buffer was a heap view; it now builds a synthetic subarray, which proves a fact about JavaScript, and
+the case that asserts the writer's answer owns its buffer passes whether or not `copiedOut` copies — because the
+native binding now copies (`mupdfRaw.ts`, `memory.readU8`). So `copiedOut` makes a SECOND whole copy of the document
+on every serialise, guarded by nothing, under a present-tense comment saying *"`asUint8Array()` IS A VIEW INTO THE
+WASM HEAP"*, which has been false since ADR-0124. **YYYYYY-2**: `shimBinary.proof.mjs`' control changed from *ends
+with `monstera_mupdf.dll`* to *equals `shimPath(clean)`* when the fixture moved to Linux (`c7de2e59`) — the resolver
+compared with itself, so no case pins the file name the build produces on either platform.
+
+### 3. Would CI have caught it?
+
+**The board at the last pushed commit, `7dce114c`, is RED** — read with `npm run board`, not recalled: five jobs,
+at the stale-shim refusal (ubuntu Guards), the build-staleness guard (windows Guards), the engine host's fixed cost
+(the shim job) and NOTICE's dependency half on a case-sensitive filesystem (both typecheck legs). `c7de2e59` is the
+repair written for them, and it has never run in CI: everything after `7dce114c` is unpushed by the owner's order and
+goes out with the one push at the end of the 30 September list, so whether it repairs them is that push's board to
+answer, not this record's. The new checks are CI's:
+`hostRoutes.test.ts` in the suite, `proof:inlineimages` required on Windows, `proof:hostfileanswers` with
+`--require-containment`. What no CI can reach is recorded as such: the packaged install (`packagedHostToken.mjs`, run
+through `Invoke-CommandInDesktopPackage`) and x2t on heavy inputs (x2t is provisioned on no runner).
+
+### 4. Are the proofs non-vacuous?
+
+The deletions are corrections or moves, each checked at its destination: `payloadBounds.test.ts`' 38 lines are the
+`unboundedMembers` helper moving to `schemaBound.ts` with its fixture control, the L11 sweep still running over every
+channel; `engineHostPrograms.test.ts`' removed case is a state the type now refuses; `pdfiumHostBody.test.ts` asserts
+the same payload from the answer file and the frame exactly; `hostBody.test.ts` and `client.test.ts`' hidden deletion
+are harness lines. The thirty kernel tests changed by one line swap the WASM import for the native binding, so they
+now exercise the engine that ships. Beside YYYYYY-1 and -2: **YYYYYY-3**: `shimReach.mjs`' `glueRoots` answers an
+empty list, with no word, when the upstream `mupdf.c` is absent, and the proof checks only that `tessocr.h` exists — so
+a partial source tree measures from the shim's own exports and reports the reassuring answer. **YYYYYY-4**:
+`hostRoutes.test.ts` pins which CHANNELS may outgrow a frame, not which members; its header's claim that an unbounded
+text field *"cannot hide behind an entry written for page lists"* holds for the command union and not for a field
+beside it in those channels' params.
+
+### 4a/4b. Instruments
+
+Each new research instrument carries its control: `converterPeaks.mjs` requires the heavy peak to exceed the light
+one; `hostAnswerSizes.mjs`, `hostSchemaBounds.mjs` and `hostFileAnswersLive.mjs` require an input over a frame;
+`mupdfInlineKeep.mjs` requires the redaction to have measurably run. **YYYYYY-6** is a conclusion rather than an
+instrument: `OFFICE_BOUNDS`' comment went from *"the heaviest reading is 1.6x under this limit"*, measured on one
+fixture shape, to *"a larger workbook loses rows rather than exceeding either"* — AAAA-8's shape, one axis named where
+two varied. A workbook of narrower cells exhausted the 2 GiB job in two runs of three. Corrected in C.
+
+### 5. Executed, or asserted?
+
+Asserted, and said so where it is used: OneDrive's `canEdit` from the `remoteItem` facet and the sharing drive's roles
+comes from Microsoft's reference, never a live run; the 0.1.5.0 picture loss on the owner's fourth CV may have been
+the host ending rather than the inline-image mechanism, which 0.1.6.0 could not separate.
+
+### 6. Architecture before the feature, or underneath it?
+
+Before, every time: ADR-0124 (`79d84be8`) before its build, ADR-0125 and its correction before `82683656`, the
+addendum before `e43a29b8`, ADR-0126 and its correction before `ba129226`, and ADR-0023 Decision 17 before route D.
+
+### 7. Do the documents still match the code?
+
+**YYYYYY-7**: `hostProtocol.ts` says a selection past the frame is *refused*; `client.ts` ends the connection and every
+document on that host goes to recovery. ADR-0125's addendum recorded it as open; decision D closes it. **YYYYYY-8**:
+0.1.6.0 shipped `engineHostFake.js`, a test's fake of the host surfaces, because the package took every module not
+NAMED as a test; found by the owner, not by an audit; decision E closes it. **YYYYYY-9** (open, low): four scripts
+outside this range spell the shim's path by hand rather than calling `shimPath`, the one resolver —
+`documentHandlers.proof.mjs`, `mupdf.proof.mjs`, `handlerFootprint.mjs`, `lowboxSpike.mjs` — B3a's second opinion,
+agreeing today.
+
+**Repairs:** YYYYYY-1 to -3 and -9 in the commit after decision C; -4 and -7 by decision D; -5 and -6 by decision C;
+-8 by decision E.
+
+---
+
 ## 2026-09-30 — The owner's 0.1.6.0 results, and decisions A to E
 
 **What the owner's installed 0.1.6.0 showed.** Edit text works on their CVs and survives save and reopen, including
