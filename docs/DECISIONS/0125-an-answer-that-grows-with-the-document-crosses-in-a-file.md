@@ -127,3 +127,36 @@ output directory and frames only its byte count. The client takes the file under
 hands the parsed envelope to the same `acceptAnswer` a framed one goes through. A failure is small and stays in the
 frame. Handlers and readers keep their types, and the route is still a per-channel declaration. Its form changes;
 Decisions 3 to 5 stand unchanged.
+
+## Addendum, 2026-09-30 — undo's pair: a capture's answer, and the same prior sent back as `engine/invert`'s request
+
+**What was left out, and why it could not be by the answer route alone.** `engine/capture` answers a command's prior
+state, main keeps it in the undo log, and undo sends it back as `engine/invert`'s *request*. So its size decides two
+crossings in opposite directions. Measured with the kernel's own `localMupdfExecution.capture`, rotating every page
+of a generated document:
+
+| pages | capture answer | the intent it undoes |
+|---|---|---|
+| 1,000 | 38,937 B | 3,939 B |
+| 6,000 | 238,937 B | 28,939 B |
+| **10,000** | **398,937 B, 1.5× the frame** | 48,939 B |
+
+A prior is about **40 bytes a page** against the intent's 5, so it crosses the frame at about 6,580 pages. The frame
+constant's own header treats 20,000 pages as in range. Today such a rotate ends the MuPDF host at its capture and
+poisons the document; and were the capture to get through, its undo could not be framed.
+
+**Decided.**
+
+6. **Both captures are `file`-answered**, MuPDF's and PDFium's, by Decisions 1 to 3. PDFium's prior is the
+   replaced runs' text, up to `PDFIUM_PRIOR_TEXT_MAX` = 65,536 characters each.
+7. **`engine/invert`'s params cross in a file, on both hosts.** A channel declares its request route beside its
+   answer route. For a `file`-requested channel, main writes the params into the session's **snapshot** directory,
+   the one the host is granted only READ on: ADR-0044's door for an asset, by which the document itself arrives. The
+   request names the session, the file and its size in place of `params`. The host reads the file under the same
+   8 MiB ceiling, requires the parsed params to name the same session, and dispatches them through the same
+   `wrapHandler`; main removes the file when the call ends. The ceiling holds with room: at the intent bound, a
+   rotate of 43,600 pages, a rotation prior is 1.74 MB.
+
+**Rejected.** A compact prior encoding, grouping pages by prior value: rotation priors group, but crop and resize
+priors carry a box per page and differ page to page, so it moves the bound without removing it. Refusing to capture
+above a page count: it makes a large command un-undoable by a number, where the file route makes it ordinary.
