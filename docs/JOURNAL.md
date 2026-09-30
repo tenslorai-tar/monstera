@@ -892,6 +892,47 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-30 — Edit text on the owner's documents (ADR-0125), and the same class through every contained process
+
+**The owner's install of 0.1.5.0 ended the PDFium host on Edit text for their own CVs.** Mechanism, measured on a
+copy of one file they allowed to be opened (nothing of it is in the tree): the page draws almost every glyph as its
+own text object — 2,499 runs for 2,854 characters, about 266 bytes a run with its style and coordinates — so page 1's
+`engine/text-runs` answer was 663,815 bytes against a 262,144-byte frame, and the host ended itself with
+`unsendable-response` rather than send it. Not memory, not the job object, not a PDFium crash. Fixed by ADR-0125: an answer that grows with the document crosses in a file in the session's output
+directory, under an 8 MiB ceiling that answers the declared `answer-too-large` above it. The addendum sends undo's
+pair the same way: a capture's answer and the same prior back as `engine/invert`'s request, read from the snapshot
+directory the host may only read. `proof:hostfileanswers` drives both real hosts, 13 cases: a generated
+one-object-per-glyph page edited, saved and reopened; a 3,000-field form's field list; a 10,000-page rotate undone.
+Each control is the input measured over a frame.
+
+**The class, through every contained process:**
+
+- **The three engine hosts' 45 channels** — `hostRoutes.test.ts` now fails the day a framed channel's schema admits
+  more than a frame at its worst, reading zod's own JSON Schema through the reader invariant L11's sweep already
+  took. 17 answers are file-routed and one of them fits only written plainly. The compose host's answers are all at
+  most 97 bytes. A capture above the ceiling becomes the bus's checkpoint instead of a failed edit. The request
+  direction's one bound is AAA-1's page list, pinned with an anchor (ADR-0125's second addendum).
+- **Poppler** — measured before, 41.2 MB on a 2,000-page document against a gibibyte.
+- **Ghostscript** — measured for the first time (`converterPeaks.mjs`, contained, the job's peak): 17.4 MiB for forty
+  scan-sized pages and 61.4 MiB for a thousand dense pages, against 1 GiB.
+- **ONLYOFFICE x2t** — photographs cost nothing over its 347 MiB floor; a workbook climbs to 1,256 MiB and 163 s at
+  50,000 rows against 2 GiB and 300 s, **and then stops rising because x2t stops at 1,500 pages**. The 50,000-row
+  PDF carries rows 1–38,250 and nothing after, silently, with the 25,000-row control complete at 982 pages. That is
+  data loss on import rather than a limit being hit, and what to do with it is the owner's.
+
+**A second report on the same night: a picture gone after Edit text.** The file is not one this project may open, so
+every shape a picture can take was generated and measured (`pdfiumImageKeep.mjs`): after a text edit, save and
+reopen, an image XObject, a soft-masked one, a stencil mask and one inside a form all survive, and an **inline**
+image (`BI … EI`) is gone — `FPDFPage_GenerateContent` writes the page afresh and does not write it back. Whether the
+owner's file draws its picture inline is not established.
+
+Two things this range got wrong on the way, both caught before a commit: a fixture file named `p1`, which the envelope
+schema refuses, made five refusal cases pass at the schema for the wrong reason, so each now asserts the rule that
+refused it. And the route check's first walker read zod's internals, the second opinion the L11 sweep's own comment
+names.
+
+---
+
 ## 2026-09-30 — The native engine (ADR-0124), and the installed app's containment measured
 
 **Item 1, the owner's install of MSIX 0.1.1.0.** Every document was refused at the host's startup check

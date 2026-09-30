@@ -58,8 +58,13 @@ export function pdfaArguments(input: string, output: string): readonly string[] 
  * The bounds §8 puts on this converter: ceilings against a hung or hostile conversion.
  *
  * Measured 2026-09-17 on this machine with Ghostscript 10.08.0: the eleven-document corpus
- * at most **3.7 s** uncontained, and the H6 fixture **6.1 s** contained. Its memory was not
- * measured; a gibibyte is the layout converter's ceiling and is not a reading of this one.
+ * at most **3.7 s** uncontained, and the H6 fixture **6.1 s** contained.
+ *
+ * Memory measured 2026-09-30 on this machine by `scripts/research/converterPeaks.mjs`, contained,
+ * through this module, as the job's peak: one page **8.6 MiB**, forty pages of 300 dpi scan-sized
+ * pictures **17.4 MiB** in 17.6 s, a thousand dense text pages **61.4 MiB** in 14.3 s. pdfwrite
+ * streams page by page, so the gibibyte is 16 times the heaviest reading — a ceiling against a
+ * hostile file, not near anything a person converts.
  */
 export const PDFA_BOUNDS: ConverterBounds = {
   processMemoryLimitBytes: 1024 * 1024 * 1024,

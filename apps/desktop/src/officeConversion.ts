@@ -55,6 +55,15 @@ export const X2T_FORMAT_PDF = 513;
  * gibibyte, PDF/A's ceiling, is under three times the floor, and a document of photographs rises from
  * there; two is chosen, and five minutes. A 16 MiB limit refused the same `.docx`, so the limit is
  * one x2t meets.
+ *
+ * Heavy documents measured 2026-09-30 on this machine by `scripts/research/converterPeaks.mjs`, the
+ * same way: twelve 3000x2000 photographs in a `.docx` **352.8 MiB** in 6.1 s — barely above the
+ * floor. A workbook of 10 columns: 25,000 rows **906 MiB** in 69–79 s; 50,000 rows **1,254–1,256 MiB**
+ * in 127–163 s; 100,000 rows **1,285 MiB** in 174 s, measured with the limits lifted for that run.
+ * It flattens because x2t 9.4.0 STOPS AT 1,500 PAGES: the 50,000-row PDF is 1,500 pages carrying rows
+ * 1–38,250 and nothing after, the 100,000-row PDF is the same bytes, and the 25,000-row control is 982
+ * pages holding every row. Where the cap is set was not found. So the heaviest reading is 1.6x under
+ * this limit and 1.7x under the time, and a larger workbook loses rows rather than exceeding either.
  */
 export const OFFICE_BOUNDS: ConverterBounds = {
   processMemoryLimitBytes: 2 * 1024 * 1024 * 1024,
