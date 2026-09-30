@@ -145,6 +145,10 @@ export function createEngineHostPlatform(sessionRoot: string): EngineHostPlatfor
   if (!user.ok) return null;
   const container = hostContainerSid(ENGINE_HOST_CONTAINER.mupdf);
   if (!container.ok) return null;
+  // THE ENGINE ITSELF since ADR-0124, from the one resolver (ADR-0122). A build without it has no MuPDF host, and a
+  // document opened there is poisoned with the no-platform reason rather than failing inside its first command.
+  const libraryPath = mupdfShimPath();
+  if (libraryPath === null) return null;
 
   const entry = hostEntryPath(ENGINE_HOST_ENTRY_FILE.mupdf);
   const binary = electronBinaryOfThisProcess();
@@ -196,7 +200,7 @@ export function createEngineHostPlatform(sessionRoot: string): EngineHostPlatfor
           program: {
             runs: 'electron-node',
             executablePath: binary,
-            commandArguments: [...hostCommandArguments({ kind: 'mupdf' }, entry, pipeName)],
+            commandArguments: [...hostCommandArguments({ kind: 'mupdf', libraryPath }, entry, pipeName)],
           },
           // Inside the grant set, for the reason the acceptance test's is: a
           // working directory of our own would be a path whose rights differ

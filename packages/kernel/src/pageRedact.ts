@@ -1,5 +1,5 @@
 import { MAX_REDACT_MATCHES_PER_PAGE, type PdfRedactImages } from '@monstera/contract/host';
-import type * as mupdf from 'mupdf';
+import type * as mupdf from './mupdfRaw.js';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, MupdfSession } from './engineSeam.js';

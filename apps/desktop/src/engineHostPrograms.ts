@@ -53,7 +53,14 @@ export type EngineHostKind = 'mupdf' | 'pdfium' | 'compose';
  * without a library path is a state the type refuses to express.
  */
 export type EngineHostProgram =
-  | { readonly kind: 'mupdf' }
+  | {
+      readonly kind: 'mupdf';
+      /**
+       * The absolute path to `monstera_mupdf.dll` — the engine itself since ADR-0124, so REQUIRED: a MuPDF host
+       * without it can do nothing, and the union refuses to express one. PDFium's rule for its library.
+       */
+      readonly libraryPath: string;
+    }
   | {
       readonly kind: 'compose';
       /**
@@ -127,9 +134,9 @@ export function hostCommandArguments(
   entryPath: string,
   pipeName: string,
 ): readonly string[] {
-  if (program.kind === 'pdfium') return [entryPath, pipeName, program.libraryPath];
+  if (program.kind === 'pdfium' || program.kind === 'mupdf') return [entryPath, pipeName, program.libraryPath];
   // THE SHIM'S PATH SECOND, where there is one: `composeHostEntry.ts` reads `argv[3]` and binds it
   // at its start, and reads its absence as *Optimize is unavailable*.
-  if (program.kind === 'compose' && program.shimPath !== null) return [entryPath, pipeName, program.shimPath];
+  if (program.shimPath !== null) return [entryPath, pipeName, program.shimPath];
   return [entryPath, pipeName];
 }

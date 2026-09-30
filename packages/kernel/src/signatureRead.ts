@@ -1,6 +1,6 @@
 import type { X509Certificate } from 'node:crypto';
 
-import type * as mupdf from 'mupdf';
+import type * as mupdf from './mupdfRaw.js';
 import forge from 'node-forge';
 
 import { withDocument } from './mupdfWriter.js';

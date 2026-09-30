@@ -2,7 +2,7 @@ import { PDFDocument, degrees, rgb } from '@cantoo/pdf-lib';
 import type { AnnotationRect } from '@monstera/contract';
 import type { PdfPoint } from '@monstera/shared';
 import { pageTransform, toPdf, viewportPoint } from '@monstera/shared';
-import { Image } from 'mupdf';
+import { Image } from './mupdfRaw.js';
 import { describe, expect, it } from 'vitest';
 
 import type { ByteImage, MupdfSession } from './engineSeam.js';

@@ -64,11 +64,15 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PDFDocument, StandardFonts, degrees } from '@cantoo/pdf-lib';
-import * as mupdf from 'mupdf';
+import * as mupdf from '../../packages/kernel/dist/mupdfRaw.js';
+import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 import { STEXT_OPTION_STRING, parsePageText, plainTextOf } from '../../packages/kernel/dist/textStructure.js';
 import { TEXT_STRUCTURE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+
+// The native engine, bound through the one resolver before any engine call (ADR-0124).
+bindNativeEngine();
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 

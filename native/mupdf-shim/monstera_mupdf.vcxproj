@@ -56,17 +56,24 @@
          The default keeps a manual MSBuild invocation working for someone who
          extracted the source by hand, and is deliberately outside native/. -->
     <MupdfRoot Condition="'$(MupdfRoot)' == ''">$(MSBuildProjectDirectory)\..\..\.tools\mupdf\1.28.0\mupdf-1.28.0-source</MupdfRoot>
+    <!-- MuPDF's own binding, generated from its platform/wasm/lib/mupdf.c by
+         scripts/provision/mupdfGlue.mjs (ADR-0124). Passed by mupdf.mjs, which
+         writes it before this build; the default is where that script puts it. -->
+    <GlueSource Condition="'$(GlueSource)' == ''">$(MSBuildProjectDirectory)\..\..\.tools\mupdf\1.28.0\glue\monstera_glue.c</GlueSource>
   </PropertyGroup>
 
   <ItemDefinitionGroup>
     <ClCompile>
       <!-- Compile as C, not C++: koffi binds a flat ABI and C++ would mangle it. -->
       <CompileAs>CompileAsC</CompileAs>
-      <AdditionalIncludeDirectories>$(MupdfRoot)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MupdfRoot)\include;$(MSBuildProjectDirectory);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <Optimization>MaxSpeed</Optimization>
       <WarningLevel>Level3</WarningLevel>
+      <!-- The conforming preprocessor: MuPDF's binding writes F(ctx, ## __VA_ARGS__), and only
+           this one drops the comma when a call passes no further arguments (ADR-0124). -->
+      <AdditionalOptions>/Zc:preprocessor %(AdditionalOptions)</AdditionalOptions>
 
       <!-- Exploit mitigations, stated rather than inherited.
            This library parses hostile input: a PDF is the single largest thing
@@ -111,6 +118,8 @@
 
   <ItemGroup>
     <ClCompile Include="monstera_mupdf.c" />
+    <ClCompile Include="monstera_glue_runtime.c" />
+    <ClCompile Include="$(GlueSource)" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

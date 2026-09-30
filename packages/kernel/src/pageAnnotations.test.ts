@@ -22,7 +22,7 @@ import {
   type CommandOfKind,
 } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
-import { ColorSpace, Pixmap } from 'mupdf';
+import { ColorSpace, Pixmap } from './mupdfRaw.js';
 import { describe, expect, it } from 'vitest';
 
 import type { MupdfSession } from './engineSeam.js';

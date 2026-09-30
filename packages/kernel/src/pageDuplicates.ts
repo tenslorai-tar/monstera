@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import type { PDFDocument, PDFObject } from 'mupdf';
+import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 
 import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';

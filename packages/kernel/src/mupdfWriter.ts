@@ -1,4 +1,4 @@
-import * as mupdf from 'mupdf';
+import * as mupdf from './mupdfRaw.js';
 
 import type {
   ByteImage,

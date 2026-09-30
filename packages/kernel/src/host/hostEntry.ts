@@ -25,6 +25,7 @@ import { recognisePage } from '../ocrRecognise.js';
 import { readPageFills } from '../pageFills.js';
 import { readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
+import { openMupdfShim } from '../mupdfRaw.js';
 import { cryptoBytes } from '../token.js';
 import { probeContainment } from './containment.js';
 import { engineChannels } from './engineChannels.js';
@@ -92,6 +93,26 @@ function pipeNameFrom(argv: readonly string[]): string {
 }
 
 const pipeName = pipeNameFrom(process.argv);
+
+/**
+ * The native MuPDF library — the engine itself since ADR-0124 — from the second argument, as PDFium's host takes
+ * `pdfium.dll`'s. Refused rather than defaulted, for the pipe's reason: the path is resolved by the one resolver in
+ * `main` (ADR-0122) and this process never guesses one.
+ */
+function libraryPathFrom(argv: readonly string[]): string {
+  const [, path] = argv.slice(2);
+  if (path === undefined || path.length === 0) {
+    throw new Error(
+      'the engine host was started with no MuPDF library path. Its second argument is the absolute path to ' +
+        '`monstera_mupdf.dll`, which the native-components resolver answers and this process never guesses.',
+    );
+  }
+  return path;
+}
+
+// BOUND BEFORE ANY HANDLER RUNS, for `pdfiumHostEntry.ts`' reason: a first bind inside a handler would put a load
+// failure inside a document's first answer rather than in this host's start.
+openMupdfShim(libraryPathFrom(process.argv));
 
 /**
  * MuPDF's channel set and its handlers, composed HERE rather than in the body

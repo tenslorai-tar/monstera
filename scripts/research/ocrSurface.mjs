@@ -126,7 +126,7 @@ try {
   process.stdout.write('# Does the engine this application loads expose OCR?\n\n');
 
   process.stdout.write('## The engine the kernel\'s own import resolves to\n\n');
-  const engine = scan('WASM engine', KNOWN_PRESENT.binary, shippedEngine());
+  const engine = scan('engine', KNOWN_PRESENT.binary, shippedEngine());
   if (engine.blind) {
     throw new Error(
       'POSITIVE CONTROL FAILED: this scan cannot find libmupdf\'s own error text in the engine ' +

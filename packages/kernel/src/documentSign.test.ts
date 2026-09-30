@@ -7,7 +7,7 @@ import {
   PDFNumber,
   StandardFonts,
 } from '@cantoo/pdf-lib';
-import * as mupdf from 'mupdf';
+import * as mupdf from './mupdfRaw.js';
 import forge from 'node-forge';
 import { beforeAll, describe, expect, it } from 'vitest';
 

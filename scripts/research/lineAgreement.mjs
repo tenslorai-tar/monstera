@@ -74,7 +74,8 @@ import { fileURLToPath } from 'node:url';
 
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import koffi from 'koffi';
-import * as mupdf from 'mupdf';
+import * as mupdf from '../../packages/kernel/dist/mupdfRaw.js';
+import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 
 import { TEXT_STRUCTURE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { corpusCaveat, openCorpus } from '../lib/corpus.mjs';
@@ -86,6 +87,9 @@ import {
   linesOf,
   parsePageText,
 } from '../../packages/kernel/dist/textStructure.js';
+
+// The native engine, bound through the one resolver before any engine call (ADR-0124).
+bindNativeEngine();
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const REQUIRE_PDFIUM = process.argv.includes('--require-pdfium');

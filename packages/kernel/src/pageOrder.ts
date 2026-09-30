@@ -10,7 +10,7 @@ import {
   movePermutation,
   swapPermutation,
 } from '@monstera/shared';
-import type { PDFDocument, PDFObject } from 'mupdf';
+import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';

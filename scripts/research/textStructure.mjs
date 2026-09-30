@@ -47,13 +47,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
-import * as mupdf from 'mupdf';
+import * as mupdf from '../../packages/kernel/dist/mupdfRaw.js';
+import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 
 import { scoreAgainstTruth } from '../../packages/kernel/dist/textAccuracy.js';
 import { STEXT_OPTIONS, parsePageText } from '../../packages/kernel/dist/textStructure.js';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
+
+// The native engine, bound through the one resolver before any engine call (ADR-0124).
+bindNativeEngine();
 
 const ROOT = repoRoot();
 

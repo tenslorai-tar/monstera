@@ -1,5 +1,5 @@
-import type { StrokeState } from 'mupdf';
-import * as mupdf from 'mupdf';
+import type { StrokeState } from './mupdfRaw.js';
+import * as mupdf from './mupdfRaw.js';
 
 import type { PageFill } from './cellFills.js';
 import type { MupdfSession } from './engineSeam.js';

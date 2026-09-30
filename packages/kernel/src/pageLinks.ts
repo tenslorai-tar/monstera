@@ -1,6 +1,6 @@
 import type { CommandOfKind } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
-import type * as mupdf from 'mupdf';
+import type * as mupdf from './mupdfRaw.js';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';

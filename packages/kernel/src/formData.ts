@@ -1,5 +1,5 @@
-import * as mupdf from 'mupdf';
-import type { PDFObject, PDFWidget } from 'mupdf';
+import * as mupdf from './mupdfRaw.js';
+import type { PDFObject, PDFWidget } from './mupdfRaw.js';
 import { z } from 'zod';
 
 import type { FieldFill, FormDataFormat, FormDataImportFormat } from '@monstera/contract';

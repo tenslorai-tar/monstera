@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 import { workspaceAliases } from './scripts/lib/workspaceAliases.mjs';
+import { shimLibraryPath } from './scripts/provision/mupdf.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 
@@ -43,7 +44,11 @@ export default defineConfig({
     // with globals off — so without this, cleanup silently never happens and a
     // query finds a previous test's node. The file is inert where there is no
     // DOM, which is everywhere outside `packages/ui`.
-    setupFiles: ['packages/testing/src/domCleanup.ts'],
+    setupFiles: ['packages/testing/src/domCleanup.ts', 'packages/kernel/src/mupdfShim.setup.ts'],
+
+    // THE NATIVE ENGINE'S PATH, from its one resolver (ADR-0124): the kernel is told where the library is and never
+    // decides, and this config is the caller that can import the provisioning script.
+    env: { MONSTERA_MUPDF_SHIM: shimLibraryPath(ROOT) },
 
     // Vitest replaces every stylesheet with an EMPTY STRING unless it is included here, and
     // that covers a `?raw` import too — so a test reading `app.css` read nothing, and its

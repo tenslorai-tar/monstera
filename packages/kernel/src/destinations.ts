@@ -1,5 +1,5 @@
 import type { OutlineEntry } from '@monstera/contract';
-import type * as mupdf from 'mupdf';
+import type * as mupdf from './mupdfRaw.js';
 
 import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';

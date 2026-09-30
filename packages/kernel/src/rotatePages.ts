@@ -1,4 +1,4 @@
-import type * as mupdf from 'mupdf';
+import type * as mupdf from './mupdfRaw.js';
 
 import type { CommandOfKind } from '@monstera/contract';
 import { snapRotation } from '@monstera/shared';

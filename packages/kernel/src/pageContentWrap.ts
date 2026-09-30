@@ -1,4 +1,4 @@
-import type { PDFDocument, PDFObject } from 'mupdf';
+import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 
 /**
  * Bracketing a page's existing content in a transform — one owner, with callers

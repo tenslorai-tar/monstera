@@ -1,4 +1,4 @@
-import type { PDFDocument, PDFObject } from 'mupdf';
+import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 
 import {
   type AccessibilityReport,

@@ -1,5 +1,5 @@
-import * as mupdf from 'mupdf';
-import type { PDFDocument, PDFObject } from 'mupdf';
+import * as mupdf from './mupdfRaw.js';
+import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 import { z } from 'zod';
 
 import type { AnnotationDataFormat } from '@monstera/contract';

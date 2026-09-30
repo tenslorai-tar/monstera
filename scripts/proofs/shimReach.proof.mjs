@@ -25,7 +25,7 @@ import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { mupdfSourcePath } from '../provision/mupdf.mjs';
-import { shimExports, shimReach } from '../security/shimReach.mjs';
+import { glueRoots, shimExports, shimReach } from '../security/shimReach.mjs';
 
 const ROOT = repoRoot();
 const SOURCE = mupdfSourcePath(ROOT);
@@ -75,8 +75,9 @@ function check(label, condition, detail) {
 if (!existsSync(join(SOURCE, 'source', 'fitz', 'tessocr.h'))) {
   passed.push('SKIPPED: MuPDF source not provisioned — no reachability was measured here');
 } else {
-  // The real measurement.
-  const real = shimReach(SOURCE, SHIM_PROJECT, SHIM_SOURCE);
+  // The real measurement: the shim's own exports AND MuPDF's binding compiled beside them (ADR-0124), whose roots
+  // are the MuPDF functions it names.
+  const real = shimReach(SOURCE, SHIM_PROJECT, SHIM_SOURCE, glueRoots(ROOT));
 
   for (const control of real.controls) {
     check(`RUN CONTROL: ${control.name}`, control.passed, control.detail);

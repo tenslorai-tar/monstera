@@ -6,7 +6,7 @@ import {
   TextRenderingMode,
   degrees,
 } from '@cantoo/pdf-lib';
-import * as mupdf from 'mupdf';
+import * as mupdf from './mupdfRaw.js';
 import { describe, expect, it } from 'vitest';
 
 import type { RecognisedLine } from './ocrRecognise.js';

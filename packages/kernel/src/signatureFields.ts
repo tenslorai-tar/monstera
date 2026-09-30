@@ -1,4 +1,4 @@
-import type * as mupdf from 'mupdf';
+import type * as mupdf from './mupdfRaw.js';
 
 /**
  * How deep the form tree is walked. A `/Kids` cycle is legal to write and never

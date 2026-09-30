@@ -43,7 +43,8 @@
  */
 
 import { PDFDocument, StandardFonts, degrees } from '@cantoo/pdf-lib';
-import * as mupdf from 'mupdf';
+import * as mupdf from '../../packages/kernel/dist/mupdfRaw.js';
+import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 
 import { mupdfWriter } from '../../packages/kernel/dist/mupdfWriter.js';
 import { applyDeskewPages } from '../../packages/kernel/dist/pageDeskew.js';
@@ -58,6 +59,9 @@ import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { corpusCaveat, openCorpus } from '../lib/corpus.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
+
+// The native engine, bound through the one resolver before any engine call (ADR-0124).
+bindNativeEngine();
 
 // THE DETECTOR IS THE KERNEL'S, and this file stopped carrying its own copy on
 // 2026-09-10, when `deskewPages` was built. The instrument that produced this

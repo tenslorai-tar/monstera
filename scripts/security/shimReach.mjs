@@ -52,6 +52,7 @@ import { join } from 'node:path';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { mupdfSourcePath } from '../provision/mupdf.mjs';
 import { buildCallGraph, deriveOcrDoors } from './ocrDoors.mjs';
+import { generatedGlue } from './pathDispatch.mjs';
 
 /**
  * The shim's exported functions, read from its source.
@@ -93,14 +94,35 @@ export function shimExports(shimSource) {
  */
 
 /**
+ * The MuPDF functions MuPDF's own binding names — the roots its 551 exports add to the walk (ADR-0124).
+ *
+ * The binding's bodies are one-line wrappers that call through macros (`POINTER(fz_x, …)`), which a parser looking
+ * for `name(` does not see, and they reach nothing but the functions they name. So the walk starts from those names,
+ * read from the glue's text as the build generates it, and follows MuPDF's own call graph from there.
+ *
+ * @param {string} root
+ * @returns {string[]} empty where MuPDF's source is not provisioned
+ */
+export function glueRoots(root) {
+  const glue = generatedGlue(root);
+  if (glue === null) return [];
+  const names = new Set([...glue.text.matchAll(/\b((?:fz|pdf)_[a-z0-9_]+)\s*[,(]/gu)].map((match) => `${match[1]}`));
+  if (!names.has('fz_new_pixmap_from_page')) {
+    throw new Error('CONTROL FAILED: the binding names no fz_new_pixmap_from_page, which it certainly calls; the root scan is blind.');
+  }
+  return [...names].sort();
+}
+
+/**
  * @param {string} sourceRoot
  * @param {string} shimProject
  * @param {string} shimSource
+ * @param {readonly string[]} [extraRoots] further functions the shipped library calls — MuPDF's binding's
  * @returns {ShimReach}
  */
-export function shimReach(sourceRoot, shimProject, shimSource) {
+export function shimReach(sourceRoot, shimProject, shimSource, extraRoots = []) {
   const doors = deriveOcrDoors(sourceRoot, shimProject).doors;
-  const exports = shimExports(shimSource);
+  const exports = [...shimExports(shimSource), ...extraRoots];
 
   const { callees } = buildCallGraph(sourceRoot, shimProject, {
     extraFiles: [shimSource],
@@ -189,7 +211,7 @@ if (process.argv[1]?.endsWith('shimReach.mjs')) {
     process.exit(1);
   }
 
-  const result = shimReach(source, shimProject, shimSource);
+  const result = shimReach(source, shimProject, shimSource, glueRoots(root));
 
   process.stdout.write(
     `${result.exports.length} shim exports, reaching ${result.reached} functions\n\n` +

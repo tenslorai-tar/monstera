@@ -44,7 +44,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
-import * as mupdf from 'mupdf';
+import * as mupdf from '../../packages/kernel/dist/mupdfRaw.js';
+import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import sharp from 'sharp';
 
 import { PAGE_KIND, TEXT_STRUCTURE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
@@ -53,6 +54,9 @@ import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { STEXT_OPTION_STRING, parsePageText } from '../../packages/kernel/dist/textStructure.js';
 import { pageKindOf } from '../../packages/kernel/dist/pageKind.js';
+
+// The native engine, bound through the one resolver before any engine call (ADR-0124).
+bindNativeEngine();
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const REQUIRE_CORPUS = process.argv.includes('--require-corpus');

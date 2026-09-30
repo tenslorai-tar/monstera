@@ -1,6 +1,6 @@
 import type { CommandOfKind } from '@monstera/contract';
-import * as mupdf from 'mupdf';
-import type { PDFDocument, PDFObject } from 'mupdf';
+import * as mupdf from './mupdfRaw.js';
+import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 
 import type { CaptureResult } from './commandLog.js';
 import { COORDINATE_DECIMALS, contentNumber } from './contentNumbers.js';

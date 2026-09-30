@@ -41,9 +41,16 @@ const SHIM_SOURCES = [
   'native/mupdf-shim/monstera_mupdf.vcxproj',
 ];
 
-/** @param {string} [root] @returns {string} */
-export function shimPath(root = repoRoot()) {
-  return join(root, 'native', 'mupdf-shim', 'out', 'monstera_mupdf.dll');
+/**
+ * Where the built shim is — THE ONE ANSWER, which `scripts/provision/mupdf.mjs`' `shimLibraryPath` returns as well.
+ * The name follows the platform's shared-library convention, because Linux builds it too (ADR-0124).
+ *
+ * @param {string} [root]
+ * @param {NodeJS.Platform} [platform]
+ * @returns {string}
+ */
+export function shimPath(root = repoRoot(), platform = process.platform) {
+  return join(root, 'native', 'mupdf-shim', 'out', platform === 'win32' ? 'monstera_mupdf.dll' : 'libmonstera_mupdf.so');
 }
 
 /** @param {string} [root] @returns {string} */

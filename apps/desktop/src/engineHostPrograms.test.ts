@@ -55,17 +55,20 @@ describe('the engine host programs', () => {
     expect(entries).toStrictEqual(['hostEntry.js', 'pdfiumHostEntry.js', 'composeHostEntry.js']);
   });
 
-  it('puts the pipe name first for every host, and the library path second for PDFium only', () => {
-    // `pdfiumHostEntry.ts`'s `argumentsFrom` reads `argv.slice(2)` as
-    // `[pipeName, libraryPath]`, and `hostEntry.ts` reads the first alone. This
+  it('puts the pipe name first for every host, and each engine’s library path second', () => {
+    // `pdfiumHostEntry.ts`'s `argumentsFrom` and `hostEntry.ts`' `libraryPathFrom` both read `argv.slice(2)` as
+    // `[pipeName, libraryPath]` — MuPDF's since its engine is the native library (ADR-0124). This
     // is the supplying side of that, asserted as an exact list rather than by
-    // `toContain` — a writer that emitted the two PDFium arguments in the other
+    // `toContain` — a writer that emitted the two arguments in the other
     // order satisfies a containment check and starts a host that binds a pipe
     // name as a library.
-    expect(hostCommandArguments({ kind: 'mupdf' }, 'C:\\k\\hostEntry.js', '\\\\.\\pipe\\p')).toStrictEqual([
-      'C:\\k\\hostEntry.js',
-      '\\\\.\\pipe\\p',
-    ]);
+    expect(
+      hostCommandArguments(
+        { kind: 'mupdf', libraryPath: 'C:\\s\\monstera_mupdf.dll' },
+        'C:\\k\\hostEntry.js',
+        '\\\\.\\pipe\\p',
+      ),
+    ).toStrictEqual(['C:\\k\\hostEntry.js', '\\\\.\\pipe\\p', 'C:\\s\\monstera_mupdf.dll']);
 
     expect(
       hostCommandArguments(
@@ -76,14 +79,13 @@ describe('the engine host programs', () => {
     ).toStrictEqual(['C:\\k\\pdfiumHostEntry.js', '\\\\.\\pipe\\q', 'C:\\t\\pdfium.dll']);
   });
 
-  it('gives MuPDF’s host, and a compose host with no shim, no third argument at all', () => {
+  it('gives a compose host with no shim no third argument at all', () => {
     // THE CONTROL for the case above, and it is not the same assertion twice: a
     // builder that appended a library path unconditionally would satisfy every
-    // PDFium expectation there, and the other entries ignore what they do not
-    // read — so those hosts would start, work, and carry a filesystem path in
-    // their command line for anything on the machine to read out of the process
+    // engine expectation there, and the compose entry ignores what it does not
+    // read — so that host would start, work, and carry a filesystem path in
+    // its command line for anything on the machine to read out of the process
     // list.
-    expect(hostCommandArguments({ kind: 'mupdf' }, 'entry', 'pipe')).toHaveLength(2);
     expect(
       hostCommandArguments({ kind: 'compose', shimPath: null }, 'composeHostEntry.js', 'pipe'),
     ).toStrictEqual(['composeHostEntry.js', 'pipe']);

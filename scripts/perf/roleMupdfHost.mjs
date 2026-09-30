@@ -455,7 +455,13 @@ async function measureHost() {
           program: {
             runs: 'electron-node',
             executablePath: electronBinaryPath(),
-            commandArguments: [join(ROOT, 'packages', 'kernel', 'dist', 'host', 'hostEntry.js'), pipeName],
+            // The engine's library second, as `hostEntry.ts` reads it (ADR-0124): the path the freshness check
+            // above vouched for, so the host measured is the shim this checkout built.
+            commandArguments: [
+              join(ROOT, 'packages', 'kernel', 'dist', 'host', 'hostEntry.js'),
+              pipeName,
+              requireCurrentShim({ root: ROOT }),
+            ],
           },
           // Inside the grant set, as the acceptance test's is and for the same
           // reason: a working directory of our own would be a path whose rights

@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 
 import type { NetworkOcrEngine, OcrLanguage } from '@monstera/contract';
-import type { Matrix as MupdfMatrix } from 'mupdf';
-import { ColorSpace, Matrix, Rect } from 'mupdf';
+import type { Matrix as MupdfMatrix } from './mupdfRaw.js';
+import { ColorSpace, Matrix, Rect } from './mupdfRaw.js';
 
 import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';

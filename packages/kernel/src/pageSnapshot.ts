@@ -1,6 +1,6 @@
 import { type AnnotationRect, MAX_SNAPSHOT_SCALE, MIN_SNAPSHOT_SCALE } from '@monstera/contract/host';
 import type { Rotation } from '@monstera/shared';
-import { ColorSpace, DrawDevice, Matrix, Pixmap } from 'mupdf';
+import { ColorSpace, DrawDevice, Matrix, Pixmap } from './mupdfRaw.js';
 
 import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';

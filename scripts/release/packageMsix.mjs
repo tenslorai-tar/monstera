@@ -296,7 +296,7 @@ function filesUnder(folder) {
 function shippedFromDist(/** @type {string} */ source) {
   const name = basename(source);
   if (/\.(?:map|d\.ts|d\.mts)$/u.test(name)) return false;
-  if (/\.(?:test|spec|proof)\.[cm]?js$/u.test(name)) return false;
+  if (/\.(?:test|spec|proof|setup)\.[cm]?js$/u.test(name)) return false;
   if (source.split(sep).includes('store-assets')) return false;
   return true;
 }

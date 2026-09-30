@@ -1,6 +1,6 @@
 import { PDFArray, PDFDocument, PDFHexString, PDFName, PDFString, degrees } from '@cantoo/pdf-lib';
 import type { AnnotationDataFormat } from '@monstera/contract';
-import { ColorSpace, Matrix, type PDFPage } from 'mupdf';
+import { ColorSpace, Matrix, type PDFPage } from './mupdfRaw.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import {

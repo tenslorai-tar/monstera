@@ -1,5 +1,5 @@
-import { ColorSpace, Matrix } from 'mupdf';
-import type { PDFPage } from 'mupdf';
+import { ColorSpace, Matrix } from './mupdfRaw.js';
+import type { PDFPage } from './mupdfRaw.js';
 
 import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';

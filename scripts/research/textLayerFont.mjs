@@ -31,7 +31,8 @@
  */
 
 import { PDFDocument, StandardFonts, TextRenderingMode } from '@cantoo/pdf-lib';
-import * as mupdf from 'mupdf';
+import * as mupdf from '../../packages/kernel/dist/mupdfRaw.js';
+import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 
 import {
   CORE_DATA_DIRECTORY,
@@ -44,6 +45,9 @@ import { corpusCaveat, openCorpus } from '../lib/corpus.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { tessdataDirectory } from '../provision/tessdata.mjs';
+
+// The native engine, bound through the one resolver before any engine call (ADR-0124).
+bindNativeEngine();
 
 // THE CORE IS INSTANTIATED THROUGH THE KERNEL'S OWN LOADER (B3a). *Which build
 // of Tesseract does this project instantiate, and how* is one question, and an

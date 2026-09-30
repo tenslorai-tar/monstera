@@ -26,7 +26,7 @@ import type {
   PDFDocument,
   PDFObject,
   PDFPage,
-} from 'mupdf';
+} from './mupdfRaw.js';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';

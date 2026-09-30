@@ -1,4 +1,4 @@
-import * as mupdf from 'mupdf';
+import * as mupdf from './mupdfRaw.js';
 import { describe, expect, it } from 'vitest';
 
 import { MAX_IMPORT_IMAGE_PIXELS } from '@monstera/contract';

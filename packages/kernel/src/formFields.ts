@@ -1,5 +1,5 @@
 import type { AnnotationRect, CommandOfKind, FieldFill, FormFieldKind } from '@monstera/contract';
-import type { PDFDocument, PDFObject, PDFPage, PDFWidget } from 'mupdf';
+import type { PDFDocument, PDFObject, PDFPage, PDFWidget } from './mupdfRaw.js';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';

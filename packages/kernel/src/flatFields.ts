@@ -1,5 +1,5 @@
-import type { PDFPage, StrokeState } from 'mupdf';
-import * as mupdf from 'mupdf';
+import type { PDFPage, StrokeState } from './mupdfRaw.js';
+import * as mupdf from './mupdfRaw.js';
 
 import type { AnnotationRect } from '@monstera/contract';
 import { type PageTransform, toPdf, viewportPoint } from '@monstera/shared';

@@ -1,5 +1,5 @@
 import type { Box } from '@monstera/shared';
-import type { PDFObject } from 'mupdf';
+import type { PDFObject } from './mupdfRaw.js';
 
 /**
  * What box a page **displays** — one answer, with callers (B3a).

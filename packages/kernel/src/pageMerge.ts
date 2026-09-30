@@ -1,5 +1,5 @@
 import type { CommandOfKind } from '@monstera/contract';
-import type { PDFDocument, PDFGraftMap } from 'mupdf';
+import type { PDFDocument, PDFGraftMap } from './mupdfRaw.js';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';

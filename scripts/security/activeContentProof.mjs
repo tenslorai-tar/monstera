@@ -204,8 +204,8 @@ function scanShippedEngine(roster, failures) {
   const engine = shippedEngine();
   if (!existsSync(engine)) {
     failures.push(
-      `the engine the application imports resolves to ${engine}, which does not exist. ` +
-        `Run npm install — a missing engine here would make every absence below a fact about ` +
+      `the engine the application loads resolves to ${engine}, which does not exist. ` +
+        `Run npm run provision:mupdf — a missing engine here would make every absence below a fact about ` +
         `a file that is not there.`,
     );
     roster.record(mark, 'the engine the application imports is resolvable and present');
@@ -219,13 +219,13 @@ function scanShippedEngine(roster, failures) {
   const libraryHits = LIBRARY_STRINGS.map((needle) => occurrences(bytes, needle));
   if (libraryHits.some((hits) => hits === 0)) {
     failures.push(
-      `POSITIVE CONTROL FAILED: MuPDF library strings are absent from the shipped WASM engine. ` +
+      `POSITIVE CONTROL FAILED: MuPDF library strings are absent from the engine the application loads. ` +
         `${LIBRARY_STRINGS.map((s, i) => `"${s}"=${String(libraryHits[i])}`).join(', ')}. ` +
         `A scan that cannot see libmupdf's own text in this file cannot report on what this ` +
         `file linked.`,
     );
   }
-  roster.record(mark, 'CONTROL: the scan finds MuPDF library strings in the WASM engine');
+  roster.record(mark, 'CONTROL: the scan finds MuPDF library strings in the engine the application loads');
 
   // AND THAT THE NEEDLES ARE MATCHABLE AT ALL, which the control above does not
   // establish: library strings being found proves the file is readable, not
@@ -263,10 +263,10 @@ function scanShippedEngine(roster, failures) {
 }
 
 async function main() {
-  // FIRST, AND BEFORE EVERY GATE BELOW. The WASM engine is what the product
-  // loads on every platform, so a scan of it must not sit behind a Windows
-  // check and a built shim — the arrangement that let the shim scan stand in
-  // for it in the first place.
+  // FIRST, AND BEFORE EVERY GATE BELOW. The engine the product loads is scanned
+  // on every platform that builds it, so the scan must not sit behind the
+  // Windows-only harness — the arrangement that once let a shim scan stand in
+  // for an engine nothing loaded. Since ADR-0124 the two are the same file.
   /** @type {string[]} */
   const engineFailures = [];
   const engineRoster = createRoster(engineFailures, { cases: 4 });

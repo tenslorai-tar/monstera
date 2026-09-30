@@ -2,7 +2,7 @@ import { PDFArray, PDFDocument, PDFName } from '@cantoo/pdf-lib';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { type CommandOfKind, createClient, type Incident, wrapHandlers } from '@monstera/contract';
-import { ColorSpace, Pixmap } from 'mupdf';
+import { ColorSpace, Pixmap } from '../mupdfRaw.js';
 
 import { localMupdfExecution } from '../commandSpecs.js';
 import type { ByteImage, MupdfSession } from '../engineSeam.js';

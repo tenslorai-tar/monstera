@@ -1,6 +1,6 @@
 import { PDFDocument, rgb } from '@cantoo/pdf-lib';
 import { MAX_SNAPSHOT_SCALE, MIN_SNAPSHOT_SCALE } from '@monstera/contract';
-import * as mupdf from 'mupdf';
+import * as mupdf from './mupdfRaw.js';
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 

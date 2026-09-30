@@ -47,6 +47,7 @@ import { join } from 'node:path';
 
 import { filesInCommit, repoRoot } from '../lib/gitScope.mjs';
 import { mupdfSourcePath } from '../provision/mupdf.mjs';
+import { generateGlue } from '../provision/mupdfGlue.mjs';
 import { buildCallGraph, publicApiSymbols } from './ocrDoors.mjs';
 
 /** MuPDF's own extension matcher. Static to writer.c, so it is the single seam. */
@@ -116,17 +117,39 @@ export function shippedUsesOfDispatchers(dispatchers, root) {
     (file) => globs.some((prefix) => file.startsWith(prefix)) && /\.(?:c|h|ts|tsx|mjs)$/u.test(file),
   );
 
-  /** @type {Array<{ file: string, symbol: string }>} */
-  const found = [];
+  /** @type {Array<{ file: string, text: string }>} */
+  const sources = [];
   for (const file of candidates) {
     const path = join(root, file);
-    if (!existsSync(path)) continue;
-    const text = readFileSync(path, 'utf8');
+    if (existsSync(path)) sources.push({ file, text: readFileSync(path, 'utf8') });
+  }
+  // MUPDF'S OWN BINDING IS SHIPPED CODE TOO (ADR-0124): it is compiled into the shim, and it is generated rather than
+  // committed, so no file in the commit carries it. Its text is derived here exactly as the build derives it, from
+  // the provisioned upstream file, so the scan reads what the DLL was compiled from.
+  const glue = generatedGlue(root);
+  if (glue !== null) sources.push(glue);
+
+  /** @type {Array<{ file: string, symbol: string }>} */
+  const found = [];
+  for (const { file, text } of sources) {
     for (const symbol of dispatchers) {
       if (new RegExp(`\\b${symbol}\\b`, 'u').test(text)) found.push({ file, symbol });
     }
   }
   return found;
+}
+
+/**
+ * The generated binding's text, or `null` where MuPDF's source is not provisioned — in which case the dispatcher set
+ * could not be derived either, and the caller has already said so.
+ *
+ * @param {string} root
+ * @returns {{ file: string, text: string } | null}
+ */
+export function generatedGlue(root) {
+  const upstream = join(mupdfSourcePath(root), 'platform', 'wasm', 'lib', 'mupdf.c');
+  if (!existsSync(upstream)) return null;
+  return { file: 'generated: monstera_glue.c', text: generateGlue(readFileSync(upstream, 'utf8')).c };
 }
 
 if (process.argv[1]?.endsWith('pathDispatch.mjs')) {

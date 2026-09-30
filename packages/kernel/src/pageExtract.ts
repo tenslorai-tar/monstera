@@ -1,4 +1,4 @@
-import type { PDFDocument, PDFObject } from 'mupdf';
+import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 
 import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { copiedOut, newDocument, withDocument } from './mupdfWriter.js';

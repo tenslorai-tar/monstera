@@ -1,5 +1,5 @@
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
-import * as mupdf from 'mupdf';
+import * as mupdf from './mupdfRaw.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { ByteImage, MupdfSession } from './engineSeam.js';
@@ -121,11 +121,18 @@ describe('mupdfWriter — the bytes it hands out', () => {
     }
   });
 
-  it('CONTROL: the engine’s own answer fails that test, so it can fail', () => {
+  it('CONTROL: a view into a larger buffer fails that test, so it can fail', () => {
     // Without this the assertion above is one every `Uint8Array` in a test
     // happens to satisfy, and nothing says it separates a copy from a view.
-    // This reaches past the adapter deliberately — it is the shape the adapter
-    // used to return, and the point is that it is distinguishable.
+    // The WASM engine's own answer WAS such a view, into its heap; the native
+    // engine's is a copy (ADR-0124), so the view is built here, in the shape a
+    // heap subarray has.
+    const heap = new Uint8Array(4096);
+    const view = heap.subarray(128, 256);
+    expect(view.buffer.byteLength).toBeGreaterThan(view.byteLength);
+  });
+
+  it('the native engine’s own buffer answer owns its bytes, where the WASM heap view did not', () => {
     // NARROWED RATHER THAN CAST: `openDocument` is typed as returning the base
     // `Document`, and `mupdfWriter.ts` narrows the same way for the same reason
     // — a non-PDF opens successfully and answers a document with no
@@ -133,9 +140,9 @@ describe('mupdfWriter — the bytes it hands out', () => {
     const document = mupdf.PDFDocument.openDocument(pdf, 'application/pdf');
     if (!(document instanceof mupdf.PDFDocument)) throw new Error('the fixture is not a PDF');
     try {
-      const view = document.saveToBuffer('').asUint8Array();
-      expect(view.byteLength).toBeGreaterThan(0);
-      expect(view.buffer.byteLength).toBeGreaterThan(view.byteLength);
+      const bytes = document.saveToBuffer('').asUint8Array();
+      expect(bytes.byteLength).toBeGreaterThan(0);
+      expect(bytes.buffer.byteLength).toBe(bytes.byteLength);
     } finally {
       document.destroy();
     }

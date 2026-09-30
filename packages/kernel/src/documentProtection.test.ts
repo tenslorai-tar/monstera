@@ -1,5 +1,5 @@
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
-import * as mupdf from 'mupdf';
+import * as mupdf from './mupdfRaw.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import {

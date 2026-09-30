@@ -45,8 +45,9 @@ import { fileURLToPath } from 'node:url';
 import { downloadVerified, fileExists, toolPath } from '../lib/fetchVerified.mjs';
 import { archiveSymlinks, extract } from '../lib/extract.mjs';
 import { handlerDisableFlags } from '../lib/documentHandlers.mjs';
+import { generateGlue } from './mupdfGlue.mjs';
 import { build, dumpbin } from '../lib/msvc.mjs';
-import { recordShimBuild } from '../lib/shimBinary.mjs';
+import { recordShimBuild, shimPath } from '../lib/shimBinary.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
 /**
@@ -97,9 +98,15 @@ export function mupdfSourcePath(root) {
   return toolPath(root, 'mupdf', MUPDF_VERSION, `mupdf-${MUPDF_VERSION}-source`);
 }
 
-/** @param {string} root @returns {string} */
+/**
+ * Where the built shim is. `shimBinary.mjs`' `shimPath` is the one answer and this returns it: the two had each
+ * joined the same path for themselves, which agrees until one of them changes (B3a).
+ *
+ * @param {string} root
+ * @returns {string}
+ */
 export function shimLibraryPath(root) {
-  return join(root, 'native', 'mupdf-shim', 'out', 'monstera_mupdf.dll');
+  return shimPath(root);
 }
 
 /** @param {string} root @returns {string} */
@@ -216,9 +223,38 @@ async function buildMupdf(root, force) {
   }
 }
 
+/**
+ * Where the generated binding lands: beside the source it was generated from,
+ * under `.tools/`, because it is a build input and not a tracked file.
+ *
+ * @param {string} root
+ */
+export function glueSourcePath(root) {
+  return join(dirname(mupdfSourcePath(root)), 'glue', 'monstera_glue.c');
+}
+
+/**
+ * Generates MuPDF's own binding for a native build (ADR-0124) and writes it.
+ *
+ * @param {string} root
+ */
+export async function writeGlue(root) {
+  const upstream = join(mupdfSourcePath(root), 'platform', 'wasm', 'lib', 'mupdf.c');
+  const { readFile, writeFile } = await import('node:fs/promises');
+  const generated = generateGlue(await readFile(upstream, 'utf8'));
+  const destination = glueSourcePath(root);
+  await mkdir(dirname(destination), { recursive: true });
+  await writeFile(destination, generated.c);
+  process.stderr.write(
+    `  MuPDF's binding: ${generated.exports.length} exports wrapped, ${generated.callbackSites} EM_ASM sites rewritten\n`,
+  );
+  return { path: destination, exports: generated.exports.map((each) => each.name) };
+}
+
 /** @param {string} root */
 async function buildShim(root) {
   const project = join(root, 'native', 'mupdf-shim', 'monstera_mupdf.vcxproj');
+  const glue = await writeGlue(root);
 
   build({
     project,
@@ -226,6 +262,7 @@ async function buildShim(root) {
       'Configuration=Release',
       'Platform=x64',
       `MupdfRoot=${mupdfSourcePath(root)}`,
+      `GlueSource=${glue.path}`,
     ],
     label: 'monstera_mupdf shim',
   });
@@ -257,6 +294,16 @@ export async function verifyExports(root, dll) {
     const name = match[1];
     if (name !== undefined) declared.add(name);
   }
+  // MUPDF'S OWN BINDING AND ITS RUNTIME ARE IN THE SAME DLL (ADR-0124), and a binding export that did not link is a
+  // member of the object model that throws on first use — so their declarations are checked against the same table.
+  const { readFile } = await import('node:fs/promises');
+  for (const file of [join(root, 'native', 'mupdf-shim', 'monstera_glue_runtime.c'), glueSourcePath(root)]) {
+    if (!existsSync(file)) continue;
+    for (const match of (await readFile(file, 'utf8')).matchAll(/^MZG_EXPORT\s+[^(\n]*?\b((?:mzg|wasm)_\w+)\s*\(/gm)) {
+      const name = match[1];
+      if (name !== undefined) declared.add(name);
+    }
+  }
 
   const tool = dumpbin();
   /** @type {Set<string>} */
@@ -268,7 +315,7 @@ export async function verifyExports(root, dll) {
       maxBuffer: 32 * 1024 * 1024,
     });
     if (probe.error === undefined && probe.status === 0) {
-      for (const match of `${probe.stdout}`.matchAll(/\b(mz_\w+)\b/g)) {
+      for (const match of `${probe.stdout}`.matchAll(/\b((?:mz|mzg|wasm)_\w+)\b/g)) {
         const name = match[1];
         if (name !== undefined) exported.add(name);
       }
