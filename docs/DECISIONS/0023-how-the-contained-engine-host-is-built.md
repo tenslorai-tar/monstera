@@ -3440,3 +3440,81 @@ records a fact that bears on the question without a capability: outside
 access, including other parts of `%userprofile%`"* — writes there are not
 virtualized, and the measured refusal of a folder the package does not own
 applies to them. Whether that is acceptable is the owner's.
+
+## Decision 17 — route D: the host keeps the package's reach, and main takes the package's permission off its data (decided 2026-09-30)
+
+**The owner's decision**, after the note above: measure a fourth route before B or
+C — keep the host the package's child container, so it keeps reaching the install
+root, and take the package's permission away from the app's data instead. Main runs
+as the user; the host has only the package's capability; a folder whose DACL is
+**protected** — no inheritance — and grants the user, SYSTEM and Administrators
+refuses the host and not main.
+
+### Measured, 2026-09-30, in the installed 0.1.1.0's identity
+
+`scripts/research/packagedHostToken.mjs --route-d`, run through
+`Invoke-CommandInDesktopPackage` (no install, no elevation), the layout built
+exactly as main would build it — through the virtual `%APPDATA%` path, from a
+process with the package's identity:
+
+| cell | answer |
+|---|---|
+| main sets the protected DACL on its redirected folder | yes — read back: Administrators, SYSTEM, the user, nothing inherited |
+| the host reads a file in the locked folder | **refused** (5); listing and creating refused too |
+| CONTROL: the same host reads a file in a sibling folder still inheriting the package ACE | opened — so the refusal is the lock |
+| the host reads its session folder, granted explicitly under the lock | opened |
+| the host opens `Monstera.exe`, `hostEntry.js`, the shim under the install root | opened |
+| main reads and writes the locked folder | yes |
+
+**What else the package's identity opens** (the owner's question b), each by the
+host's own token: it can **create files** in `LocalState`, `RoamingState` and
+`TempState` — a channel between two hosts, which is invariant 25(d) failing — and
+list `LocalCache` and `Settings` and read `Settings\settings.dat`. It is refused
+`AC`, `AppData`, `SystemAppData` and the registry hive files `User.dat` and
+`UserClasses.dat`, the process's real `%TEMP%`, and a named event main created.
+Outside the app's own folder `LocalCache` holds only empty folders. The package
+capability's ACEs on those five folders are **explicit**, written by the
+installer, and the user has full control of them.
+
+**The same lock on a real package folder** (`TempState`): the host refused listing
+and creating, the control `LocalState` still open, main still creating. **A
+re-registration** (`Add-AppxPackage -Register … -DisableDevelopmentMode`, no
+elevation) **did not put the ACE back.** An app UPDATE needs an install and so an
+elevation: `TempState` is left locked as the sentinel, and the owner's install of
+0.1.2.0 over 0.1.1.0 is the measurement.
+
+### Decided
+
+1. **In an installed build, main locks the package's data folders at every start,
+   before any host is created:** `LocalCache` (which holds the app's data and
+   everything else redirected from AppData), `LocalState`, `RoamingState`,
+   `TempState` and `Settings`, each to the protected DACL
+   `D:P(A;OICI;FA;;;<user>)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)`, composed once in
+   `hostDacl.ts` beside the session folders' own. Every start rather than once,
+   because whatever Windows does to them between starts — an update, a repair, a
+   reset — is then undone before a host exists. A folder already carrying it is
+   left alone, so the common start writes nothing.
+2. **A startup check reads the five DACLs back** and refuses to create any host
+   while one is not protected or names any `S-1-15-` principal. Its control is an
+   unlocked folder, which it must refuse. The host's own containment probe stays
+   exactly as it is — its negative file now sits in a locked folder.
+3. **The package root is found through the authority**, never assembled: the
+   final path of `userData` (the redirection resolved, as the log reveal does), up
+   to its `LocalCache`, and checked against `GetCurrentPackageFamilyName`.
+4. **Development is unchanged**: a checkout has no package, so there is nothing to
+   lock and no check to run; the dev grant (ADR-0027) keeps its reason.
+
+### Rejected
+
+- **Route B (run from a copy) and route C (give up the AppContainer)** — the owner's
+  to take, and not needed while D holds.
+- **Locking the app's own data folder alone** — the host could still write to
+  `LocalState`, `RoamingState` and `TempState`, measured.
+- **A deny ACE** — measured ignored for a capability and a container SID alike.
+- **Locking once, at first run** — nothing would notice Windows undoing it.
+
+### Not yet measured, and owed
+
+Whether an app update restores the ACE: read from the `TempState` sentinel after the
+owner's install of 0.1.2.0. Decision 1 makes the answer a question about one start
+rather than about safety, and the answer is recorded either way.

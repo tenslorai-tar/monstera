@@ -47,7 +47,7 @@
  */
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -77,6 +77,8 @@ const READS = process.argv.flatMap((value, at) => (value === '--read' ? [process
  * allow win inside `handed` while the deny holds everywhere else.
  */
 const DENY_LAYOUT = process.argv.includes('--deny-layout');
+/** Whether to measure route D — a protected data folder — and survey what else the package's identity opens. */
+const ROUTE_D = process.argv.includes('--route-d');
 if (OUT === null || PROBE_DIR === null) {
   console.error('usage: packagedHostToken.mjs --out <json> --probe-dir <dir> [--expect-package] [--moniker <name>]');
   process.exit(2);
@@ -112,6 +114,13 @@ const TokenAppContainerSid = 31;
 const SecurityImpersonation = 2;
 const TokenImpersonationType = 2;
 const GENERIC_READ = 0x80000000;
+const GENERIC_WRITE = 0x40000000;
+const FILE_LIST_DIRECTORY = 0x0001;
+const FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
+const CREATE_NEW = 1;
+const SYNCHRONIZE = 0x00100000;
+const CreateEventW = kernel32.func('void *CreateEventW(void *sa, bool manual, bool initial, const char16_t *name)');
+const OpenEventW = kernel32.func('void *OpenEventW(uint32 access, bool inherit, const char16_t *name)');
 const SHARE_ALL = 0x7;
 const OPEN_EXISTING = 3;
 const APPMODEL_ERROR_NO_PACKAGE = 15700;
@@ -184,6 +193,17 @@ function readToken(token) {
  * @param {string} path
  */
 function openAs(token, path) {
+  return handleAs(token, () => CreateFileW(path, GENERIC_READ, SHARE_ALL, null, OPEN_EXISTING, 0, null));
+}
+
+/**
+ * Makes one handle-returning call on this thread under `token`, and says what the kernel answered: the call is the
+ * access check, so every question below is asked the same way.
+ *
+ * @param {unknown} token
+ * @param {() => unknown} call
+ */
+function handleAs(token, call) {
   const duplicated = [null];
   if (!DuplicateTokenEx(token, TOKEN_IMPERSONATE | TOKEN_QUERY, null, SecurityImpersonation, TokenImpersonationType, duplicated)) {
     return { opened: 'could-not-impersonate', error: GetLastError() };
@@ -193,14 +213,31 @@ function openAs(token, path) {
     CloseHandle(duplicated[0]);
     return { opened: 'could-not-impersonate', error };
   }
-  const handle = CreateFileW(path, GENERIC_READ, SHARE_ALL, null, OPEN_EXISTING, 0, null);
+  const handle = call();
   const error = GetLastError();
   RevertToSelf();
   CloseHandle(duplicated[0]);
-  const address = koffi.address(handle);
+  const address = handle === null ? 0n : koffi.address(handle);
   const invalid = address === 0n || address === 0xffffffffffffffffn;
   if (!invalid) CloseHandle(handle);
   return invalid ? { opened: false, error } : { opened: true };
+}
+
+/** @param {unknown} token @param {string} path a directory: can the token list it? */
+function listDirectoryAs(token, path) {
+  return handleAs(token, () => CreateFileW(path, FILE_LIST_DIRECTORY, SHARE_ALL, null, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, null));
+}
+
+/** @param {unknown} token @param {string} path a file that must not exist: can the token create it? */
+function createAs(token, path) {
+  const answer = handleAs(token, () => CreateFileW(path, GENERIC_WRITE, SHARE_ALL, null, CREATE_NEW, 0, null));
+  rmSync(path, { force: true });
+  return answer;
+}
+
+/** @param {unknown} token @param {string} name a named event this process created: can the token open it? */
+function openEventAs(token, name) {
+  return handleAs(token, () => OpenEventW(SYNCHRONIZE, false, name));
 }
 
 /**
@@ -250,11 +287,92 @@ function measureDenyLayout(token, reading) {
   };
 }
 
+/**
+ * ROUTE D (the owner's decision of 2026-09-30): the host stays the package's child container, so it keeps the
+ * install root, and main takes the package's permission away from its DATA by making the data folder's DACL
+ * protected — no inheritance — granting the user, SYSTEM and Administrators only. Built here exactly as main would:
+ * through the virtual %APPDATA% path, from a process with the package's identity, so the redirection is part of what
+ * is measured.
+ *
+ * @param {unknown} token the host's token
+ * @param {unknown} reading the host's token reading
+ * @param {string | null} packageRoot `%LOCALAPPDATA%\Packages\<family>`, for the survey of what else it opens
+ */
+function measureRouteD(token, reading, packageRoot) {
+  const container = /** @type {{ appContainerSid?: unknown }} */ (reading).appContainerSid;
+  const user = /"[^"]*","(S-1-5-21-[0-9-]+)"/u.exec(spawnSync('whoami', ['/user', '/fo', 'csv'], { encoding: 'utf8' }).stdout ?? '')?.[1];
+  if (typeof container !== 'string' || user === undefined) return { skipped: `no container SID (${String(container)}) or user (${String(user)})` };
+
+  const base = join(process.env['APPDATA'] ?? '', 'monstera-route-d-probe');
+  const locked = join(base, 'locked');
+  const session = join(locked, 'session');
+  const inherits = join(base, 'inherits');
+  mkdirSync(session, { recursive: true });
+  mkdirSync(inherits, { recursive: true });
+  writeFileSync(join(locked, 'secret'), 's'.repeat(64));
+  writeFileSync(join(inherits, 'control'), 'c'.repeat(64));
+
+  const before = { lockedSecret: openAs(token, join(locked, 'secret')) };
+  const lock = icacls([
+    locked,
+    '/inheritance:r',
+    '/grant:r',
+    `*${user}:(OI)(CI)(F)`,
+    '*S-1-5-18:(OI)(CI)(F)',
+    '*S-1-5-32-544:(OI)(CI)(F)',
+  ]);
+  const grant = icacls([session, '/grant', `*${container}:(OI)(CI)(M)`]);
+  writeFileSync(join(session, 'handed'), 'h'.repeat(64));
+  const aclOfLocked = (spawnSync('icacls', [locked], { encoding: 'utf8' }).stdout ?? '').trim().split(/\r?\n/u).map((line) => line.trim());
+
+  // main — this process, with the package's identity and the user's token — still reads and writes its data.
+  /** @type {{ reads: boolean, writes: boolean } | { failed: string }} */
+  let main;
+  try {
+    const reads = readFileSync(join(locked, 'secret'), 'utf8').length === 64;
+    writeFileSync(join(locked, 'written-by-main'), 'm');
+    main = { reads, writes: readFileSync(join(locked, 'written-by-main'), 'utf8') === 'm' };
+  } catch (error) {
+    main = { failed: error instanceof Error ? error.message : String(error) };
+  }
+
+  const cells = {
+    'the host is REFUSED a file in the locked data folder': openAs(token, join(locked, 'secret')),
+    'CONTROL: the same host reads a file in a folder that still inherits the package ACE': openAs(token, join(inherits, 'control')),
+    'the host reads its own session folder, granted explicitly under the lock': openAs(token, join(session, 'handed')),
+    'the host lists the locked folder': listDirectoryAs(token, locked),
+    'the host creates a file in the locked folder': createAs(token, join(locked, 'created-by-host')),
+  };
+
+  /** @type {Record<string, unknown>} */
+  const survey = {};
+  if (packageRoot !== null) {
+    for (const folder of ['AC', 'AppData', 'LocalCache', 'LocalState', 'RoamingState', 'Settings', 'SystemAppData', 'TempState']) {
+      survey[`list ${folder}`] = listDirectoryAs(token, join(packageRoot, folder));
+    }
+    for (const file of ['Settings\\settings.dat', 'SystemAppData\\Helium\\User.dat', 'SystemAppData\\Helium\\UserClasses.dat']) {
+      survey[`read ${file}`] = openAs(token, join(packageRoot, file));
+    }
+    for (const folder of ['LocalState', 'TempState', 'RoamingState', 'AC\\Temp']) {
+      survey[`create in ${folder}`] = createAs(token, join(packageRoot, folder, 'created-by-host'));
+    }
+  }
+  const temp = process.env['TEMP'] ?? '';
+  survey[`this process's TEMP (${temp})`] = listDirectoryAs(token, temp);
+  const eventName = `Local\\monstera-route-d-${String(process.pid)}`;
+  const event = CreateEventW(null, true, false, eventName);
+  survey['open a named event main created'] = openEventAs(token, eventName);
+  if (event !== null) CloseHandle(event);
+
+  rmSync(base, { recursive: true, force: true });
+  return { user, container, before, lock, grant, aclOfLocked, main, cells, survey };
+}
+
 const self = packageName((len, buf) => GetCurrentPackageFullName(len, buf));
 /**
  * @type {{ measuredAt: string, expectPackage: boolean, moniker: string, parentPackage: unknown, probeDir: string,
  *   verdict?: string, childPackage?: unknown, childToken?: unknown, childOpensNegative?: unknown,
- *   childReads?: unknown, denyLayout?: unknown }}
+ *   childReads?: unknown, denyLayout?: unknown, routeD?: unknown }}
  */
 const result = {
   measuredAt: new Date().toISOString(),
@@ -304,6 +422,7 @@ try {
         result.childOpensNegative = openAs(token[0], negative);
         result.childReads = READS.map((path) => ({ path, ...openAs(token[0], path) }));
         if (DENY_LAYOUT) result.denyLayout = measureDenyLayout(token[0], result.childToken);
+        if (ROUTE_D) result.routeD = measureRouteD(token[0], result.childToken, argument('--package-root'));
         CloseHandle(token[0]);
       }
       result.verdict = 'MEASURED';
