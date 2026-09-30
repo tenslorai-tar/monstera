@@ -274,11 +274,16 @@ mkdirSync(PROBE_DIR, { recursive: true });
 const negative = join(PROBE_DIR, 'token-probe-negative');
 writeFileSync(negative, 'n'.repeat(64));
 
+// THE BUILT SURFACE, loaded by path as `lowboxSpike.mjs` loads it: this instrument observes, and creation is the
+// shipped surface's (RR-3), so it must be the compiled artefact the application runs.
 const { createWin32HostSurface } = await import(pathToFileURL(BUILT_SURFACE).href);
-const binary = electronBinaryPath(ROOT);
 const surface = createWin32HostSurface({
-  program: { runs: 'electron-node', executablePath: binary, commandArguments: ['token-probe-never-resumed.js'] },
-  workingDirectory: dirname(binary),
+  program: {
+    runs: 'electron-node',
+    executablePath: electronBinaryPath(ROOT),
+    commandArguments: ['token-probe-never-resumed.js'],
+  },
+  workingDirectory: dirname(electronBinaryPath(ROOT)),
   containerName: MONIKER,
   diagnosticPath: null,
 });

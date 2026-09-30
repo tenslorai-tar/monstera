@@ -630,9 +630,10 @@ the flat-C exports of `mupdf.c` in the same source tree — the npm package is b
 from exactly those two files. That C is generated into `monstera_mupdf`
 (`scripts/provision/mupdfGlue.mjs`), with a wrapper per export that ends MuPDF's
 unwind inside the DLL, and the object model runs in `mupdfRaw.ts` with memory
-reached through the shim's accessors. Two exports are withheld: MuPDF's
-JavaScript switch (invariant 24) and its format-string writer dispatcher
-(invariant 23). **No kernel module imports the WASM package**
+reached through the shim's accessors. Three exports are withheld: MuPDF's
+JavaScript switch (invariant 24), its format-string writer dispatcher
+(invariant 23), and font subsetting, the path to a memory overwrite no release
+fixes (`docs/security/engine-advisories.json`). **No kernel module imports the WASM package**
 (`npm run proof:enginesurface`: 0 importers, every one of the 539 exports the
 object model calls present in the DLL), and it is not in what ships. The shim
 builds on Windows through MuPDF's MSVC solution and on Linux through its

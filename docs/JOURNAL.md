@@ -931,6 +931,13 @@ at least 2×; the remedy is a file-backed copy and is the owner's. **Row 361's w
 WASM engine re-entering costs 24 MB and 128 misses it); the amendment waits for CI's native sample. The npm package
 leaves what ships: **13.1 MB net**. Linux builds through MuPDF's Makefile and has not run yet — CI is its first run.
 
+*Correction, 2026-09-30, the same night:* **three** exports are withheld, not two. The pre-push `check:` set found the
+third: `check:advisories` reported that `pdf_subset_fonts` and `subsetFonts` were now named by shipped code — the
+object model in `mupdfRaw.ts` — which expired the NOT-REACHABLE verdicts of CVE-2026-7233 and ARTIFEX-BUG-709567, a
+memory overwrite in no release. Font subsetting is withheld from the shim and its method removed from the object model,
+so a call does not compile; the register says so. Same finding as point 5: the new code was invisible to a scan until
+it was shipped code.
+
 ---
 
 ## 2026-09-30 — Stage audit of `0cc33126..4af180ff` — findings XXXXXX-1 to XXXXXX-8

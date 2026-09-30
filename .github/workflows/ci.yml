@@ -155,6 +155,12 @@ jobs:
       - name: Provision MuPDF and build the shim
         run: node scripts/ci/annotate.mjs scripts/provision/mupdf.mjs
 
+      # The generator that turns MuPDF's WASM binding into native C, on its
+      # fixtures and on the real mupdf.c the step above provisioned — and the
+      # port's two pins against that source (ADR-0124).
+      - name: Prove MuPDF's binding generator and the port's pins
+        run: node scripts/ci/annotate.mjs scripts/provision/mupdfGlue.proof.mjs
+
       # Build precedes the proofs that resolve compiled output: the boundary
       # proof lints imports of `@monstera/*`, which resolve through each
       # package's exports map to dist.
@@ -996,7 +1002,7 @@ jobs:
           key: mupdf-${{ runner.os }}-1.28.0-${{ hashFiles('scripts/provision/mupdf.mjs', 'scripts/provision/mupdfGlue.mjs') }}
 
       - name: Provision MuPDF and build the shim
-        run: node scripts/provision/mupdf.mjs
+        run: node scripts/ci/annotate.mjs scripts/provision/mupdf.mjs
 
       # The same `build` the matrix job runs. This job exists to prove the
       # declared Node floor can do everything the toolchain asks of it, and

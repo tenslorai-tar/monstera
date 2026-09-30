@@ -314,6 +314,16 @@ try {
       },
     ],
     [
+      'scripts/research/packagedHostToken.mjs',
+      {
+        sites: 1,
+        reason:
+          'imports the built win32HostSurface.js through a file:// URL, lowboxSpike.mjs\'s route: it measures the ' +
+          'token of a host the SHIPPED surface creates inside an installed package (ADR-0023\'s 2026-09-30 ' +
+          'correction), so the compiled artefact is the subject. Names no Electron module.',
+      },
+    ],
+    [
       'scripts/research/lowboxSpike.mjs',
       {
         sites: 6,

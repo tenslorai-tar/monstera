@@ -326,10 +326,12 @@ is wrong** — fix the boundary, not the test.
   MuPDF calls turned out to be MuPDF's own `platform/wasm/lib/mupdf.ts`, over the
   flat-C `mupdf.c` beside it, so that C is generated into the shim and that object
   model runs in `mupdfRaw.ts`; no kernel module imports the WASM package, and it
-  is not in what ships. Two exports are withheld, and both were found only once the
-  scans could see the generated glue — it is not in the commit, so a scan of
-  committed files was blind to it: MuPDF's JavaScript switch (invariant 24, MuJS
-  back in the DLL) and its format-string writer dispatcher (invariant 23). **A
+  is not in what ships. Three exports are withheld, and each was found only once a
+  scan could see the new code — the generated glue is not in the commit, so a scan
+  of committed files was blind to it: MuPDF's JavaScript switch (invariant 24, MuJS
+  back in the DLL), its format-string writer dispatcher (invariant 23), and font
+  subsetting (the advisory register's reachability watch, a memory overwrite no
+  release fixes). **A
   generated file is shipped code; a scan whose root is the commit does not see it.**
 
   **Its size was never the import count, and the figure grew for weeks unseen.**

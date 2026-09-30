@@ -89,10 +89,15 @@ export const CALLBACKS = {
  */
 export const WITHHELD = {
   wasm_pdf_enable_js: 'turns on the JavaScript interpreter, which invariant 24 keeps out of the shipped shim',
+  // (Each reason completes "an export that …" in the marker the generator leaves in the glue.)
   // Measured 2026-09-30 by `check:pathdispatch`, once it read the generated glue: this export is MuPDF's
   // format-string dispatcher, `fz_new_document_writer_with_buffer`, whose `ocr` writer starts Tesseract.
   wasm_new_document_writer_with_buffer:
     'passes a format string to MuPDF\'s writer dispatcher, which invariant 23 bans from shipped code',
+  // Found 2026-09-30 by `check:advisories`, once the object model was shipped code: font subsetting is the path to
+  // ARTIFEX-BUG-709567, a memory overwrite in CFF2 subsetting that no release fixes, and to CVE-2026-7233's code. The
+  // register's NOT-REACHABLE verdicts rest on no shipped path reaching it; withholding the export keeps that true.
+  wasm_pdf_subset_fonts: 'is font subsetting, the path to a memory overwrite no MuPDF release fixes (ARTIFEX-BUG-709567)',
 };
 
 /** The error kinds `wasm_rethrow` distinguishes, as the runtime numbers them. */
@@ -309,8 +314,9 @@ function renameExports(text) {
     }
     const inside = text.slice(open + 1, close).replace(/\s+/g, ' ').trim();
     if (WITHHELD[named[2]] !== undefined) {
-      // The whole definition goes, so nothing in the DLL references what it called.
-      out += `${text.slice(cursor, at)}/* WITHHELD ${named[2]}: ${WITHHELD[named[2]]} */`;
+      // The whole definition goes, so nothing in the DLL references what it called — and the marker left in its
+      // place gives the reason without the name, so no text the library is built from names a withheld path.
+      out += `${text.slice(cursor, at)}/* WITHHELD by scripts/provision/mupdfGlue.mjs: an export that ${WITHHELD[named[2]]} */`;
       cursor = matching(text, body) + 1;
       continue;
     }

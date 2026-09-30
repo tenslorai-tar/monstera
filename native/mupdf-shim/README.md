@@ -10,8 +10,8 @@ mandates; it is not a helper or an optimisation.
 > flat-C `platform/wasm/lib/mupdf.c`, generated at build time by
 > `scripts/provision/mupdfGlue.mjs` and compiled with `monstera_glue_runtime.c`
 > and `monstera_emscripten.h` — and `packages/kernel/src/mupdfRaw.ts` runs MuPDF's
-> object model on it. Two of that binding's exports are withheld, for invariants
-> 23 and 24 (`WITHHELD` in the generator). Until that date only Optimize loaded it
+> object model on it. Three of that binding's exports are withheld, for invariants
+> 23 and 24 and an unfixed advisory (`WITHHELD` in the generator). Until that date only Optimize loaded it
 > ([ADR-0087](../../docs/DECISIONS/0087-optimize-is-mupdfs-native-image-rewriter-in-the-compose-host.md))
 > and the pipeline ran on the npm package's WASM build.
 >

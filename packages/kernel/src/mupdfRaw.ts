@@ -37,9 +37,10 @@
  *     and the two zero-copy views upstream returned — `Buffer.asUint8Array` and `Pixmap.getPixels` — are copies.
  *  3. ERRORS. In WASM a MuPDF error was a JavaScript exception thrown from inside the call. Native, the DLL ends
  *     the unwind in its own frame and reports it, and {@link openMupdfShim} throws the same `Error` upstream threw.
- *  4. WITHHELD. Two exports are not built (`scripts/provision/mupdfGlue.mjs`' WITHHELD): MuPDF's JavaScript switch,
- *     so `enableJS()` refuses rather than linking an interpreter into the shipped shim (invariant 24), and its
- *     format-string writer dispatcher, so `new DocumentWriter()` refuses (invariant 23).
+ *  4. WITHHELD. Three exports are not built (`scripts/provision/mupdfGlue.mjs`' WITHHELD): MuPDF's JavaScript
+ *     switch, so `enableJS()` refuses rather than linking an interpreter into the shipped shim (invariant 24); its
+ *     format-string writer dispatcher, so `new DocumentWriter()` refuses (invariant 23); and font subsetting, whose
+ *     method is removed so a call does not compile (an unfixed advisory, `docs/security/engine-advisories.json`).
  *
  * The Optimize functions at the end are the shim's own `mz_*` surface, unchanged.
  *
@@ -402,7 +403,6 @@ interface Libmupdf {
 	_wasm_pdf_enable_js(doc: Pointer<"any_document">): void,
 	_wasm_pdf_disable_js(doc: Pointer<"any_document">): void,
 	_wasm_pdf_rearrange_pages(doc: Pointer<"any_document">, n: number, pages: Pointer<"int">): void,
-	_wasm_pdf_subset_fonts(doc: Pointer<"any_document">): void,
 	_wasm_pdf_bake_document(doc: Pointer<"any_document">, bake_annots: boolean, bake_widgets: boolean): void,
 	_wasm_pdf_count_layer_configs(doc: Pointer<"any_document">): number,
 	_wasm_pdf_layer_config_creator(doc: Pointer<"any_document">, config: number): Pointer<"char">,
@@ -3473,9 +3473,10 @@ export class PDFDocument extends Document {
 		}
 	}
 
-	subsetFonts() {
-		libmupdf._wasm_pdf_subset_fonts(this.pointer)
-	}
+	/* MONSTERA: WITHHELD. Upstream's font-subsetting method is removed, and the shim does not carry its export
+	 * (scripts/provision/mupdfGlue.mjs): subsetting is the path to ARTIFEX-BUG-709567, a memory overwrite no release
+	 * fixes, and `docs/security/engine-advisories.json` rests its NOT-REACHABLE verdicts on no shipped path reaching
+	 * it. Removed rather than refused, so a call is a compile error. */
 
 	bake(bakeAnnots = true, bakeWidgets = true) {
 		libmupdf._wasm_pdf_bake_document(this.pointer, bakeAnnots, bakeWidgets)
