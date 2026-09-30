@@ -567,6 +567,26 @@ once. So generation belongs to the command, which is §4's removal rule one
 operation along, and for the same reason: a document-level operation performed
 once per small edit.
 
+**AND GENERATION DROPS AN INLINE IMAGE, so the MuPDF host prepares PDFium's
+input — amended 2026-09-30**
+([ADR-0126](DECISIONS/0126-a-pdfium-command-is-handed-its-pages-with-inline-images-made-xobjects.md)).
+`CPDF_PageContentGenerator::ProcessImage` returns early for an image that
+`IsInline()`, so a regenerated page is saved without its `BI … EI` pictures.
+Measured by `pdfiumImageKeep.mjs`: of five picture shapes, only the inline one
+was lost. PDFium's public API can neither tell an inline image apart nor turn one
+into an XObject: `SetBitmap` and `LoadJpegFileInline` refill the same image and
+keep its flag, which `pdfiumInlineConvert.mjs` measured on three shapes. MuPDF's
+interpreter reads inline images, so **before a PDFium command's `apply` or
+`invert`, the MuPDF host rewrites each `BI … EI` on the pages the command
+regenerates into an image XObject and `/Name Do` at the same place in the
+content stream**. That place is what keeps the picture's clip, colour and
+drawing order. This is a stateless bytes-to-bytes call on the document session's
+granted area, like PDFium's own channels, and it touches no live session. When a
+page holds no inline image, the call writes nothing and PDFium is handed the
+image unchanged. So a PDFium command now has one dependency on the MuPDF host,
+and the rule for which pages a command regenerates has one statement, which both
+this step and the command's own declaration take.
+
 **A READER's session is not this rule's business.** HD render rasterises through
 PDFium and wants a session that outlives a call; a read-only session recycled
 when the version moves cannot answer `serialise` and is not the two-writers
