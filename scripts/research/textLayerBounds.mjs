@@ -47,7 +47,7 @@ import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import * as mupdf from '../../packages/kernel/dist/mupdfRaw.js';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 
-import { TEXT_STRUCTURE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { NATIVE_ENGINE, TEXT_STRUCTURE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { corpusCaveat, openCorpus } from '../lib/corpus.mjs';
 import { STEXT_OPTION_STRING, linesOf, parsePageText } from '../../packages/kernel/dist/textStructure.js';
 
@@ -60,7 +60,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 // the previous one and print the answer under this one's name. Added by finding
 // CCCCCC-4, which is this instrument being named by a comment in another file
 // for a range rather than by a check.
-refuseStaleBuild(root, TEXT_STRUCTURE, 1);
+refuseStaleBuild(root, [...TEXT_STRUCTURE, ...NATIVE_ENGINE], 2);
 
 /**
  * The two figures the bounds are about, for one document — plus what the ENGINE

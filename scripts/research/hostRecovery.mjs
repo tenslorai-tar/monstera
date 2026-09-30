@@ -51,6 +51,7 @@ import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
+import { shimBuildState, shimEnvironment } from '../lib/shimBinary.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { inspect } from '../provision/containerGrants.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
@@ -130,10 +131,13 @@ function ungrantedPaths() {
 
 const missingBuilt = BUILT.filter((relative) => !existsSync(join(ROOT, relative)));
 const ungranted = process.platform === 'win32' ? ungrantedPaths() : [];
+// THE ENGINE ITSELF (ADR-0124): without the variable the platform has no MuPDF host and answers `null`.
+const shim = shimBuildState({ root: ROOT });
 const runnable =
   process.platform === 'win32' &&
   existsSync(ELECTRON_BINARY) &&
   missingBuilt.length === 0 &&
+  shim.current &&
   ungranted.length === 0;
 
 if (!runnable) {
@@ -145,7 +149,9 @@ if (!runnable) {
         ? `The pinned Electron binary is absent. Run \`npm run provision:electron\`.`
         : missingBuilt.length > 0
           ? `Not built: ${missingBuilt.join(', ')}. Run \`npm run build\`.`
-          : `The container cannot read ${String(ungranted.length)} of its granted path(s), so a ` +
+          : !shim.current
+            ? `The MuPDF shim the hosts load is not usable: ${shim.reason}`
+            : `The container cannot read ${String(ungranted.length)} of its granted path(s), so a ` +
             `contained host would be created and die loading its own runtime data — reported ` +
             `by everything downstream as a host that did not reach its pipe.\n  ` +
             `${ungranted.join('\n  ')}\n  Run \`npm run provision:grants\`.`;
@@ -198,7 +204,7 @@ if (!runnable) {
       cwd: ROOT,
       stdio: 'inherit',
       timeout: 180_000,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      env: { ...process.env, ...shimEnvironment({ root: ROOT }), ELECTRON_RUN_AS_NODE: '1' },
     });
     if (result.error !== undefined) {
       throw new Error(`could not run ${CHILD} under ${ELECTRON_BINARY}`, { cause: result.error });

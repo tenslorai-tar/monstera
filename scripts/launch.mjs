@@ -50,7 +50,7 @@ import { fileURLToPath } from 'node:url';
 
 import { SHELL_LAUNCH, refuseStaleBuild } from './lib/buildFreshness.mjs';
 import { fileExists } from './lib/fetchVerified.mjs';
-import { shimBuildState, shimPath } from './lib/shimBinary.mjs';
+import { shimEnvironment } from './lib/shimBinary.mjs';
 import { electronBinaryPath } from './provision/electron.mjs';
 import { pdfiumLibrary } from './provision/pdfium.mjs';
 import { gswin64cPath } from './provision/ghostscript.mjs';
@@ -123,21 +123,17 @@ async function pdfiumEnvironment() {
 }
 
 /**
- * Where the compose host should find `monstera_mupdf.dll`, for Optimize (ADR-0087), or nothing.
- *
- * {@link pdfiumEnvironment}' shape one artefact along: `scripts/lib/shimBinary.mjs` owns where the
- * DLL lives and `apps/desktop` cannot call it. **Passed only when the DLL was built from the source
- * on disk** — `shimBuildState`'s question, not a file's presence — because the compose host binds
- * the shim's exports at its start, and a DLL older than its source can lack one: that would end a
- * host that also serves every import, where an absent path costs Optimize alone, which then says
- * it is unavailable.
+ * Where every MuPDF host should find `monstera_mupdf.dll` (ADR-0124), or nothing — from
+ * `shimEnvironment`, the one spelling. **Passed only when the DLL was built from the source on
+ * disk**, because a host binds the shim's exports at its start and a DLL older than its source can
+ * lack one. Without it the shell starts with no MuPDF host, and every document opens poisoned with
+ * the no-platform reason.
  *
  * @returns {Record<string, string>} the variables to add to the child's environment — empty when
  *   the shim is not built, or not built from this source.
  */
 function mupdfShimEnvironment() {
-  if (!shimBuildState({ root: REPO_ROOT }).current) return {};
-  return { MONSTERA_MUPDF_SHIM: shimPath(REPO_ROOT) };
+  return shimEnvironment({ root: REPO_ROOT });
 }
 
 /**

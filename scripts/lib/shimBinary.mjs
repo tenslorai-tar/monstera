@@ -167,3 +167,21 @@ export function requireCurrentShim(options = {}) {
   }
   return shimPath(root);
 }
+
+/**
+ * The variable that tells a process running `apps/desktop`'s code where the engine is (ADR-0122's
+ * `MONSTERA_MUPDF_SHIM`), or nothing where the shim is not built from the source on disk.
+ *
+ * ONE SPELLING for every process that starts the shell or builds its engine platform. Since ADR-0124
+ * the shim is the engine every MuPDF host loads, and a platform without it answers `null` — so a
+ * starter that forgot the variable has no MuPDF host at all. The launcher had it and the two contained
+ * host harnesses did not, and both went red on the commit that made the shim the engine.
+ *
+ * @param {{ root?: string }} [options]
+ * @returns {Record<string, string>}
+ */
+export function shimEnvironment(options = {}) {
+  const root = options.root ?? repoRoot();
+  if (!shimBuildState({ root }).current) return {};
+  return { MONSTERA_MUPDF_SHIM: shimPath(root) };
+}

@@ -207,6 +207,14 @@ export const COMPOSE_HOST_LIVE = [
 ];
 
 /**
+ * The kernel's native object model, which `nativeEngine.mjs` binds for every script that runs the engine in its own
+ * process (ADR-0124).
+ *
+ * @type {readonly BuildEdge[]}
+ */
+export const NATIVE_ENGINE = [['packages/kernel/src/mupdfRaw.ts', 'packages/kernel/dist/mupdfRaw.js', 'tsc']];
+
+/**
  * The declarations `contract.proof.mjs`' probes are compiled against.
  *
  * Its probes name `ContractHandlers`, `ContractClient`, `Command` and
@@ -306,18 +314,21 @@ export const ARTEFACT_EDGES = {
   // The fidelity proof drives the same built adapter, and reads pixels rather
   // than text: it is the guard that an edit does not silently redraw the page.
   'proof:editfidelity': PDFIUM_ADAPTER,
-  'proof:lineagreement': TEXT_STRUCTURE,
+  // THE ENGINE'S OBJECT MODEL TOO, on this and the two below, since ADR-0124 moved them onto `dist/mupdfRaw.js`:
+  // every one of them imported it directly with only the parser declared, so a change to the binding alone left the
+  // guard quiet about the file every page read goes through.
+  'proof:lineagreement': [...TEXT_STRUCTURE, ...NATIVE_ENGINE],
   // The bounds instrument reads the same built parser and had no edge until
   // CCCCCC-4, which is what made the requirement derive from the scripts that
   // import a build rather than from the ones that already call the guard.
-  'proof:textbounds': TEXT_STRUCTURE,
+  'proof:textbounds': [...TEXT_STRUCTURE, ...NATIVE_ENGINE],
   // THE SIXTH, and the anchor named it on its first run again — registered with
   // its `refuseStaleBuild` call and without this entry, exactly as
   // `proof:pdfiumadapter` was. It reads the built parser AND the built rule
   // that classifies a parsed page — two sources, because a change to the rule
   // alone would otherwise leave the guard quiet about the file the proof is
   // most about.
-  'proof:scannedpages': [...TEXT_STRUCTURE, ...PAGE_KIND],
+  'proof:scannedpages': [...TEXT_STRUCTURE, ...PAGE_KIND, ...NATIVE_ENGINE],
   // The language set it ties the provisioning table to is the BUILT enum, so a
   // stale build would compare against yesterday's languages.
   'proof:ocrmodels': CONTRACT_TYPES,

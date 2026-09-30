@@ -77,7 +77,7 @@ import koffi from 'koffi';
 import * as mupdf from '../../packages/kernel/dist/mupdfRaw.js';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 
-import { TEXT_STRUCTURE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { NATIVE_ENGINE, TEXT_STRUCTURE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { corpusCaveat, openCorpus } from '../lib/corpus.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { PDFIUM_VERSION, pdfiumLibrary } from '../provision/pdfium.mjs';
@@ -107,7 +107,7 @@ if (!existsSync(library)) {
 
 // The instrument's whole subject is what the built parser produces, so a stale
 // build would score the previous one and print the answer under this one's name.
-refuseStaleBuild(root, TEXT_STRUCTURE, 1);
+refuseStaleBuild(root, [...TEXT_STRUCTURE, ...NATIVE_ENGINE], 2);
 
 const LINES = [
   'The first line of the constructed page.',

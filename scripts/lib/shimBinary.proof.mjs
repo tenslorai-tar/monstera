@@ -26,7 +26,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { repoRoot } from './gitScope.mjs';
-import { recordShimBuild, shimBuildState, requireCurrentShim } from './shimBinary.mjs';
+import { recordShimBuild, shimBuildState, shimPath, requireCurrentShim } from './shimBinary.mjs';
 
 /** @type {string[]} */
 const failures = [];
@@ -58,7 +58,9 @@ function makeTree() {
     join(REAL, 'native', 'mupdf-shim', 'monstera_mupdf.vcxproj'),
     join(shim, 'monstera_mupdf.vcxproj'),
   );
-  writeFileSync(join(shim, 'out', 'monstera_mupdf.dll'), 'placeholder');
+  // WHERE THE RESOLVER LOOKS, never a spelled name: Linux builds `libmonstera_mupdf.so` (ADR-0124), and a fixture
+  // naming the DLL there leaves every tree "not built" — which reddened the Linux Guards leg on the push that did it.
+  writeFileSync(shimPath(root), 'placeholder');
   return root;
 }
 
@@ -79,7 +81,7 @@ try {
     'CONTROL: requireCurrentShim returns the path rather than throwing',
     (() => {
       try {
-        return requireCurrentShim({ root: clean }).endsWith('monstera_mupdf.dll');
+        return requireCurrentShim({ root: clean }) === shimPath(clean);
       } catch {
         return false;
       }
@@ -136,7 +138,7 @@ try {
   );
 
   const missingDll = makeTree();
-  rmSync(join(missingDll, 'native', 'mupdf-shim', 'out', 'monstera_mupdf.dll'));
+  rmSync(shimPath(missingDll));
   check(
     'a missing DLL is reported as such, with the command that builds it',
     !shimBuildState({ root: missingDll }).current &&
@@ -149,7 +151,7 @@ try {
   // -------------------------------------------------------------------------
   const touched = makeTree();
   recordShimBuild({ root: touched, version: 'test' });
-  const dllPath = join(touched, 'native', 'mupdf-shim', 'out', 'monstera_mupdf.dll');
+  const dllPath = shimPath(touched);
   const contents = readFileSync(join(touched, 'native', 'mupdf-shim', 'monstera_mupdf.c'), 'utf8');
   writeFileSync(join(touched, 'native', 'mupdf-shim', 'monstera_mupdf.c'), contents, 'utf8');
   check(

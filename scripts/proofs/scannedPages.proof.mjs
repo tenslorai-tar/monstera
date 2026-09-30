@@ -48,7 +48,7 @@ import * as mupdf from '../../packages/kernel/dist/mupdfRaw.js';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import sharp from 'sharp';
 
-import { PAGE_KIND, TEXT_STRUCTURE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { NATIVE_ENGINE, PAGE_KIND, TEXT_STRUCTURE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { corpusCaveat, openCorpus } from '../lib/corpus.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
@@ -65,7 +65,7 @@ const REQUIRE_CORPUS = process.argv.includes('--require-corpus');
 // score the previous ones and print the answer under these ones' names. Two
 // pairs: a change to the classifier alone is the likeliest edit this file will
 // ever be run after, and `TEXT_STRUCTURE` on its own would be silent about it.
-refuseStaleBuild(root, [...TEXT_STRUCTURE, ...PAGE_KIND], 2);
+refuseStaleBuild(root, [...TEXT_STRUCTURE, ...PAGE_KIND, ...NATIVE_ENGINE], 3);
 
 /** @type {string[]} */
 const failures = [];

@@ -12,6 +12,7 @@ import { existsSync } from 'node:fs';
 
 import { openMupdfShim } from '../../packages/kernel/dist/mupdfRaw.js';
 import { shimLibraryPath } from '../provision/mupdf.mjs';
+import { NATIVE_ENGINE, refuseStaleBuild } from './buildFreshness.mjs';
 import { repoRoot } from './gitScope.mjs';
 
 /**
@@ -22,6 +23,9 @@ import { repoRoot } from './gitScope.mjs';
 export function bindNativeEngine(root = repoRoot()) {
   const path = shimLibraryPath(root);
   if (!existsSync(path)) return null;
+  // THE OBJECT MODEL IS READ FROM THE BUILD, so a stale one would bind yesterday's `mupdfRaw` to today's DLL — and
+  // every caller's first engine call comes after this line, whatever that caller guards itself.
+  refuseStaleBuild(root, NATIVE_ENGINE, 1);
   openMupdfShim(path);
   return path;
 }

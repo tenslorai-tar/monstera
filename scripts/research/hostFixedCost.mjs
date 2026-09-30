@@ -65,6 +65,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { formatError } from '../lib/reportError.mjs';
+import { requireCurrentShim } from '../lib/shimBinary.mjs';
 import { peakWorkingSetOf } from '../perf/peakRss.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 
@@ -203,7 +204,9 @@ async function measureHost(runtime, index) {
     server.listen(pipeName, () => settle(undefined));
   });
 
-  const child = spawn(runtime, [HOST_ENTRY, pipeName], {
+  // The engine's library second, as `hostEntry.ts` reads it (ADR-0124) and as `roleMupdfHost.mjs` passes it: without
+  // it the entry refuses before it connects, and every cell reads as a host that never reached its pipe.
+  const child = spawn(runtime, [HOST_ENTRY, pipeName, requireCurrentShim({ root: ROOT })], {
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
