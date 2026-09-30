@@ -11,7 +11,7 @@ import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { ByteImage } from '../engineSeam.js';
 import type { TextRun } from '../pdfiumFfi.js';
 import { TextNotWritableError } from '../textEditRefusals.js';
-import { EngineCallFailed, EngineSessionGone, type SessionArea } from './remoteEngine.js';
+import { EngineCallFailed, EngineSessionGone, type SessionArea, priorTooLargeToRecord } from './remoteEngine.js';
 import { EngineSerialiseMismatch, type SessionAreaSurface } from './remoteLifecycle.js';
 import { type PdfiumChannels, pdfiumTaggedPrior } from './pdfiumChannels.js';
 
@@ -184,10 +184,8 @@ export function remotePdfiumExecution(
       command: CommandOfKind<K>,
     ): Promise<CaptureResult<CommandPrior[K]>> =>
       withImage(image, async (from, _area, session) => {
-        const answer = answered(
-          'engine/capture',
-          await client['engine/capture']({ session, command, from }),
-        );
+        const result = await client['engine/capture']({ session, command, from });
+        const answer = priorTooLargeToRecord(result) ?? answered('engine/capture', result);
         if (!answer.captured) return { captured: false, reason: answer.reason };
         // THE TAG IS CHECKED, AND TODAY THE BOUNDARY GETS THERE FIRST — which
         // is measured rather than assumed: `pdfiumPriorSchema` is a

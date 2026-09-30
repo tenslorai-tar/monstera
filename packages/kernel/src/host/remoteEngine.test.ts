@@ -961,6 +961,32 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
  * area the token does, for exactly as long — a released session has no area by either route, so an answer arriving
  * after a close is refused rather than read out of a directory nothing holds.
  */
+/**
+ * A PRIOR ABOVE THE CEILING IS A PRIOR THAT CANNOT BE RECORDED (ADR-0125): the bus's checkpoint, never a failed edit.
+ * The peer answers the declared failure itself rather than a document being built past 8 MiB — what is under test is the
+ * writer's reading of the code, and the ceiling's own enforcement is the runtime's cases.
+ */
+describe('a capture above the ceiling', () => {
+  it('is a prior the MuPDF writer cannot record, and any other declared failure still throws', async () => {
+    let code = 'answer-too-large';
+    const sessions = createRemoteSessions();
+    const client = createClient(engineChannels, (id) =>
+      id === 'engine/capture' ? Promise.resolve({ ok: false, error: { code } }) : Promise.reject(new Error(`unused: ${id}`)),
+    );
+    const remote = remoteMupdfExecution(client, sessions, NO_ASSETS);
+    const token = sessions.adopt('h1', AREA);
+
+    expect(await remote.capture(token, rotateFirst)).toMatchObject({
+      captured: false,
+      reason: expect.stringMatching(/larger than the \d+-byte ceiling/u) as unknown,
+    });
+
+    // THE CONTROL: another code the channel DECLARES, so the boundary passes it and the throw is the writer's rule.
+    code = 'asset-missing';
+    await expect(remote.capture(token, rotateFirst)).rejects.toThrow(/asset-missing/u);
+  });
+});
+
 describe('the registry answers an area by handle for the lifetime of its token', () => {
   it('names the adopted area, and nothing once the token is released', () => {
     const sessions = createRemoteSessions();

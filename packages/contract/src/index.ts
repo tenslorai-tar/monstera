@@ -17,6 +17,13 @@ export {
   fileRequested,
 } from './channel.js';
 export {
+  type RouteViolation,
+  WORST_BYTES_PER_CHAR,
+  hostRouteViolations,
+  maxEncodedBytes,
+  unboundedMembers,
+} from './schemaBound.js';
+export {
   type ChannelId,
   type ChannelParams,
   type ChannelResult,

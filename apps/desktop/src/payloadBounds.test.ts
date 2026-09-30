@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { z } from 'zod';
 
-import { PRELOAD_CHANNEL_IDS, channelIds, channels } from '@monstera/contract';
+import { PRELOAD_CHANNEL_IDS, channelIds, channels, unboundedMembers } from '@monstera/contract';
 import { CapabilityRegistry, DocumentService } from '@monstera/kernel';
 import { type DocId, asDocVersion } from '@monstera/shared';
 
@@ -505,44 +505,6 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.renderPage': 'needs an engine session',
   'document.duplicatePages': 'needs an engine session',
 };
-
-/**
- * Every array or string in a schema that a caller cannot bound.
- *
- * Read out of zod's own JSON Schema rather than by walking its internals:
- * `toJSONSchema` is the library's answer to *what does this schema permit*, and
- * a second opinion about that is what B3a forbids. It reports `maxItems` for
- * `.max()` on an array and `maxLength` for a string, so an unbounded one shows
- * up as an absence rather than being inferred.
- */
-function unboundedMembers(schema: z.ZodType, path: string): readonly string[] {
-  const found: string[] = [];
-  const walk = (node: unknown, at: string): void => {
-    if (typeof node !== 'object' || node === null) return;
-    const held = node as Record<string, unknown>;
-    // A literal or an enum is bounded by its own members, so a length bound
-    // would be a second statement of the same fact — and requiring one would
-    // put `.max()` on every `kind` discriminant in the contract.
-    const enumerated = held['const'] !== undefined || held['enum'] !== undefined;
-    // A TUPLE WITH NO REST IS ITS OWN BOUND. zod writes `z.tuple([a, b])` as `prefixItems` with no `items`, and its
-    // own parse refuses a third member; a tuple WITH a rest writes `items`, and is read as unbounded like any array.
-    const fixedTuple = Array.isArray(held['prefixItems']) && held['items'] === undefined;
-    if (held['type'] === 'array' && held['maxItems'] === undefined && !fixedTuple) found.push(`array  ${at}`);
-    if (held['type'] === 'string' && held['maxLength'] === undefined && !enumerated) {
-      found.push(`string ${at}`);
-    }
-    for (const [key, value] of Object.entries(held)) walk(value, `${at}.${key}`);
-  };
-
-  walk(
-    // A branded string reaches JSON Schema through a transform, which has no
-    // representation. `any` keeps the walk going rather than throwing on the
-    // first one — and a branded id is bounded by its own minting.
-    z.toJSONSchema(schema, { io: 'output', unrepresentable: 'any' }),
-    path,
-  );
-  return found;
-}
 
 /**
  * Channels whose result deliberately carries something unbounded.

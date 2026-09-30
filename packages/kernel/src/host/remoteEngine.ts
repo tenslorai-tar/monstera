@@ -1,4 +1,10 @@
-import type { ClientApi, Command, CommandOfKind } from '@monstera/contract';
+import {
+  ANSWER_TOO_LARGE,
+  type ClientApi,
+  type Command,
+  type CommandOfKind,
+  ENGINE_ANSWER_FILE_MAX_BYTES,
+} from '@monstera/contract';
 
 import type { CommandExecution, KindsRoutedTo } from '../commandSpecs.js';
 import type { HUMAN_CHECKS } from '../accessibilityRules.js';
@@ -228,6 +234,28 @@ function answered<T>(
   if (result.ok) return result.value;
   if (result.error.code === 'no-such-session') throw new EngineSessionGone(channel);
   throw new EngineCallFailed(channel, result.error.code);
+}
+
+/**
+ * A capture that answered `answer-too-large` (ADR-0125), as the bus's own outcome for a prior it cannot record.
+ *
+ * The prior state is larger than the ceiling a capture crosses under — a per-page prior over a selection near the
+ * command's own bound, or a document carrying long strings where a prior reads them. That is a prior this build cannot
+ * RECORD, and the bus already answers that with a checkpoint (`captured: false`), as it does for a `/Rotate` it cannot
+ * read. Failing the command instead would refuse a person their edit because its undo record is large. Both remote
+ * captures take this one function, so the two writers cannot answer the same outcome two ways (B3a).
+ *
+ * @returns the refusal to record, or `undefined` for any other answer — which the caller unwraps as it did before
+ */
+export function priorTooLargeToRecord(
+  result: { ok: true } | { ok: false; error: { code: string } },
+): { captured: false; reason: string } | undefined {
+  return !result.ok && result.error.code === ANSWER_TOO_LARGE
+    ? {
+        captured: false,
+        reason: `the prior state is larger than the ${String(ENGINE_ANSWER_FILE_MAX_BYTES)}-byte ceiling a capture crosses under`,
+      }
+    : undefined;
 }
 
 /**
@@ -711,16 +739,10 @@ export function remoteMupdfExecution(
       session: MupdfSession,
       command: CommandOfKind<K>,
     ): Promise<CaptureResult<CommandPrior[K]>> => {
-      const answer = await withAsset(session, command, async (wire, asset) =>
-        answered(
-          'engine/capture',
-          await client['engine/capture']({
-            session: sessions.handleFor(session),
-            command: wire,
-            asset,
-          }),
-        ),
-      );
+      const answer = await withAsset(session, command, async (wire, asset) => {
+        const result = await client['engine/capture']({ session: sessions.handleFor(session), command: wire, asset });
+        return priorTooLargeToRecord(result) ?? answered('engine/capture', result);
+      });
       if (!answer.captured) return { captured: false, reason: answer.reason };
 
       // THE TAG CHECK, WRITTEN THE DAY ITS TRIGGER FIRED — 2026-09-03.

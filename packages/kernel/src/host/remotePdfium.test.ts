@@ -296,6 +296,27 @@ describe('main’s PDFium writer', () => {
     });
   });
 
+  /**
+   * A PRIOR ABOVE THE CEILING IS A PRIOR THAT CANNOT BE RECORDED (ADR-0125): the bus's checkpoint, never a failed
+   * edit. The CONTROL is the next declared failure in the same shape, which still throws — so this is the code's rule
+   * and not every failure turned into a checkpoint.
+   */
+  it('answers a capture above the ceiling as a prior it cannot record, and still throws for any other failure', async () => {
+    let code = 'answer-too-large';
+    const peer: Peer = { asked: [], answer: () => ({ ok: false, error: { code } }) };
+    const { writer } = harness(peer, stubTransfer());
+
+    expect(await writer.capture(new Uint8Array([1]), COMMAND)).toMatchObject({
+      captured: false,
+      reason: expect.stringMatching(/larger than the \d+-byte ceiling/u) as unknown,
+    });
+
+    // A DECLARED code, so the boundary passes it and the refusal is the writer's rule — an undeclared one would be
+    // refused as a malformed envelope first, and this control would pass for that reason.
+    code = 'asset-missing';
+    await expect(writer.capture(new Uint8Array([1]), COMMAND)).rejects.toThrow(/asset-missing/u);
+  });
+
   it('reads a page’s text runs through the same input write', async () => {
     const transfer = stubTransfer();
     const runs = [
