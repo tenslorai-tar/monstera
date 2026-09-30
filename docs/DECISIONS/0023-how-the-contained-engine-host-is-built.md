@@ -3518,3 +3518,63 @@ elevation: `TempState` is left locked as the sentinel, and the owner's install o
 Whether an app update restores the ACE: read from the `TempState` sentinel after the
 owner's install of 0.1.2.0. Decision 1 makes the answer a question about one start
 rather than about safety, and the answer is recorded either way.
+
+### Addendum, 2026-09-30 — Chromium's own processes, measured under the lock before 0.1.2.0
+
+**The owner's question:** does any process Electron itself starts run in an
+AppContainer or LPAC and need the app's data, and does Chromium write its own
+`S-1-15-` ACEs onto `userData`? Either would break the app under the lock or make
+the startup check refuse every host.
+
+**Measured** with `scripts/research/packagedChromiumSandbox.mjs` against the
+installed 0.1.1.0, with the five folders locked by the built `packageDataLock.js`
+exactly as main will lock them. The app was started through its AUMID. A generated
+test document was handed to it and opened, and the Assistant fetched Anthropic's
+model list: Settings then read *"Listed by Anthropic this session"*, where before the
+run it read *"has not been asked this session"*.
+
+| process | AppContainer | integrity |
+|---|---|---|
+| main | no | medium (`0x2000`) |
+| renderer | no | untrusted (`0x0`) |
+| GPU | no | low (`0x1000`) |
+| network service (`network.mojom.NetworkService`) | no | medium |
+| crashpad | no | medium |
+| our engine host (`hostEntry`) | **yes**: the package's child container, one capability | low |
+
+The reader's controls separated on the same run. This process read as not a
+container; `SearchHost.exe` read as one. `StartMenuExperienceHost.exe`, the first
+choice, reads as not a container, and the control refused it. The LPAC distinction
+was not measured, because no LPAC process existed on the machine to control
+against. It does not bear on the answer, since an LPAC token also reads as an
+AppContainer.
+
+**Chromium does write `S-1-15-` ACEs into `userData`.** On `Network`, `Cache` and
+`Shared Dictionary`, and only there, it adds two explicit ACEs for one named
+capability, `S-1-15-3-1024-395641907-…-3061173417`. They are present from 0.1.1.0's
+earlier runs; its name was not derived. Twenty-one candidate names were derived
+through `DeriveCapabilitySidsFromName` with the instrument's `capability` mode, among
+them `lpacNetworkService`, `chromeNetworkService` and `lpacChromeInstallFiles`, and
+none matched. No process in the run holds that
+capability: the network service is not in a container.
+
+**Neither consequence follows**, and each was read rather than argued:
+
+- **The lock keeps Chromium's grants.** After the lock, the three folders still
+  carry exactly those two ACEs; only the package's inherited ones are gone. Explicit
+  ACEs on a child survive the propagation of a new DACL above it.
+- **The startup check is not tripped.** It reads the five top folders, and after
+  the run all five still read `PAI` with no `S-1-15-` principal. Chromium wrote
+  nothing onto them.
+- **Nothing lost its data.** Every Chromium process that writes the profile runs as
+  the user, which the lock grants full control. `Preferences` and Local Storage were
+  written during the locked run. The lock changes the DACL only, never the integrity
+  label, so the low-integrity GPU process is exactly where it was.
+
+**And the product's own containment check changed its answer.** Every earlier open
+in 0.1.1.0's log is poisoned *"not contained (containment-absent)"*: the host read
+`engine-sessions/containment-negative`, which is finding 1a. Both locked runs opened
+the document with the engine host alive and its session folders created. The log
+shows only the ordinary shutdown line at exit.
+
+**No change to Decision 17.** The design holds as decided, and 0.1.2.0 is built from it.
