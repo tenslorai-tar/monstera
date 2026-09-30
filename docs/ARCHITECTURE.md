@@ -577,15 +577,18 @@ was lost. PDFium's public API can neither tell an inline image apart nor turn on
 into an XObject: `SetBitmap` and `LoadJpegFileInline` refill the same image and
 keep its flag, which `pdfiumInlineConvert.mjs` measured on three shapes. MuPDF's
 interpreter reads inline images, so **before a PDFium command's `apply` or
-`invert`, the MuPDF host rewrites each `BI … EI` on the pages the command
+`invert`, the compose host rewrites each `BI … EI` on the pages the command
 regenerates into an image XObject and `/Name Do` at the same place in the
 content stream**. That place is what keeps the picture's clip, colour and
-drawing order. This is a stateless bytes-to-bytes call on the document session's
-granted area, like PDFium's own channels, and it touches no live session. When a
-page holds no inline image, the call writes nothing and PDFium is handed the
-image unchanged. So a PDFium command now has one dependency on the MuPDF host,
-and the rule for which pages a command regenerates has one statement, which both
-this step and the command's own declaration take.
+drawing order. The compose host is the host that holds no document and already
+runs MuPDF's image rewriter for Optimize. The call is bytes to bytes on its
+granted area, and main copies the result file to file into PDFium's snapshot
+directory, so `main` never holds it beside the image (ADR-0121). When a page
+holds no inline image, the call writes nothing and PDFium is handed the image
+unchanged. Anything short of a rewrite runs the edit anyway and writes an
+`inline-images-left` line to the log. So a PDFium command now has one dependency
+on the compose host, and `regeneratedBy` is the one statement of which pages a
+command regenerates.
 
 **A READER's session is not this rule's business.** HD render rasterises through
 PDFium and wants a session that outlives a call; a read-only session recycled

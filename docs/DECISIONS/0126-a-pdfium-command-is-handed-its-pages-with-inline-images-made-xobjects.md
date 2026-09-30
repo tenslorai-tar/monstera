@@ -76,3 +76,34 @@ fails when it is dropped, and check every other command that regenerates a page'
   larger by a name per picture, and the image data is the same bytes.
 - The loss is class-wide in PDFium's generator, so every regenerating command takes this step. MuPDF's own
   rewrites (redaction, sanitize) keep inline images and are not affected.
+
+## Correction, 2026-09-30, before building — the compose host, and what the build measured
+
+**Decision 3 named the wrong host.** It said the MuPDF host would run the step on the document session's granted
+area. But a PDFium command's execution is handed the document's bytes and nothing that names the document, so it
+has no MuPDF session to reach. The step runs in the **compose host** instead. That is the host that holds no
+document, already runs MuPDF's image rewriter for Optimize, and keeps one granted area for its lifetime.
+`engine/keep-inline-images` takes `from`, `into` and a scope that is one page or `all`. The rewritten document is
+copied file to file into PDFium's snapshot directory, so `main` never holds it beside the image it already holds
+(ADR-0121). A compose host that is unavailable, cannot read the document, leaves an image, or faults does not refuse
+the edit. The edit runs on the image as it is, and an `inline-images-left` line goes to the diagnostics log.
+
+**Decision 3's save** is incremental where MuPDF's `pdf_can_be_saved_incrementally` says it may be, and whole where it
+may not (a repaired file). The predicate decides, so a failed save is never retried another way.
+
+**Decision 4's "both callers" was one caller.** `regeneratedBy` is read by the keeper's scope alone. A command's
+declaration names its `page` and needs nothing more. The statement is still the one place, and a PDFium command added
+without a `page` does not compile until it is answered there.
+
+**The Consequences' MuPDF sentence was asserted when written and is measured now** (`mupdfInlineKeep.mjs`). Through
+the shipped commands, a redaction of the text beside an inline picture removed the text and kept the picture, with
+both redaction image settings. Sanitize with every part kept it. Whether sanitize rewrote that page's stream was not
+separated.
+
+**What the build measured.** `proof:inlineimages` runs the shim's rewrite and a real PDFium edit, save and reopen over
+five shapes: RGB, a stencil half-painted over blue, a JPEG, a picture clipped to half its square, and one inside a
+form (the `promoteFormObjects` path). Each is also run without the step, which must lose the picture. All five
+controls lost it. All five kept cases drew the picture as before, within 8 levels a channel over its 10,000-pixel
+square. An image XObject was left unchanged and nothing was written. `proof:hostfileanswers` edits an inline-picture
+page through the real compose and PDFium hosts, saves and reopens it, and the picture is drawn, with no
+`inline-images-left` line.
