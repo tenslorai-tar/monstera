@@ -447,9 +447,11 @@ import { repoRoot } from '../lib/gitScope.mjs';
 // requires to agree with this module on every value.
 import { INVALID_HANDLE_SOURCE } from '../lib/win32Handle.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
+import { shimPath } from '../lib/shimBinary.mjs';
 
 const ROOT = repoRoot();
-const SHIM = join(ROOT, 'native', 'mupdf-shim', 'out', 'monstera_mupdf.dll');
+// THE ONE RESOLVER (the stage audit's YYYYYY-9), never the name spelt here.
+const SHIM = shimPath(ROOT);
 /**
  * The document the host IS handed — GENERATED here, not assumed to exist.
  *

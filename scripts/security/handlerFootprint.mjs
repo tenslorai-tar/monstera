@@ -32,9 +32,9 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
+import { shimPath } from '../lib/shimBinary.mjs';
 
 /**
  * Byte sequences each parser's own code carries.
@@ -80,8 +80,8 @@ export function handlerFootprint(dllPath) {
 }
 
 if (process.argv[1]?.endsWith('handlerFootprint.mjs')) {
-  const dll =
-    process.argv[2] ?? join(repoRoot(), 'native', 'mupdf-shim', 'out', 'monstera_mupdf.dll');
+  // THE ONE RESOLVER (the stage audit's YYYYYY-9), never the name spelt here.
+  const dll = process.argv[2] ?? shimPath(repoRoot());
   const results = handlerFootprint(dll);
 
   process.stdout.write(`${dll}\n\n`);

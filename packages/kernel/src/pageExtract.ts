@@ -1,7 +1,7 @@
 import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 
 import type { ByteImage, MupdfSession } from './engineSeam.js';
-import { copiedOut, newDocument, withDocument } from './mupdfWriter.js';
+import { bufferBytes, newDocument, withDocument } from './mupdfWriter.js';
 
 /**
  * Building a NEW document out of some of another one's pages — the operation
@@ -113,15 +113,10 @@ export function extractPages(
     carryCatalog(source, out);
     out.setPageTreeCache(true);
 
-    // COPIED OUT OF THE ENGINE'S MEMORY, and this comment used to stop one step
-    // short. It said `asUint8Array` rather than the Buffer itself, *because the
-    // seam's `ByteImage` is a plain view and handing out MuPDF's buffer would
-    // tie the bytes' lifetime to a native object this function is about to
-    // drop* — the hazard named correctly and the remedy taken half way. The
-    // view has that same lifetime and a second problem: it is a window onto the
-    // wasm heap, which detaches when the heap grows. `mupdfWriter.ts`'
-    // `copiedOut` has the measurement and the failure it produced.
-    return copiedOut(out.saveToBuffer());
+    // THE CALLER'S BYTES, never MuPDF's buffer, whose native memory this function
+    // is about to drop: `mupdfWriter.ts`' `bufferBytes` says where the one copy is
+    // made and which case asserts it.
+    return bufferBytes(out.saveToBuffer());
   });
 }
 

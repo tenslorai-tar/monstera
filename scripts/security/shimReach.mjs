@@ -100,12 +100,22 @@ export function shimExports(shimSource) {
  * for `name(` does not see, and they reach nothing but the functions they name. So the walk starts from those names,
  * read from the glue's text as the build generates it, and follows MuPDF's own call graph from there.
  *
+ * REFUSES rather than answering empty where the binding cannot be read (the stage audit's YYYYYY-3). Both callers ask
+ * only once MuPDF's source is provisioned, and the shipped library carries the binding either way — so an empty answer
+ * was a walk from the shim's own exports reported as the whole library's reach, the reassuring answer from a read that
+ * could not see.
+ *
  * @param {string} root
- * @returns {string[]} empty where MuPDF's source is not provisioned
+ * @returns {string[]}
  */
 export function glueRoots(root) {
   const glue = generatedGlue(root);
-  if (glue === null) return [];
+  if (glue === null) {
+    throw new Error(
+      "MuPDF's binding (platform/wasm/lib/mupdf.c) cannot be read from the provisioned source, so the library's reach " +
+        'cannot be walked: the shim exports alone are not what ships. Re-provision MuPDF (npm run provision:mupdf).',
+    );
+  }
   const names = new Set([...glue.text.matchAll(/\b((?:fz|pdf)_[a-z0-9_]+)\s*[,(]/gu)].map((match) => `${match[1]}`));
   if (!names.has('fz_new_pixmap_from_page')) {
     throw new Error('CONTROL FAILED: the binding names no fz_new_pixmap_from_page, which it certainly calls; the root scan is blind.');

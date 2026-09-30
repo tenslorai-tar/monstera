@@ -38,10 +38,12 @@ import koffi from 'koffi';
 
 import { PERMITTED_HANDLERS } from '../lib/documentHandlers.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
+import { shimPath } from '../lib/shimBinary.mjs';
 import { buildLargeFixture } from '../perf/largeFixture.mjs';
 
 const ROOT = repoRoot();
-const DLL = join(ROOT, 'native', 'mupdf-shim', 'out', 'monstera_mupdf.dll');
+// THE ONE RESOLVER (the stage audit's YYYYYY-9), never the name spelt here.
+const DLL = shimPath(ROOT);
 const SCRATCH = join(ROOT, '.probe', 'document-handlers');
 
 /** @type {string[]} */

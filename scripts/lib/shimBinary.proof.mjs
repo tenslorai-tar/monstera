@@ -89,6 +89,22 @@ try {
     'the accept path has to work, or the proofs that call it never run at all',
   );
 
+  // THE NAME AGAINST THE BUILD THAT PRODUCES IT (the stage audit's YYYYYY-2). Every fixture above is written AT
+  // `shimPath`, so a wrong name in the resolver would pass them all — the resolver compared with itself. On Windows the
+  // name has a second author, MSBuild, which writes `$(OutDir)$(TargetName).dll`; read from the project file, it is the
+  // independent claim. On Linux `mupdf.mjs` links straight to `shimPath`, so the resolver is the only author there.
+  const project = readFileSync(join(REAL, 'native', 'mupdf-shim', 'monstera_mupdf.vcxproj'), 'utf8');
+  const targetName = /<TargetName>([^<]+)<\/TargetName>/u.exec(project)?.[1];
+  const outDir = /<OutDir>\$\(MSBuildProjectDirectory\)\\([^<]*)\\<\/OutDir>/u.exec(project)?.[1];
+  check(
+    "the resolver's Windows path is the one MSBuild writes: OutDir and TargetName from the project file",
+    targetName !== undefined &&
+      outDir !== undefined &&
+      shimPath(REAL, 'win32') === join(REAL, 'native', 'mupdf-shim', outDir, `${targetName}.dll`),
+    `the project file builds ${String(outDir)}\\${String(targetName)}.dll and the resolver answers ` +
+      `${shimPath(REAL, 'win32')}. A reader that could not find either field is a broken read, not a pass.`,
+  );
+
   // -------------------------------------------------------------------------
   // The source moves after the build.
   // -------------------------------------------------------------------------

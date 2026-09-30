@@ -3,7 +3,7 @@ import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
-import { copiedOut, withDocument, withDocuments } from './mupdfWriter.js';
+import { bufferBytes, withDocument, withDocuments } from './mupdfWriter.js';
 import { pushInheritablesDown } from './pageExtract.js';
 
 /**
@@ -373,8 +373,8 @@ function joinedContents(leaf: PDFObject): Uint8Array {
   if (reference.isNull()) return new Uint8Array(0);
   const resolved = reference.resolve();
   const parts: Uint8Array[] = resolved.isArray()
-    ? Array.from({ length: resolved.length }, (_, at) => copiedOut(resolved.get(at).readStream()))
-    : [copiedOut(reference.readStream())];
+    ? Array.from({ length: resolved.length }, (_, at) => bufferBytes(resolved.get(at).readStream()))
+    : [bufferBytes(reference.readStream())];
   const joined = new Uint8Array(parts.reduce((sum, part) => sum + part.length + 1, 0));
   let offset = 0;
   for (const part of parts) {

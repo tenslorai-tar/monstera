@@ -107,7 +107,16 @@ describe('mupdfWriter — session lifecycle', () => {
  * twelve documents and failed inside a test file, which makes it a threshold
  * nobody can state. What is exact is the property itself: a copy owns its
  * `ArrayBuffer`, so `byteLength` and `buffer.byteLength` agree, and a subarray
- * of a multi-megabyte heap cannot.
+ * of a larger buffer cannot.
+ *
+ * ## Since ADR-0124 the one copy is the BINDING'S, so the binding is what is asserted
+ *
+ * The native `asUint8Array()` reads into a fresh array and `bufferBytes` hands
+ * that on. The stage audit's YYYYYY-1 found the writer still copying a second
+ * time — a whole document per serialise — with the first case below green
+ * whether it did or not. So the load-bearing case is the third: the engine's own
+ * answer owns its bytes. Change the binding back to a view and it goes red, and
+ * so does the first.
  */
 describe('mupdfWriter — the bytes it hands out', () => {
   it('answers an array that OWNS its buffer, rather than a view into the engine', async () => {
@@ -122,11 +131,10 @@ describe('mupdfWriter — the bytes it hands out', () => {
   });
 
   it('CONTROL: a view into a larger buffer fails that test, so it can fail', () => {
-    // Without this the assertion above is one every `Uint8Array` in a test
-    // happens to satisfy, and nothing says it separates a copy from a view.
-    // The WASM engine's own answer WAS such a view, into its heap; the native
-    // engine's is a copy (ADR-0124), so the view is built here, in the shape a
-    // heap subarray has.
+    // THE PREDICATE'S control, not the writer's: without it the ownership test is
+    // one every `Uint8Array` might satisfy, and nothing says it separates a copy
+    // from a view. The view is built here in the shape a heap subarray has, since
+    // no engine in this build answers one any more.
     const heap = new Uint8Array(4096);
     const view = heap.subarray(128, 256);
     expect(view.buffer.byteLength).toBeGreaterThan(view.byteLength);

@@ -27,6 +27,7 @@ import { fileExists } from '../lib/fetchVerified.mjs';
 import { readPeHardening } from '../lib/peHardening.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { shimPath } from '../lib/shimBinary.mjs';
 import { shimLibraryPath, verifyExports } from './mupdf.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -100,7 +101,8 @@ async function main() {
     );
 
     // The DLL is the real one, unmodified — only the source claims more.
-    const stagedDll = join(shimDirectory, 'out', 'monstera_mupdf.dll');
+    // WHERE THE ONE RESOLVER PUTS IT in the scratch tree (the stage audit's YYYYYY-9), never the name spelt here.
+    const stagedDll = shimPath(scratch);
     await import('node:fs/promises').then((fs) =>
       fs.mkdir(dirname(stagedDll), { recursive: true }),
     );

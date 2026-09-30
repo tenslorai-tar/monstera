@@ -120,40 +120,27 @@ function promised<T>(work: () => T): Promise<T> {
 }
 
 /**
- * A MuPDF buffer's bytes, **copied out of the engine's memory**, with the buffer
- * released.
+ * A MuPDF buffer's bytes, owned by the caller, with the buffer released.
  *
- * ## `asUint8Array()` IS A VIEW INTO THE WASM HEAP, and the heap moves
- *
- * Read from `mupdf/dist/mupdf.js` on 2026-09-07: it answers
- * `HEAPU8.subarray(data, data + size)`. So the array is a window onto memory the
- * engine owns, and two things can happen to it — the buffer is freed and the
- * bytes are reused, or the heap **grows**, which replaces `HEAPU8` and leaves
- * every earlier view **detached**.
- *
- * The second is not theoretical. `pageAnnotations.test.ts` reached it while a
- * case held a serialised document across later engine work, and the failure is
- * the one this hazard produces: *"Cannot perform Construct on a detached
- * ArrayBuffer"*, thrown when those bytes were handed back to `openDocument`.
- * It appeared only once the file did enough work to grow the heap — which is
- * why it had not appeared before, and why nothing about the earlier greens said
- * the bytes were safe.
+ * ## ONE COPY, and it is the binding's
  *
  * `ByteImage` is the document's canonical bytes, held by the service across
- * commands and written to disk by the save pipeline. Those are exactly the
- * bytes that must not be a window onto somebody else's allocator.
+ * commands and written to disk by the save pipeline, so it must never be a window
+ * onto the engine's memory. The native binding's `asUint8Array()` reads the
+ * buffer into a fresh array (`mupdfRaw.ts`, `memory.readU8`, ADR-0124), and
+ * `mupdfWriter.test.ts` asserts that ownership on the engine's own answer. Under
+ * the WASM engine the same call answered a subarray of the heap, which a later
+ * heap growth detached, so this function copied a second time; since ADR-0124
+ * that second copy was a whole extra document per serialise, guarded by nothing
+ * (the stage audit's YYYYYY-1), and it is gone.
  *
  * The buffer is dropped rather than left to a finaliser, for `pageLinks.ts`'
- * reason: MuPDF's JS objects hold native memory whose finaliser runs on its own
+ * reason: MuPDF's objects hold native memory whose finaliser runs on its own
  * schedule.
  */
-export function copiedOut(buffer: mupdf.Buffer): ByteImage {
+export function bufferBytes(buffer: mupdf.Buffer): ByteImage {
   try {
-    // `new Uint8Array(view)` COPIES, where `view.subarray()` would not: the
-    // constructor allocates and reads through, so what comes back owns its own
-    // `ArrayBuffer` — which is also the property the proof asserts, because a
-    // copy's `buffer.byteLength` equals its own and a view's does not.
-    return new Uint8Array(buffer.asUint8Array());
+    return buffer.asUint8Array();
   } finally {
     buffer.destroy();
   }
@@ -528,7 +515,7 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
     // synchronous throw from a method that answers a promise (the writer's CONTROL cases).
     return promised(() => {
       const { document, terms } = saveTermsOf(session);
-      return copiedOut(document.saveToBuffer(terms));
+      return bufferBytes(document.saveToBuffer(terms));
     });
   },
 

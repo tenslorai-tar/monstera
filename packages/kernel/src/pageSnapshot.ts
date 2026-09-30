@@ -238,8 +238,8 @@ export function snapshotRegion(
       };
     } finally {
       // THE PIXMAP IS THE LARGE ALLOCATION HERE — up to MAX_SNAPSHOT_PIXELS
-      // times four bytes in the wasm heap, which the garbage collector does not
-      // see. `copiedOut`'s reason, on a different object.
+      // times four bytes of the engine's native memory, which the garbage
+      // collector does not see. `bufferBytes`' reason, on a different object.
       pixmap.destroy();
     }
   });
