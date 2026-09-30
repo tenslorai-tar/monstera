@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
@@ -25,7 +25,7 @@ import {
   sessionDirectoryName,
   sweepSessionDirectories,
 } from './sessionDirectories.js';
-import { createWin32DaclSurface, currentPackageFamilyName } from './win32DaclSurface.js';
+import { appContainerFolder, createWin32DaclSurface, currentPackageFamilyName } from './win32DaclSurface.js';
 import { createWin32DirectorySurface } from './win32DirectorySurface.js';
 import {
   createWin32HostSurface,
@@ -138,11 +138,10 @@ function diagnosticName(): SessionDirectoryName {
 }
 
 /**
- * What the package-data check needs from the caller: where `userData` is — Electron's answer, which this file may not
- * ask — and where its outcome goes. Required rather than optional, so no caller can build a platform that skipped it.
+ * Where the package-data check's outcome goes. Required rather than optional, so no caller can build a platform that
+ * skipped reporting it. The check asks Windows where the package's data is and needs nothing else from the caller.
  */
 export interface PackageDataCheck {
-  readonly userData: string;
   readonly report: (outcome: Result<PackageDataLock, string>) => void;
 }
 
@@ -163,13 +162,7 @@ export function createEngineHostPlatform(sessionRoot: string, packageData: Packa
   // makes a host the package's child container and hands it the package's capability.
   const family = currentPackageFamilyName();
   if (family !== null) {
-    mkdirSync(packageData.userData, { recursive: true });
-    const gate = gatePackageData(
-      realpathSync.native(packageData.userData),
-      family,
-      user.value,
-      createWin32DaclSurface(),
-    );
+    const gate = gatePackageData(appContainerFolder(family), family, user.value, createWin32DaclSurface());
     packageData.report(gate);
     if (!gate.ok) return null;
   }

@@ -68,16 +68,17 @@ export function lockPackageData(packageRoot: string, user: UserSid, surface: Dac
  * hold — a root that could not be resolved, or every folder left unlocked — and is the only answer on which the
  * caller creates no platform; `ok` carries what this start had to lock, which is empty on an ordinary start.
  *
- * @param finalUserData `userData` with the redirection resolved
+ * @param containerFolder Windows' answer for the package's AppContainer folder, or why it had none
  * @param family the running package's family name — a process with none has no package capability to take away
  */
 export function gatePackageData(
-  finalUserData: string,
+  containerFolder: Result<string, string>,
   family: string,
   user: UserSid,
   surface: DaclSurface,
 ): Result<PackageDataLock, string> {
-  const root = packageDataRoot(finalUserData, family);
+  if (!containerFolder.ok) return err(`the package's data root was not found: ${containerFolder.error}`);
+  const root = packageDataRoot(containerFolder.value, family);
   if (!root.ok) return err(`the package's data root was not found: ${root.error}`);
   const lock = lockPackageData(root.value, user, surface);
   if (lock.unlocked.length > 0) {
@@ -110,27 +111,26 @@ export function describePackageDataCheck(
 }
 
 /**
- * The package's data root, from the FINAL path of `userData` and the package family name Windows reports.
+ * The package's data root: the parent of the AppContainer folder Windows keeps for the package (ADR-0023 Decision 17,
+ * amended point 3).
  *
- * Both halves from their authority: the final path is where Windows actually put the redirected folder
- * (`realpathSync.native`, as the log reveal takes it), and the family name is `GetCurrentPackageFamilyName`'s. The
- * root is the folder above `LocalCache` and must be named after the family; anything else is refused rather than
- * guessed, since locking the wrong folder would be a change to something this application does not own.
+ * NOT FROM `userData`, which is where the rule first looked. Its final path lands in `LocalCache` only while no folder
+ * of the same name exists in the real `%APPDATA%` — once one does, the package's merged view resolves the name there,
+ * measured 2026-09-30 when the built layout's check refused every host. `GetAppContainerFolderPath` answers for the
+ * package itself. Its folder must be named `AC` under one named after the family (Windows returns the family in lower
+ * case); anything else is refused rather than guessed, since locking the wrong folder would change something this
+ * application does not own.
  *
- * @param finalUserData `userData` with the redirection resolved
+ * @param containerFolder Windows' `…\Packages\<family>\AC` for the package's derived SID
  * @param family the running package's family name
  */
-export function packageDataRoot(finalUserData: string, family: string): Result<string, string> {
-  let path = finalUserData;
-  for (;;) {
-    const parent = dirname(path);
-    if (parent === path) return err(`${finalUserData} is not under a LocalCache folder`);
-    if (basename(path).toLowerCase() === 'localcache') {
-      if (basename(parent).toLowerCase() !== family.toLowerCase()) {
-        return err(`${parent} is not named after the package family ${family}`);
-      }
-      return ok(parent);
-    }
-    path = parent;
+export function packageDataRoot(containerFolder: string, family: string): Result<string, string> {
+  if (basename(containerFolder).toLowerCase() !== 'ac') {
+    return err(`${containerFolder} is not an AppContainer's AC folder`);
   }
+  const root = dirname(containerFolder);
+  if (basename(root).toLowerCase() !== family.toLowerCase()) {
+    return err(`${root} is not named after the package family ${family}`);
+  }
+  return ok(root);
 }

@@ -14,8 +14,10 @@ import {
 
 const user: UserSid = { __sid: 'user', value: 'S-1-5-21-1-2-3-1001' };
 const family = 'Monstera.Test_0123456789abc';
-const root = join('C:', 'Users', 'someone', 'AppData', 'Local', 'Packages', family);
-const userData = join(root, 'LocalCache', 'Roaming', 'Monstera');
+/** As `GetAppContainerFolderPath` answers, with the family in lower case (measured 2026-09-30). */
+const packages = join('C:', 'Users', 'someone', 'AppData', 'Local', 'Packages');
+const root = join(packages, family.toLowerCase());
+const containerFolder = { ok: true, value: join(root, 'AC') } as const;
 
 /** A package data folder as MSIX leaves it: the package's capability granted explicitly (see `hostDacl.test.ts`). */
 const AS_INSTALLED = `D:AI(A;;FA;;;S-1-15-3-1-2-3)(A;OICI;FA;;;${user.value})(A;OICIID;FA;;;SY)`;
@@ -75,7 +77,7 @@ describe('lockPackageData', () => {
 
 describe('gatePackageData', () => {
   it('lets a host be created once every folder is locked', () => {
-    const gate = gatePackageData(userData, family, user, fakeSurface(AS_INSTALLED));
+    const gate = gatePackageData(containerFolder, family, user, fakeSurface(AS_INSTALLED));
     expect(gate.ok).toBe(true);
   });
 
@@ -84,7 +86,7 @@ describe('gatePackageData', () => {
    * the write is the realistic route to it, and the refusal names that folder and only that one.
    */
   it('refuses when a folder stays unlocked, and names it', () => {
-    const gate = gatePackageData(userData, family, user, fakeSurface(AS_INSTALLED, { refuse: 'LocalState' }));
+    const gate = gatePackageData(containerFolder, family, user, fakeSurface(AS_INSTALLED, { refuse: 'LocalState' }));
     expect(gate.ok).toBe(false);
     if (gate.ok) return;
     expect(gate.error).toContain('LocalState (Windows refused the new DACL)');
@@ -93,9 +95,19 @@ describe('gatePackageData', () => {
     }
   });
 
-  it('writes nothing when the package root cannot be found', () => {
+  it('writes nothing when Windows has no folder for the package', () => {
     const surface = fakeSurface(AS_INSTALLED);
-    const gate = gatePackageData(join(root, 'Roaming', 'Monstera'), family, user, surface);
+    const gate = gatePackageData({ ok: false, error: 'GetAppContainerFolderPath answered 0x80070002' }, family, user, surface);
+    expect(gate).toEqual({
+      ok: false,
+      error: "the package's data root was not found: GetAppContainerFolderPath answered 0x80070002",
+    });
+    expect(surface.writes).toEqual([]);
+  });
+
+  it("writes nothing when the folder Windows answered is not the package's", () => {
+    const surface = fakeSurface(AS_INSTALLED);
+    const gate = gatePackageData({ ok: true, value: join(packages, 'other_1', 'AC') }, family, user, surface);
     expect(gate.ok).toBe(false);
     expect(surface.writes).toEqual([]);
   });
@@ -124,21 +136,32 @@ describe('describePackageDataCheck', () => {
 });
 
 describe('packageDataRoot', () => {
-  it('is the folder above LocalCache, named after the family', () => {
-    expect(packageDataRoot(userData, family)).toEqual({ ok: true, value: root });
+  it("is the parent of the package's AC folder", () => {
+    expect(packageDataRoot(containerFolder.value, family)).toEqual({ ok: true, value: root });
   });
 
-  it('matches the family without regard to case, as Windows names it', () => {
-    expect(packageDataRoot(userData, family.toUpperCase())).toEqual({ ok: true, value: root });
+  it('matches the family without regard to case, since Windows answers it in lower case', () => {
+    expect(root.endsWith(family)).toBe(false);
+    expect(packageDataRoot(containerFolder.value, family)).toEqual({ ok: true, value: root });
   });
 
-  it('refuses a path with no LocalCache in it', () => {
-    expect(packageDataRoot(join('C:', 'Users', 'someone', 'AppData', 'Roaming', 'Monstera'), family).ok).toBe(false);
+  /**
+   * WHAT THE FIRST RULE RESOLVED TO: the final path of `userData` once a same-named folder existed in the real
+   * `%APPDATA%` (measured 2026-09-30). Handed here, it is refused by the rule's shape, not by a special case.
+   */
+  it('refuses a folder that is not an AC folder, such as the real AppData the old rule landed in', () => {
+    const answer = packageDataRoot(join('C:', 'Users', 'someone', 'AppData', 'Roaming', 'Monstera PDF Editor'), family);
+    expect(answer.ok).toBe(false);
   });
 
-  it('refuses a LocalCache that belongs to another package', () => {
-    const other = join('C:', 'Users', 'someone', 'AppData', 'Local', 'Packages', 'Other_1', 'LocalCache', 'Roaming');
-    const answer = packageDataRoot(other, family);
+  /** The fixture only the AC test can refuse: its parent IS named after the family, so the family test passes it. */
+  it("refuses a sibling of AC inside the package's own folder", () => {
+    const answer = packageDataRoot(join(root, 'LocalCache'), family);
+    expect(answer).toEqual({ ok: false, error: `${join(root, 'LocalCache')} is not an AppContainer's AC folder` });
+  });
+
+  it('refuses an AC folder that belongs to another package', () => {
+    const answer = packageDataRoot(join(packages, 'other_1', 'AC'), family);
     expect(answer.ok).toBe(false);
     if (answer.ok) return;
     expect(answer.error).toContain(family);

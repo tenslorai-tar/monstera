@@ -1,3 +1,4 @@
+import { type Result, err, ok } from '@monstera/shared';
 import koffi from 'koffi';
 
 import type { DaclSurface } from './packageDataLock.js';
@@ -25,6 +26,11 @@ interface DaclBindings {
   readonly getDacl: Native;
   readonly localFree: Native;
   readonly familyName: Native;
+  readonly deriveContainerSid: Native;
+  readonly containerFolder: Native;
+  readonly sidToString: Native;
+  readonly freeSid: Native;
+  readonly coTaskMemFree: Native;
 }
 
 let bound: DaclBindings | undefined;
@@ -33,6 +39,8 @@ function bind(): DaclBindings {
   if (bound !== undefined) return bound;
   const kernel = koffi.load('kernel32.dll');
   const advapi = koffi.load('advapi32.dll');
+  const userenv = koffi.load('userenv.dll');
+  const ole = koffi.load('ole32.dll');
   // Written from the C prototype on the adjacent line, as the other Win32 surfaces are: koffi's `func()` is
   // assignable to any signature, so the pair reading together is the review mechanism.
   bound = {
@@ -57,6 +65,13 @@ function bind(): DaclBindings {
     ) as Native,
     localFree: kernel.func('void *LocalFree(void *memory)') as Native,
     familyName: kernel.func('long GetCurrentPackageFamilyName(_Inout_ uint32 *length, void *name)') as Native,
+    deriveContainerSid: userenv.func(
+      'int32 DeriveAppContainerSidFromAppContainerName(const char16_t *name, _Out_ void **sid)',
+    ) as Native,
+    containerFolder: userenv.func('int32 GetAppContainerFolderPath(const char16_t *sid, _Out_ void **path)') as Native,
+    sidToString: advapi.func('bool ConvertSidToStringSidW(void *sid, _Out_ void **text)') as Native,
+    freeSid: advapi.func('void *FreeSid(void *sid)') as Native,
+    coTaskMemFree: ole.func('void CoTaskMemFree(void *memory)') as Native,
   };
   return bound;
 }
@@ -100,6 +115,47 @@ export function createWin32DaclSurface(): DaclSurface {
       }
     },
   };
+}
+
+/**
+ * The folder Windows keeps for an AppContainer named `name` — for a package family, `…\Packages\<family>\AC` — from
+ * the SID Windows derives for that name (ADR-0023 Decision 17, amended point 3). `err` carries the HRESULT: an
+ * uninstalled family answers `0x80070002`, measured 2026-09-30.
+ */
+export function appContainerFolder(name: string): Result<string, string> {
+  const api = bind();
+  const sidText = derivedContainerSid(api, name);
+  if (!sidText.ok) return sidText;
+  const path: unknown[] = [null];
+  const found = api.containerFolder(sidText.value, path) as number;
+  if (found !== 0) return err(`GetAppContainerFolderPath answered ${hresult(found)} for ${sidText.value}`);
+  try {
+    return ok(koffi.decode(path[0], 'char16_t', -1) as string);
+  } finally {
+    api.coTaskMemFree(path[0]);
+  }
+}
+
+/** The SID Windows derives for an AppContainer name, as text; the binary SID is freed either way. */
+function derivedContainerSid(api: DaclBindings, name: string): Result<string, string> {
+  const sid: unknown[] = [null];
+  const derived = api.deriveContainerSid(name, sid) as number;
+  if (derived !== 0) return err(`DeriveAppContainerSidFromAppContainerName answered ${hresult(derived)}`);
+  try {
+    const text: unknown[] = [null];
+    if (api.sidToString(sid[0], text) !== true) return err('the derived SID could not be written as text');
+    try {
+      return ok(koffi.decode(text[0], 'char16_t', -1) as string);
+    } finally {
+      api.localFree(text[0]);
+    }
+  } finally {
+    api.freeSid(sid[0]);
+  }
+}
+
+function hresult(value: number): string {
+  return `0x${(value >>> 0).toString(16).padStart(8, '0')}`;
 }
 
 /** The running package's family name, or `null` for a process with no package identity — every development run. */

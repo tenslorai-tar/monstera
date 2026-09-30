@@ -171,7 +171,6 @@ startShell(() => {
   // on every packaged start, naming any folder this start had to lock — the first start of an install, or something
   // that undid a lock since.
   const enginePlatform = createEngineHostPlatform(join(app.getPath('sessionData'), 'engine-sessions'), {
-    userData: app.getPath('userData'),
     report: (outcome) => {
       const line = describePackageDataCheck(outcome);
       if (line.kind === 'failure') log.failures({ event: 'package-data-unlocked', detail: line.detail });

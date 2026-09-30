@@ -166,7 +166,6 @@ async function main() {
     mkdirSync(sessionRoot, { recursive: true });
     // No package identity here, so the package-data check never reports; a report would be a refusal worth reading.
     const platform = platformModule.createEngineHostPlatform(sessionRoot, {
-      userData: join(scratch, 'user-data'),
       report: (outcome) => {
         if (!outcome.ok) process.stderr.write(`package-data check: ${outcome.error}\n`);
       },
