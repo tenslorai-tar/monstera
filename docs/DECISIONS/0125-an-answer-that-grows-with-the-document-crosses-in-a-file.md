@@ -160,3 +160,41 @@ poisons the document; and were the capture to get through, its undo could not be
 **Rejected.** A compact prior encoding, grouping pages by prior value: rotation priors group, but crop and resize
 priors carry a box per page and differ page to page, so it moves the bound without removing it. Refusing to capture
 above a page count: it makes a large command un-undoable by a number, where the file route makes it ordinary.
+
+**Built 2026-09-30** (e43a29b8). `proof:hostfileanswers` rotates every page of a generated 10,000-page document and
+undoes it through the real MuPDF host; the first and last pages read 90 and then 0. Its control is the input: the
+prior is measured with the kernel's own capture and must be larger than a frame.
+
+## Addendum, 2026-09-30 — the rule is a check, and what it found
+
+**The rule became a test** (e5af7d96). `hostRoutes.test.ts` walks every contained host's channel map with
+`hostRouteViolations` in `@monstera/contract`. A frame-answered channel must fit the frame at its schema's *worst*:
+six bytes a character, the length of a `\u` escape, with the envelope measured off its own shapes. A file-answered
+channel must declare `answer-too-large`. Its controls read `engine/text-runs` over a frame, and they report that
+channel re-declared framed, as 0.1.5.0 shipped it. The walk reads zod's own JSON Schema, the reader invariant L11's
+sweep already took, and that sweep's `unboundedMembers` moved beside it so both callers share one reader (B3a).
+
+**What it found, measured over the three hosts' 45 channels:**
+
+8. **Every answer is on a route that carries it.** The 17 channels whose results a frame cannot carry at worst are
+   all file-answered. `engine/flat-fields` is the one that fits written plainly (104 KB) and does not at worst
+   (432 KB), which is why the rule reads the worst.
+9. **A capture above the ceiling is the bus's checkpoint, never a failed command.** The capture result has no bound.
+   Its priors are per page, and where a prior reads the document's own strings (a page transition's entries) the
+   document chooses their length. `answer-too-large` on a capture is a prior this build cannot *record*, and the
+   bus already answers that with a checkpoint, as it does for a `/Rotate` it cannot read. Refusing the person their
+   edit because its undo record is large would be the wrong answer. `priorTooLargeToRecord` is the one statement of
+   this, and both remote writers take it.
+10. **The request direction has one bound that stays, and it is not this record's to remove.** Five channels frame
+   params that carry a *command*: MuPDF's apply, capture and applyPdfLib, and PDFium's apply and capture. Of the
+   50 command kinds, the only members with no bound are the 15 page lists, which is finding AAA-1's stated bound in
+   `hostProtocol.ts`: a whole-document selection meets the frame at about 43,600 pages. The test pins those five by
+   exact set per host. An anchor case beside it requires every unbounded command member to be a page list, so an
+   unbounded text field cannot hide behind an entry written for page lists.
+
+**Open, and the owner's.** `hostProtocol.ts` says the frame *refuses* a selection past that bound. What happens in
+the code is not a refusal of that call. `client.ts` ends the connection with `unsendable-response` when a request
+cannot be framed, so every session on that host goes to recovery. The request was never written, so nothing on the
+host side needed ending. Answering it as a refusal of that one call would be Decision 3's rule turned round. It
+reaches only past a stated bound 2.2× beyond any document that exists, so it is recorded here rather than changed
+under this ADR.
