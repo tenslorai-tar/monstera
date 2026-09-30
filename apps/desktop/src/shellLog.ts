@@ -175,12 +175,13 @@ export interface ShellLog {
   /** Shows the log directory, or answers `false` because there is nothing there. */
   readonly reveal: () => Promise<boolean>;
   /**
-   * Appends one already-formatted line. For the proof, and for three notices that
-   * are rare by construction: the retired-cache removal, which fires on the one
-   * start that finds the directory (`retiredCaches.ts`), a recent card's
-   * picture that was not kept — at most one line per open (`recentPictures.ts`) —
-   * and an update check that found no answer, at most one line per start
-   * (`updateCheck.ts`).
+   * Appends one already-formatted line. For the proof, and for four notices, each
+   * bounded: the retired-cache removal, which fires on the one start that finds
+   * the directory (`retiredCaches.ts`), a recent card's picture that was not kept
+   * — at most one line per open (`recentPictures.ts`) — an update check that found
+   * no answer, at most one line per start (`updateCheck.ts`), and the package-data
+   * check, exactly one line per start of an installed build (`packageDataLock.ts`),
+   * because its silence would read the same as the check not running.
    */
   readonly write: (kind: string, detail: string) => void;
 }

@@ -16,6 +16,12 @@
       "flavour": "test",
       "commit": "9bb0c75e5657f6d9d082e2662a4fbe14b8c2d1d3",
       "date": "2026-09-29"
+    },
+    {
+      "version": "0.1.2.0",
+      "flavour": "test",
+      "commit": "2b97bc16464ee3ab76402f23e0f9c08552ee0a78",
+      "date": "2026-09-30"
     }
   ]
 }

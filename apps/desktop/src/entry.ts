@@ -45,6 +45,7 @@ import {
   createPdfiumHostPlatform,
 } from './engineHostPlatform.js';
 import { OFFICE_IMPORT_FORMATS } from './officeConversion.js';
+import { describePackageDataCheck } from './packageDataLock.js';
 import { removeRetiredCaches } from './retiredCaches.js';
 import { readCloudClients } from './cloudClients.js';
 import { RECENT_FILE, createRecentFiles, recentLengthIn } from './recentFiles.js';
@@ -166,13 +167,15 @@ startShell(() => {
   // everything here reads the single-instance lock as *this process owns the
   // session root*, and `createEngineHostPlatform` sweeps that root.
   //
-  // THE PACKAGE-DATA CHECK REPORTS INTO THE LOG, which is why the log is built first (ADR-0023 Decision 17). A start
-  // that had to lock a folder says which: the first start of an install, or something that undid a lock since.
+  // THE PACKAGE-DATA CHECK REPORTS INTO THE LOG, which is why the log is built first (ADR-0023 Decision 17): one line
+  // on every packaged start, naming any folder this start had to lock — the first start of an install, or something
+  // that undid a lock since.
   const enginePlatform = createEngineHostPlatform(join(app.getPath('sessionData'), 'engine-sessions'), {
     userData: app.getPath('userData'),
     report: (outcome) => {
-      if (!outcome.ok) log.failures({ event: 'package-data-unlocked', detail: outcome.error });
-      else if (outcome.value.locked.length > 0) log.write('package-data-locked', outcome.value.locked.join(', '));
+      const line = describePackageDataCheck(outcome);
+      if (line.kind === 'failure') log.failures({ event: 'package-data-unlocked', detail: line.detail });
+      else log.write('package-data', line.detail);
     },
   });
   // X2T'S PLATFORM, `null` on Ghostscript's roads: no Win32 platform, no `x2t` handed down by the

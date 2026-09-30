@@ -88,6 +88,28 @@ export function gatePackageData(
 }
 
 /**
+ * The log line one packaged start owes, whatever the check found.
+ *
+ * EVERY START WRITES ONE, and silence is not one of the answers. A start that found all five locked and wrote nothing
+ * would otherwise log nothing — the same log as a start where the check never ran, which is the reading the owner
+ * takes after an install (measured 2026-09-30: the built 0.1.2.0 layout, run in the installed package's identity with
+ * the folders already locked, left the log exactly as it found it).
+ */
+export function describePackageDataCheck(
+  outcome: Result<PackageDataLock, string>,
+): { readonly kind: 'failure' | 'notice'; readonly detail: string } {
+  if (!outcome.ok) return { kind: 'failure', detail: outcome.error };
+  const { locked } = outcome.value;
+  return {
+    kind: 'notice',
+    detail:
+      locked.length === 0
+        ? `all ${String(PACKAGE_DATA_FOLDERS.length)} read back locked; none needed writing`
+        : `locked this start: ${locked.join(', ')}; all ${String(PACKAGE_DATA_FOLDERS.length)} read back locked`,
+  };
+}
+
+/**
  * The package's data root, from the FINAL path of `userData` and the package family name Windows reports.
  *
  * Both halves from their authority: the final path is where Windows actually put the redirected folder

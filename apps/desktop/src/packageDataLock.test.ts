@@ -6,6 +6,7 @@ import { type UserSid, packageDataDacl } from './hostDacl.js';
 import {
   type DaclSurface,
   PACKAGE_DATA_FOLDERS,
+  describePackageDataCheck,
   gatePackageData,
   lockPackageData,
   packageDataRoot,
@@ -97,6 +98,28 @@ describe('gatePackageData', () => {
     const gate = gatePackageData(join(root, 'Roaming', 'Monstera'), family, user, surface);
     expect(gate.ok).toBe(false);
     expect(surface.writes).toEqual([]);
+  });
+});
+
+describe('describePackageDataCheck', () => {
+  /** The case the function exists for: a start that wrote nothing must still say the check ran and what it read. */
+  it('says so when every folder was already locked', () => {
+    expect(describePackageDataCheck({ ok: true, value: { locked: [], unlocked: [] } })).toEqual({
+      kind: 'notice',
+      detail: 'all 5 read back locked; none needed writing',
+    });
+  });
+
+  it('names what this start had to lock', () => {
+    const line = describePackageDataCheck({ ok: true, value: { locked: ['LocalState', 'TempState'], unlocked: [] } });
+    expect(line).toEqual({ kind: 'notice', detail: 'locked this start: LocalState, TempState; all 5 read back locked' });
+  });
+
+  it('carries a refusal through as a failure, in its own words', () => {
+    expect(describePackageDataCheck({ ok: false, error: 'LocalState (Windows refused the new DACL)' })).toEqual({
+      kind: 'failure',
+      detail: 'LocalState (Windows refused the new DACL)',
+    });
   });
 });
 
