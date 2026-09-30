@@ -353,6 +353,12 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/inlineImages.proof.mjs
           ${{ runner.os == 'Windows' && '--require-engines' || '' }}
 
+      # Decision E. The package takes only the modules its entry reaches — imports, and files named by literal as the
+      # shell names a preload, a worker and each host entry — so a test's fake or a proof's harness in `dist/` does not
+      # ship. The built tree is walked here, where it is built, so the build is required on both legs.
+      - name: Prove the package ships only what its entry reaches
+        run: node scripts/ci/annotate.mjs scripts/proofs/shippedModules.proof.mjs --require-build
+
       # D6 row 1. The corpus is not here, so its five corpus cases report NOT
       # APPLICABLE and the run exits 0 — and the four that do run are the ones a
       # runner can settle: a constructed text page, a picture-only page, a BLANK

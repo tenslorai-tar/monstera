@@ -38,7 +38,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { keepInlineImages } from '../../packages/kernel/dist/mupdfRaw.js';
-import { PDFIUM_ADAPTER, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { INLINE_IMAGES, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
@@ -300,7 +300,8 @@ if (!existsSync(library) || shim === null) {
     flag: '--require-engines',
   });
 } else {
-  refuseStaleBuild(ROOT, PDFIUM_ADAPTER, 1);
+  // BOTH BUILT ENGINES ARE THE SUBJECT: the rewrite is `mupdfRaw.js`' and the edit is `pdfiumFfi.js`'.
+  refuseStaleBuild(ROOT, INLINE_IMAGES, 2);
   /** @type {any} */
   const pdfium = await import(pathToFileURL(join(ROOT, 'packages', 'kernel', 'dist', 'pdfiumFfi.js')).href);
   pdfium.openPdfium(library);

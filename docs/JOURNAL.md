@@ -1034,6 +1034,19 @@ too, with eight failures per sheet as the stop. Through the product, that workbo
 failure in 570 s (`officeWorkbookLive.mjs`, seven cases each). ADR-0120's correction holds the reasoning. This closes
 the stage audit's YYYYYY-5 and YYYYYY-6.
 
+**E — nothing a test alone uses ships.** The mechanism: the package took every module in `dist/` not NAMED as a test,
+and `engineHostFake.js`, the harnesses and the probes are named naturally. A name rule would only move the failure to
+the next helper, so the package now takes the closure of `entry.js` over the module graph — imports, and files named
+by literal, which is how the shell starts its preload, the reader's worker and each host. A path computed without a
+literal would be invisible, so the closure refuses to answer unless every module the application loads by path (the
+host entry table, read from the build, the preload and the worker) is in it. `proof:shippedmodules` asserts a
+generated tree's closure exactly, two controls (without the literal its file is out; a path-loaded module out of reach
+refuses), and the built tree: 246 modules ship and 209 are left out, 27 of them not tests — the fake, the harnesses and
+probes, package indexes nothing loads, and decision D's page-set module, built but not yet wired when this was
+measured. Each of the 27 was read by name. It closes the stage audit's YYYYYY-8. The same run found
+`proof:inlineimages` (decision B) calling the staleness guard with no edge-map entry and without the native engine's
+edge, though it reads `dist/mupdfRaw.js`; both added.
+
 ---
 
 ## 2026-09-30 — Edit text on the owner's documents (ADR-0125), and the same class through every contained process

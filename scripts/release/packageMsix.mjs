@@ -12,6 +12,13 @@
  *   hashed on the way in against the pin the manifest carries, so the package holds pinned bytes or is not built;
  * - `NOTICE`, `LICENSE` and the third-party licence texts, and the Store images indexed by MakePri.
  *
+ * ## Nothing ships that the entry does not reach
+ *
+ * `shippedModules.mjs` walks the staged modules from `entry.js` — imports, and files named by literal as the shell
+ * names a preload, a worker and each host entry — and every module outside that closure is removed from the stage,
+ * named in the output (decision E). The owner's 0.1.6.0 carried a test's fake of the host surfaces; a name-based rule
+ * had let it through.
+ *
  * ## Nothing ships that does not resolve
  *
  * Every bare import in the shipped JavaScript is looked up from inside the staged folder, the way Node's resolver
@@ -53,6 +60,7 @@ import { pdfiumLibrary } from '../provision/pdfium.mjs';
 import { pdftotextPath } from '../provision/poppler.mjs';
 import { tessdataDirectory } from '../provision/tessdata.mjs';
 import { nativeManifest } from './nativeManifest.mjs';
+import { moduleClosure, modulesLoadedByPath } from './shippedModules.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -469,6 +477,18 @@ async function main() {
     copyFileSync(join(from, 'package.json'), join(to, 'package.json'));
     cpSync(join(from, 'dist'), join(to, 'dist'), { recursive: true, filter: shippedFromDist });
   }
+  // ONLY WHAT THE ENTRY REACHES (decision E): a module no path from `entry.js` loads — a test's fake, a proof's
+  // harness — was in `dist/` because the proofs run it from there, and is removed from the stage by name.
+  const closure = moduleClosure({
+    entry: join(app, 'dist', 'entry.js'),
+    roots: [join(app, 'dist'), ...SHIPPED_WORKSPACES.filter((name) => name !== '@monstera/desktop').map((name) => join(app, 'node_modules', name, 'dist'))],
+    packageDir: (name) => (SHIPPED_WORKSPACES.includes(name) ? join(app, 'node_modules', name) : null),
+    mustReach: await modulesLoadedByPath(join(app, 'dist')),
+    ts,
+  });
+  for (const path of closure.unreached) rmSync(path);
+  step(`  ${String(closure.reached.size)} modules reached from the entry; ${String(closure.unreached.length)} left out:`);
+  for (const path of closure.unreached) step(`    ${relative(app, path)}`);
   const packages = productionPackages(REPO_ROOT);
   for (const path of packages) copyPackage(join(REPO_ROOT, 'node_modules', path), join(app, 'node_modules', path));
   step(`  ${String(packages.length)} production packages`);

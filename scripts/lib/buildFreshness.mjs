@@ -236,6 +236,25 @@ export const HOST_READS = [
 export const HOST_FILE_ANSWERS_LIVE = [['apps/desktop/src', 'apps/desktop/dist/entry.js', 'tsc'], ...HOST_READS];
 
 /**
+ * What `inlineImages.proof.mjs` runs: the shim's inline-image rewrite through the built native binding, and PDFium's
+ * edit through the built adapter (ADR-0126).
+ *
+ * @type {readonly BuildEdge[]}
+ */
+export const INLINE_IMAGES = [...PDFIUM_ADAPTER, ...NATIVE_ENGINE];
+
+/**
+ * What `shippedModules.proof.mjs` walks: every `dist/` the package takes modules from — the desktop's and the four
+ * workspace packages' it ships beside it (decision E).
+ *
+ * @type {readonly BuildEdge[]}
+ */
+export const SHIPPED_MODULES = [
+  ...HOST_FILE_ANSWERS_LIVE,
+  ['packages/nodemode/src', 'packages/nodemode/dist/index.js', 'tsc'],
+];
+
+/**
  * The declarations `contract.proof.mjs`' probes are compiled against.
  *
  * Its probes name `ContractHandlers`, `ContractClient`, `Command` and
@@ -367,6 +386,11 @@ export const ARTEFACT_EDGES = {
   // THE COMPOSE HOST, run for real against the built shell (D9's Markdown row).
   'proof:composehost': COMPOSE_HOST_LIVE,
   'proof:hostfileanswers': HOST_FILE_ANSWERS_LIVE,
+  // ADR-0126's proof, which reads two built engines. It called the guard from its first commit and had no entry here
+  // until `proof:buildfreshness` named it — the anchor working, one range late.
+  'proof:inlineimages': INLINE_IMAGES,
+  // THE PACKAGE'S MODULE CLOSURE, walked over the built `dist/`s it takes modules from (decision E).
+  'proof:shippedmodules': SHIPPED_MODULES,
   // THE COMPILE-FAIL PROOF, whose probes `import type … from '@monstera/contract'`
   // and are compiled by a spawned `tsc`. That import resolves to the package's
   // built declarations, so this proof reads the same artefact every other entry
