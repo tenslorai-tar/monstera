@@ -28,6 +28,11 @@
  * answered 531,355 bytes when measured, over a frame, and a host ending there would take the document's session
  * with it. Its control is the same: the answer is measured and must exceed a frame.
  *
+ * **Undo's pair** (ADR-0125's addendum) is driven by rotating every page of a generated 10,000-page document and undoing
+ * it: the capture answers in a file and the undo sends the same prior back as `engine/invert`'s request in one. The
+ * control is again the input — the prior is measured with the kernel's own capture and must exceed a frame — and both
+ * ends are read back through the view model, so a rotate that never applied or an undo that restored nothing is red.
+ *
  * `--document <path>` runs the PDFium sequence on a copy of that file instead — made in the run's scratch folder, so the
  * file named is never written, and reported as outcomes and counts only. For a person's own file they allowed to be
  * opened, which is how the owner's failing document was re-run; the committed proof is the generated page.
@@ -69,12 +74,15 @@ const CASES = [
   'CONTROL: and the harness process itself exited CLEANLY',
   'CONTROL: the generated form’s field list is larger than a frame can carry',
   'the real MuPDF host answered the 3,000-field form’s field list, whole',
+  'CONTROL: rotating every page of the 10,000-page document captures a prior larger than a frame can carry',
+  'the real MuPDF host rotated every page, first and last read back turned',
+  'undo sent the prior back through the real MuPDF host, and first and last read back upright',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 10 });
-if (CASES.length !== 10) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 10`);
+const roster = createRoster(failures, { cases: 13 });
+if (CASES.length !== 13) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 13`);
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -203,6 +211,26 @@ if (!runnable) {
     seen.formFields?.count === seen.formFieldCount && seen.formFields?.truncated === false,
     `document.formFields answered ${JSON.stringify(seen.formFields)} against ${String(seen.formFieldCount)} fields ` +
       'in the form. An error here, with the failures case red, is the MuPDF host ending on the answer.',
+  );
+
+  check(
+    CASES[10] ?? '',
+    typeof seen.captureAnswerBytes === 'number' && seen.captureAnswerBytes > seen.frameMaxBytes,
+    `rotating all ${String(seen.rotatedPages)} pages captured ${String(seen.captureAnswerBytes)} bytes against a frame ` +
+      `of ${String(seen.frameMaxBytes)}. A prior that fits proves nothing about either file route — add pages.`,
+  );
+  check(
+    CASES[11] ?? '',
+    seen.rotateOpened === 'opened' && seen.rotated === 'ok' && JSON.stringify(seen.rotatedView) === '[90,90]',
+    `opened ${JSON.stringify(seen.rotateOpened)}, the rotate answered ${JSON.stringify(seen.rotated)} and the first ` +
+      `and last pages read ${JSON.stringify(seen.rotatedView)}. An error with the failures case red is the host ending ` +
+      'on the capture.',
+  );
+  check(
+    CASES[12] ?? '',
+    seen.undone === 'undone' && JSON.stringify(seen.undoneView) === '[0,0]',
+    `undo answered ${JSON.stringify(seen.undone)} and the first and last pages read ${JSON.stringify(seen.undoneView)}. ` +
+      'An error with the failures case red is the host ending on the invert.',
   );
 
   process.stdout.write(

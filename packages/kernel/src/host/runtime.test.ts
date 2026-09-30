@@ -5,6 +5,7 @@ import {
   channel,
   encodeFrame,
   fileAnswered,
+  fileRequested,
 } from '@monstera/contract';
 import { type Result, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
@@ -558,12 +559,18 @@ const fileFixture = {
     ['declined'],
   ),
   'fixture.frame': channel('answers in the frame', z.object({}), z.object({})),
+  'fixture.request': fileRequested(
+    'takes its params in a file and answers how much text arrived',
+    z.object({ session: z.string(), blob: z.string() }).strict(),
+    z.object({ length: z.number() }),
+  ),
 } as const;
 
 const fileHandlers = {
   'fixture.file': ({ size }: { session: string; size: number }) =>
     Promise.resolve(size < 0 ? err({ code: 'declined' as const }) : ok({ blob: 'x'.repeat(size) })),
   'fixture.frame': () => Promise.resolve(ok({})),
+  'fixture.request': ({ blob }: { session: string; blob: string }) => Promise.resolve(ok({ length: blob.length })),
 };
 
 /**
@@ -573,6 +580,8 @@ function fileHarness(write: 'record' | 'throw' | 'short' = 'record') {
   const frames: Uint8Array[] = [];
   const terminations: HostTermination[] = [];
   const files = new Map<string, { params: unknown; bytes: Uint8Array }>();
+  /** What main wrote into a session's snapshot directory, keyed `session|name`. */
+  const snapshots = new Map<string, Uint8Array>();
   const runtime = createHostRuntime({
     channels: fileFixture,
     handlers: fileHandlers,
@@ -589,11 +598,16 @@ function fileHarness(write: 'record' | 'throw' | 'short' = 'record') {
         files.set(name, { params, bytes });
         return Promise.resolve(write === 'short' ? bytes.byteLength - 1 : bytes.byteLength);
       },
+      read: (session, name) => {
+        const found = snapshots.get(`${session}|${name}`);
+        return found === undefined ? Promise.reject(new Error('no such file')) : Promise.resolve(found);
+      },
     },
   });
   return {
     runtime,
     files,
+    snapshots,
     terminations: () => terminations,
     written: (): readonly unknown[] =>
       frames.map((frame): unknown => JSON.parse(textDecoder.decode(frame.subarray(4)))),
@@ -682,5 +696,95 @@ describe('a file-routed answer (ADR-0125)', () => {
         transport: { write: () => undefined, terminate: () => undefined },
       }),
     ).toThrow(/nowhere to write/u);
+  });
+});
+
+describe("a file-requested call (ADR-0125's addendum)", () => {
+  /**
+   * Params main wrote into session `s1`'s snapshot directory, and the envelope naming them. The name is HEX, as main
+   * mints it: a name the envelope's schema refuses would end every case below at the schema, and each refusal would
+   * pass for that reason rather than its own — which is why each one also asserts the rule that refused it.
+   */
+  const NAME = 'a1';
+  function staged(h: ReturnType<typeof fileHarness>, params: unknown, session = 's1') {
+    const bytes = encoder.encode(JSON.stringify(params));
+    h.snapshots.set(`${session}|${NAME}`, bytes);
+    return { session, name: NAME, bytes: bytes.byteLength };
+  }
+
+  /** The connection ended as `malformed-request`, for the reason `rule` names, and answered nothing. */
+  function refusedBy(h: ReturnType<typeof fileHarness>, rule: RegExp): void {
+    expect(h.terminations().map((reason) => reason.code)).toStrictEqual(['malformed-request']);
+    expect(h.terminations()[0]?.detail).toMatch(rule);
+    expect(h.written()).toStrictEqual([]);
+  }
+
+  /**
+   * THE PARAMS THE FRAME COULD NOT CARRY: larger than a frame, read from the snapshot directory and dispatched through
+   * the channel's own schema. The answer names the length that arrived, so a dispatch of anything else is visible.
+   */
+  it('reads params larger than a frame from the named file and dispatches them', async () => {
+    const h = fileHarness();
+    const blob = 'y'.repeat(300_000);
+    h.send({ id: 'r1', channel: 'fixture.request', paramsFile: staged(h, { session: 's1', blob }) });
+    await settleWrites();
+
+    expect(h.terminations()).toStrictEqual([]);
+    expect(h.written()).toStrictEqual([{ id: 'r1', body: { ok: true, value: { length: 300_000 } } }]);
+  });
+
+  /** The same schema as framed params: a file is a route, not a way past validation. */
+  it('validates file params through the channel schema, and answers the refusal in the frame', async () => {
+    const h = fileHarness();
+    h.send({ id: 'r1', channel: 'fixture.request', paramsFile: staged(h, { session: 's1', blob: 'y', extra: 1 }) });
+    await settleWrites();
+
+    expect(h.terminations()).toStrictEqual([]);
+    expect(h.written()).toMatchObject([{ id: 'r1', body: { ok: false } }]);
+  });
+
+  it('ends the connection when framed params arrive for a file-requested channel', async () => {
+    const h = fileHarness();
+    h.send({ id: 'r1', channel: 'fixture.request', params: { session: 's1', blob: 'y' } });
+    await settleWrites();
+
+    refusedBy(h, /takes its params in a file and the request framed them/u);
+  });
+
+  it('ends the connection when a file is named for a channel that frames its params', async () => {
+    const h = fileHarness();
+    h.send({ id: 'r1', channel: 'fixture.frame', paramsFile: staged(h, {}) });
+    await settleWrites();
+
+    refusedBy(h, /takes its params in the frame and the request named a file/u);
+  });
+
+  /**
+   * ANOTHER SESSION'S PARAMS, read from this session's directory: the envelope says `s1` and the params say `s2`. The
+   * CONTROL is the first case, where the two agree and the call dispatches, so this refusal is the disagreement's.
+   */
+  it('ends the connection when the params name a session other than the envelope', async () => {
+    const h = fileHarness();
+    h.send({ id: 'r1', channel: 'fixture.request', paramsFile: staged(h, { session: 's2', blob: 'y' }) });
+    await settleWrites();
+
+    refusedBy(h, /names another session/u);
+  });
+
+  it('ends the connection when the file holds other than the size announced', async () => {
+    const h = fileHarness();
+    const envelope = staged(h, { session: 's1', blob: 'y' });
+    h.send({ id: 'r1', channel: 'fixture.request', paramsFile: { ...envelope, bytes: envelope.bytes + 1 } });
+    await settleWrites();
+
+    refusedBy(h, /holds \d+ bytes, not \d+/u);
+  });
+
+  it('ends the connection when the named file is not there', async () => {
+    const h = fileHarness();
+    h.send({ id: 'r1', channel: 'fixture.request', paramsFile: { session: 's1', name: NAME, bytes: 10 } });
+    await settleWrites();
+
+    refusedBy(h, /could not be read: Error: no such file/u);
   });
 });

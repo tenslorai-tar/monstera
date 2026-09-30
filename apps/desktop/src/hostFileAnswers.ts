@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { readFile, rm, stat } from 'node:fs/promises';
+import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ChannelMap } from '@monstera/contract';
@@ -42,6 +42,18 @@ export function fileAnswersFor(
       } finally {
         await rm(path, { force: true });
       }
+    },
+    requested: (channel) => channels[channel]?.request === 'file',
+    // THE SNAPSHOT DIRECTORY, which the host may only read (ADR-0125's addendum): prior state going back to be
+    // restored arrives by the door the document and an asset arrive by (ADR-0044).
+    put: async (params, name, bytes) => {
+      const area = areaFor(params);
+      if (area === undefined) throw new Error('params for a session this host is not holding');
+      await writeFile(join(area.snapshotDirectory, name), bytes);
+    },
+    drop: async (params, name) => {
+      const area = areaFor(params);
+      if (area !== undefined) await rm(join(area.snapshotDirectory, name), { force: true });
     },
   };
 }

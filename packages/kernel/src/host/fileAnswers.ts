@@ -20,9 +20,16 @@ import type { RuntimeFileAnswers } from './runtime.js';
  */
 export function sessionFileAnswers<TEntry extends HostArea>(
   sessions: Pick<HostSessions<TEntry>, 'lookup'>,
-  files: Pick<HostFilesystem, 'writeOutput'>,
+  files: Pick<HostFilesystem, 'writeOutput' | 'readSnapshot'>,
 ): RuntimeFileAnswers {
   return {
+    // THE SNAPSHOT DIRECTORY, the one this host may only read: a file-requested call's params arrive by the door the
+    // document and an asset arrive by (ADR-0044, ADR-0125's addendum).
+    read: async (session, name) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) throw new Error('the session these params belong to is not held');
+      return files.readSnapshot(held.snapshotDirectory, name);
+    },
     write: async (params, name, bytes) => {
       const session = (params as { readonly session?: unknown } | null)?.session;
       if (typeof session !== 'string') {

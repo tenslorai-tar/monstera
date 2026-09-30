@@ -1,6 +1,7 @@
 import {
   ANSWER_TOO_LARGE,
   type AnswerRoute,
+  answerCrossesInFile,
   type ChannelMap,
   ENGINE_ANSWER_FILE_MAX_BYTES,
   FrameDecoder,
@@ -226,12 +227,13 @@ export interface HostRuntimeOptions<TMap extends ChannelMap> {
  */
 export interface RuntimeFileAnswers {
   readonly write: (params: unknown, name: string, bytes: Uint8Array) => Promise<number>;
+  /**
+   * Reads a file-requested call's params from the snapshot directory of the named session — the one this host may
+   * only read (ADR-0125's addendum). Throws where the session is not held or the file is not there.
+   */
+  readonly read: (session: string, name: string) => Promise<Uint8Array>;
 }
 
-/** Whether a wrapped handler's envelope is a success — the one kind a file carries. */
-function succeeded(body: unknown): boolean {
-  return typeof body === 'object' && body !== null && (body as { readonly ok?: unknown }).ok === true;
-}
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
@@ -253,12 +255,15 @@ export function createHostRuntime<TMap extends ChannelMap>(
 
   const frames = new FrameDecoder(options.maxFrameBytes);
 
-  /** Each channel's declared route, read once: a string a peer sends is looked up here, never cast into the map. */
+  /** Each channel's declared routes, read once: a string a peer sends is looked up here, never cast into the map. */
   const routes: ReadonlyMap<string, AnswerRoute> = new Map(
     Object.entries(options.channels as ChannelMap).map(([name, declared]) => [name, declared.answer]),
   );
+  const requestRoutes: ReadonlyMap<string, AnswerRoute> = new Map(
+    Object.entries(options.channels as ChannelMap).map(([name, declared]) => [name, declared.request]),
+  );
   const fileAnswers = options.fileAnswers;
-  if (fileAnswers === undefined && [...routes.values()].includes('file')) {
+  if (fileAnswers === undefined && [...routes.values(), ...requestRoutes.values()].includes('file')) {
     throw new RangeError(
       'This channel map declares a file-routed channel and the runtime was given nowhere to write its answers ' +
         '(ADR-0125). Pass `fileAnswers` from the entry that holds the session table.',
@@ -410,7 +415,7 @@ export function createHostRuntime<TMap extends ChannelMap>(
    * this host being unable to deliver its own answer: `unsendable-response`, as an unframeable answer is.
    */
   const answerByFile = (id: string, body: unknown, params: unknown, name: string): void => {
-    if (!succeeded(body)) {
+    if (!answerCrossesInFile(body)) {
       answer(id, body);
       return;
     }
@@ -480,7 +485,45 @@ export function createHostRuntime<TMap extends ChannelMap>(
       return;
     }
 
-    dispatch(request.data.id, request.data.channel, request.data.params, request.data.answerInto);
+    const { id, channel, answerInto } = request.data;
+    const requestRoute = requestRoutes.get(channel) ?? 'frame';
+    if (!('paramsFile' in request.data)) {
+      if (requestRoute === 'file') {
+        stop({ code: 'malformed-request', detail: `"${channel}" takes its params in a file and the request framed them.` });
+        return;
+      }
+      dispatch(id, channel, request.data.params, answerInto);
+      return;
+    }
+    if (requestRoute !== 'file' || fileAnswers === undefined) {
+      stop({ code: 'malformed-request', detail: `"${channel}" takes its params in the frame and the request named a file.` });
+      return;
+    }
+    // THE PARAMS ARE READ FROM THE SNAPSHOT DIRECTORY main wrote them into (ADR-0125's addendum), then dispatched
+    // exactly as framed params are — the channel's own schema, in the same `wrapHandler`. A file that disagrees with
+    // its announced size, is not UTF-8 JSON, or names another session is main not being the peer this build expects.
+    const { session, name, bytes } = request.data.paramsFile;
+    fileAnswers.read(session, name).then(
+      (raw) => {
+        if (isStopped()) return;
+        let params: unknown;
+        try {
+          if (raw.byteLength !== bytes) throw new Error(`the file holds ${String(raw.byteLength)} bytes, not ${String(bytes)}`);
+          params = JSON.parse(decoder.decode(raw));
+        } catch (thrown) {
+          stop({ code: 'malformed-request', detail: `A params file for "${channel}" was not one: ${String(thrown)}` });
+          return;
+        }
+        if ((params as { readonly session?: unknown } | null)?.session !== session) {
+          stop({ code: 'malformed-request', detail: `A params file for "${channel}" names another session.` });
+          return;
+        }
+        dispatch(id, channel, params, answerInto);
+      },
+      (thrown: unknown) => {
+        stop({ code: 'malformed-request', detail: `A params file for "${channel}" could not be read: ${String(thrown)}` });
+      },
+    );
   };
 
   return {

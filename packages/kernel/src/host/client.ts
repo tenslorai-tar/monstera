@@ -1,4 +1,6 @@
 import {
+  answerCrossesInFile,
+  ENGINE_ANSWER_FILE_MAX_BYTES,
   ENGINE_HOST_FRAME_MAX_BYTES,
   FrameDecoder,
   encodeFrame,
@@ -99,11 +101,12 @@ export interface ClientFileAnswers {
    * bounded by the ceiling, so a file that disagrees with it is a host writing other than it said.
    */
   readonly take: (params: unknown, name: string, bytes: number) => Promise<Uint8Array>;
-}
-
-/** Whether an envelope is a success — the one kind a file-routed channel's file carries. */
-function succeeded(body: unknown): boolean {
-  return typeof body === 'object' && body !== null && (body as { readonly ok?: unknown }).ok === true;
+  /** Whether a channel's params cross in a file — its declaration (ADR-0125's addendum). */
+  readonly requested: (channel: string) => boolean;
+  /** Writes a call's params into the snapshot directory of the session they name, which the host may only read. */
+  readonly put: (params: unknown, name: string, bytes: Uint8Array) => Promise<void>;
+  /** Removes them once the call has ended. Called from a `finally`, so it must not throw on absence. */
+  readonly drop: (params: unknown, name: string) => Promise<void>;
 }
 
 export interface HostClient {
@@ -181,8 +184,15 @@ export function createHostClient({
     for (const call of waiting) call.reject(new HostConnectionLost(reason));
   };
 
-  return {
-    invoke: async (channel: string, params: unknown): Promise<unknown> => {
+  /**
+   * Frames and sends one call — with its params in the frame, or with the params file main already wrote named in
+   * their place (ADR-0125's addendum).
+   */
+  const send = async (
+    channel: string,
+    params: unknown,
+    paramsFile: { readonly session: string; readonly name: string; readonly bytes: number } | undefined,
+  ): Promise<unknown> => {
       const stopped = state.stopped;
       if (stopped !== null) throw new HostConnectionLost(stopped);
 
@@ -212,11 +222,12 @@ export function createHostClient({
       // that could name the file would choose what main reads (ADR-0125).
       const into = fileAnswers?.routed(channel) === true ? fileAnswers.mint() : undefined;
 
+      const carried = paramsFile === undefined ? { params } : { paramsFile };
       let frame: Uint8Array;
       try {
         frame = encodeFrame(
           new TextEncoder().encode(
-            JSON.stringify(into === undefined ? { id, channel, params } : { id, channel, params, answerInto: into }),
+            JSON.stringify(into === undefined ? { id, channel, ...carried } : { id, channel, ...carried, answerInto: into }),
           ),
           maxFrameBytes,
         );
@@ -239,6 +250,29 @@ export function createHostClient({
         pending.set(id, { resolve, reject, params, into });
         transport.write(frame);
       });
+  };
+
+  return {
+    invoke: async (channel: string, params: unknown): Promise<unknown> => {
+      if (fileAnswers?.requested(channel) !== true) return send(channel, params, undefined);
+      // THE PARAMS GO IN A FILE, written before the call and removed when it ends however it ends (ADR-0125's
+      // addendum). Above the ceiling this is refused here, before anything is written: the host would refuse it too,
+      // and ending the connection over params this side chose to send would be our defect named as a violation.
+      const bytes = new TextEncoder().encode(JSON.stringify(params));
+      if (bytes.byteLength > ENGINE_ANSWER_FILE_MAX_BYTES) {
+        throw new RangeError(
+          `the params for "${channel}" are ${String(bytes.byteLength)} bytes, above the ${String(ENGINE_ANSWER_FILE_MAX_BYTES)}-byte ceiling`,
+        );
+      }
+      const session = (params as { readonly session?: unknown } | null)?.session;
+      if (typeof session !== 'string') throw new TypeError(`"${channel}" takes its params in a file and names no session`);
+      const name = fileAnswers.mint();
+      await fileAnswers.put(params, name, bytes);
+      try {
+        return await send(channel, params, { session, name, bytes: bytes.byteLength });
+      } finally {
+        await fileAnswers.drop(params, name);
+      }
     },
 
     receive: (chunk: Uint8Array): void => {
@@ -290,7 +324,7 @@ export function createHostClient({
         if (!('answerFile' in answered)) {
           // A SUCCESS FOR A FILE-ROUTED CALL arriving in the frame is the host declaring a different route from the
           // one this build compiled — refused, for the reason a file answer to a framed call is below.
-          if (call.into !== undefined && succeeded(answered.body)) {
+          if (call.into !== undefined && answerCrossesInFile(answered.body)) {
             stop({ code: 'malformed-response', detail: 'a file-routed call was answered with a success in the frame' }, true);
             call.reject(new HostConnectionLost({ code: 'malformed-response', detail: 'answered outside its route' }));
             return;

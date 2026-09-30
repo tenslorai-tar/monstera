@@ -27,6 +27,7 @@ import {
   importAnnotationsSchema,
   channel,
   fileAnswered,
+  fileRequested,
   outputNameSchema,
   cropPagesSchema,
   setPageTransitionSchema,
@@ -1782,7 +1783,9 @@ export function coreEngineChannels<
       ['no-such-session', 'asset-missing', ...wire.transferFailures, ...(wire.applyFailures ?? ([] as const))],
     ),
 
-    'engine/capture': channel(
+    // FILE-ANSWERED (ADR-0125's addendum): a prior is about 40 bytes a page, so rotating 10,000 pages captured
+    // 398,937 bytes, 1.5x the frame — measured with the kernel's own capture.
+    'engine/capture': fileAnswered(
       'Reads prior state for one command routed to this host’s engine, before it is applied.',
       z
         .object({
@@ -1819,7 +1822,9 @@ export function coreEngineChannels<
       ['no-such-session', 'asset-missing', ...wire.transferFailures],
     ),
 
-    'engine/invert': channel(
+    // FILE-REQUESTED, capture's pair (ADR-0125's addendum): the same prior goes back as these params, so its size is the
+    // capture's answer's, and it arrives by the snapshot directory this host may only read.
+    'engine/invert': fileRequested(
       'Restores prior state recorded by an earlier capture.',
       z
         .object({

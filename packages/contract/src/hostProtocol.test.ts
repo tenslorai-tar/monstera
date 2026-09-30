@@ -136,7 +136,29 @@ describe('the host request envelope', () => {
 
     // A second parse here would be a second opinion about a channel's inputs,
     // and `wrapHandler` is where that question already has one answer.
-    expect(parsed.success && parsed.data.params).toStrictEqual({ a: 1 });
+    expect(parsed.success && 'params' in parsed.data && parsed.data.params).toStrictEqual({ a: 1 });
+  });
+
+  /**
+   * ADR-0125's addendum: a file-requested call names its params' file in place of params, never beside them — one
+   * request cannot carry two sets of params — and the size is bounded as an answer's is.
+   */
+  it('names a params file in place of params, never both, within the ceiling', () => {
+    const file = { session: 'abc', name: '0a1b2c3d', bytes: 398_937 };
+    expect(hostRequestSchema.safeParse({ id: 'c1', channel: 'engine/invert', paramsFile: file }).success).toBe(true);
+    expect(
+      hostRequestSchema.safeParse({ id: 'c1', channel: 'engine/invert', params: {}, paramsFile: file }).success,
+    ).toBe(false);
+    expect(
+      hostRequestSchema.safeParse({
+        id: 'c1',
+        channel: 'engine/invert',
+        paramsFile: { ...file, bytes: ENGINE_ANSWER_FILE_MAX_BYTES + 1 },
+      }).success,
+    ).toBe(false);
+    expect(
+      hostRequestSchema.safeParse({ id: 'c1', channel: 'engine/invert', paramsFile: { ...file, name: '..\\x' } }).success,
+    ).toBe(false);
   });
 
   it('refuses an extra field rather than ignoring it', () => {

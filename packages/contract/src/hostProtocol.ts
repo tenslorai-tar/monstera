@@ -233,14 +233,37 @@ export const ENGINE_ANSWER_FILE_MAX_BYTES = 8 * 1024 * 1024;
  * it. Present exactly when the channel is file-routed — the runtime refuses a request that gets this wrong either way,
  * because the two ends disagreeing about a channel's route is the peer not being the one this build expects.
  */
-export const hostRequestSchema = z
-  .object({
-    id: z.string().min(1).max(HOST_CORRELATION_ID_MAX_CHARS),
-    channel: z.string().min(1),
-    params: z.unknown(),
-    answerInto: outputNameSchema.optional(),
-  })
-  .strict();
+export const hostRequestSchema = z.union([
+  z
+    .object({
+      id: z.string().min(1).max(HOST_CORRELATION_ID_MAX_CHARS),
+      channel: z.string().min(1),
+      params: z.unknown(),
+      answerInto: outputNameSchema.optional(),
+    })
+    .strict(),
+  /**
+   * **Or `paramsFile`, in place of `params`** (ADR-0125's addendum): a `file`-requested channel's params, written by
+   * main into the snapshot directory of the session named here, under a name main minted, and this many bytes. The
+   * session is named OUTSIDE the params because the host needs it to find the file before it can read what is in it;
+   * it must then match the session the params themselves name. Its bound here is a length guard only: what a session
+   * id IS stays the channel's own schema, which the params must pass and this must equal.
+   */
+  z
+    .object({
+      id: z.string().min(1).max(HOST_CORRELATION_ID_MAX_CHARS),
+      channel: z.string().min(1),
+      paramsFile: z
+        .object({
+          session: z.string().min(1).max(HOST_OUTPUT_NAME_MAX_CHARS),
+          name: outputNameSchema,
+          bytes: z.number().int().min(1).max(ENGINE_ANSWER_FILE_MAX_BYTES),
+        })
+        .strict(),
+      answerInto: outputNameSchema.optional(),
+    })
+    .strict(),
+]);
 
 /** @see hostRequestSchema */
 export type HostRequest = z.infer<typeof hostRequestSchema>;

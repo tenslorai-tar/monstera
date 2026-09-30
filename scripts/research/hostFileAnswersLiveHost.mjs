@@ -59,6 +59,19 @@ const EDITED = 'Edited through the real host';
 const FORM_FIELDS = 3000;
 
 /**
+ * How many pages the rotated document has: enough that rotating every page captures a prior larger than a frame —
+ * 398,937 B at this count, measured with the kernel's own capture (ADR-0125's addendum), and measured again each run.
+ */
+const ROTATED_PAGES = 10_000;
+
+/** @returns {Promise<Uint8Array>} a document of {@link ROTATED_PAGES} blank pages */
+async function manyPages() {
+  const document = await PDFDocument.create();
+  for (let index = 0; index < ROTATED_PAGES; index += 1) document.addPage([200, 200]);
+  return document.save();
+}
+
+/**
  * A form of {@link FORM_FIELDS} text fields over pages of forty — a long government form's size.
  *
  * @returns {Promise<Uint8Array>}
@@ -196,6 +209,28 @@ async function main() {
       await mupdfWriter.close(formSession);
     }
 
+    // UNDO'S CONTROL, measured with the capture the MuPDF host runs: rotating every page must capture more than a frame,
+    // so the old build could neither answer the capture nor, had it got through, send it back as undo's request.
+    const rotateBytes = await manyPages();
+    const rotatePath = join(scratch, 'many-pages.pdf');
+    writeFileSync(rotatePath, rotateBytes);
+    const rotateAll = /** @type {const} */ ({
+      kind: 'rotatePages',
+      pages: Array.from({ length: ROTATED_PAGES }, (_, page) => page),
+      quarterTurns: 1,
+    });
+    const { localMupdfExecution } = await built('packages/kernel/dist/mupdfSpecs.js');
+    const rotateSession = await mupdfWriter.open(rotateBytes);
+    let captureAnswerBytes = 0;
+    try {
+      const captured = await localMupdfExecution.capture(rotateSession, rotateAll);
+      captureAnswerBytes = captured.captured
+        ? Buffer.byteLength(JSON.stringify({ ok: true, value: { captured: true, value: captured.prior } }))
+        : 0;
+    } finally {
+      await mupdfWriter.close(rotateSession);
+    }
+
     // THE INPUT IS THE CONTROL: measured with the reader the host runs, the answer must exceed a frame.
     const library = process.env['MONSTERA_PDFIUM_LIBRARY'] ?? '';
     pdfium.openPdfium(library);
@@ -304,7 +339,40 @@ async function main() {
       formFields = form;
     }
 
+    // UNDO'S PAIR, through the MuPDF host: the capture answers in a file and the undo sends the same prior back in one.
+    // Read back through the view model at both ends of the document, so an undo that answered and restored nothing, or
+    // a rotate that never applied, is visible rather than the same `undone`.
+    picked.path = rotatePath;
+    const many = await observed(() => handlers['document.open']({}));
+    /** @type {any} */
+    let rotated = null;
+    /** @type {any} */
+    let rotatedView = null;
+    /** @type {any} */
+    let undone = null;
+    /** @type {any} */
+    let undoneView = null;
+    const ends = [0, ROTATED_PAGES - 1];
+    if (many?.ok === true && many.value.kind === 'opened') {
+      const docId = many.value.docId;
+      rotated = await observed(() => handlers['document.execute']({ docId, command: rotateAll }));
+      const view = await observed(() => handlers['document.viewModel']({ docId, pages: ends }));
+      rotatedView = view?.ok === true ? view.value.rotations : view;
+      if (rotated?.ok === true) {
+        undone = await observed(() => handlers['document.undo']({ docId }));
+        const after = await observed(() => handlers['document.viewModel']({ docId, pages: ends }));
+        undoneView = after?.ok === true ? after.value.rotations : after;
+      }
+    }
+
     const report = {
+      rotatedPages: ROTATED_PAGES,
+      captureAnswerBytes,
+      rotateOpened: many?.ok === true ? many.value.kind : many,
+      rotated: rotated?.ok === true ? 'ok' : rotated,
+      rotatedView,
+      undone: undone?.ok === true ? undone.value.kind : undone,
+      undoneView,
       frameMaxBytes: ENGINE_HOST_FRAME_MAX_BYTES,
       formAnswerBytes,
       formFieldCount: FORM_FIELDS,

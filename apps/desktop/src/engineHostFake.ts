@@ -1,4 +1,7 @@
-import { ENGINE_HOST_FRAME_MAX_BYTES, FrameDecoder, encodeFrame } from '@monstera/contract';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { ENGINE_HOST_FRAME_MAX_BYTES, FrameDecoder, answerCrossesInFile, encodeFrame } from '@monstera/contract';
 import {
   type HostTermination,
   INTEGRITY_LOW,
@@ -128,6 +131,25 @@ export function hostHarness(
   } = {},
 ): HostHarness {
   const decoder = new FrameDecoder(ENGINE_HOST_FRAME_MAX_BYTES);
+  // THE GRANTED AREA OF EACH SESSION THE PEER ISSUED, remembered from what the product SENT on the open that issued it —
+  // never recomputed from a root, so the file routes land exactly where the product's own directories are.
+  const areas = new Map<string, { readonly snapshot: string; readonly output: string }>();
+  const openedArea = (params: unknown): { snapshot: string; output: string } | null => {
+    const sent = params as { snapshotDirectory?: unknown; outputDirectory?: unknown } | null;
+    return typeof sent?.snapshotDirectory === 'string' && typeof sent.outputDirectory === 'string'
+      ? { snapshot: sent.snapshotDirectory, output: sent.outputDirectory }
+      : null;
+  };
+  const areaOf = (session: unknown): { snapshot: string; output: string } => {
+    const area = typeof session === 'string' ? areas.get(session) : undefined;
+    if (area === undefined) throw new Error(`the fake peer holds no area for session ${JSON.stringify(session)}`);
+    return area;
+  };
+  const writeAnswer = (params: unknown, name: string, body: unknown): number => {
+    const bytes = new TextEncoder().encode(JSON.stringify(body));
+    writeFileSync(join(areaOf((params as { session?: unknown }).session).output, name), bytes);
+    return bytes.length;
+  };
   const calls: string[] = [];
   const endings: HostTermination[] = [];
   let eager = false;
@@ -199,15 +221,33 @@ export function hostHarness(
             const request = JSON.parse(new TextDecoder().decode(payload)) as {
               id: string;
               channel: string;
-              params: unknown;
+              params?: unknown;
+              paramsFile?: { session: string; name: string };
+              answerInto?: string;
             };
             calls.push(`peer.request:${request.channel}`);
-            const body = failures.peer?.(request.channel, request.params);
+            // THE ROUTES THE PRODUCT DECLARED ARE HONOURED, as the host's runtime honours them (ADR-0125): params named
+            // by a file are read from the snapshot directory main wrote them into, and a success asked for by file is
+            // written into the output directory main will take it from. A fake that framed everything would be a
+            // second opinion about the protocol, and the client refuses it as the peer it is.
+            const params =
+              request.paramsFile === undefined
+                ? request.params
+                : (JSON.parse(
+                    readFileSync(join(areaOf(request.paramsFile.session).snapshot, request.paramsFile.name), 'utf8'),
+                  ) as unknown);
+            const opening = openedArea(params);
+            const body = failures.peer?.(request.channel, params);
             if (body === null || body === undefined) continue;
-            const answer = encodeFrame(
-              new TextEncoder().encode(JSON.stringify({ id: request.id, body })),
-              ENGINE_HOST_FRAME_MAX_BYTES,
-            );
+            if (opening !== null) {
+              const session = (body as { value?: { session?: unknown } }).value?.session;
+              if (typeof session === 'string') areas.set(session, opening);
+            }
+            const envelope =
+              request.answerInto !== undefined && answerCrossesInFile(body)
+                ? { id: request.id, answerFile: { bytes: writeAnswer(params, request.answerInto, body) } }
+                : { id: request.id, body };
+            const answer = encodeFrame(new TextEncoder().encode(JSON.stringify(envelope)), ENGINE_HOST_FRAME_MAX_BYTES);
             // DELIVERED ON A MICROTASK, as the reader thread would: answering
             // inside `issue` returns the answer before the caller has awaited
             // its own promise, which is a shape the real transport cannot

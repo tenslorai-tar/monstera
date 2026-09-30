@@ -1,4 +1,4 @@
-import { ENGINE_HOST_FRAME_MAX_BYTES, encodeFrame } from '@monstera/contract';
+import { ENGINE_ANSWER_FILE_MAX_BYTES, ENGINE_HOST_FRAME_MAX_BYTES, encodeFrame } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
 import { type HostClient, HostConnectionLost, createHostClient } from './client.js';
@@ -306,9 +306,14 @@ function fileHarness(take: Uint8Array | Error | null = null) {
   const writes: Uint8Array[] = [];
   const terminations: HostTermination[] = [];
   const taken: { params: unknown; name: string; bytes: number }[] = [];
+  /** Every put and drop, in order, so a case can assert the file existed exactly for the call's lifetime. */
+  const files: string[] = [];
   const client = createHostClient({
     transport: {
-      write: (frame) => writes.push(frame),
+      write: (frame) => {
+        files.push('sent');
+        writes.push(frame);
+      },
       terminate: (reason) => terminations.push(reason),
     },
     maxInFlight: 4,
@@ -321,6 +326,15 @@ function fileHarness(take: Uint8Array | Error | null = null) {
         if (take instanceof Error) return Promise.reject(take);
         return Promise.resolve(take ?? new Uint8Array());
       },
+      requested: (channel) => channel === 'doc:undo',
+      put: (_params, name, bytes) => {
+        files.push(`put ${name} ${new TextDecoder().decode(bytes)}`);
+        return Promise.resolve();
+      },
+      drop: (_params, name) => {
+        files.push(`drop ${name}`);
+        return Promise.resolve();
+      },
     },
   });
   const frame = (response: unknown): void => {
@@ -330,6 +344,7 @@ function fileHarness(take: Uint8Array | Error | null = null) {
     client,
     terminations,
     taken,
+    files,
     frame,
     sent: () => writes.map((written) => JSON.parse(new TextDecoder().decode(written.subarray(4))) as unknown),
   };
@@ -397,5 +412,46 @@ describe('a file-routed answer on the client (ADR-0125)', () => {
     failed.frame({ id: 'c1', body: { ok: false, error: { code: 'answer-too-large' } } });
     await expect(declined).resolves.toStrictEqual({ ok: false, error: { code: 'answer-too-large' } });
     expect(failed.terminations).toStrictEqual([]);
+  });
+});
+
+describe('a file-requested call on the client (ADR-0125 addendum)', () => {
+  /**
+   * THE FILE EXISTS FOR EXACTLY THE CALL: written before the frame is sent, named in place of the params, and removed
+   * once the answer has come — so a prior never sits in a directory the host may read longer than the call needs it.
+   */
+  it('writes the params before sending, names the file in their place, and drops it when the call ends', async () => {
+    const h = fileHarness();
+    const params = { session: 's1', inverse: { kind: 'rotatePages', prior: [1, 2, 3] } };
+    const call = h.client.invoke('doc:undo', params);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const json = JSON.stringify(params);
+    expect(h.files).toStrictEqual([`put n1 ${json}`, 'sent']);
+    expect(h.sent()).toStrictEqual([
+      { id: 'c1', channel: 'doc:undo', paramsFile: { session: 's1', name: 'n1', bytes: new TextEncoder().encode(json).byteLength } },
+    ]);
+
+    h.frame({ id: 'c1', body: { ok: true, value: {} } });
+    await expect(call).resolves.toStrictEqual({ ok: true, value: {} });
+    expect(h.files).toStrictEqual([`put n1 ${json}`, 'sent', 'drop n1']);
+  });
+
+  it('drops the file when the call fails as well', async () => {
+    const h = fileHarness();
+    const call = h.client.invoke('doc:undo', { session: 's1' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    h.client.fail({ code: 'connection-lost', detail: 'the host went away' });
+    await expect(call).rejects.toBeInstanceOf(HostConnectionLost);
+    expect(h.files.at(-1)).toBe('drop n1');
+  });
+
+  it('refuses params above the ceiling before writing anything', async () => {
+    const h = fileHarness();
+    await expect(
+      h.client.invoke('doc:undo', { session: 's1', blob: 'x'.repeat(ENGINE_ANSWER_FILE_MAX_BYTES) }),
+    ).rejects.toBeInstanceOf(RangeError);
+    expect(h.files).toStrictEqual([]);
+    expect(h.terminations).toStrictEqual([]);
   });
 });

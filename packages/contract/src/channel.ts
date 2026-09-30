@@ -42,9 +42,15 @@ export interface Channel<
    * channel rather than by size at the moment of sending. Renderer channels cross IPC, not a frame, and take `frame`.
    */
   readonly answer: AnswerRoute;
+  /**
+   * How a request's params cross a byte-stream boundary (ADR-0125's addendum): `frame` for params bounded by their
+   * shape — every intent — and `file` for params that carry prior state back to the host, written by main into the
+   * session's snapshot directory, which the host may only read.
+   */
+  readonly request: AnswerRoute;
 }
 
-/** See {@link Channel.answer}. */
+/** See {@link Channel.answer} and {@link Channel.request}. */
 export type AnswerRoute = 'frame' | 'file';
 
 /**
@@ -52,6 +58,15 @@ export type AnswerRoute = 'frame' | 'file';
  * declared on every such channel, and never an ended host (ADR-0125 Decision 3).
  */
 export const ANSWER_TOO_LARGE = 'answer-too-large';
+
+/**
+ * Whether a wrapped handler's envelope crosses in the file on a `file`-routed channel: a success does, and a failure
+ * stays in the frame because it is bounded by its schema (ADR-0125 Decision 2). The ONE statement of that rule — the
+ * host that writes, the client that refuses a disagreement and any fake standing in for either all call it.
+ */
+export function answerCrossesInFile(body: unknown): boolean {
+  return typeof body === 'object' && body !== null && (body as { readonly ok?: unknown }).ok === true;
+}
 
 /**
  * Declares a channel. The generic parameters are inferred from the schemas, so
@@ -70,7 +85,24 @@ export function channel<
   result: TResult,
   failures: readonly TFailure[] = [],
 ): Channel<TParams, TResult, TFailure> {
-  return { summary, params, result, failures, answer: 'frame' };
+  return { summary, params, result, failures, answer: 'frame', request: 'frame' };
+}
+
+/**
+ * Declares a channel whose REQUEST crosses in a file (ADR-0125's addendum): its params are prior state going back to
+ * the host — `engine/invert`'s — which grows with the pages a command touched. The answer stays in the frame.
+ */
+export function fileRequested<
+  TParams extends z.ZodType,
+  TResult extends z.ZodType,
+  const TFailure extends string = never,
+>(
+  summary: string,
+  params: TParams,
+  result: TResult,
+  failures: readonly TFailure[] = [],
+): Channel<TParams, TResult, TFailure> {
+  return { summary, params, result, failures, answer: 'frame', request: 'file' };
 }
 
 /**
@@ -88,7 +120,7 @@ export function fileAnswered<
   result: TResult,
   failures: readonly TFailure[] = [],
 ): Channel<TParams, TResult, TFailure | typeof ANSWER_TOO_LARGE> {
-  return { summary, params, result, failures: [...failures, ANSWER_TOO_LARGE], answer: 'file' };
+  return { summary, params, result, failures: [...failures, ANSWER_TOO_LARGE], answer: 'file', request: 'frame' };
 }
 
 /**

@@ -1,5 +1,6 @@
 export {
   ANSWER_TOO_LARGE,
+  answerCrossesInFile,
   type AnswerRoute,
   type Channel,
   type DeclaredOf,
@@ -13,6 +14,7 @@ export {
   type ResultOf,
   channel,
   fileAnswered,
+  fileRequested,
 } from './channel.js';
 export {
   type ChannelId,

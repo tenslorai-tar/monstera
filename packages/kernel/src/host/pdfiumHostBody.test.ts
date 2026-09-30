@@ -427,7 +427,7 @@ describe('the PDFium host body', () => {
     expect(files.written.size, 'nothing may be written when the input was never read').toBe(0);
   });
 
-  it('captures prior state from the named file and writes nothing', async () => {
+  it('captures prior state from the named file and writes only its answer', async () => {
     stream = stubStream();
     const files = emptyFiles();
     const { session, calls } = await openArea(files);
@@ -437,34 +437,41 @@ describe('the PDFium host body', () => {
     files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([6, 6]));
 
     stream.feed(
-      request('c1', 'engine/capture', {
-        session,
-        command: {
-          kind: 'replaceTextObject',
-          page: 0,
-          replacements: [{ index: 2, text: 'hi' }],
-          version: 1,
+      request(
+        'c1',
+        'engine/capture',
+        {
+          session,
+          command: {
+            kind: 'replaceTextObject',
+            page: 0,
+            replacements: [{ index: 2, text: 'hi' }],
+            version: 1,
+          },
+          from: IN,
         },
-        from: IN,
-      }),
+        ANSWER,
+      ),
     );
     await stream.whenSent(2);
 
-    expect(answerIn(stream.sent[1])).toMatchObject({
-      body: {
-        ok: true,
+    // THE PRIOR STATE CROSSES IN A FILE (ADR-0125's addendum): it grows with the pages a command touches.
+    const written = files.written.get(`${AREA.outputDirectory}|${ANSWER}`);
+    expect(written, 'the capture was written into the granted OUTPUT directory under the name main minted').toBeDefined();
+    expect(answerIn(stream.sent[1])).toStrictEqual({ id: 'c1', answerFile: { bytes: written?.length } });
+    expect(JSON.parse(new TextDecoder().decode(written))).toMatchObject({
+      ok: true,
+      value: {
+        captured: true,
         value: {
-          captured: true,
-          value: {
-            kind: 'replaceTextObject',
-            prior: { page: 0, objects: [{ index: 2, text: 'WAS' }] },
-          },
+          kind: 'replaceTextObject',
+          prior: { page: 0, objects: [{ index: 2, text: 'WAS' }] },
         },
       },
     });
-    // A CAPTURE PRODUCES NO BYTES, which is why its params carry no `into`.
+    // A CAPTURE PRODUCES NO DOCUMENT BYTES, which is why its params carry no `into`: the answer is the one file.
     // Asserting the answer alone would pass on a handler that also wrote.
-    expect(files.written.size).toBe(0);
+    expect([...files.written.keys()]).toStrictEqual([`${AREA.outputDirectory}|${ANSWER}`]);
     expect(calls).toStrictEqual(['capture:6,6']);
   });
 
