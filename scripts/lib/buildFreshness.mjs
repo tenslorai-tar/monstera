@@ -215,6 +215,19 @@ export const COMPOSE_HOST_LIVE = [
 export const NATIVE_ENGINE = [['packages/kernel/src/mupdfRaw.ts', 'packages/kernel/dist/mupdfRaw.js', 'tsc']];
 
 /**
+ * The engine hosts' readers and channel schemas, which `hostAnswerSizes.mjs` and `hostSchemaBounds.mjs` measure: the
+ * kernel's reads and host channels, the contract's frame and boundary, and the shared types they are built on
+ * (ADR-0125).
+ *
+ * @type {readonly BuildEdge[]}
+ */
+export const HOST_READS = [
+  ['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc'],
+  ['packages/contract/src', 'packages/contract/dist/index.js', 'tsc'],
+  ['packages/shared/src', 'packages/shared/dist/index.js', 'tsc'],
+];
+
+/**
  * The declarations `contract.proof.mjs`' probes are compiled against.
  *
  * Its probes name `ContractHandlers`, `ContractClient`, `Command` and
