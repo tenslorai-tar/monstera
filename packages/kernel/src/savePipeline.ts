@@ -191,13 +191,30 @@ async function atomicWriteStaged(
   deps: Pick<SaveDependencies, 'surface' | 'names' | 'wait'>,
   target: string,
   staged: StagedImage,
+  backups: SaveBackups = 'keep',
 ): Promise<Awaited<ReturnType<typeof atomicWrite>>> {
+  const names = deps.names(target);
   try {
-    return await atomicWrite(deps.surface, target, (temp) => staged.place(temp), deps.names(target), deps.wait);
+    // A REMOVAL'S SAVE KEEPS NO BACKUP: the file it replaces holds what was removed, and a `.bak` of it would keep that.
+    // The names the person keeps are left where they are — they are older files, and whether to delete them is asked.
+    return await atomicWrite(
+      deps.surface,
+      target,
+      (temp) => staged.place(temp),
+      backups === 'keep' ? names : { ...names, backups: [], retired: [] },
+      deps.wait,
+    );
   } finally {
     await staged.discard();
   }
 }
+
+/**
+ * Whether a save keeps backups of the file it replaces: `keep` for every save but a removal's, which keeps `none` — a
+ * redaction or Sanitize is undone on disk by a `.bak` of the previous file (the list of 29 September, item 6). The
+ * writer answers which this save is (`signaturesKeptBySave`'s `removal`), from the same decision its terms come from.
+ */
+export type SaveBackups = 'keep' | 'none';
 
 /**
  * Runs one save, inside the document's lane.
@@ -206,6 +223,7 @@ async function atomicWriteStaged(
  * @param context the lane entry's own context — proof this is running in the lane
  * @param flush stages the document's current bytes. Composed where the writer
  *   and its session are known to be correlated; see the module comment.
+ * @param backups REQUIRED, so a caller cannot drop it and keep a removal's backup by default ({@link SaveBackups})
  * @returns what happened, never a thrown outcome.
  * @throws whatever `flush` threw — an engine failure, not an outcome
  */
@@ -213,6 +231,7 @@ export async function saveDocument(
   deps: SaveDependencies,
   context: DocumentContext,
   flush: DocumentFlush,
+  backups: SaveBackups,
 ): Promise<SaveOutcome> {
   const verdict = await deps.checkWriteTarget(context.docId);
   if (verdict.kind !== 'sole-writer') {
@@ -224,7 +243,7 @@ export async function saveDocument(
 
   const staged = await flush();
   const bytes = staged.byteLength;
-  const written = await atomicWriteStaged(deps, context.path, staged);
+  const written = await atomicWriteStaged(deps, context.path, staged, backups);
   if (!written.ok) {
     // THE STAMP IS NOT REACHED, and that is invariant 18 rather than tidiness.
     // The document stays dirty, its command log is untouched, and the original

@@ -6,7 +6,7 @@ import type { CommandKind, Command } from '@monstera/contract';
 import { commandSpecs } from './commandSpecs.js';
 import { declaredCommands } from './commandDeclarations.js';
 import type { MupdfSession } from './engineSeam.js';
-import { mupdfWriter, withDocument } from './mupdfWriter.js';
+import { mupdfWriter, signaturesKeptBySave, withDocument } from './mupdfWriter.js';
 
 /**
  * Every command declaring `purpose: 'removal'` produces bytes its removal is
@@ -364,6 +364,22 @@ describe('a command whose purpose is removal', () => {
       });
 
       expect(await removal.residue(collected)).toBe(0);
+    });
+
+    /**
+     * ITEM 6 OF THE 29 SEPTEMBER LIST: the save after this command keeps no backup, because the writer answers that it
+     * is a removal's. Asked before the apply as the control — a session nothing removed from answers *ordinary*, so the
+     * `true` after it is the command's and not the fixture's.
+     */
+    it(`${kind}: the next save is a removal’s, which keeps no backup — and was not before it`, async () => {
+      const removal = REMOVAL_CASES[kind];
+      if (removal === undefined) throw new Error(`${kind} declares purpose 'removal' and has no case here`);
+      const answers = await onSession(await removal.fixture(), async (session) => {
+        const before = (await signaturesKeptBySave(session)).removal;
+        await commandSpecs[kind].apply(session as never, removal.payload as never, undefined as never, undefined as never);
+        return { before, after: (await signaturesKeptBySave(session)).removal };
+      });
+      expect(answers).toStrictEqual({ before: false, after: true });
     });
   }
 });

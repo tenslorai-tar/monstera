@@ -1139,6 +1139,24 @@ const cloudDoneSchema = z.discriminatedUnion('kind', [
  */
 export const MAX_LAUNCH_DOCUMENTS = 32;
 
+/**
+ * The most undo copies of one document a save can report: each is a terminal entry's checkpoint, and the log sheds
+ * them to a byte ceiling long before this — a bound so the answer has one, not a measurement.
+ */
+const MAX_UNDO_COPIES = 100_000;
+
+/**
+ * What a redaction's or Sanitize's save leaves that may still hold what was removed (the list of 29 September, item
+ * 6): the file's older backups by NAME — the names a save gives them, `report.pdf.bak` and on — and how many undo copies
+ * of the document this application keeps. No path crosses (invariant L2).
+ */
+const staleCopiesSchema = z
+  .object({
+    backups: z.array(z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH)).max(MAX_BACKUP_COPIES),
+    undoCopies: z.number().int().nonnegative().max(MAX_UNDO_COPIES),
+  })
+  .strict();
+
 /** A document that opened — `document.open`'s success, and the base of an import that opened with a note. */
 const openedSchema = z.object({
     kind: z.literal('opened'),
@@ -2167,7 +2185,16 @@ export const channels = {
       breakSignatures: z.boolean(),
     }),
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('saved'), version: docVersionSchema }),
+      z.object({
+        kind: z.literal('saved'),
+        version: docVersionSchema,
+        /**
+         * Where the save was a redaction's or Sanitize's — it wrote no backup — what it leaves that may still hold what
+         * was removed: older backups beside the file, by NAME (never a path, invariant L2), and how many undo copies of
+         * the document this application keeps. `null` for every other save. The person is asked whether to delete them.
+         */
+        staleCopies: staleCopiesSchema.nullable(),
+      }),
       /**
        * NOTHING WAS WRITTEN: the save would rewrite the file and so break this many signatures — a removal or a change
        * of protection is pending, or the file cannot be appended to. Asked with `breakSignatures: false` only.
@@ -2180,6 +2207,24 @@ export const channels = {
       z.object({ kind: z.literal('write-failed') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Deletes, PERMANENTLY, the stale copies a redaction's or Sanitize's save reported and the person confirmed: the
+   * named backups, and every undo copy of the document with the history that needs them (the list of 29 September,
+   * item 6). Main recomputes the file's backup names and deletes only those among `backups` — a name that is not one
+   * of this file's backups is never deleted — and answers how many of each went.
+   */
+  'document.deleteStaleCopies': channel(
+    'Deletes the older backups and undo copies a removal’s save left, as the person confirmed.',
+    z.object({ docId: docIdSchema, backups: staleCopiesSchema.shape.backups }).strict(),
+    z
+      .object({
+        backups: z.number().int().nonnegative().max(MAX_BACKUP_COPIES),
+        undoCopies: z.number().int().nonnegative().max(MAX_UNDO_COPIES),
+      })
+      .strict(),
+    ['document-not-open', 'document-busy'],
   ),
 
   /**

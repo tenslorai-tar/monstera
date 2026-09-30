@@ -401,6 +401,7 @@ import { isDirty, savedState, savedTick, windowTitle } from './savedState.js';
 import { autosaveEvery, createAutosave } from './autosave.js';
 import { AUTOSAVE_SETTING, CONFIRM_REDACTION_SETTING, WARN_SIGNATURE_BREAK_SETTING } from './settings/saving.js';
 import { SIGNATURE_BREAK_DIALOG } from './dialogs/signatureBreak.js';
+import { STALE_COPIES_DIALOG } from './dialogs/staleCopies.js';
 import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { PageList, type PageListProps } from './PageList.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
@@ -832,6 +833,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         ANNOTATION_TEXT_DIALOG,
         STAMP_DIALOG,
         SIGNATURE_BREAK_DIALOG,
+        STALE_COPIES_DIALOG,
         ANNOTATION_NOTE_DIALOG,
         ANNOTATION_EDIT_DIALOG,
         ANNOTATION_REPLY_DIALOG,

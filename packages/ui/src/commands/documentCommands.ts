@@ -86,6 +86,7 @@ import { RESIZE_PAGES_DIALOG_ID } from '../dialogs/resizePages.js';
 import type { ResizePagesAnswer } from '../dialogs/resizePagesResult.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { SIGNATURE_BREAK_DIALOG_ID, SIGNATURE_BREAK_RESULT } from '../dialogs/signatureBreak.js';
+import { STALE_COPIES_DIALOG_ID, STALE_COPIES_RESULT } from '../dialogs/staleCopies.js';
 import { WATERMARK_PAGES_DIALOG_ID } from '../dialogs/watermarkPages.js';
 import type { WatermarkPagesAnswer } from '../dialogs/watermarkPagesResult.js';
 import {
@@ -220,6 +221,7 @@ import {
   TOAST_COPY_SAVED,
   TOAST_PAGES_SAVED,
   TOAST_SAVED,
+  TOAST_STALE_COPIES_DELETED,
   TOAST_SMALLER_COPY_SAVED,
   UNDO_TITLE,
   REDO_TITLE,
@@ -2335,6 +2337,12 @@ export async function saveDocument(
     // person must be left with the one still on screen a minute later.
     deps.onSaved(docId, answer.value.version);
     deps.toast('done', TOAST_SAVED);
+    // A REMOVAL'S SAVE kept no backup, and says what older copies may still hold what was removed: every one is listed
+    // and a person decides. Never asked of a timer, whose save simply leaves them for the next one a person makes.
+    const stale = answer.value.staleCopies;
+    if (attendance === 'attended' && stale !== null && (stale.backups.length > 0 || stale.undoCopies > 0)) {
+      await deleteStaleCopies(deps, docId, stale);
+    }
     return true;
   }
   // NOT REACHABLE from a save that said `breakSignatures: true`, and narrowed rather than cast: an answer this
@@ -2348,6 +2356,25 @@ export async function saveDocument(
     outcome: answer.value.kind === 'write-failed' ? 'write-failed' : answer.value.reason,
   });
   return false;
+}
+
+/**
+ * Asks whether to delete the older copies a removal's save left — listing each — and deletes exactly those, telling
+ * the person how many went. The names sent are the ones shown; main deletes only this file's own backups among them.
+ */
+async function deleteStaleCopies(
+  deps: { readonly client: ContractClient; readonly ask: (id: string, props: unknown) => Promise<unknown> } & WritesItsOwnFile,
+  docId: DocId,
+  stale: { readonly backups: readonly string[]; readonly undoCopies: number },
+): Promise<void> {
+  const confirmed = STALE_COPIES_RESULT.safeParse(await deps.ask(STALE_COPIES_DIALOG_ID, stale));
+  if (!confirmed.success) return;
+  const deleted = await deps.client['document.deleteStaleCopies']({ docId, backups: [...stale.backups] });
+  if (!deleted.ok) {
+    reportProblem(deps, deleted.error);
+    return;
+  }
+  deps.toast('done', TOAST_STALE_COPIES_DELETED);
 }
 
 /**

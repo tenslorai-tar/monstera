@@ -1078,6 +1078,15 @@ in September; and the signer was using the pdf-lib loader, so loading for an inc
 changed its save — it now takes `openWhole`. Re-timed: 29–124 s a command on the 127,082-object fixture against
 192–239 s, the page-drawing four the slow end, why unmeasured.
 
+**Item 6 — a redaction leaves no backup.** The mechanism: every save copied the file it replaced to `.bak`, so the
+first save after a redaction put the unredacted document beside the redacted one. The writer already decides a
+removal's save terms (ADR-0045, the session's one-way *removal* mark), so the same answer now says so and the save
+writes no backup; `saveDocument` takes the choice as a required argument. What may still hold the removed content —
+older backups and this application's undo checkpoints — is listed by name and count, and deleted only on
+**Delete permanently**, which also drops the undo history those copies served. Because the mark is one-way, every
+later save of that session asks again while such copies exist; autosave never asks. Built on the owner's new branch
+workflow (UPDATE 108 in the hand-over).
+
 ---
 
 ## 2026-09-30 — Edit text on the owner's documents (ADR-0125), and the same class through every contained process

@@ -361,6 +361,7 @@ function saveTermsOf(session: MupdfSession): {
   readonly terms: string;
   readonly signatures: number;
   readonly appends: boolean;
+  readonly purpose: SavePurpose;
 } {
   const document = documentFor(session);
   // EXHAUSTIVE OVER THE UNION rather than an `if`, so a third purpose is a
@@ -392,7 +393,7 @@ function saveTermsOf(session: MupdfSession): {
   const appends =
     purpose === 'ordinary' && protection === undefined && signatures > 0 && document.canBeSavedIncrementally();
   const terms = appends ? 'incremental' : [options[purpose], protection ?? ''].filter((term) => term !== '').join(',');
-  return { document, terms, signatures, appends };
+  return { document, terms, signatures, appends, purpose };
 }
 
 /**
@@ -400,12 +401,25 @@ function saveTermsOf(session: MupdfSession): {
  * signature-breaking save* (`BUILD-PROMPT.md`:618). A save keeps a signature only by appending; so it breaks them
  * exactly where there are any and {@link saveTermsOf} chose not to append — a removal, a change of protection, or a
  * document MuPDF repaired.
+ *
+ * **And whether it is a REMOVAL save** — a redaction or Sanitize has been applied to this session — from the same
+ * decision: such a save writes no backup, because a `.bak` of the previous file would keep what was just removed (the
+ * list of 29 September, item 6).
  */
-export function signaturesKeptBySave(session: MupdfSession): Promise<{ readonly signatures: number; readonly kept: boolean }> {
+export function signaturesKeptBySave(session: MupdfSession): Promise<NextSave> {
   return promised(() => {
-    const { signatures, appends } = saveTermsOf(session);
-    return { signatures, kept: signatures === 0 || appends };
+    const { signatures, appends, purpose } = saveTermsOf(session);
+    return { signatures, kept: signatures === 0 || appends, removal: purpose === 'removal' };
   });
+}
+
+/** What the next save of a session does, as {@link signaturesKeptBySave} answers it. */
+export interface NextSave {
+  readonly signatures: number;
+  /** Whether the document's signatures survive it. */
+  readonly kept: boolean;
+  /** Whether it is a removal's save, which writes no backup. */
+  readonly removal: boolean;
 }
 
 export const mupdfWriter: EngineWriter<MupdfSession> = {

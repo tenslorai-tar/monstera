@@ -466,7 +466,7 @@ describe('save', () => {
     let asked: string | undefined;
     const client = createClient(channels, (id) => {
       asked = id;
-      return Promise.resolve(ok({ kind: 'saved', version: asDocVersion(2) }));
+      return Promise.resolve(ok({ kind: 'saved', version: asDocVersion(2), staleCopies: null }));
     });
 
     const shown: { id: string; props: unknown }[] = [];
@@ -497,7 +497,7 @@ describe('save', () => {
         sent.push(params);
         const agreed = (params as { breakSignatures: boolean }).breakSignatures;
         return Promise.resolve(
-          ok(agreed ? { kind: 'saved', version: asDocVersion(3) } : { kind: 'breaks-signatures', signatures: 2 }),
+          ok(agreed ? { kind: 'saved', version: asDocVersion(3), staleCopies: null } : { kind: 'breaks-signatures', signatures: 2 }),
         );
       });
       return { client, sent };
@@ -555,6 +555,59 @@ describe('save', () => {
       ).toBe(false);
       expect(shownHere).toStrictEqual([]);
       expect(sent).toStrictEqual([{ docId: CONTEXT.docId, breakSignatures: false }]);
+    });
+  });
+
+  /**
+   * ITEM 6 OF THE 29 SEPTEMBER LIST, at the page: a removal's save reports the older copies that may still hold what
+   * was removed; the page lists every one and deletes exactly those only when the person confirms.
+   */
+  describe('a REMOVAL’S save — the older copies it left', () => {
+    const STALE = { backups: ['report.pdf.bak', 'report.pdf.bak2'], undoCopies: 1 };
+    const removalClient = (staleCopies: typeof STALE | null): { client: ContractClient; sent: { id: string; params: unknown }[] } => {
+      const sent: { id: string; params: unknown }[] = [];
+      const client = createClient(channels, (id, params) => {
+        sent.push({ id, params });
+        if (id === 'document.deleteStaleCopies') return Promise.resolve(ok({ backups: 2, undoCopies: 1 }));
+        return Promise.resolve(ok({ kind: 'saved', version: asDocVersion(4), staleCopies }));
+      });
+      return { client, sent };
+    };
+
+    it('LISTS every copy and, confirmed, deletes exactly the names it showed', async () => {
+      const { client, sent } = removalClient(STALE);
+      const shown: { id: string; props: unknown }[] = [];
+      const ask = (id: string, props: unknown): Promise<unknown> => {
+        shown.push({ id, props });
+        return Promise.resolve({ delete: true });
+      };
+      expect(await saveDocument({ client, ask, ...saving(), warnSignatureBreak: () => true }, DOC, 'attended')).toBe(true);
+      expect(shown).toStrictEqual([{ id: 'dialog.stale-copies', props: STALE }]);
+      expect(sent.at(-1)).toStrictEqual({ id: 'document.deleteStaleCopies', params: { docId: DOC, backups: STALE.backups } });
+    });
+
+    it('CONTROL: dismissed deletes nothing; unattended never asks; an ordinary save asks nothing', async () => {
+      const dismissed = removalClient(STALE);
+      await saveDocument({ client: dismissed.client, ask: () => Promise.resolve(undefined), ...saving(), warnSignatureBreak: () => true }, DOC, 'attended');
+      expect(dismissed.sent.map((call) => call.id)).toStrictEqual(['document.save']);
+
+      const timer = removalClient(STALE);
+      const shownByTimer: unknown[] = [];
+      await saveDocument(
+        { client: timer.client, ask: (id) => Promise.resolve(shownByTimer.push(id)), ...saving(), warnSignatureBreak: () => true },
+        DOC,
+        'unattended',
+      );
+      expect(shownByTimer).toStrictEqual([]);
+
+      const ordinary = removalClient(null);
+      const shownOrdinary: unknown[] = [];
+      await saveDocument(
+        { client: ordinary.client, ask: (id) => Promise.resolve(shownOrdinary.push(id)), ...saving(), warnSignatureBreak: () => true },
+        DOC,
+        'attended',
+      );
+      expect(shownOrdinary).toStrictEqual([]);
     });
   });
 

@@ -390,6 +390,7 @@ export function createContractHandlers(deps: {
     'document.undo': undoHandler(deps.commands),
     'document.redo': redoHandler(deps.commands),
     'document.save': saveHandler(deps.commands),
+    'document.deleteStaleCopies': deleteStaleCopiesHandler(deps.commands),
     'document.extract': extractHandler(deps.commands),
     'document.snapshotRegion': snapshotRegionHandler(deps.commands),
     'document.exportFormData': exportFormDataHandler(deps.commands),
@@ -759,7 +760,14 @@ function saveHandler(commands: DocumentCommands): ContractHandlers['document.sav
   return async ({ docId, breakSignatures }): Promise<Awaited<ReturnType<ContractHandlers['document.save']>>> => {
     try {
       const outcome = await commands.save(docId, { breakSignatures });
-      if (outcome.kind === 'saved') return ok({ kind: 'saved', version: outcome.version } as const);
+      if (outcome.kind === 'saved') {
+        const stale = outcome.staleCopies;
+        return ok({
+          kind: 'saved',
+          version: outcome.version,
+          staleCopies: stale === null ? null : { backups: [...stale.backups], undoCopies: stale.undoCopies },
+        } as const);
+      }
       if (outcome.kind === 'breaks-signatures') {
         return ok({ kind: 'breaks-signatures', signatures: outcome.signatures } as const);
       }
@@ -773,6 +781,19 @@ function saveHandler(commands: DocumentCommands): ContractHandlers['document.sav
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** The stale copies a removal's save reported, deleted as the person confirmed — the save handler's classes. */
+function deleteStaleCopiesHandler(commands: DocumentCommands): ContractHandlers['document.deleteStaleCopies'] {
+  return async ({ docId, backups }): Promise<Awaited<ReturnType<ContractHandlers['document.deleteStaleCopies']>>> => {
+    try {
+      return ok(await commands.deleteStaleCopies(docId, backups));
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       throw thrown;
     }
   };

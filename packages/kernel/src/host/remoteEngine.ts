@@ -11,6 +11,7 @@ import type { HUMAN_CHECKS } from '../accessibilityRules.js';
 import type { FoundBarcode } from '../barcodeReader.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { MupdfSession } from '../engineSeam.js';
+import type { NextSave } from '../mupdfWriter.js';
 import type { DuplicatePageGroup } from '../pageDuplicates.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
 import type { ReadSignature } from '../signatureRead.js';
@@ -441,11 +442,14 @@ export function remoteMupdfSignatures(
     ).signatures;
 }
 
-/** Whether the next save keeps the document's signatures, over the boundary. `signaturesKeptBySave` in the host. */
+/**
+ * Whether the next save keeps the document's signatures, and whether it is a removal's, over the boundary.
+ * `signaturesKeptBySave` in the host.
+ */
 export function remoteMupdfSignaturesKept(
   client: ClientApi<EngineChannels>,
   sessions: RemoteSessions,
-): (session: MupdfSession) => Promise<{ readonly signatures: number; readonly kept: boolean }> {
+): (session: MupdfSession) => Promise<NextSave> {
   return async (session) =>
     answered(
       'engine/signatures-kept',

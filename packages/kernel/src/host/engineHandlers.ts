@@ -14,6 +14,7 @@ import type { Layer } from '../layers.js';
 import type { ReadSignature } from '../signatureRead.js';
 import type { FlatFieldCandidate } from '../flatFields.js';
 import type { ListedField } from '../formFields.js';
+import type { NextSave } from '../mupdfWriter.js';
 import type { ListedAnnotation } from '../pageAnnotations.js';
 // A VALUE IMPORT, and the only one in this file's import list that is not a
 // type. `OcrModelUnreadableError` is how the handler below tells a missing model
@@ -426,8 +427,8 @@ export interface EngineHandlerParts {
   readonly access: (session: MupdfSession) => DocumentAccess;
   /** Reads and verifies the document's signatures. `readSignatures`. */
   readonly signatures: HostSignaturesReader;
-  /** How many signatures, and whether the next save keeps them. `signaturesKeptBySave`. */
-  readonly signaturesKept: (session: MupdfSession) => Promise<{ readonly signatures: number; readonly kept: boolean }>;
+  /** How many signatures, whether the next save keeps them, and whether it is a removal's. `signaturesKeptBySave`. */
+  readonly signaturesKept: (session: MupdfSession) => Promise<NextSave>;
   readonly files: HostFilesystem;
   readonly probe: HostContainmentProbe;
   readonly geometry: PageGeometryReader;

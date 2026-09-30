@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 
 import { strFromU8, unzipSync } from 'fflate';
 import { tmpdir } from 'node:os';
@@ -710,7 +710,9 @@ const INERT = {
   ocr: noOcr,
   layers: noLayers,
   signatures: () => Promise.reject(new Error('this case does not read signatures')),
-  signaturesKept: () => Promise.reject(new Error('this case does not ask whether a save keeps signatures')),
+  // EVERY SAVE ASKS, since item 6 — the answer also says whether the save is a removal's — so the inert answer is the
+  // ordinary one: an unsigned document, and not a removal.
+  signaturesKept: () => Promise.resolve({ signatures: 0, kept: true, removal: false }),
   restore: noRestore,
   annotations: noAnnotations,
   annotationCopy: noAnnotationCopy,
@@ -1375,7 +1377,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       const asked: unknown[] = [];
       const { commands, saved, path, before } = await aSavableDocument((session) => {
         asked.push(session);
-        return Promise.resolve({ signatures: 2, kept: false });
+        return Promise.resolve({ signatures: 2, kept: false, removal: false });
       });
 
       expect(await commands.save(saved, { breakSignatures: false })).toStrictEqual({ kind: 'breaks-signatures', signatures: 2 });
@@ -1383,10 +1385,50 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       expect(Buffer.from(readFileSync(path)).equals(Buffer.from(before))).toBe(true);
       expect(asked).toHaveLength(1);
 
-      // AGREED: the writer is not asked again, and the save lands.
+      // AGREED: the save lands. The writer IS asked again, since item 6 — the same answer says whether this save is a
+      // removal's, which decides its backup — and an agreed save does not skip that question.
       expect((await commands.save(saved, { breakSignatures: true })).kind).toBe('saved');
-      expect(asked).toHaveLength(1);
+      expect(asked).toHaveLength(2);
       expect(Buffer.from(readFileSync(path)).equals(Buffer.from(before))).toBe(false);
+    });
+
+    /**
+     * ITEM 6 OF THE 29 SEPTEMBER LIST: a redaction's or Sanitize's save keeps no backup, because the file it replaces
+     * holds what was removed. The writer's answer is stubbed to say *removal*, and everything else is real — the service,
+     * the save pipeline and the disk — so what is asserted is what lands beside the document.
+     */
+    it('a REMOVAL’S save leaves no file beside the document holding the bytes it replaced — CONTROL: an ordinary one does', async () => {
+      const holdsReplaced = (path: string, before: Uint8Array): string[] =>
+        readdirSync(directory)
+          .filter((name) => name.startsWith(basename(path)) && name !== basename(path))
+          .filter((name) => Buffer.from(readFileSync(join(directory, name))).equals(Buffer.from(before)));
+
+      const removal = await aSavableDocument(() => Promise.resolve({ signatures: 0, kept: true, removal: true }));
+      const removed = await removal.commands.save(removal.saved, { breakSignatures: false });
+      expect(removed).toMatchObject({ kind: 'saved', staleCopies: { backups: [], undoCopies: 0 } });
+      expect(holdsReplaced(removal.path, removal.before)).toStrictEqual([]);
+
+      const ordinary = await aSavableDocument(() => Promise.resolve({ signatures: 0, kept: true, removal: false }));
+      const kept = await ordinary.commands.save(ordinary.saved, { breakSignatures: false });
+      expect(kept).toMatchObject({ kind: 'saved', staleCopies: null });
+      expect(holdsReplaced(ordinary.path, ordinary.before)).toStrictEqual([`${basename(ordinary.path)}.bak`]);
+    });
+
+    it('names an OLDER backup a removal’s save left, and deletes it — and only this file’s backups — when asked', async () => {
+      const { commands, saved, path } = await aSavableDocument(() => Promise.resolve({ signatures: 0, kept: true, removal: true }));
+      const older = `${path}.bak`;
+      writeFileSync(older, 'an earlier save, still holding what was removed');
+      const stranger = join(directory, 'someone-else.pdf');
+      writeFileSync(stranger, 'not this document’s');
+
+      const outcome = await commands.save(saved, { breakSignatures: false });
+      expect(outcome).toMatchObject({ kind: 'saved', staleCopies: { backups: [basename(older)] } });
+
+      // THE PAGE CANNOT AIM THIS ELSEWHERE: a name that is not one of this file's backup names is never deleted.
+      const deleted = await commands.deleteStaleCopies(saved, [basename(older), basename(stranger)]);
+      expect(deleted.backups).toBe(1);
+      expect(existsSync(older)).toBe(false);
+      expect(existsSync(stranger)).toBe(true);
     });
 
     it('CONTROL: a save that KEEPS them is written without being held — the real decision, on an unsigned document', async () => {

@@ -2198,7 +2198,7 @@ describe('App', () => {
           version += 1;
           return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0 }));
         }
-        if (id === 'document.save') return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(version) }));
+        if (id === 'document.save') return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(version), staleCopies: null }));
         if (id === 'cloud.saveBack') {
           return Promise.resolve(ok({ kind: 'saved-back' as const, version: asDocVersion(version) }));
         }
@@ -2256,7 +2256,7 @@ describe('App', () => {
             version += 1;
             return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0 }));
           }
-          if (id === 'document.save') return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(version) }));
+          if (id === 'document.save') return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(version), staleCopies: null }));
           const answer = (OPEN_DOCUMENT_ANSWERS as Readonly<Record<string, unknown>>)[id] ?? OTHER_ANSWERS[id];
           if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
           return Promise.resolve(ok(answer));
@@ -2294,7 +2294,7 @@ describe('App', () => {
       // document that has not changed.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.save': { kind: 'saved' as const, version: asDocVersion(2) },
+        'document.save': { kind: 'saved' as const, version: asDocVersion(2), staleCopies: null },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();

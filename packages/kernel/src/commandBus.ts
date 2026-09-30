@@ -1182,6 +1182,22 @@ export class CommandBus {
     return sourceIdsOf(entry.command);
   }
 
+  /**
+   * Drops every undo checkpoint this document's history holds, with the entries that cannot be reached without them —
+   * on a PERSON'S request, after a removal's save (the list of 29 September, item 6): a checkpoint taken before a
+   * redaction is a copy of what it removed, on disk in this application's own folder. The service deletes the files
+   * after this lane entry, by the rule that deletes every file the log stops holding. Invariant 18's *never silent* is
+   * met by the request itself — the person was shown what would go — and the count comes back for them to be told.
+   */
+  forgetUndoCopies(context: DocumentContext): LogTrim {
+    return context.commandLog(COMMAND_WRITER).trimTo(0);
+  }
+
+  /** How many undo checkpoints — whole copies of the document on disk — this document's history holds. */
+  undoCopies(context: DocumentContext): number {
+    return context.commandLog(COMMAND_WRITER).checkpointPaths().size;
+  }
+
   /** The other documents {@link replayPastImage} will re-apply against — `pendingRedoSources`, for every pending entry. */
   pendingReplaySources(context: DocumentContext): readonly DocId[] {
     return [...new Set(context.log.pastImage.flatMap((entry) => sourceIdsOf(entry.command)))];

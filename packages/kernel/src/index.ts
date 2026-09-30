@@ -255,6 +255,8 @@ export {
 export type { SessionAssets } from './host/remoteEngine.js';
 export type { SessionsByWriter } from './engineSeam.js';
 export { remoteMupdfWriter } from './host/remoteWriter.js';
+// A TYPE, erased: what the next save of a session does, as the writer answers it (item 6 of the 29 September list).
+export type { NextSave } from './mupdfWriter.js';
 export type { RemoteMupdfWriter } from './host/remoteWriter.js';
 // MAIN'S SIDE OF THE SECOND HOST, and it is on THIS barrel rather than behind
 // `@monstera/kernel/pdfium` — which is the split ADR-0026 clause 2 is about, so

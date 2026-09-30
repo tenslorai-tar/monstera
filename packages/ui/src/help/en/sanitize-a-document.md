@@ -25,6 +25,7 @@ Before sharing a document, you can remove hidden parts that could run or send th
 - Everything is ticked to begin with; untick what you want to keep.
 - Ordinary links to web pages and to other pages are kept.
 - Flattening keeps what fields and comments show, but they can no longer be edited.
+- Saving after sanitizing keeps no backup copy, because a backup would still hold what you removed. Older copies left from before are listed in **Older copies may still hold what you removed**, where **Delete permanently** deletes them for good; see "Redact (permanently remove) content".
 
 <!--
 Screenshots to capture:

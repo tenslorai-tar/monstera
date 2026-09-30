@@ -83,6 +83,7 @@ import {
   type RegisteredWriter,
   type RemoteMupdfWriter,
   type MupdfSession,
+  type NextSave,
   type SessionArea,
   type SessionAreaSurface,
   type SessionAssets,
@@ -1770,7 +1771,7 @@ function engineSessionOpener(
   /** The document's signatures, verified in the contained host. */
   readonly signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   /** How many signatures, and whether the next save keeps them — the writer's own decision, in the host. */
-  readonly signaturesKept: (session: MupdfSession) => Promise<{ readonly signatures: number; readonly kept: boolean }>;
+  readonly signaturesKept: (session: MupdfSession) => Promise<NextSave>;
   /** Every annotation in the document, from whichever host is live. */
   readonly annotations: HostAnnotationsReader;
   /** Named marks serialised for the clipboard, from whichever host is live. */
@@ -2069,12 +2070,12 @@ function engineSessionOpener(
   };
 
   /** The save's question about signatures, the same registration. See {@link pageText}. */
-  let signaturesKept: ((session: MupdfSession) => Promise<{ readonly signatures: number; readonly kept: boolean }>) | null =
+  let signaturesKept: ((session: MupdfSession) => Promise<NextSave>) | null =
     null;
 
   const readSignaturesKeptThroughHost = (
     session: MupdfSession,
-  ): Promise<{ readonly signatures: number; readonly kept: boolean }> => {
+  ): Promise<NextSave> => {
     if (signaturesKept === null) {
       throw new Error(
         'A save asked about signatures with no host reader registered. A session was resolved for this document, so ' +

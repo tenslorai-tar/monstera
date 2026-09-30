@@ -241,6 +241,7 @@ describe('saveDocument', () => {
         flushes.count += 1;
         return through(f.surface, NEW_BYTES)();
       },
+      'keep',
     );
 
     expect(outcome.kind).toBe('saved');
@@ -253,6 +254,35 @@ describe('saveDocument', () => {
     // §4's `.bak`: the user's previous version, surviving a successful save.
     expect(files.get('/docs/report.pdf.bak')).toBe('original');
     expect(document.stamped()).not.toBeNull();
+  });
+
+  /**
+   * A REMOVAL'S SAVE WRITES NO BACKUP (the list of 29 September, item 6): a `.bak` of the file a redaction replaces is a
+   * copy of what it removed. The case above is the control — the same save with `keep` leaves the `.bak` — and an older
+   * backup already on disk is LEFT, because deleting it is the person's to confirm.
+   */
+  it('a removal’s save (`none`) writes no backup, and leaves an older one where it is', async () => {
+    const files: Files = new Map([[TARGET, 'redacted before this save']]);
+    const f = fake(files);
+    const outcome = await saveDocument(
+      deps(f.surface, { kind: 'sole-writer' }),
+      held(4).context,
+      through(f.surface, NEW_BYTES),
+      'none',
+    );
+
+    expect(outcome.kind).toBe('saved');
+    if (outcome.kind === 'saved') expect(outcome.backedUp).toBe(false);
+    expect(files.get(TARGET)).toBe('saved contents');
+    expect(files.has('/docs/report.pdf.bak')).toBe(false);
+
+    const older: Files = new Map([
+      [TARGET, 'redacted before this save'],
+      ['/docs/report.pdf.bak', 'the secret, from an earlier save'],
+    ]);
+    const g = fake(older);
+    await saveDocument(deps(g.surface, { kind: 'sole-writer' }), held(4).context, through(g.surface, NEW_BYTES), 'none');
+    expect(older.get('/docs/report.pdf.bak')).toBe('the secret, from an earlier save');
   });
 
   it('THE ORDERING: the stamp happens after the rename, never before', async () => {
@@ -271,7 +301,7 @@ describe('saveDocument', () => {
       },
     };
 
-    await saveDocument(deps(f.surface, { kind: 'sole-writer' }), watching, through(f.surface, NEW_BYTES));
+    await saveDocument(deps(f.surface, { kind: 'sole-writer' }), watching, through(f.surface, NEW_BYTES), 'keep');
 
     expect(stampedAfter).toHaveLength(1);
     expect(stampedAfter[0]).toContain(`rename:${NAMES.temp}->${TARGET}`);
@@ -288,6 +318,7 @@ describe('saveDocument', () => {
       deps(f.surface, { kind: 'sole-writer' }),
       document.context,
       through(f.surface, NEW_BYTES),
+      'keep',
     );
 
     expect(outcome.kind).toBe('write-failed');
@@ -314,6 +345,7 @@ describe('saveDocument', () => {
       deps(withGuard.surface, { kind: 'sole-writer' }),
       held(4).context,
       through(withGuard.surface, NEW_BYTES),
+      'keep',
     );
 
     const withoutGuard = fake(unguarded, failure);
@@ -353,10 +385,15 @@ describe('saveDocument', () => {
       const document = held(4);
       const flushes = { count: 0 };
 
-      const outcome = await saveDocument(deps(f.surface, verdict), document.context, () => {
-        flushes.count += 1;
-        return through(f.surface, NEW_BYTES)();
-      });
+      const outcome = await saveDocument(
+        deps(f.surface, verdict),
+        document.context,
+        () => {
+          flushes.count += 1;
+          return through(f.surface, NEW_BYTES)();
+        },
+        'keep',
+      );
 
       expect(outcome).toStrictEqual({ kind: 'refused', verdict });
       expect(flushes.count).toBe(0);
@@ -380,6 +417,7 @@ describe('saveDocument', () => {
       deps(f.surface, { kind: 'target-absent' }),
       held(4).context,
       through(f.surface, NEW_BYTES),
+      'keep',
     );
 
     expect(outcome.kind).toBe('refused');
@@ -397,6 +435,7 @@ describe('saveDocument', () => {
       deps(f.surface, { kind: 'sole-writer' }),
       held(4).context,
       through(f.surface, NEW_BYTES, discards),
+      'keep',
     );
 
     expect(outcome.kind).toBe('write-failed');
@@ -413,8 +452,11 @@ describe('saveDocument', () => {
     const document = held(4);
 
     await expect(
-      saveDocument(deps(f.surface, { kind: 'sole-writer' }), document.context, () =>
-        Promise.reject(new Error('the engine host is gone')),
+      saveDocument(
+        deps(f.surface, { kind: 'sole-writer' }),
+        document.context,
+        () => Promise.reject(new Error('the engine host is gone')),
+        'keep',
       ),
     ).rejects.toThrow('the engine host is gone');
 

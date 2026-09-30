@@ -112,6 +112,7 @@ import {
   stagedBytes,
   type SplitOutcome,
   type MupdfSession,
+  type NextSave,
   type ReadSignature,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
@@ -145,7 +146,7 @@ import {
 // directory came from a picker in this process and never crosses to the
 // renderer, exactly as a destination does. What L2 forbids is a path in a
 // renderer-facing type.
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
 import {
@@ -666,7 +667,26 @@ export type PlaceImageOutcome =
   | { readonly kind: 'absent' };
 
 /** What a save came to: the pipeline's outcomes, or a save held back because it would break signatures. */
-export type SaveRequestOutcome = SaveOutcome | { readonly kind: 'breaks-signatures'; readonly signatures: number };
+export type SaveRequestOutcome =
+  /** Saved — and, where the save was a removal's, what it leaves that may still hold what was removed. */
+  | (Extract<SaveOutcome, { kind: 'saved' }> & { readonly staleCopies: StaleCopies | null })
+  | Exclude<SaveOutcome, { kind: 'saved' }>
+  | { readonly kind: 'breaks-signatures'; readonly signatures: number };
+
+/**
+ * What a redaction's or Sanitize's save leaves that may still hold what was removed (the list of 29 September, item
+ * 6): older backups beside the file, by name, and the undo copies of the document this application keeps.
+ */
+export interface StaleCopies {
+  readonly backups: readonly string[];
+  readonly undoCopies: number;
+}
+
+/** What {@link DocumentCommands.deleteStaleCopies} deleted: backups by count, and undo copies. */
+export interface StaleCopiesDeleted {
+  readonly backups: number;
+  readonly undoCopies: number;
+}
 
 /**
  * What placing and signing need from the person's library (`personalLibrary.ts`): a kept picture's bytes, and a kept
@@ -1986,7 +2006,7 @@ export interface DocumentCommandsParts {
    */
   readonly signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   /** How many signatures, and whether the next save keeps them — the writer's own decision. See {@link save}. */
-  readonly signaturesKept: (session: MupdfSession) => Promise<{ readonly signatures: number; readonly kept: boolean }>;
+  readonly signaturesKept: (session: MupdfSession) => Promise<NextSave>;
   readonly restore: DocumentRestore;
   /**
    * THE SIXTEENTH DEPENDENCY, and the first added since this became an options
@@ -2175,7 +2195,7 @@ export class DocumentCommands {
   readonly #ocr: DocumentOcrReader;
   readonly #layers: DocumentLayersReader;
   readonly #signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
-  readonly #signaturesKept: (session: MupdfSession) => Promise<{ readonly signatures: number; readonly kept: boolean }>;
+  readonly #signaturesKept: (session: MupdfSession) => Promise<NextSave>;
   readonly #restore: DocumentRestore;
   readonly #annotations: DocumentAnnotationsReader;
   readonly #annotationCopy: DocumentAnnotationCopyReader;
@@ -5483,18 +5503,64 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      if (!request.breakSignatures) {
-        const session = sessions.mupdf;
-        if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-        const kept = await this.#signaturesKept(session);
-        if (!kept.kept) return { kind: 'breaks-signatures', signatures: kept.signatures };
-      }
+      // THE WRITER'S OWN DECISION ABOUT THIS SAVE, asked once: whether it keeps the signatures, and whether it is a
+      // removal's — a redaction or Sanitize — which writes no backup (item 6 of the list of 29 September).
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      const next = await this.#signaturesKept(session);
+      if (!request.breakSignatures && !next.kept) return { kind: 'breaks-signatures', signatures: next.signatures };
 
       // STAGED, so the document's bytes go from the host to the temporary file and never through `main`
       // (ADR-0121's addendum).
-      return await saveDocument(this.#save.deps, context, () => this.#save.stage(docId, sessions));
+      const saved = await saveDocument(
+        this.#save.deps,
+        context,
+        () => this.#save.stage(docId, sessions),
+        next.removal ? 'none' : 'keep',
+      );
+      if (saved.kind !== 'saved') return saved;
+      return { ...saved, staleCopies: next.removal ? await this.#staleCopies(context) : null };
     });
 
+    return value;
+  }
+
+  /**
+   * What a removal's save leaves that may still hold what was removed: the backups beside the file, by NAME — every
+   * name a backup of this file can have, kept or retired, that is on disk — and how many undo copies of the document
+   * this application keeps. Read in the save's own lane entry, so nothing lands between the save and the list.
+   */
+  async #staleCopies(context: DocumentContext): Promise<StaleCopies> {
+    const names = this.#save.deps.names(context.path);
+    const backups: string[] = [];
+    for (const path of [...names.backups, ...names.retired]) {
+      if (await this.#save.deps.surface.exists(path)) backups.push(basename(path));
+    }
+    return { backups, undoCopies: this.#bus.undoCopies(context) };
+  }
+
+  /**
+   * Deletes, PERMANENTLY, the stale copies a person confirmed: the backups among `listed` that are still the
+   * document's and on disk, and every undo copy of the document with the history that needs them (the list of 29
+   * September, item 6).
+   *
+   * **The list is recomputed here, and `listed` only narrows it.** The renderer names what it showed; a name that is
+   * not one of this file's backup names is never deleted, whatever it says — so the page cannot aim this at another
+   * file. Not the recycle bin: a copy kept there would keep what the redaction removed.
+   */
+  async deleteStaleCopies(docId: DocId, listed: readonly string[]): Promise<StaleCopiesDeleted> {
+    const { value } = await this.#documents.run(docId, async (context): Promise<StaleCopiesDeleted> => {
+      const names = this.#save.deps.names(context.path);
+      let backups = 0;
+      for (const path of [...names.backups, ...names.retired]) {
+        if (!listed.includes(basename(path)) || !(await this.#save.deps.surface.exists(path))) continue;
+        await this.#save.deps.surface.remove(path);
+        backups += 1;
+      }
+      const before = this.#bus.undoCopies(context);
+      this.#bus.forgetUndoCopies(context);
+      return { backups, undoCopies: before - this.#bus.undoCopies(context) };
+    });
     return value;
   }
 }
