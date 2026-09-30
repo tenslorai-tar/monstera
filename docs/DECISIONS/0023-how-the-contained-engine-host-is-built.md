@@ -3578,3 +3578,51 @@ the document with the engine host alive and its session folders created. The log
 shows only the ordinary shutdown line at exit.
 
 **No change to Decision 17.** The design holds as decided, and 0.1.2.0 is built from it.
+
+### Amendment, 2026-09-30 — point 3's resolver was not an authority, and Windows has one
+
+**What failed.** Before handover, the built layout was run inside the installed
+package's identity (`Invoke-CommandInDesktopPackage`). The check refused, correctly:
+
+```
+FAILURE package-data-unlocked the package's data root was not found:
+C:\Users\emiso\AppData\Roaming\Monstera PDF Editor is not under a LocalCache folder
+```
+
+It failed closed, so no host was created. It would also have refused every host on
+the owner's install.
+
+**The mechanism.** Point 3 took the package root from the final path of `userData`.
+That path lands in `LocalCache` only while no folder of the same name exists in the
+real `%APPDATA%`. Once one does, the package's merged view resolves the name to the
+real folder. One existed here: created at 06:31:48 by an earlier layout run, whose
+executable sat outside the install root and was only partly redirected. Launches
+through the AUMID at 05:45 had created nothing there. The 1c measurement read
+`LocalCache` because no such folder existed then. So the rule answered *where does
+this name resolve today*, not *where is this package's data*. Anything that makes a
+same-named folder changes its answer: a development run, or the unpackaged flavour
+ADR-0018 keeps the seam for.
+
+**The authority**, measured the same day with a scratch probe
+(`scratchpad/item1/packageRoot.mjs`, run from a plain process):
+
+| call | answer |
+|---|---|
+| `DeriveAppContainerSidFromAppContainerName(<family>)` | `S-1-15-2-367305245-…-3626975993`: the package's SID, the same seven sub-authorities as the capability on its data folders and the prefix of every child container SID read in this ADR |
+| `GetAppContainerFolderPath(<that SID>)` | `…\AppData\Local\Packages\tenslorinc.monsterapdfeditor.test_z2a54zn3xxk4m\AC` |
+| CONTROL: the same two calls for a family that is not installed | `GetAppContainerFolderPath` answers `0x80070002`, not found |
+
+**Amended point 3.** The package root is the parent of the folder
+`GetAppContainerFolderPath` returns for the SID Windows derives from
+`GetCurrentPackageFamilyName`. It is accepted only when that folder is named `AC` and
+its parent is named after the family, ignoring case. Windows returns the family in
+lower case. Any failure refuses host creation, as before. `userData` is no longer
+read, so the check stops taking it.
+
+**Rejected:**
+
+- **Assembling `%LOCALAPPDATA%\Packages\<family>`.** It agrees with the authority on
+  every reading so far. It is still a second opinion about where Windows keeps a
+  package's data, and B3a is the rule against that.
+- **Keeping `userData` and removing the real folder.** That fixes one machine and
+  leaves the rule wrong for the next one.
