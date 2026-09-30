@@ -103,6 +103,11 @@ export type ShellFailureEvent =
   // An external converter (§8) that did not produce its output: why it did not,
   // including what it wrote to stderr, which the renderer is never sent.
   | 'converter-failed'
+  /**
+   * A cloud storage request that did not happen: which request, which provider, the name the person was shown and the
+   * provider's own host and status. The person's dialog says the name; this is where the status is.
+   */
+  | 'cloud-failed'
   | 'document-unreadable'
   | 'unresponsive'
   /**

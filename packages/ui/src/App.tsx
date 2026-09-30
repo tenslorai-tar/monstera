@@ -201,6 +201,7 @@ import { SECURITY_UPDATE_DIALOG } from './dialogs/securityUpdate.js';
 import { AI_SETUP_DIALOG } from './dialogs/aiSetup.js';
 import { CLOUD_DIALOG } from './dialogs/cloudStorage.js';
 import { CLOUD_OUTCOME_DIALOG } from './dialogs/cloudOutcome.js';
+import { CLOUD_VIEW_ONLY_DIALOG } from './dialogs/cloudViewOnly.js';
 import { cloudStorageCommand, saveBackCommand } from './commands/cloudStorage.js';
 import { aiSetupCommand } from './commands/aiSetup.js';
 import { AI_SETUP_AT_START_SETTING } from './settings/ai.js';
@@ -812,6 +813,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         SECURITY_UPDATE_DIALOG,
         CLOUD_DIALOG,
         CLOUD_OUTCOME_DIALOG,
+        CLOUD_VIEW_ONLY_DIALOG,
         KEYBOARD_SHORTCUTS_DIALOG,
         HELP_DIALOG,
         WORD_COUNT_DIALOG,
@@ -2629,7 +2631,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // D9's OPEN FROM URL, the same callbacks: a fetched document arrives as a tab.
         openFromUrlCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         // CLOUD STORAGE (ADR-0091): the same two callbacks, so a cloud file arrives as a tab.
-        cloudStorageCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate, busy }),
+        cloudStorageCommand({ client, ask, toast, onOpened: opened, onAlreadyOpen: activate, busy }),
         saveBackCommand({ client, ask, toast, onSaved }),
         // D9's WEBCAM ROW, the same callbacks: the pictures arrive as a tab.
         newFromCaptureCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),

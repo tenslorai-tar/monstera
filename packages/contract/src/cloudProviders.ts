@@ -57,8 +57,18 @@ export const CLOUD_REFUSALS = [
   'sign-in-timed-out',
   'sign-in-denied',
   'sign-in-unavailable',
-  /** The provider refused the kept sign-in; signing in again is the next step. */
+  /** The provider refused the kept sign-in (HTTP 401); signing in again is the next step. */
   'unauthorised',
+  /**
+   * The provider accepted the sign-in and refused this request for this person (HTTP 403) — a file shared with them
+   * to view. Signing in again changes nothing; saving a copy to their own storage does.
+   */
+  'forbidden',
+  /**
+   * The provider said, when the file was opened, that this person may not change it, so nothing was sent. Save back
+   * answers it after the working copy is saved, and the offer is a copy in the person's own storage.
+   */
+  'read-only',
   'unreachable',
   'rejected',
   'unexpected-answer',

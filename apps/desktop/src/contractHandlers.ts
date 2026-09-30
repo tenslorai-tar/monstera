@@ -2873,6 +2873,7 @@ function cloudHandlers(
   | 'cloud.open'
   | 'cloud.pick'
   | 'cloud.saveBack'
+  | 'cloud.access'
   | 'cloud.uploadCopy'
 > {
   /** The document refusals every per-document cloud channel declares, by class. */
@@ -2950,6 +2951,17 @@ function cloudHandlers(
         if (refused !== null) return refused;
         throw thrown;
       }
+    },
+    'cloud.access': ({ docId }) => {
+      const provider = deps.cloud.originOf(docId);
+      const canEdit = deps.cloud.canEdit(docId);
+      return Promise.resolve(
+        ok(
+          provider === null || canEdit === undefined
+            ? { kind: 'not-from-cloud' as const }
+            : { kind: 'from-cloud' as const, provider, canEdit },
+        ),
+      );
     },
     'cloud.uploadCopy': async ({ docId, provider }) => {
       const name = deps.commands.nameOf(docId);

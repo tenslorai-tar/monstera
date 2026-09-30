@@ -206,6 +206,7 @@ describe('browser shim', () => {
       'app.review',
       'app.reviewPrompt',
       'app.updateStatus',
+      'cloud.access',
       'cloud.list',
       'cloud.open',
       'cloud.pick',

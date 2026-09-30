@@ -5,6 +5,7 @@ import {
   CloudStorageRefused,
   cloudAuthorizationUrl,
   createCloudPdf,
+  describeCloudFile,
   exchangeCloudCode,
   fetchCloudPdf,
   listCloudPdfs,
@@ -207,6 +208,63 @@ describe('Save back (ADR-0091 Decision 6)', () => {
     expect(await replaceCloudPdf('google-drive', 't', 'id', '6', PDF, fetchImpl)).toBe('7');
     expect(seen[1]?.init.method).toBe('PATCH');
     expect(seen[1]?.url).toContain('uploadType=media');
+  });
+});
+
+/**
+ * 401 AND 403 ARE TWO SITUATIONS (the owner's 0.1.6.0 run): a file shared with the person to view answered Save back's
+ * upload with 403, which read as "sign in again". Each status is asserted against the other, so a rule that mapped both
+ * to either name is red in one of the two cases.
+ */
+describe('a refusal names which of the two it was', () => {
+  it('HTTP 403 is FORBIDDEN — a permission on this file, not a sign-in', async () => {
+    const { fetchImpl } = scripted([json({ name: 'shared.pdf', version: '6', capabilities: { canEdit: true } }), new Response('{}', { status: 403 })]);
+    await expect(replaceCloudPdf('google-drive', 't', 'id', '6', PDF, fetchImpl)).rejects.toMatchObject({ reason: 'forbidden' });
+  });
+
+  it('CONTROL: HTTP 401 on the same request is still UNAUTHORISED', async () => {
+    const { fetchImpl } = scripted([json({ name: 'shared.pdf', version: '6', capabilities: { canEdit: true } }), new Response('{}', { status: 401 })]);
+    await expect(replaceCloudPdf('google-drive', 't', 'id', '6', PDF, fetchImpl)).rejects.toMatchObject({ reason: 'unauthorised' });
+  });
+});
+
+describe('whether the person may change a file', () => {
+  it('Google Drive: asks for capabilities.canEdit with the version, and reads a view-only file as FALSE', async () => {
+    const { fetchImpl, seen } = scripted([json({ name: 'shared.pdf', version: '3', capabilities: { canEdit: false } })]);
+    expect(await describeCloudFile('google-drive', 't', 'id', fetchImpl)).toStrictEqual({
+      name: 'shared.pdf',
+      version: '3',
+      canEdit: false,
+    });
+    expect(new URL(seen[0]?.url ?? '').searchParams.get('fields')).toBe('name,version,capabilities(canEdit)');
+  });
+
+  it('Google Drive: an answer that does not say is UNKNOWN, never yes', async () => {
+    const { fetchImpl } = scripted([json({ name: 'x.pdf', version: '3' })]);
+    expect((await describeCloudFile('google-drive', 't', 'id', fetchImpl)).canEdit).toBeNull();
+  });
+
+  it('OneDrive: an item in the person’s own drive — no remoteItem — is theirs to change, in ONE request', async () => {
+    const { fetchImpl, seen } = scripted([json({ name: 'mine.pdf', eTag: '"e1"' })]);
+    expect((await describeCloudFile('onedrive', 't', 'id', fetchImpl)).canEdit).toBe(true);
+    expect(seen).toHaveLength(1);
+  });
+
+  it('OneDrive: an item shared from another drive is asked of THAT drive’s permissions — read only is FALSE', async () => {
+    const { fetchImpl, seen } = scripted([
+      json({ name: 'shared.pdf', eTag: '"e1"', remoteItem: { id: 'R!1', parentReference: { driveId: 'D2' } } }),
+      json({ value: [{ roles: ['read'] }] }),
+    ]);
+    expect((await describeCloudFile('onedrive', 't', 'id', fetchImpl)).canEdit).toBe(false);
+    expect(seen[1]?.url).toBe('https://graph.microsoft.com/v1.0/drives/D2/items/R!1/permissions');
+  });
+
+  it('CONTROL: the same shared item with a write role is TRUE', async () => {
+    const { fetchImpl } = scripted([
+      json({ name: 'shared.pdf', eTag: '"e1"', remoteItem: { id: 'R!1', parentReference: { driveId: 'D2' } } }),
+      json({ value: [{ roles: ['read'] }, { roles: ['write'] }] }),
+    ]);
+    expect((await describeCloudFile('onedrive', 't', 'id', fetchImpl)).canEdit).toBe(true);
   });
 });
 

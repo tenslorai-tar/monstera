@@ -1667,6 +1667,20 @@ export const channels = {
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
 
+  /**
+   * Whether an open document came from the cloud and whether this person may change the file there, as the provider
+   * said when it was opened. `canEdit` is `null` where the provider did not say — unknown, never yes — so a surface says
+   * read-only only for `false`.
+   */
+  'cloud.access': channel(
+    'Whether a document came from the cloud, and whether its file there may be changed.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('not-from-cloud') }),
+      z.object({ kind: z.literal('from-cloud'), provider: cloudProviderSchema, canEdit: z.boolean().nullable() }),
+    ]),
+  ),
+
   /** Puts a copy of a document in a provider's storage, and links the document to it. */
   'cloud.uploadCopy': channel(
     'Uploads a copy of a document to a cloud provider.',

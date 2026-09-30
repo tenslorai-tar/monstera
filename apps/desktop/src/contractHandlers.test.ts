@@ -1436,6 +1436,7 @@ describe('cloud.saveBack', () => {
     const cloud = {
       ...unconfiguredCloud(),
       originOf: (docId: DocId) => (docId === DOC ? ('onedrive' as const) : null),
+      canEdit: (docId: DocId) => (docId === DOC ? false : undefined),
       saveBack: (_docId: DocId, pdf: Uint8Array) => {
         uploaded.push(pdf);
         return upload();
@@ -1500,6 +1501,26 @@ settings: createEphemeralSettings(),
     const { handlers, uploaded } = withCloud(() => Promise.resolve(), 'write-failed');
     await expect(handlers['cloud.saveBack']({ docId: DOC })).resolves.toEqual({ ok: true, value: { kind: 'save-failed' } });
     expect(uploaded).toHaveLength(0);
+  });
+
+  it('a view-only refusal crosses BY NAME with the version saved here, for the renderer to offer the copy', async () => {
+    const { handlers } = withCloud(() => Promise.reject(new CloudOutcomeRefused('read-only')), 'saved');
+    await expect(handlers['cloud.saveBack']({ docId: DOC })).resolves.toEqual({
+      ok: true,
+      value: { kind: 'refused', reason: 'read-only', version: asDocVersion(9) },
+    });
+  });
+
+  it('cloud.access answers the provider and the edit access the session holds; CONTROL: another document is not from the cloud', async () => {
+    const { handlers } = withCloud(() => Promise.resolve(), 'saved');
+    await expect(handlers['cloud.access']({ docId: DOC })).resolves.toEqual({
+      ok: true,
+      value: { kind: 'from-cloud', provider: 'onedrive', canEdit: false },
+    });
+    await expect(handlers['cloud.access']({ docId: asDocId('00000000-0000-4000-8000-0000000000b3') })).resolves.toEqual({
+      ok: true,
+      value: { kind: 'not-from-cloud' },
+    });
   });
 });
 

@@ -892,6 +892,27 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-30 — The owner's 0.1.6.0 results, and decisions A to E
+
+**What the owner's installed 0.1.6.0 showed.** Edit text works on their CVs and survives save and reopen, including
+the fourth CV, whose picture had vanished under 0.1.5.0. A Word file converted and opened (row 220 closed). Google's
+Picker opened in the browser, a three-year-old PDF Monstera did not make opened and was edited, and Save back worked
+for the owner's own files. It failed for files shared *with* them: *"The provider no longer accepts this sign-in.
+Sign in again."*, with nothing in the log.
+
+**A — a file shared to view.** The mechanism: `cloudStorage.ts`' `call()` answered HTTP 401 and 403 as one reason,
+`unauthorised`, and the words for that reason are "sign in again". A 403 is a permission that no sign-in changes. The
+two are now separate reasons. Edit access is read with the version when a file opens: Drive's
+`capabilities.canEdit`, and for OneDrive the `remoteItem` facet and the caller's roles on the sharing drive. Both
+come from the providers' reference, not a live run. A view-only file says so the moment it opens. Save back on it
+sends nothing and offers *Save a copy to my …*, which is `cloud.uploadCopy`. Every cloud failure is logged as
+`cloud-failed`, through the one wrapper every public call takes. The wired pair asserts the decisions: no upload
+request and no second sign-in for a view-only file; the 403 named `forbidden` with its host and status in the log;
+a 401 still `unauthorised` as the control; the renderer offering the copy for `read-only` and `forbidden` and never
+for `unauthorised`. ADR-0091's 2026-09-30 correction holds the reasoning.
+
+---
+
 ## 2026-09-30 — Edit text on the owner's documents (ADR-0125), and the same class through every contained process
 
 **The owner's install of 0.1.5.0 ended the PDFium host on Edit text for their own CVs.** Mechanism, measured on a

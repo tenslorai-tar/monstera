@@ -138,3 +138,32 @@ clients.
   handed into that page: three things this route needs none of, for the same Picker.
 - **`drive.readonly` or `drive`** to list every file: restricted scopes needing Google's verification, and more access
   than choosing one file needs.
+
+## Correction, 2026-09-30 — a file the person may not change is a permission, not a sign-in
+
+**What happened.** In the owner's installed 0.1.6.0, Save back worked for the owner's own Drive files and failed for
+files others had shared with them. The message was *"The provider no longer accepts this sign-in. Sign in again."*,
+and nothing was written to the log. The refusal is Google's and correct. The words were ours and wrong: `call()`
+mapped HTTP 401 **and** 403 to one reason, `unauthorised`. A 401 is credentials the server does not accept. A 403 is
+a request it understood and refuses for the credentials it did accept (RFC 9110 §15.5.2, §15.5.4). Signing in again
+cannot change a 403.
+
+**Decided, the owner's decision A.**
+
+- **Two reasons.** 401 stays `unauthorised`. 403 is `forbidden`, a permission on this file. The API-key services
+  (AI, OCR, DocuSign) keep mapping both to one reason: for a key, both mean *this key is not allowed*, and the
+  person's remedy is the same.
+- **Edit access is read when a file is opened**, with the version: Drive's `capabilities.canEdit`, from Drive v3's
+  *files* resource. Graph has no single flag. An item with no `remoteItem` facet is in the person's own drive. An
+  item shared from another drive is asked of that drive's permissions, which for a caller who is not the owner list
+  only the caller's own (*List who has access to a file*). Any `write` or `owner` role there means yes. **Both come
+  from the providers' reference, read 2026-09-30, and were not run live**: the owner closed the live runs, and the
+  fakes in `cloudStorage.test.ts` answer what the references say. A provider answer that does not say is `null`,
+  unknown and never yes.
+- **Said before an edit.** `cloud.access` answers the provider and the flag. A file whose flag is `false` opens with
+  *Shared with you as view-only*, which offers a copy in the person's own storage.
+- **Save back on such a file** saves the working copy, as every Save back does, sends nothing, and answers
+  `read-only`. A 403 from a file not known to be view-only answers `forbidden`. Both offer the copy, which is
+  `cloud.uploadCopy` and links the document to it, so the next Save back goes to the copy.
+- **Every cloud failure is logged** as `cloud-failed`: the request, the provider, the reason and the provider's host
+  and status. One wrapper runs every public call, so no call can fail without a line.

@@ -2197,6 +2197,14 @@ export const CLOUD_PROBLEM_CHANGED_ELSEWHERE = messageKey('cloud.problem.changed
 export const CLOUD_PROBLEM_TOO_LARGE = messageKey('cloud.problem.too-large');
 export const CLOUD_PROBLEM_NOT_A_PDF = messageKey('cloud.problem.not-a-pdf');
 export const CLOUD_PROBLEM_NOTHING_PICKED = messageKey('cloud.problem.nothing-picked');
+export const CLOUD_PROBLEM_FORBIDDEN = messageKey('cloud.problem.forbidden');
+export const CLOUD_PROBLEM_READ_ONLY = messageKey('cloud.problem.read-only');
+export const CLOUD_VIEW_ONLY_TITLE = messageKey('dialog.cloud-view-only.title');
+export const CLOUD_VIEW_ONLY_OPENED = messageKey('dialog.cloud-view-only.opened');
+export const CLOUD_VIEW_ONLY_READ_ONLY = messageKey('dialog.cloud-view-only.read-only');
+export const CLOUD_VIEW_ONLY_FORBIDDEN = messageKey('dialog.cloud-view-only.forbidden');
+export const CLOUD_VIEW_ONLY_SAVE_COPY = messageKey('dialog.cloud-view-only.save-copy');
+export const TOAST_CLOUD_COPY_SAVED = messageKey('toast.cloud-copy-saved');
 export const CLOUD_PICK = messageKey('dialog.cloud.pick');
 export const CLOUD_CHOOSING = messageKey('surface.busy.cloud-choosing');
 /** Each provider's name. `satisfies` makes a third provider a compile error until it has one. */
@@ -2218,6 +2226,8 @@ export const CLOUD_PROBLEMS = {
   'sign-in-denied': CLOUD_PROBLEM_SIGN_IN_DENIED,
   'sign-in-unavailable': CLOUD_PROBLEM_SIGN_IN_UNAVAILABLE,
   unauthorised: CLOUD_PROBLEM_UNAUTHORISED,
+  forbidden: CLOUD_PROBLEM_FORBIDDEN,
+  'read-only': CLOUD_PROBLEM_READ_ONLY,
   unreachable: CLOUD_PROBLEM_UNREACHABLE,
   rejected: CLOUD_PROBLEM_REJECTED,
   'unexpected-answer': CLOUD_PROBLEM_UNEXPECTED_ANSWER,
@@ -3372,6 +3382,18 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CLOUD_PROBLEMS['sign-in-denied']]: 'The sign-in was declined, so nothing was connected.',
   [CLOUD_PROBLEMS['sign-in-unavailable']]: 'Monstera could not start the sign-in in your browser.',
   [CLOUD_PROBLEMS.unauthorised]: 'The provider no longer accepts this sign-in. Sign in again.',
+  [CLOUD_PROBLEMS.forbidden]:
+    'The provider refused this for your account. The file may be shared with you as view-only. Signing in again will not change that.',
+  [CLOUD_PROBLEMS['read-only']]: 'This file is shared with you as view-only, so it cannot be changed in cloud storage.',
+  [CLOUD_VIEW_ONLY_TITLE]: 'Shared with you as view-only',
+  [CLOUD_VIEW_ONLY_OPENED]:
+    'This file is shared with you as view-only in {provider}, so Save back to cloud cannot change it. You can still edit it here, and save a copy to your own {provider}. The original stays as it is.',
+  [CLOUD_VIEW_ONLY_READ_ONLY]:
+    'This file is shared with you as view-only in {provider}, so it was not changed there. Your changes are saved on this computer. To keep them in the cloud, save a copy to your own {provider}.',
+  [CLOUD_VIEW_ONLY_FORBIDDEN]:
+    '{provider} did not let your account change this file. It may be shared with you as view-only. Your changes are saved on this computer. To keep them in the cloud, save a copy to your own {provider}.',
+  [CLOUD_VIEW_ONLY_SAVE_COPY]: 'Save a copy to my {provider}',
+  [TOAST_CLOUD_COPY_SAVED]: 'Copy saved to your cloud storage. Save back to cloud now sends your changes to that copy.',
   [CLOUD_PROBLEMS.unreachable]: 'The provider could not be reached. Check your connection.',
   [CLOUD_PROBLEMS.rejected]: 'The provider refused the request.',
   [CLOUD_PROBLEMS['unexpected-answer']]: 'The provider’s answer could not be read.',

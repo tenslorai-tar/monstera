@@ -24,6 +24,7 @@ import type { DocId } from '@monstera/shared';
 
 import { type OpenInBrowser, SignInRefused, signInThroughLoopback } from './docusignSignIn.js';
 import type { SecretStoreSurface } from './secretStore.js';
+import type { ShellFailureSink } from './shellFailure.js';
 
 /**
  * Cloud storage, as `main` holds it
@@ -68,16 +69,19 @@ const EXPIRY_MARGIN_MS = 60_000;
 /** Characters Windows refuses in a file name, beside the control characters below 32. */
 const REFUSED_IN_NAMES = '<>:"/\\|?*';
 
-/** A cloud file this session opened, and the version it was at. */
+/** A cloud file this session opened, the version it was at, and whether the person may change it there. */
 interface CloudOrigin {
   readonly provider: CloudProviderId;
   readonly fileId: string;
   readonly version: string;
+  /** As the provider said when it was opened; `null` where it did not say. */
+  readonly canEdit: boolean | null;
 }
 
 function refusalOfKernel(error: CloudStorageRefused): CloudRefusal {
   switch (error.reason) {
     case 'unauthorised':
+    case 'forbidden':
     case 'unreachable':
     case 'rejected':
     case 'changed-elsewhere':
@@ -102,16 +106,26 @@ function refusalOfSignIn(error: SignInRefused): CloudRefusal {
   }
 }
 
-/** Runs `work`, turning every named refusal into the contract's. */
-async function named<T>(work: () => Promise<T>): Promise<T> {
-  try {
-    return await work();
-  } catch (error) {
-    if (error instanceof CloudOutcomeRefused) throw error;
-    if (error instanceof CloudStorageRefused) throw new CloudOutcomeRefused(refusalOfKernel(error), { cause: error });
-    if (error instanceof SignInRefused) throw new CloudOutcomeRefused(refusalOfSignIn(error), { cause: error });
-    throw error;
+/** The contract's refusal for anything `work` threw, or the throw itself where it is not a named refusal. */
+function refusalOf(error: unknown): unknown {
+  if (error instanceof CloudOutcomeRefused) return error;
+  if (error instanceof CloudStorageRefused) return new CloudOutcomeRefused(refusalOfKernel(error), { cause: error });
+  if (error instanceof SignInRefused) return new CloudOutcomeRefused(refusalOfSignIn(error), { cause: error });
+  return error;
+}
+
+/**
+ * One line for the diagnostics log: what was asked, of which provider, the contract's name for why it did not happen,
+ * and the provider's own words beneath it — a host and an HTTP status, never a token, which no refusal's message
+ * carries. The owner's 0.1.6.0 run met a refused Save back that left nothing in the log.
+ */
+export function describeCloudFailure(operation: string, provider: CloudProviderId | null, error: unknown): string {
+  const at = provider === null ? operation : `${operation} (${provider})`;
+  if (error instanceof CloudOutcomeRefused) {
+    const cause = error.cause instanceof Error ? ` — ${error.cause.message}` : '';
+    return `${at}: ${error.reason}${cause}`;
   }
+  return `${at}: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`;
 }
 
 /** A kept sign-in read back, or `null` for none or a malformed one. */
@@ -164,6 +178,11 @@ export interface CloudStorage {
   link(docId: DocId, path: string): void;
   /** Which provider a document came from, or `null`. */
   originOf(docId: DocId): CloudProviderId | null;
+  /**
+   * Whether the person may change a document's cloud file, as the provider said when it was opened — `null` where it
+   * did not say — or `undefined` for a document not from the cloud.
+   */
+  canEdit(docId: DocId): boolean | null | undefined;
   /** Uploads a linked document's saved bytes back to its file, at the version it was opened at. */
   saveBack(docId: DocId, pdf: Uint8Array): Promise<void>;
   /** Puts a copy of a document in the provider's storage, and links the document to it. */
@@ -185,10 +204,15 @@ export function unconfiguredCloud(): CloudStorage {
     workingDirectory: '',
     writeWorkingCopy: () => Promise.reject(new Error('an unconfigured cloud writes no working copy')),
     maxBytes: 0,
+    // NOWHERE TO WRITE, and nothing to say: every call here is refused `not-configured` before any provider is asked,
+    // which is this assembly's shape rather than a failure — a harness, or a case not about cloud storage.
+    report: () => undefined,
   });
 }
 
 export function createCloudStorage(deps: {
+  /** Where every cloud failure is written: the diagnostics log, from the composition root. */
+  readonly report: ShellFailureSink;
   readonly secrets: SecretStoreSurface;
   readonly clients: Readonly<Record<CloudProviderId, CloudClient | null>>;
   readonly openInBrowser: OpenInBrowser;
@@ -207,6 +231,20 @@ export function createCloudStorage(deps: {
   const downloaded = new Map<string, CloudOrigin>();
   /** Opened working copies, by document. */
   const linked = new Map<DocId, CloudOrigin>();
+
+  /**
+   * Runs one cloud request, turning every refusal into the contract's name and writing every failure to the log — ONE
+   * wrapper every public call takes, so a request cannot fail without a line.
+   */
+  async function named<T>(operation: string, provider: CloudProviderId | null, work: () => Promise<T>): Promise<T> {
+    try {
+      return await work();
+    } catch (error) {
+      const refused = refusalOf(error);
+      deps.report({ event: 'cloud-failed', detail: describeCloudFailure(operation, provider, refused) });
+      throw refused;
+    }
+  }
 
   function client(provider: CloudProviderId): CloudClient {
     const found = deps.clients[provider];
@@ -259,7 +297,7 @@ export function createCloudStorage(deps: {
    * listing and a file chosen in a Picker, so the two cannot differ in what a working copy is.
    */
   async function downloadInto(provider: CloudProviderId, fileId: string, access: string): Promise<string> {
-    const { name, version } = await describeCloudFile(provider, access, fileId, fetchImpl);
+    const { name, version, canEdit } = await describeCloudFile(provider, access, fileId, fetchImpl);
     const path = workingPath(provider, fileId, name);
     const written = await deps.writeWorkingCopy(path, () =>
       fetchCloudPdf(provider, access, fileId, deps.maxBytes, fetchImpl),
@@ -268,7 +306,7 @@ export function createCloudStorage(deps: {
     // this file open, and a fresh download would replace a document under them.
     if (written === 'contested') throw new CloudOutcomeRefused('changed-elsewhere');
     if (written === 'write-failed') throw new CloudOutcomeRefused('rejected');
-    downloaded.set(path, { provider, fileId, version });
+    downloaded.set(path, { provider, fileId, version, canEdit });
     return path;
   }
 
@@ -305,16 +343,17 @@ export function createCloudStorage(deps: {
       return kept(deps.secrets.read()[cloudSessionSecretId(provider)]) === null ? 'signed-out' : 'signed-in';
     },
     signIn: (provider) =>
-      named(async () => {
+      named('sign in', provider, async () => {
         await signIn(provider);
       }),
     signOut: (provider) => {
       deps.secrets.write(cloudSessionSecretId(provider), '');
     },
-    list: (provider) => named(async () => listCloudPdfs(provider, await token(provider), fetchImpl)),
-    download: (provider, fileId) => named(async () => downloadInto(provider, fileId, await token(provider))),
+    list: (provider) => named('list', provider, async () => listCloudPdfs(provider, await token(provider), fetchImpl)),
+    download: (provider, fileId) =>
+      named('open', provider, async () => downloadInto(provider, fileId, await token(provider))),
     pick: (provider) =>
-      named(async () => {
+      named('pick', provider, async () => {
         // THE PICKER SIGNS IN AS IT CHOOSES, so its tokens are the ones the download takes and are kept as any
         // sign-in's are: a person signed out is signed in by choosing, and is never asked twice for one file.
         const { tokens, picked } = await signIn(provider, true);
@@ -326,21 +365,26 @@ export function createCloudStorage(deps: {
       if (origin !== undefined) linked.set(docId, origin);
     },
     originOf: (docId) => linked.get(docId)?.provider ?? null,
+    canEdit: (docId) => linked.get(docId)?.canEdit,
     saveBack: (docId, pdf) =>
-      named(async () => {
+      named('save back', linked.get(docId)?.provider ?? null, async () => {
         const origin = linked.get(docId);
         if (origin === undefined) throw new Error('saveBack was asked for a document with no cloud origin');
+        // THE PROVIDER ALREADY SAID NO, when the file was opened: nothing is sent, so a view-only file is never asked to
+        // take an upload it will refuse. Unknown (`null`) is not no — the upload goes, and a refusal is named `forbidden`.
+        if (origin.canEdit === false) throw new CloudOutcomeRefused('read-only');
         const access = await token(origin.provider);
         const version = await replaceCloudPdf(origin.provider, access, origin.fileId, origin.version, pdf, fetchImpl);
         linked.set(docId, { ...origin, version });
       }),
     uploadCopy: (docId, provider, name, pdf) =>
-      named(async () => {
+      named('upload a copy', provider, async () => {
         const access = await token(provider);
         const fileId = await createCloudPdf(provider, access, name, pdf, fetchImpl);
-        const { version } = await describeCloudFile(provider, access, fileId, fetchImpl);
-        // LINKED to the new file, so Save back goes there next; the local file stays where it was.
-        linked.set(docId, { provider, fileId, version });
+        const { version, canEdit } = await describeCloudFile(provider, access, fileId, fetchImpl);
+        // LINKED to the new file, so Save back goes there next; the local file stays where it was. Its edit access is
+        // the provider's answer for the new file too, rather than assumed from having just made it.
+        linked.set(docId, { provider, fileId, version, canEdit });
       }),
     forget: (docId) => {
       linked.delete(docId);

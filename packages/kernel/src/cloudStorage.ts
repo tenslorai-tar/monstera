@@ -33,7 +33,13 @@ import { readWithin } from './verifiedDownload.js';
 
 /** Why a provider call did not happen. */
 export type CloudStorageRefusalReason =
+  /** HTTP 401: the provider no longer accepts the sign-in, and signing in again is the remedy. */
   | 'unauthorised'
+  /**
+   * HTTP 403: the sign-in is accepted and this request is refused for this person — a file shared with them to view,
+   * not to change. Signing in again changes nothing, so it is never said as a sign-in problem.
+   */
+  | 'forbidden'
   | 'unreachable'
   | 'rejected'
   | 'unexpected-answer'
@@ -187,8 +193,14 @@ async function call(fetchImpl: typeof fetch, url: string, init: RequestInit): Pr
   } catch (cause) {
     throw new CloudStorageRefused('unreachable', `${new URL(url).host} could not be reached`, { cause });
   }
-  if (response.status === 401 || response.status === 403) {
-    throw new CloudStorageRefused('unauthorised', `${new URL(url).host} answered HTTP ${String(response.status)}`);
+  // TWO STATUSES, TWO SITUATIONS (RFC 9110 §15.5.2 and §15.5.4): 401 is credentials the server does not accept; 403
+  // is a request it understood and refuses for the credentials it did accept. Answering both as "sign in again" sent a
+  // person with a view-only shared file round a sign-in that could never change the answer (the owner's 0.1.6.0 run).
+  if (response.status === 401) {
+    throw new CloudStorageRefused('unauthorised', `${new URL(url).host} answered HTTP 401`);
+  }
+  if (response.status === 403) {
+    throw new CloudStorageRefused('forbidden', `${new URL(url).host} answered HTTP 403`);
   }
   if (response.status === 412) {
     throw new CloudStorageRefused('changed-elsewhere', 'the file changed since it was opened');
@@ -366,14 +378,55 @@ function newestFirst(files: readonly (CloudFile | null)[]): readonly CloudFile[]
 
 /**
  * What a file is NOW, for Save back's check: its name and a version that changes whenever its
- * content does — Graph's `eTag`, Drive's `version`.
+ * content does — Graph's `eTag`, Drive's `version` — and whether this person may change it.
  */
 export interface CloudFileVersion {
   readonly name: string;
   readonly version: string;
+  /**
+   * Whether the signed-in person may change the file's content, as the provider says it: `null` where the answer did
+   * not say. UNKNOWN IS NOT YES: a surface says read-only only for `false`, and Save back still tries on `null`, where
+   * a refusal arrives as HTTP 403 and is named `forbidden`.
+   */
+  readonly canEdit: boolean | null;
 }
 
-/** A file's name and current version. */
+/** Graph's roles that may change an item's content (*permission resource*: `read`, `write`, `owner`). */
+const GRAPH_EDIT_ROLES = new Set(['write', 'owner']);
+
+/**
+ * Whether the person may change a OneDrive item.
+ *
+ * Graph has no single flag. An item in the person's own drive carries no `remoteItem` facet — *"Remote item data, if
+ * the item is shared from a drive other than the one being accessed"* (driveItem resource) — and its owner may change
+ * it. An item shared from another drive is asked of that drive's permissions, which for a caller who is not the owner
+ * list *"only the sharing permissions that apply to the caller"* (*List who has access to a file*), so any `write` or
+ * `owner` role there is this person's. Both read 2026-09-30 from Microsoft's reference; not run live.
+ */
+async function graphCanEdit(
+  answer: Readonly<Record<string, unknown>>,
+  accessToken: string,
+  fetchImpl: typeof fetch,
+): Promise<boolean | null> {
+  const remote = answer['remoteItem'];
+  if (remote === undefined || remote === null) return true;
+  const item = remote as Record<string, unknown>;
+  const itemId = text(item['id']);
+  const driveId = text((item['parentReference'] as Record<string, unknown> | undefined)?.['driveId']);
+  if (itemId === null || driveId === null) return null;
+  const permissions = await callJson(
+    fetchImpl,
+    `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}/permissions`,
+    { headers: bearer(accessToken) },
+  );
+  const value = Array.isArray(permissions['value']) ? (permissions['value'] as unknown[]) : [];
+  return value.some((entry) => {
+    const roles = (entry as Record<string, unknown> | null)?.['roles'];
+    return Array.isArray(roles) && roles.some((role) => typeof role === 'string' && GRAPH_EDIT_ROLES.has(role));
+  });
+}
+
+/** A file's name, current version, and whether this person may change it. */
 export async function describeCloudFile(
   provider: CloudProviderId,
   accessToken: string,
@@ -381,20 +434,27 @@ export async function describeCloudFile(
   fetchImpl: typeof fetch = fetch,
 ): Promise<CloudFileVersion> {
   const id = encodeURIComponent(fileId);
+  // DRIVE'S `capabilities.canEdit` is the file's own answer for the requesting user (Drive v3 *files* resource: "Whether
+  // the current user can edit this file"), asked in the same request as the version, so the two cannot disagree.
   const answer =
     provider === 'onedrive'
-      ? await callJson(fetchImpl, `https://graph.microsoft.com/v1.0/me/drive/items/${id}?$select=name,eTag`, {
+      ? await callJson(fetchImpl, `https://graph.microsoft.com/v1.0/me/drive/items/${id}?$select=name,eTag,remoteItem`, {
           headers: bearer(accessToken),
         })
-      : await callJson(fetchImpl, `https://www.googleapis.com/drive/v3/files/${id}?fields=name,version`, {
-          headers: bearer(accessToken),
-        });
+      : await callJson(
+          fetchImpl,
+          `https://www.googleapis.com/drive/v3/files/${id}?fields=name,version,capabilities(canEdit)`,
+          { headers: bearer(accessToken) },
+        );
   const name = text(answer['name']);
   const version = provider === 'onedrive' ? text(answer['eTag']) : text(answer['version']);
   if (name === null || version === null) {
     throw new CloudStorageRefused('unexpected-answer', 'the file answer lacks a name or a version');
   }
-  return { name, version };
+  const flag = (answer['capabilities'] as Record<string, unknown> | undefined)?.['canEdit'];
+  const canEdit =
+    provider === 'onedrive' ? await graphCanEdit(answer, accessToken, fetchImpl) : typeof flag === 'boolean' ? flag : null;
+  return { name, version, canEdit };
 }
 
 /** Whether a host is one of the provider's declared download hosts. */

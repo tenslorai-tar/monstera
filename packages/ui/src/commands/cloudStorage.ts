@@ -3,6 +3,7 @@ import type { DocId } from '@monstera/shared';
 
 import { CLOUD_OUTCOME_DIALOG_ID } from '../dialogs/cloudOutcome.js';
 import { CLOUD_DIALOG_ID, CLOUD_RESULT } from '../dialogs/cloudStorage.js';
+import { CLOUD_VIEW_ONLY_DIALOG_ID, CLOUD_VIEW_ONLY_RESULT, type CloudViewOnlyMoment } from '../dialogs/cloudViewOnly.js';
 import type { ShowBusy } from '../busyNote.js';
 import {
   CLOUD_COMMAND_TITLE,
@@ -10,8 +11,10 @@ import {
   CLOUD_DOWNLOADING,
   CLOUD_DOWNLOADING_FILE,
   SAVE_BACK_TITLE,
+  TOAST_CLOUD_COPY_SAVED,
   TOAST_SAVED_BACK,
 } from '../messages/en.js';
+import type { ShowToast } from '../toasts.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
 import { type WritesItsOwnFile, hasDocument, reportProblem } from './documentCommands.js';
 import type { OpenedDocument } from './importMarkdown.js';
@@ -30,9 +33,40 @@ import type { OpenedDocument } from './importMarkdown.js';
  *
  * A provider, a file id and a `DocId` go out; states, file names and open outcomes come back.
  */
+/**
+ * Tells the person a cloud file is shared with them to view, and makes the copy they ask for (the owner's decision A,
+ * 2026-09-30). The copy is `cloud.uploadCopy`, which also links the document to it — so Save back afterwards goes to
+ * the person's own copy rather than to a file they cannot change.
+ */
+async function offerCopy(
+  deps: {
+    readonly client: ContractClient;
+    readonly ask: (id: string, props: unknown) => Promise<unknown>;
+    readonly toast: ShowToast;
+  },
+  docId: DocId,
+  provider: CloudProviderId,
+  moment: CloudViewOnlyMoment,
+): Promise<void> {
+  const answered = CLOUD_VIEW_ONLY_RESULT.safeParse(await deps.ask(CLOUD_VIEW_ONLY_DIALOG_ID, { provider, moment }));
+  if (!answered.success) return;
+  const uploaded = await deps.client['cloud.uploadCopy']({ docId, provider });
+  if (!uploaded.ok) {
+    reportProblem(deps, uploaded.error);
+    return;
+  }
+  if (uploaded.value.kind === 'refused') {
+    void deps.ask(CLOUD_OUTCOME_DIALOG_ID, { outcome: uploaded.value.reason });
+    return;
+  }
+  deps.toast('done', TOAST_CLOUD_COPY_SAVED);
+}
+
 export function cloudStorageCommand(deps: {
   readonly client: ContractClient;
   readonly ask: (id: string, props: unknown) => Promise<unknown>;
+  /** Says a copy was saved, when a view-only file's copy is asked for at open. */
+  readonly toast: ShowToast;
   readonly onOpened: (opened: OpenedDocument) => void;
   readonly onAlreadyOpen: (docId: DocId) => void;
   /** Says a download is under way while `cloud.open` runs. */
@@ -123,6 +157,12 @@ export function cloudStorageCommand(deps: {
         const result = opened.value;
         if (result.kind === 'opened') {
           deps.onOpened({ docId: result.docId, version: result.version, byteLength: result.byteLength, name: result.name });
+          // SAID BEFORE ANY EDIT: a file the provider says this person may not change is named as such the moment it
+          // opens, rather than discovered at Save back after the work is done.
+          const access = await deps.client['cloud.access']({ docId: result.docId });
+          if (access.ok && access.value.kind === 'from-cloud' && access.value.canEdit === false) {
+            await offerCopy(deps, result.docId, access.value.provider, 'opened');
+          }
           return;
         }
         if (result.kind === 'already-open') {
@@ -175,6 +215,15 @@ export function saveBackCommand(
       if (result.kind === 'saved-back') {
         deps.toast('done', TOAST_SAVED_BACK);
         return;
+      }
+      // A FILE THIS PERSON MAY NOT CHANGE is not an error to report: the offer is a copy in their own storage. Known at
+      // open (`read-only`), or learnt from the provider's 403 now (`forbidden`) — never "sign in again".
+      if (result.kind === 'refused' && (result.reason === 'read-only' || result.reason === 'forbidden')) {
+        const access = await deps.client['cloud.access']({ docId });
+        if (access.ok && access.value.kind === 'from-cloud') {
+          await offerCopy(deps, docId, access.value.provider, result.reason);
+          return;
+        }
       }
       void deps.ask(CLOUD_OUTCOME_DIALOG_ID, { outcome: result.kind === 'refused' ? result.reason : result.kind });
     },

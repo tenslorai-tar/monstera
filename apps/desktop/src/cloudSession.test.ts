@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CloudOutcomeRefused, cloudSessionSecretId, createCloudStorage, safeFileName } from './cloudSession.js';
 import type { SecretStoreSurface } from './secretStore.js';
+import type { ShellFailure } from './shellFailure.js';
 
 /**
  * Cloud storage as `main` holds it (ADR-0091): the sign-in runs through a REAL loopback listener
@@ -55,10 +56,18 @@ function onedrive(): Provider {
         return Promise.resolve(json({ value: [{ id: 'f1', name: 'contract.pdf', size: 9, lastModifiedDateTime: '2026-09-01T00:00:00Z', file: {} }] }));
       }
       if (url.pathname === '/v1.0/me/drive/items/f1' ) return Promise.resolve(json({ name: 'contract.pdf', eTag: '"v1"' }));
-      if (url.pathname === '/v1.0/me/drive/items/f1/content' && (init?.method ?? 'GET') === 'GET') {
+      // `f2` IS SHARED WITH THE PERSON TO VIEW, from another drive: a `remoteItem`, whose permissions for this caller
+      // carry only `read` (Graph: a non-owner is listed only the permissions that apply to them).
+      if (url.pathname === '/v1.0/me/drive/items/f2') {
+        return Promise.resolve(
+          json({ name: 'shared.pdf', eTag: '"s1"', remoteItem: { id: 'R2', parentReference: { driveId: 'D2' } } }),
+        );
+      }
+      if (url.pathname === '/v1.0/drives/D2/items/R2/permissions') return Promise.resolve(json({ value: [{ roles: ['read'] }] }));
+      if (/^\/v1\.0\/me\/drive\/items\/f[12]\/content$/u.test(url.pathname) && (init?.method ?? 'GET') === 'GET') {
         return Promise.resolve(new Response('%PDF-1.7\n%%EOF\n', { status: 200 }));
       }
-      if (url.pathname === '/v1.0/me/drive/items/f1/content' && init?.method === 'PUT') {
+      if (/^\/v1\.0\/me\/drive\/items\/f[12]\/content$/u.test(url.pathname) && init?.method === 'PUT') {
         provider.uploads.push({ url: url.href, ifMatch: new Headers(init.headers).get('if-match') });
         if (provider.uploadStatus !== 200) return Promise.resolve(json({}, provider.uploadStatus));
         return Promise.resolve(json({ eTag: '"v2"' }));
@@ -88,7 +97,10 @@ function browser(): { readonly openInBrowser: (url: string) => Promise<void>; re
 
 function storage(provider: Provider, secrets = memorySecrets(), shown = browser(), configured = true) {
   const written: { path: string; bytes: number }[] = [];
+  /** Every line the session wrote to the diagnostics log. */
+  const logged: ShellFailure[] = [];
   const cloud = createCloudStorage({
+    report: (failure) => logged.push(failure),
     secrets,
     clients: { onedrive: configured ? { clientId: 'made-up-id' } : null, 'google-drive': null },
     openInBrowser: shown.openInBrowser,
@@ -102,7 +114,7 @@ function storage(provider: Provider, secrets = memorySecrets(), shown = browser(
       return 'written';
     },
   });
-  return { cloud, secrets, shown, written };
+  return { cloud, secrets, shown, written, logged };
 }
 
 describe('cloud storage in main (ADR-0091)', () => {
@@ -172,6 +184,53 @@ describe('cloud storage in main (ADR-0091)', () => {
     expect(provider.uploads[1]?.ifMatch).toBe('"v2"');
   });
 
+  /**
+   * THE OWNER'S 0.1.6.0 RUN, decision A: a file shared with them to view was answered "sign in again", and nothing
+   * reached the log. Each case asserts the DECISION — which request was or was not made — not the tidy end state.
+   */
+  describe('a file the person may not change', () => {
+    it('is read-only from the moment it opens, and Save back SENDS NOTHING — no upload, no sign-in — and says so in the log', async () => {
+      const provider = onedrive();
+      const { cloud, shown, logged } = storage(provider);
+      const doc = asDocId('00000000-0000-4000-8000-0000000000c3');
+      cloud.link(doc, await cloud.download('onedrive', 'f2'));
+      expect(cloud.canEdit(doc)).toBe(false);
+
+      await expect(cloud.saveBack(doc, new Uint8Array([1]))).rejects.toMatchObject({ reason: 'read-only' });
+      expect(provider.uploads).toStrictEqual([]);
+      expect(shown.redirects).toHaveLength(1);
+      expect(logged).toStrictEqual([{ event: 'cloud-failed', detail: 'save back (onedrive): read-only' }]);
+    });
+
+    it('a 403 on the upload is FORBIDDEN — never a sign-in to repeat — and the log names the status', async () => {
+      const provider = onedrive();
+      const { cloud, shown, logged } = storage(provider);
+      const doc = asDocId('00000000-0000-4000-8000-0000000000c4');
+      cloud.link(doc, await cloud.download('onedrive', 'f1'));
+      expect(cloud.canEdit(doc)).toBe(true);
+      provider.uploadStatus = 403;
+
+      await expect(cloud.saveBack(doc, new Uint8Array([1]))).rejects.toMatchObject({ reason: 'forbidden' });
+      expect(provider.uploads).toHaveLength(1);
+      // ONE SIGN-IN, the first one: the 403 did not send the person round another.
+      expect(shown.redirects).toHaveLength(1);
+      expect(logged.map((line) => line.detail)).toStrictEqual(['save back (onedrive): forbidden — graph.microsoft.com answered HTTP 403']);
+    });
+
+    it('CONTROL: a 401 on the same upload is still UNAUTHORISED, and a Save back that lands writes no line', async () => {
+      const provider = onedrive();
+      const { cloud, logged } = storage(provider);
+      const doc = asDocId('00000000-0000-4000-8000-0000000000c5');
+      cloud.link(doc, await cloud.download('onedrive', 'f1'));
+      await cloud.saveBack(doc, new Uint8Array([1]));
+      expect(logged).toStrictEqual([]);
+
+      provider.uploadStatus = 401;
+      await expect(cloud.saveBack(doc, new Uint8Array([2]))).rejects.toMatchObject({ reason: 'unauthorised' });
+      expect(logged.map((line) => line.detail)).toStrictEqual(['save back (onedrive): unauthorised — graph.microsoft.com answered HTTP 401']);
+    });
+  });
+
   describe('GOOGLE’S PICKER (ADR-0091, corrected 2026-09-29)', () => {
     /** Google's token endpoint and one file, `g1`, answering by path; every request recorded. */
     function google(): { readonly fetchImpl: typeof fetch; readonly asked: string[] } {
@@ -215,6 +274,7 @@ describe('cloud storage in main (ADR-0091)', () => {
       const written: string[] = [];
       const secrets = memorySecrets();
       const cloud = createCloudStorage({
+        report: () => undefined,
         secrets,
         clients: { onedrive: null, 'google-drive': { clientId: 'made-up-google-id', clientSecret: 'made-up' } },
         openInBrowser: shown.openInBrowser,

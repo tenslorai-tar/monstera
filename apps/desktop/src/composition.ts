@@ -1554,6 +1554,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         cloudComposition === undefined
           ? unconfiguredCloud()
           : createCloudStorage({
+              // EVERY CLOUD FAILURE IN THE LOG: the owner's refused Save back left no line anywhere.
+              report: failures,
               secrets: secretStore,
               clients: cloudComposition.clients,
               openInBrowser,
