@@ -3626,3 +3626,51 @@ read, so the check stops taking it.
   package's data, and B3a is the rule against that.
 - **Keeping `userData` and removing the real folder.** That fixes one machine and
   leaves the rule wrong for the next one.
+
+### Correction to that amendment, 2026-09-30 — its authority was measured outside the identity, where the app never runs
+
+**What failed.** The built 0.1.4.0 layout, run in the package's identity, refused
+every host again, failing closed:
+
+```
+FAILURE package-data-unlocked the package's data root was not found:
+the derived SID could not be written as text
+```
+
+**The mechanism.** The amendment's table was read from a plain process. Asked from
+*inside* the identity, with the probe given an output file because
+`Invoke-CommandInDesktopPackage` returns no stdout,
+`DeriveAppContainerSidFromAppContainerName(<family>)` answers `S_OK` with a
+**null** SID. `ConvertSidToStringSidW` then fails with 87. Outside the identity the
+same call returns the package's SID, which is all the amendment had read. It is 1a
+over again: a packaged process's AppContainer derivation is not the unpackaged one,
+and **an authority is only one where it is asked from**. Point 3 was measured from
+the one context `main` never runs in.
+
+**The authority that owns the answer** is the redirection itself.
+`SHGetKnownFolderPath(FOLDERID_RoamingAppData, KF_FLAG_RETURN_FILTER_REDIRECTION_TARGET)`
+returns where the app's file-system virtualization sends the folder. Measured the
+same day with `scratchpad/item1/redirectTarget.mjs`, **while the real
+`%APPDATA%\Monstera PDF Editor` still existed**, the condition that broke the first
+rule:
+
+| asked | answer |
+|---|---|
+| inside the identity, with the flag | `…\AppData\Local\Packages\TenslorInc.MonsteraPDFEditor.Test_z2a54zn3xxk4m\LocalCache\Roaming` |
+| inside the identity, without the flag | `…\AppData\Roaming` |
+| CONTROL: outside the identity, with the flag | `…\AppData\Roaming`. Nothing is redirected, and the rule must refuse this |
+
+**Point 3, as it now stands.** The package root is the folder two levels above
+`SHGetKnownFolderPath(FOLDERID_RoamingAppData,
+KF_FLAG_RETURN_FILTER_REDIRECTION_TARGET)`. It is accepted only when that path ends
+`<family>\LocalCache\Roaming`, ignoring case, for the family
+`GetCurrentPackageFamilyName` reports. Anything else refuses host creation. Neither
+`userData` nor an AppContainer derivation is read.
+
+**Rejected.** The first amendment's `GetAppContainerFolderPath` route: null inside
+the identity, measured. Stripping four sub-authorities from a derived child SID:
+correct on every reading here, but it rests on a SID layout nobody documents. That
+is a second opinion about Windows' naming, and B3a is the rule against it.
+
+**What transfers:** a probe of an identity-dependent API reports on the identity it
+runs in. The outside reading is the control, never the measurement.
