@@ -1,7 +1,9 @@
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
+
+import type { Result } from '@monstera/shared';
 
 import type { EngineHostPlatform } from './composition.js';
 import { providedConverterExecutable } from './containedProgram.js';
@@ -15,6 +17,7 @@ import {
   ENGINE_HOST_ENTRY_FILE,
   hostCommandArguments,
 } from './engineHostPrograms.js';
+import { type PackageDataLock, gatePackageData } from './packageDataLock.js';
 import { createReaderHostSurface } from './readerHostSurface.js';
 import {
   type SessionDirectoryName,
@@ -22,6 +25,7 @@ import {
   sessionDirectoryName,
   sweepSessionDirectories,
 } from './sessionDirectories.js';
+import { createWin32DaclSurface, currentPackageFamilyName } from './win32DaclSurface.js';
 import { createWin32DirectorySurface } from './win32DirectorySurface.js';
 import {
   createWin32HostSurface,
@@ -133,7 +137,16 @@ function diagnosticName(): SessionDirectoryName {
   return minted.value;
 }
 
-export function createEngineHostPlatform(sessionRoot: string): EngineHostPlatform | null {
+/**
+ * What the package-data check needs from the caller: where `userData` is — Electron's answer, which this file may not
+ * ask — and where its outcome goes. Required rather than optional, so no caller can build a platform that skipped it.
+ */
+export interface PackageDataCheck {
+  readonly userData: string;
+  readonly report: (outcome: Result<PackageDataLock, string>) => void;
+}
+
+export function createEngineHostPlatform(sessionRoot: string, packageData: PackageDataCheck): EngineHostPlatform | null {
   // NOT A CAPABILITY CHECK WEARING A PLATFORM CHECK'S CLOTHES. The engine host
   // is a Win32 AppContainer process by ADR-0022, so on any other platform there
   // is nothing degraded to fall back to — `null` is what the root is built to
@@ -143,6 +156,24 @@ export function createEngineHostPlatform(sessionRoot: string): EngineHostPlatfor
 
   const user = currentUserSid();
   if (!user.ok) return null;
+
+  // ROUTE D, HERE AND NOWHERE ELSE (ADR-0023 Decision 17). Every contained host this application creates — the
+  // writers, the compose host and the three converters — is built from this platform, so a refusal here is a refusal
+  // for all of them. Keyed on the package identity Windows reports, not on `app.isPackaged`: the identity is what
+  // makes a host the package's child container and hands it the package's capability.
+  const family = currentPackageFamilyName();
+  if (family !== null) {
+    mkdirSync(packageData.userData, { recursive: true });
+    const gate = gatePackageData(
+      realpathSync.native(packageData.userData),
+      family,
+      user.value,
+      createWin32DaclSurface(),
+    );
+    packageData.report(gate);
+    if (!gate.ok) return null;
+  }
+
   const container = hostContainerSid(ENGINE_HOST_CONTAINER.mupdf);
   if (!container.ok) return null;
   // THE ENGINE ITSELF since ADR-0124, from the one resolver (ADR-0122). A build without it has no MuPDF host, and a

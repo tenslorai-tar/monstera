@@ -5,6 +5,8 @@ import {
   type UserSid,
   handedDirectoryDacl,
   hostPipeDacl,
+  isPackageDataLocked,
+  packageDataDacl,
 } from './hostDacl.js';
 
 const user: UserSid = { __sid: 'user', value: 'S-1-5-21-1-2-3-1001' };
@@ -116,5 +118,65 @@ describe('handedDirectoryDacl', () => {
     expect(dacl.indexOf(user.value)).toBeLessThan(dacl.indexOf(container.value));
     expect(dacl).toContain(`FA;;;${user.value}`);
     expect(dacl).toContain(`0x001301BF;;;${container.value}`);
+  });
+});
+
+/** The package capability SID's shape, as MSIX grants it on the data folders. */
+const capability = 'S-1-15-3-1-2-3-4-5-6-7';
+
+describe('packageDataDacl', () => {
+  it('is protected and names the user, SYSTEM and Administrators only', () => {
+    expect(packageDataDacl(user)).toBe(
+      'D:P(A;OICI;FA;;;S-1-5-21-1-2-3-1001)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)',
+    );
+  });
+
+  it('reads back as locked by the predicate that checks it', () => {
+    expect(isPackageDataLocked(packageDataDacl(user))).toBe(true);
+  });
+});
+
+describe('isPackageDataLocked', () => {
+  /**
+   * THE SHAPE MSIX WRITES, read from TempState in the installed 0.1.1.0 on 2026-09-30 with the SIDs replaced: the
+   * package's ACEs are EXPLICIT on the folder, not inherited into it. So *protected* alone would leave them in place,
+   * and the case below that sets only `P` is the one that separates a lock from a flag.
+   */
+  const asInstalled =
+    `D:AI(A;;FA;;;${capability})(A;OICIIO;GA;;;${capability})(A;OICI;FA;;;${user.value})` +
+    '(A;OICIID;FA;;;SY)(A;OICIID;FA;;;BA)';
+
+  it('refuses the folder as the package installed it', () => {
+    expect(isPackageDataLocked(asInstalled)).toBe(false);
+  });
+
+  it('refuses a protected DACL that still names the package', () => {
+    // What setting only `P` on that folder leaves: Windows drops the inherited ACEs and keeps the explicit ones — the
+    // package's among them. No `ID` ACE remains, so the refusal can only come from the principal.
+    const protectedOnly = `D:PAI(A;;FA;;;${capability})(A;OICIIO;GA;;;${capability})(A;OICI;FA;;;${user.value})`;
+    expect(isPackageDataLocked(protectedOnly)).toBe(false);
+  });
+
+  it('refuses a DACL that names an AppContainer rather than the capability', () => {
+    expect(isPackageDataLocked(`D:P(A;OICI;FA;;;${user.value})(A;OICI;FA;;;${container.value})`)).toBe(false);
+  });
+
+  it('refuses a DACL that is not protected, whatever it names', () => {
+    expect(isPackageDataLocked(`D:AI(A;OICI;FA;;;${user.value})(A;OICIID;FA;;;SY)`)).toBe(false);
+  });
+
+  it('refuses an inherited ACE inside a protected DACL', () => {
+    expect(isPackageDataLocked(`D:P(A;OICI;FA;;;${user.value})(A;OICIID;FA;;;SY)`)).toBe(false);
+  });
+
+  it('refuses a DACL with no ACEs and a string with no DACL', () => {
+    expect(isPackageDataLocked('D:P')).toBe(false);
+    expect(isPackageDataLocked(`O:${user.value}G:${user.value}`)).toBe(false);
+  });
+
+  it('accepts the lock as Windows renders it, with an owner and the auto-inherited flag', () => {
+    expect(
+      isPackageDataLocked(`O:${user.value}D:PAI(A;OICI;FA;;;${user.value})(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)`),
+    ).toBe(true);
   });
 });

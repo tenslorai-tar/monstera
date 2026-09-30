@@ -259,7 +259,13 @@ async function main() {
 
     const sessionRoot = join(scratch, 'engine-sessions');
     mkdirSync(sessionRoot, { recursive: true });
-    const platform = platformModule.createEngineHostPlatform(sessionRoot);
+    // No package identity here, so the package-data check never reports; a report would be a refusal worth reading.
+    const platform = platformModule.createEngineHostPlatform(sessionRoot, {
+      userData: join(scratch, 'user-data'),
+      report: (outcome) => {
+        if (!outcome.ok) process.stderr.write(`package-data check: ${outcome.error}\n`);
+      },
+    });
     if (platform === null) {
       throw new Error(
         'createEngineHostPlatform returned null, so no contained host can exist here. The ' +

@@ -132,25 +132,10 @@ startShell(() => {
   const reportsOn = crashReportsOn(settings.read());
   if (reportsOn) crashReporter.start({ uploadToServer: false });
 
-  // NAMED, BECAUSE PDFIUM'S PLATFORM IS DERIVED FROM IT. `createPdfiumHostPlatform`
-  // takes MuPDF's rather than building a second one from scratch, so that the
-  // session root, the directory surface and the containment negative are
-  // established exactly once — see that function for why a second build is a
-  // second writer of a concern this process establishes on the way in.
-  //
-  // Evaluated inside the lambda, which is the whole of what the lambda is for:
-  // everything here reads the single-instance lock as *this process owns the
-  // session root*, and `createEngineHostPlatform` sweeps that root.
   // WHERE THE NATIVE COMPONENTS ARE (ADR-0122), told to the one resolver before anything resolves one: the package's
   // `resources/native` folder, read-only, when packaged — the one file that may ask Electron that — and otherwise the
   // launcher's variables, which is the resolver's own default.
   if (app.isPackaged) setNativeSource({ kind: 'packaged', folder: join(process.resourcesPath, 'native') });
-  const enginePlatform = createEngineHostPlatform(
-    join(app.getPath('sessionData'), 'engine-sessions'),
-  );
-  // X2T'S PLATFORM, `null` on Ghostscript's roads: no Win32 platform, no `x2t` handed down by the
-  // launcher, or no container SID (ADR-0120).
-  const officePlatform = enginePlatform === null ? null : createOfficePlatform(enginePlatform);
 
   // WHERE A DIAGNOSTIC GOES WHEN NOBODY IS WATCHING STDERR, which is every
   // packaged run: a Store application has no terminal attached, so until this
@@ -170,6 +155,29 @@ startShell(() => {
     const problem = await shell.openPath(directory);
     return problem === '';
   });
+
+  // NAMED, BECAUSE PDFIUM'S PLATFORM IS DERIVED FROM IT. `createPdfiumHostPlatform`
+  // takes MuPDF's rather than building a second one from scratch, so that the
+  // session root, the directory surface and the containment negative are
+  // established exactly once — see that function for why a second build is a
+  // second writer of a concern this process establishes on the way in.
+  //
+  // Evaluated inside the lambda, which is the whole of what the lambda is for:
+  // everything here reads the single-instance lock as *this process owns the
+  // session root*, and `createEngineHostPlatform` sweeps that root.
+  //
+  // THE PACKAGE-DATA CHECK REPORTS INTO THE LOG, which is why the log is built first (ADR-0023 Decision 17). A start
+  // that had to lock a folder says which: the first start of an install, or something that undid a lock since.
+  const enginePlatform = createEngineHostPlatform(join(app.getPath('sessionData'), 'engine-sessions'), {
+    userData: app.getPath('userData'),
+    report: (outcome) => {
+      if (!outcome.ok) log.failures({ event: 'package-data-unlocked', detail: outcome.error });
+      else if (outcome.value.locked.length > 0) log.write('package-data-locked', outcome.value.locked.join(', '));
+    },
+  });
+  // X2T'S PLATFORM, `null` on Ghostscript's roads: no Win32 platform, no `x2t` handed down by the
+  // launcher, or no container SID (ADR-0120).
+  const officePlatform = enginePlatform === null ? null : createOfficePlatform(enginePlatform);
 
   // THE SHARE SHEET (ADR-0080): the window's handle is Electron's, and so is the
   // temporary directory the shared file is written under — one folder per share, in a

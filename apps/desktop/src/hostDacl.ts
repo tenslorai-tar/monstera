@@ -193,3 +193,35 @@ export function handedDirectoryDacl(
   const mask = verb === 'read' ? DIRECTORY_READ_MASK : DIRECTORY_MODIFY_MASK;
   return `D:P(A;OICI;FA;;;${user.value})(A;OICI;${mask};;;${container.value})`;
 }
+
+/**
+ * The DACL an installed build puts on the package's data folders (ADR-0023 Decision 17, the owner's route D).
+ *
+ * A host created by a packaged `main` is a child container of the package and holds the package's capability SID,
+ * which MSIX grants on the install root — which the host needs — and on the package's data folders, which it must
+ * not reach (measured 2026-09-30). PROTECTED, so the package's ACE does not inherit in; the user, SYSTEM and
+ * Administrators only, so `main`, which runs as the user, keeps its data and the host has no ACE to match. The
+ * session folders under it are created with their own protected DACL naming the host that holds them.
+ *
+ * @param user This process's own user SID.
+ * @returns An SDDL string.
+ */
+export function packageDataDacl(user: UserSid): string {
+  return `D:P(A;OICI;FA;;;${user.value})(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)`;
+}
+
+/**
+ * Whether a package data folder's DACL, as SDDL, is the lock {@link packageDataDacl} writes: PROTECTED, so nothing
+ * inherits the package's ACE into it, and naming no AppContainer or capability principal (`S-1-15-…`), so no contained
+ * host is granted it by any route. Read from the folder, never assumed from the write (ADR-0023 Decision 17).
+ *
+ * @param sddl the folder's DACL as `ConvertSecurityDescriptorToStringSecurityDescriptorW` renders it
+ */
+export function isPackageDataLocked(sddl: string): boolean {
+  const dacl = /D:([A-Z]*)((?:\([^)]*\))*)/u.exec(sddl);
+  if (dacl === null) return false;
+  const flags = dacl[1] ?? '';
+  const aces = [...(dacl[2] ?? '').matchAll(/\(([^)]*)\)/gu)].map((match) => (match[1] ?? '').split(';'));
+  if (!flags.includes('P') || aces.length === 0) return false;
+  return aces.every((ace) => !(ace[1] ?? '').includes('ID') && !(ace[5] ?? '').startsWith('S-1-15-'));
+}

@@ -106,6 +106,11 @@ export type ShellFailureEvent =
   | 'document-unreadable'
   | 'unresponsive'
   /**
+   * An installed build could not lock its package's data folders, so no contained host exists this run
+   * (ADR-0023 Decision 17): every document opens poisoned, and this line is where the reason is.
+   */
+  | 'package-data-unlocked'
+  /**
    * The shell could not close what it holds on the way out.
    *
    * A lifecycle failure like the rest, and the only one that happens when there
