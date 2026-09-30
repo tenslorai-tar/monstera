@@ -25,7 +25,7 @@ import {
   sessionDirectoryName,
   sweepSessionDirectories,
 } from './sessionDirectories.js';
-import { appContainerFolder, createWin32DaclSurface, currentPackageFamilyName } from './win32DaclSurface.js';
+import { createWin32DaclSurface, currentPackageFamilyName, roamingRedirectionTarget } from './win32DaclSurface.js';
 import { createWin32DirectorySurface } from './win32DirectorySurface.js';
 import {
   createWin32HostSurface,
@@ -162,7 +162,7 @@ export function createEngineHostPlatform(sessionRoot: string, packageData: Packa
   // makes a host the package's child container and hands it the package's capability.
   const family = currentPackageFamilyName();
   if (family !== null) {
-    const gate = gatePackageData(appContainerFolder(family), family, user.value, createWin32DaclSurface());
+    const gate = gatePackageData(roamingRedirectionTarget(), family, user.value, createWin32DaclSurface());
     packageData.report(gate);
     if (!gate.ok) return null;
   }

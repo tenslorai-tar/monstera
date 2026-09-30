@@ -68,17 +68,17 @@ export function lockPackageData(packageRoot: string, user: UserSid, surface: Dac
  * hold — a root that could not be resolved, or every folder left unlocked — and is the only answer on which the
  * caller creates no platform; `ok` carries what this start had to lock, which is empty on an ordinary start.
  *
- * @param containerFolder Windows' answer for the package's AppContainer folder, or why it had none
+ * @param redirectedRoaming where the virtualization sends Roaming AppData, or why Windows did not say
  * @param family the running package's family name — a process with none has no package capability to take away
  */
 export function gatePackageData(
-  containerFolder: Result<string, string>,
+  redirectedRoaming: Result<string, string>,
   family: string,
   user: UserSid,
   surface: DaclSurface,
 ): Result<PackageDataLock, string> {
-  if (!containerFolder.ok) return err(`the package's data root was not found: ${containerFolder.error}`);
-  const root = packageDataRoot(containerFolder.value, family);
+  if (!redirectedRoaming.ok) return err(`the package's data root was not found: ${redirectedRoaming.error}`);
+  const root = packageDataRoot(redirectedRoaming.value, family);
   if (!root.ok) return err(`the package's data root was not found: ${root.error}`);
   const lock = lockPackageData(root.value, user, surface);
   if (lock.unlocked.length > 0) {
@@ -111,24 +111,25 @@ export function describePackageDataCheck(
 }
 
 /**
- * The package's data root: the parent of the AppContainer folder Windows keeps for the package (ADR-0023 Decision 17,
- * amended point 3).
+ * The package's data root: two levels above where the file-system virtualization sends Roaming AppData (ADR-0023
+ * Decision 17, point 3 as corrected).
  *
- * NOT FROM `userData`, which is where the rule first looked. Its final path lands in `LocalCache` only while no folder
- * of the same name exists in the real `%APPDATA%` — once one does, the package's merged view resolves the name there,
- * measured 2026-09-30 when the built layout's check refused every host. `GetAppContainerFolderPath` answers for the
- * package itself. Its folder must be named `AC` under one named after the family (Windows returns the family in lower
- * case); anything else is refused rather than guessed, since locking the wrong folder would change something this
- * application does not own.
+ * Twice from something that was not the authority, and each was measured when it failed. `userData`'s final path lands
+ * in `LocalCache` only while no same-named folder exists in the real `%APPDATA%`; `GetAppContainerFolderPath` for a
+ * SID derived from the family answers from a plain process and returns a null SID inside the identity, where `main`
+ * runs. The redirection's own answer is `…\Packages\<family>\LocalCache\Roaming`, and it must have exactly that shape;
+ * anything else — the plain `…\AppData\Roaming` a process with no redirection gets — is refused rather than guessed,
+ * since locking the wrong folder would change something this application does not own.
  *
- * @param containerFolder Windows' `…\Packages\<family>\AC` for the package's derived SID
+ * @param redirectedRoaming `SHGetKnownFolderPath(FOLDERID_RoamingAppData, KF_FLAG_RETURN_FILTER_REDIRECTION_TARGET)`
  * @param family the running package's family name
  */
-export function packageDataRoot(containerFolder: string, family: string): Result<string, string> {
-  if (basename(containerFolder).toLowerCase() !== 'ac') {
-    return err(`${containerFolder} is not an AppContainer's AC folder`);
+export function packageDataRoot(redirectedRoaming: string, family: string): Result<string, string> {
+  const localCache = dirname(redirectedRoaming);
+  const root = dirname(localCache);
+  if (basename(redirectedRoaming).toLowerCase() !== 'roaming' || basename(localCache).toLowerCase() !== 'localcache') {
+    return err(`${redirectedRoaming} is not a package's LocalCache\\Roaming — Roaming AppData is not redirected here`);
   }
-  const root = dirname(containerFolder);
   if (basename(root).toLowerCase() !== family.toLowerCase()) {
     return err(`${root} is not named after the package family ${family}`);
   }

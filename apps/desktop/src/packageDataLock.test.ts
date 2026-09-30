@@ -14,10 +14,10 @@ import {
 
 const user: UserSid = { __sid: 'user', value: 'S-1-5-21-1-2-3-1001' };
 const family = 'Monstera.Test_0123456789abc';
-/** As `GetAppContainerFolderPath` answers, with the family in lower case (measured 2026-09-30). */
 const packages = join('C:', 'Users', 'someone', 'AppData', 'Local', 'Packages');
-const root = join(packages, family.toLowerCase());
-const containerFolder = { ok: true, value: join(root, 'AC') } as const;
+const root = join(packages, family);
+/** As `SHGetKnownFolderPath` with the redirection flag answers inside the package (measured 2026-09-30). */
+const redirectedRoaming = { ok: true, value: join(root, 'LocalCache', 'Roaming') } as const;
 
 /** A package data folder as MSIX leaves it: the package's capability granted explicitly (see `hostDacl.test.ts`). */
 const AS_INSTALLED = `D:AI(A;;FA;;;S-1-15-3-1-2-3)(A;OICI;FA;;;${user.value})(A;OICIID;FA;;;SY)`;
@@ -77,7 +77,7 @@ describe('lockPackageData', () => {
 
 describe('gatePackageData', () => {
   it('lets a host be created once every folder is locked', () => {
-    const gate = gatePackageData(containerFolder, family, user, fakeSurface(AS_INSTALLED));
+    const gate = gatePackageData(redirectedRoaming, family, user, fakeSurface(AS_INSTALLED));
     expect(gate.ok).toBe(true);
   });
 
@@ -86,7 +86,7 @@ describe('gatePackageData', () => {
    * the write is the realistic route to it, and the refusal names that folder and only that one.
    */
   it('refuses when a folder stays unlocked, and names it', () => {
-    const gate = gatePackageData(containerFolder, family, user, fakeSurface(AS_INSTALLED, { refuse: 'LocalState' }));
+    const gate = gatePackageData(redirectedRoaming, family, user, fakeSurface(AS_INSTALLED, { refuse: 'LocalState' }));
     expect(gate.ok).toBe(false);
     if (gate.ok) return;
     expect(gate.error).toContain('LocalState (Windows refused the new DACL)');
@@ -95,20 +95,21 @@ describe('gatePackageData', () => {
     }
   });
 
-  it('writes nothing when Windows has no folder for the package', () => {
+  it('writes nothing when Windows did not answer', () => {
     const surface = fakeSurface(AS_INSTALLED);
-    const gate = gatePackageData({ ok: false, error: 'GetAppContainerFolderPath answered 0x80070002' }, family, user, surface);
+    const gate = gatePackageData({ ok: false, error: 'SHGetKnownFolderPath answered 0x80070002' }, family, user, surface);
     expect(gate).toEqual({
       ok: false,
-      error: "the package's data root was not found: GetAppContainerFolderPath answered 0x80070002",
+      error: "the package's data root was not found: SHGetKnownFolderPath answered 0x80070002",
     });
     expect(surface.writes).toEqual([]);
   });
 
-  it("writes nothing when the folder Windows answered is not the package's", () => {
+  /** What a process with no redirection is answered: the plain folder, which is not the package's and is not locked. */
+  it('writes nothing when Roaming AppData is not redirected', () => {
     const surface = fakeSurface(AS_INSTALLED);
-    const gate = gatePackageData({ ok: true, value: join(packages, 'other_1', 'AC') }, family, user, surface);
-    expect(gate.ok).toBe(false);
+    const plain = { ok: true, value: join('C:', 'Users', 'someone', 'AppData', 'Roaming') } as const;
+    expect(gatePackageData(plain, family, user, surface).ok).toBe(false);
     expect(surface.writes).toEqual([]);
   });
 });
@@ -136,34 +137,40 @@ describe('describePackageDataCheck', () => {
 });
 
 describe('packageDataRoot', () => {
-  it("is the parent of the package's AC folder", () => {
-    expect(packageDataRoot(containerFolder.value, family)).toEqual({ ok: true, value: root });
+  it('is two levels above the redirected LocalCache\\Roaming', () => {
+    expect(packageDataRoot(redirectedRoaming.value, family)).toEqual({ ok: true, value: root });
   });
 
-  it('matches the family without regard to case, since Windows answers it in lower case', () => {
-    expect(root.endsWith(family)).toBe(false);
-    expect(packageDataRoot(containerFolder.value, family)).toEqual({ ok: true, value: root });
+  it('matches every level without regard to case', () => {
+    const lower = join(packages, family.toLowerCase(), 'localcache', 'roaming');
+    expect(packageDataRoot(lower, family)).toEqual({ ok: true, value: join(packages, family.toLowerCase()) });
   });
 
   /**
-   * WHAT THE FIRST RULE RESOLVED TO: the final path of `userData` once a same-named folder existed in the real
-   * `%APPDATA%` (measured 2026-09-30). Handed here, it is refused by the rule's shape, not by a special case.
+   * ONE FIXTURE PER CLAUSE, each passing the other two, so removing any one clause reddens exactly its case. The
+   * plain `…\AppData\Roaming` a process with no redirection gets fails two clauses at once and separates neither.
    */
-  it('refuses a folder that is not an AC folder, such as the real AppData the old rule landed in', () => {
-    const answer = packageDataRoot(join('C:', 'Users', 'someone', 'AppData', 'Roaming', 'Monstera PDF Editor'), family);
-    expect(answer.ok).toBe(false);
+  it('refuses a Roaming that is not under LocalCache', () => {
+    const answer = packageDataRoot(join(root, 'LocalState', 'Roaming'), family);
+    expect(answer).toEqual({
+      ok: false,
+      error: `${join(root, 'LocalState', 'Roaming')} is not a package's LocalCache\\Roaming — Roaming AppData is not redirected here`,
+    });
   });
 
-  /** The fixture only the AC test can refuse: its parent IS named after the family, so the family test passes it. */
-  it("refuses a sibling of AC inside the package's own folder", () => {
-    const answer = packageDataRoot(join(root, 'LocalCache'), family);
-    expect(answer).toEqual({ ok: false, error: `${join(root, 'LocalCache')} is not an AppContainer's AC folder` });
-  });
-
-  it('refuses an AC folder that belongs to another package', () => {
-    const answer = packageDataRoot(join(packages, 'other_1', 'AC'), family);
+  it('refuses a LocalCache folder that is not Roaming', () => {
+    const answer = packageDataRoot(join(root, 'LocalCache', 'Local'), family);
     expect(answer.ok).toBe(false);
     if (answer.ok) return;
-    expect(answer.error).toContain(family);
+    expect(answer.error).toContain('is not a package');
+  });
+
+  it("refuses another package's LocalCache\\Roaming", () => {
+    const answer = packageDataRoot(join(packages, 'Other_1', 'LocalCache', 'Roaming'), family);
+    expect(answer).toEqual({ ok: false, error: `${join(packages, 'Other_1')} is not named after the package family ${family}` });
+  });
+
+  it('refuses the plain Roaming AppData a process with no redirection is answered', () => {
+    expect(packageDataRoot(join('C:', 'Users', 'someone', 'AppData', 'Roaming'), family).ok).toBe(false);
   });
 });

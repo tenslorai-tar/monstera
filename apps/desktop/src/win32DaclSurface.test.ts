@@ -1,14 +1,12 @@
-import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { join } from 'node:path';
 
-import koffi from 'koffi';
 import { describe, expect, it } from 'vitest';
 
 import { isPackageDataLocked } from './hostDacl.js';
-import { PACKAGE_DATA_FOLDERS, lockPackageData } from './packageDataLock.js';
-import { appContainerFolder, createWin32DaclSurface, currentPackageFamilyName } from './win32DaclSurface.js';
+import { PACKAGE_DATA_FOLDERS, lockPackageData, packageDataRoot } from './packageDataLock.js';
+import { createWin32DaclSurface, currentPackageFamilyName, roamingRedirectionTarget } from './win32DaclSurface.js';
 import { currentUserSid } from './win32PipeSurface.js';
 
 /**
@@ -55,35 +53,15 @@ describe.skipIf(process.platform !== 'win32')('the Win32 DACL surface', () => {
   });
 
   /**
-   * WINDOWS' ANSWER FOR A CONTAINER THAT EXISTS, AND FOR ONE THAT DOES NOT. A profile created here stands for the
-   * package — Windows keeps every AppContainer's folder at `…\Packages\<name>\AC`, the package's included — and a name
-   * with no profile is the control, which must be refused rather than answered with a path someone assembled.
+   * THE CONTROL HALF, the only half a process with no package identity can reach: Windows answers the plain Roaming
+   * AppData, and the rule refuses it. The package half — `…\Packages\<family>\LocalCache\Roaming` — is answered only
+   * inside the identity, and is measured there (ADR-0023 Decision 17, point 3 as corrected), because a probe of an
+   * identity-dependent call reports on the identity it runs in.
    */
-  it('finds the AC folder of a container that exists, and refuses one that does not', () => {
-    const userenv = koffi.load('userenv.dll');
-    const create = userenv.func(
-      'int32 CreateAppContainerProfile(const char16_t *name, const char16_t *display, const char16_t *description, ' +
-        'void *capabilities, uint32 count, _Out_ void **sid)',
-    );
-    const remove = userenv.func('int32 DeleteAppContainerProfile(const char16_t *name)');
-    const freeSid = koffi.load('advapi32.dll').func('void *FreeSid(void *sid)');
-    const name = `monstera.test.containerfolder.${randomBytes(4).toString('hex')}`;
-    const sid: unknown[] = [null];
-    expect(create(name, name, name, null, 0, sid)).toBe(0);
-    freeSid(sid[0]);
-    try {
-      const found = appContainerFolder(name);
-      expect(found.ok).toBe(true);
-      if (!found.ok) return;
-      expect(basename(found.value)).toBe('AC');
-      expect(basename(dirname(found.value))).toBe(name);
-      expect(existsSync(found.value)).toBe(true);
-    } finally {
-      remove(name);
-    }
-    const gone = appContainerFolder(name);
-    expect(gone.ok).toBe(false);
-    if (gone.ok) return;
-    expect(gone.error).toContain('GetAppContainerFolderPath answered 0x80070002');
+  it('answers the plain Roaming AppData outside a package, and the rule refuses it', () => {
+    const answer = roamingRedirectionTarget();
+    expect(answer).toEqual({ ok: true, value: process.env['APPDATA'] });
+    if (!answer.ok) return;
+    expect(packageDataRoot(answer.value, 'Any.Family_0123456789abc').ok).toBe(false);
   });
 });

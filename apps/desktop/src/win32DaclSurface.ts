@@ -26,10 +26,7 @@ interface DaclBindings {
   readonly getDacl: Native;
   readonly localFree: Native;
   readonly familyName: Native;
-  readonly deriveContainerSid: Native;
-  readonly containerFolder: Native;
-  readonly sidToString: Native;
-  readonly freeSid: Native;
+  readonly knownFolderPath: Native;
   readonly coTaskMemFree: Native;
 }
 
@@ -39,7 +36,7 @@ function bind(): DaclBindings {
   if (bound !== undefined) return bound;
   const kernel = koffi.load('kernel32.dll');
   const advapi = koffi.load('advapi32.dll');
-  const userenv = koffi.load('userenv.dll');
+  const shell = koffi.load('shell32.dll');
   const ole = koffi.load('ole32.dll');
   // Written from the C prototype on the adjacent line, as the other Win32 surfaces are: koffi's `func()` is
   // assignable to any signature, so the pair reading together is the review mechanism.
@@ -65,12 +62,9 @@ function bind(): DaclBindings {
     ) as Native,
     localFree: kernel.func('void *LocalFree(void *memory)') as Native,
     familyName: kernel.func('long GetCurrentPackageFamilyName(_Inout_ uint32 *length, void *name)') as Native,
-    deriveContainerSid: userenv.func(
-      'int32 DeriveAppContainerSidFromAppContainerName(const char16_t *name, _Out_ void **sid)',
+    knownFolderPath: shell.func(
+      'int32 SHGetKnownFolderPath(const uint8 *id, uint32 flags, void *token, _Out_ void **path)',
     ) as Native,
-    containerFolder: userenv.func('int32 GetAppContainerFolderPath(const char16_t *sid, _Out_ void **path)') as Native,
-    sidToString: advapi.func('bool ConvertSidToStringSidW(void *sid, _Out_ void **text)') as Native,
-    freeSid: advapi.func('void *FreeSid(void *sid)') as Native,
     coTaskMemFree: ole.func('void CoTaskMemFree(void *memory)') as Native,
   };
   return bound;
@@ -117,40 +111,27 @@ export function createWin32DaclSurface(): DaclSurface {
   };
 }
 
+/** `FOLDERID_RoamingAppData`, `{3EB685DB-65F9-4CF6-A03A-E3EF65729F3D}`, as the GUID's in-memory bytes. */
+const ROAMING_APP_DATA = Buffer.from([
+  0xdb, 0x85, 0xb6, 0x3e, 0xf9, 0x65, 0xf6, 0x4c, 0xa0, 0x3a, 0xe3, 0xef, 0x65, 0x72, 0x9f, 0x3d,
+]);
+/** Return where the app's file-system virtualization sends the folder, rather than the name it shows. */
+const KF_FLAG_RETURN_FILTER_REDIRECTION_TARGET = 0x00040000;
+
 /**
- * The folder Windows keeps for an AppContainer named `name` — for a package family, `…\Packages\<family>\AC` — from
- * the SID Windows derives for that name (ADR-0023 Decision 17, amended point 3). `err` carries the HRESULT: an
- * uninstalled family answers `0x80070002`, measured 2026-09-30.
+ * Where this process's file-system virtualization sends Roaming AppData (ADR-0023 Decision 17, point 3 as corrected).
+ * Inside a package it is `…\Packages\<family>\LocalCache\Roaming`, measured 2026-09-30 while a same-named real folder
+ * existed; a process with no identity gets the plain path back, which the caller's rule refuses.
  */
-export function appContainerFolder(name: string): Result<string, string> {
+export function roamingRedirectionTarget(): Result<string, string> {
   const api = bind();
-  const sidText = derivedContainerSid(api, name);
-  if (!sidText.ok) return sidText;
   const path: unknown[] = [null];
-  const found = api.containerFolder(sidText.value, path) as number;
-  if (found !== 0) return err(`GetAppContainerFolderPath answered ${hresult(found)} for ${sidText.value}`);
+  const found = api.knownFolderPath(ROAMING_APP_DATA, KF_FLAG_RETURN_FILTER_REDIRECTION_TARGET, null, path) as number;
+  if (found !== 0) return err(`SHGetKnownFolderPath answered ${hresult(found)}`);
   try {
     return ok(koffi.decode(path[0], 'char16_t', -1) as string);
   } finally {
     api.coTaskMemFree(path[0]);
-  }
-}
-
-/** The SID Windows derives for an AppContainer name, as text; the binary SID is freed either way. */
-function derivedContainerSid(api: DaclBindings, name: string): Result<string, string> {
-  const sid: unknown[] = [null];
-  const derived = api.deriveContainerSid(name, sid) as number;
-  if (derived !== 0) return err(`DeriveAppContainerSidFromAppContainerName answered ${hresult(derived)}`);
-  try {
-    const text: unknown[] = [null];
-    if (api.sidToString(sid[0], text) !== true) return err('the derived SID could not be written as text');
-    try {
-      return ok(koffi.decode(text[0], 'char16_t', -1) as string);
-    } finally {
-      api.localFree(text[0]);
-    }
-  } finally {
-    api.freeSid(sid[0]);
   }
 }
 
