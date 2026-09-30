@@ -3409,3 +3409,34 @@ host, and the three hosts and three converters all hold the same capability, so
 each can also read the others' session directories — invariant 25(d)'s
 cross-document half. Decision 16 is still open, now with the premise corrected;
 which route ships is an architecture decision and the owner's.
+
+### Note, 2026-09-30 — the route the owner preferred is closed by Microsoft's policy
+
+Three routes were put to the owner: keep the app's data outside the package's
+storage, run the hosts from a copy, or give up the AppContainer. The owner chose
+the first for the test build, **on the condition that Microsoft's documentation
+allows a Store app like this one to use it**. It does not. Read 2026-09-30:
+
+- [`desktop6:FileSystemWriteVirtualization`](https://learn.microsoft.com/en-us/uwp/schemas/appxpackage/uapmanifestschema/element-desktop6-filesystemwritevirtualization)
+  (page dated 2026-06-05): *"This element is currently intended to be used only by
+  certain types of desktop PC games that are published by Microsoft and our
+  partners. It requires the **unvirtualizedResources** restricted capability."*
+- [App capability declarations](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/app-capability-declarations)
+  (dated 2026-09-08), `unvirtualizedResources`: designed for those games and for
+  packages with an external location, and *"not intended to be used for other
+  scenarios, because it could compromise the system's ability to uninstall
+  cleanly."* Restricted capabilities are *"subject to additional Store onboarding
+  policy and review"*; sideloading needs no approval.
+- [Flexible virtualization](https://learn.microsoft.com/en-us/windows/msix/desktop/flexible-virtualization)
+  (updated 2026-01-28): unvirtualizes only named folders under `AppData`, *"was
+  introduced in Windows 11"* — ignored on Windows 10, where the whole-AppData
+  declaration applies — and its example declares the same `unvirtualizedResources`
+  capability.
+
+So neither form is available to a Store app of this kind, and by the owner's
+condition neither the first route nor the second was built. The same page
+records a fact that bears on the question without a capability: outside
+`AppData`, *"the app can write to any location where the user has write
+access, including other parts of `%userprofile%`"* — writes there are not
+virtualized, and the measured refusal of a folder the package does not own
+applies to them. Whether that is acceptable is the owner's.
