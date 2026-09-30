@@ -94,3 +94,52 @@ ship; Document Builder's scripting, the dictionaries, the headers, `doctrenderer
 (retain notices, mark a modified version, show legal notices in an interactive interface, no trademark licence), and
 core's `3DPARTY.md` at the shipped build 9.4.0.130 declares 26 third-party components; `NOTICE` carries all of them,
 and says which of them are compiled into the Windows build was not established one by one.
+
+## Correction, 2026-09-30 — a workbook lost rows and sheets in silence (decision C)
+
+Two losses, both measured on generated workbooks, neither announced by x2t.
+
+**x2t stops at 1,500 pages.** The cut-off is `c_kMaxPrintPages = 1500` in sdkjs `cell/apiDefines.js`, a compiled
+constant (read 2026-09-30 through Sourcegraph); no instruction or parameter reaches it. A 50,000-row sheet of ten
+columns came out on exactly 1,500 pages holding rows 1 to 38,250, and a 100,000-row sheet as the same bytes.
+
+**x2t prints the ACTIVE sheet only.** Without a `spreadsheetLayout` parameter it follows `activeTab`, not
+`tabSelected`, and prints that one sheet at the author's own page setup; every other sheet was missing from every
+workbook this build imported. Any `spreadsheetLayout` makes it print every visible sheet — and redraws them:
+`ignorePrintArea: false` alone printed a two-sheet workbook about ten times smaller (1,028 text runs on page one
+against 102), and `scale: 100` would override a scale the author chose. So the parameter is not sent.
+
+**The decision: a workbook is converted in parts and joined.** The compose host, which already parses a file picked for
+import (ADR-0060), reads the workbook's sheets and writes one part per visible sheet — a copy in which that sheet is the
+active one and the only visible one. A part that answers exactly 1,500 pages may have been cut, so it is halved by
+rows through the print area — the author's own area intersected, never replaced — and each half converted again, in
+place in the order. The parts' PDFs are joined in the same host with pdf-lib. The outline's answer and the join's list of
+parts cross in files (ADR-0125 and its addendum), because the host route check measured both past a frame at their
+schemas' bounds the day they were declared. Hidden sheets stay out, as Excel's
+printing leaves them out. What cannot be halved — a print area this build cannot narrow, or one row that alone reaches
+the cut-off — is named: the PDF opens and the person is told which sheet and which rows are not in it
+(`opened-incomplete`), and a `workbook-rows-missing` line goes to the log whatever the open answered. Rows are never
+lost in silence. A `.docx` or `.pptx` converts once, as before.
+
+**A third loss, found by the live run: a large sheet can exhaust the job.** x2t alone on a 100,000-row sheet of ten
+narrow columns (about 51 rows a page) ended with *"RangeError: Array buffer allocation failed"*, exit 80, against the
+2 GiB limit (`scripts/research/officeWorkbookLive.mjs`, 2026-09-30), and the whole import failed. Across three runs
+of the same workbook that happened twice; the third came out cut at 1,500 pages, rows 1 to 76,500 — so at that size
+x2t sits at the limit and either outcome happens. The earlier
+100,000-row fixture of wider cells peaked at 1,285 MiB — but it reached the cut-off at row 38,250 and so printed half
+as many rows; whether rows loaded or rows printed drives the peak was not separated. Both shrink with a smaller part,
+and size is what this build can change, so a part that times out or exits without a PDF is halved as well. A workbook x2t fails on for another reason would then halve without end, so each
+sheet spends at most eight failed conversions; past that, its failing blocks are named. A converter that could not
+start is not a size, and fails the import at once.
+
+**Measured through the product, 2026-09-30.** The shipped composition, x2t and compose host imported that workbook —
+`Big` 100,000 rows and active, `Hidden` 50 rows and hidden, `Small` 300 rows — as 1,968 pages holding every row of
+both visible sheets, first to last, and none of the hidden one, answering `opened` with nothing missing — twice, once
+by each route. In one run (562 s) the whole sheet reached the cut-off and x2t alone, the control, printed 1,500 pages
+holding rows 1 to 76,500 of `Big` and nothing of `Small`. In the other (570 s, with the outline and the join on their
+file routes) the whole sheet exhausted the job, one `converter-failed` line said so, and its two halves converted; x2t
+alone produced no PDF at all.
+
+**Rejected:** a `spreadsheetLayout` parameter (it redraws the workbook, above); patching sdkjs's constant (the tree is
+ONLYOFFICE's archive, pinned file by file, and a modified script would make this build a modified ONLYOFFICE under its
+Section 7 terms for one number); importing with a warning alone (the owner's rule: only if parts are impossible).

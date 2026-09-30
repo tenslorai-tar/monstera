@@ -57,13 +57,17 @@ export interface ConverterPlatform {
 export type ConversionFailure =
   | ConverterFailure
   | { readonly stage: 'area'; readonly detail: string }
-  | { readonly stage: 'no-output'; readonly said: string | null };
+  | { readonly stage: 'no-output'; readonly said: string | null }
+  /** A workbook's parts could not be made or joined (decision C) — the compose host's answer, in words. */
+  | { readonly stage: 'workbook'; readonly detail: string };
 
 /** A failure in words, for a converter's error message and the shell log. */
 export function describeConversionFailure(failure: ConversionFailure): string {
   switch (failure.stage) {
     case 'area':
       return `the converter's directories: ${failure.detail}`;
+    case 'workbook':
+      return `the workbook could not be converted in parts: ${failure.detail}`;
     case 'start':
       return `the converter did not start contained (${failure.failure.stage}): ${failure.failure.detail}`;
     case 'timed-out':

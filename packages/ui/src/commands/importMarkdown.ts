@@ -82,6 +82,9 @@ export function markdownImportProblem(
       return { reason: 'absent' };
     case 'at-capacity':
       return { reason: 'at-capacity' };
+    // THE DOCUMENT OPENED, and the rows that did not arrive are named — never lost in silence (decision C).
+    case 'opened-incomplete':
+      return { reason: 'workbook-incomplete', missing: answer.missing };
     // `cancelled` is a person changing their mind; `opened`, `already-open` and
     // `appended` are the document they asked for. Named rather than defaulted, so an
     // outcome a channel gains later is a lint error here instead of a silence.
@@ -242,14 +245,15 @@ export function newFromOfficeCommand(deps: {
         return;
       }
       const result = answer.value;
-      if (result.kind === 'opened') {
+      // OPENED EITHER WAY — the tab first, then what did not arrive, so the person reads the list beside the document.
+      if (result.kind === 'opened' || result.kind === 'opened-incomplete') {
         deps.onOpened({
           docId: result.docId,
           version: result.version,
           byteLength: result.byteLength,
           name: result.name,
         });
-        return;
+        if (result.kind === 'opened') return;
       }
       if (result.kind === 'already-open') {
         deps.onAlreadyOpen(result.docId);

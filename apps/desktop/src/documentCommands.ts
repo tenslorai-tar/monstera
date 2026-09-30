@@ -159,6 +159,7 @@ import { type LayoutTextSource, LayoutTextFailedError } from './layoutText.js';
 import {
   type OfficeConversion,
   type OfficeSource,
+  type WorkbookBlock,
   OfficeConversionFailedError,
   officeImportFormatOf,
 } from './officeConversion.js';
@@ -862,7 +863,8 @@ export interface OfficeImport {
 
 /** What converting a picked Office file into a file on disk answers. {@link ComposeImportOutcome}'s shape. */
 export type OfficeImportOutcome =
-  | { readonly kind: 'written'; readonly destination: string }
+  /** Written — and `missing` names any rows of a workbook the PDF does not hold (decision C); empty otherwise. */
+  | { readonly kind: 'written'; readonly destination: string; readonly missing: readonly WorkbookBlock[] }
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'too-large'; readonly limitBytes: number }
   | { readonly kind: 'unreadable' }
@@ -5158,7 +5160,7 @@ export class DocumentCommands {
       );
       if (written.kind === 'refused') return { kind: 'destination-contested', openElsewhere: written.others.length };
       if (written.kind === 'write-failed') return { kind: 'write-failed' };
-      return { kind: 'written', destination };
+      return { kind: 'written', destination, missing: converted.missing };
     } finally {
       // A STREAM READ TO ITS END HAS REMOVED THE AREA ALREADY; every other path has not.
       converted.discard();

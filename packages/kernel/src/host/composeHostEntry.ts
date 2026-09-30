@@ -13,6 +13,7 @@ import { composeChannels } from './composeChannels.js';
 import { type ImageOptimizer, type InlineImageKeeper, createComposeHandlers } from './composeHandlers.js';
 import { probeContainment } from './containment.js';
 import type { HostArea } from './engineHandlers.js';
+import { sessionFileAnswers } from './fileAnswers.js';
 import { startEngineHost } from './hostBody.js';
 import { hostFilesystem, hostPipeStream } from './hostNodeSurfaces.js';
 import { createHostSessions } from './hostSessions.js';
@@ -120,14 +121,16 @@ const keepInlineImagesIn: InlineImageKeeper | null =
           : { kind: 'kept', bytes: (await stat(output)).size, converted: kept.converted, left: kept.left };
       };
 
+// AREAS, NOT SESSIONS. This host holds no parse between calls, and it holds the
+// granted directories anyway (ADR-0048 Decision 2): a call that carried its own
+// directories would be a channel through which a confused main could redirect
+// bytes. One table, which the handlers and the file routes both read.
+const areas = createHostSessions<HostArea>(cryptoBytes);
+
 const handlers = createComposeHandlers({
   keepInlineImages: keepInlineImagesIn,
   optimize,
-  // AREAS, NOT SESSIONS. This host holds no parse between calls, and it holds the
-  // granted directories anyway (ADR-0048 Decision 2): a call that carried its own
-  // directories would be a channel through which a confused main could redirect
-  // bytes.
-  areas: createHostSessions<HostArea>(cryptoBytes),
+  areas,
   files: hostFilesystem,
   probe: probeContainment,
   composeMarkdown,
@@ -150,6 +153,8 @@ startEngineHost(
       );
     },
     maxInFlight: ENGINE_HOST_MAX_IN_FLIGHT,
+    // A WORKBOOK'S OUTLINE AND A JOIN'S LIST cross in files (ADR-0125): the area's own directories, the PDFium host's rule.
+    fileAnswers: sessionFileAnswers(areas, hostFilesystem),
   },
   (reason) => {
     process.stderr.write(`MONSTERA_HOST_ENDED ${reason.code}: ${reason.detail}\n`);

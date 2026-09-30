@@ -222,7 +222,7 @@ import type { ShellLog } from './shellLog.js';
 import type { CrashReports } from './crashReports.js';
 import type { ConverterPlatform } from './converterSession.js';
 import { createLayoutTextSource } from './layoutText.js';
-import { createOfficeSource } from './officeConversion.js';
+import { type WorkbookComposer, createOfficeSource } from './officeConversion.js';
 import { createPdfaSource } from './pdfaConversion.js';
 import { createAssistant } from './assistant.js';
 import type { PrintDestination } from './printing.js';
@@ -1445,7 +1445,11 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     officeImport:
       officeImport === null
         ? null
-        : { source: officeImport.source, convert: createOfficeSource(officeImport.platform, failures) },
+        : {
+            source: officeImport.source,
+            // A WORKBOOK IN PARTS through the compose host (decision C), which alone reads the file's sheets.
+            convert: createOfficeSource(officeImport.platform, failures, composeHost?.workbooks ?? null),
+          },
     // OPTIMIZE, MuPDF's image rewriter in the compose host (ADR-0087). A host started without the
     // native library answers `unavailable` itself, so this is `null` only where there is no host.
     optimizer: composeHost === null ? null : composeHost.optimize,
@@ -2975,6 +2979,7 @@ function composeHostBinding(
   readonly composeImages: NonNullable<ComposeImages>;
   readonly optimize: OptimizeSource;
   readonly keepInlineImages: PdfiumInputKeeper;
+  readonly workbooks: WorkbookComposer;
   readonly close: () => Promise<void>;
 } {
   /** What one built host holds. Cleared together, or not at all. */
@@ -2990,8 +2995,16 @@ function composeHostBinding(
   const areas = sessionAreas(platform);
 
   const connect = async (): Promise<Live> => {
+    const answerArea: { handle: string | null; area: SessionArea | null } = { handle: null, area: null };
     const live = await createEngineHostConnection(platform.surfaces, {
       pipeName: `\\\\.\\pipe\\monstera-compose-${randomBytes(16).toString('hex')}`,
+      // A WORKBOOK'S OUTLINE AND A JOIN'S LIST cross in files (ADR-0125), in the area this host is given below —
+      // `pdfiumHostBinding`'s binding, and for its reason no file-routed call is made before `engine/open`.
+      fileAnswers: fileAnswersFor(composeChannels, (params) =>
+        answerArea.handle !== null && (params as { readonly session?: unknown } | null)?.session === answerArea.handle
+          ? (answerArea.area ?? undefined)
+          : undefined,
+      ),
       user: platform.user,
       container: platform.container,
       readBytes: 64 * 1024,
@@ -3055,6 +3068,8 @@ function composeHostBinding(
       live.value.close();
       throw new Error(`the compose host refused its area: ${opened.error.code}`);
     }
+    answerArea.handle = opened.value.session;
+    answerArea.area = { snapshotDirectory: paths.snapshot, outputDirectory: paths.output };
 
     return { connection: live.value, client, paths, session: opened.value.session };
   };
@@ -3263,6 +3278,85 @@ function composeHostBinding(
       } finally {
         if (keptPath !== null) await rm(keptPath, { force: true });
       }
+    },
+
+    // A WORKBOOK IN PARTS (decision C). What main places — the picked workbook and each part's PDF — goes into the
+    // snapshot directory under a minted name and stays until `remove`, because the plan reads the workbook once per part.
+    // What the host writes — a part workbook, the joined PDF — is read back from the output directory and held to the
+    // count it reported, `compose`'s check; a failure code is a fault, and an answer about the file is returned.
+    workbooks: {
+      put: async (source) => {
+        const built = await ensure();
+        const name = areas.mintName();
+        await writeFile(join(built.paths.snapshot, name), source);
+        return name;
+      },
+      remove: async (name) => {
+        const built = await ensure();
+        await rm(join(built.paths.snapshot, name), { force: true });
+      },
+      outline: async (from) => {
+        const built = await ensure();
+        const answer = await built.client['engine/workbook-outline']({ session: built.session, from });
+        if (!answer.ok) throw new Error(`the compose host could not read the workbook: ${answer.error.code}`);
+        return answer.value.kind === 'outline' ? answer.value.sheets : null;
+      },
+      part: async (from, sheet, rows) => {
+        const built = await ensure();
+        const area = { snapshotDirectory: built.paths.snapshot, outputDirectory: built.paths.output };
+        const into = areas.mintName();
+        const answer = await built.client['engine/workbook-part']({
+          session: built.session,
+          from,
+          into,
+          sheet,
+          rows: rows === null ? null : { from: rows.from, to: rows.to },
+        });
+        if (!answer.ok) throw new Error(`the compose host could not cut the workbook: ${answer.error.code}`);
+        if (answer.value.kind !== 'written') return { kind: answer.value.kind };
+        return { kind: 'written', bytes: await takeComposed(area, into, answer.value.bytes) };
+      },
+      pages: async (from) => {
+        const built = await ensure();
+        const answer = await built.client['engine/pdf-pages']({ session: built.session, from });
+        if (!answer.ok) throw new Error(`the compose host could not count the pages: ${answer.error.code}`);
+        return answer.value.kind === 'counted' ? answer.value.pages : null;
+      },
+      // `optimize`'s copy: the joined PDF streamed from the output directory, held to the reported count first, and
+      // removed once read or discarded.
+      join: async (names) => {
+        const built = await ensure();
+        const into = areas.mintName();
+        const joinedPath = join(built.paths.output, into);
+        const discard = (): Promise<void> => rm(joinedPath, { force: true });
+        const answer = await built.client['engine/join-pdfs']({ session: built.session, from: [...names], into });
+        if (!answer.ok) {
+          await discard();
+          throw new Error(`the compose host could not join the parts: ${answer.error.code}`);
+        }
+        if (answer.value.kind !== 'joined') return null;
+        const written = (await stat(joinedPath)).size;
+        if (written !== answer.value.bytes) {
+          await discard();
+          throw new Error(
+            `the compose host reported ${String(answer.value.bytes)} bytes and the joined PDF holds ` +
+              `${String(written)}, so it is not the one it wrote.`,
+          );
+        }
+        async function* output(): AsyncIterable<Uint8Array> {
+          try {
+            for await (const chunk of createReadStream(joinedPath)) yield chunk as Uint8Array;
+          } finally {
+            await discard();
+          }
+        }
+        return {
+          output: output(),
+          discard: () => {
+            void discard();
+          },
+        };
+      },
     },
 
     close: async () => {

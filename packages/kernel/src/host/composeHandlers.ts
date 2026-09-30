@@ -2,6 +2,14 @@ import type { Handlers } from '@monstera/contract';
 
 import { type ComposePageSize, ComposeRefused } from '../composeLayout.js';
 import type { ImportImage } from '../imageCompose.js';
+import {
+  WorkbookUnreadable,
+  WorkbookUnsplittable,
+  joinPdfs,
+  pdfPageCount,
+  workbookOutline,
+  workbookPart,
+} from '../workbookParts.js';
 import type { ComposeChannels } from './composeChannels.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
 import type { HostArea, HostFilesystem, HostSessions } from './engineHandlers.js';
@@ -101,6 +109,15 @@ export function createComposeHandlers({
   // missing area is a code main can act on.
   const gone = { ok: false, error: { code: 'no-such-session' } } as const;
 
+  /** A source main wrote into the area, or `null` where it is not there — the transport's miss, not the file's. */
+  const readSource = async (held: HostArea, name: string): Promise<Uint8Array | null> => {
+    try {
+      return await files.readSnapshot(held.snapshotDirectory, name);
+    } catch {
+      return null;
+    }
+  };
+
   /**
    * One compose handler, for whichever composer a channel names.
    *
@@ -186,6 +203,75 @@ export function createComposeHandlers({
           : { ok: true, value: { kind: 'unreadable' } };
       }
       return { ok: true, value: { kind: 'optimized', bytes: answer.bytes } };
+    },
+
+    // A WORKBOOK'S OUTLINE AND PARTS (decision C, `workbookParts.ts`): a file main did not write is the transport's, a
+    // package this reader cannot use is `unreadable`, and a print area it cannot narrow is `unsplittable` — each an
+    // answer main names to the person, never a fault.
+    'engine/workbook-outline': async ({ session, from }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+      const source = await readSource(held, from);
+      if (source === null) return { ok: false, error: { code: 'asset-missing' } };
+      try {
+        return { ok: true, value: { kind: 'outline', sheets: [...workbookOutline(source)] } };
+      } catch (error) {
+        if (error instanceof WorkbookUnreadable) return { ok: true, value: { kind: 'unreadable' } };
+        throw error;
+      }
+    },
+
+    'engine/workbook-part': async ({ session, from, into, sheet, rows }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+      const source = await readSource(held, from);
+      if (source === null) return { ok: false, error: { code: 'asset-missing' } };
+      let part: Uint8Array | null;
+      try {
+        part = workbookPart(source, sheet, rows);
+      } catch (error) {
+        if (error instanceof WorkbookUnsplittable) return { ok: true, value: { kind: 'unsplittable' } };
+        if (error instanceof WorkbookUnreadable) return { ok: true, value: { kind: 'unreadable' } };
+        throw error;
+      }
+      if (part === null) return { ok: true, value: { kind: 'nothing' } };
+      return { ok: true, value: { kind: 'written', bytes: await files.writeOutput(held.outputDirectory, into, part) } };
+    },
+
+    'engine/pdf-pages': async ({ session, from }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+      const source = await readSource(held, from);
+      if (source === null) return { ok: false, error: { code: 'asset-missing' } };
+      const pages = await pdfPageCount(source);
+      return { ok: true, value: pages === null ? { kind: 'unreadable' } : { kind: 'counted', pages } };
+    },
+
+    // EACH PART READ WHEN IT IS JOINED, not all first, so the host holds the joined document and one part at a time. A
+    // part main did not write stops the reading, and what was joined before it is dropped.
+    'engine/join-pdfs': async ({ session, from, into }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+      // AN OBJECT, read after the join: a `let` set inside the generator is one the compiler narrows to its first value
+      // across the call, and the check after it would read as dead.
+      const read = { absent: false };
+      async function* parts(area: HostArea): AsyncIterable<Uint8Array> {
+        for (const name of from) {
+          const source = await readSource(area, name);
+          if (source === null) {
+            read.absent = true;
+            return;
+          }
+          yield source;
+        }
+      }
+      const joined = await joinPdfs(parts(held));
+      if (read.absent) return { ok: false, error: { code: 'asset-missing' } };
+      if (!('pdf' in joined)) return { ok: true, value: { kind: 'unreadable', item: joined.unreadable } };
+      return {
+        ok: true,
+        value: { kind: 'joined', bytes: await files.writeOutput(held.outputDirectory, into, joined.pdf), pages: [...joined.pages] },
+      };
     },
 
     // `engine/optimize`'s three decisions, over the inline-image keeper (ADR-0126).

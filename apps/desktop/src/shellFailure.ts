@@ -113,6 +113,11 @@ export type ShellFailureEvent =
    * why. The edit ran anyway — the owner's rule is never to refuse it — so this line is where the risk is said.
    */
   | 'inline-images-left'
+  /**
+   * Rows of a workbook an Office import could not convert (decision C): which sheet and which rows. The person's dialog
+   * names them when the PDF opens; this line holds them whatever the open answered, since the file on disk lacks them.
+   */
+  | 'workbook-rows-missing'
   | 'document-unreadable'
   | 'unresponsive'
   /**

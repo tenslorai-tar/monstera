@@ -539,6 +539,8 @@ export const MARKDOWN_IMPORT_TOO_MANY_COLUMNS_NO_LINE = messageKey(
 );
 export const MARKDOWN_IMPORT_WRITE_FAILED = messageKey('dialog.markdown-import-problem.write-failed');
 export const MARKDOWN_IMPORT_CONVERSION_FAILED = messageKey('dialog.markdown-import-problem.conversion-failed');
+export const MARKDOWN_IMPORT_WORKBOOK_INCOMPLETE = messageKey('dialog.markdown-import-problem.workbook-incomplete');
+export const MARKDOWN_IMPORT_WORKBOOK_BLOCK = messageKey('dialog.markdown-import-problem.workbook-block');
 export const MARKDOWN_IMPORT_ABSENT = messageKey('dialog.markdown-import-problem.absent');
 export const MARKDOWN_IMPORT_AT_CAPACITY = messageKey('dialog.markdown-import-problem.at-capacity');
 export const MARKDOWN_IMPORT_IMAGE_UNREADABLE = messageKey(
@@ -4119,6 +4121,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [MARKDOWN_IMPORT_CONTESTED]:
     'That file is open in this app, so nothing was written there. Close it, or choose another name.',
   [MARKDOWN_IMPORT_WRITE_FAILED]: 'The PDF could not be saved there. Nothing was imported.',
+  [MARKDOWN_IMPORT_WORKBOOK_INCOMPLETE]:
+    'The PDF is open, but these rows of the workbook are not in it. The converter could not convert them, even in smaller parts:',
+  [MARKDOWN_IMPORT_WORKBOOK_BLOCK]: 'Sheet “{sheet}”, rows {from} to {to}',
   [MARKDOWN_IMPORT_CONVERSION_FAILED]:
     'That file could not be turned into a PDF. It may be damaged, or not the kind of file its name says. ' +
     'Nothing was imported.',

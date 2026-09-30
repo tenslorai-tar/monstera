@@ -2668,8 +2668,16 @@ function newFromOfficeHandler(
         return ok({ kind: 'destination-contested', openElsewhere: converted.openElsewhere });
       case 'write-failed':
         return ok({ kind: 'write-failed' });
-      case 'written':
-        return ok((await openPath(deps, converted.destination)).outcome);
+      case 'written': {
+        const opened = (await openPath(deps, converted.destination)).outcome;
+        // THE ROWS NOT IN IT RIDE WITH THE OPEN (decision C): a document that opened is told which rows it lacks, and
+        // an open that answered anything else answers that — the file on disk is the same either way.
+        return ok(
+          opened.kind === 'opened' && converted.missing.length > 0
+            ? { ...opened, kind: 'opened-incomplete', missing: [...converted.missing] }
+            : opened,
+        );
+      }
     }
   };
 }

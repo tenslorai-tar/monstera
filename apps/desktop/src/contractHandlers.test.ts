@@ -388,6 +388,39 @@ describe('app.openWebPage', () => {
   });
 });
 
+/**
+ * Decision C at the channel: rows of a workbook the PDF does not hold ride with the open, so the person is told — and a
+ * document that arrived whole answers exactly what `document.open` does.
+ */
+describe('document.newFromOffice — the rows a workbook lacks', () => {
+  const OPENED = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'Budget.pdf' } as const;
+  const converting = (missing: readonly { sheet: string; from: number; to: number }[]): DocumentCommands =>
+    ({
+      convertOfficeFile: () => Promise.resolve({ kind: 'written', destination: 'C:/docs/Budget.pdf', missing }),
+    }) as unknown as DocumentCommands;
+
+  it('answers opened-incomplete, naming each block, where the converter reported rows missing', async () => {
+    const missing = [{ sheet: 'Data', from: 38_251, to: 50_000 }];
+    const { handlers, opened } = harness(OPENED, () => Promise.resolve(null), undefined, { commands: converting(missing) });
+
+    const result = await handlers['document.newFromOffice']({});
+
+    expect(result).toStrictEqual({
+      ok: true,
+      value: { kind: 'opened-incomplete', docId: A_DOC, version: 1, byteLength: 1024, name: 'Budget.pdf', missing },
+    });
+    expect(opened).toHaveLength(1);
+  });
+
+  it('CONTROL: answers plain opened where nothing is missing', async () => {
+    const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands: converting([]) });
+
+    const result = await handlers['document.newFromOffice']({});
+
+    expect(result).toStrictEqual({ ok: true, value: { kind: 'opened', docId: A_DOC, version: 1, byteLength: 1024, name: 'Budget.pdf' } });
+  });
+});
+
 describe('document.open', () => {
   it('never asks the renderer where the document is', async () => {
     // THE INVARIANT, asserted at the one place it could be broken. The handler

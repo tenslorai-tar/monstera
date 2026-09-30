@@ -24,6 +24,8 @@ import {
   MAX_IMAGE_PAGES,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
+  MAX_WORKBOOK_ROW,
+  MAX_WORKBOOK_SHEET_NAME,
   MAX_LINK_URI,
   MAX_LAYER_NAME_LENGTH,
   MAX_BLOCK_LINES,
@@ -1137,8 +1139,8 @@ const cloudDoneSchema = z.discriminatedUnion('kind', [
  */
 export const MAX_LAUNCH_DOCUMENTS = 32;
 
-const openOutcomeSchema = z.discriminatedUnion('kind', [
-  z.object({
+/** A document that opened — `document.open`'s success, and the base of an import that opened with a note. */
+const openedSchema = z.object({
     kind: z.literal('opened'),
     docId: docIdSchema,
     version: docVersionSchema,
@@ -1168,7 +1170,10 @@ const openOutcomeSchema = z.discriminatedUnion('kind', [
      * `documentService.ts` sends `basename` for that reason.
      */
     name: z.string().max(MAX_DOCUMENT_NAME_LENGTH),
-  }),
+  });
+
+const openOutcomeSchema = z.discriminatedUnion('kind', [
+  openedSchema,
   z.object({ kind: z.literal('already-open'), docId: docIdSchema }),
   z.object({ kind: z.literal('absent') }),
   z.object({
@@ -1229,6 +1234,9 @@ const composedImportOutcomeSchema = z.discriminatedUnion('kind', [
   importWriteFailedSchema,
 ]);
 
+/** How many blocks of a workbook an import may name as not converted. */
+export const MAX_OFFICE_MISSING_BLOCKS = 64;
+
 /**
  * What an Office import answers
  * ([ADR-0120](../../../docs/DECISIONS/0120-office-import-is-onlyoffices-x2t-contained.md)).
@@ -1239,6 +1247,27 @@ const composedImportOutcomeSchema = z.discriminatedUnion('kind', [
  */
 const officeImportOutcomeSchema = z.discriminatedUnion('kind', [
   ...openOutcomeSchema.options,
+  /**
+   * Opened, and some of the workbook could not be converted — NAMED, never lost in silence (decision C). A block is a
+   * sheet and its first and last row that the converter could not convert even in smaller parts: past its 1,500-page
+   * cut-off in a print area this build cannot narrow, or failing at every size it was tried. Every other row of every
+   * visible sheet is in the document.
+   */
+  openedSchema.extend({
+    kind: z.literal('opened-incomplete'),
+    missing: z
+      .array(
+        z
+          .object({
+            sheet: z.string().max(MAX_WORKBOOK_SHEET_NAME),
+            from: z.number().int().min(1).max(MAX_WORKBOOK_ROW),
+            to: z.number().int().min(1).max(MAX_WORKBOOK_ROW),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(MAX_OFFICE_MISSING_BLOCKS),
+  }),
   importTooLargeSchema,
   importUnreadableSchema,
   /** The converter produced no PDF from the file. Nothing was written. */

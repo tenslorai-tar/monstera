@@ -3685,6 +3685,17 @@ export const MAX_OFFICE_IMPORT_BYTES = 100 * 1024 * 1024;
 /** The most images one import takes. 500 small images measured at 10.3 s. */
 export const MAX_IMPORT_IMAGES = 500;
 
+/** A worksheet's last row, the format's (ECMA-376 §18.3.1.73) — what a workbook row named anywhere is bounded by. */
+export const MAX_WORKBOOK_ROW = 1_048_576;
+/** A sheet name as a file may spell it: Excel's own limit is 31, and a file past it is still read, to this bound. */
+export const MAX_WORKBOOK_SHEET_NAME = 255;
+/**
+ * Parts one workbook import converts and joins (decision C). A part is at most x2t's 1,500 pages and is only halved when
+ * it reaches that, so this bounds an import at over a million pages — past any workbook, and a stop for a crafted one
+ * that halves forever.
+ */
+export const MAX_WORKBOOK_PARTS = 1024;
+
 /**
  * The most pixels one PNG may have: 100 megapixels, about 1.1 GiB of decode working
  * memory by the slope above, inside the host's 3 GiB job limit with room to spare.

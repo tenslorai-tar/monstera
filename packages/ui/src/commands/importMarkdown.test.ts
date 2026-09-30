@@ -330,6 +330,37 @@ describe('newFromOfficeCommand (ADR-0120)', () => {
     ]);
   });
 
+  it('OPENS the workbook’s PDF and then NAMES the rows it lacks (decision C)', async () => {
+    const missing = [
+      { sheet: 'Data', from: 38_251, to: 50_000 },
+      { sheet: 'Totals', from: 1, to: 4 },
+    ];
+    const { client } = recording({
+      'document.newFromOffice': ok({
+        kind: 'opened-incomplete',
+        docId: COMPOSED,
+        version: asDocVersion(1),
+        byteLength: 4096,
+        name: 'Budget.pdf',
+        missing,
+      }),
+    });
+    const { calls, record, ask } = callbacks();
+
+    await newFromOfficeCommand({
+      client,
+      ask,
+      onOpened: record('opened'),
+      onAlreadyOpen: record('already-open'),
+    }).run(CONTEXT);
+
+    // THE TAB FIRST, THEN THE LIST: the person reads which rows are missing beside the document that lacks them.
+    expect(calls).toStrictEqual([
+      { name: 'opened', value: { docId: COMPOSED, version: 1, byteLength: 4096, name: 'Budget.pdf' } },
+      { name: 'ask', value: { id: 'dialog.markdown-import-problem', props: { reason: 'workbook-incomplete', missing } } },
+    ]);
+  });
+
   it('TELLS the person when the converter made no PDF — its own reason, not an unreadable file', async () => {
     const { client } = recording({ 'document.newFromOffice': ok({ kind: 'conversion-failed' }) });
     const { calls, record, ask } = callbacks();

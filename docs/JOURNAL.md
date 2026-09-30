@@ -1021,6 +1021,19 @@ redaction beside the picture removed the text and kept the picture. The owner's 
 anyway, so the 0.1.5.0 loss may have been the host ending rather than this; the fix stands on the generated fixture,
 as the owner asked.
 
+**C — every row of a workbook.** The cut-off is `c_kMaxPrintPages = 1500` in sdkjs `cell/apiDefines.js`, compiled into
+the script x2t runs; no instruction reaches it, so it is not a setting to remove. Measuring it found a second loss that
+nobody had reported: x2t prints only the ACTIVE sheet, so every workbook with more than one sheet had been arriving
+without the others. The only parameter that prints every sheet, `spreadsheetLayout`, also redrew them about ten times
+smaller, so it is not sent. Parts it is: the compose host cuts one part per visible sheet, a part that reaches 1,500
+pages is halved through the print area, and the PDFs are joined in the same host. What cannot be halved is named to
+the person when the PDF opens, and logged. The live run found a third loss: x2t alone on 100,000 rows ran out of its
+2 GiB job and the whole import failed — in two runs of three; the other came out cut. So a part that fails is halved
+too, with eight failures per sheet as the stop. Through the product, that workbook arrived as 1,968 pages with all
+100,300 visible rows and no hidden one, by both routes: halved at the cut-off in 562 s, and halved after the memory
+failure in 570 s (`officeWorkbookLive.mjs`, seven cases each). ADR-0120's correction holds the reasoning. This closes
+the stage audit's YYYYYY-5 and YYYYYY-6.
+
 ---
 
 ## 2026-09-30 — Edit text on the owner's documents (ADR-0125), and the same class through every contained process

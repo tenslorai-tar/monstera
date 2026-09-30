@@ -28,10 +28,11 @@
  *
  * Usage (Windows, after `npm run build`, `npm run provision:ghostscript` and `npm run provision:onlyoffice`):
  *   node scripts/research/converterPeaks.mjs
- *   node scripts/research/converterPeaks.mjs --rows N [--limit-mib M] [--timeout-s S] [--keep <pdf path>]
+ *   node scripts/research/converterPeaks.mjs --rows N [--limit-mib M] [--timeout-s S] [--keep <pdf path>] [--area FROM:TO]
+ *   node scripts/research/converterPeaks.mjs --file <xlsx> [--limit-mib M] [--timeout-s S] [--keep <pdf path>]
  */
 
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -227,12 +228,14 @@ function photoDocx() {
 }
 
 /**
- * A workbook of `count` rows by 10 columns, numbers and short text.
+ * A workbook of `count` rows by 10 columns, numbers and short text — with `printArea`, the sheet's own print area
+ * (`_xlnm.Print_Area`, ECMA-376 §18.2.6) set to that range of rows, which is what a person's print area is.
  *
  * @param {number} count
+ * @param {{ from: number, to: number }} [printArea]
  * @returns {Uint8Array}
  */
-function largeXlsx(count) {
+function largeXlsx(count, printArea) {
   const rows = [];
   const columns = 'ABCDEFGHIJ';
   for (let r = 1; r <= count; r += 1) {
@@ -254,7 +257,11 @@ function largeXlsx(count) {
     ),
     'xl/workbook.xml': strToU8(
       `${XML}<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${REL}">` +
-        '<sheets><sheet name="Large" sheetId="1" r:id="rId1"/></sheets></workbook>',
+        '<sheets><sheet name="Large" sheetId="1" r:id="rId1"/></sheets>' +
+        (printArea === undefined
+          ? ''
+          : `<definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">Large!$A$${String(printArea.from)}:$J$${String(printArea.to)}</definedName></definedNames>`) +
+        '</workbook>',
     ),
     'xl/_rels/workbook.xml.rels': strToU8(
       `${XML}<Relationships xmlns="${PKG_REL}"><Relationship Id="rId1" Type="${REL}/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`,
@@ -292,6 +299,13 @@ function numberFlag(flag) {
   return at === -1 ? undefined : Number(process.argv[at + 1]);
 }
 const ROWS = numberFlag('--rows');
+/** `--file <xlsx>` converts that workbook instead of a generated one — for variants a research script wrote. */
+const fileAt = process.argv.indexOf('--file');
+const FILE = fileAt === -1 ? undefined : process.argv[fileAt + 1];
+/** `--area FROM:TO` sets the one workbook's print area to those rows. */
+const areaAt = process.argv.indexOf('--area');
+const AREA_ROWS = areaAt === -1 ? undefined : (process.argv[areaAt + 1] ?? '').split(':').map(Number);
+const PRINT_AREA = AREA_ROWS === undefined ? undefined : { from: AREA_ROWS[0] ?? 1, to: AREA_ROWS[1] ?? 1 };
 /** `--keep <path>` writes the one workbook's PDF there, so what x2t produced can be read rather than only sized. */
 const keepAt = process.argv.indexOf('--keep');
 const KEEP = keepAt === -1 ? undefined : process.argv[keepAt + 1];
@@ -361,7 +375,7 @@ async function run(converter, name, input, format) {
     const pieces = [];
     for await (const piece of converted.output) pieces.push(Buffer.from(piece));
     const output = Buffer.concat(pieces);
-    if (KEEP !== undefined && ROWS !== undefined) writeFileSync(KEEP, output);
+    if (KEEP !== undefined && (ROWS !== undefined || FILE !== undefined)) writeFileSync(KEEP, output);
     return { name, ok: true, inputBytes: input.length, outputBytes: output.length, ms: Date.now() - started, peak: seen.peak, said };
   } catch (error) {
     return { name, ok: false, inputBytes: input.length, outputBytes: 0, ms: Date.now() - started, peak: seen.peak, said: [...said, formatError(error)] };
@@ -374,8 +388,11 @@ const mib = (bytes) => (bytes === null ? 'UNREAD' : `${(bytes / 1048576).toFixed
 /** @type {string[]} */
 const failures = [];
 try {
-  if (ROWS !== undefined) {
-    const one = await run('office', `x2t xlsx (${String(ROWS)} x 10)`, largeXlsx(ROWS), 'xlsx');
+  if (ROWS !== undefined || FILE !== undefined) {
+    const one =
+      FILE !== undefined
+        ? await run('office', `x2t ${FILE}`, new Uint8Array(readFileSync(FILE)), 'xlsx')
+        : await run('office', `x2t xlsx (${String(ROWS)} x 10)`, largeXlsx(ROWS ?? 0, PRINT_AREA), 'xlsx');
     process.stdout.write(
       `${one.name}: ${one.ok ? 'ok' : 'FAILED'} in ${String(one.inputBytes)} B, out ${String(one.outputBytes)} B, ` +
         `${String(one.ms)} ms, job peak ${mib(one.peak)} (limit this run ${String(LIMIT_MIB ?? 'product')} MiB, ` +

@@ -4,7 +4,12 @@ import {
   COMPOSE_REFUSALS,
   MAX_IMPORT_IMAGES,
   MAX_PAGE_COORDINATE,
+  MAX_WORKBOOK_PARTS,
+  MAX_WORKBOOK_ROW,
+  MAX_WORKBOOK_SHEET_NAME,
   channel,
+  fileAnswered,
+  fileRequested,
   insertImagePageSchema,
 } from '@monstera/contract/host';
 
@@ -90,6 +95,9 @@ const composeResultSchema = z.discriminatedUnion('kind', [
  */
 const MAX_REWRITE_DPI = 2400;
 
+/** Sheets in one workbook this outline answers. Excel's own is memory; a workbook past this is a crafted one. */
+export const MAX_WORKBOOK_SHEETS = 4096;
+
 export const composeChannels = {
   ...hostAreaChannels(byteImageWire),
 
@@ -169,6 +177,107 @@ export const composeChannels = {
       z.object({ kind: z.literal('unchanged'), left: z.number().int().nonnegative() }).strict(),
       z.object({ kind: z.literal('unreadable') }).strict(),
       z.object({ kind: z.literal('unavailable') }).strict(),
+    ]),
+    ['no-such-session', 'asset-missing'],
+  ),
+
+  /**
+   * The sheets of a workbook a person picked, in order, with each one's state and last row — what main plans a
+   * workbook's parts from: one per visible sheet, since x2t prints the active sheet only, halved where a part reaches
+   * its 1,500-page cut-off (decision C, `workbookParts.ts`).
+   *
+   * IN A FILE (ADR-0125): the answer grows with the workbook — thousands of sheets, each name up to its bound — and the
+   * route check measured its schema at 6,476,226 bytes against a 262,144-byte frame.
+   */
+  'engine/workbook-outline': fileAnswered(
+    'Reads a workbook’s sheets, their states and last rows, from the area.',
+    z.object({ session: sessionSchema, from: outputNameSchema }).strict(),
+    z.discriminatedUnion('kind', [
+      z
+        .object({
+          kind: z.literal('outline'),
+          sheets: z
+            .array(
+              z
+                .object({
+                  name: z.string().max(MAX_WORKBOOK_SHEET_NAME),
+                  state: z.enum(['visible', 'hidden', 'veryHidden']),
+                  lastRow: z.number().int().min(0).max(MAX_WORKBOOK_ROW),
+                })
+                .strict(),
+            )
+            .max(MAX_WORKBOOK_SHEETS),
+        })
+        .strict(),
+      z.object({ kind: z.literal('unreadable') }).strict(),
+    ]),
+    ['no-such-session', 'asset-missing'],
+  ),
+
+  /**
+   * A copy of the workbook in which one sheet is visible and, where `rows` is given, prints only that block — the author's
+   * own print area intersected, never replaced. `nothing` where the author's print area does not reach the block;
+   * `unsplittable` where it is one this host cannot narrow, which main names to the person rather than guesses.
+   */
+  'engine/workbook-part': channel(
+    'Writes a copy of a workbook from the area showing one sheet, and one block of its rows.',
+    z
+      .object({
+        session: sessionSchema,
+        from: outputNameSchema,
+        into: outputNameSchema,
+        sheet: z.number().int().min(0).max(MAX_WORKBOOK_SHEETS - 1),
+        rows: z
+          .object({ from: z.number().int().min(1).max(MAX_WORKBOOK_ROW), to: z.number().int().min(1).max(MAX_WORKBOOK_ROW) })
+          .strict()
+          .refine((rows) => rows.from <= rows.to, { message: 'a block of rows starts at or before its end' })
+          .nullable(),
+      })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('written'), bytes: z.number().int().positive() }).strict(),
+      z.object({ kind: z.literal('nothing') }).strict(),
+      z.object({ kind: z.literal('unsplittable') }).strict(),
+      z.object({ kind: z.literal('unreadable') }).strict(),
+    ]),
+    ['no-such-session', 'asset-missing'],
+  ),
+
+  /** How many pages a PDF in the area has — whether a conversion reached x2t's cut-off. */
+  'engine/pdf-pages': channel(
+    'Counts the pages of a PDF in the area.',
+    z.object({ session: sessionSchema, from: outputNameSchema }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('counted'), pages: z.number().int().min(0) }).strict(),
+      z.object({ kind: z.literal('unreadable') }).strict(),
+    ]),
+    ['no-such-session', 'asset-missing'],
+  ),
+
+  /**
+   * The listed PDFs in the area joined in order into one, and each one's page count.
+   *
+   * ITS PARAMS IN A FILE (ADR-0125's addendum): the list grows with the parts, and the route check found it past a
+   * frame at its bound.
+   */
+  'engine/join-pdfs': fileRequested(
+    'Joins the listed PDFs from the area, in order, into one PDF written into the area.',
+    z
+      .object({
+        session: sessionSchema,
+        from: z.array(outputNameSchema).min(1).max(MAX_WORKBOOK_PARTS),
+        into: outputNameSchema,
+      })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      z
+        .object({
+          kind: z.literal('joined'),
+          bytes: z.number().int().positive(),
+          pages: z.array(z.number().int().min(0)).max(MAX_WORKBOOK_PARTS),
+        })
+        .strict(),
+      z.object({ kind: z.literal('unreadable'), item: z.number().int().min(0).max(MAX_WORKBOOK_PARTS - 1) }).strict(),
     ]),
     ['no-such-session', 'asset-missing'],
   ),

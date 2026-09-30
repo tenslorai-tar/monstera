@@ -62,6 +62,15 @@ const markdownImportProblemSchema = z.discriminatedUnion('reason', [
   }),
   z.object({ reason: z.literal('too-many-images'), limit: z.number().int().positive() }),
   z.object({ reason: z.literal('images-too-large'), limitBytes: z.number().int().positive() }),
+  // A WORKBOOK THAT OPENED WITH ROWS IT COULD NOT CONVERT (decision C): each block named by sheet and rows, because
+  // "some rows are missing" is the silence the owner ruled out. 64 is the channel's bound, restated for the reason above.
+  z.object({
+    reason: z.literal('workbook-incomplete'),
+    missing: z
+      .array(z.object({ sheet: z.string().max(255), from: z.number().int().min(1), to: z.number().int().min(1) }))
+      .min(1)
+      .max(64),
+  }),
 ]);
 
 /**

@@ -4891,6 +4891,8 @@ describe('DocumentCommands.convertOfficeFile (ADR-0120)', () => {
     readonly destination?: string | null;
     readonly contested?: boolean;
     readonly unavailable?: boolean;
+    /** Rows of a workbook the converter says the PDF does not hold. */
+    readonly missing?: readonly { sheet: string; from: number; to: number }[];
   }): { readonly commands: DocumentCommands; readonly recorded: Recorded } {
     const recorded: Recorded = { calls: [], converted: [], asked: [], discards: 0 };
     const source: ImportSource = {
@@ -4948,6 +4950,7 @@ describe('DocumentCommands.convertOfficeFile (ADR-0120)', () => {
                     discard: () => {
                       recorded.discards += 1;
                     },
+                    missing: options.missing ?? [],
                   });
                 },
               },
@@ -4965,10 +4968,18 @@ describe('DocumentCommands.convertOfficeFile (ADR-0120)', () => {
     const destination = join(directory, 'Quarterly.pdf');
     const { commands, recorded } = officeCommands({ picked: 'C:\\Reports\\Quarterly.PPTX', destination });
 
-    expect(await commands.convertOfficeFile()).toStrictEqual({ kind: 'written', destination });
+    expect(await commands.convertOfficeFile()).toStrictEqual({ kind: 'written', destination, missing: [] });
     expect(readFileSync(destination, 'latin1')).toBe('%PDF-1.7 from x2t');
     expect(recorded.converted).toStrictEqual(['pptx:PK office']);
     expect(recorded.asked).toStrictEqual(['Quarterly.pdf']);
+  });
+
+  it('carries the rows a workbook lacks from the converter to its answer (decision C)', async () => {
+    const destination = join(directory, 'Budget.pdf');
+    const missing = [{ sheet: 'Data', from: 38_251, to: 50_000 }];
+    const { commands } = officeCommands({ picked: 'C:\\Reports\\Budget.xlsx', destination, missing });
+
+    expect(await commands.convertOfficeFile()).toStrictEqual({ kind: 'written', destination, missing });
   });
 
   it('REFUSES a name that is not one of the three formats, and reads nothing', async () => {

@@ -21,6 +21,8 @@ Monstera can turn a Word document, an Excel workbook or a PowerPoint deck into a
 - The file can be up to 100 MB.
 - The older formats (.doc, .xls, .ppt) and OpenDocument files are not supported.
 - Monstera uses the fonts it carries with it. Text in a font it does not have is shown in the closest one it has, so line breaks can differ from the original.
+- An Excel workbook arrives with every sheet that is not hidden, in the order of its tabs, each laid out with its own page settings and print area. Hidden sheets are left out, as Excel leaves them out when it prints.
+- A very long sheet is converted in parts and joined, so every row arrives. If some rows still cannot be converted, the PDF opens and a message lists each sheet and the rows that are not in it.
 - The conversion runs in a separate, locked-down process that cannot reach the internet or the rest of your files. Your file never leaves your computer.
 - If the file is damaged, or is not the kind of file its name says, nothing is saved and Monstera tells you.
 

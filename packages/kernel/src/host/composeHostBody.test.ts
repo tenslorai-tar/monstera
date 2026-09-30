@@ -1,3 +1,5 @@
+import { PDFDocument } from '@cantoo/pdf-lib';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
@@ -15,6 +17,7 @@ import { composeChannels } from './composeChannels.js';
 import { type ImageOptimizer, type InlineImageKeeper, createComposeHandlers } from './composeHandlers.js';
 import { ENGINE_SESSION_ID_MAX_CHARS } from './engineChannels.js';
 import type { HostArea } from './engineHandlers.js';
+import { sessionFileAnswers } from './fileAnswers.js';
 import { type HostByteStream, startEngineHost } from './hostBody.js';
 import { createHostSessions } from './hostSessions.js';
 
@@ -109,6 +112,18 @@ function start(
   },
 ) {
   const calls: string[] = [];
+  const areas = createHostSessions<HostArea>(() => new Uint8Array(TOKEN_BYTES).fill(7));
+  const surface = {
+    readSnapshot: (directory: string, name: string): Promise<Uint8Array> => {
+      const found = files.read.get(`${directory}|${name}`);
+      if (found === undefined) return Promise.reject(new Error('no such file'));
+      return Promise.resolve(found);
+    },
+    writeOutput: (directory: string, name: string, bytes: Uint8Array): Promise<number> => {
+      files.written.set(`${directory}|${name}`, bytes);
+      return Promise.resolve(bytes.length);
+    },
+  };
   const handlers = createComposeHandlers({
     // `optimize`'s recording, for the same reason: what the request named is what the keeper is handed.
     keepInlineImages:
@@ -130,18 +145,8 @@ function start(
             );
             return optimizer === null ? Promise.reject(new Error('unreachable')) : optimizer(area, from, into, setting);
           },
-    areas: createHostSessions<HostArea>(() => new Uint8Array(TOKEN_BYTES).fill(7)),
-    files: {
-      readSnapshot: (directory, name) => {
-        const found = files.read.get(`${directory}|${name}`);
-        if (found === undefined) return Promise.reject(new Error('no such file'));
-        return Promise.resolve(found);
-      },
-      writeOutput: (directory, name, bytes) => {
-        files.written.set(`${directory}|${name}`, bytes);
-        return Promise.resolve(bytes.length);
-      },
-    },
+    areas,
+    files: surface,
     probe: () =>
       Promise.resolve({
         positive: { kind: 'read', bytes: 64 },
@@ -186,6 +191,8 @@ function start(
         calls.push(`incident:${incident.channel}`);
       },
       maxInFlight: 4,
+      // THE ENTRY'S OWN RESOLUTION over the same table and files, never a stub of it — `pdfiumHostBody.test.ts`' reason.
+      fileAnswers: sessionFileAnswers(areas, surface),
     },
     () => undefined,
   );
@@ -205,10 +212,27 @@ function answerIn(frame: Uint8Array | undefined): unknown {
   return JSON.parse(new TextDecoder().decode(frame.subarray(FRAME_HEADER_BYTES)));
 }
 
-/** One request, framed exactly as main frames it. */
-function request(id: string, channel: string, params: unknown): Uint8Array {
+/**
+ * One request, framed exactly as main frames it — with the answer's file name for a file-answered channel, or with
+ * its params staged in the snapshot directory for a file-requested one (ADR-0125 and its addendum).
+ */
+function request(
+  id: string,
+  channel: string,
+  params: unknown,
+  route: { readonly answerInto?: string; readonly paramsIn?: { readonly files: Files; readonly name: string } } = {},
+): Uint8Array {
+  let carried: Record<string, unknown> = { params };
+  if (route.paramsIn !== undefined) {
+    const bytes = new TextEncoder().encode(JSON.stringify(params));
+    route.paramsIn.files.read.set(`${AREA.snapshotDirectory}|${route.paramsIn.name}`, bytes);
+    const session = (params as { readonly session: string }).session;
+    carried = { paramsFile: { session, name: route.paramsIn.name, bytes: bytes.byteLength } };
+  }
   return encodeFrame(
-    new TextEncoder().encode(JSON.stringify({ id, channel, params })),
+    new TextEncoder().encode(
+      JSON.stringify({ id, channel, ...carried, ...(route.answerInto === undefined ? {} : { answerInto: route.answerInto }) }),
+    ),
     ENGINE_HOST_FRAME_MAX_BYTES,
   );
 }
@@ -257,6 +281,10 @@ describe('the compose host channel set', () => {
         'engine/open',
         'engine/optimize',
         'engine/probe-containment',
+        'engine/join-pdfs',
+        'engine/pdf-pages',
+        'engine/workbook-outline',
+        'engine/workbook-part',
       ].sort(),
     );
   });
@@ -560,6 +588,138 @@ describe('the compose host — Optimize, MuPDF’s native image rewriter (ADR-00
     }
   });
 
+});
+
+/**
+ * Decision C's four channels through the body. What a part holds is `workbookParts.test.ts`' subject; here it is which
+ * answer each outcome reaches the wire as — the transport's miss, a file's own `unreadable`, and a written count.
+ */
+describe('the compose host — a workbook in parts (decision C)', () => {
+  const WB_XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  const WB_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const WB_MAIN = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+  /** One visible sheet whose last row is 12. */
+  const oneSheet = (): Uint8Array =>
+    zipSync({
+      '_rels/.rels': strToU8(
+        `${WB_XML}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${WB_REL}/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+      ),
+      'xl/workbook.xml': strToU8(
+        `${WB_XML}<workbook xmlns="${WB_MAIN}" xmlns:r="${WB_REL}"><sheets><sheet name="Only" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+      ),
+      'xl/_rels/workbook.xml.rels': strToU8(
+        `${WB_XML}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${WB_REL}/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`,
+      ),
+      'xl/worksheets/sheet1.xml': strToU8(`${WB_XML}<worksheet xmlns="${WB_MAIN}"><sheetData><row r="12"/></sheetData></worksheet>`),
+    });
+  const pdfOf = async (pages: number): Promise<Uint8Array> => {
+    const document = await PDFDocument.create();
+    for (let page = 0; page < pages; page += 1) document.addPage([100, 100]);
+    return document.save();
+  };
+  const NOT_A_FILE = new TextEncoder().encode('not a zip and not a PDF');
+  const SECOND = 'beadfeed';
+
+  it('outlines a workbook, and answers a file it cannot read as unreadable and a missing one as the transport’s', async () => {
+    const files = emptyFiles();
+    const { session } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, oneSheet());
+    files.read.set(`${AREA.snapshotDirectory}|${SECOND}`, NOT_A_FILE);
+
+    stream.feed(request('w1', 'engine/workbook-outline', { session, from: IN }, { answerInto: 'a0a0a0a0' }));
+    await stream.whenSent(2);
+    stream.feed(request('w2', 'engine/workbook-outline', { session, from: SECOND }, { answerInto: 'a1a1a1a1' }));
+    await stream.whenSent(3);
+    stream.feed(request('w3', 'engine/workbook-outline', { session, from: 'abad1dea' }, { answerInto: 'a2a2a2a2' }));
+    await stream.whenSent(4);
+
+    // THE ANSWER IS IN A FILE (ADR-0125): the outline grows with the workbook, and the frame carries its size.
+    const answered = (name: string): unknown => JSON.parse(new TextDecoder().decode(files.written.get(`${AREA.outputDirectory}|${name}`)));
+    expect(answerIn(stream.sent[1])).toMatchObject({ id: 'w1', answerFile: {} });
+    expect(answered('a0a0a0a0')).toMatchObject({
+      ok: true,
+      value: { kind: 'outline', sheets: [{ name: 'Only', state: 'visible', lastRow: 12 }] },
+    });
+    expect(answered('a1a1a1a1')).toMatchObject({ ok: true, value: { kind: 'unreadable' } });
+    // A FAILURE STAYS IN THE FRAME, bounded by its schema — `answerCrossesInFile`'s rule.
+    expect(answerIn(stream.sent[3])).toMatchObject({ body: { ok: false, error: { code: 'asset-missing' } } });
+  });
+
+  it('writes a part into the output directory and answers its count; a block past the sheet is nothing', async () => {
+    const files = emptyFiles();
+    const { session } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, oneSheet());
+
+    stream.feed(request('p1', 'engine/workbook-part', { session, from: IN, into: OUT, sheet: 0, rows: { from: 1, to: 6 } }));
+    await stream.whenSent(2);
+
+    const written = files.written.get(`${AREA.outputDirectory}|${OUT}`);
+    expect(written).toBeDefined();
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'written', bytes: written?.length } } });
+    expect(strFromU8(unzipSync(written ?? new Uint8Array())['xl/workbook.xml'] ?? new Uint8Array())).toContain("'Only'!$1:$6");
+  });
+
+  it('refuses a block that ends before it starts, and a sheet past the bound, at the schema', () => {
+    const params = composeChannels['engine/workbook-part'].params;
+    const base = { session: 'a'.repeat(TOKEN_BYTES * 2), from: IN, into: OUT, sheet: 0 };
+    expect(params.safeParse({ ...base, rows: null }).success).toBe(true);
+    expect(params.safeParse({ ...base, rows: { from: 5, to: 5 } }).success).toBe(true);
+    expect(params.safeParse({ ...base, rows: { from: 6, to: 5 } }).success).toBe(false);
+    expect(params.safeParse({ ...base, rows: { from: 0, to: 5 } }).success).toBe(false);
+    expect(params.safeParse({ ...base, sheet: 4096, rows: null }).success).toBe(false);
+  });
+
+  it('counts a PDF’s pages, and answers one it cannot read as unreadable', async () => {
+    const files = emptyFiles();
+    const { session } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, await pdfOf(3));
+    files.read.set(`${AREA.snapshotDirectory}|${SECOND}`, NOT_A_FILE);
+
+    stream.feed(request('c1', 'engine/pdf-pages', { session, from: IN }));
+    await stream.whenSent(2);
+    stream.feed(request('c2', 'engine/pdf-pages', { session, from: SECOND }));
+    await stream.whenSent(3);
+
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'counted', pages: 3 } } });
+    expect(answerIn(stream.sent[2])).toMatchObject({ body: { ok: true, value: { kind: 'unreadable' } } });
+  });
+
+  it('joins the parts in order into the output directory, and names the part it cannot read', async () => {
+    const files = emptyFiles();
+    const { session } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, await pdfOf(2));
+    files.read.set(`${AREA.snapshotDirectory}|${SECOND}`, await pdfOf(5));
+    files.read.set(`${AREA.snapshotDirectory}|abad1dea`, NOT_A_FILE);
+
+    // ITS PARAMS IN A FILE (ADR-0125's addendum), staged in the snapshot directory as main stages them.
+    stream.feed(request('j1', 'engine/join-pdfs', { session, from: [IN, SECOND], into: OUT }, { paramsIn: { files, name: 'b0b0b0b0' } }));
+    await stream.whenSent(2);
+    stream.feed(
+      request('j2', 'engine/join-pdfs', { session, from: [IN, 'abad1dea'], into: 'cafe-02' }, { paramsIn: { files, name: 'b1b1b1b1' } }),
+    );
+    await stream.whenSent(3);
+
+    const joined = files.written.get(`${AREA.outputDirectory}|${OUT}`);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'joined', bytes: joined?.length, pages: [2, 5] } } });
+    expect((await PDFDocument.load(joined ?? new Uint8Array())).getPageCount()).toBe(7);
+    expect(answerIn(stream.sent[2])).toMatchObject({ body: { ok: true, value: { kind: 'unreadable', item: 1 } } });
+    expect(files.written.has(`${AREA.outputDirectory}|cafe-02`)).toBe(false);
+  });
+
+  it('answers a part main did not write as the transport’s, and writes nothing', async () => {
+    const files = emptyFiles();
+    const { session } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, await pdfOf(2));
+
+    stream.feed(request('j1', 'engine/join-pdfs', { session, from: [IN, 'abad1dea'], into: OUT }, { paramsIn: { files, name: 'b0b0b0b0' } }));
+    await stream.whenSent(2);
+
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'asset-missing' } } });
+    expect(files.written.size).toBe(0);
+  });
+});
+
+describe('the compose host — Optimize’s setting (ADR-0087)', () => {
   it('refuses a target at or above its threshold, or one without a threshold — and CONTROL: accepts both 0', () => {
     const params = composeChannels['engine/optimize'].params;
     const base = { session: 'a'.repeat(TOKEN_BYTES * 2), from: IN, into: OUT, quality: 70 };

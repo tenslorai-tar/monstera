@@ -155,6 +155,8 @@ export {
   MAX_DROPPED_PATH_LENGTH,
   // How many documents one launch may name on its command line; main's reader takes no more.
   MAX_LAUNCH_DOCUMENTS,
+  // How many blocks of a workbook an Office import may name as not converted.
+  MAX_OFFICE_MISSING_BLOCKS,
   type PreloadChannels,
   type PreloadHandlers,
   preloadChannels,
@@ -267,6 +269,7 @@ export {
   MAX_MARKDOWN_BYTES,
   MAX_CSV_BYTES,
   MAX_OFFICE_IMPORT_BYTES,
+  MAX_WORKBOOK_PARTS,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_PIXELS,
   MAX_IMPORT_PNG_PIXELS,
