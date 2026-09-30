@@ -1,6 +1,7 @@
 import type { DocId, DocVersion } from '@monstera/shared';
 import { z } from 'zod';
 
+import { pageSetSchema } from './pageSet.js';
 import {
   DOCUMENT_PASSWORD_MAX_CHARS,
   OCR_ENGINES,
@@ -41,8 +42,8 @@ import {
  */
 export const rotatePagesSchema = z.object({
   kind: z.literal('rotatePages'),
-  /** Zero-based page indices. */
-  pages: z.array(z.number().int().nonnegative()).min(1),
+  /** Zero-based pages, as single pages and runs (`pageSet.ts`). */
+  pages: pageSetSchema,
   /** Clockwise quarter turns. 0 is not a command; it is a no-op with a log entry. */
   quarterTurns: z.union([z.literal(1), z.literal(2), z.literal(3)]),
 });
@@ -153,8 +154,8 @@ export const movePageSchema = z.object({
  */
 export const deletePagesSchema = z.object({
   kind: z.literal('deletePages'),
-  /** Zero-based page indices, in the document as it stands. */
-  pages: z.array(z.number().int().nonnegative()).min(1),
+  /** Zero-based pages, as single pages and runs (`pageSet.ts`), in the document as it stands. */
+  pages: pageSetSchema,
 });
 
 /**
@@ -180,8 +181,8 @@ export const deletePagesSchema = z.object({
  */
 export const duplicatePageSchema = z.object({
   kind: z.literal('duplicatePage'),
-  /** Zero-based indices of the pages to copy, in the document as it stands. */
-  pages: z.array(z.number().int().nonnegative()).min(1),
+  /** Zero-based pages to copy, as single pages and runs (`pageSet.ts`), in the document as it stands. */
+  pages: pageSetSchema,
 });
 
 /**
@@ -277,7 +278,7 @@ export const cropPagesSchema = z.object({
    * lists because their whole-document forms are not operations anybody asks
    * for; the day one is, it takes this shape rather than a second one.
    */
-  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+  pages: z.union([z.literal('all'), pageSetSchema]),
   /** How much to take off each edge, in points. Non-negative; zero is legal. */
   margins: z
     .object({
@@ -326,7 +327,7 @@ export const cropPagesSchema = z.object({
 export const watermarkPagesSchema = z.object({
   kind: z.literal('watermarkPages'),
   /** Which pages. `'all'` is resolved by the kernel, which holds the count. */
-  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+  pages: z.union([z.literal('all'), pageSetSchema]),
   /** The text drawn. Bounded — see this schema's own note on L11. */
   text: z.string().min(1).max(200),
   /** Fill opacity, 0 (invisible) to 1 (opaque). */
@@ -388,7 +389,7 @@ const stampSlotsSchema = z
 export const headerFooterPagesSchema = z.object({
   kind: z.literal('headerFooterPages'),
   /** Which pages. `'all'` is resolved by the kernel, which holds the count. */
-  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+  pages: z.union([z.literal('all'), pageSetSchema]),
   /** The top edge's three slots. All empty means no header. */
   header: stampSlotsSchema,
   /** The bottom edge's three slots. All empty means no footer. */
@@ -433,7 +434,7 @@ export const headerFooterPagesSchema = z.object({
 export const batesNumberPagesSchema = z.object({
   kind: z.literal('batesNumberPages'),
   /** Which pages. Resolved by the kernel, and the sequence follows this order. */
-  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+  pages: z.union([z.literal('all'), pageSetSchema]),
   /** Text before the number. Empty is ordinary. */
   prefix: z.string().max(100),
   /** Text after the number. Empty is ordinary. */
@@ -487,7 +488,7 @@ export const batesNumberPagesSchema = z.object({
 export const setPageTransitionSchema = z.object({
   kind: z.literal('setPageTransition'),
   /** Which pages. `'all'` is resolved by the kernel, which holds the count. */
-  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+  pages: z.union([z.literal('all'), pageSetSchema]),
   /** The transition style, as PDF 32000-1 Table 161 names it. */
   style: z.enum(['replace', 'dissolve', 'fade', 'box', 'blinds']),
   /**
@@ -525,7 +526,7 @@ export const setPageTransitionSchema = z.object({
 export const setPageBackgroundSchema = z.object({
   kind: z.literal('setPageBackground'),
   /** Which pages. `'all'` is resolved by the kernel, which holds the count. */
-  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+  pages: z.union([z.literal('all'), pageSetSchema]),
   /** The fill, in PDF's own DeviceRGB range. */
   red: z.number().min(0).max(1),
   green: z.number().min(0).max(1),
@@ -562,7 +563,7 @@ export const setPageBackgroundSchema = z.object({
 export const resizePagesSchema = z.object({
   kind: z.literal('resizePages'),
   /** Which pages. `'all'` is resolved by the kernel, which holds the count. */
-  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+  pages: z.union([z.literal('all'), pageSetSchema]),
   /**
    * The target box in points.
    *
@@ -617,7 +618,7 @@ export const resizePagesSchema = z.object({
 export const deskewPagesSchema = z.object({
   kind: z.literal('deskewPages'),
   /** Which pages. `'all'` is resolved by the kernel, which holds the count. */
-  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+  pages: z.union([z.literal('all'), pageSetSchema]),
 });
 
 /**
@@ -645,8 +646,8 @@ export const deskewPagesSchema = z.object({
  */
 export const enhancePagesSchema = z.object({
   kind: z.literal('enhancePages'),
-  /** Which pages, as a list. Zero-based, at least one. */
-  pages: z.array(z.number().int().nonnegative()).min(1),
+  /** Which pages, as single pages and runs (`pageSet.ts`). Zero-based, at least one. */
+  pages: pageSetSchema,
 });
 
 /**
@@ -665,8 +666,8 @@ export const enhancePagesSchema = z.object({
  */
 export const straightenScansSchema = z.object({
   kind: z.literal('straightenScans'),
-  /** Which pages, as a list. Zero-based, at least one. */
-  pages: z.array(z.number().int().nonnegative()).min(1),
+  /** Which pages, as single pages and runs (`pageSet.ts`). Zero-based, at least one. */
+  pages: pageSetSchema,
 });
 
 /**
@@ -3402,7 +3403,7 @@ export const markMatchesForRedactionSchema = z.object({
   kind: z.literal('markMatchesForRedaction'),
   /** What to look for. Bounded like every string that crosses. */
   query: z.string().min(1).max(MAX_FIND_TEXT),
-  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+  pages: z.union([z.literal('all'), pageSetSchema]),
 });
 
 /**
@@ -3476,7 +3477,7 @@ export type PdfRedactImages = (typeof PDF_REDACT_IMAGES)[number];
  */
 export const applyRedactionsSchema = z.object({
   kind: z.literal('applyRedactions'),
-  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+  pages: z.union([z.literal('all'), pageSetSchema]),
   cover: z.enum(PDF_REDACT_COVERS),
   images: z.enum(PDF_REDACT_IMAGES),
   /**

@@ -4,7 +4,7 @@ import type { CommandOfKind } from '@monstera/contract';
 import type { CaptureResult } from './commandLog.js';
 import { COORDINATE_DECIMALS, contentNumber } from './contentNumbers.js';
 import type { Apply, Invert } from './engineSeam.js';
-import { pagesOf } from './pageScope.js';
+import { pageInDocument, pagesOf } from './pageScope.js';
 
 /**
  * A page background — a filled rectangle **behind** the page's own content.
@@ -77,12 +77,7 @@ export const applySetPageBackground: Apply<'pdf-lib', 'setPageBackground'> = asy
   const targets = pagesOf(command.pages, pages.length);
 
   for (const page of targets) {
-    if (!Number.isInteger(page) || page < 0 || page >= pages.length) {
-      throw new RangeError(
-        `Page ${String(page)} is outside this document, which has ${String(pages.length)} ` +
-          'page(s). Page indices are zero-based.',
-      );
-    }
+    pageInDocument(page, pages.length);
   }
 
   const context = document.context;

@@ -407,6 +407,16 @@ export {
   watermarkPagesSchema,
 } from './commands.js';
 export {
+  // A command's pages as runs (decision D, finding AAA-1): the renderer writes them, the kernel expands them.
+  MAX_PAGE_INDEX,
+  MAX_PAGE_SET_ENTRIES,
+  type PageSet,
+  pageSetOf,
+  pageSetSchema,
+  pagesOfSet,
+  withPageRuns,
+} from './pageSet.js';
+export {
   // The OCR language set, exported for the same reason the spelling one is: both
   // sides key a record on it — the provisioning table and the renderer's display
   // titles — so adding a language is two compile errors and a digest.

@@ -2527,14 +2527,16 @@ export const spec: CommandSpec<'rotatePages'> = {
     // The member ORDER in the printed union is the compiler's and not ours, and
     // it moves when the COMMAND UNION changes even though this command's own
     // type does not: `1 | 3 | 2` while `rotatePages` was the only kind, then
-    // `2 | 3 | 1` with `setLayerVisibility`, now `3 | 1 | 2` with `movePage`
-    // (all measured, TypeScript 6.0.3, the last on 2026-09-03).
+    // `2 | 3 | 1` with `setLayerVisibility`, `3 | 1 | 2` with `movePage`
+    // (TypeScript 6.0.3, 2026-09-03), and `2 | 3 | 1` again since decision D's
+    // page sets joined the command types (2026-09-30) — no kind added, so the
+    // order also moves with the types a command is built from.
     //
     // Anchoring on the printed order is deliberate — an order-insensitive
     // pattern would also match a union this command's type never had — and the
     // cost is stated rather than discovered: this line is edited by every
     // commit that adds a command kind, and the edit is loud.
-    because: /Type '45' is not assignable to type '3 \| 1 \| 2'/u,
+    because: /Type '45' is not assignable to type '2 \| 3 \| 1'/u,
     // Atomic and scalar: the quoted types are `45` and the literal union, so
     // there is no second property name in reach.
     notBecause: null,
@@ -3509,8 +3511,12 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // had. Counting both parts keeps the case failing the day a command is
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
+    //
+    // THE SPLIT MOVED, THE SUM DID NOT (decision D, 2026-09-30): with page sets
+    // in the union TypeScript spells three members and counts 46, where it
+    // spelt four and counted 45. 3 + 46 + 1 is still the union's 50.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 45 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 46 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

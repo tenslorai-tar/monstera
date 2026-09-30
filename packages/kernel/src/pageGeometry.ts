@@ -1,6 +1,7 @@
 import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { snapRotation } from './rotatePages.js';
+import { pageInDocument } from './pageScope.js';
 
 /**
  * The geometry half of the view model (`docs/ARCHITECTURE.md` §2), read from a
@@ -142,12 +143,7 @@ export function readPageGeometry(
     // length matches the request and whose contents describe a different set of
     // pages, which nothing downstream can detect.
     for (const page of pages) {
-      if (!Number.isInteger(page) || page < 0 || page >= pageCount) {
-        throw new RangeError(
-          `Page ${String(page)} is outside this document, which has ${String(pageCount)} ` +
-            'page(s). Page indices are zero-based.',
-        );
-      }
+      pageInDocument(page, pageCount);
     }
 
     const rotations: number[] = [];

@@ -6,7 +6,7 @@ import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { boxOf, displayedBox } from './pageBoxes.js';
-import { pagesOf } from './pageScope.js';
+import { pageInDocument, pagesOf } from './pageScope.js';
 
 /**
  * Cropping — insetting a page's **visible** box, and leaving its media box
@@ -71,12 +71,7 @@ export interface PriorPageCrop {
 
 /** The page object, refusing an index this document does not have. */
 function pageObject(document: PDFDocument, page: number, total: number): PDFObject {
-  if (!Number.isInteger(page) || page < 0 || page >= total) {
-    throw new RangeError(
-      `Page ${String(page)} is outside this document, which has ${String(total)} page(s). ` +
-        'Page indices are zero-based.',
-    );
-  }
+  pageInDocument(page, total);
   return document.loadPage(page).getObject();
 }
 

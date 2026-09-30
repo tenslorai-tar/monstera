@@ -1,0 +1,100 @@
+import { describe, expect, it } from 'vitest';
+
+import { ENGINE_HOST_FRAME_MAX_BYTES } from './hostProtocol.js';
+import {
+  MAX_PAGE_INDEX,
+  MAX_PAGE_SET_ENTRIES,
+  pageSetOf,
+  pageSetSchema,
+  pagesOfSet,
+  withPageRuns,
+} from './pageSet.js';
+import { WORST_BYTES_PER_CHAR, maxEncodedBytes } from './schemaBound.js';
+
+/**
+ * A command's pages as runs (decision D, finding AAA-1). What is under test is that a selection is written short, read
+ * back exactly, bounded so every page set fits a frame, and refused — before it is listed — where a run passes the
+ * document.
+ */
+
+const refuse = (page: number, total: number): never => {
+  throw new RangeError(`${String(page)} of ${String(total)}`);
+};
+
+describe('pageSetOf — pages as the shortest set in the same order', () => {
+  it('writes a stretch of consecutive pages as one run, and a lone page as its number', () => {
+    expect(pageSetOf([0, 1, 2, 3, 7, 9, 10])).toStrictEqual([[0, 3], 7, [9, 10]]);
+  });
+
+  it('keeps the caller’s order and a page named twice — neither is its to decide', () => {
+    expect(pageSetOf([5, 4, 3, 3])).toStrictEqual([5, 4, 3, 3]);
+  });
+
+  it('a whole 43,600-page selection — the old list’s frame bound — is ONE entry', () => {
+    const everything = Array.from({ length: 43_600 }, (_, page) => page);
+    expect(pageSetOf(everything)).toStrictEqual([[0, 43_599]]);
+  });
+
+  it('reads back exactly what it wrote', () => {
+    const pages = [2, 3, 4, 0, 8, 9, 9, 1];
+    expect(pagesOfSet(pageSetOf(pages), 10, refuse)).toStrictEqual(pages);
+  });
+});
+
+describe('pagesOfSet — the pages a set names, against a document', () => {
+  it('REFUSES a run past the document before listing it, naming the run’s last page', () => {
+    expect(() => pagesOfSet([[0, MAX_PAGE_INDEX]], 10, refuse)).toThrow(`${String(MAX_PAGE_INDEX)} of 10`);
+  });
+
+  it('refuses a single page past the document by the same refusal', () => {
+    expect(() => pagesOfSet([3, 10], 10, refuse)).toThrow('10 of 10');
+  });
+
+  it('CONTROL: a set inside the document is answered, not refused', () => {
+    expect(pagesOfSet([[0, 9]], 10, refuse)).toHaveLength(10);
+  });
+});
+
+describe('pageSetSchema — bounded, so a command can say its size', () => {
+  it('refuses a run that does not end after it starts, which a single page spells as its number', () => {
+    expect(pageSetSchema.safeParse([[4, 4]]).success).toBe(false);
+    expect(pageSetSchema.safeParse([[5, 4]]).success).toBe(false);
+    expect(pageSetSchema.safeParse([[4, 5], 4]).success).toBe(true);
+  });
+
+  it('refuses an index past the format’s limit, a negative one and an empty set', () => {
+    expect(pageSetSchema.safeParse([MAX_PAGE_INDEX + 1]).success).toBe(false);
+    expect(pageSetSchema.safeParse([-1]).success).toBe(false);
+    expect(pageSetSchema.safeParse([]).success).toBe(false);
+  });
+
+  it(`refuses more than ${String(MAX_PAGE_SET_ENTRIES)} entries, and takes that many`, () => {
+    const apart = (count: number): number[] => Array.from({ length: count }, (_, at) => at * 2);
+    expect(pageSetSchema.safeParse(apart(MAX_PAGE_SET_ENTRIES)).success).toBe(true);
+    expect(pageSetSchema.safeParse(apart(MAX_PAGE_SET_ENTRIES + 1)).success).toBe(false);
+  });
+
+  it('its worst encoding fits a frame with room — every page set a schema admits', () => {
+    const worst = maxEncodedBytes(pageSetSchema, WORST_BYTES_PER_CHAR);
+    expect(worst).toBeLessThan(ENGINE_HOST_FRAME_MAX_BYTES * 0.75);
+  });
+});
+
+describe('withPageRuns — the renderer’s one place a command’s pages are written short', () => {
+  it('rewrites a command’s page list as runs and keeps every other field', () => {
+    expect(withPageRuns({ kind: 'rotatePages', pages: [0, 1, 2], quarterTurns: 1 })).toStrictEqual({
+      kind: 'rotatePages',
+      pages: [[0, 2]],
+      quarterTurns: 1,
+    });
+  });
+
+  it('leaves `all`, a set already holding runs, and a command with no pages as they came', () => {
+    const all = { kind: 'cropPages', pages: 'all' as const };
+    const runs = { kind: 'deletePages', pages: [[0, 4] as [number, number]] };
+    const none = { kind: 'movePage', from: 1, to: 2 };
+    expect(withPageRuns(all)).toBe(all);
+    expect(withPageRuns(runs)).toBe(runs);
+    expect(withPageRuns(none)).toBe(none);
+  });
+});

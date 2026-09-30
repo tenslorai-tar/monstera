@@ -20,7 +20,7 @@
  * would put an implementation in the file whose whole property is having none.
  *
  * So the resolver moves somewhere both sides can reach, which is a module whose
- * imports are a type and nothing else.
+ * only import is the contract — no engine, so `main` may load it.
  *
  * ## The scope is stated here, not taken from one command's schema
  *
@@ -31,30 +31,48 @@
  * with.
  */
 
+import { type PageSet, pagesOfSet } from '@monstera/contract/host';
+
 /**
- * Which pages a command names.
+ * Which pages a command names: `'all'`, or single pages and runs (`@monstera/contract`'s `pageSet.ts`, decision D).
  *
  * `'all'` is not sugar for a list: a list of every page is one integer per
  * page, which is a payload that scales with the document and invariant L11
  * rules out by name. The word crosses the boundary and becomes a list **here**,
- * where the page count is already known.
+ * where the page count is already known — and a run does the same for any
+ * stretch of pages.
  */
-export type PageScope = 'all' | readonly number[];
+export type PageScope = 'all' | PageSet;
+
+/**
+ * THE ONE REFUSAL for a page index a document does not have — thrown by every loader here and by the expansion below,
+ * so the words and the class are the same whether the index arrived alone, inside a run, or from a read.
+ */
+export function refusePageOutside(page: number, total: number): never {
+  throw new RangeError(
+    `Page ${String(page)} is outside this document, which has ${String(total)} page(s). Page indices are zero-based.`,
+  );
+}
+
+/** `page`, where this document has it; {@link refusePageOutside} otherwise. */
+export function pageInDocument(page: number, total: number): number {
+  if (!Number.isInteger(page) || page < 0 || page >= total) refusePageOutside(page, total);
+  return page;
+}
 
 /**
  * The pages a scope names, given the document's page count.
  *
  * Zero-based, in ascending order for `'all'`, and **in the caller's own order**
- * for a list — a command that names `[3, 1]` gets `[3, 1]`, because a capture
+ * for a set — a command that names `[3, 1]` gets `[3, 1]`, because a capture
  * records its prior state in the order the command named its pages and a
  * silently sorted list would put an inverse's entries against the wrong pages.
  *
- * It does **not** validate. An index this document does not have is refused
- * where the page is loaded, with the page count in the message; refusing here
- * as well would be two components deciding what a valid index is, and the one
- * that can name the document is the one that should.
+ * A run past the document is refused BEFORE it is listed, so a run of millions against a short document is a
+ * refusal and never a list of millions; a single index is still refused where its page is loaded, by the same
+ * {@link refusePageOutside}.
  */
 export function pagesOf(scope: PageScope, total: number): readonly number[] {
-  if (scope !== 'all') return scope;
-  return Array.from({ length: total }, (_unused, index) => index);
+  if (scope === 'all') return Array.from({ length: total }, (_unused, index) => index);
+  return pagesOfSet(scope, total, refusePageOutside);
 }

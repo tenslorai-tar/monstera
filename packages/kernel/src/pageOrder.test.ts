@@ -583,7 +583,7 @@ describe('applyDuplicatePage', () => {
     try {
       await expect(
         applyDuplicatePage(session, { kind: 'duplicatePage', pages: [9] }),
-      ).rejects.toThrow(/outside a document of 3 page/u);
+      ).rejects.toThrow(/Page 9 is outside this document, which has 3 page/u);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -603,7 +603,7 @@ describe('applyDuplicatePage', () => {
     try {
       await expect(
         applyDuplicatePage(session, { kind: 'duplicatePage', pages: [0, 9] }),
-      ).rejects.toThrow(/page 9 is outside a document of 3 page/u);
+      ).rejects.toThrow(/Page 9 is outside this document, which has 3 page/u);
       // CONTROL: the first page, which is in range, was not copied before the refusal.
       expect(await widthsOf(await mupdfWriter.serialise(session))).toStrictEqual([100, 101, 102]);
     } finally {
@@ -690,14 +690,17 @@ describe('captureDuplicatePage and invertDuplicatePage', () => {
     }
   });
 
-  it('a duplicate of a page OUTSIDE the document is NOT CAPTURED, with a reason', async () => {
+  /**
+   * THROWS, as delete's capture does and for its reason (decision D moved both onto `pagesOf`'s one refusal). This
+   * answered `captured: false` until then, which the bus reads as *take a checkpoint and apply* — a checkpoint for a
+   * copy that cannot be made, and an apply that then failed after the log had grown.
+   */
+  it('a duplicate of a page OUTSIDE the document THROWS at the capture, so no checkpoint is taken', async () => {
     const session = await mupdfWriter.open(await flatDocument(3));
     try {
-      const capture = await captureDuplicatePage(session, { kind: 'duplicatePage', pages: [9] });
-
-      expect(capture.captured).toBe(false);
-      if (capture.captured) throw new Error('the capture should have been refused');
-      expect(capture.reason).toMatch(/nothing to copy/u);
+      await expect(captureDuplicatePage(session, { kind: 'duplicatePage', pages: [9] })).rejects.toThrow(
+        /Page 9 is outside this document, which has 3 page/u,
+      );
     } finally {
       await mupdfWriter.close(session);
     }
@@ -774,7 +777,7 @@ describe('applyDeletePages', () => {
     try {
       await expect(
         applyDeletePages(session, { kind: 'deletePages', pages: [9] }),
-      ).rejects.toThrow(/outside a document of 3 page/u);
+      ).rejects.toThrow(/Page 9 is outside this document, which has 3 page/u);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -806,7 +809,7 @@ describe('captureDeletePages', () => {
     try {
       await expect(
         captureDeletePages(session, { kind: 'deletePages', pages: [9] }),
-      ).rejects.toThrow(/outside a document of 3 page/u);
+      ).rejects.toThrow(/Page 9 is outside this document, which has 3 page/u);
       await expect(
         captureDeletePages(session, { kind: 'deletePages', pages: [0, 1, 2] }),
       ).rejects.toThrow(/would leave a document with none/u);

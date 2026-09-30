@@ -51,6 +51,11 @@ import { z } from 'zod';
  * in kilobytes: the payload scales with how many pages were *selected*, never
  * with how many megabytes each page weighs. A 20,000-page document may be two
  * gigabytes on disk and its select-all intent is still 120 KB.
+ *
+ * Measured with the index-list encoding, and kept as the derivation of the
+ * frame below. Since decision D the same select-all crosses as one run; the
+ * largest page set the contract admits is now 8,192 runs of seven-digit
+ * indices, 147,456 bytes — above this figure and still under the frame.
  */
 export const LARGEST_INTENT_PAYLOAD_BYTES = 120_057;
 
@@ -65,37 +70,24 @@ export const LARGEST_INTENT_PAYLOAD_BYTES = 120_057;
  * The headroom is deliberately small. A generous maximum is one that quietly
  * accommodates the payload nobody decided to send.
  *
- * ## Where it binds, stated rather than discovered
+ * ## Where it bound, and why it no longer does (finding AAA-1, decision D)
  *
- * At 6.00 bytes per page this refuses a whole-document selection at about
- * **43,600 pages** — 2.2× the stated extreme, and a real number rather than an
- * open-ended promise. Measuring the derivation is what surfaced this; the
- * estimate it replaced did not.
+ * At 6.00 bytes per page an index list met this frame at a whole-document
+ * selection of about **43,600 pages**. The 6.00 bytes were an ENCODING artefact,
+ * and since 2026-09-30 a command's pages are a page SET of runs (`pageSet.ts`):
+ * a stretch of pages is one entry whatever its length, so select-all on any
+ * document is one entry, and the set is bounded at `MAX_PAGE_SET_ENTRIES` — at
+ * worst 147,456 bytes, which `pageSet.test.ts` holds under three quarters of
+ * this frame. The owner chose runs over the bitmap the table here once weighed;
+ * the bitmap is flat on an adversarial selection, which runs are not, and that
+ * case — more separate stretches than the bound — is refused by the contract as
+ * that one command.
  *
- * ## The bound is an ENCODING artefact, and that is the first thing to fix
- *
- * Finding AAA-1. The 6.00 bytes per page is what it costs to write a page set
- * as an explicit list of decimal indices. A page set has cheaper
- * representations, and the flat one removes the bound rather than moving it:
- *
- * | encoding | 20,000 pages | 43,600 pages | worst case |
- * | --- | --- | --- | --- |
- * | index list (today) | 120,057 B | ~262,000 B | — |
- * | ranges | a few bytes | a few bytes | alternating pages: one range each |
- * | bitmap | 2,500 B | 5,450 B | flat, whatever the selection |
- *
- * A bitmap is ~48× smaller at the stated extreme and does not degrade on an
- * adversarial selection, which is the property ranges lack. At one bit per page
- * a 256 KiB frame holds a selection over two million pages, so the bound stops
- * existing instead of being renegotiated — and the maximum could then *shrink*,
- * strengthening the property this constant exists to protect rather than
- * spending it.
- *
- * **Arithmetic from the measured 6.00 bytes/page. No bitmap encoding has been
- * measured here**, and changing the payload shape reaches this package's
- * schemas and how every command declares a page selection. That is its own
- * unit, decided when something needs it — not now, when the bound sits 2.2×
- * beyond any document that exists.
+ * **What happens to a request this side cannot frame is a REFUSAL of that call**
+ * (`client.ts`' `RequestTooLarge`): it was never written, so the host has seen
+ * nothing and nothing else ends. Until decision D the client ended the
+ * connection, which sent every document on that host to recovery — the text
+ * here said *refuses* and the code did something else (ADR-0125's addendum).
  *
  * ## So: payload shape first, chunking second
  *

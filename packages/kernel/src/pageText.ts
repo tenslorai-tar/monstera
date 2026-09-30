@@ -8,6 +8,7 @@ import {
   parsePageText,
   stextOptionsFor,
 } from './textStructure.js';
+import { pageInDocument } from './pageScope.js';
 
 /**
  * One page's text, read from a live session through the engine's own
@@ -66,12 +67,7 @@ export function readPageText(
     // length matches the request and whose contents describe a different set of
     // pages is unrepresentable rather than undetectable.
     for (const page of pages) {
-      if (!Number.isInteger(page) || page < 0 || page >= pageCount) {
-        throw new RangeError(
-          `Page ${String(page)} is outside this document, which has ${String(pageCount)} ` +
-            'page(s). Page indices are zero-based.',
-        );
-      }
+      pageInDocument(page, pageCount);
     }
 
     const read = pages.map((number) =>
@@ -105,12 +101,7 @@ export function readPageTextJson(
 ): Promise<string> {
   return withDocument(session, (document) => {
     const pageCount = document.countPages();
-    if (!Number.isInteger(page) || page < 0 || page >= pageCount) {
-      throw new RangeError(
-        `Page ${String(page)} is outside this document, which has ${String(pageCount)} ` +
-          'page(s). Page indices are zero-based.',
-      );
-    }
+    pageInDocument(page, pageCount);
     return structuredJson(document, page, read);
   });
 }

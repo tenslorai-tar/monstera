@@ -210,6 +210,47 @@ describe('rotatePages — apply', () => {
   });
 });
 
+/**
+ * DECISION D: a command's pages cross as runs. The run must reach exactly its pages — a run read as its two ends, or as
+ * one page, would rotate the wrong set — and a run past the document is refused before any page is written.
+ */
+describe('rotatePages — a page set of runs (decision D)', () => {
+  it('a run rotates every page in it and none beside it, read back by a DIFFERENT library', async () => {
+    const session = await mupdfWriter.open(flat);
+    try {
+      await applyRotatePages(session, { kind: 'rotatePages', pages: [[1, 3]], quarterTurns: 1 });
+      const reopened = await PDFDocument.load(await mupdfWriter.serialise(session), { updateMetadata: false });
+      expect([0, 1, 2, 3].map((page) => reopened.getPage(page).getRotation().angle)).toStrictEqual([0, 90, 90, 90]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('the capture records one prior per page of the run, in order, so undo restores each', async () => {
+    const session = await mupdfWriter.open(flat);
+    try {
+      const prior = await captureRotatePages(session, { kind: 'rotatePages', pages: [[0, 1], 3], quarterTurns: 1 });
+      expect(prior.captured).toBe(true);
+      if (!prior.captured) throw new Error('unreachable');
+      expect(prior.prior.map((entry) => entry.page)).toStrictEqual([0, 1, 3]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('REFUSES a run past the document before writing any page — the one refusal, naming its last page', async () => {
+    const session = await mupdfWriter.open(flat);
+    try {
+      await expect(
+        applyRotatePages(session, { kind: 'rotatePages', pages: [[0, 8_000_000]], quarterTurns: 1 }),
+      ).rejects.toThrow(/Page 8000000 is outside this document, which has 4 page/u);
+      expect(await ownRotation(session, 0)).toBeNull();
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+});
+
 describe('rotatePages — snapRotation agrees with the ENGINE, not with a tidier rule', () => {
   const RAW = [0, 1, 44, 45, 46, 89, 90, 135, 179, 180, 269, 270, 315, 340, 359, 360, 450, -1, -90, -180, -270, -360, -450];
 

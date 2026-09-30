@@ -4462,6 +4462,26 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
     }
   });
 
+  /**
+   * DECISION D, at the one place every command leaves the renderer: a ticked stretch crosses as a RUN. The fixture has
+   * a stretch and a lone page, so a dispatcher that sent the list as it came — the build before D — sends five numbers
+   * where this asserts two entries.
+   */
+  it('a ticked stretch of pages crosses as one run, and a lone page as its number', async () => {
+    for (const [factory, kind] of [
+      [rotatePageCommand, 'rotatePages'],
+      [deletePageCommand, 'deletePages'],
+    ] as const) {
+      const ticked = sending();
+      await factory({ client: ticked.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp }).run({
+        ...CONTEXT,
+        page: 2,
+        selectedPages: [4, 5, 6, 7, 9],
+      });
+      expect(ticked.sent.map((command) => (command as { pages?: unknown }).pages), kind).toStrictEqual([[[4, 7], 9]]);
+    }
+  });
+
   it('THE REST OF ORGANIZE reads `targetPages` too: duplicate and insert act, and the dialogs open on the ticked pages', async () => {
     // Work list 2026-09-26, item 4. Same fixture shape as the case above: page 2 on show, pages 0 and 3 ticked, so a
     // command still reading `page` gives 2 — or 3 for an insert — where these give the ticked pages.

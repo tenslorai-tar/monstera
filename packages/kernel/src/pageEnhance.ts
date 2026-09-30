@@ -5,7 +5,7 @@ import type { PDFObject } from './mupdfRaw.js';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
-import { pagesOf } from './pageScope.js';
+import { pageInDocument, pagesOf } from './pageScope.js';
 import { otsu } from './pageSkew.js';
 
 /**
@@ -285,12 +285,7 @@ export function enhancedPages(
     const total = document.countPages();
     const targets = pagesOf(command.pages, total);
     for (const page of targets) {
-      if (!Number.isInteger(page) || page < 0 || page >= total) {
-        throw new RangeError(
-          `Page ${String(page)} is outside this document, which has ${String(total)} page(s). ` +
-            'Page indices are zero-based.',
-        );
-      }
+      pageInDocument(page, total);
     }
 
     const report: EnhancedPage[] = [];

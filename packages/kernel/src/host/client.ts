@@ -57,6 +57,21 @@ export class HostConnectionLost extends Error {
   }
 }
 
+/**
+ * One call this side could not send — too large for its route — refused BEFORE anything was written, so it ends that
+ * call and nothing else: the connection, its other calls and every session on the host are as they were. The one
+ * class both routes throw, the frame and the params file, so a caller has one thing to recognise.
+ */
+export class RequestTooLarge extends RangeError {
+  constructor(
+    readonly channel: string,
+    detail: string,
+  ) {
+    super(`a request on "${channel}" was not sent: ${detail}`);
+    this.name = 'RequestTooLarge';
+  }
+}
+
 export interface HostClientOptions {
   /** Where framed requests go and how the connection is given up. */
   readonly transport: HostRuntimeTransport;
@@ -232,15 +247,11 @@ export function createHostClient({
           maxFrameBytes,
         );
       } catch (cause) {
-        // A request too large for the frame is OUR defect — the same shape
-        // `unsendable-response` names on the other side, and named for us
-        // rather than for the peer for the same reason.
-        const reason: HostTermination = {
-          code: 'unsendable-response',
-          detail: `a request on "${channel}" could not be framed: ${cause instanceof Error ? cause.message : String(cause)}`,
-        };
-        stop(reason, true);
-        throw new HostConnectionLost(reason);
+        // THIS CALL IS REFUSED, AND NOTHING ELSE ENDS (decision D). The request was never written, so the host has
+        // seen nothing and every other session on it is as it was; ending the connection sent every document on this
+        // host to recovery over one command this side could not send. `hostProtocol.ts` says the frame refuses such a
+        // request, and this is where that is true.
+        throw new RequestTooLarge(channel, cause instanceof Error ? cause.message : String(cause));
       }
 
       return await new Promise<unknown>((resolve, reject) => {
@@ -260,8 +271,9 @@ export function createHostClient({
       // and ending the connection over params this side chose to send would be our defect named as a violation.
       const bytes = new TextEncoder().encode(JSON.stringify(params));
       if (bytes.byteLength > ENGINE_ANSWER_FILE_MAX_BYTES) {
-        throw new RangeError(
-          `the params for "${channel}" are ${String(bytes.byteLength)} bytes, above the ${String(ENGINE_ANSWER_FILE_MAX_BYTES)}-byte ceiling`,
+        throw new RequestTooLarge(
+          channel,
+          `its params are ${String(bytes.byteLength)} bytes, above the ${String(ENGINE_ANSWER_FILE_MAX_BYTES)}-byte ceiling`,
         );
       }
       const session = (params as { readonly session?: unknown } | null)?.session;

@@ -10,6 +10,7 @@ import {
   type FormDataImportFormat,
   type OptimizeSetting,
   type SignaturePlacement,
+  withPageRuns,
   withStamp,
 } from '@monstera/contract';
 import { type DocId, type DocVersion, type Failure, type MessageKey, lineText } from '@monstera/shared';
@@ -523,7 +524,9 @@ export async function applyDocumentCommand(
     readonly keep?: (error: Failure<FailureOf<Channels, 'document.execute'>>) => boolean;
   } = {},
 ): Promise<boolean> {
-  const answer = await deps.client['document.execute']({ docId, command: withStamp(command, deps.stamp()) });
+  // PAGES AS RUNS (decision D), here where every command leaves the renderer, so no surface has to remember: a
+  // selection of ten thousand pages in one stretch crosses as one entry, and every command fits a host's frame.
+  const answer = await deps.client['document.execute']({ docId, command: withPageRuns(withStamp(command, deps.stamp())) });
 
   // A DECLARED FAILURE IS AN OUTCOME AND CHANGES NOTHING — see
   // `rotatePageCommand`, whose comment this behaviour was extracted from. It is

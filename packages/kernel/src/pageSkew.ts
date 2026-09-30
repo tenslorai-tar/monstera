@@ -3,6 +3,7 @@ import type { PDFPage } from './mupdfRaw.js';
 
 import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
+import { pageInDocument } from './pageScope.js';
 
 /**
  * How crooked a page is, measured in its own raster.
@@ -247,12 +248,7 @@ export function greyRasterOfPage(page: PDFPage): GreyRaster {
 export function measurePageSkew(session: MupdfSession, page: number): Promise<PageSkew> {
   return withDocument(session, (document) => {
     const total = document.countPages();
-    if (!Number.isInteger(page) || page < 0 || page >= total) {
-      throw new RangeError(
-        `Page ${String(page)} is outside this document, which has ${String(total)} page(s). ` +
-          'Page indices are zero-based.',
-      );
-    }
+    pageInDocument(page, total);
     return skewOfRaster(greyRasterOfPage(document.loadPage(page)));
   });
 }

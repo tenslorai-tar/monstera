@@ -11,6 +11,7 @@ import {
   swapPermutation,
 } from '@monstera/shared';
 import type { PDFDocument, PDFObject } from './mupdfRaw.js';
+import { type PageScope, pagesOf } from './pageScope.js';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
@@ -196,17 +197,10 @@ function rewriteKids(document: PDFDocument, permutation: readonly number[]): voi
  * command is legal — the disagreement `applyMovePage`'s own refusal exists to
  * report rather than to cause.
  */
-function removableOrThrow(document: PDFDocument, pages: readonly number[]): Set<number> {
+function removableOrThrow(document: PDFDocument, pages: PageScope): Set<number> {
   const count = document.countPages();
-  const gone = new Set(pages);
-  for (const page of gone) {
-    if (page >= count) {
-      throw new RangeError(
-        `page ${String(page)} is outside a document of ${String(count)} page(s). The bus ` +
-          `validates against the document it captured, so reaching here means the two disagree.`,
-      );
-    }
-  }
+  // `pagesOf` REFUSES a page outside this document — the one refusal, and a run of them before it is listed.
+  const gone = new Set(pagesOf(pages, count));
   // REFUSED, and this is the one rule the schema could not carry: it needs the
   // page count. A PDF with an empty `/Kids` is not a document a reader opens,
   // and producing one would turn an undo into the only way back to a file that
@@ -344,8 +338,9 @@ export interface PriorPageCopy {
 }
 
 /** The pages a duplicate copies — sorted and deduplicated, the schema's own note: the answer is a set. */
-function duplicatedPages(command: CommandOfKind<'duplicatePage'>): readonly number[] {
-  return [...new Set(command.pages)].sort((a, b) => a - b);
+function duplicatedPages(command: CommandOfKind<'duplicatePage'>, count: number): readonly number[] {
+  // `pagesOf` REFUSES a page this document does not have, the one refusal every command here takes.
+  return [...new Set(pagesOf(command.pages, count))].sort((a, b) => a - b);
 }
 
 /**
@@ -362,17 +357,9 @@ export function captureDuplicatePage(
   command: CommandOfKind<'duplicatePage'>,
 ): Promise<CaptureResult<PriorPageCopy>> {
   return withDocument(session, (document) => {
-    const count = document.countPages();
-    const pages = duplicatedPages(command);
-    const outside = pages.find((page) => page >= count);
-    if (outside !== undefined) {
-      return {
-        captured: false,
-        reason:
-          `page ${String(outside)} is outside this document, which has ` +
-          `${String(count)} page(s), so there is nothing to copy`,
-      };
-    }
+    // A PAGE THIS DOCUMENT DOES NOT HAVE IS REFUSED, thrown from `duplicatedPages`, as every capture here refuses an
+    // invalid command: a checkpoint taken for a copy that cannot be made would reproduce the refusal on redo.
+    const pages = duplicatedPages(command, document.countPages());
     // EACH COPY SITS AFTER ITS SOURCE, and every earlier copy has pushed it one further along: the i-th source in
     // ascending order lands at its own index plus i + 1.
     return { captured: true, prior: { at: pages.map((page, index) => page + index + 1) } };
@@ -419,15 +406,9 @@ export const applyDuplicatePage: Apply<'mupdf', 'duplicatePage'> = (
 ): Promise<void> =>
   withDocument(session, (document) => {
     const count = document.countPages();
-    const pages = duplicatedPages(command);
-    const outside = pages.find((page) => page >= count);
-    if (outside !== undefined) {
-      throw new RangeError(
-        `page ${String(outside)} is outside a document of ${String(count)} page(s). The ` +
-          `bus validates against the document it captured, so reaching here means the two ` +
-          `disagree.`,
-      );
-    }
+    // REFUSED IN `duplicatedPages` where a page is outside: the bus validated against the document it captured, so
+    // reaching the refusal here means the two disagree.
+    const pages = duplicatedPages(command, count);
 
     // THE INHERITABLES ARE PUSHED DOWN BEFORE THE GRAFT, which is the ordering
     // that matters: a leaf still inheriting its `/MediaBox` from an

@@ -12,6 +12,7 @@ import { withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
 import { MAX_SNAPSHOT_PIXELS } from './pageSnapshot.js';
 import { encodeWebp } from './webpEncoder.js';
+import { pageInDocument } from './pageScope.js';
 
 /**
  * A whole page rasterised to an image file — D10's *Pages → PNG / JPEG / WebP*.
@@ -130,12 +131,7 @@ function withPagePixmap<T>(
 ): Promise<T> {
   return withDocument(session, (document): T => {
     const total = document.countPages();
-    if (!Number.isInteger(pageIndex) || pageIndex < 0 || pageIndex >= total) {
-      throw new RangeError(
-        `Page ${String(pageIndex)} is outside this document, which has ${String(total)} ` +
-          'page(s). Page indices are zero-based.',
-      );
-    }
+    pageInDocument(pageIndex, total);
     if (!Number.isFinite(scale) || scale < MIN_SNAPSHOT_SCALE || scale > MAX_SNAPSHOT_SCALE) {
       throw new RangeError(
         `a page image scale of ${String(scale)} is outside ` +

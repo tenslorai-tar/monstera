@@ -5,6 +5,7 @@ import { ColorSpace, DrawDevice, Matrix, Pixmap } from './mupdfRaw.js';
 import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { frameOf, placedRect } from './pageAnnotations.js';
+import { pageInDocument } from './pageScope.js';
 
 /**
  * Rasterising a REGION of a page to a PNG — D3's *snapshot region to PNG*.
@@ -164,12 +165,7 @@ export function snapshotRegion(
 ): Promise<RegionSnapshot> {
   return withDocument(session, (document) => {
     const total = document.countPages();
-    if (!Number.isInteger(request.page) || request.page < 0 || request.page >= total) {
-      throw new RangeError(
-        `Page ${String(request.page)} is outside this document, which has ${String(total)} ` +
-          'page(s). Page indices are zero-based.',
-      );
-    }
+    pageInDocument(request.page, total);
     if (
       !Number.isFinite(request.scale) ||
       request.scale < MIN_SNAPSHOT_SCALE ||

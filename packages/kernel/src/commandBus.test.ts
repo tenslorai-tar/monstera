@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { type Command, type CommandOfKind, NETWORK_OCR_ENGINES } from '@monstera/contract';
+import { type Command, type CommandOfKind, NETWORK_OCR_ENGINES, type PageSet } from '@monstera/contract';
 import { type DocVersion, asDocVersion } from '@monstera/shared';
 
 import {
@@ -396,7 +396,7 @@ describe('CommandLog — a cursor, not a stack', () => {
    * failure rather than a missing property. That distinction did not exist
    * while one command did.
    */
-  function pagesOf(recorded: LogEntry | undefined): readonly number[] {
+  function pagesOf(recorded: LogEntry | undefined): PageSet {
     if (recorded === undefined) throw new Error('expected an entry, got none');
     if (recorded.command.kind !== 'rotatePages') {
       throw new Error(`expected a rotatePages entry, got ${recorded.command.kind}`);

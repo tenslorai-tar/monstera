@@ -6,6 +6,7 @@ import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { frameOf, placedRect, touchesPage } from './pageAnnotations.js';
+import { pageInDocument } from './pageScope.js';
 
 /**
  * The links on a page, read through the engine.
@@ -82,12 +83,7 @@ export interface LinkBounds {
 export function readPageLinks(session: MupdfSession, page: number): Promise<readonly PageLink[]> {
   return withDocument(session, (document) => {
     const pageCount = document.countPages();
-    if (!Number.isInteger(page) || page < 0 || page >= pageCount) {
-      throw new RangeError(
-        `Page ${String(page)} is outside this document, which has ${String(pageCount)} ` +
-          'page(s). Page indices are zero-based.',
-      );
-    }
+    pageInDocument(page, pageCount);
     return linksOn(document, page);
   });
 }
@@ -238,12 +234,7 @@ export const invertAddLink: Invert<'mupdf', 'addLink'> = (): Promise<void> => {
 
 /** The page for a validated index, or a named refusal. */
 function pageWithin(document: mupdf.PDFDocument, page: number, total: number): mupdf.PDFPage {
-  if (!Number.isInteger(page) || page < 0 || page >= total) {
-    throw new RangeError(
-      `Page ${String(page)} is outside this document, which has ${String(total)} page(s). ` +
-        'Page indices are zero-based.',
-    );
-  }
+  pageInDocument(page, total);
   return document.loadPage(page);
 }
 

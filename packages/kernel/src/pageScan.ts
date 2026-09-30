@@ -7,7 +7,7 @@ import { COORDINATE_DECIMALS, contentNumber } from './contentNumbers.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { imagesOf, roundTrippable, writeGreyJpeg } from './pageEnhance.js';
-import { pagesOf } from './pageScope.js';
+import { pageInDocument, pagesOf } from './pageScope.js';
 import { otsu } from './pageSkew.js';
 
 /**
@@ -451,12 +451,7 @@ export function straightenedPages(
     const total = document.countPages();
     const targets = pagesOf(command.pages, total);
     for (const page of targets) {
-      if (!Number.isInteger(page) || page < 0 || page >= total) {
-        throw new RangeError(
-          `Page ${String(page)} is outside this document, which has ${String(total)} page(s). ` +
-            'Page indices are zero-based.',
-        );
-      }
+      pageInDocument(page, total);
     }
     return targets.map((page) => ({ page, outcome: straighten(document, page) }));
   });

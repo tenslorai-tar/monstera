@@ -6,6 +6,7 @@ import { snapRotation } from '@monstera/shared';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
+import { pageInDocument, pagesOf } from './pageScope.js';
 
 /**
  * The first command, and the one ADR-0009 §3 was derived from.
@@ -73,13 +74,7 @@ function pageObject(
   page: number,
   total: number,
 ): mupdf.PDFObject {
-  if (!Number.isInteger(page) || page < 0 || page >= total) {
-    throw new RangeError(
-      `Page ${String(page)} is outside this document, which has ${String(total)} page(s). ` +
-        'Page indices are zero-based.',
-    );
-  }
-  return document.loadPage(page).getObject();
+  return document.loadPage(pageInDocument(page, total)).getObject();
 }
 
 /**
@@ -115,7 +110,7 @@ export function captureRotatePages(
 ): Promise<CaptureResult<readonly PriorPageRotation[]>> {
   return withDocument(session, (document) => {
     const total = document.countPages();
-    const objects = command.pages.map((page) => ({
+    const objects = pagesOf(command.pages, total).map((page) => ({
       page,
       own: pageObject(document, page, total).get('Rotate'),
     }));
@@ -204,7 +199,7 @@ export const applyRotatePages: Apply<'mupdf', 'rotatePages'> = (
 ): Promise<void> =>
   withDocument(session, (document) => {
     const total = document.countPages();
-    const objects = command.pages.map((page) => pageObject(document, page, total));
+    const objects = pagesOf(command.pages, total).map((page) => pageObject(document, page, total));
     const turn = command.quarterTurns * 90;
     for (const object of objects) {
       const inherited = object.getInheritable('Rotate');

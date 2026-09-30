@@ -5,6 +5,7 @@ import type { PageFill } from './cellFills.js';
 import type { MupdfSession } from './engineSeam.js';
 import { ENGINE_PAGE_FILLS_MAX } from './host/engineChannels.js';
 import { withDocument } from './mupdfWriter.js';
+import { pageInDocument } from './pageScope.js';
 
 /**
  * A page's filled shapes, read through the engine — the drawing half of a table cell's background
@@ -45,12 +46,7 @@ function rgbOf(space: mupdf.ColorSpace, colour: readonly number[], alpha: number
 export function readPageFills(session: MupdfSession, page: number): Promise<readonly PageFill[]> {
   return withDocument(session, (document) => {
     const pageCount = document.countPages();
-    if (!Number.isInteger(page) || page < 0 || page >= pageCount) {
-      throw new RangeError(
-        `Page ${String(page)} is outside this document, which has ${String(pageCount)} ` +
-          'page(s). Page indices are zero-based.',
-      );
-    }
+    pageInDocument(page, pageCount);
     const fills: PageFill[] = [];
     const loaded = document.loadPage(page);
     const device = new mupdf.Device({

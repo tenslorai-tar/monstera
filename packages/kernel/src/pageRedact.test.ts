@@ -227,7 +227,7 @@ describe('applyRedactions', () => {
           images: 'pixels',
           keepTitle: false,
         }),
-      ).rejects.toThrow(/page 7 of a document with 2 pages/u);
+      ).rejects.toThrow(/Page 7 is outside this document, which has 2 page/u);
     } finally {
       await mupdfWriter.close(session);
     }

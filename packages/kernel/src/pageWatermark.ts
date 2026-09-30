@@ -3,7 +3,7 @@ import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert } from './engineSeam.js';
-import { pagesOf } from './pageScope.js';
+import { pageInDocument, pagesOf } from './pageScope.js';
 
 /**
  * Drawing a text watermark across pages — **the first command routed to a
@@ -145,12 +145,7 @@ export const applyWatermarkPages: Apply<'pdf-lib', 'watermarkPages'> = async (im
   const targets = pagesOf(command.pages, pages.length);
 
   for (const page of targets) {
-    if (!Number.isInteger(page) || page < 0 || page >= pages.length) {
-      throw new RangeError(
-        `Page ${String(page)} is outside this document, which has ${String(pages.length)} ` +
-          'page(s). Page indices are zero-based.',
-      );
-    }
+    pageInDocument(page, pages.length);
   }
 
   const font = await document.embedFont(StandardFonts.Helvetica);

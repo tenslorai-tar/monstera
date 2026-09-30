@@ -428,6 +428,7 @@ export {
   type HostClient,
   type HostClientOptions,
   HostConnectionLost,
+  RequestTooLarge,
   createHostClient,
 } from './host/client.js';
 // THE TEXT SUBSTRATE'S PURE HALF, on the main surface rather than `/engine`:

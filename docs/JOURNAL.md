@@ -1047,6 +1047,26 @@ measured. Each of the 27 was read by name. It closes the stage audit's YYYYYY-8.
 `proof:inlineimages` (decision B) calling the staleness guard with no edge-map entry and without the native engine's
 edge, though it reads `dist/mupdfRaw.js`; both added.
 
+**D — a selection crosses as runs, and a request too large is one refused call.** The owner's two halves. Pages are
+now a page set of runs (`pageSet.ts`): a stretch is one entry, select-all on any document is one entry, and the set is
+bounded at 8,192 entries — 147,456 bytes at worst, under the frame. The renderer writes every command that way at the
+one place commands leave it (`applyDocumentCommand`), and the kernel expands them through `pagesOf`, which refuses a
+run past the document before listing it, so a run of millions against a short document is a refusal, never a list of
+millions. The refusal itself had been written out by hand twenty-seven times across the kernel; it is
+`pageInDocument` now and twenty-two sites call it. Five stay as they are, each checked by reading it: two carry their
+own explanation (a layer placed on a page that exists, a replace naming an existing page), two read a page array
+rather than a count, and one reads only the upper bound of an index the schema already keeps non-negative. One behaviour
+moved with it: a duplicate of a page outside the document now throws at the capture, as delete's always did, where it
+used to answer *not captured* — which took a checkpoint for a copy that could not be made. The second half:
+`client.ts` refuses a request it cannot frame as that call (`RequestTooLarge`) and ends nothing, where it used to end
+the connection and send every document on the host to recovery. The pair: `pageSet.test.ts` and `rotatePages.test.ts`
+(a run rotates exactly its pages, read back by pdf-lib; a run past the end refused before any write) with the
+renderer's case that a ticked stretch crosses as one run; `client.test.ts`' refusal with the next call as its control;
+`hostRoutes.test.ts` now asserting no array or string in a command is unbounded, with the old index list as its
+control. What the route check also showed is recorded against the audit's YYYYYY-4: the command channels still read
+unbounded at worst because command objects are not strict — which is why the refusal, not the frame, is what
+guarantees an oversized command ends nothing.
+
 ---
 
 ## 2026-09-30 — Edit text on the owner's documents (ADR-0125), and the same class through every contained process

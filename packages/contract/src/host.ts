@@ -41,4 +41,5 @@ export * from './commands.js';
 export * from './frame.js';
 export * from './hostProtocol.js';
 export * from './incident.js';
+export * from './pageSet.js';
 export * from './schemas.js';

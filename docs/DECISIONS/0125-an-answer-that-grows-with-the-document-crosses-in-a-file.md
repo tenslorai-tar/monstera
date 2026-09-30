@@ -198,3 +198,18 @@ cannot be framed, so every session on that host goes to recovery. The request wa
 host side needed ending. Answering it as a refusal of that one call would be Decision 3's rule turned round. It
 reaches only past a stated bound 2.2× beyond any document that exists, so it is recorded here rather than changed
 under this ADR.
+
+## Correction, 2026-09-30 — the open question is closed (the owner's decision D)
+
+**Both halves are built.** A command's pages are a page SET of runs (`@monstera/contract`'s `pageSet.ts`): a stretch of
+pages is one entry whatever its length, the set is bounded at 8,192 entries, and `applyDocumentCommand` writes every
+command's pages that way where it leaves the renderer; the kernel expands them through `pageScope.ts`' `pagesOf`,
+which refuses a run past the document before listing it. And a request this side cannot frame is refused as THAT call —
+`client.ts` throws `RequestTooLarge` and ends nothing, the same class it throws above the params file's ceiling. The
+control in `client.test.ts` is the next call on the same connection being written and answered.
+
+**Point 10 above was narrower than the fact, and is corrected here rather than edited** (the stage audit's
+YYYYYY-4). The five command channels exceed a frame at their schema's worst for a second reason besides page lists: a
+command object is not `.strict()`, so the walk reads it as able to carry more keys and so unbounded, which it must.
+With page lists bounded the anchor now asserts that no array or string in a command is unbounded, with a control that
+the old index list is reported; the channels stay pinned, and their oversized request is the refusal above.

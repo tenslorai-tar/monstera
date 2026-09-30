@@ -6,6 +6,7 @@ import type { Apply, MupdfSession } from './engineSeam.js';
 import { pruneEmptyFields } from './formFields.js';
 import { withDocument, withDocumentRemoving } from './mupdfWriter.js';
 import { redraw } from './pageAnnotations.js';
+import { type PageScope, pagesOf } from './pageScope.js';
 
 /**
  * Burning redact marks into the document — the other half of D3 row 131's mark.
@@ -59,20 +60,10 @@ const TEXT_REMOVE = 0;
  * upstream has to hold a number that a command running before it could have
  * changed.
  */
-function scopedPages(document: mupdf.PDFDocument, pages: 'all' | readonly number[]): number[] {
-  const count = document.countPages();
-  if (pages === 'all') return Array.from({ length: count }, (_unused, index) => index);
-  // REFUSED rather than clamped. A page index this document does not have is a
-  // renderer working from a stale count, and silently skipping it would burn in
-  // some marks and report that it burned in all of them.
-  for (const page of pages) {
-    if (page >= count) {
-      throw new Error(
-        `applyRedactions names page ${String(page)} of a document with ${String(count)} pages.`,
-      );
-    }
-  }
-  return [...pages];
+function scopedPages(document: mupdf.PDFDocument, pages: PageScope): readonly number[] {
+  // REFUSED rather than clamped, by `pagesOf`'s one refusal. A page index this document does not have is a renderer
+  // working from a stale count, and silently skipping it would burn in some marks and report that it burned in all.
+  return pagesOf(pages, document.countPages());
 }
 
 /**

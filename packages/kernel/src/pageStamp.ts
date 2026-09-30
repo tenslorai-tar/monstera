@@ -3,7 +3,7 @@ import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert } from './engineSeam.js';
-import { pagesOf } from './pageScope.js';
+import { pageInDocument, pagesOf } from './pageScope.js';
 
 /**
  * Headers and footers — **the second command routed to a byte-image writer**,
@@ -140,12 +140,7 @@ export const applyHeaderFooterPages: Apply<'pdf-lib', 'headerFooterPages'> = asy
   // EVERY PAGE VALIDATED BEFORE THE FIRST IS DRAWN, for `pageCrop.ts`'s reason:
   // a command naming one page this document does not have changes nothing.
   for (const page of targets) {
-    if (!Number.isInteger(page) || page < 0 || page >= pages.length) {
-      throw new RangeError(
-        `Page ${String(page)} is outside this document, which has ${String(pages.length)} ` +
-          'page(s). Page indices are zero-based.',
-      );
-    }
+    pageInDocument(page, pages.length);
   }
 
   const font = await document.embedFont(StandardFonts.Helvetica);
@@ -296,12 +291,7 @@ export const applyBatesNumberPages: Apply<'pdf-lib', 'batesNumberPages'> = async
   const targets = pagesOf(command.pages, pages.length);
 
   for (const page of targets) {
-    if (!Number.isInteger(page) || page < 0 || page >= pages.length) {
-      throw new RangeError(
-        `Page ${String(page)} is outside this document, which has ${String(pages.length)} ` +
-          'page(s). Page indices are zero-based.',
-      );
-    }
+    pageInDocument(page, pages.length);
   }
 
   const font = await document.embedFont(StandardFonts.Helvetica);

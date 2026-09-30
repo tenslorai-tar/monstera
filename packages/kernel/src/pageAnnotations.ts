@@ -33,6 +33,7 @@ import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { decodedImage, withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
 import { snapRotation } from './rotatePages.js';
+import { pageInDocument } from './pageScope.js';
 
 /**
  * Writing one annotation a tool drew.
@@ -105,12 +106,7 @@ import { snapRotation } from './rotatePages.js';
  * there* are different facts.
  */
 export function pageAt(document: PDFDocument, page: number, total: number): PDFPage {
-  if (!Number.isInteger(page) || page < 0 || page >= total) {
-    throw new RangeError(
-      `Page ${String(page)} is outside this document, which has ${String(total)} page(s). ` +
-        'Page indices are zero-based.',
-    );
-  }
+  pageInDocument(page, total);
   return document.loadPage(page);
 }
 

@@ -6,6 +6,7 @@ import {
   unboundedMembers,
 } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import { composeChannels } from './composeChannels.js';
 import { engineChannels } from './engineChannels.js';
@@ -22,12 +23,17 @@ import { pdfiumChannels } from './pdfiumChannels.js';
 const HOSTS = { 'MuPDF host': engineChannels, 'PDFium host': pdfiumChannels, 'compose host': composeChannels };
 
 /**
- * THE ONE REQUEST-DIRECTION BOUND THAT STAYS, and it is not ADR-0125's to remove: the channels whose params carry a
- * COMMAND. A command is intent, and every member of the union is bounded except a page list, which scales with the
- * selection — so a whole-document selection meets the frame at about 43,600 pages, the bound `hostProtocol.ts` states
- * and finding AAA-1 decided against raising (a page-set encoding is the named remedy). Pinned by exact set, per host, so
- * a channel that joins this list is red and one that leaves it has to be taken off; and the case below holds the reason
- * true, so an unbounded TEXT field in a command cannot hide behind an entry written for page lists.
+ * THE ONE REQUEST-DIRECTION BOUND THAT STAYS: the channels whose params carry a COMMAND. Pinned by exact set, per host,
+ * so a channel that joins this list is red and one that leaves it has to be taken off.
+ *
+ * ## Why they are here, corrected with decision D
+ *
+ * This said a command's only unbounded member was a page list. Decision D made page lists bounded page SETS (runs,
+ * `pageSet.ts`), and the case below now asserts no array or string in a command is unbounded — yet these channels
+ * still exceed a frame at their schema's worst, because a command object is not `.strict()` and the walk reads an
+ * object that may carry more keys as unbounded, which it must (the stage audit's YYYYYY-4, wider than recorded). So
+ * the channels stay framed, and what a request this side cannot frame does is decision D's other half: `client.ts`
+ * refuses THAT call (`RequestTooLarge`) and ends nothing.
  */
 const COMMAND_CARRYING: Readonly<Record<keyof typeof HOSTS, readonly string[]>> = {
   'MuPDF host': ['engine/apply', 'engine/capture', 'engine/applyPdfLib'],
@@ -49,12 +55,18 @@ describe('the engine hosts’ declared routes', () => {
     });
   }
 
-  /** The anchor under {@link COMMAND_CARRYING}: its reason is a page list, and nothing else in a command is unbounded. */
-  it('every unbounded member of the command union is a page list', () => {
-    const unbounded = unboundedMembers(commandSchema, 'command');
-    // THE CONTROL IS THE LIST ITSELF: fifteen commands take a page list, so an empty result is a blind read, not a pass.
-    expect(unbounded.length).toBeGreaterThan(0);
-    expect(unbounded.filter((path) => !/\.properties\.pages(\.anyOf\.\d+)?$/u.test(path))).toStrictEqual([]);
+  /** Decision D: every page list is a bounded page set, so no array or string anywhere in a command is unbounded. */
+  it('no array or string in the command union is unbounded — page lists included', () => {
+    expect(unboundedMembers(commandSchema, 'command')).toStrictEqual([]);
+  });
+
+  /**
+   * THE CONTROL, because an empty list is also what a blind walk answers: the page list as it was before decision D,
+   * one index per page, is reported by the same reader.
+   */
+  it('CONTROL: the index list the fifteen commands took before decision D is reported unbounded', () => {
+    const before = z.object({ kind: z.literal('rotatePages'), pages: z.array(z.number().int().nonnegative()).min(1) });
+    expect(unboundedMembers(before, 'command')).toStrictEqual(['array  command.properties.pages']);
   });
 
   /**

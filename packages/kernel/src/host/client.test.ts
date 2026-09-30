@@ -1,7 +1,7 @@
 import { ENGINE_ANSWER_FILE_MAX_BYTES, ENGINE_HOST_FRAME_MAX_BYTES, encodeFrame } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
-import { type HostClient, HostConnectionLost, createHostClient } from './client.js';
+import { type HostClient, HostConnectionLost, RequestTooLarge, createHostClient } from './client.js';
 import type { HostTermination } from './runtime.js';
 
 /**
@@ -61,6 +61,26 @@ describe('createHostClient', () => {
     h.answer({ ok: true }, 'a');
     await expect(call).resolves.toEqual({ ok: true });
     expect(h.client.inFlight()).toBe(0);
+  });
+
+  /**
+   * DECISION D: a request too large for the frame is refused as THAT call. It was never written, so the host has seen
+   * nothing, and ending the connection would send every document on it to recovery. The control is the next call on
+   * the same connection being written and answered — a client that stopped would refuse it instead.
+   */
+  it('REFUSES a request too large for the frame as that call alone, and the connection carries the next one', async () => {
+    const h = harness({ ids: ['a', 'b'] });
+
+    await expect(h.client.invoke('doc:big', { blob: 'x'.repeat(ENGINE_HOST_FRAME_MAX_BYTES) })).rejects.toBeInstanceOf(
+      RequestTooLarge,
+    );
+    expect(h.terminations).toStrictEqual([]);
+    expect(h.writes).toHaveLength(0);
+
+    const next = h.client.invoke('doc:small', { blob: 'y' });
+    expect(h.sent()).toStrictEqual([{ id: 'b', channel: 'doc:small', params: { blob: 'y' } }]);
+    h.answer({ ok: true }, 'b');
+    await expect(next).resolves.toEqual({ ok: true });
   });
 
   it('resolves each call with ITS answer when they come back out of order', async () => {

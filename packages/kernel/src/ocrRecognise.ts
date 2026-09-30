@@ -10,6 +10,7 @@ import { ColorSpace, Matrix, Rect } from './mupdfRaw.js';
 import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
+import { pageInDocument } from './pageScope.js';
 
 /**
  * The Tesseract native boundary — a raster becomes characters and their boxes.
@@ -500,12 +501,7 @@ export async function recognisePage(
   const scale = OCR_DPI / 72;
   const raster = await withDocument(session, (document) => {
     const total = document.countPages();
-    if (!Number.isInteger(request.page) || request.page < 0 || request.page >= total) {
-      throw new RangeError(
-        `Page ${String(request.page)} is outside this document, which has ${String(total)} ` +
-          'page(s). Page indices are zero-based.',
-      );
-    }
+    pageInDocument(request.page, total);
     const page = document.loadPage(request.page);
     // STILL THE REFUSAL, THOUGH NO LONGER THE CONVERSION. `displayedBox` answers
     // `null` for a page that displays nothing, where MuPDF's own fallback is US
