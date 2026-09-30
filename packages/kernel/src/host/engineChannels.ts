@@ -26,6 +26,8 @@ import {
   importFormDataSchema,
   importAnnotationsSchema,
   channel,
+  fileAnswered,
+  outputNameSchema,
   cropPagesSchema,
   setPageTransitionSchema,
   deletePagesSchema,
@@ -957,9 +959,16 @@ export function taggedPrior<K extends CommandKind>(
   return { kind, prior } as CapturedPrior;
 }
 
+/**
+ * How long a capture's refusal may explain itself. The reasons are sentences this build writes (`formFields.ts`,
+ * `documentSign.ts` and their siblings), a few hundred characters each; a bound is what makes the capture's answer
+ * one whose size a schema can state at all (ADR-0125's walk found it unbounded on this field alone).
+ */
+export const ENGINE_CAPTURE_REASON_MAX = 1024;
+
 const captureResultSchema = z.discriminatedUnion('captured', [
   z.object({ captured: z.literal(true), value: capturedPriorSchema }).strict(),
-  z.object({ captured: z.literal(false), reason: z.string().min(1) }).strict(),
+  z.object({ captured: z.literal(false), reason: z.string().min(1).max(ENGINE_CAPTURE_REASON_MAX) }).strict(),
 ]);
 
 /**
@@ -1260,20 +1269,10 @@ function pdfLibCarriesAsset(
 export const ENGINE_PATH_MAX_CHARS = 1024;
 
 /**
- * The file name main asks the host to write its serialised bytes into.
- *
- * Minted by MAIN and travelling main → host, which is the point: main joins
- * this to a directory it created, so the name it joins is one it chose. The
- * allowlist is the same shape the handed directory names use — hex and hyphen,
- * nothing that can spell a separator, a parent, a device name or a stream —
- * and it carries **no extension**, because MuPDF picks a writer from a file
- * extension and invariant 23 keeps that dispatch closed.
+ * The file name main asks the host to write into — declared in the contract's host protocol since ADR-0125, because
+ * the request envelope names one too, and re-exported here for every channel that takes one.
  */
-export const outputNameSchema = z
-  .string()
-  .min(1)
-  .max(ENGINE_SESSION_ID_MAX_CHARS)
-  .regex(/^[0-9a-f-]+$/u);
+export { outputNameSchema };
 
 const pathSchema = z.string().min(1).max(ENGINE_PATH_MAX_CHARS);
 
@@ -2131,6 +2130,10 @@ export const engineChannels = {
                 message: 'a rotation must be a quarter turn: 0, 90, 180 or 270',
               }),
           )
+          // THE REQUEST'S OWN BOUND, stated on the answer too: a window of at most this many pages is asked for, so
+          // an answer longer than that is not one, and the bound is what makes this answer's size one a schema can
+          // state (ADR-0125's walk found it unbounded).
+          .max(ENGINE_GEOMETRY_MAX_PAGES)
           .readonly(),
         // DISPLAYED SIZES, in points, aligned with `rotations`. Non-negative at
         // the boundary, and finite because Zod 4's `z.number()` refuses NaN and
@@ -2146,6 +2149,7 @@ export const engineChannels = {
               .strict()
               .readonly(),
           )
+          .max(ENGINE_GEOMETRY_MAX_PAGES)
           .readonly(),
       })
       .strict(),
@@ -2181,7 +2185,7 @@ export const engineChannels = {
    * here would be a second format for the same answer, and the frame would then
    * describe a tree this build invented rather than the one MuPDF computed.
    */
-  'engine/page-text': channel(
+  'engine/page-text': fileAnswered(
     'Reads one page’s structured text from a session this host holds.',
     z
       .object({
@@ -2274,7 +2278,7 @@ export const engineChannels = {
    * stays on the wire as a literal, so a request for anything else is a shape this
    * channel cannot carry rather than one it checks.
    */
-  'engine/ocr-page': channel(
+  'engine/ocr-page': fileAnswered(
     'Recognises text and boxes for a page or a region, inside the process that holds the raster.',
     z
       .object({
@@ -2304,7 +2308,7 @@ export const engineChannels = {
     ['no-such-session', 'ocr-failed', 'ocr-model-unreadable'],
   ),
 
-  'engine/page-links': channel(
+  'engine/page-links': fileAnswered(
     'Reads one page’s links from a session this host holds.',
     z
       .object({
@@ -2334,7 +2338,7 @@ export const engineChannels = {
    * (`cellFills.ts`). A shape, not MuPDF's own format, so the host builds it and the schema bounds
    * it: the count, each coordinate, and each channel.
    */
-  'engine/page-fills': channel(
+  'engine/page-fills': fileAnswered(
     'Reads one page’s filled shapes from a session this host holds.',
     z
       .object({
@@ -2375,7 +2379,7 @@ export const engineChannels = {
    * Bounded anyway, by count, because the host is hostile by invariant 25's own
    * premise and *an author would not do that* is not a guarantee.
    */
-  'engine/destinations': channel(
+  'engine/destinations': fileAnswered(
     'Reads the document’s outline from a session this host holds.',
     z.object({ session: sessionSchema }).strict(),
     z
@@ -2393,7 +2397,7 @@ export const engineChannels = {
    * the document's structure, read once when it opens, and a design carries a
    * handful rather than one per page.
    */
-  'engine/layers': channel(
+  'engine/layers': fileAnswered(
     'Reads the document’s optional-content groups from a session this host holds.',
     z.object({ session: sessionSchema }).strict(),
     z.object({ layers: z.array(engineLayerSchema).max(ENGINE_LAYERS_MAX) }).strict(),
@@ -2422,7 +2426,7 @@ export const engineChannels = {
    * different question, and answering half of it under a name that sounds like
    * all of it is the green check that verifies nothing.
    */
-  'engine/signatures': channel(
+  'engine/signatures': fileAnswered(
     'Reads and verifies the signatures in a session this host holds.',
     z.object({ session: sessionSchema }).strict(),
     z
@@ -2459,7 +2463,7 @@ export const engineChannels = {
    * not exchangeable rather than lining up a shorter list by guesswork. Bounded by the removal
    * bound, which is how many marks a person can select and act on at once.
    */
-  'engine/annotation-records': channel(
+  'engine/annotation-records': fileAnswered(
     'Reads the exchangeable entries of named annotations on one page.',
     z
       .object({
@@ -2484,7 +2488,7 @@ export const engineChannels = {
     ['no-such-session', 'no-such-annotation'],
   ),
 
-  'engine/annotations': channel(
+  'engine/annotations': fileAnswered(
     'Lists every annotation in a session this host holds, in page order.',
     z.object({ session: sessionSchema }).strict(),
     z
@@ -2497,7 +2501,7 @@ export const engineChannels = {
     ['no-such-session'],
   ),
 
-  'engine/form-fields': channel(
+  'engine/form-fields': fileAnswered(
     'Lists every AcroForm field in a session this host holds, in page order.',
     z.object({ session: sessionSchema }).strict(),
     z
@@ -2573,7 +2577,7 @@ export const engineChannels = {
    * on the page in front of them. Walking every page of a long document to
    * offer a hundred candidates is a question nobody asked.
    */
-  'engine/flat-fields': channel(
+  'engine/flat-fields': fileAnswered(
     'Proposes where a flat page’s form fields probably are.',
     z.object({ session: sessionSchema, page: z.number().int().nonnegative() }).strict(),
     z
@@ -2603,7 +2607,7 @@ export const engineChannels = {
    * a crafted symbol is input to it, so it is decoded inside invariant 25's containment. The
    * raster itself never crosses; what does is a symbology name and a text per barcode.
    */
-  'engine/page-barcodes': channel(
+  'engine/page-barcodes': fileAnswered(
     'Reads the barcodes on one page of a session this host holds.',
     z.object({ session: sessionSchema, page: z.number().int().nonnegative() }).strict(),
     z
@@ -2661,7 +2665,7 @@ export const engineChannels = {
     ['no-such-session'],
   ),
 
-  'engine/duplicate-pages': channel(
+  'engine/duplicate-pages': fileAnswered(
     'Groups pages of a session this host holds whose content and resources are identical.',
     z.object({ session: sessionSchema }).strict(),
     z

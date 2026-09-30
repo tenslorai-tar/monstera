@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import {
   channel,
+  fileAnswered,
   deletePageObjectsSchema,
   editTextBlockSchema,
   placePageObjectSchema,
@@ -15,6 +16,7 @@ import type { CommandPrior } from '../commandLog.js';
 import type { DeclaredCommands } from '../commandDeclarations.js';
 import type { KindsRoutedTo } from '../commandRouting.js';
 import {
+  ENGINE_CAPTURE_REASON_MAX,
   byteImageWire,
   coreEngineChannels,
   outputNameSchema,
@@ -259,7 +261,7 @@ const pdfiumPriorSchema = z.discriminatedUnion('kind', [
 /** What a capture answers, in `captureResultSchema`'s shape. */
 const pdfiumCaptureSchema = z.discriminatedUnion('captured', [
   z.object({ captured: z.literal(true), value: pdfiumPriorSchema }).strict(),
-  z.object({ captured: z.literal(false), reason: z.string().min(1) }).strict(),
+  z.object({ captured: z.literal(false), reason: z.string().min(1).max(ENGINE_CAPTURE_REASON_MAX) }).strict(),
 ]);
 
 /** What the union above declares, as a type the ties below compare against. */
@@ -398,7 +400,7 @@ export const pdfiumChannels = {
    * The host holds no parse, so a read opens the image too. That is the cost
    * ADR-0047 priced at 0.1–3.5 ms per `FPDF_LoadMemDocument` and accepted.
    */
-  'engine/text-runs': channel(
+  'engine/text-runs': fileAnswered(
     'Answers a page’s text runs: which object each is, what it says, where it is and how it is set.',
     z.object({ session: sessionSchema, from: outputNameSchema, page: z.number().int().nonnegative() }).strict(),
     z
@@ -507,7 +509,7 @@ export const pdfiumChannels = {
    * recolour something PDFium will not describe should say so rather than start
    * a colour picker at a guess, so the field is nullable rather than defaulted.
    */
-  'engine/page-objects': channel(
+  'engine/page-objects': fileAnswered(
     'Answers every object on a page: its kind, its box in page space, and its fill.',
     z.object({ session: sessionSchema, from: outputNameSchema, page: z.number().int().nonnegative() }).strict(),
     z

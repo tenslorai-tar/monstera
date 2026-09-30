@@ -32,7 +32,26 @@ export interface Channel<
   readonly failures: readonly TFailure[];
   /** Why this channel exists. Surfaced in generated documentation. */
   readonly summary: string;
+  /**
+   * How a successful answer crosses a byte-stream boundary
+   * ([ADR-0125](../../../docs/DECISIONS/0125-an-answer-that-grows-with-the-document-crosses-in-a-file.md)).
+   *
+   * `frame` for an answer bounded by its shape, which `check:hostanswers` proves from the result schema. `file` for an
+   * answer whose size follows a document's content: it is written into the session's granted output directory and the
+   * frame carries its byte count. Declared here, beside the schemas, so which answers may be large is decided per
+   * channel rather than by size at the moment of sending. Renderer channels cross IPC, not a frame, and take `frame`.
+   */
+  readonly answer: AnswerRoute;
 }
+
+/** See {@link Channel.answer}. */
+export type AnswerRoute = 'frame' | 'file';
+
+/**
+ * The failure a `file`-routed channel answers when its answer is above `ENGINE_ANSWER_FILE_MAX_BYTES`: planned,
+ * declared on every such channel, and never an ended host (ADR-0125 Decision 3).
+ */
+export const ANSWER_TOO_LARGE = 'answer-too-large';
 
 /**
  * Declares a channel. The generic parameters are inferred from the schemas, so
@@ -51,7 +70,25 @@ export function channel<
   result: TResult,
   failures: readonly TFailure[] = [],
 ): Channel<TParams, TResult, TFailure> {
-  return { summary, params, result, failures };
+  return { summary, params, result, failures, answer: 'frame' };
+}
+
+/**
+ * Declares a channel whose successful answer crosses in a file (ADR-0125). The failures it may answer always include
+ * {@link ANSWER_TOO_LARGE}, added here rather than listed at each declaration, so a file-routed channel cannot be
+ * written without the one outcome its route introduces.
+ */
+export function fileAnswered<
+  TParams extends z.ZodType,
+  TResult extends z.ZodType,
+  const TFailure extends string = never,
+>(
+  summary: string,
+  params: TParams,
+  result: TResult,
+  failures: readonly TFailure[] = [],
+): Channel<TParams, TResult, TFailure | typeof ANSWER_TOO_LARGE> {
+  return { summary, params, result, failures: [...failures, ANSWER_TOO_LARGE], answer: 'file' };
 }
 
 /**

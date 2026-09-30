@@ -169,6 +169,49 @@ export const HOST_CORRELATION_ID_MAX_CHARS = 64;
 export const ENGINE_HOST_MAX_IN_FLIGHT = 32;
 
 /**
+ * How long a name main mints for a file in a granted directory may be. Four times the 16 random bytes main mints, in
+ * hex, with room for a hyphen-joined pair.
+ */
+export const HOST_OUTPUT_NAME_MAX_CHARS = 64;
+
+/**
+ * The file name main asks the host to write into.
+ *
+ * Minted by MAIN and travelling main → host, which is the point: main joins
+ * this to a directory it created, so the name it joins is one it chose. The
+ * allowlist is the same shape the handed directory names use — hex and hyphen,
+ * nothing that can spell a separator, a parent, a device name or a stream —
+ * and it carries **no extension**, because MuPDF picks a writer from a file
+ * extension and invariant 23 keeps that dispatch closed.
+ *
+ * Declared HERE, below every host channel, because the request envelope names one too — an answer's file
+ * ([ADR-0125](../../../docs/DECISIONS/0125-an-answer-that-grows-with-the-document-crosses-in-a-file.md)) — and the
+ * envelope's package cannot import the channels'. One rule for what a host may be asked to write, in the one package
+ * both halves read.
+ */
+export const outputNameSchema = z
+  .string()
+  .min(1)
+  .max(HOST_OUTPUT_NAME_MAX_CHARS)
+  .regex(/^[0-9a-f-]+$/u);
+
+/**
+ * The largest answer a `file`-routed channel may write
+ * ([ADR-0125](../../../docs/DECISIONS/0125-an-answer-that-grows-with-the-document-crosses-in-a-file.md) Decision 3).
+ *
+ * A ceiling, because `main` reads the file whole and the host that wrote it is hostile by invariant 25: an
+ * unbounded answer is a peer choosing how much of main's memory it spends. The number is derived, not chosen round.
+ * Each file-routed channel's own count cap times its item size measured on 2026-09-30
+ * (`scripts/research/hostAnswerSizes.mjs`) gives its largest honest answer. The largest is `engine/text-runs`: 8,192
+ * runs × 266 bytes = 2.18 MB, on a page that draws one text object per glyph. Then `engine/form-fields`, 4,096 ×
+ * 177 = 0.73 MB, and `engine/destinations`, 4,096 × 74.5 = 0.31 MB. 8 MiB is 3.7× the largest.
+ *
+ * **The trigger:** an answer refused at this ceiling is the evidence against it, and the fix is a measurement of what
+ * that answer held. Refused, it is the declared failure `answer-too-large`, never an ended host.
+ */
+export const ENGINE_ANSWER_FILE_MAX_BYTES = 8 * 1024 * 1024;
+
+/**
  * A request travelling from main to the engine host.
  *
  * `.strict()`, for the same reason `failureSchema` is: an extra field arriving
@@ -184,12 +227,18 @@ export const ENGINE_HOST_MAX_IN_FLIGHT = 32;
  * inventing a value on the peer's behalf, which is the one thing a wire schema
  * must never do. The peer sends the field; what may be in it is not this
  * layer's question.
+ *
+ * **`answerInto` is the name a `file`-routed answer is written under** (ADR-0125), minted by main and carried BESIDE
+ * the params: it is the transport's business, not the channel's, and a channel's strict params schema would refuse
+ * it. Present exactly when the channel is file-routed — the runtime refuses a request that gets this wrong either way,
+ * because the two ends disagreeing about a channel's route is the peer not being the one this build expects.
  */
 export const hostRequestSchema = z
   .object({
     id: z.string().min(1).max(HOST_CORRELATION_ID_MAX_CHARS),
     channel: z.string().min(1),
     params: z.unknown(),
+    answerInto: outputNameSchema.optional(),
   })
   .strict();
 
@@ -202,13 +251,25 @@ export type HostRequest = z.infer<typeof hostRequestSchema>;
  * `body` is deliberately untyped here and validated by the caller against
  * `envelopeSchema(channel.result)` — the channel decides what its own answer
  * looks like, and this layer does not get a vote.
+ *
+ * **Or `answerFile`, and never both** (ADR-0125): a `file`-routed channel's successful answer — the same envelope,
+ * byte for byte — was written into the granted output directory under the request's `answerInto`, and this says how
+ * many bytes, bounded by {@link ENGINE_ANSWER_FILE_MAX_BYTES} so main refuses a larger claim before it reads anything.
  */
-export const hostResponseSchema = z
-  .object({
-    id: z.string().min(1).max(HOST_CORRELATION_ID_MAX_CHARS),
-    body: z.unknown(),
-  })
-  .strict();
+export const hostResponseSchema = z.union([
+  z
+    .object({
+      id: z.string().min(1).max(HOST_CORRELATION_ID_MAX_CHARS),
+      body: z.unknown(),
+    })
+    .strict(),
+  z
+    .object({
+      id: z.string().min(1).max(HOST_CORRELATION_ID_MAX_CHARS),
+      answerFile: z.object({ bytes: z.number().int().min(1).max(ENGINE_ANSWER_FILE_MAX_BYTES) }).strict(),
+    })
+    .strict(),
+]);
 
 /** @see hostResponseSchema */
 export type HostResponse = z.infer<typeof hostResponseSchema>;

@@ -9,6 +9,7 @@ import {
 import type { ByteImage } from '../engineSeam.js';
 import { TOKEN_BYTES } from '../token.js';
 import type { HostArea } from './engineHandlers.js';
+import { sessionFileAnswers } from './fileAnswers.js';
 import { createHostSessions } from './hostSessions.js';
 import { type HostByteStream, startEngineHost } from './hostBody.js';
 import { pdfiumChannels } from './pdfiumChannels.js';
@@ -138,8 +139,21 @@ const OUT = 'cafe-01';
  */
 function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
   const calls: string[] = [];
+  // NAMED, as the entry names it: a file-routed answer is written into the area this table holds (ADR-0125).
+  const areas = createHostSessions<HostArea>(() => new Uint8Array(TOKEN_BYTES).fill(7));
+  const surface = {
+    readSnapshot: (directory: string, name: string) => {
+      const found = files.read.get(`${directory}|${name}`);
+      if (found === undefined) return Promise.reject(new Error('no such file'));
+      return Promise.resolve(found);
+    },
+    writeOutput: (directory: string, name: string, bytes: Uint8Array) => {
+      files.written.set(`${directory}|${name}`, bytes);
+      return Promise.resolve(bytes.length);
+    },
+  };
   const handlers = createPdfiumHandlers({
-    areas: createHostSessions<HostArea>(() => new Uint8Array(TOKEN_BYTES).fill(7)),
+    areas,
     execution: {
       apply: ({ session: image }) => {
         // THE IMAGE THIS HANDLER READ, recorded so a case can assert the
@@ -167,17 +181,7 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
         return Promise.resolve(applied);
       },
     },
-    files: {
-      readSnapshot: (directory, name) => {
-        const found = files.read.get(`${directory}|${name}`);
-        if (found === undefined) return Promise.reject(new Error('no such file'));
-        return Promise.resolve(found);
-      },
-      writeOutput: (directory, name, bytes) => {
-        files.written.set(`${directory}|${name}`, bytes);
-        return Promise.resolve(bytes.length);
-      },
-    },
+    files: surface,
     probe: () =>
       Promise.resolve({
         positive: { kind: 'read', bytes: 64 },
@@ -244,6 +248,9 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
         calls.push(`incident:${incident.channel}:${JSON.stringify(incident.diagnostic)}`);
       },
       maxInFlight: 4,
+      // THE ENTRY'S OWN RESOLUTION over the same table and filesystem, never a stub of it: the case below asserts where
+      // the answer landed, and a stub here would only prove the stub.
+      fileAnswers: sessionFileAnswers(areas, surface),
     },
     () => undefined,
   );
@@ -262,17 +269,24 @@ function answerIn(frame: Uint8Array | undefined): unknown {
   return JSON.parse(new TextDecoder().decode(frame.subarray(FRAME_HEADER_BYTES)));
 }
 
-/** One request, framed exactly as main frames it. */
-function request(id: string, channel: string, params: unknown): Uint8Array {
+/** One request, framed exactly as main frames it — with the answer's file name when the channel answers in one. */
+function request(id: string, channel: string, params: unknown, answerInto?: string): Uint8Array {
   return encodeFrame(
-    new TextEncoder().encode(JSON.stringify({ id, channel, params })),
+    new TextEncoder().encode(
+      JSON.stringify(answerInto === undefined ? { id, channel, params } : { id, channel, params, answerInto }),
+    ),
     ENGINE_HOST_FRAME_MAX_BYTES,
   );
 }
 
+/** The name main mints for a file-routed answer in these cases. */
+const ANSWER = 'a0b1c2d3';
+
 /** Registers the area and returns the id the host minted. */
-async function openArea(files: Files): Promise<{ session: string; calls: string[] }> {
-  const { calls } = start(files);
+async function openArea(
+  files: Files,
+): Promise<{ session: string; calls: string[]; body: ReturnType<typeof start>['body'] }> {
+  const { calls, body } = start(files);
   stream.feed(
     request('o1', 'engine/open', {
       snapshotDirectory: AREA.snapshotDirectory,
@@ -282,7 +296,7 @@ async function openArea(files: Files): Promise<{ session: string; calls: string[
   await stream.whenSent(1);
   const opened = answerIn(stream.sent[0]) as { body: { ok: boolean; value: { session: string } } };
   expect(opened.body.ok, JSON.stringify(opened)).toBe(true);
-  return { session: opened.body.value.session, calls };
+  return { session: opened.body.value.session, calls, body };
 }
 
 function emptyFiles(): Files {
@@ -460,24 +474,27 @@ describe('the PDFium host body', () => {
     const { session, calls } = await openArea(files);
     files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([7]));
 
-    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, page: 3 }));
+    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, page: 3 }, ANSWER));
     await stream.whenSent(2);
 
-    expect(answerIn(stream.sent[1])).toMatchObject({
-      body: {
-        ok: true,
-        // THE TEXT AND THE EXTENT CROSS, not merely the indices. The wire
-        // carried numbers alone until 2026-09-09, and a `toMatchObject` on the
-        // index would pass against a host that had dropped both — which is
-        // exactly the answer the line grouping and the chooser need.
-        value: {
-          runs: RUNS,
-          truncated: false,
-          // THE COUNT CROSSES, and it is what tells a surface there is text on
-          // this page no command can name — text inside a Form XObject, which
-          // the object walk reports as one `form` and does not descend into.
-          unaddressable: 7,
-        },
+    // THE ANSWER IS IN A FILE, and the frame says how many bytes (ADR-0125): a page drawing one object per glyph
+    // answered 663,815 bytes against a 262,144-byte frame, and the host ended rather than send it.
+    const written = files.written.get(`${AREA.outputDirectory}|${ANSWER}`);
+    expect(written, 'the answer was written into the granted OUTPUT directory under the name main minted').toBeDefined();
+    expect(answerIn(stream.sent[1])).toStrictEqual({ id: 't1', answerFile: { bytes: written?.length } });
+    expect(JSON.parse(new TextDecoder().decode(written))).toMatchObject({
+      ok: true,
+      // THE TEXT AND THE EXTENT CROSS, not merely the indices. The wire
+      // carried numbers alone until 2026-09-09, and a `toMatchObject` on the
+      // index would pass against a host that had dropped both — which is
+      // exactly the answer the line grouping and the chooser need.
+      value: {
+        runs: RUNS,
+        truncated: false,
+        // THE COUNT CROSSES, and it is what tells a surface there is text on
+        // this page no command can name — text inside a Form XObject, which
+        // the object walk reports as one `form` and does not descend into.
+        unaddressable: 7,
       },
     });
     // THE PAGE REACHED THE READER. Without this the case passes on a handler
@@ -568,13 +585,42 @@ describe('the PDFium host body', () => {
     await stream.whenSent(2);
     expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true } });
 
-    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, page: 0 }));
+    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, page: 0 }, ANSWER));
     await stream.whenSent(3);
     // ORDINARY, NOT TERMINAL: a rebuilt host holds none of the previous one's
     // areas, so an id it does not hold is an outcome the supervisor answers
-    // rather than an opaque `internal`.
+    // rather than an opaque `internal`. A FAILURE STAYS IN THE FRAME even on a file-routed channel, and nothing is
+    // written (ADR-0125).
     expect(answerIn(stream.sent[2])).toMatchObject({
       body: { ok: false, error: { code: 'no-such-session' } },
     });
+    expect(files.written.size).toBe(0);
+  });
+
+  /**
+   * THE TWO ENDS MUST AGREE ABOUT A CHANNEL'S ROUTE, and a request that disagrees ends the connection: a file-routed
+   * channel asked with no name has nowhere to answer, and a framed channel asked with one is a peer declaring a
+   * contract this build did not compile.
+   */
+  it('refuses a file-routed call that names no file, and a framed call that names one', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session, body, calls } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([7]));
+
+    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, page: 0 }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(body.termination()?.code).toBe('malformed-request');
+    // REFUSED BEFORE THE HANDLER: nothing was read, and nothing was answered or written.
+    expect(calls).toStrictEqual([]);
+    expect(stream.sent).toHaveLength(1);
+    expect(files.written.size).toBe(0);
+
+    stream = stubStream();
+    const reopened = await openArea(emptyFiles());
+    stream.feed(request('c1', 'engine/close', { session: reopened.session }, ANSWER));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(reopened.body.termination()?.code).toBe('malformed-request');
+    expect(stream.sent).toHaveLength(1);
   });
 });

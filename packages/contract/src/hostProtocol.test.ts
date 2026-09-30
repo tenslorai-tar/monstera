@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { FrameDecoder, encodeFrame } from './frame.js';
 import {
+  ENGINE_ANSWER_FILE_MAX_BYTES,
   ENGINE_HOST_FRAME_MAX_BYTES,
   HOST_CORRELATION_ID_MAX_CHARS,
   LARGEST_INTENT_PAYLOAD_BYTES,
@@ -188,11 +189,36 @@ describe('the host response envelope', () => {
     // The body is whatever `envelopeSchema(channel.result)` says it is, and the
     // caller parses it with exactly that. Reaching into it here would give this
     // transport its own opinion about what a result looks like.
-    expect(parsed.success && parsed.data.body).toStrictEqual({ ok: true, value: { pages: 3 } });
+    expect(parsed.success && 'body' in parsed.data && parsed.data.body).toStrictEqual({ ok: true, value: { pages: 3 } });
   });
 
   it('refuses an extra field, and an id that is not a string', () => {
     expect(hostResponseSchema.safeParse({ id: 'c1', body: {}, extra: 1 }).success).toBe(false);
     expect(hostResponseSchema.safeParse({ id: 7, body: {} }).success).toBe(false);
+  });
+
+  /**
+   * ADR-0125: a file-routed answer is a byte count in the frame, bounded by the ceiling so main refuses a larger claim
+   * before it reads anything — and it is never BOTH a body and a file, which would be two answers to one call.
+   */
+  it('carries a file answer as a byte count within the ceiling, and never beside a body', () => {
+    expect(hostResponseSchema.safeParse({ id: 'c1', answerFile: { bytes: 663_815 } }).success).toBe(true);
+    expect(hostResponseSchema.safeParse({ id: 'c1', answerFile: { bytes: ENGINE_ANSWER_FILE_MAX_BYTES } }).success).toBe(
+      true,
+    );
+    expect(
+      hostResponseSchema.safeParse({ id: 'c1', answerFile: { bytes: ENGINE_ANSWER_FILE_MAX_BYTES + 1 } }).success,
+    ).toBe(false);
+    expect(hostResponseSchema.safeParse({ id: 'c1', answerFile: { bytes: 0 } }).success).toBe(false);
+    expect(hostResponseSchema.safeParse({ id: 'c1', body: {}, answerFile: { bytes: 10 } }).success).toBe(false);
+  });
+});
+
+describe('the request envelope names an answer file only in the output-name shape', () => {
+  it('accepts a minted name and refuses one that could spell a path or an extension', () => {
+    const request = { id: 'c1', channel: 'engine/text-runs', params: {} };
+    expect(hostRequestSchema.safeParse({ ...request, answerInto: '0123abcd0123abcd0123abcd0123abcd' }).success).toBe(true);
+    expect(hostRequestSchema.safeParse({ ...request, answerInto: '..\\secrets' }).success).toBe(false);
+    expect(hostRequestSchema.safeParse({ ...request, answerInto: 'answer.json' }).success).toBe(false);
   });
 });

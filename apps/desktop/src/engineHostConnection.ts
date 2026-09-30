@@ -1,4 +1,4 @@
-import { type HostClient, type HostTermination, createHostClient } from '@monstera/kernel';
+import { type ClientFileAnswers, type HostClient, type HostTermination, createHostClient } from '@monstera/kernel';
 import { type Result, err, ok } from '@monstera/shared';
 
 import {
@@ -117,6 +117,11 @@ export interface EngineHostConnectionOptions {
   readonly processMemoryLimitBytes: number;
   /** The correlation id source, injected so a test can make it deterministic. */
   readonly correlate: () => string;
+  /**
+   * How this host's file-routed answers are fetched (ADR-0125) — absent for a host whose channels all answer in the
+   * frame, which is the compose host's.
+   */
+  readonly fileAnswers?: ClientFileAnswers;
   /**
    * The connection ended. Called **once**, and only for a connection that
    * started.
@@ -386,6 +391,7 @@ export async function createEngineHostConnection(
     transport,
     maxInFlight: options.maxInFlight,
     correlate: options.correlate,
+    ...(options.fileAnswers === undefined ? {} : { fileAnswers: options.fileAnswers }),
   });
   state.client = client;
 

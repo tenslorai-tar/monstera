@@ -158,6 +158,7 @@
     "proof:readerworker": "node scripts/research/readerWorker.mjs",
     "proof:hostrecovery": "node scripts/research/hostRecovery.mjs",
     "proof:composehost": "node scripts/research/composeHostLive.mjs",
+    "proof:hostfileanswers": "node scripts/research/hostFileAnswersLive.mjs",
     "proof:unverifiable": "node scripts/proofs/unverifiable.proof.mjs",
     "check:types": "node scripts/lib/typecheck.mjs",
     "proof:typecheck": "node scripts/proofs/typecheck.proof.mjs",

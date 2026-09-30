@@ -422,6 +422,7 @@ export {
   createHostRuntime,
 } from './host/runtime.js';
 export {
+  type ClientFileAnswers,
   type HostClient,
   type HostClientOptions,
   HostConnectionLost,

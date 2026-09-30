@@ -10,6 +10,7 @@ import { localMupdfExecution } from '../commandSpecs.js';
 import { TOKEN_BYTES } from '../token.js';
 import { engineChannels } from './engineChannels.js';
 import { createEngineHandlers } from './engineHandlers.js';
+import { sessionFileAnswers } from './fileAnswers.js';
 import { createHostSessions } from './hostSessions.js';
 import { type HostByteStream, startEngineHost } from './hostBody.js';
 import type { HostTermination } from './runtime.js';
@@ -94,8 +95,17 @@ function start(stream: HostByteStream) {
   // built the handlers itself; it takes a channel set and its handlers now.
   // Every dependency below is unchanged — what moved is who assembles them,
   // and these cases still drive the same program through the same frames.
+  const sessions = createHostSessions(() => new Uint8Array(TOKEN_BYTES).fill(7));
+  const files = {
+    readSnapshot: (): never => {
+      throw new Error('no case here reads a snapshot');
+    },
+    writeOutput: (): never => {
+      throw new Error('no case here writes output');
+    },
+  };
   const handlers = createEngineHandlers({
-    sessions: createHostSessions(() => new Uint8Array(TOKEN_BYTES).fill(7)),
+    sessions,
     execution: localMupdfExecution,
     // Every engine dependency throws. No case here opens a document, so a
     // body that reached for one fails loudly instead of passing against a
@@ -117,14 +127,7 @@ function start(stream: HostByteStream) {
     signatures: () => {
       throw new Error('no case here reads a signature');
     },
-    files: {
-      readSnapshot: () => {
-        throw new Error('no case here reads a snapshot');
-      },
-      writeOutput: () => {
-        throw new Error('no case here writes output');
-      },
-    },
+    files,
     probe: () =>
       Promise.resolve({
         positive: { kind: 'read', bytes: 64 },
@@ -201,6 +204,9 @@ function start(stream: HostByteStream) {
       handlers,
       incidents: () => undefined,
       maxInFlight: 4,
+      // AS THE ENTRY COMPOSES IT (ADR-0125), over the same table and a filesystem that refuses: no case here answers
+      // a file-routed call, so a body that wrote one would fail loudly.
+      fileAnswers: sessionFileAnswers(sessions, files),
     },
     (reason) => endings.push(reason),
   );

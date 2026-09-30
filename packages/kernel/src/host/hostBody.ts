@@ -5,7 +5,7 @@ import {
   type IncidentSink,
 } from '@monstera/contract/host';
 
-import { type HostTermination, createHostRuntime } from './runtime.js';
+import { type HostTermination, type RuntimeFileAnswers, createHostRuntime } from './runtime.js';
 
 /**
  * The engine host's program, minus everything that needs a real process.
@@ -93,6 +93,11 @@ export interface HostBodyDependencies<TMap extends ChannelMap> {
    * memory this process holds.
    */
   readonly maxInFlight: number;
+  /**
+   * Where a file-routed channel's answer is written (ADR-0125). Required when `channels` declares one — the runtime
+   * refuses to start otherwise — and resolved by the entry, which holds the session table this body does not.
+   */
+  readonly fileAnswers?: RuntimeFileAnswers;
 }
 
 /** What the entry keeps hold of. */
@@ -145,6 +150,7 @@ export function startEngineHost<TMap extends ChannelMap>(
     incidents: dependencies.incidents,
     maxFrameBytes: ENGINE_HOST_FRAME_MAX_BYTES,
     maxInFlight: dependencies.maxInFlight,
+    ...(dependencies.fileAnswers === undefined ? {} : { fileAnswers: dependencies.fileAnswers }),
   });
 
   stream.onData(runtime.receive);

@@ -228,6 +228,14 @@ export const HOST_READS = [
 ];
 
 /**
+ * What `hostFileAnswersLive.mjs` drives: the shell's composition and platform, and the kernel's hosts, client and
+ * runtime the file route runs through (ADR-0125) — with the contract and shared packages they are built on.
+ *
+ * @type {readonly BuildEdge[]}
+ */
+export const HOST_FILE_ANSWERS_LIVE = [['apps/desktop/src', 'apps/desktop/dist/entry.js', 'tsc'], ...HOST_READS];
+
+/**
  * The declarations `contract.proof.mjs`' probes are compiled against.
  *
  * Its probes name `ContractHandlers`, `ContractClient`, `Command` and
@@ -358,6 +366,7 @@ export const ARTEFACT_EDGES = {
   'proof:verifieddownload': VERIFIED_DOWNLOAD,
   // THE COMPOSE HOST, run for real against the built shell (D9's Markdown row).
   'proof:composehost': COMPOSE_HOST_LIVE,
+  'proof:hostfileanswers': HOST_FILE_ANSWERS_LIVE,
   // THE COMPILE-FAIL PROOF, whose probes `import type … from '@monstera/contract'`
   // and are compiled by a spawned `tsc`. That import resolves to the package's
   // built declarations, so this proof reads the same artefact every other entry

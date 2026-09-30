@@ -1,8 +1,10 @@
 import {
+  ENGINE_ANSWER_FILE_MAX_BYTES,
   ENGINE_HOST_FRAME_MAX_BYTES,
   HOST_CORRELATION_ID_MAX_CHARS,
   channel,
   encodeFrame,
+  fileAnswered,
 } from '@monstera/contract';
 import { type Result, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
@@ -541,5 +543,144 @@ describe('a handler that never settles', () => {
     await settle();
     expect(frames).toHaveLength(2);
     expect(runtime.inFlight()).toBe(0);
+  });
+});
+
+/**
+ * ADR-0125's route through the loop: a file-routed channel's success is written, and the frame carries its size.
+ * Its own fixture, for the reason the one above gives — this file is about the loop, not the application's registry.
+ */
+const fileFixture = {
+  'fixture.file': fileAnswered(
+    'answers in a file, at a size the caller picks',
+    z.object({ session: z.string(), size: z.number() }),
+    z.object({ blob: z.string() }),
+    ['declined'],
+  ),
+  'fixture.frame': channel('answers in the frame', z.object({}), z.object({})),
+} as const;
+
+const fileHandlers = {
+  'fixture.file': ({ size }: { session: string; size: number }) =>
+    Promise.resolve(size < 0 ? err({ code: 'declined' as const }) : ok({ blob: 'x'.repeat(size) })),
+  'fixture.frame': () => Promise.resolve(ok({})),
+};
+
+/**
+ * @param write what the writer does with an answer: record it, throw, or report a different count than it was handed.
+ */
+function fileHarness(write: 'record' | 'throw' | 'short' = 'record') {
+  const frames: Uint8Array[] = [];
+  const terminations: HostTermination[] = [];
+  const files = new Map<string, { params: unknown; bytes: Uint8Array }>();
+  const runtime = createHostRuntime({
+    channels: fileFixture,
+    handlers: fileHandlers,
+    incidents: () => undefined,
+    maxFrameBytes: ENGINE_HOST_FRAME_MAX_BYTES,
+    maxInFlight: 8,
+    transport: {
+      write: (frame) => frames.push(frame),
+      terminate: (reason) => terminations.push(reason),
+    },
+    fileAnswers: {
+      write: (params, name, bytes) => {
+        if (write === 'throw') return Promise.reject(new Error('the session is no longer held'));
+        files.set(name, { params, bytes });
+        return Promise.resolve(write === 'short' ? bytes.byteLength - 1 : bytes.byteLength);
+      },
+    },
+  });
+  return {
+    runtime,
+    files,
+    terminations: () => terminations,
+    written: (): readonly unknown[] =>
+      frames.map((frame): unknown => JSON.parse(textDecoder.decode(frame.subarray(4)))),
+    send: (request: unknown) => {
+      runtime.receive(encodeFrame(encoder.encode(JSON.stringify(request)), ENGINE_HOST_FRAME_MAX_BYTES));
+    },
+  };
+}
+
+/** Lets a handler, then the write it starts, settle. */
+const settleWrites = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 10));
+
+describe('a file-routed answer (ADR-0125)', () => {
+  /**
+   * THE ANSWER THE FRAME COULD NOT CARRY: a success larger than the frame is written whole, under the name main
+   * minted, with the params that name its session — and the frame says how many bytes, exactly.
+   */
+  it('writes a success larger than a frame, and frames its size', async () => {
+    const h = fileHarness();
+    h.send({ id: 'c1', channel: 'fixture.file', params: { session: 's1', size: 300_000 }, answerInto: 'abc123' });
+    await settleWrites();
+
+    expect(h.terminations()).toStrictEqual([]);
+    const written = h.files.get('abc123');
+    expect(written?.params).toStrictEqual({ session: 's1', size: 300_000 });
+    expect(written?.bytes.byteLength).toBeGreaterThan(ENGINE_HOST_FRAME_MAX_BYTES);
+    expect(h.written()).toStrictEqual([{ id: 'c1', answerFile: { bytes: written?.bytes.byteLength } }]);
+    expect(JSON.parse(textDecoder.decode(written?.bytes))).toStrictEqual({ ok: true, value: { blob: 'x'.repeat(300_000) } });
+  });
+
+  it('keeps a failure in the frame and writes nothing', async () => {
+    const h = fileHarness();
+    h.send({ id: 'c1', channel: 'fixture.file', params: { session: 's1', size: -1 }, answerInto: 'abc123' });
+    await settleWrites();
+
+    expect(h.files.size).toBe(0);
+    expect(h.written()).toStrictEqual([{ id: 'c1', body: { ok: false, error: { code: 'declined' } } }]);
+  });
+
+  /** Above the ceiling, the declared failure — never an ended host, which is what an unframeable answer cost. */
+  it('answers answer-too-large above the ceiling, and keeps serving', async () => {
+    const h = fileHarness();
+    h.send({
+      id: 'c1',
+      channel: 'fixture.file',
+      params: { session: 's1', size: ENGINE_ANSWER_FILE_MAX_BYTES },
+      answerInto: 'abc123',
+    });
+    await settleWrites();
+
+    expect(h.files.size).toBe(0);
+    expect(h.terminations()).toStrictEqual([]);
+    expect(h.written()).toStrictEqual([{ id: 'c1', body: { ok: false, error: { code: 'answer-too-large' } } }]);
+
+    h.send({ id: 'c2', channel: 'fixture.frame', params: {} });
+    await settleWrites();
+    expect(h.written()).toHaveLength(2);
+  });
+
+  it('ends the connection when the answer cannot be written, as for an answer it cannot frame', async () => {
+    const h = fileHarness('throw');
+    h.send({ id: 'c1', channel: 'fixture.file', params: { session: 's1', size: 10 }, answerInto: 'abc123' });
+    await settleWrites();
+
+    expect(h.terminations().map((reason) => reason.code)).toStrictEqual(['unsendable-response']);
+    expect(h.written()).toStrictEqual([]);
+  });
+
+  it('ends the connection when the writer reports a different count than it was handed', async () => {
+    const h = fileHarness('short');
+    h.send({ id: 'c1', channel: 'fixture.file', params: { session: 's1', size: 10 }, answerInto: 'abc123' });
+    await settleWrites();
+
+    expect(h.terminations().map((reason) => reason.code)).toStrictEqual(['unsendable-response']);
+    expect(h.written()).toStrictEqual([]);
+  });
+
+  it('refuses to start with a file-routed channel and nowhere to write', () => {
+    expect(() =>
+      createHostRuntime({
+        channels: fileFixture,
+        handlers: fileHandlers,
+        incidents: () => undefined,
+        maxFrameBytes: ENGINE_HOST_FRAME_MAX_BYTES,
+        maxInFlight: 8,
+        transport: { write: () => undefined, terminate: () => undefined },
+      }),
+    ).toThrow(/nowhere to write/u);
   });
 });

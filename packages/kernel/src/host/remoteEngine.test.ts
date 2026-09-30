@@ -955,3 +955,22 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     }
   });
 });
+
+/**
+ * ONE IDENTITY, ONE REFUSAL, by either key (ADR-0125): the handle a file-routed answer is looked up by names the same
+ * area the token does, for exactly as long — a released session has no area by either route, so an answer arriving
+ * after a close is refused rather than read out of a directory nothing holds.
+ */
+describe('the registry answers an area by handle for the lifetime of its token', () => {
+  it('names the adopted area, and nothing once the token is released', () => {
+    const sessions = createRemoteSessions();
+    const area = { snapshotDirectory: 'C:\\in', outputDirectory: 'C:\\out' };
+    const session = sessions.adopt('handle-1', area);
+
+    expect(sessions.areaForHandle('handle-1')).toBe(area);
+    expect(sessions.areaForHandle('handle-2')).toBeUndefined();
+
+    sessions.release(session);
+    expect(sessions.areaForHandle('handle-1')).toBeUndefined();
+  });
+});

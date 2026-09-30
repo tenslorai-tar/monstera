@@ -11,6 +11,7 @@ import {
 import { cryptoBytes } from '../token.js';
 import { probeContainment } from './containment.js';
 import type { HostArea } from './engineHandlers.js';
+import { sessionFileAnswers } from './fileAnswers.js';
 import { createHostSessions } from './hostSessions.js';
 import { startEngineHost } from './hostBody.js';
 import { hostFilesystem, hostPipeStream } from './hostNodeSurfaces.js';
@@ -98,12 +99,15 @@ openPdfium(libraryPath);
  * owes the core set and its own reads, and none of MuPDF's twelve
  * document-model ones.
  */
+// AREAS, NOT SESSIONS. This host holds no parse between commands (ADR-0047),
+// and it holds the granted directories anyway (ADR-0048 Decision 2) — a
+// `serialise` that carried a directory would be a channel through which a
+// confused main could redirect the document's bytes on every save. Named, because
+// a file-routed answer is written into the same directories (ADR-0125).
+const areas = createHostSessions<HostArea>(cryptoBytes);
+
 const handlers = createPdfiumHandlers({
-  // AREAS, NOT SESSIONS. This host holds no parse between commands (ADR-0047),
-  // and it holds the granted directories anyway (ADR-0048 Decision 2) — a
-  // `serialise` that carried a directory would be a channel through which a
-  // confused main could redirect the document's bytes on every save.
-  areas: createHostSessions<HostArea>(cryptoBytes),
+  areas,
   execution: localPdfiumExecution,
   files: hostFilesystem,
   probe: probeContainment,
@@ -172,6 +176,7 @@ startEngineHost(
       );
     },
     maxInFlight: ENGINE_HOST_MAX_IN_FLIGHT,
+    fileAnswers: sessionFileAnswers(areas, hostFilesystem),
   },
   (reason) => {
     process.stderr.write(`MONSTERA_HOST_ENDED ${reason.code}: ${reason.detail}\n`);

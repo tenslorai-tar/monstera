@@ -102,6 +102,12 @@ export interface RemoteSessions {
   readonly handleFor: (session: MupdfSession) => string;
   /** The granted directories behind that token. Same lifetime, same refusal. */
   readonly areaFor: (session: MupdfSession) => SessionArea;
+  /**
+   * The granted directories behind a HANDLE, for the one caller that holds a handle rather than a token: the host
+   * client taking a file-routed answer, which sees only the params it sent (ADR-0125). The same entry `areaFor`
+   * reads, released with it, so a handle this registry no longer holds has no area by either route.
+   */
+  readonly areaForHandle: (handle: string) => SessionArea | undefined;
   /** Forgets a token. A later call through it is refused rather than reusing a handle. */
   readonly release: (session: MupdfSession) => void;
 }
@@ -169,6 +175,8 @@ export class UnknownRemoteSession extends Error {
  */
 export function createRemoteSessions(): RemoteSessions {
   const held = new WeakMap<MupdfSession, { handle: string; area: SessionArea }>();
+  // THE SAME ENTRIES, keyed the other way — set and cleared beside `held`, so the two lookups cannot disagree.
+  const byHandle = new Map<string, SessionArea>();
   return {
     adopt: (handle, area) => {
       // The same mint `mupdfWriter.open` makes, and the same reason it is a cast
@@ -176,8 +184,10 @@ export function createRemoteSessions(): RemoteSessions {
       // adapter can produce one, and an exported mint would be exactly that.
       const session = { engine: 'mupdf' } as MupdfSession;
       held.set(session, { handle, area });
+      byHandle.set(handle, area);
       return session;
     },
+    areaForHandle: (handle) => byHandle.get(handle),
     handleFor: (session) => {
       const entry = held.get(session);
       if (entry === undefined) throw new UnknownRemoteSession();
@@ -192,6 +202,8 @@ export function createRemoteSessions(): RemoteSessions {
       return entry.area;
     },
     release: (session) => {
+      const entry = held.get(session);
+      if (entry !== undefined) byHandle.delete(entry.handle);
       held.delete(session);
     },
   };

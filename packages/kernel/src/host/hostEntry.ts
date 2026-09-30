@@ -30,6 +30,7 @@ import { cryptoBytes } from '../token.js';
 import { probeContainment } from './containment.js';
 import { engineChannels } from './engineChannels.js';
 import { createEngineHandlers } from './engineHandlers.js';
+import { sessionFileAnswers } from './fileAnswers.js';
 import { createHostSessions } from './hostSessions.js';
 import { startEngineHost } from './hostBody.js';
 import { hostFilesystem, hostPipeStream } from './hostNodeSurfaces.js';
@@ -124,8 +125,12 @@ openMupdfShim(libraryPathFrom(process.argv));
  * the pair and knows neither, which is what *one host body, parameterised by
  * engine* means once it is built rather than specified.
  */
+// THE SESSION TABLE, named because a file-routed answer is written into the output directory of the session its
+// request names (ADR-0125), and this is the table that knows it.
+const sessions = createHostSessions(cryptoBytes);
+
 const engineHandlers = createEngineHandlers({
-  sessions: createHostSessions(cryptoBytes),
+  sessions,
   execution: localMupdfExecution,
   writer: mupdfWriter,
   access: accessFor,
@@ -206,6 +211,7 @@ startEngineHost(
       );
     },
     maxInFlight: ENGINE_HOST_MAX_IN_FLIGHT,
+    fileAnswers: sessionFileAnswers(sessions, hostFilesystem),
   },
   (reason) => {
     process.stderr.write(`MONSTERA_HOST_ENDED ${reason.code}: ${reason.detail}\n`);

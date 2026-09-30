@@ -52,7 +52,7 @@ import { SHELL_LAUNCH, refuseStaleBuild } from './lib/buildFreshness.mjs';
 import { fileExists } from './lib/fetchVerified.mjs';
 import { shimEnvironment } from './lib/shimBinary.mjs';
 import { electronBinaryPath } from './provision/electron.mjs';
-import { pdfiumLibrary } from './provision/pdfium.mjs';
+import { pdfiumEnvironment } from './provision/pdfium.mjs';
 import { gswin64cPath } from './provision/ghostscript.mjs';
 import { x2tPath } from './provision/onlyoffice.mjs';
 import { pdftotextPath } from './provision/poppler.mjs';
@@ -113,13 +113,14 @@ async function resolveRuntime() {
  * with no registration is refused **by name** — which is what a user without
  * `npm run provision:pdfium` should get, rather than a shell that will not open.
  *
- * @returns {Promise<Record<string, string>>} the variables to add to the child's
+ * The spelling is `pdfiumEnvironment`'s in `provision/pdfium.mjs`, beside `pdfiumLibrary`: the PDFium host's live
+ * harness starts the same host and must pass the same variable.
+ *
+ * @returns {Record<string, string>} the variables to add to the child's
  *   environment — empty when the library is not provisioned.
  */
-async function pdfiumEnvironment() {
-  const library = pdfiumLibrary(REPO_ROOT);
-  if (!(await fileExists(library))) return {};
-  return { MONSTERA_PDFIUM_LIBRARY: library };
+function launchPdfiumEnvironment() {
+  return pdfiumEnvironment(REPO_ROOT);
 }
 
 /**
@@ -222,7 +223,7 @@ async function main() {
     // no APPDATA and no TEMP.
     env: {
       ...process.env,
-      ...(await pdfiumEnvironment()),
+      ...launchPdfiumEnvironment(),
       ...mupdfShimEnvironment(),
       ...(await tessdataEnvironment()),
       ...(await popplerEnvironment()),

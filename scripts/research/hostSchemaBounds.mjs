@@ -124,8 +124,72 @@ function maxBytes(schema, perChar, seen = new Set()) {
   }
 }
 
+/**
+ * The paths inside a schema that nothing bounds — what makes a channel UNBOUNDED, so the answer names a field rather
+ * than a verdict.
+ *
+ * @param {any} schema
+ * @param {string} path
+ * @param {string[]} found
+ * @param {Set<unknown>} seen
+ * @returns {string[]}
+ */
+function unboundedPaths(schema, path, found = [], seen = new Set()) {
+  const def = schema?._zod?.def;
+  if (def === undefined || seen.has(schema)) return found;
+  seen.add(schema);
+  const own = maxBytes(schema, 1);
+  if (own !== Infinity) return found;
+  switch (def.type) {
+    case 'object':
+      for (const [key, value] of Object.entries(def.shape)) unboundedPaths(value, `${path}.${key}`, found, seen);
+      break;
+    case 'array':
+      if (maxBytes({ _zod: { def: { ...def, element: { _zod: { def: { type: 'null' } } } } } }, 1) === Infinity) {
+        found.push(`${path}[] (no .max)`);
+      }
+      unboundedPaths(def.element, `${path}[]`, found, seen);
+      break;
+    case 'union':
+      def.options.forEach((/** @type {unknown} */ option, /** @type {number} */ index) =>
+        unboundedPaths(option, `${path}|${String(index)}`, found, seen),
+      );
+      break;
+    case 'optional':
+    case 'nullable':
+    case 'readonly':
+    case 'default':
+    case 'prefault':
+    case 'catch':
+    case 'nonoptional':
+      unboundedPaths(def.innerType, path, found, seen);
+      break;
+    case 'pipe':
+      unboundedPaths(def.out, path, found, seen);
+      break;
+    case 'lazy':
+      unboundedPaths(def.getter(), path, found, seen);
+      break;
+    default:
+      found.push(`${path} (${String(def.type)})`);
+  }
+  return found;
+}
+
 /** @param {number} value */
 const shown = (value) => (value === Infinity ? 'UNBOUNDED' : `${String(Math.round(value))} B`);
+
+const explain = process.argv.indexOf('--explain');
+if (explain !== -1) {
+  const name = process.argv[explain + 1] ?? '';
+  for (const [host, channels] of Object.entries({ MuPDF: engineChannels, PDFium: pdfiumChannels })) {
+    const declared = channels[name];
+    if (declared === undefined) continue;
+    console.log(`${host} ${name}:`);
+    for (const found of unboundedPaths(declared.result, 'result')) console.log(`  ${found}`);
+  }
+  process.exit(0);
+}
 
 const hosts = { 'MuPDF host': engineChannels, 'PDFium host': pdfiumChannels, 'compose host': composeChannels };
 /** @type {{ host: string, channel: string, plain: number, worst: number }[]} */

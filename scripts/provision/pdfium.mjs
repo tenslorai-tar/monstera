@@ -187,6 +187,19 @@ export function pdfiumLibrary(root) {
 }
 
 /**
+ * The variable that tells a process running `apps/desktop`'s code where PDFium is (ADR-0122's
+ * `MONSTERA_PDFIUM_LIBRARY`), or nothing where it is not provisioned — ONE spelling for every process that starts the
+ * shell or its PDFium host, as `shimEnvironment` is for the MuPDF shim.
+ *
+ * @param {string} root the repository root
+ * @returns {Record<string, string>}
+ */
+export function pdfiumEnvironment(root) {
+  const library = pdfiumLibrary(root);
+  return existsSync(library) ? { MONSTERA_PDFIUM_LIBRARY: library } : {};
+}
+
+/**
  * Provisions the library, or reports that it is already there.
  *
  * @param {{ root: string, force?: boolean }} options

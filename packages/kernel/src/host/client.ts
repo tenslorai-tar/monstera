@@ -77,6 +77,33 @@ export interface HostClientOptions {
    * is outstanding, is testable by handing it a source that repeats.
    */
   readonly correlate: () => string;
+  /**
+   * How a `file`-routed channel's answer is fetched
+   * ([ADR-0125](../../../../docs/DECISIONS/0125-an-answer-that-grows-with-the-document-crosses-in-a-file.md)).
+   * Absent for a host whose channels all answer in the frame, and then a file answer arriving is the host breaking
+   * the contract this build compiled.
+   */
+  readonly fileAnswers?: ClientFileAnswers;
+}
+
+/** See {@link HostClientOptions.fileAnswers}. */
+export interface ClientFileAnswers {
+  /** Whether a channel's answer arrives in a file — the channel map's own declaration, never a guess by size. */
+  readonly routed: (channel: string) => boolean;
+  /** A fresh name the host's output-name schema accepts, for this call's answer. */
+  readonly mint: () => string;
+  /**
+   * Reads and removes the named answer in the granted output directory of the session these params name.
+   *
+   * Refuses — throws — before reading when the file is not exactly `bytes` long: the frame's figure is already
+   * bounded by the ceiling, so a file that disagrees with it is a host writing other than it said.
+   */
+  readonly take: (params: unknown, name: string, bytes: number) => Promise<Uint8Array>;
+}
+
+/** Whether an envelope is a success — the one kind a file-routed channel's file carries. */
+function succeeded(body: unknown): boolean {
+  return typeof body === 'object' && body !== null && (body as { readonly ok?: unknown }).ok === true;
 }
 
 export interface HostClient {
@@ -100,9 +127,20 @@ export function createHostClient({
   maxInFlight,
   maxFrameBytes = ENGINE_HOST_FRAME_MAX_BYTES,
   correlate,
+  fileAnswers,
 }: HostClientOptions): HostClient {
   const decoder = new FrameDecoder(maxFrameBytes);
-  const pending = new Map<string, { resolve: (body: unknown) => void; reject: (why: Error) => void }>();
+  const pending = new Map<
+    string,
+    {
+      resolve: (body: unknown) => void;
+      reject: (why: Error) => void;
+      /** The params, for a file answer's `take`, which resolves the session's directory from them. */
+      params: unknown;
+      /** The name this call's answer is written under, when its channel answers in a file. */
+      into: string | undefined;
+    }
+  >();
   /**
    * Held on an object rather than in a `let` for the reason `runtime.ts` states
    * about its own stop flag: a plain `let` lets the compiler narrow after one
@@ -170,10 +208,16 @@ export function createHostClient({
         throw new HostConnectionLost(reason);
       }
 
+      // THE NAME IS MINTED HERE, per call, and never by the host: main joins it to a directory it created, so a host
+      // that could name the file would choose what main reads (ADR-0125).
+      const into = fileAnswers?.routed(channel) === true ? fileAnswers.mint() : undefined;
+
       let frame: Uint8Array;
       try {
         frame = encodeFrame(
-          new TextEncoder().encode(JSON.stringify({ id, channel, params })),
+          new TextEncoder().encode(
+            JSON.stringify(into === undefined ? { id, channel, params } : { id, channel, params, answerInto: into }),
+          ),
           maxFrameBytes,
         );
       } catch (cause) {
@@ -192,7 +236,7 @@ export function createHostClient({
         // REGISTERED BEFORE THE WRITE. A transport that answered synchronously
         // would otherwise arrive at an empty map and be reported as an unknown
         // correlation — a violation manufactured by the order of two lines.
-        pending.set(id, { resolve, reject });
+        pending.set(id, { resolve, reject, params, into });
         transport.write(frame);
       });
     },
@@ -242,7 +286,54 @@ export function createHostClient({
           return;
         }
         pending.delete(response.data.id);
-        call.resolve(response.data.body);
+        const answered = response.data;
+        if (!('answerFile' in answered)) {
+          // A SUCCESS FOR A FILE-ROUTED CALL arriving in the frame is the host declaring a different route from the
+          // one this build compiled — refused, for the reason a file answer to a framed call is below.
+          if (call.into !== undefined && succeeded(answered.body)) {
+            stop({ code: 'malformed-response', detail: 'a file-routed call was answered with a success in the frame' }, true);
+            call.reject(new HostConnectionLost({ code: 'malformed-response', detail: 'answered outside its route' }));
+            return;
+          }
+          call.resolve(answered.body);
+          continue;
+        }
+        const { into } = call;
+        if (into === undefined || fileAnswers === undefined) {
+          stop({ code: 'malformed-response', detail: 'a file answer arrived for a call that answers in the frame' }, true);
+          call.reject(new HostConnectionLost({ code: 'malformed-response', detail: 'answered outside its route' }));
+          return;
+        }
+        const { bytes } = answered.answerFile;
+        fileAnswers.take(call.params, into, bytes).then(
+          (raw) => {
+            if (isStopped()) return;
+            let body: unknown;
+            try {
+              if (raw.byteLength !== bytes) throw new Error(`the file holds ${String(raw.byteLength)} bytes`);
+              body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw));
+            } catch (cause) {
+              const reason: HostTermination = {
+                code: 'malformed-response',
+                detail: `a file answer of ${String(bytes)} bytes was not one: ${cause instanceof Error ? cause.message : String(cause)}`,
+              };
+              stop(reason, true);
+              call.reject(new HostConnectionLost(reason));
+              return;
+            }
+            // THE SAME ENVELOPE a frame carries, handed to the same caller — `createClient`'s `acceptAnswer` parses it
+            // against the channel's result schema, so a file answer is validated exactly as a framed one (B3a).
+            call.resolve(body);
+          },
+          (cause: unknown) => {
+            const reason: HostTermination = {
+              code: 'malformed-response',
+              detail: `a file answer of ${String(bytes)} bytes could not be taken: ${cause instanceof Error ? cause.message : String(cause)}`,
+            };
+            stop(reason, true);
+            call.reject(new HostConnectionLost(reason));
+          },
+        );
       }
     },
 

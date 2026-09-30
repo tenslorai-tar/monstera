@@ -1111,6 +1111,11 @@ jobs:
       - name: Provision MuPDF and build the shim
         run: node scripts/ci/annotate.mjs scripts/provision/mupdf.mjs
 
+      # THE SECOND ENGINE, for the PDFium host's live proof below (ADR-0125). Before the grant step, which grants the
+      # container the directory PDFium lives in and so must find it there. The pinned 3.8 MB archive, hash-verified.
+      - name: Provision PDFium
+        run: node scripts/ci/annotate.mjs scripts/provision/pdfium.mjs
+
       # THIS JOB NOW NEEDS COMPILED TYPESCRIPT, and it did not before.
       #
       # `proof:perfbudget` runs the performance gate, and the gate measures
@@ -1225,6 +1230,14 @@ jobs:
       # host, and `--require-containment` makes could-not-look a failure here.
       - name: A Markdown import composes in the real compose host
         run: node scripts/ci/annotate.mjs scripts/research/composeHostLive.mjs --require-containment
+
+      # ANSWERS LARGER THAN A FRAME, THROUGH BOTH REAL HOSTS (ADR-0125). A page drawn one text object per glyph — open,
+      # text blocks, edit, save, reopen through the PDFium host — and a 3,000-field form's field list through the MuPDF
+      # host. The owner's install ended the PDFium host on such a page because its answer could not be framed, and
+      # nothing drove a real PDFium host through main before this. Each input is checked to exceed a frame, so the
+      # cases cannot pass on inputs the old build handled.
+      - name: Answers larger than a frame cross in a file, through both real hosts
+        run: node scripts/ci/annotate.mjs scripts/research/hostFileAnswersLive.mjs --require-containment
 
       # THE SWEEP, AGAINST A REAL LISTING. `sessionDirectories.test.ts` covers
       # every decision the sweep makes and supplies the listing to do it, so the

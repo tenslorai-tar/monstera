@@ -1,5 +1,8 @@
 import {
+  ANSWER_TOO_LARGE,
+  type AnswerRoute,
   type ChannelMap,
+  ENGINE_ANSWER_FILE_MAX_BYTES,
   FrameDecoder,
   type FrameViolation,
   type Handlers,
@@ -204,6 +207,30 @@ export interface HostRuntimeOptions<TMap extends ChannelMap> {
    * queued, because queueing moves the same unbounded growth into a list.
    */
   readonly maxInFlight: number;
+  /**
+   * Where a `file`-routed channel's successful answer is written
+   * ([ADR-0125](../../../../docs/DECISIONS/0125-an-answer-that-grows-with-the-document-crosses-in-a-file.md)).
+   *
+   * Required exactly when the channel map declares such a channel, and refused at construction otherwise: a runtime
+   * that could meet a file-routed call with nowhere to write would find out from a document.
+   */
+  readonly fileAnswers?: RuntimeFileAnswers;
+}
+
+/**
+ * Writing one answer into the granted output directory of the session its request names.
+ *
+ * The directory is resolved from the params by whoever holds the session table — the engine's entry — because this
+ * loop knows no engine and no session (ADR-0048). It answers how many bytes were written, and throws where the session
+ * has no directory to write into.
+ */
+export interface RuntimeFileAnswers {
+  readonly write: (params: unknown, name: string, bytes: Uint8Array) => Promise<number>;
+}
+
+/** Whether a wrapped handler's envelope is a success — the one kind a file carries. */
+function succeeded(body: unknown): boolean {
+  return typeof body === 'object' && body !== null && (body as { readonly ok?: unknown }).ok === true;
 }
 
 const encoder = new TextEncoder();
@@ -225,6 +252,18 @@ export function createHostRuntime<TMap extends ChannelMap>(
   }
 
   const frames = new FrameDecoder(options.maxFrameBytes);
+
+  /** Each channel's declared route, read once: a string a peer sends is looked up here, never cast into the map. */
+  const routes: ReadonlyMap<string, AnswerRoute> = new Map(
+    Object.entries(options.channels as ChannelMap).map(([name, declared]) => [name, declared.answer]),
+  );
+  const fileAnswers = options.fileAnswers;
+  if (fileAnswers === undefined && [...routes.values()].includes('file')) {
+    throw new RangeError(
+      'This channel map declares a file-routed channel and the runtime was given nowhere to write its answers ' +
+        '(ADR-0125). Pass `fileAnswers` from the entry that holds the session table.',
+    );
+  }
 
   /**
    * A MAP, not the mapped-type object `wrapHandlers` returns.
@@ -278,7 +317,7 @@ export function createHostRuntime<TMap extends ChannelMap>(
    * Answers one request. Never throws: a throw here would escape into whatever
    * fed us bytes, which on a socket is an event handler with no caller.
    */
-  const dispatch = (id: string, channel: string, params: unknown): void => {
+  const dispatch = (id: string, channel: string, params: unknown, answerInto: string | undefined): void => {
     const handler = dispatchTable.get(channel);
     if (handler === undefined) {
       // The registry is ONE declaration in one package that both ends compile
@@ -305,12 +344,26 @@ export function createHostRuntime<TMap extends ChannelMap>(
       });
       return;
     }
+    // THE ROUTE IS THE CHANNEL'S, and a request that disagrees with it either way is a peer declaring a different
+    // contract from the one this build compiled: a name for a framed answer, or no name for a file one.
+    const route = routes.get(channel) ?? 'frame';
+    if ((route === 'file') !== (answerInto !== undefined)) {
+      stop({
+        code: 'malformed-request',
+        detail:
+          route === 'file'
+            ? `"${channel}" answers in a file and the request named none.`
+            : `"${channel}" answers in the frame and the request named a file.`,
+      });
+      return;
+    }
 
     outstanding.add(id);
     void handler(params).then(
       (body) => {
         outstanding.delete(id);
-        answer(id, body);
+        if (answerInto === undefined) answer(id, body);
+        else answerByFile(id, body, params, answerInto);
       },
       (thrown: unknown) => {
         // `wrapHandler` already turns a handler's throw into a recorded
@@ -348,6 +401,59 @@ export function createHostRuntime<TMap extends ChannelMap>(
     options.transport.write(framed);
   };
 
+  /**
+   * A `file`-routed answer (ADR-0125): a success is written whole into the granted output directory and the frame says
+   * how many bytes; a failure is small and goes in the frame as every failure does.
+   *
+   * Above the ceiling, the answer is replaced by the declared `answer-too-large` failure — planned, and never an ended
+   * host, which is what an unframeable answer used to cost. A write that fails, or writes other than it was handed, is
+   * this host being unable to deliver its own answer: `unsendable-response`, as an unframeable answer is.
+   */
+  const answerByFile = (id: string, body: unknown, params: unknown, name: string): void => {
+    if (!succeeded(body)) {
+      answer(id, body);
+      return;
+    }
+    const bytes = encoder.encode(JSON.stringify(body));
+    if (bytes.byteLength > ENGINE_ANSWER_FILE_MAX_BYTES) {
+      answer(id, { ok: false, error: { code: ANSWER_TOO_LARGE } });
+      return;
+    }
+    if (fileAnswers === undefined) {
+      stop({ code: 'unsendable-response', detail: 'a file-routed answer arrived with nowhere to write it' });
+      return;
+    }
+    fileAnswers.write(params, name, bytes).then(
+      (written) => {
+        if (isStopped()) return;
+        if (written !== bytes.byteLength) {
+          stop({
+            code: 'unsendable-response',
+            detail: `An answer of ${String(bytes.byteLength)} bytes was written as ${String(written)}.`,
+          });
+          return;
+        }
+        let framed: Uint8Array;
+        try {
+          framed = encodeFrame(
+            encoder.encode(JSON.stringify({ id, answerFile: { bytes: written } })),
+            options.maxFrameBytes,
+          );
+        } catch (thrown) {
+          stop({ code: 'unsendable-response', detail: `A file answer's notice could not be framed: ${String(thrown)}` });
+          return;
+        }
+        options.transport.write(framed);
+      },
+      (thrown: unknown) => {
+        stop({
+          code: 'unsendable-response',
+          detail: `An answer of ${String(bytes.byteLength)} bytes could not be written: ${String(thrown)}`,
+        });
+      },
+    );
+  };
+
   const handleFrame = (payload: Uint8Array): void => {
     let parsedJson: unknown;
     try {
@@ -374,7 +480,7 @@ export function createHostRuntime<TMap extends ChannelMap>(
       return;
     }
 
-    dispatch(request.data.id, request.data.channel, request.data.params);
+    dispatch(request.data.id, request.data.channel, request.data.params, request.data.answerInto);
   };
 
   return {

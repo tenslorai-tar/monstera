@@ -82,6 +82,7 @@ import {
   type RegisteredWriter,
   type RemoteMupdfWriter,
   type MupdfSession,
+  type SessionArea,
   type SessionAreaSurface,
   type SessionAssets,
   type SnapshotWrite,
@@ -141,6 +142,7 @@ import { NO_RECENT_PICTURES, type PictureFiles, createRecentPictures } from './r
 import { NO_REQUEST_LOG, createRequestLog, observedHandlers } from './requestLog.js';
 import { createPersonalLibrary, memoryPictureFiles } from './personalLibrary.js';
 import { saveNamesFor } from './backupCopies.js';
+import { fileAnswersFor } from './hostFileAnswers.js';
 import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
 import { createUpdateCheck, manifestTransport, UPDATE_PROVIDERS } from './updateCheck.js';
 import { createLaunchDocuments } from './launchDocuments.js';
@@ -2242,10 +2244,17 @@ function engineSessionOpener(
       );
     }
     remote = createRemoteSessions();
+    // THIS host's registry, bound now: `remote` is rebuilt with the next host, and an answer taken through the
+    // variable would be looked up in a registry that never held its handle.
+    const registry = remote;
     const live = await createEngineHostConnection(platform.surfaces, {
       // A fresh name per host. A pipe name that outlived its host would be one
       // a later process could be waiting on while a different one answers.
       pipeName: `\\\\.\\pipe\\monstera-engine-${randomBytes(16).toString('hex')}`,
+      fileAnswers: fileAnswersFor(engineChannels, (params) => {
+        const handle = (params as { readonly session?: unknown } | null)?.session;
+        return typeof handle === 'string' ? registry.areaForHandle(handle) : undefined;
+      }),
       user: platform.user,
       container: platform.container,
       readBytes: 64 * 1024,
@@ -2736,8 +2745,16 @@ function pdfiumHostBinding(
   };
 
   const connect = async (): Promise<Live> => {
+    const answerArea: { handle: string | null; area: SessionArea | null } = { handle: null, area: null };
     const live = await createEngineHostConnection(platform.surfaces, {
       pipeName: `\\\\.\\pipe\\monstera-pdfium-${randomBytes(16).toString('hex')}`,
+      // THE AREA THIS HOST WILL BE GIVEN, read when an answer arrives: it exists only after the containment check
+      // and `engine/open` below, and no file-routed call is made before then (ADR-0125).
+      fileAnswers: fileAnswersFor(pdfiumChannels, (params) =>
+        answerArea.handle !== null && (params as { readonly session?: unknown } | null)?.session === answerArea.handle
+          ? (answerArea.area ?? undefined)
+          : undefined,
+      ),
       user: platform.user,
       container: platform.container,
       readBytes: 64 * 1024,
@@ -2826,6 +2843,8 @@ function pdfiumHostBinding(
       session: opened.value.session,
       area: { snapshotDirectory: paths.snapshot, outputDirectory: paths.output },
     });
+    answerArea.handle = opened.value.session;
+    answerArea.area = held().area;
 
     return {
       connection: live.value,

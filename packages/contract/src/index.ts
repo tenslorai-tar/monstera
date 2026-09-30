@@ -1,4 +1,6 @@
 export {
+  ANSWER_TOO_LARGE,
+  type AnswerRoute,
   type Channel,
   type DeclaredOf,
   type FailureOf,
@@ -10,6 +12,7 @@ export {
   type ParamsOf,
   type ResultOf,
   channel,
+  fileAnswered,
 } from './channel.js';
 export {
   type ChannelId,
@@ -181,14 +184,17 @@ export {
   pairsWith,
 } from './askAbout.js';
 export {
+  ENGINE_ANSWER_FILE_MAX_BYTES,
   ENGINE_HOST_FRAME_MAX_BYTES,
   ENGINE_HOST_MAX_IN_FLIGHT,
   HOST_CORRELATION_ID_MAX_CHARS,
+  HOST_OUTPUT_NAME_MAX_CHARS,
   type HostRequest,
   type HostResponse,
   LARGEST_INTENT_PAYLOAD_BYTES,
   hostRequestSchema,
   hostResponseSchema,
+  outputNameSchema,
 } from './hostProtocol.js';
 export {
   FRAME_HEADER_BYTES,

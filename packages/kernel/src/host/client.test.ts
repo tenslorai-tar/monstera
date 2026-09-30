@@ -295,3 +295,107 @@ describe('createHostClient', () => {
     expect(h.terminations).toEqual([]);
   });
 });
+
+/**
+ * A client whose file-routed channel is `doc:big`, and whose `take` the case decides — what the directory holds under
+ * the name, or a refusal to read it (ADR-0125).
+ *
+ * @param take the file's bytes as main would read them, or an Error to throw
+ */
+function fileHarness(take: Uint8Array | Error | null = null) {
+  const writes: Uint8Array[] = [];
+  const terminations: HostTermination[] = [];
+  const taken: { params: unknown; name: string; bytes: number }[] = [];
+  const client = createHostClient({
+    transport: {
+      write: (frame) => writes.push(frame),
+      terminate: (reason) => terminations.push(reason),
+    },
+    maxInFlight: 4,
+    correlate: () => 'c1',
+    fileAnswers: {
+      routed: (channel) => channel === 'doc:big',
+      mint: () => 'n1',
+      take: (params, name, bytes) => {
+        taken.push({ params, name, bytes });
+        if (take instanceof Error) return Promise.reject(take);
+        return Promise.resolve(take ?? new Uint8Array());
+      },
+    },
+  });
+  const frame = (response: unknown): void => {
+    client.receive(encodeFrame(new TextEncoder().encode(JSON.stringify(response)), ENGINE_HOST_FRAME_MAX_BYTES));
+  };
+  return {
+    client,
+    terminations,
+    taken,
+    frame,
+    sent: () => writes.map((written) => JSON.parse(new TextDecoder().decode(written.subarray(4))) as unknown),
+  };
+}
+
+describe('a file-routed answer on the client (ADR-0125)', () => {
+  const envelope = { ok: true, value: { runs: ['a', 'b'] } };
+  const bytes = new TextEncoder().encode(JSON.stringify(envelope));
+
+  /**
+   * THE NAME IS MAIN'S, and the envelope in the file is what the call resolves to — the same object a frame would
+   * have carried, handed to the same `acceptAnswer`.
+   */
+  it('names the file itself, takes it for the session in the params, and resolves to the envelope in it', async () => {
+    const h = fileHarness(bytes);
+    const call = h.client.invoke('doc:big', { session: 's1' });
+    expect(h.sent()).toStrictEqual([{ id: 'c1', channel: 'doc:big', params: { session: 's1' }, answerInto: 'n1' }]);
+
+    h.frame({ id: 'c1', answerFile: { bytes: bytes.byteLength } });
+    await expect(call).resolves.toStrictEqual(envelope);
+    expect(h.taken).toStrictEqual([{ params: { session: 's1' }, name: 'n1', bytes: bytes.byteLength }]);
+    expect(h.terminations).toStrictEqual([]);
+  });
+
+  it('names no file for a channel that answers in the frame', () => {
+    const h = fileHarness(bytes);
+    void h.client.invoke('doc:small', { session: 's1' }).catch(() => undefined);
+    expect(h.sent()).toStrictEqual([{ id: 'c1', channel: 'doc:small', params: { session: 's1' } }]);
+  });
+
+  it('ends the connection when the file holds other than the announced length', async () => {
+    const h = fileHarness(bytes.subarray(1));
+    const call = h.client.invoke('doc:big', { session: 's1' });
+    h.frame({ id: 'c1', answerFile: { bytes: bytes.byteLength } });
+    await expect(call).rejects.toBeInstanceOf(HostConnectionLost);
+    expect(h.terminations.map((reason) => reason.code)).toStrictEqual(['malformed-response']);
+  });
+
+  it('ends the connection when the file cannot be taken', async () => {
+    const h = fileHarness(new Error('an answer arrived for a session this host is not holding'));
+    const call = h.client.invoke('doc:big', { session: 's1' });
+    h.frame({ id: 'c1', answerFile: { bytes: 10 } });
+    await expect(call).rejects.toBeInstanceOf(HostConnectionLost);
+    expect(h.terminations.map((reason) => reason.code)).toStrictEqual(['malformed-response']);
+  });
+
+  it('refuses a file answer to a call that answers in the frame', async () => {
+    const h = fileHarness(bytes);
+    const call = h.client.invoke('doc:small', {});
+    h.frame({ id: 'c1', answerFile: { bytes: bytes.byteLength } });
+    await expect(call).rejects.toBeInstanceOf(HostConnectionLost);
+    expect(h.taken).toStrictEqual([]);
+    expect(h.terminations.map((reason) => reason.code)).toStrictEqual(['malformed-response']);
+  });
+
+  it('refuses a SUCCESS in the frame for a file-routed call, and accepts a failure there', async () => {
+    const refused = fileHarness(bytes);
+    const call = refused.client.invoke('doc:big', { session: 's1' });
+    refused.frame({ id: 'c1', body: envelope });
+    await expect(call).rejects.toBeInstanceOf(HostConnectionLost);
+    expect(refused.terminations.map((reason) => reason.code)).toStrictEqual(['malformed-response']);
+
+    const failed = fileHarness(bytes);
+    const declined = failed.client.invoke('doc:big', { session: 's1' });
+    failed.frame({ id: 'c1', body: { ok: false, error: { code: 'answer-too-large' } } });
+    await expect(declined).resolves.toStrictEqual({ ok: false, error: { code: 'answer-too-large' } });
+    expect(failed.terminations).toStrictEqual([]);
+  });
+});
