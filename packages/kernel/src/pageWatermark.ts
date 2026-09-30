@@ -1,9 +1,10 @@
-import { PDFDocument, StandardFonts, degrees, rgb } from '@cantoo/pdf-lib';
+import { StandardFonts, degrees, rgb } from '@cantoo/pdf-lib';
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert } from './engineSeam.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
+import { appendRevision, openForWriting } from './pdfLibSession.js';
 
 /**
  * Drawing a text watermark across pages — **the first command routed to a
@@ -140,7 +141,7 @@ export const invertWatermarkPages: Invert<'pdf-lib', 'watermarkPages'> = (_image
  * rather than have to derive it from where the bytes live.
  */
 export const applyWatermarkPages: Apply<'pdf-lib', 'watermarkPages'> = async (image, command) => {
-  const document = await PDFDocument.load(image, { updateMetadata: false });
+  const document = await openForWriting(image);
   const pages = document.getPages();
   const targets = pagesOf(command.pages, pages.length);
 
@@ -184,9 +185,7 @@ export const applyWatermarkPages: Apply<'pdf-lib', 'watermarkPages'> = async (im
   }
 
   // NO OPTIONS. `updateMetadata` is a **load** option, not a save one — pdf-lib
-  // stores the flag on the document and `save` reads it back. Passing it here
-  // as well type-checks in plain JavaScript and does nothing, which is how the
-  // research script came to carry it in both places; the one that decides is
-  // the `load` above.
-  return document.save();
+  // stores the flag on the document and the write reads it back; the one that
+  // decides is `openForWriting`. The write is an appended revision (ADR-0127).
+  return appendRevision(document);
 };

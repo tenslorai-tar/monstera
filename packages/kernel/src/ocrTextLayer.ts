@@ -22,7 +22,7 @@ import type { CommandOfKind } from '@monstera/contract';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert } from './engineSeam.js';
 import type { RecognisedLine } from './ocrRecognise.js';
-import { openForWriting } from './pdfLibSession.js';
+import { appendRevision, openForWriting } from './pdfLibSession.js';
 
 /**
  * The invisible text layer a recognition writes — and the font that carries it.
@@ -539,5 +539,5 @@ export const applyOcrPage: Apply<'pdf-lib', 'ocrPage', 'none', 'ocr'> = async (
   }
 
   writeRecognisedText(page, glyphlessFont(document), read.lines);
-  return document.save();
+  return appendRevision(document);
 };

@@ -75,3 +75,22 @@ search for the literal found nothing in the input that holds it. It searches bot
   (row 287). `commit()` concatenates it onto the input.
 - **Compacting the appended route.** Measured bounded by the session's commands; a compaction step would be a
   rewrite, which is what an appended revision exists to avoid.
+
+## Correction, 2026-09-30 — the build: Decision 2 was not needed, and the signer keeps its route
+
+Appended by the build, the same day, and each paragraph answers a sentence above.
+
+**Decision 2 is withdrawn.** The one pdf-lib command that touches a form, `createFormField`, builds each field's
+appearance as it places it and already recorded — measured 2026-09-08, 720 marked pixels in the field's box either
+way — that the save's appearance pass changes nothing for it and would put its font in front of fields it never
+named. The incremental route turns that pass off, which is what the command wanted; nothing asks for it.
+
+**The signer is not one of the eight.** `signDocument` is `signpdf`'s command (ADR-0054) and only borrowed the pdf-lib
+loader. A document loaded for an incremental update makes pdf-lib's `save()` append without being asked, so the
+signer now takes `openWhole` and its placeholder is written whole, as ADR-0054 decided. Whether a signature should
+append is that ADR's question, not this one's.
+
+**What the build proves.** `pdfLibSession.test.ts`: a watermark's result is its input byte for byte with one revision
+appended, which MuPDF reads unrepaired with one more version; CONTROL, a whole save of the same edit is not; and
+`appendRevision` refuses a document loaded whole. The kernel's 1,785 cases pass on the appended route, the
+`reproducible` declarations' byte-equality cases among them.

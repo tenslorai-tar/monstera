@@ -1,10 +1,11 @@
-import { PDFArray, PDFDocument, PDFName, PDFRawStream } from '@cantoo/pdf-lib';
+import { PDFArray, PDFName, PDFRawStream } from '@cantoo/pdf-lib';
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import { COORDINATE_DECIMALS, contentNumber } from './contentNumbers.js';
 import type { Apply, Invert } from './engineSeam.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
+import { appendRevision, openForWriting } from './pdfLibSession.js';
 
 /**
  * A page background — a filled rectangle **behind** the page's own content.
@@ -72,7 +73,7 @@ export const applySetPageBackground: Apply<'pdf-lib', 'setPageBackground'> = asy
   image,
   command,
 ) => {
-  const document = await PDFDocument.load(image, { updateMetadata: false });
+  const document = await openForWriting(image);
   const pages = document.getPages();
   const targets = pagesOf(command.pages, pages.length);
 
@@ -115,7 +116,7 @@ export const applySetPageBackground: Apply<'pdf-lib', 'setPageBackground'> = asy
     page.node.set(PDFName.of('Contents'), contents);
   }
 
-  return document.save();
+  return appendRevision(document);
 };
 
 /**

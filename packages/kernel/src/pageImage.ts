@@ -5,7 +5,7 @@ import { type CommandOfKind, MAX_PAGE_COORDINATE } from '@monstera/contract/host
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, ByteImage, Invert } from './engineSeam.js';
 import { checkPngPixels } from './imageDimensions.js';
-import { openForWriting } from './pdfLibSession.js';
+import { appendRevision, openForWriting } from './pdfLibSession.js';
 
 /**
  * A page made from an image.
@@ -122,7 +122,7 @@ export const applyInsertImagePage: Apply<'pdf-lib', 'insertImagePage'> = async (
 ): Promise<ByteImage> => {
   const document = await openForWriting(image);
   await addImagePage(document, command.bytes, command.mediaType, command.at);
-  return document.save();
+  return appendRevision(document);
 };
 
 /**

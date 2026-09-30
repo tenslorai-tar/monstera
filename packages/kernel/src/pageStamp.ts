@@ -1,9 +1,10 @@
-import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
+import { StandardFonts, rgb } from '@cantoo/pdf-lib';
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert } from './engineSeam.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
+import { appendRevision, openForWriting } from './pdfLibSession.js';
 
 /**
  * Headers and footers — **the second command routed to a byte-image writer**,
@@ -133,7 +134,7 @@ export const applyHeaderFooterPages: Apply<'pdf-lib', 'headerFooterPages'> = asy
   image,
   command,
 ) => {
-  const document = await PDFDocument.load(image, { updateMetadata: false });
+  const document = await openForWriting(image);
   const pages = document.getPages();
   const targets = pagesOf(command.pages, pages.length);
 
@@ -180,7 +181,7 @@ export const applyHeaderFooterPages: Apply<'pdf-lib', 'headerFooterPages'> = asy
 
   // NO OPTIONS. `updateMetadata` is a **load** option — see `pageWatermark.ts`,
   // where the measurement behind that sentence is recorded.
-  return document.save();
+  return appendRevision(document);
 };
 
 /**
@@ -286,7 +287,7 @@ export const applyBatesNumberPages: Apply<'pdf-lib', 'batesNumberPages'> = async
   image,
   command,
 ) => {
-  const document = await PDFDocument.load(image, { updateMetadata: false });
+  const document = await openForWriting(image);
   const pages = document.getPages();
   const targets = pagesOf(command.pages, pages.length);
 
@@ -316,5 +317,5 @@ export const applyBatesNumberPages: Apply<'pdf-lib', 'batesNumberPages'> = async
     });
   }
 
-  return document.save();
+  return appendRevision(document);
 };

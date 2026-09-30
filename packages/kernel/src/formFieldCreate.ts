@@ -6,7 +6,7 @@ import { snapRotation } from '@monstera/shared';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert } from './engineSeam.js';
-import { openForWriting } from './pdfLibSession.js';
+import { appendRevision, openForWriting } from './pdfLibSession.js';
 
 /**
  * Creating one AcroForm field where a person drew it.
@@ -345,7 +345,7 @@ export const applyCreateFormField: Apply<'pdf-lib', 'createFormField'> = async (
   // changes nothing. Running it anyway would put this command's font in front of
   // fields it never named.
   //
-  // NO SAVE OPTIONS either, for `applyWatermarkPages`' reason: `updateMetadata`
-  // is a load option and `openForWriting` is where it is pinned.
-  return document.save();
+  // AND THE APPENDED ROUTE RUNS NONE (ADR-0127): pdf-lib turns the pass off for an
+  // incremental save, which is what this command already wanted.
+  return appendRevision(document);
 };

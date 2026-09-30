@@ -1067,6 +1067,17 @@ control. What the route check also showed is recorded against the audit's YYYYYY
 unbounded at worst because command objects are not strict — which is why the refusal, not the frame, is what
 guarantees an oversized command ends nothing.
 
+**Item 3 of the 29 September list — the byte-image route on native.** ADR-0127, the parked 0122 renumbered (0122 to
+0126 went to other decisions). The measurement ran again on the native engine before anything was built and read the
+WASM run's numbers to the byte: 100 `commit()` appends onto a four-version document open unrepaired at 104 versions,
+every mark read back; growth bounded by the session's commands; and the product's burn-in over appendices leaves one
+revision with the secret in neither the text nor the decompressed bytes, both controls holding. The eight pdf-lib
+commands now write by `commit()`. Two things the draft had wrong, found by building: its Decision 2 (a form command
+refreshes appearances) was unneeded, because the one form command builds each appearance itself and had measured that
+in September; and the signer was using the pdf-lib loader, so loading for an incremental update would have silently
+changed its save — it now takes `openWhole`. Re-timed: 29–124 s a command on the 127,082-object fixture against
+192–239 s, the page-drawing four the slow end, why unmeasured.
+
 ---
 
 ## 2026-09-30 — Edit text on the owner's documents (ADR-0125), and the same class through every contained process

@@ -3,7 +3,7 @@ import type { CommandOfKind, OutlineEntry } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, ByteImage, Invert } from './engineSeam.js';
-import { openForWriting } from './pdfLibSession.js';
+import { appendRevision, openForWriting } from './pdfLibSession.js';
 
 /**
  * A table of contents composed from the document's own outline.
@@ -247,7 +247,7 @@ export const applyGenerateToc: Apply<'pdf-lib', 'generateToc', 'none', 'outline'
     }
   }
 
-  return document.save();
+  return appendRevision(document);
 };
 
 /**

@@ -34,16 +34,44 @@ import type { ByteImage } from './engineSeam.js';
  * unavailable rather than discouraged — because a helper sitting beside a legal
  * inline call is the same trap one step on.
  *
- * ## What it deliberately does not do
+ * ## Loaded for an incremental update (ADR-0127)
  *
- * It does not save. The save options a command needs differ — an incremental
- * save is ADR-0008's decision per purpose — and folding them in here would make
- * one function answer two questions, only one of which has a single answer.
+ * A command's result is its input with one revision appended, written by
+ * {@link appendRevision}: a whole rewrite of a 127,082-object document costs
+ * 192–239 s where the append costs a fraction of the load, and ADR-0008's
+ * conditions 2, 3 and 5 were executed before it was allowed. `commit()` refuses a
+ * document not loaded this way, so the two helpers are one route.
  */
 export function openForWriting(image: ByteImage): Promise<PDFDocument> {
   // NO EXEMPTION AND NO DISABLE. This call pins the flag, so it passes the rule
   // on its own merits — unlike `geometry.ts` under `no-bare-y-flip`, where the
   // legal spelling is textually identical to the banned one and a file
   // exemption is the only thing that separates them.
+  return PDFDocument.load(image, { updateMetadata: false, forIncrementalUpdate: true });
+}
+
+/**
+ * The signer's load: WHOLE, never for an incremental update. `signDocument` is `signpdf`'s command, not pdf-lib's, and
+ * its placeholder is written by a whole save (ADR-0054 Decision 3); ADR-0127 decided the pdf-lib commands' route and
+ * not the signer's. A document loaded for an incremental update makes `save()` append without being asked, so the
+ * signer taking {@link openForWriting} would have changed its route in silence.
+ */
+export function openWhole(image: ByteImage): Promise<PDFDocument> {
   return PDFDocument.load(image, { updateMetadata: false });
+}
+
+/**
+ * The one way a pdf-lib command writes its result: the input, byte for byte, with one revision appended (ADR-0127).
+ *
+ * ## A form is the caller's to refresh
+ *
+ * `save()` regenerates the appearance of every field a command changed; the incremental route turns that off
+ * (pdf-lib forces `updateFieldAppearances: false` there), so a command that creates or changes a field calls the
+ * form's `updateFieldAppearances()` before this. A command that never asks for the form has nothing to refresh, and
+ * asking for it here would create an `/AcroForm` in every document.
+ *
+ * @param options `useObjectStreams: false` where a reader of the result needs a classic cross-reference table
+ */
+export function appendRevision(document: PDFDocument, options: { readonly useObjectStreams?: boolean } = {}): Promise<Uint8Array> {
+  return document.commit(options.useObjectStreams === undefined ? {} : { useObjectStreams: options.useObjectStreams });
 }

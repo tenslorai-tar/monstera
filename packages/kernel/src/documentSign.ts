@@ -33,7 +33,7 @@ import { snapRotation } from '@monstera/shared';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, ByteImage } from './engineSeam.js';
 import { PngPixelsRefused, checkPngPixels } from './imageDimensions.js';
-import { openForWriting } from './pdfLibSession.js';
+import { openWhole } from './pdfLibSession.js';
 import {
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
@@ -594,7 +594,8 @@ export async function withSignaturePlaceholder(
   image: ByteImage,
   command: CommandOfKind<'signDocument'>,
 ): Promise<ByteImage> {
-  const document = await openForWriting(image);
+  // WHOLE, the signer's own route (`openWhole`), never the pdf-lib commands' appended one (ADR-0127).
+  const document = await openWhole(image);
   // THE FIRST PAGE FOR AN INVISIBLE SIGNATURE, which has no page a person
   // chose; the placement's page for a visible one, refused rather than clamped
   // when the document does not have it — a signature drawn on a different page
