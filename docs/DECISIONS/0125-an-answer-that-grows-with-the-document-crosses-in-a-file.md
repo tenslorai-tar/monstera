@@ -111,3 +111,19 @@ frame fits a read like this, and a larger one spends the property the constant e
   was not measured. **ONLYOFFICE's 2 GB was measured only at its floor**, one-sentence files at 330–352 MiB, with *"a
   document of photographs rises from there"*. Both are measured in this range, on heavy inputs, before the next
   package, and recorded in the journal.
+
+## Correction before building, 2026-09-30 — the route is carried by the transport, not by each channel's schemas
+
+Decision 2 as first written gave each file-routed channel an `into` in its params and a `{ bytes }` result. Reading
+the code to build it showed two things that decide the form. First, the host's runtime has exactly one place every
+answer passes through (`runtime.ts`' `answer`), and the client exactly one (`client.ts`' `call`). Second, the
+per-channel form reshapes every converted channel's handler, remote reader, fake and test, about eighty files, and
+leaves sixteen copies of the same file handling. That is B3a's shape: the rule living in call sites.
+
+**So the route is declared on the channel, `answer: 'file'` beside its schemas, and carried by the transport.** The
+client mints the name and sends it beside the params, since host params are strict and the name is not the channel's
+business. For a file-routed channel, the runtime writes a successful answer's envelope into the session's granted
+output directory and frames only its byte count. The client takes the file under the ceiling, checks its length, and
+hands the parsed envelope to the same `acceptAnswer` a framed one goes through. A failure is small and stays in the
+frame. Handlers and readers keep their types, and the route is still a per-channel declaration. Its form changes;
+Decisions 3 to 5 stand unchanged.
