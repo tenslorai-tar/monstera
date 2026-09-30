@@ -7,10 +7,10 @@ import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract/host';
 import { composeCsv } from '../csvCompose.js';
 import { composeImages } from '../imageCompose.js';
 import { composeMarkdown } from '../markdownCompose.js';
-import { MupdfOpenRefused, openMupdfShim, rewriteImages } from '../mupdfRaw.js';
+import { MupdfOpenRefused, keepInlineImages, openMupdfShim, rewriteImages } from '../mupdfRaw.js';
 import { cryptoBytes } from '../token.js';
 import { composeChannels } from './composeChannels.js';
-import { type ImageOptimizer, createComposeHandlers } from './composeHandlers.js';
+import { type ImageOptimizer, type InlineImageKeeper, createComposeHandlers } from './composeHandlers.js';
 import { probeContainment } from './containment.js';
 import type { HostArea } from './engineHandlers.js';
 import { startEngineHost } from './hostBody.js';
@@ -97,7 +97,31 @@ const optimize: ImageOptimizer | null =
         return { kind: 'optimized', bytes: (await stat(output)).size };
       };
 
+/**
+ * The inline-image keeper over one area (ADR-0126), `optimize`'s shape: the area's directories and two validated
+ * names, MuPDF failing to OPEN the document is the document's answer, any later failure is a fault.
+ */
+const keepInlineImagesIn: InlineImageKeeper | null =
+  shimPath === null
+    ? null
+    : async (area, from, into, scope) => {
+        const input = join(area.snapshotDirectory, from);
+        const output = join(area.outputDirectory, into);
+        if (!existsSync(input)) return { kind: 'missing' };
+        let kept;
+        try {
+          kept = keepInlineImages(input, output, scope);
+        } catch (error) {
+          if (error instanceof MupdfOpenRefused) return { kind: 'unreadable' };
+          throw error;
+        }
+        return kept.converted === 0
+          ? { kind: 'unchanged', left: kept.left }
+          : { kind: 'kept', bytes: (await stat(output)).size, converted: kept.converted, left: kept.left };
+      };
+
 const handlers = createComposeHandlers({
+  keepInlineImages: keepInlineImagesIn,
   optimize,
   // AREAS, NOT SESSIONS. This host holds no parse between calls, and it holds the
   // granted directories anyway (ADR-0048 Decision 2): a call that carried its own

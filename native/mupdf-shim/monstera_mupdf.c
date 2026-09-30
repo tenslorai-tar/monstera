@@ -1109,6 +1109,317 @@ MZ_EXPORT int mz_save_compacted(mz_ctx *c, mz_doc *d, const char *path)
     return MZ_OK;
 }
 
+/* ========================================================================== */
+/*
+ * INLINE IMAGES MADE XOBJECTS, before PDFium regenerates a page (ADR-0126).
+ *
+ * PDFium's content generator returns early for an image that IsInline(), so a page it regenerates is saved
+ * without its BI ... EI pictures. This rewrites each inline image in a content stream into an image XObject and
+ * "/Name Do" at the SAME place, copying every other byte of the stream unchanged, so the picture's clip, colour
+ * and drawing order are the stream's own and cannot be lost.
+ *
+ * The inline image is read exactly as MuPDF's interpreter reads it (parse_inline_image in pdf-interpret.c): the
+ * dictionary up to ID, one whitespace byte (two for CR LF), pdf_load_inline_image, then the first "EI" followed by
+ * whitespace or a delimiter. pdf_add_image writes the image with its compressed data, mask and decode as they were.
+ *
+ * AN INLINE IMAGE THAT CANNOT BE READ IS LEFT, AND COUNTED: after a failed read the lexer's position in the stream is
+ * unknown, so the rest of that stream is copied as it was and the caller is told how many were left.
+ */
+
+typedef struct {
+    int converted;
+    int left;
+    int *visited;
+    int visited_len;
+    int visited_cap;
+} mz_keep_tally;
+
+/* Whether a form (by object number) was already rewritten, recording it if not: a form drawn twice, or drawing
+ * itself, is visited once. */
+static int mz_keep_seen(fz_context *ctx, mz_keep_tally *t, int num)
+{
+    int i;
+    if (num <= 0)
+        return 0;
+    for (i = 0; i < t->visited_len; ++i)
+        if (t->visited[i] == num)
+            return 1;
+    if (t->visited_len == t->visited_cap) {
+        int cap = t->visited_cap == 0 ? 16 : t->visited_cap * 2;
+        t->visited = fz_realloc_array(ctx, t->visited, cap, int);
+        t->visited_cap = cap;
+    }
+    t->visited[t->visited_len++] = num;
+    return 0;
+}
+
+/*
+ * Rewrites one content stream. `resources` is what its names resolve in (a page's may be inherited, a form's may be
+ * absent); `owner` is where a Resources dictionary is made when there is none and an image has to be named.
+ */
+static void mz_keep_stream(fz_context *ctx, pdf_document *doc, pdf_obj *stream, pdf_obj *owner, pdf_obj *resources,
+                           pdf_resource_stack *parent, mz_keep_tally *t)
+{
+    fz_buffer *content = NULL;
+    fz_buffer *out = NULL;
+    fz_stream *stm = NULL;
+    fz_image *img = NULL;
+    pdf_obj *dict = NULL;
+    pdf_lexbuf lb;
+    pdf_resource_stack rs;
+    size_t copied = 0;
+    int counter = 0;
+    int changed = 0;
+    int broken = 0;
+    unsigned char *data = NULL;
+    size_t len = 0;
+
+    rs.next = parent;
+    rs.resources = resources;
+    pdf_lexbuf_init(ctx, &lb, PDF_LEXBUF_SMALL);
+
+    fz_var(content);
+    fz_var(out);
+    fz_var(stm);
+    fz_var(img);
+    fz_var(dict);
+    fz_var(copied);
+    fz_var(counter);
+    fz_var(changed);
+    fz_var(broken);
+    fz_var(resources);
+
+    fz_try(ctx)
+    {
+        content = pdf_load_stream(ctx, stream);
+        len = fz_buffer_storage(ctx, content, &data);
+        stm = fz_open_buffer(ctx, content);
+        out = fz_new_buffer(ctx, len + 64);
+
+        while (!broken)
+        {
+            pdf_token tok = pdf_lex(ctx, stm, &lb);
+            size_t start;
+            size_t end = 0;
+
+            if (tok == PDF_TOK_EOF)
+                break;
+            if (tok != PDF_TOK_KEYWORD || strcmp(lb.scratch, "BI") != 0)
+                continue;
+            start = (size_t)fz_tell(ctx, stm) - 2;
+
+            fz_try(ctx)
+            {
+                int ch;
+                int found = 0;
+                dict = pdf_parse_dict(ctx, doc, stm, &lb);
+                ch = fz_read_byte(ctx, stm);
+                if (ch == '\r' && fz_peek_byte(ctx, stm) == '\n')
+                    fz_read_byte(ctx, stm);
+                img = pdf_load_inline_image(ctx, doc, &rs, dict, stm);
+                ch = fz_read_byte(ctx, stm);
+                do
+                {
+                    while (ch != 'E' && ch != EOF)
+                        ch = fz_read_byte(ctx, stm);
+                    if (ch == 'E')
+                    {
+                        ch = fz_read_byte(ctx, stm);
+                        if (ch == 'I')
+                        {
+                            ch = fz_peek_byte(ctx, stm);
+                            if (ch == ' ' || ch <= 32 || ch == '<' || ch == '/')
+                            {
+                                found = 1;
+                                break;
+                            }
+                        }
+                    }
+                } while (ch != EOF);
+                if (!found)
+                    fz_throw(ctx, FZ_ERROR_SYNTAX, "no EI after an inline image");
+                end = (size_t)fz_tell(ctx, stm);
+            }
+            fz_always(ctx)
+            {
+                pdf_drop_obj(ctx, dict);
+                dict = NULL;
+            }
+            fz_catch(ctx)
+            {
+                fz_drop_image(ctx, img);
+                img = NULL;
+                t->left += 1;
+                broken = 1;
+            }
+            if (broken)
+                break;
+
+            {
+                char name[32];
+                pdf_obj *xobjects;
+                if (resources == NULL)
+                    resources = pdf_dict_put_dict(ctx, owner, PDF_NAME(Resources), 2);
+                xobjects = pdf_dict_get(ctx, resources, PDF_NAME(XObject));
+                if (!pdf_is_dict(ctx, xobjects))
+                    xobjects = pdf_dict_put_dict(ctx, resources, PDF_NAME(XObject), 4);
+                do
+                    fz_snprintf(name, sizeof name, "MzInline%d", ++counter);
+                while (pdf_dict_gets(ctx, xobjects, name) != NULL);
+                pdf_dict_puts_drop(ctx, xobjects, name, pdf_add_image(ctx, doc, img));
+                fz_drop_image(ctx, img);
+                img = NULL;
+                fz_append_data(ctx, out, data + copied, start - copied);
+                fz_append_printf(ctx, out, " /%s Do ", name);
+                copied = end;
+                changed = 1;
+                t->converted += 1;
+            }
+        }
+
+        if (changed)
+        {
+            fz_append_data(ctx, out, data + copied, len - copied);
+            pdf_update_stream(ctx, doc, stream, out, 0);
+        }
+    }
+    fz_always(ctx)
+    {
+        fz_drop_stream(ctx, stm);
+        fz_drop_buffer(ctx, out);
+        fz_drop_buffer(ctx, content);
+        fz_drop_image(ctx, img);
+        pdf_drop_obj(ctx, dict);
+        pdf_lexbuf_fin(ctx, &lb);
+    }
+    fz_catch(ctx)
+        fz_rethrow(ctx);
+}
+
+/*
+ * The Form XObjects a resource dictionary names, each rewritten once and then its own forms. Collected before any
+ * is rewritten, because rewriting a form with no Resources of its own adds entries to a dictionary, and a form that
+ * shares its parent's dictionary would change the one being walked.
+ */
+static void mz_keep_forms(fz_context *ctx, pdf_document *doc, pdf_obj *resources, pdf_resource_stack *parent,
+                          mz_keep_tally *t)
+{
+    pdf_obj *xobjects = pdf_dict_get(ctx, resources, PDF_NAME(XObject));
+    int n = pdf_dict_len(ctx, xobjects);
+    pdf_obj **forms = NULL;
+    int count = 0;
+    int i;
+
+    if (n <= 0)
+        return;
+
+    fz_var(forms);
+    fz_try(ctx)
+    {
+        pdf_resource_stack rs;
+        forms = fz_malloc_array(ctx, n, pdf_obj *);
+        for (i = 0; i < n; ++i)
+        {
+            pdf_obj *xobj = pdf_dict_get_val(ctx, xobjects, i);
+            if (!pdf_is_stream(ctx, xobj) || !pdf_name_eq(ctx, pdf_dict_get(ctx, xobj, PDF_NAME(Subtype)), PDF_NAME(Form)))
+                continue;
+            if (mz_keep_seen(ctx, t, pdf_to_num(ctx, xobj)))
+                continue;
+            forms[count++] = xobj;
+        }
+        rs.next = parent;
+        rs.resources = resources;
+        for (i = 0; i < count; ++i)
+        {
+            pdf_obj *own = pdf_dict_get(ctx, forms[i], PDF_NAME(Resources));
+            mz_keep_stream(ctx, doc, forms[i], forms[i], own, &rs, t);
+            own = pdf_dict_get(ctx, forms[i], PDF_NAME(Resources));
+            if (own != NULL)
+                mz_keep_forms(ctx, doc, own, &rs, t);
+        }
+    }
+    fz_always(ctx)
+        fz_free(ctx, forms);
+    fz_catch(ctx)
+        fz_rethrow(ctx);
+}
+
+/*
+ * Rewrites the inline images of one page — its content streams, and every Form XObject its resources name — and
+ * answers how many were converted and how many could not be read and were left.
+ */
+MZ_EXPORT int mz_keep_inline_images(mz_ctx *c, mz_doc *d, int number, int *converted, int *left)
+{
+    mz_keep_tally t;
+    pdf_page *page = NULL;
+
+    if (c == NULL || d == NULL || converted == NULL || left == NULL) {
+        mz_fail(c, "mz_keep_inline_images was called with a missing argument");
+        return MZ_ERR;
+    }
+    memset(&t, 0, sizeof t);
+
+    fz_var(page);
+    fz_try(c->fz)
+    {
+        pdf_obj *resources;
+        pdf_obj *contents;
+        page = pdf_load_page(c->fz, d->pdf, number);
+        resources = pdf_page_resources(c->fz, page);
+        contents = pdf_page_contents(c->fz, page);
+        if (pdf_is_array(c->fz, contents))
+        {
+            int i;
+            int n = pdf_array_len(c->fz, contents);
+            for (i = 0; i < n; ++i)
+            {
+                pdf_obj *stream = pdf_array_get(c->fz, contents, i);
+                if (pdf_is_stream(c->fz, stream))
+                    mz_keep_stream(c->fz, d->pdf, stream, page->obj, resources, NULL, &t);
+                resources = pdf_page_resources(c->fz, page);
+            }
+        }
+        else if (pdf_is_stream(c->fz, contents))
+            mz_keep_stream(c->fz, d->pdf, contents, page->obj, resources, NULL, &t);
+        resources = pdf_page_resources(c->fz, page);
+        if (resources != NULL)
+            mz_keep_forms(c->fz, d->pdf, resources, NULL, &t);
+    }
+    fz_always(c->fz)
+    {
+        fz_drop_page(c->fz, (fz_page *)page);
+        fz_free(c->fz, t.visited);
+    }
+    fz_catch(c->fz) {
+        mz_record(c);
+        return MZ_ERR;
+    }
+    *converted = t.converted;
+    *left = t.left;
+    return MZ_OK;
+}
+
+/*
+ * Saves what mz_keep_inline_images changed: incrementally where MuPDF says the document can be — the original bytes
+ * with the changed objects appended, which is fast whatever the document's size — and whole where it cannot, which
+ * is a repaired file. MuPDF's own predicate decides, so a failed incremental save is never retried another way.
+ */
+MZ_EXPORT int mz_save_kept(mz_ctx *c, mz_doc *d, const char *path)
+{
+    pdf_write_options opts = pdf_default_write_options;
+
+    fz_try(c->fz)
+    {
+        opts.do_incremental = pdf_can_be_saved_incrementally(c->fz, d->pdf);
+        pdf_save_document(c->fz, d->pdf, path, &opts);
+    }
+    fz_catch(c->fz) {
+        mz_record(c);
+        return MZ_ERR;
+    }
+    return MZ_OK;
+}
+
 /*
  * Renders one page to an RGB pixmap and hands back the samples.
  *

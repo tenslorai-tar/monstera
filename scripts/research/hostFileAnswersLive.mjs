@@ -77,12 +77,14 @@ const CASES = [
   'CONTROL: rotating every page of the 10,000-page document captures a prior larger than a frame can carry',
   'the real MuPDF host rotated every page, first and last read back turned',
   'undo sent the prior back through the real MuPDF host, and first and last read back upright',
+  'CONTROL: the generated page draws its inline picture before any edit',
+  'the inline-picture page, edited through the compose and PDFium hosts and saved, still draws its picture',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 13 });
-if (CASES.length !== 13) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 13`);
+const roster = createRoster(failures, { cases: 15 });
+if (CASES.length !== 15) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 15`);
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -231,6 +233,23 @@ if (!runnable) {
     seen.undone === 'undone' && JSON.stringify(seen.undoneView) === '[0,0]',
     `undo answered ${JSON.stringify(seen.undone)} and the first and last pages read ${JSON.stringify(seen.undoneView)}. ` +
       'An error with the failures case red is the host ending on the invert.',
+  );
+
+  check(
+    CASES[13] ?? '',
+    seen.inlineBefore === true,
+    'the generated page does not draw its red picture even before an edit, so the case after it measures nothing.',
+  );
+  check(
+    CASES[14] ?? '',
+    seen.inlineOpened === 'opened' &&
+      seen.inlineEdited === 'ok' &&
+      seen.inlineSaved === 'saved' &&
+      seen.inlineAfter === true &&
+      String(seen.inlineText).includes('Edited'),
+    `opened ${JSON.stringify(seen.inlineOpened)}, edited ${JSON.stringify(seen.inlineEdited)}, saved ` +
+      `${JSON.stringify(seen.inlineSaved)}; after the reopen the picture is ${seen.inlineAfter === true ? 'drawn' : 'GONE'} ` +
+      `and the text reads "${String(seen.inlineText)}". An inline-images-left line in the failures case says why.`,
   );
 
   process.stdout.write(

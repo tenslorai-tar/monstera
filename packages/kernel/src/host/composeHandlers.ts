@@ -43,8 +43,26 @@ export type ImageOptimizer = (
   setting: { readonly quality: number; readonly over: number; readonly to: number },
 ) => Promise<{ readonly kind: 'optimized'; readonly bytes: number } | { readonly kind: 'unreadable' | 'missing' }>;
 
+/**
+ * How this process keeps a document's inline images through a PDFium edit (ADR-0126) — the shim in the host, a fake
+ * in a proof. `optimize`'s shape: the area and two validated names, paths composed here, `missing` the transport's and
+ * `unreadable` the document's. `unchanged` wrote nothing; `kept` wrote the document into `into`.
+ */
+export type InlineImageKeeper = (
+  area: HostArea,
+  from: string,
+  into: string,
+  scope: 'all' | number,
+) => Promise<
+  | { readonly kind: 'kept'; readonly bytes: number; readonly converted: number; readonly left: number }
+  | { readonly kind: 'unchanged'; readonly left: number }
+  | { readonly kind: 'unreadable' | 'missing' }
+>;
+
 /** What the compose host's handlers are built from. */
 export interface ComposeHandlerParts {
+  /** How this process keeps inline images, or `null` without the native library — `optimize`'s rule. */
+  readonly keepInlineImages: InlineImageKeeper | null;
   /**
    * How this process rewrites images, or `null` where it was started without the native library
    * — every packaged build until packaging resolves the library's path, and any run whose launcher
@@ -74,6 +92,7 @@ export function createComposeHandlers({
   composeImages,
   composeMarkdown,
   files,
+  keepInlineImages,
   optimize,
   probe,
 }: ComposeHandlerParts): Handlers<ComposeChannels> {
@@ -167,6 +186,28 @@ export function createComposeHandlers({
           : { ok: true, value: { kind: 'unreadable' } };
       }
       return { ok: true, value: { kind: 'optimized', bytes: answer.bytes } };
+    },
+
+    // `engine/optimize`'s three decisions, over the inline-image keeper (ADR-0126).
+    'engine/keep-inline-images': async ({ session, from, into, scope }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+      if (keepInlineImages === null) return { ok: true, value: { kind: 'unavailable' } };
+
+      const answer = await keepInlineImages(held, from, into, scope);
+      switch (answer.kind) {
+        case 'missing':
+          return { ok: false, error: { code: 'asset-missing' } };
+        case 'unreadable':
+          return { ok: true, value: { kind: 'unreadable' } };
+        case 'unchanged':
+          return { ok: true, value: { kind: 'unchanged', left: answer.left } };
+        case 'kept':
+          return {
+            ok: true,
+            value: { kind: 'kept', bytes: answer.bytes, converted: answer.converted, left: answer.left },
+          };
+      }
     },
 
     // `composeWith`'s decisions over a list: a missing source is the transport's, a

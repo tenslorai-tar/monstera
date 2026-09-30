@@ -911,6 +911,20 @@ request and no second sign-in for a view-only file; the 403 named `forbidden` wi
 a 401 still `unauthorised` as the control; the renderer offering the copy for `read-only` and `forbidden` and never
 for `unauthorised`. ADR-0091's 2026-09-30 correction holds the reasoning.
 
+**B — inline pictures kept, never refused.** The mechanism, read from PDFium's source:
+`CPDF_PageContentGenerator::ProcessImage` returns early for an image that `IsInline()`, so every PDFium command that
+regenerates a page saves it without its `BI … EI` pictures. PDFium cannot fix this itself.
+`pdfiumInlineConvert.mjs` refilled the image three ways, and each kept the inline flag and lost the picture. A new
+object would lose the clip. So the shim gained `mz_keep_inline_images`: MuPDF's interpreter reads each inline image,
+`pdf_add_image` writes it as an XObject, and `/Name Do` goes at the same place in the stream, so clip, colour and
+order are the stream's own. It runs in the compose host before every PDFium `apply` and `invert`, on the pages
+`regeneratedBy` names (ADR-0126 and its correction; B4 commit first). `proof:inlineimages`: five shapes, each lost
+without the step and kept with it; an image XObject is left untouched. `proof:hostfileanswers` edits such a page
+through the real hosts and reads it back. MuPDF's own rewrites were measured too (`mupdfInlineKeep.mjs`): a
+redaction beside the picture removed the text and kept the picture. The owner's fourth CV kept its picture in 0.1.6.0
+anyway, so the 0.1.5.0 loss may have been the host ending rather than this; the fix stands on the generated fixture,
+as the owner asked.
+
 ---
 
 ## 2026-09-30 — Edit text on the owner's documents (ADR-0125), and the same class through every contained process

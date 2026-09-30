@@ -5445,6 +5445,9 @@ export function openMupdfShim(libraryPath: string): void {
 		close: library.func("int mz_close(void *c, void *d)") as unknown as MzNative,
 		rewriteImages: library.func("int mz_rewrite_images(void *c, void *d, int quality, int over, int to)") as unknown as MzNative,
 		saveCompacted: library.func("int mz_save_compacted(void *c, void *d, const char *path)") as unknown as MzNative,
+		pageCount: library.func("int mz_page_count(void *c, void *d, _Out_ int *out)") as unknown as MzNative,
+		keepInlineImages: library.func("int mz_keep_inline_images(void *c, void *d, int number, _Out_ int *converted, _Out_ int *left)") as unknown as MzNative,
+		saveKept: library.func("int mz_save_kept(void *c, void *d, const char *path)") as unknown as MzNative,
 	}
 }
 
@@ -5471,6 +5474,9 @@ interface MzApi {
 	readonly close: MzNative
 	readonly rewriteImages: MzNative
 	readonly saveCompacted: MzNative
+	readonly pageCount: MzNative
+	readonly keepInlineImages: MzNative
+	readonly saveKept: MzNative
 }
 
 /** MuPDF refused, in its own words. */
@@ -5534,6 +5540,65 @@ export function rewriteImages(input: string, output: string, setting: ImageRewri
 				throw new MupdfNativeError("rewrite the images", said())
 			if (api.saveCompacted(c, d, output) !== 0)
 				throw new MupdfNativeError("save the copy", said())
+		} finally {
+			api.close(c, d)
+		}
+	} finally {
+		api.drop(c)
+	}
+}
+
+/** What {@link keepInlineImages} did: inline images made XObjects, and inline images MuPDF could not read and left. */
+export interface InlineImagesKept {
+	readonly converted: number
+	readonly left: number
+}
+
+/**
+ * Makes the inline images of the PDF at `input` XObjects on the pages in `scope`, and writes the document to `output`
+ * only when one was converted (ADR-0126). `rewriteImages`' shape: two paths in the granted directories, a context per
+ * call dropped in `finally`.
+ *
+ * A page past the document's end is not rewritten: the command that named it is refused by its own engine, for its
+ * own reason, and a refusal here would stand in front of that one with a worse sentence.
+ *
+ * @throws {MupdfOpenRefused} where MuPDF could not open the document
+ * @throws {MupdfNativeError} where MuPDF refused a later step, with its message
+ */
+export function keepInlineImages(input: string, output: string, scope: "all" | number): InlineImagesKept {
+	const api = mzApi
+	if (api === undefined)
+		throw new Error("the MuPDF shim is not bound in this process; openMupdfShim was not called")
+
+	const context: unknown[] = [ null ]
+	if (api.init(context) !== 0)
+		throw new MupdfNativeError("create a context", "mz_init failed")
+	const c = context[0]
+	const said = (): string => String(api.lastError(c))
+	try {
+		const document: unknown[] = [ null ]
+		if (api.open(c, input, document) !== 0)
+			throw new MupdfOpenRefused(said())
+		const d = document[0]
+		try {
+			const counted: number[] = [ 0 ]
+			if (api.pageCount(c, d, counted) !== 0)
+				throw new MupdfNativeError("count the pages", said())
+			const total = counted[0] ?? 0
+			const pages = scope === "all" ? Array.from({ length: total }, (_, page) => page) : scope < total ? [ scope ] : []
+			let converted = 0
+			let left = 0
+			for (const page of pages) {
+				const made: number[] = [ 0 ]
+				const kept: number[] = [ 0 ]
+				if (api.keepInlineImages(c, d, page, made, kept) !== 0)
+					throw new MupdfNativeError(`keep the inline images of page ${String(page + 1)}`, said())
+				converted += made[0] ?? 0
+				left += kept[0] ?? 0
+			}
+			if (converted > 0 && api.saveKept(c, d, output) !== 0)
+				throw new MupdfNativeError("save the document", said())
+			return { converted, left }
 		} finally {
 			api.close(c, d)
 		}

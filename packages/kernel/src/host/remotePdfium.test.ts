@@ -7,6 +7,7 @@ import { EngineCallFailed, EngineSessionGone, type SessionArea } from './remoteE
 import { EngineSerialiseMismatch } from './remoteLifecycle.js';
 import { pdfiumChannels } from './pdfiumChannels.js';
 import {
+  type PdfiumInputKeeper,
   type PdfiumTransfer,
   remotePdfiumTextRuns,
   remotePdfiumWriter,
@@ -87,15 +88,35 @@ interface Peer {
   answer: (channel: string, params: unknown) => unknown;
 }
 
-function harness(peer: Peer, transfer: PdfiumTransfer) {
+function harness(peer: Peer, transfer: PdfiumTransfer, keep?: PdfiumInputKeeper) {
   const client = createClient(pdfiumChannels, (channel, params) => {
     peer.asked.push({ channel, params });
     return Promise.resolve(peer.answer(channel, params));
   });
   const held = () => ({ session: 'a'.repeat(43), area: AREA });
   return {
-    writer: remotePdfiumWriter(client, held, transfer),
+    writer: remotePdfiumWriter(client, held, transfer, keep),
     textRuns: remotePdfiumTextRuns(client, held, transfer),
+  };
+}
+
+/**
+ * A keeper that records what it was asked and, when `places`, puts `kept` where it was told — standing in for the
+ * compose host's file-to-file copy (ADR-0126).
+ */
+function recordingKeeper(
+  transfer: ReturnType<typeof stubTransfer>,
+  places: boolean,
+  kept: ByteImage = new Uint8Array([7, 7]),
+): { readonly keep: PdfiumInputKeeper; readonly asked: string[] } {
+  const asked: string[] = [];
+  return {
+    asked,
+    keep: (_image, scope, into) => {
+      asked.push(`${String(scope)}@${into.directory}|${into.name}`);
+      if (places) transfer.snapshots.set(into.name, kept);
+      return Promise.resolve(places);
+    },
   };
 }
 
@@ -156,6 +177,68 @@ describe('main’s PDFium writer', () => {
     // a name for, in a directory nothing sweeps until the host ends.
     expect(transfer.snapshots.size).toBe(0);
     expect(transfer.log).toStrictEqual(['write:001', 'take:002', 'remove:001']);
+  });
+
+  /**
+   * ADR-0126: a regenerating command's input is handed to the keeper, with the command's page and the exact name the
+   * host will read — and what the keeper placed is what the host reads, not overwritten by the ordinary write.
+   */
+  it('a WRITE asks the keeper for its page, and the host reads what the keeper PLACED — no second write', async () => {
+    const transfer = stubTransfer();
+    const { keep, asked } = recordingKeeper(transfer, true);
+    const result = new Uint8Array([9, 9]);
+    const peer: Peer = {
+      asked: [],
+      answer: (_channel, params) => {
+        const sent = params as { from: string; into: string };
+        expect(transfer.snapshots.get(sent.from)).toStrictEqual(new Uint8Array([7, 7]));
+        transfer.outputs.set(sent.into, result);
+        return { ok: true, value: { bytes: result.length } };
+      },
+    };
+    const { writer } = harness(peer, transfer, keep);
+    await writer.apply({ session: new Uint8Array([1, 2]), command: COMMAND, source: undefined, reads: undefined });
+    expect(asked).toStrictEqual(['0@C:\\snap|001']);
+    expect(transfer.log).toStrictEqual(['take:002', 'remove:001']);
+  });
+
+  it('CONTROL: a keeper that placed nothing leaves the ordinary write, of the image as it was', async () => {
+    const transfer = stubTransfer();
+    const { keep, asked } = recordingKeeper(transfer, false);
+    const peer: Peer = {
+      asked: [],
+      answer: (_channel, params) => {
+        const sent = params as { from: string; into: string };
+        expect(transfer.snapshots.get(sent.from)).toStrictEqual(new Uint8Array([1, 2]));
+        transfer.outputs.set(sent.into, new Uint8Array([9]));
+        return { ok: true, value: { bytes: 1 } };
+      },
+    };
+    const { writer } = harness(peer, transfer, keep);
+    await writer.apply({ session: new Uint8Array([1, 2]), command: COMMAND, source: undefined, reads: undefined });
+    expect(asked).toStrictEqual(['0@C:\\snap|001']);
+    expect(transfer.log).toStrictEqual(['write:001', 'take:002', 'remove:001']);
+  });
+
+  it('an UNDO asks the keeper for the page its prior restores; a CAPTURE, which regenerates nothing, never asks', async () => {
+    const transfer = stubTransfer();
+    const { keep, asked } = recordingKeeper(transfer, false);
+    const peer: Peer = {
+      asked: [],
+      answer: (channel, params) => {
+        if (channel === 'engine/capture') {
+          return { ok: true, value: { captured: true, value: { kind: 'replaceTextObject', prior: { page: 0, objects: [{ index: 2, text: 'WAS' }] } } } };
+        }
+        transfer.outputs.set((params as { into: string }).into, new Uint8Array([9]));
+        return { ok: true, value: { bytes: 1 } };
+      },
+    };
+    const { writer } = harness(peer, transfer, keep);
+    await writer.capture(new Uint8Array([1]), COMMAND);
+    expect(asked).toStrictEqual([]);
+    await writer.invert(new Uint8Array([1]), 'replaceTextObject', { page: 5, objects: [{ index: 2, text: 'WAS' }] });
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatch(/^5@/u);
   });
 
   it('removes the input even when the host refuses', async () => {

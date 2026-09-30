@@ -108,6 +108,11 @@ export type ShellFailureEvent =
    * provider's own host and status. The person's dialog says the name; this is where the status is.
    */
   | 'cloud-failed'
+  /**
+   * An inline image a PDFium edit may drop could not be made an XObject first (ADR-0126): which pages, how many, and
+   * why. The edit ran anyway — the owner's rule is never to refuse it — so this line is where the risk is said.
+   */
+  | 'inline-images-left'
   | 'document-unreadable'
   | 'unresponsive'
   /**

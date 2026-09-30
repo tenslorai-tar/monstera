@@ -12,7 +12,7 @@ import { type ComposePageSize, ComposeRefused } from '../composeLayout.js';
 import type { ImportImage } from '../imageCompose.js';
 import { TOKEN_BYTES } from '../token.js';
 import { composeChannels } from './composeChannels.js';
-import { type ImageOptimizer, createComposeHandlers } from './composeHandlers.js';
+import { type ImageOptimizer, type InlineImageKeeper, createComposeHandlers } from './composeHandlers.js';
 import { ENGINE_SESSION_ID_MAX_CHARS } from './engineChannels.js';
 import type { HostArea } from './engineHandlers.js';
 import { type HostByteStream, startEngineHost } from './hostBody.js';
@@ -110,6 +110,14 @@ function start(
 ) {
   const calls: string[] = [];
   const handlers = createComposeHandlers({
+    // `optimize`'s recording, for the same reason: what the request named is what the keeper is handed.
+    keepInlineImages:
+      keeper === null
+        ? null
+        : (area, from, into, scope) => {
+            calls.push(`keep:${area.snapshotDirectory}|${from}->${area.outputDirectory}|${into}:${String(scope)}`);
+            return keeper === null ? Promise.reject(new Error('unreachable')) : keeper(area, from, into, scope);
+          },
     // THE AREA'S DIRECTORIES, THE TWO NAMES AND THE SETTING, recorded, so a case can assert the
     // handler handed the rewriter what the request named rather than something else.
     optimize:
@@ -189,6 +197,7 @@ let stream = stubStream();
 
 /** The rewriter every `start` binds, set by a case before it opens its area; `null` is none bound. */
 let optimizer: ImageOptimizer | null = () => Promise.resolve({ kind: 'optimized', bytes: 1234 });
+let keeper: InlineImageKeeper | null = () => Promise.resolve({ kind: 'kept', bytes: 999, converted: 2, left: 1 });
 
 /** The response inside one frame, with the header stripped by the contract's constant. */
 function answerIn(frame: Uint8Array | undefined): unknown {
@@ -244,6 +253,7 @@ describe('the compose host channel set', () => {
         'engine/compose-csv',
         'engine/compose-images',
         'engine/compose-markdown',
+        'engine/keep-inline-images',
         'engine/open',
         'engine/optimize',
         'engine/probe-containment',
@@ -512,6 +522,42 @@ describe('the compose host — Optimize, MuPDF’s native image rewriter (ADR-00
 
     expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'internal' } } });
     expect(calls).toContain('incident:engine/optimize');
+  });
+
+  it('KEEP-INLINE-IMAGES hands the keeper the area, both names and the scope, and answers its counts (ADR-0126)', async () => {
+    const { session, calls } = await openArea(emptyFiles());
+    stream.feed(request('k1', 'engine/keep-inline-images', { session, from: IN, into: OUT, scope: 3 }));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({
+      body: { ok: true, value: { kind: 'kept', bytes: 999, converted: 2, left: 1 } },
+    });
+    expect(calls).toStrictEqual([`keep:C:\\snap|${IN}->C:\\out|${OUT}:3`]);
+  });
+
+  it('KEEP-INLINE-IMAGES: a missing source is the transport’s, no library is unavailable and calls nothing', async () => {
+    keeper = () => Promise.resolve({ kind: 'missing' });
+    const first = await openArea(emptyFiles());
+    stream.feed(request('k1', 'engine/keep-inline-images', { session: first.session, from: IN, into: OUT, scope: 'all' }));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'asset-missing' } } });
+
+    keeper = null;
+    const second = await openArea(emptyFiles());
+    stream.feed(request('k2', 'engine/keep-inline-images', { session: second.session, from: IN, into: OUT, scope: 0 }));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'unavailable' } } });
+    expect(second.calls).toStrictEqual([]);
+    keeper = () => Promise.resolve({ kind: 'kept', bytes: 999, converted: 2, left: 1 });
+  });
+
+  it('KEEP-INLINE-IMAGES takes one page or all, and refuses any other scope a command never makes', () => {
+    const params = composeChannels['engine/keep-inline-images'].params;
+    const base = { session: 'a'.repeat(TOKEN_BYTES * 2), from: IN, into: OUT };
+    expect(params.safeParse({ ...base, scope: 0 }).success).toBe(true);
+    expect(params.safeParse({ ...base, scope: 'all' }).success).toBe(true);
+    for (const scope of [-1, 1.5, [0, 1], 'some']) {
+      expect(params.safeParse({ ...base, scope }).success, JSON.stringify(scope)).toBe(false);
+    }
   });
 
   it('refuses a target at or above its threshold, or one without a threshold — and CONTROL: accepts both 0', () => {

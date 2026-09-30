@@ -276,7 +276,9 @@ export {
 export { type ComposeChannels, composeChannels } from './host/composeChannels.js';
 export {
   type PdfiumArea,
+  type PdfiumInputKeeper,
   type PdfiumTransfer,
+  regeneratedBy,
   remotePdfiumPageObjects,
   remotePdfiumRenderPage,
   remotePdfiumTextRuns,

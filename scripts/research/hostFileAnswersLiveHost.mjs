@@ -64,6 +64,76 @@ const FORM_FIELDS = 3000;
  */
 const ROTATED_PAGES = 10_000;
 
+/** The inline picture's square on {@link inlinePicturePage}, in points on a 300-point page. */
+const PICTURE_SQUARE = { x: 100, y: 100, size: 100 };
+
+/**
+ * A page of one text line and a solid red INLINE picture (`BI … EI`), written here byte for byte — the shape PDFium's
+ * content generator drops when an edit regenerates the page (ADR-0126).
+ *
+ * @returns {Buffer}
+ */
+function inlinePicturePage() {
+  const red = Buffer.alloc(16 * 16 * 3);
+  for (let at = 0; at < red.length; at += 3) red[at] = 255;
+  const place = `${String(PICTURE_SQUARE.size)} 0 0 ${String(PICTURE_SQUARE.size)} ${String(PICTURE_SQUARE.x)} ${String(PICTURE_SQUARE.y)} cm`;
+  const content = Buffer.concat([
+    Buffer.from(`BT /F1 18 Tf 40 250 Td (Hello world) Tj ET\nq ${place} BI /W 16 /H 16 /CS /RGB /BPC 8 ID `, 'latin1'),
+    red,
+    Buffer.from(' EI Q', 'latin1'),
+  ]);
+  const objects = [
+    ['<< /Type /Catalog /Pages 2 0 R >>'],
+    ['<< /Type /Pages /Kids [3 0 R] /Count 1 >>'],
+    ['<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>'],
+    ['<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'],
+    [`<< /Length ${String(content.length)} >>\nstream\n`, content, '\nendstream'],
+  ];
+  /** @type {Buffer[]} */
+  const parts = [Buffer.from('%PDF-1.7\n', 'latin1')];
+  let length = parts[0]?.length ?? 0;
+  /** @type {number[]} */
+  const offsets = [];
+  objects.forEach((body, index) => {
+    offsets.push(length);
+    const piece = Buffer.concat([
+      Buffer.from(`${String(index + 1)} 0 obj\n`, 'latin1'),
+      ...body.map((part) => (typeof part === 'string' ? Buffer.from(part, 'latin1') : part)),
+      Buffer.from('\nendobj\n', 'latin1'),
+    ]);
+    parts.push(piece);
+    length += piece.length;
+  });
+  parts.push(
+    Buffer.from(
+      `xref\n0 ${String(objects.length + 1)}\n0000000000 65535 f \n` +
+        offsets.map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`).join('') +
+        `trailer\n<< /Size ${String(objects.length + 1)} /Root 1 0 R >>\nstartxref\n${String(length)}\n%%EOF\n`,
+      'latin1',
+    ),
+  );
+  return Buffer.concat(parts);
+}
+
+/**
+ * Whether the picture's square is drawn red, read with the PDFium adapter from the bytes on disk.
+ *
+ * @param {any} pdfium @param {Uint8Array} bytes
+ * @returns {Promise<boolean>}
+ */
+async function pictureDrawn(pdfium, bytes) {
+  const session = await pdfium.pdfiumWriter.open(bytes);
+  try {
+    const bitmap = await pdfium.renderPageBitmap(session, 0, 300, 300);
+    const x = PICTURE_SQUARE.x + PICTURE_SQUARE.size / 2;
+    const y = 300 - (PICTURE_SQUARE.y + PICTURE_SQUARE.size / 2);
+    const at = (y * bitmap.width + x) * 4;
+    return (bitmap.bgra[at + 2] ?? 0) > 200 && (bitmap.bgra[at + 1] ?? 255) < 60 && (bitmap.bgra[at] ?? 255) < 60;
+  } finally {
+    await pdfium.pdfiumWriter.close(session);
+  }
+}
+
 /** @returns {Promise<Uint8Array>} a document of {@link ROTATED_PAGES} blank pages */
 async function manyPages() {
   const document = await PDFDocument.create();
@@ -261,6 +331,10 @@ async function main() {
     if (pdfiumPlatform === null) {
       throw new Error('createPdfiumHostPlatform returned null: MONSTERA_PDFIUM_LIBRARY did not reach this process.');
     }
+    // THE COMPOSE HOST TOO, which keeps a page's inline images before PDFium regenerates it (ADR-0126): without it
+    // the inline-picture case below would measure a build that cannot keep them.
+    const composePlatform = platformModule.createComposeHostPlatform(platform);
+    if (composePlatform === null) throw new Error('createComposeHostPlatform returned null, so no inline image can be kept.');
 
     /** @type {string[]} */
     const failures = [];
@@ -270,6 +344,7 @@ async function main() {
       pickDocument: () => Promise.resolve(picked.path),
       enginePlatform: platform,
       pdfiumPlatform,
+      composePlatform,
       // A RECORDING LOG, so a host that ends during the run is a line in the report rather than on a handle nobody
       // reads — the owner's failure was exactly such a line.
       log: {
@@ -365,7 +440,66 @@ async function main() {
       }
     }
 
+    // THE INLINE PICTURE (ADR-0126): the page edited through BOTH real hosts — the compose host keeping the picture,
+    // PDFium regenerating the page — saved, and the bytes on disk read back with the adapter in this process.
+    const inlineBytes = inlinePicturePage();
+    const inlinePath = join(scratch, 'inline-picture.pdf');
+    writeFileSync(inlinePath, inlineBytes);
+    const inlineBefore = await pictureDrawn(pdfium, inlineBytes);
+    picked.path = inlinePath;
+    const inlineOpened = await observed(() => handlers['document.open']({}));
+    /** @type {any} */
+    let inlineEdited = null;
+    /** @type {any} */
+    let inlineSaved = null;
+    let inlineAfter = false;
+    let inlineText = '';
+    if (inlineOpened?.ok === true && inlineOpened.value.kind === 'opened') {
+      const docId = inlineOpened.value.docId;
+      const inlineBlocks = await observed(() => handlers['document.textBlocks']({ docId, page: 0 }));
+      const block = inlineBlocks?.ok === true ? inlineBlocks.value.blocks[0] : undefined;
+      if (block !== undefined) {
+        inlineEdited = await observed(() =>
+          handlers['document.execute']({
+            docId,
+            command: {
+              kind: 'editTextBlock',
+              page: 0,
+              blocks: [
+                {
+                  lines: block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+                  text: 'Edited',
+                  fit: 'reflow',
+                },
+              ],
+              version: inlineBlocks.value.version,
+            },
+          }),
+        );
+      }
+      if (inlineEdited?.ok === true) {
+        inlineSaved = await observed(() => handlers['document.save']({ docId, breakSignatures: false }));
+      }
+      await observed(() => handlers['document.close']({ docId }));
+      if (inlineSaved?.ok === true) {
+        const onDisk = new Uint8Array(readFileSync(inlinePath));
+        inlineAfter = await pictureDrawn(pdfium, onDisk);
+        const reread = await pdfium.pdfiumWriter.open(onDisk);
+        try {
+          inlineText = (await pdfium.textRuns(reread, 0)).runs.map((/** @type {any} */ run) => run.text).join(' ');
+        } finally {
+          await pdfium.pdfiumWriter.close(reread);
+        }
+      }
+    }
+
     const report = {
+      inlineBefore,
+      inlineOpened: inlineOpened?.ok === true ? inlineOpened.value.kind : inlineOpened,
+      inlineEdited: inlineEdited?.ok === true ? 'ok' : inlineEdited,
+      inlineSaved: inlineSaved?.ok === true ? inlineSaved.value.kind : inlineSaved,
+      inlineAfter,
+      inlineText,
       rotatedPages: ROTATED_PAGES,
       captureAnswerBytes,
       rotateOpened: many?.ok === true ? many.value.kind : many,

@@ -77,6 +77,7 @@ import {
   type HostTermination,
   type PageGeometryReader,
   type PdfiumArea,
+  type PdfiumInputKeeper,
   type PdfiumTransfer,
   type ProbeTarget,
   type RegisteredWriter,
@@ -855,12 +856,28 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   //
   // `null` when there is no platform, which is what leaves `writers.pdfium`
   // absent below.
-  const pdfiumHost = pdfiumPlatform === null ? null : pdfiumHostBinding(pdfiumPlatform, failures);
   // THE COMPOSE HOST, built at the first import rather than here — this only
   // prepares the binding. `null` without a platform, and a Markdown import is
   // then refused by name rather than composed in `main` (ADR-0060).
   const composeHost =
     composePlatform === null ? null : composeHostBinding(composePlatform, failures);
+  // BUILT AFTER THE COMPOSE HOST, which it asks to keep a page's inline images before every regenerating command
+  // (ADR-0126). Without one there is nothing to ask, and each edit says so in the log rather than in silence.
+  const pdfiumHost =
+    pdfiumPlatform === null
+      ? null
+      : pdfiumHostBinding(
+          pdfiumPlatform,
+          failures,
+          composeHost?.keepInlineImages ??
+            ((_image, scope) => {
+              failures({
+                event: 'inline-images-left',
+                detail: `${scope === 'all' ? 'every page' : `page ${String(scope + 1)}`}: no compose host in this build, so none was checked`,
+              });
+              return Promise.resolve(false);
+            }),
+        );
   // THE BACK-REFERENCE CLOSED, one line after the only thing that could close
   // it. `recycleHandle` above was written against this because `create` opens
   // documents from `documents`, so the service exists first and the factory can
@@ -2711,6 +2728,8 @@ type PdfiumRenderPage = ReturnType<typeof remotePdfiumRenderPage>;
 function pdfiumHostBinding(
   platform: EngineHostPlatform,
   failures: ShellFailureSink,
+  /** Puts each regenerating command's input in place with its inline images kept (ADR-0126). */
+  keep: PdfiumInputKeeper,
 ): {
   readonly writer: RegisteredWriter<'pdfium'>;
   readonly textRuns: PdfiumTextRuns;
@@ -2850,7 +2869,7 @@ function pdfiumHostBinding(
 
     return {
       connection: live.value,
-      writer: remotePdfiumWriter(client, held, transfer),
+      writer: remotePdfiumWriter(client, held, transfer, keep),
       textRuns: remotePdfiumTextRuns(client, held, transfer),
       pageObjects: remotePdfiumPageObjects(client, held, transfer),
       renderPage: remotePdfiumRenderPage(client, held, transfer),
@@ -2955,6 +2974,7 @@ function composeHostBinding(
   ) => Promise<ComposedImport>;
   readonly composeImages: NonNullable<ComposeImages>;
   readonly optimize: OptimizeSource;
+  readonly keepInlineImages: PdfiumInputKeeper;
   readonly close: () => Promise<void>;
 } {
   /** What one built host holds. Cleared together, or not at all. */
@@ -3198,6 +3218,51 @@ function composeHostBinding(
         }
       }
       return { kind: 'optimized', bytes: written, output: output(), discard };
+    },
+
+    // INLINE IMAGES KEPT through a PDFium edit (ADR-0126): the image into this host's area, the rewrite, and — only
+    // when something was rewritten — the document copied FILE TO FILE into PDFium's snapshot directory, so `main` never
+    // holds it beside the image it already holds (ADR-0121). Anything short of a rewrite answers `false` and the edit
+    // runs on the image as it is: the owner's rule is never to refuse an edit for a picture, so what could not be kept
+    // is SAID, in the log, rather than refused or dropped in silence.
+    keepInlineImages: async (image, scope, destination) => {
+      const where = scope === 'all' ? 'every page' : `page ${String(scope + 1)}`;
+      const left = (detail: string): false => {
+        failures({ event: 'inline-images-left', detail: `${where}: ${detail}` });
+        return false;
+      };
+      const target = join(destination.directory, destination.name);
+      let keptPath: string | null = null;
+      try {
+        const built = await ensure();
+        const area = { snapshotDirectory: built.paths.snapshot, outputDirectory: built.paths.output };
+        const from = areas.mintName();
+        const into = areas.mintName();
+        keptPath = join(area.outputDirectory, into);
+        await writeFile(join(area.snapshotDirectory, from), image);
+        const answer = await built.client['engine/keep-inline-images']({ session: built.session, from, into, scope })
+          .finally(() => rm(join(area.snapshotDirectory, from), { force: true }));
+        if (!answer.ok) return left(`the compose host answered ${answer.error.code}, so none was checked`);
+        const value = answer.value;
+        if (value.kind === 'unavailable') return left('the native MuPDF library is not in this build, so none was checked');
+        if (value.kind === 'unreadable') return left('MuPDF could not open the document, so none was checked');
+        if (value.kind === 'unchanged') {
+          return value.left === 0 ? false : left(`${String(value.left)} inline image(s) could not be read and were left`);
+        }
+        await copyFile(keptPath, target);
+        const copied = (await stat(target)).size;
+        if (copied !== value.bytes) {
+          await rm(target, { force: true });
+          return left(`the rewritten document holds ${String(copied)} bytes where ${String(value.bytes)} were written`);
+        }
+        if (value.left > 0) left(`${String(value.left)} inline image(s) could not be read and were left`);
+        return true;
+      } catch (error) {
+        await rm(target, { force: true });
+        return left(`the rewrite failed: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        if (keptPath !== null) await rm(keptPath, { force: true });
+      }
     },
 
     close: async () => {

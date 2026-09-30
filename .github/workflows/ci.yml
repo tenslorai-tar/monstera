@@ -342,6 +342,17 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/editFidelity.proof.mjs
           ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
 
+      # ADR-0126. PDFium's content generator drops an inline image when an edit
+      # regenerates its page; the shim's rewrite keeps it. Five picture shapes,
+      # each run through the real rewrite and the real PDFium edit, save and
+      # reopen — and each also run WITHOUT the rewrite, which must lose the
+      # picture, so a page PDFium kept anyway cannot pass. Both engines are
+      # needed, so Windows requires them and Linux reports what it could not run.
+      - name: Prove an edit keeps a page's inline images
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/inlineImages.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-engines' || '' }}
+
       # D6 row 1. The corpus is not here, so its five corpus cases report NOT
       # APPLICABLE and the run exits 0 — and the four that do run are the ones a
       # runner can settle: a constructed text page, a picture-only page, a BLANK

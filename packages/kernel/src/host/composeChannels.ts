@@ -134,6 +134,46 @@ export const composeChannels = {
   ),
 
   /**
+   * Makes a document's inline images XObjects on the pages a PDFium command is about to regenerate
+   * ([ADR-0126](../../../../docs/DECISIONS/0126-a-pdfium-command-is-handed-its-pages-with-inline-images-made-xobjects.md)).
+   *
+   * ## Its scope is the command's, in the two shapes a PDFium command has
+   *
+   * One page, which six of the seven commands name, or `all`, which `replaceAllText` regenerates. Nothing else is
+   * expressible, so a request for a range no command makes is refused by the schema.
+   *
+   * ## `unchanged` writes nothing
+   *
+   * No inline image on those pages is the ordinary answer, and then no file is written: main hands PDFium the image
+   * it would have had. `left` counts inline images MuPDF could not read, which stay as they were in both answers.
+   */
+  'engine/keep-inline-images': channel(
+    'Rewrites the inline images on a document’s pages as XObjects, writing the document into the area when any changed.',
+    z
+      .object({
+        session: sessionSchema,
+        from: outputNameSchema,
+        into: outputNameSchema,
+        scope: z.union([z.literal('all'), z.number().int().nonnegative()]),
+      })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      z
+        .object({
+          kind: z.literal('kept'),
+          bytes: z.number().int().positive(),
+          converted: z.number().int().positive(),
+          left: z.number().int().nonnegative(),
+        })
+        .strict(),
+      z.object({ kind: z.literal('unchanged'), left: z.number().int().nonnegative() }).strict(),
+      z.object({ kind: z.literal('unreadable') }).strict(),
+      z.object({ kind: z.literal('unavailable') }).strict(),
+    ]),
+    ['no-such-session', 'asset-missing'],
+  ),
+
+  /**
    * Sets a Markdown source as a new PDF.
    *
    * The two failures are the transport's: an area this host does not hold, and a

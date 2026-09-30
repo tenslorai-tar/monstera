@@ -91,6 +91,29 @@ export interface PdfiumTransfer extends SessionAreaSurface {
 }
 
 /**
+ * Puts a PDFium command's input where the host reads it with its inline images made XObjects (ADR-0126), answering
+ * whether it did. `false` — nothing to keep, or nothing able to keep it — leaves the ordinary write to this adapter,
+ * so the command runs either way and is never refused for holding a picture.
+ *
+ * It is handed the destination rather than answering bytes: the rewritten document is copied file to file into the
+ * snapshot directory, so `main` never holds it beside the image it already holds (ADR-0121).
+ */
+export type PdfiumInputKeeper = (
+  image: ByteImage,
+  scope: 'all' | number,
+  into: { readonly directory: string; readonly name: string },
+) => Promise<boolean>;
+
+/**
+ * The pages a PDFium command regenerates — its `page`, or every page for `replaceAllText`, the one document-wide
+ * PDFium command. THE ONE STATEMENT of it (ADR-0126 Decision 4): the keeper's scope is read here, and a command added
+ * to the PDFium writer without a `page` is a compile error until it is answered here.
+ */
+export function regeneratedBy(command: CommandOfKind<KindsRoutedTo<'pdfium'>>): 'all' | number {
+  return command.kind === 'replaceAllText' ? 'all' : command.page;
+}
+
+/**
  * Turns a declared failure into a named throw.
  *
  * `remoteEngine.ts`'s `answered`, and it is written again rather than shared
@@ -117,6 +140,7 @@ export function remotePdfiumExecution(
   client: ClientApi<PdfiumChannels>,
   held: () => PdfiumArea,
   transfer: PdfiumTransfer,
+  keep?: PdfiumInputKeeper,
 ): CommandExecution<'pdfium'> {
   /**
    * Puts `image` where the host reads, runs `call` with the name, and removes
@@ -126,14 +150,22 @@ export function remotePdfiumExecution(
    * `remoteMupdfExecution`'s `withAsset` rule on the document itself rather
    * than on a command's asset. A file that outlives the call is one nothing
    * holds a name for, in a directory that is not swept until the host ends.
+   *
+   * `regenerates` names the pages a WRITE is about to regenerate, and only a write passes it: a read regenerates
+   * nothing, so it pays nothing for the keeper (ADR-0126).
    */
   const withImage = async <T>(
     image: ByteImage,
     call: (from: string, area: SessionArea, session: string) => Promise<T>,
+    regenerates?: 'all' | number,
   ): Promise<T> => {
     const { session, area } = held();
     const from = transfer.mintName();
-    await transfer.writeSnapshot(area, from, image);
+    const placed =
+      regenerates !== undefined && keep !== undefined
+        ? await keep(image, regenerates, { directory: area.snapshotDirectory, name: from })
+        : false;
+    if (!placed) await transfer.writeSnapshot(area, from, image);
     try {
       return await call(from, area, session);
     } finally {
@@ -154,17 +186,22 @@ export function remotePdfiumExecution(
    */
   const wrote = (
     image: ByteImage,
+    regenerates: 'all' | number,
     send: (from: string, into: string, session: string) => Promise<{ bytes: number }>,
   ): Promise<ByteImage> =>
-    withImage(image, async (from, area, session) => {
-      const into = transfer.mintName();
-      const answer = await send(from, into, session);
-      const bytes = await transfer.takeOutput(area, into);
-      if (bytes.length !== answer.bytes) {
-        throw new EngineSerialiseMismatch(answer.bytes, bytes.length);
-      }
-      return bytes;
-    });
+    withImage(
+      image,
+      async (from, area, session) => {
+        const into = transfer.mintName();
+        const answer = await send(from, into, session);
+        const bytes = await transfer.takeOutput(area, into);
+        if (bytes.length !== answer.bytes) {
+          throw new EngineSerialiseMismatch(answer.bytes, bytes.length);
+        }
+        return bytes;
+      },
+      regenerates,
+    );
 
   return {
     // NEITHER `source` NOR `reads` IS NAMED, for `pdfiumSpecs.ts`' reason: no
@@ -175,7 +212,7 @@ export function remotePdfiumExecution(
       session: image,
       command,
     }: ApplyRequest<'pdfium', K>): Promise<ByteImage> =>
-      wrote(image, async (from, into, session) =>
+      wrote(image, regeneratedBy(command), async (from, into, session) =>
         answered('engine/apply', await client['engine/apply']({ session, command, from, into })),
       ),
 
@@ -235,7 +272,9 @@ export function remotePdfiumExecution(
       kind: K,
       inverse: CommandPrior[K],
     ): Promise<ByteImage> =>
-      wrote(image, async (from, into, session) =>
+      // THE PAGE A PRIOR RESTORES, read through the same tagged prior the host is sent: every PDFium prior carries
+      // the page its command touched, and restoring it regenerates that page as the command did.
+      wrote(image, pdfiumTaggedPrior(kind, inverse).prior.page, async (from, into, session) =>
         answered(
           'engine/invert',
           await client['engine/invert']({
@@ -279,13 +318,14 @@ export function remotePdfiumWriter(
   client: ClientApi<PdfiumChannels>,
   held: () => PdfiumArea,
   transfer: PdfiumTransfer,
+  keep?: PdfiumInputKeeper,
 ): RegisteredWriter<'pdfium'> {
   const serialise = (session: ByteImage): Promise<ByteImage> => Promise.resolve(session);
   return {
     serialise,
     // THE SESSION IS BYTES IN `main` for a byte-image writer, so a checkpoint writes them (ADR-0121).
     serialiseInto: serialiseIntoFile(serialise),
-    ...remotePdfiumExecution(client, held, transfer),
+    ...remotePdfiumExecution(client, held, transfer, keep),
   };
 }
 
