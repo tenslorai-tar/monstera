@@ -20,7 +20,8 @@ name: Guards
 
 on:
   push:
-    branches: [main]
+    # `work/**` for `ci.yml`'s reason: a work branch is checked here before `main` is fast-forwarded to it.
+    branches: [main, 'work/**']
   pull_request:
   workflow_dispatch:
 

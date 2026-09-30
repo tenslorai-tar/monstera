@@ -8,7 +8,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # `work/**` IS WHERE WORK IS CHECKED before `main` receives it (the owner's decision, 2026-10-01): `main` is only
+    # ever fast-forwarded to a sha both CI and Guards passed on a work branch.
+    branches: [main, 'work/**']
   pull_request:
   workflow_dispatch:
 

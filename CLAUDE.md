@@ -1788,6 +1788,30 @@ Hooks are enabled automatically by the `prepare` lifecycle script
 is missing, **provision it — do not bypass the hook.** `--no-verify` on this
 repository is a Rule 0 violation with a permanent, public consequence.
 
+**GITHUB RUNS THE FULL CHECKS; THIS MACHINE RUNS ONLY WHAT AN ITEM NEEDS** (the
+owner's decision, 2026-10-01). About eight hours of one day went to checks run
+here that CI and Guards already run on GitHub's machines. So:
+
+- **Work goes to a branch, `work/<date>`**, which CI and Guards run on
+  (`branches: [main, 'work/**']`). `main` only ever receives a commit GitHub has
+  passed: when both CI and Guards are green on a branch sha, `main` is moved to
+  it with a fast-forward push, `git push origin <sha>:main`. Never force-push,
+  never rewrite history on `main` or the branch, never move `main` to a sha
+  GitHub has not passed.
+- **Push the branch at the end of a group of items**, not after every item. After
+  a push, keep working; read the board for that exact sha **once**, when the runs
+  should have finished (`npm run board -- --sha <sha>`) — never poll in a loop. If
+  red, fix on the branch and push again.
+- **Locally, only what the change reaches:** the tests of the files changed
+  (`vitest related`, or the changed files and their tests) — never the whole
+  suite; lint only the files changed; typecheck once per item (the pre-push hook
+  runs it too); **never `check:docs` by hand** (Guards runs it — it ran 28 times
+  by hand in one day, 3.1 hours). Never two heavy commands at once.
+- **One commit per item where possible.** The pre-commit hook stays exactly as it
+  is and is never bypassed.
+
+This replaces running the full pre-push set before every push.
+
 **Run the project's command, never the underlying tool.** `npm run typecheck` is
 two invocations:
 
