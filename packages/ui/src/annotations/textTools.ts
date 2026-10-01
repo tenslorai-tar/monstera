@@ -169,6 +169,7 @@ function boxTextTool(
           opacity: deps.style.opacity,
           fontSize: deps.style.fontSize,
           font: deps.style.font,
+          direction: deps.style.direction,
         },
       };
     },

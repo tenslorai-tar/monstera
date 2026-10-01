@@ -244,6 +244,19 @@ export const HOST_FILE_ANSWERS_LIVE = [['apps/desktop/src', 'apps/desktop/dist/e
 export const INLINE_IMAGES = [...PDFIUM_ADAPTER, ...NATIVE_ENGINE];
 
 /**
+ * What `rtlText.proof.mjs` draws through: the annotation writer, the executor and the writer that serialises, over the
+ * native engine whose layout engine does the ordering and shaping (ADR-0128).
+ *
+ * @type {readonly BuildEdge[]}
+ */
+export const RTL_TEXT = [
+  ['packages/kernel/src/pageAnnotations.ts', 'packages/kernel/dist/pageAnnotations.js', 'tsc'],
+  ['packages/kernel/src/commandSpecs.ts', 'packages/kernel/dist/commandSpecs.js', 'tsc'],
+  ['packages/kernel/src/mupdfWriter.ts', 'packages/kernel/dist/mupdfWriter.js', 'tsc'],
+  ...NATIVE_ENGINE,
+];
+
+/**
  * What `wordPictures.proof.mjs` exports through: the composer the MuPDF host runs, the part writer, the one reader of
  * MuPDF's structured text, and the native engine they draw with (ADR-0072's amendment of 2026-10-01).
  *
@@ -404,6 +417,8 @@ export const ARTEFACT_EDGES = {
   'proof:inlineimages': INLINE_IMAGES,
   // THE WORD EXPORT'S PICTURES, read back by a zip reader and a PNG decoder that are not the writer's.
   'proof:wordpictures': WORD_PICTURES,
+  // HEBREW AND ARABIC IN TEXT MARKS, read back by pdf.js after MuPDF's bake (ADR-0128).
+  'proof:rtltext': RTL_TEXT,
   // THE PACKAGE'S MODULE CLOSURE, walked over the built `dist/`s it takes modules from (decision E).
   'proof:shippedmodules': SHIPPED_MODULES,
   // THE COMPILE-FAIL PROOF, whose probes `import type … from '@monstera/contract'`

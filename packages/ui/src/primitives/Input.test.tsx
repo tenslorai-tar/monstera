@@ -33,6 +33,13 @@ function render(ui: ReactElement): ReturnType<typeof renderBare> {
 }
 
 describe('Input', () => {
+  it('lets what is TYPED decide which way it runs (`dir="auto"`), so Hebrew or Arabic shows right to left', () => {
+    // The attribute is the whole mechanism: the browser applies HTML's first-strong-letter rule to it. Without it the
+    // field would lay a Hebrew word out left to right while the text box it becomes is drawn right to left.
+    render(<Input label={FILE_NAME} onValueChange={vi.fn()} value="" />);
+    expect(screen.getByLabelText('File name').getAttribute('dir')).toBe('auto');
+  });
+
   it('associates its label with the control', () => {
     render(<Input label={FILE_NAME} onValueChange={vi.fn()} value="" />);
     // `getByLabelText` reads the association the way an assistive technology

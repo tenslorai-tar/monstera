@@ -1128,6 +1128,15 @@ export const EDITING_FONT_OPTION_TITLES = {
   serif: EDITING_FONT_SERIF,
   mono: EDITING_FONT_MONO,
 } as const;
+export const EDITING_DIRECTION_TITLE = messageKey('setting.editing.text-direction.title');
+export const EDITING_DIRECTION_DESCRIPTION = messageKey('setting.editing.text-direction.description');
+/** `editing.text-direction`'s members, each its own exported key as the other option sets are. */
+export const EDITING_DIRECTION_LTR = messageKey('setting.editing.text-direction.left-to-right');
+export const EDITING_DIRECTION_RTL = messageKey('setting.editing.text-direction.right-to-left');
+export const EDITING_DIRECTION_OPTION_TITLES = {
+  'left-to-right': EDITING_DIRECTION_LTR,
+  'right-to-left': EDITING_DIRECTION_RTL,
+} as const;
 export const EDITING_IMAGE_PAGES_TITLE = messageKey('setting.editing.image-pages');
 export const STYLE_PANEL_LABEL = messageKey('surface.style.label');
 export const COMMENT_STYLES_NO_WIDTH = messageKey('surface.comment-styles.no-width');
@@ -3022,6 +3031,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EDITING_FONT_OPTION_TITLES.sans]: 'Sans serif (Helvetica)',
   [EDITING_FONT_OPTION_TITLES.serif]: 'Serif (Times)',
   [EDITING_FONT_OPTION_TITLES.mono]: 'Monospace (Courier)',
+  [EDITING_DIRECTION_TITLE]: 'Text direction',
+  [EDITING_DIRECTION_DESCRIPTION]:
+    'Which side the lines of new text boxes, callouts and typed text start from. Choose right to left for Hebrew, Arabic and other languages written from the right. Letters always appear in the right order and joined as the language needs, whichever you choose.',
+  [EDITING_DIRECTION_OPTION_TITLES['left-to-right']]: 'Left to right',
+  [EDITING_DIRECTION_OPTION_TITLES['right-to-left']]: 'Right to left',
   [EDITING_IMAGE_PAGES_TITLE]: 'Place images on',
   [STYLE_PANEL_LABEL]: 'Annotation style',
   // SAID RATHER THAN SHOWN AS ZERO. Six subtypes have no `/BS` at all, and a 0

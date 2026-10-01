@@ -19,6 +19,7 @@ The Typewriter adds your text straight onto the page with no border, which is ha
 ## Good to know
 
 - Font size and colour come from the **Properties** tab. The typeface is **Annotation font** in **Settings**, on the **Editing defaults** page.
+- Hebrew, Arabic and other languages work too, with the letters in the right order. For a language written from the right, choose **Right to left** under **Text direction** on the same page, so the lines start at the right edge.
 - For text inside a bordered box, use "Add a text box".
 - Undo with **Ctrl+Z**.
 

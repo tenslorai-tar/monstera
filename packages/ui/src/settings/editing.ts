@@ -9,6 +9,8 @@ import {
   measurePerPointSchema,
   measureUnitSchema,
   ocrLanguagesSchema,
+  type TextDirection,
+  textDirectionSchema,
   AZURE_ENDPOINT_SETTING_ID,
   AZURE_KEY_SETTING_ID,
 } from '@monstera/contract';
@@ -18,6 +20,9 @@ import {
   EDITING_AUTHOR_NAME_DESCRIPTION,
   EDITING_AUTHOR_NAME_TITLE,
   EDITING_COLOUR_TITLE,
+  EDITING_DIRECTION_DESCRIPTION,
+  EDITING_DIRECTION_OPTION_TITLES,
+  EDITING_DIRECTION_TITLE,
   EDITING_FONT_DESCRIPTION,
   EDITING_FONT_OPTION_TITLES,
   EDITING_FONT_SIZE_TITLE,
@@ -406,6 +411,21 @@ export const ANNOTATION_FONT_SETTING: SettingDefinition<z.ZodEnum<{ [K in Annota
   fallback: 'sans',
   category: 'editing',
   optionTitles: EDITING_FONT_OPTION_TITLES,
+};
+
+/**
+ * Which side a new text box's, callout's or typed text's lines start from — Part F's *"RTL text"*
+ * (`BUILD-PROMPT.md`:615, ADR-0128). Left to right by default, which writes what every text mark wrote before this was
+ * a choice. The letters' order and joining are the engine's whichever is chosen; this is the alignment.
+ */
+export const TEXT_DIRECTION_SETTING: SettingDefinition<z.ZodEnum<{ [K in TextDirection]: K }>> = {
+  id: 'editing.text-direction',
+  title: EDITING_DIRECTION_TITLE,
+  description: EDITING_DIRECTION_DESCRIPTION,
+  schema: textDirectionSchema,
+  fallback: 'left-to-right',
+  category: 'editing',
+  optionTitles: EDITING_DIRECTION_OPTION_TITLES,
 };
 
 /**

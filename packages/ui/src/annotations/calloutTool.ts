@@ -105,6 +105,7 @@ export function calloutTool(deps: TextToolDeps): UiTool {
           opacity: deps.style.opacity,
           fontSize: deps.style.fontSize,
           font: deps.style.font,
+          direction: deps.style.direction,
         },
       };
     },

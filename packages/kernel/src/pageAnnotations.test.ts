@@ -464,7 +464,7 @@ describe('applyAddAnnotation writes a text box as the format defines one', () =>
     text: 'see figure 3',
     colour: [0.1, 0.1, 0.1],
     opacity: 1,
-    fontSize: 12, font: 'sans',
+    fontSize: 12, font: 'sans', direction: 'left-to-right',
   };
 
   it('puts the words in /Contents, which is where a FreeText keeps them', async () => {
@@ -507,6 +507,52 @@ describe('applyAddAnnotation writes a text box as the format defines one', () =>
       // Helvetica, which is what MuPDF does to a name outside the base 14, fails the second and third.
       expect(face?.lookup(PDFName.of('BaseFont'))?.toString(), font).toBe(`/${base}`);
     }
+  });
+
+  /** The first annotation's dictionary on page 1, read by pdf-lib — a second library, not the writer's getters. */
+  async function firstAnnotation(bytes: Uint8Array): Promise<PDFDict | undefined> {
+    const loaded = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = loaded.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    const [first] = annots instanceof PDFArray ? annots.asArray() : [];
+    return first instanceof PDFRef ? loaded.context.lookup(first, PDFDict) : undefined;
+  }
+
+  it('RIGHT TO LEFT sets each text mark’s lines against the right edge (/Q 2) — text box, typed text and callout', async () => {
+    const marks: AnnotationDraft[] = [
+      { ...TEXT_BOX, direction: 'right-to-left' },
+      { ...TEXT_BOX, type: 'typewriter', direction: 'right-to-left' },
+      { ...TEXT_BOX, type: 'callout', at: { x: 5, y: 5 }, direction: 'right-to-left' },
+    ];
+    for (const annotation of marks) {
+      const dict = await firstAnnotation(await drawnOn(await fixture(), command({ annotation })));
+      expect(dict?.lookup(PDFName.of('Q'))?.toString(), annotation.type).toBe('2');
+    }
+  });
+
+  it('CONTROL: LEFT TO RIGHT writes no /Q at all — MuPDF’s own default — so the case above is the direction’s doing', async () => {
+    const dict = await firstAnnotation(await drawnOn(await fixture(), command({ annotation: TEXT_BOX })));
+    expect(dict?.lookup(PDFName.of('Q'))).toBeUndefined();
+  });
+
+  it('HEBREW AND ARABIC are drawn in the engine’s Noto faces, not as bytes in Helvetica (ADR-0128)', async () => {
+    // THE APPEARANCE'S FONTS, read by pdf-lib: what a viewer paints with. Before the layout engine was built in, a
+    // Hebrew box's only font was `/Helvetica` and its letters were bytes that face has no glyphs for.
+    const fontsOf = async (text: string): Promise<string[]> => {
+      const dict = await firstAnnotation(await drawnOn(await fixture(), command({ annotation: { ...TEXT_BOX, text } })));
+      const normal = dict?.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N'));
+      const resources = normal instanceof PDFStream ? normal.dict.lookup(PDFName.of('Resources'), PDFDict) : undefined;
+      const fonts = resources?.lookup(PDFName.of('Font'), PDFDict);
+      return (fonts?.values() ?? []).map((ref) => {
+        const font = ref instanceof PDFRef ? fonts?.context.lookup(ref, PDFDict) : ref;
+        return font instanceof PDFDict ? (font.lookup(PDFName.of('BaseFont'))?.toString() ?? '') : '';
+      });
+    };
+    const hebrew = String.fromCodePoint(0x05e9, 0x05dc, 0x05d5, 0x05dd);
+    const arabic = String.fromCodePoint(0x0645, 0x0631, 0x062d, 0x0628, 0x0627);
+    expect((await fontsOf(hebrew)).join(' ')).toMatch(/Noto.*Hebrew/u);
+    expect((await fontsOf(arabic)).join(' ')).toMatch(/Noto.*Arabic/u);
+    // CONTROL: the same box with Latin words keeps its base-14 face, so the switch is the text's doing, not the box's.
+    expect(await fontsOf('see figure 3')).toStrictEqual(['/Helvetica']);
   });
 
   it('gives it an appearance stream, so a viewer draws the words rather than a box', async () => {
@@ -2367,7 +2413,7 @@ describe('applyAddAnnotation tells a typewriter from a text box', () => {
     text: 'in a box',
     colour: [0.1, 0.1, 0.1],
     opacity: 1,
-    fontSize: 12, font: 'sans',
+    fontSize: 12, font: 'sans', direction: 'left-to-right',
   };
   const TYPED: AnnotationDraft = {
     type: 'typewriter',
@@ -2375,7 +2421,7 @@ describe('applyAddAnnotation tells a typewriter from a text box', () => {
     text: 'on the page',
     colour: [0.1, 0.1, 0.1],
     opacity: 1,
-    fontSize: 12, font: 'sans',
+    fontSize: 12, font: 'sans', direction: 'left-to-right',
   };
 
   async function both(): Promise<Uint8Array> {
@@ -2439,7 +2485,7 @@ describe('applyAddAnnotation writes a callout the format recognises', () => {
     text: 'see this',
     colour: [0.85, 0.15, 0.15],
     opacity: 1,
-    fontSize: 12, font: 'sans',
+    fontSize: 12, font: 'sans', direction: 'left-to-right',
   };
 
   /** The `/FreeText`'s raw entries, read with pdf-lib. */
@@ -2497,7 +2543,7 @@ describe('applyAddAnnotation writes a callout the format recognises', () => {
       text: 'plain',
       colour: [0, 0, 0],
       opacity: 1,
-      fontSize: 12, font: 'sans',
+      fontSize: 12, font: 'sans', direction: 'left-to-right',
     };
     const both = await drawnOn(
       await drawnOn(await fixture(), command({ annotation: plain })),

@@ -97,6 +97,9 @@ export function Input({
       <BaseInput
         autoComplete={purpose}
         className="m-input"
+        // HTML'S OWN RULE FOR WHICH WAY TYPED TEXT RUNS: the first letter with a direction decides, so Hebrew or Arabic
+        // shows right to left as it is typed, and Latin as before. The platform's answer, not one of ours (ADR-0128).
+        dir="auto"
         onValueChange={(next): void => {
           onValueChange(next);
         }}

@@ -44,7 +44,7 @@ import { fileURLToPath } from 'node:url';
 
 import { downloadVerified, fileExists, toolPath } from '../lib/fetchVerified.mjs';
 import { archiveSymlinks, extract } from '../lib/extract.mjs';
-import { handlerDisableFlags } from '../lib/documentHandlers.mjs';
+import { LAYOUT_ENGINE_FLAGS, handlerDisableFlags } from '../lib/documentHandlers.mjs';
 import { generateGlue } from './mupdfGlue.mjs';
 import { build, dumpbin } from '../lib/msvc.mjs';
 import { recordShimBuild, shimPath } from '../lib/shimBinary.mjs';
@@ -211,7 +211,8 @@ async function buildMupdf(root, force) {
     // EPUB handler before the shim's "not a PDF" check ever runs.
     // scripts/lib/documentHandlers.mjs holds the list and explains why this is
     // one of three overlapping mechanisms rather than the only one.
-    compilerOptions: handlerDisableFlags(),
+    // AND THE LAYOUT ENGINE KEPT ON, which those disables would otherwise switch off with them (ADR-0128).
+    compilerOptions: [...handlerDisableFlags(), ...LAYOUT_ENGINE_FLAGS],
     label: `MuPDF ${MUPDF_VERSION} static libraries (several minutes)`,
   });
 
@@ -266,7 +267,7 @@ async function buildMupdfUnix(root, force) {
     process.stderr.write(`  libmupdf.a already built\n`);
     return;
   }
-  const disabled = handlerDisableFlags().map((flag) => flag.replace(/^\/D/u, '-D')).join(' ');
+  const disabled = [...handlerDisableFlags(), ...LAYOUT_ENGINE_FLAGS].map((flag) => flag.replace(/^\/D/u, '-D')).join(' ');
   const { availableParallelism } = await import('node:os');
   process.stderr.write(`  building MuPDF ${MUPDF_VERSION} static libraries with make (several minutes)\n`);
   const made = spawnSync(

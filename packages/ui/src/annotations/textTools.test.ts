@@ -82,6 +82,7 @@ describe('textBoxTool', () => {
         opacity: 1,
         fontSize: 12,
         font: 'sans',
+        direction: 'left-to-right',
       },
     });
   });
@@ -92,6 +93,14 @@ describe('textBoxTool', () => {
     expect(command?.kind === 'addAnnotation' && command.annotation.type === 'text-box' ? command.annotation.font : undefined).toBe(
       'serif',
     );
+  });
+
+  it('and in the reader’s chosen DIRECTION (`editing.text-direction`) — the first case, left to right, is the control', async () => {
+    const { tool } = toolAnswering({ text: 'see figure 3' }, { ...PLAIN_STYLE, direction: 'right-to-left' });
+    const command = await drag(tool, [20, 20], [120, 80]);
+    expect(
+      command?.kind === 'addAnnotation' && command.annotation.type === 'text-box' ? command.annotation.direction : undefined,
+    ).toBe('right-to-left');
   });
 
   it('sends NOTHING when the dialog is dismissed', async () => {

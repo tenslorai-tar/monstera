@@ -96,6 +96,7 @@ describe('calloutTool', () => {
         opacity: 1,
         fontSize: 12,
         font: 'sans',
+        direction: 'left-to-right',
       },
     });
     expect(asked).toStrictEqual([CALLOUT_DIALOG_ID]);

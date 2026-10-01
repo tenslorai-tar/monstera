@@ -21,6 +21,7 @@ A callout is a text box joined by a line to the spot it describes.
 
 - The line is straight; a bent line is not available yet.
 - Colour, opacity and font size come from the **Properties** tab. The typeface is **Annotation font** in **Settings**, on the **Editing defaults** page.
+- Hebrew, Arabic and other languages work too, with the letters in the right order. For a language written from the right, choose **Right to left** under **Text direction** on the same page, so the lines start at the right edge.
 - Undo with **Ctrl+Z**.
 
 <!--

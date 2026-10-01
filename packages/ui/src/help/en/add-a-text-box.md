@@ -20,6 +20,8 @@ A text box is a bordered box of your own text placed anywhere on a page.
 
 - Colour, opacity, line width and font size come from the **Properties** tab.
 - To choose the typeface, open **Settings**, choose **Editing defaults** and pick one under **Annotation font**: **Sans serif (Helvetica)**, **Serif (Times)** or **Monospace (Courier)**. Every PDF reader has these three, so the words look the same wherever the file is opened. Callouts and typed text use the same choice.
+- Hebrew, Arabic and other languages work too: the letters appear in the right order, and Arabic letters are joined. Monstera draws them in a font it puts into the file, so they look the same in every reader.
+- For a language written from the right, open **Settings**, choose **Editing defaults** and pick **Right to left** under **Text direction**, so each line starts at the right edge of the box. Callouts and typed text use the same choice. **Left to right** is the default.
 - For text with no box around it, use "Type text onto a page".
 - To change the words later, right-click the box and choose **Edit comment…**.
 - Undo with **Ctrl+Z**.

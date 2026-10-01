@@ -76,6 +76,20 @@ export const GATED_HANDLERS = [
 ];
 
 /**
+ * MuPDF's HTML LAYOUT ENGINE, kept ON while every HTML-family handler above is off.
+ *
+ * `config.h` derives `FZ_ENABLE_HTML_ENGINE` from the handlers when nothing defines it — on only if one of HTML, EPUB,
+ * MOBI, FB2, TXT, Office or Markdown is — so disabling them switched off, unasked, the engine MuPDF lays out an
+ * annotation's or a widget's text with whenever a base-14 font cannot carry it: bidi, shaping and its Noto fallback
+ * fonts. Measured 2026-10-01: a text box holding Hebrew or Arabic drew bytes in Helvetica. The engine is a layout
+ * engine, not a document handler — no file is opened through it — so it is named here and decided, rather than left to
+ * follow the handlers (ADR-0128).
+ *
+ * @type {readonly string[]}
+ */
+export const LAYOUT_ENGINE_FLAGS = ['/DFZ_ENABLE_HTML_ENGINE=1'];
+
+/**
  * `/D` options that disable every handler this application does not permit.
  *
  * Derived from the two lists above rather than written out, so permitting a

@@ -1122,6 +1122,16 @@ under 10 s — the research script carries the cast and the measurement. Two def
 first run and repaired before this item: five scripts ran MuPDF without binding it, and a live check sent a page list
 over decision D's bound.
 
+**Item 5 — Hebrew and Arabic in text marks (2026-10-01).** Row 268 had it waiting for native MuPDF; measured on the
+native engine, the text box still drew bytes in Helvetica. The cause was ours: `config.h` turns MuPDF's layout engine
+off when every HTML-family document handler is off, and ADR-0016 had turned them off for another reason, so the
+engine that lays out non-Latin annotation text left with them. ADR-0128 defines it on with every handler still off;
+the shim rebuilt carries SVG and FB2 parser code again, unregistered, which ADR-0016's dated correction records.
+Read back by pdf.js after MuPDF's bake, with nothing read before it: Hebrew in order, its first letter the rightmost
+glyph, Arabic as joined forms. The setting is the alignment, because the order and joining are the engine's
+whichever is chosen. Also found: CI's MuPDF cache key named the build script and not the flags file, so a flag change
+alone would have restored stale libraries; all four keys now name the three inputs.
+
 ---
 
 ## 2026-09-30 — Edit text on the owner's documents (ADR-0125), and the same class through every contained process

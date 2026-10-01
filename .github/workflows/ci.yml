@@ -152,7 +152,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .tools/mupdf
-          key: mupdf-${{ runner.os }}-1.28.0-${{ hashFiles('scripts/provision/mupdf.mjs', 'scripts/provision/mupdfGlue.mjs') }}
+          key: mupdf-${{ runner.os }}-1.28.0-${{ hashFiles('scripts/provision/mupdf.mjs', 'scripts/provision/mupdfGlue.mjs', 'scripts/lib/documentHandlers.mjs') }}
 
       - name: Provision MuPDF and build the shim
         run: node scripts/ci/annotate.mjs scripts/provision/mupdf.mjs
@@ -362,6 +362,14 @@ jobs:
       # the MuPDF that drew it. The shim is built on both legs, so both require it.
       - name: Prove the Word export carries the page's pictures
         run: node scripts/ci/annotate.mjs scripts/proofs/wordPictures.proof.mjs --require-engine
+
+      # HEBREW AND ARABIC IN TEXT MARKS (ADR-0128): drawn by MuPDF's layout
+      # engine, baked into the page, and read back by pdf.js — the letters in
+      # order, Arabic joined, the first Hebrew letter the rightmost glyph, and
+      # right to left against the box's right edge. Before the bake pdf.js reads
+      # nothing, which is the control. The shim is built on both legs.
+      - name: Prove Hebrew and Arabic are drawn as their letters, in order
+        run: node scripts/ci/annotate.mjs scripts/proofs/rtlText.proof.mjs --require-engine
 
       # Decision E. The package takes only the modules its entry reaches — imports, and files named by literal as the
       # shell names a preload, a worker and each host entry — so a test's fake or a proof's harness in `dist/` does not
@@ -1026,7 +1034,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .tools/mupdf
-          key: mupdf-${{ runner.os }}-1.28.0-${{ hashFiles('scripts/provision/mupdf.mjs', 'scripts/provision/mupdfGlue.mjs') }}
+          key: mupdf-${{ runner.os }}-1.28.0-${{ hashFiles('scripts/provision/mupdf.mjs', 'scripts/provision/mupdfGlue.mjs', 'scripts/lib/documentHandlers.mjs') }}
 
       - name: Provision MuPDF and build the shim
         run: node scripts/ci/annotate.mjs scripts/provision/mupdf.mjs
@@ -1095,7 +1103,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .tools/mupdf
-          key: mupdf-${{ runner.os }}-1.28.0-${{ hashFiles('scripts/provision/mupdf.mjs', 'scripts/provision/mupdfGlue.mjs') }}
+          key: mupdf-${{ runner.os }}-1.28.0-${{ hashFiles('scripts/provision/mupdf.mjs', 'scripts/provision/mupdfGlue.mjs', 'scripts/lib/documentHandlers.mjs') }}
 
       # THIS JOB IS THE ONLY PLACE THE ENGINE HOST CAN BE PROVEN, and until now
       # it could not run one (finding RR-1).
@@ -1653,7 +1661,10 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .tools/mupdf
-          key: mupdf-windows-2022-1.28.0-${{ hashFiles('scripts/provision/mupdf.mjs') }}
+          # THE SAME THREE INPUTS as the other MuPDF keys: the build script, the glue generator, and the compile flags
+          # (`documentHandlers.mjs`). A key missing one restores libraries built without that file's latest change, and
+          # the build reuses restored libraries rather than rebuilding them.
+          key: mupdf-windows-2022-1.28.0-${{ hashFiles('scripts/provision/mupdf.mjs', 'scripts/provision/mupdfGlue.mjs', 'scripts/lib/documentHandlers.mjs') }}
 
       # The Electron archive is a downloaded, hash-verified artefact rather than
       # something this image builds, so it is image-independent and SHARES the

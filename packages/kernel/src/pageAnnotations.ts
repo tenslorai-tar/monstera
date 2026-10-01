@@ -10,6 +10,7 @@ import {
   type CommandOfKind,
   type LineEnding,
   MAX_ANNOTATION_AUTHOR,
+  type TextDirection,
 } from '@monstera/contract/host';
 import {
   type PageTransform,
@@ -700,6 +701,18 @@ function measureDictionary(draft: MeasureDraft, document: PDFDocument): PDFObjec
 const BASE14_FACE: Readonly<Record<AnnotationFont, string>> = { sans: 'Helv', serif: 'TiRo', mono: 'Cour' };
 
 /**
+ * The side a text mark's lines sit against — `/Q`, the one thing of its direction this build writes (ADR-0128).
+ *
+ * **The letters' order and shapes are the engine's**: MuPDF lays any text a base-14 face cannot carry out through its
+ * layout engine, ordered by the bidi algorithm and shaped, whatever `/Q` says — measured 2026-10-01, Hebrew and Arabic
+ * came out right to left at `/Q 0`. So right to left is `/Q 2`, the lines against the right edge, and left to right is
+ * NOTHING CALLED: MuPDF's own default is `/Q 0`, and writing it would add a key every left-to-right box already means.
+ */
+function writeDirection(annotation: PDFAnnotation, direction: TextDirection): void {
+  if (direction === 'right-to-left') annotation.setQuadding(2);
+}
+
+/**
  * Each built-in stamp's `/Name`. Five are the format's standard names (PDF 32000 §12.5.6.12), which MuPDF draws in
  * capitals — `NotApproved` as NOT APPROVED; the other three have none, and MuPDF draws a non-standard name as its own
  * text, so they are spelt as the words to show. Measured 2026-09-28 on MuPDF 1.28.0: each draws its word in Times-Bold
@@ -862,6 +875,7 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
       // THE FACE A PERSON CHOSE, as the base-14 name MuPDF writes (`BASE14_FACE`): a face every viewer has, so
       // nothing is embedded and nothing can go missing on another machine.
       annotation.setDefaultAppearance(BASE14_FACE[draft.font], draft.fontSize, [...draft.colour]);
+      writeDirection(annotation, draft.direction);
       // NOTHING SETS A BORDER HERE, AND THE OBJECT HAS ONE. Measured
       // 2026-09-06: `createAnnotation('FreeText')` on MuPDF 1.28.0 produces
       // `/AP /BS /CL /Contents /DA /F /P /RD /Rect /Subtype /Type` — so a `/BS`
@@ -922,6 +936,7 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
       annotation.setRect(placedRect(draft.rect, transform));
       annotation.setContents(draft.text);
       annotation.setDefaultAppearance(BASE14_FACE[draft.font], draft.fontSize, [...draft.colour]);
+      writeDirection(annotation, draft.direction);
       // NO BORDER, which is the whole difference from the row above and is why
       // that row now sets one. MuPDF's own default is already this, so nothing
       // is called — stated rather than left as an absence somebody removes.
@@ -941,6 +956,7 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
       annotation.setRect(placedRect(draft.rect, transform));
       annotation.setContents(draft.text);
       annotation.setDefaultAppearance(BASE14_FACE[draft.font], draft.fontSize, [...draft.colour]);
+      writeDirection(annotation, draft.direction);
       const [at] = placedPoints([draft.at], transform);
       if (at === undefined) throw new Error('a callout has a point it leads from');
       // `setCalloutPoint` RATHER THAN `setCalloutLine`, and the difference is a

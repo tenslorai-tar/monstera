@@ -25,7 +25,7 @@ const PAGE: Parameters<typeof overlayTransform>[0] = { crop: [0, 0, 200, 300], r
 
 /** A style that has chosen `colour`, with everything else moved off its default. */
 function chosen(colour: AnnotationColour): AnnotationStyle {
-  return { colour: () => colour, opacity: 0.4, lineWidth: 5, fontSize: 20, font: 'mono' };
+  return { colour: () => colour, opacity: 0.4, lineWidth: 5, fontSize: 20, font: 'mono', direction: 'right-to-left' };
 }
 
 function drawn(tool: ReturnType<typeof rectangleTool>): Record<string, unknown> {
@@ -66,14 +66,20 @@ describe('hexFromColour and colourFromHex', () => {
 
 describe('styleFrom — the stored settings, as the style the tools draw in', () => {
   // EVERY NUMBER OFF ITS DEFAULT, so a resolver that answered `PLAIN_STYLE` is seen.
-  const stored = { opacity: 0.4, lineWidth: 5, fontSize: 20, font: 'serif' as const };
+  const stored = { opacity: 0.4, lineWidth: 5, fontSize: 20, font: 'serif' as const, direction: 'right-to-left' as const };
   const HIGHLIGHT_OWN: AnnotationColour = [1, 0.9, 0.2];
 
   it('a stored colour is EVERY tool’s colour, and the numbers pass through', () => {
     const style = styleFrom({ ...stored, colour: '#0000ff' });
     expect(style.colour(STROKE)).toStrictEqual([0, 0, 1]);
     expect(style.colour(HIGHLIGHT_OWN)).toStrictEqual([0, 0, 1]);
-    expect([style.opacity, style.lineWidth, style.fontSize, style.font]).toStrictEqual([0.4, 5, 20, 'serif']);
+    expect([style.opacity, style.lineWidth, style.fontSize, style.font, style.direction]).toStrictEqual([
+      0.4,
+      5,
+      20,
+      'serif',
+      'right-to-left',
+    ]);
   });
 
   it('CONTROL: the setting’s own no-choice value hands each tool its OWN colour', () => {

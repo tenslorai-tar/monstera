@@ -994,6 +994,20 @@ export const annotationFontSchema = z.enum(ANNOTATION_FONTS);
 export type AnnotationFont = z.infer<typeof annotationFontSchema>;
 
 /**
+ * Which way a text box's paragraphs run — the editing setting Part F calls *RTL text* (ADR-0128).
+ *
+ * **The order of the letters is not this.** MuPDF's layout engine orders each run by the Unicode bidi algorithm and
+ * shapes it, whatever is chosen here (measured 2026-10-01: Hebrew and Arabic come out right to left either way). What
+ * a person chooses is the side the lines sit against: `right-to-left` writes `/Q 2`, so a Hebrew or Arabic box reads
+ * from the right edge as it should; `left-to-right` writes nothing, which is MuPDF's own `/Q 0`.
+ */
+export const TEXT_DIRECTIONS = ['left-to-right', 'right-to-left'] as const;
+
+export const textDirectionSchema = z.enum(TEXT_DIRECTIONS);
+
+export type TextDirection = z.infer<typeof textDirectionSchema>;
+
+/**
  * The stamp library's built-in stamps — the owner's eight (2026-09-28), each a WORD the engine draws in a bordered box,
  * so none carries artwork. The kernel names each for `/Name`: five are the format's standard stamp names (PDF 32000
  * §12.5.6.12), which MuPDF draws in capitals; `for-review`, `void` and `copy` have none, and MuPDF draws a non-standard
@@ -1669,6 +1683,8 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
       /** The typeface, {@link ANNOTATION_FONTS}. */
       font: annotationFontSchema,
+      /** The side the lines sit against, {@link TEXT_DIRECTIONS}. */
+      direction: textDirectionSchema,
     })
     .strict(),
   z
@@ -1891,6 +1907,8 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
       /** The typeface, {@link ANNOTATION_FONTS}. */
       font: annotationFontSchema,
+      /** The side the lines sit against, {@link TEXT_DIRECTIONS}. */
+      direction: textDirectionSchema,
     })
     .strict(),
   z
@@ -1924,6 +1942,8 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
       /** The typeface, {@link ANNOTATION_FONTS}. */
       font: annotationFontSchema,
+      /** The side the lines sit against, {@link TEXT_DIRECTIONS}. */
+      direction: textDirectionSchema,
     })
     .strict(),
   z
