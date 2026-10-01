@@ -62,7 +62,7 @@ import {
 export type RemoteMupdfWriter = RegisteredWriter<'mupdf'> &
   Pick<
     RemoteMupdfLifecycle,
-    'close' | 'extract' | 'snapshot' | 'exportFormData' | 'exportAnnotationData' | 'pageImage' | 'stage'
+    'close' | 'extract' | 'snapshot' | 'exportFormData' | 'exportAnnotationData' | 'pageImage' | 'stage' | 'word'
   > & {
     /** pdf-lib, run in this host beside the session (ADR-0121 Decision 3). `hostedPdfLibExecution` takes it. */
     readonly pdfLib: PdfLibHost;
@@ -107,12 +107,24 @@ export function remoteMupdfWriter(
   // `exportAnnotationData` is the fifth, for the fourth's reason (ADR-0077).
   // `serialiseInto` IS ROUTING, not a sixth job: the bus's terminal branch calls it for a checkpoint (ADR-0121).
   // `stage` is the save's flush, for `serialise`'s reason one step earlier: it leaves the bytes in the granted area.
-  const { serialise, serialiseInto, stage, close, extract, snapshot, exportFormData, exportAnnotationData, pageImage } =
-    remoteMupdfLifecycle(client, sessions, areas);
+  // `word` is `stage`'s shape for the sixth job: a Word package the host composes and main moves (ADR-0072).
+  const {
+    serialise,
+    serialiseInto,
+    stage,
+    word,
+    close,
+    extract,
+    snapshot,
+    exportFormData,
+    exportAnnotationData,
+    pageImage,
+  } = remoteMupdfLifecycle(client, sessions, areas);
   return {
     serialise,
     serialiseInto,
     stage,
+    word,
     close,
     extract,
     snapshot,

@@ -59,6 +59,9 @@ const MUPDF_READS = [
   'engine/applyPdfLib',
   'engine/snapshotRegion',
   'engine/pageImage',
+  // THE WORD EXPORT IS ONE OF MuPDF'S READS for `engine/pageImage`'s reason: it draws this session's pictures,
+  // and composes where it draws (ADR-0072's amendment of 2026-10-01).
+  'engine/word',
   'engine/page-geometry',
   'engine/page-text',
   'engine/page-links',

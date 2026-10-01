@@ -86,4 +86,17 @@ export const hostFilesystem: HostFilesystem = {
     await writeFile(join(directory, name), bytes);
     return bytes.length;
   },
+  // COUNTED AS IT PASSES, so the answer is what reached `writeFile` rather than a second walk of the chunks, which
+  // an async iterable does not offer.
+  writeOutputStream: async (directory, name, chunks) => {
+    let written = 0;
+    async function* counted(): AsyncIterable<Uint8Array> {
+      for await (const chunk of chunks) {
+        written += chunk.byteLength;
+        yield chunk;
+      }
+    }
+    await writeFile(join(directory, name), counted());
+    return written;
+  },
 };

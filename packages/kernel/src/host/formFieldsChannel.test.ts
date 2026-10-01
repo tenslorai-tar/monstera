@@ -142,6 +142,9 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
         writeOutput: () => {
           throw new Error('a field read must not write the output directory');
         },
+        writeOutputStream: () => {
+          throw new Error('a field read must not write the output directory');
+        },
       },
       probe: () => {
         throw new Error('a field read must not probe containment');
@@ -188,6 +191,9 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
       },
       pageImage: () => {
         throw new Error('a field read must not rasterise a page');
+      },
+      word: () => {
+        throw new Error('a field read must not export a Word file');
       },
       flatFields: () => {
         throw new Error('a field read must not propose candidates');

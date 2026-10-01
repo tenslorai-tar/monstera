@@ -124,6 +124,9 @@ async function joined(ocr: HostOcrReader): Promise<{
         writeOutput: () => {
           throw new Error('a recognition must not write the output directory');
         },
+        writeOutputStream: () => {
+          throw new Error('a recognition must not write the output directory');
+        },
       },
       probe: () => {
         throw new Error('a recognition must not probe containment');
@@ -170,6 +173,9 @@ async function joined(ocr: HostOcrReader): Promise<{
       },
       pageImage: () => {
         throw new Error('a recognition must not export a page image');
+      },
+      word: () => {
+        throw new Error('a recognition must not export a Word file');
       },
       flatFields: () => {
         throw new Error('a recognition must not propose fields');

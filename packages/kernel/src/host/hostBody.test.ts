@@ -103,6 +103,9 @@ function start(stream: HostByteStream) {
     writeOutput: (): never => {
       throw new Error('no case here writes output');
     },
+    writeOutputStream: (): never => {
+      throw new Error('no case here writes output');
+    },
   };
   const handlers = createEngineHandlers({
     sessions,
@@ -178,6 +181,9 @@ function start(stream: HostByteStream) {
     },
     pageImage: () => {
       throw new Error('no case here exports a page image');
+    },
+    word: () => {
+      throw new Error('no case here exports a Word file');
     },
     flatFields: () => {
       throw new Error('no case here proposes fields');

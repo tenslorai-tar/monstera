@@ -162,3 +162,26 @@ one page are paired in the order each read met them.
 - **Rendering the page region under each picture.** It carries the text drawn over the picture.
 - **Holding the pictures until `document.xml` ends, or writing them to scratch files.** The first is every picture in
   the host's memory; the second is a new filesystem surface for what a second read gives.
+
+## Correction, 2026-10-01 — the build
+
+Appended by the build, the same day; each paragraph answers a sentence of the amendment above.
+
+**Decision 4's bound is the host's existing one, not a new number.** The amendment chose 16,777,216 pixels. The
+host already bounds one pixmap at `MAX_SNAPSHOT_PIXELS`, 32,000,000, for a snapshot and a page image; a second figure
+for the same allocation would be a second opinion about one limit (B3a), so a picture is drawn at most that.
+
+**The modes are one list for three processes.** The contract spelt `['text', 'layout', 'rich']` in its export channel
+and the kernel spelt `WORD_MODES` beside it, agreeing by coincidence. With the host naming the modes too, the list
+moved to the contract's `wordModes.ts`, which the host takes through `/host` (the renderer's channel map stays out of
+the host).
+
+**The one new host surface** is `HostFilesystem.writeOutputStream`, so the package is never whole in the host, and
+the composer is loaded on first use, as pdf-lib's command module is, so a host that never exports to Word pays
+nothing for it.
+
+**Measured in Word, as Decision 3 requires** (`scripts/research/wordPicturesInWord.mjs`, 2026-10-01, on this
+machine): Word opened all three modes; it counted 2 inline pictures in rich, 2 floating in layout, none in text, one
+page each. In Word's own PDF, read by MuPDF's flat picture read, layout's pictures sit at the page's boxes within
+**0.00 pt**, and rich's first spans y 94.7 to 194.7 between its paragraphs at 72.5 and 205.4. Through the real
+contained host (`hostFileAnswersLive`), the rich export carries both pictures in order.

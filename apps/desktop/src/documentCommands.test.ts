@@ -30,6 +30,7 @@ import {
   MAX_IMAGE_BYTES,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
+  type WordMode,
 } from '@monstera/contract';
 import {
   AzureRecognitionRefused,
@@ -89,6 +90,7 @@ import {
   snapshotRegion,
   signaturesKeptBySave,
   withDocument,
+  composeWordDocument,
 } from '@monstera/kernel/engine';
 import { type DocId, type DocVersion, asDocId, asDocVersion } from '@monstera/shared';
 
@@ -116,6 +118,7 @@ import {
   type DocumentOcrReader,
   type DocumentExtractReader,
   type DocumentPageImageReader,
+  type DocumentWordExport,
   pageImageName,
   suggestedTextName,
   type PickDirectory,
@@ -494,6 +497,18 @@ const localPageImage: DocumentPageImageReader = (id, sessions, request) => {
 };
 
 /**
+ * The Word export composed the way the MuPDF host composes it — the real composer, run in this process — and staged
+ * as bytes in hand, which is what `stagedBytes` is for a session held in `main`.
+ */
+const localWord: DocumentWordExport = async (id, sessions, mode) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  const parts: Uint8Array[] = [];
+  for await (const chunk of composeWordDocument(held, mode).chunks) parts.push(chunk);
+  return stagedBytes(Buffer.concat(parts));
+};
+
+/**
  * The production composition of the duplicate report, the way `composition.ts`
  * assembles it — a session lookup and `findDuplicatePages`.
  *
@@ -747,6 +762,7 @@ const INERT = {
   formData: localFormData,
   annotationData: localAnnotationData,
   pageImage: localPageImage,
+  word: localWord,
   // REFUSES BY NAME, like every inert picker: a case that exports text supplies its own.
   pickText: () => Promise.reject(new Error('INERT: this case does not export text')),
   layoutText: null,
@@ -2600,8 +2616,9 @@ describe('exportText — the document’s words, streamed one page at a time', (
       /** A page's structure nodes in place of the real read; absent, the real read. */
       readonly structure?: (page: number) => PageStructure['nodes'];
     } = {},
-  ): { readonly commands: DocumentCommands; readonly reads: number[] } {
+  ): { readonly commands: DocumentCommands; readonly reads: number[]; readonly words: WordMode[] } {
     const reads: number[] = [];
+    const words: WordMode[] = [];
     const commands = new DocumentCommands({
       ...LOCAL_READS,
       documents: textService,
@@ -2624,6 +2641,10 @@ describe('exportText — the document’s words, streamed one page at a time', (
       pageText: async (id, sessions, page) => {
         reads.push(page);
         return await LOCAL_READS.pageText(id, sessions, page);
+      },
+      word: async (id, sessions, mode) => {
+        words.push(mode);
+        return await LOCAL_READS.word(id, sessions, mode);
       },
       save: {
         deps: {
@@ -2655,7 +2676,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         return Promise.resolve(destination);
       },
     });
-    return { commands, reads };
+    return { commands, reads, words };
   }
 
   it('writes every page’s text, in order, with a form feed between pages', async () => {
@@ -2721,9 +2742,9 @@ describe('exportText — the document’s words, streamed one page at a time', (
   });
 
   describe('as a Word file (ADR-0072)', () => {
-    it('writes a package whose document holds every page’s text, in order, read through the substrate', async () => {
+    it('places the package the engine composed, holding every page’s text in order — and main reads no page', async () => {
       const destination = join(mkdtempSync(join(directory, 'word-')), 'words.docx');
-      const { commands, reads } = exportingTo(destination);
+      const { commands, reads, words } = exportingTo(destination);
 
       const outcome = await commands.exportWord(textDoc, 'text');
 
@@ -2735,14 +2756,31 @@ describe('exportText — the document’s words, streamed one page at a time', (
       expect(xml.indexOf('first page words')).toBeGreaterThan(0);
       expect(xml.indexOf('second page words')).toBeGreaterThan(xml.indexOf('first page words'));
       expect(xml.match(/<w:br w:type="page"\/>/gu)).toHaveLength(1);
-      expect(reads).toEqual([0, 1]);
+      // THE ROUTE (ADR-0072's amendment of 2026-10-01): the package came from the engine's part, asked once in the
+      // person's mode, and main read no page's text of its own.
+      expect(words).toEqual(['text']);
+      expect(reads).toEqual([]);
+      expect(outcome).toEqual({ kind: 'copied', bytes: readFileSync(destination).byteLength });
     });
 
-    it('CONTROL: a dismissed picker returns nothing and reads no page', async () => {
-      const { commands, reads } = exportingTo(null);
+    it('CONTROL: a dismissed picker returns nothing and composes nothing', async () => {
+      const { commands, reads, words } = exportingTo(null);
 
       expect(await commands.exportWord(textDoc, 'layout')).toBeUndefined();
       expect(reads).toEqual([]);
+      expect(words).toEqual([]);
+    });
+
+    it('refuses a contested destination BEFORE the engine composes anything', async () => {
+      const destination = join(mkdtempSync(join(directory, 'word-')), 'words.docx');
+      const { commands, words } = exportingTo(destination, {
+        checkTarget: () => Promise.resolve({ kind: 'contested' as const, others: [asDocId('other')] }),
+      });
+
+      expect((await commands.exportWord(textDoc, 'rich'))?.kind).toBe('refused');
+      // The decision, not the end state: a refusal after composing leaves no file either.
+      expect(words).toEqual([]);
+      expect(existsSync(destination)).toBe(false);
     });
   });
 

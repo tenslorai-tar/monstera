@@ -32,6 +32,7 @@ import { readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
 import { withCellFills } from '../cellFills.js';
 import { linesOf, parsePageStructure, parsePageTables, parsePageText } from '../textStructure.js';
+import { composeWordDocument } from '../wordPictures.js';
 import { engineChannels } from './engineChannels.js';
 import { type HostSession, createEngineHandlers } from './engineHandlers.js';
 import {
@@ -298,6 +299,9 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
         writeOutput: () => {
           throw new Error('the execution half must not write the output directory');
         },
+        writeOutputStream: () => {
+          throw new Error('the execution half must not write the output directory');
+        },
       },
       probe: () => {
         throw new Error('the execution half must not probe containment');
@@ -338,6 +342,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       exportFormData: async (session, format) =>
         serialiseFormData(await readFormData(session), format),
       pageImage: rasterisePageImage,
+      word: composeWordDocument,
       flatFields: detectFlatFields,
       barcodes: readPageBarcodes,
       exportAnnotationData: async (session, format) =>
@@ -730,6 +735,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
           writeOutput: () => {
             throw new Error('unused');
           },
+          writeOutputStream: () => {
+            throw new Error('unused');
+          },
         },
         probe: () => {
           throw new Error('unused');
@@ -777,6 +785,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
           throw new Error('unused');
         },
         pageImage: () => {
+          throw new Error('unused');
+        },
+        word: () => {
           throw new Error('unused');
         },
         flatFields: () => {
@@ -858,6 +869,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
           writeOutput: () => {
             throw new Error('unused');
           },
+          writeOutputStream: () => {
+            throw new Error('unused');
+          },
         },
         probe: () => {
           throw new Error('unused');
@@ -911,6 +925,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         pageImage: () => {
           throw new Error('the rotation-refusal case must not export a page image');
+        },
+        word: () => {
+          throw new Error('the rotation-refusal case must not export a Word file');
         },
         flatFields: () => {
           throw new Error('the rotation-refusal case must not propose fields');

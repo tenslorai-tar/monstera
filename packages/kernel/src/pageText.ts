@@ -82,9 +82,10 @@ export function readPageText(
  * One page's structured text as MuPDF's JSON, unparsed.
  *
  * **The host's reader** — `hostEntry.ts` hands this to the engine handlers, so
- * the hostile process produces the payload and forms no opinion about it.
- * `parsePageText` is the one reader of the format and it runs main-side (§3.2),
- * which is what keeps a second interpretation of MuPDF's tree from existing.
+ * the host produces the payload and `main` parses it. `parsePageText` is the one
+ * reader of the format (§3.2), which is what keeps a second interpretation of
+ * MuPDF's tree from existing; the Word export calls it in the host on this same
+ * read (`wordPictures.ts`, ADR-0072's amendment of 2026-10-01).
  *
  * The page index is validated the same way {@link readPageText} validates its
  * array: a page outside the document is a `RangeError`, never an empty answer,

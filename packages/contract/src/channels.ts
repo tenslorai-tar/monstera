@@ -17,6 +17,7 @@ import type { PreloadChannelId } from './bridge.js';
 import { channel, type Channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import { AI_ANSWER_REFUSALS, MAX_WEB_SOURCES, answerIdSchema, subscriptionIdSchema } from './events.js';
 import { TRANSLATION_LANGUAGE_IDS } from './translationLanguages.js';
+import { WORD_MODES } from './wordModes.js';
 import {
   MAX_ANNOTATION_BORDER,
   MAX_REMOVED_ANNOTATIONS,
@@ -2627,7 +2628,7 @@ export const channels = {
    */
   'document.exportWord': channel(
     'Writes the document as a Word file the user picks.',
-    z.object({ docId: docIdSchema, mode: z.enum(['text', 'layout', 'rich']) }).strict(),
+    z.object({ docId: docIdSchema, mode: z.enum(WORD_MODES) }).strict(),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
       z.object({ kind: z.literal('cancelled') }),

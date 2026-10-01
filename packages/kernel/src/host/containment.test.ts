@@ -514,6 +514,9 @@ describe('the engine host answers a containment probe', () => {
       writeOutput: () => {
         throw new Error('a containment probe must not write the output directory');
       },
+      writeOutputStream: () => {
+        throw new Error('a containment probe must not write the output directory');
+      },
     },
     geometry: () => {
       throw new Error('a containment probe must not read a page tree');
@@ -562,6 +565,9 @@ describe('the engine host answers a containment probe', () => {
     },
     pageImage: () => {
       throw new Error('a containment probe must not export a page image');
+    },
+    word: () => {
+      throw new Error('a containment probe must not export a Word file');
     },
     flatFields: () => {
       throw new Error('a containment probe must not walk a page');

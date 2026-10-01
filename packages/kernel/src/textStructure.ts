@@ -215,6 +215,20 @@ export function stextOptionsFor(read: PageTextRead): string {
 }
 
 /**
+ * The Word export's picture read: `preserve-images` ALONE.
+ *
+ * Segmentation puts every picture inside a structure block, and MuPDF's own walk
+ * does not enter one — measured 2026-10-01, 0 of 2 pictures over the shared read,
+ * 2 of 2 over this one (ADR-0072's amendment). So the pixels come from this read
+ * and the places from the shared one.
+ *
+ * **Not one of {@link PAGE_TEXT_READS}**: those are what a request may name across
+ * the pipe, and this is asked for only inside the host, by the export that draws.
+ * Composed from the one set of names all the same, so it is not a second encoding.
+ */
+export const PICTURE_READ_OPTIONS: string = STEXT_OPTIONS.preserveImages;
+
+/**
  * A rectangle in the page's **display space**, as two corners rather than a size.
  *
  * ## This said `FitzRect` and `FitzPoint` until 2026-09-08, and that was wrong
@@ -394,7 +408,7 @@ interface BlockVisitor {
   readonly enter: (block: RawNode) => void;
   /** The same block, after its contents. */
   readonly leave: () => void;
-  readonly image: () => void;
+  readonly image: (block: RawNode) => void;
   /** A block carrying `lines`, with the ones this module could read — possibly none. */
   readonly text: (block: RawNode, lines: readonly TextLine[]) => void;
   /** A `grid` block: the positions and cell flags `FZ_STEXT_TABLE_HUNT` found. */
@@ -438,7 +452,7 @@ function walkBlocks(source: readonly unknown[], visitor: BlockVisitor): void {
     // COUNTED IN THIS WALK, not in a second pass over the same tree. An image
     // may sit inside a `structure` block like any other, so a top-level count
     // would miss exactly the segmented pages this option was turned on for.
-    if (str(field(block, 'type')) === 'image') visitor.image();
+    if (str(field(block, 'type')) === 'image') visitor.image(block);
     if (str(field(block, 'type')) === 'grid') visitor.grid(block);
 
     const rawLines = nodes(field(block, 'lines'));
@@ -513,15 +527,72 @@ function blocksOf(json: string): readonly unknown[] {
  * @throws if the payload is not JSON, or is not a page-shaped object
  */
 export function parsePageText(json: string): PageText {
+  return parsePageLayout(json).text;
+}
+
+/**
+ * A picture's place on a page, as the shared read reports it.
+ *
+ * **Where it is, never what it is.** The pixels are the Word export's second read
+ * (ADR-0072's amendment of 2026-10-01): MuPDF's JSON carries a picture's box and
+ * nothing of its image.
+ */
+export interface PagePicture {
+  /** How many of the page's text blocks come before it in reading order. */
+  readonly after: number;
+  /**
+   * Its box exactly as MuPDF's JSON writer prints it: whole points, each truncated
+   * toward zero (`(int)` in `stext-output.c`). The key a second read of the same
+   * page matches it by, so it is kept as printed rather than as a rectangle.
+   */
+  readonly printed: PrintedBox;
+}
+
+/** A box as MuPDF's JSON prints one: `x`, `y`, `w` and `h`, whole points. */
+export interface PrintedBox {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+/** One page's text and the places of its pictures, from one walk. */
+export interface PageLayout {
+  readonly text: PageText;
+  readonly pictures: readonly PagePicture[];
+}
+
+/**
+ * {@link parsePageText}'s walk, keeping each picture's place in the reading order
+ * as well as the count.
+ *
+ * **The same walk and not a second one**, so the text a Word export writes and the
+ * text every other consumer reads cannot differ, and a picture's place is counted
+ * in the blocks those consumers see — an empty text block is dropped before it can
+ * shift a picture.
+ *
+ * @param json the payload from the engine's structured-text call
+ * @throws if the payload is not JSON, or is not a page-shaped object
+ */
+export function parsePageLayout(json: string): PageLayout {
   const blocks: TextBlock[] = [];
-  let images = 0;
+  const pictures: PagePicture[] = [];
   walkBlocks(blocksOf(json), {
     // A STRUCTURE BLOCK IS WALKED THROUGH and leaves nothing here: its lines
     // arrive through `text` in the order the tree holds them.
     enter: () => undefined,
     leave: () => undefined,
-    image: () => {
-      images += 1;
+    image: (block) => {
+      const box = node(field(block, 'bbox'));
+      pictures.push({
+        after: blocks.length,
+        printed: {
+          x: num(field(box, 'x'), 0),
+          y: num(field(box, 'y'), 0),
+          w: num(field(box, 'w'), 0),
+          h: num(field(box, 'h'), 0),
+        },
+      });
     },
     // A TEXT BLOCK WITH NO LINES IS DROPPED, not kept empty: MuPDF emits image
     // and vector blocks through the same array, and an empty block in a reading
@@ -531,7 +602,7 @@ export function parsePageText(json: string): PageText {
     },
     grid: () => undefined,
   });
-  return { blocks, images };
+  return { text: { blocks, images: pictures.length }, pictures };
 }
 
 /** Every line of a page, in reading order, with its block boundaries dropped. */

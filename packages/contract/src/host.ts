@@ -43,3 +43,4 @@ export * from './hostProtocol.js';
 export * from './incident.js';
 export * from './pageSet.js';
 export * from './schemas.js';
+export * from './wordModes.js';

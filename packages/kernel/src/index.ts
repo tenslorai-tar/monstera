@@ -144,6 +144,7 @@ export {
   EngineAnnotationDataExportFailed,
   EngineOpenFailed,
   EnginePageImageFailed,
+  EngineWordFailed,
   EngineSerialiseFailed,
   EngineSerialiseMismatch,
   type RemoteMupdfLifecycle,
@@ -466,7 +467,7 @@ export {
 export { type StructureOutline, structureOutlineOf } from './structureOutline.js';
 // OFFICE EXPORTS (ADR-0072). Pure: strings in, zip chunks out, no engine.
 export { type OoxmlPart, ooxmlPackage, xmlText } from './ooxmlPackage.js';
-export { type WordMode, type WordPage, WORD_MODES, baseFontName, wordDocumentParts } from './wordDocument.js';
+export { type WordMode, type WordPage, type WordPictureDrawer, baseFontName, wordDocumentParts } from './wordDocument.js';
 export {
   type PresentationPage,
   fittedPicture,

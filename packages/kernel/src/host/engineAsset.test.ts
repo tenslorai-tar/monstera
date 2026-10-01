@@ -136,6 +136,9 @@ async function joined(): Promise<{
         writeOutput: () => {
           throw new Error('the execution half must not write the output directory');
         },
+        writeOutputStream: () => {
+          throw new Error('the execution half must not write the output directory');
+        },
       },
       probe: () => {
         throw new Error('the execution half must not probe containment');
@@ -181,6 +184,9 @@ async function joined(): Promise<{
         throw new Error('unused');
       },
       pageImage: () => {
+        throw new Error('unused');
+      },
+      word: () => {
         throw new Error('unused');
       },
       flatFields: () => {

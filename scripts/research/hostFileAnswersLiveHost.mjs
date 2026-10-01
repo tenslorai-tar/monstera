@@ -36,6 +36,7 @@ import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { ABOVE, BELOW, picturedPage } from '../lib/wordPictureFixture.mjs';
 
 const ROOT = repoRoot();
 
@@ -346,6 +347,8 @@ async function main() {
       ...harnessModule.harnessSurfaces('the file-answer live harness'),
       appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
       pickDocument: () => Promise.resolve(picked.path),
+      // THE WORD EXPORT'S DESTINATION, the one Office file this harness writes.
+      pickOffice: () => Promise.resolve(join(scratch, 'pictured.docx')),
       enginePlatform: platform,
       pdfiumPlatform,
       composePlatform,
@@ -497,7 +500,35 @@ async function main() {
       }
     }
 
+    // THE WORD EXPORT, COMPOSED IN THE REAL CONTAINED MuPDF HOST (ADR-0072's amendment of 2026-10-01): the composer is
+    // loaded there on first use, draws the page's pictures, writes the package into the session's output directory,
+    // and main moves it here. Read back with fflate; the picture-level second readers are `proof:wordpictures`'.
+    const picturedPath = join(scratch, 'pictured.pdf');
+    writeFileSync(picturedPath, await picturedPage());
+    picked.path = picturedPath;
+    const wordOpened = await observed(() => handlers['document.open']({}));
+    /** @type {any} */
+    let wordExported = null;
+    let wordPictures = -1;
+    let wordInOrder = false;
+    if (wordOpened?.ok === true && wordOpened.value.kind === 'opened') {
+      const docId = wordOpened.value.docId;
+      wordExported = await observed(() => handlers['document.exportWord']({ docId, mode: 'rich' }));
+      await observed(() => handlers['document.close']({ docId }));
+      if (wordExported?.ok === true && wordExported.value.kind === 'copied') {
+        const { strFromU8, unzipSync } = await import('fflate');
+        const files = unzipSync(new Uint8Array(readFileSync(join(scratch, 'pictured.docx'))));
+        wordPictures = Object.keys(files).filter((name) => name.startsWith('word/media/')).length;
+        const xml = strFromU8(files['word/document.xml'] ?? new Uint8Array());
+        const drawing = xml.indexOf('<w:drawing>');
+        wordInOrder = xml.indexOf(ABOVE) >= 0 && drawing > xml.indexOf(ABOVE) && xml.indexOf(BELOW) > drawing;
+      }
+    }
+
     const report = {
+      wordExported: wordExported?.ok === true ? wordExported.value.kind : wordExported,
+      wordPictures,
+      wordInOrder,
       inlineBefore,
       inlineOpened: inlineOpened?.ok === true ? inlineOpened.value.kind : inlineOpened,
       inlineEdited: inlineEdited?.ok === true ? 'ok' : inlineEdited,

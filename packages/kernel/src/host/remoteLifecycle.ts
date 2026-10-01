@@ -1,4 +1,4 @@
-import type { AnnotationDataFormat, ClientApi, FormDataFormat } from '@monstera/contract';
+import type { AnnotationDataFormat, ClientApi, FormDataFormat, WordMode } from '@monstera/contract';
 
 import type { ByteImage, LockedReason, MupdfSession } from '../engineSeam.js';
 import type { PageImageRequest } from '../pageImages.js';
@@ -146,6 +146,15 @@ export class EnginePageImageFailed extends Error {
   }
 }
 
+/** The host could not write the document as a Word file. `detail` is the host's own code. */
+export class EngineWordFailed extends Error {
+  override readonly name = 'EngineWordFailed';
+
+  constructor(detail: string) {
+    super(`The engine host could not write the document as a Word file: ${detail}.`);
+  }
+}
+
 /**
  * The host could not write the form's data out.
  *
@@ -254,6 +263,11 @@ export interface RemoteMupdfLifecycle {
    */
   readonly stage: (session: MupdfSession) => Promise<StagedImage>;
   /**
+   * The document as a Word file, composed by the host and LEFT in its output directory until placed or discarded —
+   * {@link stage}'s shape, so `main` moves the package and never reads it (ADR-0072's amendment of 2026-10-01).
+   */
+  readonly word: (session: MupdfSession, mode: WordMode) => Promise<StagedImage>;
+  /**
    * The bytes of a NEW document made of the named pages.
    *
    * **Not lifecycle**, and it sits here anyway because the machinery is
@@ -359,6 +373,23 @@ export function remoteMupdfLifecycle(
 
     // `serialise`'s dance with a MOVE where it reads, and the same count check against what moved.
     stage: (session) => stage(session),
+
+    // `stage`'s dance with a different producer: the host composes the package into its output directory.
+    word: async (session, mode) => {
+      const area = sessions.areaFor(session);
+      const into = areas.mintName();
+      const answer = await client['engine/word']({ session: sessions.handleFor(session), mode, into });
+      if (!answer.ok) throw new EngineWordFailed(answer.error.code);
+      const byteLength = answer.value.bytes;
+      return {
+        byteLength,
+        place: async (destination) => {
+          const moved = await areas.moveOutput(area, into, destination);
+          if (moved !== byteLength) throw new EngineSerialiseMismatch(byteLength, moved);
+        },
+        discard: () => areas.removeOutput(area, into),
+      };
+    },
     serialiseInto: async (session, destination) => placeStaged(await stage(session), destination),
 
     extract: async (session, pages) => {

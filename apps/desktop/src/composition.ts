@@ -28,6 +28,7 @@ import {
   type UpdateManifest,
   AI_MODELS_SETTING_ID,
   type AiModel,
+  type WordMode,
   createClient,
   defaultModel,
 } from '@monstera/contract';
@@ -1394,6 +1395,13 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       open: openAnnotationData,
       read: readAnnotationData,
     },
+    // THE WORD EXPORT, `stagedBytesOf`'s route: composed in the host with its pictures and staged there, so
+    // `main` moves the package and never reads it (ADR-0072's amendment of 2026-10-01).
+    word: (docId, sessions, mode) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.word(session, mode);
+    },
     // THE PAGE IMAGE, composed as the snapshot is and for its reasons: MuPDF
     // rasterises in the host, and the image arrives through the granted directory.
     pageImage: (docId, sessions, request) => {
@@ -1799,6 +1807,8 @@ function engineSessionOpener(
    * never pass through `main` (ADR-0121's addendum). On this surface for {@link extract}'s reason.
    */
   readonly stage: (session: MupdfSession) => Promise<StagedImage>;
+  /** The document as a Word package, composed by the host and left staged for `main` to move (ADR-0072). */
+  readonly word: (session: MupdfSession, mode: WordMode) => Promise<StagedImage>;
   /** Rasterises a region of a page. On this surface for {@link extract}'s reason. */
   readonly snapshot: HostSnapshot;
   /** Encodes the form's data. On this surface for {@link extract}'s reason. */
@@ -2662,6 +2672,8 @@ function engineSessionOpener(
     extract: extractThroughHost,
     // THE SAVE'S FLUSH, staged in the host's output directory and moved into place (ADR-0121's addendum).
     stage: (session) => liveWriter().stage(session),
+    // THE WORD EXPORT, `stage`'s route: composed in the host, moved into place (ADR-0072's amendment of 2026-10-01).
+    word: (session, mode) => liveWriter().word(session, mode),
     snapshot: snapshotThroughHost,
     exportFormData: exportFormDataThroughHost,
     exportAnnotationData: exportAnnotationDataThroughHost,

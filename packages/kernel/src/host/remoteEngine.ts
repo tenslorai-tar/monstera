@@ -292,9 +292,11 @@ export function remoteMupdfGeometry(
  * split: text is a query, so it does not belong on the writer whose membership
  * rule is *the bus calls this*.
  *
- * **It returns the JSON rather than a parsed page.** `parsePageText` runs in
- * main, on a string this host produced, so there is exactly one reader of
- * MuPDF's format in the application and none of it is in the hostile process.
+ * **It returns the JSON rather than a parsed page.** `parsePageText` runs here,
+ * on a string the host produced, so there is exactly one reader of MuPDF's
+ * format and no second format for its answer. (The Word export calls the same
+ * reader inside the host, where it composes a file main moves unread — ADR-0072's
+ * amendment of 2026-10-01.)
  *
  * @param client the engine host's channels, through the contract's own
  *   validating client — so a malformed answer is rejected at the boundary

@@ -79,12 +79,13 @@ const CASES = [
   'undo sent the prior back through the real MuPDF host, and first and last read back upright',
   'CONTROL: the generated page draws its inline picture before any edit',
   'the inline-picture page, edited through the compose and PDFium hosts and saved, still draws its picture',
+  'the Word export, composed in the real MuPDF host and moved by main, carries both pictures, the first between its paragraphs',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 15 });
-if (CASES.length !== 15) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 15`);
+const roster = createRoster(failures, { cases: 16 });
+if (CASES.length !== 16) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 16`);
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -250,6 +251,13 @@ if (!runnable) {
     `opened ${JSON.stringify(seen.inlineOpened)}, edited ${JSON.stringify(seen.inlineEdited)}, saved ` +
       `${JSON.stringify(seen.inlineSaved)}; after the reopen the picture is ${seen.inlineAfter === true ? 'drawn' : 'GONE'} ` +
       `and the text reads "${String(seen.inlineText)}". An inline-images-left line in the failures case says why.`,
+  );
+  check(
+    CASES[15] ?? '',
+    seen.wordExported === 'copied' && seen.wordPictures === 2 && seen.wordInOrder === true,
+    `document.exportWord answered ${JSON.stringify(seen.wordExported)}; the package holds ${String(seen.wordPictures)} ` +
+      `picture(s) and the first is ${seen.wordInOrder === true ? '' : 'NOT '}between its paragraphs. An error with the ` +
+      'failures case red is the host ending on the export.',
   );
 
   process.stdout.write(

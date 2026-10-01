@@ -6,7 +6,7 @@ keywords: [word, docx, export to word, convert to word, pdf to word, editable do
 commands: [document.export-word]
 contexts: [dialog.export-word, home]
 ---
-Export to Word turns the document's text into a Word (.docx) file you can edit.
+Export to Word turns the document's text and pictures into a Word (.docx) file you can edit.
 
 ## Steps
 
@@ -21,7 +21,8 @@ Export to Word turns the document's text into a Word (.docx) file you can edit.
 
 ## Good to know
 
-- Pictures are not carried into the Word file in any of the three choices.
+- Pictures come with the text in two of the three choices. With **Text and its fonts — editable, flows like a normal document**, each picture sits between the paragraphs it sits between on the page, made smaller if it is wider than the page's text. With **The page layout — each line where it sits on the page**, each picture is placed where it is on the page, behind the text. **Just the words** has no pictures.
+- A picture comes out as it looks on the page: turned if the page shows it turned, and see-through where it is see-through.
 - Scanned pages have no text until it is recognised; see "Make scanned pages searchable", or "Recognise scanned pages when exporting" to have exports do it first.
 - The document itself is not changed, unless scanned pages are recognised first.
 

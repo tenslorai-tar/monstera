@@ -355,6 +355,14 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/inlineImages.proof.mjs
           ${{ runner.os == 'Windows' && '--require-engines' || '' }}
 
+      # THE WORD EXPORT CARRIES THE PAGE'S PICTURES (ADR-0072's amendment of
+      # 2026-10-01): inline in reading order, at their box in the exact layout,
+      # none in text mode. The package is read back by a zip reader written in
+      # the proof, not by fflate, and each picture decoded by libvips, not by
+      # the MuPDF that drew it. The shim is built on both legs, so both require it.
+      - name: Prove the Word export carries the page's pictures
+        run: node scripts/ci/annotate.mjs scripts/proofs/wordPictures.proof.mjs --require-engine
+
       # Decision E. The package takes only the modules its entry reaches — imports, and files named by literal as the
       # shell names a preload, a worker and each host entry — so a test's fake or a proof's harness in `dist/` does not
       # ship. The built tree is walked here, where it is built, so the build is required on both legs.

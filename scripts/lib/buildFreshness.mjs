@@ -244,6 +244,19 @@ export const HOST_FILE_ANSWERS_LIVE = [['apps/desktop/src', 'apps/desktop/dist/e
 export const INLINE_IMAGES = [...PDFIUM_ADAPTER, ...NATIVE_ENGINE];
 
 /**
+ * What `wordPictures.proof.mjs` exports through: the composer the MuPDF host runs, the part writer, the one reader of
+ * MuPDF's structured text, and the native engine they draw with (ADR-0072's amendment of 2026-10-01).
+ *
+ * @type {readonly BuildEdge[]}
+ */
+export const WORD_PICTURES = [
+  ['packages/kernel/src/wordPictures.ts', 'packages/kernel/dist/wordPictures.js', 'tsc'],
+  ['packages/kernel/src/wordDocument.ts', 'packages/kernel/dist/wordDocument.js', 'tsc'],
+  ['packages/kernel/src/textStructure.ts', 'packages/kernel/dist/textStructure.js', 'tsc'],
+  ...NATIVE_ENGINE,
+];
+
+/**
  * What `shippedModules.proof.mjs` walks: every `dist/` the package takes modules from — the desktop's and the four
  * workspace packages' it ships beside it (decision E).
  *
@@ -389,6 +402,8 @@ export const ARTEFACT_EDGES = {
   // ADR-0126's proof, which reads two built engines. It called the guard from its first commit and had no entry here
   // until `proof:buildfreshness` named it — the anchor working, one range late.
   'proof:inlineimages': INLINE_IMAGES,
+  // THE WORD EXPORT'S PICTURES, read back by a zip reader and a PNG decoder that are not the writer's.
+  'proof:wordpictures': WORD_PICTURES,
   // THE PACKAGE'S MODULE CLOSURE, walked over the built `dist/`s it takes modules from (decision E).
   'proof:shippedmodules': SHIPPED_MODULES,
   // THE COMPILE-FAIL PROOF, whose probes `import type … from '@monstera/contract'`

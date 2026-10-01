@@ -151,6 +151,9 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
       files.written.set(`${directory}|${name}`, bytes);
       return Promise.resolve(bytes.length);
     },
+    writeOutputStream: (): never => {
+      throw new Error('the PDFium host streams no output');
+    },
   };
   const handlers = createPdfiumHandlers({
     areas,

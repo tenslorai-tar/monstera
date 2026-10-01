@@ -140,8 +140,8 @@ const engineHandlers = createEngineHandlers({
   probe: probeContainment,
   geometry: readPageGeometry,
   // THE JSON, not a parsed page: `parsePageText` is the one reader of MuPDF's
-  // format and it lives main-side, so this process ships no opinion about the
-  // structure it computed.
+  // format, and re-serialising a parsed shape here would be a second format for
+  // the same answer. The Word export below calls that same reader in this process.
   pageText: readPageTextJson,
   pageLinks: readPageLinks,
   pageFills: readPageFills,
@@ -183,6 +183,18 @@ const engineHandlers = createEngineHandlers({
   // AND A FOURTH, the snapshot's reason for a whole page: §3 assigns export
   // rasterisation to MuPDF, which is here.
   pageImage: rasterisePageImage,
+  // AND THE WORD EXPORT, which draws the page's pictures (ADR-0072's amendment of 2026-10-01). LOADED ON FIRST USE,
+  // pdf-lib's reason above: the composer and its zip library are a cost only a Word export should pay.
+  word: (session, mode) => {
+    let pictures = (): number => 0;
+    async function* chunks(): AsyncIterable<Uint8Array> {
+      const { composeWordDocument } = await import('../wordPictures.js');
+      const composed = composeWordDocument(session, mode);
+      pictures = composed.pictures;
+      yield* composed.chunks;
+    }
+    return { chunks: chunks(), pictures: () => pictures() };
+  },
   // AND A READ OF A DOCUMENT'S PIXELS BY A C++ DECODER, which is the whole reason it is here
   // rather than in main (ADR-0076).
   barcodes: readPageBarcodes,

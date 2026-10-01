@@ -212,6 +212,7 @@ export { readPageBarcodes } from './barcodeReader.js';
 export { checkAccessibility } from './accessibilityCheck.js';
 export { extractPages } from './pageExtract.js';
 export { type PageImageRequest, rasterisePageImage } from './pageImages.js';
+export { composeWordDocument, drawPagePictures } from './wordPictures.js';
 export {
   MAX_SNAPSHOT_PIXELS,
   MAX_SNAPSHOT_SCALE,

@@ -1110,6 +1110,18 @@ older backups and this application's undo checkpoints — is listed by name and 
 later save of that session asks again while such copies exist; autosave never asks. Built on the owner's new branch
 workflow (UPDATE 108 in the hand-over).
 
+**Item 4 — the Word export carries pictures (2026-10-01).** ADR-0072 amended first (B4): composed in the MuPDF host,
+as its Decision 2 said, because the host is where the pictures are drawn. Measured before building, on the native
+engine: segmentation puts every picture inside a structure block, which MuPDF's walk does not enter (0 of 2 found),
+so places come from the shared read and pixels from a flat `preserve-images` read (2 of 2, boxes equal after the JSON
+writer's truncation). Two wrong turns on the way to drawing one, both measured: `toPixmap` drops the soft mask, and a
+pixmap cleared with a value is opaque. Read back by readers that are not the writer's, then in Word itself: layout's
+pictures in Word's PDF at the page's boxes within 0.00 pt. One finding outside the item: PowerShell handing Word a
+`Join-Path` result uncast made `SaveAs2` never return (180 s, twice), where the same call with `[string]` returned in
+under 10 s — the research script carries the cast and the measurement. Two defects of this branch found by the board's
+first run and repaired before this item: five scripts ran MuPDF without binding it, and a live check sent a page list
+over decision D's bound.
+
 ---
 
 ## 2026-09-30 — Edit text on the owner's documents (ADR-0125), and the same class through every contained process

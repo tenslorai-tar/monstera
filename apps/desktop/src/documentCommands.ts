@@ -39,6 +39,7 @@ import {
   type SignRefusal,
   type TimestampAuthority,
   type TextBlockStyle,
+  type WordMode,
   sourceIdsOf,
 } from '@monstera/contract';
 // DECLARATIONS, not specs. This reads `spec.writer` and calls nothing on it, so
@@ -55,13 +56,10 @@ import {
   editsFit,
   reviewGridOf,
   spreadsheetParts,
-  type WordMode,
-  type WordPage,
   ooxmlPackage,
   pictureScale,
   presentationParts,
   rasterScale,
-  wordDocumentParts,
   type ByteImage,
   type AccessibilityReportOnWire,
   barcodeRect,
@@ -1011,6 +1009,13 @@ export interface SaveSource {
 
 /** {@link DocumentFlush}, staged. Composed in the same place, for the same reason. */
 export type DocumentStage = (docId: DocId, sessions: DocumentSessions) => Promise<StagedImage>;
+
+/**
+ * The document as a Word package, composed where its pictures are drawn and staged there for `main` to move — never
+ * read into `main` ([ADR-0072](../../../docs/DECISIONS/0072-office-open-xml-exports-are-written-by-this-build-over-fflate.md)'s
+ * amendment of 2026-10-01). {@link DocumentStage}'s shape with a mode.
+ */
+export type DocumentWordExport = (docId: DocId, sessions: DocumentSessions, mode: WordMode) => Promise<StagedImage>;
 
 /**
  * The query itself could not be compiled.
@@ -2072,6 +2077,8 @@ export interface DocumentCommandsParts {
   readonly annotationData: AnnotationDataSource;
   /** How a page becomes an image file's bytes. See {@link DocumentPageImageReader}. */
   readonly pageImage: DocumentPageImageReader;
+  /** How the document becomes a Word file. See {@link DocumentWordExport}. */
+  readonly word: DocumentWordExport;
   /**
    * Where a text export goes: the save dialog narrowed to plain text, given the
    * document's name so the suggested one and the filter share an extension.
@@ -2237,6 +2244,7 @@ export class DocumentCommands {
   readonly #formData: FormDataSource;
   readonly #annotationData: AnnotationDataSource;
   readonly #pageImage: DocumentPageImageReader;
+  readonly #word: DocumentWordExport;
   readonly #pickText: (sourceName: string) => Promise<string | null>;
   readonly #layoutText: LayoutTextSource | null;
   readonly #pdfa: PdfaSource | null;
@@ -2305,6 +2313,7 @@ export class DocumentCommands {
     this.#formData = parts.formData;
     this.#annotationData = parts.annotationData;
     this.#pageImage = parts.pageImage;
+    this.#word = parts.word;
     this.#pickText = parts.pickText;
     this.#layoutText = parts.layoutText;
     this.#pdfa = parts.pdfa;
@@ -4405,14 +4414,15 @@ export class DocumentCommands {
 
   /**
    * Writes the document as a Word file — D10's *Word (rich / layout / text)*,
-   * written by this build over `fflate` (ADR-0072).
+   * written by this build over `fflate` (ADR-0072), with the page's pictures.
    *
-   * ## `exportText`'s path with a different encoder
+   * ## A copy's path with the host as the producer
    *
-   * The same picker-then-lane order, the same streamed write, and the same one
-   * reading: each page's structured text through the substrate, read when the zip
-   * asks for it. What `main` holds is one page's text and the compressor's
-   * window — ADR-0035's bound — never the document.
+   * `saveCopy`'s order: the destination is checked first, so a contested file
+   * composes nothing; the MuPDF host then composes the package into its output
+   * directory, drawing the pictures where the page is; and the atomic write moves
+   * it into place. `main` never reads it — composed here, every picture would
+   * cross the pipe only to be zipped (ADR-0072's amendment of 2026-10-01).
    *
    * It does NOT touch the document: no command, no log entry, no version bump.
    */
@@ -4430,11 +4440,11 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      return await writeStreamedDocument(
+      return await writeDocumentCopy(
         this.#save.deps,
         this.#copy.checkTarget,
-        // Called only once the destination is free, so a contested file reads no page.
-        () => Promise.resolve(ooxmlPackage(wordDocumentParts(mode, this.#wordPages(docId, sessions)))),
+        // Called only once the destination is free, so a contested file composes nothing.
+        () => this.#word(docId, sessions, mode),
         destination,
       );
     });
@@ -4800,18 +4810,6 @@ export class DocumentCommands {
         quality: 90,
       });
       yield { png, size };
-    }
-  }
-
-  /** Each page's structured text and displayed size, read as the writer pulls. */
-  async *#wordPages(docId: DocId, sessions: DocumentSessions): AsyncIterable<WordPage> {
-    const { pageCount } = await this.#geometry(docId, sessions, []);
-    for (let page = 0; page < pageCount; page += 1) {
-      const text = await this.#pageText(docId, sessions, page);
-      const { sizes } = await this.#geometry(docId, sessions, [page]);
-      const [size] = sizes;
-      if (size === undefined) throw new Error(`the geometry read named no size for page ${String(page)}`);
-      yield { text, size };
     }
   }
 

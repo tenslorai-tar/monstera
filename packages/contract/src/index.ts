@@ -417,6 +417,11 @@ export {
   withPageRuns,
 } from './pageSet.js';
 export {
+  // The Word export's modes: the renderer, main and the MuPDF host take the one list (ADR-0072).
+  WORD_MODES,
+  type WordMode,
+} from './wordModes.js';
+export {
   // The OCR language set, exported for the same reason the spelling one is: both
   // sides key a record on it — the provisioning table and the renderer's display
   // titles — so adding a language is two compile errors and a digest.

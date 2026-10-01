@@ -28,6 +28,7 @@ import {
   channel,
   fileAnswered,
   fileRequested,
+  WORD_MODES,
   outputNameSchema,
   cropPagesSchema,
   setPageTransitionSchema,
@@ -2070,6 +2071,30 @@ export const engineChannels = {
   ),
 
   /**
+   * The document as a Word file, composed here and written into the output
+   * directory (ADR-0072's amendment of 2026-10-01).
+   *
+   * **Composed in this process because the pictures are drawn in it**: a picture
+   * crossing the pipe per page, only for `main` to zip it, is the route the
+   * amendment refused. `main` moves the file and never reads it, so nothing that
+   * grows with the document crosses — the answer is two counts.
+   */
+  'engine/word': channel(
+    'Writes the document as a Word file into the output directory.',
+    z
+      .object({
+        session: sessionSchema,
+        mode: z.enum(WORD_MODES),
+        into: outputNameSchema,
+      })
+      .strict(),
+    // A COUNT, for `engine/serialise`'s reason; and how many pictures it carries, which is what the export exists to
+    // add and nothing else in the answer shows.
+    z.object({ bytes: z.number().int().nonnegative(), pictures: z.number().int().nonnegative() }).strict(),
+    ['no-such-session', 'word-failed'],
+  ),
+
+  /**
    * The view model's geometry half (`docs/ARCHITECTURE.md` §2), read from the
    * process that holds the session.
    *
@@ -2185,10 +2210,11 @@ export const engineChannels = {
    *
    * ## The payload is MuPDF's own JSON, unparsed
    *
-   * `parsePageText` is the one reader of it (§3.2), and it lives main-side so
-   * the host ships no opinion about the structure. Re-serialising a parsed shape
+   * `parsePageText` is the one reader of it (§3.2). Re-serialising a parsed shape
    * here would be a second format for the same answer, and the frame would then
-   * describe a tree this build invented rather than the one MuPDF computed.
+   * describe a tree this build invented rather than the one MuPDF computed. The
+   * reader itself is called in the host too, by `engine/word`, whose answer is a
+   * file rather than a structure (ADR-0072's amendment of 2026-10-01).
    */
   'engine/page-text': fileAnswered(
     'Reads one page’s structured text from a session this host holds.',

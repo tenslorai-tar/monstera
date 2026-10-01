@@ -36,6 +36,7 @@ import type { FoundBarcode } from '../barcodeReader.js';
 import type { DuplicatePageGroup } from '../pageDuplicates.js';
 import type { PageImageRequest } from '../pageImages.js';
 import type { RegionRequest, RegionSnapshot } from '../pageSnapshot.js';
+import type { WordMode } from '../wordDocument.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
 import {
   ENGINE_BARCODE_TEXT_MAX,
@@ -57,8 +58,10 @@ import {
  * library to decide whether a handler is correct.
  *
  * **The JSON is not parsed here.** `parsePageText` is the one reader of that
- * format and it lives main-side, so nothing in the hostile process holds an
- * opinion about the structure MuPDF computed.
+ * format, and this channel answers MuPDF's own JSON so no second format for the
+ * same answer exists. The Word export (`engine/word`) calls that same reader in
+ * this process, which is B3a's one reader called twice, not a second one
+ * (ADR-0072's amendment of 2026-10-01).
  *
  * **It takes a read's NAME**, never an option string: the substrate composes the
  * options from the name, so a request crossing the pipe cannot choose what
@@ -250,6 +253,17 @@ export type HostPageImage = (
 ) => Promise<ByteImage>;
 
 /**
+ * The document as a Word package, streamed — injected for {@link HostPageImage}'s reason: composing it reaches
+ * MuPDF, and a handler proof must drive `engine/word` without a native library.
+ *
+ * `pictures` is read once `chunks` has been consumed, which is when the count exists.
+ */
+export type HostWordExport = (
+  session: MupdfSession,
+  mode: WordMode,
+) => { readonly chunks: AsyncIterable<Uint8Array>; readonly pictures: () => number };
+
+/**
  * The barcodes on one page, as `readPageBarcodes` answers. Injected for the readers' reason: a
  * handler proof must drive the channel without rasterising or loading a decoder.
  *
@@ -370,6 +384,11 @@ export interface HostFilesystem {
   readonly readSnapshot: (directory: string, name: string) => Promise<Uint8Array>;
   /** Writes serialised bytes into the output directory. Returns how many. */
   readonly writeOutput: (directory: string, name: string, bytes: Uint8Array) => Promise<number>;
+  /**
+   * {@link writeOutput} for bytes that arrive over time — an export composed a page at a time — so they are never
+   * held whole. Returns how many were written.
+   */
+  readonly writeOutputStream: (directory: string, name: string, chunks: AsyncIterable<Uint8Array>) => Promise<number>;
 }
 
 /**
@@ -464,6 +483,8 @@ export interface EngineHandlerParts {
   readonly accessibility: HostAccessibilityCheck;
   /** How this process encodes one page as an image. `engine/pageImage`. */
   readonly pageImage: HostPageImage;
+  /** How this process writes the document as a Word package. `engine/word`. */
+  readonly word: HostWordExport;
   /** How this process proposes fields on a flat page. `detectFlatFields`. */
   readonly flatFields: HostFlatFieldsReader;
   /** How this process reads a page's barcodes. `engine/page-barcodes`. */
@@ -497,6 +518,7 @@ export function createEngineHandlers({
   exportAnnotationData,
   accessibility,
   pageImage,
+  word,
   flatFields,
   barcodes,
 }: EngineHandlerParts): Handlers<EngineChannels> {
@@ -972,6 +994,20 @@ export function createEngineHandlers({
         // THE REQUEST'S FAULT rather than the host's, as a snapshot's is: every
         // refusal is about the page, the scale, the quality or the pixel count.
         return failed('page-image-failed', error);
+      }
+    },
+
+    'engine/word': async ({ session, mode, into }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      try {
+        // STREAMED INTO THE GRANTED DIRECTORY, a page at a time, and main moves the file: the package is never
+        // whole in this process and never read by main.
+        const composed = word(held.session, mode);
+        const written = await files.writeOutputStream(held.outputDirectory, into, composed.chunks);
+        return { ok: true, value: { bytes: written, pictures: composed.pictures() } };
+      } catch (error) {
+        return failed('word-failed', error);
       }
     },
 

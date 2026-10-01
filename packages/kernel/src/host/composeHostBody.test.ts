@@ -123,6 +123,9 @@ function start(
       files.written.set(`${directory}|${name}`, bytes);
       return Promise.resolve(bytes.length);
     },
+    writeOutputStream: (): never => {
+      throw new Error('the compose host streams no output');
+    },
   };
   const handlers = createComposeHandlers({
     // `optimize`'s recording, for the same reason: what the request named is what the keeper is handed.

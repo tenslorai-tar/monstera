@@ -20,9 +20,12 @@ import { rasterisePageImage } from '../pageImages.js';
 import { snapshotRegion } from '../pageSnapshot.js';
 import type { ByteImage, MupdfSession } from '../engineSeam.js';
 import { accessFor, mupdfWriter } from '../mupdfWriter.js';
+import { placeStaged } from '../savePipeline.js';
 import { readSignatures } from '../signatureRead.js';
+import { composeWordDocument } from '../wordPictures.js';
 import { type EngineChannels, engineChannels } from './engineChannels.js';
 import { type HostSession, createEngineHandlers } from './engineHandlers.js';
+import { hostFilesystem } from './hostNodeSurfaces.js';
 import {
   type RemoteSessions,
   type SessionArea,
@@ -218,6 +221,7 @@ function joined(
           await writeFile(join(directory, name), bytes);
           return bytes.length;
         },
+        writeOutputStream: hostFilesystem.writeOutputStream,
       },
       probe: () => {
         throw new Error('the lifecycle half must not probe containment');
@@ -271,6 +275,7 @@ function joined(
       // moment the dependency is added rather than an audit later: the case
       // below drives it.
       pageImage: rasterisePageImage,
+      word: composeWordDocument,
       flatFields: detectFlatFields,
       barcodes: () => {
         throw new Error('the lifecycle half must not read barcodes');
@@ -568,6 +573,7 @@ describe('remoteMupdfLifecycle', () => {
             await writeFile(join(directory, name), bytes);
             return bytes.length;
           },
+          writeOutputStream: hostFilesystem.writeOutputStream,
         },
         probe: () => {
           throw new Error('the byte-size case must not probe containment');
@@ -604,6 +610,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         pageImage: () => {
           throw new Error('the byte-size case must not export a page image');
+        },
+        word: () => {
+          throw new Error('the byte-size case must not export a Word file');
         },
         extract: () => {
           throw new Error('the byte-size case must not build a document');
@@ -843,6 +852,30 @@ describe('remoteMupdfLifecycle', () => {
     expect(await readdir(output)).toHaveLength(1);
     expect(staged.byteLength).toBeGreaterThan(0);
     await staged.discard();
+    expect(await readdir(output)).toStrictEqual([]);
+
+    await lifecycle.close(session);
+  });
+
+  // THE WORD EXPORT IS STAGED THE SAME WAY (ADR-0072's amendment of 2026-10-01): composed by the real handler into
+  // the output directory, placed by a move with the count checked, and nothing left where the host may read.
+  it('composes a Word package through engine/word, and placing it moves it out of the output directory', async () => {
+    const areas = realAreas();
+    const { lifecycle, open } = joined(areas);
+    const session = await open(flat);
+    const output = areas.made[0]?.outputDirectory ?? '';
+    const destination = join(await mkdtemp(join(tmpdir(), 'monstera-lifecycle-')), 'words.docx');
+    mintedRoots.push(join(destination, '..'));
+
+    const staged = await lifecycle.word(session, 'layout');
+    // CONTROL: the package is IN the output directory until placed, so the emptiness below is the move's doing.
+    expect(await readdir(output)).toHaveLength(1);
+    await placeStaged(staged, destination);
+
+    const placed = new Uint8Array(await readFile(destination));
+    expect(placed.byteLength).toBe(staged.byteLength);
+    // A zip whose first entry is the content types Word reads first — the host wrote a package, not something else.
+    expect(new TextDecoder().decode(placed.subarray(30, 30 + '[Content_Types].xml'.length))).toBe('[Content_Types].xml');
     expect(await readdir(output)).toStrictEqual([]);
 
     await lifecycle.close(session);
