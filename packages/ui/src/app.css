@@ -4011,6 +4011,105 @@ optgroup {
  */
 
 /*
+ * SPLIT VIEW (FEATURES row 65, the owner's design from the old app): a header bar over two equal halves with a divider,
+ * each half a page with its "Page N" label above it. It fills the page area the single pane did.
+ */
+.m-split {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  flex: 1 1 0;
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+.m-split__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8) var(--space-12);
+  align-items: center;
+  padding: var(--space-4) var(--space-8);
+  border-block-end: 1px solid var(--border); /* decorative: separates the bar from the pages; its controls draw their own edges */
+  background: var(--bg2);
+  color: var(--text);
+  font-size: var(--font-chrome-12);
+}
+
+.m-split__title {
+  font-weight: 600;
+}
+
+.m-split__field {
+  display: inline-flex;
+  gap: var(--space-4);
+  align-items: center;
+  color: var(--muted);
+}
+
+.m-split__page {
+  /* WIDE ENOUGH FOR FOUR DIGITS in the chrome face, the status bar's page field's measure. */
+  inline-size: 5ch;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+}
+
+.m-split__of {
+  color: var(--muted);
+}
+
+/* THE GAP BETWEEN WHAT CHOOSES PAGES AND WHAT MOVES THEM, the old design's spacer. */
+.m-split__spacer {
+  flex: 1 1 auto;
+}
+
+.m-split__both {
+  display: inline-flex;
+  gap: var(--space-4);
+  align-items: center;
+  padding: var(--space-2) var(--space-8);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.m-split__both:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.m-split__halves {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-block-size: 0;
+}
+
+.m-split__half {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+/* THE DIVIDER, on the right half's leading edge, in the decorative boundary every other seam here uses. */
+.m-split__half + .m-split__half {
+  border-inline-start: 1px solid var(--border); /* decorative: the divider between the halves; nothing is clicked on it */
+}
+
+.m-split__label {
+  padding: var(--space-2) var(--space-8);
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+  text-align: center;
+}
+
+/*
  * The second pane: its picker above whichever scroller it is showing.
  *
  * A grid with the picker at its natural height and the scroller taking the

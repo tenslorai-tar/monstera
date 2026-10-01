@@ -405,6 +405,7 @@ import { SIGNATURE_BREAK_DIALOG } from './dialogs/signatureBreak.js';
 import { STALE_COPIES_DIALOG } from './dialogs/staleCopies.js';
 import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { PageList, type PageListProps } from './PageList.js';
+import { SplitView } from './SplitView.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
 import { ContextMenuArea } from './surfaces/ContextMenu.js';
 import { type TextSelection, readTextSelection } from './TextLayer.js';
@@ -3937,6 +3938,77 @@ function PageCanvas({
   }, []);
 
   /**
+   * SPLIT VIEW'S TWO PAGES (row 65, the owner's design from the old app): one document, each half showing one page
+   * chosen on its own. The left starts where the reader is and the right on the page after, set again each time the
+   * split opens; a half's own wheel turns its page, which reports here, so the header always names what is on show.
+   *
+   * A REQUEST beside each page, for the header's boxes and *Both*: the half consumes it as its `goTo` and clears it,
+   * the shape every other route into a page list already uses. The status bar's page field still reaches the half
+   * that reports (*focus follows the pane*), because a request from the header and one from the bar are two writers
+   * of the same kind of request, never two owners of the page.
+   */
+  const splitView = split && compare === undefined;
+  const [splitPages, setSplitPages] = useState<{ readonly on: boolean; readonly left: number; readonly right: number }>({
+    on: false,
+    left: current,
+    right: current + 1,
+  });
+  if (splitPages.on !== splitView) {
+    setSplitPages({ on: splitView, left: current, right: current + 1 });
+  }
+  const [splitRequests, setSplitRequests] = useState<{
+    readonly left: number | undefined;
+    readonly right: number | undefined;
+  }>({ left: undefined, right: undefined });
+  const lastPage = Math.max(0, (ready?.document.numPages ?? 1) - 1);
+  const leftShown = Math.min(splitPages.left, lastPage);
+  const rightShown = Math.min(splitPages.right, lastPage);
+  const askLeft = useCallback((page: number) => {
+    setSplitPages((now) => ({ ...now, left: page }));
+    setSplitRequests((now) => ({ ...now, left: page }));
+  }, []);
+  const askRight = useCallback((page: number) => {
+    setSplitPages((now) => ({ ...now, right: page }));
+    setSplitRequests((now) => ({ ...now, right: page }));
+  }, []);
+  const reportLeft = useCallback(
+    (page: number) => {
+      setSplitPages((now) => (now.left === page ? now : { ...now, left: page }));
+      if (reporting === 'first') onCurrentPage(page);
+    },
+    [onCurrentPage, reporting],
+  );
+  const reportRight = useCallback(
+    (page: number) => {
+      setSplitPages((now) => (now.right === page ? now : { ...now, right: page }));
+      if (reporting === 'second') onCurrentPage(page);
+    },
+    [onCurrentPage, reporting],
+  );
+  // A REQUEST FROM ABOVE IS A PAGE THE HALF NOW SHOWS: in single page the request chooses the page on show outright, so
+  // the header takes it here, as the half consumes it, rather than waiting for the half's observer to report it.
+  const leftWentTo = useCallback(() => {
+    if (splitRequests.left !== undefined) {
+      setSplitRequests((now) => ({ ...now, left: undefined }));
+      return;
+    }
+    if (goTo !== undefined) setSplitPages((now) => (now.left === goTo ? now : { ...now, left: goTo }));
+    onWentTo();
+  }, [goTo, onWentTo, splitRequests.left]);
+  const rightWentTo = useCallback(() => {
+    if (splitRequests.right !== undefined) {
+      setSplitRequests((now) => ({ ...now, right: undefined }));
+      return;
+    }
+    if (reporting !== 'second') return;
+    if (goTo !== undefined) setSplitPages((now) => (now.right === goTo ? now : { ...now, right: goTo }));
+    onWentTo();
+  }, [goTo, onWentTo, reporting, splitRequests.right]);
+  const closeSplit = useCallback(() => {
+    settings.set(SPLIT_VIEW_SETTING.id, false);
+  }, [settings]);
+
+  /**
    * §6.1's second engine, or `undefined` where the setting is off.
    *
    * ## EVERY refusal answers `null`, which is what keeps a page drawn
@@ -4030,6 +4102,102 @@ function PageCanvas({
     );
   }
 
+  // THE DOCUMENT'S FIRST PANE, the same element whether it fills the page side or is split view's left half. In a
+  // split it shows one page at a time (the owner's design: each half is a page, chosen on its own) and reports its page
+  // to the header as well as, while it is the pane in use, to the status bar.
+  const firstPane = (
+    <PageList
+      client={client}
+      view={ready}
+      // FROM THE PARSER, NOT FROM THE VIEW MODEL, and this is a correction
+      // rather than a preference. The count came from `document.viewModel` for
+      // one build, which made the whole surface depend on an **engine session**:
+      // where none can be created the model is refused, and a viewer that
+      // rendered nothing then would show an empty window for a document PDF.js
+      // can read perfectly.
+      //
+      // Measured by `proof:canvaspixels`, which waited 60 seconds for a page
+      // that could not arrive. The single-page version never had the coupling —
+      // it drew unconditionally and treated the model as advisory — and the
+      // scroller reintroduced it by needing a count before it could lay out.
+      // PDF.js has the count and needs nobody's permission for it.
+      pageCount={ready.document.numPages}
+      docId={open.docId}
+      version={open.version}
+      onCurrentPage={splitView ? reportLeft : reporting === 'first' ? onCurrentPage : ignorePage}
+      onPageBox={onPageBox}
+      mode={mode}
+      onZoomStep={onZoomStep}
+      onShownZoom={reporting === 'first' ? onShownZoom : ignoreZoom}
+      goTo={splitView ? (splitRequests.left ?? (reporting === 'first' ? goTo : undefined)) : reporting === 'first' ? goTo : undefined}
+      onActivate={splitView ? activateFirst : undefined}
+      // WHERE THIS SCROLLER IS MOUNTING, which with tabs is wherever the
+      // reader left this document. Seeding page 1 here reported them back to
+      // the top of a document they were forty pages into.
+      startAt={current}
+      onWentTo={splitView ? leftWentTo : onWentTo}
+      loupe={loupe}
+      rulers={rulers}
+      showGrid={showGrid}
+      unit={unit}
+      drawing={drawing}
+      editing={editing}
+      panning={panning}
+      search={search}
+      // `undefined` WHERE THE SETTING IS OFF, which is what makes the setting
+      // the only thing that decides. `PageList` falls back to PDF.js for an
+      // absent rasteriser and for one that answers `null`, so the two states
+      // reach the same code and neither can leave a page blank.
+      secondRasteriser={secondRenderer ? secondRasteriser : undefined}
+      tileAbove={tileAbove}
+      quality={quality}
+      pageBadges={pageBadges}
+      smoothScroll={smoothScroll}
+      layout={splitView ? 'single' : layout}
+      // AUTOSCROLL MOVES THIS PANE, the document's first; the second is a place a reader looks across to.
+      autoscroll={autoscroll}
+      onAutoscrollEnd={onAutoscrollEnd}
+      pageMenu={pageMenu}
+    />
+  );
+  // SPLIT VIEW'S RIGHT HALF, over the SAME parser: one document in two viewports costs one more set of visible page
+  // bitmaps and not a second parse (row 65). It draws, paints search matches and uses the same engine as the left,
+  // because a half that could not, or that drew differently, would show a difference the document does not have.
+  const splitSecondPane = (
+    <PageList
+      client={client}
+      view={ready}
+      pageCount={ready.document.numPages}
+      docId={open.docId}
+      version={open.version}
+      onCurrentPage={reportRight}
+      onPageBox={onPageBox}
+      mode={mode}
+      onZoomStep={onZoomStep}
+      onShownZoom={reporting === 'second' ? onShownZoom : ignoreZoom}
+      goTo={splitRequests.right ?? (reporting === 'second' ? goTo : undefined)}
+      startAt={rightShown}
+      onWentTo={rightWentTo}
+      onActivate={activateSecond}
+      loupe={loupe}
+      rulers={rulers}
+      showGrid={showGrid}
+      unit={unit}
+      label={SPLIT_SECOND_LABEL}
+      drawing={drawing}
+      editing={editing}
+      panning={panning}
+      search={search}
+      secondRasteriser={secondRenderer ? secondRasteriser : undefined}
+      tileAbove={tileAbove}
+      quality={quality}
+      pageBadges={pageBadges}
+      smoothScroll={smoothScroll}
+      layout="single"
+      pageMenu={pageMenu}
+    />
+  );
+
   return (
     // THE SIDEBAR IS A SIBLING OF THE SPINE, inside this component, because it
     // needs the same parser: a strip that opened its own would parse the
@@ -4082,57 +4250,21 @@ function PageCanvas({
           pageMenu={pageMenu}
         />
       ) : (
+      splitView ? (
+        // SPLIT VIEW (row 65): the header and two halves around the same two page lists, over one parser.
+        <SplitView
+          pageCount={ready.document.numPages}
+          left={firstPane}
+          right={splitSecondPane}
+          leftPage={leftShown}
+          rightPage={rightShown}
+          onLeftPage={askLeft}
+          onRightPage={askRight}
+          onClose={closeSplit}
+        />
+      ) : (
       <>
-      <PageList
-        client={client}
-        view={ready}
-      // FROM THE PARSER, NOT FROM THE VIEW MODEL, and this is a correction
-      // rather than a preference. The count came from `document.viewModel` for
-      // one build, which made the whole surface depend on an **engine session**:
-      // where none can be created the model is refused, and a viewer that
-      // rendered nothing then would show an empty window for a document PDF.js
-      // can read perfectly.
-      //
-      // Measured by `proof:canvaspixels`, which waited 60 seconds for a page
-      // that could not arrive. The single-page version never had the coupling —
-      // it drew unconditionally and treated the model as advisory — and the
-      // scroller reintroduced it by needing a count before it could lay out.
-      // PDF.js has the count and needs nobody's permission for it.
-        pageCount={ready.document.numPages}
-        docId={open.docId}
-        version={open.version}
-        onCurrentPage={reporting === 'first' ? onCurrentPage : ignorePage}
-        onPageBox={onPageBox}
-        mode={mode}
-        onZoomStep={onZoomStep}
-        onShownZoom={reporting === 'first' ? onShownZoom : ignoreZoom}
-        goTo={reporting === 'first' ? goTo : undefined}
-        onActivate={split && compare === undefined ? activateFirst : undefined}
-        // WHERE THIS SCROLLER IS MOUNTING, which with tabs is wherever the
-        // reader left this document. Seeding page 1 here reported them back to
-        // the top of a document they were forty pages into.
-        startAt={current}
-        onWentTo={onWentTo}
-        loupe={loupe}
-        rulers={rulers}
-        showGrid={showGrid}
-        unit={unit}
-        drawing={drawing}
-        editing={editing}
-        panning={panning}
-        search={search}
-        // `undefined` WHERE THE SETTING IS OFF, which is what makes the setting
-        // the only thing that decides. `PageList` falls back to PDF.js for an
-        // absent rasteriser and for one that answers `null`, so the two states
-        // reach the same code and neither can leave a page blank.
-        secondRasteriser={secondRenderer ? secondRasteriser : undefined}
-        tileAbove={tileAbove}
-        quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll} layout={layout}
-        // AUTOSCROLL MOVES THIS PANE, the document's first; the second is a place a reader looks across to.
-        autoscroll={autoscroll}
-        onAutoscrollEnd={onAutoscrollEnd}
-        pageMenu={pageMenu}
-      />
+      {firstPane}
       {/* THE SECOND VIEWPORT, over the SAME parser.
           One document, two scrollers: a pane that opened its own view would
           parse the document twice, start a second worker and hold a second copy
@@ -4154,18 +4286,9 @@ function PageCanvas({
           left pane pressing PageDown and watching the right one move. So they
           go to the pane the reader last pressed or focused (`reporting`,
           above): *focus follows the pane*. */}
-      {split ? (
-        // THE PANE IS THE SAME SEAM AND THE PARSER IS THE DIFFERENCE. With
-        // nothing chosen this is split view — the second viewport over `ready`,
-        // one parse for two panes. With a document chosen it is compare, and a
-        // second document is a second parse by necessity: reading one
-        // document's pages through the other's parser is not an optimisation
-        // available to anybody.
-        //
-        // The picker is rendered either way, because a control that appears
-        // only once you have done the thing it is for is a control nobody
-        // finds. With one document open it offers *this document* alone, which
-        // is a truthful list of the choices.
+      {split && compare !== undefined ? (
+        // A COMPARED DOCUMENT, a second parse by necessity: reading one document's pages through the other's parser is
+        // not an optimisation available to anybody. Split view of this document is `SplitView` above.
         <div className="m-second-pane">
           <ComparePane
             client={client}
@@ -4184,56 +4307,10 @@ function PageCanvas({
             tileAbove={tileAbove}
             quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll} layout={layout}
           />
-          {compare === undefined ? (
-            <PageList
-              client={client}
-              view={ready}
-              pageCount={ready.document.numPages}
-              docId={open.docId}
-              version={open.version}
-              onCurrentPage={reporting === 'second' ? onCurrentPage : ignorePage}
-              onPageBox={onPageBox}
-              mode={mode}
-              onZoomStep={onZoomStep}
-              onShownZoom={reporting === 'second' ? onShownZoom : ignoreZoom}
-              goTo={reporting === 'second' ? goTo : undefined}
-              // The same page the first pane starts at, so a split opens on
-              // what the reader is looking at rather than at the top.
-              startAt={current}
-              onWentTo={reporting === 'second' ? onWentTo : ignoreWentTo}
-              onActivate={activateSecond}
-              loupe={loupe}
-              rulers={rulers}
-              showGrid={showGrid}
-              unit={unit}
-              label={SPLIT_SECOND_LABEL}
-              // BOTH PANES DRAW, and they are the same document — so an
-              // annotation made in one appears in the other on the next render,
-              // which is what one document in two viewports means. A pane that
-              // could not draw would be a surface where a selected tool
-              // silently does nothing.
-              drawing={drawing}
-              editing={editing}
-              panning={panning}
-              // BOTH PANES PAINT the same matches, for the same reason: it is
-              // one document, and a split where the search highlighted one half
-              // would read as the second pane showing a different document.
-              search={search}
-              // AND BOTH DRAW WITH THE SAME ENGINE, which is the same argument
-              // again: one document in two viewports, and a split where the
-              // halves were rasterised differently would show a difference the
-              // document does not have.
-              secondRasteriser={secondRenderer ? secondRasteriser : undefined}
-              tileAbove={tileAbove}
-              quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll} layout={layout}
-              // THE SAME DOCUMENT, so the same page menu: a page right-clicked in either pane is a
-              // page of this document.
-              pageMenu={pageMenu}
-            />
-          ) : null}
         </div>
       ) : null}
       </>
+      )
       )
       }
     />
@@ -4249,4 +4326,3 @@ function PageCanvas({
  */
 const ignorePage = (_page: number): void => undefined;
 const ignoreZoom = (_shown: number): void => undefined;
-const ignoreWentTo = (): void => undefined;

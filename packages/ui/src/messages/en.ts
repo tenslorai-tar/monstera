@@ -618,6 +618,16 @@ export const DARK_PAGE_TITLE = messageKey('setting.viewing.dark-page.title');
 export const LOUPE_TITLE = messageKey('setting.viewing.loupe.title');
 export const SPLIT_VIEW_TITLE = messageKey('setting.viewing.split.title');
 export const SPLIT_SECOND_LABEL = messageKey('surface.split.second-label');
+/** Split view's header bar and halves (the owner's design from the old app's split panel, FEATURES row 65). */
+export const SPLIT_TITLE = messageKey('surface.split.title');
+export const SPLIT_LEFT_PAGE = messageKey('surface.split.left-page');
+export const SPLIT_RIGHT_PAGE = messageKey('surface.split.right-page');
+export const SPLIT_OF = messageKey('surface.split.of');
+export const SPLIT_BOTH = messageKey('surface.split.both');
+export const SPLIT_BOTH_BACK = messageKey('surface.split.both-back');
+export const SPLIT_BOTH_FORWARD = messageKey('surface.split.both-forward');
+export const SPLIT_CLOSE = messageKey('surface.split.close');
+export const SPLIT_HALF_PAGE = messageKey('surface.split.half-page');
 export const RULERS_TITLE = messageKey('setting.viewing.rulers.title');
 export const GRID_TITLE = messageKey('setting.viewing.grid.title');
 export const RECTANGLE_TOOL_TITLE = messageKey('command.annotate-rectangle.title');
@@ -2427,6 +2437,16 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // name are two regions a screen-reader user cannot tell apart, and the second
   // one is the whole point of the feature.
   [SPLIT_SECOND_LABEL]: 'Second view of this document',
+  [SPLIT_TITLE]: 'Split View',
+  [SPLIT_LEFT_PAGE]: 'Left page:',
+  [SPLIT_RIGHT_PAGE]: 'Right page:',
+  [SPLIT_OF]: 'of {count}',
+  [SPLIT_BOTH]: 'Both',
+  // THE NAME CARRIES THE WORD ON THE BUTTON (WCAG 2.5.3), and the direction the arrow shows, so the two read apart.
+  [SPLIT_BOTH_BACK]: 'Both back one page',
+  [SPLIT_BOTH_FORWARD]: 'Both forward one page',
+  [SPLIT_CLOSE]: 'Close split view',
+  [SPLIT_HALF_PAGE]: 'Page {page}',
   [RULERS_TITLE]: 'Show rulers',
   [GRID_TITLE]: 'Show grid',
   [RECTANGLE_TOOL_TITLE]: 'Rectangle',

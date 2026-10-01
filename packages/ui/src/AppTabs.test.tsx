@@ -496,19 +496,24 @@ describe('the assistant with two documents side by side (ADR-0089)', () => {
     });
 
     await act(async () => {
-      settings.set(SPLIT_VIEW_SETTING.id, true);
       settings.set(CONTEXT_PANEL_OPEN_SETTING.id, true);
       settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
       await Promise.resolve();
     });
-    // THE LAYER ON SHOW: the first document's layer is kept behind it, split like it, with a picker of its own.
-    const picker = container.querySelector('[data-document-layer="active"] [data-compare-pick]');
-    if (!(picker instanceof HTMLSelectElement)) throw new Error('the split view renders a picker');
+    // THE OTHER TAB'S MENU, *Open side by side*: split view shows one document since the owner's split design, and
+    // the compared document is chosen from the tab it is open in.
+    const otherTab = container.querySelector(`[data-tab-select="${FIRST}"]`);
+    if (otherTab === null) throw new Error('no tab for the first document');
     await act(async () => {
-      fireEvent.change(picker, { target: { value: FIRST } });
+      fireEvent.contextMenu(otherTab, { clientX: 10, clientY: 10 });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      (await screen.findByRole('menuitem', { name: 'Open side by side' })).click();
       await Promise.resolve();
       await Promise.resolve();
     });
+    expect(settings.get(SPLIT_VIEW_SETTING.id)).toBe(true);
 
     // THE COMPARE PANE MOVES TO ITS SECOND PAGE, so the right-hand page is one only its own report
     // can supply: the tab's document is still on page 0, and a root that took the status bar's
