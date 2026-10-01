@@ -2941,6 +2941,15 @@ textarea {
    * horizontal ruler would sit above the wrong element.
    */
   position: relative;
+  /*
+   * ITS OWN LAYER, so the compositor scrolls it. Without one Chromium scrolls it on the main thread and repaints its
+   * whole area each frame (the trace's frames read `SCROLL_MAIN_THREAD`): it declines to composite a scroller holding
+   * LCD-antialiased text over a transparent background at a pixel ratio under 1.5, and the text here is PDF.js'
+   * transparent text layer, which nobody sees. Measured 2026-10-02 with `scripts/research/frameTimes.mjs` (development
+   * build, `perf-baseline.pdf`, three runs each): scrolling at 100% dropped 11-14 frames without it and 0 with it, the
+   * GPU process 464-515 ms against 138-144 ms. The rulers' ticks may move by a pixel, the layer's snapping.
+   */
+  will-change: transform;
 }
 
 /*

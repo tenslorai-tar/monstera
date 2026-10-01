@@ -1,6 +1,10 @@
+import { PDFDocument } from '@cantoo/pdf-lib';
+import { asDocId, asDocVersion } from '@monstera/shared';
 import { type CDPSession, type Page, expect, test } from '@playwright/test';
 
 import { bridge } from './pageBridge.js';
+
+const DOC = asDocId('00000000-0000-4000-8000-0000000000f8');
 
 /**
  * The window's grain is a composited layer of its own, in a real browser — and it is still drawn.
@@ -72,4 +76,38 @@ test('the grain is composited on its own layer, and still drawn over the whole w
       reasons.includes('WillChangeTransform') && layer.width === viewport.width && layer.height === viewport.height,
   );
   expect(grainLayers.length, JSON.stringify(found.map(({ layer, reasons }) => [layer.width, layer.height, reasons]))).toBe(1);
+});
+
+/**
+ * The page list is a composited scroller: a layer the list's own size, composited for its `will-change`. Without it the
+ * list scrolled on the main thread and repainted its area each frame (`app.css`, `.m-page-list`).
+ */
+test('the page list is composited on its own layer, so the compositor scrolls it', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const document = await PDFDocument.create();
+  for (let index = 0; index < 3; index += 1) document.addPage([612, 792]);
+  const bytes = await document.save();
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'three.pdf' }],
+    documentBytes: new Map([[DOC, bytes]]),
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  // GENEROUS, because this waits for a page to rasterise and is not a product bound (`pagePosition.pw.ts`).
+  await expect(page.locator('.m-page-list .m-page').first()).toBeVisible({ timeout: 20_000 });
+
+  const box = await page.locator('.m-page-list').first().evaluate((list) => ({ width: list.clientWidth, height: list.clientHeight }));
+  const cdp = await page.context().newCDPSession(page);
+  const found = await layers(page, cdp);
+
+  // THE CONTROL: the read sees the viewport's own layer.
+  expect(found.some(({ reasons }) => reasons.includes('Viewport'))).toBe(true);
+  // THE CLAIM: a layer composited for its `will-change` whose size is the list's own box, not the window's.
+  const listLayers = found.filter(
+    ({ layer, reasons }) =>
+      reasons.includes('WillChangeTransform') &&
+      Math.abs(layer.width - box.width) <= 20 &&
+      Math.abs(layer.height - box.height) <= 1,
+  );
+  expect(listLayers.length, JSON.stringify({ box, layers: found.map(({ layer, reasons }) => [layer.width, layer.height, reasons]) })).toBeGreaterThanOrEqual(1);
 });
