@@ -1861,6 +1861,19 @@ a dirty checkout is typechecked as it sits on disk. The hook prints that it did
 when the tree is dirty rather than refusing, because a hook that blocked every
 push from a dirty checkout is the kind people route around.
 
+**AND UNTIL 2026-10-01 IT RAN ON WINDOWS ONLY.** `.githooks/pre-push` was tracked
+**100644** (`git ls-files -s .githooks`). Git runs a hook only when it is
+executable: on Linux and macOS it printed *"hint: The '.githooks/pre-push' hook
+was ignored because it's not set as executable"* and pushed unchecked, observed
+in a Linux cloud session pushing `work/cloud-rate-us`. Git for Windows does not
+consult the bit. Every proof read the shim's **text** or ran it through `sh`,
+which work at any mode, so the one property git keys on was read by nothing.
+`guardFiles.mjs` now refuses a hook at any mode but 100755 at the staged and tree
+scopes, `bootstrapHooks.mjs` fails the install when git would skip a hook on
+that disk, and both take the rule from `scripts/lib/hookFiles.mjs`. *A proof that
+invokes the artefact itself cannot see the condition under which its real caller
+declines to.*
+
 **The owner's trade below is untouched and is still theirs**, which is the point
 worth carrying: the gap was closed from the other side, so nobody has to take a
 decision about declaration emit to make the habit safe.
