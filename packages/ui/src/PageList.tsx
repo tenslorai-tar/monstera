@@ -9,7 +9,7 @@ import { AnnotationOverlay } from './AnnotationOverlay.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
 import { type TextEditing, TextEditPage } from './TextEditLayer.js';
-import { TextLayer, type TextLayerLine } from './TextLayer.js';
+import { TextLayer, type TextLayerLine, readTextSelection } from './TextLayer.js';
 import { type PageAnnotation, usePageAnnotations } from './usePageAnnotations.js';
 import { usePageRotations } from './usePageRotations.js';
 import { type PageTextAnswer, usePageText } from './usePageText.js';
@@ -867,6 +867,24 @@ export function PageList({
     if (first !== undefined) onCurrentPage(first);
   }, [onCurrentPage, visible]);
 
+  /**
+   * A TOOL WHOSE GESTURE IS SELECTING TEXT (`UiTool.fromSelection`, the highlighter): no drawing surface is mounted
+   * for it, so the text layer takes the drag and the browser selects the words, and the release marks them.
+   */
+  const fromSelection = drawing?.tool.fromSelection;
+  const selectsText = fromSelection !== undefined;
+  const markSelection = useCallback((): void => {
+    if (fromSelection === undefined || drawing === undefined) return;
+    const selection = readTextSelection();
+    if (selection === undefined) return;
+    const command = fromSelection(selection);
+    if (command === undefined) return;
+    drawing.onCommand(command);
+    // THE SELECTION IS SPENT once it is a mark: left in place it would still offer the selected-text menu for words
+    // that are already marked, and the next drag would start from it.
+    globalThis.document.getSelection()?.removeAllRanges();
+  }, [drawing, fromSelection]);
+
   return (
     <div
       // A NAMED, FOCUSABLE REGION: the document scrolls here, and a scroller with nothing focusable inside — a page of
@@ -880,6 +898,7 @@ export function PageList({
         layout === 'facing' ? 'm-page-list--facing' : '',
         grid === undefined ? '' : 'm-page-list-grid',
         panning ? 'm-page-list--panning' : '',
+        selectsText ? 'm-page-list--selects-text' : '',
         grab === undefined ? '' : 'is-grabbing',
       ]
         .filter((name) => name !== '')
@@ -901,7 +920,9 @@ export function PageList({
           ? () => {
               setGrab(undefined);
             }
-          : undefined
+          : selectsText
+            ? markSelection
+            : undefined
       }
       onPointerCancel={
         panning
@@ -1304,7 +1325,8 @@ function PageSlot({
           selection={drawing.selection}
         />
       )}
-      {drawing === undefined || size === undefined ? null : (
+      {/* NO DRAWING SURFACE for a tool whose gesture is a text selection: the text layer under it takes the drag. */}
+      {drawing === undefined || size === undefined || drawing.tool.fromSelection !== undefined ? null : (
         <AnnotationOverlay
           geometry={{
             // THE BOX AND THE ROTATION THE BITMAP WAS DRAWN WITH, and the

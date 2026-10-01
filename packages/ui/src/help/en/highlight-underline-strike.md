@@ -11,7 +11,7 @@ These tools mark text the way a highlighter or pen would. The marks are saved as
 ## Steps
 
 1. In the rail, choose **Comment**. In the **Markup** group, choose **Highlight**, **Underline text** or **Strikethrough**. (**Highlight** is also in **Home**, **Quick tools**.)
-2. Drag across the words you want to mark. The mark follows the lines of text, even across several lines.
+2. Drag across the words you want to mark. The pointer is an I-beam over the page, and the words light up as you drag, so you see exactly what will be marked. When you let go, the mark follows the lines of text, even across several lines.
 
 Or, with text already selected using **Select text**: right-click it and choose **Highlight**, **Underline** or **Strikethrough**.
 

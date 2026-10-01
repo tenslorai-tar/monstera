@@ -4403,6 +4403,18 @@ optgroup {
   outline-offset: -2px;
 }
 
+/* A TOOL THAT DOES NOT DRAW says so (`UiTool.cursor`): the arrow for one that picks or places by a click. */
+.m-annotation-overlay[data-cursor='arrow'] {
+  cursor: default;
+}
+
+/* THE HIGHLIGHTER'S I-BEAM over the page, where the text layer takes the drag and the words are selected
+   (`UiTool.fromSelection`). Over the whole page rather than over the words alone, so the pointer does not flicker
+   between an I-beam and an arrow in the gaps between lines. */
+.m-page-list--selects-text .m-page-slot {
+  cursor: text;
+}
+
 /*
  * The rectangle a drag is currently describing.
  *

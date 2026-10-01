@@ -181,7 +181,8 @@ export function stickyNoteTool(deps: TextToolDeps & { readonly style: Annotation
     preview: noPreview,
   };
 
-  return { id: STICKY_NOTE_TOOL_ID, controller };
+  // THE ARROW: a note is placed at a point by a click, the ribbon's *Comment* (the owner's review of 0.1.6.0).
+  return { id: STICKY_NOTE_TOOL_ID, controller, cursor: 'arrow' };
 }
 
 /**
