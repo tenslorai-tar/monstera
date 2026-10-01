@@ -826,6 +826,7 @@ export const PALETTE_TITLE = messageKey('command.palette.title');
 export const DESTINATIONS_LABEL = messageKey('surface.destinations.label');
 export const DESTINATIONS_EMPTY = messageKey('surface.destinations.empty');
 export const DESTINATIONS_UNAVAILABLE = messageKey('surface.destinations.unavailable');
+export const DESTINATIONS_TRUNCATED = messageKey('surface.destinations.truncated');
 export const DESTINATION_UNRESOLVED = messageKey('surface.destinations.unresolved');
 export const FIND_CASE_SENSITIVE = messageKey('surface.find.case-sensitive');
 export const FIND_WHOLE_WORD = messageKey('surface.find.whole-word');
@@ -2658,6 +2659,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [DESTINATIONS_LABEL]: 'Outline',
   [DESTINATIONS_EMPTY]: 'This document has no outline.',
   [DESTINATIONS_UNAVAILABLE]: 'The outline could not be read.',
+  [DESTINATIONS_TRUNCATED]: 'This outline carries more entries than can be read, so the rest are not listed.',
   [DESTINATION_UNRESOLVED]: '{title} (goes nowhere)',
   [FIND_CASE_SENSITIVE]: 'Match case',
   [FIND_WHOLE_WORD]: 'Whole word',
@@ -2832,7 +2834,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // the list is complete needs the number, and a panel headed *the annotations
   // in this document* that quietly showed some of them is the display-only sin
   // in a list.
-  [ANNOTATIONS_TRUNCATED]: 'Only the first 4,096 annotations are listed.',
+  [ANNOTATIONS_TRUNCATED]: 'This document carries more annotations than can be read, so the rest are not listed.',
   // SAYS WHAT IT REMOVES, not just "Delete". The row beside it names a kind and
   // a page, and a bare verb on a list of similar rows is the label a person
   // clicks on the wrong line.
@@ -2841,7 +2843,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FORMS_LABEL]: 'Form fields in this document',
   [FORMS_EMPTY]: 'This document has no form fields.',
   [FORMS_UNAVAILABLE]: 'The form fields in this document could not be read.',
-  [FORMS_TRUNCATED]: 'Only the first 4,096 form fields are listed.',
+  [FORMS_TRUNCATED]: 'This document carries more form fields than can be read, so the rest are not listed.',
   // THE FIELD'S OWN NAME, which is document data rather than a catalogue
   // string — a form's vocabulary belongs to whoever wrote the form. The kind
   // is beside it because two fields can share a name: a radio group is one

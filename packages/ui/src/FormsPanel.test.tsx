@@ -67,6 +67,7 @@ function clientAnswering(
         : ok({
             version: asDocVersion(options.version ?? 1),
             fields: rows,
+            next: null,
             truncated: options.truncated ?? false,
           }),
     );
@@ -365,7 +366,14 @@ describe('FormsPanel', () => {
 
   it('says the bound stopped the walk rather than showing a short list quietly', async () => {
     await panel([field({ name: 'one' })], { truncated: true });
-    expect(screen.getByText('Only the first 4,096 form fields are listed.')).toBeTruthy();
+    expect(
+      screen.getByText('This document carries more form fields than can be read, so the rest are not listed.'),
+    ).toBeTruthy();
+  });
+
+  it('CONTROL: a list the walk did not stop says nothing of the kind', async () => {
+    await panel([field({ name: 'one' })]);
+    expect(screen.queryByText(/the rest are not listed/u)).toBeNull();
   });
 
   it('a REFUSAL is its own state, not an empty form', async () => {
@@ -388,7 +396,7 @@ describe('FormsPanel', () => {
     // panel never asked*. Every case above is satisfied by a panel that renders
     // its own idea of nothing.
     const { asked } = await panel([field({ name: 'one' })]);
-    expect(asked).toStrictEqual([{ docId: DOC }]);
+    expect(asked).toStrictEqual([{ docId: DOC, from: 0 }]);
   });
 
   it('the flatten control dispatches, and dispatches once', async () => {

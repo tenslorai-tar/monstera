@@ -3,6 +3,7 @@ import type { PDFDocument, PDFObject, PDFPage, PDFWidget } from './mupdfRaw.js';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
+import { ENGINE_FORM_FIELDS_MAX } from './host/engineChannels.js';
 import { withDocument, withDocumentRemoving } from './mupdfWriter.js';
 import { frameOf, pageAt, readRect } from './pageAnnotations.js';
 
@@ -44,13 +45,11 @@ import { frameOf, pageAt, readRect } from './pageAnnotations.js';
  */
 
 /**
- * How many fields cross in one answer.
- *
- * `ENGINE_ANNOTATIONS_MAX`' number and its argument: a bound on a list a
- * hostile document controls, set where no real form reaches it. The largest
- * government form anyone has put in front of this build is in the hundreds.
+ * How many fields cross in one answer: the host answer's own bound, derived from the answer ceiling and past any real
+ * form (ADR-0130 Decision 3). It was 4,096, and a generated form pack passes that. The renderer receives the list in
+ * parts.
  */
-export const MAX_LISTED_FIELDS = 4096;
+const MAX_LISTED_FIELDS = ENGINE_FORM_FIELDS_MAX;
 
 /** How much of a field's value or name crosses. `MAX_LISTED_CONTENTS`' reason. */
 const MAX_FIELD_TEXT = 512;

@@ -2,6 +2,7 @@ import { type DispatchableCommand, keepsTheAnnotationWalk } from '@monstera/cont
 import type { DocId } from '@monstera/shared';
 
 import { type AnnotationSelection, carrySelection } from '../annotations/selectTool.js';
+import { readWholeList } from '../readWholeList.js';
 import { type Applied, type DocumentCommandDeps, applyDocumentCommand } from './documentCommands.js';
 
 /** Replaces the selection with what a function of the current one answers — a state setter's shape. */
@@ -52,8 +53,11 @@ export async function applyCarrying(
   const produced = held.answer;
   if (!moved || produced === undefined) return moved;
 
-  const read = await deps.client['document.annotations']({ docId }).catch(() => undefined);
-  const walk = read?.ok === true ? read.value : undefined;
+  const read = await readWholeList(
+    (from) => deps.client['document.annotations']({ docId, from }),
+    (part) => part.annotations,
+  ).catch(() => undefined);
+  const walk = read?.ok === true ? { version: read.value.version, annotations: read.value.items } : undefined;
   const composed = { page: command.page, version: command.version };
   deps.onApplied(produced);
   deps.carry((current) => carrySelection(current, composed, produced.version, walk));

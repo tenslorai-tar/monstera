@@ -17,7 +17,7 @@ export {
   type PageLink,
   type LinkBounds,
 } from './pageLinks.js';
-export { readDestinations, type Destination } from './destinations.js';
+export { readDestinations, type Destination, type ListedDestinations } from './destinations.js';
 export {
   applyImportPageAsLayer,
   applySetLayerVisibility,
@@ -137,7 +137,6 @@ export {
   invertDeleteFormFields,
   invertFillFormField,
   invertFlattenFormFields,
-  MAX_LISTED_FIELDS,
   readFormFields,
 } from './formFields.js';
 export {

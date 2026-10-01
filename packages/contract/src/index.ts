@@ -160,6 +160,10 @@ export {
   type PreloadChannels,
   type PreloadHandlers,
   preloadChannels,
+  // THE PART SIZES of the lists that cross in parts (ADR-0130): main cuts a part at them.
+  ANNOTATIONS_PART,
+  DESTINATIONS_PART,
+  FORM_FIELDS_PART,
 } from './channels.js';
 export { acceptAnswer, createClient, wrapHandler, wrapHandlers } from './boundary.js';
 export { BRIDGE_KEY, type MonsteraBridge, PRELOAD_CHANNEL_IDS, type PreloadChannelId } from './bridge.js';

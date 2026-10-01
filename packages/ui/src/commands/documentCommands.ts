@@ -1651,7 +1651,9 @@ export function generateTocCommand(deps: DocumentCommandDeps): UiCommand {
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
 
-      const outline = await deps.client['document.destinations']({ docId: context.docId });
+      // THE FIRST PART ONLY, and that is the whole question: whether the outline has any entry. The command reads the
+      // outline itself in `main` (the pre-read), so nothing here is built from a part.
+      const outline = await deps.client['document.destinations']({ docId: context.docId, from: 0 });
       if (!outline.ok) {
         reportProblem(deps, outline.error);
         return;

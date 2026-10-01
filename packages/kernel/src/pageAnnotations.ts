@@ -31,6 +31,7 @@ import type {
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
+import { ENGINE_ANNOTATIONS_MAX } from './host/engineChannels.js';
 import { decodedImage, withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
 import { snapRotation } from './rotatePages.js';
@@ -1753,18 +1754,15 @@ function styleOf(annotation: PDFAnnotation): ListedAnnotation['style'] {
 }
 
 /**
- * How many annotations may be listed.
- *
- * A document-scaled read, bounded for the reason `document.destinations`' is:
- * a payload that grows without limit is a renderer that can be handed anything.
- * The number is `MAX_DESTINATIONS`' argument on a different noun — far past
- * what a panel could present and short of what a hostile document could try.
+ * How many annotations may be listed: the host answer's own bound, derived from the answer ceiling and past any real
+ * document (ADR-0130 Decision 3), so the walk stops where the wire would refuse rather than at a guess about documents.
+ * The renderer receives the list in parts.
  *
  * The caller is told when the bound stopped the walk, because *this document
- * has that many* and *you asked for that many* are different answers and a
+ * has that many* and *the walk stopped* are different answers and a
  * surface offering to act on all of them would act on some.
  */
-const MAX_LISTED = 4096;
+const MAX_LISTED = ENGINE_ANNOTATIONS_MAX;
 
 /**
  * Every annotation in the document, in page order.

@@ -1865,11 +1865,15 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      * Seeded rather than canned, for `pageLinks`' reason. A document with no
      * outline is the common case, so an unseeded shim answers with none.
      */
-    'document.destinations': ({ docId }) => {
+    'document.destinations': ({ docId, from }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
 
-      return Promise.resolve(ok({ version: asDocVersion(current), destinations }));
+      // ONE PART, the LAST, for all three lists here: a seeded list is a handful of entries, and what a case about
+      // reading in parts asserts is `readWholeList`'s, against a client that answers several.
+      return Promise.resolve(
+        ok({ version: asDocVersion(current), destinations: destinations.slice(from), next: null, truncated: false }),
+      );
     },
 
     /**
@@ -1903,7 +1907,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      * the panel renders what it is handed, and a shim inventing annotations
      * would be the shim under test.
      */
-    'document.annotations': ({ docId }) => {
+    'document.annotations': ({ docId, from }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
       // SEEDED WHEN A CASE ASKS, empty otherwise: a page layer that draws existing marks is
@@ -1912,7 +1916,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(
         ok({
           version: asDocVersion(current),
-          annotations: (options.annotations ?? []).map((annotation) => ({
+          annotations: (options.annotations ?? []).slice(from).map((annotation) => ({
             ...annotation,
             style: { colour: [1, 0, 0], opacity: 1, borderWidth: null },
             contents: '',
@@ -1926,6 +1930,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
             created: annotation.created ?? null,
             blend: annotation.blend ?? 'normal',
           })),
+          next: null,
           truncated: false,
         }),
       );
@@ -1943,11 +1948,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      *
      * The last entry repeats, for `document.layers`' reason.
      */
-    'document.formFields': ({ docId }) => {
+    'document.formFields': ({ docId, from }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
       const fields = fieldLists.length > 1 ? (fieldLists.shift() ?? []) : (fieldLists[0] ?? []);
-      return Promise.resolve(ok({ version: asDocVersion(current), fields, truncated: false }));
+      return Promise.resolve(
+        ok({ version: asDocVersion(current), fields: fields.slice(from), next: null, truncated: false }),
+      );
     },
 
     /**

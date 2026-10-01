@@ -409,7 +409,7 @@ export function remoteMupdfDestinations(
     answered(
       'engine/destinations',
       await client['engine/destinations']({ session: sessions.handleFor(session) }),
-    ).destinations;
+    );
 }
 
 /** The document's layers, over the boundary. See {@link remoteMupdfDestinations}. */

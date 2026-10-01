@@ -432,6 +432,7 @@ import { shortcutRows, withChosenShortcuts } from './surfaces/shortcutChoice.js'
 import { StartFooter } from './surfaces/StartFooter.js';
 import { TitleBar } from './surfaces/TitleBar.js';
 import { useWindowControlsOverlay } from './windowControlsOverlay.js';
+import { readWholeList } from './readWholeList.js';
 import { DropTarget } from './surfaces/DropTarget.js';
 import { StartScreen } from './surfaces/StartScreen.js';
 import { ViewProblem } from './surfaces/ViewProblem.js';
@@ -1772,8 +1773,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    */
   const listAnnotations = useCallback(async () => {
     if (activeId === undefined) return undefined;
-    const answer = await client['document.annotations']({ docId: activeId });
-    return answer.ok ? answer.value : undefined;
+    const answer = await readWholeList(
+      (from) => client['document.annotations']({ docId: activeId, from }),
+      (part) => part.annotations,
+    );
+    return answer.ok ? { version: answer.value.version, annotations: answer.value.items } : undefined;
   }, [activeId, client]);
   /**
    * The selection, if it still describes the document on screen.

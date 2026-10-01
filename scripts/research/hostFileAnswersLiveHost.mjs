@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * The child of `hostFileAnswersLive.mjs`: a real shell editing text through the real PDFium host on a page drawn one
- * text object per glyph, and reading a 3,000-field form's field list through the real MuPDF host.
+ * text object per glyph, and reading a 5,000-field form's field list through the real MuPDF host, in parts.
  *
  * ## Why this exists
  *
@@ -56,8 +56,12 @@ const GLYPHS = 1600;
 /** What the edited block says afterwards: words the generated page does not contain. */
 const EDITED = 'Edited through the real host';
 
-/** How many text fields the generated form has: enough that its field list exceeds a frame (531,355 B, measured). */
-const FORM_FIELDS = 3000;
+/**
+ * How many text fields the generated form has: enough that its field list exceeds a frame (3,000 fields measured
+ * 531,355 B) AND one part of `document.formFields` (`FORM_FIELDS_PART`, 4,096), so the renderer's list crosses in two
+ * parts cut by main's real handler (ADR-0130 Decision 2).
+ */
+const FORM_FIELDS = 5000;
 
 /**
  * How many pages the rotated document has: enough that rotating every page captures a prior larger than a frame —
@@ -423,8 +427,23 @@ async function main() {
     /** @type {any} */
     let formFields = null;
     if (form?.ok === true && form.value.kind === 'opened') {
-      const listed = await observed(() => handlers['document.formFields']({ docId: form.value.docId }));
-      formFields = listed?.ok === true ? { count: listed.value.fields.length, truncated: listed.value.truncated } : listed;
+      // EVERY PART, as `readWholeList` asks for them: the count is the list's only when each part was asked for.
+      const docId = form.value.docId;
+      let from = 0;
+      let count = 0;
+      let parts = 0;
+      /** @type {any} */
+      let listed = null;
+      for (;;) {
+        const at = from;
+        listed = await observed(() => handlers['document.formFields']({ docId, from: at }));
+        if (listed?.ok !== true) break;
+        parts += 1;
+        count += listed.value.fields.length;
+        if (listed.value.next === null) break;
+        from = listed.value.next;
+      }
+      formFields = listed?.ok === true ? { count, parts, truncated: listed.value.truncated } : listed;
     } else {
       formFields = form;
     }

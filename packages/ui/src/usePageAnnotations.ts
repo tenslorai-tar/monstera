@@ -2,6 +2,8 @@ import type { AnnotationKindName, ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 import { useEffect, useState } from 'react';
 
+import { readWholeList } from './readWholeList.js';
+
 /** One existing annotation as a layer over its page draws it: which one, what kind, and where. */
 export interface PageAnnotation {
   /** Its place in the page's walk (ADR-0041) — the layer's React key, never a handle it acts on. */
@@ -63,7 +65,10 @@ export function usePageAnnotations(
     if (client === undefined || docId === undefined || version === undefined) return;
     let cancelled = false;
 
-    void client['document.annotations']({ docId }).then(
+    void readWholeList(
+      (from) => client['document.annotations']({ docId, from }),
+      (part) => part.annotations,
+    ).then(
       (answer) => {
         if (cancelled) return;
         // A REFUSAL AND A STALE VERSION BOTH DRAW NOTHING, and both are recorded as answered
@@ -73,7 +78,7 @@ export function usePageAnnotations(
           return;
         }
         const grouped = new Map<number, PageAnnotation[]>();
-        for (const annotation of answer.value.annotations) {
+        for (const annotation of answer.value.items) {
           const onPage = grouped.get(annotation.page) ?? [];
           onPage.push({ index: annotation.index, kind: annotation.kind, rect: annotation.rect });
           grouped.set(annotation.page, onPage);

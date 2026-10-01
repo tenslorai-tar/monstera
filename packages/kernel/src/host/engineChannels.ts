@@ -273,17 +273,19 @@ const linkBoundsSchema = z
   .strict();
 
 /**
- * How many outline entries may cross, and how long a title may be.
+ * How many outline entries one answer may carry, and how long a title may be.
  *
- * Counts and a length, because those are the two axes a document controls.
- * A long technical manual carries hundreds of headings; four thousand is past
- * what a panel could present and short of what a hostile document could try.
+ * {@link ENGINE_ANNOTATIONS_MAX}' derivation: the answer ceiling over {@link SMALLEST_DESTINATION_BYTES} and a comma,
+ * rounded down to a hundred, which no real outline reaches (ADR-0130 Decision 3). It was 4,096, and the walk cut a
+ * longer outline in silence.
  *
  * The title length is generous for the same reason every bound here is: the
  * lower bound is the real constraint, and a heading of 512 characters is one a
  * panel truncates rather than one it refuses to show.
  */
-export const ENGINE_DESTINATIONS_MAX = 4096;
+export const ENGINE_DESTINATIONS_MAX = 239_600;
+/** The fewest bytes one outline entry serialises to on this wire. Measured by `engineChannels.test.ts`. */
+export const SMALLEST_DESTINATION_BYTES = 34;
 export const ENGINE_DESTINATION_TITLE_MAX = 512;
 
 /**
@@ -361,32 +363,39 @@ export const ENGINE_DUPLICATE_PAGES_MAX = 4096;
 export const ENGINE_EXTRACT_PAGES_MAX = 4096;
 
 /**
- * How many annotations may be listed in one answer, and how much of a note.
+ * How many annotations one answer may list — a bound against a HOSTILE host, derived, and one no real document
+ * reaches ([ADR-0130](../../../../docs/DECISIONS/0130-a-documents-size-never-refuses-an-action.md) Decision 3) — and
+ * how much of a note.
  *
- * The duplicate bound's number for the duplicate bound's reason: a heavily
- * reviewed document carries thousands of comments and is ordinary rather than
- * hostile. Stated rather than shared for {@link ENGINE_EXTRACT_PAGES_MAX}'s
- * reason — two bounds that happen to agree are not one bound.
+ * It was 4,096, a guess about real documents, and a heavily reviewed document carries thousands of comments. What
+ * stays is the most annotations an answer within `ENGINE_ANSWER_FILE_MAX_BYTES` (8 MiB, ADR-0125) could carry at the
+ * smallest one serialises to, {@link SMALLEST_ANNOTATION_BYTES}, and a comma: the division, rounded down to a hundred.
+ * The renderer receives the list in parts (`document.annotations`), so this is never what a panel shows. A literal
+ * for `ENGINE_TEXT_OBJECTS_MAX`' reason, held to the division by `engineChannels.test.ts`.
  *
  * The note is much smaller, because it is text a hostile document controls and
  * a panel shows one line of it. It is a SLICE rather than a refusal: a note
  * longer than this is still a note, and refusing the annotation would hide it.
  */
-export const ENGINE_ANNOTATIONS_MAX = 4096;
+export const ENGINE_ANNOTATIONS_MAX = 44_100;
+/** The fewest bytes one annotation serialises to on this wire. Measured by `engineChannels.test.ts`. */
+export const SMALLEST_ANNOTATION_BYTES = 189;
 export const ENGINE_ANNOTATION_CONTENTS_MAX = 512;
 
 /**
- * How many form fields may be listed, and how much of a value, name or option.
+ * How many form fields one answer may list, and how much of a value, name or option.
  *
- * {@link ENGINE_ANNOTATIONS_MAX}' numbers for its reason, stated rather than
- * shared: a generated form pack carries fields in the thousands and is ordinary
- * rather than hostile, and two bounds that happen to agree are not one bound.
+ * {@link ENGINE_ANNOTATIONS_MAX}' derivation one noun along: a generated form pack carries fields in the thousands
+ * and is ordinary, so the count is the hostile-host bound — the answer ceiling over
+ * {@link SMALLEST_FORM_FIELD_BYTES} and a comma, rounded down to a hundred (ADR-0130 Decision 3).
  *
  * The text is a SLICE rather than a refusal for the note's reason — a value
  * longer than this is still a value, and refusing the field would hide it from
  * the list it belongs in.
  */
-export const ENGINE_FORM_FIELDS_MAX = 4096;
+export const ENGINE_FORM_FIELDS_MAX = 77_600;
+/** The fewest bytes one form field serialises to on this wire. Measured by `engineChannels.test.ts`. */
+export const SMALLEST_FORM_FIELD_BYTES = 107;
 export const ENGINE_FORM_FIELD_TEXT_MAX = 512;
 export const ENGINE_FORM_FIELD_OPTIONS_MAX = 512;
 /** How many values one field may carry. The contract's bound, on this wire. */
@@ -2408,7 +2417,9 @@ export const engineChannels = {
    * per-operation growth to bound.
    *
    * Bounded anyway, by count, because the host is hostile by invariant 25's own
-   * premise and *an author would not do that* is not a guarantee.
+   * premise — at {@link ENGINE_DESTINATIONS_MAX}, derived and past any real
+   * outline. The whole outline crosses to `main` here in a file; the renderer
+   * receives it in parts (`document.destinations`).
    */
   'engine/destinations': fileAnswered(
     'Reads the document’s outline from a session this host holds.',
@@ -2416,6 +2427,8 @@ export const engineChannels = {
     z
       .object({
         destinations: z.array(engineDestinationSchema).max(ENGINE_DESTINATIONS_MAX),
+        /** Whether the bound stopped the walk. See `engine/duplicate-pages`. */
+        truncated: z.boolean(),
       })
       .strict(),
     ['no-such-session'],

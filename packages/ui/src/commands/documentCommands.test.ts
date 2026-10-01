@@ -3475,7 +3475,7 @@ describe('generate table of contents', () => {
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
       if (id === 'document.destinations') {
-        return Promise.resolve(ok({ version: asDocVersion(1), destinations }));
+        return Promise.resolve(ok({ version: asDocVersion(1), destinations, next: null, truncated: false }));
       }
       return Promise.resolve(
         ok({ version: asDocVersion(2), byteLength: 8192, historyDropped: 0 }),
@@ -3502,7 +3502,7 @@ describe('generate table of contents', () => {
     // `CONTEXT.page + 1`, which is what every other insert here sends and would
     // put a table of contents in the middle of the document.
     expect(sent).toStrictEqual([
-      { id: 'document.destinations', params: { docId: DOC } },
+      { id: 'document.destinations', params: { docId: DOC, from: 0 } },
       { id: 'document.execute', params: { docId: DOC, command: { kind: 'generateToc', at: 0 } } },
     ]);
     expect(record.applied).toStrictEqual([
@@ -3525,7 +3525,7 @@ describe('generate table of contents', () => {
       ask: record.ask,
     }).run(CONTEXT);
 
-    expect(sent).toStrictEqual([{ id: 'document.destinations', params: { docId: DOC } }]);
+    expect(sent).toStrictEqual([{ id: 'document.destinations', params: { docId: DOC, from: 0 } }]);
     // AND THE USER WAS TOLD. Returning quietly is the display-only failure —
     // a control that ran and appeared to do nothing.
     expect(record.shown).toStrictEqual([

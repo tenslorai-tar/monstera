@@ -36,6 +36,7 @@ import {
 import { pdfjsPageOf } from './pageNumbering.js';
 import { IconButton } from './primitives/IconButton.js';
 import { ICONS } from './primitives/icons.js';
+import { readWholeList } from './readWholeList.js';
 
 /**
  * Every annotation in the document, with a jump to the page each sits on.
@@ -107,7 +108,10 @@ export function AnnotationsPanel({
     if (docId === undefined || version === undefined) return;
     let cancelled = false;
 
-    void client['document.annotations']({ docId }).then(
+    void readWholeList(
+      (from) => client['document.annotations']({ docId, from }),
+      (part) => part.annotations,
+    ).then(
       (answer) => {
         if (cancelled) return;
         // A REFUSAL IS ITS OWN STATE, not an empty list. *This document has no
@@ -119,8 +123,8 @@ export function AnnotationsPanel({
             ? {
                 kind: 'listed',
                 version,
-                annotations: answer.value.annotations,
-                truncated: answer.value.truncated,
+                annotations: answer.value.items,
+                truncated: answer.value.last.truncated,
               }
             : { kind: 'unavailable', version },
         );

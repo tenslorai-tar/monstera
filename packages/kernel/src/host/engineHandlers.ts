@@ -9,7 +9,7 @@ import type { ByteImage, DocumentAccess, EngineWriter, MupdfSession, PreReadValu
 // loads no engine.
 import { DocumentLocked } from '../engineSeam.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
-import type { Destination } from '../destinations.js';
+import type { ListedDestinations } from '../destinations.js';
 import type { Layer } from '../layers.js';
 import type { ReadSignature } from '../signatureRead.js';
 import type { FlatFieldCandidate } from '../flatFields.js';
@@ -122,9 +122,7 @@ export type HostOcrReader = (
  * property of the document, and a per-page parameter would be a signature
  * inviting a caller to ask a question this has no answer to.
  */
-export type HostDestinationsReader = (
-  session: MupdfSession,
-) => Promise<readonly Destination[]>;
+export type HostDestinationsReader = (session: MupdfSession) => Promise<ListedDestinations>;
 
 /** Reads the document's layers. Injected for the readers above's reason. */
 export type HostLayersReader = (session: MupdfSession) => Promise<readonly Layer[]>;
@@ -845,7 +843,8 @@ export function createEngineHandlers({
     'engine/destinations': async ({ session }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
-      return { ok: true, value: { destinations: [...(await destinations(held.session))] } };
+      const listed = await destinations(held.session);
+      return { ok: true, value: { destinations: [...listed.destinations], truncated: listed.truncated } };
     },
 
     'engine/layers': async ({ session }) => {

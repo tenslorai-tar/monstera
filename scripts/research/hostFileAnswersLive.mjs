@@ -24,9 +24,10 @@
  * PDFium and the container grants, reports UNVERIFIABLE through `unverifiable.mjs` wherever one is missing, and
  * `--require-containment` turns that into a failure.
  *
- * **The MuPDF host, the one that holds the document**, is driven with a generated 3,000-field form: its field list
- * answered 531,355 bytes when measured, over a frame, and a host ending there would take the document's session
- * with it. Its control is the same: the answer is measured and must exceed a frame.
+ * **The MuPDF host, the one that holds the document**, is driven with a generated 5,000-field form: a 3,000-field
+ * form's list answered 531,355 bytes when measured, over a frame, and a host ending there would take the document's
+ * session with it. Its control is the same: the answer is measured and must exceed a frame. Five thousand is past one
+ * part of `document.formFields`, so the list reaches the harness in two parts cut by main's own handler (ADR-0130).
  *
  * **Undo's pair** (ADR-0125's addendum) is driven by rotating every page of a generated 10,000-page document and undoing
  * it: the capture answers in a file and the undo sends the same prior back as `engine/invert`'s request in one. The
@@ -73,7 +74,7 @@ const CASES = [
   'no host ended and no incident was recorded during the run',
   'CONTROL: and the harness process itself exited CLEANLY',
   'CONTROL: the generated form’s field list is larger than a frame can carry',
-  'the real MuPDF host answered the 3,000-field form’s field list, whole',
+  'the real MuPDF host answered the 5,000-field form’s field list, whole, and main handed it over in parts',
   'CONTROL: rotating every page of the 10,000-page document captures a prior larger than a frame can carry',
   'the real MuPDF host rotated every page, first and last read back turned',
   'undo sent the prior back through the real MuPDF host, and first and last read back upright',
@@ -211,7 +212,7 @@ if (!runnable) {
   );
   check(
     CASES[9] ?? '',
-    seen.formFields?.count === seen.formFieldCount && seen.formFields?.truncated === false,
+    seen.formFields?.count === seen.formFieldCount && seen.formFields?.parts >= 2 && seen.formFields?.truncated === false,
     `document.formFields answered ${JSON.stringify(seen.formFields)} against ${String(seen.formFieldCount)} fields ` +
       'in the form. An error here, with the failures case red, is the MuPDF host ending on the answer.',
   );

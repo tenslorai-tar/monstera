@@ -60,6 +60,7 @@ function clientAnswering(
         : ok({
             version: asDocVersion(options.version ?? 1),
             annotations: rows,
+            next: null,
             truncated: options.truncated ?? false,
           }),
     );
@@ -201,16 +202,16 @@ describe('AnnotationsPanel', () => {
     // A panel headed *the annotations in this document* that quietly showed
     // some of them is the display-only sin in a list, and the flag exists
     // precisely because the renderer cannot tell *this document has that many*
-    // from *you asked for that many*.
+    // from *the walk stopped*.
     await panel([{ page: 0, index: 0, kind: 'square', contents: '', authored: true }], { truncated: true });
-    expect(screen.getByText(/Only the first/u)).toBeTruthy();
+    expect(screen.getByText(/the rest are not listed/u)).toBeTruthy();
   });
 
   it('CONTROL: an untruncated list says nothing of the kind', async () => {
     // Without this the case above is satisfied by a panel that always shows the
     // notice — which would tell every reader their list is incomplete.
     await panel([{ page: 0, index: 0, kind: 'square', contents: '', authored: true }]);
-    expect(screen.queryByText(/Only the first/u)).toBeNull();
+    expect(screen.queryByText(/the rest are not listed/u)).toBeNull();
   });
 
   it('separates a document with no annotations from one it could not read', async () => {
@@ -227,7 +228,7 @@ describe('AnnotationsPanel', () => {
 
   it('asks about the document rather than a page, which is what the panel lists', async () => {
     const { asked } = await panel([]);
-    expect(asked).toStrictEqual([{ docId: DOC }]);
+    expect(asked).toStrictEqual([{ docId: DOC, from: 0 }]);
   });
 
   it('dispatches the HANDLE its row was drawn from, not the row position', async () => {

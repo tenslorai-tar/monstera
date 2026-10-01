@@ -71,6 +71,7 @@ import {
   type DocumentService,
   type PageGeometry,
   type Destination,
+  type ListedDestinations,
   type DuplicatePageGroup,
   type ListedAnnotation,
   type ListedField,
@@ -1378,7 +1379,7 @@ export interface DocumentPageLinks {
 export type DocumentDestinationsReader = (
   docId: DocId,
   sessions: DocumentSessions,
-) => Promise<readonly Destination[]>;
+) => Promise<ListedDestinations>;
 
 /**
  * Recognises one page's text, through the engine host.
@@ -1402,6 +1403,8 @@ export type DocumentOcrReader = (
 export interface DocumentDestinations {
   readonly version: DocVersion;
   readonly destinations: readonly Destination[];
+  /** Whether the walk stopped at its bound, which no real outline reaches (ADR-0130 Decision 3). */
+  readonly truncated: boolean;
 }
 
 /**
@@ -2746,7 +2749,7 @@ export class DocumentCommands {
       return this.#destinations(docId, sessions);
     });
 
-    return { version, destinations: value };
+    return { version, destinations: value.destinations, truncated: value.truncated };
   }
 
   /**
@@ -3398,7 +3401,9 @@ export class DocumentCommands {
       // THE REFRESH'S ROUTE (ADR-0121 Decision 2): the session's bytes placed in the file the service names.
       currentInto: async (destination) => placeStaged(await this.#save.stage(docId, live()), destination),
       adopt: (write) => this.#restore(docId, write),
-      outline: () => this.#destinations(docId, live()),
+      // THE LIST, not the flag: a table of contents is built from the entries there are, and the walk's bound is one
+      // no real outline reaches (ADR-0130 Decision 3).
+      outline: async () => (await this.#destinations(docId, live())).destinations,
       // ADR-0051's member, and the one that takes an argument. The request is the
       // command's own — the declaration builds it — and this closure adds the
       // document, which is what the bus cannot name.

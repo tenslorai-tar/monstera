@@ -266,6 +266,9 @@ const handlers: ContractHandlers = {
           { title: 'A section', page: 3, depth: 1 },
           { title: 'Somewhere unresolvable', page: null, depth: 1 },
         ],
+        // A PART WITH A NEXT, so a boundary that dropped or defaulted `next` to null would read as the last part.
+        next: 3,
+        truncated: false,
       }),
     ),
   // ONE VISIBLE AND ONE HIDDEN, because a fixture where everything is visible
@@ -287,7 +290,7 @@ const handlers: ContractHandlers = {
   // and the case below is what separates them.
   'document.annotations': () =>
     Promise.resolve(
-      ok({ version: asDocVersion(1), annotations: [], truncated: false }),
+      ok({ version: asDocVersion(1), annotations: [], next: null, truncated: false }),
     ),
   // TWO FIELDS OF DIFFERENT KINDS, for the duplicate fixture's reason and one
   // more of its own: a boundary that dropped everything after the first would
@@ -322,6 +325,7 @@ const handlers: ContractHandlers = {
             rect: null,
           },
         ],
+        next: null,
         truncated: false,
       }),
     ),

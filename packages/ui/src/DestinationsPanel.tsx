@@ -6,10 +6,12 @@ import { type ReactElement, useEffect, useState } from 'react';
 import {
   DESTINATIONS_EMPTY,
   DESTINATIONS_LABEL,
+  DESTINATIONS_TRUNCATED,
   DESTINATIONS_UNAVAILABLE,
   DESTINATION_UNRESOLVED,
 } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
+import { readWholeList } from './readWholeList.js';
 
 /**
  * The document's outline — its named destinations, as a reader would recognise
@@ -65,12 +67,15 @@ export function DestinationsPanel({
     if (docId === undefined || version === undefined) return;
     let cancelled = false;
 
-    void client['document.destinations']({ docId }).then(
+    void readWholeList(
+      (from) => client['document.destinations']({ docId, from }),
+      (part) => part.destinations,
+    ).then(
       (answer) => {
         if (cancelled) return;
         setState(
           answer.ok
-            ? { kind: 'outline', docId, destinations: answer.value.destinations }
+            ? { kind: 'outline', docId, destinations: answer.value.items, truncated: answer.value.last.truncated }
             : { kind: 'unavailable', docId },
         );
       },
@@ -131,6 +136,9 @@ export function DestinationsPanel({
           })}
         </ul>
       )}
+      {state.kind === 'outline' && state.truncated ? (
+        <p className="m-destinations-empty">{i18n._(DESTINATIONS_TRUNCATED)}</p>
+      ) : null}
     </nav>
   );
 }
@@ -161,4 +169,6 @@ type PanelState =
       readonly kind: 'outline';
       readonly docId: DocId;
       readonly destinations: readonly PanelDestination[];
+      /** Whether the walk stopped at its bound — said, never left as a shorter outline (ADR-0130). */
+      readonly truncated: boolean;
     };

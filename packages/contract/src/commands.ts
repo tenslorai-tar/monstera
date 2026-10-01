@@ -2296,11 +2296,10 @@ export const addAnnotationSchema = z.object({
  * How many annotations one removal may name.
  *
  * `MAX_POLYGON_POINTS`' kind of bound and not the channel's: this is **intent**
- * — how many marks a person selected on one page — where `MAX_ANNOTATIONS`
- * bounds a document-scaled read. The two numbers are deliberately unrelated and
- * stated separately, which is `MAX_ANNOTATIONS`' own note about
- * `MAX_DUPLICATE_PAGES` applied one noun along: two bounds that happen to agree
- * are not one bound.
+ * — how many marks a person selected on one page — where `ANNOTATIONS_PART`
+ * bounds one part of a document-scaled read. The two numbers are deliberately
+ * unrelated and stated separately: two bounds that happen to agree are not one
+ * bound.
  *
  * Far past what a marquee over one page collects and far short of what a
  * hostile renderer could try.
@@ -3383,9 +3382,11 @@ export const MAX_FIND_TEXT = 512;
  * were not marked* is the failure the whole feature exists to prevent. The
  * kernel refuses the page rather than marking a prefix of it.
  *
- * 4,096 is `MAX_ANNOTATIONS`' own bound: a page that would carry more redact
- * marks than the annotation channel can report is one nothing downstream could
- * show a person anyway.
+ * 4,096 was the annotation channel's bound, and that reason went on 2026-10-01:
+ * the channel now crosses in parts (ADR-0130), so what stands is that
+ * `max_hits` must be a number. A dense page carries about 500 words, so 4,096
+ * matches on ONE page is every word eight times over; `docs/JOURNAL.md`' entry
+ * *No document-size refusals* records it with the rest of the class.
  */
 export const MAX_REDACT_MATCHES_PER_PAGE = 4096;
 
@@ -4052,7 +4053,7 @@ export const createFormFieldSchema = z.object({
  * How many characters one replaced text run may carry.
  *
  * {@link MAX_FIELD_VALUE}'s number and, deliberately, not its argument — two
- * bounds that happen to agree are not one bound (`MAX_ANNOTATIONS`' own note).
+ * bounds that happen to agree are not one bound.
  * This one bounds **a page object's string**, and the reasoning is the
  * document's rather than a person's typing: a PDF text object is one show
  * operation's worth of glyphs, and a page's whole text is what `MAX_PAGE_TEXT`

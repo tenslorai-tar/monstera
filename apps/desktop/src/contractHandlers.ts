@@ -1,6 +1,9 @@
 import {
   AI_PROVIDERS,
   AI_PROVIDER_IDS,
+  ANNOTATIONS_PART,
+  DESTINATIONS_PART,
+  FORM_FIELDS_PART,
   type AiModelListAnswer,
   type AiProviderId,
   CHAT_HISTORY_STORED,
@@ -2195,7 +2198,28 @@ function pageLinksHandler(commands: DocumentCommands): ContractHandlers['documen
 }
 
 /**
- * The document's outline, flattened.
+ * One part of a list that grows with the document: at most `size` items beginning at `from`, where the next part
+ * begins, and the walk's `truncated` on the LAST part only
+ * ([ADR-0130](../../../docs/DECISIONS/0130-a-documents-size-never-refuses-an-action.md) Decision 2).
+ *
+ * The one place a part is cut, for the three channels that answer in parts — a second slicing would be a second
+ * opinion about where a part ends (B3a). The whole list is read for each part; the read is the one that already
+ * crossed whole, and caching it per version is an economy, not a correctness question. A `from` past the end answers
+ * an empty last part rather than a refusal: the list is shorter than the caller thought, which is an answer.
+ */
+export function listPart<T>(
+  whole: readonly T[],
+  truncated: boolean,
+  from: number,
+  size: number,
+): { readonly items: readonly T[]; readonly next: number | null; readonly truncated: boolean } {
+  const end = from + size;
+  const next = end < whole.length ? end : null;
+  return { items: whole.slice(from, end), next, truncated: next === null && truncated };
+}
+
+/**
+ * The document's outline, flattened, a part at a time.
  *
  * The three refusals are the two readers above's, and for the same reason: an
  * outline read needs an engine session.
@@ -2205,10 +2229,12 @@ function destinationsHandler(
 ): ContractHandlers['document.destinations'] {
   return async ({
     docId,
+    from,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.destinations']>>> => {
     try {
-      const { version, destinations } = await commands.destinations(docId);
-      return ok({ version, destinations });
+      const read = await commands.destinations(docId);
+      const part = listPart(read.destinations, read.truncated, from, DESTINATIONS_PART);
+      return ok({ version: read.version, destinations: part.items, next: part.next, truncated: part.truncated });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
@@ -2269,10 +2295,12 @@ function annotationsHandler(
 ): ContractHandlers['document.annotations'] {
   return async ({
     docId,
+    from,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.annotations']>>> => {
     try {
-      const { version, annotations, truncated } = await commands.annotations(docId);
-      return ok({ version, annotations, truncated });
+      const read = await commands.annotations(docId);
+      const part = listPart(read.annotations, read.truncated, from, ANNOTATIONS_PART);
+      return ok({ version: read.version, annotations: part.items, next: part.next, truncated: part.truncated });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
@@ -2478,10 +2506,12 @@ function renderPageHandler(commands: DocumentCommands): ContractHandlers['docume
 function formFieldsHandler(commands: DocumentCommands): ContractHandlers['document.formFields'] {
   return async ({
     docId,
+    from,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.formFields']>>> => {
     try {
-      const { version, fields, truncated } = await commands.formFields(docId);
-      return ok({ version, fields, truncated });
+      const read = await commands.formFields(docId);
+      const part = listPart(read.fields, read.truncated, from, FORM_FIELDS_PART);
+      return ok({ version: read.version, fields: part.items, next: part.next, truncated: part.truncated });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

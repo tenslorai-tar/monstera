@@ -23,16 +23,25 @@ const OUTLINE = [
 
 function clientAnswering(
   destinations: readonly unknown[],
-  options: { refuse?: boolean } = {},
+  options: { refuse?: boolean; part?: number; truncated?: boolean } = {},
 ): { client: ContractClient; asked: unknown[] } {
   const asked: unknown[] = [];
+  // IN PARTS OF `part` when a case asks, as `main` cuts them: the last part carries the walk's flag.
+  const size = options.part ?? destinations.length;
   const client = createClient(channels, (id, params) => {
     if (id !== 'document.destinations') throw new Error(`unexpected channel ${id}`);
     asked.push(params);
+    const from = (params as { from: number }).from;
+    const next = from + size < destinations.length ? from + size : null;
     return Promise.resolve(
       options.refuse === true
         ? err({ code: 'document-busy' })
-        : ok({ version: V1, destinations }),
+        : ok({
+            version: V1,
+            destinations: destinations.slice(from, from + size),
+            next,
+            truncated: next === null && options.truncated === true,
+          }),
     );
   });
   return { client, asked };
@@ -154,7 +163,7 @@ describe('DestinationsPanel', () => {
     );
     await settle();
 
-    expect(asked).toStrictEqual([{ docId: DOC }]);
+    expect(asked).toStrictEqual([{ docId: DOC, from: 0 }]);
   });
 
   it('RE-READS when the document moves, because a command can change a page', async () => {
@@ -219,5 +228,45 @@ describe('DestinationsPanel', () => {
 
     expect(container.querySelector('.m-destinations')).toBeNull();
     expect(asked).toStrictEqual([]);
+  });
+
+  it('reads an outline that crosses in PARTS whole, and shows every entry (ADR-0130)', async () => {
+    // Parts of two: the third entry is in the second part, so a panel that asked once would show two rows.
+    const { client, asked } = clientAnswering(OUTLINE, { part: 2 });
+    const { container } = render(
+      <Wrapped>
+        <DestinationsPanel client={client} docId={DOC} version={V1} onJump={vi.fn()} />
+      </Wrapped>,
+    );
+    await settle();
+
+    expect(asked).toStrictEqual([
+      { docId: DOC, from: 0 },
+      { docId: DOC, from: 2 },
+    ]);
+    expect(container.querySelectorAll('.m-destinations-list li')).toHaveLength(3);
+    expect(container.textContent).toContain('Somewhere unresolvable');
+  });
+
+  it('says the walk stopped at its bound rather than showing a short outline as complete', async () => {
+    const { client } = clientAnswering(OUTLINE, { part: 2, truncated: true });
+    const { container } = render(
+      <Wrapped>
+        <DestinationsPanel client={client} docId={DOC} version={V1} onJump={vi.fn()} />
+      </Wrapped>,
+    );
+    await settle();
+    expect(container.textContent).toContain('the rest are not listed');
+  });
+
+  it('CONTROL: an outline the walk did not stop says nothing of the kind', async () => {
+    const { client } = clientAnswering(OUTLINE, { part: 2 });
+    const { container } = render(
+      <Wrapped>
+        <DestinationsPanel client={client} docId={DOC} version={V1} onJump={vi.fn()} />
+      </Wrapped>,
+    );
+    await settle();
+    expect(container.textContent).not.toContain('the rest are not listed');
   });
 });

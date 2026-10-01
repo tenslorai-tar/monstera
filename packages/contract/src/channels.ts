@@ -529,17 +529,30 @@ export const MAX_PAGE_LINKS = 4096;
 export const MAX_LINK_URI_LENGTH = 2048;
 
 /**
- * How many outline entries may reach the renderer, and how long a title may be.
+ * Where one PART of a list that grows with the document begins, and where the next part does
+ * ([ADR-0130](../../../docs/DECISIONS/0130-a-documents-size-never-refuses-an-action.md) Decision 2).
  *
- * The two axes a document controls. A long technical manual carries hundreds of
- * headings; four thousand is past what a panel could present and short of what
- * a hostile document could try. A 512-character heading is one a panel
- * truncates rather than one it refuses.
+ * A document-wide list — the annotations, the form fields, the outline — is answered a part at a time. The renderer
+ * asks `from` an offset; `main` answers at most a part's worth of the list beginning there, and `next`, the offset the
+ * following part begins at, or `null` when the list is complete. Each call is bounded, which is invariant 11's own
+ * term (*per operation*), and the list is as long as the document's: a person is never told a panel shows only the
+ * first few thousand.
  *
- * **The trigger:** the first document refused by either is the evidence the
- * bound is wrong, and the fix is a measurement of what that document carries.
+ * Every part carries the `version` it was cut from, so a renderer that sees the version move between two parts knows
+ * it holds halves of two lists and starts again (`readWholeList`). `next` is POSITIVE where present, so a part can
+ * never point back at the start of the list it is part of.
  */
-export const MAX_DESTINATIONS = 4096;
+export const listPartFromSchema = z.number().int().nonnegative();
+export const listPartNextSchema = z.number().int().positive().nullable();
+
+/**
+ * How many outline entries one part carries, and how long a title may be.
+ *
+ * A PART, not the outline: an outline longer than this crosses in several ({@link listPartFromSchema}). The number is
+ * the size of one call, set where a part is cheap to validate and render and far past a panel's first screen. A
+ * 512-character heading is one a panel truncates rather than one it refuses.
+ */
+export const DESTINATIONS_PART = 4096;
 
 /**
  * How many page indices an extract may name.
@@ -640,28 +653,23 @@ export const MAX_LAYERS = 1024;
 export const MAX_DUPLICATE_PAGES = 4096;
 
 /**
- * How many annotations may cross in one answer, and how much of a note.
+ * How many annotations one part carries, and how much of a note.
  *
- * {@link MAX_DUPLICATE_PAGES}' number for its reason, stated rather than
- * shared: a heavily reviewed document carries thousands of comments and is
- * ordinary rather than hostile. Two bounds that happen to agree are not one
- * bound, and tying them would move either silently.
+ * A PART, not the document's annotations: a heavily reviewed document carries thousands of comments and is ordinary,
+ * so a list longer than this crosses in several ({@link listPartFromSchema}, ADR-0130).
  *
  * The note is much smaller because it is one line in a panel, and it is a
  * SLICE rather than a refusal — a note longer than this is still a note, and
  * refusing the annotation would hide it from the list it belongs in.
  */
-export const MAX_ANNOTATIONS = 4096;
+export const ANNOTATIONS_PART = 4096;
 export const MAX_ANNOTATION_CONTENTS = 512;
 
 /**
- * How many form fields may cross, and how much of a value, name or option list.
+ * How many form fields one part carries, and how much of a value, name or option list.
  *
- * {@link MAX_ANNOTATIONS}' numbers for {@link MAX_ANNOTATIONS}' reason, stated
- * rather than shared — two bounds that happen to agree are not one bound. The
- * argument is the same one form along: the largest government form anyone has
- * put in front of this build carries fields in the hundreds, and a document
- * carrying thousands is a generated pack rather than a hostile one.
+ * A PART, for {@link ANNOTATIONS_PART}' reason one noun along: a generated form pack carries thousands of fields and is
+ * ordinary, so a form longer than this crosses in several ({@link listPartFromSchema}, ADR-0130).
  *
  * **The option bound is per FIELD, not per document**, which is the one place
  * this differs from the annotation shape: a dropdown of every country is around
@@ -674,7 +682,7 @@ export const MAX_ANNOTATION_CONTENTS = 512;
  * recording a choice. It is a bound on an array a hostile document controls,
  * not a promise about what a form may hold.
  */
-export const MAX_FORM_FIELDS = 4096;
+export const FORM_FIELDS_PART = 4096;
 export const MAX_FORM_FIELD_TEXT = 512;
 export const MAX_FORM_FIELD_OPTIONS = 512;
 export const MAX_FORM_FIELD_VALUES = 256;
@@ -4171,8 +4179,8 @@ export const channels = {
    * person acts on without asking.
    */
   'document.annotations': channel(
-    'Every annotation in the document, in page order, with what kind each is.',
-    z.object({ docId: docIdSchema }),
+    'One part of every annotation in the document, in page order, with what kind each is.',
+    z.object({ docId: docIdSchema, from: listPartFromSchema }),
     z.object({
       version: docVersionSchema,
       annotations: z
@@ -4324,15 +4332,18 @@ export const channels = {
             blend: annotationBlendSchema,
           }),
         )
-        .max(MAX_ANNOTATIONS)
+        .max(ANNOTATIONS_PART)
         .readonly(),
+      /** Where the next part begins, or `null` for the last. {@link listPartNextSchema}. */
+      next: listPartNextSchema,
       /**
-       * Whether the bound stopped the walk.
+       * Whether the walk stopped at its bound — set on the LAST part only.
        *
-       * `document.duplicatePages`' flag and its reason: without it a caller
-       * cannot tell *this document has that many* from *you asked for that
-       * many*, and a panel claiming to list a document's comments would be
-       * listing some of them.
+       * The bound is the engine host's, derived from the answer ceiling over the smallest annotation
+       * (ADR-0130 Decision 3), and no real document reaches it. The flag stays for
+       * `document.duplicatePages`' reason: without it a caller cannot tell *this document has that many*
+       * from *the walk stopped*, and a panel claiming to list a document's comments would be listing
+       * some of them.
        */
       truncated: z.boolean(),
     }),
@@ -4355,8 +4366,8 @@ export const channels = {
    * is fill it, and filling is a command.
    */
   'document.formFields': channel(
-    'Every AcroForm field in the document, in page order, with what kind each is.',
-    z.object({ docId: docIdSchema }),
+    'One part of every AcroForm field in the document, in page order, with what kind each is.',
+    z.object({ docId: docIdSchema, from: listPartFromSchema }),
     z.object({
       version: docVersionSchema,
       fields: z
@@ -4437,9 +4448,11 @@ export const channels = {
             rect: annotationRectSchema.nullable(),
           }),
         )
-        .max(MAX_FORM_FIELDS)
+        .max(FORM_FIELDS_PART)
         .readonly(),
-      /** Whether the bound stopped the walk. `document.annotations`' flag. */
+      /** Where the next part begins, or `null` for the last. {@link listPartNextSchema}. */
+      next: listPartNextSchema,
+      /** Whether the walk stopped at its bound, on the last part only. `document.annotations`' flag. */
       truncated: z.boolean(),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
@@ -4800,18 +4813,12 @@ export const channels = {
   /**
    * The document's named destinations, as its outline states them.
    *
-   * ## WHOLE-DOCUMENT, and why that is not invariant 11's concern
+   * ## WHOLE-DOCUMENT, answered in PARTS
    *
-   * L11 forbids a payload that scales with the document **per operation**. An
-   * outline scales with the number of headings an author wrote — a property of
-   * the document's structure rather than of its size, and a thousand-page scan
-   * has none. It is read once when a document opens rather than per page, so
-   * there is no per-operation growth here to bound.
-   *
-   * The contrast with `document.pageLinks` is the point: links exist per page
-   * and would grow with the document, so that channel takes one. Both are
-   * bounded by count regardless, because a bound that only exists where the
-   * invariant demands it is a bound nobody applies to the hostile case.
+   * An outline scales with the number of headings an author wrote, and a long manual's is long, so it crosses a part
+   * at a time ({@link listPartFromSchema}, ADR-0130): each call is bounded — invariant 11 is *per operation* — and the
+   * outline is as long as the document's. Until 2026-10-01 it crossed whole up to 4,096 entries and the walk cut the
+   * rest in silence.
    *
    * ## Flat with a depth, not a tree
    *
@@ -4821,11 +4828,15 @@ export const channels = {
    * because an outline's order is authored.
    */
   'document.destinations': channel(
-    'The document’s outline, flattened, with each entry’s resolved page.',
-    z.object({ docId: docIdSchema }),
+    'One part of the document’s outline, flattened, with each entry’s resolved page.',
+    z.object({ docId: docIdSchema, from: listPartFromSchema }),
     z.object({
       version: docVersionSchema,
-      destinations: z.array(outlineEntrySchema).max(MAX_DESTINATIONS).readonly(),
+      destinations: z.array(outlineEntrySchema).max(DESTINATIONS_PART).readonly(),
+      /** Where the next part begins, or `null` for the last. {@link listPartNextSchema}. */
+      next: listPartNextSchema,
+      /** Whether the walk stopped at its bound, on the last part only. `document.annotations`' flag. */
+      truncated: z.boolean(),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

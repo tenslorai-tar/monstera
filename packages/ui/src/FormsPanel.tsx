@@ -27,6 +27,7 @@ import {
   FORMS_UNAVAILABLE,
 } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
+import { readWholeList } from './readWholeList.js';
 
 /**
  * Every AcroForm field in the document, with the control that fills it.
@@ -143,7 +144,10 @@ export function FormsPanel({
     if (docId === undefined || version === undefined) return;
     let cancelled = false;
 
-    void client['document.formFields']({ docId }).then(
+    void readWholeList(
+      (from) => client['document.formFields']({ docId, from }),
+      (part) => part.fields,
+    ).then(
       (answer) => {
         if (cancelled) return;
         // A REFUSAL IS ITS OWN STATE, not an empty list — `AnnotationsPanel`'s
@@ -155,8 +159,8 @@ export function FormsPanel({
             ? {
                 kind: 'listed',
                 version,
-                fields: answer.value.fields,
-                truncated: answer.value.truncated,
+                fields: answer.value.items,
+                truncated: answer.value.last.truncated,
               }
             : { kind: 'unavailable', version },
         );

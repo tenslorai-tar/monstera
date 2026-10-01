@@ -2,6 +2,7 @@ import type { OutlineEntry } from '@monstera/contract';
 import type * as mupdf from './mupdfRaw.js';
 
 import type { MupdfSession } from './engineSeam.js';
+import { ENGINE_DESTINATIONS_MAX } from './host/engineChannels.js';
 import { withDocument } from './mupdfWriter.js';
 
 /**
@@ -93,14 +94,12 @@ export type Destination = Readonly<OutlineEntry>;
 const MAX_DEPTH = 10;
 
 /**
- * How many entries cross.
- *
- * The same argument as the depth, on the axis a real document actually
- * stretches: a long technical manual carries hundreds of headings. Four
- * thousand is past what a panel could present and short of what a hostile
- * document could try.
+ * How many entries cross: the host answer's own bound, derived from the answer ceiling and past any real outline
+ * (ADR-0130 Decision 3). It was 4,096, and the walk stopped there IN SILENCE — a longer outline lost its tail with
+ * nothing to say so. It now says so ({@link ListedDestinations}' `truncated`), and the renderer receives the outline in
+ * parts.
  */
-const MAX_ENTRIES = 4096;
+const MAX_ENTRIES = ENGINE_DESTINATIONS_MAX;
 
 /**
  * What this reader needs from an outline entry.
@@ -127,23 +126,33 @@ interface MupdfOutlineItem {
   readonly down?: readonly MupdfOutlineItem[] | undefined;
 }
 
+/** The outline, flattened, and whether the walk stopped at {@link MAX_ENTRIES}. */
+export interface ListedDestinations {
+  readonly destinations: readonly Destination[];
+  readonly truncated: boolean;
+}
+
 /** Reads the document's outline, flattened. */
-export function readDestinations(session: MupdfSession): Promise<readonly Destination[]> {
+export function readDestinations(session: MupdfSession): Promise<ListedDestinations> {
   return withDocument(session, (document) => flatten(document));
 }
 
-function flatten(document: mupdf.PDFDocument): readonly Destination[] {
+function flatten(document: mupdf.PDFDocument): ListedDestinations {
   // NULL IS "THIS DOCUMENT HAS NO OUTLINE", which is the common case and not a
   // failure — most documents carry none. An empty list is the honest answer and
   // a panel says so.
   const outline = document.loadOutline();
-  if (outline === null) return [];
+  if (outline === null) return { destinations: [], truncated: false };
 
   const found: Destination[] = [];
+  let truncated = false;
   const walk = (items: readonly MupdfOutlineItem[], depth: number): void => {
     if (depth > MAX_DEPTH) return;
     for (const item of items) {
-      if (found.length >= MAX_ENTRIES) return;
+      if (found.length >= MAX_ENTRIES) {
+        truncated = true;
+        return;
+      }
       found.push({
         // A TITLE IS REQUIRED BY THE SHAPE AND OPTIONAL IN THE FORMAT. An entry
         // with none is a row a reader cannot identify, so it takes the empty
@@ -157,5 +166,5 @@ function flatten(document: mupdf.PDFDocument): readonly Destination[] {
     }
   };
   walk(outline, 0);
-  return found;
+  return { destinations: found, truncated };
 }

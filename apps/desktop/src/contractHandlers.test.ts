@@ -1557,6 +1557,42 @@ settings: createEphemeralSettings(),
   });
 });
 
+/**
+ * The three lists that cross in parts (ADR-0130 Decision 2), through the REAL handlers: `main` reads the whole list
+ * and cuts the part. A list of 5,000 is past one part of each (4,096), so the first answer names a next and the second
+ * is the last — and a handler that answered the whole list, or the first part with no next, fails here.
+ */
+describe('a document-wide list answers in parts', () => {
+  const OPENED = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' } as const;
+  const LENGTH = 5000;
+  const numbered = Array.from({ length: LENGTH }, (_, at) => at);
+  // THE WALK'S FLAG IS SET, so the case separates a handler that carries it on every part from one that carries it
+  // on the last only — a list cut mid-way has not stopped at a bound.
+  const commands = {
+    annotations: () => Promise.resolve({ version: asDocVersion(7), annotations: numbered, truncated: true }),
+    formFields: () => Promise.resolve({ version: asDocVersion(7), fields: numbered, truncated: true }),
+    destinations: () => Promise.resolve({ version: asDocVersion(7), destinations: numbered, truncated: true }),
+  } as unknown as DocumentCommands;
+  const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands });
+
+  const cases = [
+    ['document.annotations', (value: object) => (value as { annotations: unknown[] }).annotations],
+    ['document.formFields', (value: object) => (value as { fields: unknown[] }).fields],
+    ['document.destinations', (value: object) => (value as { destinations: unknown[] }).destinations],
+  ] as const;
+
+  for (const [name, itemsOf] of cases) {
+    it(`${name}: the first part names the next, the second is the last, and together they are the list`, async () => {
+      const first = await handlers[name]({ docId: A_DOC, from: 0 });
+      const second = await handlers[name]({ docId: A_DOC, from: 4096 });
+      if (!first.ok || !second.ok) throw new Error(`${name} refused a part`);
+      expect(first.value).toMatchObject({ version: 7, next: 4096, truncated: false });
+      expect(second.value).toMatchObject({ version: 7, next: null, truncated: true });
+      expect([...itemsOf(first.value), ...itemsOf(second.value)]).toStrictEqual(numbered);
+    });
+  }
+});
+
 /** The handle this registry would mint for a path, without minting a new one. */
 function asFileHandleFrom(registry: CapabilityRegistry, path: string): FileHandle {
   // `mint` is idempotent per path, so this is the handle the handler would have

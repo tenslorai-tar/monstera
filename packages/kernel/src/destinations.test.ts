@@ -73,7 +73,8 @@ describe('readDestinations', () => {
   it('flattens the tree, keeping the DEPTH and the authored order', async () => {
     const session = await mupdfWriter.open(await documentWithOutline());
     try {
-      const found = await readDestinations(session);
+      const { destinations: found, truncated } = await readDestinations(session);
+      expect(truncated).toBe(false);
 
       // DEPTH-FIRST: the child comes between its parent and the parent's
       // sibling. A breadth-first walk produces the same three entries in a
@@ -94,7 +95,7 @@ describe('readDestinations', () => {
     // entry's index, or zero, or the page after, fails here.
     const session = await mupdfWriter.open(await documentWithOutline());
     try {
-      const found = await readDestinations(session);
+      const found = (await readDestinations(session)).destinations;
       expect(found[0]?.page).toBe(1);
       expect(found[1]?.page).toBe(2);
     } finally {
@@ -109,7 +110,7 @@ describe('readDestinations', () => {
     // as JSON.
     const session = await mupdfWriter.open(await documentWithOutline());
     try {
-      const found = await readDestinations(session);
+      const found = (await readDestinations(session)).destinations;
       expect(found[2]).toStrictEqual({
         title: 'Somewhere unresolvable',
         page: null,
@@ -129,7 +130,7 @@ describe('readDestinations', () => {
     bare.addPage([200, 200]);
     const session = await mupdfWriter.open(await bare.save({ useObjectStreams: false }));
     try {
-      expect(await readDestinations(session)).toStrictEqual([]);
+      expect(await readDestinations(session)).toStrictEqual({ destinations: [], truncated: false });
     } finally {
       await mupdfWriter.close(session);
     }

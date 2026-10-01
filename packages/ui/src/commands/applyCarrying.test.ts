@@ -64,6 +64,7 @@ function walkAt(version: typeof AFTER): unknown {
         blend: 'normal',
       },
     ],
+    next: null,
     truncated: false,
   };
 }
