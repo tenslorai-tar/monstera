@@ -1455,8 +1455,9 @@ with nothing selected they show the authoring settings.
 [ADR-0113](DECISIONS/0113-the-applications-own-commands-sit-at-the-centre-of-the-menu-row.md)).
 The owner puts Donate and Rate Us there, centred on the window's top row, and each is an ordinary
 command — Donate opens a dialog, Rate Us the Store's review page. A placement names its `tone` — `gold` for Donate's
-warm fill with a dark label, `violet` for Rate Us's quieter outline, `plain` for the dormant *Update available*
-notice — because a bar deciding that
+warm fill with a dark label, `violet` for Rate Us's violet fill (both filled since 2026-10-01, ADR-0113's
+correction: every tone is drawn by one rule, its label solved by `onColor` at the point of use), `plain` for the
+dormant *Update available* notice — because a bar deciding that
 from a command's id is the layout table above, one field narrower; the tones are brand tokens and do not follow the
 accent. Until 2026-09-27 these sat in the title bar, between the tabs and the search. **The
 document tabs, the command search and the layout switcher are not commands**,
