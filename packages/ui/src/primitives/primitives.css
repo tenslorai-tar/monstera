@@ -513,6 +513,21 @@
   outline-offset: 1px;
 }
 
+/* ─── Every positioned popup ─────────────────────────────────────────────── */
+
+/* NO-DRAG ON EVERY POPUP BASE UI POSITIONS: menus, the context menu, a group's More, tooltips. The menu bar and the
+   title bar are `drag` regions, and Electron hands a press inside a drag region to the window frame rather than to
+   the page, whatever is painted over it. A popup carries no region of its own, so the part of it lying over those
+   rows took no hover, showed the default cursor and ignored a click: *Help › Help centre*, the first item, sits over
+   the title bar, and *Keyboard shortcuts* below it did not (the owner's review of 0.1.6.0, `helpcentre_22.png`). A
+   `no-drag` region subtracts from the drag regions under it — the backdrop's rule below, for the same reason.
+
+   KEYED ON `data-side`, which Base UI documents on every positioner and popup (`CommonPopupDataAttributes`) and
+   nothing in this application sets itself, so a popup added tomorrow is covered without joining a list. */
+[data-side] {
+  -webkit-app-region: no-drag;
+}
+
 /* ─── Dialog ─────────────────────────────────────────────────────────────── */
 
 /* v5's SCRIM: the window dimmed and softened behind a dialog. The dialog itself is held to its floors over anything

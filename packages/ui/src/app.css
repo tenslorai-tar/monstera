@@ -210,18 +210,12 @@ textarea {
 }
 
 /* A MENU'S ITEMS: a column for the mark of a command that is on, the name, the chord at the end — so names line up
-   whether or not a group has marks. A disabled item is `--muted`, the pair the float declares; it is also announced
-   as unavailable, so the colour is not the only sign. */
+   whether or not a group has marks. A disabled item's look is the shared item's (`.m-context-menu-item[data-disabled]`). */
 .m-menu-bar__item {
   display: grid;
   grid-template-columns: var(--icon-16) minmax(0, 1fr) auto;
   align-items: center;
   column-gap: var(--space-8);
-}
-
-.m-menu-bar__item[data-disabled] {
-  color: var(--muted);
-  cursor: default;
 }
 
 .m-menu-bar__mark {
@@ -3803,8 +3797,18 @@ textarea {
   outline: none;
 }
 
-.m-context-menu-item[data-highlighted] {
+/* NOT FOR A DISABLED ITEM: a highlight is what an item that runs looks like under the pointer, and painting it on one
+   that cannot run is what made a disabled item read as enabled. */
+.m-context-menu-item[data-highlighted]:not([data-disabled]) {
   background: var(--surface2);
+}
+
+/* A DISABLED ITEM, IN EVERY MENU: `--muted`, the pair the float declares, and no pointer. It is also announced as
+   unavailable, so the colour is not the only sign. On the shared item class rather than the menu bar's, because
+   every menu's items are this class and a disabled style on one of them leaves the others looking runnable. */
+.m-context-menu-item[data-disabled] {
+  color: var(--muted);
+  cursor: default;
 }
 
 .m-context-menu-separator {
