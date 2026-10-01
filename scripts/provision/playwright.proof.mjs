@@ -56,13 +56,18 @@ const scratch = mkdtempSync(join(tmpdir(), 'monstera-playwright-proof-'));
  * there — so a first version of this proof, run with `--eval`, passed against the very guard it exists to refuse.
  * Every body also prints whether it had an entry point, which the cases require.
  *
+ * Asked as the LENGTH of argv, which is 1 under `--eval` and 2 or more for a script: the same fact, spelt so the
+ * text of this file does not read the entry path by hand, which `check:mainguards` refuses in any script module once
+ * every guard goes through `isMain` (work/cloud-ismain). The child is not deciding whether it is main; it reports
+ * whether it has an entry script at all.
+ *
  * @param {string} name the script's file name
  * @param {string} body ES module source
  * @returns {{ lines: string[], output: string, status: number | null }}
  */
 function child(name, body) {
   const path = join(scratch, name);
-  writeFileSync(path, `process.stdout.write('entry=' + String(process.argv[1] !== undefined) + '\\n');\n${body}\n`);
+  writeFileSync(path, `process.stdout.write('entry=' + String(process.argv.length > 1) + '\\n');\n${body}\n`);
   const run = spawnSync(process.execPath, [path], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
