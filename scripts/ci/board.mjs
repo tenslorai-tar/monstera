@@ -95,9 +95,21 @@ const REPO = 'tenslorai-tar/monstera';
 const POLL_SECONDS = 90;
 const MAX_POLLS = 27;
 
-/** @param {number} attempt */
-function runsUrl(attempt) {
-  return `https://api.github.com/repos/${REPO}/actions/runs?per_page=8&poll=${String(attempt)}`;
+/**
+ * The runs AT THIS COMMIT, filtered by GitHub.
+ *
+ * This asked for the repository's eight newest runs and found the commit among them, which held while one seat
+ * pushed. With a second agent pushing its own branches, the commit's runs fell past the eighth and the reader said
+ * BLIND about a commit that was green — measured 2026-10-02 at 48ea697c, CI #1021 and Guards #1028 both `success`.
+ * `?head_sha=` asks the question itself; `boardTarget` already refuses anything but the full forty it matches on.
+ * Pacing then sees only this commit's runs and waits its floor, the caller's cadence, which is what it waits when
+ * nothing has completed.
+ *
+ * @param {string} sha
+ * @param {number} attempt
+ */
+function runsUrl(sha, attempt) {
+  return `https://api.github.com/repos/${REPO}/actions/runs?per_page=8&head_sha=${sha}&poll=${String(attempt)}`;
 }
 
 /** @param {number} ms */
@@ -131,6 +143,25 @@ function headSha() {
   return execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 }
 
+/**
+ * The one look was REFUSED: say which refusal, and exit 2.
+ *
+ * `--once` returned 2 here and printed nothing — the refusals were collected for the give-up message, which a single
+ * look never reaches. Measured 2026-10-02: `--once` exited 2 in silence on a commit whose runs were both green
+ * (CI #1021, Guards #1028, read from the API without a token), so *no answer* and *the API declined* read alike —
+ * the defect AAAA-2's quiet mode was written to avoid, on the one path it did not reach.
+ *
+ * @param {string} sha
+ * @param {readonly string[]} refusals
+ */
+function refusedOnce(sha, refusals) {
+  process.stdout.write(
+    `\nNO VERDICT at ${sha}: the one look was refused — ${refusals[refusals.length - 1] ?? ''}. ` +
+      'A refusal is not a board state. Exit code 2, which is neither green nor red.\n',
+  );
+  return 2;
+}
+
 async function main() {
   const { sha, once } = boardTarget(process.argv.slice(2), { headSha: headSha() });
 
@@ -152,7 +183,7 @@ async function main() {
       // `critical`: this is the caller the reserve exists to protect, so the
       // budget never refuses it. GitHub still can, and that is reported as
       // itself — a refusal is not a board state.
-      const response = await githubFetch(runsUrl(attempt), { purpose: 'critical' });
+      const response = await githubFetch(runsUrl(sha, attempt), { purpose: 'critical' });
       if (!response.ok) {
         // A refusal is not a board state. Printed as itself so an expired token
         // or a rate limit cannot spend every poll looking like a slow run — and
@@ -167,7 +198,7 @@ async function main() {
         );
         refusals.push(`HTTP ${String(response.status)} — ${why}`);
         trace(`  poll ${String(attempt)}: HTTP ${String(response.status)} — ${why}\n`);
-        if (once) return 2;
+        if (once) return refusedOnce(sha, refusals);
         await sleep(POLL_SECONDS * 1000);
         continue;
       }
@@ -175,7 +206,7 @@ async function main() {
     } catch (error) {
       refusals.push(`request failed — ${formatError(error)}`);
       trace(`  poll ${String(attempt)}: request failed — ${formatError(error)}\n`);
-      if (once) return 2;
+      if (once) return refusedOnce(sha, refusals);
       await sleep(POLL_SECONDS * 1000);
       continue;
     }
@@ -198,7 +229,12 @@ async function main() {
       process.stdout.write(`\n${green ? 'GREEN' : 'NOT GREEN'} at ${sha}: ${reason}\n`);
       return green ? 0 : 1;
     }
-    if (once) return verdict === 'pending' ? 3 : 2;
+    // THE ONE LOOK SAYS WHAT IT SAW, for `refusedOnce`' reason: a pending board and a stale one exited 3 and 2 here
+    // in silence.
+    if (once) {
+      process.stdout.write(`\n${verdict.toUpperCase()} at ${sha}: ${reason}\n`);
+      return verdict === 'pending' ? 3 : 2;
+    }
 
     // HOW LONG TO WAIT IS DERIVED FROM THIS PAYLOAD, not from POLL_SECONDS
     // alone (finding DDDD-28). Both seats on this machine share ~60
