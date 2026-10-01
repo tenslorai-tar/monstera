@@ -538,6 +538,11 @@ export interface BrowserShimOptions {
   readonly translation?: ChannelResult<'ai.translatePage'>;
   /** What `ai.models` answers. Absent is an empty list, what a build with no provider offers. */
   readonly aiModels?: ChannelResult<'ai.models'>;
+  /**
+   * What `ai.history.load` answers: a conversation saved for the document, so a rendered case can show one without a
+   * provider to ask. Absent is nothing saved, the setting's default.
+   */
+  readonly aiHistory?: ChannelResult<'ai.history.load'>;
   /** What `ai.models.held` answers per provider. A provider absent here answers `aiModels`, or the empty list. */
   readonly aiHeldModels?: Partial<Record<AiProviderId, AiModelListAnswer>>;
   /**
@@ -2074,8 +2079,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       ),
     // REFUSED, because the shim has no provider to ask and a key it cannot check is not one it may keep.
     'ai.checkKey': () => Promise.resolve(ok({ accepted: false as const, problem: 'unreachable' as const })),
-    // NOTHING SAVED, the setting's default: the shim keeps no conversation between pages.
-    'ai.history.load': () => Promise.resolve(ok({ turns: [] })),
+    // NOTHING SAVED, the setting's default: the shim keeps no conversation between pages — unless a case seeds one.
+    'ai.history.load': () => Promise.resolve(ok(options.aiHistory ?? { turns: [] })),
     'ai.history.save': () => Promise.resolve(ok({ saved: false })),
     'ai.history.clear': () => Promise.resolve(ok({ cleared: 0 })),
     // THE SHIM HAS NO CLIPBOARD, so nothing is claimed copied.

@@ -21,7 +21,7 @@ import {
 } from '@monstera/contract';
 import type { DocId, MessageKey } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
-import { ArrowUp, Copy, Pencil, RefreshCw, Square, StickyNote } from 'lucide-react';
+import { ArrowUp, Copy, Pencil, Plus, RefreshCw, Square, StickyNote } from 'lucide-react';
 import {
   Fragment,
   type ReactElement,
@@ -90,7 +90,6 @@ import {
   ASSISTANT_PROVIDER_LABEL,
   ASSISTANT_QUICK_DATES,
   ASSISTANT_QUICK_EXPLAIN_PAGE,
-  ASSISTANT_QUICK_LABEL,
   ASSISTANT_QUICK_READ_TABLE,
   ASSISTANT_QUICK_SUMMARISE,
   ASSISTANT_SEND,
@@ -133,9 +132,10 @@ import {
 } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { Button } from './primitives/Button.js';
+import { ChoiceMenu } from './primitives/ChoiceMenu.js';
 import { IconButton } from './primitives/IconButton.js';
-import { SegmentedControl } from './primitives/SegmentedControl.js';
 import { AI_MODELS_SETTING, AI_PROVIDER_SETTING } from './settings/ai.js';
+import { motionReduced } from './settings/appearance.js';
 import type { SettingsStore } from './settingsStore.js';
 import { useSetting } from './useSetting.js';
 
@@ -222,6 +222,23 @@ export interface AssistantPanelProps {
 /** What one ask sends: its document or documents, and the side it went to with two. */
 /** How long *Copied* shows beside an answer, in milliseconds — long enough to read, then gone. */
 const COPIED_MS = 2000;
+
+/**
+ * What the empty message box suggests, in turn: the four that were buttons over it until 2026-10-01 (the owner's
+ * review of 0.1.6.0 asked for the box to carry them instead). A suggestion is TEXT, not an action — it sends
+ * nothing and changes no choice; the Context menu decides what goes.
+ *
+ * It moves on only while the box is empty, unfocused, and movement is not reduced, so it stops the moment a person
+ * starts to use the box (WCAG 2.2.2: auto-updating content a person can stop), and it never moves for someone who
+ * asked for less movement.
+ */
+const SUGGESTIONS = [
+  ASSISTANT_QUICK_SUMMARISE,
+  ASSISTANT_QUICK_DATES,
+  ASSISTANT_QUICK_EXPLAIN_PAGE,
+  ASSISTANT_QUICK_READ_TABLE,
+] as const;
+const SUGGESTION_MS = 4000;
 
 /** Which document a two-document answer was about, for its caption. */
 const SIDE_WORDS = {
@@ -323,6 +340,7 @@ export function AssistantPanel({
   const providerId = useId();
   const modelId = useId();
   const aboutId = useId();
+  const hintId = useId();
   const sidesName = useId();
   // THE PROVIDER AND EACH PROVIDER'S MODEL ARE SETTINGS (ADR-0117): this picker writes them, `main` reads Anthropic's for
   // the recogniser, and a choice survives the panel closing. The list itself is fetched here, per provider.
@@ -343,6 +361,18 @@ export function AssistantPanel({
     settings.set(AI_MODELS_SETTING.id, { ...chosenModels, [provider]: next });
   };
   const [draft, setDraft] = useState('');
+  // THE PLACEHOLDER'S SUGGESTION, which moves on while the box is empty and unfocused (`SUGGESTIONS`).
+  const [suggestion, setSuggestion] = useState(0);
+  const [typing, setTyping] = useState(false);
+  useEffect(() => {
+    if (draft !== '' || typing || motionReduced(document.documentElement)) return undefined;
+    const timer = window.setInterval(() => {
+      setSuggestion((at) => (at + 1) % SUGGESTIONS.length);
+    }, SUGGESTION_MS);
+    return (): void => {
+      window.clearInterval(timer);
+    };
+  }, [draft, typing]);
   const [streaming, setStreaming] = useState<string | null>(null);
   const [problem, setProblem] = useState<keyof typeof PROBLEMS | null>(null);
   const [chosen, setChosen] = useState<{ readonly scope: Scope; readonly after: number }>({
@@ -776,48 +806,16 @@ export function AssistantPanel({
       </Fragment>
     );
 
-  const quickStarts = [
-    { key: ASSISTANT_QUICK_SUMMARISE, scope: 'document' },
-    { key: ASSISTANT_QUICK_DATES, scope: 'document' },
-    { key: ASSISTANT_QUICK_EXPLAIN_PAGE, scope: 'page' },
-    // VISION ANALYSIS' OWN START (D11's *table reading assist*): a picture of the page on screen.
-    { key: ASSISTANT_QUICK_READ_TABLE, scope: 'page-image' },
-  ] as const;
-
   return (
     <div className="m-assistant">
-      {readiness !== 'ready' && (
-        <p className="m-assistant__state" data-assistant-readiness={readiness}>
-          {i18n._(READINESS[readiness])}
-        </p>
-      )}
-      {problem !== null && <p className="m-assistant__problem">{i18n._(PROBLEMS[problem])}</p>}
-
-      {focused !== undefined && hasKey && turns.length === 0 && (
-        <div aria-label={i18n._(ASSISTANT_QUICK_LABEL)} className="m-assistant__quick" role="group">
-          {quickStarts.map((quick) => {
-            const wanted = newRequest(quick.scope);
-            return (
-              <Button
-                disabled={wanted === null || searchesAnyway}
-                key={quick.key}
-                label={quick.key}
-                onClick={() => {
-                  choose(quick.scope);
-                  if (wanted !== null) ask(i18n._(quick.key), wanted);
-                }}
-              />
-            );
-          })}
-        </div>
-      )}
-
       {turns.length > 0 && (
         <div className="m-assistant__conversation-bar">
-          {/* NEW CHAT empties this document's conversation — and, with history on, its saved copy
-              the next time it settles. Not while an answer is arriving: that answer has nowhere to go. */}
-          <Button
+          {/* NEW CHAT, a "+" at the top right (the owner's review of 0.1.6.0): it empties this document's
+              conversation — and, with history on, its saved copy the next time it settles. Not while an answer is
+              arriving: that answer has nowhere to go. Its name is still *New chat*, which is what a reader hears. */}
+          <IconButton
             disabled={streaming !== null}
+            icon={Plus}
             label={ASSISTANT_NEW_CHAT}
             onClick={() => {
               writeTurns([]);
@@ -826,14 +824,22 @@ export function AssistantPanel({
               // A NEW CHAT STARTS *DOCUMENT ONLY* (ADR-0108), whatever the last one used.
               setWebChosen(null);
             }}
+            size="dense"
           />
         </div>
       )}
+      {readiness !== 'ready' && (
+        <p className="m-assistant__state" data-assistant-readiness={readiness}>
+          {i18n._(READINESS[readiness])}
+        </p>
+      )}
+      {problem !== null && <p className="m-assistant__problem">{i18n._(PROBLEMS[problem])}</p>}
 
       <ol aria-label={i18n._(ASSISTANT_CONVERSATION_LABEL)} className="m-assistant__turns">
         {turns.map((turn, at) => (
           <li className="m-assistant__turn" data-assistant-role={turn.role} key={`${String(at)}-${turn.role}`}>
-            <span className="m-assistant__who">
+            {/* WHO SAID IT, read and not drawn: the bubble's side says so to the eye (`app.css`). */}
+            <span className="m-visually-hidden">
               {i18n._(turn.role === 'user' ? ASSISTANT_YOU : ASSISTANT_ASSISTANT)}
             </span>
             {turn.role === 'assistant' ? (
@@ -961,13 +967,13 @@ export function AssistantPanel({
           />
         </div>
       )}
-      {/* v5-03's FOOT: the "Asking about" choices as buttons over the message box, then the box itself with the
+      {/* THE FOOT: Context and Sources as two menus on one row over the message box (the owner's review of 0.1.6.0;
+          until then two rows of chips under the labels *Asking about* and *Answer from*), then the box itself with the
           provider and model at its bottom-left and the send arrow at its bottom-right. */}
       {focused !== undefined && (
         <div className="m-assistant__about" data-assistant-about="">
-          <div className="m-assistant__about-line">
-            <span className="m-assistant__about-label">{i18n._(ASSISTANT_ABOUT_LABEL)}</span>
-            <SegmentedControl<Scope>
+          <div className="m-assistant__choices">
+            <ChoiceMenu<Scope>
               label={ASSISTANT_ABOUT_LABEL}
               onChange={choose}
               options={[
@@ -992,25 +998,22 @@ export function AssistantPanel({
                 { value: 'nothing' as const, label: ASSISTANT_CHIP_NOTHING },
               ]}
               value={scope}
-              wrap
             />
-          </div>
-          {/* DOCUMENT ONLY OR DOCUMENT + WEB (ADR-0108): each choice disabled, never dropped, where this provider and
-              model cannot take it — with the sentence that says why beneath. */}
-          <div className="m-assistant__about-line" data-assistant-web="">
-            <span className="m-assistant__about-label">{i18n._(ASSISTANT_WEB_LABEL)}</span>
-            <SegmentedControl<'document' | 'web'>
-              label={ASSISTANT_WEB_LABEL}
-              onChange={(next) => {
-                setWebChosen(next === 'web' ? { docId: focused.docId } : null);
-              }}
-              options={[
-                { value: 'document', label: ASSISTANT_WEB_DOCUMENT, disabled: webSupport.kind === 'always' },
-                { value: 'web', label: ASSISTANT_WEB_ON, disabled: webSupport.kind === 'none' },
-              ]}
-              value={webAsked ? 'web' : 'document'}
-              wrap
-            />
+            {/* DOCUMENT ONLY OR DOCUMENT + WEB (ADR-0108): each choice disabled, never dropped, where this provider
+                and model cannot take it — with the sentence that says why beneath. */}
+            <span className="m-assistant__choice" data-assistant-web="">
+              <ChoiceMenu<'document' | 'web'>
+                label={ASSISTANT_WEB_LABEL}
+                onChange={(next) => {
+                  setWebChosen(next === 'web' ? { docId: focused.docId } : null);
+                }}
+                options={[
+                  { value: 'document', label: ASSISTANT_WEB_DOCUMENT, disabled: webSupport.kind === 'always' },
+                  { value: 'web', label: ASSISTANT_WEB_ON, disabled: webSupport.kind === 'none' },
+                ]}
+                value={webAsked ? 'web' : 'document'}
+              />
+            </span>
           </div>
           {webSupport.kind === 'none' && (
             <p className="m-assistant__state" data-assistant-web-absent={webSupport.reason}>
@@ -1090,12 +1093,20 @@ export function AssistantPanel({
 
       <div className="m-assistant__composer">
         <textarea
+          aria-describedby={hintId}
           aria-label={i18n._(ASSISTANT_COMPOSER_LABEL)}
           className="m-assistant__draft"
           data-assistant-draft=""
+          onBlur={() => {
+            setTyping(false);
+          }}
           onChange={(event) => {
             setDraft(event.target.value);
           }}
+          onFocus={() => {
+            setTyping(true);
+          }}
+          placeholder={i18n._(SUGGESTIONS[suggestion] ?? ASSISTANT_QUICK_SUMMARISE)}
           onKeyDown={(event) => {
             // ENTER SENDS, SHIFT+ENTER STARTS A LINE — the owner's design.
             if (event.key === 'Enter' && !event.shiftKey) {
@@ -1173,7 +1184,11 @@ export function AssistantPanel({
           )}
         </div>
       </div>
-      <p className="m-assistant__hint">{i18n._(ASSISTANT_ASK)}</p>
+      {/* HOW THE BOX SENDS, for a screen reader through the box's description and drawn for nobody: the owner's
+          review of 0.1.6.0 took every explanatory line out of the pane, and Enter sending is the platform's way. */}
+      <span className="m-visually-hidden" id={hintId}>
+        {i18n._(ASSISTANT_ASK)}
+      </span>
     </div>
   );
 }

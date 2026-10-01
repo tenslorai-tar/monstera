@@ -2450,8 +2450,7 @@ optgroup {
   padding: var(--space-16);
 }
 
-.m-assistant__state,
-.m-assistant__hint {
+.m-assistant__state {
   margin: 0;
   color: var(--muted);
   font-size: var(--font-chrome-11);
@@ -2476,13 +2475,48 @@ optgroup {
   border-block-start: 1px solid var(--border-soft); /* decorative: separates the conversation from the ask; the controls draw their own */
 }
 
-.m-assistant__about-line {
+/* CONTEXT AND SOURCES, ONE ROW (the owner's review of 0.1.6.0): two menus whose closed faces read their names. */
+.m-assistant__choices {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-6);
-  color: var(--muted);
+}
+
+/* A CHOICE MENU'S FACE (`ChoiceMenu`): its name and a chevron, in the pane's small control shape. The trigger is the
+   control, so it takes the boundary token that solves for 3:1. */
+.m-choice-menu {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  block-size: var(--title-control);
+  padding-inline: var(--space-8) var(--space-6);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--text);
   font-size: var(--font-chrome-11);
+  cursor: default;
+}
+
+.m-choice-menu:hover,
+.m-choice-menu[data-popup-open] {
+  background: var(--surface2);
+}
+
+.m-choice-menu:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* ITS VALUES carry a mark column for the chosen one, given to the shared item through its two properties. */
+.m-choice-menu__popup {
+  --menu-item-columns: var(--icon-16) minmax(0, 1fr);
+  --menu-item-gap: var(--space-8);
+}
+
+.m-choice-menu__mark {
+  display: inline-flex;
 }
 
 /* LEFT · RIGHT · BOTH (ADR-0089): a row of native radios under a small legend. A fieldset keeps
@@ -2564,12 +2598,6 @@ optgroup {
   outline-offset: 2px;
 }
 
-.m-assistant__quick {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
 /* A CITATION IS A LINK IN THE TEXT, drawn in the text's own colour and underlined, so it holds
    every theme's contrast floor without a colour of its own — high contrast included. */
 .m-assistant__citation {
@@ -2582,8 +2610,14 @@ optgroup {
   cursor: pointer;
 }
 
+/* THE CONVERSATION AS A CHAT (the owner's review of 0.1.6.0): a person's messages at the right in a filled bubble, the
+   assistant's at the left across the pane. Who said each is still in the text, for a screen reader (`.m-visually-hidden`
+   on the speaker); the side is what the eye reads. */
 .m-assistant__turns {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  gap: var(--space-8);
   min-block-size: 0;
   margin: 0;
   padding: 0;
@@ -2591,17 +2625,23 @@ optgroup {
   list-style: none;
 }
 
-.m-assistant__turn + .m-assistant__turn {
-  margin-block-start: var(--space-4);
+.m-assistant__turn[data-assistant-role='user'] {
+  align-self: flex-end;
+  max-inline-size: 85%;
+  padding: var(--space-6) var(--space-10);
+  border-radius: var(--radius-12);
+  /* `--active`: a filled surface `--text` is declared and checked on in every theme (`tokens.css`). */
+  background: var(--active);
 }
 
-.m-assistant__who {
-  color: var(--muted);
-  font-size: var(--font-chrome-11);
+.m-assistant__turn[data-assistant-role='assistant'] {
+  align-self: stretch;
 }
 
+/* THE CHAT'S TEXT, one size up from the pane's 12 (the owner's review of 0.1.6.0). */
 .m-assistant__text {
-  margin: var(--space-2) 0 0;
+  margin: 0;
+  font-size: var(--font-chrome-13);
   white-space: pre-wrap;
 }
 
@@ -2711,10 +2751,14 @@ optgroup {
   box-shadow: var(--glow);
 }
 
+/* TWO LINES, THEN THREE, THEN A SCROLL: the box sizes to its text (`field-sizing: content`) between two and three of
+   its own lines, and past three its text scrolls inside it. */
 .m-assistant__draft {
   resize: none;
-  min-block-size: var(--composer-min);
-  max-block-size: var(--composer-max);
+  field-sizing: content;
+  min-block-size: calc(var(--composer-lines-min) * 1lh);
+  max-block-size: calc(var(--composer-lines-max) * 1lh);
+  overflow-y: auto;
   padding: var(--space-2) var(--space-4);
   border: 0;
   background: transparent;

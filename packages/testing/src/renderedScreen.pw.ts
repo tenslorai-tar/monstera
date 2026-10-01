@@ -572,27 +572,27 @@ test('at its MINIMUM width the right contextual panel still holds every Properti
   for (const past of measured?.overflow ?? []) expect(past).toBeLessThanOrEqual(0.5);
 });
 
-test('the ASSISTANT fits its panel: the hint under Send is inside it and nothing scrolls', async ({ page }) => {
+test('the ASSISTANT fits its panel: the message box is inside it and nothing scrolls', async ({ page }) => {
   // The panel was the body's full height PLUS its padding, so at 900 px the body scrolled by the
-  // padding and the hint's last line sat past its bottom edge — cut off, with a scroll bar for 8 px.
+  // padding and the pane's last line sat past its bottom edge — cut off, with a scroll bar for 8 px. The last line is
+  // the message box since 2026-10-01, when the hint under it became text for a screen reader only.
   await page.setViewportSize({ width: 1440, height: 900 });
   await bridgeWithDocument(page, { 'appearance.context-panel-open': true, 'appearance.context-panel-tab': 'assistant' }, 1);
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
-  await expect(page.locator('.m-assistant__hint')).toBeVisible();
+  await expect(page.locator('.m-assistant__composer')).toBeVisible();
 
   const fit = await page.evaluate(() => {
     const body = document.querySelector('.m-assistant')?.parentElement;
-    const hint = document.querySelector('.m-assistant__hint');
-    if (body === null || body === undefined || hint === null) return null;
-    // AND NOTHING RUNS PAST ITS SIDE: the widest row is *Asking about*'s choices, which ran past the panel's inner
-    // edge once the panel was inset like the Properties tab — a group that could not shrink could not wrap.
+    const composer = document.querySelector('.m-assistant__composer');
+    if (body === null || body === undefined || composer === null) return null;
+    // AND NOTHING RUNS PAST ITS SIDE: Context and Sources share one row, which must stay inside the panel's inner edge.
     const panel = document.querySelector('.m-assistant');
     const inner = panel === null ? 0 : panel.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(panel).paddingRight);
-    const rights = [...document.querySelectorAll('.m-assistant .m-segmented__item')].map((item) => item.getBoundingClientRect().right);
+    const rights = [...document.querySelectorAll('.m-assistant .m-choice-menu')].map((item) => item.getBoundingClientRect().right);
     return {
       overflow: body.scrollHeight - body.clientHeight,
-      past: hint.getBoundingClientRect().bottom - body.getBoundingClientRect().bottom,
+      past: composer.getBoundingClientRect().bottom - body.getBoundingClientRect().bottom,
       sideways: Math.max(...rights) - inner,
       choices: rights.length,
     };
@@ -600,8 +600,8 @@ test('the ASSISTANT fits its panel: the hint under Send is inside it and nothing
   expect(fit).not.toBeNull();
   expect(fit?.overflow).toBeLessThanOrEqual(0);
   expect(fit?.past).toBeLessThanOrEqual(0);
-  expect(fit?.choices, 'the choices were found').toBeGreaterThan(4);
-  expect(fit?.sideways, 'the farthest choice ends past the panel’s inner edge by this many px').toBeLessThanOrEqual(0.5);
+  expect(fit?.choices, 'Context and Sources were found').toBe(2);
+  expect(fit?.sideways, 'the farther menu ends past the panel’s inner edge by this many px').toBeLessThanOrEqual(0.5);
 });
 
 test('the page list FITS its pane: nothing of it sits above the pane or under the status bar', async ({

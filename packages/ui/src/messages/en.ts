@@ -1323,6 +1323,8 @@ export const ASSISTANT_COPIED = messageKey('assistant.copied');
 export const ASSISTANT_ADD_NOTE = messageKey('assistant.add-note');
 export const ASSISTANT_NOTED = messageKey('assistant.noted');
 export const ASSISTANT_NEW_CHAT = messageKey('assistant.new-chat');
+/** A `ChoiceMenu`'s accessible name: what is chosen, and the value chosen, since its face shows only the first. */
+export const CHOICE_MENU_NAME = messageKey('menu.choice.name');
 export const ASSISTANT_CAPTION = messageKey('assistant.caption');
 export const ASSISTANT_SCOPE_PAGE = messageKey('assistant.scope.page');
 export const ASSISTANT_SCOPE_DOCUMENT = messageKey('assistant.scope.document');
@@ -1465,7 +1467,7 @@ export const ASSISTANT_SIDES_NEEDED = messageKey('assistant.sides.needed');
 export const ASSISTANT_SENT_LEFT = messageKey('assistant.sent.left');
 export const ASSISTANT_SENT_RIGHT = messageKey('assistant.sent.right');
 export const ASSISTANT_CITATION_RIGHT = messageKey('assistant.citation.right');
-export const ASSISTANT_QUICK_LABEL = messageKey('assistant.quick');
+/** The suggestions the Assistant's message box cycles through as its placeholder while it is empty. */
 export const ASSISTANT_QUICK_SUMMARISE = messageKey('assistant.quick.summarise');
 export const ASSISTANT_QUICK_DATES = messageKey('assistant.quick.dates');
 export const ASSISTANT_QUICK_EXPLAIN_PAGE = messageKey('assistant.quick.explain-page');
@@ -3304,6 +3306,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_ADD_NOTE]: 'Add this answer to the page as a note',
   [ASSISTANT_NOTED]: 'Added to the page as a note',
   [ASSISTANT_NEW_CHAT]: 'New chat',
+  [CHOICE_MENU_NAME]: '{label}: {value}',
   [ASSISTANT_CAPTION]: '{model} · {scope}',
   [ASSISTANT_SCOPE_PAGE]: 'page {page}',
   [ASSISTANT_SCOPE_DOCUMENT]: 'whole document',
@@ -3322,7 +3325,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_NO_KEY]: 'This provider has no key stored. Add it in Settings › AI; the key stays on this machine.',
   [ASSISTANT_SEARCHES_THE_WEB]:
     'This model searches the web for every answer, so nothing was sent. Choose another model, or turn on Document + web.',
-  [ASSISTANT_WEB_LABEL]: 'Answer from',
+  [ASSISTANT_WEB_LABEL]: 'Sources',
   [ASSISTANT_WEB_DOCUMENT]: 'Document only',
   [ASSISTANT_WEB_ON]: 'Document + web',
   [ASSISTANT_WEB_SENDS]:
@@ -3353,7 +3356,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AI_PROVIDER_NAMES.groq]: 'Groq',
   [AI_PROVIDER_NAMES.perplexity]: 'Perplexity',
   [AI_PROVIDER_NAMES.deepseek]: 'DeepSeek',
-  [ASSISTANT_ABOUT_LABEL]: 'Asking about',
+  [ASSISTANT_ABOUT_LABEL]: 'Context',
   [ASSISTANT_ABOUT_PAGE]: 'This page ({page})',
   [ASSISTANT_ABOUT_DOCUMENT]: 'The whole document, up to {characters} characters',
   [ASSISTANT_ABOUT_SELECTION]: 'The text you selected on page {page}',
@@ -3474,7 +3477,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_SIDES_NEEDED]: 'Two documents are side by side. Choose Left, Right or Both, then send.',
   [ASSISTANT_SENT_LEFT]: 'Left: {sent}',
   [ASSISTANT_SENT_RIGHT]: 'Right: {sent}',
-  [ASSISTANT_QUICK_LABEL]: 'Start with',
   [ASSISTANT_QUICK_SUMMARISE]: 'Summarise this document',
   [ASSISTANT_QUICK_DATES]: 'List the dates and deadlines in this document',
   [ASSISTANT_QUICK_EXPLAIN_PAGE]: 'Explain this page',
