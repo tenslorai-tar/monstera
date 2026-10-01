@@ -27,10 +27,13 @@
  * Usage: node scripts/research/pdfiumImageKeep.mjs   (after npm run build and node scripts/provision/pdfium.mjs)
  */
 
+import { PDFIUM_ADAPTER, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { pdfiumLibrary } from '../provision/pdfium.mjs';
 
 const ROOT = repoRoot();
+// THE BUILT ADAPTER IS THE SUBJECT; a dynamic import, so this guard runs before it.
+refuseStaleBuild(ROOT, PDFIUM_ADAPTER, 1);
 const pdfium = await import('../../packages/kernel/dist/pdfiumFfi.js');
 pdfium.openPdfium(pdfiumLibrary(ROOT));
 
