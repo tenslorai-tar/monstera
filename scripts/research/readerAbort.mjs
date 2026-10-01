@@ -26,6 +26,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 
+import { READER_DISPOSE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 
@@ -76,6 +77,8 @@ if (process.argv[2] === 'child') {
   process.exit(0);
 }
 
+// THE BUILT READER AND SURFACES ARE THE SUBJECT, so a stale build would be measured under this build's name.
+refuseStaleBuild(ROOT, READER_DISPOSE, 5);
 const processes = Number(process.argv.find((argument) => /^\d+$/u.test(argument)) ?? 8);
 const runtime = process.argv.includes('--runtime') && process.argv.includes('electron') ? electronBinaryPath(ROOT) : process.execPath;
 let aborted = 0;
