@@ -1,4 +1,4 @@
-import { LOG_DETAIL_SETTING_ID, type MainHandlers, channels } from '@monstera/contract';
+import { LOG_DETAIL_STORED, type MainHandlers, channels, storedSetting } from '@monstera/contract';
 
 import type { SettingsSurface } from './settingsFile.js';
 
@@ -35,7 +35,7 @@ const SETTINGS_SAVE = 'settings.save';
 
 /** Whether the stored settings ask for the detailed log. Only `'detailed'` does: anything else is the default. */
 export function logIsDetailed(stored: Readonly<Record<string, unknown>>): boolean {
-  return stored[LOG_DETAIL_SETTING_ID] === 'detailed';
+  return storedSetting(stored, LOG_DETAIL_STORED) === 'detailed';
 }
 
 /** A `document.execute` request's command kind, or `undefined` for params its schema refuses. */

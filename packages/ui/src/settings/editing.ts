@@ -11,7 +11,7 @@ import {
   ocrLanguagesSchema,
   type TextDirection,
   textDirectionSchema,
-  AZURE_ENDPOINT_SETTING_ID,
+  AZURE_ENDPOINT_STORED,
   AZURE_KEY_SETTING_ID,
 } from '@monstera/contract';
 import { z } from 'zod';
@@ -352,18 +352,12 @@ export const RECOGNISE_ON_EXPORT_SETTING: SettingDefinition<z.ZodBoolean> = {
  * is empty, through the registry's `when`.
  */
 export const AZURE_DI_ENDPOINT_SETTING: SettingDefinition<z.ZodString> = {
-  // FROM THE CONTRACT, not a literal here: main looks this one up by name to
-  // make the call, and two strings that agree today is exactly the shape B3a is
-  // about — a rename would leave the cloud engine reporting that the service
-  // refused a key it never found.
-  id: AZURE_ENDPOINT_SETTING_ID,
+  // FROM THE CONTRACT — the id, the schema and the default (`storedSettings.ts`): main reads this one to make the call,
+  // and two definitions that agree today is exactly the shape B3a is about. The schema is a plain string, NOT a URL:
+  // a reader typing an address mid-keystroke would have a setting that refuses to store what they are in the middle
+  // of writing, and the scheme check that matters happens where the request is made, before anything is sent.
+  ...AZURE_ENDPOINT_STORED,
   title: EDITING_AZURE_ENDPOINT_TITLE,
-  // NOT `z.string().url()`. A reader typing an address mid-keystroke would have
-  // a setting that refuses to store what they are in the middle of writing, and
-  // the scheme check that actually matters happens where the request is made —
-  // before anything is sent, with the call count as its own case.
-  schema: z.string(),
-  fallback: '',
   // AZURE DOCUMENT INTELLIGENCE reads scans, so its address and key sit on the owner's OCR page
   // beside the language, rather than under the editing defaults its id was declared with.
   category: 'ocr',

@@ -892,6 +892,27 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-01 — Row 265's Stage 10 audit: every setting `main` reads is the registry's own definition
+
+The question, `check:secondwiring`'s asked of settings: does any shipped behaviour read a value from outside the
+registry? Swept four ways. Browser storage: none. Environment variables: four, none of them a setting (cloud client
+values, known folders, the launcher's variables, an engine host's environment block). The renderer: every read goes
+through `SettingsStore.get`, which is `registry.read` — the schema and the default. **`main`: twelve readers**, because
+`main` cannot import `packages/ui`, and each re-derived what the registry held — `!== false` for crash reports, recent
+previews, review prompts and the update check; `=== true` for chat history; `=== 'detailed'` for the log; a literal
+`'production'` for DocuSign; counts from `BACKUP_COPIES.one` and `RECENT_LENGTHS.ten`; a cast for the AI models with
+no schema; a generic string reader for Azure OpenAI's address. **Every one agreed with the registry**, which is B3a's
+dangerous shape: nothing compared them.
+
+The fix makes the rule a thing with callers. `packages/contract/src/storedSettings.ts` defines each once — id, schema,
+fallback — the registry's entry spreads it, and `main` reads through `storedSetting(stored, definition)`. The
+assistant's reader now takes a definition (`TextSetting`), so it cannot ask for an id with no default. Held by
+`settingsReads.test.ts` (no shipped module in `main` indexes the settings document; its control finds the twelve
+readers' own shapes) and `storedSettings.test.ts` (each definition is the registry entry's own schema object and
+default; its control tells a re-declared schema apart). Mutated both ways — a direct read put back in
+`crashReports.ts`, a schema re-declared in the Privacy entry — and each went red. The secret store is out of scope and
+says why: a secret's absence is *not given*, with no default to disagree with.
+
 ## 2026-10-01 — Row 303's performance pass: frame times in the owner's package, what lags and why
 
 The owner: scrolling lags, dragging feels heavy, the application feels heavy (no recording). Measured with a new

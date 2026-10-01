@@ -1,5 +1,5 @@
-import { UPDATE_CHECK_SETTING_ID, UPDATE_MANIFEST } from '@monstera/contract';
-import { z } from 'zod';
+import { UPDATE_CHECK_STORED, UPDATE_MANIFEST } from '@monstera/contract';
+import type { z } from 'zod';
 
 import { UPDATES_CHECK_DESCRIPTION, UPDATES_CHECK_TITLE } from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
@@ -11,11 +11,10 @@ import type { SettingDefinition } from '../registries/settings.js';
  * Main reads it when the check runs, once per start ([ADR-0110](../../../../docs/DECISIONS/0110-the-update-check-is-built-dormant-and-reads-numbers-only.md)).
  */
 export const UPDATE_CHECK_SETTING: SettingDefinition<z.ZodBoolean> = {
-  id: UPDATE_CHECK_SETTING_ID,
+  // THE ID, SCHEMA AND DEFAULT ARE THE CONTRACT'S, which `main` reads through too (`storedSettings.ts`).
+  ...UPDATE_CHECK_STORED,
   title: UPDATES_CHECK_TITLE,
   description: UPDATES_CHECK_DESCRIPTION,
-  schema: z.boolean(),
-  fallback: true,
   category: 'updates',
 };
 

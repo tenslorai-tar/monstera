@@ -1,9 +1,9 @@
 import {
   MAX_RECENT_ENTRIES,
   RECENT_LENGTHS,
-  RECENT_LENGTH_SETTING_ID,
-  type RecentLength,
+  RECENT_LENGTH_STORED,
   annotationInstantSchema,
+  storedSetting,
 } from '@monstera/contract';
 import type { DocId } from '@monstera/shared';
 
@@ -130,17 +130,15 @@ export interface RecentFiles {
  * the number of paths this build keeps on disk about a person. A person may choose
  * five, twenty or thirty instead.
  */
-export const DEFAULT_RECENT_LENGTH: number = RECENT_LENGTHS.ten;
+export const DEFAULT_RECENT_LENGTH: number = RECENT_LENGTHS[RECENT_LENGTH_STORED.fallback];
 
 /**
  * The length a person chose, read from the settings document — or ten for a missing or unknown value, which is what a
  * first launch and a hand-edited file both are. The table is the contract's, so no count is spelt here.
  */
 export function recentLengthIn(settings: Readonly<Record<string, unknown>>): number {
-  const chosen = settings[RECENT_LENGTH_SETTING_ID];
-  return typeof chosen === 'string' && Object.hasOwn(RECENT_LENGTHS, chosen)
-    ? RECENT_LENGTHS[chosen as RecentLength]
-    : DEFAULT_RECENT_LENGTH;
+  // THE CONTRACT'S DEFINITION decides what a stored value may be and what an unset one is (`storedSettings.ts`).
+  return RECENT_LENGTHS[storedSetting(settings, RECENT_LENGTH_STORED)];
 }
 
 /** The document's file name inside `userData`. */

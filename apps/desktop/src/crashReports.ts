@@ -1,7 +1,7 @@
 import { readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
-import { CRASH_REPORTS_SETTING_ID } from '@monstera/contract';
+import { CRASH_REPORTS_STORED, storedSetting } from '@monstera/contract';
 
 import type { SharedFile, ShareDestination } from './sharing.js';
 import { LOG_NAME, MAX_FILES } from './shellLog.js';
@@ -58,7 +58,7 @@ export interface CrashReports {
  * a missing or malformed value is the default, since a first launch has stored nothing.
  */
 export function crashReportsOn(stored: Readonly<Record<string, unknown>>): boolean {
-  return stored[CRASH_REPORTS_SETTING_ID] !== false;
+  return storedSetting(stored, CRASH_REPORTS_STORED);
 }
 
 /**

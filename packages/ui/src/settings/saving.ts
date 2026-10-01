@@ -1,4 +1,4 @@
-import { BACKUP_COPIES, BACKUP_COPIES_SETTING_ID, type BackupCopies } from '@monstera/contract';
+import { BACKUP_COPIES_STORED, type BackupCopies } from '@monstera/contract';
 import { z } from 'zod';
 
 import {
@@ -50,11 +50,10 @@ export type AutosaveInterval = z.infer<(typeof AUTOSAVE_SETTING)['schema']>;
  * one table; one is the default, the one `.bak` every save wrote before this was a choice.
  */
 export const BACKUP_COPIES_SETTING: SettingDefinition<z.ZodEnum<{ [K in BackupCopies]: K }>> = {
-  id: BACKUP_COPIES_SETTING_ID,
+  // THE ID, SCHEMA AND DEFAULT ARE THE CONTRACT'S, which `main` reads through too (`storedSettings.ts`).
+  ...BACKUP_COPIES_STORED,
   title: BACKUP_COPIES_TITLE,
   description: BACKUP_COPIES_DESCRIPTION,
-  schema: z.enum(Object.keys(BACKUP_COPIES) as [BackupCopies, ...BackupCopies[]]),
-  fallback: 'one',
   category: 'saving',
   optionTitles: BACKUP_COPIES_OPTION_TITLES,
 };

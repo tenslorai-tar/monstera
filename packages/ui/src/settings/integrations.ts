@@ -1,6 +1,5 @@
 import {
-  DOCUSIGN_ENVIRONMENT_SETTING_ID,
-  DOCUSIGN_ENVIRONMENTS,
+  DOCUSIGN_ENVIRONMENT_STORED,
   DOCUSIGN_INTEGRATION_KEY_SETTING_ID,
 } from '@monstera/contract';
 import { z } from 'zod';
@@ -51,11 +50,10 @@ export const DOCUSIGN_ENVIRONMENT_SETTING: SettingDefinition<z.ZodEnum<{
   production: 'production';
   demo: 'demo';
 }>> = {
-  id: DOCUSIGN_ENVIRONMENT_SETTING_ID,
+  // THE ID, SCHEMA AND DEFAULT ARE THE CONTRACT'S, which `main` reads through too (`storedSettings.ts`).
+  ...DOCUSIGN_ENVIRONMENT_STORED,
   title: INTEGRATIONS_DOCUSIGN_ENVIRONMENT_TITLE,
   description: INTEGRATIONS_DOCUSIGN_ENVIRONMENT_DESCRIPTION,
-  schema: z.enum(DOCUSIGN_ENVIRONMENTS),
-  fallback: 'production',
   category: 'integrations',
   optionTitles: DOCUSIGN_ENVIRONMENT_TITLES,
 };

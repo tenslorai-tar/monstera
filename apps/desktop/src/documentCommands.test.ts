@@ -1147,7 +1147,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           // and nowhere to push answers the state a machine without one is in.
           assistant: createAssistant({
             secret: () => undefined,
-            setting: () => undefined,
+            setting: (definition) => definition.fallback,
             send: () => undefined,
             openInBrowser: () => Promise.resolve(),
           }),
@@ -1769,7 +1769,7 @@ describe('search is E2s first consumer, through the composition point', () => {
       const handlers = createContractHandlers({
         assistant: createAssistant({
           secret: (id) => (id === 'ai.anthropic-key' ? 'a-key' : undefined),
-          setting: () => undefined,
+          setting: (definition) => definition.fallback,
           send: () => undefined,
           openInBrowser: () => Promise.resolve(),
           fetchImpl,
@@ -1813,7 +1813,7 @@ describe('search is E2s first consumer, through the composition point', () => {
       }) as unknown as typeof fetch;
       const assistant = createAssistant({
         secret: () => 'a-key',
-        setting: () => undefined,
+        setting: (definition) => definition.fallback,
         send: () => undefined,
         openInBrowser: () => Promise.resolve(),
         fetchImpl,

@@ -1,4 +1,4 @@
-import { RECENT_LENGTHS, RECENT_LENGTH_SETTING_ID, type RecentLength } from '@monstera/contract';
+import { RECENT_LENGTH_STORED, type RecentLength } from '@monstera/contract';
 import { z } from 'zod';
 
 import {
@@ -137,11 +137,10 @@ export const RESTORE_SESSION_SETTING: SettingDefinition<z.ZodBoolean> = {
  * time the list is read, pictures included. Ten by default, the list's length before it was a choice.
  */
 export const RECENT_LENGTH_SETTING: SettingDefinition<z.ZodEnum<{ [K in RecentLength]: K }>> = {
-  id: RECENT_LENGTH_SETTING_ID,
+  // THE ID, SCHEMA AND DEFAULT ARE THE CONTRACT'S, which `main` reads through too (`storedSettings.ts`).
+  ...RECENT_LENGTH_STORED,
   title: RECENT_LENGTH_TITLE,
   description: RECENT_LENGTH_DESCRIPTION,
-  schema: z.enum(Object.keys(RECENT_LENGTHS) as [RecentLength, ...RecentLength[]]),
-  fallback: 'ten',
   category: 'viewing',
   optionTitles: { five: RECENT_LENGTH_5, ten: RECENT_LENGTH_10, twenty: RECENT_LENGTH_20, thirty: RECENT_LENGTH_30 },
 };

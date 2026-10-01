@@ -70,7 +70,7 @@ function handlers() {
     // Same reasoning as the parts below: these cases are about which channels register.
     assistant: createAssistant({
       secret: () => undefined,
-      setting: () => undefined,
+      setting: (definition) => definition.fallback,
       send: () => undefined,
       openInBrowser: () => Promise.resolve(),
     }),
