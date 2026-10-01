@@ -5005,6 +5005,11 @@ body {
   opacity: var(--grain-opacity);
   mix-blend-mode: overlay;
   pointer-events: none;
+  /* ITS OWN LAYER, drawn once and blended by the compositor. Painted into the surface's layer, the noise tile and its
+     overlay blend were rasterised again under every repaint above them — measured 2026-10-01 with
+     `scripts/research/frameTimes.mjs` (development build, 1600 x 852): a panel-edge drag dropped 215 frames, 72 with
+     the grain on this layer, 77 with it removed; at most 2 levels in 255 differ on screen, the blend's rounding. */
+  will-change: transform;
 }
 
 /* THE MENU BAR (v5-14): 32 tall, on the mica, spanning the window over the ground's edge padding so its drag region
