@@ -27,14 +27,11 @@
  * Usage: node scripts/research/pdfiumImageKeep.mjs   (after npm run build and node scripts/provision/pdfium.mjs)
  */
 
-import { pathToFileURL } from 'node:url';
-import { join } from 'node:path';
-
 import { repoRoot } from '../lib/gitScope.mjs';
 import { pdfiumLibrary } from '../provision/pdfium.mjs';
 
 const ROOT = repoRoot();
-const pdfium = await import(pathToFileURL(join(ROOT, 'packages', 'kernel', 'dist', 'pdfiumFfi.js')).href);
+const pdfium = await import('../../packages/kernel/dist/pdfiumFfi.js');
 pdfium.openPdfium(pdfiumLibrary(ROOT));
 
 const SIDE = 16;

@@ -25,7 +25,6 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 import { WORD_PICTURES, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
@@ -108,11 +107,11 @@ if (process.platform !== 'win32') {
 } else {
   refuseStaleBuild(ROOT, WORD_PICTURES, 4);
   /** @type {any} */
-  const { composeWordDocument } = await import(pathToFileURL(join(ROOT, 'packages', 'kernel', 'dist', 'wordPictures.js')).href);
+  const { composeWordDocument } = await import('../../packages/kernel/dist/wordPictures.js');
   /** @type {any} */
-  const { mupdfWriter } = await import(pathToFileURL(join(ROOT, 'packages', 'kernel', 'dist', 'mupdfWriter.js')).href);
+  const { mupdfWriter } = await import('../../packages/kernel/dist/mupdfWriter.js');
   /** @type {any} */
-  const mupdf = await import(pathToFileURL(join(ROOT, 'packages', 'kernel', 'dist', 'mupdfRaw.js')).href);
+  const mupdf = await import('../../packages/kernel/dist/mupdfRaw.js');
 
   const scratch = mkdtempSync(join(tmpdir(), 'monstera-word-'));
   const session = await mupdfWriter.open(await picturedPage());

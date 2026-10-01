@@ -37,7 +37,7 @@ const CHILD = join(ROOT, 'scripts', 'research', 'officeWorkbookLiveHost.mjs');
 const ELECTRON_BINARY = electronBinaryPath(ROOT);
 
 /** x2t's cut-off, as `officeConversion.ts` names it — read from the build rather than written again. */
-const { X2T_MAX_PRINT_PAGES } = await import(new URL('../../apps/desktop/dist/officeConversion.js', import.meta.url).href);
+const { X2T_MAX_PRINT_PAGES } = await import('../../apps/desktop/dist/officeConversion.js');
 
 const CASES = [
   'CONTROL: x2t alone loses rows of the active sheet — cut at exactly the cut-off, or no PDF at all',

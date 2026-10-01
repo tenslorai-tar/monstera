@@ -268,7 +268,7 @@ async function main() {
     const formBytes = await manyFieldsForm();
     const formPath = join(scratch, 'many-fields-form.pdf');
     writeFileSync(formPath, formBytes);
-    const { bindNativeEngine } = await import(pathToFileURL(join(ROOT, 'scripts', 'lib', 'nativeEngine.mjs')).href);
+    const { bindNativeEngine } = await import('../lib/nativeEngine.mjs');
     if (bindNativeEngine(ROOT) === null) throw new Error('the native MuPDF shim is not built here.');
     const { mupdfWriter } = await built('packages/kernel/dist/mupdfWriter.js');
     const { readFormFields } = await built('packages/kernel/dist/formFields.js');

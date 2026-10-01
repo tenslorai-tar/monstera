@@ -631,6 +631,85 @@ try {
           'run time. Nothing here touches Electron: it reads a CSS file and does arithmetic.',
       },
     ],
+    [
+      'scripts/release/shippedModules.mjs',
+      {
+        sites: 1,
+        reason:
+          'loads the BUILT engineHostPrograms.js from the desktop dist/ it is handed, for the ' +
+          'host entries table the shell starts its hosts from (decision E): the closure\'s ' +
+          'positive control is the product\'s own table, never a copy. The directory is a ' +
+          'parameter — the proof hands a fixture tree and the packager the real one — so the ' +
+          'path cannot be a literal. Plain Node; that module is a table of file names and ' +
+          'imports nothing of Electron\'s.',
+      },
+    ],
+    [
+      'scripts/research/converterPeaks.mjs',
+      {
+        sites: 1,
+        reason:
+          'ONE helper loads five built desktop modules — the office and PDF/A conversions, the ' +
+          'engine host platform and the Win32 pipe and directory surfaces — because the subject ' +
+          'is the SHIPPED converter route\'s memory peak, and a copy would measure a harness. ' +
+          'Plain Node; it never imports the electron package.',
+      },
+    ],
+    [
+      'scripts/research/hostAnswerSizes.mjs',
+      {
+        sites: 1,
+        reason:
+          'ONE helper loads the kernel\'s built readers and the contract\'s host protocol, so the ' +
+          'answers it sizes are the ones the engine host\'s handlers return (ADR-0125). Every ' +
+          'call names a packages/*/dist module. Plain Node; it never imports the electron package.',
+      },
+    ],
+    [
+      'scripts/research/hostSchemaBounds.mjs',
+      {
+        sites: 1,
+        reason:
+          'ONE helper loads the three hosts\' built channel maps and the contract\'s bound reader, ' +
+          'so the bounds it reports are the shipped schemas\' (ADR-0125). Every call names a ' +
+          'packages/*/dist module. Plain Node; it never imports the electron package.',
+      },
+    ],
+    [
+      'scripts/research/mupdfInlineKeep.mjs',
+      {
+        sites: 1,
+        reason:
+          'ONE helper loads the kernel\'s built MuPDF writer, its specs and the PDFium adapter, so ' +
+          'the inline-image measurement runs the shipped engines (ADR-0126). Every call names a ' +
+          'packages/kernel/dist module. Plain Node; it never imports the electron package.',
+      },
+    ],
+    [
+      'scripts/research/officeWorkbookLiveHost.mjs',
+      {
+        sites: 1,
+        reason:
+          'ONE helper loads four built desktop modules — the composition root, the engine host ' +
+          'platform, the harness surfaces and the office conversion — for composeHostLiveHost.mjs\'s ' +
+          'reason: the subject is the SHIPPED workbook route through real contained hosts (decision ' +
+          'C). It runs UNDER the Electron binary in Node mode rather than starting it — its driver ' +
+          'does that, through electronBinaryPath() — and it never imports the electron package.',
+      },
+    ],
+    [
+      'scripts/research/hostFileAnswersLiveHost.mjs',
+      {
+        sites: 1,
+        reason:
+          'ONE helper loads the composition root, the engine host platform, the harness surfaces and ' +
+          'the kernel and contract modules its controls measure with, for composeHostLiveHost.mjs\'s ' +
+          'reason: the subject is answers crossing as files through the SHIPPED hosts (ADR-0125), and ' +
+          'the Word export composed in the real MuPDF host (ADR-0072). It runs UNDER the Electron ' +
+          'binary in Node mode rather than starting it — its driver does that, through ' +
+          'electronBinaryPath() — and it never imports the electron package.',
+      },
+    ],
   ]);
 
   /** @type {Map<string, number>} */

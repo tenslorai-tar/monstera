@@ -37,7 +37,6 @@
 
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { inflateRawSync } from 'node:zlib';
 
 import { WORD_PICTURES, refuseStaleBuild } from '../lib/buildFreshness.mjs';
@@ -142,9 +141,9 @@ async function exported(kernel, session, mode) {
 /** @param {any} sharp */
 async function run(sharp) {
   /** @type {any} */
-  const kernel = await import(pathToFileURL(join(ROOT, 'packages', 'kernel', 'dist', 'wordPictures.js')).href);
+  const kernel = await import('../../packages/kernel/dist/wordPictures.js');
   /** @type {any} */
-  const { mupdfWriter } = await import(pathToFileURL(join(ROOT, 'packages', 'kernel', 'dist', 'mupdfWriter.js')).href);
+  const { mupdfWriter } = await import('../../packages/kernel/dist/mupdfWriter.js');
   const session = await mupdfWriter.open(await picturedPage());
   try {
     const rich = await exported(kernel, session, 'rich');

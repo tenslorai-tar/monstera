@@ -35,7 +35,6 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 import { keepInlineImages } from '../../packages/kernel/dist/mupdfRaw.js';
 import { INLINE_IMAGES, refuseStaleBuild } from '../lib/buildFreshness.mjs';
@@ -303,7 +302,7 @@ if (!existsSync(library) || shim === null) {
   // BOTH BUILT ENGINES ARE THE SUBJECT: the rewrite is `mupdfRaw.js`' and the edit is `pdfiumFfi.js`'.
   refuseStaleBuild(ROOT, INLINE_IMAGES, 2);
   /** @type {any} */
-  const pdfium = await import(pathToFileURL(join(ROOT, 'packages', 'kernel', 'dist', 'pdfiumFfi.js')).href);
+  const pdfium = await import('../../packages/kernel/dist/pdfiumFfi.js');
   pdfium.openPdfium(library);
   /** @type {any} */
   const sharp = createRequire(join(ROOT, 'package.json'))('sharp');
