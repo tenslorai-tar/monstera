@@ -1009,3 +1009,29 @@ still waits.
 Until the discriminator is named, a number derived from these readings is a
 number derived from readings whose conditions are in dispute — which is this
 document's own recurring error, stated three sections above.
+
+## Addition, 2026-10-01 — `mupdf-host`'s baseline is derived on the native engine: 100 MB
+
+**The condition above is replaced, not met.** The discriminator between the two clusters is still not named. The
+owner's instruction of 2026-10-01 takes the window instead: above CI's HIGHEST reading, which covers both clusters
+whatever separates them, and below the native minimum plus the regression the budget must catch. A window whose floor
+is the higher cluster's top does not need to know why there are two.
+
+**The readings.** The shim job's `__MONSTERA_PEAK__` annotations for `roleMupdfHost.mjs --no-document`, every CI run
+from 2026-09-30 to 2026-10-01 whose commit contains `68937ab7` (the native engine), §9.17's units:
+
+| | n | range |
+|---|---|---|
+| native, the real host | 17 | **78.43 – 81.51 MB**, again in two clusters (78.43–78.91, 81.08–81.51) |
+| WASM, the last two runs before it (2026-09-29) | 2 | 109.07 – 109.67 MB |
+
+**What it must catch:** the WASM engine coming back, measured here at **+23.8–24.0 MB** (three runs, 2026-09-30), and
+on CI's own runners the gap between the two rows above is ~28–31 MB. The smaller is the one the derivation uses.
+
+**The window:** 81.51 → 78.43 + 23.8 = **102.2 MB**. **100 MB is inside it**: 18.5 MB above every native reading, and
+a WASM return reads above it by CI's own figures. `perf:gate`'s two roles on this budget, which measure a one-page
+document rather than none, read 64.9–65.0 MB (the model) and 80.6–83.2 MB (the real host) on the build machine,
+which reads higher than the runner (2026-10-01).
+
+**What stays true:** a regression smaller than ~18 MB — `koffi`'s 2.9 MB, the kernel barrel's 10.3 MB — still passes,
+and `proof:kernelload` remains what answers that class, exactly, where no baseline can.

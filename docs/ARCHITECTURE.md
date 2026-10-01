@@ -1910,16 +1910,18 @@ say**.
     engine's own footprint — but the engine's fixed cost is meant to be a
     fraction of the runtime's, not a multiple of it.
 
-    > **A SECOND AMENDMENT IS OWED TO THIS SAME CLAUSE AND HAS NOT LANDED.**
-    > [ADR-0025](DECISIONS/0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md)
-    > owes `mupdf-host` a derived baseline, and it is blocked on two things its
-    > own closing section names: host readings across days under the pinned
-    > runtime, and those readings taken through the real host rather than
-    > `hostFixedCost.mjs`. Recorded here, in the sentence both amendments touch,
-    > because two independent edits to one clause is how a document acquires a
-    > contradiction — and the last sentence above is the one ADR-0025 will
-    > rewrite: the ratio it asserts is **already falsified on two machines**,
-    > measured at 1.06× on the runner and 1.05× here.
+    > **THE SECOND AMENDMENT LANDED 2026-10-01: `mupdf-host`'s baseline is
+    > derived, 100 MB**
+    > ([ADR-0025](DECISIONS/0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md),
+    > addition of 2026-10-01). It must sit above the honest fixed cost and below
+    > that cost plus the smallest thing it exists to catch. On the native engine
+    > CI's real host reads **78.43–81.51 MB** over 17 runs (the shim job's
+    > annotations, 2026-09-30 → 10-01), and the regression it must catch is the
+    > WASM engine coming back: **+23.8–24.0 MB** measured here, and CI's own last
+    > two WASM runs read **109.07–109.67 MB**. The window is 81.51 → 102.2 MB.
+    > The ratio the last sentence above asserts stays falsified — the engine's
+    > fixed cost is not a fraction of the runtime's — and is left standing as the
+    > argument for why the host costs more than `main`, not as a measurement.
 
     **A baseline budget has an UPPER bound as well as a lower one, and the upper
     bound is what makes it a detector** ([ADR-0025](DECISIONS/0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md),
@@ -1954,7 +1956,7 @@ say**.
     tracks is recorded there as open.
 
     > **Memory budgets:** `main = 1.5x, 1.5 GB, base 80 MB` ·
-    > `mupdf-host = 3 GB, base 128 MB` · `renderer = provisional`
+    > `mupdf-host = 3 GB, base 100 MB` · `renderer = provisional`
     >
     > That line is machine-read, and it is the **only** place this section
     > states these numbers — the prose above names each budget and argues it,
@@ -2802,6 +2804,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-01 | **`mupdf-host`'s baseline is derived: 100 MB** (§9.17). 128 MB sat ~38 MB above the host's fixed cost, so it caught only a regression that large, and the one this role now exists to catch is the WASM engine coming back, which 128 misses. Measured on CI on the native engine: the real host 78.43–81.51 MB over 17 runs (the shim job's `__MONSTERA_PEAK__` annotations, 2026-09-30 → 10-01; two clusters about 3 MB apart, as before); the WASM engine's return +23.8–24.0 MB here, and CI's own last two WASM runs 109.07–109.67 MB. The window is CI's highest native reading to the native minimum plus the regression, 81.51 → 102.2 MB; 100 is inside it, and `perf:gate`'s two host roles read 64.9–83.2 MB here, where the runner reads lower. Rejected: a smaller number at the window's floor, which a 3 MB cluster jump would breach on correct code; leaving 128, which fails ADR-0025's own test. | §9.17's `mupdf-host = 3 GB, base 128 MB` | [ADR-0025](DECISIONS/0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md) |
 | 2026-10-01 | **A removal's save writes no `.bak`** (§4, *Save is one pipeline*). Stated after the build, not before it, and that is the finding: item 6 of the 29 September list (`5c19c062`) made a removal's save keep no backup, because a `.bak` of the file a redaction replaces holds what it removed, and left §4 naming `.bak` as a step of every save. Found by the stage audit of `ba129226..4a93218f` (ZZZZZZ-1). The pipeline is still one pipeline; its backup step is now an argument the save's purpose decides, as its mode already was. | §4's *"atomic write (temp, fsync, rename, `.bak`, …)"* for every save | [ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md) |
 | 2026-10-01 | **The shim carries MuPDF's layout engine; every HTML-family document handler stays off** (§3's annotation-appearance row). The owner's list (29 September, night, item 5): Hebrew and Arabic in the text box, callout and typed text. Measured: the native engine drew them as bytes in Helvetica, because `config.h` turns `FZ_ENABLE_HTML_ENGINE` off when every HTML-family handler is off, which ADR-0016 did for another reason. Defined on, with the handlers still off: Noto Hebrew and Noto Naskh Arabic, right to left, Arabic joined, read back in logical order by pdf.js after MuPDF's bake, with nothing read before it as the control. SVG and FB2 parser code is linked again, unregistered and refused at recognition. A document's own rich text is now laid out in the engine host. Rejected: bidi and shaping of ours; a handler turned back on; pdf-lib with an embedded font; waiting | ADR-0016's measured absence of SVG and FB2 code | [0128](DECISIONS/0128-the-shim-carries-mupdfs-layout-engine.md) |
 | 2026-10-01 | **The Word export carries pictures and is composed in the MuPDF host** (§3's *PDF → Word* row). The owner's list (29 September, night, item 4): pictures inline in reading order when the text reflows, at their box in the exact layout, none in text mode, composed in the engine host as ADR-0072's Decision 2 said. The host writes the package into the session's output directory and `main` moves it, never reading it. Measured on the native engine: segmentation puts every picture inside a structure block, which MuPDF's walk does not enter (0 of 2 found; a flat `preserve-images` read finds 2 of 2 with boxes equal to the shared read's), and a picture drawn as `pdf_show_image` draws it keeps its soft mask and its page rotation. Rejected: composing in `main` with each picture crossing as a file; a glue export for a structure block's children; rendering the page region; holding or spilling pictures until the text is written | ADR-0072's correction of 2026-09-17, for Word only | [0072](DECISIONS/0072-office-open-xml-exports-are-written-by-this-build-over-fflate.md) |
