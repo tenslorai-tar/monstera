@@ -277,6 +277,25 @@ textarea {
   flex-direction: column;
   min-block-size: 0;
   min-inline-size: 0;
+  position: relative;
+}
+
+/* ONE LAYER PER OPEN DOCUMENT (ADR-0129). The layer on show is in flow and fills the area; a background layer
+   lies over the same box, laid out and hidden, so its scroll offset, its drawn pages and its fit survive until it
+   is brought forward. `display: none` would drop all three: no box, no offset, and observers reporting every page
+   gone. */
+.m-document-layer {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+.m-document-layer[data-document-layer='background'] {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
 }
 
 /* THE START SCREEN SPANS THE RAIL'S COLUMN, because there is no rail over it:

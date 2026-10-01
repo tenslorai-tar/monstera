@@ -150,7 +150,7 @@ import { CommandPalette } from './CommandPalette.js';
 import { ComparePane } from './ComparePane.js';
 import { goToCommand, historyCommand, pageMoveCommand } from './commands/navigationCommands.js';
 import { syncConversation } from './chatHistorySync.js';
-import { DocumentStores } from './documentStores.js';
+import { type DocumentStore, DocumentStores } from './documentStores.js';
 import { Thumbnails } from './Thumbnails.js';
 import { StatusBar } from './surfaces/StatusBar.js';
 import { LinksPanel } from './LinksPanel.js';
@@ -1251,33 +1251,29 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const [goTo, setGoTo] = useState<number | undefined>(undefined);
 
   /**
-   * Brings a document to the front, and takes the reader back to its page.
+   * Brings a document to the front.
    *
    * ## Why activation is one callback rather than `setActiveId` in four places
    *
-   * Only the ACTIVE document's view is mounted, so activating a tab mounts a
-   * scroller. `PageList` seeds one page visible and reports it as the current
-   * one, which is how a document draws something before any intersection has
-   * fired — and a scroller mounting at the top would tell that document's own
-   * store the reader had gone back to page 1, a moment after the store was
-   * asked where they were.
+   * Every route that changes the active document comes through here rather than
+   * calling `setActiveId`, so there is one name for it.
    *
-   * `startAt` is what stops that: the scroller seeds the page it is mounting
-   * at, so its first report is the truth, and reveals it itself on mount. That
-   * reveal was a `goTo` issued here until 2026-09-18, and the route it did not
-   * cover — a new version, which remounted the scroller on every edit until
-   * `useDocumentView` kept the shown view across versions (2026-10-01) — is why
-   * it moved into the scroller (`PageList`'s `revealedStart`). Every route that
-   * changes the active document still comes through here rather than calling
-   * `setActiveId`, so there is one name for it.
+   * ## Every open document's view is mounted, and the active one is shown (ADR-0129)
    *
-   * ## Only the active view is mounted, and that is a BUDGET decision
+   * Until 2026-10-01 only the active document's view was mounted, as a budget
+   * decision: one set of page bitmaps rather than one per open document. Each
+   * switch then mounted a scroller from nothing, which re-parsed the document
+   * (against §6's *nothing is snapshotted, restored, or re-parsed*) and showed
+   * it building up in three stages. Each document now has a layer of its own,
+   * kept behind the active one (`DocumentLayer`), so activating changes which
+   * layer is shown and its scroll offset, zoom and drawn pages are already
+   * there. `startAt` and the scroller's own reveal (`PageList`'s
+   * `revealedStart`) still serve the mounts that remain: a document opening,
+   * and the error boundary's retry.
    *
-   * Keeping every tab's scroller mounted would preserve the scroll position
-   * for free, and would hold one set of page bitmaps per open document — which
-   * is the first thing in this build that looks like the cache §9.17's
-   * renderer budget is written about. Unmounting keeps that budget a statement
-   * about one document, and this callback is what it costs.
+   * The budget question did not go away; it moved. §9.17's renderer budget is
+   * still provisional, and ADR-0129 states the expected cost per kept tab and
+   * what to do if a measurement breaks it.
    */
   const activate = useCallback((docId: DocId): void => {
     setActiveId(docId);
@@ -3028,6 +3024,76 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     return settings.watch([DARK_PAGE_SETTING.id], apply);
   }, [settings]);
 
+  /**
+   * A version that moved underneath a BACKGROUND document's view, recorded without bringing it forward.
+   *
+   * `opened` is what the active layer is told, and it activates: right for the document on show, wrong for
+   * one behind it, whose parser noticing a moved version must not switch the reader's tab.
+   */
+  const movedBehind = useCallback(
+    (next: OpenedDocument): void => {
+      setTabs((current) => current.map((tab) => (tab.docId === next.docId ? { ...tab, ...next } : tab)));
+      stores.get(next.docId)?.getState().observed(next.version);
+    },
+    [stores],
+  );
+
+  /**
+   * §7's PAGE MENU, with the page right-clicked as the context's page — so every item acts on that page and every
+   * `when` is asked about it. On the page holding the selected annotations the annotation group comes first: the
+   * selection's page is where its actions belong.
+   *
+   * A NAMED CALLBACK rather than inline, because a background layer takes it too (ADR-0129): it wraps each page
+   * and thumbnail slot, and a layer that wrapped them in anything else would put a different component at that
+   * position, so bringing it forward would remount every slot and its canvas. Behind, the layer is inert, so its
+   * menus cannot open on the focused document's context.
+   */
+  const pageMenu = useCallback(
+    (page: number, element: ReactElement): ReactNode => (
+      <ContextMenuArea
+        registry={registry}
+        // THE RIGHT-CLICKED PAGE, and the selection only when that page is in it: a right-click on a page
+        // outside what is ticked means THAT page, so the menu's commands must not act on the ticked ones.
+        context={{ ...context, page, selectedPages: context.selectedPages.includes(page) ? context.selectedPages : NO_PAGES }}
+        menus={[
+          ...(textSelection?.page === page ? (['selection'] as const) : []),
+          ...(selection?.page === page ? (['annotation'] as const) : []),
+          'page',
+        ]}
+      >
+        {element}
+      </ContextMenuArea>
+    ),
+    [context, registry, selection?.page, textSelection?.page],
+  );
+
+  /**
+   * What a background layer shares with the layer on show (ADR-0129): every prop that decides the page area's
+   * LAYOUT, so a document brought forward is already laid out exactly as it will be shown and nothing re-fits.
+   * The rest is the layer's own store or nothing (`DocumentLayer`).
+   */
+  const background = useMemo<BackgroundLayer>(
+    () => ({
+      client,
+      settings,
+      requestPassword,
+      onVersionMoved: movedBehind,
+      pageMenu,
+      others: tabs,
+      rulers,
+      showGrid,
+      unit,
+      split,
+      secondRenderer,
+      tileAbove,
+      quality,
+      pageBadges,
+      smoothScroll,
+      layout,
+    }),
+    [client, layout, movedBehind, pageBadges, pageMenu, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, tabs, tileAbove, unit],
+  );
+
   return (
     // THE WINDOW'S BOUNDARY, the outermost one, and INSIDE this component for the reason the
     // page area's is (§10.5a): the tabs, the focused document and the dialog state live above
@@ -3126,9 +3192,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // whole app would have to restore all three, and a restore is a
         // mechanism that can be wrong where a position cannot (B5).
         //
-        // `key` on the document, so opening a different file clears a caught
-        // error rather than showing the previous document's failure over the
-        // new one — a boundary that latches is a document you cannot open.
+        // ONE BOUNDARY PER DOCUMENT, inside its layer and keyed with it
+        // (`DocumentLayer`), so one document's caught error is never shown over
+        // another's — a boundary that latches is a document you cannot open.
         //
         // THE RETRY'S REMOUNT STARTS WHERE THE READER WAS, because the scroller
         // reveals its `startAt` itself on mount. Holding the state above the
@@ -3146,16 +3212,12 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             grid item the shell would have to name, and a new state would land in
             no area. */}
         <div className="m-body-area">
-        <ErrorBoundary
-          key={open.docId}
-          fallback={({ reset }) => (
-            <ViewProblem
-              onRetry={() => {
-                reset();
-              }}
-            />
-          )}
-        >
+        {/* ONE LAYER PER OPEN DOCUMENT, the background ones hidden and kept (ADR-0129): §6's *tab switching
+            changes which store the UI reads — nothing is snapshotted, restored, or re-parsed*. The active layer
+            renders this element; a background layer renders the same component with its own store's page and
+            zoom, so a switch changes props and never remounts. Each layer carries its own boundary, keyed with it. */}
+        {tabs.map((tab) => (
+        <DocumentLayer key={tab.docId} tab={tab} store={stores.get(tab.docId)} background={tab.docId === open.docId ? undefined : background}>
         <PageCanvas
           client={client}
           document={open}
@@ -3203,24 +3265,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           // `PageCanvas`' row beside the page area (design pass D).
           // §10.3's FLOATING QUICK TOOLBAR, placed inside the page area it floats over (pass F).
           quickToolbar={<QuickToolbar registry={registry} context={context} settings={settings} />}
-          // §7's PAGE MENU, with the page right-clicked as the context's page — so every item acts on
-          // that page and every `when` is asked about it. On the page holding the selected annotations
-          // the annotation group comes first: the selection's page is where its actions belong.
-          pageMenu={(page, element) => (
-            <ContextMenuArea
-              registry={registry}
-              // THE RIGHT-CLICKED PAGE, and the selection only when that page is in it: a right-click on a page
-              // outside what is ticked means THAT page, so the menu's commands must not act on the ticked ones.
-              context={{ ...context, page, selectedPages: context.selectedPages.includes(page) ? context.selectedPages : NO_PAGES }}
-              menus={[
-                ...(textSelection?.page === page ? (['selection'] as const) : []),
-                ...(selection?.page === page ? (['annotation'] as const) : []),
-                'page',
-              ]}
-            >
-              {element}
-            </ContextMenuArea>
-          )}
+          pageMenu={pageMenu}
           contextPanel={
             <ContextPanel
               assistant={
@@ -3343,7 +3388,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             ),
           }}
         />
-        </ErrorBoundary>
+        </DocumentLayer>
+        ))}
         </div>
         </>
       )}
@@ -3533,6 +3579,135 @@ function useTheme(settings: SettingsStore): void {
       unsubscribeMotion();
     };
   }, [settings]);
+}
+
+type PageCanvasProps = Parameters<typeof PageCanvas>[0];
+
+/** {@link App}'s `background`: the layout-deciding props a background layer shares with the one on show. */
+type BackgroundLayer = Pick<
+  PageCanvasProps,
+  | 'client'
+  | 'settings'
+  | 'requestPassword'
+  | 'onVersionMoved'
+  | 'pageMenu'
+  | 'others'
+  | 'rulers'
+  | 'showGrid'
+  | 'unit'
+  | 'split'
+  | 'secondRenderer'
+  | 'tileAbove'
+  | 'quality'
+  | 'pageBadges'
+  | 'smoothScroll'
+  | 'layout'
+>;
+
+const IGNORE = (): void => undefined;
+/** A background layer's document panels: none mounted, so nothing behind the reader asks main for anything. */
+const NO_PANELS: PageCanvasProps['panels'] = { bookmarks: null, comments: null, forms: null, layers: null, search: null };
+
+/**
+ * One open document's page area, kept for as long as the document is open (ADR-0129).
+ *
+ * ## The same `PageCanvas` whether on show or behind
+ *
+ * §6 says tab switching re-parses nothing, and the page area was unmounted with every switch: each one opened a
+ * new parser and drew from nothing, so a switch showed a blank strip, then a blank page at 100%, then the page at
+ * its fit (the owner's review of 0.1.6.0, 2026-10-01). Now every open document has a layer. The one on show
+ * renders the element `App` builds; a background layer renders a `PageCanvas` of its own at the same position,
+ * so React keeps the instance across a switch — its parser, its drawn pages and thumbnails, its scroll offset —
+ * and only the props change.
+ *
+ * ## Behind, it shares the layout and nothing else
+ *
+ * Everything that decides the page area's size is the shared `background`: rulers, the split, the page layout,
+ * the side panels' widths (their settings, read by an empty `ContextPanel` shell). So its fit resolves to what
+ * it will be on show. What it does NOT get is anything that acts: no tool, no search, no compare, no reporting
+ * into `App`'s state, which belongs to the document on show. Its page and zoom come from its own store, which
+ * is where they live (§6).
+ *
+ * ## Hidden, never removed from layout
+ *
+ * `visibility: hidden` over the same box (`app.css`), not `display: none`: a box with no layout loses its scroll
+ * offset and its observers report every page gone, which would unmount the very canvases this keeps. `inert`
+ * and `aria-hidden` take it out of the focus order, find-in-page and the accessibility tree.
+ */
+function DocumentLayer({
+  tab,
+  store,
+  background,
+  children,
+}: {
+  readonly tab: OpenDocument;
+  readonly store: DocumentStore | undefined;
+  /** The shared props when this layer is behind; `undefined` when it is the one on show. */
+  readonly background: BackgroundLayer | undefined;
+  /** The `PageCanvas` element `App` builds for the document on show. */
+  readonly children: ReactElement;
+}): ReactElement {
+  const state = useSyncExternalStore(store?.subscribe ?? NO_DOCUMENT_SUBSCRIBE, () => store?.getState());
+  const behind = background !== undefined;
+  return (
+    <div
+      className="m-document-layer"
+      data-document-layer={behind ? 'background' : 'active'}
+      aria-hidden={behind ? true : undefined}
+      inert={behind}
+    >
+      <ErrorBoundary
+        fallback={({ reset }) => (
+          <ViewProblem
+            onRetry={() => {
+              reset();
+            }}
+          />
+        )}
+      >
+        {behind ? (
+          <PageCanvas
+            {...background}
+            document={tab}
+            onPageBox={IGNORE}
+            onCurrentPage={state?.viewing ?? IGNORE}
+            mode={state?.zoom ?? DEFAULT_ZOOM}
+            onZoomStep={IGNORE}
+            onShownZoom={IGNORE}
+            goTo={undefined}
+            onWentTo={IGNORE}
+            onPageCount={state?.counted ?? IGNORE}
+            loupe={false}
+            current={state?.page ?? FIRST_PAGE.kernel}
+            onJump={IGNORE}
+            onMove={IGNORE}
+            onSwap={IGNORE}
+            organize={undefined}
+            compare={undefined}
+            onComparePage={IGNORE}
+            compareGoTo={undefined}
+            onCompareWentTo={IGNORE}
+            onCompare={IGNORE}
+            drawing={undefined}
+            editing={undefined}
+            panning={false}
+            search={undefined}
+            autoscroll={undefined}
+            onAutoscrollEnd={IGNORE}
+            panels={NO_PANELS}
+            contextPanel={
+              <ContextPanel settings={background.settings} assistant={null}>
+                {null}
+              </ContextPanel>
+            }
+            quickToolbar={null}
+          />
+        ) : (
+          children
+        )}
+      </ErrorBoundary>
+    </div>
+  );
 }
 
 /**
