@@ -896,6 +896,11 @@ jobs:
       - name: Provision the pinned browser for the accessibility gate
         run: node scripts/ci/annotate.mjs scripts/provision/playwright.mjs
 
+      # THE GATE LAUNCHES THE BROWSER THAT STEP INSTALLED, whatever the runner's environment says, and reading where
+      # it is runs no install. Needs node_modules (the config imports @playwright/test), which this job has.
+      - name: The rendered tests look where the browser was provisioned
+        run: node scripts/ci/annotate.mjs scripts/provision/playwright.proof.mjs
+
       # WRAPPED, through the wrapper's --npm form. This read "NOT wrapped, and it
       # cannot be: `annotate.mjs` spawns a node SCRIPT" — true when written, and
       # false from 2026-09-14, when --npm arrived for the unit-test step's own

@@ -50,6 +50,8 @@ import { fileURLToPath } from 'node:url';
 
 import { defineConfig, devices } from '@playwright/test';
 
+import { BROWSERS_PATH } from '../provision/playwright.mjs';
+
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PORT = 4173;
 
@@ -57,8 +59,15 @@ const PORT = 4173;
 // environment, `npm run test:a11y` silently drives whatever browser the machine
 // has in its per-user cache instead of the one `provision:playwright` put in
 // `.tools/` — and it passes, against an artefact this repository never chose.
-// Not overridden when already set, so a deliberate value still wins.
-process.env['PLAYWRIGHT_BROWSERS_PATH'] ??= join(REPO_ROOT, '.tools', 'playwright');
+//
+// THE PROVISIONER'S OWN PATH, and SET, not defaulted. This was `??=` "so a
+// deliberate value still wins", but the provisioner installs into
+// `BROWSERS_PATH` whatever the environment says, so an ambient value was never
+// one it honoured: on a machine that sets one — the cloud environment sets
+// `/opt/pw-browsers`, holding another Playwright's build — `provision:playwright`
+// succeeded and every rendered run then failed to find the browser it had just
+// installed (measured 2026-10-01). One path, from the module that installs it.
+process.env['PLAYWRIGHT_BROWSERS_PATH'] = BROWSERS_PATH;
 
 export default defineConfig({
   testDir: join(REPO_ROOT, 'packages', 'testing', 'src'),

@@ -49,6 +49,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { isMain } from '../lib/isMain.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -141,7 +142,9 @@ function provision(force) {
   return 0;
 }
 
-if (process.argv[1] !== undefined && import.meta.url.endsWith('playwright.mjs')) {
+// `isMain`, not a test of this module's own URL: `import.meta.url.endsWith('playwright.mjs')` was true on EVERY
+// import, so the rendered config importing `BROWSERS_PATH` would have started a browser install.
+if (isMain(import.meta.url)) {
   try {
     process.exitCode = provision(process.argv.includes('--force'));
   } catch (error) {
