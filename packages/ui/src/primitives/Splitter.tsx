@@ -4,6 +4,7 @@ import * as splitter from '@zag-js/splitter';
 import type { MessageKey } from '@monstera/shared';
 import { Fragment, useId, useRef, useState, type ReactElement, type ReactNode } from 'react';
 
+import { SPLITTER_MACHINE } from './splitterMachine.js';
 import { pixelsOfRoot } from './splitterSize.js';
 
 /**
@@ -157,7 +158,8 @@ export function Splitter({ start, middle, end }: SplitterProps): ReactElement {
     return pane.fixed.open ? `${String(pane.fixed.width)}px` : SHUT;
   });
 
-  const service = useMachine(splitter.machine, {
+  // WITHOUT ZAG'S DRAG CURSOR, which restyled the whole document on every pointer move (`splitterMachine.ts`).
+  const service = useMachine(SPLITTER_MACHINE, {
     id,
     orientation: 'horizontal',
     panels: panes.map((pane) =>
