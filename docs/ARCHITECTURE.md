@@ -800,8 +800,8 @@ Adding a row still means executing it first.
   kernel to place that editor and decides nothing in the renderer.
 
   **One join is the PDFium host's, and only one**
-  ([ADR-0130](DECISIONS/0130-a-documents-size-never-refuses-an-action.md), 2026-10-01): consecutive text objects
-  in one style that abut on one baseline are one run, named by the first object and carrying the last, and the
+  ([ADR-0130](DECISIONS/0130-a-documents-size-never-refuses-an-action.md), 2026-10-01, and its correction): text
+  objects next among the page's runs, in one style, abutting on one line (their heights overlapping) are one run, named by the first object and carrying the last, and the
   same function expands a named run when an edit applies — one join in one module, read and apply alike. A page
   drawn one glyph per object no longer outgrows the text read. Lines and blocks stay `main`'s, under the rule above.
 - **A list that grows with the document crosses in parts, and a count bound on a document's content is a

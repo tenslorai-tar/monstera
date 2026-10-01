@@ -4,8 +4,8 @@
  *
  * A producer that positions every glyph draws one text object per glyph, so a page of prose answered one run per
  * letter: 60 lines of 140 characters is 8,400 runs, past every bound that carried them, and the page could not be
- * edited. Objects that are one run by any reading — consecutive in the page's own order, set alike, on one baseline,
- * each starting where the last ends — are joined here into one run named by its FIRST object and carrying its LAST.
+ * edited. Objects that are one run by any reading — next among the page's runs, set alike, on one line, each starting
+ * where the last ends — are joined here into one run named by its FIRST object and carrying its LAST.
  *
  * ## One function, read and apply alike
  *

@@ -75,3 +75,18 @@ The audit of every document-driven refusal, truncation and cap — 38 of them, w
 `docs/JOURNAL.md`' entry of 2026-10-01, *No document-size refusals*. This ADR fixes the three the owner named and sets
 the rule each of the others is measured against: a cap a real document can reach is a defect owed a part or a join;
 a cap only a hostile peer can reach is a bound, and says what it is derived from.
+
+## Correction, 2026-10-01 — the join rule as built differs from Decision 1's wording in two clauses
+
+Decision 1 says the next object must be *the one after it in the page's own object order* and that its *bottom* must
+be *within a fifth of the size of the run's*. The build (`textRunJoin.ts`, commit ef15da04) does neither, and both
+changes were forced by a measurement rather than chosen:
+
+- **Next among the page's RUNS, not next object.** A line drawn one glyph per object carries a space drawn with no ink
+  between words, which the walk holds no run for; requiring index + 1 broke every such line at its first space. A
+  joined run therefore carries its `members`, and an object between two of them is never one (`membersOf`).
+- **Overlapping height, not matching bottoms.** A descender's ink reaches a fifth of the size below its neighbours'
+  (`g` at 12 points, 2.5 points), and comparing bottoms broke a real line at its first `g`. Two glyphs are on one line
+  when their heights overlap by 0.3 of the size; a line at tight leading does not.
+
+The rest of Decision 1 stands as written. Its text is left as the decision was taken; this note is the rule.
