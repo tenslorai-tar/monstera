@@ -356,4 +356,61 @@ describe('Button', () => {
       expect(screen.getByRole('button', { name: 'Save' }).style.color).toBe('');
     });
   });
+
+  // EVERY BRAND TONE IS A FILL (the owner's decision, 2026-10-01): each draws through `.m-button--tone` and has its label
+  // solved against `--tone-top` and `--tone-bottom`, starting from `--tone-label`. The stylesheet maps a tone's class to
+  // those three; happy-dom does not substitute a `var()` inside a custom property, so the fixture declares them direct.
+  describe('every brand tone is a fill whose label is solved', () => {
+    // A LABEL THAT FAILS ITS FILL: the dark theme's violet label on a mid violet, 2.8:1. A tone drawn as an outline,
+    // or one that skipped the solve, would keep this colour — so the case separates the two from a solved fill.
+    const label = '#160b33';
+    const ends = ['#6d28d9', '#5b21b6'] as const;
+    const declareTone = (): void => {
+      const sheet = document.createElement('style');
+      sheet.dataset['fixture'] = 'tokens';
+      sheet.textContent = `.m-button { --tone-label: ${label}; --tone-top: ${ends[0]}; --tone-bottom: ${ends[1]}; }`;
+      document.head.append(sheet);
+    };
+
+    for (const variant of ['gold', 'violet'] as const) {
+      it(`${variant} draws through the shared tone rule and clears 4.5:1 on both stops`, async () => {
+        declareTone();
+        render(<Button label={SAVE} variant={variant} />);
+        const button = screen.getByRole('button', { name: 'Save' });
+        expect(button.className).toContain('m-button--tone');
+        expect(button.className).toContain(`m-button--${variant}`);
+
+        await vi.waitFor(() => {
+          expect(button.style.color).not.toBe('');
+        });
+        const applied = channels(button.style.color);
+        const started = channels(label);
+        const stops = ends.map((end) => channels(end));
+        if (applied === null || started === null || stops.some((stop) => stop === null)) {
+          throw new Error('a colour did not parse');
+        }
+        for (const stop of stops) expect(contrast(applied, stop ?? [0, 0, 0])).toBeGreaterThanOrEqual(4.5);
+        // THE CONTROL: the label it started from fails both stops, so passing above means it was solved.
+        for (const stop of stops) expect(contrast(started, stop ?? [0, 0, 0])).toBeLessThan(4.5);
+      });
+    }
+
+    it('CONTROL: the outlined and plain variants are not tones, and a disabled tone solves nothing', async () => {
+      declareTone();
+      const { rerender } = render(<Button label={SAVE} />);
+      const button = screen.getByRole('button', { name: 'Save' });
+      expect(button.className).not.toContain('m-button--tone');
+      rerender(<Button label={SAVE} variant="primary" />);
+      expect(button.className).not.toContain('m-button--tone');
+
+      rerender(<Button label={SAVE} variant="violet" />);
+      await vi.waitFor(() => {
+        expect(button.style.color).not.toBe('');
+      });
+      rerender(<Button disabled label={SAVE} variant="violet" />);
+      await vi.waitFor(() => {
+        expect(button.style.color).toBe('');
+      });
+    });
+  });
 });
