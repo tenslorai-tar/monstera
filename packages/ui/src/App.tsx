@@ -1192,9 +1192,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
 
   /** A command sent to one document, carrying the selection across it where it keeps the walk (ADR-0102). */
   const send = useCallback(
-    (docId: DocId, command: DispatchableCommand): void => {
-      void applyCarrying({ client, onApplied: applied, ask, stamp, carry: setPicked }, docId, command);
-    },
+    // WHETHER THE VERSION MOVED, handed back: the drawing overlay holds a committed shape until the
+    // page redraws with it, and drops it at once when the command was refused.
+    (docId: DocId, command: DispatchableCommand): Promise<boolean> =>
+      applyCarrying({ client, onApplied: applied, ask, stamp, carry: setPicked }, docId, command),
     [applied, ask, client, stamp],
   );
 
@@ -1208,7 +1209,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const dispatch = useCallback(
     (command: DispatchableCommand): void => {
       if (activeId === undefined) return;
-      send(activeId, command);
+      void send(activeId, command);
     },
     [activeId, send],
   );
@@ -1264,7 +1265,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * `startAt` is what stops that: the scroller seeds the page it is mounting
    * at, so its first report is the truth, and reveals it itself on mount. That
    * reveal was a `goTo` issued here until 2026-09-18, and the route it did not
-   * cover — a new version, which remounts the scroller on every edit — is why
+   * cover — a new version, which remounted the scroller on every edit until
+   * `useDocumentView` kept the shown view across versions (2026-10-01) — is why
    * it moved into the scroller (`PageList`'s `revealedStart`). Every route that
    * changes the active document still comes through here rather than calling
    * `setActiveId`, so there is one name for it.
@@ -2914,11 +2916,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     const docId = open.docId;
     return {
       tool,
-      onCommand: (command: DispatchableCommand): void => {
+      onCommand: (command: DispatchableCommand): Promise<boolean> =>
         // A DRAG OF THE SELECTION is a `placeAnnotation`, which keeps the walk, so the marks stay
         // selected for the next drag — the same route an arrow key takes.
-        send(docId, command);
-      },
+        send(docId, command),
       selection,
     };
   }, [open, selection, send, toolId, tools]);
@@ -3135,8 +3136,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // which seeded its first page and reported it, so a reader who threw on
         // page 40 came back to page 1 with every piece of state intact. The retry
         // re-issued a `goTo` for that until 2026-09-18, when the reveal moved into
-        // the scroller because an edit remounts it too and no caller's request can
-        // reach the scroller that mounts after it (`PageList`'s `revealedStart`).
+        // the scroller because an edit remounted it too (until 2026-10-01) and no
+        // caller's request can reach the scroller that mounts after it
+        // (`PageList`'s `revealedStart`).
         <>
         <Ribbon registry={registry} context={context} settings={settings} showing={showing} />
         {/* THE BODY AREA, one element whatever the view renders: a scroller, a

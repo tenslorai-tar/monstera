@@ -61,8 +61,23 @@ export interface AnnotationOverlayProps {
    * raises invariant 18's dialog. A second dispatch path here would be the
    * second opinion B3a spends its time on, on the one question every mutation
    * asks.
+   *
+   * Resolves whether the document's version moved, which is what decides how long the drawn shape
+   * stays on this overlay ({@link drawnWith}).
    */
-  readonly onCommand: (command: DispatchableCommand) => void;
+  readonly onCommand: (command: DispatchableCommand) => Promise<boolean>;
+  /**
+   * The view the page underneath was last drawn from: an identity, compared and never read.
+   *
+   * ## Why the overlay is told this
+   *
+   * A committed shape becomes part of the page only when the page redraws from the version the
+   * command produced, which is a reparse and a raster after the release. The overlay used to clear
+   * its preview at the release, so the shape vanished for that whole interval and then reappeared
+   * drawn by the page. It now keeps the shape until the page has been drawn from a NEWER view than
+   * the one under it at the release, and drops it at once when the command did not move the version.
+   */
+  readonly drawnWith: unknown;
   /** The accessible name for the drawing surface, resolved by the caller. */
   readonly label: string;
 }
@@ -72,6 +87,7 @@ export function AnnotationOverlay({
   page,
   geometry,
   onCommand,
+  drawnWith,
   label,
 }: AnnotationOverlayProps): ReactElement {
   const surface = useRef<SVGSVGElement>(null);
@@ -83,6 +99,13 @@ export function AnnotationOverlay({
    * the argument.
    */
   const [gesture, setGesture] = useState<Gesture | undefined>(undefined);
+  /**
+   * A released shape whose command is in flight or landed, and the view the page was drawn from at
+   * the release. Shown while the page is still that drawing ({@link AnnotationOverlayProps.drawnWith}).
+   */
+  const [committed, setCommitted] = useState<{ readonly preview: ToolPreview; readonly since: unknown } | undefined>(
+    undefined,
+  );
 
   /**
    * Where the pointer is, in the overlay's own box.
@@ -182,20 +205,29 @@ export function AnnotationOverlay({
       // from the zoom on screen, and resolving it after an await would place
       // the annotation using a scale the drag never happened at.
       const transform = overlayTransform(geometry);
+      // THE SHAPE AS RELEASED, and the drawing under it now: held only once there is a command, and
+      // only for a tool that previews at all.
+      const shape = tool.controller.preview(finished);
+      const released = shape === undefined ? undefined : { preview: shape, since: drawnWith };
       // `Promise.resolve` OVER THE UNION. `commit` may answer now or later, and
       // this is the one line that does not care which — a synchronous answer
       // still lands a microtask later, which is why the overlay's own cases
       // settle before asserting rather than reading the DOM straight after the
       // pointer-up.
-      void Promise.resolve(tool.controller.commit(finished, page, transform)).then((command) => {
+      void Promise.resolve(tool.controller.commit(finished, page, transform)).then(async (command) => {
         // `undefined` IS AN OUTCOME, and now it is two of them: a click that
         // did not drag produces no annotation, and so does a dismissed dialog.
         // Both mean *there is nothing to send*, which is why the gate is the
         // absence of a value rather than a flag somebody checks.
-        if (command !== undefined) onCommand(command);
+        if (command === undefined) return;
+        if (released !== undefined) setCommitted(released);
+        const moved = await onCommand(command);
+        // A REFUSED COMMAND MADE NOTHING, so nothing may stay drawn as if it had. Only this shape is
+        // dropped: a later release may already hold the slot.
+        if (!moved) setCommitted((current) => (current === released ? undefined : current));
       });
     },
-    [geometry, gesture, onCommand, page, pointAt, tool],
+    [drawnWith, geometry, gesture, onCommand, page, pointAt, tool],
   );
 
   const cancel = useCallback((): void => {
@@ -203,6 +235,9 @@ export function AnnotationOverlay({
   }, []);
 
   const preview = gesture === undefined ? undefined : tool.controller.preview(gesture);
+  // DERIVED, not cleared by an effect: once the page has been drawn from a newer view, the shape is
+  // in its pixels and this stops rendering it in the same render that carries the new drawing.
+  const held = committed !== undefined && committed.since === drawnWith ? committed.preview : undefined;
 
   return (
     <svg
@@ -228,6 +263,11 @@ export function AnnotationOverlay({
       role="application"
       tabIndex={0}
     >
+      {held === undefined ? null : (
+        <g data-annotation-held="true">
+          <Preview preview={held} />
+        </g>
+      )}
       {preview === undefined ? null : <Preview preview={preview} />}
     </svg>
   );

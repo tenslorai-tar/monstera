@@ -96,8 +96,8 @@ const ANSWERS: Readonly<Record<string, unknown>> = {
   // The shell announces its close subscription at mount (`windowClose.ts`); a fixture with no
   // answer for it makes every case here carry an unhandled rejection.
   'window.closeListening': { acknowledged: true },
-  // AN UNDO MOVES THE VERSION, which remounts the scroller exactly as a retry does — and moves no
-  // page, so the reader's page is the same number afterwards (a move would remap it, correctly).
+  // AN UNDO MOVES THE VERSION, which reopens the view under the same scroller — and moves no page,
+  // so the reader's page is the same number afterwards (a move would remap it, correctly).
   'document.undo': { kind: 'undone' as const, version: asDocVersion(2), byteLength: 2048 },
 };
 
@@ -316,10 +316,12 @@ describe('the error boundary around the document view, in App', () => {
     expect(scrolled).toStrictEqual([1]);
   });
 
-  it('a COMMAND that moves the version returns the reader to their page, as a retry does', async () => {
-    // THE THIRD REMOUNT. A new version closes the view and opens the new bytes, so the scroller
-    // remounts and seeds page 1 — and until 2026-09-18 nothing re-requested the reader's page, so
-    // every edit put them back at the top (seen live after ADR-0084 made every edit a version).
+  it('a COMMAND that moves the version leaves the reader on their page, in the same scroller', async () => {
+    // IT USED TO BE THE THIRD REMOUNT. A new version closed the shown view before opening the next,
+    // the scroller unmounted with it and remounted seeding page 1, and from 2026-09-18 the reveal
+    // re-requested the reader's page. Since 2026-10-01 the shown view stays until its successor has
+    // opened (`useDocumentView`), so a command never unmounts the scroller and there is nothing to
+    // restore. The separator is the ELEMENT: a remount is a new node seeded at page 1.
     activateCatalogue('en', EN);
     const { container } = render(<App client={client()} settings={freshSettings()} />);
     await open();
@@ -328,6 +330,8 @@ describe('the error boundary around the document view, in App', () => {
       await Promise.resolve();
     });
     expect(container.querySelector('.m-status-page')?.textContent).toBe('Page 2 of 2');
+    const scroller = container.querySelector('.m-page-list');
+    expect(scroller).not.toBeNull();
 
     // FROM HERE, so the list holds what the version move asked for and nothing before it.
     scrolled.length = 0;
@@ -342,9 +346,11 @@ describe('the error boundary around the document view, in App', () => {
       await Promise.resolve();
     });
 
-    // THE CALL, not the end state: the remounted scroller reports page 1 whatever happened, and
-    // what separates a kept place from a lost one is whether page 2 was REQUESTED.
-    expect(scrolled).toStrictEqual([1]);
+    // THE SAME NODE, and no page requested: a kept scroller has nothing to reveal. A remount would
+    // be a different element, and its seeding would report page 1.
+    expect(container.querySelector('.m-page-list')).toBe(scroller);
+    expect(scrolled).toStrictEqual([]);
+    expect(container.querySelector('.m-status-page')?.textContent).toBe('Page 2 of 2');
   });
 
   it('CONTROL: a view that does not throw renders, and no problem is announced', async () => {

@@ -208,7 +208,8 @@ export interface PageListProps {
   readonly drawing?:
     | {
         readonly tool: UiTool;
-        readonly onCommand: (command: DispatchableCommand) => void;
+        /** Sends a gesture's command; resolves whether the version moved (`AnnotationOverlay.onCommand`). */
+        readonly onCommand: (command: DispatchableCommand) => Promise<boolean>;
         /**
          * What the select tool has picked, drawn over its own page.
          *
@@ -709,7 +710,8 @@ export function PageList({
    * in the render that moves the version, where the OLD scroller is still mounted and consumes
    * it, and the new one mounts at the top a moment later. The scroller that mounts is the one
    * place that knows it mounted, so it reveals its own starting page, and no route has a half
-   * left to forget.
+   * left to forget. (An edit stopped remounting it on 2026-10-01, when `useDocumentView` began
+   * keeping the shown view until the next opens; a tab brought forward and the retry still do.)
    *
    * ONCE, by a ref: `slotFor` and `pageCount` may change while this scroller lives, and a reveal
    * that re-fired on them would pull the reader back to where they started.
@@ -965,6 +967,11 @@ export function PageList({
           page={page}
           ref={slotRef(page)}
           view={view}
+          // THE ELEMENT FOLLOWS THE MARGIN and the draw follows the answer, and they are two props because
+          // they part company on every command: a new version empties the rotation answers until the model
+          // is asked again, and when one prop did both, the canvases on screen unmounted for those frames
+          // and came back empty. Now the canvas keeps the previous drawing until a draw can start.
+          mounted={visible.has(page)}
           // `has`, not a truthy `get`: a page answered with `undefined` is
           // answered, and a page answered with `0` is upright. Both draw.
           draw={visible.has(page) && rotations.has(page)}
@@ -1052,6 +1059,7 @@ function PageSlot({
   page,
   ref,
   view,
+  mounted,
   draw,
   rotation,
   size,
@@ -1074,6 +1082,9 @@ function PageSlot({
   readonly page: number;
   readonly ref: (element: HTMLElement | null) => void;
   readonly view: DocumentView | undefined;
+  /** Whether the page is inside the margin, which is what keeps its canvas (and its bitmap) alive. */
+  readonly mounted: boolean;
+  /** Whether it may rasterise now: mounted, and its rotation answered for this version. */
   readonly draw: boolean;
   readonly rotation: number | undefined;
   readonly size: Measured | undefined;
@@ -1121,6 +1132,9 @@ function PageSlot({
     [ref],
   );
   const paperAt = useCallback((x: number, y: number): string | undefined => paperIn(own.current, x, y), []);
+  // THE VIEW THE PIXELS ON SCREEN CAME FROM, set when a draw has presented: the drawing overlay holds a
+  // released shape until this moves past the view it was released over (`AnnotationOverlay.drawnWith`).
+  const [drawnWith, setDrawnWith] = useState<DocumentView | undefined>(undefined);
 
   /**
    * What the page occupies on screen, in CSS pixels, at the CURRENT zoom.
@@ -1146,6 +1160,12 @@ function PageSlot({
     // SUPERSEDED, NOT MERELY IGNORED: aborting cancels the PDF.js task holding this canvas, which
     // a flag did not — and the next draw on the same canvas was then refused (`renderPage`).
     const superseded = new AbortController();
+    // A NEW DRAW OWNS THE MARKER. A failure belongs to the draw that threw, and one can throw for a
+    // reason the next draw does not have: a page scrolled into view while a command's new view is
+    // still opening is asked of the previous one, whose range main refuses as stale
+    // (`useDocumentView`), and the new view's draw then succeeds. Left set, the marker outlived the
+    // page it described. The thumbnail strip already cleared it here.
+    if (canvas.current !== null) delete canvas.current.dataset['failed'];
 
     const drawPage = async (): Promise<void> => {
       // `devicePixelRatio × zoom`, which is E1's first rule: one bitmap pixel per
@@ -1159,6 +1179,8 @@ function PageSlot({
         const measured = await pageGeometry(view.document, pdfjsPageOf(page), scale, rotation);
         if (superseded.signal.aborted) return;
         onMeasured(page, { ...measured, drawnAt: scale });
+        // MEASURED, not drawn: each tile presents itself, so this is the nearest moment this slot knows of.
+        setDrawnWith(view);
         return;
       }
       const target = canvas.current;
@@ -1183,6 +1205,7 @@ function PageSlot({
         crop: drawn.crop,
         rotation: drawn.rotation,
       });
+      setDrawnWith(view);
     };
 
     void drawPage().catch((error: unknown) => {
@@ -1215,9 +1238,10 @@ function PageSlot({
       ref={slotRef}
       style={shown === undefined ? undefined : { width: shown.width, height: shown.height }}
     >
-      {draw && tiled ? (
+      {mounted && tiled ? (
         size === undefined || view === undefined ? null : (
           <PageTiles
+            draw={draw}
             page={page}
             // THE PAGE'S DEVICE SIZE AT THE SCALE TILES DRAW AT, from the measured size and the scale it was measured
             // at — the same ratio `shown` places the slot by, so the tiles and the slot cannot disagree about the page.
@@ -1233,7 +1257,7 @@ function PageSlot({
             zoom={zoom}
           />
         )
-      ) : draw ? (
+      ) : mounted ? (
         <canvas
           className="m-page"
           data-page-canvas={String(page)}
@@ -1319,6 +1343,7 @@ function PageSlot({
           }}
           label={i18n._(ANNOTATION_SURFACE_LABEL, { page: pdfjsPageOf(page) })}
           onCommand={drawing.onCommand}
+          drawnWith={drawnWith}
           page={page}
           tool={drawing.tool}
         />
@@ -1364,6 +1389,7 @@ function paperIn(slot: HTMLElement | null, x: number, y: number): string | undef
  */
 function PageTiles({
   view,
+  draw,
   page,
   rotation,
   scale,
@@ -1373,6 +1399,8 @@ function PageTiles({
   slot,
 }: {
   readonly view: DocumentView;
+  /** The slot's: whether a tile may rasterise now. A tile on screen keeps its last drawing until it may. */
+  readonly draw: boolean;
   readonly page: number;
   readonly rotation: number | undefined;
   readonly scale: number;
@@ -1423,7 +1451,7 @@ function PageTiles({
   return (
     <div className="m-page-tiles" data-page-tiles={String(page)}>
       {tiles.map((tile) => (
-        <PageTile key={tile.key} page={page} rotation={rotation} scale={scale} tile={tile} view={view} zoom={zoom} />
+        <PageTile key={tile.key} draw={draw} page={page} rotation={rotation} scale={scale} tile={tile} view={view} zoom={zoom} />
       ))}
     </div>
   );
@@ -1453,6 +1481,7 @@ function sameTiles(a: readonly Tile[], b: readonly Tile[]): boolean {
  */
 function PageTile({
   view,
+  draw,
   page,
   rotation,
   tile,
@@ -1460,6 +1489,7 @@ function PageTile({
   zoom,
 }: {
   readonly view: DocumentView;
+  readonly draw: boolean;
   readonly page: number;
   readonly rotation: number | undefined;
   readonly tile: Tile;
@@ -1472,8 +1502,10 @@ function PageTile({
 
   useEffect(() => {
     const target = canvas.current;
-    if (target === null) return;
+    if (target === null || !draw) return;
     const superseded = new AbortController();
+    // A NEW DRAW OWNS THE MARKER: a failure belongs to the draw that threw, and the slot's, above, says why.
+    delete target.dataset['failed'];
     const region = { x, y, width, height };
     void renderRegion(view.document, pdfjsPageOf(page), target, scale, rotation, region, superseded.signal)
       .then(() => {
@@ -1487,7 +1519,7 @@ function PageTile({
     return (): void => {
       superseded.abort();
     };
-  }, [height, page, rotation, scale, view, width, x, y]);
+  }, [draw, height, page, rotation, scale, view, width, x, y]);
 
   const per = drawn === undefined ? 0 : zoom / drawn.scale;
   return (
