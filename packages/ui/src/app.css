@@ -2668,8 +2668,16 @@ optgroup {
   max-inline-size: 85%;
   padding: var(--space-6) var(--space-10);
   border-radius: var(--radius-12);
-  /* `--active`: a filled surface `--text` is declared and checked on in every theme (`tokens.css`). */
-  background: var(--active);
+  /* GREEN (the owner's decision, 2026-10-01): the bubble's own surface and its own text, declared as a pair and
+     checked in every theme (`tokens.css`). Never `--accent-soft`, the selected state, which carries no text. */
+  color: var(--on-bubble);
+  background: var(--bubble);
+}
+
+/* WHAT WENT, inside a person's bubble, takes the bubble's text: `--muted` is declared on the pane's surfaces, and a
+   pair nobody declared is a pair nobody checked. */
+.m-assistant__turn[data-assistant-role='user'] .m-assistant__sent {
+  color: var(--on-bubble);
 }
 
 .m-assistant__turn[data-assistant-role='assistant'] {

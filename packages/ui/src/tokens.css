@@ -120,6 +120,8 @@
  * @role violet-top surface
  * @role violet-bottom surface
  * @role on-violet text @on violet-top violet-bottom
+ * @role bubble surface
+ * @role on-bubble text @on bubble
  * ─────────────────────────────────────────────────────────────────────────── */
 
 :root,
@@ -190,6 +192,13 @@
   --violet-top: #a78bfa;
   --violet-bottom: #9775f8;
   --on-violet: #160b33;
+  /* A PERSON'S MESSAGE in the assistant's chat, green (the owner's decision, 2026-10-01). Its own surface and its own
+     text, never `--accent-soft`: that is the selected state, and ADR-0003 §4 gives it no text. OPAQUE, so the pair is
+     one colour against one colour whatever the pane sits over, and FIXED like the brand tones above, so the stored text
+     is checked by check:tokencontrast rather than derived. Text on it: dark 6.40:1, light 12.82:1, hc 11.08:1 (WCAG's
+     formula, computed 2026-10-01; a deliberately failing light value turned check:tokencontrast red at 1.77:1). */
+  --bubble: #1d6640;
+  --on-bubble: #f2f7f4;
 
   /* THE PAINT, built from the roles above wherever a text sits on it. */
   --ambient:
@@ -297,6 +306,9 @@
   --violet-top: #7c3aed;
   --violet-bottom: #6d28d9;
   --on-violet: #ffffff;
+  /* Pale in light, as a sent message is in the chat apps a person knows, with dark text. */
+  --bubble: #d3f2de;
+  --on-bubble: #0f2a1b;
 
   --ambient:
     radial-gradient(ellipse 60% 55% at 8% -5%, var(--glow-green), transparent 70%),
@@ -404,6 +416,8 @@
   --violet-top: #c4b5fd;
   --violet-bottom: #c4b5fd;
   --on-violet: #000000;
+  --bubble: #0b4527;
+  --on-bubble: #ffffff;
 
   --ambient: none;
   --grain-opacity: 0;
