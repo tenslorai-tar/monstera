@@ -892,6 +892,62 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-01 — Row 303's performance pass: frame times in the owner's package, what lags and why
+
+The owner: scrolling lags, dragging feels heavy, the application feels heavy (no recording). Measured with a new
+instrument, `scripts/research/frameTimes.mjs`: it launches the package stage `packageMsix.mjs` wraps (0.1.6.0, the
+build the owner installed) or a development build, maximised by PID to 1600 × 852 — the owner's own window size in the
+batch-1 frames — and reads frame intervals from `requestAnimationFrame` plus a Chromium trace over the same window
+(main thread split into script, style and layout, paint, composite; raster; GPU process). **Controls first, and it
+refuses to report unless they separate:** idle reads 16.6 ms and 0 dropped; a page spinning 40 ms a frame reads
+p95 50 ms, 70 dropped, script largest. Its first run failed its own sanity check (a thread 5,432 ms busy in a 4,973 ms
+window: nested tasks summed) and was repaired to a union per thread, which now throws if it recurs.
+
+**The owner's package, 5-page dense document** (frames, dropped against 16.6 ms, p95):
+
+| scenario | p95 | dropped | what dominates |
+|---|---|---|---|
+| scroll at 100% / 190% | 50 ms / 50 ms | 66–70 / 43–44 | GPU process busy 3.0–3.3 s of 4–5 s; main thread half busy |
+| drag a panel edge | 50–67 ms | 255–268 | style recalculation (3.4 s) and GPU (9 s) in a 10.3 s drag |
+| drag the float bar, a thumbnail; draw a rectangle; open a menu | 16.8 ms | 0–8 | nothing |
+
+**The large document** (the scan-shaped 210 MB fixture, 212 pages): scrolling at 100% p95 116.5 ms, 316 dropped, the
+main thread busy 7.65 s of 7.84 s and 6.45 s of it script; a panel-edge drag took 20.6 s.
+
+**The candidates, each measured by removing it:** backdrop blur — **refuted**, no change (the float bar drags at 16.8 ms
+with it); thumbnails — **refuted**, no change; PDF.js re-rendering — minor (176 ms of a 4.5 s scroll, 8 canvases
+added and 16 resized); "gradients" — first read as the cost (GPU halved without them), and that variant also removed
+the GRAIN, an SVG noise tile blended `overlay` over the window. Measured apart on a panel drag: 215 dropped; 77 without
+the grain; 140 without the page area's light; 196 without the ambient lights.
+
+**The mechanisms, and what was done:**
+
+1. **The page list scrolls on the main thread and repaints its whole area every frame**: no layer of its own (its area
+   is a `RepaintsOnScroll` rectangle on the surface's layer; the trace's frames read `SCROLL_MAIN_THREAD`). Chromium
+   declines to composite a scroller holding LCD-antialiased text over a transparent background at a pixel ratio under
+   1.5, and the text there is PDF.js' transparent text layer. `will-change: transform` on `.m-page-list` composites it:
+   scroll at 100% dropped 72 → 36, the GPU's 3.2 s → 1.1 s. **Waits for `work/cloud-flicker`**, which owns the page
+   view; it moves the ruler's ticks by up to a pixel (the layer snaps), and the text affected is text nobody sees.
+2. **Every scroll re-renders the whole application**, and `pageMenu` wraps every page slot and every thumbnail in its
+   own `ContextMenuArea`, which evaluates the registry and mounts a menu on every render: on the large document 1.48 s
+   of an 8.1 s scroll, plus 830 ms of garbage collection. The remedy is one menu per surface, built when it opens.
+   **Waits for the same merge** (`App.tsx`, `PageList.tsx`, `Thumbnails.tsx`).
+3. **Fixed — the splitter restyled the whole document on every pointer move** (`d20cc9e0`): Zag's `setGlobalCursor`
+   rewrites `* { cursor: … !important }` each move, and the CSP refuses the sheet anyway. Style and layout on the drag
+   3,381 → 646 ms.
+4. **Fixed — every label was parsed as ICU on every render** (`b9343183`): Lingui 6.6.0's `_()` compiles string messages
+   per call with no cache; the catalogue is now compiled once at load.
+5. **Fixed — the grain is on its own layer** (`93f34880`): drag dropped 215 → 72, at most 2 levels in 255 on screen.
+6. **Fixed — the crash found on the way**, the entry below.
+
+**Correction to `93f34880`'s message:** it says scrolling at 100% went *72 → 60 dropped*. 60 is the trace's compositor
+count; the frame-interval figure every other number here uses is **72 → 39**.
+
+**The owner's trade (asked, not taken):** with the page list composited and the grain on its layer, a panel-edge drag
+still drops about 71 frames in 7 s; removing the page area's light and the ambient lights (the green radial
+gradients) brings it to 17 and the GPU from 5.7 s to 4.3 s, and scrolling barely changes (36 → 30). Each would change
+the look.
+
 ## 2026-10-01 — The application aborted when it closed an engine host's reader: `dispose` terminated the thread
 
 Found while measuring row 303's lag, not by any check. A frame-time run of the packaged 0.1.6.0 lost its process
