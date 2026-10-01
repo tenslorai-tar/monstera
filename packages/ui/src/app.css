@@ -210,12 +210,12 @@ textarea {
 }
 
 /* A MENU'S ITEMS: a column for the mark of a command that is on, the name, the chord at the end — so names line up
-   whether or not a group has marks. A disabled item's look is the shared item's (`.m-context-menu-item[data-disabled]`). */
-.m-menu-bar__item {
-  display: grid;
-  grid-template-columns: var(--icon-16) minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: var(--space-8);
+   whether or not a group has marks. Given to the items through the shared item's two properties, never by a layout
+   rule of the menu bar's own: `.m-context-menu-item` is the one class that lays an item out
+   (`scripts/lib/layoutOwnership.mjs`). */
+.m-menu-bar__popup {
+  --menu-item-columns: var(--icon-16) minmax(0, 1fr) auto;
+  --menu-item-gap: var(--space-8);
 }
 
 .m-menu-bar__mark {
@@ -3787,10 +3787,15 @@ textarea {
   box-shadow: var(--elevation-3);
 }
 
+/* THE ONE CLASS THAT LAYS AN ITEM OUT, in every menu: the name, then the chord at the end. A menu that needs other
+   columns sets the two properties on its popup (the menu bar adds a mark column). Until 2026-10-01 this was a flex
+   row with `justify-content: space-between` and the menu bar's items also carried a grid of their own; this rule
+   came later in the file and won, so every menu bar title floated away from its chord towards the middle. */
 .m-context-menu-item {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-16);
+  display: grid;
+  grid-template-columns: var(--menu-item-columns, minmax(0, 1fr) auto);
+  align-items: center;
+  column-gap: var(--menu-item-gap, var(--space-16));
   padding: var(--space-4) var(--space-8);
   border-radius: var(--radius-4);
   cursor: pointer;

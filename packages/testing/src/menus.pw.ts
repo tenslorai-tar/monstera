@@ -90,6 +90,51 @@ test('EVERY POSITIONED POPUP is a no-drag region: the context menu and a tooltip
   expect(await regionOf(tooltip)).toBe('no-drag');
 });
 
+/** Each item's title offset from its own edge, and its chord's gap to its own end, in one open popup. */
+async function itemGeometry(page: Page, popup: string): Promise<{ title: number; chordGap: number | null }[]> {
+  return page.evaluate((selector) => {
+    const items = [...document.querySelectorAll<HTMLElement>(`${selector} .m-context-menu-item`)];
+    return items.map((item) => {
+      const box = item.getBoundingClientRect();
+      const spans = [...item.querySelectorAll<HTMLElement>(':scope > span')];
+      const chord = item.querySelector<HTMLElement>('.m-context-menu-chord');
+      const title = spans.find((span) => span !== chord && span.textContent.trim() !== '');
+      return {
+        title: Math.round((title?.getBoundingClientRect().left ?? box.left) - box.left),
+        chordGap: chord === null ? null : Math.round(box.right - chord.getBoundingClientRect().right),
+      };
+    });
+  }, popup);
+}
+
+test('EVERY MENU lines its items up: each title at one offset, each chord at the item’s end', async ({ page }) => {
+  // The menu bar's items carried a grid class and a flex class with `space-between`; the flex rule came later and
+  // won, so each title floated towards the middle at an offset that depended on its own width. A title offset that
+  // varies from item to item is exactly that; one offset everywhere is the grid the menu bar meant.
+  await openDocument(page);
+  const menus = ['File', 'Edit', 'View', 'Organize', 'Comment', 'Forms', 'Review', 'Protect', 'Tools', 'Window', 'Help'];
+  const report: Record<string, unknown> = {};
+  for (const name of menus) {
+    await page.getByRole('menuitem', { name, exact: true }).click();
+    await expect(page.locator('.m-menu-bar__popup')).toBeVisible();
+    const items = await itemGeometry(page, '.m-menu-bar__popup');
+    const offsets = new Set(items.map((item) => item.title));
+    const loose = items.filter((item) => item.chordGap !== null && item.chordGap > 12);
+    if (items.length === 0 || offsets.size !== 1 || loose.length > 0) report[name] = { offsets: [...offsets], loose };
+    await page.keyboard.press('Escape');
+  }
+
+  await page.locator('.m-page-list .m-page-slot').first().click({ button: 'right' });
+  await expect(page.locator('.m-context-menu').first()).toBeVisible();
+  const context = await itemGeometry(page, '.m-context-menu');
+  const contextOffsets = new Set(context.map((item) => item.title));
+  if (context.length === 0 || contextOffsets.size !== 1 || context.some((item) => item.chordGap !== null && item.chordGap > 12)) {
+    report['context menu'] = context;
+  }
+
+  expect(report).toStrictEqual({});
+});
+
 test('a DISABLED menu item looks disabled: muted, and no highlight under the pointer', async ({ page }) => {
   await openDocument(page);
   // EDIT, where Undo has nothing to undo on a document nobody has changed: a disabled item beside enabled ones.
