@@ -73,7 +73,7 @@ const ASSERTABLE =
   /^([a-z][a-z0-9-]*)\s*=\s*([0-9]+(?:\.[0-9]+)?)x\s*,\s*([0-9]+(?:\.[0-9]+)?)\s*(GB|MB)\s*,\s*base\s+([0-9]+(?:\.[0-9]+)?)\s*(GB|MB)$/u;
 
 /**
- * `name = 3 GB, base 128 MB` — an absolute and a baseline, and NO multiple.
+ * `name = 3 GB, base 100 MB` — an absolute and a baseline, and NO multiple.
  *
  * A PARSED STATE, on the same principle as `provisional` below rather than as
  * an optional group inside the pattern above. An optional `(…x, )?` would match
@@ -135,7 +135,7 @@ function fail(what) {
       `build passes.\n` +
       `Expected exactly one line of the form:\n` +
       `  > **Memory budgets:** \`main = 1.5x, 1.5 GB, base 80 MB\` · ` +
-      `\`mupdf-host = 3 GB, base 128 MB\` · \`renderer = provisional\``,
+      `\`mupdf-host = 3 GB, base 100 MB\` · \`renderer = provisional\``,
   );
 }
 

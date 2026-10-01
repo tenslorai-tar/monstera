@@ -799,6 +799,18 @@ Adding a row still means executing it first.
   become an extraction path, and ADR-0049 stops covering it. Its extent leaves the
   kernel to place that editor and decides nothing in the renderer.
 
+  **One join is the PDFium host's, and only one**
+  ([ADR-0130](DECISIONS/0130-a-documents-size-never-refuses-an-action.md), 2026-10-01): consecutive text objects
+  in one style that abut on one baseline are one run, named by the first object and carrying the last, and the
+  same function expands a named run when an edit applies — one join in one module, read and apply alike. A page
+  drawn one glyph per object no longer outgrows the text read. Lines and blocks stay `main`'s, under the rule above.
+- **A list that grows with the document crosses in parts, and a count bound on a document's content is a
+  hostile-host bound, derived** ([ADR-0130](DECISIONS/0130-a-documents-size-never-refuses-an-action.md)). A
+  person is never told an action cannot be done because of their document. A document-wide list is asked for
+  from an offset and answered a part at a time, each part bounded — invariant 11 is *per operation* — and the
+  bound a host answer keeps is `ENGINE_ANSWER_FILE_MAX_BYTES` over the smallest item it can carry, which no real
+  document reaches; a cap a real document can reach is a defect owed a part or a join.
+
   This licenses no tolerance constant. The groupings this permits are relations
   with no number to tune — vertical **overlap** for a line, and for a block, gaps
   compared against the line's **own height** — so Part E2's *"constants change
@@ -1930,16 +1942,18 @@ say**.
     engine's own footprint — but the engine's fixed cost is meant to be a
     fraction of the runtime's, not a multiple of it.
 
-    > **A SECOND AMENDMENT IS OWED TO THIS SAME CLAUSE AND HAS NOT LANDED.**
-    > [ADR-0025](DECISIONS/0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md)
-    > owes `mupdf-host` a derived baseline, and it is blocked on two things its
-    > own closing section names: host readings across days under the pinned
-    > runtime, and those readings taken through the real host rather than
-    > `hostFixedCost.mjs`. Recorded here, in the sentence both amendments touch,
-    > because two independent edits to one clause is how a document acquires a
-    > contradiction — and the last sentence above is the one ADR-0025 will
-    > rewrite: the ratio it asserts is **already falsified on two machines**,
-    > measured at 1.06× on the runner and 1.05× here.
+    > **THE SECOND AMENDMENT LANDED 2026-10-01: `mupdf-host`'s baseline is
+    > derived, 100 MB**
+    > ([ADR-0025](DECISIONS/0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md),
+    > addition of 2026-10-01). It must sit above the honest fixed cost and below
+    > that cost plus the smallest thing it exists to catch. On the native engine
+    > CI's real host reads **78.43–81.51 MB** over 17 runs (the shim job's
+    > annotations, 2026-09-30 → 10-01), and the regression it must catch is the
+    > WASM engine coming back: **+23.8–24.0 MB** measured here, and CI's own last
+    > two WASM runs read **109.07–109.67 MB**. The window is 81.51 → 102.2 MB.
+    > The ratio the last sentence above asserts stays falsified — the engine's
+    > fixed cost is not a fraction of the runtime's — and is left standing as the
+    > argument for why the host costs more than `main`, not as a measurement.
 
     **A baseline budget has an UPPER bound as well as a lower one, and the upper
     bound is what makes it a detector** ([ADR-0025](DECISIONS/0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md),
@@ -1974,7 +1988,7 @@ say**.
     tracks is recorded there as open.
 
     > **Memory budgets:** `main = 1.5x, 1.5 GB, base 80 MB` ·
-    > `mupdf-host = 3 GB, base 128 MB` · `renderer = provisional`
+    > `mupdf-host = 3 GB, base 100 MB` · `renderer = provisional`
     >
     > That line is machine-read, and it is the **only** place this section
     > states these numbers — the prose above names each budget and argues it,
@@ -2823,6 +2837,8 @@ Every entry names the founding clause it supersedes and links its ADR.
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
 | 2026-10-01 | **The provider picker beside Send names the provider; the pane carries no consent line** (§8, *What reaches an AI provider*). The owner's decision: remove the *Asking about* line that named the scope and the provider before Send. Content still reaches a provider only when the person presses Send, and the picker beside Send shows which provider before anything goes, so the naming the founding clause asks for is the picker's and the consent is the press. Rejects keeping the line (the owner's call), and moving it to a confirmation step (a second action for every question) | `BUILD-PROMPT.md` :593-594, *"the consent copy in the assistant panel says which provider receives it"*, as ADR-0088 Decision 3 read it (*"The Asking about line names the scope and the provider before a person presses Send"*) | [0088](DECISIONS/0088-an-ask-about-a-document-carries-a-bounded-window-read-in-main.md) (correction 2026-10-01) |
+| 2026-10-01 | **A document's size never refuses an action** (§3.2). The owner's rule: Monstera works as Acrobat and PDF-XChange do, and a person is never told an action cannot be done because of their document. Three caps did: 8,192 text runs a page (a page drawn one glyph per object cannot be edited), 4,096 form fields listed, and 4,096 outline entries cut in silence. **The PDFium host joins** consecutive same-style text objects that abut on one baseline into one run, named by its first object, and the same function expands a named run when an edit applies, so command shapes do not change. **A document-wide list crosses in parts**, each part bounded per invariant 11. **A count bound on a document's content is a hostile-host bound** derived from the 8 MiB answer ceiling over the smallest item. Rejected: raising the caps (the renderer's 512 becomes the wall one hop on), ranges in commands (every command, prior and undo changes shape), joining in `main` (a second join, B3a), one larger list bound, an event stream, a cursor held in `main`. | §3.2's *"the host answers the engine's facts"* for the one join, and §2's lists answered whole up to a guessed count | [ADR-0130](DECISIONS/0130-a-documents-size-never-refuses-an-action.md) |
+| 2026-10-01 | **`mupdf-host`'s baseline is derived: 100 MB** (§9.17). 128 MB sat ~38 MB above the host's fixed cost, so it caught only a regression that large, and the one this role now exists to catch is the WASM engine coming back, which 128 misses. Measured on CI on the native engine: the real host 78.43–81.51 MB over 17 runs (the shim job's `__MONSTERA_PEAK__` annotations, 2026-09-30 → 10-01; two clusters about 3 MB apart, as before); the WASM engine's return +23.8–24.0 MB here, and CI's own last two WASM runs 109.07–109.67 MB. The window is CI's highest native reading to the native minimum plus the regression, 81.51 → 102.2 MB; 100 is inside it, and `perf:gate`'s two host roles read 64.9–83.2 MB here, where the runner reads lower. Rejected: a smaller number at the window's floor, which a 3 MB cluster jump would breach on correct code; leaving 128, which fails ADR-0025's own test. | §9.17's `mupdf-host = 3 GB, base 128 MB` | [ADR-0025](DECISIONS/0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md) |
 | 2026-10-01 | **A removal's save writes no `.bak`** (§4, *Save is one pipeline*). Stated after the build, not before it, and that is the finding: item 6 of the 29 September list (`5c19c062`) made a removal's save keep no backup, because a `.bak` of the file a redaction replaces holds what it removed, and left §4 naming `.bak` as a step of every save. Found by the stage audit of `ba129226..4a93218f` (ZZZZZZ-1). The pipeline is still one pipeline; its backup step is now an argument the save's purpose decides, as its mode already was. | §4's *"atomic write (temp, fsync, rename, `.bak`, …)"* for every save | [ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md) |
 | 2026-10-01 | **An open document's view lives until it closes; a background tab is kept, hidden** (§6). The owner's review of 0.1.6.0: a tab switch built up in three stages, because only the active document's page area was mounted and every switch re-parsed the other — against §6's own *nothing is re-parsed*. Every open document now has a layer; the one on show is in flow, the others are laid out under `visibility: hidden` with `inert`, render the same component so a switch changes props only, and share every layout-deciding prop so nothing re-fits. Cost estimated, not measured; §9.17's renderer budget stays provisional, and a cap on kept layers is the stated follow-up if a measurement breaks it. Rejected: a last-frame bitmap (still re-parses; no way to capture the DOM), a cached parser with a remounted page area (keeps every other stage), a cap now (no measurement behind it) | `App.tsx`'s *"Only the active view is mounted, and that is a BUDGET decision"*, an implementation decision rather than a founding clause; §6's *"State is per document"* paragraph is extended, not replaced | [0129](DECISIONS/0129-an-open-documents-view-lives-until-it-closes.md) |
 | 2026-10-01 | **The shim carries MuPDF's layout engine; every HTML-family document handler stays off** (§3's annotation-appearance row). The owner's list (29 September, night, item 5): Hebrew and Arabic in the text box, callout and typed text. Measured: the native engine drew them as bytes in Helvetica, because `config.h` turns `FZ_ENABLE_HTML_ENGINE` off when every HTML-family handler is off, which ADR-0016 did for another reason. Defined on, with the handlers still off: Noto Hebrew and Noto Naskh Arabic, right to left, Arabic joined, read back in logical order by pdf.js after MuPDF's bake, with nothing read before it as the control. SVG and FB2 parser code is linked again, unregistered and refused at recognition. A document's own rich text is now laid out in the engine host. Rejected: bidi and shaping of ours; a handler turned back on; pdf-lib with an embedded font; waiting | ADR-0016's measured absence of SVG and FB2 code | [0128](DECISIONS/0128-the-shim-carries-mupdfs-layout-engine.md) |

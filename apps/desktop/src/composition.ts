@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import {
   type CloudProviderId,
   ANTHROPIC_KEY_SETTING_ID,
-  AZURE_ENDPOINT_SETTING_ID,
+  AZURE_ENDPOINT_STORED,
   AZURE_KEY_SETTING_ID,
   type EventId,
   type EventPayload,
@@ -18,19 +18,20 @@ import {
   type NetworkOcrEngine,
   OPTIMIZE_SETTINGS,
   ENGINE_HOST_MAX_IN_FLIGHT,
-  RECENT_PREVIEWS_SETTING_ID,
-  REVIEW_PROMPTS_SETTING_ID,
+  RECENT_PREVIEWS_STORED,
+  REVIEW_PROMPTS_STORED,
   type ClientApi,
   type IncidentSink,
   type StorePage,
-  UPDATE_CHECK_SETTING_ID,
+  UPDATE_CHECK_STORED,
   UPDATE_MANIFEST,
   type UpdateManifest,
-  AI_MODELS_SETTING_ID,
+  AI_MODELS_STORED,
   type AiModel,
   type WordMode,
   createClient,
   defaultModel,
+  storedSetting,
 } from '@monstera/contract';
 import {
   CapabilityRegistry,
@@ -1486,7 +1487,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       : createRecentPictures({
           files: recentPictureFiles,
           picture: (docId) => commands.firstPagePicture(docId),
-          enabled: () => settings.read()[RECENT_PREVIEWS_SETTING_ID] !== false,
+          enabled: () => storedSetting(settings.read(), RECENT_PREVIEWS_STORED),
           listed: (path) => recent.has(path),
           notKept: (reason, detail) => {
             log?.write('recent-picture', `not kept: ${reason} (${detail})`);
@@ -1547,10 +1548,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
           const value = secretStore.read()[id];
           return typeof value === 'string' ? value : undefined;
         },
-        setting: (id) => {
-          const value = settings.read()[id];
-          return typeof value === 'string' ? value : undefined;
-        },
+        setting: (definition) => storedSetting(settings.read(), definition),
         send: (event, payload) => {
           sendEvent?.(event, payload);
         },
@@ -1571,7 +1569,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
           : reviewPrompt(
               createEngagement(engagementFile, {
                 now: () => new Date(),
-                enabled: () => settings.read()[REVIEW_PROMPTS_SETTING_ID] !== false,
+                enabled: () => storedSetting(settings.read(), REVIEW_PROMPTS_STORED),
               }),
               appInfo.installChannel === 'store' && openStore !== undefined
                 ? () => openStore('review')
@@ -1633,7 +1631,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         provider: UPDATE_PROVIDERS[appInfo.installChannel],
         address: UPDATE_MANIFEST,
         installed: appInfo.version,
-        enabled: () => settings.read()[UPDATE_CHECK_SETTING_ID] !== false,
+        enabled: () => storedSetting(settings.read(), UPDATE_CHECK_STORED),
         record: updateRecordFile ?? null,
         fetchManifest: fetchUpdateManifest ?? manifestTransport(),
         log: (detail) => {
@@ -3476,9 +3474,9 @@ function azureCredentials(
   settings: SettingsSurface,
   secrets: SecretStoreSurface | undefined,
 ): AzureCredentials | null {
-  const endpoint = settings.read()[AZURE_ENDPOINT_SETTING_ID];
+  const endpoint = storedSetting(settings.read(), AZURE_ENDPOINT_STORED);
   const key = secrets?.read()[AZURE_KEY_SETTING_ID];
-  if (typeof endpoint !== 'string' || endpoint === '') return null;
+  if (endpoint === '') return null;
   if (typeof key !== 'string' || key === '') return null;
   return { endpoint, key };
 }
@@ -3539,10 +3537,9 @@ export async function claudeModel(
   list: (key: string) => Promise<{ readonly models: readonly AiModel[] }> = (anthropicKey) =>
     listModels({ provider: 'anthropic', key: anthropicKey }),
 ): Promise<string> {
-  const chosen = settings.read()[AI_MODELS_SETTING_ID];
-  const stored =
-    typeof chosen === 'object' && chosen !== null ? (chosen as Readonly<Record<string, unknown>>)['anthropic'] : undefined;
-  if (typeof stored === 'string' && stored !== '') return stored;
+  // THE REGISTRY'S SCHEMA, through the contract's one definition: a value it refuses is no choice at all.
+  const stored = storedSetting(settings.read(), AI_MODELS_STORED).anthropic;
+  if (stored !== undefined) return stored;
   const listed = await list(key);
   const model = defaultModel(listed.models, { vision: true });
   if (model === undefined) {

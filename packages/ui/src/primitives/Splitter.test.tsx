@@ -2,6 +2,7 @@
 import { I18nProvider } from '@lingui/react';
 import { messageKey } from '@monstera/shared';
 import { render, screen } from '@testing-library/react';
+import * as splitter from '@zag-js/splitter';
 import type { ReactElement, ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
@@ -9,6 +10,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { activateCatalogue, i18n } from '../i18n.js';
 import { Splitter, type FixedPane } from './Splitter.js';
+import { SPLITTER_MACHINE as MACHINE } from './splitterMachine.js';
 
 /**
  * What a component test CAN see of a splitter, and what it cannot.
@@ -41,6 +43,34 @@ function fixed(content: string, label: FixedPane['label'], onWidthChange = (): v
 function precedes(a: Node, b: Node): boolean {
   return (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
 }
+
+/**
+ * THE DRAG CURSOR, held where it can be seen. happy-dom lays nothing out, and Zag's move runs `setPointerValue` before
+ * `setGlobalCursor`, so a component drag here never reaches the cursor action for the stock machine either — measured:
+ * a case asserting *no sheet* passed against the stock machine too. So the behaviour is the production build's
+ * (`splitterDrag.pw.ts`: a drag that moves the pane adds no sheet), and what is here is the part a rename would break.
+ */
+describe('Splitter: the drag cursor is emptied by name', () => {
+  const stock = splitter.machine.implementations?.actions ?? {};
+  const ours = MACHINE.implementations?.actions ?? {};
+
+  it("CONTROL: the stock machine still runs both actions, and runs the cursor one on every pointer move", () => {
+    // A RENAME IN THE LIBRARY turns this red, which is the point: the override below would otherwise empty a name
+    // nothing calls, and the sheet would be back with every case here green.
+    expect(typeof stock['setGlobalCursor']).toBe('function');
+    expect(typeof stock['clearGlobalCursor']).toBe('function');
+    expect(JSON.stringify(splitter.machine.states)).toContain('"POINTER_MOVE":{"actions":["setPointerValue","setGlobalCursor"]}');
+  });
+
+  it('the primitive’s machine replaces exactly those two, and keeps every other action the library’s', () => {
+    expect(ours['setGlobalCursor']).not.toBe(stock['setGlobalCursor']);
+    expect(ours['clearGlobalCursor']).not.toBe(stock['clearGlobalCursor']);
+    const others = Object.keys(stock).filter((name) => name !== 'setGlobalCursor' && name !== 'clearGlobalCursor');
+    expect(others.length).toBeGreaterThan(0);
+    for (const name of others) expect(ours[name], name).toBe(stock[name]);
+    expect(MACHINE.states).toBe(splitter.machine.states);
+  });
+});
 
 describe('Splitter', () => {
   it('START + MIDDLE: one separator, named, horizontal, focusable, between the two panes', () => {

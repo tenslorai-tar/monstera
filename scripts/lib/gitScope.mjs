@@ -125,6 +125,36 @@ export function filesInCommit(options = {}) {
 }
 
 /**
+ * @typedef {{ mode: string, sha: string, path: string }} IndexEntry
+ */
+
+/**
+ * Every index entry, with the MODE and blob the index records for it.
+ *
+ * The mode is the half a path list cannot carry, and it is what a checkout
+ * writes: an executable bit set on one contributor's disk and never staged is
+ * on no other machine.
+ *
+ * @param {readonly string[]} [pathspecs] Limits the listing; empty lists everything.
+ * @param {{ cwd?: string }} [options]
+ * @returns {IndexEntry[]}
+ */
+export function indexEntries(pathspecs = [], options = {}) {
+  const args = ['ls-files', '-s', '-z', ...(pathspecs.length > 0 ? ['--', ...pathspecs] : [])];
+  /** @type {IndexEntry[]} */
+  const entries = [];
+  for (const entry of `${git(args, options).stdout}`.split('\0')) {
+    // `<mode> <sha> <stage>\t<path>`
+    const tab = entry.indexOf('\t');
+    if (tab === -1) continue;
+    const [mode, sha] = entry.slice(0, tab).split(/\s+/);
+    const path = entry.slice(tab + 1);
+    if (mode !== undefined && sha !== undefined && path.length > 0) entries.push({ mode, sha, path });
+  }
+  return entries;
+}
+
+/**
  * @typedef {{
  *   state: string,
  *   path: string,

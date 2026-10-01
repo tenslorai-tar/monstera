@@ -147,7 +147,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     // INERT, like every other surface here: these cases drive the SCHEMAS, not the work.
     assistant: createAssistant({
       secret: () => undefined,
-      setting: () => undefined,
+      setting: (definition) => definition.fallback,
       send: () => undefined,
       openInBrowser: () => Promise.resolve(),
     }),

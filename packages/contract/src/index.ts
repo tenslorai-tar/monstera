@@ -518,3 +518,20 @@ export {
   cloudProviderSchema,
   cloudStateSchema,
 } from './cloudProviders.js';
+export {
+  AI_MODELS_STORED,
+  AZURE_ENDPOINT_STORED,
+  AZURE_OPENAI_ENDPOINT_STORED,
+  BACKUP_COPIES_STORED,
+  CHAT_HISTORY_STORED,
+  CRASH_REPORTS_STORED,
+  DOCUSIGN_ENVIRONMENT_STORED,
+  LOG_DETAIL_STORED,
+  RECENT_PREVIEWS_STORED,
+  REVIEW_PROMPTS_STORED,
+  STORED_SETTINGS,
+  UPDATE_CHECK_STORED,
+  storedSetting,
+  type StoredSetting,
+  type TextSetting,
+} from './storedSettings.js';

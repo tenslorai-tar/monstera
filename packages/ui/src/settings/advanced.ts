@@ -1,5 +1,5 @@
-import { LOG_DETAILS, LOG_DETAIL_SETTING_ID } from '@monstera/contract';
-import { z } from 'zod';
+import { LOG_DETAIL_STORED, type LOG_DETAILS } from '@monstera/contract';
+import type { z } from 'zod';
 
 import { LOG_DETAIL_DESCRIPTION, LOG_DETAIL_OPTION_TITLES, LOG_DETAIL_TITLE } from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
@@ -13,11 +13,10 @@ import type { SettingDefinition } from '../registries/settings.js';
  * it, so the choice holds from the next thing a person does.
  */
 export const LOG_DETAIL_SETTING: SettingDefinition<z.ZodEnum<{ [K in (typeof LOG_DETAILS)[number]]: K }>> = {
-  id: LOG_DETAIL_SETTING_ID,
+  // THE ID, SCHEMA AND DEFAULT ARE THE CONTRACT'S, which `main` reads through too (`storedSettings.ts`).
+  ...LOG_DETAIL_STORED,
   title: LOG_DETAIL_TITLE,
   description: LOG_DETAIL_DESCRIPTION,
-  schema: z.enum(LOG_DETAILS),
-  fallback: 'problems',
   category: 'advanced',
   optionTitles: LOG_DETAIL_OPTION_TITLES,
 };

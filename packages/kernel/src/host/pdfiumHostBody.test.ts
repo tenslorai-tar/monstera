@@ -112,6 +112,8 @@ const AREA = { snapshotDirectory: 'C:\\snap', outputDirectory: 'C:\\out' };
 const RUNS = [
   {
     index: 1,
+    // A JOINED RUN, objects 1 to 2 (ADR-0130): a handler that dropped `last` would answer a run of one.
+    last: 2,
     text: 'ONE',
     bottom: 229.9,
     top: 238.0,
@@ -121,6 +123,7 @@ const RUNS = [
   },
   {
     index: 3,
+    last: 3,
     text: 'TWO',
     bottom: 189.9,
     top: 198.0,

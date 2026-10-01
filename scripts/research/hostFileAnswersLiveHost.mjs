@@ -32,7 +32,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
+import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
@@ -216,6 +216,13 @@ async function observed(call) {
 /**
  * A page drawing `glyphs` characters, each its own text object — the shape of the owner's failing file, made here.
  *
+ * ## Each glyph in a colour other than its neighbour's, since the host joins runs (ADR-0130)
+ *
+ * The PDFium host joins abutting glyph objects set alike into one run before it answers, so this page drawn in one
+ * colour now answers twenty runs, 8,196 bytes — measured 2026-10-01 — which a frame carries, and the case that the
+ * answer crosses in a FILE would prove nothing. Alternating two colours keeps every glyph its own run, which is a page
+ * the join leaves apart by its own rule, and the answer above a frame as the owner's file was.
+ *
  * @returns {Promise<Uint8Array>}
  */
 async function onePerGlyphPage() {
@@ -226,7 +233,8 @@ async function onePerGlyphPage() {
   for (let index = 0; index < GLYPHS; index += 1) {
     const column = index % 80;
     const row = Math.floor(index / 80);
-    page.drawText(alphabet[index % alphabet.length] ?? 'a', { x: 20 + column * 7, y: 820 - row * 30, size: 9, font });
+    const color = index % 2 === 0 ? rgb(0, 0, 0) : rgb(0.2, 0, 0);
+    page.drawText(alphabet[index % alphabet.length] ?? 'a', { x: 20 + column * 7, y: 820 - row * 30, size: 9, font, color });
   }
   return document.save();
 }

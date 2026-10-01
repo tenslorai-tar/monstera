@@ -1,8 +1,8 @@
-import { BACKUP_COPIES, BACKUP_COPIES_SETTING_ID, type BackupCopies } from '@monstera/contract';
+import { BACKUP_COPIES, BACKUP_COPIES_STORED, storedSetting } from '@monstera/contract';
 import { type SaveFileNames, siblingNames } from '@monstera/kernel';
 
-/** One: §4's one `.bak`, which every save wrote before the count was a choice. */
-export const DEFAULT_BACKUP_COPIES: number = BACKUP_COPIES.one;
+/** The setting's own default, counted: §4's one `.bak`, which every save wrote before the count was a choice. */
+export const DEFAULT_BACKUP_COPIES: number = BACKUP_COPIES[BACKUP_COPIES_STORED.fallback];
 
 /**
  * How many earlier versions a save keeps beside the file, read from the settings document at the moment of saving —
@@ -10,10 +10,8 @@ export const DEFAULT_BACKUP_COPIES: number = BACKUP_COPIES.one;
  * the contract's (`BACKUP_COPIES`), which the renderer's setting declares too, so no count is spelt here.
  */
 export function backupCopiesIn(settings: Readonly<Record<string, unknown>>): number {
-  const chosen = settings[BACKUP_COPIES_SETTING_ID];
-  return typeof chosen === 'string' && Object.hasOwn(BACKUP_COPIES, chosen)
-    ? BACKUP_COPIES[chosen as BackupCopies]
-    : DEFAULT_BACKUP_COPIES;
+  // THE CONTRACT'S DEFINITION decides what a stored value may be and what an unset one is (`storedSettings.ts`).
+  return BACKUP_COPIES[storedSetting(settings, BACKUP_COPIES_STORED)];
 }
 
 /**

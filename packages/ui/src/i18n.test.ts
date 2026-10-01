@@ -1,7 +1,8 @@
+import { compileMessage } from '@lingui/message-utils/compileMessage';
 import { messageKey } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import { MessageMissing, activateCatalogue, resolve } from './i18n.js';
+import { MessageMissing, activateCatalogue, i18n, resolve } from './i18n.js';
 
 /**
  * The resolver, and the two properties that are decisions rather than plumbing.
@@ -64,13 +65,56 @@ describe('the message resolver', () => {
     // copy on the day Lingui stops making one, and that is the honest
     // description of what it guards.
     //
-    // The spread stays for a reason of its own: `load` takes a mutable record,
-    // and the alternative is widening the parameter's type with a cast.
+    // Since 2026-10-01 there is no spread: `activateCatalogue` builds a new
+    // record of COMPILED messages (the case below), which is a copy of its own.
     const catalogue: Record<string, string> = { [TITLE]: 'Open a document' };
     activateCatalogue('en', catalogue);
 
     catalogue[TITLE] = 'Mutated after loading';
 
     expect(resolve(TITLE)).toBe('Open a document');
+  });
+});
+
+describe('the catalogue is compiled once, at load', () => {
+  /**
+   * `_()` hands a string message to the compiler on EVERY call and caches nothing (`@lingui/core` 6.6.0), so a
+   * catalogue loaded as strings is parsed again for every label of every render — 174 ms in the parser of an 8.1 s
+   * scroll, measured 2026-10-01. Counted here by a compiler that counts, swapped in for the length of each case.
+   */
+  function counting(): { readonly calls: () => number; readonly restore: () => void } {
+    let calls = 0;
+    i18n.setMessagesCompiler((message) => {
+      calls += 1;
+      return compileMessage(message);
+    });
+    return { calls: () => calls, restore: () => i18n.setMessagesCompiler(compileMessage) };
+  }
+
+  it('resolving an activated catalogue compiles nothing, and interpolates as before', () => {
+    activateCatalogue('en', { [TITLE]: 'Open {name}' });
+    const compiler = counting();
+    try {
+      expect(i18n._(TITLE, { name: 'a.pdf' })).toBe('Open a.pdf');
+      expect(i18n._(TITLE, { name: 'b.pdf' })).toBe('Open b.pdf');
+      expect(compiler.calls()).toBe(0);
+    } finally {
+      compiler.restore();
+    }
+  });
+
+  it('CONTROL: the same catalogue loaded as strings is compiled on every call', () => {
+    // Without this the case above passes for a counter that never counts — the state a compiler swapped in after
+    // Lingui stopped consulting it would also produce.
+    i18n.load('en', { [TITLE]: 'Open {name}' });
+    i18n.activate('en');
+    const compiler = counting();
+    try {
+      expect(i18n._(TITLE, { name: 'a.pdf' })).toBe('Open a.pdf');
+      expect(i18n._(TITLE, { name: 'b.pdf' })).toBe('Open b.pdf');
+      expect(compiler.calls()).toBe(2);
+    } finally {
+      compiler.restore();
+    }
   });
 });

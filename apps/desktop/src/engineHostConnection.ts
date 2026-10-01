@@ -368,9 +368,9 @@ export async function createEngineHostConnection(
     // first cause survives: `client.fail` keeps the termination it already has.
     state.client?.fail(reason);
 
-    channel.dispose();
+    // THE PIPE OUTLIVES THE READER: it is closed when the reader has ended, never before (`dispose`).
+    channel.dispose(closePipe);
     state.host?.free();
-    closePipe();
 
     // BEFORE the `started` gate, because a connection still being waited on has
     // not started and its waiter is the only thing that will report this.

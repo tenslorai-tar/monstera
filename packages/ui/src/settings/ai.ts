@@ -1,14 +1,13 @@
 import {
   AI_PROVIDERS,
-  AI_MODELS_SETTING_ID,
+  AI_MODELS_STORED,
   AI_PROVIDER_IDS,
   AI_PROVIDER_SETTING_ID,
   AI_SETUP_AT_START_SETTING_ID,
   type AiProviderId,
   ANTHROPIC_KEY_SETTING_ID,
-  AZURE_OPENAI_ENDPOINT_SETTING_ID,
-  CHAT_HISTORY_SETTING_ID,
-  MAX_MODEL_ID,
+  AZURE_OPENAI_ENDPOINT_STORED,
+  CHAT_HISTORY_STORED,
 } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import { z } from 'zod';
@@ -99,11 +98,10 @@ export const AI_PROVIDER_KEY_SETTINGS: readonly SettingDefinition<z.ZodString>[]
  * cannot be typed into, and the scheme check belongs where the request is made.
  */
 export const AZURE_OPENAI_ENDPOINT_SETTING: SettingDefinition<z.ZodString> = {
-  id: AZURE_OPENAI_ENDPOINT_SETTING_ID,
+  // THE ID, SCHEMA AND DEFAULT ARE THE CONTRACT'S, which `main` reads through too (`storedSettings.ts`).
+  ...AZURE_OPENAI_ENDPOINT_STORED,
   title: AI_AZURE_OPENAI_ENDPOINT_TITLE,
   description: AI_AZURE_OPENAI_ENDPOINT_DESCRIPTION,
-  schema: z.string(),
-  fallback: '',
   category: 'ai',
 };
 
@@ -141,14 +139,11 @@ export const AI_PROVIDER_SETTING: SettingDefinition<z.ZodEnum<{ [K in AiProvider
  * list*, and the row lists what `main` already holds rather than anything fetched on open (the correction of
  * 2026-09-28), because the dialog is props-only (ADR-0038).
  */
-const AI_MODELS_SCHEMA = z.partialRecord(z.enum(AI_PROVIDER_IDS), z.string().min(1).max(MAX_MODEL_ID));
-
-export const AI_MODELS_SETTING: SettingDefinition<typeof AI_MODELS_SCHEMA> = {
-  id: AI_MODELS_SETTING_ID,
+export const AI_MODELS_SETTING: SettingDefinition<(typeof AI_MODELS_STORED)['schema']> = {
+  // THE ID, SCHEMA AND DEFAULT ARE THE CONTRACT'S, which `main` reads through too (`storedSettings.ts`).
+  ...AI_MODELS_STORED,
   title: AI_MODELS_TITLE,
   description: AI_MODELS_DESCRIPTION,
-  schema: AI_MODELS_SCHEMA,
-  fallback: {},
   category: 'ai',
   control: 'ai-models',
 };
@@ -169,14 +164,13 @@ export const AI_SETUP_AT_START_SETTING: SettingDefinition<z.ZodBoolean> = {
  * while it is off, so this control is the choice and not the enforcement.
  */
 export const CHAT_HISTORY_SETTING: SettingDefinition<z.ZodBoolean> = {
-  id: CHAT_HISTORY_SETTING_ID,
+  // THE ID, SCHEMA AND DEFAULT ARE THE CONTRACT'S, which `main` reads through too (`storedSettings.ts`).
+  ...CHAT_HISTORY_STORED,
   title: AI_SAVE_HISTORY_TITLE,
   description: AI_SAVE_HISTORY_DESCRIPTION,
   // THE CONVERSATIONS ARE ENCRYPTED with the keys' cipher (ADR-0093), so a machine that cannot keep
   // a key cannot keep a conversation either, and the switch says so rather than reading ON.
   needsSecureStorage: true,
-  schema: z.boolean(),
-  fallback: false,
   category: 'ai',
 };
 

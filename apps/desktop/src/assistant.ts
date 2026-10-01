@@ -1,10 +1,11 @@
 import {
   AI_PROVIDERS,
-  AZURE_OPENAI_ENDPOINT_SETTING_ID,
+  AZURE_OPENAI_ENDPOINT_STORED,
   type AiProviderId,
   type EventId,
   type EventPayload,
   MAX_EVENT_TEXT,
+  type TextSetting,
   checkEvent,
 } from '@monstera/contract';
 import {
@@ -50,8 +51,11 @@ import { randomUUID } from 'node:crypto';
 export interface AssistantParts {
   /** The stored secrets, by setting id — `main`'s own copy, never the renderer's. */
   readonly secret: (id: string) => string | undefined;
-  /** A non-secret setting's value, for Azure OpenAI's resource address. */
-  readonly setting: (id: string) => string | undefined;
+  /**
+   * A non-secret text setting's value, for Azure OpenAI's resource address: named by the contract's definition, so the
+   * default is the registry's (`storedSettings.ts`) and an id with none cannot be asked for.
+   */
+  readonly setting: (setting: TextSetting) => string;
   /** Pushes one declared event to the renderer. */
   readonly send: <K extends EventId>(id: K, payload: EventPayload<K>) => void;
   /** Injected so a case drives the provider. The application passes the real one. */
@@ -125,7 +129,7 @@ export function createAssistant(parts: AssistantParts): Assistant {
 
   const keyFor = (provider: AiProviderId): string => parts.secret(AI_PROVIDERS[provider].keySetting) ?? '';
   const endpointFor = (provider: AiProviderId): string =>
-    provider === 'azure-openai' ? (parts.setting(AZURE_OPENAI_ENDPOINT_SETTING_ID) ?? '') : '';
+    provider === 'azure-openai' ? parts.setting(AZURE_OPENAI_ENDPOINT_STORED) : '';
 
   /** Each kept answer's source addresses, oldest first — `ai.openSource`'s only source of an address. */
   const kept = new Map<string, readonly WebSource[]>();

@@ -892,6 +892,233 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-01 — Stage audit of `4a93218f..173cc5ae` — findings AAAAAAA-1 to AAAAAAA-5
+
+Owed at one batch of files: merging `origin/main` into `work/cloud-2` (the cloud branches combined) would have taken
+the unaudited range to 241 files against 200, and the pre-commit gate refused the merge. This record rides that merge
+commit, as the gate requires. **It audits this side, `4a93218f..173cc5ae`: 39 commits, 177 files** — main's audit
+record and its two repairs, `work/cloud-flicker` (an edit keeps its pages, ADR-0129 and the kept view, the ribbon's
+fold), `work/cloud-screens` (the screen items of 1 October, the recent list at four, the assistant pane's four
+changes, the cloud rules), `work/cloud-ismain`, and the two merges joining them. **Main's own commits after
+`4a93218f` (`48ea697c` and its 17 ancestors) are NOT covered here**; with this merge they come to one range under a
+batch, for main's next audit. The watermark advances to `173cc5ae`, the side audited.
+
+### 1. Root cause or workaround?
+
+Each fix states a mechanism, including the two found in this range rather than reported to it: the canvas harness read
+a size and a pixel count in two steps, so a page presented between them came back as 300 x 150 with ink (`72ca95fd`,
+measured 1 in 30, 5 in 5 with a pause between the reads); and a hand-written main guard of the form
+`import.meta.url.endsWith(argv[1])` does not fire in a path with a space, because the url escapes it (`b0f53c8b`,
+measured from a directory named `with space`). **AAAAAAA-3** (low, open) is the one workaround-shaped change:
+`620e6d54` respelt a proof's emitted child (`process.argv.length > 1`) so the widened main-guard scan would not report
+it. The fact the child prints is the same, measured both ways; what did not change is the scan, which reads text and so
+cannot tell a guard from a program a proof writes to disk.
+
+### 2. Verified against the easy shape only?
+
+The recent list's cut is proven on a stored list longer than four, with the pictures of the cut entries, and crash
+recovery on six tabs past the cap. The bubble's pair is checked in all three themes. **AAAAAAA-2** (low, open): the
+ubuntu `canvasPixels` run at `bf17dfc2` that drew nothing for 60 s and again after the zoom has no mechanism. It is not
+the harness race (that branch had no single-step present), it did not recur in 66 local runs, and since `72ca95fd` the
+case prints every page canvas when it fails.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Strengthened: the main-guard scan now matches the read of `process.argv[1]` in any spelling and walks every `.mjs` under
+`scripts/`, where it matched one comparison in the npm roster; render-geometry gains a case comparing each wait's size
+with a later reading. Removed with their subjects: the assistant's scope line and web note (their absence asserted with
+a positive half each), the placeholder rotation's focus control, and the start screen's *Show all*.
+
+### 3. Would CI have caught it?
+
+The owner's reading at 23:06 UTC: `72ca95fd` green on both; `620e6d54` red only on the visual baselines, as expected;
+`b0f53c8b` CI green, Guards red only at the first-push history step that `work/2026-10-01-hook-mode` (now on main)
+fixes. The other direction has two answers, both found on this machine and invisible to CI: the space-in-path guard
+(CI's paths have none), and **AAAAAAA-1** below, which needs a git hook running in a linked worktree.
+
+### 4. Are the proofs non-vacuous?
+
+Mutated in the commits that added them: the stored-list cut and its control, the bubble's pair (a failing light value
+went red at 1.77:1), the old main-guard pattern (the spelling case reported none of four), and the harness race (the
+new case caught the two-step harness 3 in 3). Every deleted line in the 16 modified proofs was read: each is a
+rewrite with a stronger separator — `AppErrorBoundary` and `AppTabs` now assert the SAME scroller node where they
+asserted a remount's reveal, `renderPage` asserts the canvas on screen is untouched until the whole drawing is
+presented, and the roster counts rose.
+
+### 4a, 4b. Instruments and searches
+
+The new frame inspector reproduced the blank frame before the fix it measures; the widened scan locates
+`emittedTemplates.mjs` on every run; the harness now prints the canvases it saw. **AAAAAAA-5** (low, open): in the
+cloud sandbox, `proof:perfbudget` failed on an unmodified checkout of `5f5a747a`, reading *no budget declared for
+mupdf-host* while CI was green on the same line. The line has since changed on main; why the two places disagreed is
+not established.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+The scan's walk is derived, and the danger it guards against is a hand guard it did not read, which a larger walk
+reduces; its control file makes an empty walk loud. Nothing else derives a count.
+
+### 5. Executed, or asserted?
+
+Executed: every figure above. Asserted, and said so where it lives: ADR-0129's memory cost of a kept layer.
+
+### 6. Architecture before the feature, or underneath it?
+
+Before, both times a seam moved: §8's amendment (`6893ddfe`) before the line was removed (`01e27fc7`), ADR-0129
+(`9235c10a`) before the kept view (`e6252ae9`).
+
+### 7. Do the documents still match the code?
+
+Swept for the removed line, the web note, *Show all*, the recent length and the rotation: what remains is ADR text
+corrected by an appended note, as an ADR is. **AAAAAAA-4** (low, closed by this record): `b0f53c8b`'s message splits the
+39 guards as 18, 11 and 10; the true split is 18 url-suffix, 12 name-suffix and 9 resolved-path. A commit message is
+not rewritten, so the correction is here.
+
+**AAAAAAA-1** (medium, open, owed on `work/cloud-canary`): `scannerCanary.mjs`' `buildCorpus` runs `git init`,
+`git config` and `git add` in a temporary directory with the inherited environment. A git hook exports `GIT_DIR`; in a
+linked worktree that is an absolute path into the real repository, so the canary wrote `core.bare=true` and a `canary`
+identity into the shared config and replaced the worktree's index with its corpus (observed 2026-10-01). The commit was
+blocked only because the secret scan then found the corpus's planted secrets. In the main checkout `GIT_DIR` is the
+relative `.git`, which resolves inside the temporary directory, which is why it never showed.
+
+---
+
+## 2026-10-01 — The taskbar icon filled 87% of its height; the exe still carries Electron's icon
+
+The owner's taskbar (batch-1, `taskbar_icon.png`): Monstera's mark about 17.5 × 20 pixels in a 24-pixel slot, beside
+Notepad's portrait page at 18 × 24 and Sticky Notes at 22 × 22. **Mechanism:** `storeAssets.mjs` fitted the master's
+square canvas with `fit: 'contain'`, and the master holds the portrait mark inside a transparent margin, so the margin
+came along — 75% of the width, 87–88% of the height. For an icon the transparent border is now trimmed before the
+fit; the mark itself is unaltered (ADR-0002) and runs the full height, about 80% of the width. Tiles keep the canvas at
+two thirds. `proof:storeassets` gains the case that the 256-pixel icon's mark touches its top and bottom rows; run
+against the old fit it reads both clear.
+
+**Which icon the taskbar draws:** the package's. `Monstera.exe` is the renamed `electron.exe` and nothing writes an
+icon into it — `ExtractAssociatedIcon` on the stage's exe returns Electron's atom — so the green mark in the owner's
+taskbar can only be the package's `Square44x44Logo` images. **Open, for the owner:** wherever Windows draws the exe's
+own icon rather than the package's (Alt+Tab and Task Manager are the candidates), it may show Electron's atom. Writing
+the icon into the exe needs a resource editor this repository does not have, which is a download; whether those
+places show it needs the installed package.
+
+## 2026-10-01 — Row 265's Stage 10 audit: every setting `main` reads is the registry's own definition
+
+The question, `check:secondwiring`'s asked of settings: does any shipped behaviour read a value from outside the
+registry? Swept four ways. Browser storage: none. Environment variables: four, none of them a setting (cloud client
+values, known folders, the launcher's variables, an engine host's environment block). The renderer: every read goes
+through `SettingsStore.get`, which is `registry.read` — the schema and the default. **`main`: twelve readers**, because
+`main` cannot import `packages/ui`, and each re-derived what the registry held — `!== false` for crash reports, recent
+previews, review prompts and the update check; `=== true` for chat history; `=== 'detailed'` for the log; a literal
+`'production'` for DocuSign; counts from `BACKUP_COPIES.one` and `RECENT_LENGTHS.ten`; a cast for the AI models with
+no schema; a generic string reader for Azure OpenAI's address. **Every one agreed with the registry**, which is B3a's
+dangerous shape: nothing compared them.
+
+The fix makes the rule a thing with callers. `packages/contract/src/storedSettings.ts` defines each once — id, schema,
+fallback — the registry's entry spreads it, and `main` reads through `storedSetting(stored, definition)`. The
+assistant's reader now takes a definition (`TextSetting`), so it cannot ask for an id with no default. Held by
+`settingsReads.test.ts` (no shipped module in `main` indexes the settings document; its control finds the twelve
+readers' own shapes) and `storedSettings.test.ts` (each definition is the registry entry's own schema object and
+default; its control tells a re-declared schema apart). Mutated both ways — a direct read put back in
+`crashReports.ts`, a schema re-declared in the Privacy entry — and each went red. The secret store is out of scope and
+says why: a secret's absence is *not given*, with no default to disagree with.
+
+## 2026-10-01 — Row 303's performance pass: frame times in the owner's package, what lags and why
+
+The owner: scrolling lags, dragging feels heavy, the application feels heavy (no recording). Measured with a new
+instrument, `scripts/research/frameTimes.mjs`: it launches the package stage `packageMsix.mjs` wraps (0.1.6.0, the
+build the owner installed) or a development build, maximised by PID to 1600 × 852 — the owner's own window size in the
+batch-1 frames — and reads frame intervals from `requestAnimationFrame` plus a Chromium trace over the same window
+(main thread split into script, style and layout, paint, composite; raster; GPU process). **Controls first, and it
+refuses to report unless they separate:** idle reads 16.6 ms and 0 dropped; a page spinning 40 ms a frame reads
+p95 50 ms, 70 dropped, script largest. Its first run failed its own sanity check (a thread 5,432 ms busy in a 4,973 ms
+window: nested tasks summed) and was repaired to a union per thread, which now throws if it recurs.
+
+**The owner's package, 5-page dense document** (frames, dropped against 16.6 ms, p95):
+
+| scenario | p95 | dropped | what dominates |
+|---|---|---|---|
+| scroll at 100% / 190% | 50 ms / 50 ms | 66–70 / 43–44 | GPU process busy 3.0–3.3 s of 4–5 s; main thread half busy |
+| drag a panel edge | 50–67 ms | 255–268 | style recalculation (3.4 s) and GPU (9 s) in a 10.3 s drag |
+| drag the float bar, a thumbnail; draw a rectangle; open a menu | 16.8 ms | 0–8 | nothing |
+
+**The large document** (the scan-shaped 210 MB fixture, 212 pages): scrolling at 100% p95 116.5 ms, 316 dropped, the
+main thread busy 7.65 s of 7.84 s and 6.45 s of it script; a panel-edge drag took 20.6 s.
+
+**The candidates, each measured by removing it:** backdrop blur — **refuted**, no change (the float bar drags at 16.8 ms
+with it); thumbnails — **refuted**, no change; PDF.js re-rendering — minor (176 ms of a 4.5 s scroll, 8 canvases
+added and 16 resized); "gradients" — first read as the cost (GPU halved without them), and that variant also removed
+the GRAIN, an SVG noise tile blended `overlay` over the window. Measured apart on a panel drag: 215 dropped; 77 without
+the grain; 140 without the page area's light; 196 without the ambient lights.
+
+**The mechanisms, and what was done:**
+
+1. **The page list scrolls on the main thread and repaints its whole area every frame**: no layer of its own (its area
+   is a `RepaintsOnScroll` rectangle on the surface's layer; the trace's frames read `SCROLL_MAIN_THREAD`). Chromium
+   declines to composite a scroller holding LCD-antialiased text over a transparent background at a pixel ratio under
+   1.5, and the text there is PDF.js' transparent text layer. `will-change: transform` on `.m-page-list` composites it:
+   scroll at 100% dropped 72 → 36, the GPU's 3.2 s → 1.1 s. **Waits for `work/cloud-flicker`**, which owns the page
+   view; it moves the ruler's ticks by up to a pixel (the layer snaps), and the text affected is text nobody sees.
+2. **Every scroll re-renders the whole application**, and `pageMenu` wraps every page slot and every thumbnail in its
+   own `ContextMenuArea`, which evaluates the registry and mounts a menu on every render: on the large document 1.48 s
+   of an 8.1 s scroll, plus 830 ms of garbage collection. The remedy is one menu per surface, built when it opens.
+   **Waits for the same merge** (`App.tsx`, `PageList.tsx`, `Thumbnails.tsx`).
+3. **Fixed — the splitter restyled the whole document on every pointer move** (`d20cc9e0`): Zag's `setGlobalCursor`
+   rewrites `* { cursor: … !important }` each move, and the CSP refuses the sheet anyway. Style and layout on the drag
+   3,381 → 646 ms.
+4. **Fixed — every label was parsed as ICU on every render** (`b9343183`): Lingui 6.6.0's `_()` compiles string messages
+   per call with no cache; the catalogue is now compiled once at load.
+5. **Fixed — the grain is on its own layer** (`93f34880`): drag dropped 215 → 72, at most 2 levels in 255 on screen.
+6. **Fixed — the crash found on the way**, the entry below.
+
+**Correction to `93f34880`'s message:** it says scrolling at 100% went *72 → 60 dropped*. 60 is the trace's compositor
+count; the frame-interval figure every other number here uses is **72 → 39**.
+
+**The owner's trade (asked, not taken):** with the page list composited and the grain on its layer, a panel-edge drag
+still drops about 71 frames in 7 s; removing the page area's light and the ambient lights (the green radial
+gradients) brings it to 17 and the GPU from 5.7 s to 4.3 s, and scrolling barely changes (36 → 30). Each would change
+the look.
+
+## 2026-10-01 — The application aborted when it closed an engine host's reader: `dispose` terminated the thread
+
+Found while measuring row 303's lag, not by any check. A frame-time run of the packaged 0.1.6.0 lost its process
+twenty-six seconds in, with `FATAL ERROR: Error::ThrowAsJavaScriptException napi_throw`, exit 134, and the reader
+thread's JavaScript stack at `abandonOperation` — the `CancelIoEx` it issues after being stopped while waiting for a host
+to connect. To the person using it, the application vanishes.
+
+**The mechanism, in one sentence:** `engineReaderChannel.ts`' `dispose` terminated a reader that had not yet ended, every
+deliberate close reaches `dispose` on the tick after signalling the reader's stop event — while the reader, woken by that
+event, is still on its way out (57–127 ms from the signal to its ending arriving, measured) — and a termination that
+lands while the thread is inside a koffi call fails koffi's own throw, which node-addon-api answers with
+`napi_fatal_error`, aborting the whole process.
+
+This is UUUUU-2's signature (2026-08-31: *"aborts, exit 134, `napi_throw` fatal from the reader's
+`GetOverlappedResult`"*). That finding fixed the ORDER of the shell's shutdown — signal the reader before killing the
+host — and left `dispose`'s terminate in place as a backstop, which every close still reached.
+
+**Reproduced, then fixed:** the shipped channel, stopped and terminated across 0–130 ms after the stop, aborted 7
+processes of 8 on Electron's Node and 3 of 8 on plain Node (60 stops each). `dispose` now never terminates: it signals
+the stop if nothing has, and releases the stop event — and, through a new `release` argument, the PIPE — when the
+reader's ending arrives. The pipe waits too, because the reader's last act is a cancel on it, and a pipe closed first
+names a handle value the next connection may already have been given. `ReaderWorkerHandle` has no `terminate` any more,
+so the backstop cannot be written back without changing the type (B5).
+
+**Proof, with its control** (`proof:readerdispose`, both Windows jobs, `--require-transport`): the control arm
+terminates the shipped reader on its way out and must abort at least one process; the shipped channel's arm runs 600
+stop-and-dispose cycles across the same window with no abort and every release run once. Mutated by putting the
+terminate back into the built channel: 6 processes of 10 aborted and 180 releases of 600 ran. The unit test that read
+*"disposes a running reader by terminating it"* pinned the defect and is replaced by the waiting half's cases; the
+composition test that pinned `worker.terminate` in the shutdown order now pins the reader's handles LAST.
+
+### Correction, 2026-10-01 — the proof's control was a race, and CI showed it
+
+The control arm above — the old order, swept, must abort at least once — went twenty processes without an abort on
+the Windows Server 2022 runner at `6a230404`: whether the termination lands in the window is the machine's timing, so
+it was a gate that reddens on correct code. Two deterministic triggers were tried and aborted nothing (terminating
+first and waking after, 2,400 cycles; terminating a thread looping on a koffi call, 200). The reproduction moved to
+`scripts/research/readerAbort.mjs` — 4 of 6 processes aborted on a third run, and a fifth ended in an access violation
+(`0xC0000005`), a second crash from the same termination. `proof:readerdispose` now proves the shipped channel's
+600 cycles end cleanly with every release run once, and its control is of the instrument: a child ending the way the
+abort ends is counted as one.
+
 ## 2026-10-01 — Stage audit of `ba129226..4a93218f` — findings ZZZZZZ-1 to ZZZZZZ-6
 
 Owed at one batch of files: the Windows visual baselines for the merge of `work/cloud-rate-us` would have taken the

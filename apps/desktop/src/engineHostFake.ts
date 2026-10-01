@@ -162,7 +162,6 @@ export function hostHarness(
     onMessage: (sink) => sinks.message.push(sink),
     onError: () => undefined,
     onExit: (sink) => sinks.exit.push(sink),
-    terminate: () => calls.push('worker.terminate'),
   };
 
   const surfaces: EngineHostConnectionSurfaces = {
@@ -186,6 +185,13 @@ export function hostHarness(
       },
       signal: () => {
         calls.push('reader.signal');
+        // THE READER ENDS ON ITS OWN, LATER, as the shipped one does (57–127 ms after the signal, measured 2026-10-01):
+        // a fake that ended inside `signal`, or never, could not show a dispose arriving before the ending — the order
+        // in which the shipped channel used to terminate the thread and abort the process.
+        const ended = [...sinks.message];
+        setImmediate(() => {
+          for (const sink of ended) sink({ kind: 'ended', detail: 'stopped while waiting for bytes' });
+        });
         return true;
       },
       closeEvent: () => calls.push('reader.closeEvent'),

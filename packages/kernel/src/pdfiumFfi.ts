@@ -3,6 +3,7 @@ import koffi, { type KoffiFunc, type TypeObject } from 'koffi';
 
 import type { ByteImage, EngineWriter, PdfiumSession } from './engineSeam.js';
 import { TextNotWritableError } from './textEditRefusals.js';
+import { type JoinedRun, joinRuns, membersOf } from './textRunJoin.js';
 
 /**
  * The PDFium native boundary.
@@ -762,8 +763,13 @@ export interface RunStyle {
  * that and for placing the editor.
  */
 export interface TextRun {
-  /** The object's index in the page's object order. `textObjectIndices`' unit. */
+  /** The object's index in the page's object order. `textObjectIndices`' unit. The FIRST object of a joined run. */
   readonly index: number;
+  /**
+   * The run's last object: `index` for a run of one object, later for glyph objects joined into one run
+   * (`textRunJoin.ts`, ADR-0130). A run names objects `index` to `last`, and an edit naming the run is applied to all.
+   */
+  readonly last: number;
   /**
    * What it currently says, WITH the spaces PDFium infers between its words.
    *
@@ -875,15 +881,55 @@ export function textRuns(session: PdfiumSession, page: number): Promise<PageText
     onPage(session, page, (handle) => {
       const bindings = api();
       const walked = walkRuns(bindings, handle);
+      // THE MEMBERS STAY HERE: the wire names a run by its first and last object, and the edit recomputes the rest.
+      const runs = joinedWalk(bindings, handle, walked).map(({ members: _members, ...run }) => run);
+      return { runs, unaddressable: walked.unaddressable };
+    }),
+  );
+}
+
+/**
+ * Every text object's run on a page, NOT joined: one run per object, `last` equal to `index`.
+ *
+ * For a writer that works object by object — replace-all writes each object's own text back into that object, and an
+ * occurrence split across two objects is left alone on purpose. Joined runs there would write a run's whole text into
+ * its first object: measured 2026-10-01 when the join first went in, `proof:pdfiumcommand`'s split occurrence came out
+ * as *"GADGET GET"*. The editor reads {@link textRuns}; this is the other reading, named so neither is taken for the
+ * other.
+ */
+export function objectRuns(session: PdfiumSession, page: number): Promise<PageText> {
+  return promised(() =>
+    onPage(session, page, (handle) => {
+      const bindings = api();
+      const walked = walkRuns(bindings, handle);
       return {
         runs: [...walked.runs.entries()].map(([index, run]) => ({
           index,
+          last: index,
           ...run,
           style: styleOf(bindings, bindings.getObject(handle, index)),
         })),
         unaddressable: walked.unaddressable,
       };
     }),
+  );
+}
+
+/**
+ * The walk's runs with their styles, JOINED (`textRunJoin.ts`, ADR-0130): the one answer both {@link textRuns} and an
+ * edit's layout take, so the run a person is shown and the objects an edit writes are one join's answer.
+ */
+function joinedWalk(
+  bindings: Bound,
+  handle: unknown,
+  walked: { readonly runs: ReadonlyMap<number, WalkedRun> },
+): JoinedRun<RunStyle>[] {
+  return joinRuns(
+    [...walked.runs.entries()].map(([index, run]) => ({
+      index,
+      ...run,
+      style: styleOf(bindings, bindings.getObject(handle, index)),
+    })),
   );
 }
 
@@ -1234,6 +1280,16 @@ interface HeldRun {
   object: unknown;
   /** What the person was shown it saying — the walk's text, generated spaces included. */
   readonly text: string;
+  /**
+   * The run's OTHER objects, when it is glyph objects joined into one run (ADR-0130): moved with it, and removed
+   * when the run is written — a joined run is written whole into its first object, which is set in the run's font
+   * and starts where the run starts. Written glyph by glyph instead, each object kept its old place while the text
+   * moved through them: measured 2026-10-01, *"edited whole"* read back as *"edited whol e"*. Emptied here once
+   * removed, so nothing later moves an object that is going.
+   */
+  extras: unknown[];
+  /** Where the whole run's ink began and ended, before the edit: the width a write grows or shrinks from. */
+  readonly span: { readonly left: number; readonly right: number };
 }
 
 /** A matrix as six numbers, read so it can be written back moved. */
@@ -1422,19 +1478,41 @@ function layOutBlocks(
       // EVERY BLOCK RESOLVED IN FULL FIRST, against the untouched page, so a bad
       // index refuses before anything is written — and so a later block's
       // indices are the page's own, not whatever an earlier block left behind.
+      // A NAMED RUN IS ITS OBJECTS: the same join the read answered (`joinedWalk`, ADR-0130) expands each run an edit
+      // names into the objects it is, in order — so a line drawn one glyph per object is written as the person saw it.
+      const joined = joinedWalk(bindings, handle, walked);
       const blocks = edits.map((edit) => ({
         text: edit.text,
         fit: edit.fit,
         lines: edit.lines.map((line) =>
-          line.map((index): HeldRun => {
-            const object = textObjectAt(bindings, handle, page, index);
-            const run = walked.runs.get(index);
-            if (run === undefined) {
+          line.map((named): HeldRun => {
+            const members = membersOf(joined, named);
+            if (members === undefined) {
               throw new Error(
-                `Object ${String(index)} on page ${String(page)} carries no text this page's reading can place.`,
+                `Object ${String(named)} on page ${String(page)} begins no run this page's reading answered.`,
               );
             }
-            return { index, object, text: run.text };
+            const held = members.map((index) => {
+              const run = walked.runs.get(index);
+              if (run === undefined) {
+                throw new Error(
+                  `Object ${String(index)} on page ${String(page)} carries no text this page's reading can place.`,
+                );
+              }
+              return { object: textObjectAt(bindings, handle, page, index), run };
+            });
+            const [first, ...rest] = held;
+            if (first === undefined) throw new Error(`Run ${String(named)} on page ${String(page)} has no object.`);
+            return {
+              index: named,
+              object: first.object,
+              text: held.map((member) => member.run.text).join(''),
+              extras: rest.map((member) => member.object),
+              span: {
+                left: Math.min(...held.map((member) => member.run.left)),
+                right: Math.max(...held.map((member) => member.run.right)),
+              },
+            };
           }),
         ),
       }));
@@ -1694,8 +1772,8 @@ function layOutBlocks(
           for (const [k, line] of lines.entries()) {
             const next = typed[k];
             if (next === undefined) {
-              // THE PERSON REMOVED THIS LINE; its objects go at the end.
-              removed.push(...line.map((run) => run.object));
+              // THE PERSON REMOVED THIS LINE; its objects go at the end — a joined run's every object.
+              removed.push(...line.flatMap((run) => [run.object, ...run.extras]));
               continue;
             }
             const replacements = new Map(
@@ -1707,18 +1785,25 @@ function layOutBlocks(
             const emptied = new Set<number>();
             for (const run of line) {
               moveBy(bindings, run.object, push, 0);
+              for (const extra of run.extras) moveBy(bindings, extra, push, 0);
               const text = replacements.get(run.index);
               if (text === undefined) continue;
-              const before = boundsOf(bindings, run.object);
+              // THE WHOLE RUN'S WIDTH, a joined run's every object: measured off its first object alone, a write
+              // into a run of glyphs would read as growing by the whole line and push everything after it away.
+              const before = run.extras.length === 0 ? boundsOf(bindings, run.object) : run.span;
               // AN EMPTIED RUN IS REMOVED. `lineEdit`'s diff empties the runs an edit crossed, and
               // `FPDFText_SetText` REFUSES the empty string (measured 2026-09-24) — so a translation,
               // or a person retyping across a bold word, was refused where nothing was wrong.
               if (text === '') {
                 emptied.add(run.index);
-                removed.push(run.object);
+                removed.push(run.object, ...run.extras);
+                run.extras = [];
                 push -= before.right - before.left;
                 continue;
               }
+              // A JOINED RUN IS WRITTEN WHOLE into its first object; its other objects go (`HeldRun.extras`).
+              removed.push(...run.extras);
+              run.extras = [];
               // THE RUN NOW NAMES WHATEVER SAYS IT — itself, or its twin.
               run.object = write(run.object, text);
               const after = boundsOf(bindings, run.object);
@@ -1741,7 +1826,8 @@ function layOutBlocks(
             }
             if (tail !== '') record(last.object, lastText);
             visual.push({
-              objects: line.map((run) => run.object),
+              // A joined run the edit left alone still has all its objects, and they move down with the line.
+              objects: line.flatMap((run) => [run.object, ...run.extras]),
               oldBaseline: baselines[k],
               gapAbove: k === 0 ? 0 : (baselines[k - 1] ?? 0) - (baselines[k] ?? 0),
             });

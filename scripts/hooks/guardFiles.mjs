@@ -31,6 +31,12 @@
  * moment it is pushed — and a declaration file is the only part of that policy
  * a program can actually enforce.
  *
+ * And one mode rule: a hook under .githooks/ must be tracked 100755, because a
+ * hook git will not execute is every other rule here switched off on Linux and
+ * macOS with nothing failing. See scripts/lib/hookFiles.mjs. It reads the mode
+ * the index records, which is the only one a checkout reproduces, so it applies
+ * at the staged and tree scopes; the history scope carries no modes.
+ *
  * Usage: node scripts/hooks/guardFiles.mjs [--staged | --tree]
  */
 
@@ -40,7 +46,8 @@ import { extname, join } from 'node:path';
 // The git scope this guard reads is a decision, not an implementation detail —
 // see scripts/lib/gitScope.mjs for the four scopes, where they are rooted, and
 // why reaching for the filesystem instead is almost always the wrong question.
-import { git, readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
+import { git, indexEntries, readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
+import { hookModeViolation } from '../lib/hookFiles.mjs';
 import { isMain } from '../lib/isMain.mjs';
 
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -157,7 +164,9 @@ function readDiskProvenance() {
 }
 
 /**
- * @typedef {{ path: string, sha: string }} Blob
+ * @typedef {{ path: string, sha: string, mode?: string }} Blob
+ *   `mode` is what the index records at the staged and tree scopes, and absent
+ *   at the history scope, where `rev-list --objects` names a blob without one.
  */
 
 /**
@@ -200,20 +209,8 @@ function collectBlobs(scope, range) {
     return blobs;
   }
 
-  // tree: every tracked file, with the SHA the index records.
-  const { stdout } = git(['ls-files', '-s', '-z']);
-  /** @type {Blob[]} */
-  const blobs = [];
-  for (const entry of `${stdout}`.split('\0')) {
-    // `<mode> <sha> <stage>\t<path>`
-    const tab = entry.indexOf('\t');
-    if (tab === -1) continue;
-    const fields = entry.slice(0, tab).split(/\s+/);
-    const sha = fields[1];
-    const path = entry.slice(tab + 1);
-    if (sha !== undefined && path.length > 0) blobs.push({ path, sha });
-  }
-  return blobs;
+  // tree: every tracked file, with the SHA and mode the index records.
+  return indexEntries();
 }
 
 /**
@@ -233,6 +230,7 @@ function parseRawDiff(stdout) {
     if (meta === undefined || !meta.startsWith(':')) continue;
 
     const parts = meta.slice(1).split(/\s+/);
+    const dstMode = parts[1];
     const dstSha = parts[3];
     const status = parts[4] ?? '';
     const path = fields[index + 1];
@@ -242,12 +240,16 @@ function parseRawDiff(stdout) {
     if (/^[RC]/.test(status)) {
       const destination = fields[index + 1];
       index += 1;
-      if (dstSha !== undefined && destination !== undefined) {
-        blobs.push({ path: destination, sha: dstSha });
+      if (dstMode !== undefined && dstSha !== undefined && destination !== undefined) {
+        blobs.push({ path: destination, sha: dstSha, mode: dstMode });
       }
       continue;
     }
-    if (dstSha !== undefined && path !== undefined) blobs.push({ path, sha: dstSha });
+    // The mode field precedes the sha, so a line carrying a sha carries a mode
+    // and requiring both drops nothing the sha check alone would keep.
+    if (dstMode !== undefined && dstSha !== undefined && path !== undefined) {
+      blobs.push({ path, sha: dstSha, mode: dstMode });
+    }
   }
   return blobs;
 }
@@ -676,6 +678,15 @@ export function guardFiles(scope, range) {
   const seen = new Set();
 
   let knownHistorical = 0;
+
+  // Per ENTRY, outside the SHA de-duplication below: a mode belongs to a path,
+  // not to content, so two hooks with identical bytes and different modes are
+  // two answers, and the loop below would inspect only the first.
+  for (const blob of blobs) {
+    if (blob.mode === undefined) continue;
+    const reason = hookModeViolation(blob.path, blob.mode);
+    if (reason !== null) failures.push(`  ${blob.path}\n      ${reason}`);
+  }
 
   for (const blob of blobs) {
     if (seen.has(blob.sha)) continue;

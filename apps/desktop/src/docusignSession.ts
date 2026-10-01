@@ -1,9 +1,9 @@
 import {
-  DOCUSIGN_ENVIRONMENT_SETTING_ID,
-  DOCUSIGN_ENVIRONMENTS,
+  DOCUSIGN_ENVIRONMENT_STORED,
   DOCUSIGN_INTEGRATION_KEY_SETTING_ID,
   type DocusignEnvironment,
   type DocusignRefusalKind,
+  storedSetting,
 } from '@monstera/contract';
 import {
   authorizationUrl,
@@ -217,10 +217,8 @@ export function createDocusignSession(deps: {
     const clientId = deps.secrets.read()[DOCUSIGN_INTEGRATION_KEY_SETTING_ID] ?? '';
     if (clientId === '') throw new DocusignOutcomeRefused('no-integration-key');
     if (!deps.secrets.available()) throw new DocusignOutcomeRefused('secrets-unavailable');
-    const stored = deps.settings.read()[DOCUSIGN_ENVIRONMENT_SETTING_ID];
-    const environment = (DOCUSIGN_ENVIRONMENTS as readonly unknown[]).includes(stored)
-      ? (stored as DocusignEnvironment)
-      : 'production';
+    // THE CONTRACT'S DEFINITION: the schema and the default the Settings dialog shows (`storedSettings.ts`).
+    const environment = storedSetting(deps.settings.read(), DOCUSIGN_ENVIRONMENT_STORED);
     return { clientId, environment };
   }
 

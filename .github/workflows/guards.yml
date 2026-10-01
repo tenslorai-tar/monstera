@@ -722,15 +722,32 @@ jobs:
       # Scoped to what the change introduces rather than to all of history: the
       # eight blobs that predate 45eb4fb cannot be removed, so gating on them
       # every run would be a red build people learn to ignore.
+      #
+      # Which range is historyRange.mjs's, and its header has the rule: a push
+      # with no previous tip (forty zeros on the push that creates a branch,
+      # nothing at all on a dispatch) scans from the merge base with the default
+      # branch. The zero range made git exit 128 on the first push of every
+      # `work/**` branch and skipped the secret scan below (Guards run
+      # 36873944916, 2026-10-01); the empty one scanned nothing and passed.
+      #
+      # The payload goes through `env`, never into the script text. A failed
+      # resolution stops the step: `range=$(…)` is a plain assignment, so
+      # bash's -e applies to it.
+      #
+      # Its proof runs first: the zero shape occurs only on a branch's first
+      # push, so the run that carries a change to it may never take that path.
+      - name: The history range is one git accepts, for every payload shape
+        run: node scripts/ci/annotate.mjs scripts/proofs/historyRange.proof.mjs
+
       - name: File policy (history introduced by this change)
+        env:
+          PULL_REQUEST_BASE: ${{ github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
-            node scripts/ci/annotate.mjs scripts/hooks/guardFiles.mjs --history \
-              --range "${{ github.event.pull_request.base.sha }}..${{ github.sha }}"
-          else
-            node scripts/ci/annotate.mjs scripts/hooks/guardFiles.mjs --history \
-              --range "${{ github.event.before }}..${{ github.sha }}"
-          fi
+          range=$(node scripts/ci/annotate.mjs scripts/ci/historyRange.mjs)
+          node scripts/ci/annotate.mjs scripts/hooks/guardFiles.mjs --history --range "$range"
 
       - name: Secret scan (full history)
         run: node scripts/ci/annotate.mjs scripts/hooks/scanSecrets.mjs

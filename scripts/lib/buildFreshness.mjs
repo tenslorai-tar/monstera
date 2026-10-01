@@ -270,6 +270,20 @@ export const WORD_PICTURES = [
 ];
 
 /**
+ * What `readerDispose.proof.mjs` runs: the shipped reader channel and the surfaces that create its pipe, its stop event
+ * and its thread, and the reader thread itself.
+ *
+ * @type {readonly BuildEdge[]}
+ */
+export const READER_DISPOSE = [
+  ['apps/desktop/src/engineReaderChannel.ts', 'apps/desktop/dist/engineReaderChannel.js', 'tsc'],
+  ['apps/desktop/src/readerHostSurface.ts', 'apps/desktop/dist/readerHostSurface.js', 'tsc'],
+  ['apps/desktop/src/win32PipeSurface.ts', 'apps/desktop/dist/win32PipeSurface.js', 'tsc'],
+  ['apps/desktop/src/enginePipeFactory.ts', 'apps/desktop/dist/enginePipeFactory.js', 'tsc'],
+  ['packages/nodemode/src/readerWorker.ts', 'packages/nodemode/dist/readerWorker.js', 'tsc'],
+];
+
+/**
  * What `shippedModules.proof.mjs` walks: every `dist/` the package takes modules from — the desktop's and the four
  * workspace packages' it ships beside it (decision E).
  *
@@ -419,6 +433,8 @@ export const ARTEFACT_EDGES = {
   'proof:wordpictures': WORD_PICTURES,
   // HEBREW AND ARABIC IN TEXT MARKS, read back by pdf.js after MuPDF's bake (ADR-0128).
   'proof:rtltext': RTL_TEXT,
+  // THE READER CHANNEL'S TEARDOWN on the shipped thread, which used to abort the process when it terminated it.
+  'proof:readerdispose': READER_DISPOSE,
   // THE PACKAGE'S MODULE CLOSURE, walked over the built `dist/`s it takes modules from (decision E).
   'proof:shippedmodules': SHIPPED_MODULES,
   // THE COMPILE-FAIL PROOF, whose probes `import type … from '@monstera/contract'`

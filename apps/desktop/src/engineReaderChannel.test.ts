@@ -49,7 +49,6 @@ function surface(options: { noEvent?: boolean; noWorker?: boolean } = {}): Recor
     onExit: (sink) => {
       exitSink = sink;
     },
-    terminate: () => calls.push('terminate'),
   };
 
   return {
@@ -270,31 +269,65 @@ describe('createEngineReaderChannel', () => {
     expect(host.calls).not.toContain('terminate');
   });
 
-  it('disposes a running reader by terminating it and closing the event', () => {
+  /**
+   * THE ORDER EVERY DELIBERATE CLOSE TAKES: stopped, then disposed before the reader's ending arrives. This used to
+   * terminate the thread on its way out, and a termination landing inside a koffi call aborts the process (exit 134,
+   * `scripts/proofs/readerDispose.proof.mjs`). The thread cannot be terminated from here any more — the handle has
+   * no such member — so what this asserts is the other half: the event and the caller's handles are held until the
+   * reader has ended, because the reader's last act is a cancel on the pipe.
+   */
+  it('a reader stopped and disposed before it ended keeps its handles until its ending arrives', () => {
     const host = surface();
     const made = createEngineReaderChannel(host, PIPE, READ_BYTES);
     if (!made.ok) throw new Error(made.error);
+    const released: string[] = [];
 
-    made.value.dispose();
-    made.value.dispose();
+    made.value.channel.stop();
+    made.value.dispose(() => released.push('pipe'));
+    made.value.dispose(() => released.push('a second dispose'));
 
-    expect(host.calls.filter((call) => call === 'terminate')).toEqual(['terminate']);
+    // CONTROL, before the ending: nothing released, and the stop was signalled once — by `stop`, not again.
+    expect(host.calls).not.toContain('closeEvent');
+    expect(released).toEqual([]);
+    expect(host.calls.filter((call) => call === 'signal')).toEqual(['signal']);
+
+    host.post({ kind: 'ended', detail: 'stopped while waiting for bytes' });
+    host.exit(0);
+
     expect(host.calls.filter((call) => call === 'closeEvent')).toEqual(['closeEvent']);
+    expect(released).toEqual(['pipe']);
   });
 
-  it('CONTROL: disposing after the reader ended closes the event and terminates NOTHING', () => {
+  it('a running reader disposed WITHOUT a stop is asked to stop, and released only when it ends', () => {
     const host = surface();
     const made = createEngineReaderChannel(host, PIPE, READ_BYTES);
     if (!made.ok) throw new Error(made.error);
+    const released: string[] = [];
 
-    host.post({ kind: 'ended', detail: 'stopped' });
-    made.value.dispose();
+    made.value.dispose(() => released.push('pipe'));
 
-    // Without this, "dispose terminates" is satisfied by a dispose that
-    // terminates unconditionally — and a terminate on an ended thread is the
-    // call that lets somebody later conclude the terminate is what stops it.
-    expect(host.calls).not.toContain('terminate');
+    expect(host.calls.filter((call) => call === 'signal')).toEqual(['signal']);
+    expect(released).toEqual([]);
+
+    // An EXIT with nothing said is an ending too, and it releases the handles the same way.
+    host.exit(1);
+    expect(host.calls.filter((call) => call === 'closeEvent')).toEqual(['closeEvent']);
+    expect(released).toEqual(['pipe']);
+  });
+
+  it('CONTROL: disposing after the reader ended releases at once and signals nothing', () => {
+    const host = surface();
+    const made = createEngineReaderChannel(host, PIPE, READ_BYTES);
+    if (!made.ok) throw new Error(made.error);
+    const released: string[] = [];
+
+    host.post({ kind: 'ended', detail: 'the host closed its end of the pipe' });
+    made.value.dispose(() => released.push('pipe'));
+
+    // Without this, "released on the ending" is satisfied by a dispose that never releases at all.
     expect(host.calls).toContain('closeEvent');
+    expect(released).toEqual(['pipe']);
+    expect(host.calls).not.toContain('signal');
   });
 
   it('refuses a read size that is not a whole number of bytes', () => {

@@ -505,7 +505,7 @@ const thrown = guarded(() => {
       // the same run, with no second measurement to disagree with.
       //
       // AND THE GATE'S OWN COVERAGE IS UNCHANGED. `budgetGate.mjs` still
-      // measures every role against §9.17's real `base 128 MB`; a genuine
+      // measures every role against §9.17's real baseline (`base 100 MB` since 2026-10-01); a genuine
       // regression in the fixed cost is caught there, by the step after this
       // one. This file proves that term is load-bearing, not what its value is.
       const belowBaselineMB = 1;

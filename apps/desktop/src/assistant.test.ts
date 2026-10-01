@@ -55,7 +55,7 @@ function assistantWith(
   let answers = 0;
   const assistant = createAssistant({
     secret: (id) => (id === 'ai.openai-key' || id === 'ai.anthropic-key' ? key : undefined),
-    setting: () => undefined,
+    setting: (definition) => definition.fallback,
     send: (id, payload) => events.push({ id, payload }),
     fetchImpl,
     openInBrowser: (url) => {

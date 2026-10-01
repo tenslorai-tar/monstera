@@ -25,10 +25,26 @@ import { tmpdir } from 'node:os';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { indexEntries } from './lib/gitScope.mjs';
+import { HOOKS_DIRECTORY, hookModeViolation, isHookPath } from './lib/hookFiles.mjs';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BOOTSTRAP = resolve(HERE, 'bootstrapHooks.mjs');
 const REPO = resolve(HERE, '..');
-const HOOKS_DIRECTORY = '.githooks';
+
+/**
+ * The hooks this repository ships, written out rather than read from the
+ * directory: a hook deleted from the index would shrink a derived list along
+ * with it, and every per-hook case below would then agree with the loss.
+ */
+const EXPECTED_HOOKS = ['pre-commit', 'pre-push'];
+
+/**
+ * Git for Windows does not consult the executable bit, so a mode case there
+ * would observe nothing either way. The index-mode cases still run there; only
+ * the ones that ask what git does with a file on disk are skipped, and say so.
+ */
+const GIT_READS_THE_BIT = process.platform !== 'win32';
 
 /** @type {string[]} */
 const failures = [];
@@ -165,20 +181,129 @@ try {
   );
 
   // -------------------------------------------------------------------------
-  // 6. What the pointer points AT, in this repository, actually exists.
+  // 6. THE PREMISE: git skips a hook it cannot execute, and lets the commit
+  //    through. Every case below about modes rests on this, so it is observed
+  //    from git rather than assumed. Case 2 is its control: the same hook,
+  //    executable, blocks.
   // -------------------------------------------------------------------------
-  const shimPath = join(REPO, HOOKS_DIRECTORY, 'pre-commit');
+  if (GIT_READS_THE_BIT) {
+    const ignored = makeRepo();
+    repos.push(ignored);
+    git(ignored, ['config', '--local', 'core.hooksPath', HOOKS_DIRECTORY]);
+    chmodSync(join(ignored, HOOKS_DIRECTORY, 'pre-commit'), 0o644);
+    const through = git(ignored, ['commit', '-m', 'hook without the bit']);
+    check(
+      'git SKIPS a hook that is not executable, and the commit lands',
+      through.status === 0 && git(ignored, ['rev-list', '--all', '--count']).stdout === '1',
+      `commit exited ${through.status}. If it was refused, git ran a hook without the bit on ` +
+        `this platform, and the mode rule in scripts/lib/hookFiles.mjs guards a premise that ` +
+        `does not hold here.\n      ${through.stderr}`,
+    );
+
+    // -----------------------------------------------------------------------
+    // 7. So the bootstrap refuses to report hooks enabled when git would skip
+    //    one, in both places the bit can be lost. Case 1 is the control: an
+    //    executable hook, exit 0.
+    // -----------------------------------------------------------------------
+    const indexLost = makeRepo();
+    repos.push(indexLost);
+    git(indexLost, ['update-index', '--chmod=-x', '--', `${HOOKS_DIRECTORY}/pre-commit`]);
+    chmodSync(join(indexLost, HOOKS_DIRECTORY, 'pre-commit'), 0o644);
+    const refusedIndex = runBootstrap(indexLost);
+    check(
+      'the bootstrap fails when a hook is TRACKED 100644, and names the index repair',
+      refusedIndex.status === 1 &&
+        refusedIndex.output.includes('git update-index --chmod=+x -- .githooks/pre-commit') &&
+        !refusedIndex.output.includes('Git hooks enabled'),
+      `exit=${refusedIndex.status}\n      ${refusedIndex.output}`,
+    );
+
+    const diskLost = makeRepo();
+    repos.push(diskLost);
+    chmodSync(join(diskLost, HOOKS_DIRECTORY, 'pre-commit'), 0o644);
+    const refusedDisk = runBootstrap(diskLost);
+    check(
+      'and when the index says 100755 but the file on disk lost the bit, it names the disk repair',
+      refusedDisk.status === 1 &&
+        refusedDisk.output.includes('chmod +x .githooks/pre-commit') &&
+        !refusedDisk.output.includes('update-index'),
+      `exit=${refusedDisk.status}\n      ${refusedDisk.output}\n      The two states need ` +
+        `different repairs: chmodding the disk over a 100644 entry fixes one machine and leaves ` +
+        `every other checkout skipping the hook.`,
+    );
+  } else {
+    process.stdout.write(
+      '  --  skipped the on-disk mode cases: Git for Windows does not consult the executable ' +
+        'bit, so there is nothing to observe here. They run on the Linux leg.\n',
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // 8. THIS repository's index records every hook at the mode git will run.
+  //    The real defect: `.githooks/pre-push` was 100644 and every case above
+  //    and in prePush.proof.mjs read its text, which is the same at any mode.
+  // -------------------------------------------------------------------------
+  const tracked = indexEntries([HOOKS_DIRECTORY], { cwd: REPO }).filter((entry) =>
+    isHookPath(entry.path),
+  );
+  const trackedNames = tracked.map((entry) => entry.path.slice(HOOKS_DIRECTORY.length + 1));
   check(
-    `${HOOKS_DIRECTORY}/pre-commit exists to be pointed at`,
-    existsSync(shimPath),
-    `core.hooksPath would name a directory with no pre-commit hook, so every commit would ` +
-      `pass unchecked with no error anywhere.`,
+    `the index tracks every expected hook (${EXPECTED_HOOKS.join(', ')})`,
+    EXPECTED_HOOKS.every((name) => trackedNames.includes(name)),
+    `tracked: [${trackedNames.join(', ')}]. A hook absent from the index is absent from every ` +
+      `checkout, and the mode case below would pass over it by having nothing to read.`,
+  );
+  const wrongModes = tracked
+    .map((entry) => {
+      const reason = hookModeViolation(entry.path, entry.mode);
+      return reason === null ? null : `${entry.path} ${reason}`;
+    })
+    .filter((reason) => reason !== null);
+  check(
+    'every hook in the index is 100755',
+    tracked.length > 0 && wrongModes.length === 0,
+    wrongModes.join('\n      ') || 'no hook entries were read at all',
   );
 
-  if (existsSync(shimPath)) {
+  // CONTROL, from a fixture rather than this index: the same reader and the
+  // same rule must REPORT a 100644 entry and pass the same entry once it is
+  // 100755. Without it the case above is satisfied by a reader that drops modes.
+  const modeFixture = makeRepo();
+  repos.push(modeFixture);
+  const hookPath = `${HOOKS_DIRECTORY}/pre-commit`;
+  git(modeFixture, ['update-index', '--chmod=-x', '--', hookPath]);
+  const asNonExecutable = indexEntries([HOOKS_DIRECTORY], { cwd: modeFixture });
+  git(modeFixture, ['update-index', '--chmod=+x', '--', hookPath]);
+  const asExecutable = indexEntries([HOOKS_DIRECTORY], { cwd: modeFixture });
+  check(
+    'CONTROL: the reader and rule report a fixture hook at 100644 and pass it at 100755',
+    asNonExecutable.length === 1 &&
+      asNonExecutable[0]?.mode === '100644' &&
+      hookModeViolation(hookPath, asNonExecutable[0].mode) !== null &&
+      asExecutable.length === 1 &&
+      hookModeViolation(hookPath, asExecutable[0]?.mode ?? '') === null,
+    `read ${JSON.stringify(asNonExecutable)} then ${JSON.stringify(asExecutable)}`,
+  );
+
+  // -------------------------------------------------------------------------
+  // 9. What the pointer points AT, in this repository, exists and runs, for
+  //    EVERY hook. This was pre-commit only, which is part of how pre-push's
+  //    mode went unseen: the per-hook cases had one hook in their set.
+  // -------------------------------------------------------------------------
+  for (const name of EXPECTED_HOOKS) {
+    const shimPath = join(REPO, HOOKS_DIRECTORY, name);
+    if (!existsSync(shimPath)) {
+      check(
+        `${HOOKS_DIRECTORY}/${name} exists to be pointed at`,
+        false,
+        `core.hooksPath would name a directory with no ${name} hook, so it would pass ` +
+          `unchecked with no error anywhere.`,
+      );
+      continue;
+    }
     const shim = readFileSync(shimPath, 'utf8');
     check(
-      'the hook shim has an LF-only shebang',
+      `${name}: the hook shim has an LF-only shebang`,
       shim.startsWith('#!') && !shim.slice(0, shim.indexOf('\n')).includes('\r'),
       `Git for Windows' sh parses a trailing CR as part of the command word, so a CRLF hook ` +
         `dies with "/bin/sh^M: bad interpreter" — on the platform this project targets.`,
@@ -189,7 +314,7 @@ try {
     // file has none.
     const referenced = [...shim.matchAll(/scripts\/[\w./-]*\.mjs/g)].map((match) => match[0]);
     check(
-      'every script the shim executes exists',
+      `${name}: every script the shim executes exists`,
       referenced.length > 0 && referenced.every((path) => existsSync(join(REPO, path))),
       `referenced [${referenced.join(', ')}] — a hook that execs a missing file fails at commit ` +
         `time on someone else's machine, and the name was wrong in two documents for this ` +
@@ -202,10 +327,10 @@ try {
     // `.nvmrc` for this project's whole life; there has never been one.
     const namedFiles = [...shim.matchAll(/(?<![\w./-])\.[a-z][\w-]*(?:rc|\.json|\.yml|-versions)\b/g)]
       .map((match) => match[0])
-      .filter((name) => name !== '.git');
-    const absent = [...new Set(namedFiles)].filter((name) => !existsSync(join(REPO, name)));
+      .filter((file) => file !== '.git');
+    const absent = [...new Set(namedFiles)].filter((file) => !existsSync(join(REPO, file)));
     check(
-      'every dotfile the shim names in its guidance exists',
+      `${name}: every dotfile the shim names in its guidance exists`,
       absent.length === 0,
       `named but absent: ${absent.join(', ')}\n      This message is printed when the toolchain ` +
         `is already broken. Sending that reader to a file that is not there is the one moment ` +

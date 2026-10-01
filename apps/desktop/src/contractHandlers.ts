@@ -3,7 +3,8 @@ import {
   AI_PROVIDER_IDS,
   type AiModelListAnswer,
   type AiProviderId,
-  CHAT_HISTORY_SETTING_ID,
+  CHAT_HISTORY_STORED,
+  storedSetting,
   type AskSent,
   CLOUD_PROVIDER_IDS,
   MAX_ASK_CONTEXT,
@@ -510,13 +511,13 @@ export function createContractHandlers(deps: {
     'ai.history.load': ({ docId }) => {
       const key = deps.documents.historyKeyOf(docId);
       if (key === undefined) return Promise.resolve(err({ code: 'document-not-open' } as const));
-      const on = deps.settings.read()[CHAT_HISTORY_SETTING_ID] === true;
+      const on = storedSetting(deps.settings.read(), CHAT_HISTORY_STORED);
       return Promise.resolve(ok({ turns: on ? [...deps.chatHistory.load(key)] : [] }));
     },
     'ai.history.save': ({ docId, turns }) => {
       const key = deps.documents.historyKeyOf(docId);
       if (key === undefined) return Promise.resolve(err({ code: 'document-not-open' } as const));
-      if (deps.settings.read()[CHAT_HISTORY_SETTING_ID] !== true) return Promise.resolve(ok({ saved: false }));
+      if (!storedSetting(deps.settings.read(), CHAT_HISTORY_STORED)) return Promise.resolve(ok({ saved: false }));
       if (!deps.chatHistory.available()) return Promise.resolve(err({ code: 'secret-storage-unavailable' } as const));
       deps.chatHistory.save(key, turns);
       return Promise.resolve(ok({ saved: true }));

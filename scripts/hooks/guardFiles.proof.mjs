@@ -59,6 +59,24 @@ function stage(root, relativePath, contents) {
 }
 
 /**
+ * Stages a file and then SETS its index mode, rather than letting `git add`
+ * take one from the disk. What `git add` records depends on the platform and
+ * on `core.fileMode`, and Git for Windows records 100644 whatever the file is.
+ * A fixture that relied on it would test a different mode on each runner.
+ *
+ * @param {string} root
+ * @param {string} relativePath
+ * @param {string} contents
+ * @param {'+x' | '-x'} chmod
+ */
+function stageWithMode(root, relativePath, contents, chmod) {
+  stage(root, relativePath, contents);
+  git(root, ['update-index', `--chmod=${chmod}`, '--', relativePath]);
+}
+
+const HOOK_SHIM = '#!/bin/sh\nexec node scripts/hooks/prePush.mjs\n';
+
+/**
  * Writes a file WITHOUT staging it, so the index and the working tree disagree.
  *
  * `stage()` writes and adds in one call, so every case built on it has a blob
@@ -106,6 +124,57 @@ const CASES = [
     name: 'plain source file',
     expect: 'accept',
     setup: (root) => stage(root, 'src/index.ts', 'export const answer = 42;\n'),
+  },
+  // ---------------------------------------------------------------------------
+  // Hook modes. `.githooks/pre-push` was tracked 100644 and git on Linux and
+  // macOS skipped it with a hint, while every proof here read its TEXT, which
+  // is identical at either mode. These cases build the index mode explicitly.
+  // ---------------------------------------------------------------------------
+  {
+    name: 'a hook staged at 100644',
+    expect: 'reject',
+    because: 'tracked with mode 100644',
+    setup: (root) => stageWithMode(root, '.githooks/pre-push', HOOK_SHIM, '-x'),
+  },
+  {
+    // CONTROL. The same bytes at the same path, executable. Without it the case
+    // above is satisfied by a rule that rejects every file under .githooks/.
+    name: 'a hook staged at 100755',
+    expect: 'accept',
+    setup: (root) => stageWithMode(root, '.githooks/pre-push', HOOK_SHIM, '+x'),
+  },
+  {
+    // The tree scope is the one that sees a mode already COMMITTED, which is
+    // the state the real defect sat in: the staged scope lists only what a
+    // commit changes, and nothing changed the hook for its whole life.
+    name: 'a hook committed at 100644, seen by the tree scope',
+    expect: 'reject',
+    because: 'tracked with mode 100644',
+    scope: '--tree',
+    setup: (root) => {
+      stageWithMode(root, '.githooks/pre-push', HOOK_SHIM, '-x');
+      git(root, ['commit', '--quiet', '--no-verify', '-m', 'hook without the bit']);
+    },
+  },
+  {
+    // Two hooks with IDENTICAL bytes: one blob, two modes. The content rules
+    // inspect each blob once, so a mode rule placed inside that loop sees the
+    // first path only (here the executable one) and passes. Separates where
+    // the rule runs, not only whether it exists.
+    name: 'two hooks sharing one blob, the second at 100644',
+    expect: 'reject',
+    because: '.githooks/pre-push',
+    setup: (root) => {
+      stageWithMode(root, '.githooks/pre-commit', HOOK_SHIM, '+x');
+      stageWithMode(root, '.githooks/pre-push', HOOK_SHIM, '-x');
+    },
+  },
+  {
+    // CONTROL for the rule's reach: git resolves `<hooksPath>/<name>` only, so
+    // a file one level down is never run and is held to no mode.
+    name: 'a non-executable file in a subdirectory of .githooks/',
+    expect: 'accept',
+    setup: (root) => stageWithMode(root, '.githooks/notes/README.md', '# notes\n', '-x'),
   },
   // ---------------------------------------------------------------------------
   // package.json scripts: the channel the PreToolUse guard structurally cannot

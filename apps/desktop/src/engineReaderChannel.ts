@@ -37,6 +37,26 @@ import type { StopEvent } from './win32PipeSurface.js';
  * **An exit with nothing said before it is still an ending**, and it is the one
  * worth having: a reader that vanished without a word is a dead host, and
  * silence is exactly what a missing case would produce.
+ *
+ * ## Nothing here terminates the thread, and that is a crash fix, not a style
+ *
+ * `dispose` used to end a reader that had not yet ended with `worker.terminate()`
+ * as a backstop. Every deliberate close reached it: the transport signals the stop
+ * event and announces its ending on the next tick, and the connection disposes the
+ * channel there — while the reader, woken by that same event, is still on its way
+ * out (57–127 ms from signal to its ending arriving, measured 2026-10-01). A
+ * termination that lands while the thread is inside a koffi call fails koffi's own
+ * throw, and node-addon-api answers a failed throw with `napi_fatal_error`: the
+ * WHOLE PROCESS aborts, exit 134 — measured in the packaged 0.1.6.0 as the
+ * application vanishing, and reproduced in seven processes of eight by stopping
+ * and disposing the shipped channel across that window
+ * (`scripts/proofs/readerDispose.proof.mjs`).
+ *
+ * So a reader is ended only by its stop event, which the two-handle wait makes
+ * sufficient in every state it can be in, and `dispose` waits for the ending it
+ * asked for before closing that event — closing it earlier would also take the
+ * handle out from under the wait that is using it. `ReaderWorkerHandle` carries no
+ * `terminate`, so the backstop cannot be written back in without changing the type.
  */
 
 /** A started reader thread, as this ordering needs to see it. */
@@ -47,15 +67,6 @@ export interface ReaderWorkerHandle {
   readonly onError: (sink: (error: Error) => void) => void;
   /** Registers the sink for the thread ending. Called once. */
   readonly onExit: (sink: (code: number) => void) => void;
-  /**
-   * Ends the thread from outside.
-   *
-   * The BACKSTOP, never the mechanism. Stopping a reader is signalling its stop
-   * event and letting it return from its own wait — measured at 15ms — and a
-   * `terminate` on that path would mask a reader that could not be stopped,
-   * which is the failure the two-handle wait exists to make impossible.
-   */
-  readonly terminate: () => void;
 }
 
 /** The Win32 and worker calls this ordering cannot make itself. */
@@ -96,15 +107,23 @@ export interface EngineReaderChannel {
    */
   readonly onConnected: (sink: () => void) => void;
   /**
-   * Releases the stop event and, if the reader is still alive, ends the thread.
+   * Releases the stop event, then runs `release`, once the reader has ended — at once
+   * if it already has, and otherwise when its ending arrives, having signalled the
+   * stop if nothing had.
+   *
+   * `release` is for the handles the reader itself uses, which means the PIPE: the
+   * reader's last act on its way out is `CancelIoEx(pipe, …)`, and a pipe closed
+   * before that names a handle value the next connection may already have been
+   * given — a cancel aimed at somebody else's I/O.
    *
    * Idempotent, and called by the composer after the transport reports its
    * ending. It is separate from `stop` because they answer different questions:
    * `stop` asks the reader to finish, `dispose` gives up its resources — and a
    * reader that was asked and did not finish is a fact worth being able to
-   * observe rather than one to tidy away inside `stop`.
+   * observe ({@link finished}) rather than one to tidy away inside `stop`. It
+   * never ends the thread itself; see the module note for the crash that did.
    */
-  readonly dispose: () => void;
+  readonly dispose: (release: () => void) => void;
   /** Whether the reader thread has ended. For the composer and for controls. */
   readonly finished: () => boolean;
 }
@@ -165,9 +184,21 @@ export function createEngineReaderChannel(
     sink?.();
   };
 
+  /** What `dispose` was handed, held until the reader has ended. */
+  let release: (() => void) | null = null;
+  /** The event, then the caller's handles: once, and only once the reader no longer uses either. */
+  const releaseAll = (): void => {
+    surface.closeEvent(stopEvent);
+    const then = release;
+    release = null;
+    then?.();
+  };
+
   const finish = (detail: string): void => {
     if (state.ended) return;
     state.ended = true;
+    // A DISPOSE THAT CAME FIRST left the handles for this moment: the reader no longer waits on them.
+    if (state.disposed) releaseAll();
     endedSink?.(detail);
   };
 
@@ -232,14 +263,20 @@ export function createEngineReaderChannel(
       connectedSink = sink;
     },
 
-    dispose: (): void => {
+    dispose: (then): void => {
       if (state.disposed) return;
       state.disposed = true;
-      // TERMINATE ONLY WHAT IS STILL RUNNING. A reader that ended on its own has
-      // nothing to end, and calling anyway would be the shape that lets somebody
-      // later conclude the terminate is what stops it.
-      if (!state.ended) worker.terminate();
-      surface.closeEvent(stopEvent);
+      release = then;
+      if (state.ended) {
+        releaseAll();
+        return;
+      }
+      // STILL RUNNING: asked to stop if nothing has asked yet, and the handles are released by `finish` when the
+      // reader's ending arrives — never terminated, which is what aborted the process (the module note).
+      if (!state.stopped) {
+        state.stopped = true;
+        surface.signal(stopEvent);
+      }
     },
 
     finished: (): boolean => state.ended,

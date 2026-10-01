@@ -115,6 +115,18 @@ i18n.on('missing', (event) => {
  * The cost is the ICU parser in the production bundle. That is the same parser
  * every development run already loads, and the alternative is a class of defect
  * that only the shipped artefact can exhibit.
+ *
+ * ## Correction, 2026-10-01 — the cost named above was not the cost
+ *
+ * The parser's PRESENCE was weighed; its USE was not. `_()` hands a catalogue
+ * string to the compiler on EVERY call and caches nothing (`@lingui/core` 6.6.0,
+ * `dist/index.mjs`, `_`), so every label of every render was parsed as ICU again:
+ * scrolling a 200-page document spent 174 ms in the parser's `parseBody` and
+ * 184 ms in `_` of an 8.1 s profile (row 303's pass). `activateCatalogue` now
+ * compiles the catalogue ONCE, at load — `_()` skips the compiler for a message
+ * that is already compiled — and the compiler stays registered for what reaches
+ * `_()` uncompiled, a fallback `message` or a missing id, which is the property
+ * this section was written for: one behaviour in both modes.
  */
 i18n.setMessagesCompiler(compileMessage);
 
@@ -129,10 +141,13 @@ export function activateCatalogue(
   locale: string,
   messages: Readonly<Record<string, string>>,
 ): void {
-  // Spread rather than cast: `load` takes a mutable record, and the alternative
-  // to copying is `as Record<string, string>` — widening a type to make an error
-  // disappear, in the one parameter a caller might reasonably keep and mutate.
-  i18n.load(locale, { ...messages });
+  // COMPILED ONCE, HERE: `_()` compiles a string message on every call (the
+  // correction above), and a compiled one never. Building a new record is also
+  // what `load` needs — it takes a mutable one — without a cast.
+  i18n.load(
+    locale,
+    Object.fromEntries(Object.entries(messages).map(([key, text]) => [key, compileMessage(text)])),
+  );
   i18n.activate(locale);
 }
 

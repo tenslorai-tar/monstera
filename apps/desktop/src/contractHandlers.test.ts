@@ -52,7 +52,7 @@ const NO_HISTORY = noChatHistory();
 
 const INERT_ASSISTANT = createAssistant({
   secret: () => undefined,
-  setting: () => undefined,
+  setting: (definition) => definition.fallback,
   send: () => undefined,
   openInBrowser: () => Promise.resolve(),
 });
@@ -1054,7 +1054,7 @@ describe('ai.checkKey', () => {
     const asked: string[] = [];
     const assistant = createAssistant({
       secret: (id) => secrets.read()[id],
-      setting: () => undefined,
+      setting: (definition) => definition.fallback,
       send: () => undefined,
       openInBrowser: () => Promise.resolve(),
       fetchImpl: (_input, init) => {
@@ -1174,7 +1174,7 @@ describe('ai.translatePage (ADR-0097)', () => {
     const asked: { system: string; user: string }[] = [];
     const assistant = createAssistant({
       secret: (id) => secrets.read()[id],
-      setting: () => undefined,
+      setting: (definition) => definition.fallback,
       send: () => undefined,
       openInBrowser: () => Promise.resolve(),
       fetchImpl: ((_url: string, init?: { body?: string }) => {

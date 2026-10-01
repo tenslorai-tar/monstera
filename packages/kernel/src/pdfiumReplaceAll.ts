@@ -3,7 +3,7 @@ import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { ByteImage } from './engineSeam.js';
-import { pageCount, pdfiumWriter, replaceTextObjects, textRuns } from './pdfiumFfi.js';
+import { objectRuns, pageCount, pdfiumWriter, replaceTextObjects } from './pdfiumFfi.js';
 
 /**
  * Document-wide replace-all, as the bus calls it.
@@ -180,7 +180,9 @@ export async function applyReplaceAllText(
       // a count nothing on this path could carry back — the command answers a
       // version. `document.textLines` is where a person is told, because that is
       // the read a surface makes before offering an edit.
-      const { runs } = await textRuns(session, page);
+      // ONE RUN PER OBJECT (`objectRuns`), never the editor's joined runs: each replacement is written back into the
+      // object whose text it was, and a joined run's text written into its first object corrupts the line (ADR-0130).
+      const { runs } = await objectRuns(session, page);
       const replacements = runs.flatMap((run) => {
         const next = replacedIn(run.text, compiled.value.matchesIn(run.text), command.replace);
         return next === null ? [] : [{ index: run.index, text: next }];

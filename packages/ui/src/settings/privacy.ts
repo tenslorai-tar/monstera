@@ -1,5 +1,5 @@
-import { CRASH_REPORTS_SETTING_ID, RECENT_PREVIEWS_SETTING_ID, REVIEW_PROMPTS_SETTING_ID } from '@monstera/contract';
-import { z } from 'zod';
+import { CRASH_REPORTS_STORED, RECENT_PREVIEWS_STORED, REVIEW_PROMPTS_STORED } from '@monstera/contract';
+import type { z } from 'zod';
 
 import {
   PRIVACY_CRASH_REPORTS_DESCRIPTION,
@@ -20,11 +20,10 @@ import type { SettingDefinition } from '../registries/settings.js';
  * turning it off deletes every picture with the same write, in main.
  */
 export const RECENT_PREVIEWS_SETTING: SettingDefinition<z.ZodBoolean> = {
-  id: RECENT_PREVIEWS_SETTING_ID,
+  // THE ID, SCHEMA AND DEFAULT ARE THE CONTRACT'S, which `main` reads through too (`storedSettings.ts`).
+  ...RECENT_PREVIEWS_STORED,
   title: PRIVACY_RECENT_PREVIEWS_TITLE,
   description: PRIVACY_RECENT_PREVIEWS_DESCRIPTION,
-  schema: z.boolean(),
-  fallback: true,
   category: 'privacy',
 };
 
@@ -37,11 +36,9 @@ export const RECENT_PREVIEWS_SETTING: SettingDefinition<z.ZodBoolean> = {
  * starts and deletes the reports already kept, which the description says.
  */
 export const CRASH_REPORTS_SETTING: SettingDefinition<z.ZodBoolean> = {
-  id: CRASH_REPORTS_SETTING_ID,
+  ...CRASH_REPORTS_STORED,
   title: PRIVACY_CRASH_REPORTS_TITLE,
   description: PRIVACY_CRASH_REPORTS_DESCRIPTION,
-  schema: z.boolean(),
-  fallback: true,
   category: 'privacy',
 };
 
@@ -58,10 +55,8 @@ export const CRASH_REPORTS_SETTING: SettingDefinition<z.ZodBoolean> = {
  * and never keys, and a renamed id would forget every stored opt-out while reading as the default.
  */
 export const REVIEW_PROMPTS_SETTING: SettingDefinition<z.ZodBoolean> = {
-  id: REVIEW_PROMPTS_SETTING_ID,
+  ...REVIEW_PROMPTS_STORED,
   title: REVIEW_PROMPTS_SETTING_TITLE,
   description: REVIEW_PROMPTS_SETTING_DESCRIPTION,
-  schema: z.boolean(),
-  fallback: true,
   category: 'privacy',
 };

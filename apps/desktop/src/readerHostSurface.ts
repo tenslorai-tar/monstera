@@ -87,13 +87,6 @@ export function createReaderHostSurface(entryPath: string = readerEntryPath()): 
             sink(code);
           });
         },
-        // `void` on purpose: `terminate()` answers with a promise nobody here
-        // waits for, because this is the backstop path — the thread is already
-        // being given up on, and awaiting it would put a wait into the one call
-        // whose reason for existing is that a wait did not work.
-        terminate: (): void => {
-          void worker.terminate();
-        },
       };
     },
   };

@@ -135,6 +135,12 @@ describe('createEngineHostConnection', () => {
     expect(connection.ok).toBe(false);
     if (connection.ok) return;
     expect(connection.error.stage).toBe('host');
+    // THE READER IS STILL ON ITS WAY OUT, so the pipe and its stop event are not yet closed: the reader's last act is a
+    // cancel on the pipe (`engineReaderChannel.ts`). The fake reader ends one turn after the stop, as the shipped one
+    // does some tens of milliseconds after it.
+    expect(h.calls).toContain('reader.signal');
+    expect(h.calls).not.toContain('pipe.close');
+    await new Promise((settled) => setImmediate(settled));
     expect(h.calls).toContain('pipe.close');
     expect(h.calls).toContain('reader.closeEvent');
     expect(h.endings).toEqual([]);
