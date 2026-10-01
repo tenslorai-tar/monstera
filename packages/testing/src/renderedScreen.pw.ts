@@ -2131,7 +2131,11 @@ test('the START SCREEN draws the supplied logo, the hero lines, one primary Open
   const drawn = await measure(hero);
   // DECODED — a broken source is still a laid-out box, with a natural width of zero.
   expect(drawn.natural).toBeGreaterThan(0);
-  expect(drawn.height).toBeCloseTo(84, 0);
+  // 118, the owner's 40% over the 84 it was (review of 0.1.6.0); `--logo-hero`.
+  expect(drawn.height).toBeCloseTo(118, 0);
+  // AND THE ARTWORK HAS THE PIXELS FOR IT on a 2x display: a derivative smaller than twice the drawn height is
+  // upscaled, which is blur that no layout assertion sees.
+  expect(drawn.natural).toBeGreaterThanOrEqual(2 * drawn.height);
   // UNSTRETCHED: drawn at the image's OWN ratio. This asserted the portrait master's 1652 × 2050 until the owner's
   // square masters replaced it on 2026-09-19 and it failed on a correct drawing — a ratio written down is a claim about
   // one artwork, and the image's own ratio is the property ADR-0002 states for any.

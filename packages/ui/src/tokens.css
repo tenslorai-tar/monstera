@@ -549,7 +549,8 @@
      and the title bar 26 px"*. The derivatives are drawn at twice these, for a 2x display. v5 draws the mark in the
      MENU BAR at 18 (ADR-0107), which is where it moved from the title bar; the 26 px title-bar size is retired with it. */
   --logo-menu: 18px;
-  --logo-hero: 84px;
+  /* 118, not the 84 named above: the owner's review of 0.1.6.0 asked for the hero 40% larger (84 × 1.4 = 117.6). */
+  --logo-hero: 118px;
   /* The About window's, from the same wordmark derivative as the hero (the owner's list: the wordmark master for the
      start screen, About and the website), drawn smaller because the window is. */
   --logo-about: 64px;

@@ -54,8 +54,9 @@ const MASTERS = {
  *
  * `logo-256.png` is what README.md displays: 256 px keeps a 132 px render crisp on a 2x display
  * without shipping a megabyte to every reader of the front page. `logo-hero.png` and
- * `logo-title.png` are what the RENDERER draws — the start screen's hero at 84 px and the title
- * bar at 26 px (`tokens.css`) — each at twice that so a 2x display draws real pixels. The masters
+ * `logo-title.png` are what the RENDERER draws — the start screen's hero at 118 px, and the mark
+ * at 26 px in the title bar until ADR-0107 moved it to the menu bar at 18 (`tokens.css`) — each
+ * at least twice that so a 2x display draws real pixels. The masters
  * are square, so each is a square of `size`; the title bar takes the mark without its word, which
  * at 26 px is a smudge rather than a name.
  *
@@ -63,7 +64,7 @@ const MASTERS = {
  */
 const OUTPUTS = [
   { file: 'logo-256.png', master: 'wordmark', size: 256 },
-  { file: 'logo-hero.png', master: 'wordmark', size: 168 },
+  { file: 'logo-hero.png', master: 'wordmark', size: 236 },
   { file: 'logo-title.png', master: 'mark', size: 52 },
 ];
 
