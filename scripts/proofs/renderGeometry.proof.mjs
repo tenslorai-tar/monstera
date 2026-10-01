@@ -190,7 +190,11 @@ try {
       `honouring it draws ${String(PAGE_HEIGHT)}x${String(PAGE_WIDTH)}; this rendered ` +
       `${size(rotated)}.\n      ` +
       `${size(upright)} here means the rotation was IGNORED — which draws a page that looks ` +
-      `perfectly correct and is sideways, and which no pixel count can see.`,
+      `perfectly correct and is sideways, and which no pixel count can see.\n      ` +
+      // WHAT THE WAIT SAW, because a size alone could not say which canvas it was read from: a 300 x 150 reading
+      // that carried ink (CI, Windows, 2026-10-01) is no page's size at all.
+      `settled by "${rotated.settledBy}" after ${String(rotated.elapsedMs)} ms; page canvases ` +
+      `${JSON.stringify(rotated.pageCanvases)}.`,
   );
 
   check(

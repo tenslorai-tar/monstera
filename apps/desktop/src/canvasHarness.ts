@@ -136,6 +136,8 @@ export interface CanvasReadback {
   readonly renderFailed: boolean;
   /** How long the wait took, so a bound that is being approached is visible. */
   readonly elapsedMs: number;
+  /** Every page canvas as the wait settled — see {@link PAGE_CANVASES}. */
+  readonly pageCanvases: readonly PageCanvasState[];
   /**
    * The same reading taken again after the shipped zoom control was clicked.
    *
@@ -381,6 +383,45 @@ async function evaluate<T>(
     );
   }
   return returned;
+}
+
+/** One page canvas as the wait settled: which page, its size, and its failure marker with the reason the page gave. */
+export interface PageCanvasState {
+  readonly page: string | null;
+  readonly width: number;
+  readonly height: number;
+  readonly failed: boolean;
+  readonly reason: string | null;
+}
+
+/**
+ * EVERY page canvas in the document, not the first: the readings above take `querySelector`'s first, and a run that
+ * settled on a 300 × 150 canvas carrying ink (CI, Windows, 2026-10-01) could not say whether that was the page asked
+ * about or another one mounted before it. Bounded, so a long document cannot grow the marker line.
+ */
+const PAGE_CANVASES = `[...document.querySelectorAll('canvas.m-page')].slice(0, 8).map((canvas) => ({
+  page: canvas.dataset.pageCanvas ?? null,
+  width: canvas.width,
+  height: canvas.height,
+  failed: canvas.dataset.failed === 'true',
+  reason: canvas.dataset.failedReason ?? null,
+}))`;
+
+function isPageCanvases(value: unknown): value is PageCanvasState[] {
+  return (
+    Array.isArray(value) &&
+    value.every((entry: unknown) => {
+      if (typeof entry !== 'object' || entry === null) return false;
+      const candidate = entry as Record<string, unknown>;
+      return (
+        (typeof candidate['page'] === 'string' || candidate['page'] === null) &&
+        typeof candidate['width'] === 'number' &&
+        typeof candidate['height'] === 'number' &&
+        typeof candidate['failed'] === 'boolean' &&
+        (typeof candidate['reason'] === 'string' || candidate['reason'] === null)
+      );
+    })
+  );
 }
 
 function isCanvasState(value: unknown): value is {
@@ -690,6 +731,7 @@ export async function reportCanvasPixels(
 
   const dispatched = await clickControl(contents, openControlName, 'open control');
   const settled = await waitForCanvas(contents);
+  const pageCanvases = await evaluate(contents, PAGE_CANVASES, isPageCanvases, 'page canvases');
 
   const painted = await evaluate(
     contents,
@@ -784,6 +826,7 @@ export async function reportCanvasPixels(
     pixelsWritten: pixelsTo,
     renderFailed: settled.failed,
     elapsedMs: settled.elapsedMs,
+    pageCanvases,
   };
 
   // EXIT ONLY ONCE THE LINE IS FLUSHED. `app.exit()` terminates immediately, and

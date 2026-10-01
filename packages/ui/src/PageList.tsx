@@ -1165,7 +1165,10 @@ function PageSlot({
     // still opening is asked of the previous one, whose range main refuses as stale
     // (`useDocumentView`), and the new view's draw then succeeds. Left set, the marker outlived the
     // page it described. The thumbnail strip already cleared it here.
-    if (canvas.current !== null) delete canvas.current.dataset['failed'];
+    if (canvas.current !== null) {
+      delete canvas.current.dataset['failed'];
+      delete canvas.current.dataset['failedReason'];
+    }
 
     const drawPage = async (): Promise<void> => {
       // `devicePixelRatio × zoom`, which is E1's first rule: one bitmap pixel per
@@ -1223,7 +1226,12 @@ function PageSlot({
       // One page, not a broken document, so the marker is on the canvas rather
       // than on the surface — but it is *a* marker, which is the difference
       // between a state and a silence.
-      if (canvas.current !== null) canvas.current.dataset['failed'] = 'true';
+      if (canvas.current !== null) {
+        canvas.current.dataset['failed'] = 'true';
+        // AND WHY, for whoever reads the marker from outside — `canvasHarness.ts` reports it, where a bare marker told
+        // a CI run only that a draw had thrown.
+        canvas.current.dataset['failedReason'] = (error instanceof Error ? error.message : String(error)).slice(0, 200);
+      }
     });
 
     return (): void => {
