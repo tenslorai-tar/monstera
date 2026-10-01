@@ -919,8 +919,6 @@ export const CRASH_REPORT_SHARE_FAILED = messageKey('surface.crash-report.share-
 export const PRIVACY_RECENT_PREVIEWS_DESCRIPTION = messageKey('setting.privacy.recent-previews.description');
 export const RECENT_HEADING = messageKey('surface.recent.heading');
 export const RECENT_CLEAR = messageKey('surface.recent.clear');
-export const RECENT_SHOW_ALL = messageKey('surface.recent.show-all');
-export const RECENT_SHOW_FEWER = messageKey('surface.recent.show-fewer');
 export const RECENT_PLACEHOLDER = messageKey('surface.recent.placeholder');
 export const RECENT_TODAY = messageKey('surface.recent.today');
 export const RECENT_YESTERDAY = messageKey('surface.recent.yesterday');
@@ -1540,12 +1538,6 @@ export const DARK_PAGE_DESCRIPTION = messageKey('setting.viewing.dark-page.descr
 export const LOUPE_DESCRIPTION = messageKey('setting.viewing.loupe.description');
 export const RESTORE_SESSION_TITLE = messageKey('setting.viewing.restore-session.title');
 export const RESTORE_SESSION_DESCRIPTION = messageKey('setting.viewing.restore-session.description');
-export const RECENT_LENGTH_TITLE = messageKey('setting.viewing.recent-length.title');
-export const RECENT_LENGTH_DESCRIPTION = messageKey('setting.viewing.recent-length.description');
-export const RECENT_LENGTH_5 = messageKey('setting.viewing.recent-length.5');
-export const RECENT_LENGTH_10 = messageKey('setting.viewing.recent-length.10');
-export const RECENT_LENGTH_20 = messageKey('setting.viewing.recent-length.20');
-export const RECENT_LENGTH_30 = messageKey('setting.viewing.recent-length.30');
 export const SMOOTH_SCROLL_TITLE = messageKey('setting.viewing.smooth-scroll.title');
 export const SMOOTH_SCROLL_DESCRIPTION = messageKey('setting.viewing.smooth-scroll.description');
 export const PAGE_BADGES_TITLE = messageKey('setting.viewing.page-badges.title');
@@ -2799,8 +2791,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // v5-01's header over the cards, and its one action.
   [RECENT_HEADING]: 'Recent',
   [RECENT_CLEAR]: 'Clear list',
-  [RECENT_SHOW_ALL]: 'Show all {count}',
-  [RECENT_SHOW_FEWER]: 'Show fewer',
   // A CARD WITH NO PICTURE shows the page's shape and its type, the way a file icon does.
   [RECENT_PLACEHOLDER]: 'PDF',
   [RECENT_TODAY]: 'Today',
@@ -3555,13 +3545,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RESTORE_SESSION_TITLE]: 'Reopen my documents at start',
   [RESTORE_SESSION_DESCRIPTION]:
     'Opens the documents that were open when Monstera last closed. After a crash you are asked instead.',
-  [RECENT_LENGTH_TITLE]: 'Recent files to keep',
-  [RECENT_LENGTH_DESCRIPTION]:
-    'How many documents Monstera remembers. The start screen shows the four most recent, and the rest under Show all. A shorter list forgets the oldest ones.',
-  [RECENT_LENGTH_5]: '5',
-  [RECENT_LENGTH_10]: '10',
-  [RECENT_LENGTH_20]: '20',
-  [RECENT_LENGTH_30]: '30',
   [SMOOTH_SCROLL_TITLE]: 'Smooth scrolling',
   [SMOOTH_SCROLL_DESCRIPTION]:
     'Going to another page glides there instead of jumping. Off whenever reduced motion is on.',

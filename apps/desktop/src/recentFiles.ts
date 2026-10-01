@@ -1,10 +1,4 @@
-import {
-  MAX_RECENT_ENTRIES,
-  RECENT_LENGTHS,
-  RECENT_LENGTH_SETTING_ID,
-  type RecentLength,
-  annotationInstantSchema,
-} from '@monstera/contract';
+import { MAX_RECENT_ENTRIES, MAX_SESSION_ENTRIES, annotationInstantSchema } from '@monstera/contract';
 import type { DocId } from '@monstera/shared';
 
 import type { SettingsSurface } from './settingsFile.js';
@@ -121,28 +115,6 @@ export interface RecentFiles {
   lastSession(): readonly RecentEntry[];
 }
 
-/**
- * How many documents are remembered when nobody has chosen — Part F's *"recent-files length"*, `RECENT_LENGTHS`.
- *
- * Ten is what a menu can show without becoming a file browser, and the list is
- * a convenience rather than a history — a reader looking for a file they opened
- * three weeks ago is looking in the wrong place, and a longer list mostly grows
- * the number of paths this build keeps on disk about a person. A person may choose
- * five, twenty or thirty instead.
- */
-export const DEFAULT_RECENT_LENGTH: number = RECENT_LENGTHS.ten;
-
-/**
- * The length a person chose, read from the settings document — or ten for a missing or unknown value, which is what a
- * first launch and a hand-edited file both are. The table is the contract's, so no count is spelt here.
- */
-export function recentLengthIn(settings: Readonly<Record<string, unknown>>): number {
-  const chosen = settings[RECENT_LENGTH_SETTING_ID];
-  return typeof chosen === 'string' && Object.hasOwn(RECENT_LENGTHS, chosen)
-    ? RECENT_LENGTHS[chosen as RecentLength]
-    : DEFAULT_RECENT_LENGTH;
-}
-
 /** The document's file name inside `userData`. */
 export const RECENT_FILE = 'recent.json';
 
@@ -152,17 +124,25 @@ export const RECENT_FILE = 'recent.json';
  * @param file the document, from `createJsonFile`. Injected rather than opened
  *   here for `SettingsSurface`'s reason: the directory is Electron's question
  *   and this module answers a different one.
+ * The list holds at most `MAX_RECENT_ENTRIES` — four, the owner's number — and nothing older is kept anywhere.
+ *
  * @param now the clock an opening is stamped from, injected so a case can assert the instant recorded
- * @param length how many are kept, READ AT EACH USE (the application passes `recentLengthIn` over the settings
- *   document), so a length chosen a moment ago is the one the next opening and the next reading keep
  */
-export function createRecentFiles(
-  file: SettingsSurface,
-  now: () => Date = () => new Date(),
-  length: () => number = () => DEFAULT_RECENT_LENGTH,
-): RecentFiles {
+export function createRecentFiles(file: SettingsSurface, now: () => Date = () => new Date()): RecentFiles {
   /** Who is told when entries leave; see {@link RecentFiles.onDropped}. */
-  let dropped: (paths: readonly string[]) => void = () => undefined;
+  let dropped: ((paths: readonly string[]) => void) | undefined;
+  /**
+   * Paths that left before anybody was listening: a stored list longer than four — written by a build that kept up to
+   * thirty — is cut as this store opens, which is before the composition root registers the pictures' `drop`. Held
+   * here and handed over at registration, so a picture never outlives its entry for want of a listener at the moment
+   * the entry went.
+   */
+  let unannounced: string[] = [];
+  const announce = (paths: readonly string[]): void => {
+    if (paths.length === 0) return;
+    if (dropped === undefined) unannounced = [...unannounced, ...paths];
+    else dropped(paths);
+  };
   const stored = file.read();
   // READ ONCE, at construction, and the marker is answered from THIS copy for
   // the rest of the run. The first thing below is a write that clears it.
@@ -175,11 +155,15 @@ export function createRecentFiles(
   // build writes on start and clears on shutdown — means a run that did not
   // finish.
   const wasClean = stored['cleanExit'] !== false;
-  let entries = readEntries(stored['entries']);
+  // THE STORED LIST, CUT TO FOUR NOW — not when it is next read — so the document written below already holds only
+  // what is kept, and what was past the cap leaves with its pictures (`announce`).
+  const read = readEntries(stored['entries']);
+  let entries = read.slice(0, MAX_RECENT_ENTRIES);
+  announce(read.slice(MAX_RECENT_ENTRIES).map((held) => held.path));
   // READ BEFORE THE CLEARING WRITE BELOW, for `wasClean`'s reason: what was
   // open belongs to the previous run, and the first thing this constructor
   // does is start recording this one.
-  const previousSession = readEntries(stored['session']);
+  const previousSession = readEntries(stored['session']).slice(0, MAX_SESSION_ENTRIES);
 
   /**
    * The documents open right now, by the id this run minted for each.
@@ -194,12 +178,9 @@ export function createRecentFiles(
     file.write({
       entries: [...entries],
       cleanExit,
-      // BOUNDED THE WAY `entries` IS, and by the same number. What is dropped
-      // is our own record rather than anything the document holds, so this is
-      // a policy about how much we keep — the distinction the layers finding
-      // in this range's audit turns on. An offer with more rows than the
-      // recent list is not an offer.
-      session: [...live.values()].slice(0, length()),
+      // BOUNDED BY THE SESSION'S OWN NUMBER, not the recent cap. It was the recent length until 2026-10-01, and at
+      // four that would reopen four of a reader's six tabs after a crash and say nothing of the other two.
+      session: [...live.values()].slice(0, MAX_SESSION_ENTRIES),
     });
   };
 
@@ -209,18 +190,7 @@ export function createRecentFiles(
   persist(false);
 
   return {
-    list: () => {
-      // A LENGTH MADE SHORTER takes effect here, the next time anything reads the list: what is past it leaves the
-      // document, and its pictures with it (`dropped`), rather than staying on disk behind a shorter display.
-      const kept = length();
-      if (entries.length > kept) {
-        const evicted = entries.slice(kept).map((held) => held.path);
-        entries = entries.slice(0, kept);
-        persist(false);
-        dropped(evicted);
-      }
-      return entries;
-    },
+    list: () => entries,
     record: (entry) => {
       // DEDUPED BY PATH AND MOVED TO THE FRONT. Reopening the same file twice
       // must not fill the list with one document, and an entry whose name has
@@ -230,29 +200,30 @@ export function createRecentFiles(
         { path: entry.path, name: entry.name, openedAt: now().toISOString() },
         ...entries.filter((held) => held.path !== entry.path),
       ];
-      const kept = length();
-      entries = ordered.slice(0, kept);
+      entries = ordered.slice(0, MAX_RECENT_ENTRIES);
       persist(false);
       // PUSHED PAST THE CAP is leaving too, and the quietest way to: nobody asked for it.
-      const evicted = ordered.slice(kept).map((held) => held.path);
-      if (evicted.length > 0) dropped(evicted);
+      announce(ordered.slice(MAX_RECENT_ENTRIES).map((held) => held.path));
     },
     forget: (path) => {
       const before = entries.length;
       entries = entries.filter((held) => held.path !== path);
       persist(false);
-      if (entries.length < before) dropped([path]);
+      if (entries.length < before) announce([path]);
     },
     clear: () => {
       const gone = entries.map((held) => held.path);
       entries = [];
       persist(false);
-      if (gone.length > 0) dropped(gone);
+      announce(gone);
       return gone.length;
     },
     has: (path) => entries.some((held) => held.path === path),
     onDropped: (listener) => {
       dropped = listener;
+      const waiting = unannounced;
+      unannounced = [];
+      if (waiting.length > 0) listener(waiting);
     },
     lastExitClean: () => wasClean,
     markCleanExit: () => {
@@ -295,6 +266,7 @@ function readEntries(value: unknown): readonly ListedRecent[] {
     const instant = annotationInstantSchema.safeParse(openedAt);
     entries.push({ path, name, openedAt: instant.success ? instant.data : null });
   }
-  // THE WIDEST A PERSON CAN CHOOSE, which is what the boundary carries; the chosen length applies when the list is read.
-  return entries.slice(0, MAX_RECENT_ENTRIES);
+  // EVERY READABLE ROW, uncut: the store cuts to four itself, so the rows past the cap are known and leave with their
+  // pictures rather than vanishing here unannounced.
+  return entries;
 }

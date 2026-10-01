@@ -12,8 +12,6 @@ import {
   RECENT_LABEL,
   RECENT_MISSING,
   RECENT_PLACEHOLDER,
-  RECENT_SHOW_ALL,
-  RECENT_SHOW_FEWER,
   RECOVER_LABEL,
   RECOVER_OFFER,
 } from './messages/en.js';
@@ -51,15 +49,6 @@ import {
  * entry is one of them and this must become a recorded session rather than an
  * inference.
  */
-/**
- * How many recent documents the start screen shows before *Show all* (the owner's review of 0.1.6.0).
- *
- * NOT the recent-length setting, which is how many `main` REMEMBERS (5 to 30). The two were one number until this,
- * and they answer different questions: one is a row of cards that must fit the start screen, the other is a memory.
- * The rest stay one click away, so a longer setting still reaches a file the reader can open.
- */
-export const START_SCREEN_RECENT = 4;
-
 export function RecentFiles({
   client,
   onOpened,
@@ -75,7 +64,6 @@ export function RecentFiles({
 }): ReactElement | null {
   const { _ } = useLingui();
   const [state, setState] = useState<RecentState>({ kind: 'idle' });
-  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -169,19 +157,6 @@ export function RecentFiles({
         // cards are — ADR-0068 keeps the recent list out of the registry as data with a control.
         <div className="m-recent-header">
           <h2 className="m-recent-heading">{_(RECENT_HEADING)}</h2>
-          <span className="m-recent-actions">
-          {state.entries.length > START_SCREEN_RECENT ? (
-            <button
-              type="button"
-              className="m-recent-action"
-              aria-expanded={showAll}
-              onClick={() => {
-                setShowAll((current) => !current);
-              }}
-            >
-              {showAll ? _(RECENT_SHOW_FEWER) : _(RECENT_SHOW_ALL, { count: state.entries.length })}
-            </button>
-          ) : null}
           <button
             type="button"
             className="m-recent-action"
@@ -200,14 +175,15 @@ export function RecentFiles({
           >
             {_(RECENT_CLEAR)}
           </button>
-          </span>
         </div>
       )}
       {state.entries.length === 0 ? (
         <p className="m-recent-empty">{_(RECENT_EMPTY)}</p>
       ) : (
         <ul className="m-recent-list">
-          {(showAll ? state.entries : state.entries.slice(0, START_SCREEN_RECENT)).map((entry) => (
+          {/* EVERY ENTRY MAIN SENDS, and main keeps four (`MAX_RECENT_ENTRIES`): the one number lives in the store that
+              writes the list, so the screen has no cap of its own to drift from it (B3). */}
+          {state.entries.map((entry) => (
             // THE HANDLE IS THE KEY. It is minted per path and idempotent, so
             // it is the one value here that identifies a row — two files may
             // share a name, and a name key would make React reuse one row's

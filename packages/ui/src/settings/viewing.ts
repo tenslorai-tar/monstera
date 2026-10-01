@@ -1,13 +1,6 @@
-import { RECENT_LENGTHS, RECENT_LENGTH_SETTING_ID, type RecentLength } from '@monstera/contract';
 import { z } from 'zod';
 
 import {
-  RECENT_LENGTH_10,
-  RECENT_LENGTH_20,
-  RECENT_LENGTH_30,
-  RECENT_LENGTH_5,
-  RECENT_LENGTH_DESCRIPTION,
-  RECENT_LENGTH_TITLE,
   RESTORE_SESSION_DESCRIPTION,
   RESTORE_SESSION_TITLE,
   DARK_PAGE_DESCRIPTION,
@@ -129,21 +122,6 @@ export const RESTORE_SESSION_SETTING: SettingDefinition<z.ZodBoolean> = {
   schema: z.boolean(),
   fallback: false,
   category: 'viewing',
-};
-
-/**
- * How many documents the recent list keeps — Part F's *"recent-files length"* (`BUILD-PROMPT.md`:611). `main`'s store
- * reads the same id (`recentLengthIn`) at each opening and each reading; a shorter choice drops what is past it the next
- * time the list is read, pictures included. Ten by default, the list's length before it was a choice.
- */
-export const RECENT_LENGTH_SETTING: SettingDefinition<z.ZodEnum<{ [K in RecentLength]: K }>> = {
-  id: RECENT_LENGTH_SETTING_ID,
-  title: RECENT_LENGTH_TITLE,
-  description: RECENT_LENGTH_DESCRIPTION,
-  schema: z.enum(Object.keys(RECENT_LENGTHS) as [RecentLength, ...RecentLength[]]),
-  fallback: 'ten',
-  category: 'viewing',
-  optionTitles: { five: RECENT_LENGTH_5, ten: RECENT_LENGTH_10, twenty: RECENT_LENGTH_20, thirty: RECENT_LENGTH_30 },
 };
 
 /**

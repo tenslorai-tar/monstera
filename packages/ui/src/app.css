@@ -940,12 +940,6 @@ optgroup {
   text-transform: uppercase;
 }
 
-/* The list's own controls, *Show all* and *Clear list*, together at the header's end. */
-.m-recent-actions {
-  display: flex;
-  gap: var(--space-8);
-}
-
 .m-recent-action {
   padding: var(--space-2) var(--space-4);
   border: none;
