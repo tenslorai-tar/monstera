@@ -722,11 +722,21 @@ jobs:
       # Scoped to what the change introduces rather than to all of history: the
       # eight blobs that predate 45eb4fb cannot be removed, so gating on them
       # every run would be a red build people learn to ignore.
+      #
+      # A push that CREATES the ref has no previous tip: GitHub sends forty
+      # zeros as `before`, which git refuses as a range (exit 128), so the first
+      # push of every `work/**` branch failed here and skipped the secret scan
+      # below (Guards run 36873944916, 2026-10-01). The payload's own `created`
+      # field says which push this is, and what such a branch introduces is
+      # what is not on the default branch.
       - name: File policy (history introduced by this change)
         run: |
           if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
             node scripts/ci/annotate.mjs scripts/hooks/guardFiles.mjs --history \
               --range "${{ github.event.pull_request.base.sha }}..${{ github.sha }}"
+          elif [ "${{ github.event.created }}" = "true" ]; then
+            node scripts/ci/annotate.mjs scripts/hooks/guardFiles.mjs --history \
+              --range "origin/${{ github.event.repository.default_branch }}..${{ github.sha }}"
           else
             node scripts/ci/annotate.mjs scripts/hooks/guardFiles.mjs --history \
               --range "${{ github.event.before }}..${{ github.sha }}"
