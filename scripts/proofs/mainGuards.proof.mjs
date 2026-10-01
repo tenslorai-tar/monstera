@@ -11,6 +11,7 @@
  * Usage: node scripts/proofs/mainGuards.proof.mjs
  */
 
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -22,7 +23,7 @@ import { createRoster } from '../lib/passRoster.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 8 });
+const roster = createRoster(failures, { cases: 10 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -53,6 +54,13 @@ function fixture(name, files) {
 }
 
 const HAND_ROLLED = 'if (import.meta.url === `file://${process.argv[1]}`) { run(); }\n';
+// THE THREE SPELLINGS the first pattern could not see (39 files on 5f5a747a). Each is a hand-written
+// read of the entry path, which is the class; only the first spelling above compares with `===`.
+const URL_SUFFIX = "if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\\\', '/') ?? ' ')) { run(); }\n";
+const NAME_SUFFIX = "if (process.argv[1]?.endsWith('tool.mjs')) { run(); }\n";
+const RESOLVED =
+  "import { resolve } from 'node:path';\nimport { fileURLToPath } from 'node:url';\n" +
+  'if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) { run(); }\n';
 const NAMED = "import { isMain } from './isMain.mjs';\nif (isMain(import.meta.url)) { run(); }\n";
 const UNGUARDED = 'run();\n';
 // The use that is NOT a guard, and the reason the first version of this scan
@@ -84,6 +92,66 @@ try {
         `run unconditionally — every proof here does — and fileURLToPath(import.meta.url) to ` +
         `locate a directory is an unrelated, correct use. Reporting those is how a scan gets ` +
         `turned off.`,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // 2a. IT CAN SEE every spelling, not only the `===` one — including in a
+  // module no npm script invokes, which the roster this scan used to take
+  // (the manifest's entry points) did not read.
+  // -------------------------------------------------------------------------
+  {
+    const root = fixture('spellings', {
+      'urlSuffix.mjs': URL_SUFFIX,
+      'nameSuffix.mjs': NAME_SUFFIX,
+      'resolved.mjs': RESOLVED,
+      'good.mjs': NAMED,
+    });
+    // OUTSIDE THE MANIFEST: a hook, as `.githooks/` enters `scripts/hooks/prePush.mjs`.
+    mkdirSync(join(root, 'scripts', 'hooks'), { recursive: true });
+    writeFileSync(join(root, 'scripts', 'hooks', 'hook.mjs'), URL_SUFFIX, 'utf8');
+    const { handRolled } = scanMainGuards({ root });
+    const expected = ['scripts/hooks/hook.mjs', 'scripts/nameSuffix.mjs', 'scripts/resolved.mjs', 'scripts/urlSuffix.mjs'];
+    check(
+      'the url-suffix, name-suffix and resolved-path spellings are each reported, in or out of the manifest',
+      JSON.stringify(handRolled) === JSON.stringify(expected),
+      `reported ${JSON.stringify(handRolled)}, expected ${JSON.stringify(expected)}. The first ` +
+        `pattern matched only "import.meta.url ===" and reported ok over 39 guards in these ` +
+        `three spellings, four of them in files the manifest does not invoke.`,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // 2b. WHY the url-suffix spelling is a defect and not a style: run from a
+  // directory whose name has a space, it does not fire and isMain does. Run as
+  // a real process, because argv[1] and import.meta.url are both facts about
+  // how a process was started, and a simulation would choose them both.
+  // -------------------------------------------------------------------------
+  {
+    const spaced = join(scratch, 'with space');
+    mkdirSync(spaced, { recursive: true });
+    const probe = join(spaced, 'probe.mjs');
+    writeFileSync(
+      probe,
+      `import { isMain } from ${JSON.stringify(pathToFileURL(join(import.meta.dirname, '..', 'lib', 'isMain.mjs')).href)};\n` +
+        `const suffix = import.meta.url.endsWith(process.argv[1]?.replaceAll('\\\\', '/') ?? ' ');\n` +
+        'process.stdout.write(JSON.stringify({ suffix, isMain: isMain(import.meta.url) }));\n',
+      'utf8',
+    );
+    const child = spawnSync(process.execPath, [probe], { encoding: 'utf8' });
+    /** @type {{ suffix?: unknown, isMain?: unknown }} */
+    let answer = {};
+    try {
+      answer = JSON.parse(child.stdout);
+    } catch {
+      // Left empty, and the check below reports what the child printed.
+    }
+    check(
+      'from a path with a space, isMain fires and the url-suffix spelling does not',
+      answer.isMain === true && answer.suffix === false,
+      `the child answered ${JSON.stringify(answer)} (stdout ${JSON.stringify(child.stdout)}, stderr ` +
+        `${JSON.stringify(child.stderr)}). isMain must be TRUE here, or the resolver has the defect; ` +
+        `the suffix spelling FALSE is the reason it is refused: the url says %20 and argv says a space.`,
     );
   }
 

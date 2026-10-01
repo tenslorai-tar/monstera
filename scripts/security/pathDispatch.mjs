@@ -49,6 +49,7 @@ import { filesInCommit, repoRoot } from '../lib/gitScope.mjs';
 import { mupdfSourcePath } from '../provision/mupdf.mjs';
 import { generateGlue } from '../provision/mupdfGlue.mjs';
 import { buildCallGraph, publicApiSymbols } from './ocrDoors.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 /** MuPDF's own extension matcher. Static to writer.c, so it is the single seam. */
 const EXTENSION_MATCHER = 'is_extension';
@@ -152,7 +153,7 @@ export function generatedGlue(root) {
   return { file: 'generated: monstera_glue.c', text: generateGlue(readFileSync(upstream, 'utf8')).c };
 }
 
-if (process.argv[1]?.endsWith('pathDispatch.mjs')) {
+if (isMain(import.meta.url)) {
   const root = repoRoot();
   const source = mupdfSourcePath(root);
   const shimProject = join(root, 'native', 'mupdf-shim', 'monstera_mupdf.vcxproj');

@@ -39,6 +39,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { repoRoot } from './gitScope.mjs';
+import { isMain } from './isMain.mjs';
 
 /** Repo-relative directory holding the workflows this scans. */
 export const WORKFLOW_DIR = '.github/workflows';
@@ -104,7 +105,7 @@ export function scanWorkflows(root = repoRoot()) {
   return { violations, controlFound, filesScanned: files.length };
 }
 
-if (process.argv[1]?.endsWith('workflowPins.mjs')) {
+if (isMain(import.meta.url)) {
   const { violations, controlFound, filesScanned } = scanWorkflows();
 
   if (!controlFound) {

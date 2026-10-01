@@ -82,6 +82,7 @@ import { fileURLToPath } from 'node:url';
 
 import { changedPaths } from '../lib/gitScope.mjs';
 import { NPM_VERSION } from '../lib/toolchain.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -442,8 +443,7 @@ export function explain(output) {
   );
 }
 
-const invokedDirectly =
-  process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const invokedDirectly = isMain(import.meta.url);
 
 if (invokedDirectly) {
   const { ok, output } = checkLockfile();

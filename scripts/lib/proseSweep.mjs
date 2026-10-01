@@ -51,6 +51,7 @@ import { join } from 'node:path';
 
 import { repoRoot } from './gitScope.mjs';
 import { normalise, units } from './withdrawnPhrases.mjs';
+import { isMain } from './isMain.mjs';
 
 /**
  * A phrase that WRAPS in the control text below, so a line-scoped matcher
@@ -123,7 +124,7 @@ export function sweep(pattern, { files, root = repoRoot() } = {}) {
   };
 }
 
-if (process.argv[1]?.endsWith('proseSweep.mjs')) {
+if (isMain(import.meta.url)) {
   const [source, ...files] = process.argv.slice(2);
   if (source === undefined) {
     process.stderr.write('Usage: node scripts/lib/proseSweep.mjs "<pattern>" [file...]\n');

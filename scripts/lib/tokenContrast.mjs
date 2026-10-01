@@ -49,6 +49,7 @@ import { pathToFileURL } from 'node:url';
 
 import { TOKEN_CONTRAST, refuseStaleBuild } from './buildFreshness.mjs';
 import { repoRoot } from './gitScope.mjs';
+import { isMain } from './isMain.mjs';
 
 /**
  * The colour maths, from the BUILD of `packages/shared`.
@@ -691,7 +692,7 @@ export function report(result) {
   );
 }
 
-if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
+if (isMain(import.meta.url)) {
   const outcome = scan();
   process.stdout.write(report(outcome));
   process.exitCode = outcome.blind !== null || outcome.failures.length > 0 ? 1 : 0;

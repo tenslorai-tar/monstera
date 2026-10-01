@@ -49,6 +49,7 @@ import {
 import { verifyDetached } from '../lib/openpgpVerify.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { LIBREOFFICE_KEY_FINGERPRINT, libreOfficeKeyPath } from './keys/libreOfficeKey.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 /** `26.8.0`, the newest in `download.documentfoundation.org/libreoffice/stable/`, read 2026-09-13. */
 export const LIBREOFFICE_VERSION = '26.8.0';
@@ -244,7 +245,7 @@ async function downloadFromMirrors(destination) {
   throw new AggregateError(unanswered, `no mirror answered for ${LIBREOFFICE_ASSET}`);
 }
 
-if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
+if (isMain(import.meta.url)) {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
   if (process.argv.includes('--check')) {
     const soffice = sofficePath(root);

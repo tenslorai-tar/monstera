@@ -58,11 +58,11 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 import { git, repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 const ROOT = repoRoot();
 const REGISTER = join(ROOT, 'docs', 'security', 'engine-advisories.json');
@@ -400,7 +400,7 @@ async function main() {
 // Guarded, because this module is imported by its own proof. Without it, every
 // import ran the gate — printing its decision and then calling process.exit,
 // which ends the importing process wherever it happens to be.
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
 main().then(
   (status) => {
     process.exit(status);

@@ -92,11 +92,11 @@
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { repoRoot } from './gitScope.mjs';
 import { loadTypeScript } from './loadTypeScript.mjs';
 import { invokesRepositoryScript } from './workflowInvocations.mjs';
+import { isMain } from './isMain.mjs';
 
 const WORKFLOW_DIR = '.github/workflows';
 const SCRIPTS_DIR = 'scripts';
@@ -690,7 +690,7 @@ export async function main() {
 }
 
 /* c8 ignore start */
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   process.exitCode = await main();
 }
 /* c8 ignore stop */

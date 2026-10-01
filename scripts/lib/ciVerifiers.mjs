@@ -66,6 +66,7 @@ import { join } from 'node:path';
 import { repoRoot } from './gitScope.mjs';
 import { WORKFLOW_DIR } from './workflowPins.mjs';
 import { invokesRepositoryScript } from './workflowInvocations.mjs';
+import { isMain } from './isMain.mjs';
 
 /**
  * Any repository script path, whether or not `node` precedes it.
@@ -341,7 +342,7 @@ export function verifiersNotRunByCi({ root = repoRoot() } = {}) {
   };
 }
 
-if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
+if (isMain(import.meta.url)) {
   const result = ciVerifiers();
   const anchor = verifiersNotRunByCi();
   process.stdout.write(

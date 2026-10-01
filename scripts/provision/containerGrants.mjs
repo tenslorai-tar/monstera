@@ -94,6 +94,7 @@ import {
   readAcl,
   revokeOne,
 } from '../lib/containerGrant.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 /**
  * The principal, and the icacls primitives, from the one module that spells them.
@@ -421,7 +422,7 @@ export function apply({ root = repoRoot(), revoke = false } = {}) {
   return { lines, failed };
 }
 
-if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
+if (isMain(import.meta.url)) {
   if (process.platform !== 'win32') {
     process.stdout.write(
       `  --  container grants are a Windows AppContainer concern; this is ${process.platform}.\n` +

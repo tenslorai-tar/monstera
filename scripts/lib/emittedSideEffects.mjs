@@ -62,6 +62,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { repoRoot } from './gitScope.mjs';
+import { isMain } from './isMain.mjs';
 
 /**
  * A statement that survives type erasure with no bindings left.
@@ -211,7 +212,7 @@ export function report(result) {
   );
 }
 
-if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
+if (isMain(import.meta.url)) {
   const outcome = scan();
   process.stdout.write(report(outcome));
   process.exitCode = outcome.blind !== null || outcome.violations.length > 0 ? 1 : 0;

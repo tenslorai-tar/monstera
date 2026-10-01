@@ -54,6 +54,7 @@ import { filesUnder, treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mj
 import { formatError } from '../lib/reportError.mjs';
 import { normaliseLayout } from '../release/generateNotice.mjs';
 import { sameAsCommitted } from './condaForge.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 export const ONLYOFFICE_VERSION = '9.4.0';
 
@@ -471,7 +472,7 @@ export async function provisionOnlyOffice({ root, force = false }) {
   }
 }
 
-if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
+if (isMain(import.meta.url)) {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
   const check = process.argv.includes('--check');
   const force = process.argv.includes('--force');

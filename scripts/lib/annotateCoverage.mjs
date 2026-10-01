@@ -102,6 +102,7 @@ import { join } from 'node:path';
 
 import { repoRoot } from './gitScope.mjs';
 import { firstInvokedScriptPath, invokedScriptPaths } from './workflowInvocations.mjs';
+import { isMain } from './isMain.mjs';
 
 const WORKFLOW_DIR = '.github/workflows';
 const WRAPPER = 'scripts/ci/annotate.mjs';
@@ -282,7 +283,7 @@ export function scan(options = {}) {
 }
 
 /* c8 ignore start */
-if (process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1].replace(/\\/gu, '/'))) {
+if (isMain(import.meta.url)) {
   const result = scan();
   if (result.blind) {
     process.stderr.write(

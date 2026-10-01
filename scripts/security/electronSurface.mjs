@@ -79,6 +79,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { loadTypeScript as loadCompiler } from '../lib/loadTypeScript.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -347,8 +348,7 @@ export async function parseElectronDeclarations({ path, describe }) {
   };
 }
 
-const invokedDirectly =
-  process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const invokedDirectly = isMain(import.meta.url);
 
 if (invokedDirectly) {
   const surface = await readElectronSurface();

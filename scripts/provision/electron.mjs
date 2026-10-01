@@ -59,6 +59,7 @@ import {
   verifyFileDigest,
 } from '../lib/fetchVerified.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -638,27 +639,16 @@ export async function provisionElectron({ root = REPO_ROOT, key = platformKey() 
 }
 
 /**
- * Whether this module was run directly, as opposed to imported.
+ * Whether this module was run directly, as opposed to imported — through
+ * `isMain`, the one resolver (`scripts/lib/isMain.mjs`, B3a).
  *
- * `resolve` + `fileURLToPath`, which is what `gitleaks.mjs:852`, `mupdf.mjs:346`
- * and `electronSurface.mjs:351` already do. This file had invented a fourth
- * answer — comparing `import.meta.url` against a hand-built `file://` + path —
- * and it is wrong on exactly one platform: `import.meta.url` is
- * `file:///C:/…` with THREE slashes, while concatenation yields `file://C:/…`
- * with two. On Linux the leading `/` of an absolute path makes the two forms
- * coincide, so it worked there and silently did nothing on Windows.
- *
- * **It exited 0 while provisioning nothing**, which is why nothing found it: the
- * first run of `npm run provision:electron` in this repository's history
+ * This file once compared `import.meta.url` against a hand-built `file://` +
+ * path, which is wrong on Windows (three slashes against two), and **exited 0
+ * while provisioning nothing**: the first run of `npm run provision:electron`
  * produced no output, no archive and no runtime, and reported success.
- *
- * B3a — three modules already answered this question and a fourth opinion was
- * written anyway. The remaining hand-rolled variants (`endsWith` in four
- * `security/` modules) are looser than this but not wrong; that they are a
- * fifth shape of one question is recorded rather than fixed here.
+ * `check:mainguards` now refuses any hand-written read of the entry path.
  */
-const RUN_DIRECTLY =
-  process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const RUN_DIRECTLY = isMain(import.meta.url);
 
 if (RUN_DIRECTLY) {
   provisionElectron().then(

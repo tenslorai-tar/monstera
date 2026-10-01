@@ -46,6 +46,7 @@ import { verifyDetached } from '../lib/openpgpVerify.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { ADOPTIUM_KEY_FINGERPRINT, adoptiumKeyPath } from './keys/adoptiumKey.mjs';
 import { VERAPDF_KEY_FINGERPRINT, verapdfKeyPath } from './keys/verapdfKey.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 export const VERAPDF_VERSION = '1.30.2';
 export const JRE_VERSION = '21.0.12.1+1';
@@ -203,7 +204,7 @@ export async function provisionVerapdf({ root, force = false }) {
   }
 }
 
-if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
+if (isMain(import.meta.url)) {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
   if (process.argv.includes('--check')) {
     const java = javaPath(root);
