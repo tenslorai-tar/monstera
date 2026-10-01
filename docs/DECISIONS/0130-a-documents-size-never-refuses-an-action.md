@@ -90,3 +90,10 @@ changes were forced by a measurement rather than chosen:
   when their heights overlap by 0.3 of the size; a line at tight leading does not.
 
 The rest of Decision 1 stands as written. Its text is left as the decision was taken; this note is the rule.
+
+## Correction, 2026-10-02 — the audit's date, and its count
+
+*The rest of the class* above cites the JOURNAL entry *of 2026-10-01* and counts 38 caps. The entry was written on
+2026-10-02, under the same title, and it groups what it found by what a person meets rather than counting caps: fourteen
+a real document reaches that fail the action, the cut-with-a-note ones, the silent ones, and the bounds only a crafted
+file reaches.

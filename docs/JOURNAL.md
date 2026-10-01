@@ -892,6 +892,78 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-02 — No document-size refusals: what every cap a document can reach does today
+
+The owner's rule (2026-10-01): a person is never told an action cannot be done because of their document.
+[ADR-0130](DECISIONS/0130-a-documents-size-never-refuses-an-action.md) fixed the three caps the owner named and set
+the rule the rest are measured against — **a cap a real document can reach is a defect owed a part or a join; a cap
+only a hostile peer can reach is a bound, and says what it is derived from.** This is the rest, as of c5cdef64.
+
+**Fixed (2026-10-01):** a page drawn one glyph per object (the PDFium host joins runs, ef15da04); the annotations, form
+fields and outline lists (they cross in parts and the walks stop only at derived hostile-host bounds — 44,100, 77,600
+and 239,600 — and say so, c5cdef64; the outline used to stop at 4,096 in silence).
+
+**Provenance, which is a label's citation (B6):** each row was traced by a read-only search of the working tree on
+2026-10-02, which named the file and line of the behaviour; rows marked **✓** were then re-read by me against the code.
+The rest carry the trace's citation and nothing more. The trace's own *not traced* items are listed at the end.
+
+### A — a real document reaches it, and the action fails (defects owed)
+
+| cap | what a person meets | the owed shape |
+|---|---|---|
+| ✓ `documentBytesCeiling` (1.5 GiB − 80 MiB, all open documents together) | *"There is not enough room to open that document"* — one 1.5 GB scan, or several large files open | `main` holds every image in memory; a file-backed image is item 2's question, the owner's decision |
+| ✓ `MAX_RANGE_BYTES` (16 MiB, one range) | a page whose one object (a large scanned image) is over it does not render; nothing is said | a range answered in several calls, or the object streamed |
+| ✓ `MAX_TEXT_OBJECTS` (512) on `document.textBlocks` and `document.pageObjects` | **refused as `internal`, not cut**: main forwards every block and up to 45,800 objects and the contract's `.max(512)` rejects the answer. *Edit page object* on a page drawn one glyph per object (8,400 objects) fails; a dense table page whose cells are blocks fails *Edit text*. Predates 2026-10-01 (the host's bound was 8,192, also over 512) | parts, or a join for objects as for runs; the `truncated` messages for both are unreachable today |
+| ✓ `MAX_EXTRACT_PAGES` / `MAX_SPLIT_PARTS` / `MAX_IMAGE_PAGES` (4,096 page indices) | extracting, splitting one file per page, exporting images of, or stamping *all pages* of a document past 4,096 pages fails as `internal` | a page SET of runs, as commands already take (`pageSet.ts`) |
+| ✓ the outline relayed to the compose host for *Generate TOC* (`engine/applyPdfLib`'s `reads`, a 256 KiB request frame) | about 3,500 bookmarks of ordinary length (7,700 empty ones at most) and the table of contents fails as `internal` | the outline crosses in a file, as answers do (ADR-0125) |
+| `MAX_LAYERS` (1,024) and layer names over 256 | *"The layers could not be read"* — a CAD export carries thousands | parts |
+| `MAX_PAGE_LINKS` (4,096) and one URI over 2,048 | *"The links on this page could not be read"* — one long tracking link loses the page's every link | slice the URI with a flag; parts for the count |
+| `MAX_ANNOTATIONS` in `xfdfReader.ts` and `annotationInterchange.ts` (4,096) | importing comments: *"Nothing was added"* — this app's own export of a long review cannot be imported back (export is unbounded) | apply in parts; the count is not a property of a hostile file |
+| form-data import (4,096 fields) | JSON and XFDF refuse as *unreadable*; FDF keeps the first 4,096 **silently** | as above, and the FDF cut says so meanwhile |
+| translate, one block over 4,096 characters | the whole page refused with a message that blames the provider | split the block's write; say what happened |
+| `page-too-large` on a picture ask (edge over 2,576 px at scale 1) | *"This page is too large to send as a picture"* — every A0 drawing | scale below 1 for a picture, or tile it |
+| Office import: 64 missing blocks, 1,024 workbook parts | *"That file could not be turned into a PDF"* | a part count, not a refusal |
+| cloud upload, 250 MiB | *"The document is too large to send in one piece"* | a resumable upload session |
+| `ENGINE_SIGNATURES_*` — a `/Reason`, `/Name` or `/Location` over 256 characters | the signatures read **and every save** fail as `internal` (the save asks the host whether it keeps the signatures) | slice the strings with a flag; the count (256) needs a crafted file |
+
+### B — a real document reaches it, and the cut is said
+
+The find bar's 100 matches a page (*"More matches than can be listed"*); the page-structure list (4,096 tags); the
+Excel review grid (4,096 cells, *the ones not shown are exported as found*; a cell over 2,048 characters cannot be
+edited there); duplicate pages (4,096); barcodes (64 a page); flat-form candidates (256 a page); the comparison's
+1,000 listed changes; the assistant's 100,000-character window (*cut short at …*); and undo history trimmed to the
+memory budget (*older undo steps were released*), which is retention, never a refusal. Import byte limits (8 MiB
+comments and form data, 4 MiB Markdown, 1 MiB CSV, 100 MiB Office, 64 MiB image) bound the file picked, not the open
+document, and each names its limit. These meet the rule's letter — nothing is refused — and each is a list a person
+sees part of; whether any should cross in parts is a question per surface, not a defect.
+
+### C — a real document reaches it, and the cut is SILENT
+
+- the text layer (2,048 lines, 1,024 characters a line): selection drops the flag, and spell check leaves the rest
+  unchecked without saying so; comparison does say so;
+- outline depth past 10 (`destinations.ts`' `MAX_DEPTH`): entries skipped, no flag, and *Generate TOC* omits them;
+- the accessibility check lists 16 pages a rule fails on and never shows the count it carries;
+- an asked-about selection or comment over 16,384 characters is cut, and `truncated` is answered `false`;
+- PDF/A's 64 removal lines; `engine/page-fills`' 4,096 (its consumer not traced).
+
+Each is owed at least the flag, since *a list that looks complete* is the display-only defect in a list.
+
+### D — only a crafted file reaches it (bounds, and what they are derived from)
+
+The page-text answer (8 MiB, a dense page measured about 8 KB); every host answer (8 MiB, ADR-0125); the page set's
+8,192 separate stretches; the view model's 512 pages a read; OCR's 2,048 lines a page (5–54 measured); the redaction
+cap of 4,096 matches of one term on one page; the edit commands' 1,024 blocks and 512 replacements (reachable only
+through the 512-object refusal above). `engine/text-runs` meets its 8 MiB file before its 45,800-run bound at about
+31,500 ordinary runs — after the join, a page of that many runs is not one any producer draws.
+
+### Not traced
+
+How many pages `document.viewModel` can be asked for at once; what PDF.js draws after the range transport stops;
+whether a failed host apply (redaction, import, OCR) counts towards poisoning the document; Win32's 64 print page
+ranges; where the 100 MiB Office check is made. **The owner's question:** class A is fourteen defects; the order this
+build would take them is the three marked ✓ that fail as `internal` (objects and blocks, page lists, the TOC frame),
+then the panels (layers, links), then imports. The memory ceiling waits on item 2's decision.
+
 ## 2026-10-01 — The taskbar icon filled 87% of its height; the exe still carries Electron's icon
 
 The owner's taskbar (batch-1, `taskbar_icon.png`): Monstera's mark about 17.5 × 20 pixels in a 24-pixel slot, beside
