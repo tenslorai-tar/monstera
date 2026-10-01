@@ -434,12 +434,16 @@ describe('the assistant about a document (ADR-0088)', () => {
     });
   }
 
-  it('names the page as a person reads it and the provider by name, and asks about THAT page', async () => {
+  it('names the page as a person reads it and the provider by name beside Send, and asks about THAT page', async () => {
     const { sent } = await drawn({ focused: focusedOn() });
 
     expect(chosenIn('Context')).toBe('Page 7');
-    expect(screen.getByText(/This page \(7\)/u)).toBeTruthy();
-    expect(screen.getByText(/Sent to Anthropic only when you press Send\./u)).toBeTruthy();
+    // THE PROVIDER IS NAMED BY THE PICKER BESIDE SEND, and no separate line restates it (ARCHITECTURE §8, the owner's
+    // decision of 2026-10-01). The picker's shown value is the positive half, so the absence below is not a blank pane.
+    const picker = screen.getByRole('combobox', { name: 'Provider' });
+    expect(within(picker).getByRole('option', { name: 'Anthropic', selected: true })).toBeTruthy();
+    expect(screen.queryByText(/only when you press Send/u)).toBeNull();
+    expect(screen.queryByText(/This page \(7\)/u)).toBeNull();
     // THE PROVIDER LIST SAYS NAMES, never the registry's ids.
     expect(screen.getByRole('option', { name: 'Google Gemini' })).toBeTruthy();
     expect(screen.queryByRole('option', { name: 'anthropic' })).toBeNull();
@@ -449,16 +453,13 @@ describe('the assistant about a document (ADR-0088)', () => {
     expect(lastAbout(sent)).toStrictEqual({ scope: 'page', docId: DOC_A, page: 6 });
   });
 
-  it('asks about the whole document when chosen, and CONTROL: about nothing sends no scope and no consent line', async () => {
+  it('asks about the whole document when chosen', async () => {
     const { sent } = await drawn({ focused: focusedOn() });
 
     await about('Document');
     type('Summarise it');
     await send();
     expect(lastAbout(sent)).toStrictEqual({ scope: 'document', docId: DOC_A });
-
-    await about('None');
-    expect(screen.queryByText(/only when you press Send/u)).toBeNull();
   });
 
   describe('Document only / Document + web (ADR-0108)', () => {
@@ -679,7 +680,7 @@ describe('the assistant about a document (ADR-0088)', () => {
     expect(a.store.getState().conversation.at(-1)).toStrictEqual({ role: 'assistant', text: 'late words' });
   });
 
-  it('a command’s request asks at once about the words it names, and the line offers that selection', async () => {
+  it('a command’s request asks at once about the words it names, and the menu offers that selection', async () => {
     const request: AssistantRequest = {
       serial: 1,
       about: { scope: 'selection', docId: DOC_A, page: 2, text: 'the indemnity clause' },
@@ -693,27 +694,26 @@ describe('the assistant about a document (ADR-0088)', () => {
     expect(lastAbout(sent)).toStrictEqual(request.about);
     expect(screen.getByText('Explain the selected text in plain language.')).toBeTruthy();
     expect(chosenIn('Context')).toBe('Selection');
-    expect(screen.getByText(/The text you selected on page 3/u)).toBeTruthy();
   });
 
-  it('CONTROL: a selection from ANOTHER document is not offered, so the line never names words not on show', async () => {
+  it('CONTROL: a selection from ANOTHER document is not offered, so the menu never offers words not on show', async () => {
     const request: AssistantRequest = {
       serial: 1,
       about: { scope: 'selection', docId: DOC_B, page: 2, text: 'words from B' },
     };
     await drawn({ focused: focusedOn(DOC_A), request });
-    // THE MENU AND THE LINE, the two places the positive case above finds the selection. This queried an `option`
-    // until the audit of 1e1bfad..e24eca0e: the choices became buttons in 44250155 and no option exists, so the case
-    // passed whatever the panel drew. Since 2026-10-01 they are the Context menu's values, read with it OPEN — a
-    // closed menu holds no value at all, which would pass this the same way.
+    // THE MENU, the one place the positive case above finds the selection since the line under it went (ADR-0088's
+    // correction of 2026-10-01). This queried an `option` until the audit of 1e1bfad..e24eca0e: the choices became
+    // buttons in 44250155 and no option exists, so the case passed whatever the panel drew. Since 2026-10-01 they are
+    // the Context menu's values, read with it OPEN — a closed menu holds no value at all, which would pass this the
+    // same way.
     const values = await valuesIn('Context');
     expect(valueNamed(values, 'Page 7')).toBeDefined();
     expect(valueNamed(values, 'Selection')).toBeUndefined();
     await closeChoices();
-    expect(screen.queryByText(/you selected/u)).toBeNull();
   });
 
-  it('names a COMMENT as a comment on the line, and asks with the comment scope', async () => {
+  it('names a COMMENT as a comment in the menu, and asks with the comment scope', async () => {
     const request: AssistantRequest = {
       serial: 1,
       about: { scope: 'comment', docId: DOC_A, page: 3, text: 'Can we move the date?' },
@@ -726,13 +726,11 @@ describe('the assistant about a document (ADR-0088)', () => {
     });
 
     expect(chosenIn('Context')).toBe('Comment');
-    expect(screen.getByText(/The comment on page 4/u)).toBeTruthy();
     // CONTROL: the selection's wording is not borrowed.
     const values = await valuesIn('Context');
     expect(valueNamed(values, 'Comment')).toBeDefined();
     expect(valueNamed(values, 'Selection')).toBeUndefined();
     await closeChoices();
-    expect(screen.queryByText(/you selected/u)).toBeNull();
     const params = sent.find((entry) => entry.id === 'ai.ask')?.params as { about: { scope: string } };
     expect(params.about.scope).toBe('comment');
   });
@@ -861,15 +859,13 @@ describe('the assistant about a document (ADR-0088)', () => {
     });
   });
 
-  it('SUMMARISE COMMENTS: the command’s request asks at once about the comments, and the line names them', async () => {
+  it('SUMMARISE COMMENTS: the command’s request asks at once about the comments, and the menu names them', async () => {
     const { sent } = await drawn({
       focused: focusedOn(),
       request: { serial: 1, about: { scope: 'comments', docId: DOC_A }, prompt: ASSISTANT_PROMPT_SUMMARISE_COMMENTS },
     });
     expect(lastAbout(sent)).toStrictEqual({ scope: 'comments', docId: DOC_A });
     expect(chosenIn('Context')).toBe('Comments');
-    // THE CHOICE IN FULL, under the menus.
-    expect(screen.getByText(/All the comments in this document/u)).toBeTruthy();
   });
 
   describe('a picture of the page — vision analysis (ADR-0090)', () => {
@@ -957,12 +953,11 @@ describe('the assistant about a document (ADR-0088)', () => {
       expect(lastAsk(sent).alongside).toStrictEqual({ scope: 'page', docId: DOC_B, page: 2 });
     });
 
-    it('RIGHT sends the right document alone, and the page line names the right pane’s page', async () => {
+    it('RIGHT sends the right document alone, and the Context menu names the right pane’s page', async () => {
       const { sent } = await drawn({ focused: focusedOn(), beside: BESIDE });
 
       pick('Right');
       expect(chosenIn('Context')).toBe('Page 3');
-      expect(screen.getByText(/This page \(3\)/u)).toBeTruthy();
       type('What is on the right page?');
       await send();
       expect(lastAsk(sent).about).toStrictEqual({ scope: 'page', docId: DOC_B, page: 2 });

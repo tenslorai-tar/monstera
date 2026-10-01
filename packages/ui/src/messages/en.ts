@@ -1391,12 +1391,6 @@ export const AI_PROVIDER_NAMES = {
   deepseek: AI_PROVIDER_DEEPSEEK,
 } as const satisfies Record<AiProviderId, MessageKey>;
 export const ASSISTANT_ABOUT_LABEL = messageKey('assistant.about');
-export const ASSISTANT_ABOUT_PAGE = messageKey('assistant.about.page');
-export const ASSISTANT_ABOUT_DOCUMENT = messageKey('assistant.about.document');
-export const ASSISTANT_ABOUT_SELECTION = messageKey('assistant.about.selection');
-export const ASSISTANT_ABOUT_COMMENT = messageKey('assistant.about.comment');
-export const ASSISTANT_ABOUT_COMMENTS = messageKey('assistant.about.comments');
-export const ASSISTANT_ABOUT_PICTURE = messageKey('assistant.about.picture');
 export const ASSISTANT_SENT_PICTURE = messageKey('assistant.sent.picture');
 export const ASSISTANT_SENT_COMMENTS = messageKey('assistant.sent.comments');
 export const ASSISTANT_SENT_COMMENTS_CUT = messageKey('assistant.sent.comments-cut');
@@ -1446,8 +1440,7 @@ export const SETTINGS_AI_MODELS_UNREAD = messageKey('dialog.settings.ai-models.u
  */
 export const AI_MODELS_NONE = messageKey('ai.models.none');
 export const AI_SAVE_HISTORY_TITLE = messageKey('setting.ai.save-history.title');
-export const ASSISTANT_ABOUT_NOTHING = messageKey('assistant.about.nothing');
-/** v5-03's "Asking about" choices, as short buttons over the message box; the sentence under them says the rest. */
+/** The Context menu's values, which until 2026-10-01 had a sentence under them saying the rest (ADR-0088's correction). */
 export const ASSISTANT_CHIP_SELECTION = messageKey('assistant.chip.selection');
 export const ASSISTANT_CHIP_COMMENT = messageKey('assistant.chip.comment');
 export const ASSISTANT_CHIP_PAGE = messageKey('assistant.chip.page');
@@ -1455,7 +1448,6 @@ export const ASSISTANT_CHIP_DOCUMENT = messageKey('assistant.chip.document');
 export const ASSISTANT_CHIP_COMMENTS = messageKey('assistant.chip.comments');
 export const ASSISTANT_CHIP_PICTURE = messageKey('assistant.chip.picture');
 export const ASSISTANT_CHIP_NOTHING = messageKey('assistant.chip.nothing');
-export const ASSISTANT_ABOUT_SENDS = messageKey('assistant.about.sends');
 export const ASSISTANT_SENT_PAGE = messageKey('assistant.sent.page');
 export const ASSISTANT_SENT_PAGES = messageKey('assistant.sent.pages');
 export const ASSISTANT_SENT_CUT = messageKey('assistant.sent.cut');
@@ -3353,13 +3345,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AI_PROVIDER_NAMES.perplexity]: 'Perplexity',
   [AI_PROVIDER_NAMES.deepseek]: 'DeepSeek',
   [ASSISTANT_ABOUT_LABEL]: 'Context',
-  [ASSISTANT_ABOUT_PAGE]: 'This page ({page})',
-  [ASSISTANT_ABOUT_DOCUMENT]: 'The whole document, up to {characters} characters',
-  [ASSISTANT_ABOUT_SELECTION]: 'The text you selected on page {page}',
-  [ASSISTANT_ABOUT_COMMENT]: 'The comment on page {page}',
-  [ASSISTANT_ABOUT_COMMENTS]: 'All the comments in this document',
-  // VISION ANALYSIS (ADR-0090): what goes is a picture, and the line says so before Send.
-  [ASSISTANT_ABOUT_PICTURE]: 'A picture of this page ({page})',
   [ASSISTANT_SENT_PICTURE]: 'Sent a picture of page {page} of {count}',
   [ASSISTANT_SENT_COMMENTS]: '{comments, plural, one {Sent the one comment in this document} other {Sent all # comments in this document}}',
   [ASSISTANT_SENT_COMMENTS_CUT]: '{comments, plural, one {Sent the first comment — the list was too long to send whole} other {Sent the first # comments — the list was too long to send whole}}',
@@ -3450,7 +3435,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AI_SETUP_NOT_STORED]: 'The key could not be stored securely on this computer, so it was not saved.',
   [AI_SETUP_AT_START_TITLE]: 'Offer AI setup when Monstera starts',
   [AI_SAVE_HISTORY_TITLE]: 'Save chat history',
-  [ASSISTANT_ABOUT_NOTHING]: 'Nothing from the document',
   [ASSISTANT_CHIP_SELECTION]: 'Selection',
   [ASSISTANT_CHIP_COMMENT]: 'Comment',
   [ASSISTANT_CHIP_PAGE]: 'Page {page}',
@@ -3458,9 +3442,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_CHIP_COMMENTS]: 'Comments',
   [ASSISTANT_CHIP_PICTURE]: 'Picture',
   [ASSISTANT_CHIP_NOTHING]: 'None',
-  // WHO RECEIVES IT AND WHEN, which is BUILD-PROMPT's consent sentence: document content goes
-  // to a provider only on an explicit action, and the panel says which provider.
-  [ASSISTANT_ABOUT_SENDS]: 'Sent to {provider} only when you press Send.',
   [ASSISTANT_SENT_PAGE]: 'Sent page {page} of {count}',
   [ASSISTANT_SENT_PAGES]: 'Sent pages {first} to {last} of {count}',
   [ASSISTANT_SENT_CUT]: '— cut short at {characters} characters',

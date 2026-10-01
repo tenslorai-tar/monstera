@@ -9,7 +9,6 @@ import {
   type AskSides,
   type ContractClient,
   MAX_ANNOTATION_TEXT,
-  MAX_ASK_CONTEXT,
   MAX_CHAT_TEXT,
   type DispatchableCommand,
   type WebSearchAbsence,
@@ -42,15 +41,7 @@ import type { ConversationTurn, DocumentStore } from './documentStores.js';
 import {
   AI_PROVIDER_NAMES,
   ANTHROPIC_OUT_OF_CREDIT,
-  ASSISTANT_ABOUT_COMMENT,
-  ASSISTANT_ABOUT_COMMENTS,
-  ASSISTANT_ABOUT_DOCUMENT,
   ASSISTANT_ABOUT_LABEL,
-  ASSISTANT_ABOUT_NOTHING,
-  ASSISTANT_ABOUT_PAGE,
-  ASSISTANT_ABOUT_PICTURE,
-  ASSISTANT_ABOUT_SELECTION,
-  ASSISTANT_ABOUT_SENDS,
   ASSISTANT_ASK,
   ASSISTANT_ASSISTANT,
   ASSISTANT_CHIP_COMMENT,
@@ -146,12 +137,13 @@ import { useSetting } from './useSetting.js';
  * [ADR-0082](../../../docs/DECISIONS/0082-main-may-push-on-declared-event-channels.md),
  * [ADR-0088](../../../docs/DECISIONS/0088-an-ask-about-a-document-carries-a-bounded-window-read-in-main.md)).
  *
- * ## What is sent is named before it is sent
+ * ## The provider is named before anything is sent; what went is named after
  *
- * The *Asking about* line is a choice and a sentence: which part of the document goes with the
- * next ask, and which provider receives it — BUILD-PROMPT's consent copy. Nothing about the
- * document is read until Send, and each asked turn then says which pages actually went, so a
- * whole-document question about a long file says that it covered the first twelve pages.
+ * The provider picker beside Send shows who receives the next ask, and Send is the explicit
+ * action (ARCHITECTURE §8, *What reaches an AI provider*). The Context menu chooses which part
+ * of the document goes. Nothing about the document is read until Send, and each asked turn then
+ * says which pages actually went, so a whole-document question about a long file says that it
+ * covered the first twelve pages.
  *
  * ## One conversation per document, and an answer goes to the document that asked
  *
@@ -297,8 +289,8 @@ const READINESS = {
 } as const;
 
 /**
- * What the *Asking about* choice can be. A selection or a comment exists only when a command
- * gave one, and is offered under its own name — the line and the instruction both say which.
+ * What the Context choice can be. A selection or a comment exists only when a command gave one,
+ * and is offered under its own name — the menu and the instruction both say which.
  */
 type Scope = 'page' | 'page-image' | 'document' | 'comments' | 'selection' | 'comment' | 'nothing';
 
@@ -339,7 +331,6 @@ export function AssistantPanel({
   const { i18n } = useLingui();
   const providerId = useId();
   const modelId = useId();
-  const aboutId = useId();
   const hintId = useId();
   const sidesName = useId();
   // THE PROVIDER AND EACH PROVIDER'S MODEL ARE SETTINGS (ADR-0117): this picker writes them, `main` reads Anthropic's for
@@ -423,14 +414,14 @@ export function AssistantPanel({
 
   // A SELECTION BELONGS TO THE DOCUMENT IT WAS MADE IN, and it is DERIVED from the request that
   // carried it rather than copied into state: switching tabs makes it vanish by construction, so
-  // the line can never name words from a file that is not in front of the reader.
+  // the Context menu can never offer words from a file that is not in front of the reader.
   const docId = focused?.docId;
   const selection =
     (request?.about.scope === 'selection' || request?.about.scope === 'comment') && request.about.docId === docId
       ? request.about
       : null;
   // THE PERSON'S CHOICE, stamped with the newest request it was made after: a request that
-  // arrives later points the line, and a choice made after that request wins again.
+  // arrives later points the menu, and a choice made after that request wins again.
   const requestedScope =
     request !== undefined && request.serial > chosen.after ? request.about.scope : undefined;
   const wanted = requestedScope ?? chosen.scope;
@@ -1061,33 +1052,6 @@ export function AssistantPanel({
               {i18n._(ASSISTANT_SIDES_NEEDED)}
             </p>
           )}
-          {/* THE CHOICE IN FULL, under its short button — which page, how much of the document — and, for anything
-              that sends, who it goes to and when. */}
-          <p className="m-assistant__consent" data-assistant-consent={scope === 'nothing' ? undefined : ''} id={aboutId}>
-            {i18n._(
-              {
-                selection: ASSISTANT_ABOUT_SELECTION,
-                comment: ASSISTANT_ABOUT_COMMENT,
-                page: ASSISTANT_ABOUT_PAGE,
-                document: ASSISTANT_ABOUT_DOCUMENT,
-                comments: ASSISTANT_ABOUT_COMMENTS,
-                'page-image': ASSISTANT_ABOUT_PICTURE,
-                nothing: ASSISTANT_ABOUT_NOTHING,
-              }[scope],
-              {
-                page: pdfjsPageOf(
-                  scope === 'selection' || scope === 'comment'
-                    ? (selection?.page ?? focused.page)
-                    : beside !== undefined && sides === 'right' && scope === 'page'
-                      ? beside.page
-                      : focused.page,
-                ),
-                characters: number.format(MAX_ASK_CONTEXT),
-              },
-            )}
-            {scope === 'nothing' ? null : ' · '}
-            {scope === 'nothing' ? null : i18n._(ASSISTANT_ABOUT_SENDS, { provider: i18n._(AI_PROVIDER_NAMES[provider]) })}
-          </p>
         </div>
       )}
 
