@@ -69,7 +69,6 @@ import {
   ASSISTANT_WEB_NONE_NO_SEARCH,
   ASSISTANT_WEB_NONE_TERMS,
   ASSISTANT_WEB_ON,
-  ASSISTANT_WEB_SENDS,
   ASSISTANT_NO_MODELS,
   ASSISTANT_NO_VISION,
   ASSISTANT_PROBLEM_PAGE_TOO_LARGE,
@@ -1014,11 +1013,6 @@ export function AssistantPanel({
           {searchesAnyway && (
             <p className="m-assistant__state" data-assistant-web-always="">
               {i18n._(ASSISTANT_WEB_ALWAYS)}
-            </p>
-          )}
-          {webAsked && (
-            <p className="m-assistant__consent" data-assistant-web-sends="">
-              {i18n._(ASSISTANT_WEB_SENDS, { provider: i18n._(AI_PROVIDER_NAMES[provider]) })}
             </p>
           )}
           {pairable && (

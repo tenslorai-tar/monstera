@@ -2584,7 +2584,6 @@ optgroup {
   align-items: center;
 }
 
-.m-assistant__consent,
 /* WHAT WAS SENT, under the question. One rule: this was two blocks with the same selector, the
    second setting only a top margin, so the first's `margin: 0` was overridden by its own twin.
    It WRAPS and is never truncated — the owner's enhancement (2026-09-22): a summary that ends in an

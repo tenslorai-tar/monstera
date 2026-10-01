@@ -481,10 +481,9 @@ describe('the assistant about a document (ADR-0088)', () => {
     const lastSubscription = (sent: readonly { id: string; params: unknown }[]): string =>
       (sent.filter((entry) => entry.id === 'ai.ask').at(-1)?.params as { subscription: string }).subscription;
 
-    it('starts DOCUMENT ONLY, asks with the web only once chosen, and says where the question then goes', async () => {
+    it('starts DOCUMENT ONLY, asks with the web only once chosen, and draws no web note in the pane', async () => {
       const { sent, push } = await drawn({ focused: focusedOn() });
       expect(chosenIn('Sources')).toBe('Document only');
-      expect(screen.queryByText(/goes to a search engine/u)).toBeNull();
 
       type('First');
       await send();
@@ -492,7 +491,10 @@ describe('the assistant about a document (ADR-0088)', () => {
       push('ai.done', { subscription: lastSubscription(sent), stopped: false, web: NO_WEB });
 
       await answerFrom('Document + web');
-      expect(screen.getByText(/goes to a search engine through Anthropic\. Searches may cost extra\./u)).toBeDefined();
+      // THE NOTE LIVES IN HELP, not in the pane (the owner's decision, ADR-0108's correction of 2026-10-01). Read with
+      // the web CHOSEN, which is the only state that ever drew it, so the absence is not the Document-only default's.
+      expect(chosenIn('Sources')).toBe('Document + web');
+      expect(screen.queryByText(/search engine/u)).toBeNull();
       type('Second');
       await send();
       expect(lastWeb(sent)).toBe(true);

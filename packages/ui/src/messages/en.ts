@@ -1343,11 +1343,10 @@ export const ASSISTANT_ASK = messageKey('assistant.ask-hint');
 export const ASSISTANT_NO_KEY = messageKey('assistant.no-key');
 /** A *Document only* ask to a model that searches the web for every answer, refused before sending (ADR-0108). */
 export const ASSISTANT_SEARCHES_THE_WEB = messageKey('assistant.searches-the-web');
-/** The *Document only / Document + web* switch on the Asking-about line, and what it says (ADR-0108). */
+/** The *Document only / Document + web* switch, the Sources menu, and why a choice is disabled (ADR-0108). */
 export const ASSISTANT_WEB_LABEL = messageKey('assistant.web.label');
 export const ASSISTANT_WEB_DOCUMENT = messageKey('assistant.web.document');
 export const ASSISTANT_WEB_ON = messageKey('assistant.web.on');
-export const ASSISTANT_WEB_SENDS = messageKey('assistant.web.sends');
 export const ASSISTANT_WEB_ALWAYS = messageKey('assistant.web.always');
 export const ASSISTANT_WEB_NONE_NO_SEARCH = messageKey('assistant.web.none.no-search');
 export const ASSISTANT_WEB_NONE_TERMS = messageKey('assistant.web.none.terms');
@@ -3316,8 +3315,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_WEB_LABEL]: 'Sources',
   [ASSISTANT_WEB_DOCUMENT]: 'Document only',
   [ASSISTANT_WEB_ON]: 'Document + web',
-  [ASSISTANT_WEB_SENDS]:
-    'Your question, and possibly text from the document, goes to a search engine through {provider}. Searches may cost extra.',
   [ASSISTANT_WEB_ALWAYS]: 'Always searches the web. To use this model, choose Document + web.',
   [ASSISTANT_WEB_NONE_NO_SEARCH]: 'Web search isn’t available with this provider.',
   [ASSISTANT_WEB_NONE_TERMS]: 'Web search isn’t available with this provider in Monstera.',

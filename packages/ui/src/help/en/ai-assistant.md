@@ -2,7 +2,7 @@
 id: ai-assistant
 title: Ask the AI assistant about a document
 summary: Chat with an AI provider of your choice about the page, the whole document, selected text or the comments.
-keywords: [ai, assistant, chat, ask, question, summarise, claude, openai, gemini, explain, answer, copilot]
+keywords: [ai, assistant, chat, ask, question, summarise, claude, openai, gemini, explain, answer, copilot, web search]
 commands: [ai.open-assistant]
 contexts: [context-panel.assistant, review]
 ---
@@ -24,6 +24,7 @@ The assistant answers questions about your document using an AI provider you cho
 - Under an answer you can **Regenerate this answer**, **Edit your question and ask again**, **Copy this answer**, or **Add this answer to the page as a note**. **Stop** ends an answer early; **New chat**, the **+** at the top right, starts over.
 - With two documents side by side, choose **Left**, **Right** or **Both**.
 - Conversations are not kept after the document closes unless you turn on **Save chat history** (**Settings**, **AI** page). Saved chats are encrypted on this computer; clear them with **Clear chat history** on the **Privacy** page.
+- With **Document + web**, your question, and possibly text from the document, goes to a search engine through the provider you chose, and searches may cost extra. Every new chat starts with **Document only**.
 - The provider bills you directly for what you send. If a model cannot read pictures, sending a picture is not offered.
 - If the key is not accepted or the provider cannot be reached, the assistant says so. What you typed is kept.
 
