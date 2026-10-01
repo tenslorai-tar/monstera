@@ -109,10 +109,11 @@ export class RenderCancelledError extends Error {
 /**
  * Draws page `pageNumber` (1-based, as PDF.js numbers them) at `scale`.
  *
- * The canvas is sized to the viewport before drawing. Sizing it afterwards
- * would clear it — setting `width` or `height` resets the drawing surface —
- * which renders a blank page and looks exactly like a parse that produced
- * nothing.
+ * The page is drawn on a canvas nobody sees, sized to the viewport before
+ * drawing, and copied onto `canvas` only when whole ({@link present}). Sizing
+ * either one after drawing would clear it — setting `width` or `height` resets
+ * the drawing surface — which renders a blank page and looks exactly like a
+ * parse that produced nothing.
  *
  * @param rotation the page's ABSOLUTE rotation from the view model, in degrees.
  *   `undefined` where the model has not answered for this version, in which
@@ -163,35 +164,103 @@ export async function renderPage(
     typeof scale === 'number'
       ? viewportOf(page, scale, rotation)
       : viewportOf(page, scale.fitWidth / viewportOf(page, 1, rotation).width, rotation);
-
-  canvas.width = Math.ceil(viewport.width);
-  canvas.height = Math.ceil(viewport.height);
-
-  const context = canvas.getContext('2d');
-  if (context === null) {
-    throw new Error('the page canvas has no 2d context to draw into');
-  }
+  const size = { width: Math.ceil(viewport.width), height: Math.ceil(viewport.height) };
+  // ASKED BEFORE ANY DRAWING, so a canvas nobody can draw on refuses the page rather than after a
+  // render has been paid for.
+  const shown = contextOf(canvas);
 
   // THE SECOND ENGINE FIRST WHERE THERE IS ONE, and PDF.js when it answers
   // nothing. See {@link SecondRasteriser}: the fallback is what keeps a machine
-  // with no `pdfium.dll` drawing pages, and it is the same canvas either way, so
-  // everything below this line is unchanged by which engine drew.
-  const drawn = raster === undefined ? null : await raster(pageNumber, canvas.width, canvas.height);
+  // with no `pdfium.dll` drawing pages. Either way the drawing is finished
+  // before the canvas on screen is touched — see {@link present}.
+  const drawn = raster === undefined ? null : await raster(pageNumber, size.width, size.height);
   if (superseded()) {
     drawn?.close();
     throw new RenderCancelledError(pageNumber);
   }
   if (drawn === null) {
-    await drawWithPdfjs(page, canvas, context, viewport, undefined, signal, pageNumber);
+    const scratch = scratchFor(canvas, size);
+    try {
+      await drawWithPdfjs(page, scratch, contextOf(scratch), viewport, undefined, signal, pageNumber);
+      present(canvas, shown, scratch, signal, pageNumber);
+    } finally {
+      release(scratch);
+    }
   } else {
-    // `drawImage` AT 0,0 WITH NO SCALE. The raster was asked for at exactly this
-    // canvas's device size, so any scaling here would be resampling a bitmap
-    // that is already the right size — the blur E1's whole render clause exists
-    // to prevent, arriving through the path that was supposed to sharpen it.
-    context.drawImage(drawn, 0, 0);
-    drawn.close();
+    // AT 0,0 WITH NO SCALE, inside `present`. The raster was asked for at exactly
+    // this size, so any scaling would be resampling a bitmap that is already the
+    // right size — the blur E1's whole render clause exists to prevent, arriving
+    // through the path that was supposed to sharpen it.
+    try {
+      present(canvas, shown, drawn, signal, pageNumber);
+    } finally {
+      drawn.close();
+    }
   }
-  return geometryOf(page, viewport, { width: canvas.width, height: canvas.height });
+  return geometryOf(page, viewport, size);
+}
+
+/**
+ * Puts a FINISHED drawing on the canvas on screen, in one synchronous step.
+ *
+ * ## Why every draw goes through here
+ *
+ * Sizing a canvas clears it, and PDF.js paints across several tasks. Drawing
+ * straight onto the canvas on screen therefore showed a page cleared, then
+ * painted white, then whole, and the browser composites whichever of those
+ * stands at each frame. That is the blank-then-redraw a person saw on every
+ * edit, on every thumbnail, and on every zoom that settled (the owner's review
+ * of 0.1.6.0, 2026-10-01).
+ *
+ * So the drawing happens on a canvas nobody sees and arrives here whole. The
+ * resize and the copy run in the same task, and a frame is painted only between
+ * tasks, so no frame can show the cleared canvas between them: until this runs
+ * the previous drawing stays on screen, which E1 already permits while a zoom
+ * settles. A superseded draw is refused here too, so it never replaces the
+ * pixels of the draw that superseded it.
+ *
+ * The cost is one page's bitmap twice for the length of a draw (computed, not
+ * measured: a Letter page at 1.5 device pixels and 100% is 918 × 1188 × 4 bytes,
+ * about 4.4 MB), released as
+ * soon as the copy is made. A page past the tile threshold is drawn in tiles, so
+ * that figure is bounded by the tile size, not by the zoom.
+ */
+function present(
+  canvas: HTMLCanvasElement,
+  context: CanvasRenderingContext2D,
+  drawing: HTMLCanvasElement | ImageBitmap,
+  signal: AbortSignal,
+  pageNumber: number,
+): void {
+  if (signal.aborted) throw new RenderCancelledError(pageNumber);
+  canvas.width = drawing.width;
+  canvas.height = drawing.height;
+  context.drawImage(drawing, 0, 0);
+}
+
+/** A canvas nobody sees, at `size`, from the document the canvas on screen lives in. */
+function scratchFor(canvas: HTMLCanvasElement, size: { readonly width: number; readonly height: number }): HTMLCanvasElement {
+  const scratch = canvas.ownerDocument.createElement('canvas');
+  scratch.width = size.width;
+  scratch.height = size.height;
+  return scratch;
+}
+
+/**
+ * Drops a scratch canvas's backing store now rather than at collection: a detached canvas holds a page-sized
+ * bitmap until the collector reaches it, and a scroll starts many draws in a row.
+ */
+function release(scratch: HTMLCanvasElement): void {
+  scratch.width = 0;
+  scratch.height = 0;
+}
+
+function contextOf(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
+  const context = canvas.getContext('2d');
+  if (context === null) {
+    throw new Error('the page canvas has no 2d context to draw into');
+  }
+  return context;
 }
 
 type PdfPage = Awaited<ReturnType<PDFDocumentProxy['getPage']>>;
@@ -290,9 +359,14 @@ export async function renderRegion(
   // BEFORE THE CANVAS IS TOUCHED, `renderPage`'s reason.
   if (signal.aborted) throw new RenderCancelledError(pageNumber);
   const viewport = viewportOf(page, scale, rotation);
-  canvas.width = region.width;
-  canvas.height = region.height;
-  const context = canvas.getContext('2d');
-  if (context === null) throw new Error('the page canvas has no 2d context to draw into');
-  await drawWithPdfjs(page, canvas, context, viewport, [1, 0, 0, 1, -region.x, -region.y], signal, pageNumber);
+  // OFF SCREEN AND THEN PRESENTED WHOLE, `present`'s reason: a tile or the loupe drawn in place shows
+  // a cleared, then white, then finished square.
+  const shown = contextOf(canvas);
+  const scratch = scratchFor(canvas, region);
+  try {
+    await drawWithPdfjs(page, scratch, contextOf(scratch), viewport, [1, 0, 0, 1, -region.x, -region.y], signal, pageNumber);
+    present(canvas, shown, scratch, signal, pageNumber);
+  } finally {
+    release(scratch);
+  }
 }

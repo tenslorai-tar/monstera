@@ -385,6 +385,8 @@ describe('multi-document tabs', () => {
       await Promise.resolve();
     });
     expect(container.querySelector('.m-status-page')?.textContent).toBe('Page 2 of 2');
+    const firstScroller = container.querySelector('[data-document-layer="active"] .m-page-list');
+    expect(firstScroller).not.toBeNull();
 
     await act(async () => {
       screen.getByRole('button', { name: 'Open another document' }).click();
@@ -401,9 +403,11 @@ describe('multi-document tabs', () => {
 
     expect(container.querySelector('.m-status-name')?.textContent).toBe('annual.pdf');
     expect(container.querySelector('.m-status-page')?.textContent).toBe('Page 2 of 2');
-    // AND THE VIEW WAS TAKEN THERE, which the line above cannot say: the remounted scroller seeds
-    // page 2 as its report either way, and only the reveal moves what the reader sees.
-    expect(scrolled).toStrictEqual([1]);
+    // AND THE VIEW WAS KEPT THERE (ADR-0129), which the line above cannot say: the first document's
+    // scroller is the same node it was before the switch, so its offset was never lost and there is
+    // nothing to reveal. A switch that remounted it would be a new node, revealing page 2 again.
+    expect(container.querySelector('[data-document-layer="active"] .m-page-list')).toBe(firstScroller);
+    expect(scrolled).toStrictEqual([]);
   });
 
   it('CLOSES the document at main, not only the tab', async () => {
@@ -497,7 +501,8 @@ describe('the assistant with two documents side by side (ADR-0089)', () => {
       settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
       await Promise.resolve();
     });
-    const picker = container.querySelector('[data-compare-pick]');
+    // THE LAYER ON SHOW: the first document's layer is kept behind it, split like it, with a picker of its own.
+    const picker = container.querySelector('[data-document-layer="active"] [data-compare-pick]');
     if (!(picker instanceof HTMLSelectElement)) throw new Error('the split view renders a picker');
     await act(async () => {
       fireEvent.change(picker, { target: { value: FIRST } });
@@ -510,7 +515,7 @@ describe('the assistant with two documents side by side (ADR-0089)', () => {
     // page for the right would send 0.
     act(() => {
       const pane = observers.find((observer) =>
-        observer.observed.some((element) => element.closest('.m-second-pane') !== null),
+        observer.observed.some((element) => element.closest('[data-document-layer="active"] .m-second-pane') !== null),
       );
       if (pane === undefined) throw new Error('the compare pane observes its slots');
       pane.callback(

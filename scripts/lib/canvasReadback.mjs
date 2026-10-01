@@ -110,6 +110,7 @@ export function controlName(key) {
  *   pixelsWritten: { path: string, width: number, height: number } | null,
  *   renderFailed: boolean,
  *   elapsedMs: number,
+ *   pageCanvases: Array<{ page: string | null, width: number, height: number, failed: boolean, reason: string | null }>,
  *   zoomed: {
  *     clicks: number,
  *     settledBy: 'resized' | 'bound',

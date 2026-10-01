@@ -338,7 +338,11 @@ try {
         `\`data-failed\`, so the parse threw and the defect is in the channel or the transport, ` +
         `not in drawing; "bound" means the canvas never acquired a pixel within the harness's ` +
         `liveness bound, which on Linux without a display is what a working renderer also ` +
-        `produces.`,
+        `produces.\n      ` +
+        // EVERY PAGE CANVAS AT THE END OF THE WAIT, because a "bound" with no failure is otherwise silent about
+        // which page was missing and whether any canvas existed at all (ubuntu, bf17dfc2, 2026-10-01: 0 pixels
+        // after 60 s, renderFailed false, and nothing to say why).
+        `page canvases ${JSON.stringify(seen.pageCanvases)}.`,
     );
 
     check(

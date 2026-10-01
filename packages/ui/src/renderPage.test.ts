@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { RenderCancelledError, pageGeometry, renderPage, renderRegion } from './renderPage.js';
 
@@ -80,12 +80,24 @@ function documentWithViewport(
  */
 function canvasWithContext(context: Partial<CanvasRenderingContext2D> = {}): HTMLCanvasElement {
   const canvas = window.document.createElement('canvas');
-  vi.spyOn(canvas, 'getContext').mockReturnValue(context as CanvasRenderingContext2D);
+  vi.spyOn(canvas, 'getContext').mockReturnValue({ drawImage: () => undefined, ...context } as CanvasRenderingContext2D);
   return canvas;
 }
 
+// THE SCRATCH CANVAS a draw paints on is made inside `renderPage`, so no case can hand it a stub.
+// Every canvas without one of its own gets an empty context here; the canvas on screen keeps the
+// per-case stub above, which is the one whose calls a case observes.
+beforeEach(() => {
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+    drawImage: () => undefined,
+  } as unknown as CanvasRenderingContext2D);
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe('renderPage', () => {
-  it('sizes the canvas BEFORE drawing, because sizing it after would clear it', async () => {
+  it('sizes the drawing canvas BEFORE drawing, because sizing it after would clear it', async () => {
     // Setting `width` or `height` on a canvas resets its drawing surface, so a
     // correct render followed by a resize is a blank page — which looks exactly
     // like a parse that produced nothing. The order is the whole decision, and
@@ -96,6 +108,40 @@ describe('renderPage', () => {
     await renderPage(document, 1, canvas, 1, undefined, LIVE);
 
     expect(sizeAtRender).toStrictEqual([{ width: 301, height: 401 }]);
+  });
+
+  it('leaves the canvas ON SCREEN untouched while PDF.js draws, and hands it the whole drawing once', async () => {
+    // THE BLANK FRAME. Drawing straight onto the canvas on screen sized it (which clears it) and
+    // then let PDF.js paint across tasks, so a person saw the page cleared, then white, then whole.
+    // The separator is the screen canvas's state AT RENDER TIME: the old order had already sized it
+    // to the page; this one has not touched it, and the copy arrives after the render finished.
+    const onScreen: { width: number; height: number }[] = [];
+    const copied: { image: unknown; width: number }[] = [];
+    const canvas = canvasWithContext({
+      drawImage: (image: unknown) => {
+        copied.push({ image, width: canvas.width });
+      },
+    });
+    const before = { width: canvas.width, height: canvas.height };
+    const page = {
+      view: VIEW,
+      getViewport: () => ({ width: 301, height: 401, rotation: 0 }),
+      render: ({ canvas: drawnOn }: { canvas: HTMLCanvasElement }) => {
+        onScreen.push({ width: canvas.width, height: canvas.height });
+        expect(drawnOn).not.toBe(canvas);
+        return { promise: Promise.resolve() };
+      },
+    };
+    const document = { getPage: () => Promise.resolve(page) } as unknown as PDFDocumentProxy;
+
+    await renderPage(document, 1, canvas, 1, 0, LIVE);
+
+    expect(onScreen).toStrictEqual([before]);
+    expect(copied).toHaveLength(1);
+    expect(copied[0]?.image).not.toBe(canvas);
+    // SIZED AND FILLED IN ONE STEP: by the time the copy ran, the canvas already had the page's size.
+    expect(copied[0]?.width).toBe(301);
+    expect({ width: canvas.width, height: canvas.height }).toStrictEqual({ width: 301, height: 401 });
   });
 
   it('rounds the viewport UP, so a fractional page is never cropped', async () => {
@@ -214,7 +260,7 @@ describe('renderPage', () => {
         drawn.push({ image, x, y });
       },
     });
-    const bitmap = { close: () => closed.push(1) } as unknown as ImageBitmap;
+    const bitmap = { width: 300, height: 400, close: () => closed.push(1) } as unknown as ImageBitmap;
     const asked: { page: number; width: number; height: number }[] = [];
 
     const result = await renderPage(document, 1, canvas, 1, 0, LIVE, (page, width, height) => {
@@ -390,6 +436,23 @@ describe('renderPage and a superseded draw', () => {
 
     await expect(drawing).rejects.toBeInstanceOf(RenderCancelledError);
     expect(cancels()).toBe(1);
+  });
+
+  it('a draw superseded MID-RENDER leaves the canvas on screen as it was', async () => {
+    // The newer draw's pixels, or the previous version's, are what that canvas holds; a stale draw
+    // that sized it would clear them, which is the blank frame by another route.
+    const { document } = pendingPage();
+    const canvas = canvasWithContext();
+    const before = { width: canvas.width, height: canvas.height };
+    const superseded = new AbortController();
+    const drawing = renderPage(document, 1, canvas, 1, 0, superseded.signal);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    superseded.abort();
+
+    await expect(drawing).rejects.toBeInstanceOf(RenderCancelledError);
+    expect({ width: canvas.width, height: canvas.height }).toStrictEqual(before);
   });
 
   it('never touches the canvas when aborted before the page arrives', async () => {
