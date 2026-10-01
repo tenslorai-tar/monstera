@@ -72,16 +72,13 @@ import {
   ASSISTANT_NO_MODELS,
   ASSISTANT_NO_VISION,
   ASSISTANT_PROBLEM_PAGE_TOO_LARGE,
+  ASSISTANT_PLACEHOLDER,
   ASSISTANT_POST_REPLY,
   ASSISTANT_PROBLEM_REJECTED,
   ASSISTANT_PROBLEM_UNAUTHORISED,
   ASSISTANT_PROBLEM_UNREACHABLE,
   ASSISTANT_PROBLEM_UNREADABLE,
   ASSISTANT_PROVIDER_LABEL,
-  ASSISTANT_QUICK_DATES,
-  ASSISTANT_QUICK_EXPLAIN_PAGE,
-  ASSISTANT_QUICK_READ_TABLE,
-  ASSISTANT_QUICK_SUMMARISE,
   ASSISTANT_SEND,
   ASSISTANT_SENT_CUT,
   ASSISTANT_SENT_LEFT,
@@ -125,7 +122,6 @@ import { Button } from './primitives/Button.js';
 import { ChoiceMenu } from './primitives/ChoiceMenu.js';
 import { IconButton } from './primitives/IconButton.js';
 import { AI_MODELS_SETTING, AI_PROVIDER_SETTING } from './settings/ai.js';
-import { motionReduced } from './settings/appearance.js';
 import type { SettingsStore } from './settingsStore.js';
 import { useSetting } from './useSetting.js';
 
@@ -213,23 +209,6 @@ export interface AssistantPanelProps {
 /** What one ask sends: its document or documents, and the side it went to with two. */
 /** How long *Copied* shows beside an answer, in milliseconds — long enough to read, then gone. */
 const COPIED_MS = 2000;
-
-/**
- * What the empty message box suggests, in turn: the four that were buttons over it until 2026-10-01 (the owner's
- * review of 0.1.6.0 asked for the box to carry them instead). A suggestion is TEXT, not an action — it sends
- * nothing and changes no choice; the Context menu decides what goes.
- *
- * It moves on only while the box is empty, unfocused, and movement is not reduced, so it stops the moment a person
- * starts to use the box (WCAG 2.2.2: auto-updating content a person can stop), and it never moves for someone who
- * asked for less movement.
- */
-const SUGGESTIONS = [
-  ASSISTANT_QUICK_SUMMARISE,
-  ASSISTANT_QUICK_DATES,
-  ASSISTANT_QUICK_EXPLAIN_PAGE,
-  ASSISTANT_QUICK_READ_TABLE,
-] as const;
-const SUGGESTION_MS = 4000;
 
 /** Which document a two-document answer was about, for its caption. */
 const SIDE_WORDS = {
@@ -351,18 +330,6 @@ export function AssistantPanel({
     settings.set(AI_MODELS_SETTING.id, { ...chosenModels, [provider]: next });
   };
   const [draft, setDraft] = useState('');
-  // THE PLACEHOLDER'S SUGGESTION, which moves on while the box is empty and unfocused (`SUGGESTIONS`).
-  const [suggestion, setSuggestion] = useState(0);
-  const [typing, setTyping] = useState(false);
-  useEffect(() => {
-    if (draft !== '' || typing || motionReduced(document.documentElement)) return undefined;
-    const timer = window.setInterval(() => {
-      setSuggestion((at) => (at + 1) % SUGGESTIONS.length);
-    }, SUGGESTION_MS);
-    return (): void => {
-      window.clearInterval(timer);
-    };
-  }, [draft, typing]);
   const [streaming, setStreaming] = useState<string | null>(null);
   const [problem, setProblem] = useState<keyof typeof PROBLEMS | null>(null);
   const [chosen, setChosen] = useState<{ readonly scope: Scope; readonly after: number }>({
@@ -1055,16 +1022,12 @@ export function AssistantPanel({
           aria-label={i18n._(ASSISTANT_COMPOSER_LABEL)}
           className="m-assistant__draft"
           data-assistant-draft=""
-          onBlur={() => {
-            setTyping(false);
-          }}
           onChange={(event) => {
             setDraft(event.target.value);
           }}
-          onFocus={() => {
-            setTyping(true);
-          }}
-          placeholder={i18n._(SUGGESTIONS[suggestion] ?? ASSISTANT_QUICK_SUMMARISE)}
+          // ONE FIXED LINE (the owner's decision, 2026-10-01): until then four suggestions took turns here, which was
+          // content that moved by itself (WCAG 2.2.2) and needed a timer, a focus state and a reduced-motion test.
+          placeholder={i18n._(ASSISTANT_PLACEHOLDER)}
           onKeyDown={(event) => {
             // ENTER SENDS, SHIFT+ENTER STARTS A LINE — the owner's design.
             if (event.key === 'Enter' && !event.shiftKey) {

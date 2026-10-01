@@ -14,7 +14,7 @@ The assistant answers questions about your document using an AI provider you cho
 2. In the rail, choose **Review**, then **Open the assistant** in the **AI** group, or press **Ctrl+Shift+A**. The **Assistant** tab opens in the right-hand panel.
 3. Choose the **Provider** and **Model**, beside **Send**. Whatever the provider box shows is where your next message goes.
 4. Open **Context** and choose what to send: this page, the whole document, the comments, a picture of this page, or **None**, and the text you selected or a comment when there is one. Nothing is sent until you press **Send**. **Sources** beside it chooses **Document only** or **Document + web**.
-5. Type your question in **Ask about this document**. While it is empty the box suggests questions such as **Summarise this document**. Press **Enter** to send (**Shift+Enter** starts a new line).
+5. Type your question in the box that says **Ask about this page…**. Press **Enter** to send (**Shift+Enter** starts a new line).
 6. Choose **Go to page …** in an answer to jump to the page it cites.
 
 ![The Assistant tab with Provider, Model, Context and an answer citing a page](screenshot:ai-assistant-1)

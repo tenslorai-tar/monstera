@@ -1395,7 +1395,6 @@ export const ASSISTANT_SENT_COMMENTS = messageKey('assistant.sent.comments');
 export const ASSISTANT_SENT_COMMENTS_CUT = messageKey('assistant.sent.comments-cut');
 export const ASSISTANT_NO_VISION = messageKey('assistant.no-vision');
 export const ASSISTANT_PROBLEM_PAGE_TOO_LARGE = messageKey('assistant.problem.page-too-large');
-export const ASSISTANT_QUICK_READ_TABLE = messageKey('assistant.quick.read-table');
 export const SUMMARISE_COMMENTS_TITLE = messageKey('command.ai.summarise-comments');
 export const ASSISTANT_PROMPT_SUMMARISE_COMMENTS = messageKey('assistant.prompt.summarise-comments');
 export const GROUP_AI = messageKey('surface.ribbon.group.ai');
@@ -1460,10 +1459,8 @@ export const ASSISTANT_SIDES_NEEDED = messageKey('assistant.sides.needed');
 export const ASSISTANT_SENT_LEFT = messageKey('assistant.sent.left');
 export const ASSISTANT_SENT_RIGHT = messageKey('assistant.sent.right');
 export const ASSISTANT_CITATION_RIGHT = messageKey('assistant.citation.right');
-/** The suggestions the Assistant's message box cycles through as its placeholder while it is empty. */
-export const ASSISTANT_QUICK_SUMMARISE = messageKey('assistant.quick.summarise');
-export const ASSISTANT_QUICK_DATES = messageKey('assistant.quick.dates');
-export const ASSISTANT_QUICK_EXPLAIN_PAGE = messageKey('assistant.quick.explain-page');
+/** The Assistant's message box placeholder: one fixed line (the owner's decision, 2026-10-01). */
+export const ASSISTANT_PLACEHOLDER = messageKey('assistant.placeholder');
 export const ASK_AI_SELECTION_TITLE = messageKey('command.ai.ask-selection');
 export const EXPLAIN_SELECTION_TITLE = messageKey('command.ai.explain-selection');
 export const SUMMARISE_SELECTION_TITLE = messageKey('command.ai.summarise-selection');
@@ -3347,7 +3344,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_SENT_COMMENTS_CUT]: '{comments, plural, one {Sent the first comment — the list was too long to send whole} other {Sent the first # comments — the list was too long to send whole}}',
   [ASSISTANT_NO_VISION]: 'This model cannot read pictures. Choose a model that can, or ask about the page’s text.',
   [ASSISTANT_PROBLEM_PAGE_TOO_LARGE]: 'This page is too large to send as a picture. Ask about its text instead.',
-  [ASSISTANT_QUICK_READ_TABLE]: 'Read the table on this page',
   [SUMMARISE_COMMENTS_TITLE]: 'Summarise comments',
   [ASSISTANT_PROMPT_SUMMARISE_COMMENTS]:
     'Summarise the comments on this document: what people ask for, what they point out, and what is still open. Cite the page of each point.',
@@ -3453,9 +3449,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_SIDES_NEEDED]: 'Two documents are side by side. Choose Left, Right or Both, then send.',
   [ASSISTANT_SENT_LEFT]: 'Left: {sent}',
   [ASSISTANT_SENT_RIGHT]: 'Right: {sent}',
-  [ASSISTANT_QUICK_SUMMARISE]: 'Summarise this document',
-  [ASSISTANT_QUICK_DATES]: 'List the dates and deadlines in this document',
-  [ASSISTANT_QUICK_EXPLAIN_PAGE]: 'Explain this page',
+  [ASSISTANT_PLACEHOLDER]: 'Ask about this page…',
   [ASK_AI_SELECTION_TITLE]: 'Ask AI',
   [EXPLAIN_SELECTION_TITLE]: 'Explain',
   [SUMMARISE_SELECTION_TITLE]: 'Summarise',

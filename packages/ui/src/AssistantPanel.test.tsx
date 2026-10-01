@@ -830,34 +830,24 @@ describe('the assistant about a document (ADR-0088)', () => {
     expect(screen.queryByRole('button', { name: 'Post as a reply' })).toBeNull();
   });
 
-  describe('the empty box SUGGESTS, in its placeholder (until 2026-10-01 four buttons over it)', () => {
+  describe('the empty box shows ONE FIXED placeholder (the owner’s decision, 2026-10-01)', () => {
     const box = (): HTMLTextAreaElement => screen.getByLabelText('Ask about this document');
 
     afterEach(() => {
       vi.useRealTimers();
     });
 
-    it('shows a suggestion, moves on to the next while empty and unfocused, and sends nothing', async () => {
-      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    it('reads “Ask about this page…” and still does while empty, unfocused and time passes, sending nothing', async () => {
+      // EMPTY AND UNFOCUSED is the state the rotation moved in until 2026-10-01, and twelve seconds is three of its
+      // turns, so a timer brought back fails here rather than reading as the first suggestion.
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
       const { sent } = await drawn({ focused: focusedOn() });
-      expect(box().placeholder).toBe('Summarise this document');
-      expect(screen.queryByRole('button', { name: 'Summarise this document' })).toBeNull();
-
-      act(() => {
-        vi.advanceTimersByTime(4000);
-      });
-      expect(box().placeholder).toBe('List the dates and deadlines in this document');
-      expect(sent.some((entry) => entry.id === 'ai.ask')).toBe(false);
-    });
-
-    it('CONTROL: stops moving the moment a person focuses the box, so it never changes under them', async () => {
-      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
-      await drawn({ focused: focusedOn() });
-      fireEvent.focus(box());
+      expect(box().placeholder).toBe('Ask about this page…');
       act(() => {
         vi.advanceTimersByTime(12_000);
       });
-      expect(box().placeholder).toBe('Summarise this document');
+      expect(box().placeholder).toBe('Ask about this page…');
+      expect(sent.some((entry) => entry.id === 'ai.ask')).toBe(false);
     });
   });
 
