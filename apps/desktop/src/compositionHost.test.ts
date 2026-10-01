@@ -208,6 +208,11 @@ const ENGINE: FakePeer = (channel) => {
     case 'engine/invert':
     case 'engine/close':
       return { ok: true, value: {} };
+    // EVERY SAVE ASKS THIS FIRST since item 6 (the answer also says whether the save is a removal's, which keeps no
+    // backup), and the default below sends no reply — so a save through this peer waited for ever. Answered as an
+    // unsigned document with no removal: an ordinary save.
+    case 'engine/signatures-kept':
+      return { ok: true, value: { signatures: 0, kept: true, removal: false } };
     default:
       return null;
   }
