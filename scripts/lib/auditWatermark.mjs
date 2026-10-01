@@ -7,8 +7,9 @@
  * without a repository shaped to trip them.
  */
 
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { changedPaths, git, repoRoot } from './gitScope.mjs';
 
@@ -211,22 +212,68 @@ export function auditScope({ root = repoRoot(), head = 'HEAD', churn = true, wat
   // introduced by a fix.
   const commit = watermark === undefined ? readWatermark(root).commit : asCommitSha(watermark);
 
-  // An unreachable watermark is a rewritten history or a bad sha, and reporting
-  // an empty range for it would say "nothing to audit" — the reassuring answer.
-  try {
-    git(['merge-base', '--is-ancestor', commit, head], { cwd: root });
-  } catch {
-    throw new Error(
-      `The audit watermark ${commit} is not an ancestor of ${head}. Either it names a commit that ` +
-        `no longer exists, or the branch has moved sideways. Resolve it deliberately — an ` +
-        `unresolvable watermark reports an empty range, which is indistinguishable from a clean one.`,
-    );
-  }
+  requireReachable(commit, [head], root);
 
   const range = `${commit}..${head}`;
   const commits = Number(`${git(['rev-list', '--count', range], { cwd: root }).stdout}`.trim());
 
   return buildScope({ commit, range, commits, root, churn });
+}
+
+/**
+ * Refuses a watermark that none of `heads` descends from.
+ *
+ * An unreachable watermark is a rewritten history or a bad sha, and reporting an
+ * empty range for it would say "nothing to audit" — the reassuring answer.
+ *
+ * A LIST, because a merge commit has more than one parent and the watermark need
+ * only be behind one of them: a branch that merges in a base which has recorded
+ * an audit carries the base's newer watermark, and that sha is an ancestor of
+ * the base's tip and of nothing on the branch's own side.
+ *
+ * @param {string} commit A validated sha.
+ * @param {string[]} heads The commits the range ends at.
+ * @param {string} root
+ */
+function requireReachable(commit, heads, root) {
+  const reachable = heads.some(
+    (head) =>
+      spawnSync('git', ['merge-base', '--is-ancestor', commit, head], { cwd: root }).status === 0,
+  );
+  if (!reachable) {
+    throw new Error(
+      `The audit watermark ${commit} is not an ancestor of ${heads.join(' or ')}. Either it names ` +
+        `a commit that no longer exists, or the branch has moved sideways. Resolve it deliberately ` +
+        `— an unresolvable watermark reports an empty range, which is indistinguishable from a ` +
+        `clean one.`,
+    );
+  }
+}
+
+/**
+ * The parents the commit being made will have: HEAD, and during a merge every
+ * commit `MERGE_HEAD` names — one line each, several for an octopus merge.
+ *
+ * The file's location is asked of git (`--git-path`) rather than assumed to be
+ * `.git/MERGE_HEAD`, because in a linked worktree it is not.
+ *
+ * @param {string} root
+ * @returns {string[]}
+ */
+function pendingParents(root) {
+  const located = `${git(['rev-parse', '--git-path', 'MERGE_HEAD'], { cwd: root }).stdout}`.trim();
+  /** @type {string} */
+  let text;
+  try {
+    text = readFileSync(resolve(root, located), 'utf8');
+  } catch (error) {
+    // NOT MERGING is the only thing a missing file may mean; anything else is a
+    // read that failed, and failing it here is failing closed.
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return ['HEAD'];
+    throw error;
+  }
+  const merging = text.split('\n').filter((line) => line !== '').map((line) => asCommitSha(line));
+  return ['HEAD', ...merging];
 }
 
 /**
@@ -481,8 +528,22 @@ export function auditRecordDisagreement({ journalText, watermark }) {
  * the moment of composing a command is not a defence — that is the argument the
  * escape-resolving-write hook exists to make, demonstrated seven times.
  *
- * So: commits + 1, and the file set unioned with what is staged. A path already
- * in the range and staged again counts once, which is why this is a set.
+ * So: the commits the range already holds, plus this one; and the files whose
+ * content differs between the watermark's tree and the index, which is the tree
+ * this commit records.
+ *
+ * ## A merge has more than one parent
+ *
+ * This read the range from `auditScope`, which ends it at HEAD alone. Measured
+ * 2026-10-01 merging `origin/main` into a branch that left it before main
+ * recorded an audit: the staged watermark named main's audited tip, which is an
+ * ancestor of `MERGE_HEAD` and not of HEAD, so the gate threw *not an ancestor*
+ * and refused the merge. And had the ancestry passed, the file set was the
+ * committed range (`watermark..HEAD`, a tree diff that then holds every file the
+ * base changed since the branch left it) unioned with the staged paths, which
+ * counted main's audited files again and refused it on size instead. The range
+ * now ends at every parent the commit will have, and the files are one diff of
+ * the index against the watermark.
  *
  * ## The one commit it must never block
  *
@@ -512,9 +573,9 @@ export function auditRecordDisagreement({ journalText, watermark }) {
  * ## One decision, one scope
  *
  * **A gate's inputs all come from the scope its decision is about.** This
- * function models *the index applied to HEAD*, so every input is read from the
- * index or from HEAD — which is why `auditScope` is handed `pending` rather than
- * left to read the file.
+ * function models *the index applied to HEAD* (and to `MERGE_HEAD` during a
+ * merge), so every input is read from the index or from those commits — which
+ * is why the range is measured from `pending` rather than from the file.
  *
  * It used to read three scopes for one decision: `recordsAudit` from HEAD and
  * the index, and the RANGE from the **working tree**, because `auditScope` falls
@@ -560,23 +621,34 @@ export function pendingAuditScope({ root = repoRoot() } = {}) {
     return { watermark: '', commits: 0, files: [], recordsAudit: false, overBudget: [] };
   }
 
-  const committed = auditScope({ root, churn: false, watermark: pending ?? recorded ?? undefined });
+  // `?? ''` is unreachable after the early return above, and refused if reached.
+  const commit = asCommitSha(pending ?? recorded ?? '');
+  const parents = pendingParents(root);
+  requireReachable(commit, parents, root);
 
-  const staged = `${git(['diff', '--cached', '--name-only', '-z'], { cwd: root }).stdout}`
-    .split('\0')
-    .filter((path) => path !== '');
+  // Every commit reachable from a parent and not from the watermark, plus this
+  // one. `^commit` with several tips is git's own answer to *what a merge brings
+  // in*, so the base's already-audited history is excluded by the same rule
+  // that excludes it on an ordinary commit.
+  const reached = git(['rev-list', '--count', ...parents, `^${commit}`], { cwd: root }).stdout;
+  const commits = Number(`${reached}`.trim()) + 1;
 
-  const files = new Set([...committed.files, ...staged]);
-  const commits = committed.commits + 1;
+  // The TREE this commit will record against the watermark's: `--cached <sha>`
+  // diffs the index against that commit, which is the measure `check:docs`
+  // takes of `watermark..HEAD` once the commit exists. Not the committed range
+  // unioned with the staged paths: during a merge HEAD's tree differs from the
+  // watermark's by every file the base changed since the branch left it, and
+  // that union counted the base's audited files a second time.
+  const files = changedPaths(['--cached', commit], { cwd: root }).map((entry) => entry.path);
 
   return {
-    watermark: committed.watermark,
+    watermark: commit,
     commits,
-    files: [...files],
+    files,
     recordsAudit: recorded !== null && pending !== null && recorded !== pending,
     overBudget: [
       ...(commits > BATCH.commits ? [`${commits} commits (one batch is ${BATCH.commits})`] : []),
-      ...(files.size > BATCH.files ? [`${files.size} files (one batch is ${BATCH.files})`] : []),
+      ...(files.length > BATCH.files ? [`${files.length} files (one batch is ${BATCH.files})`] : []),
     ],
   };
 }

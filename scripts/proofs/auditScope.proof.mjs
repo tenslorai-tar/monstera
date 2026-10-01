@@ -781,6 +781,125 @@ try {
   }
 
   // ---------------------------------------------------------------------------
+  // A merge has two parents, and the gate measured from one.
+  //
+  // Measured 2026-10-01: a branch that left main before main recorded an audit
+  // merged main back in. The staged watermark named main's audited tip, an
+  // ancestor of MERGE_HEAD and not of HEAD, so the pre-commit gate threw "not an
+  // ancestor" and refused the merge outright.
+  //
+  // The fixture is that shape in miniature. The base audits up to `audited`
+  // after the branch left; the branch has one commit of its own. The merge
+  // brings in two commits the base made, one of them already audited.
+  // ---------------------------------------------------------------------------
+  {
+    const base = git(scratch, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    git(scratch, ['checkout', '--quiet', '-b', 'branch']);
+    commit('branch-own.txt', 'x\n');
+    git(scratch, ['checkout', '--quiet', base]);
+    const audited = commit('base-audited.txt', 'x\n');
+    setWatermark(audited);
+    git(scratch, ['checkout', '--quiet', 'branch']);
+    git(scratch, ['merge', '--quiet', '--no-commit', '--no-ff', base]);
+
+    let thrown = '';
+    try {
+      auditScope({ root: scratch, churn: false, watermark: audited });
+    } catch (error) {
+      thrown = error instanceof Error ? error.message : String(error);
+    }
+    check(
+      'CONTROL: measured from HEAD alone, this merge is refused as unreachable',
+      thrown.includes('not an ancestor'),
+      `auditScope ending at HEAD ${thrown === '' ? 'returned normally' : `threw: ${thrown}`}. ` +
+        `The fixture exists to reproduce that refusal; without it the case below proves nothing ` +
+        `about the parent the gate used to ignore.`,
+    );
+
+    let merging = null;
+    let refused = '';
+    try {
+      merging = pendingAuditScope({ root: scratch });
+    } catch (error) {
+      refused = error instanceof Error ? error.message : String(error);
+    }
+    check(
+      'a merge bringing in the base\'s newer watermark is measured, not refused',
+      merging !== null && merging.watermark === audited && merging.commits === 3,
+      `${refused === '' ? `watermark=${String(merging?.watermark)}, commits=${String(merging?.commits)}` : `it threw: ${refused}`}. ` +
+        `Three is the branch's own commit, the base's watermark commit, and the merge itself.`,
+    );
+
+    // The files a merge brings in that the base had ALREADY audited are not
+    // this range's. Unioning the committed range with the staged paths counted
+    // them, because HEAD's tree differs from the watermark's by exactly those.
+    const files = merging?.files ?? [];
+    check(
+      'the base\'s audited files are not counted again, and the branch\'s own are',
+      files.includes('branch-own.txt') && !files.includes('base-audited.txt'),
+      `files: ${JSON.stringify(files)}. base-audited.txt is at the watermark and unchanged, and ` +
+        `branch-own.txt is the branch's whole contribution.`,
+    );
+
+    git(scratch, ['merge', '--abort']);
+
+    // FAIL CLOSED STILL: a watermark behind NEITHER parent is refused.
+    git(scratch, ['checkout', '--quiet', '-b', 'elsewhere', `${audited}~1`]);
+    const stray = commit('stray.txt', 'x\n');
+    git(scratch, ['checkout', '--quiet', 'branch']);
+    git(scratch, ['merge', '--quiet', '--no-commit', '--no-ff', base]);
+    writeFileSync(
+      join(scratch, 'docs', 'audit-watermark.json'),
+      `${JSON.stringify({ commit: stray, audited: 'proof' }, null, 2)}\n`,
+      'utf8',
+    );
+    git(scratch, ['add', 'docs/audit-watermark.json']);
+    let strayRefused = '';
+    try {
+      pendingAuditScope({ root: scratch });
+    } catch (error) {
+      strayRefused = error instanceof Error ? error.message : String(error);
+    }
+    check(
+      'a watermark that is an ancestor of neither merge parent is still refused',
+      strayRefused.includes('not an ancestor'),
+      `pendingAuditScope ${strayRefused === '' ? 'returned normally' : `threw: ${strayRefused}`}. ` +
+        `Accepting any parent must not become accepting no parent.`,
+    );
+    git(scratch, ['merge', '--abort']);
+    git(scratch, ['checkout', '--quiet', base]);
+
+    // THE FILE AXIS OF THE PENDING GATE, which no case reached: every crossing
+    // above is on commits. Found by the typechecker, not by this file — a
+    // `files.size` on an array is `undefined`, the comparison is false, and all
+    // the cases above stayed green. One batch exactly must pass and one more
+    // must not, with the commit count far below its own threshold.
+    const fileNames = (/** @type {number} */ count) =>
+      Array.from({ length: count }, (_, index) => join('wide', `f${String(index)}.txt`));
+    mkdirSync(join(scratch, 'wide'), { recursive: true });
+    const already = pendingAuditScope({ root: scratch }).files.length;
+    for (const name of fileNames(BATCH.files - already)) writeFileSync(join(scratch, name), 'x\n');
+    git(scratch, ['add', '-A']);
+    const atBatch = pendingAuditScope({ root: scratch });
+    check(
+      'CONTROL: exactly one batch of files does not trip the pending gate',
+      atBatch.files.length === BATCH.files && atBatch.overBudget.length === 0,
+      `${String(atBatch.files.length)} files reported ${atBatch.overBudget.join('; ') || 'nothing'}.`,
+    );
+    writeFileSync(join(scratch, 'wide', 'one-more.txt'), 'x\n');
+    git(scratch, ['add', '-A']);
+    const overFiles = pendingAuditScope({ root: scratch });
+    check(
+      'one file past a batch trips the pending gate on FILES, with commits under theirs',
+      overFiles.commits <= BATCH.commits && overFiles.overBudget.some((line) => line.includes('files')),
+      `${String(overFiles.files.length)} files at ${String(overFiles.commits)} commits reported ` +
+        `${overFiles.overBudget.join('; ') || 'nothing'}.`,
+    );
+    git(scratch, ['reset', '--quiet', '--hard']);
+    git(scratch, ['clean', '--quiet', '-fd']);
+  }
+
+  // ---------------------------------------------------------------------------
   // Z-1: the classifier recognised A and M, and this report had a SECOND
   // opinion about `--name-status` from the one in lockfileIntegrity.mjs.
   //
