@@ -128,3 +128,16 @@ registration function rather than to any list here.
 **Patch `document-all.c` in the vendored tree.** Rejected: undone by the next
 provisioning run, and it edits source we do not own to express a decision that
 is ours.
+
+## Correction, 2026-10-01 — the handlers' flags also switched off MuPDF's layout engine
+
+`config.h` derives `FZ_ENABLE_HTML_ENGINE` from the HTML-family handlers when
+nothing defines it, so turning them all off turned off the engine MuPDF lays an
+annotation's or a widget's non-Latin text out with — measured, a text box drew
+Hebrew and Arabic as bytes in Helvetica. [ADR-0128](0128-the-shim-carries-mupdfs-layout-engine.md)
+defines it on and leaves every handler off, so this decision stands. Its
+measured table does not: after that rebuild `handlerFootprint.mjs` finds **SVG**
+and **FB2** markers present again — parser code the layout engine shares —
+while both are still refused at recognition (`proof:documenthandlers`). For
+those two the verdict rests on mechanism 2, as it already did for HTML and
+Office.
