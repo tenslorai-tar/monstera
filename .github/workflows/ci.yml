@@ -1404,6 +1404,13 @@ jobs:
       - name: Prove the shipped reader carries bytes and stops when told
         run: node scripts/ci/annotate.mjs scripts/research/readerWorker.mjs --require-transport
 
+      # THE TEARDOWN NEVER ABORTS THE PROCESS. Terminating the reader thread on its
+      # way out (the old `dispose`) aborted at 134 when it landed inside a koffi
+      # call — the packaged 0.1.6.0 vanishing mid-run, 2026-10-01. The control arm
+      # reproduces that abort; the shipped channel's arm must end cleanly.
+      - name: Prove disposing the reader channel never aborts the process
+        run: node scripts/ci/annotate.mjs scripts/proofs/readerDispose.proof.mjs --require-transport
+
       # Executes CVE-2026-7233's disclosed trigger against the built engine and
       # proves the fix is load-bearing by rebuilding libmupdf without it and
       # confirming the same input then crashes. Guards against a future MuPDF
@@ -1778,3 +1785,10 @@ jobs:
       # had never executed while every other case passed.
       - name: Prove the shipped reader carries bytes and stops when told
         run: node scripts/ci/annotate.mjs scripts/research/readerWorker.mjs --require-transport
+
+      # THE TEARDOWN NEVER ABORTS THE PROCESS. Terminating the reader thread on its
+      # way out (the old `dispose`) aborted at 134 when it landed inside a koffi
+      # call — the packaged 0.1.6.0 vanishing mid-run, 2026-10-01. The control arm
+      # reproduces that abort; the shipped channel's arm must end cleanly.
+      - name: Prove disposing the reader channel never aborts the process
+        run: node scripts/ci/annotate.mjs scripts/proofs/readerDispose.proof.mjs --require-transport

@@ -715,6 +715,9 @@ describe('the composition root, with an engine host platform', () => {
 
     const before = spy.harness.calls.length;
     await shutdown();
+    // THE READER'S OWN ENDING, which the fake delivers one turn after the stop as the shipped thread does tens of
+    // milliseconds after it — and only then are its stop event and its pipe released.
+    await new Promise((settled) => setImmediate(settled));
     const during = spy.harness.calls.slice(before);
 
     // THE WHOLE TEARDOWN, IN ORDER, and the order is the assertion. `reader.signal`
@@ -733,12 +736,13 @@ describe('the composition root, with an engine host platform', () => {
       'peer.request:engine/close',
       'reader.signal',
       'writes.abandon',
-      'worker.terminate',
-      'reader.closeEvent',
       'host.terminate',
       'host.close:process',
       'host.close:job',
       'host.discardDiagnostics',
+      // NO TERMINATE OF THE READER THREAD, and its handles LAST: released when its ending arrives. A terminate here
+      // was the order that aborted the process at 134 when it landed inside a koffi call (`readerDispose.proof.mjs`).
+      'reader.closeEvent',
       'pipe.close',
     ]);
 

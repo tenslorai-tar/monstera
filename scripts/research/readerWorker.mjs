@@ -131,29 +131,27 @@ const pipe = built.value.instances[0];
 // `createEngineReaderChannel` owns the stop event and the worker, which is the
 // point of it — so the two facts this probe needs and the channel does not
 // expose are observed by decorating the surface it is handed: whether the OS
-// thread actually exited, and whether `terminate` was ever called.
+// thread actually exited, and whether the handle it was given could end the
+// thread from outside at all (since 2026-10-01 it cannot: a termination landing
+// inside a koffi call aborted the process, `readerDispose.proof.mjs`).
 //
 // A DECORATOR, never a second implementation. Every call still goes to
 // `createReaderHostSurface`, so what is measured is the shipped path.
 const shipped = createReaderHostSurface(BUILT.reader);
 let exited = false;
-let terminated = 0;
+/** @type {string[]} the members of the handle the shipped surface returned */
+let handleMembers = [];
 const surface = {
   ...shipped,
   /** @param {unknown} data */
   startWorker: (data) => {
     const handle = shipped.startWorker(data);
     if (handle === null) return null;
+    handleMembers = Object.keys(handle);
     handle.onExit(() => {
       exited = true;
     });
-    return {
-      ...handle,
-      terminate: () => {
-        terminated += 1;
-        handle.terminate();
-      },
-    };
+    return handle;
   },
 };
 
@@ -322,24 +320,23 @@ check(
 );
 
 check(
-  'THE CONTROL: the stop EVENT did it, and no terminate was ever called',
-  terminated === 0,
-  `terminate was called ${String(terminated)} time(s) before the reader ended. That is the ` +
-    `measurement this whole design turns on: a channel that killed the thread would end it just ` +
-    `as promptly and prove nothing about the two-handle wait, which is why stop() may not do it.` +
-    `\n      Measured by adding that terminate: THREE cases go red, and the third is the ` +
-    `interesting one — the reader never gets to post its own ending, so the diagnostic becomes ` +
-    `"exited with code 1" instead of "stopped while waiting for bytes". Killing the thread does ` +
-    `not merely prove nothing; it destroys the only account of what happened.`,
+  'THE CONTROL: the stop EVENT did it — the handle has no way to end the thread from outside',
+  handleMembers.length > 0 && !handleMembers.includes('terminate'),
+  `the shipped handle's members are ${JSON.stringify(handleMembers)}. That is the measurement this ` +
+    `whole design turns on: a channel that killed the thread would end it just as promptly and ` +
+    `prove nothing about the two-handle wait — and, measured 2026-10-01, a termination landing ` +
+    `inside a koffi call aborts the process (exit 134). An empty list is a blind read, not a pass.`,
 );
 
-dispose();
+let released = 0;
+dispose(() => {
+  released += 1;
+});
 check(
-  'and disposing an already-ended reader still terminates nothing',
-  terminated === 0,
-  `terminate was called ${String(terminated)} time(s) by dispose. A terminate on an ended thread ` +
-    `is the call that lets somebody later conclude the terminate is what stops it — the unit ` +
-    `test asserts this against a fake, and this asserts it against the real one.`,
+  'and disposing an already-ended reader releases its handles at once, and once',
+  released === 1,
+  `the release ran ${String(released)} time(s). A reader that has ended no longer uses the pipe, ` +
+    `so nothing waits; the unit test asserts the waiting half against a fake.`,
 );
 
 process.stdout.write(

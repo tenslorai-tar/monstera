@@ -892,6 +892,37 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-01 — The application aborted when it closed an engine host's reader: `dispose` terminated the thread
+
+Found while measuring row 303's lag, not by any check. A frame-time run of the packaged 0.1.6.0 lost its process
+twenty-six seconds in, with `FATAL ERROR: Error::ThrowAsJavaScriptException napi_throw`, exit 134, and the reader
+thread's JavaScript stack at `abandonOperation` — the `CancelIoEx` it issues after being stopped while waiting for a host
+to connect. To the person using it, the application vanishes.
+
+**The mechanism, in one sentence:** `engineReaderChannel.ts`' `dispose` terminated a reader that had not yet ended, every
+deliberate close reaches `dispose` on the tick after signalling the reader's stop event — while the reader, woken by that
+event, is still on its way out (57–127 ms from the signal to its ending arriving, measured) — and a termination that
+lands while the thread is inside a koffi call fails koffi's own throw, which node-addon-api answers with
+`napi_fatal_error`, aborting the whole process.
+
+This is UUUUU-2's signature (2026-08-31: *"aborts, exit 134, `napi_throw` fatal from the reader's
+`GetOverlappedResult`"*). That finding fixed the ORDER of the shell's shutdown — signal the reader before killing the
+host — and left `dispose`'s terminate in place as a backstop, which every close still reached.
+
+**Reproduced, then fixed:** the shipped channel, stopped and terminated across 0–130 ms after the stop, aborted 7
+processes of 8 on Electron's Node and 3 of 8 on plain Node (60 stops each). `dispose` now never terminates: it signals
+the stop if nothing has, and releases the stop event — and, through a new `release` argument, the PIPE — when the
+reader's ending arrives. The pipe waits too, because the reader's last act is a cancel on it, and a pipe closed first
+names a handle value the next connection may already have been given. `ReaderWorkerHandle` has no `terminate` any more,
+so the backstop cannot be written back without changing the type (B5).
+
+**Proof, with its control** (`proof:readerdispose`, both Windows jobs, `--require-transport`): the control arm
+terminates the shipped reader on its way out and must abort at least one process; the shipped channel's arm runs 600
+stop-and-dispose cycles across the same window with no abort and every release run once. Mutated by putting the
+terminate back into the built channel: 6 processes of 10 aborted and 180 releases of 600 ran. The unit test that read
+*"disposes a running reader by terminating it"* pinned the defect and is replaced by the waiting half's cases; the
+composition test that pinned `worker.terminate` in the shutdown order now pins the reader's handles LAST.
+
 ## 2026-10-01 — Stage audit of `ba129226..4a93218f` — findings ZZZZZZ-1 to ZZZZZZ-6
 
 Owed at one batch of files: the Windows visual baselines for the merge of `work/cloud-rate-us` would have taken the
