@@ -892,6 +892,98 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-01 — Stage audit of `ba129226..4a93218f` — findings ZZZZZZ-1 to ZZZZZZ-6
+
+Owed at one batch of files: the Windows visual baselines for the merge of `work/cloud-rate-us` would have taken the
+unaudited range to 216 files against 200, and the pre-commit gate refused that commit. The range is 24 commits: the
+last audit's record and its repairs, decisions C, D and E, ADR-0127 and its build, item 6 (a removal leaves no
+backup), the board's repairs at `60b7df6a`, item 4 (ADR-0072's amendment and the Word export's pictures), item 5
+(ADR-0128 and right-to-left text), item 9, and the first cloud branch merged (`516627dd`, `7c939609`: Donate and Rate
+Us both filled). The modified proofs were read by their deleted lines across the whole range.
+
+### 1. Root cause or workaround?
+
+Each product fix states a mechanism. **ZZZZZZ-2** (open, low) is the exception and it is in an instrument:
+`scripts/research/wordPicturesInWord.mjs` drives Word through COM, and `SaveAs2` hung until the path was cast with
+`[string]`. The cast made it stop; why Word waits on the uncast value was never established, so by Rule 0's test it is
+a change that works rather than a mechanism. The instrument's readings stand (Word's own PDF, placement within 0.00 pt),
+because the hang stopped the run and never altered what it read.
+
+### 2. Verified against the easy shape only?
+
+Twice, both open. **ZZZZZZ-5**: `rtlText.proof.mjs` reads back pure Hebrew, pure Arabic and pure Latin. A line that
+MIXES them — Hebrew with a number or a Latin word, which is where the bidirectional algorithm does its work — is not
+run. **ZZZZZZ-6**: the Word export's pictures are placed from the structured-text read's boxes and proven on pages
+whose CropBox starts at the origin with no `/Rotate`; a picture rotated on the page is covered, a rotated page or an
+offset CropBox is not.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Decision D moved a duplicate of a page outside the document from *not captured* to a refusal at the capture, and
+`pageOrder.test.ts` says why in the case: `captured: false` let the bus take a checkpoint for a copy that could not be
+made. Every other moved assertion changes its message or adds a field (the five *outside this document* messages,
+`removal` beside `kept`, `staleCopies` on a save's answer). Nothing narrowed.
+
+### 3. Would CI have caught it?
+
+The board at the last pushed commit, `6ea13b6b`, is green on both (`npm run board`). The merged cloud branch was red
+only on the visual baselines job, as its commit said it would be; the baselines are regenerated on Windows in the
+commit after this one, and whether CI's runner agrees is that push's board to answer. The inverse question has a live
+answer: ZZZZZZ-3's spread is this machine's, and CI's Windows runner compares against images made here.
+
+### 4. Are the proofs non-vacuous?
+
+The deletions are corrections, each read: `hostRoutes.test.ts` replaced *every unbounded member is a page list* with
+*nothing in a command is unbounded*, and added the control that the old index list is reported by the same reader;
+`inlineImages.proof.mjs` now refuses a stale build of BOTH engines it loads (`INLINE_IMAGES`, 2) where it checked one;
+`documentCommands.test.ts`' *reads every page* became *composes once in the engine and main reads no page*, which is
+the amendment's route; `wordDocument.test.ts` was rewritten with the composer and still pins the package's part names
+exactly; `contract.proof.mjs`' type-error text moved with decision D's types and keeps the union's sum at 50. The merged
+`Button.test.tsx` and `renderedScreen.pw.ts` add cases only, each with a control its commit names.
+
+### 4a. Resolution test before measuring?
+
+**ZZZZZZ-3** (low): `scripts/test/visual.config.mjs` chose `maxDiffPixels: 100` from a spread of zero, read
+2026-09-15. Regenerating twice on identical code here on 2026-10-01 moved 17 of 36 images by up to 66 pixels (largest
+channel delta 40, a shield icon), so the margin under the gate is 34 pixels rather than 100, and the smallest change
+the gate must see is still 319. The figure is not raised; the comment now carries both readings.
+
+### 4b. A search with a positive control?
+
+Each new search carries one: `wordPicturesInWord.mjs` must find pictures in rich and layout mode before text mode's
+*none* means anything; `rtlText.proof.mjs` reads a Latin box first; the baseline comparison for this merge was a
+pixel diff against `git show HEAD:path` that throws when no image changed.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+No. `rtlText.proof.mjs` and `wordPictures.proof.mjs` declare 8 cases each as literals, and `COMMAND_CARRYING` stays a
+written-out list. Nothing in this range derives a count.
+
+### 5. Executed, or asserted?
+
+Asserted, and said so where it is used: OneDrive's `canEdit` from Microsoft's reference, never a live run. **ZZZZZZ-4**
+(open, low): an `EPERM` on a rename in `apps/desktop/src/documentCommands.test.ts` was observed once and not
+reproduced; nothing about it is established. ADR-0128's new parsing surface is the owner's to accept and is recorded
+there as open.
+
+### 6. Architecture before the feature, or underneath it?
+
+Before, for the three that changed a seam: ADR-0127 (`ff9a7f2f`) before `370458fd`, ADR-0072's amendment (`c4ac1411`)
+before `2707ab34`, ADR-0128 (`0c5b0ee7`) before `d243d506`. **ZZZZZZ-1** is the one underneath, and it is item 7's
+too: item 6 (`5c19c062`) made a removal's save write no `.bak` without touching §4, which still names `.bak` as a step
+of the one save pipeline for every save.
+
+### 7. Do the documents still match the code?
+
+**ZZZZZZ-1** (medium): `docs/ARCHITECTURE.md`' *"Save is one pipeline: … atomic write (temp, fsync, rename, `.bak`,
+…)"* is a compound claim with one clause false for the removal row since `5c19c062` — exactly the half-true sentence
+item 7 says to look for, because the live clauses vouch for the dead one. A cross-document sweep for the old frame
+bound (43,600 pages) found every statement of it already past tense. The merged branch's three removed tokens survive
+only in ADR-0113's original text and its dated correction, which is how an ADR is corrected.
+
+**Repairs:** ZZZZZZ-1 by an amendment in its own commit, after this one; ZZZZZZ-3 by the comment, in the commit after
+the baselines. ZZZZZZ-2, -4, -5 and -6 are open.
+
 ## 2026-09-30 — Stage audit of `4af180ff..ba129226` — findings YYYYYY-1 to YYYYYY-9
 
 Owed at one batch of files: decision C's commit would have taken the unaudited range to 209 files against 200, and
