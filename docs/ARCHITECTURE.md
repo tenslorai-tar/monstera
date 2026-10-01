@@ -982,8 +982,15 @@ the handle" is satisfied either way — by intent that can be re-run, or by an
 effect that can be re-applied.
 
 **Save is one pipeline:** flush each writer of record once → atomic write (temp,
-fsync, rename, `.bak`, Windows `EPERM`/`EBUSY` retry ladder) → stamp saved
-version.
+fsync, rename, Windows `EPERM`/`EBUSY` retry ladder) → stamp saved version. **The
+`.bak` of the file a save replaces is written for every save except a removal's**:
+`saveDocument` takes `backups: 'keep' | 'none'` as a required argument, and the
+writer's one answer about the next save (`signaturesKeptBySave`, which already
+reads the session's one-way removal mark) says which. A backup of the file a
+redaction replaces is a copy of what it removed, beside the redacted file. Older
+backups and the undo copies that may still hold removed content are named to the
+person after a removal's save and deleted only on their confirmation
+(`document.deleteStaleCopies`).
 
 **The pipeline has one mode, and the purpose of the save chooses it** — never a
 default, never a setting ([ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md)):
@@ -2795,6 +2802,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-01 | **A removal's save writes no `.bak`** (§4, *Save is one pipeline*). Stated after the build, not before it, and that is the finding: item 6 of the 29 September list (`5c19c062`) made a removal's save keep no backup, because a `.bak` of the file a redaction replaces holds what it removed, and left §4 naming `.bak` as a step of every save. Found by the stage audit of `ba129226..4a93218f` (ZZZZZZ-1). The pipeline is still one pipeline; its backup step is now an argument the save's purpose decides, as its mode already was. | §4's *"atomic write (temp, fsync, rename, `.bak`, …)"* for every save | [ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md) |
 | 2026-10-01 | **The shim carries MuPDF's layout engine; every HTML-family document handler stays off** (§3's annotation-appearance row). The owner's list (29 September, night, item 5): Hebrew and Arabic in the text box, callout and typed text. Measured: the native engine drew them as bytes in Helvetica, because `config.h` turns `FZ_ENABLE_HTML_ENGINE` off when every HTML-family handler is off, which ADR-0016 did for another reason. Defined on, with the handlers still off: Noto Hebrew and Noto Naskh Arabic, right to left, Arabic joined, read back in logical order by pdf.js after MuPDF's bake, with nothing read before it as the control. SVG and FB2 parser code is linked again, unregistered and refused at recognition. A document's own rich text is now laid out in the engine host. Rejected: bidi and shaping of ours; a handler turned back on; pdf-lib with an embedded font; waiting | ADR-0016's measured absence of SVG and FB2 code | [0128](DECISIONS/0128-the-shim-carries-mupdfs-layout-engine.md) |
 | 2026-10-01 | **The Word export carries pictures and is composed in the MuPDF host** (§3's *PDF → Word* row). The owner's list (29 September, night, item 4): pictures inline in reading order when the text reflows, at their box in the exact layout, none in text mode, composed in the engine host as ADR-0072's Decision 2 said. The host writes the package into the session's output directory and `main` moves it, never reading it. Measured on the native engine: segmentation puts every picture inside a structure block, which MuPDF's walk does not enter (0 of 2 found; a flat `preserve-images` read finds 2 of 2 with boxes equal to the shared read's), and a picture drawn as `pdf_show_image` draws it keeps its soft mask and its page rotation. Rejected: composing in `main` with each picture crossing as a file; a glue export for a structure block's children; rendering the page region; holding or spilling pictures until the text is written | ADR-0072's correction of 2026-09-17, for Word only | [0072](DECISIONS/0072-office-open-xml-exports-are-written-by-this-build-over-fflate.md) |
 | 2026-09-30 | **Undo's pair crosses in files: a capture's prior as an answer, and the same prior as `engine/invert`'s request** (§5). Measured with the kernel's own capture: rotating every page of 10,000 pages captures 398,937 B, 1.5× the frame, at about 40 B a page against the intent's 5. It crosses at about 6,580 pages, inside the 20,000-page range the frame constant allows for. Both hosts' captures are file-answered. `engine/invert`'s params are written into the session's snapshot directory, which the host may only read (ADR-0044's door). The request names the session, file and size; the host reads under the 8 MiB ceiling, requires the same session, and dispatches through the same `wrapHandler`. **Rejected:** a compact prior encoding (crop and resize priors differ per page); refusing a capture above a page count. | The row below, which routed answers only | [0125](DECISIONS/0125-an-answer-that-grows-with-the-document-crosses-in-a-file.md) addendum |
