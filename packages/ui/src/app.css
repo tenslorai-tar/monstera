@@ -47,6 +47,20 @@ textarea {
   font: inherit;
 }
 
+/* EVERY NATIVE LIST IS OPAQUE, IN EVERY THEME. Chromium draws a select's list in a popup of its own from the
+   select's computed colours: the text from its `color`, the ground from its `background-color` made opaque against
+   white. `color-scheme` (`tokens.css`) does not reach either once a select sets them. So a select with a transparent
+   or translucent dark background — the assistant's pickers, and every select over the glass theme's surfaces — opened
+   a near-white list carrying the theme's light text, readable only on the highlighted row (the owner's review of
+   0.1.6.0, `assistant_3`). `--list` is opaque in all three themes and its text pairs are checked (`tokens.css`); the
+   options carry it too, so no row falls back to the blended ground. */
+select,
+option,
+optgroup {
+  background-color: var(--list);
+  color: var(--text);
+}
+
 /*
  * §10.3's anatomy as one grid: the tabs, then the active section's tools across
  * the top, then the section rail beside the document, then the status bar.
@@ -2727,8 +2741,6 @@ textarea {
   padding-inline: var(--space-6);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-6);
-  background: transparent;
-  color: var(--text);
   font-size: var(--font-chrome-11);
   text-overflow: ellipsis;
 }
@@ -3675,8 +3687,6 @@ textarea {
   padding: var(--space-8);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-4);
-  background: var(--bg2);
-  color: var(--text);
   font-size: var(--font-chrome-13);
 }
 

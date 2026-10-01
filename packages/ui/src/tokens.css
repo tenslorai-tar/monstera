@@ -82,6 +82,7 @@
  * @role bg2 surface @over ground canvas
  * @role surface surface @over ground bg bg2
  * @role float surface @over any
+ * @role list surface
  * @role surface2 surface @over bg bg2 surface float canvas
  * @role active surface @over bg bg2 surface
  * @role page surface
@@ -102,8 +103,8 @@
  * @role accent-grad-top fill
  * @role accent-grad-bottom fill
  * @role redact-mark graphic @on page
- * @role text text @on ground bg bg2 surface surface2 canvas float active dialog-head-wash violet-wash
- * @role muted text @on ground bg bg2 surface surface2 canvas float
+ * @role text text @on ground bg bg2 surface surface2 canvas float list active dialog-head-wash violet-wash
+ * @role muted text @on ground bg bg2 surface surface2 canvas float list
  * @role faint text @on ground bg bg2 surface canvas
  * @role accent-text text @on ground bg bg2 surface canvas float
  * @role border-control boundary-control @on ground bg bg2 surface surface2 canvas float
@@ -147,6 +148,9 @@
   /* v5 was 0.74. A menu or dialog floats over ANYTHING — a context menu over the white page is the ordinary case — and
      at 0.74 over white --muted is 3.08:1 and --text on a hovered row fails too. 0.91 is the least that holds them. */
   --float: rgba(18, 26, 23, 0.91);
+  /* OPAQUE, the float's own colour at full strength: a native list is drawn from its select's colours, and a
+     translucent one is made opaque against WHITE (`app.css`, the native select rule). */
+  --list: #121a17;
   --surface2: rgba(255, 255, 255, 0.055);
   --active: rgba(255, 255, 255, 0.16);
   --page: #ffffff;
@@ -258,6 +262,7 @@
   --surface: rgba(255, 255, 255, 0.66);
   /* v5 was 0.76; over black (a dark image on the page) --muted and --accent-text fell under 4.5:1. */
   --float: rgba(255, 255, 255, 0.83);
+  --list: #ffffff;
   --surface2: rgba(15, 30, 22, 0.045);
   --active: #ffffff;
   --page: #ffffff;
@@ -365,6 +370,7 @@
   --bg2: #000000;
   --surface: #0a0a0a;
   --float: #0a0a0a;
+  --list: #0a0a0a;
   --surface2: #101010;
   --active: #0d3a22;
   --page: #ffffff;
