@@ -127,6 +127,54 @@ export function rulerTicks(
   return ticks;
 }
 
+/** Where one page lies along a ruler, in CSS pixels from the ruler's start. */
+export interface RulerSpan {
+  readonly start: number;
+  readonly end: number;
+}
+
+/** A mark, and which of the spans it measures, so two pages' marks never share a key. */
+export interface SpanTick extends RulerTick {
+  readonly span: number;
+}
+
+/**
+ * The marks along one edge when several pages lie along it, EACH READ FROM ITS OWN PAGE'S ZERO.
+ *
+ * A ruler zeroed on the first page counts on past that page's foot, so page 2's top reads 11 inches and page 9's
+ * reads 99: numbers for page 1 and arithmetic for every page after it. A person measuring a page measures from its
+ * corner, so each page gets its own run, starting at 0 at its own top or left, and the gap between two pages carries
+ * no marks at all.
+ *
+ * A span that starts inside the one before it is skipped: the right page of a facing pair has the left page's extent
+ * down the vertical ruler, and two runs over one stretch would draw every label twice.
+ *
+ * @param spans the pages along this ruler, in any order
+ * @param lengthPx how long the ruler is, in CSS pixels
+ * @param unit what a reader chose
+ * @param zoom CSS pixels per point
+ */
+export function spanTicks(
+  spans: readonly RulerSpan[],
+  lengthPx: number,
+  unit: RulerUnit,
+  zoom: number,
+): readonly SpanTick[] {
+  const ticks: SpanTick[] = [];
+  let reached = Number.NEGATIVE_INFINITY;
+  const ordered = [...spans].sort((a, b) => a.start - b.start);
+  for (const [index, span] of ordered.entries()) {
+    if (span.start < reached) continue;
+    reached = span.end;
+    const from = Math.max(span.start, 0);
+    const to = Math.min(span.end, lengthPx);
+    for (const tick of rulerTicks(lengthPx, unit, zoom, span.start)) {
+      if (tick.offset >= from && tick.offset <= to) ticks.push({ ...tick, span: index });
+    }
+  }
+  return ticks;
+}
+
 /**
  * The spacing of the grid overlay, in CSS pixels.
  *

@@ -6,7 +6,7 @@ keywords: [rulers, grid, measure, align, units, millimetres, inches, points, gui
 commands: [view.toggle-rulers, view.toggle-grid]
 contexts: [tools]
 ---
-Rulers run along the top and left of the page. The grid draws lines over the page at the rulers' main marks, which helps you line up marks and shapes.
+Rulers run along the top and left of the page area and stay there as you scroll. Every page is measured from its own top left corner, so each page starts at 0. The grid draws lines over the page at the rulers' main marks, which helps you line up marks and shapes.
 
 ## Steps
 

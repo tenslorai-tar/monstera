@@ -1286,8 +1286,9 @@ test('NOTHING DRAWS OVER A DIALOG: every stacked element of the window sits unde
   // to the end of the body with no z-index, so they win by order alone — and the ruler (1), the loupe (2) and
   // Studio's overlay (2) each carried a z-index into the ROOT stacking context, where any number beats none.
   // The assertion is about every element with a z-index, not about the ruler: a hit test at each one's centre must
-  // land on the dialog or its backdrop. The rulers are on so at least one such element exists — the premise is
-  // asserted, since a window with none would pass by having nothing to test.
+  // land on the dialog or its backdrop. The premise that at least one such element exists is asserted, since a window
+  // with none would pass by having nothing to test. (The rulers were that element until 2026-10-01; they now sit in
+  // grid tracks beside the scroller and carry no z-index. They stay on so a ruler that regains one is probed too.)
   //
   // THE HIT TEST IS BLIND WITHOUT ONE CHANGE, and the first version of this case passed on the broken build for it:
   // the ruler is `pointer-events: none`, so `elementFromPoint` looks straight through it to the backdrop and reports

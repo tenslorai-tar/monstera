@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { gridSpacing, rulerTicks } from './rulerGeometry.js';
+import { gridSpacing, rulerTicks, spanTicks } from './rulerGeometry.js';
 
 /**
  * The ruler's arithmetic.
@@ -87,6 +87,72 @@ describe('rulerTicks', () => {
     expect(rulerTicks(300, 'in', -1)).toStrictEqual([]);
     expect(rulerTicks(0, 'in', 1)).toStrictEqual([]);
     expect(rulerTicks(Number.POSITIVE_INFINITY, 'in', 1)).toStrictEqual([]);
+  });
+});
+
+describe('spanTicks', () => {
+  const majors = (ticks: ReturnType<typeof spanTicks>): string[] =>
+    ticks.filter((tick) => tick.major).map((tick) => `${String(tick.offset)}:${tick.label ?? ''}`);
+
+  it('starts every page at its OWN zero, so the second page reads 0 at its top rather than continuing', () => {
+    // Two 2-inch pages at 100%, 16 px apart. Zeroed on the first page alone, the second page's top would be the
+    // first page's 160 px, labelled with no whole inch, and its foot would read 4.
+    const ticks = spanTicks(
+      [
+        { start: 0, end: 144 },
+        { start: 160, end: 304 },
+      ],
+      400,
+      'in',
+      1,
+    );
+    expect(majors(ticks)).toStrictEqual(['0:0', '72:1', '144:2', '160:0', '232:1', '304:2']);
+  });
+
+  it('draws nothing in the gap between two pages, nor past the ruler', () => {
+    const ticks = spanTicks(
+      [
+        { start: 0, end: 144 },
+        { start: 160, end: 304 },
+      ],
+      250,
+      'in',
+      1,
+    );
+    expect(ticks.some((tick) => tick.offset > 144 && tick.offset < 160)).toBe(false);
+    expect(ticks.every((tick) => tick.offset <= 250)).toBe(true);
+  });
+
+  it('keeps a page scrolled half past the top on its own grid', () => {
+    // A page whose top is 100 px above the strip: the first major on screen is its 2-inch mark, at 44.
+    expect(majors(spanTicks([{ start: -100, end: 188 }], 300, 'in', 1))).toStrictEqual(['44:2', '116:3', '188:4']);
+  });
+
+  it('marks a facing pair once down the side, where both pages share one extent', () => {
+    const pair = spanTicks(
+      [
+        { start: 0, end: 144 },
+        { start: 0, end: 144 },
+      ],
+      300,
+      'in',
+      1,
+    );
+    expect(majors(pair)).toStrictEqual(['0:0', '72:1', '144:2']);
+  });
+
+  it('carries which page a mark belongs to, so two pages never key a mark alike', () => {
+    const ticks = spanTicks(
+      [
+        { start: 160, end: 304 },
+        { start: 0, end: 144 },
+      ],
+      400,
+      'in',
+      1,
+    );
+    expect(new Set(ticks.map((tick) => `${String(tick.span)}:${String(tick.offset)}`)).size).toBe(ticks.length);
+    expect(ticks.find((tick) => tick.offset === 160)?.span).toBe(1);
   });
 });
 

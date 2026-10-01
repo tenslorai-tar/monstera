@@ -24,7 +24,7 @@ import { type Tile, tilesCovering } from './tiles.js';
 import type { SearchHighlight } from './searchHighlight.js';
 import { Loupe } from './Loupe.js';
 import { Rulers } from './Rulers.js';
-import { type RulerUnit, gridSpacing } from './rulerGeometry.js';
+import { type RulerSpan, type RulerUnit, gridSpacing } from './rulerGeometry.js';
 import { useVisiblePages } from './useVisiblePages.js';
 import { type Box, type ZoomDirection, type ZoomMode, resolveZoom } from './zoom.js';
 
@@ -434,6 +434,8 @@ export function PageList({
   // to narrow to the visible set, and the layer is mounted only on slots that are measured.
   const pageAnnotations = usePageAnnotations(client, docId, version);
   const scroller = useRef<HTMLDivElement | null>(null);
+  /** The pane around the scroller, which holds what must not scroll: the rulers and the loupe. */
+  const pane = useRef<HTMLDivElement | null>(null);
   /**
    * The scroller's own box, remeasured whenever it changes.
    *
@@ -569,27 +571,66 @@ export function PageList({
    * different gesture.
    */
   /**
-   * Where the page's zero sits inside the scroller, in CSS pixels.
+   * Where the pages on screen lie inside the scroller, in CSS pixels, for the rulers and the grid.
    *
-   * **Read from the first slot's own box**, not computed from the page size and
+   * **Read from the slots' own boxes**, not computed from the page size and
    * a guessed margin: the slot is centred by CSS and the margin is a token, so
    * arithmetic here would be a second opinion about a layout the stylesheet
    * owns — and it would be wrong the day the margin changes.
    *
-   * Both numbers go NEGATIVE once the page is scrolled past, which is correct:
+   * EVERY PAGE NEAR THE VIEWPORT, not the first page alone. Measured from page 1 only, the vertical ruler counted on
+   * past page 1's foot, so every later page read a continuation of page 1's numbers (the owner's review of 0.1.6.0).
+   * The pages are the ones `visible` already names, so this asks the slots the observer is watching and no others.
+   *
+   * `origin` is the CURRENT page's corner, which is what the grid is anchored to and what the horizontal ruler measures
+   * from, with the page beside it in a facing row.
+   *
+   * The numbers go NEGATIVE once a page is scrolled past, which is correct:
    * a ruler whose origin clamped to zero would put its zero mark wherever the
    * viewport happened to start.
    */
-  const [pageOrigin, setPageOrigin] = useState({ x: 0, y: 0 });
+  const [pageSpans, setPageSpans] = useState<{
+    readonly origin: { readonly x: number; readonly y: number };
+    readonly across: readonly RulerSpan[];
+    readonly down: readonly RulerSpan[];
+    readonly size: { readonly width: number; readonly height: number };
+  }>({ origin: { x: 0, y: 0 }, across: [], down: [], size: { width: 0, height: 0 } });
+  const pageOrigin = pageSpans.origin;
 
   const measureOrigin = useCallback((): void => {
     const box = scroller.current;
-    const slot = slotFor(FIRST_PAGE.kernel);
-    if (box === null || slot === undefined) return;
+    if (box === null) return;
     const outer = box.getBoundingClientRect();
-    const inner = slot.getBoundingClientRect();
-    setPageOrigin({ x: inner.left - outer.left, y: inner.top - outer.top });
-  }, [slotFor]);
+    const pages = (visible.size > 0 ? [...visible] : [FIRST_PAGE.kernel])
+      .sort((a, b) => a - b)
+      .flatMap((page) => {
+        const slot = slotFor(page);
+        if (slot === undefined) return [];
+        const inner = slot.getBoundingClientRect();
+        // A HIDDEN SLOT (single page layout) has no box, and a span of zero would put a page's zero on top of another's.
+        if (inner.height === 0) return [];
+        return [
+          {
+            left: inner.left - outer.left,
+            right: inner.right - outer.left,
+            top: inner.top - outer.top,
+            bottom: inner.bottom - outer.top,
+          },
+        ];
+      });
+    // THE TOPMOST PAGE ON SCREEN. `visible` reaches a viewport beyond the screen either way (`MARGIN`), so its first
+    // page can lie wholly above it; the boxes read here say which pages the scrollport actually shows.
+    const current = pages.find((page) => page.bottom > 0 && page.top < outer.height) ?? pages[0];
+    if (current === undefined) return;
+    setPageSpans({
+      origin: { x: current.left, y: current.top },
+      across: pages
+        .filter((page) => page.top < current.bottom && page.bottom > current.top)
+        .map((page) => ({ start: page.left, end: page.right })),
+      down: pages.map((page) => ({ start: page.top, end: page.bottom })),
+      size: { width: outer.width, height: outer.height },
+    });
+  }, [slotFor, visible]);
 
   // Recomputed on scroll, on resize, and whenever the page is redrawn at a new
   // scale — the three things that move the page's corner. A ruler that updated
@@ -650,13 +691,15 @@ export function PageList({
         return;
       }
       const slot = target.getBoundingClientRect();
-      const outer = box.getBoundingClientRect();
+      const outer = (pane.current ?? box).getBoundingClientRect();
       setLens({
         page,
         at: { x: event.clientX - slot.left, y: event.clientY - slot.top },
-        // Positioned against the SCROLLER, because that is what the loupe is
+        // Positioned against the PANE, because that is what the loupe is
         // absolutely placed inside — viewport coordinates would put it in the
-        // wrong place the moment the window is not at the origin.
+        // wrong place the moment the window is not at the origin. Not the
+        // scroller: an absolute child of a scroll container is laid out in its
+        // scrolled content, so the loupe landed `scrollTop` above the pointer.
         screen: { x: event.clientX - outer.left, y: event.clientY - outer.top },
       });
     },
@@ -887,6 +930,23 @@ export function PageList({
 
   return (
     <div
+      // THE PANE: the scroller, and beside it what must NOT scroll with the pages. The rulers take their own grid tracks
+      // and the loupe is placed against this box; inside the scroller both were laid out in its scrolled content.
+      className={rulers ? 'm-page-pane m-page-pane--rulers' : 'm-page-pane'}
+      ref={pane}
+    >
+      {loupe && lens !== undefined ? (
+        <div
+          className="m-loupe-at"
+          style={{ insetInlineStart: `${String(lens.screen.x)}px`, insetBlockStart: `${String(lens.screen.y)}px` }}
+        >
+          <Loupe view={view} page={lens.page} zoom={shown} rotation={rotations.get(lens.page)} at={lens.at} />
+        </div>
+      ) : null}
+      {rulers && pageSpans.size.height > 0 ? (
+        <Rulers unit={unit} zoom={shown} size={pageSpans.size} across={pageSpans.across} down={pageSpans.down} />
+      ) : null}
+    <div
       // A NAMED, FOCUSABLE REGION: the document scrolls here, and a scroller with nothing focusable inside — a page of
       // plain text, a scan — could not be scrolled from the keyboard at all (WCAG 2.1.1; axe's
       // `scrollable-region-focusable`, found by the menu bar's rendered case on 2026-09-26). Focused, the arrows and
@@ -968,17 +1028,6 @@ export function PageList({
       onPointerDownCapture={onActivate}
       onFocusCapture={onActivate}
     >
-      {loupe && lens !== undefined ? (
-        <div
-          className="m-loupe-at"
-          style={{ insetInlineStart: `${String(lens.screen.x)}px`, insetBlockStart: `${String(lens.screen.y)}px` }}
-        >
-          <Loupe view={view} page={lens.page} zoom={shown} rotation={rotations.get(lens.page)} at={lens.at} />
-        </div>
-      ) : null}
-      {rulers && viewport !== undefined ? (
-        <Rulers unit={unit} zoom={shown} size={viewport} origin={pageOrigin} />
-      ) : null}
       {Array.from({ length: pageCount }, (_, page) => {
         const slot = (
         <PageSlot
@@ -1029,6 +1078,7 @@ export function PageList({
         // THE KEY ON THE OUTERMOST ELEMENT, `Thumbnails`' reason.
         return pageMenu === undefined ? slot : <Fragment key={page}>{pageMenu(page, slot)}</Fragment>;
       })}
+    </div>
     </div>
   );
 }

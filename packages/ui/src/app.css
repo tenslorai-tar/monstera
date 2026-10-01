@@ -2955,6 +2955,22 @@ optgroup {
   block-size: 100%;
   overflow-y: auto;
   padding-block: var(--space-16);
+  grid-area: list;
+}
+
+/*
+ * THE PANE: one scroller and what must not scroll with its pages.
+ *
+ * The rulers and the loupe were the scroller's own absolutely positioned children, and an absolute child of a scroll
+ * container is laid out in its scrolled CONTENT: the rulers rode up with page 1 and were gone after one screen, and
+ * the loupe drew `scrollTop` above the pointer (the owner's review of 0.1.6.0). Here the rulers take grid tracks beside
+ * the scroller, so the horizontal one starts at the scroller's left edge and the vertical one at its top — an offset
+ * measured from the scroller's box is an offset along a ruler — and the loupe is placed against this box.
+ */
+.m-page-pane {
+  display: grid;
+  grid-template: 'list' minmax(0, 1fr) / minmax(0, 1fr);
+  block-size: 100%;
   /*
    * SHARES THE WIDTH WITH A SECOND PANE, and `min-inline-size: 0` is what makes
    * that work: a flex item's default minimum is its content, so a scroller full
@@ -2964,14 +2980,25 @@ optgroup {
    */
   flex: 1 1 0;
   min-inline-size: 0;
-
-  /*
-   * THE CONTAINING BLOCK FOR THE RULERS, which are absolutely positioned and
-   * must not scroll away with the pages. Without this they would position
-   * against the nearest positioned ancestor — the app surface — and the
-   * horizontal ruler would sit above the wrong element.
-   */
+  /* THE CONTAINING BLOCK FOR THE LOUPE, which is placed from the pointer's offset in this box. */
   position: relative;
+}
+
+/* THE CORNER where the two rulers meet, in the rulers' own surface so the pair reads as one frame. */
+.m-page-pane--rulers {
+  grid-template:
+    'corner across' var(--ruler)
+    'down list' minmax(0, 1fr)
+    / var(--ruler) minmax(0, 1fr);
+}
+
+.m-page-pane--rulers::before {
+  content: '';
+  grid-area: corner;
+  box-sizing: border-box;
+  background: var(--surface);
+  border-inline-end: 1px solid var(--border); /* decorative: the rulers' frame, as on .m-ruler-h and .m-ruler-v */
+  border-block-end: 1px solid var(--border); /* decorative: as above */
 }
 
 /*
@@ -2993,13 +3020,6 @@ optgroup {
  * rather than a rule that draws an edge on a single view nobody asked to
  * divide.
  */
-/* CLEAR OF THE RULERS when they are drawn: they lie over the list's start edges, and a 16 px padding left the first
-   page's top under the 18 px ruler (measured 2026-09-27 in the baselines: page at 205, ruler to 207). */
-.m-page-list:has(> .m-ruler) {
-  padding-block-start: calc(var(--ruler) + var(--space-16));
-  padding-inline-start: var(--ruler);
-}
-
 /*
  * FACING PAGES (`viewing.page-layout`): two columns, so the pages pair 1–2, 3–4 as spreads print, with the list's own
  * gap as the spine. `max-content` keeps each column the page's own width, and `safe` keeps a spread wider than the
@@ -3019,7 +3039,7 @@ optgroup {
   display: none;
 }
 
-.m-page-list + .m-page-list {
+.m-page-pane + .m-page-pane {
   border-inline-start: 1px solid var(--border); /* decorative: separates two scrollable regions of one document and bounds neither; each pane's own controls carry their focus rings */
 }
 
@@ -3045,35 +3065,28 @@ optgroup {
 }
 
 .m-ruler {
-  position: absolute;
-  z-index: 1;
+  /* THE CONTAINING BLOCK FOR ITS TICKS, each placed at an offset along it. */
+  position: relative;
   background: var(--surface);
   color: var(--muted);
   font-size: var(--font-chrome-10);
-  /*
-   * NOT A POINTER TARGET. The ruler sits over the scroller's padding, and a
-   * strip that swallowed a click would make the area beside the page dead —
-   * including the drag a future selection tool will want.
-   */
-  pointer-events: none;
   overflow: hidden;
+  user-select: none;
 }
 
 /* v5: rulers 18, an outer size (the design is border-box throughout). */
 .m-ruler-h {
+  grid-area: across;
   box-sizing: border-box;
-  inset-block-start: 0;
-  inset-inline: 0;
   block-size: var(--ruler);
-  border-block-end: 1px solid var(--border); /* decorative: the ruler is pointer-events:none, so this edge separates chrome from the page area and bounds nothing a user can reach */
+  border-block-end: 1px solid var(--border); /* decorative: the ruler holds nothing to operate, so this edge separates chrome from the page area and bounds nothing a user can reach */
 }
 
 .m-ruler-v {
+  grid-area: down;
   box-sizing: border-box;
-  inset-inline-start: 0;
-  inset-block: 0;
   inline-size: var(--ruler);
-  border-inline-end: 1px solid var(--border); /* decorative: as m-ruler-h above — a chrome/page divider on a strip that takes no pointer events */
+  border-inline-end: 1px solid var(--border); /* decorative: as m-ruler-h above — a chrome/page divider on a strip with nothing to operate */
 }
 
 .m-tick {

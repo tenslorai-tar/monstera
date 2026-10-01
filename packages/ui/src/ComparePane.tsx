@@ -225,7 +225,7 @@ function CompareView({
   );
 
   if (failed) return <canvas className="m-page" data-failed="true" />;
-  if (ready === undefined) return <div className="m-page-list" />;
+  if (ready === undefined) return <div className="m-page-pane" />;
 
   return (
     <PageList
