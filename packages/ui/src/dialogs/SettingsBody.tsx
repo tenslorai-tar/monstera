@@ -213,7 +213,9 @@ function SettingControl({
     // a row of eight buttons is the wall this dialog exists to stop being.
     if (members.length <= 3) {
       return (
-        <div aria-labelledby={labelledBy} className="m-segmented" data-setting={setting.id} role="radiogroup">
+        // `--wrap`: a group whose choices are sentences (Print quality's) may be wider than the row; it wraps its choices
+        // rather than running past the dialog's edge.
+        <div aria-labelledby={labelledBy} className="m-segmented m-segmented--wrap" data-setting={setting.id} role="radiogroup">
           {members.map((member) => (
             <button
               aria-checked={String(draft) === member}

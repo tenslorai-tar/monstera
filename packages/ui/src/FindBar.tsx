@@ -495,15 +495,22 @@ export function FindBar({
         // component's internals would be the second wiring place the registry
         // exists to forbid.
         data-find-input="true"
+        className="m-input"
         value={query}
         onChange={(event) => {
           setQuery(event.target.value);
         }}
       />
-      <button type="submit">{_(FIND_SUBMIT)}</button>
+      {/* THE PRIMITIVES' OWN CLASSES on native elements: `Button` and `Input` carry no `data-*` passthrough, and these
+          are found by theirs. A look restated here would be a second opinion about what a button is (B3a). */}
+      <div className="m-find-actions">
+      <button type="submit" className="m-button m-button--default">
+        {_(FIND_SUBMIT)}
+      </button>
       {pageCount === undefined ? null : searching ? (
         <button
           type="button"
+          className="m-button m-button--default"
           data-find-cancel="true"
           onClick={() => {
             walk.current?.abort();
@@ -514,6 +521,7 @@ export function FindBar({
       ) : (
         <button
           type="button"
+          className="m-button m-button--default"
           data-find-all="true"
           onClick={() => {
             void searchAll();
@@ -522,6 +530,7 @@ export function FindBar({
           {_(FIND_ALL_PAGES)}
         </button>
       )}
+      </div>
       <fieldset className="m-find-options">
         {OPTION_ROWS.map(({ key, label }) => (
           <label key={key}>
@@ -553,6 +562,7 @@ export function FindBar({
           <input
             id={`${inputId}-replacement`}
             data-find-replacement="true"
+            className="m-input"
             value={replacement}
             onChange={(event) => {
               setReplacement(event.target.value);
@@ -560,6 +570,7 @@ export function FindBar({
           />
           <button
             type="button"
+            className="m-button m-button--default"
             data-find-replace-all="true"
             // DISABLED ON AN EMPTY QUERY, which is the same refusal the schema
             // and the kernel make. A person with an empty box has not asked for
@@ -615,6 +626,7 @@ export function FindBar({
             <div className="m-find-navigation">
               <button
                 type="button"
+                className="m-button m-button--default"
                 data-find-previous="true"
                 onClick={() => {
                   step(-1);
@@ -633,6 +645,7 @@ export function FindBar({
               </p>
               <button
                 type="button"
+                className="m-button m-button--default"
                 data-find-next="true"
                 onClick={() => {
                   step(1);

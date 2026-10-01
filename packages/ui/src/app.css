@@ -47,6 +47,36 @@ textarea {
   font: inherit;
 }
 
+/* A GROUP OF CHOICES, WHEREVER IT IS. Fifteen dialog bodies, the Search tab and the Assistant group radios or boxes
+   in a fieldset, and three components had each undone the browser's frame for themselves — on the stated ground that
+   no other body grouped radios — so every group written since drew the browser's bare border with its options
+   running inline and wrapping mid-sentence (the owner's review of 0.1.6.0: Print, Export to Word, the Search tab).
+   Undone once, here: the options stack, one to a line, and the legend reads as the group's heading. Element and
+   `:where` selectors, so any component's own class rule still wins. */
+fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+legend {
+  margin-block-end: var(--space-4);
+  padding: 0;
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+  font-weight: 600;
+}
+
+:where(label:has(> input[type='radio'], > input[type='checkbox'])) {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
 /* EVERY NATIVE LIST IS OPAQUE, IN EVERY THEME. Chromium draws a select's list in a popup of its own from the
    select's computed colours: the text from its `color`, the ground from its `background-color` made opaque against
    white. `color-scheme` (`tokens.css`) does not reach either once a select sets them. So a select with a transparent
@@ -1462,22 +1492,30 @@ optgroup {
 }
 
 /*
- * A row is the jump and the control side by side.
+ * A row is the field's name on its own line, and the control with its Delete beneath it.
+ *
+ * TWO LINES, because one did not fit: the name, a 12rem control and a Delete that may not shrink shared a panel
+ * about 280 px wide, and the name was left about 40 — *F.* and *E.* for *First name* and *Email* (the owner's review
+ * of 0.1.6.0). The name is the document's own word, so it wraps rather than being cut.
  *
  * `align-items: center` rather than the annotation row's `baseline`, and it is
  * the controls that decide it: a tick box and a `<select>` have no text baseline
- * to share with the label beside them, so baseline alignment puts them a few
+ * to share with the button beside them, so baseline alignment puts them a few
  * pixels off the row they belong to.
  */
 .m-forms-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'name name'
+    'control delete';
   align-items: center;
-  gap: var(--space-8);
-  padding-block: var(--space-2);
+  gap: var(--space-2) var(--space-8);
+  padding-block: var(--space-4);
 }
 
 .m-forms-jump {
-  flex: 1 1 auto;
+  grid-area: name;
   min-inline-size: 0;
   padding: var(--space-2) var(--space-4);
   background: none;
@@ -1485,9 +1523,15 @@ optgroup {
   color: var(--text);
   cursor: pointer;
   text-align: start;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+
+.m-forms-text,
+.m-forms-choice,
+.m-forms-check,
+.m-forms-locked {
+  grid-area: control;
+  justify-self: start;
 }
 
 .m-forms-jump:hover,
@@ -1496,21 +1540,17 @@ optgroup {
 }
 
 /*
- * The controls do not grow with the row.
+ * The controls fill their column, which is the same width on every row.
  *
- * A text input that took the space left over would be a different width on
- * every row, keyed on how long the field's own name happens to be — and the
- * name is the document's, so the layout would be the document's too.
+ * A text input sized by the space a row's name left over would be a different
+ * width on every row, keyed on how long the field's own name happens to be —
+ * and the name is the document's, so the layout would be the document's too.
+ * The name has its own line now, so the column is the panel's less Delete's.
  */
 .m-forms-text,
 .m-forms-choice {
-  flex: 0 0 auto;
-  inline-size: 12rem;
-  max-inline-size: 40%;
-}
-
-.m-forms-check {
-  flex: 0 0 auto;
+  inline-size: 100%;
+  max-inline-size: 16rem;
 }
 
 /*
@@ -1521,7 +1561,6 @@ optgroup {
  * would say a document is broken when it is doing exactly what it should.
  */
 .m-forms-locked {
-  flex: 0 0 auto;
   color: var(--muted);
 }
 
@@ -1533,7 +1572,7 @@ optgroup {
  * it is one a person clicks on the wrong line.
  */
 .m-forms-delete {
-  flex: 0 0 auto;
+  grid-area: delete;
   padding: var(--space-2) var(--space-4);
   background: none;
   border: 1px solid transparent;
@@ -1911,10 +1950,10 @@ optgroup {
 /*
  * The line chooser in the edit-text dialog.
  *
- * A `fieldset` carries a browser default border, margin and padding that no
- * other body in this application has to undo, because no other body groups
- * radios — so this is the one rule the grouping costs, and it is here rather
- * than in the component for the reason every rule in this file is.
+ * The browser's fieldset frame is undone by the base `fieldset` rule at the top
+ * of this file. This paragraph used to say no other body grouped radios, which
+ * stopped being true and left every later group in the browser's frame; what
+ * remains here is this chooser's own layout.
  *
  * The options are a COLUMN, and that is a change of 2026-09-10 rather than the
  * default. They were a wrapping row while each option was a one- or two-digit
@@ -4089,10 +4128,50 @@ optgroup {
  * to be visible, or `aria-current` is the only place the answer exists and a
  * sighted reader is told a number and shown nothing.
  */
+/*
+ * THE FIND BAR, which had no rule of its own: in the Search tab it drew the browser's form — grey buttons, a framed
+ * fieldset and a bulleted list (the owner's review of 0.1.6.0). A column, so it reads top to bottom in a narrow panel;
+ * its controls carry the primitives' classes (`FindBar.tsx`).
+ */
+.m-find-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  font-size: var(--font-chrome-12);
+}
+
+.m-find-bar > label,
+.m-find-replace > label {
+  color: var(--muted);
+}
+
+.m-find-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.m-find-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.m-find-results > p {
+  margin: 0;
+}
+
+.m-find-results > ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .m-find-navigation {
   display: flex;
   gap: var(--space-8);
-  align-items: baseline;
+  align-items: center;
 }
 
 .m-find-position {
@@ -4688,11 +4767,15 @@ optgroup {
 }
 
 /* ONE ROW: the words on the left, the control on the right, a hairline between rows. */
+/* WRAPS, and the text keeps a reading width before the control yields its place (`.m-settings-row__text`'s basis).
+   Unwrapped, a control wider than half the row — Print quality's three sentences — kept its width and squeezed the
+   text, which `min-inline-size: 0` lets go to nothing: one word per line (the owner's review of 0.1.6.0). */
 .m-settings-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-24);
+  gap: var(--space-8) var(--space-24);
   padding-block: var(--space-8);
   border-block-end: 1px solid var(--border-soft); /* decorative: separates rows; every control inside carries its own boundary */
 }
@@ -4703,6 +4786,7 @@ optgroup {
 
 .m-settings-row__text {
   display: flex;
+  flex: 1 1 32ch;
   flex-direction: column;
   gap: var(--space-2);
   min-inline-size: 0;
@@ -4718,11 +4802,13 @@ optgroup {
   font-size: var(--font-chrome-12);
 }
 
+/* MAY SHRINK to the row, once it has wrapped onto its own line, so a wrapping control inside it can wrap. */
 .m-settings-row__control {
   display: flex;
   align-items: center;
   gap: var(--space-8);
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-inline-size: 0;
 }
 
 .m-settings-row__colour,
@@ -5569,6 +5655,20 @@ body {
   min-block-size: 0;
   block-size: 100%;
   background: var(--bg);
+}
+
+/*
+ * CLEAR OF A DOCKED FLOAT BAR (the owner's review of 0.1.6.0: at 1280 × 800 it covered cards 1 and 5). The grid lays
+ * its cards from the area's start edge, which is where the pill docks, so its first column sat under it. The lane is
+ * the bar's own inset and width; the grid's padding then gives the gap. Not the document view: it centres its page,
+ * and the owner chose on 2026-09-26 that the pill floats over it with no strip reserved.
+ */
+.m-canvas-area:has(> .m-quick-toolbar--start) > .m-page-grid {
+  padding-inline-start: calc(var(--space-12) + var(--quick-toolbar));
+}
+
+.m-canvas-area:has(> .m-quick-toolbar--end) > .m-page-grid {
+  padding-inline-end: calc(var(--space-12) + var(--quick-toolbar));
 }
 
 .m-page-grid__head {

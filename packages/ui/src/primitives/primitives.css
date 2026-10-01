@@ -623,3 +623,18 @@
   min-block-size: 0;
   overflow: auto;
 }
+
+/* A BODY'S ONE WRAPPER STACKS ITS CONTENT TOO. Nearly every dialog renders its content inside a single element of its
+   own class, which takes it out of the body's column, and most of those classes have no rule at all — so a select
+   sat flush on the button under it (Merge, Import as layer: the owner's review of 0.1.6.0). The same column as the
+   body's, at no specificity, so a dialog that lays its content out itself still does. Blocks span the column as they
+   did in the flow; a button keeps its own width, as it did inline, rather than spanning the dialog. */
+:where(.m-dialog__body > :only-child) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+:where(.m-dialog__body > :only-child > .m-button) {
+  align-self: flex-start;
+}
