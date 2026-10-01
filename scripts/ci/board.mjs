@@ -54,7 +54,7 @@
 
 import { execFileSync } from 'node:child_process';
 
-import { boardTarget, boardVerdict, parseRuns, pollDelaySeconds } from '../lib/boardStatus.mjs';
+import { boardTarget, boardVerdict, onceWithoutVerdict, parseRuns, pollDelaySeconds } from '../lib/boardStatus.mjs';
 import { describeAuthorisation, githubFetch } from '../lib/githubFetch.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
@@ -131,6 +131,19 @@ function headSha() {
   return execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 }
 
+/**
+ * Ends one look that reached no verdict: prints the library's line, on stdout like every verdict, and answers its code.
+ *
+ * @param {string} sha
+ * @param {Parameters<typeof onceWithoutVerdict>[0]['look']} look
+ * @returns {number}
+ */
+function concludeOnce(sha, look) {
+  const { line, exitCode } = onceWithoutVerdict({ sha, look });
+  process.stdout.write(`\n${line}\n`);
+  return exitCode;
+}
+
 async function main() {
   const { sha, once } = boardTarget(process.argv.slice(2), { headSha: headSha() });
 
@@ -167,7 +180,7 @@ async function main() {
         );
         refusals.push(`HTTP ${String(response.status)} — ${why}`);
         trace(`  poll ${String(attempt)}: HTTP ${String(response.status)} — ${why}\n`);
-        if (once) return 2;
+        if (once) return concludeOnce(sha, { kind: 'refused', status: response.status, why });
         await sleep(POLL_SECONDS * 1000);
         continue;
       }
@@ -175,7 +188,7 @@ async function main() {
     } catch (error) {
       refusals.push(`request failed — ${formatError(error)}`);
       trace(`  poll ${String(attempt)}: request failed — ${formatError(error)}\n`);
-      if (once) return 2;
+      if (once) return concludeOnce(sha, { kind: 'failed', error: formatError(error) });
       await sleep(POLL_SECONDS * 1000);
       continue;
     }
@@ -198,7 +211,7 @@ async function main() {
       process.stdout.write(`\n${green ? 'GREEN' : 'NOT GREEN'} at ${sha}: ${reason}\n`);
       return green ? 0 : 1;
     }
-    if (once) return verdict === 'pending' ? 3 : 2;
+    if (once) return concludeOnce(sha, { kind: 'answered', verdict, reason });
 
     // HOW LONG TO WAIT IS DERIVED FROM THIS PAYLOAD, not from POLL_SECONDS
     // alone (finding DDDD-28). Both seats on this machine share ~60

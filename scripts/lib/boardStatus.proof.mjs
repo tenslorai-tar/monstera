@@ -32,13 +32,13 @@
  * Usage: node scripts/lib/boardStatus.proof.mjs
  */
 
-import { boardTarget, boardVerdict, parseRuns, pollDelaySeconds } from './boardStatus.mjs';
+import { boardTarget, boardVerdict, onceWithoutVerdict, parseRuns, pollDelaySeconds } from './boardStatus.mjs';
 import { createRoster } from './passRoster.mjs';
 import { formatError } from './reportError.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 29 });
+const roster = createRoster(failures, { cases: 33 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -477,6 +477,47 @@ check(
     'the flags still come back, so moving the parse did not drop --once or --verbose',
     target(['--once', '--verbose']).once && target(['--once', '--verbose']).verbose,
     `got ${JSON.stringify(target(['--once', '--verbose']))}.`,
+  );
+}
+
+// ONE LOOK THAT REACHES NO VERDICT SAYS WHY. `--once` returned 2 with nothing printed on a 401 or a 403 — the reason
+// went to a trace that only `--verbose` shows — and the same on a dropped request and on a run still in progress.
+// Each case asserts the line names the cause a person acts on, because a line that said only "no verdict" would pass
+// a check for non-empty output and leave them where the silence did.
+{
+  const refused = onceWithoutVerdict({
+    sha: MINE,
+    look: { kind: 'refused', status: 403, why: 'The unauthenticated quota is spent (0 left this hour).' },
+  });
+  check(
+    'one look REFUSED (403) prints the status and the reason, and exits 2',
+    refused.exitCode === 2 &&
+      refused.line.includes('HTTP 403') &&
+      refused.line.includes('quota is spent') &&
+      refused.line.includes(MINE) &&
+      !refused.line.includes('..'),
+    `got ${JSON.stringify(refused)}.`,
+  );
+
+  const failed = onceWithoutVerdict({ sha: MINE, look: { kind: 'failed', error: 'getaddrinfo ENOTFOUND api.github.com' } });
+  check(
+    'one look whose request FAILED prints the error, and exits 2',
+    failed.exitCode === 2 && failed.line.includes('request failed') && failed.line.includes('ENOTFOUND'),
+    `got ${JSON.stringify(failed)}.`,
+  );
+
+  const pending = onceWithoutVerdict({ sha: MINE, look: { kind: 'answered', verdict: 'pending', reason: 'CI=in_progress' } });
+  check(
+    'one look at runs still going prints PENDING with the reason, and exits 3',
+    pending.exitCode === 3 && pending.line.startsWith('PENDING at') && pending.line.includes('CI=in_progress'),
+    `got ${JSON.stringify(pending)}.`,
+  );
+
+  const blind = onceWithoutVerdict({ sha: MINE, look: { kind: 'answered', verdict: 'blind', reason: 'Found 0 run(s)' } });
+  check(
+    'CONTROL: a blind look is not reported as pending — BLIND, exit 2, so 3 still means the runs exist',
+    blind.exitCode === 2 && blind.line.startsWith('BLIND at') && blind.line.includes('Found 0 run(s)'),
+    `got ${JSON.stringify(blind)}.`,
   );
 }
 

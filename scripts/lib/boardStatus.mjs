@@ -454,3 +454,50 @@ export function boardVerdict(payload, { sha, expect = 2, seen = new Map() }) {
     green: mine.every((run) => run.conclusion === PASSING_CONCLUSION),
   };
 }
+
+/**
+ * What one look (`--once`) prints and exits with when it reaches no verdict.
+ *
+ * **THE LINE IS THE ANSWER, so it is printed whatever `--verbose` says.** The shell
+ * returned from each of these three places with the reason written only to its
+ * per-poll trace, which is silent unless `--verbose`, and the summary that names
+ * refusals sits after the poll loop, which one look never reaches. So a 401, a
+ * 403, a dropped connection and a run still in progress all exited 2 or 3 and
+ * printed nothing — measured from this sandbox, whose proxy refuses GitHub.
+ *
+ * Decided here rather than in the shell for the file's own reason: the shell has
+ * no proof and prints what it is handed.
+ *
+ * @param {{
+ *   sha: string,
+ *   look:
+ *     | { kind: 'refused', status: number, why: string }
+ *     | { kind: 'failed', error: string }
+ *     | { kind: 'answered', verdict: Exclude<Verdict, 'complete'>, reason: string },
+ * }} input `refused` is an HTTP answer that was not OK, with
+ *   `describeAuthorisation`'s reading of it; `failed` is a request that threw.
+ * @returns {{ line: string, exitCode: 2 | 3 }} 3 for `pending` — the runs exist
+ *   and have not finished — and 2, *neither green nor red*, for everything else.
+ */
+export function onceWithoutVerdict({ sha, look }) {
+  switch (look.kind) {
+    case 'refused':
+      return {
+        // `why` is a sentence of its own and ends in a stop, so the line supplies none after it.
+        line:
+          `NO VERDICT at ${sha}: HTTP ${String(look.status)} — ${look.why.replace(/[.\s]+$/u, '')}. A refusal ` +
+          `is not a board state: the API declined to answer, so nothing here is evidence about the commit.`,
+        exitCode: 2,
+      };
+    case 'failed':
+      return {
+        line: `NO VERDICT at ${sha}: request failed — ${look.error}. Nothing here is evidence about the commit.`,
+        exitCode: 2,
+      };
+    case 'answered':
+      return {
+        line: `${look.verdict.toUpperCase()} at ${sha}: ${look.reason}`,
+        exitCode: look.verdict === 'pending' ? 3 : 2,
+      };
+  }
+}
