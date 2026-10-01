@@ -1132,6 +1132,12 @@ glyph, Arabic as joined forms. The setting is the alignment, because the order a
 whichever is chosen. Also found: CI's MuPDF cache key named the build script and not the flags file, so a flag change
 alone would have restored stale libraries; all four keys now name the three inputs.
 
+**Item 9 — the settings inventory row made currently true (2026-10-01).** Its *owed to a feature first* list had gone
+stale one feature at a time: every entry is now a registered setting (read from the registry's ids, not from the
+rows) or a done row of its own — the libraries and the binaries manager. What is left is said as what it is: UI
+language hidden by a decision (one catalogue), the update check's switch deferred and registered only while its
+manifest is live (ADR-0110). Status: done.
+
 ---
 
 ## 2026-09-30 — Edit text on the owner's documents (ADR-0125), and the same class through every contained process
