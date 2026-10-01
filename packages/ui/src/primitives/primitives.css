@@ -84,31 +84,36 @@
   text-decoration: underline;
 }
 
-/* THE OWNER'S TWO BRAND TONES (ADR-0113), for the menu row's Donate and Rate Us. Fixed tokens that do not follow the
-   accent, each a declared role: the gold's dark label is held on both of its stops, the violet edge and star at 3:1,
-   and the label on the violet wash is `--text`, held there too. */
-.m-button--gold {
+/* THE OWNER'S BRAND TONES (ADR-0113), for the menu row's Donate and Rate Us, and EVERY TONE IS A FILL (the owner's
+   decision, 2026-10-01; Rate Us was an outline until then). This one rule draws them all — the fill, the hover, the
+   press — and a tone's own class below only names its tokens, so a tone added later cannot be drawn some other way.
+   The label is solved by `Button` against both stops at the point of use; `color` here is what stands when it cannot
+   be. Each tone's stops and label are also declared roles, so `check:tokencontrast` holds the pair in every theme. */
+.m-button--tone {
   border: 1px solid transparent;
-  background: linear-gradient(180deg, var(--gold-top), var(--gold-bottom));
-  color: var(--on-gold);
+  background: linear-gradient(180deg, var(--tone-top), var(--tone-bottom));
+  color: var(--tone-label);
 }
 
-.m-button--gold:hover:not(:disabled) {
+.m-button--tone:hover:not(:disabled) {
   filter: brightness(1.05);
 }
 
+/* PRESSED, a shade under the fill, so a press reads apart from a hover on a control with no edge to change. */
+.m-button--tone:active:not(:disabled) {
+  filter: brightness(0.95);
+}
+
+.m-button--gold {
+  --tone-top: var(--gold-top);
+  --tone-bottom: var(--gold-bottom);
+  --tone-label: var(--on-gold);
+}
+
 .m-button--violet {
-  border: 1px solid var(--violet-edge);
-  background: var(--violet-wash);
-  color: var(--text);
-}
-
-.m-button--violet .m-icon {
-  color: var(--violet-mark);
-}
-
-.m-button--violet:hover:not(:disabled) {
-  background: var(--surface2);
+  --tone-top: var(--violet-top);
+  --tone-bottom: var(--violet-bottom);
+  --tone-label: var(--on-violet);
 }
 
 /* THE GLYPH ALONE (a row out of room for words): square, the label kept as the name and the tooltip. */
@@ -121,9 +126,10 @@
   color: var(--faint);
 }
 
-/* Off the accent while disabled, so it cannot be read as the screen's action. `Button` stops solving
-   a foreground for the accent in the same state, which is what lets `--faint` above apply. */
-.m-button--primary:disabled {
+/* Off its fill while disabled, so it cannot be read as the screen's action — the accent's and a tone's alike. `Button`
+   stops solving a foreground for a fill in the same state, which is what lets `--faint` above apply. */
+.m-button--primary:disabled,
+.m-button--tone:disabled {
   border-color: var(--border-control);
   background: var(--surface);
 }

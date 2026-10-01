@@ -55,3 +55,13 @@ breakpoint, because the menus' width depends on the language. Checked in the pro
   brand.
 - **Hide them in narrow windows.** A control that exists at one width and not another is a capability the width takes
   away; §10.3's *modes hide chrome, never capability* is the same rule.
+
+## Correction, 2026-10-01 — both tones are filled
+
+The owner's decision: Donate and Rate Us are each filled with their own colour, so Rate Us is no longer an outline on
+a violet wash. Decision 2's violet tokens are replaced: `--violet-edge`, `--violet-mark` and `--violet-wash` are gone,
+and `--violet-top`, `--violet-bottom` and `--on-violet` take their place, declared like the gold's — two stops and a
+label held at 4.5:1 on both (7:1 in `hc`). Decision 1 is unchanged; what changed is how a tone is drawn, and it is drawn
+by one rule for every tone: `.m-button--tone` paints `--tone-top` to `--tone-bottom`, a tone's class names its tokens,
+and `Button` solves the label from `--tone-label` against both stops with `onColor` at the point of use, as it does the
+primary's. A fourth tone therefore arrives filled, with its label solved, by naming three tokens.

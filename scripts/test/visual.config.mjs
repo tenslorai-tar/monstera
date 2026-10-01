@@ -54,6 +54,12 @@ export default defineConfig({
       // environment drift §10.7 names as why exact hashes go flaky. The spread on
       // the CI runner is not yet read; if it exceeds this, that is a finding about
       // the environment, and the figure is re-chosen from the reading, not raised.
+      //
+      // THE SPREAD HERE IS NO LONGER ZERO (finding ZZZZZZ-3): regenerating twice
+      // on identical code, 2026-10-01, on the developer machine, moved 17 of the
+      // 36 images by up to 66 pixels each (largest channel delta 40, a shield
+      // icon; the rest anti-aliased edges and a panel corner). So the margin under
+      // this figure is 34 pixels, not 100, and the planted change still moves 319.
       maxDiffPixels: 100,
     },
   },

@@ -5,7 +5,15 @@
 import { AxeBuilder } from '@axe-core/playwright';
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { AI_SETUP_AT_START_SETTING_ID, displayLocationSchema } from '@monstera/contract';
-import { MINIMUM_WINDOW, asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
+import {
+  MINIMUM_WINDOW,
+  asDocId,
+  asDocVersion,
+  asFileHandle,
+  channels,
+  contrast,
+  textContrastFloor,
+} from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
 // ONE BRIDGE for both Playwright runs — §10.7's baselines drive the renderer the same way (B3a),
@@ -1660,6 +1668,78 @@ test('DONATE AND RATE US sit at the MENU ROW’s centre while they fit, and afte
   expect(narrow.group.x + narrow.group.width).toBeLessThanOrEqual(narrow.reserve.x + 0.5);
   expect(narrow.reserve.x + narrow.reserve.width).toBeLessThanOrEqual(narrow.row.x + narrow.row.width + 0.5);
 });
+
+// BOTH BRAND TONES ARE FILLS, in every look (the owner's decision, 2026-10-01): Rate Us was an outline on a translucent
+// wash until then, which paints no `background-image` — so a Rate Us drawn as an outline again fails the FILL loop below
+// in all three, before anything about its label is asked. Measured against the outline's own code on 2026-10-01: the
+// fill loop is first because the label loop also fails there (Donate's label was not solved then), and a case that
+// went red on Donate's label would not have said whether it could see Rate Us's outline. Read from Chromium's own
+// cascade, because the fill, the label a stylesheet maps and the states are the stylesheet's, which a component test
+// does not apply.
+for (const look of LOOKS) {
+  test(`${look.name}: DONATE AND RATE US are each FILLED in their own colour, their labels clear the theme's floor, and hover, press and focus show`, async ({
+    page,
+  }) => {
+    await bridgeUnder(page, look);
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
+    const floor = textContrastFloor(look.name);
+    const commands = page.locator('.m-menu-bar__commands');
+    await expect(commands.getByRole('button', { name: 'Rate Us' })).toBeVisible();
+
+    // THE FILLS: a gradient of two opaque stops each, and not the same two.
+    const fills = new Map<string, string[]>();
+    for (const name of ['Donate', 'Rate Us']) {
+      const image = await commands
+        .getByRole('button', { name })
+        .evaluate((element) => getComputedStyle(element).backgroundImage);
+      expect(image, `${name}'s fill`).toMatch(/^linear-gradient\(/u);
+      const stops = image.match(/rgba?\([^)]*\)/gu) ?? [];
+      expect(stops, `${name}'s stops in ${image}`).toHaveLength(2);
+      // OPAQUE, which a wash is not: a translucent stop would be the outline's ground showing through.
+      for (const stop of stops) expect(stop.startsWith('rgba('), `${name}'s stop ${stop} is opaque`).toBe(false);
+      fills.set(name, stops);
+    }
+    // EACH IN ITS OWN COLOUR: two fills that matched would be one tone drawn twice.
+    expect(fills.get('Donate')).not.toEqual(fills.get('Rate Us'));
+
+    for (const [name, stops] of fills) {
+      const button = commands.getByRole('button', { name });
+      // SOLVED AT THE POINT OF USE: `useOnColor` writes the label inline once it has read the fill's two stops.
+      await expect.poll(() => button.evaluate((element) => element.style.color)).not.toBe('');
+      const drawn = await button.evaluate((element) => getComputedStyle(element).color);
+      const label = channels(drawn);
+      if (label === null) throw new Error(`${name}'s label ${drawn} did not parse`);
+      for (const stop of stops) {
+        const fill = channels(stop);
+        if (fill === null) throw new Error(`${name}'s stop ${stop} did not parse`);
+        expect(contrast(label, fill), `${name}'s label on ${stop}`).toBeGreaterThanOrEqual(floor);
+      }
+
+      // FOCUS FROM THE KEYBOARD — off the control and back with Tab — because a focus a script gives is not one
+      // Chromium shows a ring for, and the ring a keyboard user sees is the state this case is about.
+      await button.focus();
+      await page.keyboard.press('Shift+Tab');
+      await page.keyboard.press('Tab');
+      expect(await button.evaluate((element) => element === document.activeElement)).toBe(true);
+      expect(await button.evaluate((element) => element.matches(':focus-visible'))).toBe(true);
+      expect(await button.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe('solid');
+      await button.blur();
+
+      // HOVER and PRESS each change what is drawn, and differently from each other and from rest.
+      const filter = (): Promise<string> => button.evaluate((element) => getComputedStyle(element).filter);
+      const rest = await filter();
+      await button.hover();
+      const hovered = await filter();
+      // Released off the control, so the press is drawn and no click is sent.
+      await page.mouse.down();
+      const pressed = await filter();
+      await page.mouse.move(0, 0);
+      await page.mouse.up();
+      expect(new Set([rest, hovered, pressed]).size, `${name}: rest ${rest}, hover ${hovered}, press ${pressed}`).toBe(3);
+    }
+  });
+}
 
 test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every group keeps a named tool', async ({
   page,

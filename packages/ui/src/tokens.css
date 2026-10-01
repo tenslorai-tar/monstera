@@ -103,7 +103,7 @@
  * @role accent-grad-top fill
  * @role accent-grad-bottom fill
  * @role redact-mark graphic @on page
- * @role text text @on ground bg bg2 surface surface2 canvas float list active dialog-head-wash violet-wash
+ * @role text text @on ground bg bg2 surface surface2 canvas float list active dialog-head-wash
  * @role muted text @on ground bg bg2 surface surface2 canvas float list
  * @role faint text @on ground bg bg2 surface canvas
  * @role accent-text text @on ground bg bg2 surface canvas float
@@ -117,9 +117,9 @@
  * @role gold-top surface
  * @role gold-bottom surface
  * @role on-gold text @on gold-top gold-bottom
- * @role violet-wash surface @over ground
- * @role violet-edge boundary-control @on ground
- * @role violet-mark graphic @on violet-wash
+ * @role violet-top surface
+ * @role violet-bottom surface
+ * @role on-violet text @on violet-top violet-bottom
  * ─────────────────────────────────────────────────────────────────────────── */
 
 :root,
@@ -181,15 +181,15 @@
   --accent-hover: #3bc677;
   --accent-soft: rgba(59, 198, 119, 0.16);
   /* THE OWNER'S BRAND TONES for the menu row (ADR-0113), which do not follow the accent: Donate's warm gold with a dark
-     label, Rate Us's soft violet, quieter. */
+     label, Rate Us's soft violet, both filled (the owner's decision, 2026-10-01). The violet starts at the owner's
+     #a78bfa and deepens a step, as the gold does; its dark label clears both stops, 6.83:1 and 5.50:1 (WCAG's formula,
+     computed 2026-10-01; check:tokencontrast holds the pair). */
   --gold-top: #f7c948;
   --gold-bottom: #e8a317;
   --on-gold: #1f1500;
-  --violet-wash: rgba(167, 139, 250, 0.12);
-  /* The owner's was #a78bfa: 2.93:1 against the ground under the green glow and the start screen's tint, under the 3:1 a
-     control's edge owes (check:tokencontrast, 2026-09-27). 3% toward white is the least that clears it, 3.03:1. */
-  --violet-edge: #aa8efa;
-  --violet-mark: #a78bfa;
+  --violet-top: #a78bfa;
+  --violet-bottom: #9775f8;
+  --on-violet: #160b33;
 
   /* THE PAINT, built from the roles above wherever a text sits on it. */
   --ambient:
@@ -292,9 +292,11 @@
   --gold-top: #e5a50f;
   --gold-bottom: #c98a0b;
   --on-gold: #1f1500;
-  --violet-wash: rgba(124, 58, 237, 0.08);
-  --violet-edge: #7c3aed;
-  --violet-mark: #7c3aed;
+  /* From the owner's light violet, #7c3aed, a step deeper; white clears both stops, 5.70:1 and 7.10:1 (computed
+     2026-10-01, as dark's are). */
+  --violet-top: #7c3aed;
+  --violet-bottom: #6d28d9;
+  --on-violet: #ffffff;
 
   --ambient:
     radial-gradient(ellipse 60% 55% at 8% -5%, var(--glow-green), transparent 70%),
@@ -395,13 +397,13 @@
   --accent: #3ff08f;
   --accent-hover: #6ff5ab;
   --accent-soft: #0d3a22;
-  /* FLAT, as the theme is: one solid gold with a black label, a pale violet edge on black. */
+  /* FLAT, as the theme is: one solid gold and one solid pale violet, each with a black label. */
   --gold-top: #ffd24a;
   --gold-bottom: #ffd24a;
   --on-gold: #000000;
-  --violet-wash: #000000;
-  --violet-edge: #c4b5fd;
-  --violet-mark: #c4b5fd;
+  --violet-top: #c4b5fd;
+  --violet-bottom: #c4b5fd;
+  --on-violet: #000000;
 
   --ambient: none;
   --grain-opacity: 0;
