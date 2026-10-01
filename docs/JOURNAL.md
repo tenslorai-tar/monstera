@@ -892,6 +892,23 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-01 — The taskbar icon filled 87% of its height; the exe still carries Electron's icon
+
+The owner's taskbar (batch-1, `taskbar_icon.png`): Monstera's mark about 17.5 × 20 pixels in a 24-pixel slot, beside
+Notepad's portrait page at 18 × 24 and Sticky Notes at 22 × 22. **Mechanism:** `storeAssets.mjs` fitted the master's
+square canvas with `fit: 'contain'`, and the master holds the portrait mark inside a transparent margin, so the margin
+came along — 75% of the width, 87–88% of the height. For an icon the transparent border is now trimmed before the
+fit; the mark itself is unaltered (ADR-0002) and runs the full height, about 80% of the width. Tiles keep the canvas at
+two thirds. `proof:storeassets` gains the case that the 256-pixel icon's mark touches its top and bottom rows; run
+against the old fit it reads both clear.
+
+**Which icon the taskbar draws:** the package's. `Monstera.exe` is the renamed `electron.exe` and nothing writes an
+icon into it — `ExtractAssociatedIcon` on the stage's exe returns Electron's atom — so the green mark in the owner's
+taskbar can only be the package's `Square44x44Logo` images. **Open, for the owner:** wherever Windows draws the exe's
+own icon rather than the package's (Alt+Tab and Task Manager are the candidates), it may show Electron's atom. Writing
+the icon into the exe needs a resource editor this repository does not have, which is a download; whether those
+places show it needs the installed package.
+
 ## 2026-10-01 — Row 265's Stage 10 audit: every setting `main` reads is the registry's own definition
 
 The question, `check:secondwiring`'s asked of settings: does any shipped behaviour read a value from outside the

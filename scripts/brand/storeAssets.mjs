@@ -23,9 +23,10 @@
  *
  * ## How the mark sits in each
  *
- * An icon fills its square, as `logo.ico` does. A TILE is a surface Windows draws the mark ON, so the mark takes two
- * thirds of the tile's shorter side and is centred, never stretched — the masters are square and ADR-0002 rules out
- * altering a mark. Every image keeps the master's transparency, so no background colour is invented here.
+ * An icon is the mark itself filling its square: the master's transparent margin is trimmed and the portrait mark
+ * runs the square's full height, as first-party portrait icons do (`storeImage`). A TILE is a surface Windows draws the
+ * mark ON, so the master takes two thirds of the tile's shorter side and is centred, never stretched — ADR-0002 rules
+ * out altering a mark. Every image keeps the master's transparency, so no background colour is invented here.
  *
  * Usage: node scripts/brand/storeAssets.mjs [output-directory]
  */
@@ -120,7 +121,14 @@ export async function storeImage(master, asset) {
   const side = asset.fill
     ? Math.min(asset.width, asset.height)
     : Math.round((Math.min(asset.width, asset.height) * 2) / 3);
-  const mark = await sharp(master).resize(side, side, { fit: 'contain', background: clear }).png().toBuffer();
+  // AN ICON IS THE MARK ITSELF, not the master's canvas: the master is a square holding a portrait mark inside a
+  // transparent margin, and fitting the canvas kept that margin — the app-list icon filled 75% of its width and 87–88%
+  // of its height, and sat visibly smaller on the taskbar than Notepad's portrait page, which runs the full height
+  // (measured 2026-10-01 on the owner's taskbar: about 20 of 24 pixels against 24). So for an icon the transparent
+  // border is trimmed first and the mark itself is fitted, touching the square's top and bottom. Nothing of the mark is
+  // altered (ADR-0002): only fully transparent rows and columns go. A TILE keeps the canvas, two thirds of its side.
+  const source = asset.fill ? await sharp(master).trim().png().toBuffer() : master;
+  const mark = await sharp(source).resize(side, side, { fit: 'contain', background: clear }).png().toBuffer();
   return sharp({ create: { width: asset.width, height: asset.height, channels: 4, background: clear } })
     .composite([{ input: mark, gravity: 'centre' }])
     .png({ compressionLevel: 9 })

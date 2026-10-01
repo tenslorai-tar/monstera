@@ -30,7 +30,7 @@ import { formatError } from '../lib/reportError.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 6 });
+const roster = createRoster(failures, { cases: 7 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -98,6 +98,22 @@ try {
   // empty canvases would pass the tile's case and fail this one.
   const icon = join(scratch, 'AppList.targetsize-256.png');
   check('CONTROL: an icon is filled by the mark — its centre is drawn', (await alphaAt(icon, 128, 128)) > 0, 'the icon’s centre is clear.');
+
+  // AN ICON'S MARK RUNS ITS SQUARE'S FULL HEIGHT, as a first-party portrait icon does (Notepad's, on the owner's taskbar,
+  // 2026-10-01): the master's transparent margin is trimmed before the fit. Fitting the master's canvas left the mark
+  // 87–88% tall, so both rows below read clear — which the wide tile's case above shows a tile still does, on purpose.
+  const unplated = join(scratch, 'AppList.targetsize-256_altform-unplated.png');
+  /** @param {number} y */
+  const rowDrawn = async (y) => {
+    const { data, info } = await sharp(readFileSync(unplated)).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    for (let x = 0; x < info.width; x += 1) if ((data[(y * info.width + x) * info.channels + 3] ?? 0) > 0) return true;
+    return false;
+  };
+  check(
+    'an icon’s mark touches its square’s top and bottom rows — no margin of the master’s canvas is kept',
+    (await rowDrawn(0)) && (await rowDrawn(255)),
+    `top row drawn: ${String(await rowDrawn(0))}, bottom row drawn: ${String(await rowDrawn(255))}.`,
+  );
 
   if (failures.length > 0) {
     process.stderr.write(
