@@ -90,6 +90,7 @@ const failures = [];
  */
 const RUNTIME_CASES = [
   'CONTROL: the upright page renders at its own MediaBox, so a size means something here',
+  'every size below is the size of the canvas that was counted, read again after the wait',
   'the upright page CARRIES INK, so the sizes below are read off a page that drew',
   'a /Rotate 90 page renders LANDSCAPE, which is the renderer honouring the page tree',
   'the rotated page carries ink too, so the swap is not a resized blank',
@@ -165,6 +166,14 @@ try {
   const size = (seen) => `${String(seen.width)}x${String(seen.height)}`;
   /** @param {{ painted: number, width: number, height: number }} seen */
   const floor = (seen) => Math.floor(seen.width * seen.height * PAINTED_FLOOR_FRACTION);
+  /**
+   * WHAT THE WAIT SAW, on every size case: a size alone cannot say which canvas, or which moment, it was read from.
+   *
+   * @param {{ settledBy: string, elapsedMs: number, pageCanvases: unknown }} seen
+   */
+  const waited = (seen) =>
+    `settled by "${seen.settledBy}" after ${String(seen.elapsedMs)} ms; page canvases ` +
+    `${JSON.stringify(seen.pageCanvases)}.`;
 
   check(
     'CONTROL: the upright page renders at its own MediaBox, so a size means something here',
@@ -173,7 +182,23 @@ try {
       `${size(upright)}.\n      ` +
       `THIS IS THE CONTROL FOR THE TWO CASES BELOW. They read a rotation and a crop as a ` +
       `canvas SIZE, and a size only carries that meaning if the plain case produces the plain ` +
-      `answer — a renderer that always drew 600x400 would satisfy the rotation case exactly.`,
+      `answer — a renderer that always drew 600x400 would satisfy the rotation case exactly.\n      ` +
+      waited(upright),
+  );
+
+  // THE WAIT'S SIZE AGAINST A SECOND READING. The harness used to read the size and the ink in two steps, and a page
+  // presented between them came back as 300 x 150 carrying ink (1 run in 30 on 2026-10-01; 5 in 5 with a pause put
+  // between the steps). It reads both at once now; this asks a later, independent reading of the same canvas whether
+  // the size the wait returned is still its size, so a stale pairing fails as itself rather than as a wrong rotation.
+  const stale = [upright, rotated, cropped, fonted].filter(
+    (seen) => seen.pageCanvases[0] === undefined || seen.pageCanvases[0].width !== seen.width || seen.pageCanvases[0].height !== seen.height,
+  );
+  check(
+    'every size below is the size of the canvas that was counted, read again after the wait',
+    stale.length === 0,
+    stale
+      .map((seen) => `the wait returned ${size(seen)}; ${waited(seen)}`)
+      .join('\n      '),
   );
 
   check(
@@ -191,10 +216,9 @@ try {
       `${size(rotated)}.\n      ` +
       `${size(upright)} here means the rotation was IGNORED — which draws a page that looks ` +
       `perfectly correct and is sideways, and which no pixel count can see.\n      ` +
-      // WHAT THE WAIT SAW, because a size alone could not say which canvas it was read from: a 300 x 150 reading
-      // that carried ink (CI, Windows, 2026-10-01) is no page's size at all.
-      `settled by "${rotated.settledBy}" after ${String(rotated.elapsedMs)} ms; page canvases ` +
-      `${JSON.stringify(rotated.pageCanvases)}.`,
+      // A 300 x 150 reading that carried ink (CI, Windows, 2026-10-01) is no page's size at all: it was the wait
+      // pairing a size from before a draw with ink from after it, which the case above now names.
+      waited(rotated),
   );
 
   check(
@@ -213,7 +237,8 @@ try {
       `${String(PAGE_WIDTH)}x${String(PAGE_HEIGHT)} MediaBox, at a NON-ZERO origin; this ` +
       `rendered ${size(cropped)}.\n      ` +
       `${size(upright)} means the MediaBox was used, which shows the reader more of the ` +
-      `document than its author published — and looks like a page rather than like a defect.`,
+      `document than its author published — and looks like a page rather than like a defect.\n      ` +
+      waited(cropped),
   );
 
   check(

@@ -429,6 +429,7 @@ function isCanvasState(value: unknown): value is {
   width: number;
   height: number;
   failed: boolean;
+  painted: number;
 } {
   if (typeof value !== 'object' || value === null) return false;
   const candidate = value as Record<string, unknown>;
@@ -436,7 +437,8 @@ function isCanvasState(value: unknown): value is {
     typeof candidate['present'] === 'boolean' &&
     typeof candidate['width'] === 'number' &&
     typeof candidate['height'] === 'number' &&
-    typeof candidate['failed'] === 'boolean'
+    typeof candidate['failed'] === 'boolean' &&
+    typeof candidate['painted'] === 'number'
   );
 }
 
@@ -539,11 +541,25 @@ async function waitForCanvas(
    * timeout rather than as the wrong size.
    */
   notWidth: number | null = null,
-): Promise<{ settledBy: CanvasReadback['settledBy']; width: number; height: number; failed: boolean; elapsedMs: number }> {
+): Promise<{
+  settledBy: CanvasReadback['settledBy'];
+  width: number;
+  height: number;
+  failed: boolean;
+  /** Counted in the same reading as the size, so the two describe one canvas at one moment. */
+  painted: number;
+  elapsedMs: number;
+}> {
   const startedAt = process.hrtime.bigint();
   const elapsed = (): number => Number((process.hrtime.bigint() - startedAt) / 1_000_000n);
 
   for (;;) {
+    // THE SIZE AND THE PIXELS IN ONE READING, because a page can be drawn between two. `renderPage` presents a
+    // finished drawing in one task — the resize and the copy together — so a size read in one `evaluate` and a
+    // count read in the next could straddle it: the default 300 x 150 before, the ink after, returned as one
+    // settled canvas. Measured 2026-10-01 on a merge of the flicker and screens branches: 1 render-geometry run
+    // in 30 failed that way, and 5 in 5 with a 1.5 s pause put between the two reads, each reporting 300 x 150 for
+    // a canvas the next read found at its page's size. One script runs in one task, so nothing can draw inside it.
     const state = await evaluate(
       contents,
       `(() => {
@@ -553,6 +569,7 @@ async function waitForCanvas(
            width: canvas === null ? 0 : canvas.width,
            height: canvas === null ? 0 : canvas.height,
            failed: canvas !== null && canvas.dataset.failed === 'true',
+           painted: (${COUNT_PAINTED})(canvas),
          };
        })()`,
       isCanvasState,
@@ -560,32 +577,32 @@ async function waitForCanvas(
     );
 
     if (state.failed) {
-      return { settledBy: 'failed', width: state.width, height: state.height, failed: true, elapsedMs: elapsed() };
+      return {
+        settledBy: 'failed',
+        width: state.width,
+        height: state.height,
+        failed: true,
+        painted: state.painted,
+        elapsedMs: elapsed(),
+      };
     }
-    // POLLED ON THE PIXELS, not on the canvas's dimensions. `renderPage` sizes
-    // the canvas before drawing, so a sized canvas is a draw that has begun and
-    // not one that has finished — and the size it is sized to is a property of
-    // the document, so "it is no longer the element default" is not a statement
-    // anything can make about an arbitrary page. Paint is what finishing looks
-    // like, and the counter above returns zero for both ways of not having done
-    // it.
-    if (state.present && state.width !== notWidth) {
-      const painted = await evaluate(
-        contents,
-        // NULL-SAFE, because the canvas is absent on exactly the path this harness
-    // exists to catch. `PageCanvas` is mounted only once a document is open, so
-    // an Open control that dispatches into the void leaves no canvas at all —
-    // and a probe that threw there would report "the harness broke" for the
-    // defect it was written to find. Measured 2026-08-29 by making the start
-    // screen's click handler return early: the run died on a null dereference
-    // instead of naming the case.
-    `(${COUNT_PAINTED})(document.querySelector('canvas.m-page') ?? null)`,
-        (value): value is number => typeof value === 'number',
-        'painted count',
-      );
-      if (painted > 0) {
-        return { settledBy: 'drawn', width: state.width, height: state.height, failed: false, elapsedMs: elapsed() };
-      }
+    // POLLED ON THE PIXELS, not on the canvas's dimensions. A sized canvas says
+    // nothing about whether a draw finished, and the size it is sized to is a
+    // property of the document, so "it is no longer the element default" is not
+    // a statement anything can make about an arbitrary page. Paint is what
+    // finishing looks like, and the counter returns no positive count for any way
+    // of not having done it — including no canvas at all, the path an Open control that
+    // dispatches into the void leaves (measured 2026-08-29: a probe that threw
+    // there reported "the harness broke" for the defect it exists to find).
+    if (state.present && state.width !== notWidth && state.painted > 0) {
+      return {
+        settledBy: 'drawn',
+        width: state.width,
+        height: state.height,
+        failed: false,
+        painted: state.painted,
+        elapsedMs: elapsed(),
+      };
     }
     if (elapsed() >= DRAW_BOUND_MS) {
       return {
@@ -593,6 +610,7 @@ async function waitForCanvas(
         width: state.width,
         height: state.height,
         failed: state.failed,
+        painted: state.painted,
         elapsedMs: elapsed(),
       };
     }
@@ -643,12 +661,6 @@ async function readZoomed(
   }
 
   const settled = await waitForCanvas(contents, beforeWidth);
-  const painted = await evaluate(
-    contents,
-    `(${COUNT_PAINTED})(document.querySelector('canvas.m-page') ?? null)`,
-    (value): value is number => typeof value === 'number',
-    'zoomed painted count',
-  );
   const ratio = await evaluate(
     contents,
     'window.devicePixelRatio',
@@ -661,7 +673,7 @@ async function readZoomed(
     settledBy: settled.settledBy === 'drawn' ? 'resized' : 'bound',
     width: settled.width,
     height: settled.height,
-    painted,
+    painted: settled.painted,
     devicePixelRatio: ratio,
   };
 }
@@ -732,20 +744,9 @@ export async function reportCanvasPixels(
   const dispatched = await clickControl(contents, openControlName, 'open control');
   const settled = await waitForCanvas(contents);
   const pageCanvases = await evaluate(contents, PAGE_CANVASES, isPageCanvases, 'page canvases');
-
-  const painted = await evaluate(
-    contents,
-    // NULL-SAFE, because the canvas is absent on exactly the path this harness
-    // exists to catch. `PageCanvas` is mounted only once a document is open, so
-    // an Open control that dispatches into the void leaves no canvas at all —
-    // and a probe that threw there would report "the harness broke" for the
-    // defect it was written to find. Measured 2026-08-29 by making the start
-    // screen's click handler return early: the run died on a null dereference
-    // instead of naming the case.
-    `(${COUNT_PAINTED})(document.querySelector('canvas.m-page') ?? null)`,
-    (value): value is number => typeof value === 'number',
-    'painted count',
-  );
+  // THE WAIT'S OWN COUNT, taken in the reading that gave the size: a second count read here would pair the size
+  // from one moment with the ink from another, which is the defect `waitForCanvas` reads both at once to prevent.
+  const { painted } = settled;
 
   // THE CONTROL, and its direction is what makes it one.
   //
