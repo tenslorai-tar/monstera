@@ -1,10 +1,11 @@
 import { AZURE_OPENAI_ENDPOINT_SETTING_ID, type ContractClient } from '@monstera/contract';
 
 import { AI_SETUP_DIALOG_ID, type AiSetupAnswer, type AiSetupProblem } from '../dialogs/aiSetup.js';
-import { AI_SETUP_COMMAND_TITLE, GROUP_AI } from '../messages/en.js';
+import { AI_SETUP_COMMAND_TITLE, GROUP_AI, TOAST_AI_KEY_CHECKED, TOAST_AI_KEY_KEPT_UNCHECKED } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 import { AI_SETUP_AT_START_SETTING } from '../settings/ai.js';
 import type { SettingsStore } from '../settingsStore.js';
+import type { ShowToast } from '../toasts.js';
 
 /**
  * *Set up AI…* — BUILD-PROMPT E5's first-run step, and the same step on demand: choose a
@@ -33,6 +34,7 @@ export function aiSetupCommand(deps: {
   readonly settings: SettingsStore;
   readonly ask: (id: string, props: unknown) => Promise<unknown>;
   readonly onSecretsChanged: () => void;
+  readonly toast: ShowToast;
 }): UiCommand {
   return {
     id: 'ai.setup',
@@ -79,6 +81,9 @@ export function aiSetupCommand(deps: {
 
         deps.settings.set(AI_SETUP_AT_START_SETTING.id, false);
         deps.onSecretsChanged();
+        // SAID ON SCREEN: the dialog closing is all an accepted key used to change, and a person could not tell it
+        // from Cancel (the owner's review of 0.1.6.0). *Works* only where the provider was asked and said so.
+        deps.toast('done', checked.value.checked ? TOAST_AI_KEY_CHECKED : TOAST_AI_KEY_KEPT_UNCHECKED);
         return;
       }
     },

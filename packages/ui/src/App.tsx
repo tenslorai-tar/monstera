@@ -2376,8 +2376,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         onSecretsChanged: () => {
           refreshSecrets();
         },
+        toast,
       }),
-    [ask, client, refreshSecrets, settings],
+    [ask, client, refreshSecrets, settings, toast],
   );
 
   /**

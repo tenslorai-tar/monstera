@@ -5051,7 +5051,14 @@ export const channels = {
       })
       .strict(),
     z.discriminatedUnion('accepted', [
-      z.object({ accepted: z.literal(true) }),
+      z.object({
+        accepted: z.literal(true),
+        /**
+         * Whether the provider was ASKED and confirmed the key. `false` for a provider with no list to ask, whose key
+         * is kept unchecked — so a confirmation that says *your key works* is said only where it was found to.
+         */
+        checked: z.boolean(),
+      }),
       z.object({
         accepted: z.literal(false),
         problem: z.enum(['unauthorised', 'unreachable', 'rejected', 'unreadable']),

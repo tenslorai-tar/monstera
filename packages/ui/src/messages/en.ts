@@ -1408,6 +1408,8 @@ export const ASSISTANT_PROMPT_SUMMARISE_COMMENTS = messageKey('assistant.prompt.
 export const GROUP_AI = messageKey('surface.ribbon.group.ai');
 export const AI_SETUP_TITLE = messageKey('dialog.ai-setup.title');
 export const AI_SETUP_COMMAND_TITLE = messageKey('command.ai.setup');
+export const TOAST_AI_KEY_CHECKED = messageKey('toast.ai-key-checked');
+export const TOAST_AI_KEY_KEPT_UNCHECKED = messageKey('toast.ai-key-kept-unchecked');
 export const AI_SETUP_INTRO = messageKey('dialog.ai-setup.intro');
 export const AI_SETUP_PROVIDER = messageKey('dialog.ai-setup.provider');
 export const AI_SETUP_KEY = messageKey('dialog.ai-setup.key');
@@ -3436,6 +3438,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // assistant needs a key.
   [AI_SETUP_TITLE]: 'Set up the AI assistant',
   [AI_SETUP_COMMAND_TITLE]: 'Set up AI…',
+  [TOAST_AI_KEY_CHECKED]: 'Your AI key works and is saved. The Assistant is ready.',
+  [TOAST_AI_KEY_KEPT_UNCHECKED]: 'Your AI key is saved. This provider cannot check a key in advance, so your first question will.',
   [AI_SETUP_INTRO]:
     'The assistant answers questions about your documents using an AI provider you choose, with your own key. Everything else in Monstera works without one, so you can skip this and add a key later in Settings.',
   [AI_SETUP_PROVIDER]: 'Provider',

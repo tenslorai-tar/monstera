@@ -1109,8 +1109,17 @@ settings: createEphemeralSettings(),
   it('CONTROL: an ACCEPTED key replaces the stored one', async () => {
     const { handlers, secrets } = checking(200);
     const result = await handlers['ai.checkKey']({ provider: 'openai', key: 'a-new-key' });
-    expect(result).toEqual({ ok: true, value: { accepted: true } });
+    expect(result).toEqual({ ok: true, value: { accepted: true, checked: true } });
     expect(secrets.read()['ai.openai-key']).toBe('a-new-key');
+  });
+
+  it('a provider with NO LIST to ask keeps the key and says it was not checked', async () => {
+    const { handlers, secrets, asked } = checking(200);
+    const result = await handlers['ai.checkKey']({ provider: 'perplexity', key: 'a-perplexity-key' });
+    expect(result).toEqual({ ok: true, value: { accepted: true, checked: false } });
+    expect(secrets.read()['ai.perplexity-key']).toBe('a-perplexity-key');
+    // NOTHING WAS ASKED, which is what makes `checked: false` the truth rather than a pessimism.
+    expect(asked).toStrictEqual([]);
   });
 
   it('ai.models.held answers every provider from what main holds, and asks no provider (ADR-0117)', async () => {
