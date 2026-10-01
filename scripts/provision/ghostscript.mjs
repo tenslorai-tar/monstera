@@ -37,6 +37,7 @@ import { downloadVerified, fileExists, toolPath } from '../lib/fetchVerified.mjs
 import { treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { VC14_RUNTIME, installCondaPackage, sameAsCommitted } from './condaForge.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 /** The conda-forge build ADR-0075 names; the newest Ghostscript on the channel, read 2026-09-17. */
 export const GHOSTSCRIPT_VERSION = '10.08.0';
@@ -182,7 +183,7 @@ export async function provisionGhostscript({ root, force = false }) {
   }
 }
 
-if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
+if (isMain(import.meta.url)) {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
   if (process.argv.includes('--check')) {

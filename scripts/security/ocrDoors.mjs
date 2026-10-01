@@ -64,6 +64,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 
 import { compiledSources } from '../lib/mupdfBuildGraph.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 /** Headers whose declarations make a symbol part of MuPDF's public API. */
 const PUBLIC_HEADER_ROOT = join('include', 'mupdf');
@@ -515,7 +516,7 @@ export function deriveOcrDoors(sourceRoot, shimProject) {
   };
 }
 
-if (process.argv[1]?.endsWith('ocrDoors.mjs')) {
+if (isMain(import.meta.url)) {
   const { mupdfSourcePath } = await import('../provision/mupdf.mjs');
   const { repoRoot } = await import('../lib/gitScope.mjs');
   const root = repoRoot();

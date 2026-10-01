@@ -50,6 +50,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { formatError } from '../lib/reportError.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -141,7 +142,7 @@ function provision(force) {
   return 0;
 }
 
-if (process.argv[1] !== undefined && import.meta.url.endsWith('playwright.mjs')) {
+if (isMain(import.meta.url)) {
   try {
     process.exitCode = provision(process.argv.includes('--force'));
   } catch (error) {

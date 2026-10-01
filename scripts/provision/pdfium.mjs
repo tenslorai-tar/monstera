@@ -65,6 +65,7 @@ import { downloadVerified, fileExists, toolPath } from '../lib/fetchVerified.mjs
 import { treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { committedLicenceName, sameAsCommitted } from './condaForge.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 /**
  * The pinned release.
@@ -256,7 +257,7 @@ export async function provisionPdfium({ root, force = false }) {
   }
 }
 
-if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
+if (isMain(import.meta.url)) {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
   const check = process.argv.includes('--check');
   const force = process.argv.includes('--force');

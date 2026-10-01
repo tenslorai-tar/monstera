@@ -51,6 +51,7 @@ import { defaultInclude } from 'vitest/config';
 
 import vitestConfig from '../../vitest.config.mjs';
 import { repoRoot } from './gitScope.mjs';
+import { isMain } from './isMain.mjs';
 
 /**
  * Directories vitest does not collect from, so neither does this — **read from
@@ -373,6 +374,6 @@ export function run({ root = repoRoot() } = {}) {
   return result.violations.length > 0 ? 1 : 0;
 }
 
-if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
+if (isMain(import.meta.url)) {
   process.exit(run());
 }

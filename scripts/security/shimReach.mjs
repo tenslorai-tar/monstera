@@ -53,6 +53,7 @@ import { repoRoot } from '../lib/gitScope.mjs';
 import { mupdfSourcePath } from '../provision/mupdf.mjs';
 import { buildCallGraph, deriveOcrDoors } from './ocrDoors.mjs';
 import { generatedGlue } from './pathDispatch.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 /**
  * The shim's exported functions, read from its source.
@@ -210,7 +211,7 @@ export function shimReach(sourceRoot, shimProject, shimSource, extraRoots = []) 
   };
 }
 
-if (process.argv[1]?.endsWith('shimReach.mjs')) {
+if (isMain(import.meta.url)) {
   const root = repoRoot();
   const source = mupdfSourcePath(root);
   const shimProject = join(root, 'native', 'mupdf-shim', 'monstera_mupdf.vcxproj');

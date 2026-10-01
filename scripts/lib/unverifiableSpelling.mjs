@@ -47,6 +47,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import { repoRoot } from './gitScope.mjs';
+import { isMain } from './isMain.mjs';
 
 /** The module that owns the answer, and the file that proves it. */
 const OWNERS = ['scripts/lib/unverifiable.mjs', 'scripts/proofs/unverifiable.proof.mjs'];
@@ -147,7 +148,7 @@ function rootFrom(argv) {
   return at === -1 ? repoRoot() : (argv[at + 1] ?? repoRoot());
 }
 
-if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
+if (isMain(import.meta.url)) {
   const { examined, offenders, sawControl } = spellingReport({ root: rootFrom(process.argv) });
 
   // THE POSITIVE CONTROL, ON EVERY RUN AND NOT ONLY IN THE PROOF. This is a

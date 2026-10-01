@@ -49,6 +49,7 @@ import { generateGlue } from './mupdfGlue.mjs';
 import { build, dumpbin } from '../lib/msvc.mjs';
 import { recordShimBuild, shimPath } from '../lib/shimBinary.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 /**
  * Pinned deliberately, and NOT bumped to the newest release.
@@ -482,8 +483,7 @@ async function main() {
   return 0;
 }
 
-const invokedDirectly =
-  process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const invokedDirectly = isMain(import.meta.url);
 
 if (invokedDirectly) {
   main().then(

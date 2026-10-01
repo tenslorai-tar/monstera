@@ -59,6 +59,7 @@ import { fileURLToPath } from 'node:url';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { bundledLibrariesIn, compiledSources } from '../lib/mupdfBuildGraph.mjs';
 import { MUPDF_VERSION, mupdfSourcePath } from '../provision/mupdf.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = repoRoot();
@@ -1056,7 +1057,7 @@ function verifiedSuffix(bundleChecked, sourcesChecked) {
   return ' (NOT verified — MuPDF source not provisioned here)';
 }
 
-if (process.argv[1]?.endsWith('generateNotice.mjs')) {
+if (isMain(import.meta.url)) {
   const notice = renderNotice();
   const native = checkNativeComponents();
   const sources = checkLicenceSources();

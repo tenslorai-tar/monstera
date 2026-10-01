@@ -42,6 +42,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 /** The four that appear zero times in either workflow, as of `af73baa`. */
 const NEVER_RAN = ['perf:gate', 'electron:surface', 'shim:reach', 'ocr:doors'];
@@ -144,7 +145,7 @@ export function sweep(text) {
   return { paragraphs: paragraphs.length, mentions, reliances };
 }
 
-if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
+if (isMain(import.meta.url)) {
   const control = sweep(CONTROL_FIXTURE);
   if (control.reliances.length !== 1) {
     process.stderr.write(

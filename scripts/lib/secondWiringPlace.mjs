@@ -64,6 +64,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import { repoRoot } from './gitScope.mjs';
+import { isMain } from './isMain.mjs';
 
 /** Where §7's projections live. Named in ADR-0029's row, not invented here. */
 export const SURFACES_DIR = 'packages/ui/src/surfaces';
@@ -319,6 +320,6 @@ export function run({ root = repoRoot() } = {}) {
   return 1;
 }
 
-if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
+if (isMain(import.meta.url)) {
   process.exit(run());
 }

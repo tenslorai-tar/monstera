@@ -30,6 +30,7 @@ import { compareContents, downloadVerified, fileExists } from '../lib/fetchVerif
 // actually runs — the Windows instance was fixed and the class left open.
 import { extract } from '../lib/extract.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 export const GITLEAKS_VERSION = '8.30.1';
 
@@ -845,12 +846,8 @@ export async function provisionGitleaks({
   return binary;
 }
 
-// Run only when invoked directly, not when imported by the hook. Comparing
-// resolved filesystem paths rather than URL strings avoids the Windows case
-// where file:///C:/… and file://C:\… describe the same file and compare unequal.
-const invokedDirectly =
-  process.argv[1] !== undefined &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+// Run only when invoked directly, not when imported by the hook.
+const invokedDirectly = isMain(import.meta.url);
 
 if (invokedDirectly) {
   provisionGitleaks({ force: process.argv.includes('--force') }).catch((error) => {

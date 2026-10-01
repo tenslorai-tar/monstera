@@ -21,6 +21,7 @@
  */
 
 import { PDFDocument, PDFName, PDFNumber, PDFString, StandardFonts, rgb } from '@cantoo/pdf-lib';
+import { isMain } from '../lib/isMain.mjs';
 
 const PAGE_COUNT = 6;
 
@@ -145,9 +146,7 @@ export async function buildFixture() {
   return doc.save({ useObjectStreams: false });
 }
 
-const invokedDirectly =
-  process.argv[1] !== undefined &&
-  process.argv[1].replace(/\\/g, '/').endsWith('scripts/spike/makeFixture.mjs');
+const invokedDirectly = isMain(import.meta.url);
 
 if (invokedDirectly) {
   const bytes = await buildFixture();

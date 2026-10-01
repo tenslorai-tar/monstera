@@ -51,6 +51,7 @@ import { treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { VC14_RUNTIME, committedLicenceName, installCondaPackage, sameAsCommitted } from './condaForge.mjs';
 import { POPPLER_KEY_FINGERPRINT, popplerKeyPath } from './keys/popplerKey.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 /** The conda-forge build ADR-0071 names; the newest Poppler on the channel, read 2026-09-16. */
 export const POPPLER_VERSION = '26.09.0';
@@ -227,7 +228,7 @@ export async function provisionPoppler({ root, force = false }) {
   }
 }
 
-if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
+if (isMain(import.meta.url)) {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
   const check = process.argv.includes('--check');
   const force = process.argv.includes('--force');
