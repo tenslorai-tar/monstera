@@ -13,12 +13,12 @@ You can save just the answers in a form to a small file, and fill a matching for
 To export:
 
 1. In the rail, choose **Forms**, then **Export** in the **Data** group.
-2. Choose **Export JSON…**, **Export XFDF…** or **Export FDF…**, and choose where to save.
+2. Choose **Export form data as JSON…**, **Export form data as XFDF…** or **Export form data as FDF…**, and choose where to save.
 
 To import:
 
 1. Choose **Import** in the **Data** group.
-2. Choose **Import JSON…**, **Import XFDF…** or **Import FDF…**, and pick the file.
+2. Choose **Import form data from JSON…**, **Import form data from XFDF…** or **Import form data from FDF…**, and pick the file.
 
 ![The Data group's Export menu with the three formats](screenshot:form-data-import-export-1)
 

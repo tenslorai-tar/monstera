@@ -11,7 +11,7 @@ If another program can do something to a page that Monstera cannot, you can send
 ## Steps
 
 1. Go to the page.
-2. In the rail, choose **Organize**. In the **Pages** group, choose **More**, then **External edit…** (**Edit page in another app…**).
+2. In the rail, choose **Organize**. In the **Pages** group, choose **More**, then **Edit page in another app…**.
 3. Choose a name and folder for the page file (it must end in .pdf). It opens in your usual PDF app.
 4. Edit the page there and save it.
 5. Back in Monstera, the **Put the edited page back?** window appears. Choose **Put it back** to replace the page.

@@ -12,12 +12,12 @@ You can pass comments between people and programs without sending the whole docu
 
 To export:
 
-1. In the rail, choose **Review**. In the **Comment files** group, choose **Export XFDF…**, **Export FDF…** or **Export JSON…**.
+1. In the rail, choose **Review**. In the **Comment files** group, choose **Export XFDF**, **Export FDF** or **Export JSON**.
 2. Choose where to save.
 
 To import:
 
-1. In the **Comment files** group, choose **Import XFDF…**, **Import FDF…** or **Import JSON…**.
+1. In the **Comment files** group, choose **Import XFDF**, **Import FDF** or **Import JSON**.
 2. Pick the file.
 
 ![The Comment files group in the Review section](screenshot:comment-files-1)

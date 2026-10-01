@@ -74,6 +74,36 @@ const normal = (text: string): string =>
 const SHOWN = new Set(Object.values(EN).flatMap((text) => shownForms(text).map(normal)));
 
 /**
+ * Every word shown by a message that is NOT a ribbon button's short label (`ribbon.*`).
+ *
+ * A group's *More* menu lists a command by its TITLE; the short label is what the same command reads as a button in the
+ * group itself. So *Blank page* is a word Monstera shows, and still not one a More menu does: the menu reads *Insert
+ * blank page*. {@link SHOWN} cannot tell those apart, and two articles named a menu item by its button label for that
+ * reason (the owner's review of 0.1.6.0).
+ */
+const SHOWN_IN_A_MENU = new Set(
+  Object.entries(EN)
+    .filter(([key]) => !key.startsWith('ribbon.'))
+    .flatMap(([, text]) => shownForms(text).map(normal)),
+);
+
+/** The bold words a step names AFTER a bold **More** — the items it says to choose from that menu. */
+function afterMore(article: (typeof HELP_ARTICLES)[number]): string[] {
+  const following = (parts: readonly Inline[]): string[] => {
+    const bold = parts.filter((part) => part.kind === 'bold').map((part) => part.text);
+    const more = bold.indexOf('More');
+    return more === -1 ? [] : bold.slice(more + 1);
+  };
+  return article.blocks.flatMap((block) =>
+    block.kind === 'numbered' || block.kind === 'bulleted'
+      ? block.items.flatMap((item) => [...following(item.inline), ...item.nested.flatMap(following)])
+      : block.kind === 'paragraph'
+        ? following(block.inline)
+        : [],
+  );
+}
+
+/**
  * A bold that names a KEY rather than a control — `Ctrl+K`, `F1`, `Esc` — which is not a catalogue word. Matched as a
  * whole, so a control named *Delete pages* is still checked.
  */
@@ -95,6 +125,26 @@ describe('the Help centre’s articles', () => {
     );
     // THE LIST IN THE MESSAGE: vitest's diff truncates an array, and every entry is a fix.
     expect(stale, `\n${stale.join('\n')}\n`).toStrictEqual([]);
+  });
+
+  it('an item chosen from a MORE menu is named as the menu reads it — the command’s title, never a button’s short label', () => {
+    const asButton = HELP_ARTICLES.flatMap((article) =>
+      afterMore(article)
+        .filter((term) => !KEY.test(term) && !SHOWN_IN_A_MENU.has(normal(term)) && !article.outside.includes(term))
+        .map((term) => `${article.id}: ${term}`),
+    );
+    expect(asButton, `\n${asButton.join('\n')}\n`).toStrictEqual([]);
+  });
+
+  it('CONTROL: a More item named by its button label is seen, and its title is not', () => {
+    const named = (item: string): string[] =>
+      afterMore(parseArticle('c.md', `---\nid: c\ntitle: C\nsummary: s\n---\n1. Choose **More**, then **${item}**.\n`)).filter(
+        (term) => !SHOWN_IN_A_MENU.has(normal(term)),
+      );
+    // *Blank page* IS in the catalogue — as `ribbon.insert-blank` — which is why the wider check passed it.
+    expect(SHOWN.has(normal('Blank page'))).toBe(true);
+    expect(named('Blank page')).toStrictEqual(['Blank page']);
+    expect(named('Insert blank page')).toStrictEqual([]);
   });
 
   it('CONTROL: the check sees a bold word that is not Monstera’s', () => {
