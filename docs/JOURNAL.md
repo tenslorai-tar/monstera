@@ -1017,6 +1017,17 @@ terminate back into the built channel: 6 processes of 10 aborted and 180 release
 *"disposes a running reader by terminating it"* pinned the defect and is replaced by the waiting half's cases; the
 composition test that pinned `worker.terminate` in the shutdown order now pins the reader's handles LAST.
 
+### Correction, 2026-10-01 — the proof's control was a race, and CI showed it
+
+The control arm above — the old order, swept, must abort at least once — went twenty processes without an abort on
+the Windows Server 2022 runner at `6a230404`: whether the termination lands in the window is the machine's timing, so
+it was a gate that reddens on correct code. Two deterministic triggers were tried and aborted nothing (terminating
+first and waking after, 2,400 cycles; terminating a thread looping on a koffi call, 200). The reproduction moved to
+`scripts/research/readerAbort.mjs` — 4 of 6 processes aborted on a third run, and a fifth ended in an access violation
+(`0xC0000005`), a second crash from the same termination. `proof:readerdispose` now proves the shipped channel's
+600 cycles end cleanly with every release run once, and its control is of the instrument: a child ending the way the
+abort ends is counted as one.
+
 ## 2026-10-01 — Stage audit of `ba129226..4a93218f` — findings ZZZZZZ-1 to ZZZZZZ-6
 
 Owed at one batch of files: the Windows visual baselines for the merge of `work/cloud-rate-us` would have taken the

@@ -1,35 +1,40 @@
 // @ts-check
 /**
- * Disposing the engine host's reader channel never ends the process.
+ * Disposing the engine host's reader channel ends its thread cleanly, on a real thread, every time.
  *
  * ## The defect
  *
  * `engineReaderChannel.ts`' `dispose` ended a reader that had not yet ended with `worker.terminate()`, and every
  * deliberate close reached it: the transport signals the stop event, announces its ending on the next tick, and the
  * connection disposes the channel there — while the reader, woken by that same event, is still on its way out. A
- * termination that lands while the thread is inside a koffi call fails koffi's own throw, and node-addon-api answers a
+ * termination that lands at the wrong moment of a koffi call fails koffi's own throw, and node-addon-api answers a
  * failed throw with `napi_fatal_error`. The whole process aborts, exit 134, printing
  * `FATAL ERROR: Error::ThrowAsJavaScriptException napi_throw`.
  *
  * Observed 2026-10-01 in the packaged 0.1.6.0 as the application vanishing mid-run, with the reader's JavaScript stack
- * at `abandonOperation` — the cancel it issues after being stopped while waiting for a host to connect.
+ * at `abandonOperation` — the cancel it issues after being stopped while waiting for a host to connect. Reproduced the
+ * same day by `scripts/research/readerAbort.mjs`: the old order, stop then terminate swept across the reader's wake,
+ * aborted 7 processes of 8 on Electron's Node and 3 of 8 on plain Node, sixty cycles each.
  *
- * ## The two arms
+ * ## Why the reproduction is research and not this proof's control
  *
- * - CONTROL: the shipped reader thread, started on a real pipe and stop event made by the shipped surfaces, stopped,
- *   and TERMINATED a swept moment later — the order the old `dispose` took. At least one process must abort with the
- *   fatal error, or the other arm's silence proves nothing: this arm is what shows the instrument can see the abort.
- * - THE SHIPPED CHANNEL: stopped and disposed across the same sweep. No process aborts, and every dispose's `release`
- *   runs exactly once — after the reader's ending, which is the other half of the fix (the pipe outlives the reader).
+ * It was this proof's control first, and a Windows Server 2022 runner went twenty processes without one abort
+ * (CI at `6a230404`): whether the termination lands in the window is the machine's timing. A control that fires on one
+ * runner and not another is a gate that reddens on correct code. Terminating first and waking after, and terminating
+ * a thread looping on a koffi call, were each tried as a deterministic trigger and aborted nothing in 2,400 and 200
+ * cycles — so the window is narrower than *inside a koffi call*, and the mechanism's reproduction stays where a
+ * measurement belongs. That the channel CANNOT terminate the thread is the type's to hold: `ReaderWorkerHandle` has no
+ * `terminate`, and `engineReaderChannel.test.ts` holds the waiting half.
  *
- * The moment is swept across 0–130 ms after the stop, because the reader's ending arrives 57–127 ms after it (measured
- * 2026-10-01) and the abort needs the termination to land inside a native call on that path. Each process runs many
- * iterations because one abort ends it; the parent counts how processes ended.
+ * ## What this proves, and its control
  *
- * ## What it does not cover
- *
- * That `dispose` cannot terminate the thread is the TYPE's to guarantee — `ReaderWorkerHandle` has no `terminate`.
- * This proves the hazard is real and that the shipped channel completes its teardown on a real thread without it.
+ * - THE SHIPPED CHANNEL, on the shipped thread over a real pipe and stop event made by the shipped surfaces: stopped
+ *   and disposed across the window the old order aborted in, sixty cycles a process. No process ends but cleanly, and
+ *   every dispose's `release` runs exactly once — after the reader's ending, the other half of the fix (the pipe
+ *   outlives the reader).
+ * - CONTROL, of the instrument: a process that ends the way the abort ends — the fatal line on stderr, exit 134 — is
+ *   counted as an abort, and one that ends cleanly is not. Without it, *no abort* is also what a parent that never
+ *   recognised one would report.
  *
  * Usage: node scripts/proofs/readerDispose.proof.mjs [--require-transport]
  */
@@ -38,7 +43,6 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Worker } from 'node:worker_threads';
 
 import { READER_DISPOSE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
@@ -47,15 +51,16 @@ import { exitUnverifiable } from '../lib/unverifiable.mjs';
 
 const ROOT = repoRoot();
 const SELF = fileURLToPath(import.meta.url);
-/** Iterations per process. One abort ends a process, so a process is a trial of this many. */
+/** Stop-and-dispose cycles per process. */
 const PER_PROCESS = 60;
-/** Processes the control may take to show one abort; it stops at the first. */
-const CONTROL_PROCESSES = 20;
 /** Processes the shipped channel runs, every one of which must end cleanly. */
 const CHANNEL_PROCESSES = 10;
-/** The sweep after the stop, in milliseconds. */
+/** The sweep after the stop, in milliseconds: the reader's ending arrives 57–127 ms after it (measured 2026-10-01). */
 const SWEEP_MS = 130;
-const FATAL = 'Error::ThrowAsJavaScriptException napi_throw';
+/** The line the abort prints, from the packaged application's own stderr. */
+const FATAL = 'FATAL ERROR: Error::ThrowAsJavaScriptException napi_throw';
+/** The abort's exit code. */
+const ABORTED = 134;
 
 const BUILT = {
   pipeSurface: join(ROOT, 'apps', 'desktop', 'dist', 'win32PipeSurface.js'),
@@ -76,11 +81,27 @@ function spin(ms) {
   }
 }
 
-// ---------------------------------------------------------------------------------------------------------------
-// A CHILD: one arm's iterations in one process.
+/**
+ * How a child process ended: an abort is the fatal line AND exit 134 — the two together, because either alone is
+ * something else (a test failing with 134, a log that quotes the line).
+ *
+ * @param {{ status: number | null, stderr: string }} run
+ */
+function endedBy(run) {
+  if (run.status === ABORTED && run.stderr.includes(FATAL)) return 'abort';
+  return run.status === 0 ? 'clean' : 'other';
+}
 
-if (process.argv[2] === 'child') {
-  const arm = process.argv[3];
+// ---------------------------------------------------------------------------------------------------------------
+// THE CHILDREN.
+
+if (process.argv[2] === 'abort-like') {
+  // THE CONTROL'S CHILD: it ends the way the abort ends, and nothing else.
+  process.stderr.write(`\n#\n# ${FATAL}\n----- Native stack trace -----\n`);
+  process.exit(ABORTED);
+}
+
+if (process.argv[2] === 'channel') {
   const { createWin32PipeSurface, currentUserSid, hostContainerSid } = await import(
     '../../apps/desktop/dist/win32PipeSurface.js'
   );
@@ -99,40 +120,23 @@ if (process.argv[2] === 'child') {
     if (!built.ok) throw new Error(`the shipped factory refused at ${built.error.stage}: ${built.error.detail}`);
     const pipe = built.value.instances[0];
     if (pipe === undefined) throw new Error('the shipped factory answered no pipe instance for a request of one');
-    const gap = (i / PER_PROCESS) * SWEEP_MS;
-    if (arm === 'control') {
-      // THE OLD ORDER, on the shipped thread: started as `readerHostSurface.ts` starts it, stopped, then terminated.
-      const stop = surface.createStopEvent();
-      if (stop === null) throw new Error('no stop event');
-      const worker = new Worker(BUILT.reader, {
-        workerData: { pipeAddress: surface.addressOf(pipe), stopAddress: surface.addressOf(stop), readBytes: 65536 },
-      });
-      const exited = new Promise((done) => worker.once('exit', done));
-      await rest(30);
-      surface.signal(stop);
-      spin(gap);
-      void worker.terminate();
-      await exited;
-      surface.closeEvent(stop);
+    const made = createEngineReaderChannel(surface, pipe, 65536);
+    if (!made.ok) throw new Error(made.error);
+    /** @type {() => void} */
+    let markFreed = () => undefined;
+    const freed = new Promise((done) => {
+      markFreed = () => done(undefined);
+    });
+    // THE READER REACHES ITS CONNECT WAIT — the state the packaged abort was in — before the close.
+    await rest(30);
+    made.value.channel.stop();
+    spin((i / PER_PROCESS) * SWEEP_MS);
+    made.value.dispose(() => {
+      released += 1;
       pipes.close(pipe);
-    } else {
-      const made = createEngineReaderChannel(surface, pipe, 65536);
-      if (!made.ok) throw new Error(made.error);
-      /** @type {() => void} */
-      let markFreed = () => undefined;
-      const freed = new Promise((done) => {
-        markFreed = () => done(undefined);
-      });
-      await rest(30);
-      made.value.channel.stop();
-      spin(gap);
-      made.value.dispose(() => {
-        released += 1;
-        pipes.close(pipe);
-        markFreed();
-      });
-      await Promise.race([freed, rest(5000)]);
-    }
+      markFreed();
+    });
+    await Promise.race([freed, rest(5000)]);
   }
   process.stdout.write(`released ${String(released)}\n`);
   process.exit(0);
@@ -172,41 +176,33 @@ function check(label, held, detail) {
   roster.record(mark, label);
 }
 
-/** @param {'control' | 'channel'} arm */
-function runChild(arm) {
-  const run = spawnSync(process.execPath, [SELF, 'child', arm], { encoding: 'utf8', timeout: 600_000 });
-  return { status: run.status, aborted: run.stderr.includes(FATAL), stdout: run.stdout, stderr: run.stderr };
+/** @param {'channel' | 'abort-like'} mode */
+function runChild(mode) {
+  return spawnSync(process.execPath, [SELF, mode], { encoding: 'utf8', timeout: 600_000 });
 }
 
-let controlProcesses = 0;
-let controlAborts = 0;
-while (controlProcesses < CONTROL_PROCESSES && controlAborts === 0) {
-  const run = runChild('control');
-  controlProcesses += 1;
-  if (run.aborted && run.status === 134) controlAborts += 1;
-}
+// THE CONTROL FIRST: the parent recognises an abort, and a clean ending is not one.
+const abortLike = runChild('abort-like');
 check(
-  'CONTROL: terminating the shipped reader on its way out aborts the process',
-  controlAborts > 0,
-  `${String(controlProcesses)} process(es) of ${String(PER_PROCESS)} stop-then-terminate each, and none aborted. ` +
-    `Without an abort here, the shipped channel's arm ending cleanly below separates nothing.`,
+  'CONTROL: a process ending the way the abort ends is counted as an abort',
+  endedBy({ status: abortLike.status, stderr: abortLike.stderr }) === 'abort' && endedBy({ status: 0, stderr: '' }) === 'clean',
+  `the abort-like child read as ${endedBy({ status: abortLike.status, stderr: abortLike.stderr })} (exit ${String(abortLike.status)}).`,
 );
 
-let channelAborts = 0;
-let channelOther = 0;
+/** @type {Record<string, number>} */
+const endings = { clean: 0, abort: 0, other: 0 };
 let releasedTotal = 0;
 for (let i = 0; i < CHANNEL_PROCESSES; i += 1) {
   const run = runChild('channel');
-  if (run.aborted) channelAborts += 1;
-  else if (run.status !== 0) channelOther += 1;
+  const ending = endedBy({ status: run.status, stderr: run.stderr });
+  endings[ending] = (endings[ending] ?? 0) + 1;
   releasedTotal += Number(/released (\d+)/u.exec(run.stdout)?.[1] ?? 0);
-  if (run.status !== 0 && !run.aborted) process.stderr.write(run.stderr.slice(-2000));
+  if (ending !== 'clean') process.stderr.write(run.stderr.slice(-2000));
 }
 check(
-  'the shipped channel, stopped and disposed across the same window, never aborts the process',
-  channelAborts === 0 && channelOther === 0,
-  `${String(channelAborts)} process(es) aborted with the fatal error and ${String(channelOther)} ended otherwise, ` +
-    `of ${String(CHANNEL_PROCESSES)}.`,
+  'the shipped channel, stopped and disposed across the window the old order aborted in, ends every process cleanly',
+  endings['clean'] === CHANNEL_PROCESSES,
+  `${String(endings['abort'])} aborted and ${String(endings['other'])} ended otherwise, of ${String(CHANNEL_PROCESSES)}.`,
 );
 check(
   'and every dispose released its pipe exactly once, after the reader ended',
@@ -216,8 +212,8 @@ check(
 );
 
 process.stdout.write(
-  `\n  control: an abort in process ${String(controlProcesses)} of up to ${String(CONTROL_PROCESSES)}\n` +
-    `  shipped channel: ${String(CHANNEL_PROCESSES * PER_PROCESS)} dispose(s), ${String(channelAborts)} abort(s)\n\n`,
+  `\n  shipped channel: ${String(CHANNEL_PROCESSES * PER_PROCESS)} stop-and-dispose cycle(s), ` +
+    `${String(endings['abort'])} abort(s), ${String(releasedTotal)} release(s)\n\n`,
 );
 process.stdout.write(
   failures.length > 0
