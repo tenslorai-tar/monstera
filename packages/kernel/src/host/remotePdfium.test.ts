@@ -405,6 +405,8 @@ describe('main’s PDFium writer', () => {
     const runs = [
       {
         index: 1,
+        // A JOINED RUN, objects 1 to 2 (ADR-0130), so the read is seen carrying `last` through, not inventing it.
+        last: 2,
         text: 'ONE',
         bottom: 229.9,
         top: 238.0,
@@ -414,6 +416,7 @@ describe('main’s PDFium writer', () => {
       },
       {
         index: 3,
+        last: 3,
         text: 'TWO',
         bottom: 189.9,
         top: 198.0,

@@ -102,11 +102,22 @@ export type PdfiumChannelExcludesEveryOtherKind = Excludes<
 >;
 
 /**
- * How many text objects one page's answer may name.
+ * How many text objects one page's answer may name — a bound against a HOSTILE host, derived, and one no real page
+ * reaches ([ADR-0130](../../../../docs/DECISIONS/0130-a-documents-size-never-refuses-an-action.md) Decision 3).
  *
- * A page-scaled read, so it is bounded like every other one here
- * (`ENGINE_ANNOTATIONS_MAX`'s reason). Far past what any producer emits for one
- * page and far short of a payload that could carry a document.
+ * ## It was 8,192, a guess about real pages, and a real page passed it
+ *
+ * A producer that draws one text object per glyph puts 8,400 on a page of 60 lines × 140 characters, and the page was
+ * answered truncated: *"more text than can be outlined at once"*, and the rest could not be edited. The host now joins
+ * a run's glyph objects before it answers (`textRunJoin.ts`), so that page answers 60 runs; and what stays here is the
+ * bound against a peer that is not a document at all: the most runs an answer within `ENGINE_ANSWER_FILE_MAX_BYTES`
+ * (8 MiB, ADR-0125) could carry at the smallest a run can serialise to — {@link SMALLEST_RUN_BYTES}, 182 bytes for a run
+ * with no text, and one more for the comma between runs — which is 45,839, rounded down to 45,800. A real page's runs
+ * are larger and far fewer.
+ *
+ * A literal, not the division: computed at module load, a field added to the schema would move the bound with no line of
+ * any diff saying so. `pdfiumChannels.test.ts` holds the literal to the division, so a change to either is a red case
+ * and a visible edit, never a silent one.
  *
  * ## It bounds the PRIOR's list too, and that is one question rather than two
  *
@@ -118,7 +129,13 @@ export type PdfiumChannelExcludesEveryOtherKind = Excludes<
  * believed. Declared above the schemas because a `const` referenced during
  * module evaluation cannot be declared below them.
  */
-export const ENGINE_TEXT_OBJECTS_MAX = 8192;
+export const ENGINE_TEXT_OBJECTS_MAX = 45_800;
+
+/**
+ * The fewest bytes one text run can serialise to on this wire: no text, every number `0`, every flag `true`.
+ * Measured by `pdfiumChannels.test.ts` against the schema's own shape, and the divisor of {@link ENGINE_TEXT_OBJECTS_MAX}.
+ */
+export const SMALLEST_RUN_BYTES = 182;
 
 /**
  * How long a captured run's text may be on this wire.
@@ -409,8 +426,13 @@ export const pdfiumChannels = {
           .array(
             z
               .object({
-                /** The object's index in the page's own object order. */
+                /** The object's index in the page's own object order — the FIRST object of a joined run. */
                 index: z.number().int().nonnegative(),
+                /**
+                 * The run's last object (`textRunJoin.ts`, ADR-0130): glyph objects that abut on one baseline in one
+                 * style are one run, named by `index`, and an edit naming it is applied to every object to here.
+                 */
+                last: z.number().int().nonnegative(),
                 /** What the run says, as PDFium read it off this page. */
                 text: z.string().max(PDFIUM_PRIOR_TEXT_MAX),
                 /**
@@ -447,7 +469,9 @@ export const pdfiumChannels = {
                   })
                   .strict(),
               })
-              .strict(),
+              .strict()
+              // A RUN ENDS AT OR AFTER ITS START: a host answering otherwise names objects that are no run.
+              .refine((run) => run.last >= run.index, { message: 'a run cannot end before it starts' }),
           )
           .max(ENGINE_TEXT_OBJECTS_MAX),
         /**

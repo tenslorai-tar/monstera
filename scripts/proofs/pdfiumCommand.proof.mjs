@@ -126,7 +126,7 @@ async function threeRunsAndARectangle() {
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 58 });
+const roster = createRoster(failures, { cases: 61 });
 
 /**
  * @param {string} name
@@ -402,6 +402,7 @@ async function main() {
   await replaceAllCases();
   await promotionCases();
   await blockEditCases();
+  await glyphLineCases();
 
   process.stdout.write(
     failures.length > 0
@@ -790,6 +791,64 @@ async function blocksOf(bytes) {
  * case names what only the correct write produces: an edit that fits makes NO new object; one that
  * grows past the block makes one AND moves the line below AND leaves nothing past the edge.
  */
+/** A line a producer drew ONE GLYPH PER TEXT OBJECT — every character its own `drawText`. */
+const GLYPH_LINE = 'Drawn one glyph at a time';
+
+/** One page carrying {@link GLYPH_LINE}, each character a separate text object. */
+async function aLineOfGlyphs() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([612, 792]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  let x = 72;
+  for (const character of GLYPH_LINE) {
+    page.drawText(character, { x, y: 700, size: 12, font, color: rgb(0, 0, 0) });
+    x += font.widthOfTextAtSize(character, 12);
+  }
+  return document.save();
+}
+
+/**
+ * A page drawn one glyph per object reads as ONE run and is edited as one
+ * ([ADR-0130](../../docs/DECISIONS/0130-a-documents-size-never-refuses-an-action.md) Decision 1). Such a page passed
+ * the old 8,192-run bound at 60 lines of 140 characters, and what passed it could not be edited. Against the real
+ * library, from reopened bytes: the read joins the line, and an edit naming the joined run rewrites the whole of it.
+ */
+async function glyphLineCases() {
+  const original = await aLineOfGlyphs();
+  const objects = (await textIndicesOf(original)).length;
+  const { runs } = await blocksOf(original);
+  const [run] = runs;
+  record(
+    'CONTROL: the fixture is one text object per glyph',
+    objects === GLYPH_LINE.replace(/ /gu, '').length || objects === GLYPH_LINE.length,
+    `${String(objects)} text objects for ${String(GLYPH_LINE.length)} characters`,
+  );
+  record(
+    'a line drawn one glyph per object reads as ONE run, named by its first object and carrying its last',
+    runs.length === 1 && run !== undefined && run.last > run.index && run.text.replace(/\s+/gu, ' ').trim() === GLYPH_LINE,
+    `${String(runs.length)} run(s); first ${String(run?.index)} last ${String(run?.last)} "${String(run?.text)}"`,
+  );
+  if (run === undefined) return;
+  const edited = await localPdfiumExecution.apply({
+    session: original,
+    command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+      kind: 'editTextBlock',
+      page: 0,
+      // THE JOINED RUN, by its first object alone: the edit expands it through the same join.
+      blocks: [{ lines: [[run.index]], text: 'Drawn as one line and edited whole', fit: 'reflow' }],
+      version: 1,
+    }),
+    source: undefined,
+    reads: undefined,
+  });
+  const after = (await textOf(edited)).replace(/\s+/gu, ' ');
+  record(
+    'and an edit naming that run rewrites the whole line — no glyph of the old text is left behind',
+    after.includes('Drawn as one line and edited whole') && !after.includes('glyph at a time'),
+    after.slice(0, 120),
+  );
+}
+
 async function blockEditCases() {
   record(
     'the declaration routes editTextBlock to pdfium, terminal, with a checkpoint undo',
