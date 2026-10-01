@@ -639,14 +639,20 @@ test('the page list FITS its pane: nothing of it sits above the pane or under th
     // THE INSIDE OF THE PANEL THE LIST FILLS. Since the owner's v5 surfaces (72d1ecc) the canvas area is
     // an inset panel with a 1 px border — measured 2026-09-24, `.m-canvas-area` border-top 1px and the
     // list 1 px below the pane — so the list's box is the area's padding box, not the pane's.
-    const area = list.parentElement;
+    //
+    // UNDER THE HORIZONTAL RULER when one is drawn (on by default): since 2026-10-01 the rulers take grid tracks
+    // beside the scroller instead of lying over it, so the list begins exactly at the ruler's foot. The ruler's own
+    // box is read, never its token, so a ruler of any height is measured the same way.
+    const area = list.closest('.m-canvas-area');
     if (area === null) return null;
     const areaBox = area.getBoundingClientRect();
     const areaStyle = getComputedStyle(area);
+    const ruler = area.querySelector('.m-ruler-h');
     return {
       listTop: listBox.top,
       listBottom: listBox.bottom,
-      paneTop: areaBox.top + Number.parseFloat(areaStyle.borderTopWidth),
+      paneTop: ruler === null ? areaBox.top + Number.parseFloat(areaStyle.borderTopWidth) : ruler.getBoundingClientRect().bottom,
+      rulerShown: ruler !== null,
       paneBottom: areaBox.bottom - Number.parseFloat(areaStyle.borderBottomWidth),
       statusTop: status.getBoundingClientRect().top,
       paneScrollTop: pane.scrollTop,
@@ -654,6 +660,9 @@ test('the page list FITS its pane: nothing of it sits above the pane or under th
     };
   });
   expect(fit).not.toBeNull();
+  // THE PREMISE of the top's reading: the rulers are on by default, so the branch that measures from one is the one
+  // this case takes. Without it, a ruler gone missing would be measured as though there were none and still pass.
+  expect(fit?.rulerShown).toBe(true);
   expect(Math.abs((fit?.listTop ?? 0) - (fit?.paneTop ?? 1))).toBeLessThan(0.5);
   expect(Math.abs((fit?.listBottom ?? 0) - (fit?.paneBottom ?? 1))).toBeLessThan(0.5);
   expect(fit?.listBottom ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual((fit?.statusTop ?? 0) + 0.5);
