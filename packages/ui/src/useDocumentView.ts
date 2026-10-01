@@ -1,6 +1,6 @@
 import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { type DocumentView, needsPasswordToParse, openDocumentView } from './documentView.js';
 
@@ -33,9 +33,31 @@ import { type DocumentView, needsPasswordToParse, openDocumentView } from './doc
  * read `view` while it was still `undefined`, so a document closed while its
  * view was opening leaked a parser, a worker and a transport every time.
  *
- * The state is CLEARED BEFORE the close, so no render can hold a torn-down
- * view. Separating them is how a component draws through a closed parser for
- * one frame, which reads as an intermittent blank page.
+ * ## A NEW VERSION REPLACES the shown view; it never empties it first
+ *
+ * Every command moves the version, and a moved version needs a new parser
+ * (ADR-0031: the old one's byte offsets belong to bytes that no longer exist).
+ * This hook used to clear the shown view in the effect's cleanup and then open
+ * the next, so for the whole parse the caller had no view and rendered an empty
+ * page area: every edit blanked the pages and then drew them again.
+ *
+ * So the shown view stays until the next one HAS OPENED, and is then replaced in
+ * one state change. The old view is closed by the effect that owns the shown
+ * view, whose cleanup React runs after the commit that shows its successor, so
+ * no committed render holds a view that has been closed.
+ *
+ * What makes keeping it legal under ADR-0031 is that the old view is not asked
+ * for anything new. Its pages are already pixels on screen, and pixels need no
+ * range. A draw it does start in the gap (a page scrolled into the margin while
+ * the next view parses) asks for a range at the old version, which main refuses
+ * with `stale` exactly as before; the transport then closes that view itself,
+ * the page's draw fails without touching its canvas (`renderPage` presents a
+ * drawing only once it is whole), and the successor redraws it a moment later.
+ * Main's rule is unchanged and still decides: no byte of the new version is
+ * ever read through the old view's offsets.
+ *
+ * A view that opened after its version was already superseded is closed by the
+ * effect that opened it and never shown.
  */
 export function useDocumentView(
   client: ContractClient,
@@ -75,9 +97,36 @@ export function useDocumentView(
   readonly failed: boolean;
 } {
   const [failed, setFailed] = useState(false);
-  const [ready, setReady] = useState<DocumentView | undefined>(undefined);
+  // KEYED BY DOCUMENT, so a view is only ever kept across a version of ITS document. The callers
+  // remount per document today; this makes another document's pages unrepresentable rather than
+  // relying on that.
+  const [shown, setShown] = useState<{ readonly docId: DocId; readonly view: DocumentView } | undefined>(undefined);
 
   const { docId, version, byteLength } = document;
+
+  // EVERY VIEW THIS HOOK OPENED AND HAS NOT CLOSED, for the one path the shown-view effect below
+  // cannot reach: a view handed to state in the same batch that unmounts the caller never commits,
+  // so that effect never runs for it. The old cleanup closed it directly; this keeps that guarantee.
+  // `close` is idempotent.
+  const opened = useRef(new Set<DocumentView>());
+  useEffect(() => {
+    const views = opened.current;
+    return (): void => {
+      for (const view of views) void view.close();
+      views.clear();
+    };
+  }, []);
+
+  // THE SHOWN VIEW'S LIFETIME, separate from the opening effect's. The cleanup runs when `shown` is
+  // replaced, after the commit that renders the replacement, and on unmount.
+  useEffect(() => {
+    if (shown === undefined) return;
+    const views = opened.current;
+    return (): void => {
+      views.delete(shown.view);
+      void shown.view.close();
+    };
+  }, [shown]);
 
   useEffect(() => {
     let cancelled = false;
@@ -167,8 +216,10 @@ export function useDocumentView(
         // HANDED ON, and this hook's job ends at a live view. The model read
         // lives in the scroller, because with continuous scroll the pages to
         // read rotations FOR are the ones on screen, and nothing here knows
-        // which those are.
-        setReady(view);
+        // which those are. From here the shown-view effect owns the close.
+        opened.current.add(view);
+        setShown({ docId, view });
+        setFailed(false);
       } catch {
         // A parse that fails is a document this renderer cannot show. Not a
         // crash and not silence: the caller says so through `failed`, and the
@@ -179,12 +230,13 @@ export function useDocumentView(
 
     void show();
 
+    // NOTHING IS CLOSED HERE. A view still opening sees `stopped()` on its late path and closes
+    // itself; a view already shown belongs to the shown-view effect, and closing it here is what
+    // used to empty the page area for the length of every reparse.
     return (): void => {
       cancelled = true;
-      setReady(undefined);
-      void view?.close();
     };
   }, [byteLength, client, docId, onVersionMoved, requestPassword, version]);
 
-  return { ready, failed };
+  return { ready: shown?.docId === docId ? shown.view : undefined, failed };
 }

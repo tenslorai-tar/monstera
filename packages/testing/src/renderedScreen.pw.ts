@@ -873,7 +873,9 @@ test('OPEN SIDE BY SIDE puts the right-clicked tab’s document in the second pa
 
   // THE PANE ITSELF, which only renders under split view — so this also says the command turned
   // that on. A version that wrote the document alone would leave nothing here at all.
-  const picker = page.locator('[data-compare-pick="true"]');
+  // THE LAYER ON SHOW: the other document's layer is kept behind it under the same split (ADR-0129), with a
+  // hidden picker of its own.
+  const picker = page.locator('[data-document-layer="active"] [data-compare-pick="true"]');
   await expect(picker).toBeVisible();
   // AND THE PICKER'S VALUE IS THE ID, not merely that something is compared: the command writes
   // the same state the picker owns, and a wrong id would still fill the pane.

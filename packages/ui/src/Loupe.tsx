@@ -87,13 +87,13 @@ export function Loupe({
     // THE SQUARE: the cell before, the cell, the cell after, both ways — so the window, never more than half a
     // window from its cell's edges, lies wholly inside it.
     const square = { x: (column - 1) * WINDOW, y: (row - 1) * WINDOW };
-    // DRAWN OFF SCREEN AND COPIED WHEN DONE: sizing a canvas clears it, so drawing into the shown one would blank the
-    // loupe at every cell the pointer crosses. Two 540-pixel squares cost nothing beside the page they replaced.
-    const offscreen = element.ownerDocument.createElement('canvas');
+    // ONTO THE SHOWN CANVAS, because `renderRegion` draws off screen and presents the square whole: sizing a canvas
+    // clears it, and this file did that copy itself while every other surface drew in place. It is the drawing
+    // function's job now, so the page, the tiles, the thumbnails and the loupe cannot disagree about it.
     void renderRegion(
       view.document,
       pdfjsPageOf(page),
-      offscreen,
+      element,
       ratio * zoom * MAGNIFICATION,
       rotation,
       {
@@ -106,9 +106,6 @@ export function Loupe({
     )
       .then(() => {
         if (superseded.signal.aborted) return;
-        element.width = offscreen.width;
-        element.height = offscreen.height;
-        element.getContext('2d')?.drawImage(offscreen, 0, 0);
         setDrawn(square);
       })
       .catch(() => {

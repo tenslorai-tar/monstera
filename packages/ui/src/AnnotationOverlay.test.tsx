@@ -43,26 +43,56 @@ import { pointerPath } from './registries/tools.js';
 
 const PAGE: OverlayPage = { crop: [50, 100, 250, 400], rotation: 0, zoom: 2 };
 
-/** Renders an overlay and returns the surface plus every command it sent. */
-function mounted(tool: UiTool = rectangleTool): {
+/** The drawing under the overlay before any command lands: an identity, as `PageSlot` passes a view. */
+const FIRST_DRAWING = { drawing: 'first' };
+
+/**
+ * Renders an overlay and returns the surface plus every command it sent.
+ *
+ * `moves` is what each command's dispatch answers: whether the version moved. `redraw` re-renders the
+ * overlay as `PageSlot` does once the page has presented a drawing from another view.
+ */
+function mounted(
+  tool: UiTool = rectangleTool,
+  moves = true,
+): {
   readonly surface: Element;
   readonly sent: DispatchableCommand[];
+  readonly redraw: (drawing: unknown) => void;
 } {
   const sent: DispatchableCommand[] = [];
-  const { container } = render(
+  const overlay = (drawnWith: unknown): React.ReactElement => (
     <AnnotationOverlay
+      drawnWith={drawnWith}
       geometry={PAGE}
       label="Draw on page 4"
-      onCommand={(command): void => {
+      onCommand={(command): Promise<boolean> => {
         sent.push(command);
+        return Promise.resolve(moves);
       }}
       page={3}
       tool={tool}
-    />,
+    />
   );
+  const { container, rerender } = render(overlay(FIRST_DRAWING));
   const surface = container.querySelector('[data-annotation-overlay]');
   if (surface === null) throw new Error('the overlay did not render a surface');
-  return { surface, sent };
+  return {
+    surface,
+    sent,
+    redraw: (drawing) => {
+      rerender(overlay(drawing));
+    },
+  };
+}
+
+/** The preview of a gesture still being drawn, never the released shape the overlay holds. */
+function inFlightPreview(surface: Element): Element | null {
+  return (
+    [...surface.querySelectorAll('[data-annotation-preview]')].find(
+      (element) => element.closest('[data-annotation-held]') === null,
+    ) ?? null
+  );
 }
 
 /**
@@ -218,6 +248,46 @@ describe('AnnotationOverlay', () => {
     expect(surface.querySelector('[data-annotation-preview]')).toBeNull();
   });
 
+  it('HOLDS the released shape until the page has been drawn from a newer view', async () => {
+    // The shape becomes part of the page only when the page redraws from the version the command
+    // produced. The overlay cleared it at the release, so it vanished for a reparse and a raster and
+    // then came back drawn by the page. The separator is the frame between the two: after the
+    // command landed and before the page redrew, the shape must still be on screen.
+    const { surface, redraw } = mounted();
+    await drag(surface, [20, 20], [120, 80]);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const held = surface.querySelector('[data-annotation-held] [data-annotation-preview]');
+    expect(held?.getAttribute('width')).toBe('100');
+
+    redraw({ drawing: 'from the new version' });
+    expect(surface.querySelector('[data-annotation-held]')).toBeNull();
+  });
+
+  it('CONTROL: the same drawing re-rendered does not drop it, so the drop is the redraw and not any render', async () => {
+    const { surface, redraw } = mounted();
+    await drag(surface, [20, 20], [120, 80]);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    redraw(FIRST_DRAWING);
+    expect(surface.querySelector('[data-annotation-held]')).not.toBeNull();
+  });
+
+  it('drops the shape at once when the command did not move the version, since nothing was made', async () => {
+    const { surface } = mounted(rectangleTool, false);
+    await drag(surface, [20, 20], [120, 80]);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(surface.querySelector('[data-annotation-held]')).toBeNull();
+  });
+
   it('dispatches whatever the ACTIVE tool commits, knowing nothing about rectangles', async () => {
     // THE DISPATCHER PROPERTY. Adding the nineteenth tool must not change this
     // file, and the case that says so is one whose controller is not the
@@ -272,8 +342,9 @@ describe('AnnotationOverlay', () => {
     // CLEARED, so the next press starts a new shape rather than continuing this
     // one. The multi-press path is the only place in this component that keeps
     // a gesture, and a completion that forgot to clear would make every polygon
-    // after the first inherit the last one's corners.
-    expect(surface.querySelector('[data-annotation-preview]')).toBeNull();
+    // after the first inherit the last one's corners. The IN-FLIGHT preview: the released shape is
+    // held separately until the page redraws, and is not a gesture.
+    expect(inFlightPreview(surface)).toBeNull();
   });
 
   it('abandons a half-drawn multi-press gesture on Escape', async () => {
@@ -300,7 +371,7 @@ describe('AnnotationOverlay', () => {
     await drag(surface, [20, 20], [120, 80]);
 
     expect(sent).toHaveLength(1);
-    expect(surface.querySelector('[data-annotation-preview]')).toBeNull();
+    expect(inFlightPreview(surface)).toBeNull();
   });
 
   it('names the surface and the tool on the element, for the projections that look', () => {
