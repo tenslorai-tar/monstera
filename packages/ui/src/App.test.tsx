@@ -3178,6 +3178,51 @@ describe('App', () => {
       }
     });
 
+    it('the start screen shows FOUR recent files, and *Show all* reaches every one main keeps (the owner’s review of 0.1.6.0)', async () => {
+      const names = ['a.pdf', 'b.pdf', 'c.pdf', 'd.pdf', 'e.pdf', 'f.pdf'];
+      const { client } = withRecent({
+        entries: names.map((name, at) => row(`handle-${String(at)}`, name)),
+        lastExitClean: true,
+        lastSession: [],
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(document.querySelectorAll('.m-recent-list > li')).toHaveLength(4);
+      expect(screen.queryByRole('button', { name: 'e.pdf' })).toBeNull();
+      const more = screen.getByRole('button', { name: 'Show all 6' });
+      expect(more.getAttribute('aria-expanded')).toBe('false');
+
+      await act(async () => {
+        more.click();
+        await Promise.resolve();
+      });
+      expect(document.querySelectorAll('.m-recent-list > li')).toHaveLength(6);
+      expect(screen.getByRole('button', { name: 'f.pdf' })).toBeTruthy();
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Show fewer' }).click();
+        await Promise.resolve();
+      });
+      expect(document.querySelectorAll('.m-recent-list > li')).toHaveLength(4);
+    });
+
+    it('CONTROL: with four or fewer, every one shows and there is nothing to show more of', async () => {
+      const { client } = withRecent({
+        entries: ['a.pdf', 'b.pdf', 'c.pdf', 'd.pdf'].map((name, at) => row(`handle-${String(at)}`, name)),
+        lastExitClean: true,
+        lastSession: [],
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(document.querySelectorAll('.m-recent-list > li')).toHaveLength(4);
+      expect(screen.queryByRole('button', { name: /^Show all/u })).toBeNull();
+    });
+
     it('a card is NAMED by the file and DESCRIBED by when and where it was opened (ADR-0100)', async () => {
       const { client } = withRecent({
         entries: [

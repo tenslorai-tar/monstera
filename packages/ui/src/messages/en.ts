@@ -919,6 +919,8 @@ export const CRASH_REPORT_SHARE_FAILED = messageKey('surface.crash-report.share-
 export const PRIVACY_RECENT_PREVIEWS_DESCRIPTION = messageKey('setting.privacy.recent-previews.description');
 export const RECENT_HEADING = messageKey('surface.recent.heading');
 export const RECENT_CLEAR = messageKey('surface.recent.clear');
+export const RECENT_SHOW_ALL = messageKey('surface.recent.show-all');
+export const RECENT_SHOW_FEWER = messageKey('surface.recent.show-fewer');
 export const RECENT_PLACEHOLDER = messageKey('surface.recent.placeholder');
 export const RECENT_TODAY = messageKey('surface.recent.today');
 export const RECENT_YESTERDAY = messageKey('surface.recent.yesterday');
@@ -2797,6 +2799,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // v5-01's header over the cards, and its one action.
   [RECENT_HEADING]: 'Recent',
   [RECENT_CLEAR]: 'Clear list',
+  [RECENT_SHOW_ALL]: 'Show all {count}',
+  [RECENT_SHOW_FEWER]: 'Show fewer',
   // A CARD WITH NO PICTURE shows the page's shape and its type, the way a file icon does.
   [RECENT_PLACEHOLDER]: 'PDF',
   [RECENT_TODAY]: 'Today',
@@ -3552,7 +3556,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RESTORE_SESSION_DESCRIPTION]:
     'Opens the documents that were open when Monstera last closed. After a crash you are asked instead.',
   [RECENT_LENGTH_TITLE]: 'Recent files to keep',
-  [RECENT_LENGTH_DESCRIPTION]: 'How many documents the start screen lists. A shorter list forgets the oldest ones.',
+  [RECENT_LENGTH_DESCRIPTION]:
+    'How many documents Monstera remembers. The start screen shows the four most recent, and the rest under Show all. A shorter list forgets the oldest ones.',
   [RECENT_LENGTH_5]: '5',
   [RECENT_LENGTH_10]: '10',
   [RECENT_LENGTH_20]: '20',
