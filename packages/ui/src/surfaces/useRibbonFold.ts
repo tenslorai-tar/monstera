@@ -1,55 +1,53 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { foldRow, ribbonUnits, type GroupFold, type GroupWidths } from './ribbonFolding.js';
+import { foldRow, ribbonUnits, type GroupFold, type GroupWidths, type RowFold } from './ribbonFolding.js';
 import type { RibbonSection } from './projections.js';
 
 /**
  * Measures the ribbon's tools row and answers how many buttons each group draws.
  *
- * ## The measurement is of the UNFOLDED row, once per section, and is then cached
+ * ## The measurements are KEPT, and the fold is DERIVED from them in render
  *
  * A fold changes the widths on screen, so measuring what is rendered after folding would feed the
  * fold its own output: one narrow frame would hide a button, which frees space, which shows it
  * again. The natural width of a button is a property of its label and the font, not of the window,
- * so it is measured while the row is unfolded and kept by command id. Every later answer is
- * arithmetic over those numbers and the row's current width.
+ * so it is measured while the button is drawn and kept by command id; a group's frame is kept by its
+ * caption key. The row's room, the *More*'s width and the gap are read from the row. The fold is
+ * then arithmetic over those numbers, computed while rendering.
  *
- * That is why the first paint of a section is unfolded: there is nothing else to measure from, and
- * a hidden measuring copy of the ribbon would be a second ribbon in the accessibility tree.
+ * ## A NEW SECTION OBJECT IS NOT A NEW ROW, and treating it as one made the Comment ribbon flicker
  *
- * ## The section must be a STABLE VALUE, and `Ribbon` memoises it for this
+ * Until 2026-10-01 the answer was keyed on the section's IDENTITY, and the measured widths were
+ * thrown away whenever it changed. The shell's command context depends on the text selection, so
+ * every change of selection built new section objects with the same buttons: the row was drawn
+ * unfolded for a frame, measured overflowing, and folded again. On a section that does not fit
+ * unfolded — Comment, at the owner's width — that is a row alternating between 6 tools and 13 for as
+ * long as text is selected (the owner's review of 0.1.6.0). Sections that fit unfolded look the same
+ * either way, which is why only Comment showed it.
  *
- * The projection is recomputed on every render, so an effect depending on the model's object
- * identity re-runs for ever: it measures, sets state, the render builds another object, it runs
- * again. That is not a subtlety to be careful about — it put the ribbon behind the error boundary
- * the first time this was wired, with *Part of this window stopped working* on screen. `Ribbon`
- * memoises `ribbonModel(...)`, so the identity here changes only when the commands do.
+ * Now nothing is keyed on identity. Two sections with the same buttons fold the same in the same
+ * render, because the widths they are folded from are the same kept numbers. A row is drawn unfolded
+ * only while some button it can show has never been drawn, which is a section's first appearance:
+ * there is nothing else to measure from, and a hidden measuring copy of the ribbon would be a second
+ * ribbon in the accessibility tree.
  *
- * ## Nothing is measured synchronously in an effect
+ * ## When it measures
  *
- * The `ResizeObserver` delivers a first observation as soon as it observes, so the initial
- * measurement arrives through the same callback every later one does. An effect body that measured
- * and set state would be a cascading render, and there would then be two paths into the same state
- * with different timing.
+ * On every resize of the row (a `ResizeObserver`, whose first observation is the first reading), and
+ * after a render that drew a button with no width yet, which no resize announces because the row's
+ * box does not change when its content overflows.
  */
 export interface RibbonFold {
   /** Attach to the element whose width the groups must fit inside. */
   readonly rowRef: (element: HTMLDivElement | null) => void;
   /** Attach to each group, in the order the model gives them. */
   readonly groupRef: (index: number) => (element: HTMLDivElement | null) => void;
-  /** What each group draws, or `null` before this section has been measured. */
+  /** What each group draws, or `null` while a button this section can show has never been measured. */
   readonly folds: readonly GroupFold[] | null;
   /**
    * The first group folded WHOLE into the row's own *More* (`foldRow`); the group count when none is, and when the
    * section has not been measured.
    */
-  readonly hiddenFrom: number;
-}
-
-/** A measurement, and the row it was taken of. */
-interface Measured {
-  readonly section: RibbonSection | undefined;
-  readonly folds: readonly GroupFold[];
   readonly hiddenFrom: number;
 }
 
@@ -63,99 +61,98 @@ interface GroupFrame {
   readonly gap: number;
 }
 
+/** Everything a fold is computed from: what was measured, kept across renders. */
+interface Metrics {
+  /** Each button's natural width by command id, so a folded-away button still has one. */
+  readonly naturals: ReadonlyMap<string, number>;
+  /** Each group's frame by caption key, so a group hidden in the row's More still has one. */
+  readonly frames: ReadonlyMap<string, GroupFrame>;
+  /** The row's content box (`innerWidthOf`). */
+  readonly room: number;
+  /** The *More*'s width, read off the gauge that is always drawn. */
+  readonly more: number;
+  /** The gap between two items in the row. */
+  readonly gap: number;
+}
+
 export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
-  const [measured, setMeasured] = useState<Measured | null>(null);
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
   const row = useRef<HTMLDivElement | null>(null);
   const groups = useRef<(HTMLDivElement | null)[]>([]);
-  /** Each button's natural width by command id, so a folded-away button still has one. */
-  const naturals = useRef<Map<string, number>>(new Map());
-  /** Each group's frame by caption key, so a group hidden in the row's More still has one. */
-  const frames = useRef<Map<string, GroupFrame>>(new Map());
+  /** The section drawn last, for a measurement that arrives from the observer rather than from a render. */
+  const drawn = useRef<RibbonSection | undefined>(section);
+  const observer = useRef<ResizeObserver | null>(null);
 
   const measure = useCallback((): void => {
     const container = row.current;
-    if (container === null || section === undefined) return;
-
-    // EVERY BUTTON THIS ROW CAN SHOW, whether or not it is on screen now: a width already measured
-    // is kept, and one that is not measurable yet leaves the row unmeasured rather than counted as
-    // zero — which would say everything fits.
-    // WHICH BUTTONS HAVE NO WIDTH YET, as a set rather than a flag: a boolean assigned inside the
-    // map below is narrowed to its initial value by the compiler, so the guard after it would be
-    // dead code that reads as a check.
-    const unmeasured = new Set<string>();
-    const widths: GroupWidths[] = section.groups.map((group, index) => {
-      const element = groups.current[index] ?? null;
-      // A DRAWN GROUP IS MEASURED, and its frame kept; one folded whole into the row's More is not drawn and takes
-      // the frame it was last measured with. Never measured is unmeasured, for a button's reason below.
-      if (element !== null) {
-        frames.current.set(group.group, {
-          chrome: Math.max(element.getBoundingClientRect().width - buttonsWidth(element), 0),
-          gap: buttonGap(element),
-        });
-      }
-      const frame = frames.current.get(group.group);
-      if (frame === undefined) unmeasured.add(group.group);
-      // THE ROW'S BUTTONS, from the one function that defines them: primaries only, a named menu as
-      // one (ADR-0098, ADR-0101). A secondary is never drawn in the row, so it has no width to fold
-      // by, and what it costs is the *More* its group then always draws.
-      const units = ribbonUnits(group.entries);
-      const primaries = group.entries.filter((entry) => !entry.secondary);
-      const buttons = units.map((unit) => {
-        const drawn = element?.querySelector<HTMLElement>(`[data-command="${CSS.escape(unit.key)}"]`);
-        const width = drawn?.getBoundingClientRect().width ?? 0;
-        if (width > 0) naturals.current.set(unit.key, width);
-        const known = naturals.current.get(unit.key);
-        if (known === undefined) unmeasured.add(unit.key);
-        return known ?? 0;
-      });
-      return {
-        buttons,
-        chrome: frame?.chrome ?? 0,
-        gap: frame?.gap ?? 0,
-        secondaries: group.entries.length - primaries.length,
-      };
-    });
-    if (unmeasured.size > 0) return;
-
-    // THE GAUGE, which is always drawn (`RibbonMoreGauge`), so a More's width is known before any
-    // group has folded. Absent or unlaid-out means the row is not ready, which is the same answer
-    // as an unmeasured button: fold nothing yet rather than fold against a guess.
+    const current = drawn.current;
+    if (container === null || current === undefined) return;
+    // THE GAUGE FIRST, which is always drawn (`RibbonMoreGauge`), so a More's width is known before any group has
+    // folded. Absent or unlaid-out means the row is not laid out at all, so nothing in it can be read: fold nothing
+    // yet rather than fold against a guess, and read no button.
     const more = container.querySelector<HTMLElement>('.m-ribbon__more-gauge')?.getBoundingClientRect().width ?? 0;
     if (more <= 0) return;
-    const { groups: folds, hiddenFrom } = foldRow(widths, innerWidthOf(container), more, rowGapOf(container));
 
-    // AN EQUAL ANSWER MUST NOT RE-RENDER. The fold is a pure function of the widths and the row, so
-    // a measurement that agrees with the last one has nothing to say, and setting a fresh array
-    // anyway would make the observer its own trigger.
-    setMeasured((previous) =>
-      previous !== null &&
-      previous.section === section &&
-      previous.hiddenFrom === hiddenFrom &&
-      same(previous.folds, folds)
-        ? previous
-        : { section, folds, hiddenFrom },
-    );
-  }, [section]);
-
-  useEffect(() => {
-    const container = row.current;
-    if (container === null || typeof ResizeObserver === 'undefined') return undefined;
-    // A DIFFERENT ROW HAS NEVER BEEN MEASURED. Its buttons carry other labels, so their widths and
-    // the width of a *More* beside them are somebody else's numbers.
-    naturals.current = new Map();
-    frames.current = new Map();
-    const observer = new ResizeObserver(() => {
-      measure();
+    // WHAT IS ON SCREEN NOW: the frames of the groups drawn and the widths of the buttons drawn. A button folded
+    // away or a group hidden in the row's More is not read, and keeps what it was last measured at.
+    const frames = new Map<string, GroupFrame>();
+    const naturals = new Map<string, number>();
+    current.groups.forEach((group, index) => {
+      const element = groups.current[index] ?? null;
+      if (element === null) return;
+      frames.set(group.group, {
+        chrome: Math.max(element.getBoundingClientRect().width - buttonsWidth(element), 0),
+        gap: buttonGap(element),
+      });
+      // THE ROW'S BUTTONS, from the one function that defines them: primaries only, a named menu as one
+      // (ADR-0098, ADR-0101). A secondary is never drawn in the row, so it has no width to fold by.
+      for (const unit of ribbonUnits(group.entries)) {
+        const width = element.querySelector<HTMLElement>(`[data-command="${CSS.escape(unit.key)}"]`)?.getBoundingClientRect().width ?? 0;
+        if (width > 0) naturals.set(unit.key, width);
+      }
     });
-    observer.observe(container);
-    return (): void => {
-      observer.disconnect();
-    };
-  }, [measure]);
+    const room = innerWidthOf(container);
+    const gap = rowGapOf(container);
 
-  const rowRef = useCallback((element: HTMLDivElement | null): void => {
-    row.current = element;
+    // MERGED, and AN EQUAL READING MUST NOT RE-RENDER: a measurement that agrees with what is kept has nothing to
+    // say, and setting a fresh object anyway would make the observer its own trigger.
+    setMetrics((previous) => {
+      const next: Metrics = {
+        naturals: merged(previous?.naturals, naturals),
+        frames: merged(previous?.frames, frames),
+        room,
+        more,
+        gap,
+      };
+      return previous !== null && sameMetrics(previous, next) ? previous : next;
+    });
   }, []);
+
+  // THE SECTION ON SCREEN, recorded after each render for the observer's readings.
+  useLayoutEffect(() => {
+    drawn.current = section;
+  });
+
+  const rowRef = useCallback(
+    (element: HTMLDivElement | null): void => {
+      observer.current?.disconnect();
+      observer.current = null;
+      row.current = element;
+      if (element === null || typeof ResizeObserver === 'undefined') return;
+      observer.current = new ResizeObserver(() => {
+        measure();
+      });
+      observer.current.observe(element);
+    },
+    [measure],
+  );
+
+  useEffect(
+    () => (): void => {
+      observer.current?.disconnect();
+    },
+    [],
+  );
 
   const groupRef = useCallback(
     (index: number) =>
@@ -165,28 +162,74 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
     [],
   );
 
-  // DERIVED, NEVER RESET. A measurement of a different row is not this row's answer, and comparing
-  // here means no effect has to set state back to `null` when the section changes — which is the
-  // cascading render the pattern above avoids on the other side.
-  const current = measured !== null && measured.section === section ? measured : null;
+  // THE FOLD, from the kept numbers. `null` while any button or group this section can show has no measurement.
+  const fold = useMemo<RowFold | null>(() => {
+    if (section === undefined || metrics === null) return null;
+    const widths: GroupWidths[] = [];
+    for (const group of section.groups) {
+      const frame = metrics.frames.get(group.group);
+      if (frame === undefined) return null;
+      const buttons: number[] = [];
+      for (const unit of ribbonUnits(group.entries)) {
+        const width = metrics.naturals.get(unit.key);
+        if (width === undefined) return null;
+        buttons.push(width);
+      }
+      widths.push({
+        buttons,
+        chrome: frame.chrome,
+        gap: frame.gap,
+        secondaries: group.entries.filter((entry) => entry.secondary).length,
+      });
+    }
+    return foldRow(widths, metrics.room, metrics.more, metrics.gap);
+  }, [metrics, section]);
+
+  // A ROW DRAWN WITH A BUTTON NOBODY HAS MEASURED is measured once it is on screen. No resize announces it — the
+  // row's box is the same size when its content overflows — so this is the one other trigger, and it fires only
+  // while the fold is still unknown, which is a section's first appearance.
+  useLayoutEffect(() => {
+    if (fold === null && section !== undefined) measure();
+  }, [fold, measure, section]);
 
   return {
     rowRef,
     groupRef,
-    folds: current?.folds ?? null,
-    hiddenFrom: current?.hiddenFrom ?? section?.groups.length ?? 0,
+    folds: fold?.groups ?? null,
+    hiddenFrom: fold?.hiddenFrom ?? section?.groups.length ?? 0,
   };
 }
 
-/** Whether two answers say the same thing, so an unchanged measurement renders nothing. */
-function same(left: readonly GroupFold[], right: readonly GroupFold[]): boolean {
-  if (left.length !== right.length) return false;
-  // `at`, so the pair is a value both the compiler and the lint rule agree can be absent — an index
-  // read is narrowed differently by each and neither spelling satisfies both.
-  return left.every((entry, index) => {
-    const other = right.at(index);
-    return other?.shown === entry.shown && other.more === entry.more;
-  });
+/** `previous` with `readings` laid over it, or `previous` itself when nothing it holds changed. */
+function merged<T>(previous: ReadonlyMap<string, T> | undefined, readings: ReadonlyMap<string, T>): ReadonlyMap<string, T> {
+  if (previous === undefined) return readings;
+  let changed = false;
+  for (const [key, value] of readings) {
+    if (!same(previous.get(key), value)) changed = true;
+  }
+  if (!changed) return previous;
+  return new Map([...previous, ...readings]);
+}
+
+/** Two kept readings equal by value: a width, or a frame's two numbers. */
+function same<T>(left: T | undefined, right: T): boolean {
+  if (typeof right === 'object' && right !== null && typeof left === 'object' && left !== null) {
+    const a = left as unknown as GroupFrame;
+    const b = right as unknown as GroupFrame;
+    return a.chrome === b.chrome && a.gap === b.gap;
+  }
+  return left === right;
+}
+
+/** Whether two sets of metrics say the same thing, so an unchanged measurement renders nothing. */
+function sameMetrics(left: Metrics, right: Metrics): boolean {
+  return (
+    left.naturals === right.naturals &&
+    left.frames === right.frames &&
+    left.room === right.room &&
+    left.more === right.more &&
+    left.gap === right.gap
+  );
 }
 
 /**
