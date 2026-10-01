@@ -209,7 +209,13 @@ function check(name, condition, detail) {
   // below is what stops the replacement being wrong in the other direction; what
   // stops it being wrong in this one is re-asking the question whenever an edge
   // kind is added, which is written here rather than remembered.
-  const UNREACHED = 'packages/shared/src/geometry.ts';
+  //
+  // A THIRD TIME, 2026-10-01: `packages/shared/src/geometry.ts` stopped being
+  // unreached when `proof:shippedmodules` and `proof:hostfileanswers` took build
+  // edges naming the whole `packages/shared/src` directory — they run the built
+  // shared package, so the edge is true. The fixture moved to a module of the
+  // testing package, which no build edge names (asked of `affectedProofs` itself).
+  const UNREACHED = 'packages/testing/src/domCleanup.ts';
   check(
     'CONTROL: the unreached fixture is a tracked file, so its emptiness means something',
     filesInCommit({ cwd: ROOT }).includes(UNREACHED),
