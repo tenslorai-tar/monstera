@@ -28,9 +28,22 @@
  */
 import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 
+import { NATIVE_ENGINE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { repoRoot } from '../lib/gitScope.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 
 if (bindNativeEngine() === null) throw new Error('the native MuPDF shim is not built here: npm run provision:mupdf');
+// THE BUILT WRITER AND COMMANDS ARE THE SUBJECT: a stale build would measure yesterday's save terms under today's name.
+refuseStaleBuild(
+  repoRoot(),
+  [
+    ['packages/kernel/src/engine.ts', 'packages/kernel/dist/engine.js', 'tsc'],
+    ['packages/kernel/src/mupdfWriter.ts', 'packages/kernel/dist/mupdfWriter.js', 'tsc'],
+    ['packages/kernel/src/commandSpecs.ts', 'packages/kernel/dist/commandSpecs.js', 'tsc'],
+    ...NATIVE_ENGINE,
+  ],
+  4,
+);
 const mupdf = await import('../../packages/kernel/dist/mupdfRaw.js');
 const kernel = await import('../../packages/kernel/dist/engine.js');
 const { mupdfWriter, localMupdfExecution } = kernel;
