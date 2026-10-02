@@ -82,6 +82,7 @@
  * @role bg2 surface @over ground canvas
  * @role surface surface @over ground bg bg2
  * @role float surface @over any
+ * @role list surface
  * @role surface2 surface @over bg bg2 surface float canvas
  * @role active surface @over bg bg2 surface
  * @role page surface
@@ -102,8 +103,8 @@
  * @role accent-grad-top fill
  * @role accent-grad-bottom fill
  * @role redact-mark graphic @on page
- * @role text text @on ground bg bg2 surface surface2 canvas float active dialog-head-wash
- * @role muted text @on ground bg bg2 surface surface2 canvas float
+ * @role text text @on ground bg bg2 surface surface2 canvas float list active dialog-head-wash
+ * @role muted text @on ground bg bg2 surface surface2 canvas float list
  * @role faint text @on ground bg bg2 surface canvas
  * @role accent-text text @on ground bg bg2 surface canvas float
  * @role border-control boundary-control @on ground bg bg2 surface surface2 canvas float
@@ -119,6 +120,8 @@
  * @role violet-top surface
  * @role violet-bottom surface
  * @role on-violet text @on violet-top violet-bottom
+ * @role bubble surface
+ * @role on-bubble text @on bubble
  * ─────────────────────────────────────────────────────────────────────────── */
 
 :root,
@@ -147,6 +150,9 @@
   /* v5 was 0.74. A menu or dialog floats over ANYTHING — a context menu over the white page is the ordinary case — and
      at 0.74 over white --muted is 3.08:1 and --text on a hovered row fails too. 0.91 is the least that holds them. */
   --float: rgba(18, 26, 23, 0.91);
+  /* OPAQUE, the float's own colour at full strength: a native list is drawn from its select's colours, and a
+     translucent one is made opaque against WHITE (`app.css`, the native select rule). */
+  --list: #121a17;
   --surface2: rgba(255, 255, 255, 0.055);
   --active: rgba(255, 255, 255, 0.16);
   --page: #ffffff;
@@ -186,6 +192,13 @@
   --violet-top: #a78bfa;
   --violet-bottom: #9775f8;
   --on-violet: #160b33;
+  /* A PERSON'S MESSAGE in the assistant's chat, green (the owner's decision, 2026-10-01). Its own surface and its own
+     text, never `--accent-soft`: that is the selected state, and ADR-0003 §4 gives it no text. OPAQUE, so the pair is
+     one colour against one colour whatever the pane sits over, and FIXED like the brand tones above, so the stored text
+     is checked by check:tokencontrast rather than derived. Text on it: dark 6.40:1, light 12.82:1, hc 11.08:1 (WCAG's
+     formula, computed 2026-10-01; a deliberately failing light value turned check:tokencontrast red at 1.77:1). */
+  --bubble: #1d6640;
+  --on-bubble: #f2f7f4;
 
   /* THE PAINT, built from the roles above wherever a text sits on it. */
   --ambient:
@@ -258,6 +271,7 @@
   --surface: rgba(255, 255, 255, 0.66);
   /* v5 was 0.76; over black (a dark image on the page) --muted and --accent-text fell under 4.5:1. */
   --float: rgba(255, 255, 255, 0.83);
+  --list: #ffffff;
   --surface2: rgba(15, 30, 22, 0.045);
   --active: #ffffff;
   --page: #ffffff;
@@ -292,6 +306,9 @@
   --violet-top: #7c3aed;
   --violet-bottom: #6d28d9;
   --on-violet: #ffffff;
+  /* Pale in light, as a sent message is in the chat apps a person knows, with dark text. */
+  --bubble: #d3f2de;
+  --on-bubble: #0f2a1b;
 
   --ambient:
     radial-gradient(ellipse 60% 55% at 8% -5%, var(--glow-green), transparent 70%),
@@ -367,6 +384,7 @@
   --bg2: #000000;
   --surface: #0a0a0a;
   --float: #0a0a0a;
+  --list: #0a0a0a;
   --surface2: #101010;
   --active: #0d3a22;
   --page: #ffffff;
@@ -398,6 +416,8 @@
   --violet-top: #c4b5fd;
   --violet-bottom: #c4b5fd;
   --on-violet: #000000;
+  --bubble: #0b4527;
+  --on-bubble: #ffffff;
 
   --ambient: none;
   --grain-opacity: 0;
@@ -528,9 +548,11 @@
   --start-footer: 36px;
   --start-glyph: 34px;
   --ruler: 18px;
-  /* The Assistant's message box (v5-03): its text grows from 36 to 280 tall; a picker in its foot stays compact. */
-  --composer-min: 36px;
-  --composer-max: 280px;
+  /* The Assistant's message box: its text starts two lines tall, grows to three, then scrolls (the owner's review of
+     0.1.6.0; it grew from 36 to 280 px before). Counts of lines, so they follow the text's own line height. A picker
+     in its foot stays compact. */
+  --composer-lines-min: 2;
+  --composer-lines-max: 3;
   --composer-picker: 144px;
   --scrollbar: 10px;
   /* §10.3: the document panel's "six icon tabs (24 px tabs, 14 px icons)". */
@@ -541,7 +563,8 @@
      and the title bar 26 px"*. The derivatives are drawn at twice these, for a 2x display. v5 draws the mark in the
      MENU BAR at 18 (ADR-0107), which is where it moved from the title bar; the 26 px title-bar size is retired with it. */
   --logo-menu: 18px;
-  --logo-hero: 84px;
+  /* 118, not the 84 named above: the owner's review of 0.1.6.0 asked for the hero 40% larger (84 × 1.4 = 117.6). */
+  --logo-hero: 118px;
   /* The About window's, from the same wordmark derivative as the hero (the owner's list: the wordmark master for the
      start screen, About and the website), drawn smaller because the window is. */
   --logo-about: 64px;

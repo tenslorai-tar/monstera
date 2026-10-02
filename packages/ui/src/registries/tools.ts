@@ -1,6 +1,8 @@
 import type { DispatchableCommand } from '@monstera/contract';
 import type { PageTransform, ViewportPoint } from '@monstera/shared';
 
+import type { TextSelection } from '../TextLayer.js';
+
 /**
  * The tool registry — §7's *Tools* row, whose entry is a controller.
  *
@@ -335,6 +337,23 @@ export interface UiTool {
   readonly id: string;
   /** How the drag becomes a command. */
   readonly controller: ToolController;
+  /**
+   * The pointer over the page while this tool is active (the owner's review of 0.1.6.0: the crosshair was every
+   * tool's). ABSENT IS THE CROSSHAIR, the drawing tools' pointer — a shape is drawn from a corner and an arrow points
+   * at a spot — so the ~40 drawing tools say nothing and a tool that does not draw says what it is: `arrow` for one
+   * that picks or places (Select, the note), `text` for one that works on selected text. Read by `PageList`, which
+   * puts it on the surface as `data-cursor` for the stylesheet.
+   */
+  readonly cursor?: 'arrow' | 'text';
+  /**
+   * The command for a TEXT SELECTION, for a tool whose gesture is selecting text rather than dragging a shape — a
+   * highlighter, Acrobat's way: the words light up as they are selected and the mark lands on release.
+   *
+   * A tool that has this is never given the drawing surface: the page's own text layer takes the drag, so the
+   * selection is the browser's, glyph by glyph, and `PageList` hands the finished selection here when the pointer is
+   * released. `undefined` from it means the selection names nothing to mark.
+   */
+  readonly fromSelection?: (selection: TextSelection) => DispatchableCommand | undefined;
 }
 
 /**

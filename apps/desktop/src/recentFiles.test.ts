@@ -1,12 +1,12 @@
-import { MAX_RECENT_ENTRIES, RECENT_LENGTHS, RECENT_LENGTH_SETTING_ID, type RecentLength } from '@monstera/contract';
+import { MAX_RECENT_ENTRIES, MAX_SESSION_ENTRIES } from '@monstera/contract';
 import { asDocId } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_RECENT_LENGTH, createRecentFiles, recentLengthIn } from './recentFiles.js';
-
-/** The default length under its old name in these cases: what a store with no choice keeps. */
-const MAX_RECENT = DEFAULT_RECENT_LENGTH;
+import { createRecentFiles } from './recentFiles.js';
 import type { SettingsSurface } from './settingsFile.js';
+
+/** What the store keeps, under the name these cases have always used. */
+const MAX_RECENT = MAX_RECENT_ENTRIES;
 
 /**
  * A JSON surface over a variable, so a case can outlive one store and open a
@@ -45,32 +45,37 @@ describe('the recent list', () => {
     // notice them parting. Raise one alone and every recent-files read is
     // refused at the boundary, at run time, with nothing red at build time.
     //
-    // SINCE 2026-09-28 THE CAP IS A PERSON'S CHOICE: the longest they can choose must be what the boundary carries, and
-    // a store at that length must keep exactly that many — asserted on the STORE, not on the table, since the table
-    // and the bound are derived from one another and would agree whatever the store did.
-    const longest = Math.max(...Object.values(RECENT_LENGTHS));
-    expect(longest).toBe(MAX_RECENT_ENTRIES);
-    const recent = createRecentFiles(aFile(), undefined, () => longest);
-    for (let index = 0; index < longest + 3; index += 1) recent.record({ path: `C:/${String(index)}.pdf`, name: 'x.pdf' });
+    // FOUR, THE OWNER'S NUMBER (2026-10-01), asserted on the STORE: the boundary's bound is the contract's constant and
+    // the store imports it, so the two cannot disagree by number — only by the store keeping more than it says.
+    expect(MAX_RECENT_ENTRIES).toBe(4);
+    const recent = createRecentFiles(aFile());
+    for (let index = 0; index < MAX_RECENT_ENTRIES + 3; index += 1) recent.record({ path: `C:/${String(index)}.pdf`, name: 'x.pdf' });
     expect(recent.list()).toHaveLength(MAX_RECENT_ENTRIES);
   });
 
-  it('keeps the CHOSEN length, read at each use — longer than the old cap, then shorter — and says what it dropped', () => {
-    let chosen: RecentLength = 'twenty';
-    const recent = createRecentFiles(aFile(), undefined, () => recentLengthIn({ [RECENT_LENGTH_SETTING_ID]: chosen }));
+  it('cuts a STORED LIST longer than four as it opens — on disk at once — and hands the cut paths to the drop listener when it registers', () => {
+    // A document an earlier build wrote, when a person could keep up to thirty.
+    const entries = Array.from({ length: 10 }, (_, index) => ({ path: `C:/${String(index)}.pdf`, name: `${String(index)}.pdf` }));
+    const file = aFile({ entries });
+    const recent = createRecentFiles(file);
+
+    // DISCARDED FROM THE DOCUMENT before anything reads the list: only the four newest are written back.
+    expect((file.held()['entries'] as unknown[]).length).toBe(4);
+    expect(recent.list().map((entry) => entry.name)).toStrictEqual(['0.pdf', '1.pdf', '2.pdf', '3.pdf']);
+
+    // AND THEIR PICTURES GO TOO: the six cut before any listener existed are delivered the moment one registers.
     const left: string[][] = [];
     recent.onDropped((paths) => left.push([...paths]));
-    for (let index = 0; index < 25; index += 1) recent.record({ path: `C:/${String(index)}.pdf`, name: `${String(index)}.pdf` });
+    expect(left).toStrictEqual([['C:/4.pdf', 'C:/5.pdf', 'C:/6.pdf', 'C:/7.pdf', 'C:/8.pdf', 'C:/9.pdf']]);
+  });
 
-    // TWENTY, which the old fixed cap of ten could not hold.
-    expect(recent.list()).toHaveLength(20);
-    chosen = 'five';
-    // SHORTENED: the next reading keeps the five newest, and the fifteen past them leave, pictures and all.
-    expect(recent.list().map((entry) => entry.name)).toStrictEqual(['24.pdf', '23.pdf', '22.pdf', '21.pdf', '20.pdf']);
-    expect(left.at(-1)).toHaveLength(15);
-    // AN UNKNOWN VALUE, a hand-edited file, is the default rather than nothing.
-    expect(recentLengthIn({ [RECENT_LENGTH_SETTING_ID]: 'eleventy' })).toBe(DEFAULT_RECENT_LENGTH);
-    expect(recentLengthIn({})).toBe(DEFAULT_RECENT_LENGTH);
+  it('CONTROL: a stored list of four or fewer hands nothing to the drop listener', () => {
+    const entries = [{ path: 'C:/a.pdf', name: 'a.pdf' }];
+    const recent = createRecentFiles(aFile({ entries }));
+    const left: string[][] = [];
+    recent.onDropped((paths) => left.push([...paths]));
+    expect(left).toStrictEqual([]);
+    expect(recent.list()).toHaveLength(1);
   });
 
   it('keeps what was recorded, newest first', () => {
@@ -169,16 +174,16 @@ describe('the recent list', () => {
     for (let index = 0; index <= MAX_RECENT; index += 1) {
       recent.record({ path: `C:/${String(index)}.pdf`, name: `${String(index)}.pdf` });
     }
-    recent.forget('C:/5.pdf');
+    recent.forget('C:/2.pdf');
     // A path not on the list leaves nothing, so nothing is said.
     recent.forget('C:/never.pdf');
     const cleared = recent.clear();
 
     expect(left).toStrictEqual([
-      // THE OLDEST, pushed out by the eleventh: the quiet way to leave, and the one easiest to miss.
+      // THE OLDEST, pushed out by the fifth: the quiet way to leave, and the one easiest to miss.
       ['C:/0.pdf'],
-      ['C:/5.pdf'],
-      ['C:/10.pdf', 'C:/9.pdf', 'C:/8.pdf', 'C:/7.pdf', 'C:/6.pdf', 'C:/4.pdf', 'C:/3.pdf', 'C:/2.pdf', 'C:/1.pdf'],
+      ['C:/2.pdf'],
+      ['C:/4.pdf', 'C:/3.pdf', 'C:/1.pdf'],
     ]);
     expect(cleared).toBe(MAX_RECENT - 1);
     expect(recent.list()).toStrictEqual([]);
@@ -294,6 +299,23 @@ describe('the recent list', () => {
      */
     const DRAFT = asDocId('00000000-0000-4000-8000-0000000000d1');
     const NOTES = asDocId('00000000-0000-4000-8000-0000000000d2');
+
+    it('carries EVERY open document after a crash, more than the four the recent list keeps', () => {
+      // THE SESSION IS NOT TRIMMED TO THE RECENT CAP. It was, until 2026-10-01, and at four a reader with six tabs who
+      // lost the application would have been offered four of them.
+      const file = aFile();
+      const first = createRecentFiles(file);
+      const names = Array.from({ length: 6 }, (_, index) => `${String(index)}.pdf`);
+      names.forEach((name, index) => {
+        first.opened(asDocId(`00000000-0000-4000-8000-0000000000e${String(index)}`), { path: `C:/${name}`, name });
+      });
+      // No `markCleanExit`: this run died.
+      const next = createRecentFiles(file);
+      expect(next.lastExitClean()).toBe(false);
+      expect(next.lastSession().map((entry) => entry.name)).toStrictEqual(names);
+      expect(names.length).toBeGreaterThan(MAX_RECENT);
+      expect(names.length).toBeLessThanOrEqual(MAX_SESSION_ENTRIES);
+    });
 
     it('carries what is OPEN, which is not the head of the recent list', () => {
       // THE TWO LISTS ARE MADE TO DISAGREE, and that is the case rather than

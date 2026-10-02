@@ -444,5 +444,6 @@ export function selectTool(deps: SelectDeps): UiTool {
     },
   };
 
-  return { id: SELECT_TOOL_ID, controller };
+  // THE ARROW: this tool picks what is there rather than drawing something new (the owner's review of 0.1.6.0).
+  return { id: SELECT_TOOL_ID, controller, cursor: 'arrow' };
 }

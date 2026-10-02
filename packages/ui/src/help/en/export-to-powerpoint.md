@@ -10,10 +10,10 @@ Export to PowerPoint makes a presentation with one slide per page. Each slide sh
 
 ## Steps
 
-1. In the rail, choose **Tools**. In the **Convert** group, choose **More**, then **PowerPoint…**.
+1. In the rail, choose **Tools**. In the **Convert** group, choose **More**, then **Export to PowerPoint…**.
 2. Choose where to save the file.
 
-![The Export group's More menu with PowerPoint…](screenshot:export-to-powerpoint-1)
+![The Convert group's More menu with Export to PowerPoint…](screenshot:export-to-powerpoint-1)
 
 ## Good to know
 
@@ -23,5 +23,5 @@ Export to PowerPoint makes a presentation with one slide per page. Each slide sh
 
 <!--
 Screenshots to capture:
-1. export-to-powerpoint-1 — Tools › Convert › More menu open with PowerPoint… highlighted. Frame the menu.
+1. export-to-powerpoint-1 — Tools › Convert › More menu open with Export to PowerPoint… highlighted. Frame the menu.
 -->

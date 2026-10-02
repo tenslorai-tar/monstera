@@ -10,11 +10,11 @@ Pick several pictures and Monstera makes a PDF with one picture on each page.
 
 ## Steps
 
-1. In the rail, choose **Tools**, then **From images…** in the **Create** group (**New PDF from images…**).
+1. In the rail, choose **Tools**, then **From images** in the **Create** group. In a narrower window it is under the group's **More**, as **New PDF from images…**.
 2. Pick the JPEG or PNG files.
 3. Choose where to save the PDF. It opens in a new tab.
 
-![The Create group with From images…](screenshot:pdf-from-images-1)
+![The Create group with From images](screenshot:pdf-from-images-1)
 
 ## Good to know
 

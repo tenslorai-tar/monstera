@@ -14,8 +14,9 @@ import { UPDATE_CHECK_SETTING } from './updates.js';
  */
 describe('the settings main reads', () => {
   it('each is registered, with the contract definition’s own schema and default', () => {
-    // VACUITY GUARD: twelve were found, and a list that went empty would make every line below vacuous.
-    expect(STORED_SETTINGS.length).toBe(12);
+    // VACUITY GUARD: twelve were found, and a list that went empty would make every line below vacuous. Eleven since
+    // the recent list's length stopped being a setting (756f8578: four, the owner's number).
+    expect(STORED_SETTINGS.length).toBe(11);
     // THE UPDATE CHECK'S SWITCH IS REGISTERED ONLY WHILE THE CHECK HAS AN ADDRESS (ADR-0110, dormant), so it is not in
     // `ALL_SETTINGS` today; its definition is taken from where it is declared, and held the same way.
     const declared = [...ALL_SETTINGS, UPDATE_CHECK_SETTING];

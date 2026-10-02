@@ -245,6 +245,8 @@ export function AnnotationOverlay({
       className="m-annotation-overlay"
       data-annotation-overlay={String(page)}
       data-tool={tool.id}
+      // THE TOOL'S OWN POINTER (`UiTool.cursor`); the drawing tools say nothing and draw with the crosshair.
+      data-cursor={tool.cursor ?? 'crosshair'}
       onKeyDown={(event): void => {
         // ESCAPE ABANDONS THE DRAG, which is the fourth phase of §6's
         // lifecycle arriving where the state lives.

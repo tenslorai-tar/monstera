@@ -11,10 +11,10 @@ Insert a blank page adds an empty page straight after the page you are on, the s
 ## Steps
 
 1. Go to the page after which you want the blank page.
-2. In the rail, choose **Organize**. In the **Pages** group, choose **More**, then **Blank page**.
+2. In the rail, choose **Organize**. In the **Pages** group, choose **More**, then **Insert blank page**.
 3. Or right-click the page and choose **Insert blank page**.
 
-![The Pages group's More menu with Blank page](screenshot:insert-a-blank-page-1)
+![The Pages group's More menu with Insert blank page](screenshot:insert-a-blank-page-1)
 
 ## Good to know
 
@@ -22,5 +22,5 @@ Insert a blank page adds an empty page straight after the page you are on, the s
 
 <!--
 Screenshots to capture:
-1. insert-a-blank-page-1 — Organize section, Pages group More menu open. Frame the menu with Blank page.
+1. insert-a-blank-page-1 — Organize section, Pages group More menu open. Frame the menu with Insert blank page.
 -->

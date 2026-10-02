@@ -16,7 +16,7 @@ protects users rather than the project.
 | `monstera_logo_no_text.png` | 2048 × 2048, RGBA | **master — supplied by the owner**: the mark alone | `logo-title.png`, `logo.ico`; the Store's 73 images — the package's 72 and the listing's app tile icon (`npm run brand:store`, built into `apps/desktop/dist/store-assets/` and not committed); the file-type icon when packaging lands |
 | `logo-256.png` | 256 × 256 | generated | `README.md` and docs |
 | `logo-title.png` | 52 × 52 | generated | the menu bar's mark, drawn at 18 px (`--logo-menu`; the title bar's, at 26 px, until ADR-0107) |
-| `logo-hero.png` | 168 × 168 | generated | the start screen's hero, drawn at 84 px; the About window, at 64 px |
+| `logo-hero.png` | 236 × 236 | generated | the start screen's hero, drawn at 118 px (84 until the owner's review of 0.1.6.0 asked for 40% more); the About window, at 64 px |
 | `logo.ico` | 16/24/32/48/64/128/256 px | generated | the packaged application's icon |
 
 Which master feeds which output is this build's reading of the owner's file names, recorded in
@@ -59,8 +59,8 @@ history like its predecessor.
   are produced by fitting inside the box and padding with transparency.
 
 - **Do not ship a master to the renderer.** Each is 1.5–2.2 MB; the
-  start-screen hero is 84 px and the title bar 26 px. The UI consumes derived
-  sizes.
+  start-screen hero is 118 px and the menu bar's mark 18 px. The UI consumes
+  derived sizes.
 
 ## Archival master
 

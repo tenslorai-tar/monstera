@@ -1324,6 +1324,8 @@ export const ASSISTANT_COPIED = messageKey('assistant.copied');
 export const ASSISTANT_ADD_NOTE = messageKey('assistant.add-note');
 export const ASSISTANT_NOTED = messageKey('assistant.noted');
 export const ASSISTANT_NEW_CHAT = messageKey('assistant.new-chat');
+/** A `ChoiceMenu`'s accessible name: what is chosen, and the value chosen, since its face shows only the first. */
+export const CHOICE_MENU_NAME = messageKey('menu.choice.name');
 export const ASSISTANT_CAPTION = messageKey('assistant.caption');
 export const ASSISTANT_SCOPE_PAGE = messageKey('assistant.scope.page');
 export const ASSISTANT_SCOPE_DOCUMENT = messageKey('assistant.scope.document');
@@ -1342,11 +1344,10 @@ export const ASSISTANT_ASK = messageKey('assistant.ask-hint');
 export const ASSISTANT_NO_KEY = messageKey('assistant.no-key');
 /** A *Document only* ask to a model that searches the web for every answer, refused before sending (ADR-0108). */
 export const ASSISTANT_SEARCHES_THE_WEB = messageKey('assistant.searches-the-web');
-/** The *Document only / Document + web* switch on the Asking-about line, and what it says (ADR-0108). */
+/** The *Document only / Document + web* switch, the Sources menu, and why a choice is disabled (ADR-0108). */
 export const ASSISTANT_WEB_LABEL = messageKey('assistant.web.label');
 export const ASSISTANT_WEB_DOCUMENT = messageKey('assistant.web.document');
 export const ASSISTANT_WEB_ON = messageKey('assistant.web.on');
-export const ASSISTANT_WEB_SENDS = messageKey('assistant.web.sends');
 export const ASSISTANT_WEB_ALWAYS = messageKey('assistant.web.always');
 export const ASSISTANT_WEB_NONE_NO_SEARCH = messageKey('assistant.web.none.no-search');
 export const ASSISTANT_WEB_NONE_TERMS = messageKey('assistant.web.none.terms');
@@ -1390,23 +1391,18 @@ export const AI_PROVIDER_NAMES = {
   deepseek: AI_PROVIDER_DEEPSEEK,
 } as const satisfies Record<AiProviderId, MessageKey>;
 export const ASSISTANT_ABOUT_LABEL = messageKey('assistant.about');
-export const ASSISTANT_ABOUT_PAGE = messageKey('assistant.about.page');
-export const ASSISTANT_ABOUT_DOCUMENT = messageKey('assistant.about.document');
-export const ASSISTANT_ABOUT_SELECTION = messageKey('assistant.about.selection');
-export const ASSISTANT_ABOUT_COMMENT = messageKey('assistant.about.comment');
-export const ASSISTANT_ABOUT_COMMENTS = messageKey('assistant.about.comments');
-export const ASSISTANT_ABOUT_PICTURE = messageKey('assistant.about.picture');
 export const ASSISTANT_SENT_PICTURE = messageKey('assistant.sent.picture');
 export const ASSISTANT_SENT_COMMENTS = messageKey('assistant.sent.comments');
 export const ASSISTANT_SENT_COMMENTS_CUT = messageKey('assistant.sent.comments-cut');
 export const ASSISTANT_NO_VISION = messageKey('assistant.no-vision');
 export const ASSISTANT_PROBLEM_PAGE_TOO_LARGE = messageKey('assistant.problem.page-too-large');
-export const ASSISTANT_QUICK_READ_TABLE = messageKey('assistant.quick.read-table');
 export const SUMMARISE_COMMENTS_TITLE = messageKey('command.ai.summarise-comments');
 export const ASSISTANT_PROMPT_SUMMARISE_COMMENTS = messageKey('assistant.prompt.summarise-comments');
 export const GROUP_AI = messageKey('surface.ribbon.group.ai');
 export const AI_SETUP_TITLE = messageKey('dialog.ai-setup.title');
 export const AI_SETUP_COMMAND_TITLE = messageKey('command.ai.setup');
+export const TOAST_AI_KEY_CHECKED = messageKey('toast.ai-key-checked');
+export const TOAST_AI_KEY_KEPT_UNCHECKED = messageKey('toast.ai-key-kept-unchecked');
 export const AI_SETUP_INTRO = messageKey('dialog.ai-setup.intro');
 export const AI_SETUP_PROVIDER = messageKey('dialog.ai-setup.provider');
 export const AI_SETUP_KEY = messageKey('dialog.ai-setup.key');
@@ -1443,8 +1439,7 @@ export const SETTINGS_AI_MODELS_UNREAD = messageKey('dialog.settings.ai-models.u
  */
 export const AI_MODELS_NONE = messageKey('ai.models.none');
 export const AI_SAVE_HISTORY_TITLE = messageKey('setting.ai.save-history.title');
-export const ASSISTANT_ABOUT_NOTHING = messageKey('assistant.about.nothing');
-/** v5-03's "Asking about" choices, as short buttons over the message box; the sentence under them says the rest. */
+/** The Context menu's values, which until 2026-10-01 had a sentence under them saying the rest (ADR-0088's correction). */
 export const ASSISTANT_CHIP_SELECTION = messageKey('assistant.chip.selection');
 export const ASSISTANT_CHIP_COMMENT = messageKey('assistant.chip.comment');
 export const ASSISTANT_CHIP_PAGE = messageKey('assistant.chip.page');
@@ -1452,7 +1447,6 @@ export const ASSISTANT_CHIP_DOCUMENT = messageKey('assistant.chip.document');
 export const ASSISTANT_CHIP_COMMENTS = messageKey('assistant.chip.comments');
 export const ASSISTANT_CHIP_PICTURE = messageKey('assistant.chip.picture');
 export const ASSISTANT_CHIP_NOTHING = messageKey('assistant.chip.nothing');
-export const ASSISTANT_ABOUT_SENDS = messageKey('assistant.about.sends');
 export const ASSISTANT_SENT_PAGE = messageKey('assistant.sent.page');
 export const ASSISTANT_SENT_PAGES = messageKey('assistant.sent.pages');
 export const ASSISTANT_SENT_CUT = messageKey('assistant.sent.cut');
@@ -1466,10 +1460,8 @@ export const ASSISTANT_SIDES_NEEDED = messageKey('assistant.sides.needed');
 export const ASSISTANT_SENT_LEFT = messageKey('assistant.sent.left');
 export const ASSISTANT_SENT_RIGHT = messageKey('assistant.sent.right');
 export const ASSISTANT_CITATION_RIGHT = messageKey('assistant.citation.right');
-export const ASSISTANT_QUICK_LABEL = messageKey('assistant.quick');
-export const ASSISTANT_QUICK_SUMMARISE = messageKey('assistant.quick.summarise');
-export const ASSISTANT_QUICK_DATES = messageKey('assistant.quick.dates');
-export const ASSISTANT_QUICK_EXPLAIN_PAGE = messageKey('assistant.quick.explain-page');
+/** The Assistant's message box placeholder: one fixed line (the owner's decision, 2026-10-01). */
+export const ASSISTANT_PLACEHOLDER = messageKey('assistant.placeholder');
 export const ASK_AI_SELECTION_TITLE = messageKey('command.ai.ask-selection');
 export const EXPLAIN_SELECTION_TITLE = messageKey('command.ai.explain-selection');
 export const SUMMARISE_SELECTION_TITLE = messageKey('command.ai.summarise-selection');
@@ -1535,12 +1527,6 @@ export const DARK_PAGE_DESCRIPTION = messageKey('setting.viewing.dark-page.descr
 export const LOUPE_DESCRIPTION = messageKey('setting.viewing.loupe.description');
 export const RESTORE_SESSION_TITLE = messageKey('setting.viewing.restore-session.title');
 export const RESTORE_SESSION_DESCRIPTION = messageKey('setting.viewing.restore-session.description');
-export const RECENT_LENGTH_TITLE = messageKey('setting.viewing.recent-length.title');
-export const RECENT_LENGTH_DESCRIPTION = messageKey('setting.viewing.recent-length.description');
-export const RECENT_LENGTH_5 = messageKey('setting.viewing.recent-length.5');
-export const RECENT_LENGTH_10 = messageKey('setting.viewing.recent-length.10');
-export const RECENT_LENGTH_20 = messageKey('setting.viewing.recent-length.20');
-export const RECENT_LENGTH_30 = messageKey('setting.viewing.recent-length.30');
 export const SMOOTH_SCROLL_TITLE = messageKey('setting.viewing.smooth-scroll.title');
 export const SMOOTH_SCROLL_DESCRIPTION = messageKey('setting.viewing.smooth-scroll.description');
 export const PAGE_BADGES_TITLE = messageKey('setting.viewing.page-badges.title');
@@ -3306,6 +3292,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_ADD_NOTE]: 'Add this answer to the page as a note',
   [ASSISTANT_NOTED]: 'Added to the page as a note',
   [ASSISTANT_NEW_CHAT]: 'New chat',
+  [CHOICE_MENU_NAME]: '{label}: {value}',
   [ASSISTANT_CAPTION]: '{model} · {scope}',
   [ASSISTANT_SCOPE_PAGE]: 'page {page}',
   [ASSISTANT_SCOPE_DOCUMENT]: 'whole document',
@@ -3324,11 +3311,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_NO_KEY]: 'This provider has no key stored. Add it in Settings › AI; the key stays on this machine.',
   [ASSISTANT_SEARCHES_THE_WEB]:
     'This model searches the web for every answer, so nothing was sent. Choose another model, or turn on Document + web.',
-  [ASSISTANT_WEB_LABEL]: 'Answer from',
+  [ASSISTANT_WEB_LABEL]: 'Sources',
   [ASSISTANT_WEB_DOCUMENT]: 'Document only',
   [ASSISTANT_WEB_ON]: 'Document + web',
-  [ASSISTANT_WEB_SENDS]:
-    'Your question, and possibly text from the document, goes to a search engine through {provider}. Searches may cost extra.',
   [ASSISTANT_WEB_ALWAYS]: 'Always searches the web. To use this model, choose Document + web.',
   [ASSISTANT_WEB_NONE_NO_SEARCH]: 'Web search isn’t available with this provider.',
   [ASSISTANT_WEB_NONE_TERMS]: 'Web search isn’t available with this provider in Monstera.',
@@ -3355,20 +3340,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AI_PROVIDER_NAMES.groq]: 'Groq',
   [AI_PROVIDER_NAMES.perplexity]: 'Perplexity',
   [AI_PROVIDER_NAMES.deepseek]: 'DeepSeek',
-  [ASSISTANT_ABOUT_LABEL]: 'Asking about',
-  [ASSISTANT_ABOUT_PAGE]: 'This page ({page})',
-  [ASSISTANT_ABOUT_DOCUMENT]: 'The whole document, up to {characters} characters',
-  [ASSISTANT_ABOUT_SELECTION]: 'The text you selected on page {page}',
-  [ASSISTANT_ABOUT_COMMENT]: 'The comment on page {page}',
-  [ASSISTANT_ABOUT_COMMENTS]: 'All the comments in this document',
-  // VISION ANALYSIS (ADR-0090): what goes is a picture, and the line says so before Send.
-  [ASSISTANT_ABOUT_PICTURE]: 'A picture of this page ({page})',
+  [ASSISTANT_ABOUT_LABEL]: 'Context',
   [ASSISTANT_SENT_PICTURE]: 'Sent a picture of page {page} of {count}',
   [ASSISTANT_SENT_COMMENTS]: '{comments, plural, one {Sent the one comment in this document} other {Sent all # comments in this document}}',
   [ASSISTANT_SENT_COMMENTS_CUT]: '{comments, plural, one {Sent the first comment — the list was too long to send whole} other {Sent the first # comments — the list was too long to send whole}}',
   [ASSISTANT_NO_VISION]: 'This model cannot read pictures. Choose a model that can, or ask about the page’s text.',
   [ASSISTANT_PROBLEM_PAGE_TOO_LARGE]: 'This page is too large to send as a picture. Ask about its text instead.',
-  [ASSISTANT_QUICK_READ_TABLE]: 'Read the table on this page',
   [SUMMARISE_COMMENTS_TITLE]: 'Summarise comments',
   [ASSISTANT_PROMPT_SUMMARISE_COMMENTS]:
     'Summarise the comments on this document: what people ask for, what they point out, and what is still open. Cite the page of each point.',
@@ -3435,6 +3412,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // assistant needs a key.
   [AI_SETUP_TITLE]: 'Set up the AI assistant',
   [AI_SETUP_COMMAND_TITLE]: 'Set up AI…',
+  [TOAST_AI_KEY_CHECKED]: 'Your AI key works and is saved. The Assistant is ready.',
+  [TOAST_AI_KEY_KEPT_UNCHECKED]: 'Your AI key is saved. This provider cannot check a key in advance, so your first question will.',
   [AI_SETUP_INTRO]:
     'The assistant answers questions about your documents using an AI provider you choose, with your own key. Everything else in Monstera works without one, so you can skip this and add a key later in Settings.',
   [AI_SETUP_PROVIDER]: 'Provider',
@@ -3451,7 +3430,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AI_SETUP_NOT_STORED]: 'The key could not be stored securely on this computer, so it was not saved.',
   [AI_SETUP_AT_START_TITLE]: 'Offer AI setup when Monstera starts',
   [AI_SAVE_HISTORY_TITLE]: 'Save chat history',
-  [ASSISTANT_ABOUT_NOTHING]: 'Nothing from the document',
   [ASSISTANT_CHIP_SELECTION]: 'Selection',
   [ASSISTANT_CHIP_COMMENT]: 'Comment',
   [ASSISTANT_CHIP_PAGE]: 'Page {page}',
@@ -3459,9 +3437,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_CHIP_COMMENTS]: 'Comments',
   [ASSISTANT_CHIP_PICTURE]: 'Picture',
   [ASSISTANT_CHIP_NOTHING]: 'None',
-  // WHO RECEIVES IT AND WHEN, which is BUILD-PROMPT's consent sentence: document content goes
-  // to a provider only on an explicit action, and the panel says which provider.
-  [ASSISTANT_ABOUT_SENDS]: 'Sent to {provider} only when you press Send.',
   [ASSISTANT_SENT_PAGE]: 'Sent page {page} of {count}',
   [ASSISTANT_SENT_PAGES]: 'Sent pages {first} to {last} of {count}',
   [ASSISTANT_SENT_CUT]: '— cut short at {characters} characters',
@@ -3476,10 +3451,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_SIDES_NEEDED]: 'Two documents are side by side. Choose Left, Right or Both, then send.',
   [ASSISTANT_SENT_LEFT]: 'Left: {sent}',
   [ASSISTANT_SENT_RIGHT]: 'Right: {sent}',
-  [ASSISTANT_QUICK_LABEL]: 'Start with',
-  [ASSISTANT_QUICK_SUMMARISE]: 'Summarise this document',
-  [ASSISTANT_QUICK_DATES]: 'List the dates and deadlines in this document',
-  [ASSISTANT_QUICK_EXPLAIN_PAGE]: 'Explain this page',
+  [ASSISTANT_PLACEHOLDER]: 'Ask about this page…',
   [ASK_AI_SELECTION_TITLE]: 'Ask AI',
   [EXPLAIN_SELECTION_TITLE]: 'Explain',
   [SUMMARISE_SELECTION_TITLE]: 'Summarise',
@@ -3547,12 +3519,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RESTORE_SESSION_TITLE]: 'Reopen my documents at start',
   [RESTORE_SESSION_DESCRIPTION]:
     'Opens the documents that were open when Monstera last closed. After a crash you are asked instead.',
-  [RECENT_LENGTH_TITLE]: 'Recent files to keep',
-  [RECENT_LENGTH_DESCRIPTION]: 'How many documents the start screen lists. A shorter list forgets the oldest ones.',
-  [RECENT_LENGTH_5]: '5',
-  [RECENT_LENGTH_10]: '10',
-  [RECENT_LENGTH_20]: '20',
-  [RECENT_LENGTH_30]: '30',
   [SMOOTH_SCROLL_TITLE]: 'Smooth scrolling',
   [SMOOTH_SCROLL_DESCRIPTION]:
     'Going to another page glides there instead of jumping. Off whenever reduced motion is on.',

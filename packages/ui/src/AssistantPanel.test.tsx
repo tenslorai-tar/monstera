@@ -4,7 +4,7 @@ import { asDocId, asDocVersion } from '@monstera/shared';
 import { I18nProvider } from '@lingui/react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { type ReactElement, type ReactNode, useState } from 'react';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { type AssistantDocument, AssistantPanel, type AssistantPanelProps } from './AssistantPanel.js';
 import type { AssistantRequest } from './assistantRequest.js';
@@ -178,6 +178,45 @@ async function drawn(options: {
 
 function type(text: string): void {
   fireEvent.change(screen.getByLabelText('Ask about this document'), { target: { value: text } });
+}
+
+/** A choice menu's face — *Context* or *Sources* — found by the name it gives, which carries its value. */
+function choiceButton(menu: 'Context' | 'Sources'): HTMLElement {
+  return screen.getByRole('button', { name: new RegExp(`^${menu}: `, 'u') });
+}
+
+/** What a choice menu says is chosen, from its accessible name (its face shows only its own name). */
+function chosenIn(menu: 'Context' | 'Sources'): string {
+  return (choiceButton(menu).getAttribute('aria-label') ?? '').slice(menu.length + 2);
+}
+
+/** Opens a choice menu and answers its values as offered, each a radio item. */
+async function valuesIn(menu: 'Context' | 'Sources'): Promise<HTMLElement[]> {
+  fireEvent.click(choiceButton(menu));
+  return screen.findAllByRole('menuitemradio');
+}
+
+/** The value labelled `label` in an OPEN choice menu, or `undefined` when it is not offered. */
+function valueNamed(values: readonly HTMLElement[], label: string | RegExp): HTMLElement | undefined {
+  return values.find((value) => (typeof label === 'string' ? value.textContent === label : label.test(value.textContent)));
+}
+
+/** Closes an open choice menu without choosing. */
+async function closeChoices(): Promise<void> {
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
+/** Chooses a value in a choice menu, by the label it shows. */
+async function chooseIn(menu: 'Context' | 'Sources', label: string | RegExp): Promise<void> {
+  const value = valueNamed(await valuesIn(menu), label);
+  if (value === undefined) throw new Error(`${menu} offers no ${String(label)}`);
+  fireEvent.click(value);
+  await act(async () => {
+    await Promise.resolve();
+  });
 }
 
 describe('the assistant tab', () => {
@@ -377,10 +416,9 @@ describe('the assistant about a document (ADR-0088)', () => {
     return { docId, store: createDocumentStore(docId, asDocVersion(1)), page };
   }
 
-  /** Presses one of the "Asking about" buttons (v5-03), by the label it shows. */
-  function about(label: 'Selection' | 'Comment' | 'Document' | 'Comments' | 'Picture' | 'None' | RegExp): void {
-    const group = screen.getByRole('group', { name: 'Asking about' });
-    fireEvent.click(within(group).getByRole('button', { name: label }));
+  /** Chooses one of the Context values (until 2026-10-01 the "Asking about" buttons), by the label it shows. */
+  async function about(label: 'Selection' | 'Comment' | 'Document' | 'Comments' | 'Picture' | 'None' | RegExp): Promise<void> {
+    await chooseIn('Context', label);
   }
 
   /** The `about` the last ask carried, or `undefined` for an ask about nothing. */
@@ -396,13 +434,16 @@ describe('the assistant about a document (ADR-0088)', () => {
     });
   }
 
-  it('names the page as a person reads it and the provider by name, and asks about THAT page', async () => {
+  it('names the page as a person reads it and the provider by name beside Send, and asks about THAT page', async () => {
     const { sent } = await drawn({ focused: focusedOn() });
 
-    const group = screen.getByRole('group', { name: 'Asking about' });
-    expect(within(group).getByRole('button', { name: 'Page 7' }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByText(/This page \(7\)/u)).toBeTruthy();
-    expect(screen.getByText(/Sent to Anthropic only when you press Send\./u)).toBeTruthy();
+    expect(chosenIn('Context')).toBe('Page 7');
+    // THE PROVIDER IS NAMED BY THE PICKER BESIDE SEND, and no separate line restates it (ARCHITECTURE §8, the owner's
+    // decision of 2026-10-01). The picker's shown value is the positive half, so the absence below is not a blank pane.
+    const picker = screen.getByRole('combobox', { name: 'Provider' });
+    expect(within(picker).getByRole('option', { name: 'Anthropic', selected: true })).toBeTruthy();
+    expect(screen.queryByText(/only when you press Send/u)).toBeNull();
+    expect(screen.queryByText(/This page \(7\)/u)).toBeNull();
     // THE PROVIDER LIST SAYS NAMES, never the registry's ids.
     expect(screen.getByRole('option', { name: 'Google Gemini' })).toBeTruthy();
     expect(screen.queryByRole('option', { name: 'anthropic' })).toBeNull();
@@ -412,23 +453,26 @@ describe('the assistant about a document (ADR-0088)', () => {
     expect(lastAbout(sent)).toStrictEqual({ scope: 'page', docId: DOC_A, page: 6 });
   });
 
-  it('asks about the whole document when chosen, and CONTROL: about nothing sends no scope and no consent line', async () => {
+  it('asks about the whole document when chosen', async () => {
     const { sent } = await drawn({ focused: focusedOn() });
 
-    about('Document');
+    await about('Document');
     type('Summarise it');
     await send();
     expect(lastAbout(sent)).toStrictEqual({ scope: 'document', docId: DOC_A });
-
-    about('None');
-    expect(screen.queryByText(/only when you press Send/u)).toBeNull();
   });
 
   describe('Document only / Document + web (ADR-0108)', () => {
-    /** Presses one side of the switch. */
-    function answerFrom(label: 'Document only' | 'Document + web'): void {
-      const group = screen.getByRole('group', { name: 'Answer from' });
-      fireEvent.click(within(group).getByRole('button', { name: label }));
+    /** Chooses one side of the switch, in the Sources menu (until 2026-10-01 *Answer from*). */
+    async function answerFrom(label: 'Document only' | 'Document + web'): Promise<void> {
+      await chooseIn('Sources', label);
+    }
+    /** Whether a Sources value is offered disabled, read with the menu open and closed again after. */
+    async function sourceDisabled(label: 'Document only' | 'Document + web'): Promise<boolean> {
+      const value = valueNamed(await valuesIn('Sources'), label);
+      const disabled = value?.getAttribute('aria-disabled') === 'true';
+      await closeChoices();
+      return disabled;
     }
     /** The `web` the last ask carried. */
     function lastWeb(sent: readonly { id: string; params: unknown }[]): unknown {
@@ -437,19 +481,20 @@ describe('the assistant about a document (ADR-0088)', () => {
     const lastSubscription = (sent: readonly { id: string; params: unknown }[]): string =>
       (sent.filter((entry) => entry.id === 'ai.ask').at(-1)?.params as { subscription: string }).subscription;
 
-    it('starts DOCUMENT ONLY, asks with the web only once chosen, and says where the question then goes', async () => {
+    it('starts DOCUMENT ONLY, asks with the web only once chosen, and draws no web note in the pane', async () => {
       const { sent, push } = await drawn({ focused: focusedOn() });
-      const group = screen.getByRole('group', { name: 'Answer from' });
-      expect(within(group).getByRole('button', { name: 'Document only' }).getAttribute('aria-pressed')).toBe('true');
-      expect(screen.queryByText(/goes to a search engine/u)).toBeNull();
+      expect(chosenIn('Sources')).toBe('Document only');
 
       type('First');
       await send();
       expect(lastWeb(sent)).toBe(false);
       push('ai.done', { subscription: lastSubscription(sent), stopped: false, web: NO_WEB });
 
-      answerFrom('Document + web');
-      expect(screen.getByText(/goes to a search engine through Anthropic\. Searches may cost extra\./u)).toBeDefined();
+      await answerFrom('Document + web');
+      // THE NOTE LIVES IN HELP, not in the pane (the owner's decision, ADR-0108's correction of 2026-10-01). Read with
+      // the web CHOSEN, which is the only state that ever drew it, so the absence is not the Document-only default's.
+      expect(chosenIn('Sources')).toBe('Document + web');
+      expect(screen.queryByText(/search engine/u)).toBeNull();
       type('Second');
       await send();
       expect(lastWeb(sent)).toBe(true);
@@ -458,41 +503,37 @@ describe('the assistant about a document (ADR-0088)', () => {
     it('a NEW CHAT starts Document only again, and CONTROL: another document never inherits the choice', async () => {
       const a = focusedOn();
       const { sent, push, redraw } = await drawn({ focused: a });
-      const pressed = (label: string): string | null =>
-        within(screen.getByRole('group', { name: 'Answer from' })).getByRole('button', { name: label }).getAttribute('aria-pressed');
-      answerFrom('Document + web');
+      await answerFrom('Document + web');
       type('Asked with the web');
       await send();
       push('ai.delta', { subscription: lastSubscription(sent), text: 'An answer.' });
       push('ai.done', { subscription: lastSubscription(sent), stopped: false, web: NO_WEB });
 
       await redraw({ focused: focusedOn(DOC_B) });
-      expect(pressed('Document only')).toBe('true');
+      expect(chosenIn('Sources')).toBe('Document only');
 
       // BACK ON THE SAME DOCUMENT'S CHAT the choice still stands — it is that conversation's.
       await redraw({ focused: a });
-      expect(pressed('Document + web')).toBe('true');
+      expect(chosenIn('Sources')).toBe('Document + web');
       fireEvent.click(screen.getByRole('button', { name: 'New chat' }));
-      expect(pressed('Document only')).toBe('true');
+      expect(chosenIn('Sources')).toBe('Document only');
     });
 
     it('DISABLES the web, with the reason, for a provider that cannot search — and CONTROL: Anthropic can', async () => {
       await drawn({ focused: focusedOn(), stored: [ANTHROPIC_KEY, 'ai.gemini-key'] });
-      const web = (): HTMLElement =>
-        within(screen.getByRole('group', { name: 'Answer from' })).getByRole('button', { name: 'Document + web' });
-      expect(web().hasAttribute('disabled')).toBe(false);
+      expect(await sourceDisabled('Document + web')).toBe(false);
 
       fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'gemini' } });
       await act(async () => {
         await Promise.resolve();
       });
-      expect(web().hasAttribute('disabled')).toBe(true);
+      expect(await sourceDisabled('Document + web')).toBe(true);
       expect(screen.getByText('Web search isn’t available with this provider in Monstera.')).toBeDefined();
     });
 
     it('shows the web sources under the answer, opens one BY ITS PLACE, and says when no search was used', async () => {
       const { sent, push } = await drawn({ focused: focusedOn() });
-      answerFrom('Document + web');
+      await answerFrom('Document + web');
       type('When was it built?');
       await send();
       const subscription = lastSubscription(sent);
@@ -550,7 +591,7 @@ describe('the assistant about a document (ADR-0088)', () => {
 
   it('CONTROL: an ask about nothing carries no scope at all', async () => {
     const { sent, push } = await drawn({ focused: focusedOn() });
-    about('None');
+    await about('None');
     type('Just a question');
     await send();
     const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
@@ -564,7 +605,7 @@ describe('the assistant about a document (ADR-0088)', () => {
       focused: focusedOn(),
       window: { firstPage: 0, lastPage: 11, pageCount: 40, characters: 99_870, truncated: true },
     });
-    about('Document');
+    await about('Document');
     type('Summarise it');
     await send();
 
@@ -641,7 +682,7 @@ describe('the assistant about a document (ADR-0088)', () => {
     expect(a.store.getState().conversation.at(-1)).toStrictEqual({ role: 'assistant', text: 'late words' });
   });
 
-  it('a command’s request asks at once about the words it names, and the line offers that selection', async () => {
+  it('a command’s request asks at once about the words it names, and the menu offers that selection', async () => {
     const request: AssistantRequest = {
       serial: 1,
       about: { scope: 'selection', docId: DOC_A, page: 2, text: 'the indemnity clause' },
@@ -654,26 +695,27 @@ describe('the assistant about a document (ADR-0088)', () => {
 
     expect(lastAbout(sent)).toStrictEqual(request.about);
     expect(screen.getByText('Explain the selected text in plain language.')).toBeTruthy();
-    const group = screen.getByRole('group', { name: 'Asking about' });
-    expect(within(group).getByRole('button', { name: 'Selection' }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByText(/The text you selected on page 3/u)).toBeTruthy();
+    expect(chosenIn('Context')).toBe('Selection');
   });
 
-  it('CONTROL: a selection from ANOTHER document is not offered, so the line never names words not on show', async () => {
+  it('CONTROL: a selection from ANOTHER document is not offered, so the menu never offers words not on show', async () => {
     const request: AssistantRequest = {
       serial: 1,
       about: { scope: 'selection', docId: DOC_B, page: 2, text: 'words from B' },
     };
     await drawn({ focused: focusedOn(DOC_A), request });
-    // THE CHIP AND THE LINE, the two places the positive case above finds the selection. This queried an `option`
-    // until the audit of 1e1bfad..e24eca0e: the choices became buttons in 44250155 and no option exists, so the case
-    // passed whatever the panel drew.
-    const group = screen.getByRole('group', { name: 'Asking about' });
-    expect(within(group).queryByRole('button', { name: 'Selection' })).toBeNull();
-    expect(screen.queryByText(/you selected/u)).toBeNull();
+    // THE MENU, the one place the positive case above finds the selection since the line under it went (ADR-0088's
+    // correction of 2026-10-01). This queried an `option` until the audit of 1e1bfad..e24eca0e: the choices became
+    // buttons in 44250155 and no option exists, so the case passed whatever the panel drew. Since 2026-10-01 they are
+    // the Context menu's values, read with it OPEN — a closed menu holds no value at all, which would pass this the
+    // same way.
+    const values = await valuesIn('Context');
+    expect(valueNamed(values, 'Page 7')).toBeDefined();
+    expect(valueNamed(values, 'Selection')).toBeUndefined();
+    await closeChoices();
   });
 
-  it('names a COMMENT as a comment on the line, and asks with the comment scope', async () => {
+  it('names a COMMENT as a comment in the menu, and asks with the comment scope', async () => {
     const request: AssistantRequest = {
       serial: 1,
       about: { scope: 'comment', docId: DOC_A, page: 3, text: 'Can we move the date?' },
@@ -685,12 +727,12 @@ describe('the assistant about a document (ADR-0088)', () => {
       await Promise.resolve();
     });
 
-    const group = screen.getByRole('group', { name: 'Asking about' });
-    expect(within(group).getByRole('button', { name: 'Comment' }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByText(/The comment on page 4/u)).toBeTruthy();
+    expect(chosenIn('Context')).toBe('Comment');
     // CONTROL: the selection's wording is not borrowed.
-    expect(within(group).queryByRole('button', { name: 'Selection' })).toBeNull();
-    expect(screen.queryByText(/you selected/u)).toBeNull();
+    const values = await valuesIn('Context');
+    expect(valueNamed(values, 'Comment')).toBeDefined();
+    expect(valueNamed(values, 'Selection')).toBeUndefined();
+    await closeChoices();
     const params = sent.find((entry) => entry.id === 'ai.ask')?.params as { about: { scope: string } };
     expect(params.about.scope).toBe('comment');
   });
@@ -788,38 +830,45 @@ describe('the assistant about a document (ADR-0088)', () => {
     expect(screen.queryByRole('button', { name: 'Post as a reply' })).toBeNull();
   });
 
-  it('offers quick starts on an empty conversation, and one asks about the whole document', async () => {
-    const { sent } = await drawn({ focused: focusedOn() });
-    fireEvent.click(screen.getByRole('button', { name: 'Summarise this document' }));
-    await act(async () => {
-      await Promise.resolve();
+  describe('the empty box shows ONE FIXED placeholder (the owner’s decision, 2026-10-01)', () => {
+    const box = (): HTMLTextAreaElement => screen.getByLabelText('Ask about this document');
+
+    afterEach(() => {
+      vi.useRealTimers();
     });
-    expect(lastAbout(sent)).toStrictEqual({ scope: 'document', docId: DOC_A });
-    expect(screen.queryByRole('button', { name: 'Summarise this document' })).toBeNull();
+
+    it('reads “Ask about this page…” and still does while empty, unfocused and time passes, sending nothing', async () => {
+      // EMPTY AND UNFOCUSED is the state the rotation moved in until 2026-10-01, and twelve seconds is three of its
+      // turns, so a timer brought back fails here rather than reading as the first suggestion.
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
+      const { sent } = await drawn({ focused: focusedOn() });
+      expect(box().placeholder).toBe('Ask about this page…');
+      act(() => {
+        vi.advanceTimersByTime(12_000);
+      });
+      expect(box().placeholder).toBe('Ask about this page…');
+      expect(sent.some((entry) => entry.id === 'ai.ask')).toBe(false);
+    });
   });
 
-  it('SUMMARISE COMMENTS: the command’s request asks at once about the comments, and the line names them', async () => {
+  it('SUMMARISE COMMENTS: the command’s request asks at once about the comments, and the menu names them', async () => {
     const { sent } = await drawn({
       focused: focusedOn(),
       request: { serial: 1, about: { scope: 'comments', docId: DOC_A }, prompt: ASSISTANT_PROMPT_SUMMARISE_COMMENTS },
     });
     expect(lastAbout(sent)).toStrictEqual({ scope: 'comments', docId: DOC_A });
-    const group = screen.getByRole('group', { name: 'Asking about' });
-    expect(within(group).getByRole('button', { name: 'Comments' }).getAttribute('aria-pressed')).toBe('true');
-    // THE CHOICE IN FULL, under the buttons.
-    expect(screen.getByText(/All the comments in this document/u)).toBeTruthy();
+    expect(chosenIn('Context')).toBe('Comments');
   });
 
   describe('a picture of the page — vision analysis (ADR-0090)', () => {
-    it('the quick start asks about a PICTURE of the page on screen, and the turn says a picture went', async () => {
+    it('Context › Picture asks about a PICTURE of the page on screen, and the turn says a picture went', async () => {
       const { sent } = await drawn({
         focused: focusedOn(),
         window: { firstPage: 6, lastPage: 6, pageCount: 9, characters: 0, truncated: false, picture: true },
       });
-      fireEvent.click(screen.getByRole('button', { name: 'Read the table on this page' }));
-      await act(async () => {
-        await Promise.resolve();
-      });
+      await about('Picture');
+      type('Read the table on this page');
+      await send();
       expect(lastAbout(sent)).toStrictEqual({ scope: 'page-image', docId: DOC_A, page: 6 });
       // NOT "No text was found to send", which is what a picture's zero characters would say.
       expect(screen.getByText('Sent a picture of page 7 of 9')).toBeTruthy();
@@ -834,11 +883,10 @@ describe('the assistant about a document (ADR-0088)', () => {
         ],
       });
       // A STALE CHOICE, made for real: Picture chosen while a model that can see is picked, then the blind one picked.
-      about('Picture');
+      await about('Picture');
       fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'm-blind' } });
-      const group = screen.getByRole('group', { name: 'Asking about' });
-      expect(within(group).getByRole('button', { name: 'Picture' }).hasAttribute('disabled')).toBe(true);
-      expect(screen.getByRole('button', { name: 'Read the table on this page' }).hasAttribute('disabled')).toBe(true);
+      expect(valueNamed(await valuesIn('Context'), 'Picture')?.getAttribute('aria-disabled')).toBe('true');
+      await closeChoices();
 
       // CHOSEN BEFORE — it still sends nothing, and says why.
       expect(screen.getByText(/This model cannot read pictures/u)).toBeTruthy();
@@ -852,8 +900,9 @@ describe('the assistant about a document (ADR-0088)', () => {
 
     it('CONTROL: a model whose provider does not say is offered it — unknown is not "cannot"', async () => {
       await drawn({ focused: focusedOn(), models: [{ id: 'm-1', label: 'Model one', vision: null }] });
-      const group = screen.getByRole('group', { name: 'Asking about' });
-      expect(within(group).getByRole('button', { name: 'Picture' }).hasAttribute('disabled')).toBe(false);
+      const picture = valueNamed(await valuesIn('Context'), 'Picture');
+      expect(picture).toBeDefined();
+      expect(picture?.getAttribute('aria-disabled')).not.toBe('true');
     });
   });
 
@@ -870,14 +919,13 @@ describe('the assistant about a document (ADR-0088)', () => {
       fireEvent.click(screen.getByRole('radio', { name }));
     }
 
-    it('asks BEFORE sending: nothing chosen, Send and the quick starts wait, and pressing Send sends nothing', async () => {
+    it('asks BEFORE sending: nothing chosen, Send waits, and pressing Send sends nothing', async () => {
       const { sent } = await drawn({ focused: focusedOn(), beside: BESIDE });
 
       const radios = screen.getAllByRole('radio');
       expect(radios.map((radio) => (radio as HTMLInputElement).checked)).toStrictEqual([false, false, false]);
       expect(screen.getByText('Two documents are side by side. Choose Left, Right or Both, then send.')).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(true);
-      expect(screen.getByRole('button', { name: 'Summarise this document' }).hasAttribute('disabled')).toBe(true);
 
       type('Which is later?');
       fireEvent.keyDown(screen.getByLabelText('Ask about this document'), { key: 'Enter' });
@@ -897,12 +945,11 @@ describe('the assistant about a document (ADR-0088)', () => {
       expect(lastAsk(sent).alongside).toStrictEqual({ scope: 'page', docId: DOC_B, page: 2 });
     });
 
-    it('RIGHT sends the right document alone, and the page line names the right pane’s page', async () => {
+    it('RIGHT sends the right document alone, and the Context menu names the right pane’s page', async () => {
       const { sent } = await drawn({ focused: focusedOn(), beside: BESIDE });
 
       pick('Right');
-      expect(within(screen.getByRole('group', { name: 'Asking about' })).getByRole('button', { name: 'Page 3' })).toBeTruthy();
-      expect(screen.getByText(/This page \(3\)/u)).toBeTruthy();
+      expect(chosenIn('Context')).toBe('Page 3');
       type('What is on the right page?');
       await send();
       expect(lastAsk(sent).about).toStrictEqual({ scope: 'page', docId: DOC_B, page: 2 });
@@ -1010,9 +1057,9 @@ describe('the chat extras (the owner’s design, 2026-09-15)', () => {
 
   it('REGENERATE asks the same question about the SAME scope again, and replaces the answer', async () => {
     const { sent, store } = await answered();
-    // CONTROL of the premise: move the *Asking about* line away, so re-asking "what the line says
+    // CONTROL of the premise: move the Context choice away, so re-asking "what the line says
     // now" would send the whole document instead of page 3.
-    fireEvent.click(within(screen.getByRole('group', { name: 'Asking about' })).getByRole('button', { name: 'Document' }));
+    await chooseIn('Context', 'Document');
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate this answer' }));
     await act(async () => {
       await Promise.resolve();

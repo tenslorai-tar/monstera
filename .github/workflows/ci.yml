@@ -256,6 +256,14 @@ jobs:
       - name: No decorative border token bounds an unmarked control
         run: node scripts/ci/annotate.mjs scripts/lib/borderTokens.mjs
 
+      # One class owns an element's layout: two classes that both set it are decided by source order, which no
+      # component author sees (every menu bar item, until 2026-10-01). The scan refuses to report when it cannot see.
+      - name: Prove the layout-ownership scan reports two owners and tolerates a modifier
+        run: node scripts/ci/annotate.mjs scripts/proofs/layoutOwnership.proof.mjs
+
+      - name: No element's classes both set its layout
+        run: node scripts/ci/annotate.mjs scripts/lib/layoutOwnership.mjs
+
       # The scan the two above could not have made. Both ask whether a token's
       # ROLE fits its context; neither asks whether the token EXISTS — and
       # `--space-3` shipped a button with no padding at all, because an
@@ -887,6 +895,11 @@ jobs:
       # annotations route was used instead.
       - name: Provision the pinned browser for the accessibility gate
         run: node scripts/ci/annotate.mjs scripts/provision/playwright.mjs
+
+      # THE GATE LAUNCHES THE BROWSER THAT STEP INSTALLED, whatever the runner's environment says, and reading where
+      # it is runs no install. Needs node_modules (the config imports @playwright/test), which this job has.
+      - name: The rendered tests look where the browser was provisioned
+        run: node scripts/ci/annotate.mjs scripts/provision/playwright.proof.mjs
 
       # WRAPPED, through the wrapper's --npm form. This read "NOT wrapped, and it
       # cannot be: `annotate.mjs` spawns a node SCRIPT" — true when written, and

@@ -2378,8 +2378,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         onSecretsChanged: () => {
           refreshSecrets();
         },
+        toast,
       }),
-    [ask, client, refreshSecrets, settings],
+    [ask, client, refreshSecrets, settings, toast],
   );
 
   /**
@@ -4027,7 +4028,7 @@ function PageCanvas({
       <DocumentBody
         settings={settings}
         panel={<DocumentPanel settings={settings} panels={panels} pages={null} />}
-        page={<div className="m-page-list" />}
+        page={<div className="m-page-pane" />}
         contextPanel={contextPanel} quickToolbar={quickToolbar}
       />
     );

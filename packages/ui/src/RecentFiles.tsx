@@ -159,7 +159,7 @@ export function RecentFiles({
           <h2 className="m-recent-heading">{_(RECENT_HEADING)}</h2>
           <button
             type="button"
-            className="m-recent-clear"
+            className="m-recent-action"
             onClick={() => {
               void client['document.clearRecent']({}).then(
                 (answer) => {
@@ -181,6 +181,8 @@ export function RecentFiles({
         <p className="m-recent-empty">{_(RECENT_EMPTY)}</p>
       ) : (
         <ul className="m-recent-list">
+          {/* EVERY ENTRY MAIN SENDS, and main keeps four (`MAX_RECENT_ENTRIES`): the one number lives in the store that
+              writes the list, so the screen has no cap of its own to drift from it (B3). */}
           {state.entries.map((entry) => (
             // THE HANDLE IS THE KEY. It is minted per path and idempotent, so
             // it is the one value here that identifies a row — two files may

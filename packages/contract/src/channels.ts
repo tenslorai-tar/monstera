@@ -888,19 +888,24 @@ export type DisplayLocation = z.infer<typeof displayLocationSchema>;
  * a mechanism reads exactly like one, which is why the audit that found this
  * looked for the case rather than for a disagreement.
  *
- * **Since 2026-09-28 the store's cap is a person's choice** (`RECENT_LENGTHS`), so the boundary's bound is the
- * largest of them — derived from that one table, which the renderer's setting and `main`'s store both read, so a
- * length a person can choose is never one the boundary refuses.
+ * **FOUR, AND NOT A CHOICE (the owner, 2026-10-01): *"Show just exactly 4 and nothing more. Discard the rest. Keep
+ * only the latest 4."*** From 2026-09-28 the cap was a person's choice of 5 to 30 (`viewing.recent-length`), and the
+ * start screen then showed four of them; a remembered file no surface showed, under a setting that changed nothing a
+ * person could see, is the display-only defect. So the store keeps four, the start screen shows what it keeps, and the
+ * setting is withdrawn.
  */
-export const RECENT_LENGTHS = { five: 5, ten: 10, twenty: 20, thirty: 30 } as const;
+export const MAX_RECENT_ENTRIES = 4;
 
-/** One of {@link RECENT_LENGTHS}' choices. */
-export type RecentLength = keyof typeof RECENT_LENGTHS;
-
-/** Part F's *"recent-files length"* (`BUILD-PROMPT.md`:611): one id, read by `main`'s store and declared by the renderer. */
-export const RECENT_LENGTH_SETTING_ID = 'viewing.recent-length';
-
-export const MAX_RECENT_ENTRIES: number = Math.max(...Object.values(RECENT_LENGTHS));
+/**
+ * How many documents a recorded SESSION carries — what was open when a run ended, for the crash offer and
+ * `viewing.restore-session`.
+ *
+ * NOT the recent cap, which bounded it until 2026-10-01: a session is the reader's open tabs, and a crash offer that
+ * reopened four of six would drop two documents without a word ("preserve, never drop"). Thirty is the bound this
+ * channel already carried — the widest recent length the withdrawn setting allowed — so no session a build has
+ * written is refused by this one.
+ */
+export const MAX_SESSION_ENTRIES = 30;
 
 /**
  * Part F's *"backup copies to keep"* (`BUILD-PROMPT.md`:617): how many earlier versions a save leaves beside the file —
@@ -1820,7 +1825,7 @@ export const channels = {
             name: z.string().max(MAX_DOCUMENT_NAME_LENGTH),
           }),
         )
-        .max(MAX_RECENT_ENTRIES)
+        .max(MAX_SESSION_ENTRIES)
         .readonly(),
     }),
   ),
@@ -5062,7 +5067,14 @@ export const channels = {
       })
       .strict(),
     z.discriminatedUnion('accepted', [
-      z.object({ accepted: z.literal(true) }),
+      z.object({
+        accepted: z.literal(true),
+        /**
+         * Whether the provider was ASKED and confirmed the key. `false` for a provider with no list to ask, whose key
+         * is kept unchecked — so a confirmation that says *your key works* is said only where it was found to.
+         */
+        checked: z.boolean(),
+      }),
       z.object({
         accepted: z.literal(false),
         problem: z.enum(['unauthorised', 'unreachable', 'rejected', 'unreadable']),

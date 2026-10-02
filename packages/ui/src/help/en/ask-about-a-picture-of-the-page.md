@@ -11,7 +11,7 @@ Some things are easier to read from how a page looks than from its text, such as
 ## Steps
 
 1. Open the assistant (**Ctrl+Shift+A**).
-2. Choose **Read the table on this page** under **Start with**, or set **Asking about** to **A picture of this page** and type your question.
+2. Open **Context**, choose **Picture**, and type your question, for example "Read the table on this page".
 3. Press **Send**. The line under your question says **Sent a picture of page … of …**. Tables come back as tables.
 
 ![The assistant answering with a table read from a picture of the page](screenshot:ask-about-a-picture-of-the-page-1)

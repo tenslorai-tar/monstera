@@ -9,7 +9,6 @@ import {
   type AskSides,
   type ContractClient,
   MAX_ANNOTATION_TEXT,
-  MAX_ASK_CONTEXT,
   MAX_CHAT_TEXT,
   type DispatchableCommand,
   type WebSearchAbsence,
@@ -21,7 +20,7 @@ import {
 } from '@monstera/contract';
 import type { DocId, MessageKey } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
-import { ArrowUp, Copy, Pencil, RefreshCw, Square, StickyNote } from 'lucide-react';
+import { ArrowUp, Copy, Pencil, Plus, RefreshCw, Square, StickyNote } from 'lucide-react';
 import {
   Fragment,
   type ReactElement,
@@ -42,15 +41,7 @@ import type { ConversationTurn, DocumentStore } from './documentStores.js';
 import {
   AI_PROVIDER_NAMES,
   ANTHROPIC_OUT_OF_CREDIT,
-  ASSISTANT_ABOUT_COMMENT,
-  ASSISTANT_ABOUT_COMMENTS,
-  ASSISTANT_ABOUT_DOCUMENT,
   ASSISTANT_ABOUT_LABEL,
-  ASSISTANT_ABOUT_NOTHING,
-  ASSISTANT_ABOUT_PAGE,
-  ASSISTANT_ABOUT_PICTURE,
-  ASSISTANT_ABOUT_SELECTION,
-  ASSISTANT_ABOUT_SENDS,
   ASSISTANT_ASK,
   ASSISTANT_ASSISTANT,
   ASSISTANT_CHIP_COMMENT,
@@ -78,21 +69,16 @@ import {
   ASSISTANT_WEB_NONE_NO_SEARCH,
   ASSISTANT_WEB_NONE_TERMS,
   ASSISTANT_WEB_ON,
-  ASSISTANT_WEB_SENDS,
   ASSISTANT_NO_MODELS,
   ASSISTANT_NO_VISION,
   ASSISTANT_PROBLEM_PAGE_TOO_LARGE,
+  ASSISTANT_PLACEHOLDER,
   ASSISTANT_POST_REPLY,
   ASSISTANT_PROBLEM_REJECTED,
   ASSISTANT_PROBLEM_UNAUTHORISED,
   ASSISTANT_PROBLEM_UNREACHABLE,
   ASSISTANT_PROBLEM_UNREADABLE,
   ASSISTANT_PROVIDER_LABEL,
-  ASSISTANT_QUICK_DATES,
-  ASSISTANT_QUICK_EXPLAIN_PAGE,
-  ASSISTANT_QUICK_LABEL,
-  ASSISTANT_QUICK_READ_TABLE,
-  ASSISTANT_QUICK_SUMMARISE,
   ASSISTANT_SEND,
   ASSISTANT_SENT_CUT,
   ASSISTANT_SENT_LEFT,
@@ -133,8 +119,8 @@ import {
 } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { Button } from './primitives/Button.js';
+import { ChoiceMenu } from './primitives/ChoiceMenu.js';
 import { IconButton } from './primitives/IconButton.js';
-import { SegmentedControl } from './primitives/SegmentedControl.js';
 import { AI_MODELS_SETTING, AI_PROVIDER_SETTING } from './settings/ai.js';
 import type { SettingsStore } from './settingsStore.js';
 import { useSetting } from './useSetting.js';
@@ -146,12 +132,13 @@ import { useSetting } from './useSetting.js';
  * [ADR-0082](../../../docs/DECISIONS/0082-main-may-push-on-declared-event-channels.md),
  * [ADR-0088](../../../docs/DECISIONS/0088-an-ask-about-a-document-carries-a-bounded-window-read-in-main.md)).
  *
- * ## What is sent is named before it is sent
+ * ## The provider is named before anything is sent; what went is named after
  *
- * The *Asking about* line is a choice and a sentence: which part of the document goes with the
- * next ask, and which provider receives it — BUILD-PROMPT's consent copy. Nothing about the
- * document is read until Send, and each asked turn then says which pages actually went, so a
- * whole-document question about a long file says that it covered the first twelve pages.
+ * The provider picker beside Send shows who receives the next ask, and Send is the explicit
+ * action (ARCHITECTURE §8, *What reaches an AI provider*). The Context menu chooses which part
+ * of the document goes. Nothing about the document is read until Send, and each asked turn then
+ * says which pages actually went, so a whole-document question about a long file says that it
+ * covered the first twelve pages.
  *
  * ## One conversation per document, and an answer goes to the document that asked
  *
@@ -280,8 +267,8 @@ const READINESS = {
 } as const;
 
 /**
- * What the *Asking about* choice can be. A selection or a comment exists only when a command
- * gave one, and is offered under its own name — the line and the instruction both say which.
+ * What the Context choice can be. A selection or a comment exists only when a command gave one,
+ * and is offered under its own name — the menu and the instruction both say which.
  */
 type Scope = 'page' | 'page-image' | 'document' | 'comments' | 'selection' | 'comment' | 'nothing';
 
@@ -322,7 +309,7 @@ export function AssistantPanel({
   const { i18n } = useLingui();
   const providerId = useId();
   const modelId = useId();
-  const aboutId = useId();
+  const hintId = useId();
   const sidesName = useId();
   // THE PROVIDER AND EACH PROVIDER'S MODEL ARE SETTINGS (ADR-0117): this picker writes them, `main` reads Anthropic's for
   // the recogniser, and a choice survives the panel closing. The list itself is fetched here, per provider.
@@ -393,14 +380,14 @@ export function AssistantPanel({
 
   // A SELECTION BELONGS TO THE DOCUMENT IT WAS MADE IN, and it is DERIVED from the request that
   // carried it rather than copied into state: switching tabs makes it vanish by construction, so
-  // the line can never name words from a file that is not in front of the reader.
+  // the Context menu can never offer words from a file that is not in front of the reader.
   const docId = focused?.docId;
   const selection =
     (request?.about.scope === 'selection' || request?.about.scope === 'comment') && request.about.docId === docId
       ? request.about
       : null;
   // THE PERSON'S CHOICE, stamped with the newest request it was made after: a request that
-  // arrives later points the line, and a choice made after that request wins again.
+  // arrives later points the menu, and a choice made after that request wins again.
   const requestedScope =
     request !== undefined && request.serial > chosen.after ? request.about.scope : undefined;
   const wanted = requestedScope ?? chosen.scope;
@@ -776,48 +763,16 @@ export function AssistantPanel({
       </Fragment>
     );
 
-  const quickStarts = [
-    { key: ASSISTANT_QUICK_SUMMARISE, scope: 'document' },
-    { key: ASSISTANT_QUICK_DATES, scope: 'document' },
-    { key: ASSISTANT_QUICK_EXPLAIN_PAGE, scope: 'page' },
-    // VISION ANALYSIS' OWN START (D11's *table reading assist*): a picture of the page on screen.
-    { key: ASSISTANT_QUICK_READ_TABLE, scope: 'page-image' },
-  ] as const;
-
   return (
     <div className="m-assistant">
-      {readiness !== 'ready' && (
-        <p className="m-assistant__state" data-assistant-readiness={readiness}>
-          {i18n._(READINESS[readiness])}
-        </p>
-      )}
-      {problem !== null && <p className="m-assistant__problem">{i18n._(PROBLEMS[problem])}</p>}
-
-      {focused !== undefined && hasKey && turns.length === 0 && (
-        <div aria-label={i18n._(ASSISTANT_QUICK_LABEL)} className="m-assistant__quick" role="group">
-          {quickStarts.map((quick) => {
-            const wanted = newRequest(quick.scope);
-            return (
-              <Button
-                disabled={wanted === null || searchesAnyway}
-                key={quick.key}
-                label={quick.key}
-                onClick={() => {
-                  choose(quick.scope);
-                  if (wanted !== null) ask(i18n._(quick.key), wanted);
-                }}
-              />
-            );
-          })}
-        </div>
-      )}
-
       {turns.length > 0 && (
         <div className="m-assistant__conversation-bar">
-          {/* NEW CHAT empties this document's conversation — and, with history on, its saved copy
-              the next time it settles. Not while an answer is arriving: that answer has nowhere to go. */}
-          <Button
+          {/* NEW CHAT, a "+" at the top right (the owner's review of 0.1.6.0): it empties this document's
+              conversation — and, with history on, its saved copy the next time it settles. Not while an answer is
+              arriving: that answer has nowhere to go. Its name is still *New chat*, which is what a reader hears. */}
+          <IconButton
             disabled={streaming !== null}
+            icon={Plus}
             label={ASSISTANT_NEW_CHAT}
             onClick={() => {
               writeTurns([]);
@@ -826,14 +781,22 @@ export function AssistantPanel({
               // A NEW CHAT STARTS *DOCUMENT ONLY* (ADR-0108), whatever the last one used.
               setWebChosen(null);
             }}
+            size="dense"
           />
         </div>
       )}
+      {readiness !== 'ready' && (
+        <p className="m-assistant__state" data-assistant-readiness={readiness}>
+          {i18n._(READINESS[readiness])}
+        </p>
+      )}
+      {problem !== null && <p className="m-assistant__problem">{i18n._(PROBLEMS[problem])}</p>}
 
       <ol aria-label={i18n._(ASSISTANT_CONVERSATION_LABEL)} className="m-assistant__turns">
         {turns.map((turn, at) => (
           <li className="m-assistant__turn" data-assistant-role={turn.role} key={`${String(at)}-${turn.role}`}>
-            <span className="m-assistant__who">
+            {/* WHO SAID IT, read and not drawn: the bubble's side says so to the eye (`app.css`). */}
+            <span className="m-visually-hidden">
               {i18n._(turn.role === 'user' ? ASSISTANT_YOU : ASSISTANT_ASSISTANT)}
             </span>
             {turn.role === 'assistant' ? (
@@ -961,13 +924,13 @@ export function AssistantPanel({
           />
         </div>
       )}
-      {/* v5-03's FOOT: the "Asking about" choices as buttons over the message box, then the box itself with the
+      {/* THE FOOT: Context and Sources as two menus on one row over the message box (the owner's review of 0.1.6.0;
+          until then two rows of chips under the labels *Asking about* and *Answer from*), then the box itself with the
           provider and model at its bottom-left and the send arrow at its bottom-right. */}
       {focused !== undefined && (
         <div className="m-assistant__about" data-assistant-about="">
-          <div className="m-assistant__about-line">
-            <span className="m-assistant__about-label">{i18n._(ASSISTANT_ABOUT_LABEL)}</span>
-            <SegmentedControl<Scope>
+          <div className="m-assistant__choices">
+            <ChoiceMenu<Scope>
               label={ASSISTANT_ABOUT_LABEL}
               onChange={choose}
               options={[
@@ -992,25 +955,22 @@ export function AssistantPanel({
                 { value: 'nothing' as const, label: ASSISTANT_CHIP_NOTHING },
               ]}
               value={scope}
-              wrap
             />
-          </div>
-          {/* DOCUMENT ONLY OR DOCUMENT + WEB (ADR-0108): each choice disabled, never dropped, where this provider and
-              model cannot take it — with the sentence that says why beneath. */}
-          <div className="m-assistant__about-line" data-assistant-web="">
-            <span className="m-assistant__about-label">{i18n._(ASSISTANT_WEB_LABEL)}</span>
-            <SegmentedControl<'document' | 'web'>
-              label={ASSISTANT_WEB_LABEL}
-              onChange={(next) => {
-                setWebChosen(next === 'web' ? { docId: focused.docId } : null);
-              }}
-              options={[
-                { value: 'document', label: ASSISTANT_WEB_DOCUMENT, disabled: webSupport.kind === 'always' },
-                { value: 'web', label: ASSISTANT_WEB_ON, disabled: webSupport.kind === 'none' },
-              ]}
-              value={webAsked ? 'web' : 'document'}
-              wrap
-            />
+            {/* DOCUMENT ONLY OR DOCUMENT + WEB (ADR-0108): each choice disabled, never dropped, where this provider
+                and model cannot take it — with the sentence that says why beneath. */}
+            <span className="m-assistant__choice" data-assistant-web="">
+              <ChoiceMenu<'document' | 'web'>
+                label={ASSISTANT_WEB_LABEL}
+                onChange={(next) => {
+                  setWebChosen(next === 'web' ? { docId: focused.docId } : null);
+                }}
+                options={[
+                  { value: 'document', label: ASSISTANT_WEB_DOCUMENT, disabled: webSupport.kind === 'always' },
+                  { value: 'web', label: ASSISTANT_WEB_ON, disabled: webSupport.kind === 'none' },
+                ]}
+                value={webAsked ? 'web' : 'document'}
+              />
+            </span>
           </div>
           {webSupport.kind === 'none' && (
             <p className="m-assistant__state" data-assistant-web-absent={webSupport.reason}>
@@ -1020,11 +980,6 @@ export function AssistantPanel({
           {searchesAnyway && (
             <p className="m-assistant__state" data-assistant-web-always="">
               {i18n._(ASSISTANT_WEB_ALWAYS)}
-            </p>
-          )}
-          {webAsked && (
-            <p className="m-assistant__consent" data-assistant-web-sends="">
-              {i18n._(ASSISTANT_WEB_SENDS, { provider: i18n._(AI_PROVIDER_NAMES[provider]) })}
             </p>
           )}
           {pairable && (
@@ -1058,44 +1013,21 @@ export function AssistantPanel({
               {i18n._(ASSISTANT_SIDES_NEEDED)}
             </p>
           )}
-          {/* THE CHOICE IN FULL, under its short button — which page, how much of the document — and, for anything
-              that sends, who it goes to and when. */}
-          <p className="m-assistant__consent" data-assistant-consent={scope === 'nothing' ? undefined : ''} id={aboutId}>
-            {i18n._(
-              {
-                selection: ASSISTANT_ABOUT_SELECTION,
-                comment: ASSISTANT_ABOUT_COMMENT,
-                page: ASSISTANT_ABOUT_PAGE,
-                document: ASSISTANT_ABOUT_DOCUMENT,
-                comments: ASSISTANT_ABOUT_COMMENTS,
-                'page-image': ASSISTANT_ABOUT_PICTURE,
-                nothing: ASSISTANT_ABOUT_NOTHING,
-              }[scope],
-              {
-                page: pdfjsPageOf(
-                  scope === 'selection' || scope === 'comment'
-                    ? (selection?.page ?? focused.page)
-                    : beside !== undefined && sides === 'right' && scope === 'page'
-                      ? beside.page
-                      : focused.page,
-                ),
-                characters: number.format(MAX_ASK_CONTEXT),
-              },
-            )}
-            {scope === 'nothing' ? null : ' · '}
-            {scope === 'nothing' ? null : i18n._(ASSISTANT_ABOUT_SENDS, { provider: i18n._(AI_PROVIDER_NAMES[provider]) })}
-          </p>
         </div>
       )}
 
       <div className="m-assistant__composer">
         <textarea
+          aria-describedby={hintId}
           aria-label={i18n._(ASSISTANT_COMPOSER_LABEL)}
           className="m-assistant__draft"
           data-assistant-draft=""
           onChange={(event) => {
             setDraft(event.target.value);
           }}
+          // ONE FIXED LINE (the owner's decision, 2026-10-01): until then four suggestions took turns here, which was
+          // content that moved by itself (WCAG 2.2.2) and needed a timer, a focus state and a reduced-motion test.
+          placeholder={i18n._(ASSISTANT_PLACEHOLDER)}
           onKeyDown={(event) => {
             // ENTER SENDS, SHIFT+ENTER STARTS A LINE — the owner's design.
             if (event.key === 'Enter' && !event.shiftKey) {
@@ -1173,7 +1105,11 @@ export function AssistantPanel({
           )}
         </div>
       </div>
-      <p className="m-assistant__hint">{i18n._(ASSISTANT_ASK)}</p>
+      {/* HOW THE BOX SENDS, for a screen reader through the box's description and drawn for nobody: the owner's
+          review of 0.1.6.0 took every explanatory line out of the pane, and Enter sending is the platform's way. */}
+      <span className="m-visually-hidden" id={hintId}>
+        {i18n._(ASSISTANT_ASK)}
+      </span>
     </div>
   );
 }

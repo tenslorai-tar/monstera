@@ -416,7 +416,8 @@ test('organize-pages-grid-1', async ({ page }) => {
   await openApp(page);
   await openDocument(page);
   await openSection(page, 'Organize');
-  // THE FLOAT BAR PUT AWAY, with its own status-bar button: at this size it sits over the first column of cards.
+  // THE FLOAT BAR PUT AWAY, with its own status-bar button, so the picture is of the grid alone. (It sat over the
+  // first column of cards until the grid reserved its lane, 2026-10-01; `layoutReview.pw.ts` holds that.)
   await page.getByRole('status', { name: 'Document status' }).getByRole('button', { name: 'Show or hide the Float bar' }).click();
   await expect(page.getByRole('toolbar', { name: 'Float bar' })).toBeHidden();
   const grid = page.locator('.m-page-grid');

@@ -121,6 +121,8 @@
     "check:tokencontrast": "node scripts/lib/tokenContrast.mjs",
     "proof:bordertokens": "node scripts/proofs/borderTokens.proof.mjs",
     "check:bordertokens": "node scripts/lib/borderTokens.mjs",
+    "proof:layoutownership": "node scripts/proofs/layoutOwnership.proof.mjs",
+    "check:layoutownership": "node scripts/lib/layoutOwnership.mjs",
     "provision:pdfium": "node scripts/provision/pdfium.mjs",
     "provision:libreoffice": "node scripts/provision/libreoffice.mjs",
     "provision:poppler": "node scripts/provision/poppler.mjs",

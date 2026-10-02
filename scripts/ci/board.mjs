@@ -54,7 +54,7 @@
 
 import { execFileSync } from 'node:child_process';
 
-import { boardTarget, boardVerdict, parseRuns, pollDelaySeconds } from '../lib/boardStatus.mjs';
+import { boardTarget, boardVerdict, onceWithoutVerdict, parseRuns, pollDelaySeconds } from '../lib/boardStatus.mjs';
 import { describeAuthorisation, githubFetch } from '../lib/githubFetch.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
@@ -144,22 +144,16 @@ function headSha() {
 }
 
 /**
- * The one look was REFUSED: say which refusal, and exit 2.
- *
- * `--once` returned 2 here and printed nothing — the refusals were collected for the give-up message, which a single
- * look never reaches. Measured 2026-10-02: `--once` exited 2 in silence on a commit whose runs were both green
- * (CI #1021, Guards #1028, read from the API without a token), so *no answer* and *the API declined* read alike —
- * the defect AAAA-2's quiet mode was written to avoid, on the one path it did not reach.
+ * Ends one look that reached no verdict: prints the library's line, on stdout like every verdict, and answers its code.
  *
  * @param {string} sha
- * @param {readonly string[]} refusals
+ * @param {Parameters<typeof onceWithoutVerdict>[0]['look']} look
+ * @returns {number}
  */
-function refusedOnce(sha, refusals) {
-  process.stdout.write(
-    `\nNO VERDICT at ${sha}: the one look was refused — ${refusals[refusals.length - 1] ?? ''}. ` +
-      'A refusal is not a board state. Exit code 2, which is neither green nor red.\n',
-  );
-  return 2;
+function concludeOnce(sha, look) {
+  const { line, exitCode } = onceWithoutVerdict({ sha, look });
+  process.stdout.write(`\n${line}\n`);
+  return exitCode;
 }
 
 async function main() {
@@ -198,7 +192,7 @@ async function main() {
         );
         refusals.push(`HTTP ${String(response.status)} — ${why}`);
         trace(`  poll ${String(attempt)}: HTTP ${String(response.status)} — ${why}\n`);
-        if (once) return refusedOnce(sha, refusals);
+        if (once) return concludeOnce(sha, { kind: 'refused', status: response.status, why });
         await sleep(POLL_SECONDS * 1000);
         continue;
       }
@@ -206,7 +200,7 @@ async function main() {
     } catch (error) {
       refusals.push(`request failed — ${formatError(error)}`);
       trace(`  poll ${String(attempt)}: request failed — ${formatError(error)}\n`);
-      if (once) return refusedOnce(sha, refusals);
+      if (once) return concludeOnce(sha, { kind: 'failed', error: formatError(error) });
       await sleep(POLL_SECONDS * 1000);
       continue;
     }
@@ -229,12 +223,7 @@ async function main() {
       process.stdout.write(`\n${green ? 'GREEN' : 'NOT GREEN'} at ${sha}: ${reason}\n`);
       return green ? 0 : 1;
     }
-    // THE ONE LOOK SAYS WHAT IT SAW, for `refusedOnce`' reason: a pending board and a stale one exited 3 and 2 here
-    // in silence.
-    if (once) {
-      process.stdout.write(`\n${verdict.toUpperCase()} at ${sha}: ${reason}\n`);
-      return verdict === 'pending' ? 3 : 2;
-    }
+    if (once) return concludeOnce(sha, { kind: 'answered', verdict, reason });
 
     // HOW LONG TO WAIT IS DERIVED FROM THIS PAYLOAD, not from POLL_SECONDS
     // alone (finding DDDD-28). Both seats on this machine share ~60

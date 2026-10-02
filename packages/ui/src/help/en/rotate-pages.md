@@ -12,9 +12,9 @@ Rotate turns pages that are sideways or upside down. The change is saved into th
 
 1. In the rail, choose **Organize**. Select the pages to turn in the page grid, or leave none selected to turn the page you were reading.
 2. In the **Pages** group, choose **Rotate page** to turn them a quarter turn clockwise.
-3. For a half or three-quarter turn, choose **More**, then **Rotate 180°** or **Rotate 270°**.
+3. For a half or three-quarter turn, choose **More**, then **Rotate page 180°** or **Rotate page 270°**.
 
-![The Organize section's Pages group with Rotate page, and the More menu showing Rotate 180° and Rotate 270°](screenshot:rotate-pages-1)
+![The Organize section's Pages group with Rotate page, and the More menu showing Rotate page 180° and Rotate page 270°](screenshot:rotate-pages-1)
 
 ## Good to know
 

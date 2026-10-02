@@ -102,3 +102,24 @@ line per mark with words in it (its kind, whether it is a reply, its contents), 
 page's marker and bounded by the same window. A list cut at its own bound marks the window
 `truncated`, so the instruction says the summary may miss comments. It does not pair with a
 second document ([ADR-0089](0089-a-two-document-ask-carries-one-window-per-document-inside-one-bound.md)).
+
+## Correction, 2026-10-01 — the line before Send is removed; the turn's record stands
+
+Decision 3's first clause is withdrawn by the owner's decision: *"Remove the line, amend the
+founding doc if necessary."* The *Asking about* sentence under the Context menu, which named the
+scope and the provider before Send, is gone from the pane. `docs/ARCHITECTURE.md` §8 (*What
+reaches an AI provider*) carries the amendment and names the founding clause it supersedes,
+`BUILD-PROMPT.md` :593-594.
+
+The provider is still named before anything goes: the provider picker sits beside Send and
+always shows the provider the next message is sent to, and nothing about the document is read
+until Send is pressed, which is the explicit action.
+
+What the removal costs, stated so it is not mistaken for nothing: the **scope** is no longer
+drawn while the menu is closed. The Context menu's closed face reads only *Context* by the
+owner's design of 0.1.6.0 (`ChoiceMenu`), so the chosen part of the document is visible when
+the menu is opened and is in the button's accessible name, and nowhere else before Send.
+
+Decision 3's second clause is unchanged: each asked turn still records what actually went
+(*Sent pages 1 to 12 of 40*, and *cut short* where the window stopped), so a whole-document
+answer about a long file still says what it covered.

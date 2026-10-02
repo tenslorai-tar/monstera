@@ -18,7 +18,7 @@ Monstera remembers the files you opened most recently so you can get back to the
 
 ## Good to know
 
-- Up to 10 files are listed. To keep 5, 20 or 30 instead, open **Settings**, choose the **Viewing** page and pick a number under **Recent files to keep**. A shorter list forgets the oldest files.
+- Monstera keeps your four most recent files and shows all four. Opening a fifth forgets the oldest, and its picture with it.
 - To open the documents you had open last time as soon as Monstera starts, turn on **Reopen my documents at start** on the same page.
 - If a file has been moved or renamed since, Monstera says it could not be opened and removes it from the list.
 - The small page pictures can be turned off: in **Settings**, on the **Privacy** page, turn off **Show previews of recent files**. Turning it off deletes the pictures already kept.

@@ -95,3 +95,15 @@ provider reported no search. A *Document only* answer never carries the last lin
 - Anthropic's `pause_turn` (a long search turn paused by the service) ends the answer with the text so far; resuming it
   is not built.
 - Perplexity's Sonar API ends on 2026-09-27 (its own pages); moving to its Agent API is its own row.
+
+## Correction, 2026-10-01 — the web note leaves the pane and lives in Help
+
+As built, choosing *Document + web* drew a note under the menus: *"Your question, and possibly text from the
+document, goes to a search engine through {provider}. Searches may cost extra."* The owner's decision removes it from
+the pane. The same disclosure is now in the assistant's Help article (`ai-assistant`), so it still exists, outside the
+pane.
+
+Nothing else in this ADR moves. The choice is still per chat and starts *Document only* (question 4); `web` is still
+required and *Document only* still enforced in `main` (Decision 2). The sentences that say why a choice is **disabled**
+stay where they are (Decision 1): they explain a control a person cannot use, which §10.5 requires of every disabled
+control, and they are not this note.

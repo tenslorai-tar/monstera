@@ -3178,6 +3178,22 @@ describe('App', () => {
       }
     });
 
+    it('the start screen shows the four recent files main keeps, all of them, with nothing to show more of (the owner, 2026-10-01)', async () => {
+      // FOUR IS MAIN'S NUMBER (`recentFiles.test.ts` holds the store to it); the screen shows what it is sent.
+      const { client } = withRecent({
+        entries: ['a.pdf', 'b.pdf', 'c.pdf', 'd.pdf'].map((name, at) => row(`handle-${String(at)}`, name)),
+        lastExitClean: true,
+        lastSession: [],
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(document.querySelectorAll('.m-recent-list > li')).toHaveLength(4);
+      expect(screen.getByRole('button', { name: 'd.pdf' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /^Show (all|fewer)/u })).toBeNull();
+    });
+
     it('a card is NAMED by the file and DESCRIBED by when and where it was opened (ADR-0100)', async () => {
       const { client } = withRecent({
         entries: [

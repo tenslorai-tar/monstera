@@ -580,27 +580,27 @@ test('at its MINIMUM width the right contextual panel still holds every Properti
   for (const past of measured?.overflow ?? []) expect(past).toBeLessThanOrEqual(0.5);
 });
 
-test('the ASSISTANT fits its panel: the hint under Send is inside it and nothing scrolls', async ({ page }) => {
+test('the ASSISTANT fits its panel: the message box is inside it and nothing scrolls', async ({ page }) => {
   // The panel was the body's full height PLUS its padding, so at 900 px the body scrolled by the
-  // padding and the hint's last line sat past its bottom edge — cut off, with a scroll bar for 8 px.
+  // padding and the pane's last line sat past its bottom edge — cut off, with a scroll bar for 8 px. The last line is
+  // the message box since 2026-10-01, when the hint under it became text for a screen reader only.
   await page.setViewportSize({ width: 1440, height: 900 });
   await bridgeWithDocument(page, { 'appearance.context-panel-open': true, 'appearance.context-panel-tab': 'assistant' }, 1);
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
-  await expect(page.locator('.m-assistant__hint')).toBeVisible();
+  await expect(page.locator('.m-assistant__composer')).toBeVisible();
 
   const fit = await page.evaluate(() => {
     const body = document.querySelector('.m-assistant')?.parentElement;
-    const hint = document.querySelector('.m-assistant__hint');
-    if (body === null || body === undefined || hint === null) return null;
-    // AND NOTHING RUNS PAST ITS SIDE: the widest row is *Asking about*'s choices, which ran past the panel's inner
-    // edge once the panel was inset like the Properties tab — a group that could not shrink could not wrap.
+    const composer = document.querySelector('.m-assistant__composer');
+    if (body === null || body === undefined || composer === null) return null;
+    // AND NOTHING RUNS PAST ITS SIDE: Context and Sources share one row, which must stay inside the panel's inner edge.
     const panel = document.querySelector('.m-assistant');
     const inner = panel === null ? 0 : panel.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(panel).paddingRight);
-    const rights = [...document.querySelectorAll('.m-assistant .m-segmented__item')].map((item) => item.getBoundingClientRect().right);
+    const rights = [...document.querySelectorAll('.m-assistant .m-choice-menu')].map((item) => item.getBoundingClientRect().right);
     return {
       overflow: body.scrollHeight - body.clientHeight,
-      past: hint.getBoundingClientRect().bottom - body.getBoundingClientRect().bottom,
+      past: composer.getBoundingClientRect().bottom - body.getBoundingClientRect().bottom,
       sideways: Math.max(...rights) - inner,
       choices: rights.length,
     };
@@ -608,8 +608,8 @@ test('the ASSISTANT fits its panel: the hint under Send is inside it and nothing
   expect(fit).not.toBeNull();
   expect(fit?.overflow).toBeLessThanOrEqual(0);
   expect(fit?.past).toBeLessThanOrEqual(0);
-  expect(fit?.choices, 'the choices were found').toBeGreaterThan(4);
-  expect(fit?.sideways, 'the farthest choice ends past the panel’s inner edge by this many px').toBeLessThanOrEqual(0.5);
+  expect(fit?.choices, 'Context and Sources were found').toBe(2);
+  expect(fit?.sideways, 'the farther menu ends past the panel’s inner edge by this many px').toBeLessThanOrEqual(0.5);
 });
 
 test('the page list FITS its pane: nothing of it sits above the pane or under the status bar', async ({
@@ -639,14 +639,20 @@ test('the page list FITS its pane: nothing of it sits above the pane or under th
     // THE INSIDE OF THE PANEL THE LIST FILLS. Since the owner's v5 surfaces (72d1ecc) the canvas area is
     // an inset panel with a 1 px border — measured 2026-09-24, `.m-canvas-area` border-top 1px and the
     // list 1 px below the pane — so the list's box is the area's padding box, not the pane's.
-    const area = list.parentElement;
+    //
+    // UNDER THE HORIZONTAL RULER when one is drawn (on by default): since 2026-10-01 the rulers take grid tracks
+    // beside the scroller instead of lying over it, so the list begins exactly at the ruler's foot. The ruler's own
+    // box is read, never its token, so a ruler of any height is measured the same way.
+    const area = list.closest('.m-canvas-area');
     if (area === null) return null;
     const areaBox = area.getBoundingClientRect();
     const areaStyle = getComputedStyle(area);
+    const ruler = area.querySelector('.m-ruler-h');
     return {
       listTop: listBox.top,
       listBottom: listBox.bottom,
-      paneTop: areaBox.top + Number.parseFloat(areaStyle.borderTopWidth),
+      paneTop: ruler === null ? areaBox.top + Number.parseFloat(areaStyle.borderTopWidth) : ruler.getBoundingClientRect().bottom,
+      rulerShown: ruler !== null,
       paneBottom: areaBox.bottom - Number.parseFloat(areaStyle.borderBottomWidth),
       statusTop: status.getBoundingClientRect().top,
       paneScrollTop: pane.scrollTop,
@@ -654,6 +660,9 @@ test('the page list FITS its pane: nothing of it sits above the pane or under th
     };
   });
   expect(fit).not.toBeNull();
+  // THE PREMISE of the top's reading: the rulers are on by default, so the branch that measures from one is the one
+  // this case takes. Without it, a ruler gone missing would be measured as though there were none and still pass.
+  expect(fit?.rulerShown).toBe(true);
   expect(Math.abs((fit?.listTop ?? 0) - (fit?.paneTop ?? 1))).toBeLessThan(0.5);
   expect(Math.abs((fit?.listBottom ?? 0) - (fit?.paneBottom ?? 1))).toBeLessThan(0.5);
   expect(fit?.listBottom ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual((fit?.statusTop ?? 0) + 0.5);
@@ -1288,8 +1297,9 @@ test('NOTHING DRAWS OVER A DIALOG: every stacked element of the window sits unde
   // to the end of the body with no z-index, so they win by order alone — and the ruler (1), the loupe (2) and
   // Studio's overlay (2) each carried a z-index into the ROOT stacking context, where any number beats none.
   // The assertion is about every element with a z-index, not about the ruler: a hit test at each one's centre must
-  // land on the dialog or its backdrop. The rulers are on so at least one such element exists — the premise is
-  // asserted, since a window with none would pass by having nothing to test.
+  // land on the dialog or its backdrop. The premise that at least one such element exists is asserted, since a window
+  // with none would pass by having nothing to test. (The rulers were that element until 2026-10-01; they now sit in
+  // grid tracks beside the scroller and carry no z-index. They stay on so a ruler that regains one is probed too.)
   //
   // THE HIT TEST IS BLIND WITHOUT ONE CHANGE, and the first version of this case passed on the broken build for it:
   // the ruler is `pointer-events: none`, so `elementFromPoint` looks straight through it to the backdrop and reports
@@ -2132,7 +2142,11 @@ test('the START SCREEN draws the supplied logo, the hero lines, one primary Open
   const drawn = await measure(hero);
   // DECODED — a broken source is still a laid-out box, with a natural width of zero.
   expect(drawn.natural).toBeGreaterThan(0);
-  expect(drawn.height).toBeCloseTo(84, 0);
+  // 118, the owner's 40% over the 84 it was (review of 0.1.6.0); `--logo-hero`.
+  expect(drawn.height).toBeCloseTo(118, 0);
+  // AND THE ARTWORK HAS THE PIXELS FOR IT on a 2x display: a derivative smaller than twice the drawn height is
+  // upscaled, which is blur that no layout assertion sees.
+  expect(drawn.natural).toBeGreaterThanOrEqual(2 * drawn.height);
   // UNSTRETCHED: drawn at the image's OWN ratio. This asserted the portrait master's 1652 × 2050 until the owner's
   // square masters replaced it on 2026-09-19 and it failed on a correct drawing — a ratio written down is a claim about
   // one artwork, and the image's own ratio is the property ADR-0002 states for any.

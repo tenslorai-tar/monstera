@@ -506,7 +506,8 @@ export function createContractHandlers(deps: {
       // A REFUSED KEY NEVER REACHES THE STORE: the key already stored, if any, is untouched.
       if (listed.problem !== undefined) return ok({ accepted: false, problem: listed.problem } as const);
       deps.secrets.write(AI_PROVIDERS[provider].keySetting, key);
-      return ok({ accepted: true } as const);
+      // CHECKED ONLY WHERE THE PROVIDER ANSWERED A LIST: with nothing to ask, the key is kept on trust.
+      return ok({ accepted: true, checked: listed.source === 'fetched' } as const);
     },
     // CHAT HISTORY (ADR-0093). `main` reads the setting ITSELF on every load and save: a renderer that
     // asked with the setting off gets nothing and stores nothing, whatever it believed.

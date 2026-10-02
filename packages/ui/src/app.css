@@ -47,6 +47,50 @@ textarea {
   font: inherit;
 }
 
+/* A GROUP OF CHOICES, WHEREVER IT IS. Fifteen dialog bodies, the Search tab and the Assistant group radios or boxes
+   in a fieldset, and three components had each undone the browser's frame for themselves — on the stated ground that
+   no other body grouped radios — so every group written since drew the browser's bare border with its options
+   running inline and wrapping mid-sentence (the owner's review of 0.1.6.0: Print, Export to Word, the Search tab).
+   Undone once, here: the options stack, one to a line, and the legend reads as the group's heading. Element and
+   `:where` selectors, so any component's own class rule still wins. */
+fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+legend {
+  margin-block-end: var(--space-4);
+  padding: 0;
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+  font-weight: 600;
+}
+
+:where(label:has(> input[type='radio'], > input[type='checkbox'])) {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+/* EVERY NATIVE LIST IS OPAQUE, IN EVERY THEME. Chromium draws a select's list in a popup of its own from the
+   select's computed colours: the text from its `color`, the ground from its `background-color` made opaque against
+   white. `color-scheme` (`tokens.css`) does not reach either once a select sets them. So a select with a transparent
+   or translucent dark background — the assistant's pickers, and every select over the glass theme's surfaces — opened
+   a near-white list carrying the theme's light text, readable only on the highlighted row (the owner's review of
+   0.1.6.0, `assistant_3`). `--list` is opaque in all three themes and its text pairs are checked (`tokens.css`); the
+   options carry it too, so no row falls back to the blended ground. */
+select,
+option,
+optgroup {
+  background-color: var(--list);
+  color: var(--text);
+}
+
 /*
  * §10.3's anatomy as one grid: the tabs, then the active section's tools across
  * the top, then the section rail beside the document, then the status bar.
@@ -210,18 +254,12 @@ textarea {
 }
 
 /* A MENU'S ITEMS: a column for the mark of a command that is on, the name, the chord at the end — so names line up
-   whether or not a group has marks. A disabled item is `--muted`, the pair the float declares; it is also announced
-   as unavailable, so the colour is not the only sign. */
-.m-menu-bar__item {
-  display: grid;
-  grid-template-columns: var(--icon-16) minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: var(--space-8);
-}
-
-.m-menu-bar__item[data-disabled] {
-  color: var(--muted);
-  cursor: default;
+   whether or not a group has marks. Given to the items through the shared item's two properties, never by a layout
+   rule of the menu bar's own: `.m-context-menu-item` is the one class that lays an item out
+   (`scripts/lib/layoutOwnership.mjs`). */
+.m-menu-bar__popup {
+  --menu-item-columns: var(--icon-16) minmax(0, 1fr) auto;
+  --menu-item-gap: var(--space-8);
 }
 
 .m-menu-bar__mark {
@@ -921,7 +959,7 @@ textarea {
   text-transform: uppercase;
 }
 
-.m-recent-clear {
+.m-recent-action {
   padding: var(--space-2) var(--space-4);
   border: none;
   background: none;
@@ -930,8 +968,8 @@ textarea {
   cursor: pointer;
 }
 
-.m-recent-clear:hover,
-.m-recent-clear:focus-visible {
+.m-recent-action:hover,
+.m-recent-action:focus-visible {
   text-decoration: underline;
 }
 
@@ -1467,22 +1505,30 @@ textarea {
 }
 
 /*
- * A row is the jump and the control side by side.
+ * A row is the field's name on its own line, and the control with its Delete beneath it.
+ *
+ * TWO LINES, because one did not fit: the name, a 12rem control and a Delete that may not shrink shared a panel
+ * about 280 px wide, and the name was left about 40 — *F.* and *E.* for *First name* and *Email* (the owner's review
+ * of 0.1.6.0). The name is the document's own word, so it wraps rather than being cut.
  *
  * `align-items: center` rather than the annotation row's `baseline`, and it is
  * the controls that decide it: a tick box and a `<select>` have no text baseline
- * to share with the label beside them, so baseline alignment puts them a few
+ * to share with the button beside them, so baseline alignment puts them a few
  * pixels off the row they belong to.
  */
 .m-forms-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'name name'
+    'control delete';
   align-items: center;
-  gap: var(--space-8);
-  padding-block: var(--space-2);
+  gap: var(--space-2) var(--space-8);
+  padding-block: var(--space-4);
 }
 
 .m-forms-jump {
-  flex: 1 1 auto;
+  grid-area: name;
   min-inline-size: 0;
   padding: var(--space-2) var(--space-4);
   background: none;
@@ -1490,9 +1536,15 @@ textarea {
   color: var(--text);
   cursor: pointer;
   text-align: start;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+
+.m-forms-text,
+.m-forms-choice,
+.m-forms-check,
+.m-forms-locked {
+  grid-area: control;
+  justify-self: start;
 }
 
 .m-forms-jump:hover,
@@ -1501,21 +1553,17 @@ textarea {
 }
 
 /*
- * The controls do not grow with the row.
+ * The controls fill their column, which is the same width on every row.
  *
- * A text input that took the space left over would be a different width on
- * every row, keyed on how long the field's own name happens to be — and the
- * name is the document's, so the layout would be the document's too.
+ * A text input sized by the space a row's name left over would be a different
+ * width on every row, keyed on how long the field's own name happens to be —
+ * and the name is the document's, so the layout would be the document's too.
+ * The name has its own line now, so the column is the panel's less Delete's.
  */
 .m-forms-text,
 .m-forms-choice {
-  flex: 0 0 auto;
-  inline-size: 12rem;
-  max-inline-size: 40%;
-}
-
-.m-forms-check {
-  flex: 0 0 auto;
+  inline-size: 100%;
+  max-inline-size: 16rem;
 }
 
 /*
@@ -1526,7 +1574,6 @@ textarea {
  * would say a document is broken when it is doing exactly what it should.
  */
 .m-forms-locked {
-  flex: 0 0 auto;
   color: var(--muted);
 }
 
@@ -1538,7 +1585,7 @@ textarea {
  * it is one a person clicks on the wrong line.
  */
 .m-forms-delete {
-  flex: 0 0 auto;
+  grid-area: delete;
   padding: var(--space-2) var(--space-4);
   background: none;
   border: 1px solid transparent;
@@ -1916,10 +1963,10 @@ textarea {
 /*
  * The line chooser in the edit-text dialog.
  *
- * A `fieldset` carries a browser default border, margin and padding that no
- * other body in this application has to undo, because no other body groups
- * radios — so this is the one rule the grouping costs, and it is here rather
- * than in the component for the reason every rule in this file is.
+ * The browser's fieldset frame is undone by the base `fieldset` rule at the top
+ * of this file. This paragraph used to say no other body grouped radios, which
+ * stopped being true and left every later group in the browser's frame; what
+ * remains here is this chooser's own layout.
  *
  * The options are a COLUMN, and that is a change of 2026-09-10 rather than the
  * default. They were a wrapping row while each option was a one- or two-digit
@@ -2461,8 +2508,7 @@ textarea {
   padding: var(--space-16);
 }
 
-.m-assistant__state,
-.m-assistant__hint {
+.m-assistant__state {
   margin: 0;
   color: var(--muted);
   font-size: var(--font-chrome-11);
@@ -2487,13 +2533,48 @@ textarea {
   border-block-start: 1px solid var(--border-soft); /* decorative: separates the conversation from the ask; the controls draw their own */
 }
 
-.m-assistant__about-line {
+/* CONTEXT AND SOURCES, ONE ROW (the owner's review of 0.1.6.0): two menus whose closed faces read their names. */
+.m-assistant__choices {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-6);
-  color: var(--muted);
+}
+
+/* A CHOICE MENU'S FACE (`ChoiceMenu`): its name and a chevron, in the pane's small control shape. The trigger is the
+   control, so it takes the boundary token that solves for 3:1. */
+.m-choice-menu {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  block-size: var(--title-control);
+  padding-inline: var(--space-8) var(--space-6);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--text);
   font-size: var(--font-chrome-11);
+  cursor: default;
+}
+
+.m-choice-menu:hover,
+.m-choice-menu[data-popup-open] {
+  background: var(--surface2);
+}
+
+.m-choice-menu:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* ITS VALUES carry a mark column for the chosen one, given to the shared item through its two properties. */
+.m-choice-menu__popup {
+  --menu-item-columns: var(--icon-16) minmax(0, 1fr);
+  --menu-item-gap: var(--space-8);
+}
+
+.m-choice-menu__mark {
+  display: inline-flex;
 }
 
 /* LEFT · RIGHT · BOTH (ADR-0089): a row of native radios under a small legend. A fieldset keeps
@@ -2522,7 +2603,6 @@ textarea {
   align-items: center;
 }
 
-.m-assistant__consent,
 /* WHAT WAS SENT, under the question. One rule: this was two blocks with the same selector, the
    second setting only a top margin, so the first's `margin: 0` was overridden by its own twin.
    It WRAPS and is never truncated — the owner's enhancement (2026-09-22): a summary that ends in an
@@ -2575,12 +2655,6 @@ textarea {
   outline-offset: 2px;
 }
 
-.m-assistant__quick {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
 /* A CITATION IS A LINK IN THE TEXT, drawn in the text's own colour and underlined, so it holds
    every theme's contrast floor without a colour of its own — high contrast included. */
 .m-assistant__citation {
@@ -2593,8 +2667,14 @@ textarea {
   cursor: pointer;
 }
 
+/* THE CONVERSATION AS A CHAT (the owner's review of 0.1.6.0): a person's messages at the right in a filled bubble, the
+   assistant's at the left across the pane. Who said each is still in the text, for a screen reader (`.m-visually-hidden`
+   on the speaker); the side is what the eye reads. */
 .m-assistant__turns {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  gap: var(--space-8);
   min-block-size: 0;
   margin: 0;
   padding: 0;
@@ -2602,17 +2682,31 @@ textarea {
   list-style: none;
 }
 
-.m-assistant__turn + .m-assistant__turn {
-  margin-block-start: var(--space-4);
+.m-assistant__turn[data-assistant-role='user'] {
+  align-self: flex-end;
+  max-inline-size: 85%;
+  padding: var(--space-6) var(--space-10);
+  border-radius: var(--radius-12);
+  /* GREEN (the owner's decision, 2026-10-01): the bubble's own surface and its own text, declared as a pair and
+     checked in every theme (`tokens.css`). Never `--accent-soft`, the selected state, which carries no text. */
+  color: var(--on-bubble);
+  background: var(--bubble);
 }
 
-.m-assistant__who {
-  color: var(--muted);
-  font-size: var(--font-chrome-11);
+/* WHAT WENT, inside a person's bubble, takes the bubble's text: `--muted` is declared on the pane's surfaces, and a
+   pair nobody declared is a pair nobody checked. */
+.m-assistant__turn[data-assistant-role='user'] .m-assistant__sent {
+  color: var(--on-bubble);
 }
 
+.m-assistant__turn[data-assistant-role='assistant'] {
+  align-self: stretch;
+}
+
+/* THE CHAT'S TEXT, one size up from the pane's 12 (the owner's review of 0.1.6.0). */
 .m-assistant__text {
-  margin: var(--space-2) 0 0;
+  margin: 0;
+  font-size: var(--font-chrome-13);
   white-space: pre-wrap;
 }
 
@@ -2722,10 +2816,14 @@ textarea {
   box-shadow: var(--glow);
 }
 
+/* TWO LINES, THEN THREE, THEN A SCROLL: the box sizes to its text (`field-sizing: content`) between two and three of
+   its own lines, and past three its text scrolls inside it. */
 .m-assistant__draft {
   resize: none;
-  min-block-size: var(--composer-min);
-  max-block-size: var(--composer-max);
+  field-sizing: content;
+  min-block-size: calc(var(--composer-lines-min) * 1lh);
+  max-block-size: calc(var(--composer-lines-max) * 1lh);
+  overflow-y: auto;
   padding: var(--space-2) var(--space-4);
   border: 0;
   background: transparent;
@@ -2752,8 +2850,6 @@ textarea {
   padding-inline: var(--space-6);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-6);
-  background: transparent;
-  color: var(--text);
   font-size: var(--font-chrome-11);
   text-overflow: ellipsis;
 }
@@ -2924,6 +3020,22 @@ textarea {
   block-size: 100%;
   overflow-y: auto;
   padding-block: var(--space-16);
+  grid-area: list;
+}
+
+/*
+ * THE PANE: one scroller and what must not scroll with its pages.
+ *
+ * The rulers and the loupe were the scroller's own absolutely positioned children, and an absolute child of a scroll
+ * container is laid out in its scrolled CONTENT: the rulers rode up with page 1 and were gone after one screen, and
+ * the loupe drew `scrollTop` above the pointer (the owner's review of 0.1.6.0). Here the rulers take grid tracks beside
+ * the scroller, so the horizontal one starts at the scroller's left edge and the vertical one at its top — an offset
+ * measured from the scroller's box is an offset along a ruler — and the loupe is placed against this box.
+ */
+.m-page-pane {
+  display: grid;
+  grid-template: 'list' minmax(0, 1fr) / minmax(0, 1fr);
+  block-size: 100%;
   /*
    * SHARES THE WIDTH WITH A SECOND PANE, and `min-inline-size: 0` is what makes
    * that work: a flex item's default minimum is its content, so a scroller full
@@ -2933,13 +3045,7 @@ textarea {
    */
   flex: 1 1 0;
   min-inline-size: 0;
-
-  /*
-   * THE CONTAINING BLOCK FOR THE RULERS, which are absolutely positioned and
-   * must not scroll away with the pages. Without this they would position
-   * against the nearest positioned ancestor — the app surface — and the
-   * horizontal ruler would sit above the wrong element.
-   */
+  /* THE CONTAINING BLOCK FOR THE LOUPE, which is placed from the pointer's offset in this box. */
   position: relative;
   /*
    * ITS OWN LAYER, so the compositor scrolls it. Without one Chromium scrolls it on the main thread and repaints its
@@ -2950,6 +3056,23 @@ textarea {
    * GPU process 464-515 ms against 138-144 ms. The rulers' ticks may move by a pixel, the layer's snapping.
    */
   will-change: transform;
+}
+
+/* THE CORNER where the two rulers meet, in the rulers' own surface so the pair reads as one frame. */
+.m-page-pane--rulers {
+  grid-template:
+    'corner across' var(--ruler)
+    'down list' minmax(0, 1fr)
+    / var(--ruler) minmax(0, 1fr);
+}
+
+.m-page-pane--rulers::before {
+  content: '';
+  grid-area: corner;
+  box-sizing: border-box;
+  background: var(--surface);
+  border-inline-end: 1px solid var(--border); /* decorative: the rulers' frame, as on .m-ruler-h and .m-ruler-v */
+  border-block-end: 1px solid var(--border); /* decorative: as above */
 }
 
 /*
@@ -2971,13 +3094,6 @@ textarea {
  * rather than a rule that draws an edge on a single view nobody asked to
  * divide.
  */
-/* CLEAR OF THE RULERS when they are drawn: they lie over the list's start edges, and a 16 px padding left the first
-   page's top under the 18 px ruler (measured 2026-09-27 in the baselines: page at 205, ruler to 207). */
-.m-page-list:has(> .m-ruler) {
-  padding-block-start: calc(var(--ruler) + var(--space-16));
-  padding-inline-start: var(--ruler);
-}
-
 /*
  * FACING PAGES (`viewing.page-layout`): two columns, so the pages pair 1–2, 3–4 as spreads print, with the list's own
  * gap as the spine. `max-content` keeps each column the page's own width, and `safe` keeps a spread wider than the
@@ -2997,7 +3113,7 @@ textarea {
   display: none;
 }
 
-.m-page-list + .m-page-list {
+.m-page-pane + .m-page-pane {
   border-inline-start: 1px solid var(--border); /* decorative: separates two scrollable regions of one document and bounds neither; each pane's own controls carry their focus rings */
 }
 
@@ -3023,35 +3139,28 @@ textarea {
 }
 
 .m-ruler {
-  position: absolute;
-  z-index: 1;
+  /* THE CONTAINING BLOCK FOR ITS TICKS, each placed at an offset along it. */
+  position: relative;
   background: var(--surface);
   color: var(--muted);
   font-size: var(--font-chrome-10);
-  /*
-   * NOT A POINTER TARGET. The ruler sits over the scroller's padding, and a
-   * strip that swallowed a click would make the area beside the page dead —
-   * including the drag a future selection tool will want.
-   */
-  pointer-events: none;
   overflow: hidden;
+  user-select: none;
 }
 
 /* v5: rulers 18, an outer size (the design is border-box throughout). */
 .m-ruler-h {
+  grid-area: across;
   box-sizing: border-box;
-  inset-block-start: 0;
-  inset-inline: 0;
   block-size: var(--ruler);
-  border-block-end: 1px solid var(--border); /* decorative: the ruler is pointer-events:none, so this edge separates chrome from the page area and bounds nothing a user can reach */
+  border-block-end: 1px solid var(--border); /* decorative: the ruler holds nothing to operate, so this edge separates chrome from the page area and bounds nothing a user can reach */
 }
 
 .m-ruler-v {
+  grid-area: down;
   box-sizing: border-box;
-  inset-inline-start: 0;
-  inset-block: 0;
   inline-size: var(--ruler);
-  border-inline-end: 1px solid var(--border); /* decorative: as m-ruler-h above — a chrome/page divider on a strip that takes no pointer events */
+  border-inline-end: 1px solid var(--border); /* decorative: as m-ruler-h above — a chrome/page divider on a strip with nothing to operate */
 }
 
 .m-tick {
@@ -3709,8 +3818,6 @@ textarea {
   padding: var(--space-8);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-4);
-  background: var(--bg2);
-  color: var(--text);
   font-size: var(--font-chrome-13);
 }
 
@@ -3821,18 +3928,33 @@ textarea {
   box-shadow: var(--elevation-3);
 }
 
+/* THE ONE CLASS THAT LAYS AN ITEM OUT, in every menu: the name, then the chord at the end. A menu that needs other
+   columns sets the two properties on its popup (the menu bar adds a mark column). Until 2026-10-01 this was a flex
+   row with `justify-content: space-between` and the menu bar's items also carried a grid of their own; this rule
+   came later in the file and won, so every menu bar title floated away from its chord towards the middle. */
 .m-context-menu-item {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-16);
+  display: grid;
+  grid-template-columns: var(--menu-item-columns, minmax(0, 1fr) auto);
+  align-items: center;
+  column-gap: var(--menu-item-gap, var(--space-16));
   padding: var(--space-4) var(--space-8);
   border-radius: var(--radius-4);
   cursor: pointer;
   outline: none;
 }
 
-.m-context-menu-item[data-highlighted] {
+/* NOT FOR A DISABLED ITEM: a highlight is what an item that runs looks like under the pointer, and painting it on one
+   that cannot run is what made a disabled item read as enabled. */
+.m-context-menu-item[data-highlighted]:not([data-disabled]) {
   background: var(--surface2);
+}
+
+/* A DISABLED ITEM, IN EVERY MENU: `--muted`, the pair the float declares, and no pointer. It is also announced as
+   unavailable, so the colour is not the only sign. On the shared item class rather than the menu bar's, because
+   every menu's items are this class and a disabled style on one of them leaves the others looking runnable. */
+.m-context-menu-item[data-disabled] {
+  color: var(--muted);
+  cursor: default;
 }
 
 .m-context-menu-separator {
@@ -4035,10 +4157,50 @@ textarea {
  * to be visible, or `aria-current` is the only place the answer exists and a
  * sighted reader is told a number and shown nothing.
  */
+/*
+ * THE FIND BAR, which had no rule of its own: in the Search tab it drew the browser's form — grey buttons, a framed
+ * fieldset and a bulleted list (the owner's review of 0.1.6.0). A column, so it reads top to bottom in a narrow panel;
+ * its controls carry the primitives' classes (`FindBar.tsx`).
+ */
+.m-find-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  font-size: var(--font-chrome-12);
+}
+
+.m-find-bar > label,
+.m-find-replace > label {
+  color: var(--muted);
+}
+
+.m-find-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.m-find-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.m-find-results > p {
+  margin: 0;
+}
+
+.m-find-results > ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .m-find-navigation {
   display: flex;
   gap: var(--space-8);
-  align-items: baseline;
+  align-items: center;
 }
 
 .m-find-position {
@@ -4368,6 +4530,18 @@ textarea {
   outline-offset: -2px;
 }
 
+/* A TOOL THAT DOES NOT DRAW says so (`UiTool.cursor`): the arrow for one that picks or places by a click. */
+.m-annotation-overlay[data-cursor='arrow'] {
+  cursor: default;
+}
+
+/* THE HIGHLIGHTER'S I-BEAM over the page, where the text layer takes the drag and the words are selected
+   (`UiTool.fromSelection`). Over the whole page rather than over the words alone, so the pointer does not flicker
+   between an I-beam and an arrow in the gaps between lines. */
+.m-page-list--selects-text .m-page-slot {
+  cursor: text;
+}
+
 /*
  * The rectangle a drag is currently describing.
  *
@@ -4622,11 +4796,15 @@ textarea {
 }
 
 /* ONE ROW: the words on the left, the control on the right, a hairline between rows. */
+/* WRAPS, and the text keeps a reading width before the control yields its place (`.m-settings-row__text`'s basis).
+   Unwrapped, a control wider than half the row — Print quality's three sentences — kept its width and squeezed the
+   text, which `min-inline-size: 0` lets go to nothing: one word per line (the owner's review of 0.1.6.0). */
 .m-settings-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-24);
+  gap: var(--space-8) var(--space-24);
   padding-block: var(--space-8);
   border-block-end: 1px solid var(--border-soft); /* decorative: separates rows; every control inside carries its own boundary */
 }
@@ -4637,6 +4815,7 @@ textarea {
 
 .m-settings-row__text {
   display: flex;
+  flex: 1 1 32ch;
   flex-direction: column;
   gap: var(--space-2);
   min-inline-size: 0;
@@ -4652,11 +4831,13 @@ textarea {
   font-size: var(--font-chrome-12);
 }
 
+/* MAY SHRINK to the row, once it has wrapped onto its own line, so a wrapping control inside it can wrap. */
 .m-settings-row__control {
   display: flex;
   align-items: center;
   gap: var(--space-8);
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-inline-size: 0;
 }
 
 .m-settings-row__colour,
@@ -5508,6 +5689,20 @@ body {
   min-block-size: 0;
   block-size: 100%;
   background: var(--bg);
+}
+
+/*
+ * CLEAR OF A DOCKED FLOAT BAR (the owner's review of 0.1.6.0: at 1280 × 800 it covered cards 1 and 5). The grid lays
+ * its cards from the area's start edge, which is where the pill docks, so its first column sat under it. The lane is
+ * the bar's own inset and width; the grid's padding then gives the gap. Not the document view: it centres its page,
+ * and the owner chose on 2026-09-26 that the pill floats over it with no strip reserved.
+ */
+.m-canvas-area:has(> .m-quick-toolbar--start) > .m-page-grid {
+  padding-inline-start: calc(var(--space-12) + var(--quick-toolbar));
+}
+
+.m-canvas-area:has(> .m-quick-toolbar--end) > .m-page-grid {
+  padding-inline-end: calc(var(--space-12) + var(--quick-toolbar));
 }
 
 .m-page-grid__head {

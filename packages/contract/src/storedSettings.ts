@@ -8,13 +8,10 @@ import {
   LOG_DETAILS,
   LOG_DETAIL_SETTING_ID,
   MAX_MODEL_ID,
-  RECENT_LENGTHS,
-  RECENT_LENGTH_SETTING_ID,
   RECENT_PREVIEWS_SETTING_ID,
   REVIEW_PROMPTS_SETTING_ID,
   UPDATE_CHECK_SETTING_ID,
   type BackupCopies,
-  type RecentLength,
 } from './channels.js';
 import { AZURE_ENDPOINT_SETTING_ID, DOCUSIGN_ENVIRONMENTS, DOCUSIGN_ENVIRONMENT_SETTING_ID } from './schemas.js';
 
@@ -139,13 +136,6 @@ export const BACKUP_COPIES_STORED = {
   fallback: 'one' as BackupCopies,
 } satisfies StoredSetting;
 
-/** How long the recent list is: ten, its length before it was a choice. */
-export const RECENT_LENGTH_STORED = {
-  id: RECENT_LENGTH_SETTING_ID,
-  schema: z.enum(Object.keys(RECENT_LENGTHS) as [RecentLength, ...RecentLength[]]),
-  fallback: 'ten' as RecentLength,
-} satisfies StoredSetting;
-
 /**
  * Every definition above, for the checks that hold them to the registry. A LITERAL list: the failure to fear is one
  * going missing, and a list derived from this module's exports would agree with any omission (audit item 4c).
@@ -162,5 +152,4 @@ export const STORED_SETTINGS: readonly StoredSetting[] = [
   AZURE_ENDPOINT_STORED,
   DOCUSIGN_ENVIRONMENT_STORED,
   BACKUP_COPIES_STORED,
-  RECENT_LENGTH_STORED,
 ];

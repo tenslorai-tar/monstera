@@ -127,10 +127,8 @@ export {
   // A recent card's picture: main's store refuses to keep one past the bound, and both sides read the setting.
   MAX_RECENT_PREVIEW_BYTES,
   RECENT_PREVIEWS_SETTING_ID,
-  // THE RECENT LIST'S LENGTH: main's store caps at the chosen one, the renderer declares the choice, one table.
-  RECENT_LENGTHS,
-  RECENT_LENGTH_SETTING_ID,
-  type RecentLength,
+  // THE SESSION'S BOUND, apart from the recent cap: what was open is not trimmed to what is remembered.
+  MAX_SESSION_ENTRIES,
   CRASH_REPORTS_SETTING_ID,
   LOG_DETAIL_SETTING_ID,
   MAX_SETTINGS_FILE_BYTES,
@@ -533,7 +531,6 @@ export {
   CRASH_REPORTS_STORED,
   DOCUSIGN_ENVIRONMENT_STORED,
   LOG_DETAIL_STORED,
-  RECENT_LENGTH_STORED,
   RECENT_PREVIEWS_STORED,
   REVIEW_PROMPTS_STORED,
   STORED_SETTINGS,

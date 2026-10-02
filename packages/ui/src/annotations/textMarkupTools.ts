@@ -120,7 +120,16 @@ function markupTool(id: string, type: MarkupType, style: AnnotationStyle): UiToo
     },
   };
 
-  return { id, controller };
+  return {
+    id,
+    controller,
+    // THE TEXT IS THE GESTURE (the owner's review of 0.1.6.0): a line from where the drag started to where it ended
+    // was ambiguous between two lines of text. Now the page's own selection shows exactly the words that will be
+    // marked, under an I-beam, and the two ends of that selection are the two points the kernel resolves — the same
+    // command the selected-text menu builds (`markupCommand`), so the drag and the menu cannot disagree.
+    cursor: 'text',
+    fromSelection: (selection) => markupCommand(type, selection.page, selection.from, selection.to, style),
+  };
 }
 
 /** The three text markups, in the order their controls appear. */
