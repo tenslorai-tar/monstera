@@ -47,6 +47,7 @@ import {
   ASSISTANT_ASSISTANT,
   ASSISTANT_CHIP_COMMENT,
   ASSISTANT_CHIP_COMMENTS,
+  ASSISTANT_CHOOSE,
   ASSISTANT_CHIP_DOCUMENT,
   ASSISTANT_CHIP_NOTHING,
   ASSISTANT_CHIP_PAGE,
@@ -329,6 +330,7 @@ export function AssistantPanel({
   const modelId = useId();
   const hintId = useId();
   const sidesName = useId();
+  const chooseId = useId();
   // THE PROVIDER AND EACH PROVIDER'S MODEL ARE SETTINGS (ADR-0117): this picker writes them, `main` reads Anthropic's for
   // the recogniser, and a choice survives the panel closing. The list itself is fetched here, per provider.
   const provider = useSetting(settings, AI_PROVIDER_SETTING);
@@ -961,12 +963,16 @@ export function AssistantPanel({
           />
         </div>
       )}
-      {/* THE FOOT: Context and Sources as two menus on one row over the message box (the owner's review of 0.1.6.0;
-          until then two rows of chips under the labels *Asking about* and *Answer from*), then the box itself with the
-          provider and model at its bottom-left and the send arrow at its bottom-right. */}
+      {/* THE FOOT: the word *Choose*, then Context and Sources as two menus, ON ONE ROW over the message box (the
+          owner, 2 October; each menu's face is its value alone, so the row fits the pane), then the box itself with
+          the provider and model at its bottom-left and the send arrow at its bottom-right. The word names the group,
+          so a screen reader hears *Choose* once on entering it and each menu by its own name. */}
       {focused !== undefined && (
         <div className="m-assistant__about" data-assistant-about="">
-          <div className="m-assistant__choices">
+          <div aria-labelledby={chooseId} className="m-assistant__choices" role="group">
+            <span className="m-assistant__choose" id={chooseId}>
+              {i18n._(ASSISTANT_CHOOSE)}
+            </span>
             <ChoiceMenu<Scope>
               label={ASSISTANT_ABOUT_LABEL}
               onChange={choose}

@@ -1384,7 +1384,7 @@ export const ASSISTANT_COPIED = messageKey('assistant.copied');
 export const ASSISTANT_ADD_NOTE = messageKey('assistant.add-note');
 export const ASSISTANT_NOTED = messageKey('assistant.noted');
 export const ASSISTANT_NEW_CHAT = messageKey('assistant.new-chat');
-/** A `ChoiceMenu`'s accessible name: what is chosen, and the value chosen, since its face shows only the first. */
+/** A `ChoiceMenu`'s accessible name: what is chosen, and the value chosen, since its face shows only the second. */
 export const CHOICE_MENU_NAME = messageKey('menu.choice.name');
 export const ASSISTANT_CAPTION = messageKey('assistant.caption');
 export const ASSISTANT_SCOPE_PAGE = messageKey('assistant.scope.page');
@@ -1451,6 +1451,8 @@ export const AI_PROVIDER_NAMES = {
   deepseek: AI_PROVIDER_DEEPSEEK,
 } as const satisfies Record<AiProviderId, MessageKey>;
 export const ASSISTANT_ABOUT_LABEL = messageKey('assistant.about');
+/** The word before the Context and Sources menus, which names the row they make. */
+export const ASSISTANT_CHOOSE = messageKey('assistant.choose');
 export const ASSISTANT_SENT_PICTURE = messageKey('assistant.sent.picture');
 export const ASSISTANT_SENT_COMMENTS = messageKey('assistant.sent.comments');
 export const ASSISTANT_SENT_COMMENTS_CUT = messageKey('assistant.sent.comments-cut');
@@ -3441,7 +3443,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_NO_KEY]: 'This provider has no key stored. Add it in Settings › AI; the key stays on this machine.',
   [ASSISTANT_SEARCHES_THE_WEB]:
     'This model searches the web for every answer, so nothing was sent. Choose another model, or turn on Document + web.',
-  [ASSISTANT_WEB_LABEL]: 'Choose sources',
+  [ASSISTANT_WEB_LABEL]: 'Sources',
   [ASSISTANT_WEB_DOCUMENT]: 'Document only',
   [ASSISTANT_WEB_ON]: 'Document + web',
   [ASSISTANT_WEB_ALWAYS]: 'Always searches the web. To use this model, choose Document + web.',
@@ -3470,7 +3472,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AI_PROVIDER_NAMES.groq]: 'Groq',
   [AI_PROVIDER_NAMES.perplexity]: 'Perplexity',
   [AI_PROVIDER_NAMES.deepseek]: 'DeepSeek',
-  [ASSISTANT_ABOUT_LABEL]: 'Choose context',
+  [ASSISTANT_ABOUT_LABEL]: 'Context',
+  [ASSISTANT_CHOOSE]: 'Choose',
   [ASSISTANT_SENT_PICTURE]: 'Sent a picture of page {page} of {count}',
   [ASSISTANT_SENT_COMMENTS]: '{comments, plural, one {Sent the one comment in this document} other {Sent all # comments in this document}}',
   [ASSISTANT_SENT_COMMENTS_CUT]: '{comments, plural, one {Sent the first comment — the list was too long to send whole} other {Sent the first # comments — the list was too long to send whole}}',

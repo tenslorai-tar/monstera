@@ -180,17 +180,14 @@ function type(text: string): void {
   fireEvent.change(screen.getByLabelText('Ask about this document'), { target: { value: text } });
 }
 
-/** What each choice menu's face reads before its value. */
-const FACE = { Context: 'Choose context', Sources: 'Choose sources' } as const;
-
-/** A choice menu's face — *Choose context: …* or *Choose sources: …* — found by the name it reads, value and all. */
+/** A choice menu — *Context: …* or *Sources: …* — found by its name, which reads what is chosen and the value. */
 function choiceButton(menu: 'Context' | 'Sources'): HTMLElement {
-  return screen.getByRole('button', { name: new RegExp(`^${FACE[menu]}: `, 'u') });
+  return screen.getByRole('button', { name: new RegExp(`^${menu}: `, 'u') });
 }
 
-/** What a choice menu says is chosen, from the words on its face, which are also its name. */
+/** What a choice menu says is chosen: the words on its face, which are the value alone. */
 function chosenIn(menu: 'Context' | 'Sources'): string {
-  return choiceButton(menu).textContent.slice(FACE[menu].length + 2);
+  return choiceButton(menu).textContent;
 }
 
 /** Opens a choice menu and answers its values as offered, each a radio item. */

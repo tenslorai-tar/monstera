@@ -2,7 +2,7 @@ import { asDocId, asDocVersion, channels, contrast } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
-import { bridge } from './pageBridge.js';
+import { LOOKS, bridge } from './pageBridge.js';
 
 /**
  * The Assistant pane as the owner's review of 0.1.6.0 redrew it, measured in a real browser: Context and Sources
@@ -13,8 +13,12 @@ import { bridge } from './pageBridge.js';
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000000a9');
 
-async function openPane(page: Page, settings: Record<string, unknown> = {}): Promise<void> {
-  await page.setViewportSize({ width: 1440, height: 900 });
+async function openPane(
+  page: Page,
+  settings: Record<string, unknown> = {},
+  viewport: { readonly width: number; readonly height: number } = { width: 1440, height: 900 },
+): Promise<void> {
+  await page.setViewportSize(viewport);
   const bytes = await blockedPages([612, 792], 1);
   await bridge(page, {
     opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'chat.pdf' }],
@@ -38,28 +42,44 @@ async function openPane(page: Page, settings: Record<string, unknown> = {}): Pro
   await expect(page.locator('.m-assistant__turn')).toHaveCount(2, { timeout: 10_000 });
 }
 
-test('CONTEXT and SOURCES each read their choice and value, whole and inside the pane', async ({ page }) => {
-  await openPane(page);
-  const faces = page.locator('.m-assistant [data-choice-menu]');
-  await expect(faces).toHaveCount(2);
-  expect(await faces.allTextContents()).toStrictEqual(['Choose context: Page 1', 'Choose sources: Document only']);
-  // ONE ROW NO LONGER: at the pane's default width the row is 306 px and the two faces need 381 (measured 2026-10-02
-  // at 1280 × 800), so Sources wraps under Context. What must hold either way is that each face lies inside the row
-  // and shows every word it reads.
-  const fit = await page.evaluate(() => {
-    const row = document.querySelector('.m-assistant__choices')?.getBoundingClientRect();
-    return [...document.querySelectorAll<HTMLElement>('.m-assistant [data-choice-menu]')].map((face) => {
-      const box = face.getBoundingClientRect();
+// *CHOOSE*, CONTEXT, SOURCES — ONE ROW at the pane's default width, in every look (the owner, 2 October). The pane is
+// at its default width because nothing has resized it, and 1280 × 800 is the smallest window this suite lays screens
+// out at, so it is the narrowest default the row meets.
+for (const look of LOOKS) {
+  test(`${look.name}: CHOOSE, then CONTEXT and SOURCES showing their values, on ONE row inside the pane`, async ({ page }) => {
+    await page.emulateMedia({ contrast: look.contrast });
+    await openPane(page, { 'appearance.theme': look.theme }, { width: 1280, height: 800 });
+    const faces = page.locator('.m-assistant [data-choice-menu]');
+    await expect(faces).toHaveCount(2);
+    expect(await faces.allTextContents()).toStrictEqual(['Page 1', 'Document only']);
+    await expect(page.getByRole('group', { name: 'Choose' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Context: Page 1' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sources: Document only' })).toBeVisible();
+    const row = await page.evaluate(() => {
+      const group = document.querySelector('.m-assistant__choices');
+      const box = group?.getBoundingClientRect();
+      const parts = [...(group?.children ?? [])].map((part) => part.getBoundingClientRect());
       return {
-        inside: row !== undefined && box.left >= row.left - 0.5 && box.right <= row.right + 0.5,
-        whole: face.scrollWidth <= face.clientWidth,
+        // ONE ROW: every part's vertical middle within a pixel of the first's. A wrapped part sits a whole control
+        // lower, about 24 px, so the tolerance cannot hide one.
+        middles: parts.map((part) => Math.round(part.top + part.height / 2)),
+        inside: box !== undefined && parts.every((part) => part.left >= box.left - 0.5 && part.right <= box.right + 0.5),
+        whole: [...document.querySelectorAll<HTMLElement>('.m-assistant [data-choice-menu]')].every(
+          (face) => face.scrollWidth <= face.clientWidth,
+        ),
+        count: parts.length,
       };
     });
+    expect(row.count).toBe(3);
+    const first = row.middles[0] ?? Number.NaN;
+    expect(row.middles.every((middle) => Math.abs(middle - first) <= 1), JSON.stringify(row.middles)).toBe(true);
+    expect(row.inside).toBe(true);
+    expect(row.whole).toBe(true);
   });
-  expect(fit).toStrictEqual([
-    { inside: true, whole: true },
-    { inside: true, whole: true },
-  ]);
+}
+
+test('the message box carries its Enter hint for a screen reader only', async ({ page }) => {
+  await openPane(page);
   // NO EXPLANATORY HINT is drawn under the box: the Enter line is a description for a screen reader only, so it is
   // present and occupies no more than the one clipped pixel `.m-visually-hidden` leaves.
   const hint = page.getByText('Enter sends. Shift+Enter starts a new line.');

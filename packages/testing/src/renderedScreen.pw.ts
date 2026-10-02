@@ -828,7 +828,7 @@ test('right-click › ASK AI quotes the selected words in the assistant’s box,
   const caret = await draft.evaluate((element: HTMLTextAreaElement) => [element.selectionStart, element.selectionEnd, element.value.length]);
   expect(caret[0]).toBe(caret[2]);
   expect(caret[1]).toBe(caret[2]);
-  await expect(page.locator('.m-assistant [data-choice-menu]').first()).toHaveText('Choose context: Selection');
+  await expect(page.locator('.m-assistant [data-choice-menu]').first()).toHaveText('Selection');
 });
 
 test('a triple-click on a page’s LAST LINE still opens the selected-text menu, on that line', async ({

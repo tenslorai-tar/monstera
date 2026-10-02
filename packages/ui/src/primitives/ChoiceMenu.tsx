@@ -18,12 +18,13 @@ import type { SegmentedOption } from './SegmentedControl.js';
  * opens the values on demand. The options are the segmented control's type, so a caller moving between the two
  * changes the component and nothing else.
  *
- * ## The closed face reads the choice AND its value
+ * ## The closed face reads the VALUE; the name reads the choice and the value
  *
- * *Choose context: Page 4* (`CHOICE_MENU_NAME`), the owner's wording of 2 October. Until then the face read only its
- * label and the value lived in an `aria-label`, so a sighted person could not see what would be sent without opening
- * the menu. The visible words are now the accessible name, so the two cannot say different things (WCAG 2.5.3). Each
- * value is a radio item, so the open menu announces which one is chosen.
+ * The face shows what will be sent, *Page 4*, beside the word the row puts before it (the owner, 2 October: *Choose*,
+ * then the Context menu, then the Sources menu, on one row). What is being chosen goes in the accessible name,
+ * *Context: Page 4* (`CHOICE_MENU_NAME`), which CONTAINS the visible words, as WCAG 2.5.3 asks, so a person who says
+ * what they see can still reach it by voice. Until 2 October the face read *Choose context: Page 4*, which wrapped
+ * the pane's two menus onto two rows. Each value is a radio item, so the open menu announces which one is chosen.
  *
  * ## A Base UI MENU, never its Select
  *
@@ -32,7 +33,7 @@ import type { SegmentedOption } from './SegmentedControl.js';
  * so it is a no-drag region over the title bar like them (`primitives.css`, `[data-side]`).
  */
 export interface ChoiceMenuProps<Value extends string> {
-  /** What is being chosen, which the closed face reads before the value: *Choose context*, *Choose sources*. */
+  /** What is being chosen, which the accessible name reads before the value: *Context*, *Sources*. */
   readonly label: MessageKey;
   readonly options: readonly SegmentedOption<Value>[];
   readonly value: Value;
@@ -42,10 +43,15 @@ export interface ChoiceMenuProps<Value extends string> {
 export function ChoiceMenu<Value extends string>({ label, options, value, onChange }: ChoiceMenuProps<Value>): ReactElement {
   const { _ } = useLingui();
   const chosen = options.find((option) => option.value === value);
+  const shown = chosen === undefined ? '' : _(chosen.label, chosen.values);
   return (
     <Menu.Root>
-      <Menu.Trigger className="m-choice-menu" data-choice-menu="">
-        <span>{_(CHOICE_MENU_NAME, { label: _(label), value: chosen === undefined ? '' : _(chosen.label, chosen.values) })}</span>
+      <Menu.Trigger
+        aria-label={_(CHOICE_MENU_NAME, { label: _(label), value: shown })}
+        className="m-choice-menu"
+        data-choice-menu=""
+      >
+        <span>{shown}</span>
         <Icon name="ChevronDown" size="dense" />
       </Menu.Trigger>
       <Menu.Portal>
