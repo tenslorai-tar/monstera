@@ -27,9 +27,11 @@ import {
   formFieldKindSchema,
   importFormDataSchema,
   importAnnotationsSchema,
+  type AnswerRoute,
   channel,
   fileAnswered,
   fileRequested,
+  fileRequestedAndAnswered,
   WORD_MODES,
   outputNameSchema,
   cropPagesSchema,
@@ -1487,6 +1489,12 @@ export interface CoreChannelSchemas<
   readonly inverse: TInverse;
   /** {@link liveSessionWire} or {@link byteImageWire}. */
   readonly wire: TWire;
+  /**
+   * How `engine/apply`'s and `engine/capture`'s params cross: `frame` where this engine's commands fit a frame at their
+   * worst, `file` where they can outgrow one (ADR-0138). DECLARED per engine rather than derived from the union's size,
+   * so a kind that grows past the frame on a framed engine turns `hostRoutes.test.ts` red instead of moving a route.
+   */
+  readonly commandRoute: AnswerRoute;
 }
 
 /**
@@ -1748,7 +1756,9 @@ export function coreEngineChannels<
     // set is still the six `coreChannels.test.ts` names.
     ...hostAreaChannels(wire),
 
-    'engine/apply': channel(
+    // THE COMMAND'S ROUTE IS THE ENGINE'S DECLARATION (ADR-0138): MuPDF's kinds fit a frame at their worst, PDFium's
+    // text edits do not.
+    'engine/apply': (schemas.commandRoute === 'file' ? fileRequested : channel)(
       'Applies one command routed to this host’s engine to a session it holds.',
       z
         .object({
@@ -1808,8 +1818,8 @@ export function coreEngineChannels<
     ),
 
     // FILE-ANSWERED (ADR-0125's addendum): a prior is about 40 bytes a page, so rotating 10,000 pages captured
-    // 398,937 bytes, 1.5x the frame — measured with the kernel's own capture.
-    'engine/capture': fileAnswered(
+    // 398,937 bytes, 1.5x the frame — measured with the kernel's own capture. Its params take the command's route.
+    'engine/capture': (schemas.commandRoute === 'file' ? fileRequestedAndAnswered : fileAnswered)(
       'Reads prior state for one command routed to this host’s engine, before it is applied.',
       z
         .object({
@@ -1953,6 +1963,8 @@ export const engineChannels = {
     // on the way out, and an apply that answers nothing — which is
     // `CommandExecution<'mupdf'>.apply`'s `Promise<void>` on the wire.
     wire: liveSessionWire,
+    // IN THE FRAME: every MuPDF kind fits one at its worst, the largest `addAnnotation` at 247,050 bytes (ADR-0138).
+    commandRoute: 'frame',
   }),
   // THE LIVE-SESSION CHANNEL. MuPDF holds a parse between commands, so it owes
   // the channel that hands the parse's bytes back (ADR-0048's correction).
@@ -1971,7 +1983,9 @@ export const engineChannels = {
    * layer draws — because the bus decides what a command is handed, wherever it runs. `asset` is `insertImagePage`'s
    * picture, by `engine/apply`'s door.
    */
-  'engine/applyPdfLib': channel(
+  // FILE-REQUESTED (ADR-0138): `createFormField` and the pre-read — a recognised page, an outline — can each outgrow a
+  // frame at its schema's worst.
+  'engine/applyPdfLib': fileRequested(
     'Runs one pdf-lib command on the image of a session this host holds, and writes the result to the output directory.',
     z
       .object({

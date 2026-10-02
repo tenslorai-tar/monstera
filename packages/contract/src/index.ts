@@ -15,6 +15,7 @@ export {
   channel,
   fileAnswered,
   fileRequested,
+  fileRequestedAndAnswered,
 } from './channel.js';
 export {
   type RouteViolation,
@@ -338,7 +339,10 @@ export {
   type FormFieldKind,
   type CreatedField,
   createFormFieldSchema,
+  createdFieldPlacementSchema,
   createdFieldSchema,
+  simpleCreatedFieldSchema,
+  MAX_CREATED_FIELDS,
   deleteFormFieldsSchema,
   fieldFillSchema,
   fillFormFieldSchema,
@@ -494,6 +498,7 @@ export {
   type OcrEngine,
   type OcrLanguage,
   type OcrLanguages,
+  DOC_ID_MAX_CHARS,
   docIdSchema,
   docVersionSchema,
   envelopeSchema,

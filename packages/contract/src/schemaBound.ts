@@ -23,9 +23,14 @@ import { HOST_CORRELATION_ID_MAX_CHARS, HOST_OUTPUT_NAME_MAX_CHARS } from './hos
  *
  * `perChar` is 1 for roughly what an honest encoder writes and {@link WORST_BYTES_PER_CHAR} for what a string can cost
  * at most — the length of a `\u` escape — which is the figure a bound has to hold at.
+ *
+ * `io` is which side of a transform is read. `output` by default, as it always was. `input` is the side the WIRE's
+ * JSON is parsed against, and it is the honest reading for a value that crosses as JSON and is branded on arrival — a
+ * `DocVersion` is a number on the wire, which `output` cannot represent and so reads as unbounded (measured
+ * 2026-10-02: fifteen command kinds were unmeasurable for their `version` alone, item 5c).
  */
-export function maxEncodedBytes(schema: z.ZodType, perChar: number): number {
-  return walk(z.toJSONSchema(schema, { io: 'output', unrepresentable: 'any' }), perChar);
+export function maxEncodedBytes(schema: z.ZodType, perChar: number, io: 'output' | 'input' = 'output'): number {
+  return walk(z.toJSONSchema(schema, { io, unrepresentable: 'any' }), perChar);
 }
 
 /** The longest one JSON string character can encode to: `\u0000`. */
@@ -188,14 +193,18 @@ export interface RouteViolation {
 
 /**
  * THE RULE ADR-0125 SETS, over a host's channel map: a channel whose answer crosses in the frame must fit the frame at
- * its schema's worst; a channel whose answer crosses in a file must declare the one failure that route introduces; and
- * a channel whose params cross in the frame must fit it too. `fileAnswered` adds the failure by construction, so the
- * second clause catches a declaration spelt by hand.
+ * its schema's worst; a channel whose answer crosses in a file must declare the one failure that route introduces; a
+ * channel whose params cross in the frame must fit it too; and, since ADR-0138, a channel whose params cross in a file
+ * must fit the file's ceiling. `fileAnswered` adds the failure by construction, so the second clause catches a
+ * declaration spelt by hand.
+ *
+ * Params are read on the side their JSON is parsed against (`io: 'input'`): a branded `DocVersion` is a number there,
+ * and an object that is not strict accepts more keys there, so both read as what the wire may actually carry.
  *
  * Failures are left out of the answer figure: a failure body is a code and at most an incident id, bounded by the
  * channel's literal codes rather than by anything a document holds.
  */
-export function hostRouteViolations(channels: ChannelMap, frameMaxBytes: number): RouteViolation[] {
+export function hostRouteViolations(channels: ChannelMap, frameMaxBytes: number, fileMaxBytes: number): RouteViolation[] {
   const violations: RouteViolation[] = [];
   for (const [name, declared] of Object.entries(channels)) {
     if (declared.answer === 'frame') {
@@ -211,12 +220,22 @@ export function hostRouteViolations(channels: ChannelMap, frameMaxBytes: number)
       violations.push({ channel: name, direction: 'answer', reason: `it answers in a file and does not declare ${ANSWER_TOO_LARGE}` });
     }
     if (declared.request === 'frame') {
-      const worst = requestOverheadBytes(name) + maxEncodedBytes(declared.params, WORST_BYTES_PER_CHAR);
+      const worst = requestOverheadBytes(name) + maxEncodedBytes(declared.params, WORST_BYTES_PER_CHAR, 'input');
       if (worst > frameMaxBytes) {
         violations.push({
           channel: name,
           direction: 'request',
           reason: `its params schema admits ${String(worst)} bytes at worst against a ${String(frameMaxBytes)}-byte frame`,
+        });
+      }
+    } else {
+      // THE FILE IS THE PARAMS ALONE: `client.ts` writes `JSON.stringify(params)` and refuses it above the ceiling.
+      const worst = maxEncodedBytes(declared.params, WORST_BYTES_PER_CHAR, 'input');
+      if (worst > fileMaxBytes) {
+        violations.push({
+          channel: name,
+          direction: 'request',
+          reason: `its params schema admits ${String(worst)} bytes at worst against the ${String(fileMaxBytes)}-byte file ceiling`,
         });
       }
     }

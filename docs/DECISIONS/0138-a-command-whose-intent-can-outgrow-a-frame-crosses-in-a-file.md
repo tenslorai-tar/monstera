@@ -108,3 +108,11 @@ schema's worst. Pinned by exact set, so a channel that joins is red and one that
 - **Lowering the field and option bounds until `createFormField` fits the frame.** At 256 text fields the name bound
   would have to fall to about 120 characters at worst, which refuses a person a long field name to keep a transport
   constant, and the pre-read rows above would still not fit.
+
+## Correction before building, 2026-10-02 — the pre-read refusal is reasoned, not observed
+
+The Context says the pre-read rows are *a person's ordinary action refused today*. That is stronger than its
+evidence: the figures are schema bounds, and no document here was run to a refusal. What is measured is that the
+schema admits more than a frame, written plainly as well as at worst, so a large enough outline or recognition is
+refused by `client.ts`; how large a real dense page's recognition is was not measured. The decision does not rest on
+it, because ADR-0125 routes by what the schema admits and not by what a corpus has produced.

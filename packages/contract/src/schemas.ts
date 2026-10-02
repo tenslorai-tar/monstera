@@ -17,7 +17,16 @@ import { AI_PROVIDER_KEY_SETTING_IDS } from './aiProviders.js';
  * first and validating later would put an unchecked value into a type that
  * claims it was checked.
  */
-export const docIdSchema = z.string().min(1).transform(asDocId);
+
+/**
+ * How long a `DocId` may be. Main mints one as 32 random bytes in base64url, 43 characters (`token.ts`); the bound is
+ * there for the reason a host session id has one, that an unbounded id is a peer deciding how many bytes of a frame
+ * it spends, and so that a command naming a second document has a size at all (item 5c: three command kinds measured
+ * as unbounded for their `source` alone).
+ */
+export const DOC_ID_MAX_CHARS = 64;
+
+export const docIdSchema = z.string().min(1).max(DOC_ID_MAX_CHARS).transform(asDocId);
 export const docVersionSchema = z.number().int().nonnegative().transform(asDocVersion);
 export const fileHandleSchema = z.string().min(1).transform(asFileHandle);
 
