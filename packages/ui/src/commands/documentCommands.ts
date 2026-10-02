@@ -2620,10 +2620,16 @@ export function exportWordCommand(deps: DocumentCommandDeps & RecognisesFirst & 
 export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.export-powerpoint',
-    icon: 'FileImage',
+    // A SLIDE, not the page-picture glyph *Export page images* already draws: two exports sharing one icon read as one.
+    icon: 'Presentation',
     title: EXPORT_POWERPOINT_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_POWERPOINT,
-    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 160, prominence: 'secondary' }],
+    // BESIDE WORD AND EXCEL, as the owner's review of 0.1.9.0 asked: Home › Export straight after Excel, and Tools ›
+    // Convert straight after Excel at the same prominence, which is also its place in the Tools menu.
+    placements: [
+      { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 305 },
+      { surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 125 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;

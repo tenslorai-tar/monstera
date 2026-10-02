@@ -213,9 +213,10 @@ test('export-text-1', async ({ page }) => {
 test('export-to-powerpoint-1', async ({ page }) => {
   await openApp(page);
   await openDocument(page);
-  const menu = await openGroupMenu(page, 'Tools', 'Convert');
-  await menu.getByRole('menuitem', { name: 'Export to PowerPoint…' }).focus();
-  await shoot(page, 'export-to-powerpoint-1', menu, 12);
+  await openSection(page, 'Home');
+  const group = ribbonGroup(page, 'Export');
+  await group.getByRole('button', { name: 'PowerPoint', exact: true }).focus();
+  await shoot(page, 'export-to-powerpoint-1', group, 8);
 });
 
 test('insert-a-blank-page-1', async ({ page }) => {
