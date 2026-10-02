@@ -3414,10 +3414,20 @@ optgroup {
   gap: var(--space-2);
 }
 
+/* NOTHING IN THE ROW SHRINKS — a group, a tool, a named menu or a More. The fold's arithmetic is done in natural
+   widths, read off what is drawn (`useRibbonFold`), so a width the row could squeeze would be measured squeezed and
+   kept as natural. Only the More said `flex: none`, for that reason, while the tool beside it carried a 52 px minimum,
+   which replaces a flex item's content-based one. A group's own automatic minimum held the tools at their content in
+   every case measured on 2 October, so this states the property rather than repairing a reproduced defect: a row
+   that does not fit overflows, its groups' boxes change, and the fold measures again. */
+.m-ribbon__group,
+.m-ribbon__buttons > * {
+  flex: none;
+}
+
 /* A GROUP'S OVERFLOW (the owner's `document-light-narrow.png`): the tools that did not fit, in the
    group they belong to. It draws as a tool button so a folded group reads as a group — the chevron
-   is what says it opens rather than runs. `flex: none`, because the fold's arithmetic is done in
-   natural widths and a More that shrank would make the row it was measured for wrong. */
+   is what says it opens rather than runs. */
 .m-ribbon__more {
   flex: none;
 }

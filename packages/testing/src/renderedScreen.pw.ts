@@ -1936,6 +1936,111 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every
   await expect.poll(async () => more.count()).toBe(0);
 });
 
+/** How far a ribbon row's content runs past its box: above 1 px, the row's `overflow: hidden` is cutting a tool. */
+const ribbonOverflow = (tools: ReturnType<Page['locator']>): Promise<number> =>
+  tools.evaluate((element) => element.scrollWidth - element.clientWidth);
+
+test('a CAPTION THAT GROWS after the fold measured it is measured again, so the row never cuts a tool', async ({ page }) => {
+  // THE GAP: the fold keeps each button's width, and the row's box is the same size whether its content fits or not,
+  // so nothing announced a caption that grew. Measured 2026-10-02 with no group observed: the row ran 61 px past its
+  // box for good. Growing the captions is the CONTROL's input — something the absent fix would leave overflowing.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const tools = page.locator('.m-ribbon__tools');
+  await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
+  await expect.poll(() => ribbonOverflow(tools)).toBeLessThanOrEqual(1);
+  const shownBefore = await tools.locator('.m-tool-button[data-command]').count();
+  await page.evaluate(() => {
+    document.styleSheets[0]?.insertRule('.m-tool-button__label { font-size: 13px !important; }', 0);
+  });
+  // THE GROWTH TOOK: the captions are drawn larger, so the row had something to answer.
+  await expect(tools.locator('.m-tool-button__label').first()).toHaveCSS('font-size', '13px');
+  await expect.poll(() => ribbonOverflow(tools)).toBeLessThanOrEqual(1);
+  // AND IT ANSWERED BY FOLDING, not by the browser hiding the excess: fewer tools on the row than before.
+  expect(await tools.locator('.m-tool-button[data-command]').count()).toBeLessThan(shownBefore);
+});
+
+// EVERY RIBBON TAB AT 1280 × 800, the size this suite reads as the owner's (`window.ts` sets no size of its own). A
+// literal list, because this package may not import the registry — and a case below holds it equal to the rail's
+// sections, so a tab added without a case here is red rather than unchecked.
+const RIBBON_TABS = ['home', 'organize', 'edit', 'comment', 'forms', 'protect', 'review', 'tools'] as const;
+
+test('the ribbon tabs checked at 1280 × 800 are exactly the rail’s sections', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const sections = page.locator('.m-ribbon__tab[data-ribbon-section]');
+  await expect(sections.first()).toBeVisible();
+  const rail = await sections.evaluateAll((tabs) => tabs.map((tab) => (tab as HTMLElement).dataset['ribbonSection']));
+  expect(rail).toStrictEqual([...RIBBON_TABS]);
+});
+
+for (const tab of RIBBON_TABS) {
+  test(`the ${tab.toUpperCase()} ribbon at 1280 × 800 cuts no caption and folds no tool while room remains`, async ({ page }) => {
+    // THE OWNER'S REPORT OF 2 OCTOBER: Forms showed a More with room to spare and "List box" cut to "List bo".
+    // Not reproduced on this machine's fonts; these are the properties, held per tab where they can be seen.
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await bridgeWithDocument(page, {}, 1);
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    const tools = page.locator('.m-ribbon__tools');
+    await page.locator(`.m-ribbon__tab[data-ribbon-section="${tab}"]`).click();
+    await expect(tools).toHaveAttribute('data-ribbon-active', tab);
+    await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
+    // THE WIDEST TOOL THIS TAB DRAWS, read where (nearly) everything is drawn: room left at 1280 may not reach it.
+    const widest = await tools
+      .locator('.m-tool-button[data-command]')
+      .evaluateAll((buttons) => Math.max(...buttons.map((button) => button.getBoundingClientRect().width)));
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect.poll(() => ribbonOverflow(tools)).toBeLessThanOrEqual(1);
+
+    const seen = await tools.evaluate((element) => {
+      const caption = (button: HTMLElement): { label: number; room: number } => {
+        const label = button.querySelector<HTMLElement>('.m-tool-button__label');
+        const style = getComputedStyle(button);
+        return {
+          label: label?.getBoundingClientRect().width ?? 0,
+          room: button.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight),
+        };
+      };
+      const buttons = [...element.querySelectorAll<HTMLElement>('.m-tool-button[data-command]')];
+      const cut = buttons.filter((button) => caption(button).label > caption(button).room + 0.5).map((button) => button.dataset['command']);
+      // POSITIVE CONTROL, in the instrument: one tool squeezed on purpose must read as cut, or a clean answer means
+      // nothing — a label's own box grows with its text, which made the first version of this check blind.
+      const first = buttons[0];
+      let sees = false;
+      if (first !== undefined) {
+        first.style.setProperty('min-inline-size', '0');
+        first.style.inlineSize = '20px';
+        sees = caption(first).label > caption(first).room + 0.5;
+        first.style.removeProperty('inline-size');
+        first.style.removeProperty('min-inline-size');
+      }
+      const last = [...element.querySelectorAll('.m-ribbon__group, .m-ribbon__rest')].at(-1);
+      const end = element.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(element).paddingRight);
+      return {
+        cut,
+        sees,
+        room: last === undefined ? 0 : end - last.getBoundingClientRect().right,
+        widthFolded: [...element.querySelectorAll<HTMLElement>('.m-ribbon__more[data-width-folded]')].reduce(
+          (sum, more) => sum + Number(more.dataset['widthFolded'] ?? '0'),
+          0,
+        ),
+        rest: element.querySelector('.m-ribbon__rest') !== null,
+      };
+    });
+    const detail = JSON.stringify({ ...seen, widest });
+    expect(seen.sees, `the clip check can see a cut caption: ${detail}`).toBe(true);
+    expect(seen.cut, detail).toStrictEqual([]);
+    // A TOOL FOLDED FOR WIDTH only where the room left could not have held one more. A More holding only a group's
+    // secondary tools (ADR-0098) is drawn at every width, so it is not a fold for width and is not asked about here.
+    if (seen.widthFolded > 0 || seen.rest) expect(seen.room, detail).toBeLessThan(widest);
+  });
+}
+
 test('BELOW THE FLOOR whole groups fold into the row’s More, nothing scrolls sideways, and every tool is still reachable', async ({
   page,
 }) => {
