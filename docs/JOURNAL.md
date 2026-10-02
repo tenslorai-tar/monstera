@@ -941,6 +941,67 @@ red on every screen this range changes and are regenerated on Windows only. **Ex
 finding above was read in a diff or a run here, except HHHHHHH-5's Windows reproduction and HHHHHHH-6's shell
 behaviour, which are the findings.
 
+*The checklist, item by item — added 2026-10-02 after Guards' document-scope proof refused this entry at `a58f0c83`
+for answering none of the items under its own heading; the prose above stands as written.*
+
+### 1. Root cause or workaround?
+
+Each fix states its mechanism in its commit: the Assistant's composer (`5e8003e`), the 22ch basis read as a height in a
+column (`b35f471`), the transparent overlay that declares no app region (`e779568`), the first frame's ordering
+(`2bc3840`), Fit page's padding and gap (`2d54f43`), the button unmounted under the focus and a stop inside a draw
+read as a failure (`cbdda52`), HHHHHHH-1's fallback (`cc6305d3`). C.a has no fix because it has no reproduction
+(HHHHHHH-5). No workaround in the range.
+
+### 2. Verified against the easy shape only?
+
+The rendered cases ran at narrow, default and wide sizes in light, dark and high contrast for the screens they changed.
+Fit page took 1600 × 852 and 1280 × 800; Side by Side's scroll took four device scales, two widths and scrollbars
+drawn. The hard shape not reached is Windows: the drag rows (HHHHHHH-6) and C.a's own files (HHHHHHH-5).
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+The tool windows' unit tests now mount each body inside its dialog, as the registry does; `ChoiceMenu.test.tsx` reads
+the face's name and its aria-label; `Thumbnails.test.tsx` replaces the fit-to-height case with a width case. Each moved
+with the design it tests, and none dropped a control.
+
+### 3. Would CI have caught it?
+
+Answered above from the runs of `b4707df` and `2d54f43`. HHHHHHH-1 is the one CI caught that the local runs did not.
+
+### 4. Are the proofs non-vacuous?
+
+Every new rendered case in the range carries a control run against the previous build or with the guard removed, and
+each failed it (the commits name them). The scroll recorder of HHHHHHH-5 has a positive control; whether it would see
+the recorded defect is the open finding.
+
+### 4a. Resolution test before measuring?
+
+The first-frame inspector and the scroll recorder were each shown to report a difference first: the inspector failed on
+the old build's frames, the recorder saw a planted scroll of 120 px.
+
+### 4b. A search with a positive control?
+
+`definedTokens.mjs` carries its own; the menu-glyph check in the registry names every offender and its case plants one.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+The registry's glyph check is derived from the commands registered, which is the growth direction; the menu case's
+control is a registry built with a command that has none.
+
+### 5. Executed, or asserted?
+
+Executed: every case named above, typecheck, lint, the contrast check, and the two CI runs read. Asserted: HHHHHHH-5's
+cause and HHHHHHH-6's shell behaviour.
+
+### 6. Architecture before the feature, or underneath it?
+
+No architecture changed in the range audited; ADR-0139 (`2b84035`) is in the range and precedes C.d, which follows it.
+
+### 7. Do the documents still match the code?
+
+The FEATURES rows each item touched were updated in its commit (Side by Side, compare, PowerPoint, Full page); the
+Help articles for the Assistant, Export to PowerPoint and Cloud storage were rewritten with them.
+
 ---
 
 ## 2026-10-02 — The GPU process's 9×: canvas memory kept for every page drawn, not the surface's lights, grain or blur
