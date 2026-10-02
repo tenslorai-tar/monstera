@@ -39,10 +39,10 @@ import {
   MAX_WORKBOOK_SHEET_NAME,
   MAX_LINK_URI,
   MAX_LAYER_NAME_LENGTH,
-  MAX_BLOCK_LINES,
-  MAX_EDIT_BLOCKS,
-  MAX_REPLACED_TEXT,
-  MAX_TEXT_REPLACEMENTS,
+  MAX_EDIT_RUNS,
+  MAX_OBJECT_INDEX,
+  blockEditAgrees,
+  blockEditSchema,
   annotationKindNameSchema,
   annotationRectSchema,
   annotationAuthorSchema,
@@ -736,41 +736,15 @@ export const ACCESSIBILITY_HUMAN_CHECKS = [
 ] as const;
 
 /**
- * How many of a page's text objects one answer may name — and, because a page
- * cannot have more lines than runs, how many **lines** one answer may carry.
+ * How long one read run's text may be — the PDFium host's own bound on a run (`PDFIUM_PRIOR_TEXT_MAX`), so any run
+ * the host answers can cross (ADR-0142 Decision 5).
  *
- * A page-scaled read, bounded like every other one that crosses. **Not the
- * engine wire's `ENGINE_TEXT_OBJECTS_MAX`**, which is 8192 and bounds a
- * different hop: that one exists so a hostile host cannot hand main an
- * unbounded array, and this one exists so main cannot hand the renderer a list
- * no person can work through. The smaller number is the honest one here — a
- * chooser of 8192 rows is not a chooser — and the flag beside it says when the
- * page had more, exactly as the flat-field and duplicate reports do.
- *
- * One number for both because they bound the same collection counted two ways:
- * grouping runs into lines can only make the list shorter, so a separate line
- * bound would be a second constant that could never be the binding one.
- *
- * ## `MAX_TEXT_REPLACEMENTS`' NUMBER AND NOT ITS ARGUMENT, which is finding W-1
- *
- * A surface offers what this read answered and sends what the person accepted
- * as one `replaceTextObject`, so a read bound above the command's would offer an
- * accept the command cannot carry. That relationship is real and it is **≤**.
- *
- * This was written `= MAX_TEXT_REPLACEMENTS` on 2026-09-09, citing CLAUDE.md's
- * *copy only where the reader cannot reach the source* — and the audit of
- * `63f10be..258a9ce` found the rule that governs instead, eleven lines from
- * where the derivation was made: `MAX_REPLACED_TEXT` refuses to derive from
- * `MAX_FIELD_VALUE` because **two bounds that happen to agree are not one
- * bound**. The two reasons differ. The command's bound is about a payload; this
- * one is about a list a person works through, and a derivation encoding `=`
- * would let a payload argument raise the chooser's ceiling past *a chooser of
- * 8192 rows is not a chooser* with no mechanism left on that side.
- *
- * So it is a literal with the relationship in prose — `MAX_FLAT_FIELD_CANDIDATES`
- * beside `MAX_CREATED_FIELDS`, which is the precedent this file already had.
+ * A read's lines and runs are bounded by `MAX_EDIT_RUNS`, the edit's: a surface offers what this read answered and
+ * sends what the person accepted as one command, so the read must never offer more than the command can carry. That
+ * relationship is **≤**, and here it is equality because both are a page's runs. It was the command's per-text 4,096
+ * reused for the run, which two bounds that agree are not.
  */
-export const MAX_TEXT_OBJECTS = 512;
+export const MAX_RUN_TEXT = 65_536;
 
 /**
  * How many text blocks, and how many page objects, one PART of a page's read carries
@@ -778,7 +752,7 @@ export const MAX_TEXT_OBJECTS = 512;
  *
  * A PART, not the page: a dense table page is thousands of blocks, and a page drawn one glyph per object is thousands
  * of objects (8,400 measured, JOURNAL 2026-10-02, *No document-size refusals*). Both lists were bounded at
- * {@link MAX_TEXT_OBJECTS} and answered whole, while `main` forwarded every block and up to 45,800 objects — so such a
+ * 512 and answered whole, while `main` forwarded every block and up to 45,800 objects — so such a
  * page was refused as `internal` by this contract, finding AAAAAAA-1. They now cross a part at a time, as the outline
  * does ({@link listPartFromSchema}). The figure is the old bound, so one part costs what the whole list used to.
  */
@@ -4672,21 +4646,21 @@ export const channels = {
                           z
                             .object({
                               /** The object's index in the engine's own page-object order. */
-                              index: z.number().int().nonnegative(),
+                              index: z.number().int().min(0).max(MAX_OBJECT_INDEX),
                               /** What that run says, with the spaces PDFium infers between words. */
-                              text: z.string().max(MAX_REPLACED_TEXT),
+                              text: z.string().max(MAX_RUN_TEXT),
                             })
                             .strict(),
                         )
                         .min(1)
-                        .max(MAX_TEXT_OBJECTS)
+                        .max(MAX_EDIT_RUNS)
                         .readonly(),
                       box: pdfBoxSchema,
                     })
                     .strict(),
                 )
                 .min(1)
-                .max(MAX_BLOCK_LINES)
+                .max(MAX_EDIT_RUNS)
                 .readonly(),
               style: textBlockStyleSchema,
             })
@@ -5409,20 +5383,13 @@ export const channels = {
       z.object({
         kind: z.literal('translated'),
         version: docVersionSchema,
-        blocks: z
-          .array(
-            z
-              .object({
-                lines: z
-                  .array(z.array(z.number().int().nonnegative()).min(1).max(MAX_TEXT_REPLACEMENTS))
-                  .min(1)
-                  .max(MAX_BLOCK_LINES),
-                text: z.string().max(MAX_REPLACED_TEXT),
-              })
-              .strict(),
-          )
-          .min(1)
-          .max(MAX_EDIT_BLOCKS),
+        /**
+         * The blocks to write, in `editTextBlock`'s own wire form (ADR-0142), so the renderer adds the page, the
+         * version and the fit and composes nothing.
+         */
+        edit: blockEditSchema.refine((edit) => blockEditAgrees(edit), {
+          message: 'the starts must describe the lists, and an object may be named once',
+        }),
       }),
       z.object({ kind: z.literal('nothing-to-translate') }),
       z.object({ kind: z.literal('refused'), problem: z.enum(AI_ANSWER_REFUSALS) }),

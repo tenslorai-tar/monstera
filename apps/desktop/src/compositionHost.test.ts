@@ -8,6 +8,7 @@ import {
   JOB_LIMIT_KILL_ON_JOB_CLOSE,
   JOB_LIMIT_PROCESS_MEMORY,
 } from '@monstera/kernel';
+import { blockEditOf, replacementFieldsOf } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 
@@ -1115,7 +1116,7 @@ describe('the composition root, with BOTH engine hosts', () => {
       command: {
         kind: 'replaceTextObject',
         page: 0,
-        replacements: [{ index: 2, text: 'hi' }],
+        ...replacementFieldsOf([{ index: 2, text: 'hi' }]),
         version: opened.value.version,
       },
     });
@@ -1192,7 +1193,8 @@ describe('the composition root, with BOTH engine hosts', () => {
         command: {
           kind: 'editTextBlock',
           page: 0,
-          blocks: [{ lines: [[2, 4], [7]], text: 'new words', fit: 'reflow' }],
+          ...blockEditOf([{ lines: [[2, 4], [7]], text: 'new words' }]),
+          fit: 'reflow',
           version: opened.value.version,
         },
       });
@@ -1237,7 +1239,7 @@ describe('the composition root, with BOTH engine hosts', () => {
       command: {
         kind: 'replaceTextObject',
         page: 0,
-        replacements: [{ index: 2, text: 'hi' }],
+        ...replacementFieldsOf([{ index: 2, text: 'hi' }]),
         version: opened.value.version,
       },
     });

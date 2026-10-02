@@ -1361,7 +1361,14 @@ describe('delete pages — the mutation-dialog gate', () => {
           command: {
             kind: 'editTextBlock',
             page: 3,
-            blocks: [{ lines: [[4, 9], [2]], text: 'The quick brown dog\njumps over', fit: 'reflow' }],
+            // THE WIRE FORM WRITTEN OUT, not built by the encoder under test (ADR-0142): two lines, of runs 4 and 9
+            // and of run 2, one block, its words.
+            runs: [4, 9, 2],
+            lineStarts: [0, 2],
+            blockStarts: [0],
+            text: 'The quick brown dog\njumps over',
+            textStarts: [0],
+            fit: 'reflow',
             version: 7,
           },
         },

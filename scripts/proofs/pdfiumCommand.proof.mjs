@@ -85,8 +85,10 @@ if (!existsSync(library)) {
 
 // The proof imports the BUILT modules, so a stale build would prove yesterday's
 // routing and say nothing about the diff under review.
-refuseStaleBuild(root, PDFIUM_COMMAND, 5);
+refuseStaleBuild(root, PDFIUM_COMMAND, 6);
 
+// EVERY EDIT BUILT THROUGH THE CONTRACT'S ONE ENCODER, as the application builds it (ADR-0142).
+const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
 const { openPdfium, pdfiumWriter, pageText, replaceTextObjects, textObjectIndices, textRuns } = await import(
   '../../packages/kernel/dist/pdfiumFfi.js'
 );
@@ -210,7 +212,7 @@ async function main() {
   const command = /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextObject'>} */ ({
     kind: 'replaceTextObject',
     page: 0,
-    replacements: [{ index: texts[1] ?? -1, text: REPLACEMENT }],
+    ...replacementFieldsOf([{ index: texts[1] ?? -1, text: REPLACEMENT }]),
     version: 1,
   });
 
@@ -240,7 +242,7 @@ async function main() {
   // unhealthy — a rebuild for a page index the caller got wrong.
   const missed = await localPdfiumExecution.capture(original, {
     ...command,
-    replacements: [{ index: 99, text: REPLACEMENT }],
+    ...replacementFieldsOf([{ index: 99, text: REPLACEMENT }]),
   });
   record(
     'a capture naming no text object reports captured:false with a reason',
@@ -256,10 +258,10 @@ async function main() {
   // failure and kept what it had would answer `captured: true` here.
   const partly = await localPdfiumExecution.capture(original, {
     ...command,
-    replacements: [
+    ...replacementFieldsOf([
       { index: texts[0] ?? -1, text: REPLACEMENT },
       { index: 99, text: REPLACEMENT },
-    ],
+    ]),
   });
   record(
     'a capture whose list is partly unreadable refuses the WHOLE command',
@@ -331,14 +333,14 @@ async function main() {
   // reason the payload carries a list at all. `proof:pdfiumadapter` already
   // proves `replaceTextObjects` writes several; what is unproven one layer up
   // is that the COMMAND carries them there, so an execution that quietly took
-  // `replacements[0]` and dropped the rest would pass every case above.
+  // the first object and dropped the rest would pass every case above.
   const bothCommand = /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextObject'>} */ ({
     kind: 'replaceTextObject',
     page: 0,
-    replacements: [
+    ...replacementFieldsOf([
       { index: texts[0] ?? -1, text: 'FIRST RUN is edited too' },
       { index: texts[2] ?? -1, text: 'THIRD RUN is edited too' },
-    ],
+    ]),
     version: 1,
   });
   const bothPrior = await localPdfiumExecution.capture(original, bothCommand);
@@ -835,7 +837,8 @@ async function glyphLineCases() {
       kind: 'editTextBlock',
       page: 0,
       // THE JOINED RUN, by its first object alone: the edit expands it through the same join.
-      blocks: [{ lines: [[run.index]], text: 'Drawn as one line and edited whole', fit: 'reflow' }],
+      ...blockEditOf([{ lines: [[run.index]], text: 'Drawn as one line and edited whole' }]),
+      fit: 'reflow',
       version: 1,
     }),
     source: undefined,
@@ -878,7 +881,8 @@ async function blockEditCases() {
       command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
         kind: 'editTextBlock',
         page: 0,
-        blocks: [{ lines, text, fit: 'reflow' }],
+        ...blockEditOf([{ lines, text }]),
+        fit: 'reflow',
         version: 1,
       }),
       source: undefined,
@@ -888,7 +892,8 @@ async function blockEditCases() {
   const refusedCapture = await localPdfiumExecution.capture(original, {
     kind: 'editTextBlock',
     page: 0,
-    blocks: [{ lines, text: 'x', fit: 'reflow' }],
+    ...blockEditOf([{ lines, text: 'x' }]),
+    fit: 'reflow',
     version: /** @type {never} */ (1),
   });
   record(
@@ -1002,7 +1007,8 @@ async function blockEditCases() {
       command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
         kind: 'editTextBlock',
         page: 0,
-        blocks: [{ lines: headingLines, text: 'Les plantations de printemps commencent la semaine prochaine', fit: 'reflow' }],
+        ...blockEditOf([{ lines: headingLines, text: 'Les plantations de printemps commencent la semaine prochaine' }]),
+        fit: 'reflow',
         version: 1,
       }),
       source: undefined,
@@ -1029,7 +1035,8 @@ async function blockEditCases() {
       command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
         kind: 'editTextBlock',
         page: 0,
-        blocks: [{ lines: target, text, fit }],
+        ...blockEditOf([{ lines: target, text }]),
+        fit,
         version: 1,
       }),
       source: undefined,
@@ -1098,7 +1105,8 @@ async function blockEditCases() {
       command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
         kind: 'editTextBlock',
         page: 0,
-        blocks: [{ lines: twoRunLines, text: replacedWhole, fit: 'reflow' }],
+        ...blockEditOf([{ lines: twoRunLines, text: replacedWhole }]),
+        fit: 'reflow',
         version: 1,
       }),
       source: undefined,
@@ -1127,14 +1135,14 @@ async function blockEditCases() {
     command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
       kind: 'editTextBlock',
       page: 0,
-      blocks: [
-        { lines, text: [BLOCK_LINES[0], 'a second line, rewritten', BLOCK_LINES[2]].join('\n'), fit: 'reflow' },
+      ...blockEditOf([
+        { lines, text: [BLOCK_LINES[0], 'a second line, rewritten', BLOCK_LINES[2]].join('\n') },
         {
           lines: separate.lines.map((line) => line.runs.map((run) => run.index)),
           text: 'The block below, rewritten',
-          fit: 'reflow',
         },
-      ],
+      ]),
+      fit: 'reflow',
       version: 1,
     }),
     source: undefined,
@@ -1167,7 +1175,8 @@ async function blockEditCases() {
         command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
           kind: 'editTextBlock',
           page: 0,
-          blocks: [{ lines: narrowedLines, text: [BLOCK_LINES[0], accented, BLOCK_LINES[2]].join('\n'), fit: 'reflow' }],
+          ...blockEditOf([{ lines: narrowedLines, text: [BLOCK_LINES[0], accented, BLOCK_LINES[2]].join('\n') }]),
+          fit: 'reflow',
           version: 1,
         }),
         source: undefined,

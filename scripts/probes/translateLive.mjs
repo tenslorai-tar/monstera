@@ -38,6 +38,7 @@
 
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 
+import { blockEditOf } from '../../packages/contract/dist/commands.js';
 import { listModels } from '../../packages/kernel/dist/aiModels.js';
 import { streamChat } from '../../packages/kernel/dist/aiChat.js';
 import { openPdfium, pageText, pdfiumWriter, textRuns } from '../../packages/kernel/dist/pdfiumFfi.js';
@@ -65,8 +66,10 @@ refuseStaleBuild(
     ['packages/kernel/src/pdfiumFfi.ts', 'packages/kernel/dist/pdfiumFfi.js', 'tsc'],
     ['packages/kernel/src/pdfiumTextEdit.ts', 'packages/kernel/dist/pdfiumTextEdit.js', 'tsc'],
     ['packages/kernel/src/aiChat.ts', 'packages/kernel/dist/aiChat.js', 'tsc'],
+    // THE EDIT'S WIRE FORM, built through the contract's encoder (ADR-0142).
+    ['packages/contract/src/commands.ts', 'packages/contract/dist/commands.js', 'tsc'],
   ],
-  4,
+  5,
 );
 
 const key = process.env[KEY_VARIABLE] ?? '';
@@ -134,7 +137,8 @@ const written = await localPdfiumExecution.apply({
   command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
     kind: 'editTextBlock',
     page: 0,
-    blocks: changed.map((block) => ({ ...block, fit: /** @type {const} */ ('shrink') })),
+    ...blockEditOf(changed),
+    fit: 'shrink',
     version: 1,
   }),
   source: undefined,

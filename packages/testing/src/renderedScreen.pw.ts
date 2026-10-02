@@ -4,7 +4,7 @@
 // than the class — "this expression is not constructable", at compile time.
 import { AxeBuilder } from '@axe-core/playwright';
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
-import { AI_SETUP_AT_START_SETTING_ID, displayLocationSchema } from '@monstera/contract';
+import { AI_SETUP_AT_START_SETTING_ID, blockEditOf, displayLocationSchema } from '@monstera/contract';
 import {
   MINIMUM_WINDOW,
   asDocId,
@@ -3158,7 +3158,7 @@ for (const look of LOOKS) {
       // A STORED KEY IS WHAT OFFERS A PROVIDER; the value is a fixture no provider sees.
       secrets: { 'ai.openai-key': 'a-fixture-key' },
       aiModels: { source: 'fetched', models: [{ id: 'fixture-model', label: 'Fixture', capabilities: { vision: null, streaming: null } }] },
-      translation: { kind: 'translated', version: asDocVersion(1), blocks: [{ lines: [[3]], text: 'Bonjour' }] },
+      translation: { kind: 'translated', version: asDocVersion(1), edit: blockEditOf([{ lines: [[3]], text: 'Bonjour' }]) },
     });
     await page.goto('/');
     await page.getByRole('button', { name: 'Open PDF…' }).click();

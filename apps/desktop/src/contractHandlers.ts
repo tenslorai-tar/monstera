@@ -24,7 +24,8 @@ import {
   MAX_LIBRARY_PICTURE_BYTES,
   MAX_RASTER_BYTES,
   MAX_RASTER_PIXELS,
-  MAX_REPLACED_TEXT,
+  MAX_EDIT_TEXT,
+  blockEditOf,
   MAX_SETTINGS_FILE_BYTES,
   SECRET_SETTING_IDS,
   TRANSLATION_LANGUAGES,
@@ -2564,10 +2565,11 @@ function textBlocksHandler(commands: DocumentCommands): ContractHandlers['docume
  * rewriting it would regenerate content for nothing, and a translation that changed nothing is
  * `nothing-to-translate`.
  *
- * ## An answer longer than a block may carry is unreadable, not cut
+ * ## An answer longer than a page's edit may carry is unreadable, not cut
  *
- * `MAX_REPLACED_TEXT` bounds what a block edit writes; a translation past it would have to be cut
- * to fit, and a translation cut mid-sentence is a wrong one. So the whole answer is refused.
+ * `MAX_EDIT_TEXT` bounds what one block edit writes, every block's words together (ADR-0142); a
+ * translation past it would have to be cut to fit, and a translation cut mid-sentence is a wrong one.
+ * So the whole answer is refused. A single block is bounded by nothing smaller.
  */
 function translatePageHandler(deps: {
   readonly commands: DocumentCommands;
@@ -2608,19 +2610,20 @@ function translatePageHandler(deps: {
       if (answer.refusal !== undefined) return ok({ kind: 'refused', problem: answer.refusal } as const);
       translated = readTranslation(answer.text, texts.length);
     }
-    if (translated === undefined || translated.some((text) => text.length > MAX_REPLACED_TEXT)) {
-      return ok({ kind: 'refused', problem: 'unreadable' } as const);
-    }
+    if (translated === undefined) return ok({ kind: 'refused', problem: 'unreadable' } as const);
     const blocks = read.blocks.flatMap((block, at) => {
       const text = translated[at];
       return text === undefined || text === texts[at]
         ? []
         : [{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), text }];
     });
-    const [first, ...rest] = blocks;
-    return first === undefined
-      ? ok({ kind: 'nothing-to-translate' } as const)
-      : ok({ kind: 'translated', version: read.version, blocks: [first, ...rest] } as const);
+    if (blocks.length === 0) return ok({ kind: 'nothing-to-translate' } as const);
+    // A BLOCK'S WORDS ARE BOUNDED ONLY BY THE PAGE'S (ADR-0142): a translated paragraph past 4,096 characters was
+    // refused here as an answer that could not be read, blaming the provider for an ordinary page (table A row 10).
+    // The page's text past `MAX_EDIT_TEXT` is a model that wrote far more than it was given, which that refusal names.
+    const edit = blockEditOf(blocks);
+    if (edit.text.length > MAX_EDIT_TEXT) return ok({ kind: 'refused', problem: 'unreadable' } as const);
+    return ok({ kind: 'translated', version: read.version, edit } as const);
   };
 }
 

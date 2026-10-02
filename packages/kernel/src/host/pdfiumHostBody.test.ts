@@ -5,6 +5,7 @@ import {
   ENGINE_HOST_FRAME_MAX_BYTES,
   FRAME_HEADER_BYTES,
   encodeFrame,
+  replacementFieldsOf,
 } from '@monstera/contract';
 
 import type { ByteImage } from '../engineSeam.js';
@@ -364,7 +365,7 @@ describe('the PDFium host body', () => {
         command: {
           kind: 'replaceTextObject',
           page: 0,
-          replacements: [{ index: 2, text: 'hi' }],
+          ...replacementFieldsOf([{ index: 2, text: 'hi' }]),
           version: 1,
         },
         from: IN,
@@ -394,7 +395,7 @@ describe('the PDFium host body', () => {
         command: {
           kind: 'replaceTextObject',
           page: 0,
-          replacements: [{ index: 2, text: 'hi' }],
+          ...replacementFieldsOf([{ index: 2, text: 'hi' }]),
           version: 1,
         },
         from: IN,
@@ -429,7 +430,7 @@ describe('the PDFium host body', () => {
         command: {
           kind: 'replaceTextObject',
           page: 0,
-          replacements: [{ index: 2, text: 'hi' }],
+          ...replacementFieldsOf([{ index: 2, text: 'hi' }]),
           version: 1,
         },
         // A WELL-FORMED NAME NOTHING WROTE. It has to satisfy the schema, or
@@ -469,7 +470,7 @@ describe('the PDFium host body', () => {
           command: {
             kind: 'replaceTextObject',
             page: 0,
-            replacements: [{ index: 2, text: 'hi' }],
+            ...replacementFieldsOf([{ index: 2, text: 'hi' }]),
             version: 1,
           },
           from: IN,

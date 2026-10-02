@@ -8,6 +8,7 @@ import {
   MAX_PAGE_BARCODES,
   MAX_SETTINGS_FILE_BYTES,
   RECENT_PREVIEWS_SETTING_ID,
+  blockEditOf,
   channels,
 } from '@monstera/contract';
 import { mkdtempSync, writeFileSync } from 'node:fs';
@@ -1318,12 +1319,24 @@ settings: createEphemeralSettings(),
 
     expect(result).toStrictEqual({
       ok: true,
-      value: { kind: 'translated', version: 7, blocks: [{ lines: [[3]], text: 'Facture' }] },
+      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], text: 'Facture' }]) },
     });
     expect(asked).toHaveLength(1);
     // THE BLOCKS AS THE KERNEL WILL DIFF THEM: runs joined as they are, lines by a line break.
     expect(JSON.parse(asked[0]?.user ?? '[]')).toStrictEqual(['Invoice', 'Payment is due\nwithin 30 days.']);
     expect(asked[0]?.system).toContain('into French');
+  });
+
+  it('a translated paragraph past 4,096 characters is answered whole, not refused (table A row 10)', async () => {
+    // It was refused as an unreadable answer — blaming the provider for an ordinary page — because one block's text
+    // was bounded at 4,096. A block is bounded only by the page's text now (ADR-0142).
+    const long = 'Le paiement est dû dans les trente jours suivant la réception. '.repeat(80);
+    expect(long.length).toBeGreaterThan(4096);
+    const { handlers } = translating(BLOCKS, JSON.stringify([long, 'Payment is due\nwithin 30 days.']));
+    expect(await handlers['ai.translatePage'](ASK)).toStrictEqual({
+      ok: true,
+      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], text: long }]) },
+    });
   });
 
   it('an answer of the WRONG LENGTH is refused as unreadable — after ONE more ask, never matched by guess', async () => {
@@ -1340,7 +1353,7 @@ settings: createEphemeralSettings(),
     const { handlers, asked } = translating(BLOCKS, ['not an array', JSON.stringify(['Facture', 'Payment is due\nwithin 30 days.'])]);
     expect(await handlers['ai.translatePage'](ASK)).toStrictEqual({
       ok: true,
-      value: { kind: 'translated', version: 7, blocks: [{ lines: [[3]], text: 'Facture' }] },
+      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], text: 'Facture' }]) },
     });
     expect(asked).toHaveLength(2);
   });

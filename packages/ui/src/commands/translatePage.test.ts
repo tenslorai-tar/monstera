@@ -1,4 +1,4 @@
-import { channels, createClient } from '@monstera/contract';
+import { blockEditOf, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok, type MessageKey } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -51,7 +51,7 @@ async function run(options: {
   const applied: unknown[] = [];
   const answers: Readonly<Record<string, unknown>> = {
     'ai.models': { source: 'fetched', models: [{ id: 'first-model', label: 'First', capabilities: { vision: null, streaming: null } }] },
-    'ai.translatePage': { kind: 'translated', version: 4, blocks: BLOCKS },
+    'ai.translatePage': { kind: 'translated', version: 4, edit: blockEditOf(BLOCKS) },
     'document.execute': { version: asDocVersion(5), byteLength: 900, historyDropped: 0 },
     ...options.answers,
   };
@@ -96,7 +96,8 @@ describe('translatePageCommand', () => {
         // And every block FITTED: a translation keeps the page's layout (ADR-0097 4b).
         params: {
           docId: DOC,
-          command: { kind: 'editTextBlock', page: 2, blocks: [{ lines: [[3]], text: 'Facture', fit: 'shrink' }], version: 4 },
+          // MAIN'S EDIT AS IT CAME, with the page, the fit and the version added (ADR-0142).
+          command: { kind: 'editTextBlock', page: 2, ...blockEditOf(BLOCKS), fit: 'shrink', version: 4 },
         },
       },
     ]);

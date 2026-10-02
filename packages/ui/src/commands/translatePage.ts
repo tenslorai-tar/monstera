@@ -121,8 +121,10 @@ export function translatePageCommand(deps: TranslatePageDeps): UiCommand {
           {
             kind: 'editTextBlock',
             page,
+            // MAIN'S EDIT AS IT CAME, already in the command's wire form (ADR-0142).
+            ...result.edit,
             // SHRINK: a translation keeps the page's layout — each block fitted to the box it had.
-            blocks: result.blocks.map((block) => ({ ...block, fit: 'shrink' as const })),
+            fit: 'shrink',
             version: result.version,
           },
           {

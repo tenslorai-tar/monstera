@@ -11,6 +11,7 @@ import {
   type OptimizeSetting,
   type PageSet,
   type SignaturePlacement,
+  blockEditOf,
   pageSetOf,
   withPageRuns,
   withStamp,
@@ -3663,8 +3664,10 @@ export async function commitTextBlock(
     {
       kind: 'editTextBlock',
       page,
+      // IN THE WIRE FORM, through the contract's one encoder (ADR-0142).
+      ...blockEditOf([{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), text }]),
       // REFLOW: a person typing sees the block grow as they type, and it stays that way.
-      blocks: [{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), text, fit: 'reflow' }],
+      fit: 'reflow',
       version,
     },
     {

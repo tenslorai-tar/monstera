@@ -39,12 +39,13 @@ const violationsOf = (channels: ChannelMap) =>
  * - `engine/invert`: its params are a capture's answer, which crossed under the same ceiling to reach main.
  * - `engine/applyPdfLib`: its pre-read is `engine/ocr-page`'s or `engine/destinations`' answer, by the same argument;
  *   the case below holds the rest of its params to the ceiling.
- * - PDFium's `engine/apply` and `engine/capture`: open, and the owner's. `replaceTextObject` and `editTextBlock`
- *   multiply per-entry bounds whose real limit is a page's total, and above the ceiling the call is refused as itself.
+ *
+ * PDFium's `engine/apply` and `engine/capture` LEFT this set with ADR-0142: its two text edits carry one list and one
+ * text each, so their worst is a sum under the ceiling (`commands.test.ts` measures both).
  */
 const PAST_THE_ROUTE: Readonly<Record<keyof typeof HOSTS, readonly string[]>> = {
   'MuPDF host': ['engine/invert', 'engine/applyPdfLib'],
-  'PDFium host': ['engine/invert', 'engine/apply', 'engine/capture'],
+  'PDFium host': ['engine/invert'],
   'compose host': [],
 };
 
@@ -110,8 +111,11 @@ const WRITERS = {
 const capacityOf = (route: 'frame' | 'file'): number =>
   route === 'frame' ? ENGINE_HOST_FRAME_MAX_BYTES : ENGINE_ANSWER_FILE_MAX_BYTES;
 
-/** Kinds past their writer's route, by exact set: PDFium's two text edits, open (see `PAST_THE_ROUTE`). */
-const KINDS_PAST_THE_ROUTE: readonly string[] = ['replaceTextObject', 'editTextBlock'];
+/**
+ * Kinds past their writer's route, by exact set: none since ADR-0142 reshaped PDFium's two text edits, which were the
+ * two. Empty and still pinned, so a kind that grows past its route is red rather than tolerated.
+ */
+const KINDS_PAST_THE_ROUTE: readonly string[] = [];
 
 type KindOption = z.ZodObject<{ kind: z.ZodLiteral<string> }>;
 

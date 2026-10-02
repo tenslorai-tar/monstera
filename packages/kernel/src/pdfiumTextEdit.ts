@@ -1,4 +1,4 @@
-import type { CommandOfKind } from '@monstera/contract';
+import { type CommandOfKind, blocksOfEdit, replacementsOf } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { ByteImage } from './engineSeam.js';
@@ -111,7 +111,7 @@ export async function captureReplaceTextObject(
 ): Promise<CaptureResult<PriorTextObjects>> {
   return onImage(image, async (session) => {
     const objects: { index: number; text: string }[] = [];
-    for (const replacement of command.replacements) {
+    for (const replacement of replacementsOf(command)) {
       try {
         // SEQUENTIALLY, on one session. `textObjectText` loads and closes a text
         // page per call, and PDFium's page handles are not safe to work through
@@ -155,7 +155,8 @@ export async function applyReplaceTextObject(
   command: CommandOfKind<'replaceTextObject'>,
 ): Promise<ByteImage> {
   return onImage(image, async (session) => {
-    await replaceTextObjects(session, command.page, command.replacements);
+    // READ BACK THROUGH THE CONTRACT'S DECODER, the one inverse of the wire form (ADR-0142).
+    await replaceTextObjects(session, command.page, replacementsOf(command));
     return pdfiumWriter.serialise(session);
   });
 }
@@ -219,7 +220,9 @@ export async function applyEditTextBlock(
   command: CommandOfKind<'editTextBlock'>,
 ): Promise<ByteImage> {
   const { bytes, written } = await onImage(image, async (session) => {
-    const placed = await editTextBlocks(session, command.page, command.blocks);
+    // ONE FIT FOR THE COMMAND, laid out per block as before (ADR-0142).
+    const blocks = blocksOfEdit(command).map((block) => ({ ...block, fit: command.fit }));
+    const placed = await editTextBlocks(session, command.page, blocks);
     return { bytes: await pdfiumWriter.serialise(session), written: placed };
   });
   const read = await onImage(bytes, (session) => drawnTexts(session, command.page, written.map((write) => write.index)));
