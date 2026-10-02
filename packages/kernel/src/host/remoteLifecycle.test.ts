@@ -238,6 +238,9 @@ function joined(
       pageFills: () => {
         throw new Error('the lifecycle half must not read page fills');
       },
+      wordBoxes: () => {
+        throw new Error('the lifecycle half must not read word boxes');
+      },
       ocr: () => {
         throw new Error('the lifecycle half must not recognise anything');
       },
@@ -589,6 +592,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         pageFills: () => {
           throw new Error('the byte-size case must not read page fills');
+        },
+        wordBoxes: () => {
+          throw new Error('the byte-size case must not read word boxes');
         },
         ocr: () => {
           throw new Error('the byte-size case must not recognise anything');

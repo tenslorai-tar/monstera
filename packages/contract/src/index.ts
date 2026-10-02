@@ -70,6 +70,7 @@ export {
   MAX_SERVICE_DETAIL,
   MAX_TEXT_LAYER_LINE,
   MAX_TEXT_LAYER_LINES,
+  MAX_PAGE_WORD_BOXES,
   // THE SEARCH QUERY'S BOUND, exported because the selected-text menu seeds the find field with a
   // selection, and cutting it to the channel's own bound keeps a long selection from being refused.
   MAX_QUERY_LENGTH,

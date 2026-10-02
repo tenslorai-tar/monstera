@@ -155,6 +155,9 @@ async function joined(): Promise<{
       pageFills: () => {
         throw new Error('unused');
       },
+      wordBoxes: () => {
+        throw new Error('unused');
+      },
       ocr: () => {
         throw new Error('unused');
       },

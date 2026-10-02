@@ -484,6 +484,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.pageTables': 'needs an engine session',
   'document.viewModel': 'needs an engine session',
   'document.pageLinks': 'needs an engine session',
+  'document.pageWordBoxes': 'needs an engine session',
   'document.destinations': 'needs an engine session',
   'document.layers': 'needs an engine session',
   'document.annotations': 'needs an engine session',

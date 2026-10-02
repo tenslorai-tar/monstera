@@ -149,6 +149,9 @@ function start(stream: HostByteStream) {
     pageFills: () => {
       throw new Error('no case here reads page fills');
     },
+    wordBoxes: () => {
+      throw new Error('no case here reads word boxes');
+    },
     ocr: () => {
       throw new Error('no case here recognises anything');
     },

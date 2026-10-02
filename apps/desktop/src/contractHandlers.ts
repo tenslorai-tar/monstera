@@ -477,6 +477,7 @@ export function createContractHandlers(deps: {
     'document.pageStructure': pageStructureHandler(deps.commands),
     'document.pageTables': pageTablesHandler(deps.commands),
     'document.pageLinks': pageLinksHandler(deps.commands),
+    'document.pageWordBoxes': pageWordBoxesHandler(deps.commands),
     'document.destinations': destinationsHandler(deps.commands),
     'document.layers': layersHandler(deps.commands),
     'document.signatures': signaturesHandler(deps.commands),
@@ -2356,6 +2357,21 @@ function pageLinksHandler(commands: DocumentCommands): ContractHandlers['documen
     try {
       const { version, links } = await commands.pageLinks(docId, page);
       return ok({ version, links });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** One page's word boxes (ADR-0137), with the link read's three refusals for its reason. */
+function pageWordBoxesHandler(commands: DocumentCommands): ContractHandlers['document.pageWordBoxes'] {
+  return async ({ docId, page }): Promise<Awaited<ReturnType<ContractHandlers['document.pageWordBoxes']>>> => {
+    try {
+      const { version, lines, truncated } = await commands.pageWordBoxes(docId, page);
+      return ok({ version, lines: lines.map((line) => ({ text: line.text, box: { ...line.box }, boxes: [...line.boxes] })), truncated });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

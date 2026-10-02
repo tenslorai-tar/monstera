@@ -264,6 +264,7 @@ describe('browser shim', () => {
       'document.pageStructure',
       'document.pageTables',
       'document.pageTextLayer',
+      'document.pageWordBoxes',
       'document.pageWordCount',
       'document.pasteAnnotations',
       'document.placeBarcode',

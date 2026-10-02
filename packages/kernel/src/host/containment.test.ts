@@ -530,6 +530,9 @@ describe('the engine host answers a containment probe', () => {
     pageFills: () => {
       throw new Error('a containment probe must not read page fills');
     },
+    wordBoxes: () => {
+      throw new Error('a containment probe must not read word boxes');
+    },
     ocr: () => {
       throw new Error('a containment probe must not recognise anything');
     },

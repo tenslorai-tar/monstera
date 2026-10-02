@@ -2114,6 +2114,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       );
     },
 
+    // NO ENGINE, SO NO WORD BOXES: every line keeps the estimate, which is what a read that boxed nothing means.
+    'document.pageWordBoxes': ({ docId }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(ok({ version: asDocVersion(current), lines: [], truncated: false }));
+    },
+
     // SETTINGS SURVIVE WITHIN ONE SHIM, and do not survive constructing another.
     //
     // That is the real boundary's behaviour with the process boundary removed:

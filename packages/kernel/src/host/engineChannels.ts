@@ -202,6 +202,23 @@ export const ENGINE_PAGE_LINKS_MAX = 4096;
 export const ENGINE_PAGE_FILLS_MAX = 4096;
 
 /**
+ * How many tokens one `engine/word-boxes` answer boxes (ADR-0137). A dense page holds a few thousand; the reader stops
+ * boxing here and says so, and the tokens past it keep the estimate rather than the page being refused. Declared here
+ * for {@link ENGINE_PAGE_FILLS_MAX}'s reason.
+ */
+export const ENGINE_WORD_BOXES_MAX = 16_384;
+
+/**
+ * How many lines one word-box answer carries: four times the text layer's 2,048, a bound only a crafted page reaches.
+ * LITERALS, because this file loads the host's half of the contract and the text layer's bounds are in the renderer's
+ * (`host.ts` keeps `channels.js` out of the host); `wordBoxes.test.ts` holds each to the text layer's own.
+ */
+export const ENGINE_WORD_BOXES_LINES_MAX = 8192;
+
+/** A walked line's text, cut where the text layer cuts its own (1,024), so the two cut lines still pair and agree. */
+export const ENGINE_WORD_LINE_MAX = 1024;
+
+/**
  * How long a link's URI may be.
  *
  * The one string in this shape that a document controls, so it is the one that
@@ -2398,6 +2415,40 @@ export const engineChannels = {
               .strict(),
           )
           .max(ENGINE_PAGE_FILLS_MAX),
+      })
+      .strict(),
+    ['no-such-session'],
+  ),
+
+  /**
+   * One page's word boxes ([ADR-0137](../../../../docs/DECISIONS/0137-a-words-box-is-the-engines-read-on-request.md)):
+   * each line's text and box, and each token's box as the union of its characters' quads. A shape the host builds, so
+   * the schema bounds it — the token total by {@link ENGINE_WORD_BOXES_MAX}, which the reader itself stops at, and each
+   * line's text by the text layer's own line length.
+   */
+  'engine/word-boxes': fileAnswered(
+    'Reads one page’s word boxes from a session this host holds.',
+    z
+      .object({
+        session: sessionSchema,
+        /** Zero-based index, as `commands.ts` declares them. */
+        page: z.number().int().nonnegative(),
+      })
+      .strict(),
+    z
+      .object({
+        lines: z
+          .array(
+            z
+              .object({
+                text: z.string().max(ENGINE_WORD_LINE_MAX),
+                box: z.object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() }).strict(),
+                boxes: z.array(z.number()).max(ENGINE_WORD_BOXES_MAX * 4),
+              })
+              .strict(),
+          )
+          .max(ENGINE_WORD_BOXES_LINES_MAX),
+        truncated: z.boolean(),
       })
       .strict(),
     ['no-such-session'],

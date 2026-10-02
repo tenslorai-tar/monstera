@@ -1,5 +1,5 @@
 import { type ContractClient, channels, createClient } from '@monstera/contract';
-import { type DocId, asDocId, asDocVersion, err, ok } from '@monstera/shared';
+import { type CompareBox, type DocId, asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { type CompareRow, type CompareSide, type DrawnPage, MAX_COMPARE_CHANGES, compareSides } from './sideBySideCompare.js';
@@ -29,12 +29,25 @@ function lineBox(text: string, index: number): { x0: number; y0: number; x1: num
  */
 function clientFor(
   documents: ReadonlyMap<DocId, readonly FakePage[]>,
-  options: { readonly movedAfter?: number; readonly refuse?: boolean } = {},
-): { client: ContractClient; reads: string[] } {
+  options: {
+    readonly movedAfter?: number;
+    readonly refuse?: boolean;
+    /** The engine's word boxes for a line, as `document.pageWordBoxes` answers them; absent, the read boxes nothing. */
+    readonly words?: (docId: DocId, page: number) => readonly { text: string; box: CompareBox; boxes: number[] }[];
+    readonly refuseWords?: boolean;
+  } = {},
+): { client: ContractClient; reads: string[]; wordReads: string[] } {
   const reads: string[] = [];
+  const wordReads: string[] = [];
   const client = createClient(channels, (id, params) => {
     const docId = (params as { docId: DocId }).docId;
     const pages = documents.get(docId) ?? [];
+    if (id === 'document.pageWordBoxes') {
+      const page = (params as { page: number }).page;
+      wordReads.push(`${docId === LEFT ? 'left' : 'right'}:${String(page)}`);
+      if (options.refuseWords === true) return Promise.resolve(err({ code: 'document-poisoned' }));
+      return Promise.resolve(ok({ version: VERSION, lines: [...(options.words?.(docId, page) ?? [])], truncated: false }));
+    }
     if (id === 'document.annotations') {
       return Promise.resolve(
         ok({
@@ -72,7 +85,7 @@ function clientFor(
       }),
     );
   });
-  return { client, reads };
+  return { client, reads, wordReads };
 }
 
 /** A half drawing its pages from the fixture: white, with dark squares, at one pixel per point. */
@@ -132,6 +145,34 @@ describe('Side by Side — the four fixtures ADR-0131 names, through the walk th
     expect([row.left, row.right, row.change.removed, row.change.inserted]).toStrictEqual([1, 1, 'thirty', 'sixty']);
     expect(row.change.left).toHaveLength(1);
     expect(row.change.right).toHaveLength(1);
+  });
+
+  it('a changed word is marked by the ENGINE’S box (ADR-0137) — and CONTROL: a refused word-box read marks it by the estimate', async () => {
+    const edited: FakePage = { lines: ['Payment is due within sixty days of the invoice'] };
+    const left = [intro, terms];
+    const right = [intro, edited];
+    // THE ENGINE SAYS "sixty" is printed at 300–340, which no share of the line's characters would put it at.
+    const engine = (docId: DocId, page: number) => {
+      const text = (docId === LEFT ? left : right)[page]?.lines[0] ?? '';
+      const tokens = text.split(' ').length;
+      const boxes = Array.from({ length: tokens }, (_, at) => [at * 20, 10, at * 20 + 10, 20]).flat();
+      if (docId === RIGHT && page === 1) boxes.splice(4 * 4, 4, 300, 10, 340, 20);
+      return [{ text, box: lineBox(text, 0), boxes }];
+    };
+    const { client, wordReads } = clientFor(new Map([[LEFT, left], [RIGHT, right]]), { words: engine });
+    const done = await compareSides(client, side(LEFT, left), side(RIGHT, right), new AbortController().signal, () => undefined);
+    if (done.kind !== 'done') throw new Error(done.kind);
+    const [row] = done.result.rows;
+    expect(row?.kind === 'text' ? row.change.right : undefined).toStrictEqual([{ x0: 300, y0: 10, x1: 340, y1: 20 }]);
+    // READ ONLY FOR THE PAIR WHOSE TEXT CHANGED: the identical first pages ask for no boxes.
+    expect(wordReads).toStrictEqual(['left:1', 'right:1']);
+
+    const refused = clientFor(new Map([[LEFT, left], [RIGHT, right]]), { words: engine, refuseWords: true });
+    const estimated = await compareSides(refused.client, side(LEFT, left), side(RIGHT, right), new AbortController().signal, () => undefined);
+    if (estimated.kind !== 'done') throw new Error(estimated.kind);
+    const [kept] = estimated.result.rows;
+    expect(kept?.kind === 'text' ? kept.change.inserted : undefined).toBe('sixty');
+    expect(kept?.kind === 'text' ? kept.change.right[0]?.x0 : undefined).not.toBe(300);
   });
 
   it('a MOVED IMAGE is a picture change where it was and where it is, and no text change', async () => {

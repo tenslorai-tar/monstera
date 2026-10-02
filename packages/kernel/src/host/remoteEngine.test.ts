@@ -28,6 +28,7 @@ import { readFormFields } from '../formFields.js';
 import { readAnnotations } from '../pageAnnotations.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
 import { readPageFills } from '../pageFills.js';
+import { readPageWordBoxes } from '../wordBoxes.js';
 import { readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
 import { withCellFills } from '../cellFills.js';
@@ -42,6 +43,7 @@ import {
   remoteMupdfGeometry,
   remoteMupdfPageText,
   remoteMupdfPageFills,
+  remoteMupdfWordBoxes,
   remoteMupdfAccessibility,
   type SessionAssets,
   UnknownRemoteSession,
@@ -232,6 +234,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
   readonly geometry: ReturnType<typeof remoteMupdfGeometry>;
   readonly pageText: ReturnType<typeof remoteMupdfPageText>;
   readonly pageFills: ReturnType<typeof remoteMupdfPageFills>;
+  readonly wordBoxes: ReturnType<typeof remoteMupdfWordBoxes>;
   readonly accessibility: ReturnType<typeof remoteMupdfAccessibility>;
   readonly sessions: ReturnType<typeof createRemoteSessions>;
   readonly requests: () => number;
@@ -316,6 +319,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       pageText: readPageTextJson,
       pageLinks: readPageLinks,
       pageFills: readPageFills,
+      wordBoxes: readPageWordBoxes,
       // NOT THE REAL READER, where its neighbours above are. `recognisePage`
       // instantiates 2.8 MB of Tesseract WASM and takes about four seconds per
       // page, and no case in this file drives the channel — so the production
@@ -372,6 +376,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
     geometry: remoteMupdfGeometry(client, sessions),
     pageText: remoteMupdfPageText(client, sessions),
     pageFills: remoteMupdfPageFills(client, sessions),
+    wordBoxes: remoteMupdfWordBoxes(client, sessions),
     accessibility: remoteMupdfAccessibility(client, sessions),
     sessions,
     requests: () => requests,
@@ -515,6 +520,18 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
           [null, null, null],
         ],
       ]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('the WORD-BOX read crosses the real handler and schema, and answers what the reader answers in process (ADR-0137)', async () => {
+    const { session, token, wordBoxes } = await joined(shaded);
+    try {
+      const crossed = await wordBoxes(token, 0);
+      // NOT EMPTY, or the equality below would hold for a handler that crossed nothing.
+      expect(crossed.lines.some((line) => line.boxes.length > 0)).toBe(true);
+      expect(crossed).toStrictEqual(await readPageWordBoxes(session, 0));
     } finally {
       await mupdfWriter.close(session);
     }
@@ -754,6 +771,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         pageFills: () => {
           throw new Error('unused');
         },
+        wordBoxes: () => {
+          throw new Error('unused');
+        },
         ocr: () => {
           throw new Error('unused');
         },
@@ -892,6 +912,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         pageFills: () => {
           throw new Error('the rotation-refusal case must not read page fills');
+        },
+        wordBoxes: () => {
+          throw new Error('the rotation-refusal case must not read word boxes');
         },
         ocr: () => {
           throw new Error('the rotation-refusal case must not recognise anything');

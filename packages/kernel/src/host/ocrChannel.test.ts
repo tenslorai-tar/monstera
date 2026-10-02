@@ -143,6 +143,9 @@ async function joined(ocr: HostOcrReader): Promise<{
       pageFills: () => {
         throw new Error('a recognition must not read the page fills');
       },
+      wordBoxes: () => {
+        throw new Error('a recognition must not read the word boxes');
+      },
       ocr,
       destinations: () => {
         throw new Error('a recognition must not read the outline');

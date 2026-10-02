@@ -53,7 +53,7 @@ export {
 // `document.pageWordCount` and may not import the kernel, so a counting rule in
 // the kernel would be re-stated in the shim and the two would agree until one
 // of them changed — which is exactly what happened to the matching rule above.
-export { type WordCount, countWords, wordsOf } from './wordCount.js';
+export { type TextToken, type WordCount, countWords, tokensOf, wordsOf } from './wordCount.js';
 export { MINIMUM_WINDOW, minimumWindowFor } from './windowSize.js';
 export { type AlignmentStep, type LineChange, alignSequences, comparableLine, diffLines } from './lineDiff.js';
 export {
@@ -65,10 +65,12 @@ export {
   type PageAlignment,
   type PageSignature,
   type PairChange,
+  type WalkedWordLine,
   CHANGE_TEXT_LIMIT,
   alignPages,
   comparePair,
   needsPicture,
+  pairWordBoxes,
   signPage,
 } from './pageCompare.js';
 // WHICH RUNS AN EDITED LINE REWRITES, once. The kernel's `editTextBlock` owns

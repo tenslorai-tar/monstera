@@ -30,6 +30,7 @@ import {
 } from '../ocrRecognise.js';
 import type { PageFill } from '../cellFills.js';
 import type { PageLink } from '../pageLinks.js';
+import type { PageWordBoxes } from '../wordBoxes.js';
 import type { PageTextRead } from '../textStructure.js';
 import type { AccessibilityReport } from '../accessibilityRules.js';
 import type { FoundBarcode } from '../barcodeReader.js';
@@ -93,6 +94,9 @@ export type HostPageLinksReader = (
 
 /** Reads one page's filled shapes — what a table cell's background is joined from. */
 export type HostPageFillsReader = (session: MupdfSession, page: number) => Promise<readonly PageFill[]>;
+
+/** One page's word boxes (ADR-0137): `readPageWordBoxes` in the host, `remoteMupdfWordBoxes` across the pipe. */
+export type HostWordBoxesReader = (session: MupdfSession, page: number) => Promise<PageWordBoxes>;
 
 /**
  * Recognises one page's text and word boxes.
@@ -455,6 +459,8 @@ export interface EngineHandlerParts {
   readonly pageLinks: HostPageLinksReader;
   /** A page's filled shapes. `engine/page-fills`. */
   readonly pageFills: HostPageFillsReader;
+  /** A page's word boxes (ADR-0137). `engine/word-boxes`. */
+  readonly wordBoxes: HostWordBoxesReader;
   /** How this process turns a raster into characters. `engine/ocr-page`. */
   readonly ocr: HostOcrReader;
   readonly destinations: HostDestinationsReader;
@@ -504,6 +510,7 @@ export function createEngineHandlers({
   pageText,
   pageLinks,
   pageFills,
+  wordBoxes,
   ocr,
   destinations,
   layers,
@@ -840,6 +847,15 @@ export function createEngineHandlers({
       if (held === undefined) return gone;
       // NO try/catch, for the link read's reason.
       return { ok: true, value: { fills: [...(await pageFills(held.session, page))] } };
+    },
+
+    'engine/word-boxes': async ({ session, page }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // NO try/catch, for the link read's reason.
+      const read = await wordBoxes(held.session, page);
+      const lines = read.lines.map((line) => ({ text: line.text, box: { ...line.box }, boxes: [...line.boxes] }));
+      return { ok: true, value: { lines, truncated: read.truncated } };
     },
 
     'engine/destinations': async ({ session }) => {

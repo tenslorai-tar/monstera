@@ -84,6 +84,7 @@ import {
   readPageLinks,
   readPageText,
   readPageTextJson,
+  readPageWordBoxes,
   detectFlatFields,
   readInterchangeAnnotations,
   serialiseAnnotationData,
@@ -131,6 +132,7 @@ import {
   type PickDirectory,
   type DocumentLayersReader,
   type DocumentPageLinksReader,
+  type DocumentWordBoxesReader,
   type CopySource,
   type CertificateSource,
   type LibraryReader,
@@ -352,6 +354,8 @@ const noPageTables: DocumentPageTables = () =>
 
 const noPageLinks: DocumentPageLinksReader = () =>
   Promise.reject(new Error('this case does not read page links'));
+
+const noWordBoxes: DocumentWordBoxesReader = () => Promise.reject(new Error('this case does not read word boxes'));
 
 const noDestinations: DocumentDestinationsReader = () =>
   Promise.reject(new Error('this case does not read the outline'));
@@ -669,6 +673,13 @@ const localPageLinks: DocumentPageLinksReader = (id, sessions, page) => {
   return readPageLinks(held, page);
 };
 
+/** The production composition of the word-box read (ADR-0137). See {@link localPageLinks}. */
+const localWordBoxes: DocumentWordBoxesReader = (id, sessions, page) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  return readPageWordBoxes(held, page);
+};
+
 /** The production composition of the outline read. See {@link localPageLinks}. */
 const localDestinations: DocumentDestinationsReader = (id, sessions) => {
   const held = sessions.mupdf;
@@ -735,6 +746,7 @@ const INERT = {
   pageStructure: noPageStructure,
   pageTables: noPageTables,
   pageLinks: noPageLinks,
+  wordBoxes: noWordBoxes,
   destinations: noDestinations,
   // REFUSES IN BOTH SETS, for the reason `textBlocks` gives below: recognition is
   // the engine host's, and a fixture answering plausible words would be this file
@@ -821,6 +833,7 @@ const LOCAL_READS = {
   pageStructure: localPageStructure,
   pageTables: localPageTables,
   pageLinks: localPageLinks,
+  wordBoxes: localWordBoxes,
   destinations: localDestinations,
   layers: localLayers,
   annotations: localAnnotations,

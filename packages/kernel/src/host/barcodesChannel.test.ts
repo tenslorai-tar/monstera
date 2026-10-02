@@ -89,6 +89,7 @@ async function joined(
       pageText: refuse('read the page text'),
       pageLinks: refuse('read the page links'),
       pageFills: refuse('read the page fills'),
+      wordBoxes: refuse('read the word boxes'),
       ocr: refuse('recognise a page'),
       destinations: refuse('read the outline'),
       layers: refuse('read the layers'),

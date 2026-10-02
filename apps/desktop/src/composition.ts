@@ -76,6 +76,7 @@ import {
   type HostPageFillsReader,
   type HostPageLinksReader,
   type HostPageTextReader,
+  type HostWordBoxesReader,
   type HostTermination,
   type PageGeometryReader,
   type PdfiumArea,
@@ -126,6 +127,7 @@ import {
   remoteMupdfPageFills,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
+  remoteMupdfWordBoxes,
   remoteMupdfWriter,
   serialiseIntoFile,
   type StagedImage,
@@ -1072,6 +1074,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (read.tables.length === 0) return read;
       return { ...read, tables: withCellFills(read.tables, await engineHost.pageFills(session, page)) };
     },
+    // A PAGE'S WORD BOXES (ADR-0137), the host's walk of its characters, crossed as data.
+    wordBoxes: (docId, sessions, page) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.wordBoxes(session, page);
+    },
     // THE OUTLINE, composed here for the reads above's reason and taking no
     // page, because an outline is a property of the document rather than of a
     // page.
@@ -1800,6 +1808,8 @@ function engineSessionOpener(
   readonly pageLinks: HostPageLinksReader;
   /** One page's filled shapes, from whichever host is live — a table cell's background. */
   readonly pageFills: HostPageFillsReader;
+  /** One page's word boxes, from whichever host is live (ADR-0137). */
+  readonly wordBoxes: HostWordBoxesReader;
   /** The document's outline, from whichever host is live. */
   readonly destinations: HostDestinationsReader;
   /** One page's recognised text, from whichever host is live. */
@@ -2049,6 +2059,20 @@ function engineSessionOpener(
       );
     }
     return pageFills(session, page);
+  };
+
+  /** The word-box read's half of the same registration. See {@link pageText}. */
+  let wordBoxes: HostWordBoxesReader | null = null;
+
+  const readWordBoxesThroughHost: HostWordBoxesReader = (session, page) => {
+    if (wordBoxes === null) {
+      throw new Error(
+        'A word-box read reached the engine with no host word-box reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return wordBoxes(session, page);
   };
 
   /** The outline's half of the same registration. See {@link pageText}. */
@@ -2410,6 +2434,7 @@ function engineSessionOpener(
     pageText = remoteMupdfPageText(client, remote);
     pageLinks = remoteMupdfPageLinks(client, remote);
     pageFills = remoteMupdfPageFills(client, remote);
+    wordBoxes = remoteMupdfWordBoxes(client, remote);
     destinations = remoteMupdfDestinations(client, remote);
     ocr = remoteMupdfOcr(client, remote);
     layers = remoteMupdfLayers(client, remote);
@@ -2687,6 +2712,7 @@ function engineSessionOpener(
     pageText: readPageTextThroughHost,
     pageLinks: readPageLinksThroughHost,
     pageFills: readPageFillsThroughHost,
+    wordBoxes: readWordBoxesThroughHost,
     destinations: readDestinationsThroughHost,
     ocr: recogniseThroughHost,
     layers: readLayersThroughHost,

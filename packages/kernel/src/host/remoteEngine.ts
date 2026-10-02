@@ -35,6 +35,7 @@ import type {
   HostPageFillsReader,
   HostPageLinksReader,
   HostPageTextReader,
+  HostWordBoxesReader,
 } from './engineHandlers.js';
 
 /**
@@ -350,6 +351,12 @@ export function remoteMupdfPageFills(
       'engine/page-fills',
       await client['engine/page-fills']({ session: sessions.handleFor(session), page }),
     ).fills;
+}
+
+/** One page's word boxes, over the boundary (ADR-0137) — {@link remoteMupdfPageFills}' shape, for its reason. */
+export function remoteMupdfWordBoxes(client: ClientApi<EngineChannels>, sessions: RemoteSessions): HostWordBoxesReader {
+  return async (session, page) =>
+    answered('engine/word-boxes', await client['engine/word-boxes']({ session: sessions.handleFor(session), page }));
 }
 
 /**
