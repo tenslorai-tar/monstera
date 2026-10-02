@@ -29,7 +29,17 @@
  * file and its delta for **two** close to 2.0×: a reading of main outside 0.8–1.4× (one) or 1.6–2.6× (two) means the
  * classification, the timing or the counter is wrong, and the run throws rather than reporting the other roles.
  *
- * Usage: node scripts/research/appMemory.mjs --build package|dev [--document <absolute .pdf>]
+ * ## A candidate measured by removing it
+ *
+ * `--variant <name>` takes `surfaceVariants.mjs`' table, the one `frameTimes.mjs` takes: its CSS is adopted into the
+ * page of EVERY launch, the empty one included, and its switches go on every launch, so a role's figure is the variant's
+ * own cost against its own start screen. Comparing a variant's figure with `none`'s is what attributes memory to the
+ * thing the variant removes. `--single` skips the two-document launch and its half of the control, for a comparison
+ * that needs only one document. Every launch is maximised (`maximiseWindow.mjs`): a window-sized layer is a texture
+ * the size of the window, so the size is part of what is measured.
+ *
+ * Usage: node scripts/research/appMemory.mjs --build package|dev [--document <absolute .pdf>] [--variant <name>]
+ *   [--single] [--no-read]
  * Without `--document`, the scan-shaped fixture (`scripts/perf/largeFixture.mjs`) is generated and measured.
  */
 
@@ -44,6 +54,8 @@ import { repoRoot } from '../lib/gitScope.mjs';
 import { buildScanFixture } from '../perf/largeFixture.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
+import { maximise } from './maximiseWindow.mjs';
+import { variantCss, variantSwitches } from './surfaceVariants.mjs';
 
 const ROOT = repoRoot();
 const PORT = 9341;
@@ -59,6 +71,10 @@ const build = option('build');
 if (build !== 'package' && build !== 'dev') throw new Error('--build is package or dev');
 /** What `npm start` hands a development shell (`launchEnvironment.mjs`); nothing for the package, which finds its own. */
 const DEVELOPMENT_ENV = build === 'dev' ? await developmentEnvironment(ROOT) : {};
+const variant = option('variant') ?? 'none';
+const css = variantCss(variant);
+const SWITCHES = variantSwitches(variant);
+const single = process.argv.includes('--single');
 
 const scratch = mkdtempSync(join(tmpdir(), 'monstera-memory-'));
 // THE SCAN THE OTHER INSTRUMENTS READ, from the one builder (it caches by its own digest), never a second generator.
@@ -80,7 +96,7 @@ function launch(documents) {
   const already = portListeners();
   if (already.length > 0) throw new Error(`port ${String(PORT)} is already held by PID ${already.join(', ')}; end it first`);
   const userData = mkdtempSync(join(tmpdir(), 'monstera-memory-data-'));
-  const common = [`--user-data-dir=${userData}`, `--remote-debugging-port=${String(PORT)}`, ...documents];
+  const common = [`--user-data-dir=${userData}`, `--remote-debugging-port=${String(PORT)}`, ...SWITCHES, ...documents];
   const [command, args] =
     build === 'package'
       ? [join(ROOT, 'release', 'msix', 'test', 'layout', 'Monstera.exe'), common]
@@ -234,7 +250,17 @@ async function run(label, documents) {
       if (page === undefined) await new Promise((done) => setTimeout(done, 500));
     }
     if (page === undefined) throw new Error(`${label}: no page showed within a minute`);
+    maximise(/** @type {number} */ (child.pid));
     await page.getByRole('button', { name: 'Skip' }).click({ timeout: 5000 }).catch(() => undefined);
+    // THE VARIANT, as `frameTimes.mjs` adopts it: a constructed sheet, which the renderer's CSP does not refuse.
+    if (css !== '') {
+      await page.evaluate((/** @type {string} */ text) => {
+        const w = /** @type {any} */ (globalThis);
+        const sheet = new w.CSSStyleSheet();
+        sheet.replaceSync(text);
+        w.document.adoptedStyleSheets = [...w.document.adoptedStyleSheets, sheet];
+      }, css);
+    }
     await page.waitForTimeout(3000);
     // EACH DOCUMENT READ TO ITS END, by its tab: the last opened is on show, so the others are brought forward in turn.
     // THE DOCUMENT TABS by their own attribute: `role="tab"` also names the side panel's tabs, which open no document.
@@ -243,7 +269,9 @@ async function run(label, documents) {
     for (let index = 0; index < count; index += 1) {
       await tabs.nth(index).click();
       await page.waitForTimeout(1500);
-      await readToEnd(page);
+      // `--no-read` leaves each document at its first screen: what a document costs before it is read, against what it
+      // costs read to its end, separates a fixed cost from one that grows with every page drawn.
+      if (!process.argv.includes('--no-read')) await readToEnd(page);
     }
     await page.waitForTimeout(5000);
     // EVERY CANVAS THE RENDERER STILL HOLDS, and its pixels: a 2D canvas Chromium accelerates is backed by the GPU
@@ -264,7 +292,7 @@ async function run(label, documents) {
 try {
   const empty = await run('empty', []);
   const one = await run('one', [documentPath]);
-  const two = await run('two', [documentPath, copyPath]);
+  const two = single ? one : await run('two', [documentPath, copyPath]);
 
   /** @param {Record<string, number>} roles */
   const over = (roles) =>
@@ -284,7 +312,7 @@ try {
   // THE CONTROL: main holds one copy per open document.
   const mainOne = oneOver['main'] ?? 0;
   const mainTwo = twoOver['main'] ?? 0;
-  if (!(mainOne >= 0.8 && mainOne <= 1.4) || !(mainTwo >= 1.6 && mainTwo <= 2.6)) {
+  if (!(mainOne >= 0.8 && mainOne <= 1.4) || (!single && !(mainTwo >= 1.6 && mainTwo <= 2.6))) {
     throw new Error(
       `CONTROL FAILED: main read ${String(mainOne)}x with one document and ${String(mainTwo)}x with two, where it holds ` +
         'one copy each. The classification or the counter is wrong, and nothing else here is reported.',
@@ -295,6 +323,7 @@ try {
     JSON.stringify(
       {
         build,
+        variant,
         fileMiB: mib(fileBytes),
         tabs: { one: one.tabs, two: two.tabs },
         emptyMiB: Object.fromEntries(Object.entries(empty.roles).map(([role, bytes]) => [role, mib(bytes)])),

@@ -79,6 +79,8 @@ import { repoRoot } from '../lib/gitScope.mjs';
 import { buildScanFixture } from '../perf/largeFixture.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
+import { maximise } from './maximiseWindow.mjs';
+import { variantCss, variantSwitches } from './surfaceVariants.mjs';
 
 const ROOT = repoRoot();
 const PORT = 9339;
@@ -133,36 +135,6 @@ if ((scenarios.includes('open') || scenarios.includes('switch')) && secondPath =
   throw new Error('the open and switch scenarios need --then-open <absolute .pdf>|large.');
 }
 
-/** The CSS each variant adds, to measure a candidate by removing it — never shipped, only injected here. */
-const VARIANTS = {
-  none: '',
-  'no-blur': '*, *::before, *::after { backdrop-filter: none !important; }',
-  'no-gradients': '*, *::before, *::after { background-image: none !important; }',
-  'no-thumbnails': '.m-document-panel__body { display: none !important; }',
-  // THE SCROLLER COMPOSITED, two ways: a hint, and an opaque background (which changes the look and is a probe only).
-  'composited-scroll': '.m-page-list { will-change: scroll-position; }',
-  'opaque-scroller': '.m-page-list { background-color: #0b120e !important; }',
-  'scroller-layer': '.m-page-list { will-change: transform; }',
-  // `no-gradients` TAKES THE GRAIN TOO (an SVG noise image, blended `overlay` over the window), so the three are also
-  // measured apart: the grain alone, the surface's ambient lights alone, and the page area's own light alone.
-  'no-grain': '.m-document-surface::before { display: none !important; }',
-  'no-ambient': '.m-document-surface { background-image: none !important; }',
-  'no-canvas-light': '.m-canvas-area { background-image: none !important; }',
-  'scroller-layer-no-grain': '.m-page-list { will-change: transform; } .m-document-surface::before { display: none !important; }',
-  // THE GRAIN KEPT, on its own layer: drawn once, blended by the compositor, never re-rastered under a repaint.
-  'grain-layer': '.m-document-surface::before { will-change: transform; }',
-  'scroller-layer-grain-layer': '.m-page-list { will-change: transform; } .m-document-surface::before { will-change: transform; }',
-  // THE GRADIENTS' REMAINING COST once the page list has its own layer: the owner's trade, measured after the fix.
-  'scroller-layer-no-gradients':
-    '.m-page-list { will-change: transform; } *, *::before, *::after { background-image: none !important; }',
-  // EACH PAGE'S LAYOUT ISOLATED: a slot that moved without changing size need not lay its text layer out again.
-  'contain-slots': '.m-page-slot { contain: layout; }',
-  // A Chromium switch rather than CSS: every scroller composited, LCD text given up wherever one scrolls.
-  'prefer-compositing': '',
-  // A script rather than CSS: see NO_GLOBAL_CURSOR.
-  'no-global-cursor': '',
-};
-
 /**
  * Keeps zag's splitter from adding its drag-cursor `<style>` (`* { cursor: … !important }`), which `setGlobalCursor`
  * rewrites on EVERY pointer move (`@zag-js/splitter` 1.43.3, `splitter.machine.mjs`) — a stylesheet change matching
@@ -170,10 +142,9 @@ const VARIANTS = {
  * Measurement only: injected into the page, never shipped.
  */
 const NO_GLOBAL_CURSOR = variant === 'no-global-cursor';
-/** Chromium switches a variant adds to the launch. */
-const SWITCHES = variant === 'prefer-compositing' ? ['--enable-prefer-compositing-to-lcd-text'] : [];
-const css = VARIANTS[/** @type {keyof typeof VARIANTS} */ (variant)];
-if (css === undefined) throw new Error(`--variant is one of ${Object.keys(VARIANTS).join(', ')}.`);
+/** The variant's CSS and Chromium switches, from the one table every instrument takes (`surfaceVariants.mjs`). */
+const SWITCHES = variantSwitches(variant);
+const css = variantCss(variant);
 
 // ---------------------------------------------------------------------------------------------------------------
 // The trace: which thread did what, between two marks.
@@ -483,22 +454,6 @@ async function end(child, userData) {
   } catch (error) {
     console.error(`The scratch folder ${userData} was not removed: ${String(error)}`);
   }
-}
-
-/**
- * Maximises the launched window, as the owner's is in every recording of the lag (`batch-1`).
- *
- * The shell sets no size, and Electron's DevTools protocol has no `Browser.getWindowForTarget` (measured: *"wasn't
- * found"*), so this asks Windows: `ShowWindow(…, SW_MAXIMIZE)` on the main window of THIS run's process, found by its
- * PID — never by title, which the owner's own window shares.
- *
- * @param {number} pid
- */
-function maximise(pid) {
-  const command =
-    "Add-Type -Name Win -Namespace Frames -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool ShowWindow(System.IntPtr window, int command);'; " +
-    `$w = (Get-Process -Id ${String(pid)}).MainWindowHandle; if ($w -eq 0) { exit 3 }; [void][Frames.Win]::ShowWindow($w, 3)`;
-  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { stdio: 'pipe' });
 }
 
 /*

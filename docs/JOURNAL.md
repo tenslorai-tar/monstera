@@ -892,6 +892,41 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-02 — The GPU process's 9×: canvas memory kept for every page drawn, not the surface's lights, grain or blur
+
+The owner's item 4 (CCCCCCC-7), time-boxed to two hours, measure only. `scripts/research/appMemory.mjs` gains
+`--variant` (the table now lives in `scripts/research/surfaceVariants.mjs`, which `frameTimes.mjs` takes too, so the two
+instruments cannot measure different things under one name), a maximised window (`maximiseWindow.mjs`, shared: a
+window-sized layer is a texture the window's size, and this instrument had measured at the default size), and
+`--no-read`. Development build at `7808a20c`, 1600 × 852, the 210 MB generated scan read to its end, one launch each;
+private bytes, `PrivatePageCount`, the document's launch against the start screen's.
+
+| removed | GPU process with the scan read (MiB) | against the baseline |
+|---|---|---|
+| nothing — baseline, two runs | 1,906.7 · 1,931.6 | spread 25 |
+| the grain's own layer (93f34880's `will-change`) | 1,887.6 | −19 to −44 |
+| the grain | 1,884.9 | −22 to −47 |
+| both lights (ambient and page area) | 1,901.8 | within the spread |
+| every backdrop blur | 1,900.9 | within the spread |
+| the thumbnail strip | 1,901.8 | within the spread |
+| **2D canvases held in the renderer** (`--disable-accelerated-2d-canvas`) | **324.9** | **−1,582 to −1,607** |
+
+With 2D canvases out of the GPU process the renderer rises to 2,129 MiB, so the GPU's share is 2D-canvas memory that
+moves with them. The canvases in the page hold 37.3 MiB of pixels in every run (213 of them), so it is not the canvases
+on screen. **It grows with the pages drawn**: the scan opened and not scrolled (`--no-read`) adds 93 MiB to the GPU
+process; read to its end, about 1,820 MiB — some 1,730 MiB over 212 pages, **~8.2 MiB a page**. One page of the scan
+decoded at its own size is 1,240 × 1,754 × 4 bytes, 8.3 MiB (computed from the fixture's A4 at 150 dpi, not
+measured), and the page canvases are smaller than that at this window's fit. The surface's lights, grain, blur and
+thumbnail strip are each within ~45 MiB, the baseline's spread being 25.
+
+**The probable mechanism, not established:** the renderer never calls PDF.js's `page.cleanup()` — `git grep` finds no
+cleanup in `packages/ui` but `task.destroy()` when a document closes — and PDF.js keeps a page's decoded images in that
+page's objects until the page is cleaned up; its own viewer cleans pages that leave its buffer. **For the cloud agent:**
+clean up a page's PDF.js resources once it is drawn and off screen, then read this table's first and last rows again;
+the claim holds if the GPU's read-to-end figure falls to about the unread one.
+
+---
+
 ## 2026-10-02 — Stage audit of `a8fecfd0..2639b023` — findings FFFFFFF-1 to FFFFFFF-3
 
 28 commits, 195 files: work/cloud-2's twenty after its own audit (`0401c925..b076b30a`), and this branch's audit, its
