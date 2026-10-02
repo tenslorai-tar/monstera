@@ -21,7 +21,8 @@ import { unscaledTransform } from './annotations/annotationSpace.js';
 
 /**
  * How many differences one comparison lists. A document rewritten from end to end differs everywhere, and a list a
- * person cannot read to the end is not a review; the counts above it stay whole.
+ * person cannot read to the end is not a review; the count above it stays whole, because the walk compares every pair
+ * whatever the list holds (`ComparisonResult.found`).
  */
 export const MAX_COMPARE_CHANGES = 1000;
 
@@ -57,6 +58,8 @@ export type CompareRow =
 /** What a finished comparison found. */
 export interface ComparisonResult {
   readonly rows: readonly CompareRow[];
+  /** Every difference the walk found, listed or not: `rows` stops at {@link MAX_COMPARE_CHANGES} and this does not. */
+  readonly found: number;
   /** Whether there were more differences than {@link MAX_COMPARE_CHANGES}. */
   readonly more: boolean;
   readonly matched: number;
@@ -140,11 +143,11 @@ export async function compareSides(
   onProgress(done, total);
 
   const rows: CompareRow[] = [];
-  let more = false;
+  let found = 0;
   let clipped = 0;
   const add = (row: CompareRow): void => {
+    found += 1;
     if (rows.length < MAX_COMPARE_CHANGES) rows.push(row);
-    else more = true;
   };
 
   for (const entry of alignment) {
@@ -179,7 +182,8 @@ export async function compareSides(
     kind: 'done',
     result: {
       rows,
-      more,
+      found,
+      more: found > rows.length,
       matched: pairs.length,
       inserted: alignment.filter((entry) => entry.kind === 'inserted').length,
       removed: alignment.filter((entry) => entry.kind === 'removed').length,

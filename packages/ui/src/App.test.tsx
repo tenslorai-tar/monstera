@@ -3073,6 +3073,13 @@ describe('App', () => {
       // Each still separates: routed to the wrong pane, either command has nowhere to go and both boxes stay 1 and 2.
       it('a press in the SECOND pane sends the page there, and only there', async () => {
         expect(await boxesAfter('Previous page', 1)).toStrictEqual(['1', '1']);
+        // ONLY THERE, which the case above cannot see: a Previous sent to BOTH halves also reads 1 and 1, because the
+        // left half opens on the first page and has nowhere to go. A Next is the direction only the LEFT half can take
+        // here, so a broadcast moves it to 2 while the right half, already at the last page, stays. Measured: with both
+        // halves taking the request this reads 2 and 2. The mirror for the first pane cannot be built on two pages,
+        // because its Previous is disabled on page 1 and sends nothing at all.
+        cleanup();
+        expect(await boxesAfter('Next page', 1)).toStrictEqual(['1', '2']);
       });
 
       it('CONTROL: with no press, and after a press in the first, it goes to the first pane', async () => {
