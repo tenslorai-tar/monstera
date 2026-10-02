@@ -16,6 +16,7 @@ import {
   ACCESSIBILITY_HUMAN_CHECKS,
   MAX_IMAGE_BYTES,
   MAX_LIBRARY_ENTRIES,
+  LAYERS_PART,
   PAGE_OBJECTS_PART,
   TEXT_BLOCKS_PART,
   type ChannelParams,
@@ -874,6 +875,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   const destinations = options.destinations ?? [];
   // Copied and consumed, exactly like `viewModels`.
   const layerLists = [...(options.layers ?? [])];
+  // The list the read in progress takes its parts from (`document.layers`).
+  let layersRead: readonly ShimLayer[] = [];
   const fieldLists = [...(options.formFields ?? [])];
   // `let`, because *Clear list* empties it as main's store empties itself.
   let recentEntries = options.recent ?? [];
@@ -1979,7 +1982,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      * The document's layers, from the scripted sequence — see `layers` in the
      * options for why a toggle is not applied here.
      */
-    'document.layers': ({ docId }) => {
+    'document.layers': ({ docId, from }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
 
@@ -1987,9 +1990,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       // the reason `document.viewModel` states: a panel that appeared to lose
       // its layers on the third read would be reacting to a shim behaviour no
       // product code can produce.
-      // ONE PART, the last, as the outline's above: a scripted list is a handful of layers.
-      const layers = layerLists.length > 1 ? (layerLists.shift() ?? []) : (layerLists[0] ?? []);
-      return Promise.resolve(ok({ version: asDocVersion(current), layers, next: null, truncated: false }));
+      //
+      // ONE READ TAKES ONE SCRIPTED LIST, so only its first part moves the queue, and the list is cut in parts as main
+      // cuts it: a scripted CAD export's thousands are past one part, which the contract refuses.
+      if (from === 0) layersRead = layerLists.length > 1 ? (layerLists.shift() ?? []) : (layerLists[0] ?? []);
+      return Promise.resolve(
+        ok({ version: asDocVersion(current), ...shimPart(layersRead, from, LAYERS_PART, 'layers'), truncated: false }),
+      );
     },
 
     /**

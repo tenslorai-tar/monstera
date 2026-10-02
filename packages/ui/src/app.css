@@ -2170,6 +2170,18 @@ optgroup {
   background: var(--surface2);
 }
 
+/* A DOCUMENT'S NAME FOR A THING may be one unbroken word of 256 characters, which ran past the panel's edge. It breaks
+ * anywhere and shows three lines at most; the checkbox's label, and so its accessible name, keeps the whole text. */
+.m-layer-name,
+.m-destination-title {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
 .m-destinations-empty,
 .m-layers-empty,
 .m-annotations-empty,
@@ -2389,6 +2401,12 @@ optgroup {
   flex: 1;
   min-block-size: 0;
   overflow-y: auto;
+}
+
+/* ONE PANEL IN A TAB TAKES THE TAB. The lists' 40vh share is for the Bookmarks tab, where the outline and the links
+ * stack; a tab holding one list left the dock empty below 40vh, with the list scrolling inside a scrolling body. */
+.m-document-panel__body > :only-child {
+  max-block-size: none;
 }
 
 /* THE SLIM EDGE HANDLE §10.3 reopens a collapsed panel with, on the canvas's leading
