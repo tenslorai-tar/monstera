@@ -3,7 +3,7 @@ id: select-and-copy-text
 title: Select and copy text
 summary: Use the Select text tool to highlight words on a page and copy them.
 keywords: [select text, copy, ctrl+c, copy text, clipboard, highlight words, text tool]
-commands: [view.select-text, text.copy]
+commands: [view.select-text, text.copy, edit.copy]
 contexts: [home, edit]
 ---
 You can select the words on a page and copy them into another program.

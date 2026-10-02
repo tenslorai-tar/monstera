@@ -9,7 +9,6 @@ import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
 import {
   COMMENT_SELECTION_TITLE,
   COPY_SELECTION_TITLE,
-  GROUP_TEXT,
   HIGHLIGHT_SELECTION_TITLE,
   REDACT_SELECTION_TITLE,
   SEARCH_SELECTION_TITLE,
@@ -62,11 +61,9 @@ export function copySelectionCommand(deps: TextSelectionDeps): UiCommand {
     title: COPY_SELECTION_TITLE,
     // NO CHORD OF ITS OWN: Ctrl+C is `edit.copy`'s, which runs this when the page's text is what is selected (ADR-0107).
     icon: 'Copy',
-    placements: [
-      { surface: 'context-menu', context: 'selection', order: 10 },
-      // AND EDIT › TEXT, D4's *select and copy*: present while there is a selection to copy.
-      { surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 50 },
-    ],
+    // THE SELECTION'S MENU ONLY. Edit › Text's *Copy* is `edit.copy`, which copies the page's selected text first: two
+    // commands both called Copy put the action in the Edit menu twice (item 5b), which the registry now refuses.
+    placements: [{ surface: 'context-menu', context: 'selection', order: 10 }],
     when: selected(deps),
     run: (): void => {
       deps.copy();

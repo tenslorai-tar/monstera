@@ -2,7 +2,8 @@ import { type DocId, type DocVersion, type MessageKey, isDottedName } from '@mon
 
 import type { SideDocument } from '../SideBySide.js';
 import type { IconName } from '../primitives/icons.js';
-import type { Placement, SurfaceId } from './placement.js';
+import { EN } from '../messages/en.js';
+import { type Placement, type SurfaceId, menuOf } from './placement.js';
 
 /**
  * The command registry — §7's first row, and the one every surface projects.
@@ -353,6 +354,29 @@ export class CommandRegistry {
           );
         }
         captions.set(key, { caption: placement.caption, by: command.id });
+      }
+    }
+    // ONE NAME PER MENU (item 5b, 2026-10-02): two commands a menu lists under the same words are one action offered
+    // twice or two a person cannot tell apart — the Edit menu drew *Copy* twice, `edit.copy` from its application
+    // group and `text.copy` from the Edit section. By the WORDS DRAWN, the source catalogue's English, because those
+    // two were two keys that both say *Copy*. A title the catalogue does not name is a test's placeholder, never an
+    // application command's (the catalogue's own completeness check holds those), so it is not compared. Which menu a
+    // placement lands in is `menuOf`'s, the rule the menu bar draws by.
+    const named = new Map<string, string>();
+    for (const command of this.#byId.values()) {
+      for (const placement of command.placements) {
+        const menu = menuOf(placement);
+        const words: string | undefined = EN[command.title];
+        if (menu === undefined || words === undefined) continue;
+        const key = `${menu} › ${words}`;
+        const by = named.get(key);
+        if (by !== undefined && by !== command.id) {
+          throw new Error(
+            `"${by}" and "${command.id}" are both "${words}" in the ${menu} menu. A menu lists an action once; place ` +
+              `one command where both are wanted, or give the second words of its own.`,
+          );
+        }
+        named.set(key, command.id);
       }
     }
     // EVERY RIBBON COMMAND IS IN SOME MENU (ADR-0107 Decision 3 and its correction). Every section but Home is a menu

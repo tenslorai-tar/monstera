@@ -78,7 +78,7 @@ is not available.
 - [ ] **Word count** — Proofing · `document.word-count` · Help: *Count words and characters*
 - [ ] **Edit text on the page** — Text · `text.edit` · Help: *Edit text on the page*
 - [ ] **Edit an object on page** — Text · `document.edit-page-object` · Help: *Move, resize, recolour or remove things on a page*
-- [ ] **Copy** — Text · `text.copy` · Help: *Select and copy text*
+- [ ] **Copy** — Text · `edit.copy` · Help: *Select and copy text*
 
 ## Ribbon › Comment
 
@@ -195,6 +195,7 @@ is not available.
 ## Context menus
 
 - [ ] **Close tab** · `document.close-tab` · Help: *Close a document that has unsaved changes*
+- [ ] **Copy** · `text.copy` · Help: *Select and copy text*
 - [ ] **Edit comment…** · `annotate.edit-selection` · Help: *Edit a comment or reply to it*
 - [ ] **Close other tabs** · `document.close-others` · Help: *Use right-click menus*
 - [ ] **Highlight** · `text.highlight` · Help: *Highlight, underline or strike through text*
@@ -226,7 +227,6 @@ is not available.
 - [ ] **Show or hide the document panel** · `view.toggle-panel` · Help: *Use the document panel*
 - [ ] **Bookmarks panel** · `view.show-bookmarks`
 - [ ] **Command palette** · `view.command-palette` · Help: *Find any tool by name*
-- [ ] **Copy** · `edit.copy`
 - [ ] **Light theme** · `view.theme-light`
 - [ ] **Save a copy…** · `document.save-copy` · Help: *Save a copy under another name*
 - [ ] **Show or hide the properties panel** · `view.toggle-context-panel` · Help: *Use the properties panel*

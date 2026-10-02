@@ -196,3 +196,26 @@ export type StatusBarCluster = StatusBarPlacement['cluster'];
 
 /** Every `surface` tag, for a projection that needs to name the one it is. */
 export type SurfaceId = Placement['surface'];
+
+/**
+ * The section menus, in v5-14's order, which is the prototype's and not the rail's (ADR-0107). Home is not a menu: its
+ * tools are placed on the application menus. Edit is a section too, and its menu is the Edit application menu.
+ */
+export const MENU_BAR_SECTIONS = ['organize', 'comment', 'forms', 'review', 'protect', 'tools'] as const satisfies readonly SectionId[];
+
+/** A menu on the bar: an application menu, or a ribbon section's. */
+export type MenuId = MenuBarMenu | (typeof MENU_BAR_SECTIONS)[number];
+
+/**
+ * Which menu a placement puts its command in — THE ONE RULE (B3a), taken by the menu bar's projection and by the
+ * registry's check that no menu names two items alike: an application menu by its placement, the Edit menu for the
+ * Edit section, a section's own menu for the sections that are menus, and none for Home or any other surface.
+ */
+export function menuOf(placement: Placement): MenuId | undefined {
+  if (placement.surface === 'menu-bar') return placement.menu;
+  if (placement.surface !== 'ribbon') return undefined;
+  if (placement.section === 'edit') return 'edit';
+  return (MENU_BAR_SECTIONS as readonly SectionId[]).includes(placement.section)
+    ? (placement.section as (typeof MENU_BAR_SECTIONS)[number])
+    : undefined;
+}
