@@ -3211,6 +3211,50 @@ export const signaturePlacementSchema = z
 export type SignaturePlacement = z.infer<typeof signaturePlacementSchema>;
 
 /**
+ * A plain signature, typed or drawn, placed on one page as a `/Stamp` with no certificate
+ * ([ADR-0133](../../../docs/DECISIONS/0133-a-signatures-mark-is-drawn-once-for-both-writers.md)).
+ *
+ * The mark is the same one *Sign with certificate* draws, from the same schema, and the kernel draws it through the
+ * same module — so a signature placed with a certificate and one placed without look the same from the same mark.
+ * **One page**, as a visible signature's: a signature is placed where a person clicked, never repeated across pages.
+ *
+ * Withheld from the renderer with the picture kind below: both are minted by main from `document.placeSignature`,
+ * which resolves a kept look and keeps a new one, so there is one route for a placed signature rather than two.
+ */
+export const placeSignatureMarkSchema = z
+  .object({
+    kind: z.literal('placeSignatureMark'),
+    page: z.number().int().nonnegative(),
+    /** The box it occupies, in PDF user space; the mark is fitted inside it, upright as the page is seen. */
+    rect: annotationRectSchema,
+    mark: keepableSignatureSchema,
+    /** Who placed it and when (ADR-0103). */
+    stamp: annotationStampSchema,
+  })
+  .strict();
+
+/**
+ * A plain signature that is a picture, placed as {@link placeSignatureMarkSchema}'s is.
+ *
+ * **Its own kind because it carries bytes**: the asset axis is declared per kind, and `CommandAsset` admits `'bytes'`
+ * only for a payload that always carries them (ADR-0133 Decision 2). The bound and the media type are the visible
+ * signature's own, so a picture this build would put on a certificate's widget is a picture it will place here.
+ */
+export const placeSignaturePictureSchema = z
+  .object({
+    kind: z.literal('placeSignaturePicture'),
+    page: z.number().int().nonnegative(),
+    rect: annotationRectSchema,
+    bytes: z.custom<Uint8Array>(
+      (value) => value instanceof Uint8Array && value.byteLength <= MAX_IMAGE_BYTES,
+      { message: `not an image of at most ${String(MAX_IMAGE_BYTES)} bytes` },
+    ),
+    mediaType: z.enum(['image/jpeg', 'image/png']),
+    stamp: annotationStampSchema,
+  })
+  .strict();
+
+/**
  * Signs the document with a PKCS#12 certificate the user picked.
  *
  * ## The certificate's BYTES are the command's asset, and main reads them
@@ -4582,6 +4626,8 @@ export const commandSchema = z.discriminatedUnion('kind', [
   removeAnnotationSchema,
   placeAnnotationSchema,
   placeImageSchema,
+  placeSignatureMarkSchema,
+  placeSignaturePictureSchema,
   addLinkSchema,
   styleAnnotationSchema,
   editAnnotationTextSchema,
@@ -4867,9 +4913,14 @@ export function withStamp(command: DispatchableCommand, stamp: AnnotationStamp):
 // it and mints the command, so the renderer has no field to put one in — the
 // capability is unrepresentable rather than discouraged.
 // `importAnnotations` JOINS `importFormData`, for its reason exactly: a picked file's bytes.
+// The two PLACED-SIGNATURE kinds join on 2026-10-02 (ADR-0133): the picture one carries a picked file's bytes, and
+// the typed or drawn one is minted beside it by main from `document.placeSignature`, which resolves a kept look and
+// keeps a new one — so a placed signature has one route rather than a second the renderer could take round it.
 type WithheldFromRenderer =
   | 'insertImagePage'
   | 'placeImage'
+  | 'placeSignatureMark'
+  | 'placeSignaturePicture'
   | 'importFormData'
   | 'importAnnotations'
   | 'signDocument';

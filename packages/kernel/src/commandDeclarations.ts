@@ -1283,6 +1283,39 @@ const declarations = {
     asset: 'bytes',
     purpose: 'ordinary',
   },
+  // A PLAIN SIGNATURE (ADR-0133): `placeImage`'s classification on every axis, for its reasons — a `/Stamp` carrying
+  // its own appearance, so it moves, resizes and deletes as any mark; undone by checkpoint because the inverse would be
+  // "the last stamp on the page"; reproducible because the drawing is a pure function of the mark and the box.
+  placeSignatureMark: {
+    kind: 'placeSignatureMark',
+    display: 'image',
+    writer: 'mupdf',
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    targets: 'none',
+    reads: 'none',
+    // A typed or drawn mark is a few hundred bytes of intent and crosses the JSON wire as it is.
+    asset: 'none',
+    purpose: 'ordinary',
+  },
+  // The picture look: the one difference from the line above is the asset, for `placeImage`'s reason.
+  placeSignaturePicture: {
+    kind: 'placeSignaturePicture',
+    display: 'image',
+    writer: 'mupdf',
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    targets: 'none',
+    reads: 'none',
+    asset: 'bytes',
+    purpose: 'ordinary',
+  },
   styleAnnotation: {
     kind: 'styleAnnotation',
     display: 'image',

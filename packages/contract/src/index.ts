@@ -386,6 +386,8 @@ export {
   MAX_FIELD_VALUE,
   placeAnnotationSchema,
   placeImageSchema,
+  placeSignatureMarkSchema,
+  placeSignaturePictureSchema,
   MAX_IMAGE_PAGES,
   removeAnnotationSchema,
   styleAnnotationSchema,

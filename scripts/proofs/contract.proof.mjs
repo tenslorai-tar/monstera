@@ -848,6 +848,39 @@ const EDIT_ANNOTATION_TEXT_SPEC = `  editAnnotationText: {
  * `editAnnotationText`'s axes exactly — one index and one string, so invertible with an inverse
  * undo — because it rewrites `/T` where that command rewrites `/Contents`.
  */
+/** A placed signature, typed or drawn (ADR-0133): {@link PLACE_IMAGE_SPEC}'s axes, for its reasons. */
+const PLACE_SIGNATURE_MARK_SPEC = `  placeSignatureMark: {
+    kind: 'placeSignatureMark',
+    writer: 'mupdf',
+    apply: applyPlaceSignatureMark,
+    capture: capturePlaceSignature,
+    invert: invertPlaceSignature,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
+/**
+ * A placed signature that is a picture — the NEWEST kind since 2026-10-02, and the one the `missing a command kind`
+ * case omits. Its asset is not spelt here, for {@link PLACE_IMAGE_SPEC}'s reason.
+ */
+const PLACE_SIGNATURE_PICTURE_SPEC = `  placeSignaturePicture: {
+    kind: 'placeSignaturePicture',
+    writer: 'mupdf',
+    apply: applyPlaceSignaturePicture,
+    capture: capturePlaceSignature,
+    invert: invertPlaceSignature,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
 const SET_ANNOTATION_AUTHOR_SPEC = `  setAnnotationAuthor: {
     kind: 'setAnnotationAuthor',
     writer: 'mupdf',
@@ -1147,6 +1180,10 @@ const SPEC_IMPORTS = `import {
   applyPlaceImage,
   capturePlaceImage,
   invertPlaceImage,
+  applyPlaceSignatureMark,
+  applyPlaceSignaturePicture,
+  capturePlaceSignature,
+  invertPlaceSignature,
   applyFillFormField,
   captureFillFormField,
   invertFillFormField,
@@ -2022,6 +2059,8 @@ ${EDIT_ANNOTATION_TEXT_SPEC}
 ${REPLY_TO_ANNOTATION_SPEC}
 ${EDIT_BLOCK_SPEC}
 ${SET_ANNOTATION_AUTHOR_SPEC}
+${PLACE_SIGNATURE_MARK_SPEC}
+${PLACE_SIGNATURE_PICTURE_SPEC}
 };
 `,
   },
@@ -2071,9 +2110,10 @@ ${SET_ANNOTATION_AUTHOR_SPEC}
     // `editAnnotationText`, for the same reason each time: the table had not
     // grown by the previous kind either. FIVE for five on `setAnnotationAuthor`
     // (2026-09-24): TS2739 naming it and `editTextBlock`, which this table had
-    // been omitting as the newest.
+    // been omitting as the newest. SIX for six on `placeSignatureMark` and `placeSignaturePicture` (2026-10-02):
+    // TS2739 naming both and `setAnnotationAuthor`, which this table had been omitting as the newest.
     because:
-      /Property 'setAnnotationAuthor' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'placeSignaturePicture' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -2142,6 +2182,8 @@ ${IMPORT_ANNOTATIONS_SPEC}
 ${EDIT_ANNOTATION_TEXT_SPEC}
 ${REPLY_TO_ANNOTATION_SPEC}
 ${EDIT_BLOCK_SPEC}
+${SET_ANNOTATION_AUTHOR_SPEC}
+${PLACE_SIGNATURE_MARK_SPEC}
 };
 `,
   },
@@ -3521,8 +3563,10 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // THE SPLIT MOVED, THE SUM DID NOT (decision D, 2026-09-30): with page sets
     // in the union TypeScript spells three members and counts 46, where it
     // spelt four and counted 45. 3 + 46 + 1 is still the union's 50.
+    //
+    // 52 since `placeSignatureMark` and `placeSignaturePicture` (2026-10-02, ADR-0133): three spelt, 48 counted, one.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 46 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 48 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,
