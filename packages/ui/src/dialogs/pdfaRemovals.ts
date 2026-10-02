@@ -17,6 +17,7 @@ export const PDFA_REMOVALS_DIALOG_ID = 'dialog.pdfa-removals';
 export const PDFA_REMOVALS_DIALOG = declareDialog({
   id: PDFA_REMOVALS_DIALOG_ID,
   title: PDFA_REMOVALS_TITLE,
+  informs: 'report',
   props: z
     .object({
       removed: z.array(z.string().max(MAX_PDFA_REMOVAL_CHARS)).max(MAX_PDFA_REMOVALS).readonly(),

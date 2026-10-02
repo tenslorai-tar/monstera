@@ -16,6 +16,7 @@ export const PAGE_BARCODES_DIALOG_ID = 'dialog.page-barcodes';
 export const PAGE_BARCODES_DIALOG = declareDialog({
   id: PAGE_BARCODES_DIALOG_ID,
   title: PAGE_BARCODES_TITLE,
+  informs: 'report',
   props: z.discriminatedUnion('kind', [
     z.object({
       kind: z.literal('read'),

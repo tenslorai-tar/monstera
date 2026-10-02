@@ -38,6 +38,7 @@ import { messageKey } from '@monstera/shared';
 export const OPEN_DOCUMENT_TITLE = messageKey('command.open-document.title');
 export const CLOSE_LABEL = messageKey('action.close.label');
 export const DIALOG_CANCEL = messageKey('action.dialog-cancel.label');
+export const DIALOG_OK = messageKey('action.dialog-ok.label');
 export const DOCUMENT_SURFACE_LABEL = messageKey('surface.document.label');
 export const THEME_TITLE = messageKey('setting.appearance-theme.title');
 export const BACKGROUND_GLOW_TITLE = messageKey('setting.appearance-background-glow.title');
@@ -2368,6 +2369,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [OPEN_DOCUMENT_TITLE]: 'Open PDF…',
   [CLOSE_LABEL]: 'Close',
   [DIALOG_CANCEL]: 'Cancel',
+  [DIALOG_OK]: 'OK',
   [DOCUMENT_SURFACE_LABEL]: 'Document',
   [THEME_TITLE]: 'Theme',
   // v5-10's Appearance rows. *Also on when Windows asks* is true of the build: `applyMotion` reads both.

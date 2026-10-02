@@ -107,7 +107,9 @@ export default function AiSetupBody({
       )}
       {/* THE PATTERN'S FOOTER: Cancel, which is *not now*; Skip, which also stops the first-run offer; and the check.
           Skip stays as large as the check (the owner's ruling, 2026-09-22). */}
-      <DialogFooter>
+      {/* SKIP IS THE DISMISSAL (the owner, 2026-10-02): it records the choice, so a Cancel beside it would be a second
+          way to decline that records nothing. */}
+      <DialogFooter dismissal="own">
         <Button
           label={AI_SETUP_SKIP}
           onClick={() => {

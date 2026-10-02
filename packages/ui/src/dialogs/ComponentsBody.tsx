@@ -18,6 +18,7 @@ import {
   COMPONENTS_VERSION,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { ComponentsAnswer } from './components.js';
 
@@ -86,14 +87,14 @@ export default function ComponentsBody({
       </table>
       {verified ? <p className="m-components__line">{_(COMPONENTS_VERIFIED_NOTE)}</p> : null}
       {changed ? <p className="m-components__line">{_(COMPONENTS_REPAIR)}</p> : null}
-      <div className="m-components__actions">
+      <DialogFooter dismissal="close">
         <Button
           label={COMPONENTS_VERIFY}
           onClick={() => {
             resolve('verify');
           }}
         />
-      </div>
+      </DialogFooter>
     </div>
   );
 }

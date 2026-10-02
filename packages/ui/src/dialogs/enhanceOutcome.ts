@@ -32,6 +32,7 @@ export const ENHANCE_OUTCOME_DIALOG_ID = 'dialog.enhance-outcome';
 export const ENHANCE_OUTCOME_DIALOG = declareDialog({
   id: ENHANCE_OUTCOME_DIALOG_ID,
   title: ENHANCE_OUTCOME_TITLE,
+  informs: 'message',
   props: z
     .object({
       /** How many pages were sent to be levelled. */

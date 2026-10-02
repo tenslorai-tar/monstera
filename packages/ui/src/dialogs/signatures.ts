@@ -48,6 +48,7 @@ export type ShownSignature = z.infer<typeof shownSignatureSchema>;
 export const SIGNATURES_DIALOG = declareDialog({
   id: SIGNATURES_DIALOG_ID,
   title: SIGNATURES_TITLE,
+  informs: 'report',
   props: z.object({
     signatures: z.array(shownSignatureSchema).max(MAX_SIGNATURES),
     /** Whether a signature was there and could not be read. */

@@ -54,6 +54,7 @@ export const HISTORY_TRIMMED_DIALOG_ID = 'dialog.history-trimmed';
 export const HISTORY_TRIMMED_DIALOG = declareDialog({
   id: HISTORY_TRIMMED_DIALOG_ID,
   title: HISTORY_TRIMMED_TITLE,
+  informs: 'message',
   props: z.object({ dropped: z.number().int().positive() }).strict(),
   component: lazy(() => import('./HistoryTrimmedBody.js')),
 });

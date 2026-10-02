@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { activateCatalogue, i18n } from '../i18n.js';
-import { DIALOG_PROBLEM_BODY, DIALOG_PROBLEM_TITLE } from '../messages/en.js';
+import { DIALOG_OK, DIALOG_PROBLEM_BODY, DIALOG_PROBLEM_TITLE } from '../messages/en.js';
 import { DialogRegistry, declareDialog } from '../registries/dialogs.js';
 import { DialogHost, useDialogHost } from './DialogHost.js';
 
@@ -26,6 +26,7 @@ const renameEntry = declareDialog({
   id: 'dialog.rename',
   title: messageKey('dialog.rename.title'),
   props: z.object({ name: z.string().min(1) }),
+  informs: 'message',
   component: lazy(() =>
     Promise.resolve({
       default: ({ name }: { name: string }) => <p>{`renaming ${name}`}</p>,
@@ -118,6 +119,7 @@ const brokenEntry = declareDialog({
   id: 'dialog.broken',
   title: messageKey('dialog.broken.title'),
   props: z.object({}),
+  informs: 'report',
   component: lazy<() => ReactElement>(() =>
     Promise.reject(new Error('Failed to fetch dynamically imported module')),
   ),
@@ -144,6 +146,7 @@ activateCatalogue('en', {
   [DIALOG_PROBLEM_TITLE]: 'This could not be opened.',
   [DIALOG_PROBLEM_BODY]: 'Nothing was changed.',
   [CLOSE]: 'Close',
+  [DIALOG_OK]: 'OK',
 });
 
 function Messages({ children }: { children: ReactNode }): ReactElement {
@@ -243,6 +246,34 @@ describe('DialogHost', () => {
     // the primitive does not govern, and that failure is invisible to every
     // assertion above.
     expect(dialog.contains(body)).toBe(true);
+  });
+
+  it('a dialog that ASKS NOTHING ends in its one button, which closes it — and CONTROL: one that answers gets none', async () => {
+    const answers: unknown[] = [];
+    const first = render(
+      <Harness id="dialog.rename" props={{ name: 'chapter one' }} onAnswer={(answer) => answers.push(answer)} />,
+    );
+    screen.getByRole('button', { name: 'Open' }).click();
+    const dialog = await screen.findByRole('dialog', { name: 'Rename document' });
+    await screen.findByText('renaming chapter one');
+    const footer = dialog.querySelector('.m-dialog-footer');
+    const buttons = [...(footer?.querySelectorAll('button') ?? [])];
+    // ONE button, its words the message's, and primary because it is the only action there is.
+    expect(buttons.map((button) => button.textContent)).toStrictEqual(['OK']);
+    expect(buttons[0]?.classList.contains('m-button--primary')).toBe(true);
+    await act(async () => {
+      buttons[0]?.click();
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(answers).toStrictEqual([undefined]);
+    first.unmount();
+
+    render(<Harness id="dialog.pick" props={{ limit: 3 }} />);
+    screen.getByRole('button', { name: 'Open' }).click();
+    const pick = await screen.findByRole('dialog', { name: 'Pick a page' });
+    await screen.findByText('picking under 3');
+    expect(pick.querySelector('.m-dialog-footer')).toBeNull();
   });
 
   it('refuses props the schema rejects BEFORE anything opens', async () => {

@@ -31,6 +31,7 @@ export const IMPORT_FORM_DATA_PROBLEM_DIALOG_ID = 'dialog.import-form-data-probl
 export const IMPORT_FORM_DATA_PROBLEM_DIALOG = declareDialog({
   id: IMPORT_FORM_DATA_PROBLEM_DIALOG_ID,
   title: IMPORT_FORM_DATA_PROBLEM_TITLE,
+  informs: 'message',
   props: z.discriminatedUnion('reason', [
     z.object({ reason: z.literal('unreadable') }),
     z.object({ reason: z.literal('too-large'), limitBytes: z.number().int().positive() }),

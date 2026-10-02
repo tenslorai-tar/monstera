@@ -15,6 +15,7 @@ export const SERVICE_REFUSED_DIALOG_ID = 'dialog.service-refused';
 export const SERVICE_REFUSED_DIALOG = declareDialog({
   id: SERVICE_REFUSED_DIALOG_ID,
   title: SERVICE_REFUSED_TITLE,
+  informs: 'message',
   props: z.object({
     /** The page a person reads, from 1. */
     page: z.number().int().positive(),

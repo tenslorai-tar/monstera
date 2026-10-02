@@ -19,6 +19,7 @@ import {
   ABOUT_VERSION_LABEL,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { AboutAnswer } from './about.js';
 
@@ -84,7 +85,7 @@ export default function AboutBody({
       <p className="m-about__line">{_(checksForUpdates ? ABOUT_UPDATES_CHECKED : UPDATE_LINES[installChannel])}</p>
       <p className="m-about__line">{_(ABOUT_LICENCE)}</p>
       <p className="m-about__line">{_(ABOUT_COPYRIGHT)}</p>
-      <div className="m-about__actions">
+      <DialogFooter dismissal="close">
         <Button
           label={ABOUT_SOURCE}
           onClick={() => {
@@ -97,7 +98,7 @@ export default function AboutBody({
             resolve('licences');
           }}
         />
-      </div>
+      </DialogFooter>
     </div>
   );
 }

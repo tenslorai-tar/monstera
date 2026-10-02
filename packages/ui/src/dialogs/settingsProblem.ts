@@ -46,6 +46,7 @@ export const SETTINGS_PROBLEM_DIALOG_ID = 'dialog.settings-problem';
 export const SETTINGS_PROBLEM_DIALOG = declareDialog({
   id: SETTINGS_PROBLEM_DIALOG_ID,
   title: SETTINGS_PROBLEM_TITLE,
+  informs: 'message',
   props: z.object({
     /**
      * The message key naming the setting that did not persist.

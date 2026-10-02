@@ -29,6 +29,7 @@ export type UrlOpenProblem = z.infer<typeof urlOpenProblemSchema>;
 export const URL_OPEN_PROBLEM_DIALOG = declareDialog({
   id: URL_OPEN_PROBLEM_DIALOG_ID,
   title: URL_OPEN_PROBLEM_TITLE,
+  informs: 'message',
   props: urlOpenProblemSchema,
   component: lazy(() => import('./UrlOpenProblemBody.js')),
 });

@@ -17,6 +17,7 @@ export const SIGNATURE_PROBLEM_DIALOG_ID = 'dialog.signature-problem';
 export const SIGNATURE_PROBLEM_DIALOG = declareDialog({
   id: SIGNATURE_PROBLEM_DIALOG_ID,
   title: SIGNATURE_PROBLEM_TITLE,
+  informs: 'message',
   props: z.discriminatedUnion('reason', [
     z.object({ reason: z.literal('unreadable') }).strict(),
     z.object({ reason: z.literal('too-large'), limitBytes: z.number().int().positive() }).strict(),

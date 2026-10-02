@@ -25,6 +25,7 @@ export type CloudOutcome = (typeof CLOUD_OUTCOMES)[number];
 export const CLOUD_OUTCOME_DIALOG = declareDialog({
   id: CLOUD_OUTCOME_DIALOG_ID,
   title: CLOUD_OUTCOME_TITLE,
+  informs: 'message',
   props: z.object({ outcome: z.enum(CLOUD_OUTCOMES) }).strict(),
   component: lazy(() => import('./CloudOutcomeBody.js')),
 });

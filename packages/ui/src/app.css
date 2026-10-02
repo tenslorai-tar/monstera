@@ -3694,12 +3694,6 @@ optgroup {
   line-height: 1.5;
 }
 
-.m-about__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
-}
-
 .m-about dt {
   color: var(--muted);
 }
@@ -3742,11 +3736,6 @@ optgroup {
 .m-components__detail {
   display: block;
   color: var(--muted);
-}
-
-.m-components__actions {
-  display: flex;
-  gap: var(--space-8);
 }
 
 /* CLOUD STORAGE (ADR-0091): a provider per row with where it stands, its actions beneath, and its

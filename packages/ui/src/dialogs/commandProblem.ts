@@ -45,6 +45,7 @@ export const COMMAND_PROBLEM_DIALOG_ID = 'dialog.command-problem';
 export const COMMAND_PROBLEM_DIALOG = declareDialog({
   id: COMMAND_PROBLEM_DIALOG_ID,
   title: PROBLEM_TITLE,
+  informs: 'message',
   // `.strict()` ON EVERY MEMBER, and the case that asked for it is the reason
   // this comment exists. Without it zod STRIPS an unknown key rather than
   // refusing it, so `{code: 'document-busy', incident: '…'}` parsed cleanly and
