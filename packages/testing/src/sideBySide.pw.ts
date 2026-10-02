@@ -139,6 +139,26 @@ for (const [scale, from] of [
   });
 }
 
+// EACH HALF READS ITS OWN DOCUMENT (DDDDDDD-4): the compare pane's case loaded one document's bytes into both halves,
+// so a half that read the other's could not fail it. Here the two differ in length and in their second page's words.
+test('each half shows ITS OWN document: its own pages, and its own words on the page they share a number with', async ({
+  page,
+}) => {
+  const surface = await openSideBySide(page);
+  await expect(surface.locator('[data-side-half="left"] .m-page-slot')).toHaveCount(2);
+  await expect(surface.locator('[data-side-half="right"] .m-page-slot')).toHaveCount(5);
+  for (const [side, own, other] of [
+    ['left', 'Nothing further', 'Nothing more'],
+    ['right', 'Nothing more', 'Nothing further'],
+  ] as const) {
+    const list = surface.locator(`[data-side-half="${side}"] .m-page-list`);
+    // THE SECOND PAGE IN VIEW, so its text layer is mounted.
+    await list.locator('.m-page-slot').nth(1).scrollIntoViewIfNeeded();
+    await expect(list.getByText(own, { exact: true })).toBeAttached({ timeout: 10_000 });
+    await expect(list.getByText(other, { exact: true })).toHaveCount(0);
+  }
+});
+
 test('the Differences close hides the panel AND every mark on both halves; the comparison is still held', async ({ page }) => {
   const surface = await openSideBySide(page);
   await surface.locator('[data-side-compare]').click();
