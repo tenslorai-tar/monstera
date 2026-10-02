@@ -2,7 +2,7 @@ import { asDocId, asDocVersion, channels, contrast } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
-import { LOOKS, bridge } from './pageBridge.js';
+import { LOOKS, type Look, bridge, bridgeUnder } from './pageBridge.js';
 
 /**
  * The Assistant pane as the owner's review of 0.1.6.0 redrew it, measured in a real browser: Context and Sources
@@ -13,15 +13,21 @@ import { LOOKS, bridge } from './pageBridge.js';
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000000a9');
 
+/**
+ * The pane open on a saved conversation. Under a `look` it is bridged by `bridgeUnder` — the media and the theme
+ * setting as the one pair, never applied by hand here — and the theme is asserted before anything is measured, so a
+ * look that failed to apply cannot test the light screen three times.
+ */
 async function openPane(
   page: Page,
   settings: Record<string, unknown> = {},
   viewport: { readonly width: number; readonly height: number } = { width: 1440, height: 900 },
+  look?: Look,
 ): Promise<void> {
   await page.setViewportSize(viewport);
   const bytes = await blockedPages([612, 792], 1);
-  await bridge(page, {
-    opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'chat.pdf' }],
+  const options = {
+    opens: [{ kind: 'opened' as const, docId: DOC, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'chat.pdf' }],
     documentBytes: new Map([[DOC, bytes]]),
     settings: {
       'appearance.context-panel-open': true,
@@ -32,12 +38,15 @@ async function openPane(
     // A SAVED CONVERSATION, so the chat is on screen without a provider to ask.
     aiHistory: {
       turns: [
-        { role: 'user', text: 'What is this page about?' },
-        { role: 'assistant', text: 'It is a page with a black square in its middle.' },
+        { role: 'user' as const, text: 'What is this page about?' },
+        { role: 'assistant' as const, text: 'It is a page with a black square in its middle.' },
       ],
     },
-  });
+  };
+  if (look === undefined) await bridge(page, options);
+  else await bridgeUnder(page, look, options);
   await page.goto('/');
+  if (look !== undefined) await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   await expect(page.locator('.m-assistant__turn')).toHaveCount(2, { timeout: 10_000 });
 }
@@ -47,8 +56,7 @@ async function openPane(
 // out at, so it is the narrowest default the row meets.
 for (const look of LOOKS) {
   test(`${look.name}: CHOOSE, then CONTEXT and SOURCES by NAME, on ONE row across the pane`, async ({ page }) => {
-    await page.emulateMedia({ contrast: look.contrast });
-    await openPane(page, { 'appearance.theme': look.theme }, { width: 1280, height: 800 });
+    await openPane(page, {}, { width: 1280, height: 800 }, look);
     const faces = page.locator('.m-assistant [data-choice-menu]');
     await expect(faces).toHaveCount(2);
     // THE NAMES, NOT THE VALUES (the owner's review of 0.1.9.0): *Choose · Context · Sources*.
@@ -193,33 +201,52 @@ test('the CHAT: the person’s message at the right in a filled bubble, the answ
 });
 
 // A DEEP BLUE wants light text and an AMBER dark text, so a stored text colour fails one of them: each case asserting
-// its own direction is what shows the text is derived where it is drawn rather than kept.
-for (const [accent, wants] of [
-  ['#1d4ed8', 'lighter'],
-  ['#f59e0b', 'darker'],
-] as const) {
-  test(`a person’s bubble FOLLOWS THE ACCENT ${accent}, with text solved ${wants} than it`, async ({ page }) => {
-    await openPane(page, { 'appearance.accent': accent });
-    const drawn = await page.evaluate(() => {
-      const user = document.querySelector<HTMLElement>('.m-assistant__turn[data-assistant-role="user"]');
-      if (user === null) return null;
-      // THE ACCENT IN EFFECT, read as a colour the way the bubble's background is, so the two compare as equals.
-      const probe = document.createElement('span');
-      probe.style.backgroundColor = 'var(--accent)';
-      user.append(probe);
-      const accentColour = getComputedStyle(probe).backgroundColor;
-      probe.remove();
-      return { fill: getComputedStyle(user).backgroundColor, text: getComputedStyle(user).color, accentColour };
+// its own direction is what shows the text is derived where it is drawn rather than kept. IN EVERY LOOK, at that look's
+// own text floor — 7:1 under high contrast, which clears a person's accent for the theme's, so the direction is asserted
+// only where the chosen accent is the one drawn.
+for (const look of LOOKS) {
+  for (const [accent, wants] of [
+    ['#1d4ed8', 'lighter'],
+    ['#f59e0b', 'darker'],
+  ] as const) {
+    test(`${look.name}: a person’s bubble FOLLOWS THE ACCENT in effect under ${accent}, its text solved to the look’s floor`, async ({
+      page,
+    }) => {
+      await openPane(page, { 'appearance.accent': accent }, undefined, look);
+      const drawn = await page.evaluate(() => {
+        const user = document.querySelector<HTMLElement>('.m-assistant__turn[data-assistant-role="user"]');
+        if (user === null) return null;
+        // THE ACCENT IN EFFECT, read as a colour the way the bubble's background is, so the two compare as equals.
+        const probe = document.createElement('span');
+        probe.style.backgroundColor = 'var(--accent)';
+        user.append(probe);
+        const accentColour = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return {
+          fill: getComputedStyle(user).backgroundColor,
+          text: getComputedStyle(user).color,
+          accentColour,
+          // A PERSON'S ACCENT IS WRITTEN ON THE ROOT (`applyAccent`), and cleared there under high contrast.
+          personsAccent: document.documentElement.style.getPropertyValue('--accent'),
+        };
+      });
+      if (drawn === null) throw new Error('a person’s turn');
+      expect(drawn.fill, accent).toBe(drawn.accentColour);
+      const fill = channels(drawn.fill);
+      const text = channels(drawn.text);
+      if (fill === null || text === null) throw new Error(`colours that parse: ${drawn.fill} and ${drawn.text}`);
+      const floor = look.name === 'hc' ? 7 : 4.5;
+      expect(contrast(text, fill), `${drawn.text} on ${drawn.fill}`).toBeGreaterThanOrEqual(floor);
+      if (look.name === 'hc') {
+        // CLEARED: the theme's accent is the one drawn, so the person's is not on the root.
+        expect(drawn.personsAccent).toBe('');
+      } else {
+        expect(drawn.personsAccent).not.toBe('');
+        const brightness = ([r, g, b]: readonly number[]): number => (r ?? 0) + (g ?? 0) + (b ?? 0);
+        expect(brightness(text) > brightness(fill) ? 'lighter' : 'darker', `${drawn.text} on ${drawn.fill}`).toBe(wants);
+      }
     });
-    if (drawn === null) throw new Error('a person’s turn');
-    expect(drawn.fill, accent).toBe(drawn.accentColour);
-    const fill = channels(drawn.fill);
-    const text = channels(drawn.text);
-    if (fill === null || text === null) throw new Error(`colours that parse: ${drawn.fill} and ${drawn.text}`);
-    expect(contrast(text, fill), `${drawn.text} on ${drawn.fill}`).toBeGreaterThanOrEqual(4.5);
-    const brightness = ([r, g, b]: readonly number[]): number => (r ?? 0) + (g ?? 0) + (b ?? 0);
-    expect(brightness(text) > brightness(fill) ? 'lighter' : 'darker', `${drawn.text} on ${drawn.fill}`).toBe(wants);
-  });
+  }
 }
 
 test('NEW CHAT is a "+" at the top right of the pane', async ({ page }) => {
