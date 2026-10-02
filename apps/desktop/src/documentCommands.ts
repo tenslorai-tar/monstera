@@ -1273,11 +1273,11 @@ export type NetworkTableReader = (
  * limits every provider shape accepts, weighed in `main` and retaken smaller while it is over.
  * Composed beside {@link NetworkTableReader}, whose route it is.
  *
- * @throws {@link PageTooLargeToPicture} when even the smallest snapshot scale is over the limits
+ * @throws {@link PageTooLargeToPicture} when even the whole page's floor scale is over the limits
  */
 export type AskPictureReader = (docId: DocId, sessions: DocumentSessions, page: number) => Promise<Uint8Array>;
 
-/** A page too large to picture within the image limits even at the snapshot floor. */
+/** A page too large to picture within the image limits even at `MIN_PAGE_PICTURE_SCALE`, which no page PDF allows is. */
 export class PageTooLargeToPicture extends Error {
   constructor(readonly page: number) {
     super(`page ${String(page + 1)} is too large to picture within the image limits`);

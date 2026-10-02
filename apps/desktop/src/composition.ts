@@ -177,8 +177,8 @@ import {
   MissingSessionError,
   NetworkKeyMissing,
   type OptimizeSource,
-  PageTooLargeToPicture,
 } from './documentCommands.js';
+import { pictureForAsk } from './askPicture.js';
 import { timestampTransport } from './timestampTransport.js';
 
 /**
@@ -1473,21 +1473,17 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       }));
       return prepared.readTables(raster.png);
     },
-    // A PAGE AS A PICTURE FOR A VISION ASK (ADR-0090), by the table route above: the host draws the
-    // whole page and main weighs it. CLAUDE'S IMAGE LIMITS FOR EVERY PROVIDER — the tightest the
-    // three adapter shapes document — so one picture serves whichever the person chose.
-    askPicture: async (docId, sessions, page) => {
+    // A PAGE AS A PICTURE FOR A VISION ASK (ADR-0090), by the table route above: `pictureForAsk` holds the scale rule.
+    askPicture: (docId, sessions, page) => {
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-      const { sizes } = await engineHost.geometry(session, [page]);
-      const size = sizes[0];
-      if (size === undefined) throw new Error(`the engine reported no size for page ${String(page + 1)}`);
-      const scale = claudeRasterScale(size.width, size.height, AZURE_RASTER_SCALE, MIN_SNAPSHOT_SCALE);
-      if (scale === null) throw new PageTooLargeToPicture(page);
-      const { raster } = await rasterWithinLimit(scale, MIN_SNAPSHOT_SCALE, claudeAcceptsBytes, async (at) => ({
-        png: await engineHost.pageImage(session, { page, format: 'png', scale: at, quality: 100 }),
-      }));
-      return raster.png;
+      return pictureForAsk(
+        {
+          size: async (at) => (await engineHost.geometry(session, [at])).sizes[0],
+          draw: (at, scale) => engineHost.pageImage(session, { page: at, format: 'png', scale, quality: 100 }),
+        },
+        page,
+      );
     },
     // THE TEXT EXPORT'S DIALOG, a parameter for the folder picker's reason below.
     pickText,

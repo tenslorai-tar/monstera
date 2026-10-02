@@ -495,6 +495,7 @@ export {
   isNetworkOcrEngine,
   MAX_SNAPSHOT_SCALE,
   MIN_SNAPSHOT_SCALE,
+  MIN_PAGE_PICTURE_SCALE,
   PAGE_IMAGE_FORMATS,
   type PageImageFormat,
   MIN_PAGE_IMAGE_DPI,

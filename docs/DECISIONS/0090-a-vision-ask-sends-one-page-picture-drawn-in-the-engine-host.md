@@ -54,3 +54,14 @@
 - A table read this way is the model's reading, and the answer says what it is: an answer in a
   conversation, not a table the application vouches for. The Excel route (ADR-0086) remains the
   one that writes a table into a file.
+
+## Correction, 2026-10-02
+
+Decision 2's *"even at the snapshot floor"* refused every A0 drawing: 2,384 × 3,370 pt is over the
+2576 px edge at 72 dpi (JOURNAL, *No document-size refusals*, table A row 11). A picture is looked
+at, not read, and the provider would scale it down anyway, so the whole page now has its own floor,
+`MIN_PAGE_PICTURE_SCALE` (0.01) in the contract, which the host's page rasteriser enforces in place
+of the snapshot's. The largest page PDF allows fits at 0.17, so `page-too-large` is unreachable by
+a real page. The page-image export keeps 72 dpi in the renderer's schema. The drawing closure is
+now `pictureForAsk` in `apps/desktop/src/askPicture.ts`, crossed by cases rather than only by a
+live run.
