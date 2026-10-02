@@ -2572,7 +2572,9 @@ describe('App', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'Help centre' }, { timeout: 2000 });
     const here = within(dialog).getByRole('heading', { name: 'For what you are doing' });
-    const listed = [...(here.parentElement?.querySelectorAll('[data-article]') ?? [])].map((item) => item.getAttribute('data-article'));
+    const listed = [...(here.closest('section')?.querySelectorAll('[data-article]') ?? [])].map((item) =>
+      item.getAttribute('data-article'),
+    );
     const expected = HELP_ARTICLES.filter((article) => article.contexts.includes('start-screen')).map((article) => article.id);
     expect(expected.length).toBeGreaterThan(0);
     expect(listed).toStrictEqual(expected);

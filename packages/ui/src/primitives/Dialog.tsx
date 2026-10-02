@@ -229,6 +229,72 @@ export function DialogChoices<Value extends string>({
   );
 }
 
+/*
+ * THE PATTERN FOR A WINDOW THAT IS BROWSED OR STEPPED THROUGH (the owner, 2 October: Cloud storage, Help, Keyboard
+ * shortcuts, Spell check and Camera capture, which asked no one question and so had kept their own layouts). The same
+ * title bar, rows and footer as a question's dialog, plus three parts: a SECTION per thing being browsed, with a
+ * heading in the row's type and a state at its right; a section's ACTIONS in one row, the main one first and a quieter
+ * one set apart at the end; and a SCROLLING region, so a long list moves between the title bar and the footer and
+ * neither scrolls away.
+ */
+
+/**
+ * One part of a browsed window: its heading, an optional state at the heading's right (*Signed in*), an optional
+ * one-line note, then its content. A `section` named by its heading, so a screen reader can move between them.
+ */
+export function DialogSection({
+  title,
+  values,
+  state,
+  note,
+  data,
+  children,
+}: {
+  readonly title: MessageKey;
+  readonly values?: Record<string, unknown> | undefined;
+  readonly state?: ReactNode;
+  readonly note?: ReactNode;
+  /** `data-` attributes the caller marks the section with, for its own tests and styles. */
+  readonly data?: Readonly<Record<`data-${string}`, string>> | undefined;
+  readonly children?: ReactNode;
+}): ReactElement {
+  const { _ } = useLingui();
+  const heading = useId();
+  return (
+    <section aria-labelledby={heading} className="m-dialog-section" {...data}>
+      <div className="m-dialog-section__head">
+        <h3 className="m-dialog-section__title" id={heading}>
+          {_(title, values)}
+        </h3>
+        {state === undefined ? null : <span className="m-dialog-section__state">{state}</span>}
+      </div>
+      {note === undefined ? null : <p className="m-dialog-section__note">{note}</p>}
+      {children}
+    </section>
+  );
+}
+
+/**
+ * A section's actions in one row that wraps: the main action first, as the caller orders them, and `apart` — a
+ * quieter action such as *Sign out* — at the row's end, separated from the rest.
+ */
+export function DialogActions({ children, apart }: { readonly children?: ReactNode; readonly apart?: ReactNode }): ReactElement {
+  return (
+    <div className="m-dialog-actions">
+      {children}
+      {apart === undefined ? null : <span className="m-dialog-actions__apart">{apart}</span>}
+    </div>
+  );
+}
+
+/**
+ * The part of a browsed window that scrolls. A body built of this and a `DialogFooter` side by side keeps its footer
+ * (and anything placed before this, such as a search field) in view while the list moves.
+ */
+export function DialogScroll({ children }: { readonly children: ReactNode }): ReactElement {
+  return <div className="m-dialog-scroll">{children}</div>;
+}
+
 /**
  * The body's foot: Cancel, then the action, at the right. Cancel is Base UI's `Close`, which works anywhere inside the
  * popup and closes it exactly as the header's close control does, so a body needs no dismissal of its own and
@@ -236,9 +302,15 @@ export function DialogChoices<Value extends string>({
  */
 export function DialogFooter({
   children,
+  aside,
   dismissal = 'cancel',
 }: {
   readonly children?: ReactNode;
+  /**
+   * An action about the whole window that is neither its answer nor its dismissal (*Reset all shortcuts*), at the
+   * footer's start, apart from the buttons at its end.
+   */
+  readonly aside?: ReactNode;
   /**
    * What the footer's closing button says, which is decided by what the dialog IS (the owner, 2026-10-02):
    *
@@ -256,6 +328,7 @@ export function DialogFooter({
   const only = children === undefined;
   return (
     <div className="m-dialog-footer">
+      {aside === undefined ? null : <span className="m-dialog-footer__aside">{aside}</span>}
       {dismissal === 'own' ? null : (
         <BaseDialog.Close
           nativeButton

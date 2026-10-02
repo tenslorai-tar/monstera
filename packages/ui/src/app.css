@@ -666,19 +666,39 @@ optgroup {
   border-block-end: 1px solid var(--border); /* decorative: separates the header row from the rows; nothing in it is operable */
 }
 
+/* THE PATTERN'S ROWS (the owner, 2 October): a soft line between one command and the next, as between dialog rows. */
+.m-shortcuts tbody tr {
+  border-block-end: 1px solid var(--border-soft); /* decorative: separates one command from the next */
+}
+
+.m-shortcuts tbody tr:last-child {
+  border-block-end: 0;
+}
+
+.m-shortcuts tbody :is(th, td) {
+  padding-block: var(--space-6);
+}
+
+/* THE CHANGES AT THE ROW'S END, where a dialog row keeps its control, on one line: the column takes the least width
+   that holds them, and the command's name and keys wrap first. */
+.m-shortcuts thead th:last-child,
+.m-shortcuts__actions {
+  text-align: end;
+}
+
+.m-shortcuts__actions {
+  inline-size: 1%;
+  white-space: nowrap;
+}
+
 .m-shortcuts kbd {
   font-family: inherit;
   font-variant-numeric: tabular-nums;
 }
 
-/* THE SHORTCUTS EDITOR (ADR-0111): the list above, with a row header per command, a column of changes, and one
-   *Reset all* at the foot. Several keys of one command sit side by side with the scale's own gap. */
-.m-shortcuts-editor {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
-}
-
+/* THE SHORTCUTS EDITOR (ADR-0111): the list above, scrolling in the dialog pattern, with a row header per command, a
+   column of changes, and one *Reset all* at the footer's start. Several keys of one command sit side by side with the
+   scale's own gap. */
 .m-shortcuts tbody th {
   font-weight: 400;
 }
@@ -694,10 +714,6 @@ optgroup {
 
 .m-shortcuts :is(th, td) {
   vertical-align: middle;
-}
-
-.m-shortcuts__actions {
-  white-space: nowrap;
 }
 
 .m-shortcuts__none {
@@ -728,11 +744,6 @@ optgroup {
 
 .m-shortcuts-editor__note {
   margin: 0;
-}
-
-.m-shortcuts-editor__actions {
-  display: flex;
-  justify-content: flex-end;
 }
 
 /* THE OCR DIALOG'S HANDWRITING NOTE and, while no key is stored, the link to the article on getting one under it. */
@@ -770,16 +781,17 @@ optgroup {
   align-items: center;
 }
 
-/* THE HELP CENTRE (ADR-0112): the search over the list, each article a full-width button naming it with its summary
-   under, and an article read at a comfortable measure. */
+/* THE HELP CENTRE (ADR-0112): the search above the list, which scrolls in the pattern's sections (`HelpBody`), each
+   article a full-width button naming it with its summary under, and an article read at a comfortable measure under
+   *Back to the list*. */
 .m-help {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
 }
 
-.m-help h3 {
-  margin: var(--space-8) 0 0;
+.m-help__back {
+  display: flex;
 }
 
 .m-help__count {
@@ -1679,16 +1691,9 @@ optgroup {
 }
 
 /*
- * The spell check review, and it needs the same two rules for the same reason.
- *
- * The comment above states this file's rule: every other dialog body carries no
- * CSS and relies on the dialog primitive's own flow — `m-word-count` has none
- * and is right not to. **A LIST IS THE EXCEPTION**, and this body is one: four
- * spans per row, which default flow stacks into four lines each, and a `<ul>`
- * that arrives with bullets and an indent the primitive did not ask for.
- *
- * The word and its detail are on one line with the action at the end, so a
- * reader scanning for a word finds it in the same column on every row.
+ * The spell check review: one dialog-pattern row per word (`SpellCheckBody`), the word and where it is on the left
+ * and its add at the row's end, in a `<ul>` that arrives with bullets and an indent the pattern did not ask for. The
+ * word carries the weight as the row's name; the count, the page and the suggestions are its muted notes.
  */
 .m-spell-check__list {
   list-style: none;
@@ -1696,32 +1701,18 @@ optgroup {
   padding: 0;
 }
 
-.m-spell-check__row {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-8);
-  padding-block: var(--space-2);
+.m-spell-check__list > .m-dialog-row:last-child {
+  border-block-end: 0;
 }
 
 /*
- * The misspelt word carries the weight, and its surroundings do not.
- *
- * `--muted` on the count, the page and the suggestions for
- * `.m-flat-fields__name`'s reason: the distinction has to survive being read
- * quickly, and colour carries it without a second line. The word itself is the
- * thing a reader is looking for, so it is the one thing at full contrast.
- */
-.m-spell-check__word {
-  font-weight: 600;
-}
-
-/*
- * The reading-order inspection: a list, so it takes the spell check's two rules
- * for their reason — no bullets or indent the primitive did not ask for, and one
- * line per element. The indent it does want is the depth, set on the row.
+ * The reading-order inspection: a list, so it needs two rules — no bullets or
+ * indent the primitive did not ask for, and one line per element. The indent it
+ * does want is the depth, set on the row.
  *
  * The role carries the weight; the document's own name and the line count are
- * `--muted` beside it, for `.m-spell-check__word`'s reason.
+ * `--muted` beside it: the distinction has to survive being read quickly, and
+ * colour carries it without a second line.
  */
 .m-page-structure__list {
   list-style: none;
@@ -1894,21 +1885,6 @@ optgroup {
   letter-spacing: 0.04em;
 }
 
-.m-spell-check__where,
-.m-spell-check__suggestions,
-.m-spell-check__added {
-  color: var(--muted);
-}
-
-/*
- * The action sits at the end of the row rather than beside the word.
- *
- * Every row's button in the same column is what makes a list of them scannable;
- * left to flow, each would sit wherever its own word ended.
- */
-.m-spell-check__row > :last-child {
-  margin-inline-start: auto;
-}
 
 /*
  * The derived name, set apart from the document's own words beside it.
@@ -3729,6 +3705,17 @@ optgroup {
   object-fit: contain;
 }
 
+/* A STATUS WITH NOTHING TO SAY TAKES NO ROOM: the live region stays in the page, so what it says next is announced. */
+.m-camera-capture__status:empty,
+.m-camera-capture__problem:empty {
+  display: none;
+}
+
+.m-camera-capture__status,
+.m-camera-capture__problem {
+  margin: 0;
+}
+
 /*
  * The About dialog's body: a definition list, laid out as label/value pairs.
  * `grid` rather than the browser's default `dd` indent, because that indent is a
@@ -3805,41 +3792,16 @@ optgroup {
   color: var(--muted);
 }
 
-/* CLOUD STORAGE (ADR-0091): a provider per row with where it stands, its actions beneath, and its
-   PDFs listed under it when asked for. */
-.m-cloud {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
-}
-
-.m-cloud__providers,
+/* CLOUD STORAGE (ADR-0091): a section per provider in the dialog pattern (`CloudStorageBody`), and its PDFs listed
+   under it as the pattern's rows when asked for. */
 .m-cloud__files {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.m-cloud__heading,
-.m-cloud__file,
-.m-cloud__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
-  align-items: center;
-}
-
-.m-cloud__heading {
-  justify-content: space-between;
-}
-
-.m-cloud__state,
-.m-cloud__hint {
-  margin: 0;
-  color: var(--muted);
+.m-cloud__files > .m-dialog-row:last-child {
+  border-block-end: 0;
 }
 
 .m-cloud__problem,
@@ -3855,18 +3817,10 @@ optgroup {
   margin: 0;
 }
 
+/* A FILE'S NAME breaks anywhere rather than widening the window; when it changed and how large it is is the row's note,
+   which tells apart files that share a name. */
 .m-cloud__file-name {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
   overflow-wrap: anywhere;
-}
-
-/* When it changed and how large it is — what tells apart files that share a name. */
-.m-cloud__file-meta {
-  color: var(--muted);
-  font-size: var(--font-chrome-12);
 }
 
 /* THE FIRST-RUN AI SETUP (E5): the sentence, the two fields, and Skip beside the check, the same

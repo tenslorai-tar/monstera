@@ -2301,6 +2301,9 @@ export const CLOUD_GOOGLE_NOTE = messageKey('dialog.cloud.google-note');
 export const CLOUD_NOTE_SIGNED_IN = messageKey('dialog.cloud.note.signed-in');
 export const CLOUD_NOTE_SIGNED_OUT = messageKey('dialog.cloud.note.signed-out');
 export const CLOUD_NOTE_UPLOADED = messageKey('dialog.cloud.note.uploaded');
+/** A provider's one line under its name, by where it stands: what signing in gives, and what signed in offers. */
+export const CLOUD_EXPLAIN_SIGNED_OUT = messageKey('dialog.cloud.explain.signed-out');
+export const CLOUD_EXPLAIN_SIGNED_IN = messageKey('dialog.cloud.explain.signed-in');
 export const SAVE_BACK_NOT_FROM_CLOUD = messageKey('dialog.cloud-outcome.not-from-cloud');
 export const SAVE_BACK_SAVE_FAILED = messageKey('dialog.cloud-outcome.save-failed');
 export const SAVE_BACK_KEPT_HERE = messageKey('dialog.cloud-outcome.kept-here');
@@ -2672,7 +2675,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SPELL_CHECK_ADD]: 'Add {word} to dictionary',
   [SPELL_CHECK_ADDED]: 'Added to your dictionary',
   [SPELL_CHECK_SAVE]:
-    '{count, plural, one {Save one word to your dictionary} other {Save # words to your dictionary}}',
+    '{count, plural, =0 {Save to your dictionary} one {Save one word to your dictionary} other {Save # words to your dictionary}}',
   // NAMES WHAT IT PRODUCES, not the technique. *OCR* is the name of the thing in
   // the ribbon group, where a reader who knows the word will look for it; the
   // command says what happens to their document.
@@ -3557,9 +3560,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CLOUD_DOWNLOADING]: 'Downloading the file…',
   [CLOUD_FILES_LABEL]: 'PDFs in cloud storage',
   [CLOUD_FILES_EMPTY]: 'No PDFs were found here.',
-  [CLOUD_GOOGLE_NOTE]:
-    'Monstera can see only the Google Drive files it put there, or that you choose. To open any other PDF, choose it in Google Drive.',
-  [CLOUD_PICK]: 'Choose a file in Google Drive…',
+  [CLOUD_GOOGLE_NOTE]: 'Monstera sees only the files it put in your Google Drive, and any file you choose.',
+  [CLOUD_PICK]: 'Choose a file…',
+  [CLOUD_EXPLAIN_SIGNED_OUT]: 'Sign in to open your PDFs from {provider} and upload copies to it.',
+  [CLOUD_EXPLAIN_SIGNED_IN]: 'Open your PDFs from {provider}, or upload this document to it.',
   [CLOUD_CHOOSING]: 'Waiting for your choice in Google Drive…',
   [CLOUD_PROBLEM_NOTHING_PICKED]: 'No file was chosen in Google Drive. Nothing was opened.',
   [CLOUD_NOTE_SIGNED_IN]: 'Signed in.',

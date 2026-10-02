@@ -1372,13 +1372,16 @@ test('a DIALOG taller than the window stays inside it, and its body scrolls to t
   expect(box?.y ?? -1).toBeGreaterThanOrEqual(0);
   expect((box?.y ?? 0) + (box?.height ?? Number.POSITIVE_INFINITY)).toBeLessThanOrEqual(420);
 
-  // THE BODY SCROLLS — the property that makes the bound usable rather than a clip — and the title stays put.
-  const scrolls = await dialog.locator('.m-dialog__body').evaluate((body) => body.scrollHeight > body.clientHeight);
+  // THE BODY SCROLLS — the property that makes the bound usable rather than a clip — and the title stays put. A browsed
+  // window (the dialog pattern's `DialogScroll`, 2 October) scrolls its list rather than its whole body, so its footer
+  // stays in view too.
+  const scrolls = await dialog.locator('.m-dialog-scroll').evaluate((region) => region.scrollHeight > region.clientHeight);
   expect(scrolls).toBe(true);
   await save.scrollIntoViewIfNeeded();
   const saveBox = await save.boundingBox();
   expect((saveBox?.y ?? -1) >= 0 && (saveBox?.y ?? 0) + (saveBox?.height ?? 0) <= 420).toBe(true);
   await expect(dialog.getByRole('heading', { name: 'Keyboard shortcuts' })).toBeInViewport();
+  await expect(dialog.getByRole('button', { name: 'Reset all shortcuts' })).toBeInViewport();
 });
 
 test('NOTHING DRAWS OVER A DIALOG: every stacked element of the window sits under the modal layer', async ({ page }) => {

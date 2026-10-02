@@ -16,6 +16,7 @@ import {
   CAMERA_CAPTURE_TAKE,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogScroll } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { CameraCaptureAnswer } from './cameraCapture.js';
 
@@ -143,49 +144,62 @@ export default function CameraCaptureBody({ resolve }: DialogAnswering<CameraCap
   const sentence = STATE_SENTENCES[state];
   const total = frames.reduce((sum, frame) => sum + frame.byteLength, 0);
 
+  // IN THE DIALOG PATTERN (the owner, 2 October): the preview, what the camera is doing, then one row — how many
+  // pictures are taken, and *Take picture* at the row's end — and *Make PDF* in the footer beside Cancel. The preview
+  // and the row scroll together where a small window cannot hold both, so the footer never leaves the window.
   return (
-    <div className="m-camera-capture">
-      <video
-        aria-label={_(CAMERA_CAPTURE_PREVIEW)}
-        autoPlay
-        className="m-camera-capture__preview"
-        data-camera-preview=""
-        hidden={state !== 'live'}
-        muted
-        playsInline
-        ref={video}
-      />
-      <p className="m-camera-capture__status" role="status">
-        {sentence === null ? '' : _(sentence)}
-      </p>
-      <p className="m-camera-capture__count">{_(CAMERA_CAPTURE_COUNT, { count: frames.length })}</p>
-      <p className="m-camera-capture__problem" role="status">
-        {full ? _(CAMERA_CAPTURE_FULL) : ''}
-      </p>
-      <Button
-        disabled={state !== 'live' || full}
-        label={CAMERA_CAPTURE_TAKE}
-        onClick={() => {
-          const element = video.current;
-          if (element === null) return;
-          void jpegOf(element).then((frame) => {
-            if (frame === null) return;
-            if (frames.length + 1 > MAX_IMPORT_IMAGES || total + frame.byteLength > MAX_IMPORT_IMAGE_BYTES) {
-              setFull(true);
-              return;
-            }
-            setFrames([...frames, frame]);
-          });
-        }}
-      />
-      <Button
-        disabled={frames.length === 0}
-        label={CAMERA_CAPTURE_DONE}
-        onClick={() => {
-          if (frames.length > 0) resolve({ frames: [...frames] });
-        }}
-        variant="primary"
-      />
-    </div>
+    <>
+      <DialogScroll>
+        <video
+          aria-label={_(CAMERA_CAPTURE_PREVIEW)}
+          autoPlay
+          className="m-camera-capture__preview"
+          data-camera-preview=""
+          hidden={state !== 'live'}
+          muted
+          playsInline
+          ref={video}
+        />
+        <p className="m-camera-capture__status" role="status">
+          {sentence === null ? '' : _(sentence)}
+        </p>
+        <div className="m-dialog-row">
+          <span className="m-dialog-row__text">
+            <span className="m-dialog-row__label m-camera-capture__count">{_(CAMERA_CAPTURE_COUNT, { count: frames.length })}</span>
+          </span>
+          <div className="m-dialog-row__control">
+            <Button
+              disabled={state !== 'live' || full}
+              label={CAMERA_CAPTURE_TAKE}
+              onClick={() => {
+                const element = video.current;
+                if (element === null) return;
+                void jpegOf(element).then((frame) => {
+                  if (frame === null) return;
+                  if (frames.length + 1 > MAX_IMPORT_IMAGES || total + frame.byteLength > MAX_IMPORT_IMAGE_BYTES) {
+                    setFull(true);
+                    return;
+                  }
+                  setFrames([...frames, frame]);
+                });
+              }}
+            />
+          </div>
+        </div>
+        <p className="m-camera-capture__problem" role="status">
+          {full ? _(CAMERA_CAPTURE_FULL) : ''}
+        </p>
+      </DialogScroll>
+      <DialogFooter>
+        <Button
+          disabled={frames.length === 0}
+          label={CAMERA_CAPTURE_DONE}
+          onClick={() => {
+            if (frames.length > 0) resolve({ frames: [...frames] });
+          }}
+          variant="primary"
+        />
+      </DialogFooter>
+    </>
   );
 }

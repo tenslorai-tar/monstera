@@ -1,13 +1,14 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
 import type { MessageKey } from '@monstera/shared';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { HELP_ARTICLES, screenshotUrl } from '../help/articles.js';
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN, ROTATE_PAGE_180_TITLE, ROTATE_PAGE_TITLE, SAVE_TITLE } from '../messages/en.js';
+import { CLOSE_LABEL, EN, HELP_TITLE, ROTATE_PAGE_180_TITLE, ROTATE_PAGE_TITLE, SAVE_TITLE } from '../messages/en.js';
+import { Dialog } from '../primitives/Dialog.js';
 import type { HelpAnswer } from './help.js';
 import HelpBody from './HelpBody.js';
 
@@ -16,9 +17,16 @@ import HelpBody from './HelpBody.js';
  * `App.test.tsx`'; this half is what the body draws for the props it is given, and what it answers.
  */
 
+/** IN THE DIALOG, as the registry mounts it: the footer's Close is the popup's own close and exists only inside one. */
 function Wrapped({ children }: { children: ReactNode }): ReactElement {
   activateCatalogue('en', EN);
-  return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
+  return (
+    <I18nProvider i18n={i18n}>
+      <Dialog closeLabel={CLOSE_LABEL} onOpenChange={() => undefined} open title={HELP_TITLE}>
+        {children}
+      </Dialog>
+    </I18nProvider>
+  );
 }
 
 afterEach(() => {
@@ -81,16 +89,26 @@ describe('the Help centre’s body', () => {
     drawn({ article: 'rotate-pages' });
     expect(screen.getByRole('heading', { level: 3, name: 'Rotate pages' })).toBeDefined();
     expect(document.querySelector('.m-help__article ol li')).not.toBeNull();
+    // THE DIALOG'S OWN FIRST FOCUS SETTLES FIRST, as it has long before a person presses anything.
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole('dialog'));
+    });
 
+    // PRESSED FROM THE KEYBOARD: the focused control is the one the change removes, which is the harder case — the
+    // dialog's focus manager answers a focused element's removal by focusing the popup when focus is left on the body.
+    const back = screen.getByRole('button', { name: 'Back to the list' });
     await act(async () => {
-      screen.getByRole('button', { name: 'Back to the list' }).click();
-      await Promise.resolve();
+      back.focus();
+      back.click();
+      await new Promise((resolve) => setTimeout(resolve, 50));
     });
     expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Search help' }));
 
+    const item = document.querySelector<HTMLElement>('[data-article="rotate-pages"]');
     await act(async () => {
-      document.querySelector<HTMLElement>('[data-article="rotate-pages"]')?.click();
-      await Promise.resolve();
+      item?.focus();
+      item?.click();
+      await new Promise((resolve) => setTimeout(resolve, 50));
     });
     expect(document.activeElement).toBe(screen.getByRole('heading', { level: 3, name: 'Rotate pages' }));
   });

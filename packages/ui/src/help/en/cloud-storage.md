@@ -11,9 +11,9 @@ Monstera can open PDFs from OneDrive and Google Drive, upload the open document,
 ## Steps
 
 1. Open the **File** menu at the top of the window and choose **Cloud storage…**.
-2. Beside the provider, choose **Sign in**. Your web browser opens so you can sign in there.
+2. Under the provider's name, choose **Sign in**. Your web browser opens so you can sign in there.
 3. Choose **Show my PDFs**, then **Open** beside a file. It downloads and opens in a tab.
-4. For Google Drive you can also choose **Choose a file in Google Drive…**: your browser shows Google's own file chooser, and the PDF you pick opens in a tab. It signs you in if you are not signed in yet.
+4. Under Google Drive you can also choose **Choose a file…**: your browser shows Google's own file chooser, and the PDF you pick opens in a tab. It signs you in if you are not signed in yet.
 5. To put the open document in the cloud, choose **Upload this document**.
 6. After making changes, open the **File** menu and choose **Save back to cloud**. A message says **Saved to cloud storage**.
 
@@ -21,8 +21,8 @@ Monstera can open PDFs from OneDrive and Google Drive, upload the open document,
 
 ## Good to know
 
-- Each provider shows **Signed in**, **Not signed in**, or **Not available in this build**.
-- **Show my PDFs** lists only the Google Drive files Monstera put there, or that you chose before. To open any other PDF in your Google Drive, use **Choose a file in Google Drive…**. Monstera can then see that one file and no others.
+- Each provider shows **Signed in**, **Not signed in**, or **Not available in this build** beside its name. **Sign out** is at the end of a signed-in provider's row.
+- **Show my PDFs** lists only the Google Drive files Monstera put there, or that you chose before. To open any other PDF in your Google Drive, use **Choose a file…** under Google Drive. Monstera can then see that one file and no others.
 - If the file changed in the cloud since you opened it, Monstera does not overwrite it. Your changes are saved on this computer.
 
 ## Files shared with you as view-only

@@ -6,6 +6,7 @@ import type { Article, Block, Inline } from '../help/article.js';
 import { HELP_ARTICLES, helpArticle, screenshotUrl, searchHelp } from '../help/articles.js';
 import { HELP_ALL, HELP_ARTICLE_COUNT, HELP_BACK, HELP_HERE, HELP_NONE, HELP_SEARCH, HELP_SHOW_ME } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogScroll, DialogSection } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { HelpAnswer } from './help.js';
@@ -125,6 +126,11 @@ function ArticleList({
  * ([ADR-0112](../../../../docs/DECISIONS/0112-the-help-centre-is-bundled-articles-and-f1-opens-the-one-for-where-you-are.md)):
  * a search over every article, the list, and one article at a time.
  *
+ * ## In the dialog pattern (the owner, 2 October)
+ *
+ * The search field, or *Back to the list*, stays above a region that scrolls; the lists are the pattern's sections and
+ * the footer's Close puts the window away, so neither the way in nor the way out scrolls off with a long list.
+ *
  * ## Where it opens
  *
  * On the article the opener named, when there is one; else on the list, with the articles for the opener's context
@@ -180,59 +186,72 @@ export default function HelpBody({
   if (open !== undefined) {
     const shows = showable.filter((each) => open.commands.includes(each.id));
     return (
-      <article className="m-help__article">
-        <Button
-          label={HELP_BACK}
-          icon="ChevronLeft"
-          onClick={() => {
-            go(undefined);
-          }}
-        />
-        <h3 ref={heading} tabIndex={-1}>
-          {open.title}
-        </h3>
-        {shows.length === 0 ? null : (
-          <div aria-label={_(HELP_SHOW_ME)} className="m-help__show" role="group">
-            <span aria-hidden="true">{_(HELP_SHOW_ME)}</span>
-            {shows.map((each) => (
-              <Button
-                key={each.id}
-                label={each.title}
-                onClick={() => {
-                  resolve({ kind: 'show', command: each.id });
-                }}
-              />
-            ))}
-          </div>
-        )}
-        {open.blocks.map(block)}
-      </article>
+      <>
+        {/* BACK STAYS IN VIEW above the article, which scrolls under it. */}
+        <div className="m-help__back">
+          <Button
+            label={HELP_BACK}
+            icon="ChevronLeft"
+            variant="quiet"
+            onClick={() => {
+              go(undefined);
+            }}
+          />
+        </div>
+        <DialogScroll>
+          <article className="m-help__article">
+            <h3 ref={heading} tabIndex={-1}>
+              {open.title}
+            </h3>
+            {shows.length === 0 ? null : (
+              <div aria-label={_(HELP_SHOW_ME)} className="m-help__show" role="group">
+                <span aria-hidden="true">{_(HELP_SHOW_ME)}</span>
+                {shows.map((each) => (
+                  <Button
+                    key={each.id}
+                    label={each.title}
+                    onClick={() => {
+                      resolve({ kind: 'show', command: each.id });
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+            {open.blocks.map(block)}
+          </article>
+        </DialogScroll>
+        <DialogFooter dismissal="close" />
+      </>
     );
   }
 
   const searching = query.trim() !== '';
   return (
-    <div className="m-help" ref={list}>
-      <Input label={HELP_SEARCH} onValueChange={setQuery} value={query} />
-      <p className="m-help__count" role="status">
-        {searching ? (found.length === 0 ? _(HELP_NONE) : _(HELP_ARTICLE_COUNT, { count: found.length })) : null}
-      </p>
-      {searching ? (
-        <ArticleList articles={found} onOpen={openArticle} />
-      ) : (
-        <>
-          {here.length === 0 ? null : (
-            <section aria-labelledby="m-help-here">
-              <h3 id="m-help-here">{_(HELP_HERE)}</h3>
-              <ArticleList articles={here} onOpen={openArticle} />
-            </section>
-          )}
-          <section aria-labelledby="m-help-all">
-            <h3 id="m-help-all">{_(HELP_ALL)}</h3>
-            <ArticleList articles={HELP_ARTICLES} onOpen={openArticle} />
-          </section>
-        </>
-      )}
-    </div>
+    <>
+      {/* THE SEARCH STAYS IN VIEW above the list, which scrolls under it. */}
+      <div className="m-help" ref={list}>
+        <Input label={HELP_SEARCH} onValueChange={setQuery} value={query} />
+        <p className="m-help__count" role="status">
+          {searching ? (found.length === 0 ? _(HELP_NONE) : _(HELP_ARTICLE_COUNT, { count: found.length })) : null}
+        </p>
+      </div>
+      <DialogScroll>
+        {searching ? (
+          <ArticleList articles={found} onOpen={openArticle} />
+        ) : (
+          <>
+            {here.length === 0 ? null : (
+              <DialogSection title={HELP_HERE}>
+                <ArticleList articles={here} onOpen={openArticle} />
+              </DialogSection>
+            )}
+            <DialogSection title={HELP_ALL}>
+              <ArticleList articles={HELP_ARTICLES} onOpen={openArticle} />
+            </DialogSection>
+          </>
+        )}
+      </DialogScroll>
+      <DialogFooter dismissal="close" />
+    </>
   );
 }

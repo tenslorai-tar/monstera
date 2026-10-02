@@ -16,6 +16,7 @@ import {
   SPELL_CHECK_UNAVAILABLE,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogScroll } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { languageTitle } from '../spelling/languages.js';
 import type { SpellCheckAnswer } from './spellCheckResult.js';
@@ -78,48 +79,53 @@ export default function SpellCheckBody({
 
   if (!available) {
     return (
-      <div className="m-spell-check">
+      <>
         <p className="m-spell-check__unavailable" role="status">
           {_(SPELL_CHECK_UNAVAILABLE)}
         </p>
-      </div>
+        <DialogFooter dismissal="ok" />
+      </>
     );
   }
 
   return (
-    <div className="m-spell-check">
-      {/* The dictionary is named because a reader looking at a list of words
-          their document uses needs to know what it was judged against — and
-          because with one language shipped there is no control that would
-          otherwise say so. */}
-      <p className="m-spell-check__language">
-        {_(SPELL_CHECK_LANGUAGE, { language: _(languageTitle(language)) })}
-      </p>
-      {pagesChecked < pageCount ? (
-        <p className="m-spell-check__partial" data-partial="true" role="status">
-          {_(SPELL_CHECK_PARTIAL, { counted: pagesChecked, total: pageCount })}
+    <>
+      <DialogScroll>
+        {/* The dictionary is named because a reader looking at a list of words
+            their document uses needs to know what it was judged against — and
+            because with one language shipped there is no control that would
+            otherwise say so. */}
+        <p className="m-dialog-section__note m-spell-check__language">
+          {_(SPELL_CHECK_LANGUAGE, { language: _(languageTitle(language)) })}
         </p>
-      ) : null}
-      {misspellings.length === 0 ? (
-        <p className="m-spell-check__clean">{_(SPELL_CHECK_CLEAN)}</p>
-      ) : (
-        <>
+        {pagesChecked < pageCount ? (
+          <p className="m-spell-check__partial" data-partial="true" role="status">
+            {_(SPELL_CHECK_PARTIAL, { counted: pagesChecked, total: pageCount })}
+          </p>
+        ) : null}
+        {misspellings.length === 0 ? (
+          <p className="m-spell-check__clean">{_(SPELL_CHECK_CLEAN)}</p>
+        ) : (
+          // ONE PATTERN ROW PER WORD: the word and where it is on the left, what could replace it under, and the add at
+          // the row's end, where every row keeps its control.
           <ul className="m-spell-check__list">
             {misspellings.map((entry) => (
-              <li className="m-spell-check__row" key={entry.word}>
-                <span className="m-spell-check__word">{entry.word}</span>
-                <span className="m-spell-check__where">
-                  {_(SPELL_CHECK_OCCURRENCES, { count: entry.occurrences })}
-                  {', '}
-                  {_(SPELL_CHECK_FIRST_PAGE, { page: entry.firstPage + 1 })}
-                </span>
-                <span className="m-spell-check__suggestions">
-                  {entry.suggestions.length === 0
-                    ? _(SPELL_CHECK_NO_SUGGESTIONS)
-                    : `${_(SPELL_CHECK_SUGGESTIONS)}: ${entry.suggestions.join(', ')}`}
+              <li className="m-dialog-row m-spell-check__row" key={entry.word}>
+                <span className="m-dialog-row__text">
+                  <span className="m-dialog-row__label m-spell-check__word">{entry.word}</span>
+                  <span className="m-dialog-row__note m-spell-check__where">
+                    {_(SPELL_CHECK_OCCURRENCES, { count: entry.occurrences })}
+                    {', '}
+                    {_(SPELL_CHECK_FIRST_PAGE, { page: entry.firstPage + 1 })}
+                  </span>
+                  <span className="m-dialog-row__note m-spell-check__suggestions">
+                    {entry.suggestions.length === 0
+                      ? _(SPELL_CHECK_NO_SUGGESTIONS)
+                      : `${_(SPELL_CHECK_SUGGESTIONS)}: ${entry.suggestions.join(', ')}`}
+                  </span>
                 </span>
                 {added.includes(entry.word) ? (
-                  <span className="m-spell-check__added" data-added="true">
+                  <span className="m-dialog-row__note m-spell-check__added" data-added="true">
                     {_(SPELL_CHECK_ADDED)}
                   </span>
                 ) : (
@@ -134,6 +140,12 @@ export default function SpellCheckBody({
               </li>
             ))}
           </ul>
+        )}
+      </DialogScroll>
+      {misspellings.length === 0 ? (
+        <DialogFooter dismissal="close" />
+      ) : (
+        <DialogFooter>
           <Button
             disabled={added.length === 0}
             label={SPELL_CHECK_SAVE}
@@ -149,8 +161,8 @@ export default function SpellCheckBody({
             values={{ count: added.length }}
             variant="primary"
           />
-        </>
+        </DialogFooter>
       )}
-    </div>
+    </>
   );
 }

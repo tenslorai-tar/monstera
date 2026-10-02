@@ -549,6 +549,11 @@ export interface BrowserShimOptions {
    * browser — so a case that wants the write that follows a translation hands one in.
    */
   readonly translation?: ChannelResult<'ai.translatePage'>;
+  /**
+   * What `cloud.status` answers. Absent is every provider not configured, what a build without client values is — so
+   * a case that draws Cloud storage's signed-in and signed-out sections hands their states in.
+   */
+  readonly cloudStatus?: ChannelResult<'cloud.status'>;
   /** What `ai.models` answers. Absent is an empty list, what a build with no provider offers. */
   readonly aiModels?: ChannelResult<'ai.models'>;
   /**
@@ -2213,7 +2218,11 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // is what a build without its values is — not configured (ADR-0091 Decision 2).
     'cloud.status': () =>
       Promise.resolve(
-        ok({ providers: CLOUD_PROVIDER_IDS.map((provider) => ({ provider, state: 'not-configured' as const })) }),
+        ok(
+          options.cloudStatus ?? {
+            providers: CLOUD_PROVIDER_IDS.map((provider) => ({ provider, state: 'not-configured' as const })),
+          },
+        ),
       ),
     'cloud.signIn': () => Promise.resolve(ok({ kind: 'refused' as const, reason: 'not-configured' as const })),
     'cloud.signOut': () => Promise.resolve(ok({ state: 'not-configured' as const })),
