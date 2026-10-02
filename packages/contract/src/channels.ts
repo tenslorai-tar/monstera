@@ -132,18 +132,16 @@ import {
  * over the measured maximum and is about 1% of `main`'s 1.5 GB budget, so a
  * request at the bound is nowhere near a figure the budget notices.
  *
- * ## What this refuses that is not an attack
+ * ## An object larger than this is read in pieces, never refused
  *
- * A document holding one object larger than this cannot be rendered: PDF.js asks
- * for the object whole, and a range cannot be answered in several calls —
- * measured, the reader completes and is deleted after the first chunk. So the
- * failure mode is real and it is the honest one, because the alternative is a
- * channel that will hand over a 300 MB object and call L11 satisfied.
- *
- * **The trigger, so this is a number with an expiry rather than a guess:** the
- * first document that fails to render with a refused range is the evidence that
- * this bound is wrong, and the fix is a measurement of what such documents
- * actually contain — not a larger round number.
+ * PDF.js asks for an object whole and must be answered in ONE call — measured,
+ * its reader completes and is deleted after the first chunk. So a scan stored as
+ * one image past this bound used to be a page that never drew. The renderer's
+ * transport now reads such a range in pieces of at most this size and answers
+ * PDF.js once with the joined bytes (`documentTransport.ts`, 2026-10-02;
+ * `largeObject.pw.ts` draws an 18,750,000-byte image). This bound is what one
+ * read carries, which is L11's *per operation*; the joined copy is bounded by the
+ * object PDF.js asked for.
  */
 export const MAX_RANGE_BYTES = 16 * 1024 * 1024;
 
