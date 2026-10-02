@@ -62,3 +62,11 @@
   each, and both lines say how many — ADR-0088's consequence, twice.
 - A fifth scope added to the contract must say whether it pairs; the schema's refinement is
   written over the scope names, so it is not silently pairable.
+
+## Correction, 2026-10-02 — the rejected list is withdrawn
+
+The owner's answer of 2 October adds *All Open Docs* to the Context menu, which is the list rejected above.
+[ADR-0134](0134-an-ask-about-every-open-document-carries-one-window-each-inside-the-one-bound.md) takes it, and answers
+this ADR's reason rather than setting it aside: each document's share of the bound is said to the person and to the
+model. The pair's frame is the one ADR-0134 extends, so `[Left p. 3]` and `[Doc 2 p. 3]` are spellings of one frame.
+The pair itself has had no route since Side by Side replaced the compare pane (ADR-0131).
