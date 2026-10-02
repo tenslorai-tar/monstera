@@ -6,8 +6,9 @@ import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { activateCatalogue, i18n } from '../i18n.js';
+import { DIALOG_CANCEL } from '../messages/en.js';
 import { Button } from './Button.js';
-import { Dialog } from './Dialog.js';
+import { Dialog, DialogChoices, DialogFooter, DialogRow } from './Dialog.js';
 
 /**
  * `closeLabel` travels to `IconButton` as a KEY and is resolved there, so this
@@ -167,5 +168,77 @@ describe('Dialog', () => {
         expect(dialog.contains(document.activeElement)).toBe(true);
       });
     });
+  });
+});
+
+describe('the dialog pattern', () => {
+  const QUESTION = messageKey('dialog.pattern-test.question');
+  const QUESTION_NOTE = messageKey('dialog.pattern-test.question-note');
+  const FIRST = messageKey('dialog.pattern-test.first');
+  const FIRST_NOTE = messageKey('dialog.pattern-test.first-note');
+  const SECOND = messageKey('dialog.pattern-test.second');
+  const SECOND_NOTE = messageKey('dialog.pattern-test.second-note');
+  activateCatalogue('en', {
+    [TITLE]: 'Rename document',
+    [CLOSE]: 'Close',
+    [CONFIRM]: 'Confirm',
+    [OUTSIDE]: 'Outside',
+    [DIALOG_CANCEL]: 'Cancel',
+    [QUESTION]: 'What to keep',
+    [QUESTION_NOTE]: 'How much of the page',
+    [FIRST]: 'Everything',
+    [FIRST_NOTE]: 'Text and pictures',
+    [SECOND]: 'Words',
+    [SECOND_NOTE]: 'Only the text',
+  });
+
+  it("the footer's Cancel closes exactly as the header's close control does, and confirms nothing", () => {
+    const onOpenChange = vi.fn();
+    const onConfirm = vi.fn();
+    render(
+      <Dialog closeLabel={CLOSE} onOpenChange={onOpenChange} open title={TITLE}>
+        <DialogFooter>
+          <Button label={CONFIRM} onClick={onConfirm} />
+        </DialogFooter>
+      </Dialog>,
+    );
+    screen.getByRole('button', { name: 'Cancel' }).click();
+    // THE ARGUMENT, for the close control's reason above; and the action beside it untouched, because a Cancel that
+    // also ran the action would pass the first assertion.
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('choices are one group named by the question, checked as the value says, and a choice reports its value', () => {
+    const onChange = vi.fn();
+    render(
+      <DialogChoices<'first' | 'second'>
+        label={QUESTION}
+        note={QUESTION_NOTE}
+        onChange={onChange}
+        options={[
+          { value: 'first', label: FIRST, note: FIRST_NOTE },
+          { value: 'second', label: SECOND, note: SECOND_NOTE },
+        ]}
+        value="first"
+      />,
+    );
+    expect(screen.getByRole('radiogroup', { name: 'What to keep How much of the page' })).toBeDefined();
+    const first = screen.getByRole<HTMLInputElement>('radio', { name: 'Everything Text and pictures' });
+    const second = screen.getByRole<HTMLInputElement>('radio', { name: 'Words Only the text' });
+    expect([first.checked, second.checked]).toEqual([true, false]);
+    second.click();
+    expect(onChange).toHaveBeenCalledWith('second');
+  });
+
+  it("a row shows its question and note beside its control, and the control keeps its own name", () => {
+    render(
+      <DialogRow label={QUESTION} note={QUESTION_NOTE}>
+        <Button label={CONFIRM} />
+      </DialogRow>,
+    );
+    expect(screen.getByText('What to keep')).toBeDefined();
+    expect(screen.getByText('How much of the page')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDefined();
   });
 });

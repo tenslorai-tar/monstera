@@ -613,6 +613,98 @@
   color: var(--text);
 }
 
+/* THE DIALOG PATTERN (`Dialog.tsx`, adopted 2026-10-02): Settings' row, in a dialog — the same tokens as
+   `.m-settings-row`, so the two read as one language: a 13 px semibold name, a 12 px muted note, the control at the
+   right, a soft line between rows. */
+.m-dialog-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8) var(--space-24);
+  padding-block: var(--space-10);
+  border-block-end: 1px solid var(--border-soft); /* decorative: separates one question from the next */
+}
+
+.m-dialog-row__text {
+  display: flex;
+  flex: 1 1 22ch;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+.m-dialog-row__label {
+  font-size: var(--font-chrome-13);
+  font-weight: 600;
+}
+
+.m-dialog-row__note {
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+}
+
+.m-dialog-row__control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-inline-size: 0;
+}
+
+/* CHOICES THAT NEED A SENTENCE: the question, then a row per option, the radio at the start and the whole row the
+   target. */
+.m-dialog-choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-block: var(--space-10);
+  border-block-end: 1px solid var(--border-soft); /* decorative: as a row's */
+}
+
+.m-dialog-choices > .m-dialog-row__text {
+  padding-block-end: var(--space-6);
+}
+
+.m-dialog-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-10);
+  padding: var(--space-8) var(--space-10);
+  border-radius: var(--radius-6);
+  cursor: pointer;
+}
+
+.m-dialog-choice:hover {
+  background: var(--surface2);
+}
+
+.m-dialog-choice input {
+  margin-block-start: var(--space-2);
+}
+
+/* THE FOOT: Cancel and the one action at the right, above a line, as the end of a Settings page reads. The rows above
+   it need no line of their own, so the last one's is dropped and the footer draws the one that remains. */
+.m-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-8);
+  margin-block-start: var(--space-8);
+  padding-block-start: var(--space-12);
+  border-block-start: 1px solid var(--border-soft); /* decorative: separates the questions from the answer */
+}
+
+:is(.m-dialog-row, .m-dialog-choices):has(+ .m-dialog-footer) {
+  border-block-end: 0;
+}
+
+/* ONE WIDTH FOR EVERY BODY IN THE PATTERN. The popup shrinks to its content, so without a definite width each dialog
+   was as wide as its longest note and the same rows sat at a different measure in each. A body that ends in the
+   footer is in the pattern by construction, so the rule keys on that rather than on a class each dialog must
+   remember. */
+.m-dialog:has(.m-dialog-footer) {
+  inline-size: 36rem;
+}
+
 .m-dialog__body {
   display: flex;
   flex-direction: column;

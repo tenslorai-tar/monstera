@@ -5,7 +5,8 @@ import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN } from '../messages/en.js';
+import { CLOSE_LABEL, EN, EXPORT_PAGE_IMAGES_TITLE } from '../messages/en.js';
+import { Dialog } from '../primitives/Dialog.js';
 import ExportPageImagesBody from './ExportPageImagesBody.js';
 
 /**
@@ -18,9 +19,16 @@ import ExportPageImagesBody from './ExportPageImagesBody.js';
  * answer, since that test hands the command an answer it wrote itself.
  */
 
+/** IN THE DIALOG, as the registry mounts it: the footer's Cancel is the popup's own close and exists only inside one. */
 function Wrapped({ children }: { children: ReactNode }): ReactElement {
   activateCatalogue('en', EN);
-  return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
+  return (
+    <I18nProvider i18n={i18n}>
+      <Dialog closeLabel={CLOSE_LABEL} onOpenChange={() => undefined} open title={EXPORT_PAGE_IMAGES_TITLE}>
+        {children}
+      </Dialog>
+    </I18nProvider>
+  );
 }
 
 function opened(): { readonly resolve: ReturnType<typeof vi.fn> } {
@@ -33,8 +41,10 @@ function opened(): { readonly resolve: ReturnType<typeof vi.fn> } {
   return { resolve };
 }
 
-const QUALITY = (): HTMLElement | null => screen.queryByRole('textbox', { name: 'Quality (1–100)' });
-const EXPORT = (): HTMLElement => screen.getByRole('button');
+const QUALITY = (): HTMLElement | null => screen.queryByRole('textbox', { name: 'Quality' });
+const EXPORT = (): HTMLElement => screen.getByRole('button', { name: 'Choose a folder…' });
+/** A format is a segment of the Format group: a toggle, so a button with a pressed state. */
+const FORMAT = (name: string): HTMLElement => screen.getByRole('button', { name });
 
 afterEach(() => {
   cleanup();
@@ -44,7 +54,7 @@ describe('ExportPageImagesBody', () => {
   it('CHOOSING WebP answers WebP, with the quality typed', () => {
     const { resolve } = opened();
 
-    fireEvent.click(screen.getByRole('radio', { name: 'WebP — smaller still, some detail lost' }));
+    fireEvent.click(FORMAT('WebP'));
     const quality = QUALITY();
     if (quality === null) throw new Error('WebP is lossy, and the dialog asked no quality for it');
     fireEvent.change(quality, { target: { value: '40' } });
@@ -58,11 +68,11 @@ describe('ExportPageImagesBody', () => {
     // showed it for every format would pass.
     const { resolve } = opened();
 
-    fireEvent.click(screen.getByRole('radio', { name: 'JPEG — smaller files, some detail lost' }));
+    fireEvent.click(FORMAT('JPEG'));
     const quality = QUALITY();
     if (quality === null) throw new Error('JPEG is lossy, and the dialog asked no quality for it');
     fireEvent.change(quality, { target: { value: '0' } });
-    fireEvent.click(screen.getByRole('radio', { name: 'PNG — exact, larger files' }));
+    fireEvent.click(FORMAT('PNG'));
 
     expect(QUALITY()).toBeNull();
     fireEvent.click(EXPORT());

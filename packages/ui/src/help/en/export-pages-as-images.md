@@ -11,10 +11,10 @@ Export pages as images saves each page as a picture file, with its comments and 
 ## Steps
 
 1. In the rail, choose **Home**, then **Image…** in the **Export** group (its full name is **Export pages as images…**).
-2. Choose **Every page**, or **These pages** and type the pages, for example `1-3, 5`.
-3. In **Format**, choose **PNG — exact, larger files**, **JPEG — smaller files, some detail lost** or **WebP — smaller still, some detail lost**.
-4. Set **Resolution (dots per inch)**, and for JPEG or WebP the **Quality (1–100)**.
-5. Confirm, then choose the folder to save into.
+2. In **Pages**, choose **Every page**, or **These pages** and type them in **Page numbers**, for example `1-3, 5`.
+3. In **Format**, choose **PNG**, **JPEG** or **WebP**. PNG keeps every detail; JPEG and WebP make smaller files and lose a little.
+4. Set the **Resolution** in dots per inch, and for JPEG or WebP the **Quality**, from 1 to 100.
+5. Choose **Choose a folder…**, then the folder to save into. **Cancel** closes the window and saves nothing.
 
 ![The Export pages as images window with These pages, Format and Resolution](screenshot:export-pages-as-images-1)
 

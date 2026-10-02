@@ -37,6 +37,7 @@ import { messageKey } from '@monstera/shared';
 
 export const OPEN_DOCUMENT_TITLE = messageKey('command.open-document.title');
 export const CLOSE_LABEL = messageKey('action.close.label');
+export const DIALOG_CANCEL = messageKey('action.dialog-cancel.label');
 export const DOCUMENT_SURFACE_LABEL = messageKey('surface.document.label');
 export const THEME_TITLE = messageKey('setting.appearance-theme.title');
 export const BACKGROUND_GLOW_TITLE = messageKey('setting.appearance-background-glow.title');
@@ -318,9 +319,13 @@ export const EXPORT_WORD_COMMAND_TITLE = messageKey('command.export-word.title')
 export const EXPORT_POWERPOINT_COMMAND_TITLE = messageKey('command.export-powerpoint.title');
 export const EXPORT_WORD_TITLE = messageKey('dialog.export-word.title');
 export const EXPORT_WORD_MODE = messageKey('dialog.export-word.mode');
+export const EXPORT_WORD_MODE_NOTE = messageKey('dialog.export-word.mode-note');
 export const EXPORT_WORD_RICH = messageKey('dialog.export-word.rich');
+export const EXPORT_WORD_RICH_NOTE = messageKey('dialog.export-word.rich-note');
 export const EXPORT_WORD_LAYOUT = messageKey('dialog.export-word.layout');
+export const EXPORT_WORD_LAYOUT_NOTE = messageKey('dialog.export-word.layout-note');
 export const EXPORT_WORD_TEXT = messageKey('dialog.export-word.text');
+export const EXPORT_WORD_TEXT_NOTE = messageKey('dialog.export-word.text-note');
 export const EXPORT_WORD_APPLY = messageKey('dialog.export-word.apply');
 export const EXPORT_PDFA_COMMAND_TITLE = messageKey('command.export-pdfa.title');
 export const PDFA_REMOVALS_TITLE = messageKey('dialog.pdfa-removals.title');
@@ -444,16 +449,21 @@ export const EXPORT_EXCEL_TABLE = messageKey('dialog.export-excel.table');
 export const EXPORT_EXCEL_CELL = messageKey('dialog.export-excel.cell');
 export const EXPORT_EXCEL_CLIPPED = messageKey('dialog.export-excel.clipped');
 export const EXPORT_EXCEL_TRUNCATED = messageKey('dialog.export-excel.truncated');
+export const EXPORT_PAGE_IMAGES_PAGES = messageKey('dialog.export-page-images.pages');
+export const EXPORT_PAGE_IMAGES_PAGES_NOTE = messageKey('dialog.export-page-images.pages-note');
 export const EXPORT_PAGE_IMAGES_ALL = messageKey('dialog.export-page-images.all');
 export const EXPORT_PAGE_IMAGES_RANGES = messageKey('dialog.export-page-images.ranges');
 export const EXPORT_PAGE_IMAGES_LABEL = messageKey('dialog.export-page-images.label');
 export const EXPORT_PAGE_IMAGES_EMPTY = messageKey('dialog.export-page-images.empty');
 export const EXPORT_PAGE_IMAGES_FORMAT = messageKey('dialog.export-page-images.format');
+export const EXPORT_PAGE_IMAGES_FORMAT_NOTE = messageKey('dialog.export-page-images.format-note');
 export const EXPORT_PAGE_IMAGES_PNG = messageKey('dialog.export-page-images.png');
 export const EXPORT_PAGE_IMAGES_JPEG = messageKey('dialog.export-page-images.jpeg');
 export const EXPORT_PAGE_IMAGES_WEBP = messageKey('dialog.export-page-images.webp');
 export const EXPORT_PAGE_IMAGES_DPI = messageKey('dialog.export-page-images.dpi');
+export const EXPORT_PAGE_IMAGES_DPI_NOTE = messageKey('dialog.export-page-images.dpi-note');
 export const EXPORT_PAGE_IMAGES_QUALITY = messageKey('dialog.export-page-images.quality');
+export const EXPORT_PAGE_IMAGES_QUALITY_NOTE = messageKey('dialog.export-page-images.quality-note');
 export const EXPORT_PAGE_IMAGES_OUT_OF_BOUNDS = messageKey('dialog.export-page-images.out-of-bounds');
 export const EXPORT_PAGE_IMAGES_FILES = messageKey('dialog.export-page-images.files');
 export const EXPORT_TEXT_COMMAND_TITLE = messageKey('command.export-text.title');
@@ -2303,6 +2313,7 @@ export const CLOUD_PROBLEMS = {
 export const EN: Readonly<Record<MessageKey, string>> = {
   [OPEN_DOCUMENT_TITLE]: 'Open PDF…',
   [CLOSE_LABEL]: 'Close',
+  [DIALOG_CANCEL]: 'Cancel',
   [DOCUMENT_SURFACE_LABEL]: 'Document',
   [THEME_TITLE]: 'Theme',
   // v5-10's Appearance rows. *Also on when Windows asks* is true of the build: `applyMotion` reads both.
@@ -3974,9 +3985,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_POWERPOINT_COMMAND_TITLE]: 'Export to PowerPoint…',
   [EXPORT_WORD_TITLE]: 'Export to Word',
   [EXPORT_WORD_MODE]: 'What to keep',
-  [EXPORT_WORD_RICH]: 'Text and its fonts — editable, flows like a normal document',
-  [EXPORT_WORD_LAYOUT]: 'The page layout — each line where it sits on the page',
-  [EXPORT_WORD_TEXT]: 'Just the words',
+  [EXPORT_WORD_MODE_NOTE]: 'How closely the Word file follows the pages.',
+  [EXPORT_WORD_RICH]: 'Editable text',
+  [EXPORT_WORD_RICH_NOTE]: 'Text and its fonts, flowing like a normal document.',
+  [EXPORT_WORD_LAYOUT]: 'Page layout',
+  [EXPORT_WORD_LAYOUT_NOTE]: 'Each line where it sits on the page.',
+  [EXPORT_WORD_TEXT]: 'Words only',
+  [EXPORT_WORD_TEXT_NOTE]: 'Just the words, with no pictures and no layout.',
   [EXPORT_WORD_APPLY]: 'Choose where to save…',
   [EXPORT_PDFA_COMMAND_TITLE]: 'Export as PDF/A…',
   [PDFA_REMOVALS_TITLE]: 'Saved as PDF/A',
@@ -4113,16 +4128,21 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_EXCEL_CELL]: 'Table {table}, row {row}, column {column}',
   [EXPORT_EXCEL_CLIPPED]: 'This cell is too long to show whole, so it cannot be changed here.',
   [EXPORT_EXCEL_TRUNCATED]: 'This page has more cells than can be shown. The ones not shown are exported as found.',
+  [EXPORT_PAGE_IMAGES_PAGES]: 'Pages',
+  [EXPORT_PAGE_IMAGES_PAGES_NOTE]: 'Each page becomes one picture file.',
   [EXPORT_PAGE_IMAGES_ALL]: 'Every page',
   [EXPORT_PAGE_IMAGES_RANGES]: 'These pages',
-  [EXPORT_PAGE_IMAGES_LABEL]: 'Pages',
+  [EXPORT_PAGE_IMAGES_LABEL]: 'Page numbers',
   [EXPORT_PAGE_IMAGES_EMPTY]: 'Type the pages to export, for example 1-3, 5.',
   [EXPORT_PAGE_IMAGES_FORMAT]: 'Format',
-  [EXPORT_PAGE_IMAGES_PNG]: 'PNG — exact, larger files',
-  [EXPORT_PAGE_IMAGES_JPEG]: 'JPEG — smaller files, some detail lost',
-  [EXPORT_PAGE_IMAGES_WEBP]: 'WebP — smaller still, some detail lost',
-  [EXPORT_PAGE_IMAGES_DPI]: 'Resolution (dots per inch)',
-  [EXPORT_PAGE_IMAGES_QUALITY]: 'Quality (1–100)',
+  [EXPORT_PAGE_IMAGES_FORMAT_NOTE]: 'PNG keeps every detail. JPEG and WebP make smaller files and lose a little.',
+  [EXPORT_PAGE_IMAGES_PNG]: 'PNG',
+  [EXPORT_PAGE_IMAGES_JPEG]: 'JPEG',
+  [EXPORT_PAGE_IMAGES_WEBP]: 'WebP',
+  [EXPORT_PAGE_IMAGES_DPI]: 'Resolution',
+  [EXPORT_PAGE_IMAGES_DPI_NOTE]: 'Dots per inch: 150 for a screen, 300 for print.',
+  [EXPORT_PAGE_IMAGES_QUALITY]: 'Quality',
+  [EXPORT_PAGE_IMAGES_QUALITY_NOTE]: 'From 1 to 100. Higher keeps more detail and makes larger files.',
   // THE BOUNDS ARE IN THE MESSAGE, because a disabled button with no reason is a
   // control that looks broken.
   [EXPORT_PAGE_IMAGES_OUT_OF_BOUNDS]:
