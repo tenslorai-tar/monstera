@@ -41,8 +41,6 @@ export const DIALOG_CANCEL = messageKey('action.dialog-cancel.label');
 export const DIALOG_OK = messageKey('action.dialog-ok.label');
 export const DOCUMENT_SURFACE_LABEL = messageKey('surface.document.label');
 export const THEME_TITLE = messageKey('setting.appearance-theme.title');
-export const BACKGROUND_GLOW_TITLE = messageKey('setting.appearance-background-glow.title');
-export const BACKGROUND_GLOW_DESCRIPTION = messageKey('setting.appearance-background-glow.description');
 export const REDUCE_MOTION_TITLE = messageKey('setting.appearance-reduce-motion.title');
 export const REDUCE_MOTION_DESCRIPTION = messageKey('setting.appearance-reduce-motion.description');
 export const THUMBNAIL_SIZE_TITLE = messageKey('setting.viewing-thumbnail-size.title');
@@ -2384,9 +2382,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [DOCUMENT_SURFACE_LABEL]: 'Document',
   [THEME_TITLE]: 'Theme',
   // v5-10's Appearance rows. *Also on when Windows asks* is true of the build: `applyMotion` reads both.
-  [BACKGROUND_GLOW_TITLE]: 'Background glow',
-  [BACKGROUND_GLOW_DESCRIPTION]:
-    'The soft light behind the window, in your accent colour. Turn it off for a plain background. High contrast never shows it.',
   [REDUCE_MOTION_TITLE]: 'Reduce motion',
   [REDUCE_MOTION_DESCRIPTION]:
     'Turns off the transitions and animations in the interface. Also on whenever Windows asks for reduced motion.',

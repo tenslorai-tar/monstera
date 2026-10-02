@@ -2,6 +2,7 @@ import { ACCENT_LIGHTS, NO_TURN, channels, channelsWithAlpha, turnFor, turnLight
 import { describe, expect, it } from 'vitest';
 
 // THE FILE'S TEXT through the bundler, as the renderer's own build would read it: this package may not import Node.
+import APP from '../app.css?raw';
 import TOKENS from '../tokens.css?raw';
 import { ACCENT_PRESETS } from './accentPresets.js';
 
@@ -36,8 +37,8 @@ describe.each(['dark', 'light'] as const)('the %s theme’s lights', (theme) => 
   const accent = channels(values.get('accent') ?? '');
 
   it('declares every light the accent turns, so none is turned from nothing', () => {
-    // THE LIST'S CONTROL: an empty list would satisfy every case below.
-    expect(ACCENT_LIGHTS.length).toBeGreaterThan(20);
+    // THE LIST'S CONTROL: an empty list would satisfy every case below. Fifteen since the ground lost its lights.
+    expect(ACCENT_LIGHTS.length).toBeGreaterThanOrEqual(15);
     expect(ACCENT_LIGHTS.filter((name) => !values.has(name))).toStrictEqual([]);
   });
 
@@ -64,11 +65,11 @@ describe.each(['dark', 'light'] as const)('the %s theme’s lights', (theme) => 
     expect(others.length).toBeGreaterThanOrEqual(3);
   });
 
-  it.each(others.map((preset) => preset.value))('the sample accent %s MOVES the glow and every tint', (value) => {
+  it.each(others.map((preset) => preset.value))('the sample accent %s MOVES the surfaces’ tints', (value) => {
     const chosen = channels(value);
     if (accent === null || chosen === null) throw new Error('both accents parse');
     const turn = turnFor(chosen, accent);
-    const still = ['glow-green', 'tint-start', 'tint-canvas', 'glow-teal'].filter((name) => {
+    const still = ['tint-mica', 'tint-ribbon', 'tint-panel', 'tint-hero'].filter((name) => {
       const design = values.get(name) ?? '';
       const turned = turnLight(design, turn);
       return turned === null || same(turned, design);
@@ -78,8 +79,32 @@ describe.each(['dark', 'light'] as const)('the %s theme’s lights', (theme) => 
 
   it('CONTROL: the default green, chosen by its value, is unchanged — the move above is the accent’s, not the rule’s', () => {
     if (accent === null) throw new Error('the theme declares its accent');
-    const design = values.get('glow-green') ?? '';
+    const design = values.get('tint-mica') ?? '';
     const turned = turnLight(design, turnFor(accent, accent));
     expect(turned !== null && same(turned, design)).toBe(true);
   });
+
+  /**
+   * ADR-0140, the owner's review of 0.1.9.0: no light on the ground, the page area or round a page, and the grain kept.
+   * Read from the theme's own declarations, so a light put back under any name in `--ambient` or `--canvas-bg` is red.
+   */
+  it('the ground has NO LIGHT: the ambient and the page area are plain, no page halo, and the grain is drawn', () => {
+    expect(values.get('ambient')).toMatch(/^linear-gradient\(/u);
+    expect(values.get('ambient')).not.toMatch(/radial-gradient/u);
+    expect(values.get('canvas-bg')).toBe('var(--canvas)');
+    expect(values.get('page-shadow')).not.toMatch(/light-halo/u);
+    expect(Number(values.get('grain-opacity'))).toBeGreaterThan(0);
+  });
+});
+
+it('the start screen’s logo draws no green shadow under it — a glow by another property (ADR-0140)', () => {
+  const rule = /\.m-start-logo\s*\{([^}]*)\}/u.exec(APP)?.[1];
+  expect(rule).toBeDefined();
+  expect(rule).not.toMatch(/drop-shadow|box-shadow/u);
+});
+
+it('CONTROL: the token file still draws a gradient and a halo-coloured glow, so the case above reads real declarations', () => {
+  // The button glows (`--glow`) use the halo colour on purpose; a reader that found nothing would pass the case above.
+  expect(block('dark').get('glow')).toMatch(/light-halo/u);
+  expect(TOKENS).not.toMatch(/radial-gradient/u);
 });

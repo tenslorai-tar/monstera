@@ -51,7 +51,7 @@ import { EN } from './messages/en.js';
 import { PSEUDO_LOCALE, pseudoCatalogue, pseudoMessage } from './messages/pseudo.js';
 import { SettingsRegistry } from './registries/settings.js';
 import { ALL_SETTINGS } from './settings/all.js';
-import { BACKGROUND_GLOW_SETTING, REDUCE_MOTION_SETTING, THEME_SETTING } from './settings/appearance.js';
+import { REDUCE_MOTION_SETTING, THEME_SETTING } from './settings/appearance.js';
 import { FIRST_PAGE } from './pageNumbering.js';
 import { SettingsStore } from './settingsStore.js';
 import { resetSharedPainter } from './searchHighlight.js';
@@ -2580,17 +2580,19 @@ describe('App', () => {
     expect(listed).toStrictEqual(expected);
   });
 
-  it('BACKGROUND GLOW reaches the root as the one attribute the stylesheet reads, and follows the setting (ADR-0114)', async () => {
+  it('NO BACKGROUND GLOW (ADR-0140): the shell writes no glow attribute and no row for it, while the theme still applies', async () => {
+    delete document.documentElement.dataset['glow'];
     const settings = freshSettings();
     const { client } = recordingClient({ kind: 'cancelled' });
     render(<App client={client} settings={settings} />);
-    expect(document.documentElement.dataset['glow']).toBe('on');
     await act(async () => {
-      settings.set(BACKGROUND_GLOW_SETTING.id, false);
+      settings.set(THEME_SETTING.id, 'light');
       await Promise.resolve();
     });
-    // CONTROL IN ONE CASE: the same root, the other value — the attribute follows the setting, not a default.
-    expect(document.documentElement.dataset['glow']).toBe('off');
+    // CONTROL: the effect that wrote the glow attribute ran — it wrote the theme the setting asked for.
+    expect(document.documentElement.dataset['theme']).toBe('light');
+    expect(document.documentElement.dataset['glow']).toBeUndefined();
+    expect(ALL_SETTINGS.map((setting) => setting.id)).not.toContain('appearance.background-glow');
   });
 
   it('F6 moves between the PANES in the real shell, and Shift+F6 back (item 12)', async () => {

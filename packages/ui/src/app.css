@@ -400,11 +400,6 @@ optgroup {
   text-align: center;
 }
 
-/* v5-01's glow over the start screen: the accent's wash from the top centre, over the window's own light. */
-.m-start-area {
-  background: radial-gradient(ellipse 60% 50% at 50% 0%, var(--tint-start), transparent 70%);
-}
-
 /*
  * §10.3's hero: the supplied artwork, the wordmark, "PDF EDITOR" letterspaced beneath, and the tagline (v5-01: 12 px
  * between the artwork and the name, 12 to "PDF EDITOR", 14 to the tagline).
@@ -453,12 +448,11 @@ optgroup {
   }
 }
 
-/* ADR-0002: the brand's height, and the width the image's own ratio gives it — never stretched. v5 lifts it on a soft
-   green shadow. */
+/* ADR-0002: the brand's height, and the width the image's own ratio gives it — never stretched. No shadow under it: v5
+   lifted it on a soft green one, which is a glow, and the ground has none (ADR-0140). */
 .m-start-logo {
   block-size: var(--logo-hero);
   inline-size: auto;
-  filter: drop-shadow(0 12px 28px var(--accent-soft));
 }
 
 /* "PDF EDITOR" in the brand face, the accent's text colour, letterspaced (v5: 16 px, 0.2em) — not grey. */

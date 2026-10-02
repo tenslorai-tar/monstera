@@ -337,7 +337,6 @@ import { ToolRegistry } from './registries/tools.js';
 import { DialogRegistry } from './registries/dialogs.js';
 import { DialogHost, useDialogHost } from './surfaces/DialogHost.js';
 import {
-  BACKGROUND_GLOW_SETTING,
   HIGH_CONTRAST_QUERIES,
   REDUCED_MOTION_QUERY,
   REDUCE_MOTION_SETTING,
@@ -345,7 +344,6 @@ import {
   THUMBNAIL_SIZE_SETTING,
   type Theme,
   applyAppearance,
-  applyGlow,
   applyMotion,
   highContrastWanted,
 } from './settings/appearance.js';
@@ -3674,8 +3672,6 @@ function useTheme(settings: SettingsStore): void {
       // next action is unaffected. What a refusal needs is to be findable, and
       // the log is where a diagnostic goes.
       if (refusal !== undefined) console.warn(`Accent not applied: ${refusal}`);
-      // THE BACKGROUND GLOW (ADR-0114): one attribute; `tokens.css` keeps high contrast flat whatever it says.
-      applyGlow(root, settings.get(BACKGROUND_GLOW_SETTING.id) === true);
     };
     apply();
 
@@ -3688,7 +3684,7 @@ function useTheme(settings: SettingsStore): void {
 
     // `watch`, not `subscribe`: the stored theme arrives as a hydrate one round trip
     // after this first applies the fallback, and a hydrate names no single id.
-    const unsubscribe = settings.watch([THEME_SETTING.id, ACCENT_SETTING.id, BACKGROUND_GLOW_SETTING.id], apply);
+    const unsubscribe = settings.watch([THEME_SETTING.id, ACCENT_SETTING.id], apply);
 
     // MOTION, from the setting and the platform together (`applyMotion`), re-applied when either changes.
     const motion = (): void => {

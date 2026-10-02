@@ -1,8 +1,6 @@
 import { z } from 'zod';
 
 import {
-  BACKGROUND_GLOW_DESCRIPTION,
-  BACKGROUND_GLOW_TITLE,
   REDUCE_MOTION_DESCRIPTION,
   REDUCE_MOTION_TITLE,
   THEME_DESCRIPTION,
@@ -104,25 +102,6 @@ export const REDUCE_MOTION_SETTING: SettingDefinition<z.ZodBoolean> = {
   fallback: false,
   category: 'appearance',
 };
-
-/**
- * *Background glow* (the owner's 27 September list, item 6; ADR-0114): the lights over the window's ground, and its
- * grain. On by default, which is the design; off draws the plain ground. High contrast draws none either way, which
- * `tokens.css` decides, so this setting cannot bring a light into that theme.
- */
-export const BACKGROUND_GLOW_SETTING: SettingDefinition<z.ZodBoolean> = {
-  id: 'appearance.background-glow',
-  title: BACKGROUND_GLOW_TITLE,
-  description: BACKGROUND_GLOW_DESCRIPTION,
-  schema: z.boolean(),
-  fallback: true,
-  category: 'appearance',
-};
-
-/** Puts the glow setting on the root as the one attribute the stylesheet reads. */
-export function applyGlow(root: HTMLElement, on: boolean): void {
-  root.dataset['glow'] = on ? 'on' : 'off';
-}
 
 /** How large the Pages panel draws its page pictures (v5-10's Appearance page). */
 export const THUMBNAIL_SIZE_SETTING: SettingDefinition<z.ZodEnum<{ small: 'small'; medium: 'medium'; large: 'large' }>> = {

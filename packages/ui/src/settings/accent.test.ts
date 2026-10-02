@@ -165,7 +165,7 @@ describe('the ground’s light follows the accent (ADR-0114)', () => {
     const sheet = document.createElement('style');
     sheet.textContent =
       '.m-test-theme { --bg: rgb(12, 19, 16); --surface: rgb(20, 29, 25); --accent: #2fb96a; ' +
-      '--glow-green: rgba(34, 197, 94, 0.3); --tint-canvas: rgba(59, 198, 119, 0.13); }';
+      '--tint-mica: rgba(59, 198, 119, 0.1); --tint-panel: rgba(59, 198, 119, 0.07); }';
     document.head.append(sheet);
     const root = document.createElement('div');
     root.className = 'm-test-theme';
@@ -173,17 +173,17 @@ describe('the ground’s light follows the accent (ADR-0114)', () => {
     return root;
   }
 
-  it('a BLUE accent turns the green glow blue, draws it at the turned strength, and leaves text alone', () => {
+  it('a BLUE accent turns the green tint blue, draws it at the turned strength, and leaves text alone', () => {
     const root = themed();
     expect(applyAccent(root, '#2563eb')).toBeUndefined();
-    const glow = root.style.getPropertyValue('--glow-green');
-    expect(glow).not.toBe('');
-    const [red = 0, green = 0, blue = 0] = channels(glow) ?? [];
+    const tint = root.style.getPropertyValue('--tint-mica');
+    expect(tint).not.toBe('');
+    const [red = 0, green = 0, blue = 0] = channels(tint) ?? [];
     // BLUE NOW LEADS where green did: the light moved with the accent's hue.
     expect(blue).toBeGreaterThan(green);
     expect(blue).toBeGreaterThan(red);
-    expect(glow.endsWith(`, ${String(Math.round(0.3 * TURNED_STRENGTH * 1000) / 1000)})`)).toBe(true);
-    expect(root.style.getPropertyValue('--tint-canvas')).not.toBe('');
+    expect(tint.endsWith(`, ${String(Math.round(0.1 * TURNED_STRENGTH * 1000) / 1000)})`)).toBe(true);
+    expect(root.style.getPropertyValue('--tint-panel')).not.toBe('');
     expect(root.style.getPropertyValue('--text')).toBe('');
   });
 
@@ -191,7 +191,7 @@ describe('the ground’s light follows the accent (ADR-0114)', () => {
     const root = themed();
     applyAccent(root, '#2563eb');
     expect(applyAccent(root, 'theme')).toBeUndefined();
-    expect(root.style.getPropertyValue('--glow-green')).toBe('');
+    expect(root.style.getPropertyValue('--tint-mica')).toBe('');
     expect(root.style.getPropertyValue('--accent')).toBe('');
   });
 
@@ -199,7 +199,7 @@ describe('the ground’s light follows the accent (ADR-0114)', () => {
     const root = themed();
     applyAccent(root, '#2563eb');
     applyAccent(root, '#dc2626');
-    const [red = 0, green = 0, blue = 0] = channels(root.style.getPropertyValue('--glow-green')) ?? [];
+    const [red = 0, green = 0, blue = 0] = channels(root.style.getPropertyValue('--tint-mica')) ?? [];
     // RED LEADS. Turned from the blue it would be read back as the design and turned again, landing elsewhere.
     expect(red).toBeGreaterThan(green);
     expect(red).toBeGreaterThan(blue);
