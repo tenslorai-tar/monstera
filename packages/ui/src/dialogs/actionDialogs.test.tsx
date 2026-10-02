@@ -4,6 +4,20 @@ import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import AiSetupBody from './AiSetupBody.js';
+import AnnotationNoteBody from './AnnotationNoteBody.js';
+import CloseUnsavedBody from './CloseUnsavedBody.js';
+import CloudViewOnlyBody from './CloudViewOnlyBody.js';
+import DocusignSendBody from './DocusignSendBody.js';
+import DonateBody from './DonateBody.js';
+import EditPageObjectBody from './EditPageObjectBody.js';
+import FormFieldListboxBody from './FormFieldListboxBody.js';
+import FormFieldTextBody from './FormFieldTextBody.js';
+import LinkAddressBody from './LinkAddressBody.js';
+import OpenFromUrlBody from './OpenFromUrlBody.js';
+import ReimportExternalEditBody from './ReimportExternalEditBody.js';
+import SecurityUpdateBody from './SecurityUpdateBody.js';
+import SignatureBreakBody from './SignatureBreakBody.js';
+import StaleCopiesBody from './StaleCopiesBody.js';
 import ApplyRedactionsBody from './ApplyRedactionsBody.js';
 import BatesNumberBody from './BatesNumberBody.js';
 import DocumentPasswordBody from './DocumentPasswordBody.js';
@@ -48,8 +62,69 @@ const BODIES: readonly { readonly name: string; readonly body: ReactNode; readon
   { name: 'Set up AI', body: <AiSetupBody secretsAvailable resolve={ignore} update={ignore} />, firstRow: 'Provider' },
 ];
 
+/** Group 3: the shared text forms and the dialogs whose answers are buttons. Same shape, same assertion. */
+const GROUP_3: readonly { readonly name: string; readonly body: ReactNode; readonly firstRow: string | null }[] = [
+  { name: 'Sticky note', body: <AnnotationNoteBody resolve={ignore} update={ignore} />, firstRow: '' },
+  { name: 'Text field', body: <FormFieldTextBody resolve={ignore} update={ignore} />, firstRow: '' },
+  { name: 'List box', body: <FormFieldListboxBody resolve={ignore} update={ignore} />, firstRow: '' },
+  { name: 'Link to an address', body: <LinkAddressBody resolve={ignore} update={ignore} />, firstRow: '' },
+  { name: 'Open from a URL', body: <OpenFromUrlBody resolve={ignore} update={ignore} />, firstRow: '' },
+  { name: 'Send to DocuSign', body: <DocusignSendBody resolve={ignore} update={ignore} />, firstRow: 'Email subject' },
+  {
+    name: 'Edit a page object',
+    body: (
+      <EditPageObjectBody
+        objects={[{ index: 0, kind: 'path', left: 0, bottom: 0, right: 10, top: 10, fill: { red: 0, green: 0, blue: 0, alpha: 255 } }]}
+        truncated={false}
+        resolve={ignore}
+        update={ignore}
+      />
+    ),
+    firstRow: '',
+  },
+  { name: 'Close with changes', body: <CloseUnsavedBody name="a.pdf" resolve={ignore} update={ignore} />, firstRow: null },
+  { name: 'Re-import an edit', body: <ReimportExternalEditBody page={0} resolve={ignore} update={ignore} />, firstRow: null },
+  { name: 'Old copies', body: <StaleCopiesBody backups={['a.bak']} undoCopies={0} resolve={ignore} update={ignore} />, firstRow: null },
+  { name: 'Signature will break', body: <SignatureBreakBody signatures={1} resolve={ignore} update={ignore} />, firstRow: null },
+  {
+    name: 'View only',
+    body: <CloudViewOnlyBody provider="onedrive" moment="opened" resolve={ignore} update={ignore} />,
+    firstRow: null,
+  },
+];
+
 afterEach(() => {
   cleanup();
+});
+
+describe('the text forms and button dialogs in the dialog pattern', () => {
+  for (const { name, body, firstRow } of GROUP_3) {
+    it(`${name}: ends in the footer — Cancel first, its primary action last`, () => {
+      render(<InDialog>{body}</InDialog>);
+      const rows = [...document.querySelectorAll('.m-dialog-row .m-dialog-row__label')].map((label) => label.textContent);
+      if (firstRow !== null) expect(rows.length).toBeGreaterThan(0);
+      if (firstRow !== null && firstRow !== '') expect(rows[0]).toBe(firstRow);
+      const buttons = [...(document.querySelector('.m-dialog-footer')?.querySelectorAll('button') ?? [])];
+      expect(buttons[0]?.textContent).toBe('Cancel');
+      expect(buttons.at(-1)?.classList.contains('m-button--primary')).toBe(true);
+    });
+  }
+
+  it('Close with changes: Cancel, Don’t save, Save — its own Cancel is gone, and the popup’s close answers cancel', () => {
+    render(<InDialog><CloseUnsavedBody name="a.pdf" resolve={ignore} update={ignore} /></InDialog>);
+    const buttons = [...(document.querySelector('.m-dialog-footer')?.querySelectorAll('button') ?? [])];
+    expect(buttons.map((button) => button.textContent)).toStrictEqual(['Cancel', 'Don’t save', 'Save']);
+  });
+
+  it('a notice whose own button IS its dismissal draws no Cancel beside it — and CONTROL: one without does', () => {
+    render(<InDialog><SecurityUpdateBody version="1.2.3.0" resolve={ignore} update={ignore} /></InDialog>);
+    const notice = [...(document.querySelector('.m-dialog-footer')?.querySelectorAll('button') ?? [])];
+    expect(notice.map((button) => button.textContent)).toStrictEqual(['I understand', 'Open Microsoft Store']);
+    cleanup();
+    render(<InDialog><DonateBody resolve={ignore} update={ignore} /></InDialog>);
+    const donate = [...(document.querySelector('.m-dialog-footer')?.querySelectorAll('button') ?? [])];
+    expect(donate.map((button) => button.textContent)).toStrictEqual(['Not now', 'Open the donation page']);
+  });
 });
 
 describe('the action dialogs in the dialog pattern', () => {

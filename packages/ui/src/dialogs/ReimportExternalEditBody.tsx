@@ -4,6 +4,7 @@ import type { ReactElement } from 'react';
 import { REIMPORT_EXTERNAL_EDIT_APPLY, REIMPORT_EXTERNAL_EDIT_SAVED } from '../messages/en.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { ReimportExternalEditAnswer } from './reimportExternalEditResult.js';
 
@@ -30,13 +31,15 @@ export default function ReimportExternalEditBody({
   return (
     <div className="m-reimport-external-edit">
       <p>{_(REIMPORT_EXTERNAL_EDIT_SAVED, { page: pdfjsPageOf(page) })}</p>
-      <Button
-        label={REIMPORT_EXTERNAL_EDIT_APPLY}
-        onClick={() => {
-          resolve({ reimport: true });
-        }}
-        variant="primary"
-      />
+      <DialogFooter>
+        <Button
+          label={REIMPORT_EXTERNAL_EDIT_APPLY}
+          onClick={() => {
+            resolve({ reimport: true });
+          }}
+          variant="primary"
+        />
+      </DialogFooter>
     </div>
   );
 }

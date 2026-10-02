@@ -2,12 +2,12 @@ import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
 
 import {
-  CLOSE_UNSAVED_CANCEL,
   CLOSE_UNSAVED_DISCARD,
   CLOSE_UNSAVED_QUESTION,
   CLOSE_UNSAVED_SAVE,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { CloseUnsavedAnswer } from './closeUnsaved.js';
 
@@ -35,14 +35,9 @@ export default function CloseUnsavedBody({
   return (
     <div className="m-close-unsaved">
       <p>{_(CLOSE_UNSAVED_QUESTION, { name })}</p>
-      <div className="m-close-unsaved__actions">
-        <Button
-          label={CLOSE_UNSAVED_SAVE}
-          onClick={() => {
-            resolve('save');
-          }}
-          variant="primary"
-        />
+      {/* THE PATTERN'S FOOTER: Cancel — the popup's own close, which the close path reads as `cancel` — then discarding,
+          then saving, the primary last. */}
+      <DialogFooter>
         <Button
           label={CLOSE_UNSAVED_DISCARD}
           onClick={() => {
@@ -50,12 +45,13 @@ export default function CloseUnsavedBody({
           }}
         />
         <Button
-          label={CLOSE_UNSAVED_CANCEL}
+          label={CLOSE_UNSAVED_SAVE}
           onClick={() => {
-            resolve('cancel');
+            resolve('save');
           }}
+          variant="primary"
         />
-      </div>
+      </DialogFooter>
     </div>
   );
 }

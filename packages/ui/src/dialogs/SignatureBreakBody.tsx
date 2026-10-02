@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 
 import { SIGNATURE_BREAK_APPLY, SIGNATURE_BREAK_EXPLAINS } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 
 /**
@@ -19,13 +20,15 @@ export default function SignatureBreakBody({
   return (
     <div className="m-signature-break">
       <p>{_(SIGNATURE_BREAK_EXPLAINS, { count: signatures })}</p>
-      <Button
-        label={SIGNATURE_BREAK_APPLY}
-        variant="primary"
-        onClick={() => {
-          resolve({ save: true });
-        }}
-      />
+      <DialogFooter>
+        <Button
+          label={SIGNATURE_BREAK_APPLY}
+          variant="primary"
+          onClick={() => {
+            resolve({ save: true });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

@@ -234,10 +234,21 @@ export function DialogChoices<Value extends string>({
  * popup and closes it exactly as the header's close control does, so a body needs no dismissal of its own and
  * Cancel cannot mean anything different from the X. Its words are the primitive's, so every dialog says the same.
  */
-export function DialogFooter({ children }: { readonly children: ReactNode }): ReactElement {
+export function DialogFooter({
+  children,
+  ownDismissal = false,
+}: {
+  readonly children: ReactNode;
+  /**
+   * The body's own buttons include the answer a dismissal is — *Later*, *Understood* — which the command records, so a
+   * Cancel beside it would be a second way to say the same thing that records nothing. Then the footer draws no Cancel;
+   * the header's close still dismisses.
+   */
+  readonly ownDismissal?: boolean;
+}): ReactElement {
   return (
     <div className="m-dialog-footer">
-      <BaseDialog.Close nativeButton render={<Button label={DIALOG_CANCEL} />} />
+      {ownDismissal ? null : <BaseDialog.Close nativeButton render={<Button label={DIALOG_CANCEL} />} />}
       {children}
     </div>
   );

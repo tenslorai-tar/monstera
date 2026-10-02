@@ -5,6 +5,7 @@ import type { ReactElement } from 'react';
 import { useState } from 'react';
 
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { AnnotationTextAnswer } from './annotationTextResult.js';
 
@@ -121,7 +122,9 @@ export function AnnotationTextForm({
 
   return (
     <div className="m-annotation-text">
-      <Input label={label} onValueChange={setText} value={text} />
+      <DialogRow label={label}>
+        <Input label={label} labelShownBeside onValueChange={setText} value={text} />
+      </DialogRow>
       <p className="m-annotation-text__problem" role="status">
         {over
           ? _(tooLong)
@@ -131,20 +134,22 @@ export function AnnotationTextForm({
               ? ''
               : _(failed)}
       </p>
-      <Button
-        disabled={!usable}
-        label={apply}
-        onClick={() => {
-          // GUARDED AGAIN rather than trusting the disabled attribute, for
-          // `DeletePagesBody`'s reason: a disabled control is a rendering
-          // decision, and the schema behind `resolve` refuses an empty string —
-          // so a mismatch would throw `DialogResultRejected` over the user's
-          // document rather than doing nothing.
-          if (!usable) return;
-          resolve({ text });
-        }}
-        variant="primary"
-      />
+      <DialogFooter>
+        <Button
+          disabled={!usable}
+          label={apply}
+          onClick={() => {
+            // GUARDED AGAIN rather than trusting the disabled attribute, for
+            // `DeletePagesBody`'s reason: a disabled control is a rendering
+            // decision, and the schema behind `resolve` refuses an empty string —
+            // so a mismatch would throw `DialogResultRejected` over the user's
+            // document rather than doing nothing.
+            if (!usable) return;
+            resolve({ text });
+          }}
+          variant="primary"
+        />
+      </DialogFooter>
     </div>
   );
 }
