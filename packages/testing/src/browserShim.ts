@@ -20,7 +20,6 @@ import {
   PAGE_LINKS_PART,
   PAGE_OBJECTS_PART,
   TEXT_BLOCKS_PART,
-  type ChannelParams,
   type LibraryEntry,
   NATIVE_COMPONENT_IDS,
   SECRET_SETTING_IDS,
@@ -145,8 +144,6 @@ export interface BrowserShim {
   revealedLog: () => number;
   /** Every written file the renderer asked main to show in its folder, in order. */
   revealedFiles: () => readonly FileHandle[];
-  /** Every plain signature the renderer asked main to place, with its arguments, in order (ADR-0133). */
-  placedSignatures: () => readonly ChannelParams<'document.placeSignature'>[];
   /** Every overlay the renderer asked main to paint, in order — the title bar's colours as it computed them. */
   titleBarOverlays: () => readonly { readonly color: string; readonly symbolColor: string; readonly height: number }[];
   /** How many times the renderer told main the window may close — `revealedLog`'s reason for a count. */
@@ -838,7 +835,6 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     return asFileHandle(`shim-written-${String(writes)}`);
   };
   const revealedFiles: FileHandle[] = [];
-  const placedSignatures: ChannelParams<'document.placeSignature'>[] = [];
   /** Whether the seeded crash report was shared or dismissed — then it is offered no more. */
   let crashReportDone = false;
   /** The seeded update status, which an acknowledgement moves as main's record does. */
@@ -1357,16 +1353,15 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       );
     },
     /**
-     * A placed signature (ADR-0133), recorded with every argument so a case can assert what the control sent; whether
-     * a `/Stamp` lands on the page is the kernel's case (`placedSignature.test.ts`). A kept look is resolved and a new
-     * one kept as main does, so a reuse after a keep reaches the same entry.
+     * A placed signature (ADR-0133); whether a `/Stamp` lands on the page is the kernel's case
+     * (`placedSignature.test.ts`), and what the control sends is `signatureCommands.test.ts`'. A kept look is resolved
+     * and a typed or drawn one kept as main does, so a reuse after a keep reaches the same entry. **A picture is never
+     * kept here**, where main keeps it or answers `not-keepable`: the shim holds no picked bytes to keep.
      */
-    'document.placeSignature': (request) => {
-      const { docId, mark, keep } = request;
+    'document.placeSignature': ({ docId, mark, keep }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
-      placedSignatures.push(request);
       if (mark.kind === 'saved' && !libraryEntries.some((entry) => entry.id === mark.id)) {
         return Promise.resolve(ok({ kind: 'absent' as const }));
       }
@@ -2379,7 +2374,6 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     incidents,
     revealedLog: () => revealedLog,
     revealedFiles: () => [...revealedFiles],
-    placedSignatures: () => [...placedSignatures],
     titleBarOverlays: () => [...titleBarOverlays],
     windowCloses: () => windowCloses,
     closeListenings: () => closeListenings,

@@ -175,7 +175,7 @@ import {
 } from './officeConversion.js';
 import { type PdfaSource, PdfaFailedError } from './pdfaConversion.js';
 import type { HeldPicture } from './heldPicture.js';
-import type { PersonalLibrary } from './personalLibrary.js';
+import { type PersonalLibrary, pictureTypeOf } from './personalLibrary.js';
 import { type PrintDestination, PrintFailedError } from './printing.js';
 import { type ShareDestination, ShareFailedError, shareTitle } from './sharing.js';
 import { type OpenExternalEditor, isPdfPath } from './openExternalEditor.js';
@@ -5574,9 +5574,11 @@ export class DocumentCommands {
    * A requested signature look as a command carries it — **the one resolver for both routes** (ADR-0133 Decision 3):
    * *Sign with certificate* and the plain *Signature* ask the same question and take this answer.
    *
-   * `insertImage`'s ordering exactly: the extension routes to a decoder before anything is read, the read is bounded,
-   * and the decoder refusing is decided later by the apply. A picked picture answers its file's own name too, which is
-   * what the library names a kept picture by — never its folder.
+   * **A picked picture is typed by its BYTES**, with the library's `pictureTypeOf` (B3a), as `signature.pickPicture`
+   * types the picture the dialog previews: the extension still decides whether the file is read at all, the read is
+   * bounded, and the type the command carries is what the picture is, which *Sign with certificate*'s decoder is chosen
+   * by — so a PNG named `.jpg` is a PNG here. A picked picture answers its file's own name too, which is what the library
+   * names a kept picture by — never its folder.
    */
   async #markFor(mark: RequestedSignatureMark): Promise<
     | {
@@ -5611,11 +5613,13 @@ export class DocumentCommands {
 
     const picked = await this.#image.pick();
     if (picked === null) return { kind: 'cancelled' };
-    const mediaType = imageMediaType(picked);
-    if (mediaType === null) return { kind: 'image-unreadable' };
+    // AN EXTENSION WITH NO DECODER IS NOT READ, `insertImage`'s rule; it routes and never types.
+    if (imageMediaType(picked) === null) return { kind: 'image-unreadable' };
     const read = await this.#image.read(picked);
     if (read.kind === 'too-large') return { kind: 'image-too-large' };
     if (read.kind === 'unreadable') return { kind: 'image-unreadable' };
+    const mediaType = pictureTypeOf(read.bytes);
+    if (mediaType === null) return { kind: 'image-unreadable' };
     return { kind: 'ready', mark: { kind: 'image', bytes: read.bytes, mediaType }, picked: basename(picked) };
   }
 

@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import {
   HUMAN_CHECKS,
   CapabilityRegistry,
+  DocumentBusyError,
   DocumentNotOpenError,
   DocumentService,
   ENGINE_BARCODE_TEXT_MAX,
@@ -422,6 +423,44 @@ describe('the person’s library (library.*, and document.placeImage with a kept
     expect(requested).toStrictEqual([
       { pages: [0], rect: { x0: 1, y0: 1, x1: 20, y1: 20 }, stamp: { author: 'A. Tester', created: '2026-09-28T12:00:00Z' }, picture },
     ]);
+  });
+
+  /**
+   * `document.placeSignature`'s handler (ADR-0133), between the renderer's dispatch and main's placement. The renderer
+   * half asserts the channel is called and the main half runs `placeSignature` directly; this is the step neither
+   * crosses. `keep: true` and an outcome that is not the default `kept` are the inputs a handler dropping a field, or
+   * answering for main, would get wrong.
+   */
+  it('FORWARDS a plain signature’s every field to main, answers main’s outcome as named, and says a busy document is busy', async () => {
+    const docId = asDocId('00000000-0000-4000-8000-0000000000e3');
+    const request = {
+      page: 2,
+      rect: { x0: 10, y0: 20, x1: 160, y1: 70 },
+      mark: { kind: 'typed', text: 'Ada Lovelace', font: 'times-italic' },
+      keep: true,
+      stamp: { author: 'A. Tester', created: '2026-10-02T12:00:00Z' },
+    } as const;
+    const PLACED = { kind: 'placed', version: asDocVersion(4), byteLength: 2048, historyDropped: 0, kept: 'not-keepable' } as const;
+    const requested: unknown[] = [];
+    let busy = false;
+    const commands = {
+      placeSignature: (on: DocId, made: unknown) => {
+        requested.push({ on, made });
+        if (busy) return Promise.reject(new DocumentBusyError(on, 64));
+        return Promise.resolve(PLACED);
+      },
+    } as unknown as DocumentCommands;
+    const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+
+    const answer = await handlers['document.placeSignature']({ docId, ...request });
+    expect(answer).toStrictEqual({ ok: true, value: PLACED });
+    expect(requested).toStrictEqual([{ on: docId, made: request }]);
+
+    busy = true;
+    expect(await handlers['document.placeSignature']({ docId, ...request })).toStrictEqual({
+      ok: false,
+      error: { code: 'document-busy' },
+    });
   });
 });
 

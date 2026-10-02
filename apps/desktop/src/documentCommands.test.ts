@@ -4434,13 +4434,16 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
     keep: boolean,
     picked: { readonly path: string; readonly bytes: Uint8Array } | null = null,
     heldPicture: HeldPicture = NO_HELD_PICTURE,
-  ): Promise<{ outcome: unknown; kinds: string[]; library: ReturnType<typeof createPersonalLibrary> }> => {
+  ): Promise<{ outcome: unknown; kinds: string[]; types: (string | undefined)[]; library: ReturnType<typeof createPersonalLibrary> }> => {
     const kinds: string[] = [];
+    // THE MEDIA TYPE each command carried — *Sign with certificate*'s decoder is chosen by it.
+    const types: (string | undefined)[] = [];
     const recording: RegisteredWriter<'mupdf'> = {
       ...localMupdfWriter,
       apply: (request) => {
         const command: unknown = request.command;
         kinds.push((command as { readonly kind: string }).kind);
+        types.push((command as { readonly mediaType?: string }).mediaType);
         return localMupdfWriter.apply(request);
       },
     };
@@ -4461,7 +4464,7 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
       },
     });
     const outcome = await commands.placeSignature(docId, { page: 0, rect: RECT, mark, keep, stamp: STAMP });
-    return { outcome, kinds, library };
+    return { outcome, kinds, types, library };
   };
 
   it('a TYPED mark reaches the engine as placeSignatureMark, and Save for reuse KEEPS it as it was made', async () => {
@@ -4486,6 +4489,18 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
     // THE NAME, NEVER THE FOLDER: the library takes the base name without its extension.
     expect(entry?.look).toStrictEqual({ kind: 'picture', name: 'My signature' });
     expect(placed.library.picture(entry?.id ?? '')?.bytes).toStrictEqual(PICTURE);
+  });
+
+  it('a picked picture is typed by its BYTES (ADR-0133 Decision 3): a PNG named .jpg reaches the engine as a PNG', async () => {
+    const placed = await placing({ kind: 'image' }, false, { path: 'scan.jpg', bytes: PICTURE });
+    expect(placed.outcome).toMatchObject({ kind: 'placed' });
+    expect(placed.types).toStrictEqual(['image/png']);
+  });
+
+  it('CONTROL: bytes that are no picture, named .png, are unreadable BEFORE any command reaches the engine', async () => {
+    const placed = await placing({ kind: 'image' }, false, { path: 'not-a-picture.png', bytes: Uint8Array.of(1, 2, 3, 4) });
+    expect(placed.outcome).toStrictEqual({ kind: 'unreadable' });
+    expect(placed.kinds).toStrictEqual([]);
   });
 
   it('a picture past the LIBRARY’S bound is placed and answered not-keepable, and nothing is kept', async () => {
