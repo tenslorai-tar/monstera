@@ -2526,13 +2526,15 @@ are token remaps under `data-*` attributes. **Components consume tokens only**;
 a raw hex value or magic pixel number in a component is a lint error unless the
 value is genuinely dynamic (a user-chosen annotation color).
 
-**The ground's light follows the accent** (amended 2026-09-27,
-[ADR-0114](DECISIONS/0114-the-grounds-light-follows-the-accent.md)). Every glow and tint the design draws in green is
+**The surfaces' tints follow the accent** (amended 2026-09-27,
+[ADR-0114](DECISIONS/0114-the-grounds-light-follows-the-accent.md)). Every tint the design draws in green is
 stored once as the design's value and turned, at the point of use, by the chosen accent's OKLCH hue (and scaled by its
-chroma), keeping each light's own lightness and drawing it at a fixed share of its alpha — so the default accent draws
-the design to the byte, and the lights a person can reach form a family small enough for the contrast check to sweep
-whole. The ground's own opaque colours do not turn: the floors were solved against them, to the hundredth. *Background glow*, on by
-default, turns the glows and grain off; high contrast has none either way.
+chroma), keeping each tint's own lightness and drawing it at a fixed share of its alpha — so the default accent draws
+the design to the byte, and the tints a person can reach form a family small enough for the contrast check to sweep
+whole. The ground's own opaque colours do not turn: the floors were solved against them, to the hundredth. **The ground
+has no lights** (amended 2026-10-02, [ADR-0140](DECISIONS/0140-the-ground-has-no-lights.md)): no radial glow over it,
+none over the page area or the start screen, and no halo round a page, in any theme. It keeps its grain, always;
+high contrast has none.
 
 **Contrast is enforced, not audited.** CI computes it from the token file
 itself, so the check never needs a wholesale exemption — an exempted check is
@@ -2849,6 +2851,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-02 | **The ground has no lights; the grain stays** (§10.2). The owner's review of 0.1.9.0: no glow anywhere, in every theme, and the window's grain kept. The four radial glows over the ground, the page area's two lights, the start screen's wash and dark's halo round a page go, with their tokens. The surfaces' linear tints stay and keep following the accent. The *Background glow* setting goes, because the only thing left for it to switch off was the grain. | §10.2's *"Every glow and tint … *Background glow*, on by default, turns the glows and grain off"*, and ADR-0114's setting | [ADR-0140](DECISIONS/0140-the-ground-has-no-lights.md) |
 | 2026-10-02 | **A removal's save deletes the backups Monstera made, and the removal is the document's fact** (§4, *Save is one pipeline*). The owner's review of 0.1.9.0 found a `.bak` beside a redacted file. Measured: the save's backup decision read a mark on the engine session, and a restore, an adopt or a host restart rebuilds the session without it, so the next save backed up the unredacted file and listed nothing. An earlier ordinary save's `.bak` also survived whenever nobody was asked (autosave) or the person kept it. The fact now lives on the document in main. A removal's save deletes, unasked, the backups main's ledger shows it made, plus the undo copies, and names any file with a backup's name that it did not make. | the 2026-10-01 row's *"named to the person … deleted only on their confirmation"*, and *"the writer's one answer about the next save … says which"* | [ADR-0139](DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md) |
 | 2026-10-02 | **A command whose intent can outgrow a frame crosses in a file** (§5's host pipe). Read on the side the JSON is parsed against, with every command object closed and a `DocId` bounded at 64 characters, MuPDF's 35 kinds fit the frame (largest 247,050 B at worst). `createFormField` (202 MB at worst), the pdf-lib channel's pre-read (an OCR page's recognition, an outline) and PDFium's two text edits do not, so a large enough recognition or outline is refused as too large (the schema's figure; no real page was run to it). `engine/applyPdfLib` and PDFium's `engine/apply` and `engine/capture` take their params by ADR-0125's file route; the route is declared per engine. `createFormField` carries many simple fields or one of any kind. A file-requested channel must fit the 8 MiB ceiling at worst; `engine/invert` and the pre-read are bounded by the answers that brought them, and PDFium's two edits stay open. Rejected: forcing strict in the check, raising the frame, a file for every command, a size threshold, lowering field bounds | ADR-0125's addenda: one file-requested channel, and five command channels pinned in the frame | [0138](DECISIONS/0138-a-command-whose-intent-can-outgrow-a-frame-crosses-in-a-file.md) |
 | 2026-10-02 | **A secondary ribbon tool is drawn in the row when there is room** (§7's `Placement`, ADR-0098's correction). The owner's answer of 2 October: secondaries go on the row when there is room and under *More* only when there is not. A group's row is its primaries, then its secondaries, and the width fold takes buttons from the end, so every secondary folds before any primary and a window wide enough for the group draws no *More*. Rejected: secondaries interleaved by `order` (a narrowing row would lose a tool from its middle), a breakpoint, a setting | ADR-0098 Decision 1's *in its group's More at every width* | [0098](DECISIONS/0098-a-ribbon-placement-may-be-secondary-and-the-rail-has-a-foot.md) |
