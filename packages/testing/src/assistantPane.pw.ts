@@ -46,12 +46,13 @@ async function openPane(
 // at its default width because nothing has resized it, and 1280 × 800 is the smallest window this suite lays screens
 // out at, so it is the narrowest default the row meets.
 for (const look of LOOKS) {
-  test(`${look.name}: CHOOSE, then CONTEXT and SOURCES showing their values, on ONE row inside the pane`, async ({ page }) => {
+  test(`${look.name}: CHOOSE, then CONTEXT and SOURCES by NAME, on ONE row across the pane`, async ({ page }) => {
     await page.emulateMedia({ contrast: look.contrast });
     await openPane(page, { 'appearance.theme': look.theme }, { width: 1280, height: 800 });
     const faces = page.locator('.m-assistant [data-choice-menu]');
     await expect(faces).toHaveCount(2);
-    expect(await faces.allTextContents()).toStrictEqual(['Page 1', 'Document only']);
+    // THE NAMES, NOT THE VALUES (the owner's review of 0.1.9.0): *Choose · Context · Sources*.
+    expect(await faces.allTextContents()).toStrictEqual(['Context', 'Sources']);
     await expect(page.getByRole('group', { name: 'Choose' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Context: Page 1' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Sources: Document only' })).toBeVisible();
@@ -67,6 +68,8 @@ for (const look of LOOKS) {
         whole: [...document.querySelectorAll<HTMLElement>('.m-assistant [data-choice-menu]')].every(
           (face) => face.scrollWidth <= face.clientWidth,
         ),
+        // SPREAD ACROSS THE ROW, not bunched at its start: the last part ends at the row's end.
+        endGap: box === undefined ? Number.NaN : Math.round(box.right - Math.max(...parts.map((part) => part.right))),
         count: parts.length,
       };
     });
@@ -75,6 +78,77 @@ for (const look of LOOKS) {
     expect(row.middles.every((middle) => Math.abs(middle - first) <= 1), JSON.stringify(row.middles)).toBe(true);
     expect(row.inside).toBe(true);
     expect(row.whole).toBe(true);
+    expect(row.endGap).toBeLessThanOrEqual(1);
+  });
+}
+
+test('an OPEN choice menu is headed by its name, then its values with the chosen one marked', async ({ page }) => {
+  // STILL, so the boxes are where they settle rather than where the popup's entrance has them.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await openPane(page);
+  await page.getByRole('button', { name: 'Context: Page 1' }).click();
+  const group = page.getByRole('group', { name: 'Context' });
+  await expect(group).toBeVisible();
+  const items = group.getByRole('menuitemradio');
+  expect(await items.allTextContents()).toStrictEqual(['Page 1', 'Document', 'Comments', 'Picture', 'None']);
+  await expect(items.first()).toHaveAttribute('aria-checked', 'true');
+  // THE HEADING IS ABOVE THE FIRST VALUE, drawn, not only a name.
+  const heading = await group.getByText('Context', { exact: true }).boundingBox();
+  const firstItem = await items.first().boundingBox();
+  if (heading === null || firstItem === null) throw new Error('the heading and the first value have boxes');
+  expect(heading.y + heading.height).toBeLessThanOrEqual(firstItem.y + 0.5);
+});
+
+// AT EVERY WIDTH THE PANE ALLOWS (the owner's review of 0.1.9.0, where Send was pushed out of the box and the box
+// scrolled sideways): nothing in the pane extends past it or scrolls sideways, the paperclip, the text and Send are
+// inside the box, and the provider and model are a row UNDER it. 216 is the pane's floor, 340 its default and 1600 its
+// ceiling, which a 1600 px window holds to what the page area leaves. The old foot pushed Send out at 340, so the
+// default is a case that separates, and a long unbroken line typed into the box is in every case, because a text box
+// that sizes to its content can widen itself.
+for (const width of [216, 340, 1600]) {
+  test(`at a ${String(width)} px pane the message box holds the paperclip, the text and Send, and nothing overflows`, async ({
+    page,
+  }) => {
+    await openPane(page, { 'appearance.context-panel-width': width }, { width: 1600, height: 900 });
+    await page.getByLabel('Ask about this document').fill('x'.repeat(400));
+    const shape = await page.evaluate(() => {
+      const pane = document.querySelector('.m-assistant');
+      const box = document.querySelector('.m-assistant__composer');
+      const models = document.querySelector('[data-assistant-models]');
+      if (pane === null || box === null) return null;
+      const p = pane.getBoundingClientRect();
+      const b = box.getBoundingClientRect();
+      const within = (selector: string): boolean => {
+        const r = box.querySelector(selector)?.getBoundingClientRect();
+        return r !== undefined && r.width > 0 && r.left >= b.left && r.right <= b.right && r.top >= b.top && r.bottom <= b.bottom;
+      };
+      const past = [...pane.querySelectorAll<HTMLElement>('*')]
+        .filter((element) => element.closest('.m-visually-hidden') === null)
+        .filter((element) => {
+          const r = element.getBoundingClientRect();
+          return (r.width > 0 && (r.right > p.right + 0.5 || r.left < p.left - 0.5)) || element.scrollWidth > element.clientWidth + 1;
+        })
+        .map((element) => element.className);
+      return {
+        paneWidth: Math.round(p.width),
+        past,
+        paperclip: within('button[aria-label="Attach files"]'),
+        text: within('textarea'),
+        send: within('button[aria-label="Send"]'),
+        modelsBelow: models !== null && models.getBoundingClientRect().top >= b.bottom,
+        pickersInBox: box.querySelectorAll('select').length,
+      };
+    });
+    expect(shape).not.toBeNull();
+    // THE PANE IS AT THE WIDTH ASKED, less its 1 px border each side — or, at the ceiling, as wide as the window lets it.
+    if (width < 1600) expect(shape?.paneWidth).toBe(width - 2);
+    else expect(shape?.paneWidth).toBeGreaterThan(500);
+    expect(shape?.past, JSON.stringify(shape?.past)).toStrictEqual([]);
+    expect(shape?.paperclip).toBe(true);
+    expect(shape?.text).toBe(true);
+    expect(shape?.send).toBe(true);
+    expect(shape?.modelsBelow).toBe(true);
+    expect(shape?.pickersInBox).toBe(0);
   });
 }
 

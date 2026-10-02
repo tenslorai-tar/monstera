@@ -543,11 +543,9 @@
   --start-glyph: 34px;
   --ruler: 18px;
   /* The Assistant's message box: its text starts two lines tall, grows to three, then scrolls (the owner's review of
-     0.1.6.0; it grew from 36 to 280 px before). Counts of lines, so they follow the text's own line height. A picker
-     in its foot stays compact. */
+     0.1.6.0; it grew from 36 to 280 px before). Counts of lines, so they follow the text's own line height. */
   --composer-lines-min: 2;
   --composer-lines-max: 3;
-  --composer-picker: 144px;
   --scrollbar: 10px;
   /* §10.3: the document panel's "six icon tabs (24 px tabs, 14 px icons)". */
   --control-panel-tab: 24px;

@@ -1579,8 +1579,10 @@ reconciled.
   Settings › Privacy removes all of it.
 - **What reaches an AI provider, and who says so.** Document content goes to a
   provider **only when the person presses Send**, which is the explicit action.
-  The provider is named before anything is sent by the **provider picker beside
-  Send**, which always shows the provider the next message goes to. There is
+  The provider is named before anything is sent by the **provider picker under
+  the message box** (beside Send until the owner's review of 0.1.9.0 moved it
+  out of the box, where it pushed Send off a narrow pane), which always shows
+  the provider the next message goes to. There is
   **no separate consent line** in the assistant pane: the owner removed the
   *Asking about* line that restated scope and provider before Send
   (2026-10-01), so the picker is the naming and Send is the consent. What was

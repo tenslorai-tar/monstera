@@ -18,13 +18,15 @@ import type { SegmentedOption } from './SegmentedControl.js';
  * opens the values on demand. The options are the segmented control's type, so a caller moving between the two
  * changes the component and nothing else.
  *
- * ## The closed face reads the VALUE; the name reads the choice and the value
+ * ## The closed face reads the NAME; the open menu reads the name again, then the values
  *
- * The face shows what will be sent, *Page 4*, beside the word the row puts before it (the owner, 2 October: *Choose*,
- * then the Context menu, then the Sources menu, on one row). What is being chosen goes in the accessible name,
- * *Context: Page 4* (`CHOICE_MENU_NAME`), which CONTAINS the visible words, as WCAG 2.5.3 asks, so a person who says
- * what they see can still reach it by voice. Until 2 October the face read *Choose context: Page 4*, which wrapped
- * the pane's two menus onto two rows. Each value is a radio item, so the open menu announces which one is chosen.
+ * The face shows what is being chosen, *Context*, after the word the row puts before it (the owner's review of
+ * 0.1.9.0: *"Choose · Context · Sources"* reads as a sentence, *"Choose · Page 1 · Document only"* does not). The
+ * value chosen is in the accessible name, *Context: Page 4* (`CHOICE_MENU_NAME`), which STARTS with the visible word,
+ * as WCAG 2.5.3 asks, so a person who says what they see reaches it by voice and a screen reader hears the value
+ * without opening it. Opened, the menu is headed by the same name and lists the values as radio items, the chosen
+ * one marked, so it announces which one is chosen. From the morning of 2 October until the owner's review the face
+ * read the value alone; before that, *Choose context: Page 4*, which wrapped the pane's two menus onto two rows.
  *
  * ## A Base UI MENU, never its Select
  *
@@ -44,14 +46,11 @@ export function ChoiceMenu<Value extends string>({ label, options, value, onChan
   const { _ } = useLingui();
   const chosen = options.find((option) => option.value === value);
   const shown = chosen === undefined ? '' : _(chosen.label, chosen.values);
+  const name = _(label);
   return (
     <Menu.Root>
-      <Menu.Trigger
-        aria-label={_(CHOICE_MENU_NAME, { label: _(label), value: shown })}
-        className="m-choice-menu"
-        data-choice-menu=""
-      >
-        <span>{shown}</span>
+      <Menu.Trigger aria-label={_(CHOICE_MENU_NAME, { label: name, value: shown })} className="m-choice-menu" data-choice-menu="">
+        <span className="m-choice-menu__name">{name}</span>
         <Icon name="ChevronDown" size="dense" />
       </Menu.Trigger>
       <Menu.Portal>
@@ -67,6 +66,9 @@ export function ChoiceMenu<Value extends string>({ label, options, value, onChan
                 onChange(picked.value);
               }}
             >
+              {/* THE HEADING names the group, so the radios are announced as the Context group's (Base UI ties the
+                  label to the group by id). */}
+              <Menu.GroupLabel className="m-choice-menu__heading">{name}</Menu.GroupLabel>
               {options.map((option) => (
                 <Menu.RadioItem
                   className="m-context-menu-item"

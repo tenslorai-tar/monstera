@@ -2519,13 +2519,44 @@ optgroup {
   border-block-start: 1px solid var(--border-soft); /* decorative: separates the conversation from the ask; the controls draw their own */
 }
 
-/* ONE ROW, NEVER WRAPPED (the owner, 2 October): *Choose*, the Context menu, the Sources menu. Each menu's face is its
-   value alone, which is what makes one row fit the pane's default width; `assistantPane.pw.ts` measures it. */
+/* ONE ROW, NEVER WRAPPED, ACROSS THE PANE (the owner's review of 0.1.9.0): *Choose*, then the Context and Sources menus
+   sharing what is left equally, so the row spans the pane at every width it allows rather than bunching at the start.
+   Each face reads its name, the shortest words the row can carry; `assistantPane.pw.ts` measures it at the pane's
+   narrowest and widest. */
 .m-assistant__choices {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
   gap: var(--space-6);
   min-inline-size: 0;
+}
+
+.m-assistant__choice {
+  display: flex;
+  min-inline-size: 0;
+}
+
+.m-assistant__choices .m-choice-menu {
+  flex: 1;
+  justify-content: space-between;
+  min-inline-size: 0;
+}
+
+/* AT THE PANE'S NARROWEST the word goes above the two menus rather than any of the three being cut. The row needs
+   192 px and the pane's 216 px floor leaves 182 inside it (measured 2026-10-02 in the production build on the cloud
+   session's Chromium 151, `cloud-3`), so the switch is set 16 px above that need, for a face drawn in another font. */
+.m-assistant__about {
+  container: choices / inline-size;
+}
+
+@container choices (inline-size < 208px) {
+  .m-assistant__choices {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .m-assistant__choose {
+    grid-column: 1 / -1;
+  }
 }
 
 .m-assistant__choose {
@@ -2564,6 +2595,14 @@ optgroup {
 .m-choice-menu__popup {
   --menu-item-columns: var(--icon-16) minmax(0, 1fr);
   --menu-item-gap: var(--space-8);
+}
+
+/* THE OPEN MENU'S HEADING: the menu bar's caption, inset to the items' text column so it reads as their title. */
+.m-choice-menu__heading {
+  padding: var(--space-4) var(--space-8) var(--space-2) calc(var(--space-8) + var(--icon-16) + var(--space-8));
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+  font-weight: 600;
 }
 
 .m-choice-menu__mark {
@@ -2874,8 +2913,24 @@ optgroup {
   margin-inline-start: auto;
 }
 
+/* THE PROVIDER AND THE MODEL, on their own row UNDER the box (the owner's review of 0.1.9.0): inside it they set the
+   foot's least width at their longest option's, and a pane narrower than that pushed Send out of the box and scrolled
+   it sideways. Here each takes half the row and may shrink to nothing, its text cut with an ellipsis, so the row is
+   the pane's width at every width the pane allows. */
+.m-assistant__models {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-8);
+}
+
+.m-assistant__picker {
+  display: flex;
+  min-inline-size: 0;
+}
+
 .m-assistant__picker select {
-  max-inline-size: var(--composer-picker);
+  flex: 1;
+  min-inline-size: 0;
   block-size: var(--title-control);
   padding-inline: var(--space-6);
   border: 1px solid var(--border-control);

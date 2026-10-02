@@ -169,7 +169,7 @@ import { useSetting } from './useSetting.js';
  *
  * ## The provider is named before anything is sent; what went is named after
  *
- * The provider picker beside Send shows who receives the next ask, and Send is the explicit
+ * The provider picker under the message box shows who receives the next ask, and Send is the explicit
  * action (ARCHITECTURE §8, *What reaches an AI provider*). The Context menu chooses which part
  * of the document goes. Nothing about the document is read until Send, and each asked turn then
  * says which pages actually went, so a whole-document question about a long file says that it
@@ -1143,10 +1143,11 @@ export function AssistantPanel({
           />
         </div>
       )}
-      {/* THE FOOT: the word *Choose*, then Context and Sources as two menus, ON ONE ROW over the message box (the
-          owner, 2 October; each menu's face is its value alone, so the row fits the pane), then the box itself with
-          the provider and model at its bottom-left and the send arrow at its bottom-right. The word names the group,
-          so a screen reader hears *Choose* once on entering it and each menu by its own name. */}
+      {/* THE FOOT: the word *Choose*, then the Context and Sources menus, ON ONE ROW across the pane over the message
+          box (the owner's review of 0.1.9.0: each face reads its name, and the value is in the name and the open menu);
+          then the box with the paperclip at its bottom-left and the send arrow at its bottom-right; then the provider
+          and model under it. The word names the group, so a screen reader hears *Choose* once on entering it and each
+          menu by its own name. */}
       {focused !== undefined && (
         <div className="m-assistant__about" data-assistant-about="">
           <div aria-labelledby={chooseId} className="m-assistant__choices" role="group">
@@ -1306,56 +1307,6 @@ export function AssistantPanel({
             onClick={attach}
             size="control"
           />
-          {/* THE PROVIDER AND MODEL, inside the box at its bottom-left (v5-03), each a compact labelled select. EVERY
-              PROVIDER IS LISTED, with or without a key: a person choosing where to put a key must be able to see the
-              choice, and the no-key line above says what the chosen one needs. */}
-          <label className="m-assistant__picker" htmlFor={providerId}>
-            <span className="m-visually-hidden">{i18n._(ASSISTANT_PROVIDER_LABEL)}</span>
-            <select
-              data-assistant-provider=""
-              id={providerId}
-              onChange={(event) => {
-                setProvider(event.target.value as AiProviderId);
-              }}
-              value={provider}
-            >
-              {AI_PROVIDER_IDS.map((id) => (
-                <option key={id} value={id}>
-                  {i18n._(AI_PROVIDER_NAMES[id])}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="m-assistant__picker" htmlFor={modelId}>
-            <span className="m-visually-hidden">{i18n._(ASSISTANT_MODEL_LABEL)}</span>
-            <select
-              data-assistant-model=""
-              disabled={models.length === 0}
-              id={modelId}
-              onChange={(event) => {
-                setModel(event.target.value);
-              }}
-              value={model}
-            >
-              {/* A STORED CHOICE THE LIST NO LONGER NAMES stays shown and selected, marked, never silently swapped for
-                  another model (ADR-0117 Decision 3). */}
-              {/* NOTHING TO LIST SAYS SO, as the Settings row does, rather than drawing an empty box. */}
-              {models.length === 0 ? <option value="">{i18n._(AI_MODELS_NONE)}</option> : null}
-              {stored !== undefined && models.length > 0 && chosenEntry === undefined ? (
-                <option value={stored}>{i18n._(ASSISTANT_MODEL_NOT_OFFERED, { name: stored })}</option>
-              ) : null}
-              {/* DISABLED, NEVER DROPPED (ADR-0081, ADR-0117 Decision 4): where this choice reads images — Anthropic's,
-                  which the recogniser uses — a model that says it has no vision is listed and cannot be chosen. */}
-              {models.map((entry) => {
-                const blind = readsImages && !servesVision(entry);
-                return (
-                  <option disabled={blind} key={entry.id} value={entry.id}>
-                    {blind ? i18n._(ASSISTANT_MODEL_NO_VISION, { name: entry.label }) : entry.label}
-                  </option>
-                );
-              })}
-            </select>
-          </label>
           {/* THE SEND ARROW at the bottom-right, which becomes Stop while an answer arrives (v5-03). NOT A DEAD
               CONTROL (§10.5): with no key, or no model to ask, Send is disabled and the lines above say which. */}
           {streaming === null ? (
@@ -1371,6 +1322,59 @@ export function AssistantPanel({
             <IconButton icon={Square} label={ASSISTANT_STOP} onClick={stop} size="control" />
           )}
         </div>
+      </div>
+      {/* THE PROVIDER AND MODEL, on their own row UNDER the box (the owner's review of 0.1.9.0; inside it they pushed
+          Send out of a narrow pane), each a labelled select taking half the row. EVERY PROVIDER IS LISTED, with or
+          without a key: a person choosing where to put a key must be able to see the choice, and the no-key line above
+          says what the chosen one needs. */}
+      <div className="m-assistant__models" data-assistant-models="">
+        <label className="m-assistant__picker" htmlFor={providerId}>
+          <span className="m-visually-hidden">{i18n._(ASSISTANT_PROVIDER_LABEL)}</span>
+          <select
+            data-assistant-provider=""
+            id={providerId}
+            onChange={(event) => {
+              setProvider(event.target.value as AiProviderId);
+            }}
+            value={provider}
+          >
+            {AI_PROVIDER_IDS.map((id) => (
+              <option key={id} value={id}>
+                {i18n._(AI_PROVIDER_NAMES[id])}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="m-assistant__picker" htmlFor={modelId}>
+          <span className="m-visually-hidden">{i18n._(ASSISTANT_MODEL_LABEL)}</span>
+          <select
+            data-assistant-model=""
+            disabled={models.length === 0}
+            id={modelId}
+            onChange={(event) => {
+              setModel(event.target.value);
+            }}
+            value={model}
+          >
+            {/* A STORED CHOICE THE LIST NO LONGER NAMES stays shown and selected, marked, never silently swapped for
+                another model (ADR-0117 Decision 3). */}
+            {/* NOTHING TO LIST SAYS SO, as the Settings row does, rather than drawing an empty box. */}
+            {models.length === 0 ? <option value="">{i18n._(AI_MODELS_NONE)}</option> : null}
+            {stored !== undefined && models.length > 0 && chosenEntry === undefined ? (
+              <option value={stored}>{i18n._(ASSISTANT_MODEL_NOT_OFFERED, { name: stored })}</option>
+            ) : null}
+            {/* DISABLED, NEVER DROPPED (ADR-0081, ADR-0117 Decision 4): where this choice reads images — Anthropic's,
+                which the recogniser uses — a model that says it has no vision is listed and cannot be chosen. */}
+            {models.map((entry) => {
+              const blind = readsImages && !servesVision(entry);
+              return (
+                <option disabled={blind} key={entry.id} value={entry.id}>
+                  {blind ? i18n._(ASSISTANT_MODEL_NO_VISION, { name: entry.label }) : entry.label}
+                </option>
+              );
+            })}
+          </select>
+        </label>
       </div>
       {/* HOW THE BOX SENDS, for a screen reader through the box's description and drawn for nobody: the owner's
           review of 0.1.6.0 took every explanatory line out of the pane, and Enter sending is the platform's way. */}
