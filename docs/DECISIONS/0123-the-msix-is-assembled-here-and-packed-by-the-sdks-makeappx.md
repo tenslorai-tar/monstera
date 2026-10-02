@@ -82,3 +82,18 @@ runtime is already provisioned here, pinned and verified (`scripts/provision/ele
 the install root and being refused by its own startup check, because a packaged `main` makes it a child container of
 the package, which holds the package's capability and so its whole data folder. ADR-0023's correction of this date has
 the measurement. The packaging itself is unaffected; the containment route is ADR-0023 Decision 16's.
+
+## Correction, 2026-10-02 — the runtime is not staged unchanged: the executable takes the brand's icon
+
+Decision 2 stages the runtime with one rename and one removal. Since 0.1.8.0 it also edits one thing in it:
+`Monstera.exe` carried Electron's icon, which Windows shows for the file, so `brandExecutable` sets
+`assets/brand/logo.ico` with `rcedit` 5.0.2 (the Electron organisation's tool, MIT, pinned in the lockfile, a
+development dependency because nothing of it ships — the file's resources change and no code is added). Decision 1's
+*downloads nothing* still holds: rcedit arrives through npm's lockfile with every other development tool, its
+download approved by the owner on 2026-10-02, and the script fetches nothing.
+
+The step is read back, not trusted: `scripts/lib/peIcons.mjs` reads the first icon group from the file's resources —
+the one rcedit replaces and Windows shows — and the package is refused unless its images are the `.ico`'s, byte for
+byte. `proof:packagemsix` applies the packager's own step to a copy of the provisioned `electron.exe` and reads it
+back, against the same copy without the step, which shows Electron's four images and not the brand's seven; the
+Windows leg of CI requires those cases.

@@ -4,29 +4,55 @@
  * which Publisher each flavour writes and refuses, which versions it refuses, and that its resolution check sees a
  * missing package — each with the control that separates it from a check that refuses or accepts everything.
  *
- * Pure: it builds no package and needs no SDK, so it runs on every runner.
+ * And the executable's icon: the packager's own step is applied to a copy of the provisioned `electron.exe` and the
+ * icon is read back from its resources, against the same file without the step.
  *
- * Usage: node scripts/proofs/packageMsix.proof.mjs
+ * It builds no package and needs no SDK. The icon cases need a Windows executable and rcedit, which runs one, so they
+ * run where Windows is; elsewhere they are named as not run, and `--require-runtime` — which the Windows leg passes —
+ * makes that a failure.
+ *
+ * Usage: node scripts/proofs/packageMsix.proof.mjs [--require-runtime]
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { loadTypeScript } from '../lib/loadTypeScript.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
+import { applicationIcon, carriesIcon, icoImages } from '../lib/peIcons.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { partialOutcome } from '../lib/unverifiable.mjs';
+import { electronBinaryPath } from '../provision/electron.mjs';
 import {
+  BRAND_ICON,
   UNSIGNED_OID,
   appxManifest,
   bareSpecifiers,
+  brandExecutable,
   packageIdentity,
   refuseVersion,
   unresolvedImports,
 } from '../release/packageMsix.mjs';
 
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const ELECTRON_BINARY = electronBinaryPath(REPO_ROOT);
+const RUNTIME_PRESENT = process.platform === 'win32' && existsSync(ELECTRON_BINARY);
+
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 9 });
+
+/** The cases that need a Windows executable, named once: the count, and what a run without one lists as not run. */
+const RUNTIME_CASES = [
+  "the packager's step leaves the executable carrying the brand's icon, read back from its resources",
+  "CONTROL: the same executable without the step shows an icon, and it is not the brand's",
+  "CONTROL: an .ico one byte different from the brand's is not reported as carried",
+];
+
+/** Cases decidable without one. These run on every machine. */
+const PURE_CASES = 10;
+
+const roster = createRoster(failures, { cases: RUNTIME_PRESENT ? PURE_CASES + RUNTIME_CASES.length : PURE_CASES });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -162,11 +188,56 @@ try {
     `blind: ${String(blind)}`,
   );
 
+  // The brand's set is the seven sizes `assets/brand/README.md` names. CONTROL: a PNG — the brand's own 256-pixel
+  // logo — is refused rather than read as an icon with no images.
+  const brandImages = icoImages(readFileSync(BRAND_ICON));
+  const notIco = thrown(() => icoImages(readFileSync(join(REPO_ROOT, 'assets', 'brand', 'logo-256.png'))));
+  check(
+    "the brand's .ico reads as its seven images, and a PNG is refused as not an .ico",
+    brandImages.length === 7 && notIco !== null && notIco.includes('not an .ico'),
+    `${String(brandImages.length)} image(s); PNG: ${String(notIco)}`,
+  );
+
+  if (RUNTIME_PRESENT) {
+    const brand = readFileSync(BRAND_ICON);
+    const plain = join(scratch, 'plain.exe');
+    const branded = join(scratch, 'branded.exe');
+    copyFileSync(ELECTRON_BINARY, plain);
+    copyFileSync(ELECTRON_BINARY, branded);
+    await brandExecutable(branded, BRAND_ICON);
+    check(RUNTIME_CASES[0] ?? '', carriesIcon(readFileSync(branded), brand), `first group: ${String(applicationIcon(readFileSync(branded)).images.length)} image(s)`);
+
+    // The plain file must SHOW an icon — Electron's — so "not the brand's" is a comparison that ran, not a group the
+    // reader failed to find; `applicationIcon` throws when there is none.
+    const shown = applicationIcon(readFileSync(plain));
+    check(RUNTIME_CASES[1] ?? '', shown.images.length > 0 && !carriesIcon(readFileSync(plain), brand), `first group ${String(shown.id)}: ${String(shown.images.length)} image(s)`);
+
+    const altered = Buffer.from(brand);
+    const lastEntry = 6 + (brandImages.length - 1) * 16;
+    const lastByte = altered.readUInt32LE(lastEntry + 12) + altered.readUInt32LE(lastEntry + 8) - 1;
+    altered.writeUInt8(altered.readUInt8(lastByte) ^ 1, lastByte);
+    check(RUNTIME_CASES[2] ?? '', !carriesIcon(readFileSync(branded), altered), 'the last image differs in its last byte');
+  }
+
   if (failures.length > 0) {
     process.stderr.write(`\nMSIX packager proof — ${String(failures.length)} failure(s):\n\n${failures.map((f) => `  - ${f}`).join('\n\n')}\n\n`);
     process.exitCode = 1;
-  } else {
+  } else if (RUNTIME_PRESENT) {
     process.stdout.write(`${roster.format('MSIX packager case')}\n`);
+  } else {
+    const partial = partialOutcome({
+      required: process.argv.includes('--require-runtime'),
+      ran: PURE_CASES,
+      missed: RUNTIME_CASES,
+      why:
+        process.platform === 'win32'
+          ? `The Electron runtime is missing:\n    ${ELECTRON_BINARY}\n  Run \`npm run provision:electron\`.`
+          : 'This is not Windows: the icon cases need a Windows executable and rcedit, which runs one.',
+      flag: '--require-runtime',
+    });
+    if (partial.stream === 'stderr') process.stderr.write(`${roster.format('MSIX packager case')}${partial.text}`);
+    else process.stdout.write(`${roster.format('MSIX packager case')}${partial.text}`);
+    process.exitCode = partial.code;
   }
 } catch (error) {
   process.stderr.write(`${formatError(error)}\n`);

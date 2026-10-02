@@ -5,7 +5,9 @@
  *
  * ## What goes in, and from where
  *
- * - the provisioned Electron runtime, `electron.exe` renamed `Monstera.exe`;
+ * - the provisioned Electron runtime, `electron.exe` renamed `Monstera.exe` and given the brand's icon — by rcedit,
+ *   and read back from the file's resources before anything else is staged, because rcedit exiting 0 is not the
+ *   executable carrying the icon;
  * - `resources/app/`: the desktop package's `dist/`, and a `node_modules/` holding the workspace packages' `dist/`
  *   and npm's own production tree for them — npm answers which third-party packages ship, never a list kept here;
  * - `resources/native/<component>/` and `manifest.json` (ADR-0122), each file copied from its development tree and
@@ -47,10 +49,13 @@ import { builtinModules } from 'node:module';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { rcedit } from 'rcedit';
+
 import { STORE_ASSETS, writeStoreAssets } from '../brand/storeAssets.mjs';
 import { SHELL_LAUNCH, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { isMain } from '../lib/isMain.mjs';
 import { loadTypeScript } from '../lib/loadTypeScript.mjs';
+import { carriesIcon } from '../lib/peIcons.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { shimPath } from '../lib/shimBinary.mjs';
 import { electronRoot } from '../provision/electron.mjs';
@@ -75,6 +80,25 @@ export const DISPLAY_NAME = 'Monstera PDF Editor';
 
 /** The runtime's executable, and the name the package gives it. */
 const EXECUTABLE = 'Monstera.exe';
+
+/** The icon Windows shows for the executable: the brand's generated set (`assets/brand/README.md`). */
+export const BRAND_ICON = join(REPO_ROOT, 'assets', 'brand', 'logo.ico');
+
+/**
+ * Gives an executable an icon, and refuses unless the file then carries it.
+ *
+ * rcedit replaces the first icon group the file enumerates, which is the one Windows shows for it; reading that group
+ * back is what separates *the icon was set* from *the tool returned*.
+ *
+ * @param {string} executable
+ * @param {string} ico
+ */
+export async function brandExecutable(executable, ico) {
+  await rcedit(executable, { icon: ico });
+  if (!carriesIcon(readFileSync(executable), readFileSync(ico))) {
+    throw new Error(`${executable} does not carry ${ico} after rcedit set it; its first icon group is another icon.`);
+  }
+}
 
 /** The workspace packages the shell loads in Node or Electron main. `ui` and `testing` are bundled or unshipped. */
 const SHIPPED_WORKSPACES = ['@monstera/desktop', '@monstera/kernel', '@monstera/contract', '@monstera/shared', '@monstera/nodemode'];
@@ -460,6 +484,7 @@ async function main() {
   cpSync(electronRoot(REPO_ROOT), stage, { recursive: true });
   renameSync(join(stage, 'electron.exe'), join(stage, EXECUTABLE));
   rmSync(join(stage, 'resources', 'default_app.asar'), { force: true });
+  await brandExecutable(join(stage, EXECUTABLE), BRAND_ICON);
 
   step('application');
   const app = join(stage, 'resources', 'app');

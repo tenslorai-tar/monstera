@@ -28,40 +28,13 @@
  * opinion about this: it asks whether an interpreter is **linked**, which is a
  * question about code that need not be exported at all.
  *
- * ## The format, in the order this reads it
+ * ## The format
  *
- * `e_lfanew` at 0x3C gives the PE signature; the COFF header follows it; the
- * optional header follows that and its magic separates PE32 from PE32+, which
- * differ by 16 bytes before the data directories. Data directory 0 is the export
- * table, addressed as an RVA — so the section headers are read to map it to a
- * file offset, because a directory RVA read as a file offset lands in the middle
- * of arbitrary data and produces a plausible-looking count.
+ * Data directory 0 is the export table. The walk to it, and from its RVAs to
+ * file offsets, is `peImage.mjs`'s.
  */
 
-/**
- * A parsed section header, enough to map an RVA to a file offset.
- *
- * @typedef {{ virtualAddress: number, virtualSize: number, rawAddress: number }} Section
- */
-
-/**
- * Where an RVA lives in the file.
- *
- * @param {readonly Section[]} sections
- * @param {number} rva
- * @returns {number}
- */
-function fileOffset(sections, rva) {
-  for (const section of sections) {
-    if (rva >= section.virtualAddress && rva < section.virtualAddress + section.virtualSize) {
-      return section.rawAddress + (rva - section.virtualAddress);
-    }
-  }
-  throw new Error(
-    `RVA 0x${rva.toString(16)} lies in no section, so this file's export directory cannot be ` +
-      'located — which means the parse is wrong rather than the file having no exports',
-  );
-}
+import { peLayout } from './peImage.mjs';
 
 /**
  * Every name in a PE file's export directory.
@@ -76,52 +49,20 @@ function fileOffset(sections, rva) {
  * @returns {readonly string[]} the exported names, in the file's own order
  */
 export function peExports(bytes) {
-  if (bytes.length < 0x40 || bytes.readUInt16LE(0) !== 0x5a4d) {
-    throw new Error('not a PE file: no MZ signature');
-  }
-  const peAt = bytes.readUInt32LE(0x3c);
-  if (bytes.readUInt32LE(peAt) !== 0x00004550) {
-    throw new Error(`no PE signature at 0x${peAt.toString(16)}`);
-  }
-
-  const coffAt = peAt + 4;
-  const sectionCount = bytes.readUInt16LE(coffAt + 2);
-  const optionalSize = bytes.readUInt16LE(coffAt + 16);
-  const optionalAt = coffAt + 20;
-
-  const magic = bytes.readUInt16LE(optionalAt);
-  // PE32+ carries an 8-byte ImageBase where PE32 carries 4 plus a 4-byte
-  // BaseOfData, so the data directories start 16 bytes later.
-  const plus = magic === 0x20b;
-  if (!plus && magic !== 0x10b) {
-    throw new Error(`unknown optional header magic 0x${magic.toString(16)}`);
-  }
-  const directoriesAt = optionalAt + (plus ? 112 : 96);
-  const exportRva = bytes.readUInt32LE(directoriesAt);
+  const layout = peLayout(bytes);
+  const exportRva = layout.directory(0).rva;
   if (exportRva === 0) return [];
 
-  const sectionsAt = optionalAt + optionalSize;
-  /** @type {Section[]} */
-  const sections = [];
-  for (let index = 0; index < sectionCount; index += 1) {
-    const at = sectionsAt + index * 40;
-    sections.push({
-      virtualSize: bytes.readUInt32LE(at + 8),
-      virtualAddress: bytes.readUInt32LE(at + 12),
-      rawAddress: bytes.readUInt32LE(at + 20),
-    });
-  }
-
-  const directory = fileOffset(sections, exportRva);
+  const directory = layout.fileOffset(exportRva);
   const nameCount = bytes.readUInt32LE(directory + 24);
   const namesRva = bytes.readUInt32LE(directory + 32);
   if (nameCount === 0) return [];
 
-  const namesAt = fileOffset(sections, namesRva);
+  const namesAt = layout.fileOffset(namesRva);
   /** @type {string[]} */
   const names = [];
   for (let index = 0; index < nameCount; index += 1) {
-    const at = fileOffset(sections, bytes.readUInt32LE(namesAt + index * 4));
+    const at = layout.fileOffset(bytes.readUInt32LE(namesAt + index * 4));
     const end = bytes.indexOf(0, at);
     names.push(bytes.toString('latin1', at, end));
   }
