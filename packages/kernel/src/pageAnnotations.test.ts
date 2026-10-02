@@ -803,6 +803,10 @@ describe('applyAddAnnotation places a point annotation where the click was', () 
       { page: 0, index: 0, kind: 'sticky-note', contents: 'check this figure', authored: true },
       { page: 0, index: 1, kind: 'ink', contents: '', authored: true },
     ]);
+    // THE WALK'S STOP (AAAAAAA-6): at one it stops after the note and says so; at two, the count, it is whole.
+    const stopped = await onSession(both, (session) => readAnnotations(session, 1));
+    expect([stopped.annotations.map((each) => each.kind), stopped.truncated]).toStrictEqual([['sticky-note'], true]);
+    expect((await onSession(both, (session) => readAnnotations(session, 2))).truncated).toBe(false);
   });
 
   it('and removing the note takes its popup with it, leaving no orphan', async () => {

@@ -226,6 +226,10 @@ describe('readPageLinks', () => {
       const { links, truncated } = await readPageLinks(session, 0);
       expect(links).toHaveLength(4200);
       expect(truncated).toBe(false);
+      // THE WALK'S STOP (AAAAAAA-6), at a bound one under the links: it stops and says so, and at the count it is whole.
+      const stopped = await readPageLinks(session, 0, 4199);
+      expect([stopped.links.length, stopped.truncated]).toStrictEqual([4199, true]);
+      expect((await readPageLinks(session, 0, 4200)).truncated).toBe(false);
       const long = links[3000];
       expect(long?.kind).toBe('external');
       if (long?.kind !== 'external') throw new Error('link 3,000 should be external');

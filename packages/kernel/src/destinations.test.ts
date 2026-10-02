@@ -86,6 +86,10 @@ describe('readDestinations', () => {
         'Somewhere unresolvable',
       ]);
       expect(found.map((entry) => entry.depth)).toStrictEqual([0, 1, 0]);
+      // THE WALK'S STOP (AAAAAAA-6), inside the tree: at two it stops after the child and says so; at three, whole.
+      const stopped = await readDestinations(session, 2);
+      expect([stopped.destinations.map((entry) => entry.title), stopped.truncated]).toStrictEqual([['Chapter one', 'A section'], true]);
+      expect((await readDestinations(session, 3)).truncated).toBe(false);
     } finally {
       await mupdfWriter.close(session);
     }

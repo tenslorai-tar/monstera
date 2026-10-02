@@ -171,6 +171,10 @@ describe('readLayers', () => {
       expect(long?.name.endsWith('…')).toBe(true);
       // CONTROL: the fixture's name really is past the bound, so the case is about the shortening.
       expect(LONG.length).toBeGreaterThan(256);
+      // THE WALK'S STOP (AAAAAAA-6), at a bound one under the layers: it stops and says so, and at the count it is whole.
+      const stopped = await readLayers(session, 1099);
+      expect([stopped.layers.length, stopped.truncated, stopped.layers.at(-1)?.name]).toStrictEqual([1099, true, 'Level 1098']);
+      expect((await readLayers(session, 1100)).truncated).toBe(false);
     } finally {
       await mupdfWriter.close(session);
     }

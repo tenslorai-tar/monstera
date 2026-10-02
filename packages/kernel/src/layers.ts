@@ -1,6 +1,7 @@
 import type { CommandOfKind } from '@monstera/contract';
 import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 
+import { BoundedList } from './boundedList.js';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { ENGINE_LAYER_NAME_MAX, ENGINE_LAYERS_MAX } from './host/engineChannels.js';
@@ -187,20 +188,22 @@ function visibilityOf(config: PDFObject | null, group: PDFObject): boolean {
  *
  * A QUERY, so it does not go through the bus — nothing is mutated and there is
  * nothing to capture. It reads `/OCGs` in the document's own order, which is
- * the order the indices address.
+ * the order the indices address. Bounded through `BoundedList`.
+ *
+ * @param bound every caller passes none; a case passes a small one to reach the stop on a small document
  */
-export function readLayers(session: MupdfSession): Promise<ListedLayers> {
+export function readLayers(session: MupdfSession, bound = MAX_LAYERS): Promise<ListedLayers> {
   return withDocument(session, (document) => {
     const groups = groupsOf(document);
     if (groups === null) return { layers: [], truncated: false };
     const config = defaultConfig(document);
 
-    const layers: Layer[] = [];
-    const count = Math.min(groups.length, MAX_LAYERS);
-    for (let index = 0; index < count; index += 1) {
+    const layers = new BoundedList<Layer>(bound);
+    for (let index = 0; index < groups.length; index += 1) {
+      if (!layers.room()) break;
       const group = groups.get(index);
       const name = deref(deref(group).get('Name'));
-      layers.push({
+      layers.add({
         index,
         // A group with no `/Name` is malformed and still has to render as a
         // row: dropping it would renumber every layer after it, and the
@@ -209,7 +212,8 @@ export function readLayers(session: MupdfSession): Promise<ListedLayers> {
         visible: visibilityOf(config, group),
       });
     }
-    return { layers, truncated: groups.length > MAX_LAYERS };
+    const { items, truncated } = layers.answer();
+    return { layers: items, truncated };
   });
 }
 

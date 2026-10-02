@@ -30,6 +30,7 @@ import type {
   PDFPage,
 } from './mupdfRaw.js';
 
+import { BoundedList } from './boundedList.js';
 import type { CaptureResult } from './commandLog.js';
 import { contentNumber } from './contentNumber.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
@@ -1787,13 +1788,16 @@ const MAX_LISTED = ENGINE_ANNOTATIONS_MAX;
  * per-page read would make the panel ask once per page and stitch the answers,
  * which is the same payload arriving as N round trips.
  *
- * Bounded and reported, exactly as the duplicate report is.
+ * Bounded and reported, exactly as the duplicate report is, through `BoundedList`.
+ *
+ * @param bound every caller passes none; a case passes a small one to reach the stop on a small document
  */
 export function readAnnotations(
   session: MupdfSession,
+  bound = MAX_LISTED,
 ): Promise<{ readonly annotations: readonly ListedAnnotation[]; readonly truncated: boolean }> {
   return withDocument(session, (document) => {
-    const found: ListedAnnotation[] = [];
+    const found = new BoundedList<ListedAnnotation>(bound);
     const pages = document.countPages();
     for (let page = 0; page < pages; page += 1) {
       // RESET PER PAGE, and counted from the walk rather than from `found`. The
@@ -1818,8 +1822,8 @@ export function readAnnotations(
         if (object.isIndirect()) positionOf.set(object.asIndirect(), at);
       }
       for (const annotation of marks) {
-        if (found.length >= MAX_LISTED) return { annotations: found, truncated: true };
-        found.push({
+        if (!found.room()) return listedOf(found);
+        found.add({
           page,
           index: index++,
           rect: transform === null ? null : readRect(annotation, transform),
@@ -1838,8 +1842,14 @@ export function readAnnotations(
         });
       }
     }
-    return { annotations: found, truncated: false };
+    return listedOf(found);
   });
+}
+
+/** A walk's list in the read's own field names. */
+function listedOf(found: BoundedList<ListedAnnotation>): { readonly annotations: readonly ListedAnnotation[]; readonly truncated: boolean } {
+  const { items, truncated } = found.answer();
+  return { annotations: items, truncated };
 }
 
 /**

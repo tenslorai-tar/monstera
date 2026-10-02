@@ -1,6 +1,7 @@
 import type { OutlineEntry } from '@monstera/contract';
 import type * as mupdf from './mupdfRaw.js';
 
+import { BoundedList } from './boundedList.js';
 import type { MupdfSession } from './engineSeam.js';
 import { ENGINE_DESTINATION_TITLE_MAX, ENGINE_DESTINATIONS_MAX } from './host/engineChannels.js';
 import { withDocument } from './mupdfWriter.js';
@@ -133,28 +134,28 @@ export interface ListedDestinations {
   readonly truncated: boolean;
 }
 
-/** Reads the document's outline, flattened. */
-export function readDestinations(session: MupdfSession): Promise<ListedDestinations> {
-  return withDocument(session, (document) => flatten(document));
+/**
+ * Reads the document's outline, flattened, through `BoundedList`.
+ *
+ * @param bound every caller passes none; a case passes a small one to reach the stop on a small document
+ */
+export function readDestinations(session: MupdfSession, bound = MAX_ENTRIES): Promise<ListedDestinations> {
+  return withDocument(session, (document) => flatten(document, bound));
 }
 
-function flatten(document: mupdf.PDFDocument): ListedDestinations {
+function flatten(document: mupdf.PDFDocument, bound: number): ListedDestinations {
   // NULL IS "THIS DOCUMENT HAS NO OUTLINE", which is the common case and not a
   // failure — most documents carry none. An empty list is the honest answer and
   // a panel says so.
   const outline = document.loadOutline();
   if (outline === null) return { destinations: [], truncated: false };
 
-  const found: Destination[] = [];
-  let truncated = false;
+  const found = new BoundedList<Destination>(bound);
   const walk = (items: readonly MupdfOutlineItem[], depth: number): void => {
     if (depth > MAX_DEPTH) return;
     for (const item of items) {
-      if (found.length >= MAX_ENTRIES) {
-        truncated = true;
-        return;
-      }
-      found.push({
+      if (!found.room()) return;
+      found.add({
         // A TITLE IS REQUIRED BY THE SHAPE AND OPTIONAL IN THE FORMAT. An entry
         // with none is a row a reader cannot identify, so it takes the empty
         // string and the panel decides what to show — rather than this dropping
@@ -168,5 +169,6 @@ function flatten(document: mupdf.PDFDocument): ListedDestinations {
     }
   };
   walk(outline, 0);
-  return { destinations: found, truncated };
+  const { items, truncated } = found.answer();
+  return { destinations: items, truncated };
 }
