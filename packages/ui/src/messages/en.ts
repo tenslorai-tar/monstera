@@ -56,12 +56,12 @@ export const THUMBNAIL_SIZE_OPTION_TITLES = {
 } as const;
 export const FOCUS_HINT = messageKey('surface.focus.hint');
 export const ORGANIZE_GRID_SIZE_TITLE = messageKey('setting.appearance-organize-grid-size.title');
-export const ORGANIZE_GRID_MEDIUM = messageKey('setting.appearance-organize-grid-size.medium');
-export const ORGANIZE_GRID_LARGE = messageKey('setting.appearance-organize-grid-size.large');
+export const ORGANIZE_GRID_THUMBNAIL = messageKey('setting.appearance-organize-grid-size.thumbnail');
+export const ORGANIZE_GRID_FULL_PAGE = messageKey('setting.appearance-organize-grid-size.full-page');
 /** `appearance.organize-grid-size`'s members, each its own exported key as the other option sets are. */
 export const ORGANIZE_GRID_SIZE_OPTION_TITLES = {
-  medium: ORGANIZE_GRID_MEDIUM,
-  large: ORGANIZE_GRID_LARGE,
+  thumbnail: ORGANIZE_GRID_THUMBNAIL,
+  'full-page': ORGANIZE_GRID_FULL_PAGE,
 } as const;
 export const ORGANIZE_GRID_LABEL = messageKey('surface.organize.label');
 export const ORGANIZE_GRID_COUNT = messageKey('surface.organize.count');
@@ -401,24 +401,7 @@ export const IMPORT_ANNOTATIONS_PROBLEM_TITLE = messageKey('dialog.import-annota
 export const IMPORT_ANNOTATIONS_UNREADABLE = messageKey('dialog.import-annotations.unreadable');
 export const IMPORT_ANNOTATIONS_TOO_LARGE = messageKey('dialog.import-annotations.too-large');
 export const COMPARE_COMMAND_TITLE = messageKey('command.compare-documents.title');
-export const COMPARE_PROGRESS = messageKey('task.compare-documents');
 export const OPTIMIZE_CHECKING = messageKey('task.optimize-checking');
-export const COMPARE_DOCUMENTS_TITLE = messageKey('dialog.compare-documents.title');
-export const COMPARE_DOCUMENTS_LABEL = messageKey('dialog.compare-documents.label');
-export const COMPARE_DOCUMENTS_APPLY = messageKey('dialog.compare-documents.apply');
-export const COMPARE_RESULT_TITLE = messageKey('dialog.compare-result.title');
-export const COMPARE_RESULT_NONE = messageKey('dialog.compare-result.none');
-export const COMPARE_RESULT_REFUSED = messageKey('dialog.compare-result.refused');
-export const COMPARE_RESULT_WHAT = messageKey('dialog.compare-result.what');
-export const COMPARE_RESULT_SUMMARY = messageKey('dialog.compare-result.summary');
-export const COMPARE_RESULT_PARTIAL = messageKey('dialog.compare-result.partial');
-export const COMPARE_RESULT_EXTRA_HERE = messageKey('dialog.compare-result.extra-here');
-export const COMPARE_RESULT_EXTRA_OTHER = messageKey('dialog.compare-result.extra-other');
-export const COMPARE_RESULT_CLIPPED = messageKey('dialog.compare-result.clipped');
-export const COMPARE_RESULT_TRUNCATED = messageKey('dialog.compare-result.truncated');
-export const COMPARE_RESULT_PAGE = messageKey('dialog.compare-result.page');
-export const COMPARE_RESULT_REMOVED = messageKey('dialog.compare-result.removed');
-export const COMPARE_RESULT_ADDED = messageKey('dialog.compare-result.added');
 export const READ_BARCODES_COMMAND_TITLE = messageKey('command.read-barcodes.title');
 export const PLACE_BARCODE_TOOL_TITLE = messageKey('command.organize.place-barcode');
 export const PAGE_BARCODES_TITLE = messageKey('dialog.page-barcodes.title');
@@ -618,6 +601,54 @@ export const DARK_PAGE_TITLE = messageKey('setting.viewing.dark-page.title');
 export const LOUPE_TITLE = messageKey('setting.viewing.loupe.title');
 export const SPLIT_VIEW_TITLE = messageKey('setting.viewing.split.title');
 export const SPLIT_SECOND_LABEL = messageKey('surface.split.second-label');
+/** Split view's header bar and halves (the owner's design from the old app's split panel, FEATURES row 65). */
+export const SPLIT_TITLE = messageKey('surface.split.title');
+export const SPLIT_LEFT_PAGE = messageKey('surface.split.left-page');
+export const SPLIT_RIGHT_PAGE = messageKey('surface.split.right-page');
+export const SPLIT_OF = messageKey('surface.split.of');
+export const SPLIT_BOTH = messageKey('surface.split.both');
+export const SPLIT_BOTH_BACK = messageKey('surface.split.both-back');
+export const SPLIT_BOTH_FORWARD = messageKey('surface.split.both-forward');
+export const SPLIT_CLOSE = messageKey('surface.split.close');
+export const SPLIT_HALF_PAGE = messageKey('surface.split.half-page');
+export const SIDE_TITLE = messageKey('surface.side-by-side.title');
+export const SIDE_SUBTITLE = messageKey('surface.side-by-side.subtitle');
+export const SIDE_CLOSE = messageKey('surface.side-by-side.close');
+export const SIDE_CLOSE_TEXT = messageKey('surface.side-by-side.close-text');
+export const SIDE_LEFT = messageKey('surface.side-by-side.left');
+export const SIDE_RIGHT = messageKey('surface.side-by-side.right');
+export const SIDE_DOCUMENT = messageKey('surface.side-by-side.document');
+export const SIDE_HALF_LABEL = messageKey('surface.side-by-side.half-label');
+export const SIDE_OPEN = messageKey('surface.side-by-side.open');
+export const SIDE_ZOOM_OUT = messageKey('surface.side-by-side.zoom-out');
+export const SIDE_ZOOM_IN = messageKey('surface.side-by-side.zoom-in');
+export const SIDE_ZOOM = messageKey('surface.side-by-side.zoom');
+export const SIDE_COMPARE = messageKey('surface.side-by-side.compare');
+export const SIDE_COMPARING = messageKey('surface.side-by-side.comparing');
+export const SIDE_CANCEL = messageKey('surface.side-by-side.cancel');
+export const SIDE_DIFFERENCES = messageKey('surface.side-by-side.differences');
+export const SIDE_COUNT = messageKey('surface.side-by-side.count');
+export const SIDE_NONE = messageKey('surface.side-by-side.none');
+export const SIDE_MORE = messageKey('surface.side-by-side.more');
+export const SIDE_CLIPPED = messageKey('surface.side-by-side.clipped');
+export const SIDE_REFUSED = messageKey('surface.side-by-side.refused');
+export const SIDE_MOVED = messageKey('surface.side-by-side.moved');
+export const SIDE_FAILED = messageKey('surface.side-by-side.failed');
+export const SIDE_ROW_TEXT = messageKey('surface.side-by-side.row-text');
+export const SIDE_ROW_LAYOUT = messageKey('surface.side-by-side.row-layout');
+export const SIDE_ROW_PAGE_SIZE = messageKey('surface.side-by-side.row-page-size');
+export const SIDE_ROW_ANNOTATION_ADDED = messageKey('surface.side-by-side.row-annotation-added');
+export const SIDE_ROW_ANNOTATION_REMOVED = messageKey('surface.side-by-side.row-annotation-removed');
+export const SIDE_ROW_ANNOTATION_CHANGED = messageKey('surface.side-by-side.row-annotation-changed');
+export const SIDE_ROW_GRAPHICS = messageKey('surface.side-by-side.row-graphics');
+export const SIDE_ROW_INSERTED = messageKey('surface.side-by-side.row-inserted');
+export const SIDE_ROW_REMOVED = messageKey('surface.side-by-side.row-removed');
+export const SIDE_ROW_REPLACED = messageKey('surface.side-by-side.row-replaced');
+export const SIDE_ROW_DELETED_TEXT = messageKey('surface.side-by-side.row-deleted-text');
+export const SIDE_ROW_ADDED_TEXT = messageKey('surface.side-by-side.row-added-text');
+export const SIDE_ROW_PAGES = messageKey('surface.side-by-side.row-pages');
+export const SIDE_ROW_LEFT = messageKey('surface.side-by-side.row-left');
+export const SIDE_ROW_RIGHT = messageKey('surface.side-by-side.row-right');
 export const RULERS_TITLE = messageKey('setting.viewing.rulers.title');
 export const GRID_TITLE = messageKey('setting.viewing.grid.title');
 export const RECTANGLE_TOOL_TITLE = messageKey('command.annotate-rectangle.title');
@@ -821,6 +852,10 @@ export const VERTICAL_RULER_LABEL = messageKey('surface.ruler.vertical.label');
 export const ACCENT_TITLE = messageKey('setting.appearance.accent.title');
 export const PALETTE_LABEL = messageKey('surface.palette.label');
 export const PALETTE_PLACEHOLDER = messageKey('surface.palette.placeholder');
+/** The title bar's light and dark switch (ADR-0132): what a click does, and why it is off under high contrast. */
+export const THEME_SWITCH_TO_LIGHT = messageKey('surface.theme-switch.to-light');
+export const THEME_SWITCH_TO_DARK = messageKey('surface.theme-switch.to-dark');
+export const THEME_SWITCH_HIGH_CONTRAST = messageKey('surface.theme-switch.high-contrast');
 export const PALETTE_EMPTY = messageKey('surface.palette.empty');
 export const PALETTE_TITLE = messageKey('command.palette.title');
 export const DESTINATIONS_LABEL = messageKey('surface.destinations.label');
@@ -842,9 +877,6 @@ export const FIND_MATCH_ON_PAGE = messageKey('surface.find.match-on-page');
 export const FIND_NEXT_MATCH = messageKey('surface.find.next-match');
 export const FIND_PREVIOUS_MATCH = messageKey('surface.find.previous-match');
 export const FIND_MATCH_POSITION = messageKey('surface.find.match-position');
-export const COMPARE_PICK = messageKey('surface.compare.pick');
-export const COMPARE_SAME = messageKey('surface.compare.same');
-export const COMPARE_SECOND_LABEL = messageKey('surface.compare.second-label');
 export const TAB_STRIP_LABEL = messageKey('surface.tabs.label');
 export const TAB_CLOSE = messageKey('surface.tabs.close');
 export const TAB_OPEN_ANOTHER = messageKey('surface.tabs.open-another');
@@ -1271,6 +1303,25 @@ export const TOAST_SAVED = messageKey('toast.saved');
 export const TOAST_COPY_SAVED = messageKey('toast.copy-saved');
 export const TOAST_SMALLER_COPY_SAVED = messageKey('toast.smaller-copy-saved');
 export const TOAST_PAGES_SAVED = messageKey('toast.pages-saved');
+export const TOAST_SHOW_IN_FOLDER = messageKey('toast.show-in-folder');
+export const TOAST_FILES_SAVED = messageKey('toast.files-saved');
+export const TOAST_IMAGES_SAVED = messageKey('toast.images-saved');
+export const TOAST_TEXT_SAVED = messageKey('toast.text-saved');
+export const TOAST_WORD_SAVED = messageKey('toast.word-saved');
+export const TOAST_POWERPOINT_SAVED = messageKey('toast.powerpoint-saved');
+export const TOAST_EXCEL_SAVED = messageKey('toast.excel-saved');
+export const TOAST_PDFA_SAVED = messageKey('toast.pdfa-saved');
+export const TOAST_FORM_DATA_SAVED = messageKey('toast.form-data-saved');
+export const TOAST_COMMENTS_SAVED = messageKey('toast.comments-saved');
+export const TOAST_SIGNED_COPY_SAVED = messageKey('toast.signed-copy-saved');
+export const TOAST_SETTINGS_SAVED = messageKey('toast.settings-saved');
+export const TOAST_SEARCHABLE_SAVED = messageKey('toast.searchable-saved');
+export const TOAST_SNAPSHOT_SAVED = messageKey('toast.snapshot-saved');
+export const TOAST_SETTINGS_NOT_SAVED = messageKey('toast.settings-not-saved');
+export const TOAST_SENT_TO_PRINTER = messageKey('toast.sent-to-printer');
+export const TOAST_DOCUMENT_SIGNED = messageKey('toast.document-signed');
+export const TOAST_ACTIVE_CONTENT_REMOVED = messageKey('toast.active-content-removed');
+export const TOAST_TRANSITION_SET = messageKey('toast.transition-set');
 export const TOAST_SAVED_BACK = messageKey('toast.saved-back');
 export const THUMBNAILS_LABEL = messageKey('surface.thumbnails.label');
 /**
@@ -1462,6 +1513,8 @@ export const ASSISTANT_SENT_RIGHT = messageKey('assistant.sent.right');
 export const ASSISTANT_CITATION_RIGHT = messageKey('assistant.citation.right');
 /** The Assistant's message box placeholder: one fixed line (the owner's decision, 2026-10-01). */
 export const ASSISTANT_PLACEHOLDER = messageKey('assistant.placeholder');
+/** *Ask AI* on a selection: the selected words quoted in the message box, for the person's question to follow. */
+export const ASSISTANT_QUOTED = messageKey('assistant.quoted');
 export const ASK_AI_SELECTION_TITLE = messageKey('command.ai.ask-selection');
 export const EXPLAIN_SELECTION_TITLE = messageKey('command.ai.explain-selection');
 export const SUMMARISE_SELECTION_TITLE = messageKey('command.ai.summarise-selection');
@@ -2267,9 +2320,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [THUMBNAIL_SIZE_OPTION_TITLES.large]: 'Large',
   // THE CHORD IS A VALUE, read off the shortcut map, as the start screen's F1 hint's is.
   [FOCUS_HINT]: 'Focus mode · {chord} to return',
-  [ORGANIZE_GRID_SIZE_TITLE]: 'Card size',
-  [ORGANIZE_GRID_SIZE_OPTION_TITLES.medium]: 'Medium',
-  [ORGANIZE_GRID_SIZE_OPTION_TITLES.large]: 'Large',
+  [ORGANIZE_GRID_SIZE_TITLE]: 'Page view',
+  [ORGANIZE_GRID_SIZE_OPTION_TITLES.thumbnail]: 'Thumbnail',
+  [ORGANIZE_GRID_SIZE_OPTION_TITLES['full-page']]: 'Full page',
   [ORGANIZE_GRID_LABEL]: 'Pages to organize',
   [ORGANIZE_GRID_COUNT]: '{count, plural, one {# page} other {# pages}}',
   [ORGANIZE_GRID_SELECTED]: '{count} selected',
@@ -2428,6 +2481,55 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // name are two regions a screen-reader user cannot tell apart, and the second
   // one is the whole point of the feature.
   [SPLIT_SECOND_LABEL]: 'Second view of this document',
+  [SPLIT_TITLE]: 'Split View',
+  [SPLIT_LEFT_PAGE]: 'Left page:',
+  [SPLIT_RIGHT_PAGE]: 'Right page:',
+  [SPLIT_OF]: 'of {count}',
+  [SPLIT_BOTH]: 'Both',
+  // THE NAME CARRIES THE WORD ON THE BUTTON (WCAG 2.5.3), and the direction the arrow shows, so the two read apart.
+  [SPLIT_BOTH_BACK]: 'Both back one page',
+  [SPLIT_BOTH_FORWARD]: 'Both forward one page',
+  [SPLIT_CLOSE]: 'Close split view',
+  [SPLIT_HALF_PAGE]: 'Page {page}',
+  [SIDE_TITLE]: 'Side by Side',
+  [SIDE_SUBTITLE]: 'Compare two open documents',
+  [SIDE_CLOSE]: 'Close Side by Side',
+  [SIDE_CLOSE_TEXT]: 'Close',
+  [SIDE_LEFT]: 'Left',
+  [SIDE_RIGHT]: 'Right',
+  [SIDE_DOCUMENT]: '{side} document',
+  [SIDE_HALF_LABEL]: '{side}: {name}',
+  [SIDE_OPEN]: 'Open another PDF…',
+  [SIDE_ZOOM_OUT]: 'Zoom out',
+  [SIDE_ZOOM_IN]: 'Zoom in',
+  [SIDE_ZOOM]: '{percent}%',
+  [SIDE_COMPARE]: 'Compare',
+  [SIDE_COMPARING]: 'Comparing… {done} of {total}',
+  [SIDE_CANCEL]: 'Cancel',
+  [SIDE_DIFFERENCES]: 'Differences',
+  [SIDE_COUNT]: '{count, plural, one {# difference} other {# differences}}',
+  [SIDE_NONE]: 'No differences found.',
+  [SIDE_MORE]: 'There are more differences than can be listed. Only the first {count} are shown.',
+  [SIDE_CLIPPED]:
+    '{count, plural, one {One page has more text than can be compared at once, so part of its text was not compared.} other {# pages have more text than can be compared at once, so part of their text was not compared.}}',
+  [SIDE_REFUSED]: 'The documents could not be compared. One of them may be busy or no longer open.',
+  [SIDE_MOVED]: 'A document changed while it was being compared. Compare again to see its differences.',
+  [SIDE_FAILED]: 'A page could not be drawn, so the comparison stopped. Nothing was changed in either document.',
+  [SIDE_ROW_TEXT]: 'Text changed',
+  [SIDE_ROW_LAYOUT]: 'Moved',
+  [SIDE_ROW_PAGE_SIZE]: 'Page size changed',
+  [SIDE_ROW_ANNOTATION_ADDED]: 'Annotation added',
+  [SIDE_ROW_ANNOTATION_REMOVED]: 'Annotation removed',
+  [SIDE_ROW_ANNOTATION_CHANGED]: 'Annotation changed',
+  [SIDE_ROW_GRAPHICS]: 'Picture changed',
+  [SIDE_ROW_INSERTED]: 'Page added',
+  [SIDE_ROW_REMOVED]: 'Page removed',
+  [SIDE_ROW_REPLACED]: '“{removed}” → “{inserted}”',
+  [SIDE_ROW_DELETED_TEXT]: 'Removed “{text}”',
+  [SIDE_ROW_ADDED_TEXT]: 'Added “{text}”',
+  [SIDE_ROW_PAGES]: 'Left page {left} · Right page {right}',
+  [SIDE_ROW_LEFT]: 'Left page {page}',
+  [SIDE_ROW_RIGHT]: 'Right page {page}',
   [RULERS_TITLE]: 'Show rulers',
   [GRID_TITLE]: 'Show grid',
   [RECTANGLE_TOOL_TITLE]: 'Rectangle',
@@ -2640,6 +2742,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ACCENT_TITLE]: 'Accent colour',
   [PALETTE_LABEL]: 'Command palette',
   [PALETTE_PLACEHOLDER]: 'Search commands',
+  [THEME_SWITCH_TO_LIGHT]: 'Switch to light theme',
+  [THEME_SWITCH_TO_DARK]: 'Switch to dark theme',
+  [THEME_SWITCH_HIGH_CONTRAST]: 'Windows high contrast is on, so light and dark follow it',
   [PALETTE_EMPTY]: 'No command matches.',
   [PALETTE_TITLE]: 'Command palette',
   [DESTINATIONS_LABEL]: 'Outline',
@@ -2667,12 +2772,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // far they have to go as much as where they are, and "match 7" alone is the
   // half that tells them neither.
   [FIND_MATCH_POSITION]: 'Match {position} of {count}',
-  [COMPARE_PICK]: 'Compare with',
   // THE DEFAULT IS THIS DOCUMENT AGAIN, which is split view. Naming it as an
   // option rather than as an absence is what makes it something a reader can
   // return to.
-  [COMPARE_SAME]: 'This document',
-  [COMPARE_SECOND_LABEL]: 'Second view: {name}',
   [TAB_STRIP_LABEL]: 'Open documents',
   // THE FILE'S NAME IS IN THE CONTROL'S NAME. Six tabs give six close buttons,
   // and six of them called "Close" are six controls a screen-reader user
@@ -3255,6 +3357,25 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_COPY_SAVED]: 'Copy saved',
   [TOAST_SMALLER_COPY_SAVED]: 'Smaller copy saved',
   [TOAST_PAGES_SAVED]: 'Pages saved',
+  [TOAST_SHOW_IN_FOLDER]: 'Show in folder',
+  [TOAST_FILES_SAVED]: 'Files saved',
+  [TOAST_IMAGES_SAVED]: 'Images saved',
+  [TOAST_TEXT_SAVED]: 'Text file saved',
+  [TOAST_WORD_SAVED]: 'Word file saved',
+  [TOAST_POWERPOINT_SAVED]: 'PowerPoint file saved',
+  [TOAST_EXCEL_SAVED]: 'Excel file saved',
+  [TOAST_PDFA_SAVED]: 'PDF/A file saved',
+  [TOAST_FORM_DATA_SAVED]: 'Form data saved',
+  [TOAST_COMMENTS_SAVED]: 'Comments saved',
+  [TOAST_SIGNED_COPY_SAVED]: 'Signed copy saved',
+  [TOAST_SETTINGS_SAVED]: 'Settings saved to a file',
+  [TOAST_SEARCHABLE_SAVED]: 'Searchable copy saved',
+  [TOAST_SNAPSHOT_SAVED]: 'Snapshot saved',
+  [TOAST_SETTINGS_NOT_SAVED]: 'The settings file could not be written. Nothing was changed.',
+  [TOAST_SENT_TO_PRINTER]: 'Sent to the printer',
+  [TOAST_DOCUMENT_SIGNED]: 'Document signed. Save to keep the signature.',
+  [TOAST_ACTIVE_CONTENT_REMOVED]: 'Active content removed. Save to keep the change.',
+  [TOAST_TRANSITION_SET]: 'Page transition set. It plays when the document is presented.',
   [TOAST_SAVED_BACK]: 'Saved to cloud storage',
   [STATUS_ZOOM_SLIDER]: 'Zoom level',
   [THUMBNAILS_LABEL]: 'Page thumbnails',
@@ -3311,7 +3432,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_NO_KEY]: 'This provider has no key stored. Add it in Settings › AI; the key stays on this machine.',
   [ASSISTANT_SEARCHES_THE_WEB]:
     'This model searches the web for every answer, so nothing was sent. Choose another model, or turn on Document + web.',
-  [ASSISTANT_WEB_LABEL]: 'Sources',
+  [ASSISTANT_WEB_LABEL]: 'Choose sources',
   [ASSISTANT_WEB_DOCUMENT]: 'Document only',
   [ASSISTANT_WEB_ON]: 'Document + web',
   [ASSISTANT_WEB_ALWAYS]: 'Always searches the web. To use this model, choose Document + web.',
@@ -3340,7 +3461,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AI_PROVIDER_NAMES.groq]: 'Groq',
   [AI_PROVIDER_NAMES.perplexity]: 'Perplexity',
   [AI_PROVIDER_NAMES.deepseek]: 'DeepSeek',
-  [ASSISTANT_ABOUT_LABEL]: 'Context',
+  [ASSISTANT_ABOUT_LABEL]: 'Choose context',
   [ASSISTANT_SENT_PICTURE]: 'Sent a picture of page {page} of {count}',
   [ASSISTANT_SENT_COMMENTS]: '{comments, plural, one {Sent the one comment in this document} other {Sent all # comments in this document}}',
   [ASSISTANT_SENT_COMMENTS_CUT]: '{comments, plural, one {Sent the first comment — the list was too long to send whole} other {Sent the first # comments — the list was too long to send whole}}',
@@ -3452,6 +3573,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_SENT_LEFT]: 'Left: {sent}',
   [ASSISTANT_SENT_RIGHT]: 'Right: {sent}',
   [ASSISTANT_PLACEHOLDER]: 'Ask about this page…',
+  [ASSISTANT_QUOTED]: '“{text}”',
   [ASK_AI_SELECTION_TITLE]: 'Ask AI',
   [EXPLAIN_SELECTION_TITLE]: 'Explain',
   [SUMMARISE_SELECTION_TITLE]: 'Summarise',
@@ -3945,30 +4067,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [IMPORT_ANNOTATIONS_TOO_LARGE]:
     'Nothing was added. Monstera reads comment files up to {megabytes} MB, and that one is larger.',
   [COMPARE_COMMAND_TITLE]: 'Compare documents…',
-  [COMPARE_PROGRESS]: 'Comparing pages',
   [OPTIMIZE_CHECKING]: 'Checking the size of a smaller copy',
-  [COMPARE_DOCUMENTS_TITLE]: 'Compare documents',
-  [COMPARE_DOCUMENTS_LABEL]: 'Compare this document with',
-  [COMPARE_DOCUMENTS_APPLY]: 'Compare',
-  [COMPARE_RESULT_TITLE]: 'Differences',
-  [COMPARE_RESULT_NONE]: 'Open the other document in a tab first, then compare.',
-  [COMPARE_RESULT_REFUSED]: 'The documents could not be compared. One of them may be busy or no longer open.',
-  [COMPARE_RESULT_WHAT]:
-    'This compares the words on each page with the page at the same number in {name}. Pictures and layout are not compared, and a page added in the middle shifts every page after it.',
-  [COMPARE_RESULT_SUMMARY]:
-    '{count, plural, =0 {No lines differ in the {pages} pages both documents have.} one {One line differs in the {pages} pages both documents have.} other {# lines differ in the {pages} pages both documents have.}}',
-  [COMPARE_RESULT_PARTIAL]:
-    'Compared {counted} of {total} pages. A document changed during the comparison, so the rest were not compared.',
-  [COMPARE_RESULT_EXTRA_HERE]:
-    '{count, plural, one {This document has one more page, which was not compared.} other {This document has # more pages, which were not compared.}}',
-  [COMPARE_RESULT_EXTRA_OTHER]:
-    '{count, plural, one {{name} has one more page, which was not compared.} other {{name} has # more pages, which were not compared.}}',
-  [COMPARE_RESULT_CLIPPED]:
-    '{count, plural, one {One page has more text than can be read at once, so some of its lines may be missing from the comparison.} other {# pages have more text than can be read at once, so some of their lines may be missing from the comparison.}}',
-  [COMPARE_RESULT_TRUNCATED]: 'There are more differences than can be listed. Only the first ones are shown.',
-  [COMPARE_RESULT_PAGE]: 'Page {page}',
-  [COMPARE_RESULT_REMOVED]: 'Only in this document',
-  [COMPARE_RESULT_ADDED]: 'Only in {name}',
   [READ_BARCODES_COMMAND_TITLE]: 'Read barcodes',
   [PLACE_BARCODE_TOOL_TITLE]: 'Add a barcode',
   [PAGE_BARCODES_TITLE]: 'Barcodes on this page',
@@ -4363,7 +4462,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_DOCUMENT_IMAGE_NOTE]:
     'You will be asked for a PNG or JPEG picture of your signature first, then for your certificate.',
   [SIGN_DOCUMENT_MARK_MISSING]: 'Type or draw the signature first.',
-  [PLACE_SIGNATURE_TOOL_TITLE]: 'Place a visible signature',
+  [PLACE_SIGNATURE_TOOL_TITLE]: 'Sign with certificate',
 
   [SIGNATURES_COMMAND_TITLE]: 'Check signatures',
   [SIGNATURES_TITLE]: 'Signatures',
@@ -4501,7 +4600,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_COMMENTS_EXPORT_JSON]: 'Export JSON',
   [RIBBON_PROTECT_DOCUMENT]: 'Permissions',
   [RIBBON_REDACT_MATCHES]: 'Redact matches',
-  [RIBBON_PLACE_SIGNATURE]: 'Signature',
+  [RIBBON_PLACE_SIGNATURE]: 'Sign with certificate',
   [RIBBON_DIAGNOSTICS]: 'Diagnostics',
   [RIBBON_NEW_FROM_MARKDOWN]: 'From Markdown',
   [RIBBON_APPEND_MARKDOWN]: 'Append Markdown',

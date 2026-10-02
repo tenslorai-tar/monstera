@@ -1,5 +1,5 @@
 import { type Command, type ContractClient, type OcrLanguages, channels, createClient } from '@monstera/contract';
-import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
+import { asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { ENHANCE_OUTCOME_DIALOG_ID } from '../dialogs/enhanceOutcome.js';
@@ -114,7 +114,7 @@ function clientOver(
     }
     if (id === 'document.saveCopy') {
       copies += 1;
-      return Promise.resolve(ok({ kind: 'copied' as const, bytes: 2048 }));
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: 2048, written: asFileHandle('Handle-searchable-copy') }));
     }
     throw new Error(`unexpected channel ${id}`);
   });
@@ -401,6 +401,7 @@ describe('the recognise-text command', () => {
 
     await exportSearchableCommand({
       client,
+      toast: () => undefined,
       onApplied: () => undefined,
       stamp: STAMP,
       ask,
@@ -432,7 +433,7 @@ describe('the recognise-text command', () => {
       end: () => undefined,
     });
 
-    await exportSearchableCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, track, servicesReady: () => false, ocrLanguages: () => STORED }).run(
+    await exportSearchableCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, toast: () => undefined, track, servicesReady: () => false, ocrLanguages: () => STORED }).run(
       contextWith(2),
     );
 

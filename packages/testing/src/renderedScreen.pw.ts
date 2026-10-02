@@ -796,6 +796,41 @@ test('SELECTED TEXT opens the selected-text menu above the page’s, in the owne
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(selected);
 });
 
+test('right-click › ASK AI quotes the selected words in the assistant’s box, the cursor after them, and sends nothing', async ({ page }) => {
+  // THE WHOLE PATH in the production build: the command's quote, `App`'s request and the panel's box. The unit cases
+  // hold each half; only this one crosses the composition between them.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const bytes = await threePagePdf();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000e4');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'three.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    pageLines: [['Quarterly totals for the north', 'Nothing further is owed']],
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const line = page.locator('[data-text-layer="0"] [data-text-line="0"]');
+  await expect(line).toHaveCount(1);
+  const box = await line.boundingBox();
+  if (box === null) throw new Error('the first line has no box');
+  await page.mouse.move(box.x + 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+  const selected = (await page.evaluate(() => document.getSelection()?.toString() ?? '')).trim();
+  expect(selected).not.toBe('');
+
+  await line.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } });
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Ask AI' }).click();
+  const draft = page.getByLabel('Ask about this document');
+  await expect(draft).toHaveValue(`“${selected}” `);
+  await expect(draft).toBeFocused();
+  const caret = await draft.evaluate((element: HTMLTextAreaElement) => [element.selectionStart, element.selectionEnd, element.value.length]);
+  expect(caret[0]).toBe(caret[2]);
+  expect(caret[1]).toBe(caret[2]);
+  await expect(page.locator('.m-assistant [data-choice-menu]').first()).toHaveText('Choose context: Selection');
+});
+
 test('a triple-click on a page’s LAST LINE still opens the selected-text menu, on that line', async ({
   page,
 }) => {
@@ -838,13 +873,13 @@ test('a triple-click on a page’s LAST LINE still opens the selected-text menu,
   await expect(page.getByRole('menuitem', { name: 'Explain' })).toBeVisible();
 });
 
-test('OPEN SIDE BY SIDE puts the right-clicked tab’s document in the second pane (§7)', async ({
+test('OPEN SIDE BY SIDE puts the right-clicked tab’s document in Side by Side’s right half (§7, ADR-0131)', async ({
   page,
 }) => {
   // The tab menu in the production build, with TWO documents open — which is what makes this case
   // able to fail. The menu rewrites the context's `docId` to the tab that was right-clicked, so a
-  // command reading the focused document would compare the document already on show, and the
-  // picker below would answer with the wrong id rather than with nothing.
+  // command reading the focused document would put the document already on show on both sides,
+  // and the right half's list below would answer with the wrong id rather than with nothing.
   //
   // It is here and not in a live run because a second document can only be opened through the
   // native file dialog, which no instrument drives.
@@ -880,15 +915,69 @@ test('OPEN SIDE BY SIDE puts the right-clicked tab’s document in the second pa
 
   await page.getByRole('menuitem', { name: 'Open side by side' }).click();
 
-  // THE PANE ITSELF, which only renders under split view — so this also says the command turned
-  // that on. A version that wrote the document alone would leave nothing here at all.
-  // THE LAYER ON SHOW: the other document's layer is kept behind it under the same split (ADR-0129), with a
-  // hidden picker of its own.
-  const picker = page.locator('[data-document-layer="active"] [data-compare-pick="true"]');
-  await expect(picker).toBeVisible();
-  // AND THE PICKER'S VALUE IS THE ID, not merely that something is compared: the command writes
-  // the same state the picker owns, and a wrong id would still fill the pane.
-  await expect(picker).toHaveValue(first);
+  // THE SURFACE, over the ribbon and the page area, and each half's list naming its document by id: a wrong id would
+  // still fill a half, so the values are what separates the command from one that reads the wrong document.
+  await expect(page.locator('section[data-side-by-side]')).toBeVisible();
+  await expect(page.locator('.m-ribbon__tools')).toBeHidden();
+  await expect(page.locator('[data-side-pick="left"]')).toHaveValue(second);
+  await expect(page.locator('[data-side-pick="right"]')).toHaveValue(first);
+  // ESC RETURNS THE WINDOW AS IT WAS.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('section[data-side-by-side]')).toHaveCount(0);
+  await expect(page.locator('.m-ribbon__tools')).toBeVisible();
+});
+
+test('SIDE BY SIDE’S COMPARE marks a changed line on BOTH pages and lists it (ADR-0131)', async ({ page }) => {
+  // TWO DOCUMENTS WHOSE TEXT DIFFERS ON ONE LINE of page 1, and nowhere else. The same bytes draw both, so the
+  // pictures agree and the one difference is the text — a mark on a page the walk did not pair, or on one side only,
+  // is what this case exists to catch, and only real layout can show it: happy-dom measures no page.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const bytes = await threePagePdf();
+  const first = asDocId('00000000-0000-4000-8000-0000000000e9');
+  const second = asDocId('00000000-0000-4000-8000-0000000000ea');
+  const text = (owed: string): readonly (readonly string[])[] => [
+    ['Quarterly totals for the north', owed],
+    ['The second page is the same in both'],
+    ['The third page is the same in both'],
+  ];
+  await bridge(page, {
+    opens: [
+      { kind: 'opened', docId: first, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'first.pdf' },
+      { kind: 'opened', docId: second, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'second.pdf' },
+    ],
+    documentBytes: new Map([
+      [first, bytes],
+      [second, bytes],
+    ]),
+    documentPageLines: new Map([
+      [first, text('Nothing further is owed')],
+      [second, text('Nothing more is owed')],
+    ]),
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await page.locator('.m-ribbon__tools').getByRole('button', { name: 'Open', exact: true }).click();
+  // REVIEW › COMPARE, the ribbon's route in: `second.pdf` is in front, so it is the left half.
+  await page.locator('nav.m-ribbon__rail').getByRole('button', { name: 'Review' }).click();
+  await page.locator('.m-ribbon__tools').getByRole('button', { name: 'Compare', exact: true }).click();
+  const surface = page.locator('section[data-side-by-side]');
+  await expect(surface).toBeVisible();
+
+  await surface.locator('[data-side-compare]').click();
+  await expect(surface.locator('[data-side-count]')).toHaveText('1 difference');
+  const row = surface.locator('[data-side-row="text"]');
+  await expect(row).toContainText('Left page 1 · Right page 1');
+  await expect(row).toContainText('“more” → “further”');
+  await row.click();
+
+  // ON BOTH HALVES, on page 1, and drawn as the chosen change.
+  for (const side of ['left', 'right'] as const) {
+    const mark = surface.locator(`[data-side-half="${side}"] [data-difference-layer="0"] .m-difference--text.m-difference--active`);
+    await expect(mark).toHaveCount(1);
+    await expect(mark).toBeVisible();
+  }
+  // AND NOWHERE ELSE: pages 2 and 3 are the same in both, so a mark there is a pairing defect.
+  await expect(surface.locator('[data-difference-layer="1"], [data-difference-layer="2"]')).toHaveCount(0);
 });
 
 test('each TEXT-LAYER LINE’S GLYPHS SPAN ITS BOX, so a selection lands on the ink it covers', async ({ page }) => {
@@ -1882,6 +1971,111 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every
   await expect.poll(async () => more.count()).toBe(0);
 });
 
+/** How far a ribbon row's content runs past its box: above 1 px, the row's `overflow: hidden` is cutting a tool. */
+const ribbonOverflow = (tools: ReturnType<Page['locator']>): Promise<number> =>
+  tools.evaluate((element) => element.scrollWidth - element.clientWidth);
+
+test('a CAPTION THAT GROWS after the fold measured it is measured again, so the row never cuts a tool', async ({ page }) => {
+  // THE GAP: the fold keeps each button's width, and the row's box is the same size whether its content fits or not,
+  // so nothing announced a caption that grew. Measured 2026-10-02 with no group observed: the row ran 61 px past its
+  // box for good. Growing the captions is the CONTROL's input — something the absent fix would leave overflowing.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const tools = page.locator('.m-ribbon__tools');
+  await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
+  await expect.poll(() => ribbonOverflow(tools)).toBeLessThanOrEqual(1);
+  const shownBefore = await tools.locator('.m-tool-button[data-command]').count();
+  await page.evaluate(() => {
+    document.styleSheets[0]?.insertRule('.m-tool-button__label { font-size: 13px !important; }', 0);
+  });
+  // THE GROWTH TOOK: the captions are drawn larger, so the row had something to answer.
+  await expect(tools.locator('.m-tool-button__label').first()).toHaveCSS('font-size', '13px');
+  await expect.poll(() => ribbonOverflow(tools)).toBeLessThanOrEqual(1);
+  // AND IT ANSWERED BY FOLDING, not by the browser hiding the excess: fewer tools on the row than before.
+  expect(await tools.locator('.m-tool-button[data-command]').count()).toBeLessThan(shownBefore);
+});
+
+// EVERY RIBBON TAB AT 1280 × 800, the size this suite reads as the owner's (`window.ts` sets no size of its own). A
+// literal list, because this package may not import the registry — and a case below holds it equal to the rail's
+// sections, so a tab added without a case here is red rather than unchecked.
+const RIBBON_TABS = ['home', 'organize', 'edit', 'comment', 'forms', 'protect', 'review', 'tools'] as const;
+
+test('the ribbon tabs checked at 1280 × 800 are exactly the rail’s sections', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const sections = page.locator('.m-ribbon__tab[data-ribbon-section]');
+  await expect(sections.first()).toBeVisible();
+  const rail = await sections.evaluateAll((tabs) => tabs.map((tab) => (tab as HTMLElement).dataset['ribbonSection']));
+  expect(rail).toStrictEqual([...RIBBON_TABS]);
+});
+
+for (const tab of RIBBON_TABS) {
+  test(`the ${tab.toUpperCase()} ribbon at 1280 × 800 cuts no caption and folds no tool while room remains`, async ({ page }) => {
+    // THE OWNER'S REPORT OF 2 OCTOBER: Forms showed a More with room to spare and "List box" cut to "List bo".
+    // Not reproduced on this machine's fonts; these are the properties, held per tab where they can be seen.
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await bridgeWithDocument(page, {}, 1);
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    const tools = page.locator('.m-ribbon__tools');
+    await page.locator(`.m-ribbon__tab[data-ribbon-section="${tab}"]`).click();
+    await expect(tools).toHaveAttribute('data-ribbon-active', tab);
+    await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
+    // THE WIDEST TOOL THIS TAB DRAWS, read where (nearly) everything is drawn: room left at 1280 may not reach it.
+    const widest = await tools
+      .locator('.m-tool-button[data-command]')
+      .evaluateAll((buttons) => Math.max(...buttons.map((button) => button.getBoundingClientRect().width)));
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect.poll(() => ribbonOverflow(tools)).toBeLessThanOrEqual(1);
+
+    const seen = await tools.evaluate((element) => {
+      const caption = (button: HTMLElement): { label: number; room: number } => {
+        const label = button.querySelector<HTMLElement>('.m-tool-button__label');
+        const style = getComputedStyle(button);
+        return {
+          label: label?.getBoundingClientRect().width ?? 0,
+          room: button.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight),
+        };
+      };
+      const buttons = [...element.querySelectorAll<HTMLElement>('.m-tool-button[data-command]')];
+      const cut = buttons.filter((button) => caption(button).label > caption(button).room + 0.5).map((button) => button.dataset['command']);
+      // POSITIVE CONTROL, in the instrument: one tool squeezed on purpose must read as cut, or a clean answer means
+      // nothing — a label's own box grows with its text, which made the first version of this check blind.
+      const first = buttons[0];
+      let sees = false;
+      if (first !== undefined) {
+        first.style.setProperty('min-inline-size', '0');
+        first.style.inlineSize = '20px';
+        sees = caption(first).label > caption(first).room + 0.5;
+        first.style.removeProperty('inline-size');
+        first.style.removeProperty('min-inline-size');
+      }
+      const last = [...element.querySelectorAll('.m-ribbon__group, .m-ribbon__rest')].at(-1);
+      const end = element.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(element).paddingRight);
+      return {
+        cut,
+        sees,
+        room: last === undefined ? 0 : end - last.getBoundingClientRect().right,
+        widthFolded: [...element.querySelectorAll<HTMLElement>('.m-ribbon__more[data-width-folded]')].reduce(
+          (sum, more) => sum + Number(more.dataset['widthFolded'] ?? '0'),
+          0,
+        ),
+        rest: element.querySelector('.m-ribbon__rest') !== null,
+      };
+    });
+    const detail = JSON.stringify({ ...seen, widest });
+    expect(seen.sees, `the clip check can see a cut caption: ${detail}`).toBe(true);
+    expect(seen.cut, detail).toStrictEqual([]);
+    // A TOOL FOLDED FOR WIDTH only where the room left could not have held one more. A More holding only a group's
+    // secondary tools (ADR-0098) is drawn at every width, so it is not a fold for width and is not asked about here.
+    if (seen.widthFolded > 0 || seen.rest) expect(seen.room, detail).toBeLessThan(widest);
+  });
+}
+
 test('BELOW THE FLOOR whole groups fold into the row’s More, nothing scrolls sideways, and every tool is still reachable', async ({
   page,
 }) => {
@@ -2061,6 +2255,45 @@ test('LIVE CHECK 2.1.2, 2.4.3 and 2.4.7: Tab walks the document screen in readin
   expect(status, JSON.stringify(order)).toBe(order.length - 1);
 });
 
+for (const [theme, offers] of [
+  ['light', 'Switch to dark theme'],
+  ['dark', 'Switch to light theme'],
+] as const) {
+  test(`${theme}: the TITLE BAR's light and dark switch offers the other theme, and the search keeps its words at 1280 × 800`, async ({
+    page,
+  }) => {
+    // ADR-0132 at the owner's size, with a document open so the tabs take their share of the row.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await bridgeWithDocument(page, { 'appearance.theme': theme }, 1);
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    const bar = page.locator('.m-title-bar');
+    await expect(bar.getByRole('button', { name: offers })).toBeVisible();
+
+    const fit = await bar.evaluate((element) => {
+      const search = element.querySelector<HTMLElement>('.m-command-search');
+      const chord = element.querySelector<HTMLElement>('.m-command-search__chord');
+      const words = search?.querySelector<HTMLElement>('span');
+      const searchBox = search?.getBoundingClientRect();
+      const chordBox = chord?.getBoundingClientRect();
+      return {
+        // THE PLACEHOLDER WHOLE: its own text fits the box it is laid out in.
+        placeholder: words !== null && words !== undefined && words.scrollWidth <= words.clientWidth + 1,
+        // THE CHORD INSIDE THE SEARCH, not pushed past its edge.
+        chord: searchBox !== undefined && chordBox !== undefined && chordBox.right <= searchBox.right + 0.5,
+        // AND THE ROW ITSELF scrolls nothing sideways: every control is laid out inside it.
+        row: element.scrollWidth <= element.clientWidth + 1,
+      };
+    });
+    expect(fit).toStrictEqual({ placeholder: true, chord: true, row: true });
+
+    // A CLICK writes the other theme, through View › Theme's command.
+    await bar.getByRole('button', { name: offers }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme === 'light' ? 'dark' : 'light');
+  });
+}
+
 test('LIVE CHECK toasts: a toast never covers the assistant’s Send button', async ({ page }) => {
   // The review's "toasts over Send": the toast strip sits at the window's bottom-right, which is where the assistant's
   // composer ends. A save's toast is the one this screen raises on its own.
@@ -2079,6 +2312,13 @@ test('LIVE CHECK toasts: a toast never covers the assistant’s Send button', as
   if (a === null || b === null) throw new Error('a box is missing');
   const overlaps = a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
   expect(overlaps, `toast ${JSON.stringify(a)} against Send ${JSON.stringify(b)}`).toBe(false);
+  // THE CLASS, not the one button: the strip sits in the page area, so NO control of the panel can be under it. It
+  // missed Send by a guessed offset until the composer lost a line and the guess covered Send by 0.56 px on Windows.
+  const [pane, panel] = [await page.locator('.m-page-pane').last().boundingBox(), await page.locator('.m-context-panel').boundingBox()];
+  if (pane === null || panel === null) throw new Error('the page pane and the context panel');
+  expect(a.x + a.width, 'the toast ends inside the page area').toBeLessThanOrEqual(pane.x + pane.width);
+  expect(a.y + a.height, 'and above its foot').toBeLessThanOrEqual(pane.y + pane.height);
+  expect(a.x + a.width, 'so it stops short of the panel').toBeLessThanOrEqual(panel.x);
 });
 
 test('LIVE CHECK Studio: the overlay goes when focus leaves it for another part of the window', async ({ page }) => {
@@ -2738,6 +2978,51 @@ test('the ORGANIZE GRID spans the whole page area at 1920 × 1080, as many colum
   expect(Math.max(...portrait) - Math.min(...portrait), detail).toBeLessThanOrEqual(1);
   // CONTROL: the landscape card IS shorter, so the shared top above was a fact about alignment and not about equal cards.
   expect(measured.state.heights[LANDSCAPE] ?? 0, detail).toBeLessThan(Math.min(...portrait) - 10);
+});
+
+// ORGANIZE'S FULL PAGE (the owner's sub-tabs, 2026-10-02): every page WHOLE, as tall as the grid allows. Only real
+// layout can show this — the height is read from the laid-out grid, and happy-dom lays nothing out.
+test('ORGANIZE’S FULL PAGE shows each page whole at the grid’s height at 1280 × 800, a landscape page as wide as it is', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const pdf = await PDFDocument.create();
+  for (let at = 0; at < 6; at += 1) pdf.addPage(at === LANDSCAPE ? [792, 612] : [612, 792]);
+  const bytes = await pdf.save();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000eb');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'lease.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    settings: { 'appearance.ribbon-section': 'organize' },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const grid = page.getByRole('region', { name: 'Pages to organize' });
+  await grid.getByRole('button', { name: 'Full page' }).click();
+  await expect(grid.locator('[data-thumb-page="0"] canvas[data-drawn="true"]')).toBeAttached();
+  await expect(grid.locator(`[data-thumb-page="${String(LANDSCAPE)}"] canvas[data-drawn="true"]`)).toBeAttached();
+
+  const measured = await page.evaluate((landscape) => {
+    const strip = document.querySelector('.m-page-grid .m-thumbnails')?.getBoundingClientRect();
+    const box = (at: number): DOMRect | undefined =>
+      document.querySelector(`.m-page-grid [data-thumb-page="${String(at)}"] canvas`)?.getBoundingClientRect();
+    const first = box(0);
+    const wide = box(landscape);
+    return {
+      stripTop: strip?.top ?? 0,
+      stripBottom: strip?.bottom ?? 0,
+      first: first === undefined ? null : { top: first.top, bottom: first.bottom, width: first.width, height: first.height },
+      wide: wide === undefined ? null : { width: wide.width, height: wide.height },
+    };
+  }, LANDSCAPE);
+  const detail = JSON.stringify(measured);
+  // WHOLE: the first page's picture ends inside the grid's box, so it is read without scrolling past it.
+  expect(measured.first?.bottom ?? Infinity, detail).toBeLessThanOrEqual(measured.stripBottom);
+  // AND LARGE: it takes most of that height. A thumbnail is 142 px tall; the grid here is about 560.
+  expect(measured.first?.height ?? 0, detail).toBeGreaterThan((measured.stripBottom - measured.stripTop) * 0.8);
+  // CONTROL: a landscape page is drawn at the SAME height and is wider, so the cards fit a height and not a width.
+  expect(Math.abs((measured.wide?.height ?? 0) - (measured.first?.height ?? 0)), detail).toBeLessThanOrEqual(1);
+  expect(measured.wide?.width ?? 0, detail).toBeGreaterThan((measured.first?.width ?? 0) + 50);
 });
 
 // THE MENU BAR (ADR-0107), in every theme: the window's top row above the title bar, reached from the keyboard by F10,

@@ -268,8 +268,11 @@ export async function saveDocument(
  * `WriteTargetVerdict`, which is two members instead of five.
  */
 export type CopyOutcome =
-  /** The bytes are on disk at the chosen destination. */
-  | { readonly kind: 'copied'; readonly bytes: number }
+  /**
+   * The bytes are on disk at the chosen destination. `destination` is that path, MAIN'S ONLY: the contract answers a
+   * `FileHandle` for it, so a person can be shown the file without the renderer ever holding where it is.
+   */
+  | { readonly kind: 'copied'; readonly bytes: number; readonly destination: string }
   /** Another open document reaches the destination. Nothing was written. */
   | { readonly kind: 'refused'; readonly others: readonly DocId[] }
   /** The filesystem refused. Nothing at the destination was replaced. */
@@ -434,7 +437,7 @@ export async function writeDocumentCopy(
   const written = await atomicWriteStaged(deps, destination, staged);
   if (!written.ok) return { kind: 'write-failed', failure: written.error };
 
-  return { kind: 'copied', bytes: staged.byteLength };
+  return { kind: 'copied', bytes: staged.byteLength, destination };
 }
 
 /**
@@ -494,5 +497,5 @@ export async function writeStreamedDocument(
     if (sourceFailures.length > 0) throw sourceFailures[0];
     return { kind: 'write-failed', failure: written.error };
   }
-  return { kind: 'copied', bytes };
+  return { kind: 'copied', bytes, destination };
 }

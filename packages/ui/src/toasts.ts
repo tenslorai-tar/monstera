@@ -1,7 +1,7 @@
 import type { MessageKey } from '@monstera/shared';
 import { type StoreApi, createStore } from 'zustand/vanilla';
 
-import type { ToastKind, ToastMessage } from './primitives/Toast.js';
+import type { ToastAction, ToastKind, ToastMessage } from './primitives/Toast.js';
 
 /**
  * The brief confirmations along the bottom of the window, and the queue that holds them.
@@ -43,7 +43,7 @@ export interface ToastActions {
    * **Newest last, oldest dropped past {@link TOAST_LIMIT}.** A run of saves must not grow a
    * column up the window; three is what fits above the status bar at the 720 px floor.
    */
-  readonly show: (kind: ToastKind, message: MessageKey) => number;
+  readonly show: (kind: ToastKind, message: MessageKey, action?: ToastAction) => number;
   /** Takes one toast off, by the id `show` answered. Unknown ids are ignored. */
   readonly dismiss: (id: number) => void;
 }
@@ -61,10 +61,10 @@ export function createToastStore(): ToastStore {
   let next = 0;
   return createStore<ToastState & ToastActions>()((set) => ({
     toasts: [],
-    show: (kind, message) => {
+    show: (kind, message, action) => {
       next += 1;
       const id = next;
-      set((state) => ({ toasts: [...state.toasts, { id, kind, message }].slice(-TOAST_LIMIT) }));
+      set((state) => ({ toasts: [...state.toasts, { id, kind, message, action }].slice(-TOAST_LIMIT) }));
       return id;
     },
     dismiss: (id) => {
@@ -81,4 +81,4 @@ export function createToastStore(): ToastStore {
  * in the feature set wants that; handing out only `show` makes it unrepresentable rather than
  * merely unused (B5).
  */
-export type ShowToast = (kind: ToastKind, message: MessageKey) => void;
+export type ShowToast = (kind: ToastKind, message: MessageKey, action?: ToastAction) => void;

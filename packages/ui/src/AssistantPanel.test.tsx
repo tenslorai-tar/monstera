@@ -180,14 +180,17 @@ function type(text: string): void {
   fireEvent.change(screen.getByLabelText('Ask about this document'), { target: { value: text } });
 }
 
-/** A choice menu's face — *Context* or *Sources* — found by the name it gives, which carries its value. */
+/** What each choice menu's face reads before its value. */
+const FACE = { Context: 'Choose context', Sources: 'Choose sources' } as const;
+
+/** A choice menu's face — *Choose context: …* or *Choose sources: …* — found by the name it reads, value and all. */
 function choiceButton(menu: 'Context' | 'Sources'): HTMLElement {
-  return screen.getByRole('button', { name: new RegExp(`^${menu}: `, 'u') });
+  return screen.getByRole('button', { name: new RegExp(`^${FACE[menu]}: `, 'u') });
 }
 
-/** What a choice menu says is chosen, from its accessible name (its face shows only its own name). */
+/** What a choice menu says is chosen, from the words on its face, which are also its name. */
 function chosenIn(menu: 'Context' | 'Sources'): string {
-  return (choiceButton(menu).getAttribute('aria-label') ?? '').slice(menu.length + 2);
+  return choiceButton(menu).textContent.slice(FACE[menu].length + 2);
 }
 
 /** Opens a choice menu and answers its values as offered, each a radio item. */
@@ -713,6 +716,32 @@ describe('the assistant about a document (ADR-0088)', () => {
     expect(valueNamed(values, 'Page 7')).toBeDefined();
     expect(valueNamed(values, 'Selection')).toBeUndefined();
     await closeChoices();
+  });
+
+  const box = (): HTMLTextAreaElement => screen.getByLabelText('Ask about this document');
+  const QUOTING: AssistantRequest = {
+    serial: 1,
+    about: { scope: 'selection', docId: DOC_A, page: 2, text: 'the indemnity clause' },
+    quote: 'the indemnity clause',
+  };
+
+  it('ASK AI quotes the words in the box with a space and the cursor after them, sends nothing, and stays on Selection', async () => {
+    const { sent } = await drawn({ focused: focusedOn(), request: QUOTING });
+    const field = box();
+    expect(field.value).toBe('“the indemnity clause” ');
+    expect(document.activeElement).toBe(field);
+    expect([field.selectionStart, field.selectionEnd]).toStrictEqual([field.value.length, field.value.length]);
+    expect(sent.some((entry) => entry.id === 'ai.ask')).toBe(false);
+    expect(chosenIn('Context')).toBe('Selection');
+  });
+
+  it('CONTROL: a quote already handled is not written again when the panel remounts', async () => {
+    const { redraw } = await drawn({ focused: focusedOn(), request: QUOTING });
+    expect(box().value).toBe('“the indemnity clause” ');
+    // A REMOUNT under the host that keeps the handled serial, as `App` does when the panel closes and opens: the box
+    // starts empty, and a quote written again would put back words the person may have sent or deleted.
+    await redraw({ mount: 2 });
+    expect(box().value).toBe('');
   });
 
   it('names a COMMENT as a comment in the menu, and asks with the comment scope', async () => {

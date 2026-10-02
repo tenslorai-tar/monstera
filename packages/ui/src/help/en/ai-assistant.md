@@ -13,7 +13,7 @@ The assistant answers questions about your document using an AI provider you cho
 1. Add a key for a provider first. See "Get and add keys for AI and online reading services".
 2. In the rail, choose **Review**, then **Open the assistant** in the **AI** group, or press **Ctrl+Shift+A**. The **Assistant** tab opens in the right-hand panel.
 3. Choose the **Provider** and **Model**, beside **Send**. Whatever the provider box shows is where your next message goes.
-4. Open **Context** and choose what to send: this page, the whole document, the comments, a picture of this page, or **None**, and the text you selected or a comment when there is one. Nothing is sent until you press **Send**. **Sources** beside it chooses **Document only** or **Document + web**.
+4. Open **Choose context** and choose what to send: this page, the whole document, the comments, a picture of this page, or **None**, and the text you selected or a comment when there is one. The button shows what is chosen, for example "Choose context: Page 4". Nothing is sent until you press **Send**. **Choose sources** beside it chooses **Document only** or **Document + web**.
 5. Type your question in the box that says **Ask about this page…**. Press **Enter** to send (**Shift+Enter** starts a new line).
 6. Choose **Go to page …** in an answer to jump to the page it cites.
 
@@ -22,7 +22,6 @@ The assistant answers questions about your document using an AI provider you cho
 ## Good to know
 
 - Under an answer you can **Regenerate this answer**, **Edit your question and ask again**, **Copy this answer**, or **Add this answer to the page as a note**. **Stop** ends an answer early; **New chat**, the **+** at the top right, starts over.
-- With two documents side by side, choose **Left**, **Right** or **Both**.
 - Conversations are not kept after the document closes unless you turn on **Save chat history** (**Settings**, **AI** page). Saved chats are encrypted on this computer; clear them with **Clear chat history** on the **Privacy** page.
 - With **Document + web**, your question, and possibly text from the document, goes to a search engine through the provider you chose, and searches may cost extra. Every new chat starts with **Document only**.
 - The provider bills you directly for what you send. If a model cannot read pictures, sending a picture is not offered.

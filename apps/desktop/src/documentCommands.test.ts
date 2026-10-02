@@ -1167,6 +1167,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           chatHistory: noChatHistory(),
           pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
           revealLog: () => Promise.resolve(false),
+          revealPath: () => Promise.resolve(false),
           titleBarOverlay: () => false,
           confirmClose: () => false,
           edit: () => false,
@@ -1790,6 +1791,7 @@ describe('search is E2s first consumer, through the composition point', () => {
         chatHistory: noChatHistory(),
         pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
         revealLog: () => Promise.resolve(false),
+        revealPath: () => Promise.resolve(false),
         titleBarOverlay: () => false,
         confirmClose: () => false,
         edit: () => false,
@@ -2492,7 +2494,8 @@ describe('exportPageImages — one image per page, in a folder, all or nothing',
       quality: 80,
     });
 
-    expect(outcome).toEqual({ kind: 'split', files: 2 });
+    // THE FOLDER THE PERSON CHOSE is what a toast's Show in folder opens, not a file in it.
+    expect(outcome).toEqual({ kind: 'split', files: 2, destination: folder });
     const first = readFileSync(join(folder, 'sized 1.jpg'));
     const third = readFileSync(join(folder, 'sized 3.jpg'));
     expect([...first.subarray(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
@@ -2686,7 +2689,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
     const outcome = await commands.exportText(textDoc, 'plain');
 
     const written = readFileSync(destination, 'utf8');
-    expect(outcome).toEqual({ kind: 'copied', bytes: Buffer.byteLength(written, 'utf8') });
+    expect(outcome).toEqual({ kind: 'copied', bytes: Buffer.byteLength(written, 'utf8'), destination });
     expect(written).toBe('first page words\fsecond page words');
     expect(reads).toEqual([0, 1]);
   });
@@ -2760,7 +2763,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       // person's mode, and main read no page's text of its own.
       expect(words).toEqual(['text']);
       expect(reads).toEqual([]);
-      expect(outcome).toEqual({ kind: 'copied', bytes: readFileSync(destination).byteLength });
+      expect(outcome).toEqual({ kind: 'copied', bytes: readFileSync(destination).byteLength, destination });
     });
 
     it('CONTROL: a dismissed picker returns nothing and composes nothing', async () => {
@@ -2828,7 +2831,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
 
       const outcome = await commands.exportText(textDoc, 'layout');
 
-      expect(outcome).toEqual({ kind: 'copied', bytes: 22 });
+      expect(outcome).toEqual({ kind: 'copied', bytes: 22, destination });
       expect(readFileSync(destination, 'utf8')).toBe('col one      col two\n\f');
       // What the converter read is what a save would write — not the file on disk,
       // and not MuPDF's text: the plain path's page reads never happened.
@@ -2909,6 +2912,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         removed: ['not permitted in PDF/A, annotation will not be present in output file'],
         // THE REAL STRUCTURE READ on this untagged fixture: nothing to lose, nothing said.
         tagsDropped: false,
+        destination,
       });
       expect(readFileSync(destination, 'latin1')).toBe('%PDF-1.7 as PDF/A');
       expect(given).toStrictEqual([FLUSHED]);
@@ -2998,7 +3002,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
 
       const outcome = await commands.optimize(textDoc, 'high', await versionOf(commands));
 
-      expect(outcome).toStrictEqual({ kind: 'copied', bytes: COPY.length, before: 1000 });
+      expect(outcome).toStrictEqual({ kind: 'copied', bytes: COPY.length, before: 1000, destination });
       expect(readFileSync(destination, 'latin1')).toBe(COPY);
       expect(discards()).toBe(1);
     });

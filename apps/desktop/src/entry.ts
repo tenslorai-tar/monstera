@@ -311,6 +311,17 @@ startShell(() => {
       const failure = await shell.openPath(path);
       return failure === '' ? null : failure;
     },
+    // A TOAST'S *SHOW IN FOLDER*: a path a write just produced, which `file.reveal` resolved from a handle this
+    // process minted. A file is shown selected in its folder; a folder (a split, the pages as images) is opened, and
+    // `shell.openPath` resolves with an error message, or an empty string when it opened. A path no longer there
+    // answers `false`, nothing shown, rather than an error: the person moved it.
+    revealPath: async (path: string) => {
+      const found = await stat(path).catch(() => null);
+      if (found === null) return false;
+      if (found.isDirectory()) return (await shell.openPath(path)) === '';
+      shell.showItemInFolder(path);
+      return true;
+    },
     editWatch: nodeEditWatchSurface,
     // THE BOUND IS CHECKED BEFORE THE READ, which is the whole reason this is a
     // function here rather than a `readFile` at the call site: `stat` costs

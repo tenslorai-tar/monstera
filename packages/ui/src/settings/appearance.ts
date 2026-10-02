@@ -136,24 +136,30 @@ export const THUMBNAIL_SIZE_SETTING: SettingDefinition<z.ZodEnum<{ small: 'small
 };
 
 /**
- * The Organize grid's card size (ADR-0104) — v5-09's Medium / Large, drawn by the grid itself.
+ * The Organize grid's view (ADR-0104) — the owner's *Thumbnail* | *Full page* of 2 October, drawn by the grid itself.
+ * *Thumbnail* is v5-09's Medium card: six columns across the canvas at a 1280 px window, read off the export.
+ * *Full page* draws every page whole at the height the grid has, so a page is read without scrolling past it.
  *
  * REMEMBERED, not a Settings row: the control for it is the grid's own segmented control, as a panel's width's
- * is its splitter. The widths are v5-09's cards at a 1280 px window — six columns across the canvas at Medium,
- * about four at Large — read off the export, a picture's width in CSS pixels.
+ * is its splitter.
+ *
+ * MIGRATED from v5-09's Medium / Large, which a person chose on the same control: both read as *Thumbnail*, the
+ * card view each of them was. A dropped value would be the stored choice silently replaced by the default anyway;
+ * naming the mapping says which.
  */
-export const ORGANIZE_GRID_SIZE_SETTING: SettingDefinition<z.ZodEnum<{ medium: 'medium'; large: 'large' }>> = {
+export const ORGANIZE_GRID_SIZE_SETTING: SettingDefinition<z.ZodEnum<{ thumbnail: 'thumbnail'; 'full-page': 'full-page' }>> = {
   id: 'appearance.organize-grid-size',
   title: ORGANIZE_GRID_SIZE_TITLE,
-  schema: z.enum(['medium', 'large']),
-  fallback: 'medium',
+  schema: z.enum(['thumbnail', 'full-page']),
+  fallback: 'thumbnail',
   category: 'appearance',
   remembered: true,
   optionTitles: ORGANIZE_GRID_SIZE_OPTION_TITLES,
+  migrate: (stored) => (stored === 'medium' || stored === 'large' ? 'thumbnail' : stored),
 };
 
-/** A grid card's width in CSS pixels, per {@link ORGANIZE_GRID_SIZE_SETTING}. */
-export const ORGANIZE_GRID_WIDTHS: Readonly<Record<'medium' | 'large', number>> = { medium: 110, large: 160 };
+/** A *Thumbnail* card's width in CSS pixels: v5-09's Medium. */
+export const ORGANIZE_THUMBNAIL_WIDTH = 110;
 
 /** One of {@link THUMBNAIL_SIZE_SETTING}'s sizes. */
 export type ThumbnailSize = z.infer<(typeof THUMBNAIL_SIZE_SETTING)['schema']>;
@@ -216,6 +222,18 @@ export const HIGH_CONTRAST_QUERIES = [
  * environment — a shell that assumed high contrast because it could not ask
  * would be the reassuring answer pointing the wrong way.
  */
+/** The operating system's own scheme, which `system` follows. */
+export const SYSTEM_DARK_QUERY = '(prefers-color-scheme: dark)';
+
+/**
+ * The scheme on show: the setting's, or under `system` the operating system's. What the title bar's light and dark
+ * switch reads to decide its face and its next step (ADR-0132): from `system` a click picks the opposite of THIS.
+ */
+export function shownTheme(theme: Theme, systemDark: boolean): 'light' | 'dark' {
+  if (theme !== 'system') return theme;
+  return systemDark ? 'dark' : 'light';
+}
+
 export function highContrastWanted(): boolean {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
   return HIGH_CONTRAST_QUERIES.some((query) => window.matchMedia(query).matches);

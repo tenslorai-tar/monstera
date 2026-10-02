@@ -16,9 +16,12 @@ const DOC = asDocId('00000000-0000-4000-8000-0000000000b8');
 /** A letter page is eleven inches tall: no mark on a page's own run can read more. */
 const PAGE_INCHES = 11;
 
+/** The fixture's page, in points: what each slot's shape becomes once its size has arrived. */
+const PAGE_POINTS = [612, 792] as const;
+
 async function openScrolledToSecondPage(page: Page, settings: Record<string, unknown>): Promise<void> {
   await page.setViewportSize({ width: 1280, height: 800 });
-  const bytes = await blockedPages([612, 792], 3);
+  const bytes = await blockedPages([...PAGE_POINTS], 3);
   await bridge(page, {
     settings: { 'viewing.rulers': true, 'viewing.ruler-unit': 'in', ...settings },
     opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'three.pdf' }],
@@ -27,11 +30,19 @@ async function openScrolledToSecondPage(page: Page, settings: Record<string, unk
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   await expect(page.locator('.m-page-slot')).toHaveCount(3);
-  // MEASURED BEFORE SCROLLING: until a page is drawn every slot sits at its 260 px minimum, so an offset computed then
-  // lands inside page 1 once the estimates grow — measured 2026-10-02, a scroll of 92 px left page 2 at y = 939, below
-  // the window, whenever the first page was measured after this step (a composited page list measures it later).
-  await expect.poll(async () => (await page.locator('.m-page-slot').nth(1).boundingBox())?.height ?? 0).toBeGreaterThan(500);
   await expect(page.locator('.m-ruler-v')).toBeVisible();
+  // NOT BEFORE THE PAGES HAVE THEIR SIZES. A slot is laid out at a provisional size until the document's page sizes
+  // arrive, and they can arrive after the scroll below: measured, a scroll of 92 px put page 2 at 200 px, then the
+  // slots grew from 260 to 792 px and page 2 sat at 732 px, below the scroller, so the case read a screen it had not
+  // arranged. The slot's shape is the fixture's own page once its size is real.
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const box = document.querySelector<HTMLElement>('.m-page-slot')?.getBoundingClientRect();
+        return box === undefined || box.width === 0 ? 0 : box.height / box.width;
+      }),
+    )
+    .toBeCloseTo(PAGE_POINTS[1] / PAGE_POINTS[0], 1);
   // PAGE 2'S TOP 200 px INTO THE SCROLLER: a whole screen of scrolling at any fit, with page 1's foot above it.
   await page.evaluate(() => {
     const scroller = document.querySelector<HTMLElement>('.m-page-list');

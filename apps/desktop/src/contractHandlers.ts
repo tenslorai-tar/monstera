@@ -52,7 +52,7 @@ import {
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, isAbsolute } from 'node:path';
 
-import { type DocId, err, lineText, ok } from '@monstera/shared';
+import { type DocId, type FileHandle, err, lineText, ok } from '@monstera/shared';
 
 import { executeCommandHandler } from './commandHandlers.js';
 import {
@@ -270,6 +270,12 @@ export function createContractHandlers(deps: {
    */
   readonly revealLog: () => Promise<boolean>;
   /**
+   * Shows a path a write produced in the file manager — a file selected in its folder, a folder opened — answering
+   * whether there was anything to show. `file.reveal` resolves the renderer's handle to the path; this does the
+   * showing, at the boundary entitled to know Electron's `shell`.
+   */
+  readonly revealPath: (path: string) => Promise<boolean>;
+  /**
    * The crash reports this computer keeps (ADR-0109). Named by a report's file NAME, never a path; `null` where the
    * shell has none to offer — a build with the setting off. Optional for the composition's `log` reason: a graph built
    * without a dumps folder, every unit test's, has no report to offer, and absent answers exactly that.
@@ -341,6 +347,9 @@ export function createContractHandlers(deps: {
   /** Cloud storage (ADR-0091): sign-ins, listings, working copies and their links. REQUIRED, for `titleBarOverlay`'s reason. */
   readonly cloud: CloudStorage;
 }): MainHandlers {
+  // THE HANDLE EVERY WRITE ANSWERS for what it wrote (`WRITTEN`), from the registry that mints every other: a path
+  // this process wrote becomes a capability the renderer may name and cannot read.
+  const mintWritten: MintWritten = (destination) => deps.capabilities.mint(destination);
   return {
     // THE PRELOAD'S CHANNEL (ADR-0099). The page cannot send it — the bridge's `invoke` refuses its id —
     // so the path here is one `webUtils.getPathForFile` resolved from a file the operating system handed
@@ -395,26 +404,26 @@ export function createContractHandlers(deps: {
     'document.redo': redoHandler(deps.commands),
     'document.save': saveHandler(deps.commands),
     'document.deleteStaleCopies': deleteStaleCopiesHandler(deps.commands),
-    'document.extract': extractHandler(deps.commands),
-    'document.snapshotRegion': snapshotRegionHandler(deps.commands),
-    'document.exportFormData': exportFormDataHandler(deps.commands),
-    'document.exportAnnotations': exportAnnotationsHandler(deps.commands),
+    'document.extract': extractHandler(deps.commands, mintWritten),
+    'document.snapshotRegion': snapshotRegionHandler(deps.commands, mintWritten),
+    'document.exportFormData': exportFormDataHandler(deps.commands, mintWritten),
+    'document.exportAnnotations': exportAnnotationsHandler(deps.commands, mintWritten),
     'document.importAnnotations': importAnnotationsHandler(deps.commands),
     'document.copyAnnotations': copyAnnotationsHandler(deps.commands),
     'document.pasteAnnotations': pasteAnnotationsHandler(deps.commands),
     'document.importFormData': importFormDataHandler(deps.commands),
-    'document.split': splitHandler(deps.commands),
-    'document.exportPageImages': exportPageImagesHandler(deps.commands),
-    'document.exportText': exportTextHandler(deps.commands),
-    'document.exportWord': exportWordHandler(deps.commands),
-    'document.exportPowerPoint': exportPowerPointHandler(deps.commands),
-    'document.exportExcel': exportExcelHandler(deps.commands),
+    'document.split': splitHandler(deps.commands, mintWritten),
+    'document.exportPageImages': exportPageImagesHandler(deps.commands, mintWritten),
+    'document.exportText': exportTextHandler(deps.commands, mintWritten),
+    'document.exportWord': exportWordHandler(deps.commands, mintWritten),
+    'document.exportPowerPoint': exportPowerPointHandler(deps.commands, mintWritten),
+    'document.exportExcel': exportExcelHandler(deps.commands, mintWritten),
     'document.print': printHandler(deps.commands),
     'document.email': emailHandler(deps.commands),
-    'document.exportPdfa': exportPdfaHandler(deps.commands),
+    'document.exportPdfa': exportPdfaHandler(deps.commands, mintWritten),
     'document.optimizeMeasure': optimizeMeasureHandler(deps.commands),
-    'document.optimize': optimizeHandler(deps.commands),
-    'document.saveCopy': saveCopyHandler(deps.commands),
+    'document.optimize': optimizeHandler(deps.commands, mintWritten),
+    'document.saveCopy': saveCopyHandler(deps.commands, mintWritten),
     'document.insertImage': insertImageHandler(deps.commands),
     'document.newFromMarkdown': newFromImportHandler(deps, 'markdown'),
     'document.newFromCsv': newFromImportHandler(deps, 'csv'),
@@ -441,7 +450,7 @@ export function createContractHandlers(deps: {
     'document.accessibilityCheck': accessibilityCheckHandler(deps.commands),
     'document.sign': signHandler(deps.commands),
     'docusign.send': docusignSendHandler(deps.commands),
-    'docusign.retrieve': docusignRetrieveHandler(deps.commands),
+    'docusign.retrieve': docusignRetrieveHandler(deps.commands, mintWritten),
     'document.readRange': readRangeHandler(deps.documents),
     'document.viewModel': viewModelHandler(deps.commands),
     'document.searchPage': searchPageHandler(deps.commands),
@@ -619,7 +628,7 @@ export function createContractHandlers(deps: {
       } catch {
         return ok({ kind: 'write-failed' } as const);
       }
-      return ok({ kind: 'written', settings: Object.keys(stored).length } as const);
+      return ok({ kind: 'written', settings: Object.keys(stored).length, written: mintWritten(path) } as const);
     },
     'settings.import': async () => {
       const path = await deps.openSettingsFile();
@@ -669,6 +678,11 @@ export function createContractHandlers(deps: {
       } as const);
     },
     'log.reveal': async () => ok({ revealed: await deps.revealLog() }),
+    // A HANDLE THIS PROCESS DID NOT MINT shows nothing: `resolve` answers no path, and there is nothing to reveal.
+    'file.reveal': async ({ handle }) => {
+      const path = deps.capabilities.resolve(handle);
+      return ok({ revealed: path === undefined ? false : await deps.revealPath(path) });
+    },
     'crashReport.pending': async () => ok({ report: (await deps.crashReports?.pending()) ?? null }),
     'crashReport.share': async ({ id }) => ok({ outcome: (await deps.crashReports?.share(id)) ?? ('gone' as const) }),
     'crashReport.dismiss': async ({ id }) => {
@@ -1370,18 +1384,24 @@ function docusignSendHandler(commands: DocumentCommands): ContractHandlers['docu
 }
 
 /**
+ * Mints the handle a write's answer carries for the path it wrote (the contract's `WRITTEN`). Every file-writing
+ * handler takes this one function rather than the registry, so none can do anything with it but name its own file.
+ */
+type MintWritten = (destination: string) => FileHandle;
+
+/**
  * `docusign.retrieve`'s handler.
  *
  * The write's outcomes map exactly as `extractHandler` maps them — a dismissed picker
  * is `cancelled`, a contested destination carries how many other documents reach it —
  * and DocuSign's own outcomes cross unchanged.
  */
-function docusignRetrieveHandler(commands: DocumentCommands): ContractHandlers['docusign.retrieve'] {
+function docusignRetrieveHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['docusign.retrieve'] {
   return async ({ docId }) => {
     try {
       const outcome = await commands.docusignRetrieve(docId);
       if (outcome === undefined) return ok({ kind: 'cancelled' as const });
-      if (outcome.kind === 'copied') return ok({ kind: 'copied' as const, bytes: outcome.bytes });
+      if (outcome.kind === 'copied') return ok({ kind: 'copied' as const, bytes: outcome.bytes, written: mint(outcome.destination) });
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' as const });
       if (outcome.kind === 'refused') {
         return ok({ kind: 'refused' as const, openElsewhere: outcome.others.length });
@@ -1406,7 +1426,7 @@ function docusignRetrieveHandler(commands: DocumentCommands): ContractHandlers['
  * lines of agreement is cheaper than one shared function that must not
  * diverge.
  */
-function extractHandler(commands: DocumentCommands): ContractHandlers['document.extract'] {
+function extractHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['document.extract'] {
   return async ({
     docId,
     pages,
@@ -1415,7 +1435,7 @@ function extractHandler(commands: DocumentCommands): ContractHandlers['document.
       const outcome = await commands.extract(docId, pages);
       // UNDEFINED IS THE USER DISMISSING THE DIALOG, exactly as it is next door.
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
-      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
+      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
     } catch (thrown) {
@@ -1448,6 +1468,7 @@ function extractHandler(commands: DocumentCommands): ContractHandlers['document.
  */
 function snapshotRegionHandler(
   commands: DocumentCommands,
+  mint: MintWritten,
 ): ContractHandlers['document.snapshotRegion'] {
   return async ({
     docId,
@@ -1458,7 +1479,7 @@ function snapshotRegionHandler(
     try {
       const outcome = await commands.snapshot(docId, { page, rect, scale });
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
-      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
+      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
     } catch (thrown) {
@@ -1518,6 +1539,7 @@ function importFormDataHandler(
  */
 function exportFormDataHandler(
   commands: DocumentCommands,
+  mint: MintWritten,
 ): ContractHandlers['document.exportFormData'] {
   return async ({
     docId,
@@ -1526,7 +1548,7 @@ function exportFormDataHandler(
     try {
       const outcome = await commands.exportFormData(docId, format);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
-      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
+      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
     } catch (thrown) {
@@ -1548,6 +1570,7 @@ function exportFormDataHandler(
 /** The annotation export's handler: {@link exportFormDataHandler}'s body for its outcomes (ADR-0077). */
 function exportAnnotationsHandler(
   commands: DocumentCommands,
+  mint: MintWritten,
 ): ContractHandlers['document.exportAnnotations'] {
   return async ({
     docId,
@@ -1556,7 +1579,7 @@ function exportAnnotationsHandler(
     try {
       const outcome = await commands.exportAnnotations(docId, format);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
-      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
+      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
     } catch (thrown) {
@@ -1654,7 +1677,7 @@ function importAnnotationsHandler(
  * rather than `bytes` — and the same three refusals, because it is the same
  * destination path run several times.
  */
-function splitHandler(commands: DocumentCommands): ContractHandlers['document.split'] {
+function splitHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['document.split'] {
   return async ({
     docId,
     groups,
@@ -1662,7 +1685,7 @@ function splitHandler(commands: DocumentCommands): ContractHandlers['document.sp
     try {
       const outcome = await commands.split(docId, groups);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
-      if (outcome.kind === 'split') return ok({ kind: 'split', files: outcome.files } as const);
+      if (outcome.kind === 'split') return ok({ kind: 'split', files: outcome.files, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
     } catch (thrown) {
@@ -1680,6 +1703,7 @@ function splitHandler(commands: DocumentCommands): ContractHandlers['document.sp
  */
 function exportPageImagesHandler(
   commands: DocumentCommands,
+  mint: MintWritten,
 ): ContractHandlers['document.exportPageImages'] {
   return async ({
     docId,
@@ -1691,7 +1715,7 @@ function exportPageImagesHandler(
     try {
       const outcome = await commands.exportPageImages(docId, { pages, format, dpi, quality });
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
-      if (outcome.kind === 'split') return ok({ kind: 'split', files: outcome.files } as const);
+      if (outcome.kind === 'split') return ok({ kind: 'split', files: outcome.files, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
     } catch (thrown) {
@@ -1707,7 +1731,7 @@ function exportPageImagesHandler(
  * The text export's handler: {@link saveCopyHandler}'s outcomes, because it is the
  * same single-file destination path with the document's text where its bytes were.
  */
-function exportTextHandler(commands: DocumentCommands): ContractHandlers['document.exportText'] {
+function exportTextHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['document.exportText'] {
   return async ({
     docId,
     mode,
@@ -1717,7 +1741,7 @@ function exportTextHandler(commands: DocumentCommands): ContractHandlers['docume
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       switch (outcome.kind) {
         case 'copied':
-          return ok({ kind: 'copied', bytes: outcome.bytes } as const);
+          return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
         case 'write-failed':
           return ok({ kind: 'write-failed' } as const);
         case 'refused':
@@ -1739,7 +1763,7 @@ function exportTextHandler(commands: DocumentCommands): ContractHandlers['docume
 }
 
 /** The Word export's handler: {@link saveCopyHandler}'s outcomes, a Word file where the bytes were. */
-function exportWordHandler(commands: DocumentCommands): ContractHandlers['document.exportWord'] {
+function exportWordHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['document.exportWord'] {
   return async ({
     docId,
     mode,
@@ -1747,7 +1771,7 @@ function exportWordHandler(commands: DocumentCommands): ContractHandlers['docume
     try {
       const outcome = await commands.exportWord(docId, mode);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
-      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
+      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
     } catch (thrown) {
@@ -1760,14 +1784,14 @@ function exportWordHandler(commands: DocumentCommands): ContractHandlers['docume
 }
 
 /** The PowerPoint export's handler: {@link saveCopyHandler}'s outcomes, a deck where the bytes were. */
-function exportPowerPointHandler(commands: DocumentCommands): ContractHandlers['document.exportPowerPoint'] {
+function exportPowerPointHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['document.exportPowerPoint'] {
   return async ({
     docId,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportPowerPoint']>>> => {
     try {
       const outcome = await commands.exportPowerPoint(docId);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
-      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
+      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
     } catch (thrown) {
@@ -1780,14 +1804,14 @@ function exportPowerPointHandler(commands: DocumentCommands): ContractHandlers['
 }
 
 /** The PDF/A export's handler: a copy's outcomes with the removals, and the converter's two refusals. */
-function exportPdfaHandler(commands: DocumentCommands): ContractHandlers['document.exportPdfa'] {
+function exportPdfaHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['document.exportPdfa'] {
   return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.exportPdfa']>>> => {
     try {
       const outcome = await commands.exportPdfa(docId);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       switch (outcome.kind) {
         case 'copied':
-          return ok({ kind: 'copied', bytes: outcome.bytes, removed: outcome.removed, tagsDropped: outcome.tagsDropped } as const);
+          return ok({ kind: 'copied', bytes: outcome.bytes, removed: outcome.removed, tagsDropped: outcome.tagsDropped, written: mint(outcome.destination) } as const);
         case 'refused':
           return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
         case 'write-failed':
@@ -1823,14 +1847,14 @@ function optimizeMeasureHandler(commands: DocumentCommands): ContractHandlers['d
 }
 
 /** Optimize's copy (ADR-0087): a copy's outcomes, plus not-smaller, changed, unreadable and unavailable. */
-function optimizeHandler(commands: DocumentCommands): ContractHandlers['document.optimize'] {
+function optimizeHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['document.optimize'] {
   return async ({ docId, setting, version }): Promise<Awaited<ReturnType<ContractHandlers['document.optimize']>>> => {
     try {
       const outcome = await commands.optimize(docId, setting, version);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       switch (outcome.kind) {
         case 'copied':
-          return ok({ kind: 'copied', bytes: outcome.bytes, before: outcome.before } as const);
+          return ok({ kind: 'copied', bytes: outcome.bytes, before: outcome.before, written: mint(outcome.destination) } as const);
         case 'refused':
           return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
         case 'not-smaller':
@@ -1882,7 +1906,7 @@ function printHandler(commands: DocumentCommands): ContractHandlers['document.pr
 }
 
 /** The Excel export's handler: a copy's outcomes, and `no-tables` before any picker. */
-function exportExcelHandler(commands: DocumentCommands): ContractHandlers['document.exportExcel'] {
+function exportExcelHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['document.exportExcel'] {
   return async ({
     docId,
     layout,
@@ -1893,7 +1917,7 @@ function exportExcelHandler(commands: DocumentCommands): ContractHandlers['docum
     try {
       const outcome = await commands.exportExcel(docId, layout, { version, edits }, engine);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
-      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
+      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       if (outcome.kind === 'changed') return ok({ kind: 'changed' } as const);
       if (outcome.kind === 'service-refused') return ok({ ...outcome });
@@ -1910,7 +1934,7 @@ function exportExcelHandler(commands: DocumentCommands): ContractHandlers['docum
   };
 }
 
-function saveCopyHandler(commands: DocumentCommands): ContractHandlers['document.saveCopy'] {
+function saveCopyHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['document.saveCopy'] {
   return async ({
     docId,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.saveCopy']>>> => {
@@ -1920,7 +1944,7 @@ function saveCopyHandler(commands: DocumentCommands): ContractHandlers['document
       // kernel returns no value at all for it rather than a fourth member,
       // because nothing ran — see `DocumentCommands.saveCopy`.
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
-      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
+      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
     } catch (thrown) {

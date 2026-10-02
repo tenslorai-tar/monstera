@@ -18,11 +18,12 @@ import type { SegmentedOption } from './SegmentedControl.js';
  * opens the values on demand. The options are the segmented control's type, so a caller moving between the two
  * changes the component and nothing else.
  *
- * ## The value is in the NAME, because the face does not show it
+ * ## The closed face reads the choice AND its value
  *
- * The closed button reads only its label, by the owner's design. A screen reader is told the label AND the chosen
- * value (`CHOICE_MENU_NAME`), since a control whose state is visible to nobody is a control a person cannot check.
- * Each value is a radio item, so the open menu announces which one is chosen.
+ * *Choose context: Page 4* (`CHOICE_MENU_NAME`), the owner's wording of 2 October. Until then the face read only its
+ * label and the value lived in an `aria-label`, so a sighted person could not see what would be sent without opening
+ * the menu. The visible words are now the accessible name, so the two cannot say different things (WCAG 2.5.3). Each
+ * value is a radio item, so the open menu announces which one is chosen.
  *
  * ## A Base UI MENU, never its Select
  *
@@ -31,7 +32,7 @@ import type { SegmentedOption } from './SegmentedControl.js';
  * so it is a no-drag region over the title bar like them (`primitives.css`, `[data-side]`).
  */
 export interface ChoiceMenuProps<Value extends string> {
-  /** What is being chosen, which is also the closed face: *Context*, *Sources*. */
+  /** What is being chosen, which the closed face reads before the value: *Choose context*, *Choose sources*. */
   readonly label: MessageKey;
   readonly options: readonly SegmentedOption<Value>[];
   readonly value: Value;
@@ -43,12 +44,8 @@ export function ChoiceMenu<Value extends string>({ label, options, value, onChan
   const chosen = options.find((option) => option.value === value);
   return (
     <Menu.Root>
-      <Menu.Trigger
-        aria-label={_(CHOICE_MENU_NAME, { label: _(label), value: chosen === undefined ? '' : _(chosen.label, chosen.values) })}
-        className="m-choice-menu"
-        data-choice-menu=""
-      >
-        <span>{_(label)}</span>
+      <Menu.Trigger className="m-choice-menu" data-choice-menu="">
+        <span>{_(CHOICE_MENU_NAME, { label: _(label), value: chosen === undefined ? '' : _(chosen.label, chosen.values) })}</span>
         <Icon name="ChevronDown" size="dense" />
       </Menu.Trigger>
       <Menu.Portal>

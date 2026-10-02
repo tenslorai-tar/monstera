@@ -281,7 +281,9 @@ optgroup {
   flex: none;
   align-items: center;
   gap: var(--space-8);
-  min-inline-size: 16rem;
+  /* NARROWER since the light and dark switch joined the row (ADR-0132): the tabs keep the width. `flex: none`, so the
+     placeholder and the chord set the width whenever they need more than this floor, and are never cut. */
+  min-inline-size: 12rem;
   margin-inline-start: auto;
   padding: var(--space-4) var(--space-8);
   border: 1px solid var(--border-control);
@@ -1811,30 +1813,6 @@ optgroup {
 }
 
 /*
- * The comparison's list: the list exception's two rules, and each line's side above its text so
- * a long line wraps under its label rather than beside it.
- */
-.m-compare-result__changes {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.m-compare-result__changes li {
-  display: flex;
-  flex-direction: column;
-  padding-block: var(--space-4);
-}
-
-.m-compare-result__side {
-  color: var(--muted);
-}
-
-.m-compare-result__text {
-  overflow-wrap: anywhere;
-}
-
-/*
  * The accessibility check's two lists: the list exception's rules, and each rule's verdict, words
  * and pages on one wrapping line so a long rule name does not push its verdict off the row.
  */
@@ -2687,16 +2665,17 @@ optgroup {
   max-inline-size: 85%;
   padding: var(--space-6) var(--space-10);
   border-radius: var(--radius-12);
-  /* GREEN (the owner's decision, 2026-10-01): the bubble's own surface and its own text, declared as a pair and
-     checked in every theme (`tokens.css`). Never `--accent-soft`, the selected state, which carries no text. */
-  color: var(--on-bubble);
-  background: var(--bubble);
+  /* THE ACCENT (the owner, 2026-10-02), so a person's message follows the colour they chose. Its text is SOLVED
+     against the accent where it is drawn (`Turn` in `AssistantPanel.tsx`, `useOnColor`), never stored; `--text` stands
+     only until the solve has run. Never `--accent-soft`, the selected state, which carries no text. */
+  color: var(--text);
+  background: var(--accent);
 }
 
-/* WHAT WENT, inside a person's bubble, takes the bubble's text: `--muted` is declared on the pane's surfaces, and a
-   pair nobody declared is a pair nobody checked. */
+/* WHAT WENT, inside a person's bubble, takes the bubble's solved text: `--muted` is declared on the pane's surfaces,
+   and over the accent it is a pair nobody checked. */
 .m-assistant__turn[data-assistant-role='user'] .m-assistant__sent {
-  color: var(--on-bubble);
+  color: inherit;
 }
 
 .m-assistant__turn[data-assistant-role='assistant'] {
@@ -3059,6 +3038,8 @@ optgroup {
   min-inline-size: 0;
   /* THE CONTAINING BLOCK FOR THE LOUPE, which is placed from the pointer's offset in this box. */
   position: relative;
+  /* WHERE THE TOAST STRIP SITS (`.m-toasts`); with two panes the last one, the right, names it. */
+  anchor-name: --m-page-area;
 }
 
 /* THE CORNER where the two rulers meet, in the rulers' own surface so the pair reads as one frame. */
@@ -3450,10 +3431,20 @@ optgroup {
   gap: var(--space-2);
 }
 
+/* NOTHING IN THE ROW SHRINKS — a group, a tool, a named menu or a More. The fold's arithmetic is done in natural
+   widths, read off what is drawn (`useRibbonFold`), so a width the row could squeeze would be measured squeezed and
+   kept as natural. Only the More said `flex: none`, for that reason, while the tool beside it carried a 52 px minimum,
+   which replaces a flex item's content-based one. A group's own automatic minimum held the tools at their content in
+   every case measured on 2 October, so this states the property rather than repairing a reproduced defect: a row
+   that does not fit overflows, its groups' boxes change, and the fold measures again. */
+.m-ribbon__group,
+.m-ribbon__buttons > * {
+  flex: none;
+}
+
 /* A GROUP'S OVERFLOW (the owner's `document-light-narrow.png`): the tools that did not fit, in the
    group they belong to. It draws as a tool button so a folded group reads as a group — the chevron
-   is what says it opens rather than runs. `flex: none`, because the fold's arithmetic is done in
-   natural widths and a More that shrank would make the row it was measured for wrong. */
+   is what says it opens rather than runs. */
 .m-ribbon__more {
   flex: none;
 }
@@ -4023,30 +4014,279 @@ optgroup {
  */
 
 /*
- * The second pane: its picker above whichever scroller it is showing.
- *
- * A grid with the picker at its natural height and the scroller taking the
- * rest, so the two panes' pages line up at the same y — which is the whole of
- * what side-by-side comparison is for, and a picker that pushed one pane down
- * would undo it.
+ * SPLIT VIEW (FEATURES row 65, the owner's design from the old app): a header bar over two equal halves with a divider,
+ * each half a page with its "Page N" label above it. It fills the page area the single pane did.
  */
-.m-second-pane {
+.m-split {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
+  flex: 1 1 0;
+  min-inline-size: 0;
   min-block-size: 0;
 }
 
-.m-compare {
-  display: contents;
+.m-split__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8) var(--space-12);
+  align-items: center;
+  padding: var(--space-4) var(--space-8);
+  border-block-end: 1px solid var(--border); /* decorative: separates the bar from the pages; its controls draw their own edges */
+  background: var(--bg2);
+  color: var(--text);
+  font-size: var(--font-chrome-12);
 }
 
-.m-compare-pick {
-  display: flex;
-  gap: var(--space-8);
-  align-items: baseline;
-  padding: var(--space-2) var(--space-4);
-  background: var(--bg2);
+.m-split__title {
+  font-weight: 600;
+}
+
+.m-split__field {
+  display: inline-flex;
+  gap: var(--space-4);
+  align-items: center;
   color: var(--muted);
+}
+
+.m-split__page {
+  /* WIDE ENOUGH FOR FOUR DIGITS in the chrome face, the status bar's page field's measure. */
+  inline-size: 5ch;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+}
+
+.m-split__of {
+  color: var(--muted);
+}
+
+/* THE GAP BETWEEN WHAT CHOOSES PAGES AND WHAT MOVES THEM, the old design's spacer. */
+.m-split__spacer {
+  flex: 1 1 auto;
+}
+
+.m-split__both {
+  display: inline-flex;
+  gap: var(--space-4);
+  align-items: center;
+  padding: var(--space-2) var(--space-8);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.m-split__both:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.m-split__halves {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-block-size: 0;
+}
+
+.m-split__half {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+/* THE DIVIDER, on the right half's leading edge, in the decorative boundary every other seam here uses. */
+.m-split__half + .m-split__half {
+  border-inline-start: 1px solid var(--border); /* decorative: the divider between the halves; nothing is clicked on it */
+}
+
+.m-split__label {
+  padding: var(--space-2) var(--space-8);
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+  text-align: center;
+}
+
+/*
+ * SIDE BY SIDE (ADR-0131): from the ribbon's row to the status bar's, across both columns, so the menu and title bars
+ * stay. What it covers is hidden rather than unmounted — every document's layer keeps its state — and `visibility`
+ * takes it out of the tab order and the accessibility tree as well as out of sight.
+ */
+.m-side {
+  grid-row: ribbon-start / status-end;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-block-size: 0;
+  background: var(--canvas);
+}
+
+.m-side:focus {
+  outline: none;
+}
+
+/* `.m-ribbon` is `display: contents`, and `visibility` inherits through it to the rail and the tool strip. */
+.m-document-surface[data-covered-by='side-by-side'] > :is(.m-ribbon, .m-body-area, .m-status-bar) {
+  visibility: hidden;
+}
+
+/* TWO EQUAL HALVES, and the summary list beside them once a comparison has run. */
+.m-side__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-block-size: 0;
+}
+
+.m-side__body--listed {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(24ch, 32ch);
+}
+
+.m-side__half {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+.m-side__half + .m-side__half {
+  border-inline-start: 1px solid var(--border); /* decorative: the divider between the halves; nothing is clicked on it */
+}
+
+.m-side__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-8);
+  align-items: center;
+  padding: var(--space-4) var(--space-8);
+  background: var(--bg2);
+  border-block-end: 1px solid var(--border); /* decorative: separates the toolbar from the pages; its controls draw their own edges */
+  font-size: var(--font-chrome-12);
+}
+
+.m-side__pick {
+  max-inline-size: 28ch;
+}
+
+.m-side__zoom {
+  min-inline-size: 5ch;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.m-side__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-block-size: 0;
+  overflow-y: auto;
+  padding: var(--space-8);
+  background: var(--bg2);
+  border-inline-start: 1px solid var(--border); /* decorative: the list's edge; its rows draw their own state */
+  font-size: var(--font-chrome-12);
+}
+
+.m-side__heading {
+  margin: 0;
+  font-size: var(--font-chrome-12);
+  font-weight: 600;
+}
+
+.m-side__note {
+  margin: 0;
+  color: var(--muted);
+}
+
+.m-side__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.m-side__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  inline-size: 100%;
+  padding: var(--space-4) var(--space-8);
+  border: 0;
+  border-inline-start: 2px solid transparent; /* decorative: reserves the chosen row's mark so choosing moves nothing */
+  border-radius: var(--radius-4);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.m-side__row:hover {
+  background: var(--surface2);
+}
+
+/* NOT COLOUR ALONE: the border survives `forced-colors`, where this rule's background is discarded. */
+.m-side__row[aria-current='true'] {
+  background: var(--accent-soft);
+  border-inline-start-color: var(--accent);
+}
+
+.m-side__where {
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+}
+
+.m-side__detail {
+  overflow-wrap: anywhere;
+}
+
+/*
+ * A comparison's marks over a page, inert, in the text layer's own box. Each kind has its own hue AND its own line,
+ * so the kinds are told apart without colour; the chosen change is drawn stronger in the same hue, as the find bar's
+ * active match is.
+ */
+.m-difference-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.m-difference {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.m-difference--text {
+  background: color-mix(in srgb, var(--gold-bottom) 30%, transparent);
+  border-block-end: 2px solid var(--gold-bottom); /* decorative: a change's mark over the page; nothing is clicked on it */
+}
+
+.m-difference--layout {
+  outline: 2px dashed var(--violet-bottom);
+}
+
+.m-difference--annotation {
+  outline: 2px solid var(--accent);
+}
+
+.m-difference--graphics {
+  outline: 2px dotted var(--gold-bottom);
+  background: color-mix(in srgb, var(--gold-bottom) 12%, transparent);
+}
+
+.m-difference--page {
+  outline: 4px solid var(--accent);
+  outline-offset: -4px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.m-difference--active {
+  outline-width: 3px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 /*
@@ -5097,11 +5337,22 @@ optgroup {
   gap: var(--space-8);
 }
 
+/*
+ * AT THE PAGE AREA'S CORNER, never the window's. A strip fixed at the window's bottom right sits over whatever panel
+ * ends there, and it was placed by a guess at where the assistant's composer ends: when the composer lost a line the
+ * guess was off and a toast covered Send by half a pixel on Windows. Anchored to the page pane, no panel's control can
+ * be under it. With no page pane (the start screen) the anchor is missing and the fallbacks are the window's corner.
+ */
 .m-toasts {
   position: fixed;
-  /* ABOVE whatever marked `data-toast-avoid` it would cover (`ToastStrip` sets `--m-toasts-clear`), else where it was. */
-  inset-block-end: max(calc(var(--space-24) + var(--space-16)), calc(var(--m-toasts-clear, 0px) + var(--space-8)));
-  inset-inline-end: var(--space-16);
+  position-anchor: --m-page-area;
+  /* AND ABOVE whatever marks itself `data-toast-avoid` under the strip (`ToastStrip` sets `--m-toasts-clear`): the
+     anchor keeps the strip off every panel, and the clearance keeps it off a control the page area itself holds. */
+  inset-block-end: max(
+    calc(anchor(end, var(--space-24)) + var(--space-16)),
+    calc(var(--m-toasts-clear, 0px) + var(--space-8))
+  );
+  inset-inline-end: calc(anchor(end, 0px) + var(--space-16));
   z-index: 3;
   display: flex;
   flex-direction: column;
@@ -5151,6 +5402,29 @@ optgroup {
   /* WRAPS rather than ellipsing. A toast leaves after a few seconds, so a message cut short is
      one nobody gets a second look at — the height is what gives here, not the words. */
   overflow-wrap: anywhere;
+}
+
+/* A TOAST'S ONE ACTION (Show in folder): a text button in the accent's text colour, with the control edge so it reads
+   as something to press in forced colours too, where the colour is discarded. */
+.m-toast__action {
+  flex: none;
+  padding: var(--space-2) var(--space-8);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: transparent;
+  color: var(--accent-text);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.m-toast__action:hover {
+  background: var(--surface2);
+}
+
+.m-toast__action:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 
 @keyframes m-toast-in {

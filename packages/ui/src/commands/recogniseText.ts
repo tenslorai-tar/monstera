@@ -20,11 +20,14 @@ import {
   RIBBON_OCR_EXPORT,
   RIBBON_ENHANCE,
   RIBBON_STRAIGHTEN_PHOTOS,
+  TOAST_SEARCHABLE_SAVED,
 } from '../messages/en.js';
 import { type CommandContext, targetPages, type UiCommand } from '../registries/commands.js';
 import type { TrackTask } from '../runningTask.js';
+import { confirmWritten } from './confirmWritten.js';
 import {
   type DocumentCommandDeps,
+  type WritesAFile,
   applyDocumentCommand,
   hasDocument,
   reportProblem,
@@ -405,7 +408,7 @@ export async function recogniseBeforeExport(
  * has undo.
  */
 export function exportSearchableCommand(
-  deps: DocumentCommandDeps & {
+  deps: DocumentCommandDeps & WritesAFile & {
     readonly track: TrackTask;
     readonly servicesReady: () => boolean;
     readonly ocrLanguages: () => OcrLanguages;
@@ -466,9 +469,11 @@ export function exportSearchableCommand(
         return;
       }
       if (copied.value.kind === 'copied' || copied.value.kind === 'cancelled') {
-        // `saveCopyCommand`'s rule: the file is where the user put it, or they are
-        // the one who cancelled. What is NOT silent is what happened to the open
-        // document, which is why the outcome is still reported.
+        // TWO THINGS HAPPENED, and each is said once. The recognition changed the OPEN
+        // document whether or not the copy was written, so its outcome is reported either
+        // way; the FILE is confirmed only where it was written (`confirmWritten`), and a
+        // cancelled picker writes none, so it says nothing about one.
+        if (copied.value.kind === 'copied') confirmWritten(deps, TOAST_SEARCHABLE_SAVED, copied.value.written);
         void deps.ask(OCR_OUTCOME_DIALOG_ID, walked);
         return;
       }

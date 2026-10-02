@@ -481,11 +481,10 @@ describe('multi-document tabs', () => {
   });
 });
 
-describe('the assistant with two documents side by side (ADR-0089)', () => {
-  it('AT THE COMPOSITION ROOT: Both asks about the tab’s document with the compared one alongside, at its pane’s page', async () => {
-    // The panel's cases inject `beside`; this is the one that crosses what `App` builds it from —
-    // the split setting, the picked document and the compare pane's own report.
-    const { client: built, sent } = client();
+describe('Side by Side through App (ADR-0131), and the two-document ask it took the route of (ADR-0089)', () => {
+  /** Two documents open, the second in front, and the first tab's menu opened. */
+  async function twoOpenWithMenuOnFirst(): Promise<{ readonly container: HTMLElement; readonly settings: ReturnType<typeof freshSettings> }> {
+    const { client: built } = client();
     const settings = freshSettings();
     const { container } = render(<App client={built} settings={settings} />);
     await openOne();
@@ -494,53 +493,47 @@ describe('the assistant with two documents side by side (ADR-0089)', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-
+    const otherTab = container.querySelector(`[data-tab-select="${FIRST}"]`);
+    if (otherTab === null) throw new Error('no tab for the first document');
     await act(async () => {
-      settings.set(SPLIT_VIEW_SETTING.id, true);
+      fireEvent.contextMenu(otherTab, { clientX: 10, clientY: 10 });
+      await Promise.resolve();
+    });
+    return { container, settings };
+  }
+
+  it('the tab menu opens Side by Side with the document on show on the LEFT and the right-clicked one on the right', async () => {
+    const { container, settings } = await twoOpenWithMenuOnFirst();
+    await act(async () => {
+      (await screen.findByRole('menuitem', { name: 'Open side by side' })).click();
+      await Promise.resolve();
+    });
+    const surface = container.querySelector('section[data-side-by-side]');
+    if (!(surface instanceof HTMLElement)) throw new Error('Side by Side did not open');
+    // THE TAB MENU'S CONTEXT names the right-clicked tab, so a root that read the side from it would put FIRST on both.
+    expect(container.querySelector<HTMLSelectElement>('[data-side-pick="left"]')?.value).toBe(SECOND);
+    expect(container.querySelector<HTMLSelectElement>('[data-side-pick="right"]')?.value).toBe(FIRST);
+    // WHAT IT COVERS IS HIDDEN, never unmounted: the ribbon is still there for the window to return to.
+    expect(container.querySelector('main')?.dataset['coveredBy']).toBe('side-by-side');
+    expect(container.querySelector('.m-body-area')).not.toBeNull();
+    // AND SPLIT VIEW IS NOT HOW IT OPENS ANY MORE: one document per split since the owner's design.
+    expect(settings.get(SPLIT_VIEW_SETTING.id)).toBe(false);
+
+    fireEvent.keyDown(surface, { key: 'Escape' });
+    expect(container.querySelector('[data-side-by-side]')).toBeNull();
+    expect(container.querySelector('main')?.dataset['coveredBy']).toBeUndefined();
+  });
+
+  it('CONTROL: with Side by Side closed, the assistant offers no Left · Right · Both — the ask has no route (ADR-0131)', async () => {
+    const { settings } = await twoOpenWithMenuOnFirst();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    await act(async () => {
       settings.set(CONTEXT_PANEL_OPEN_SETTING.id, true);
       settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
       await Promise.resolve();
     });
-    // THE LAYER ON SHOW: the first document's layer is kept behind it, split like it, with a picker of its own.
-    const picker = container.querySelector('[data-document-layer="active"] [data-compare-pick]');
-    if (!(picker instanceof HTMLSelectElement)) throw new Error('the split view renders a picker');
-    await act(async () => {
-      fireEvent.change(picker, { target: { value: FIRST } });
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    // THE COMPARE PANE MOVES TO ITS SECOND PAGE, so the right-hand page is one only its own report
-    // can supply: the tab's document is still on page 0, and a root that took the status bar's
-    // page for the right would send 0.
-    act(() => {
-      const pane = observers.find((observer) =>
-        observer.observed.some((element) => element.closest('[data-document-layer="active"] .m-second-pane') !== null),
-      );
-      if (pane === undefined) throw new Error('the compare pane observes its slots');
-      pane.callback(
-        pane.observed
-          .filter((element) => element instanceof HTMLElement && element.classList.contains('m-page-slot'))
-          .map(
-            (slot) =>
-              ({ target: slot, isIntersecting: (slot as HTMLElement).dataset['page'] === '1' }) as unknown as IntersectionObserverEntry,
-          ),
-        {} as unknown as IntersectionObserver,
-      );
-    });
-
-    fireEvent.click(screen.getByRole('radio', { name: 'Both' }));
-    fireEvent.change(screen.getByLabelText('Ask about this document'), { target: { value: 'Which is longer?' } });
-    await act(async () => {
-      screen.getByRole('button', { name: 'Send' }).click();
-      await Promise.resolve();
-    });
-
-    const ask = sent.filter((entry) => entry.id === 'ai.ask').at(-1)?.params as
-      | { about?: unknown; alongside?: unknown }
-      | undefined;
-    expect(ask?.about).toStrictEqual({ scope: 'page', docId: SECOND, page: 0 });
-    expect(ask?.alongside).toStrictEqual({ scope: 'page', docId: FIRST, page: 1 });
+    expect(screen.getByLabelText('Ask about this document')).toBeTruthy();
+    expect(screen.queryByRole('radio', { name: 'Both' })).toBeNull();
   });
 
   it('CONTROL: split view of ONE document offers no choice — the second pane is the same document', async () => {

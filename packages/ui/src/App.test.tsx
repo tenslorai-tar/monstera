@@ -7,7 +7,7 @@ import {
   channels,
   createClient,
 } from '@monstera/contract';
-import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
+import { asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
 import { act, cleanup, fireEvent, render as renderBare, screen, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -1278,7 +1278,7 @@ describe('App', () => {
         'document.pageTextLayer': { version: asDocVersion(1), lines: [], truncated: false, kind: 'image-only' as const },
         'app.ocrLanguages': { languages: ['eng', 'deu'] },
         'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
-        'document.exportText': { kind: 'copied' as const, bytes: 10 },
+        'document.exportText': { kind: 'copied' as const, bytes: 10, written: asFileHandle('Handle-text-export') },
       };
 
       it('with the setting on, Export text recognises every picture page in the STORED language, then exports', async () => {
@@ -1319,6 +1319,25 @@ describe('App', () => {
           expect(sent.some((call) => call.id === 'document.exportText')).toBe(true);
         });
         expect(sent.filter((call) => call.id === 'document.execute')).toStrictEqual([]);
+      });
+
+      it('THROUGH THE COMPOSITION: an export that lands is confirmed, and Show in folder reveals the file it wrote', async () => {
+        // THE PAIR'S UI HALF crossing App's own wiring: the toast is the shell's, and its action reaches main by the
+        // handle the export answered. A root that dropped `toast` from the export's dependencies compiles nowhere,
+        // and one that showed a toast without the action would pass every command case.
+        const { client, sent } = answeringClient({ ...SCANNED, 'file.reveal': { revealed: true } });
+        render(<App client={client} settings={freshSettings()} />);
+        await withDocumentOpen();
+
+        await pressCommand('Export text…');
+        const show = await screen.findByRole('button', { name: 'Show in folder' });
+        expect(screen.getByText('Text file saved')).toBeTruthy();
+        fireEvent.click(show);
+        await vi.waitFor(() => {
+          expect(sent.filter((call) => call.id === 'file.reveal').map((call) => call.params)).toStrictEqual([
+            { handle: 'Handle-text-export' },
+          ]);
+        });
       });
     });
 
@@ -2974,6 +2993,24 @@ describe('App', () => {
       expect(document.querySelectorAll('.m-page-list')).toHaveLength(2);
     });
 
+    it('the header CLOSES it by writing the same setting, and the second half goes with it', async () => {
+      const { settings } = await withDocument();
+      await act(async () => {
+        settings.set(SPLIT_VIEW_SETTING.id, true);
+        await Promise.resolve();
+      });
+      expect(document.querySelector('[data-split-view]')).not.toBeNull();
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Close split view' }).click();
+        await Promise.resolve();
+      });
+
+      expect(settings.get(SPLIT_VIEW_SETTING.id)).toBe(false);
+      expect(document.querySelector('[data-split-view]')).toBeNull();
+      expect(document.querySelectorAll('.m-page-list')).toHaveLength(1);
+    });
+
     it('opens NO SECOND PARSER — both panes render through the same view', async () => {
       // The property the feature rests on. A pane that opened its own view
       // would parse the document twice, start a second worker and hold a second
@@ -3003,11 +3040,14 @@ describe('App', () => {
 
     describe('FOCUS FOLLOWS THE PANE — navigation goes to the pane the reader pressed in', () => {
       /**
-       * Which pane each scroll-into-view landed in, by the pane's index. The observable is the
-       * SCROLL, not the status readout: the readout follows the page an intersection observer
-       * reports, which happy-dom never runs, while a go-to request is a scroll this can see.
+       * The two halves' page boxes after *Next page*, as a person reads them. The observable is the HEADER, which
+       * names each half's page: a half shows one page (the owner's split design), so a request to it changes the page
+       * on show rather than scrolling, and the box beside it is where that is visible.
        */
-      async function nextPageLandsIn(press: 0 | 1 | null): Promise<readonly number[]> {
+      async function boxesAfter(
+        command: 'Next page' | 'Previous page',
+        press: 0 | 1 | null,
+      ): Promise<readonly string[]> {
         const { settings } = await withDocument();
         await act(async () => {
           settings.set(SPLIT_VIEW_SETTING.id, true);
@@ -3022,28 +3062,25 @@ describe('App', () => {
             await Promise.resolve();
           });
         }
-        const landed: number[] = [];
-        const spy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (this: Element) {
-          landed.push(panes.findIndex((pane) => pane.contains(this)));
-        });
-        try {
-          await pressCommand('Next page');
-        } finally {
-          spy.mockRestore();
-        }
-        return landed;
+        await pressCommand(command);
+        return ['left', 'right'].map(
+          (side) => document.querySelector<HTMLInputElement>(`[data-split-page="${side}"]`)?.value ?? '',
+        );
       }
 
-      it('a press in the SECOND pane sends the next page there, and only there', async () => {
-        expect(await nextPageLandsIn(1)).toStrictEqual([1]);
+      // THE SPLIT OPENS on the reader's page at the left and the next at the right: 1 and 2 of this two-page fixture.
+      // The second pane's case goes BACK, because its half opens on the last page; the first pane's goes forward.
+      // Each still separates: routed to the wrong pane, either command has nowhere to go and both boxes stay 1 and 2.
+      it('a press in the SECOND pane sends the page there, and only there', async () => {
+        expect(await boxesAfter('Previous page', 1)).toStrictEqual(['1', '1']);
       });
 
       it('CONTROL: with no press, and after a press in the first, it goes to the first pane', async () => {
         // The first pane is the reporter until the reader chooses otherwise — the state a split
         // opens in. Without this pair, a build that always routed to the second pane would pass.
-        expect(await nextPageLandsIn(null)).toStrictEqual([0]);
+        expect(await boxesAfter('Next page', null)).toStrictEqual(['2', '2']);
         cleanup();
-        expect(await nextPageLandsIn(0)).toStrictEqual([0]);
+        expect(await boxesAfter('Next page', 0)).toStrictEqual(['2', '2']);
       });
     });
   });

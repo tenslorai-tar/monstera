@@ -195,6 +195,9 @@ function handlers() {
     revealLog: () => {
       throw new Error('registration cases must not reach the log');
     },
+    revealPath: () => {
+      throw new Error('registration cases must not reach the file manager');
+    },
     readDictionary: () => {
       throw new Error('registration cases must not read a dictionary');
     },

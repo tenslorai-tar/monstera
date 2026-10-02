@@ -55,7 +55,22 @@ export {
 // of them changed — which is exactly what happened to the matching rule above.
 export { type WordCount, countWords, wordsOf } from './wordCount.js';
 export { MINIMUM_WINDOW, minimumWindowFor } from './windowSize.js';
-export { type LineChange, comparableLine, diffLines } from './lineDiff.js';
+export { type AlignmentStep, type LineChange, alignSequences, comparableLine, diffLines } from './lineDiff.js';
+export {
+  type CompareAnnotation,
+  type CompareBox,
+  type CompareLine,
+  type ComparePage,
+  type CompareRaster,
+  type PageAlignment,
+  type PageSignature,
+  type PairChange,
+  CHANGE_TEXT_LIMIT,
+  alignPages,
+  comparePair,
+  needsPicture,
+  signPage,
+} from './pageCompare.js';
 // WHICH RUNS AN EDITED LINE REWRITES, once. The kernel's `editTextBlock` owns
 // the write and the renderer only shows the words; neither may carry a second
 // opinion about which object a typed character belongs to (ADR-0096).

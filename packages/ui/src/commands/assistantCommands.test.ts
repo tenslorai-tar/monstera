@@ -40,7 +40,8 @@ describe('Ask AI · Explain · Summarise · Translate on selected text', () => {
 
     const about = { scope: 'selection', docId: DOC, page: 4, text: 'the indemnity clause' };
     expect(asked).toStrictEqual([
-      [about, undefined],
+      // ASK AI QUOTES the words for the person's own question and sends nothing; the other three ask at once.
+      [about, { quote: 'the indemnity clause' }],
       [about, ASSISTANT_PROMPT_EXPLAIN],
       [about, ASSISTANT_PROMPT_SUMMARISE],
       [about, ASSISTANT_PROMPT_TRANSLATE],

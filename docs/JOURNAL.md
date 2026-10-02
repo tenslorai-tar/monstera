@@ -1183,6 +1183,117 @@ ranges; where the 100 MiB Office check is made. **The owner's question:** class 
 build would take them is the three marked ✓ that fail as `internal` (objects and blocks, page lists, the TOC frame),
 then the panels (layers, links), then imports. The memory ceiling waits on item 2's decision.
 
+## 2026-10-01 — Stage audit of `4a93218f..173cc5ae` — findings BBBBBBB-1 to BBBBBBB-5
+
+*Renumbered at the merge into `work/2026-10-01` (2026-10-02): this entry labelled its findings AAAAAAA-1 to
+AAAAAAA-5, labels the audit of `4a93218f..884eff57` already held on `main`; as with an ADR number, the unmerged one
+moves, and every citation of them in this entry moved with it.*
+
+Owed at one batch of files: merging `origin/main` into `work/cloud-2` (the cloud branches combined) would have taken
+the unaudited range to 241 files against 200, and the pre-commit gate refused the merge. This record rides that merge
+commit, as the gate requires. **It audits this side, `4a93218f..173cc5ae`: 39 commits, 177 files** — main's audit
+record and its two repairs, `work/cloud-flicker` (an edit keeps its pages, ADR-0129 and the kept view, the ribbon's
+fold), `work/cloud-screens` (the screen items of 1 October, the recent list at four, the assistant pane's four
+changes, the cloud rules), `work/cloud-ismain`, and the two merges joining them. **Main's own commits after
+`4a93218f` (`48ea697c` and its 17 ancestors) are NOT covered here**; with this merge they come to one range under a
+batch, for main's next audit. The watermark advances to `173cc5ae`, the side audited.
+
+### 1. Root cause or workaround?
+
+Each fix states a mechanism, including the two found in this range rather than reported to it: the canvas harness read
+a size and a pixel count in two steps, so a page presented between them came back as 300 x 150 with ink (`72ca95fd`,
+measured 1 in 30, 5 in 5 with a pause between the reads); and a hand-written main guard of the form
+`import.meta.url.endsWith(argv[1])` does not fire in a path with a space, because the url escapes it (`b0f53c8b`,
+measured from a directory named `with space`). **BBBBBBB-3** (low, open) is the one workaround-shaped change:
+`620e6d54` respelt a proof's emitted child (`process.argv.length > 1`) so the widened main-guard scan would not report
+it. The fact the child prints is the same, measured both ways; what did not change is the scan, which reads text and so
+cannot tell a guard from a program a proof writes to disk.
+
+### 2. Verified against the easy shape only?
+
+The recent list's cut is proven on a stored list longer than four, with the pictures of the cut entries, and crash
+recovery on six tabs past the cap. The bubble's pair is checked in all three themes. **BBBBBBB-2** (low, open): the
+ubuntu `canvasPixels` run at `bf17dfc2` that drew nothing for 60 s and again after the zoom has no mechanism. It is not
+the harness race (that branch had no single-step present), it did not recur in 66 local runs, and since `72ca95fd` the
+case prints every page canvas when it fails.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Strengthened: the main-guard scan now matches the read of `process.argv[1]` in any spelling and walks every `.mjs` under
+`scripts/`, where it matched one comparison in the npm roster; render-geometry gains a case comparing each wait's size
+with a later reading. Removed with their subjects: the assistant's scope line and web note (their absence asserted with
+a positive half each), the placeholder rotation's focus control, and the start screen's *Show all*.
+
+### 3. Would CI have caught it?
+
+The owner's reading at 23:06 UTC: `72ca95fd` green on both; `620e6d54` red only on the visual baselines, as expected;
+`b0f53c8b` CI green, Guards red only at the first-push history step that `work/2026-10-01-hook-mode` (now on main)
+fixes. The other direction has two answers, both found on this machine and invisible to CI: the space-in-path guard
+(CI's paths have none), and **BBBBBBB-1** below, which needs a git hook running in a linked worktree.
+
+### 4. Are the proofs non-vacuous?
+
+Mutated in the commits that added them: the stored-list cut and its control, the bubble's pair (a failing light value
+went red at 1.77:1), the old main-guard pattern (the spelling case reported none of four), and the harness race (the
+new case caught the two-step harness 3 in 3). Every deleted line in the 16 modified proofs was read: each is a
+rewrite with a stronger separator — `AppErrorBoundary` and `AppTabs` now assert the SAME scroller node where they
+asserted a remount's reveal, `renderPage` asserts the canvas on screen is untouched until the whole drawing is
+presented, and the roster counts rose.
+
+### 4a, 4b. Instruments and searches
+
+The new frame inspector reproduced the blank frame before the fix it measures; the widened scan locates
+`emittedTemplates.mjs` on every run; the harness now prints the canvases it saw. **BBBBBBB-5** (low, open): in the
+cloud sandbox, `proof:perfbudget` failed on an unmodified checkout of `5f5a747a`, reading *no budget declared for
+mupdf-host* while CI was green on the same line. The line has since changed on main; why the two places disagreed is
+not established.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+The scan's walk is derived, and the danger it guards against is a hand guard it did not read, which a larger walk
+reduces; its control file makes an empty walk loud. Nothing else derives a count.
+
+### 5. Executed, or asserted?
+
+Executed: every figure above. Asserted, and said so where it lives: ADR-0129's memory cost of a kept layer.
+
+### 6. Architecture before the feature, or underneath it?
+
+Before, both times a seam moved: §8's amendment (`6893ddfe`) before the line was removed (`01e27fc7`), ADR-0129
+(`9235c10a`) before the kept view (`e6252ae9`).
+
+### 7. Do the documents still match the code?
+
+Swept for the removed line, the web note, *Show all*, the recent length and the rotation: what remains is ADR text
+corrected by an appended note, as an ADR is. **BBBBBBB-4** (low, closed by this record): `b0f53c8b`'s message splits the
+39 guards as 18, 11 and 10; the true split is 18 url-suffix, 12 name-suffix and 9 resolved-path. A commit message is
+not rewritten, so the correction is here.
+
+**BBBBBBB-1** (medium, open, owed on `work/cloud-canary`): `scannerCanary.mjs`' `buildCorpus` runs `git init`,
+`git config` and `git add` in a temporary directory with the inherited environment. A git hook exports `GIT_DIR`; in a
+linked worktree that is an absolute path into the real repository, so the canary wrote `core.bare=true` and a `canary`
+identity into the shared config and replaced the worktree's index with its corpus (observed 2026-10-01). The commit was
+blocked only because the secret scan then found the corpus's planted secrets. In the main checkout `GIT_DIR` is the
+relative `.git`, which resolves inside the temporary directory, which is why it never showed.
+
+### Correction, 2026-10-02: 4a and 4b answered apart
+
+The heading *4a, 4b* above answered two items under one, and the document check counts each by its own heading, so
+Guards refused this entry on `41d5bda8` and `dfa9b02b`. The answers are unchanged; they are set out here as the two
+items they are.
+
+#### 4a. Instruments: a resolution test before a real measurement
+
+The frame inspector reproduced the blank frame on the commit before the fix it then measured, so it was shown able to
+see the state it exists to find before it judged the fix. No other instrument arrived in the range.
+
+#### 4b. Searches: a positive control on every run
+
+The widened main-guard scan must locate `emittedTemplates.mjs` on every run and refuses to report when it does not;
+the canvas harness prints the canvases it saw, so an empty walk is visible. BBBBBBB-5 (above) stays open.
+
+---
+
 ## 2026-10-01 — The taskbar icon filled 87% of its height; the exe still carries Electron's icon
 
 The owner's taskbar (batch-1, `taskbar_icon.png`): Monstera's mark about 17.5 × 20 pixels in a 24-pixel slot, beside

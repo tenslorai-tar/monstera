@@ -105,6 +105,50 @@ test('the SETTINGS row keeps its description readable beside a wide control (Pri
   expect(control.x + control.width).toBeLessThanOrEqual(edge.x + edge.width + 1);
 });
 
+test('EVERY SETTINGS PAGE keeps every row’s description at its reading basis or wider, OCR’s languages included', async ({ page }) => {
+  // THE CLASS, not Print quality alone: every row on every page, so a wide control added tomorrow on any page is held
+  // to the same rule. The basis is the text's own `flex-basis`, resolved in its own font, so the case reads the rule
+  // rather than restating a number; a row narrower than its basis may give the text the whole row instead.
+  await openApp(page);
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Settings' });
+  const pages = dialog.getByRole('navigation').getByRole('button');
+  await expect(pages.first()).toBeVisible();
+  const names = await pages.allTextContents();
+  // THE POSITIVE CONTROL: the page the owner named is among those walked, so an empty walk cannot pass.
+  expect(names).toContain('OCR');
+  const narrow: string[] = [];
+  let rows = 0;
+  for (const name of names) {
+    await pages.filter({ hasText: name }).first().click();
+    const found = await dialog.locator('.m-settings-row').evaluateAll((all) =>
+      all.map((row) => {
+        const text = row.querySelector<HTMLElement>('.m-settings-row__text');
+        if (text === null) return { label: '(no text)', width: 0, basis: 0, row: 1 };
+        const probe = document.createElement('span');
+        probe.style.cssText = `position:absolute;visibility:hidden;inline-size:${getComputedStyle(text).flexBasis}`;
+        text.append(probe);
+        const basis = probe.getBoundingClientRect().width;
+        probe.remove();
+        return {
+          label: text.querySelector('.m-settings-row__label')?.textContent ?? '',
+          width: text.getBoundingClientRect().width,
+          basis,
+          row: row.getBoundingClientRect().width,
+        };
+      }),
+    );
+    rows += found.length;
+    for (const row of found) {
+      if (row.width + 0.5 < Math.min(row.basis, row.row)) {
+        narrow.push(`${name} › ${row.label}: ${String(Math.round(row.width))} px of ${String(Math.round(row.basis))}`);
+      }
+    }
+  }
+  expect(rows).toBeGreaterThan(20);
+  expect(narrow).toStrictEqual([]);
+});
+
 test('the FLOAT BAR covers no ORGANIZE card at 1280 × 800', async ({ page }) => {
   await openApp(page);
   await openDocument(page);

@@ -144,7 +144,7 @@ export async function renderPage(
   document: PDFDocumentProxy,
   pageNumber: number,
   canvas: HTMLCanvasElement,
-  scale: number | { readonly fitWidth: number },
+  scale: number | { readonly fitWidth: number } | { readonly fitHeight: number },
   rotation: number | undefined,
   signal: AbortSignal,
   raster?: SecondRasteriser,
@@ -157,13 +157,17 @@ export async function renderPage(
   // BEFORE THE CANVAS IS TOUCHED: sizing it clears it, so a superseded draw that got this far
   // would wipe the newer one's pixels.
   if (superseded()) throw new RenderCancelledError(pageNumber);
-  // A WIDTH TO FIT is answered from PDF.js' own viewport at scale 1, which sizes the page without
-  // drawing it. The thumbnail strip drew the whole page at full size to learn this, and that
-  // first pass is what a superseded draw left on its canvas (2026-09-18).
+  // A WIDTH OR A HEIGHT TO FIT is answered from PDF.js' own viewport at scale 1, which sizes the
+  // page without drawing it. The thumbnail strip drew the whole page at full size to learn this,
+  // and that first pass is what a superseded draw left on its canvas (2026-09-18). A height is
+  // Organize's *Full page*: every page whole at the height the grid has, whatever its shape.
+  const unit = typeof scale === 'number' ? undefined : viewportOf(page, 1, rotation);
   const viewport =
     typeof scale === 'number'
       ? viewportOf(page, scale, rotation)
-      : viewportOf(page, scale.fitWidth / viewportOf(page, 1, rotation).width, rotation);
+      : 'fitWidth' in scale
+        ? viewportOf(page, scale.fitWidth / (unit?.width ?? 1), rotation)
+        : viewportOf(page, scale.fitHeight / (unit?.height ?? 1), rotation);
   const size = { width: Math.ceil(viewport.width), height: Math.ceil(viewport.height) };
   // ASKED BEFORE ANY DRAWING, so a canvas nobody can draw on refuses the page rather than after a
   // render has been paid for.

@@ -147,7 +147,6 @@ import {
   openAssistantCommand,
 } from './commands/assistantCommands.js';
 import { CommandPalette } from './CommandPalette.js';
-import { ComparePane } from './ComparePane.js';
 import { goToCommand, historyCommand, pageMoveCommand } from './commands/navigationCommands.js';
 import { syncConversation } from './chatHistorySync.js';
 import { type DocumentStore, DocumentStores } from './documentStores.js';
@@ -209,7 +208,6 @@ import { KEYBOARD_SHORTCUTS_DIALOG } from './dialogs/keyboardShortcuts.js';
 import { WORD_COUNT_DIALOG } from './dialogs/wordCount.js';
 import { PAGE_STRUCTURE_DIALOG } from './dialogs/pageStructure.js';
 import { SPELL_CHECK_DIALOG } from './dialogs/spellCheck.js';
-import { COMPARE_DOCUMENTS_DIALOG, COMPARE_RESULT_DIALOG } from './dialogs/compareDocuments.js';
 import { compareDocumentsCommand } from './commands/compareDocuments.js';
 import { OCR_DIALOG } from './dialogs/ocr.js';
 import { TRANSLATE_PAGE_DIALOG } from './dialogs/translatePage.js';
@@ -405,6 +403,8 @@ import { SIGNATURE_BREAK_DIALOG } from './dialogs/signatureBreak.js';
 import { STALE_COPIES_DIALOG } from './dialogs/staleCopies.js';
 import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { PageList, type PageListProps } from './PageList.js';
+import { type Side, SideBySide, type SidePreferences, drawForComparison } from './SideBySide.js';
+import { SplitView } from './SplitView.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
 import { ContextMenuArea } from './surfaces/ContextMenu.js';
 import { type TextSelection, readTextSelection } from './TextLayer.js';
@@ -584,39 +584,25 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const [tabs, setTabs] = useState<readonly OpenDocument[]>([]);
   const [activeId, setActiveId] = useState<DocId | undefined>(undefined);
   /**
-   * The document the second pane compares against, or none.
+   * Side by Side's two documents, or `undefined` while it is closed (ADR-0131).
    *
-   * App-shell state and not a setting: which two documents a reader is
-   * comparing is about this moment, and a comparison that survived a restart
-   * would name documents that are not open. Split view IS a setting — that one
-   * is *how I like to read* — and the two live in different places for that
-   * reason rather than by oversight.
+   * App-shell state and not a setting: which two documents a reader is comparing is about this
+   * moment, and a comparison that survived a restart would name documents that are not open. Split
+   * view IS a setting — that one is *how I like to read* — and the two live in different places for
+   * that reason rather than by oversight. Held by `DocId`, and resolved against the open tabs at
+   * each render, so a half whose document was closed shows another rather than a closed one.
    */
-  const [compareId, setCompareId] = useState<DocId | undefined>(undefined);
-  /**
-   * The page the compare pane is on, and a page the assistant asked it to go to — the RIGHT
-   * document's own position, for the assistant's *Right* and *Both* (ADR-0089). Never the status
-   * bar's: its commands act on the tab's document, and this is a page of another one. Held with
-   * the document it is a page of, so a pick of a different document reads as page 1 until its
-   * pane reports, rather than as the last document's page.
-   */
-  const [comparePage, setComparePage] = useState<{ readonly docId: DocId; readonly page: number } | undefined>(undefined);
-  const [compareGoTo, setCompareGoTo] = useState<number | undefined>(undefined);
-  const comparedAt = useCallback(
-    (docId: DocId, page: number) => {
-      setComparePage((current) => (current?.docId === docId && current.page === page ? current : { docId, page }));
-    },
-    [],
-  );
-  const compareWentTo = useCallback(() => {
-    setCompareGoTo(undefined);
+  const [sideBySide, setSideBySide] = useState<{ readonly left: DocId; readonly right: DocId } | undefined>(undefined);
+  /** Opens Side by Side on two documents — Review › Compare's and the tab menu's one route in. */
+  const showSideBySide = useCallback((left: DocId, right: DocId): void => {
+    setSideBySide({ left, right });
   }, []);
   /**
    * What the find bar last answered, for the text layers to paint.
    *
    * **Here rather than inside `FindBar`**, because the two components that need
    * it are siblings: the bar knows what was searched and the scroller owns the
-   * pages. App-shell state for `compareId`'s reason — it is about this moment,
+   * pages. App-shell state for `sideBySide`'s reason — it is about this moment,
    * and a highlight that survived a restart would be painted for a search
    * nobody ran.
    *
@@ -746,8 +732,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const [toastStore] = useState(() => createToastStore());
   const toasts = useSyncExternalStore(toastStore.subscribe, () => toastStore.getState().toasts);
   const toast = useCallback<ShowToast>(
-    (kind, message) => {
-      toastStore.getState().show(kind, message);
+    (kind, message, action) => {
+      toastStore.getState().show(kind, message, action);
     },
     [toastStore],
   );
@@ -886,9 +872,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         PDFA_REMOVALS_DIALOG,
         OPTIMIZE_DIALOG,
         PAGE_BARCODES_DIALOG,
-        COMPARE_DOCUMENTS_DIALOG,
         ACCESSIBILITY_DIALOG,
-        COMPARE_RESULT_DIALOG,
         PLACE_BARCODE_DIALOG,
         DUPLICATE_PAGES_DIALOG,
         SETTINGS_PROBLEM_DIALOG,
@@ -1652,13 +1636,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   // open, and a marker it held reset on remount and replayed the last request.
   const [assistantHandled, setAssistantHandled] = useState<number | undefined>(undefined);
   const askAssistant = useCallback<AskAssistant>(
-    (about, prompt, replyTo) => {
+    (about, next, replyTo) => {
       settings.set(CONTEXT_PANEL_OPEN_SETTING.id, true);
       settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
       setAssistantRequest((last) => ({
         serial: (last?.serial ?? 0) + 1,
         about,
-        ...(prompt === undefined ? {} : { prompt }),
+        ...(next === undefined ? {} : typeof next === 'string' ? { prompt: next } : { quote: next.quote }),
         ...(replyTo === undefined ? {} : { replyTo }),
       }));
     },
@@ -1858,7 +1842,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * How many marks main's clipboard holds, as the last copy reported it — the COUNT and never the
    * marks, which stay in main because a paste is a command the renderer may not send.
    *
-   * App state and not a setting, for `compareId`'s reason: main's clipboard is empty at every
+   * App state and not a setting, for `sideBySide`'s reason: main's clipboard is empty at every
    * start, so a count that survived a restart would show *Paste* over nothing. Application-wide
    * rather than per document, which is what lets a copy in one tab be pasted into another.
    */
@@ -2088,9 +2072,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const onSnapshot = useCallback(
     (page: number, rect: AnnotationRect, snapshotScale: number): void => {
       if (activeId === undefined) return;
-      void snapshotRegion({ client, ask }, activeId, page, rect, snapshotScale);
+      void snapshotRegion({ client, ask, toast }, activeId, page, rect, snapshotScale);
     },
-    [activeId, ask, client],
+    [activeId, ask, client, toast],
   );
 
   /**
@@ -2153,9 +2137,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const onPlaceSignature = useCallback(
     (page: number, rect: AnnotationRect): void => {
       if (activeId === undefined) return;
-      void signDocument({ client, ask, onApplied: applied }, activeId, { page, rect });
+      void signDocument({ client, ask, onApplied: applied, toast }, activeId, { page, rect });
     },
-    [activeId, applied, ask, client],
+    [activeId, applied, ask, client, toast],
   );
 
   /**
@@ -2284,8 +2268,6 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const unit = useSetting(settings, RULER_UNIT_SETTING);
   const loupe = useSetting(settings, LOUPE_SETTING);
   const split = useSetting(settings, SPLIT_VIEW_SETTING);
-  /** The document the second pane compares against, while it is still open. */
-  const compared = tabs.find((tab) => tab.docId === compareId);
   const secondRenderer = useSetting(settings, SECOND_RENDERER_SETTING);
   // E1's TILE THRESHOLD, as the scale a page list compares its settled zoom against.
   const tileAbove = TILE_THRESHOLD_ZOOM[useSetting(settings, TILE_THRESHOLD_SETTING)];
@@ -2319,6 +2301,21 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     },
     [changeZoom, zoomStep],
   );
+  // THE READER'S DRAWING PREFERENCES, which Side by Side's halves take as the document pane does.
+  const sidePreferences = useMemo<SidePreferences>(
+    () => ({ unit, tileAbove, quality, pageBadges, smoothScroll, zoomStep }),
+    [pageBadges, quality, smoothScroll, tileAbove, unit, zoomStep],
+  );
+  // SIDE BY SIDE'S TWO DOCUMENTS, resolved against the tabs: a half whose document was closed shows the one in front,
+  // and with no document open there is nothing to show.
+  const sideDocuments =
+    sideBySide === undefined || open === undefined
+      ? undefined
+      : {
+          left: tabs.find((tab) => tab.docId === sideBySide.left) ?? open,
+          right: tabs.find((tab) => tab.docId === sideBySide.right) ?? open,
+        };
+  if (sideBySide !== undefined && tabs.length === 0) setSideBySide(undefined);
 
   /**
    * The open command, built once and read by two things.
@@ -2342,6 +2339,31 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     },
     [dropOpener, openDeps],
   );
+  // SIDE BY SIDE'S *OPEN ANOTHER PDF…* opens through the same dependencies as well, so the file arrives as a tab like
+  // any other (main's picker, a `FileHandle`, no path or bytes here) — and is then put in the half that asked. A file
+  // already open is put there too, without bringing its tab forward behind the surface.
+  const openBeside = useCallback(
+    (side: Side): void => {
+      const put = (docId: DocId): void => {
+        setSideBySide((current) => (current === undefined ? current : { ...current, [side]: docId }));
+      };
+      void openDocument({
+        ...openDeps,
+        onOpened: (document) => {
+          opened(document);
+          put(document.docId);
+        },
+        onAlreadyOpen: put,
+      });
+    },
+    [openDeps, opened],
+  );
+  const pickBeside = useCallback((side: Side, docId: DocId): void => {
+    setSideBySide((current) => (current === undefined ? current : { ...current, [side]: docId }));
+  }, []);
+  const closeSideBySide = useCallback((): void => {
+    setSideBySide(undefined);
+  }, []);
   // THE COMMAND LINE'S DOCUMENTS open through the same dependencies too: asked for ONCE when the window starts (the
   // first launch's), and again each time main says a later launch named more. Main hands each path over once, so an
   // extra ask opens nothing twice — but the first is guarded all the same, since these dependencies change identity.
@@ -2434,6 +2456,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       onApplied: applied,
       ask,
       stamp,
+      // EVERY WRITE CONFIRMS through `confirmWritten`, which needs where the toast goes.
+      toast,
       recogniseFirst: (docId: DocId, pageCount: number) =>
         recogniseBeforeExport(
           {
@@ -2525,7 +2549,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         }),
         aiSetup,
         showWordCountCommand({ client, ask, track }),
-        compareDocumentsCommand({ client, ask, track }),
+        compareDocumentsCommand({ show: showSideBySide }),
         translatePageCommand({ client, onApplied: applied, ask, stamp, toast, track, storedSecrets: () => storedSecrets }),
         inspectPageStructureCommand({ client, ask }),
         accessibilityCheckCommand({ client, ask }),
@@ -2556,8 +2580,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         deletePagesCommand({ client, onApplied: applied, ask, stamp }),
         cropPagesCommand({ client, onApplied: applied, ask, stamp }),
         protectDocumentCommand({ client, onApplied: applied, ask, stamp }),
-        sanitizeDocumentCommand({ client, onApplied: applied, ask, stamp }),
-        signDocumentCommand({ client, onApplied: applied, ask, stamp }),
+        sanitizeDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
+        signDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
         signaturesCommand({ client, onApplied: applied, ask, stamp }),
         docusignSendCommand({
           client,
@@ -2571,6 +2595,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onApplied: applied,
           ask,
           stamp,
+          toast,
           docusignReady: () => docusignKeyStored,
         }),
         redactMatchesCommand({ client, onApplied: applied, ask, stamp }),
@@ -2585,7 +2610,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         watermarkPagesCommand({ client, onApplied: applied, ask, stamp }),
         headerFooterCommand({ client, onApplied: applied, ask, stamp }),
         batesNumberCommand({ client, onApplied: applied, ask, stamp }),
-        pageTransitionCommand({ client, onApplied: applied, ask, stamp }),
+        pageTransitionCommand({ client, onApplied: applied, ask, stamp, toast }),
         pageBackgroundCommand({ client, onApplied: applied, ask, stamp }),
         resizePagesCommand({ client, onApplied: applied, ask, stamp }),
         deskewPagesCommand({ client, onApplied: applied, ask, stamp }),
@@ -2613,6 +2638,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onApplied: applied,
           ask,
           stamp,
+          toast,
           track,
           servicesReady: () => azureReady || claudeKeyStored,
           ocrLanguages: storedOcrLanguages,
@@ -2666,17 +2692,18 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onActivate: activate,
         }),
         extractPagesCommand({ client, onApplied: applied, ask, stamp, toast }),
-        splitDocumentCommand({ client, onApplied: applied, ask, stamp }),
-        exportPageImagesCommand({ client, onApplied: applied, ask, stamp }),
+        splitDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
+        exportPageImagesCommand({ client, onApplied: applied, ask, stamp, toast }),
         exportTextCommand(exportDeps),
         exportLayoutTextCommand(exportDeps),
         exportWordCommand(exportDeps),
-        exportPowerPointCommand({ client, onApplied: applied, ask, stamp }),
+        exportPowerPointCommand({ client, onApplied: applied, ask, stamp, toast }),
         exportExcelCommand({
           client,
           onApplied: applied,
           ask,
           stamp,
+          toast,
           // THE SAME TWO FACTS the OCR tool's engines are offered on (`cloudReady`, `claudeReady`
           // below): a service is offered where its key is stored, and nowhere else (ADR-0086).
           tableEngines: () => [
@@ -2685,7 +2712,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             ...(claudeKeyStored ? (['claude'] as const) : []),
           ],
         }),
-        printCommand({ client, onApplied: applied, ask, stamp, settings }),
+        printCommand({ client, onApplied: applied, ask, stamp, settings, toast }),
         emailCommand({ client, onApplied: applied, ask, stamp }),
         exportPdfaCommand(exportDeps),
         optimizeCommand({ client, onApplied: applied, ask, stamp, track, toast }),
@@ -2696,13 +2723,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         saveCommand({ client, ask, toast, onSaved, warnSignatureBreak }),
         closeTabCommand({ close: (docId) => requestClose([docId]) }),
         closeOthersCommand({ close: requestClose }),
-        // THE SHELL'S OWN `activeId` AND `setCompareId`, which is what keeps this a second ROUTE
-        // to the compare pane rather than a second owner of it: the picker writes the same value.
-        openSideBySideCommand({ focused: readActiveId, compare: setCompareId, settings }),
+        // THE SHELL'S OWN `activeId` AND `showSideBySide`, which is what keeps this a second ROUTE
+        // to Side by Side rather than a second owner of it: Review › Compare writes the same value.
+        openSideBySideCommand({ focused: readActiveId, show: showSideBySide }),
         saveCopyCommand({ client, onApplied: applied, ask, stamp, toast }),
-        exportFormDataJsonCommand({ client, onApplied: applied, ask, stamp }),
-        exportFormDataXfdfCommand({ client, onApplied: applied, ask, stamp }),
-        exportFormDataFdfCommand({ client, onApplied: applied, ask, stamp }),
+        exportFormDataJsonCommand({ client, onApplied: applied, ask, stamp, toast }),
+        exportFormDataXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
+        exportFormDataFdfCommand({ client, onApplied: applied, ask, stamp, toast }),
         importFormDataJsonCommand({ client, onApplied: applied, ask, stamp }),
         importFormDataXfdfCommand({ client, onApplied: applied, ask, stamp }),
         importFormDataFdfCommand({ client, onApplied: applied, ask, stamp }),
@@ -2712,9 +2739,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         importAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp }),
         // THE CLIPBOARD'S PASTE, beside the import it is: main mints the same command.
         marksPaste,
-        exportAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp }),
-        exportAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp }),
-        exportAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp }),
+        exportAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
+        exportAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp, toast }),
+        exportAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp, toast }),
         detectFlatFieldsCommand({ client, onApplied: applied, ask, stamp }),
         flattenFormCommand({ client, onApplied: applied, ask, stamp }),
         // EDIT TEXT, a MODE in the tool slot (ADR-0096): it toggles as a drawing
@@ -2827,6 +2854,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // tab menu hands it. Rebuilding the registry when the focused tab changes
       // is the same cheap, deliberate cost the selection already pays.
       readActiveId,
+      showSideBySide,
       // WHETHER *PASTE ANNOTATIONS* EXISTS, which changes when a copy succeeds.
       readHasCopied,
       // WHETHER *UPDATE AVAILABLE* EXISTS, which changes once, when main's answer arrives.
@@ -3084,7 +3112,6 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       requestPassword,
       onVersionMoved: movedBehind,
       pageMenu,
-      others: tabs,
       rulers,
       showGrid,
       unit,
@@ -3096,7 +3123,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       smoothScroll,
       layout,
     }),
-    [client, layout, movedBehind, pageBadges, pageMenu, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, tabs, tileAbove, unit],
+    [client, layout, movedBehind, pageBadges, pageMenu, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, tileAbove, unit],
   );
 
   return (
@@ -3116,7 +3143,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         </main>
       )}
     >
-    <main className="m-document-surface" data-layout={layoutMode}>
+    <main
+      className="m-document-surface"
+      data-layout={layoutMode}
+      // WHILE SIDE BY SIDE IS OPEN the ribbon, the page area and the status bar are hidden rather than unmounted, so
+      // closing it returns every document exactly as it was (ADR-0129's layers), and nothing behind it takes focus.
+      data-covered-by={sideDocuments === undefined ? undefined : 'side-by-side'}
+    >
       {dropOpener === undefined ? null : <DropTarget onFiles={onDroppedFiles} />}
       {/* v5-07's way-out note, over the page in Focus with a document open; it draws itself only while the key
           it names works (`FocusHint`). */}
@@ -3245,19 +3278,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           showGrid={showGrid}
           unit={unit}
           split={split}
-          // COMPARE, and the second pane is where it lives: it is the split
-          // view's pane showing a different document rather than a third
-          // surface. `others` is every open document, including this one —
-          // *this document* is a choice a reader returns to, not an absence.
-          compare={compared}
-          onComparePage={comparedAt}
-          compareGoTo={compareGoTo}
-          onCompareWentTo={compareWentTo}
           drawing={drawing}
           editing={editing}
           panning={toolId === HAND_TOOL_ID}
-          others={tabs}
-          onCompare={setCompareId}
           search={search ?? undefined}
           secondRenderer={secondRenderer}
           tileAbove={tileAbove}
@@ -3290,18 +3313,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                       : { docId: activeId, store, page: currentPage }
                   }
                   onGoTo={navigator.jumpTo}
-                  // THE DOCUMENT ON THE RIGHT, only while split view is showing a compared one:
-                  // that is when two documents are side by side and the owner's *Left · Right ·
-                  // Both* has something to choose between (ADR-0089).
-                  beside={
-                    split && compared !== undefined
-                      ? {
-                          docId: compared.docId,
-                          page: comparePage?.docId === compared.docId ? comparePage.page : FIRST_PAGE.kernel,
-                        }
-                      : undefined
-                  }
-                  onGoToBeside={setCompareGoTo}
+                  // NO DOCUMENT BESIDE, so *Left · Right · Both* is not offered (ADR-0089). Its second document came
+                  // from the compare pane, which Side by Side replaced; Side by Side covers this panel while it is
+                  // open, so the two-document ask has no route until the owner decides where it belongs (ADR-0131).
                   onReply={dispatch}
                   onNote={noteFromAnswer}
                   request={assistantRequest}
@@ -3397,6 +3411,20 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         ))}
         </div>
         </>
+      )}
+      {/* SIDE BY SIDE (ADR-0131), over the ribbon, the page area and the status bar, below the title bar. */}
+      {sideDocuments === undefined ? null : (
+        <SideBySide
+          client={client}
+          documents={tabs}
+          left={sideDocuments.left}
+          right={sideDocuments.right}
+          onPick={pickBeside}
+          onOpenFile={openBeside}
+          onClose={closeSideBySide}
+          draw={drawForComparison}
+          preferences={sidePreferences}
+        />
       )}
       {palette ? (
         <CommandPalette registry={registry} context={context} onClose={closePalette} />
@@ -3596,7 +3624,6 @@ type BackgroundLayer = Pick<
   | 'requestPassword'
   | 'onVersionMoved'
   | 'pageMenu'
-  | 'others'
   | 'rulers'
   | 'showGrid'
   | 'unit'
@@ -3688,11 +3715,6 @@ function DocumentLayer({
             onMove={IGNORE}
             onSwap={IGNORE}
             organize={undefined}
-            compare={undefined}
-            onComparePage={IGNORE}
-            compareGoTo={undefined}
-            onCompareWentTo={IGNORE}
-            onCompare={IGNORE}
             drawing={undefined}
             editing={undefined}
             panning={false}
@@ -3756,12 +3778,6 @@ function PageCanvas({
   unit,
   split,
   organize,
-  compare,
-  onComparePage,
-  compareGoTo,
-  onCompareWentTo,
-  others,
-  onCompare,
   drawing,
   editing,
   panning,
@@ -3787,8 +3803,8 @@ function PageCanvas({
   readonly onVersionMoved: (next: OpenedDocument) => void;
   /**
    * Wraps a thumbnail or a page slot in the page context menu for that page (§7), built by `App`
-   * where the registry is. Handed to this document's thumbnails and both of its panes; never to the
-   * compare pane, whose pages belong to another document.
+   * where the registry is. Handed to this document's thumbnails and both of its panes; never to
+   * Side by Side's halves, whose pages may belong to another document.
    */
   readonly pageMenu: (page: number, element: ReactElement) => ReactNode;
   readonly onCurrentPage: (page: number) => void;
@@ -3824,19 +3840,6 @@ function PageCanvas({
   readonly unit: RulerUnit;
   /** Whether a second viewport onto the same document is shown. */
   readonly split: boolean;
-  /**
-   * The document the second pane compares against, or `undefined` for a second
-   * view of this one.
-   */
-  readonly compare: OpenDocument | undefined;
-  /** Told the page the compare pane is on — for the assistant's *Right*, never the status bar. */
-  readonly onComparePage: (docId: DocId, page: number) => void;
-  /** A page of the compared document to go to, from an answer's right-hand citation. */
-  readonly compareGoTo: number | undefined;
-  readonly onCompareWentTo: () => void;
-  /** Every open document, as the compare picker's choices. */
-  readonly others: readonly OpenDocument[];
-  readonly onCompare: (docId: DocId | undefined) => void;
   /** The active tool and where its commands go. Both panes take it. */
   readonly drawing: PageListProps['drawing'];
   /** Edit text's mode, or `undefined` when it is off. Both panes take it. */
@@ -3894,7 +3897,7 @@ function PageCanvas({
     [onVersionMoved, open.docId, open.name],
   );
 
-  // THE LIFETIME LIVES IN A HOOK NOW, because compare gave it a second caller.
+  // THE LIFETIME LIVES IN A HOOK, because Side by Side's halves are its other callers.
   // Every hazard it carries — the call-not-variable cancellation flag, the
   // close on the late path, the clear before the close — is stated there.
   // BOUND TO THIS DOCUMENT'S NAME here rather than inside the hook, because the
@@ -3917,14 +3920,8 @@ function PageCanvas({
    * reporting into it would make the status bar follow whichever scrolled last. So the reports
    * are ROUTED: the pane last pressed or focused gets the owner's callbacks and the other gets
    * none. Swapping a callback re-runs the reporting effects in `PageList`, so the newly active
-   * pane reports its own page and zoom the moment it is chosen.
-   *
-   * ## Split view only, never compare
-   *
-   * A compared document's page is a page of ANOTHER document, and the commands the status bar
-   * and the page field drive act on this one — rotate the current page would rotate this
-   * document's page by the other's number. So the compare pane keeps its own position and the
-   * first pane stays the reporter.
+   * pane reports its own page and zoom the moment it is chosen. Both panes show this document; a
+   * second document is Side by Side's (ADR-0131), which reports nothing here.
    *
    * Leaving the split hands the reports back to the first pane at once: the value is kept, and
    * read through `split` below, so there is no moment with no reporter.
@@ -3932,13 +3929,83 @@ function PageCanvas({
   const [secondActive, setSecondActive] = useState(false);
   // THE PAGES STRIP'S SIZE, the Appearance setting's, read where the strip is mounted.
   const thumbnailSize = useSetting(settings, THUMBNAIL_SIZE_SETTING);
-  const reporting: 'first' | 'second' = split && compare === undefined && secondActive ? 'second' : 'first';
+  const reporting: 'first' | 'second' = split && secondActive ? 'second' : 'first';
   const activateFirst = useCallback(() => {
     setSecondActive(false);
   }, []);
   const activateSecond = useCallback(() => {
     setSecondActive(true);
   }, []);
+
+  /**
+   * SPLIT VIEW'S TWO PAGES (row 65, the owner's design from the old app): one document, each half showing one page
+   * chosen on its own. The left starts where the reader is and the right on the page after, set again each time the
+   * split opens; a half's own wheel turns its page, which reports here, so the header always names what is on show.
+   *
+   * A REQUEST beside each page, for the header's boxes and *Both*: the half consumes it as its `goTo` and clears it,
+   * the shape every other route into a page list already uses. The status bar's page field still reaches the half
+   * that reports (*focus follows the pane*), because a request from the header and one from the bar are two writers
+   * of the same kind of request, never two owners of the page.
+   */
+  const [splitPages, setSplitPages] = useState<{ readonly on: boolean; readonly left: number; readonly right: number }>({
+    on: false,
+    left: current,
+    right: current + 1,
+  });
+  if (splitPages.on !== split) {
+    setSplitPages({ on: split, left: current, right: current + 1 });
+  }
+  const [splitRequests, setSplitRequests] = useState<{
+    readonly left: number | undefined;
+    readonly right: number | undefined;
+  }>({ left: undefined, right: undefined });
+  const lastPage = Math.max(0, (ready?.document.numPages ?? 1) - 1);
+  const leftShown = Math.min(splitPages.left, lastPage);
+  const rightShown = Math.min(splitPages.right, lastPage);
+  const askLeft = useCallback((page: number) => {
+    setSplitPages((now) => ({ ...now, left: page }));
+    setSplitRequests((now) => ({ ...now, left: page }));
+  }, []);
+  const askRight = useCallback((page: number) => {
+    setSplitPages((now) => ({ ...now, right: page }));
+    setSplitRequests((now) => ({ ...now, right: page }));
+  }, []);
+  const reportLeft = useCallback(
+    (page: number) => {
+      setSplitPages((now) => (now.left === page ? now : { ...now, left: page }));
+      if (reporting === 'first') onCurrentPage(page);
+    },
+    [onCurrentPage, reporting],
+  );
+  const reportRight = useCallback(
+    (page: number) => {
+      setSplitPages((now) => (now.right === page ? now : { ...now, right: page }));
+      if (reporting === 'second') onCurrentPage(page);
+    },
+    [onCurrentPage, reporting],
+  );
+  // A REQUEST FROM ABOVE IS A PAGE THE HALF NOW SHOWS: in single page the request chooses the page on show outright, so
+  // the header takes it here, as the half consumes it, rather than waiting for the half's observer to report it.
+  const leftWentTo = useCallback(() => {
+    if (splitRequests.left !== undefined) {
+      setSplitRequests((now) => ({ ...now, left: undefined }));
+      return;
+    }
+    if (goTo !== undefined) setSplitPages((now) => (now.left === goTo ? now : { ...now, left: goTo }));
+    onWentTo();
+  }, [goTo, onWentTo, splitRequests.left]);
+  const rightWentTo = useCallback(() => {
+    if (splitRequests.right !== undefined) {
+      setSplitRequests((now) => ({ ...now, right: undefined }));
+      return;
+    }
+    if (reporting !== 'second') return;
+    if (goTo !== undefined) setSplitPages((now) => (now.right === goTo ? now : { ...now, right: goTo }));
+    onWentTo();
+  }, [goTo, onWentTo, reporting, splitRequests.right]);
+  const closeSplit = useCallback(() => {
+    settings.set(SPLIT_VIEW_SETTING.id, false);
+  }, [settings]);
 
   /**
    * §6.1's second engine, or `undefined` where the setting is off.
@@ -4034,6 +4101,106 @@ function PageCanvas({
     );
   }
 
+  // THE DOCUMENT'S FIRST PANE, the same element whether it fills the page side or is split view's left half. In a
+  // split it shows one page at a time (the owner's design: each half is a page, chosen on its own) and reports its page
+  // to the header as well as, while it is the pane in use, to the status bar.
+  const firstPane = (
+    <PageList
+      client={client}
+      view={ready}
+      // FROM THE PARSER, NOT FROM THE VIEW MODEL, and this is a correction
+      // rather than a preference. The count came from `document.viewModel` for
+      // one build, which made the whole surface depend on an **engine session**:
+      // where none can be created the model is refused, and a viewer that
+      // rendered nothing then would show an empty window for a document PDF.js
+      // can read perfectly.
+      //
+      // Measured by `proof:canvaspixels`, which waited 60 seconds for a page
+      // that could not arrive. The single-page version never had the coupling —
+      // it drew unconditionally and treated the model as advisory — and the
+      // scroller reintroduced it by needing a count before it could lay out.
+      // PDF.js has the count and needs nobody's permission for it.
+      pageCount={ready.document.numPages}
+      docId={open.docId}
+      version={open.version}
+      onCurrentPage={split ? reportLeft : reporting === 'first' ? onCurrentPage : ignorePage}
+      onPageBox={onPageBox}
+      mode={mode}
+      onZoomStep={onZoomStep}
+      onShownZoom={reporting === 'first' ? onShownZoom : ignoreZoom}
+      goTo={split ? (splitRequests.left ?? (reporting === 'first' ? goTo : undefined)) : reporting === 'first' ? goTo : undefined}
+      onActivate={split ? activateFirst : undefined}
+      // WHERE THIS SCROLLER IS MOUNTING, which with tabs is wherever the
+      // reader left this document. Seeding page 1 here reported them back to
+      // the top of a document they were forty pages into.
+      startAt={current}
+      onWentTo={split ? leftWentTo : onWentTo}
+      loupe={loupe}
+      rulers={rulers}
+      showGrid={showGrid}
+      unit={unit}
+      drawing={drawing}
+      editing={editing}
+      panning={panning}
+      search={search}
+      // NO DIFFERENCES: a comparison's marks are Side by Side's, over its own halves.
+      differences={undefined}
+      // `undefined` WHERE THE SETTING IS OFF, which is what makes the setting
+      // the only thing that decides. `PageList` falls back to PDF.js for an
+      // absent rasteriser and for one that answers `null`, so the two states
+      // reach the same code and neither can leave a page blank.
+      secondRasteriser={secondRenderer ? secondRasteriser : undefined}
+      tileAbove={tileAbove}
+      quality={quality}
+      pageBadges={pageBadges}
+      smoothScroll={smoothScroll}
+      layout={split ? 'single' : layout}
+      // AUTOSCROLL MOVES THIS PANE, the document's first; the second is a place a reader looks across to.
+      autoscroll={autoscroll}
+      onAutoscrollEnd={onAutoscrollEnd}
+      pageMenu={pageMenu}
+    />
+  );
+  // SPLIT VIEW'S RIGHT HALF, over the SAME parser: one document in two viewports costs one more set of visible page
+  // bitmaps and not a second parse (row 65). It draws, paints search matches and uses the same engine as the left,
+  // because a half that could not, or that drew differently, would show a difference the document does not have.
+  const splitSecondPane = (
+    <PageList
+      client={client}
+      view={ready}
+      pageCount={ready.document.numPages}
+      docId={open.docId}
+      version={open.version}
+      onCurrentPage={reportRight}
+      onPageBox={onPageBox}
+      mode={mode}
+      onZoomStep={onZoomStep}
+      onShownZoom={reporting === 'second' ? onShownZoom : ignoreZoom}
+      goTo={splitRequests.right ?? (reporting === 'second' ? goTo : undefined)}
+      startAt={rightShown}
+      onWentTo={rightWentTo}
+      onActivate={activateSecond}
+      loupe={loupe}
+      rulers={rulers}
+      showGrid={showGrid}
+      unit={unit}
+      label={SPLIT_SECOND_LABEL}
+      drawing={drawing}
+      editing={editing}
+      panning={panning}
+      search={search}
+      // NO DIFFERENCES: a comparison's marks are Side by Side's, over its own halves.
+      differences={undefined}
+      secondRasteriser={secondRenderer ? secondRasteriser : undefined}
+      tileAbove={tileAbove}
+      quality={quality}
+      pageBadges={pageBadges}
+      smoothScroll={smoothScroll}
+      layout="single"
+      pageMenu={pageMenu}
+    />
+  );
+
   return (
     // THE SIDEBAR IS A SIBLING OF THE SPINE, inside this component, because it
     // needs the same parser: a strip that opened its own would parse the
@@ -4086,158 +4253,32 @@ function PageCanvas({
           pageMenu={pageMenu}
         />
       ) : (
-      <>
-      <PageList
-        client={client}
-        view={ready}
-      // FROM THE PARSER, NOT FROM THE VIEW MODEL, and this is a correction
-      // rather than a preference. The count came from `document.viewModel` for
-      // one build, which made the whole surface depend on an **engine session**:
-      // where none can be created the model is refused, and a viewer that
-      // rendered nothing then would show an empty window for a document PDF.js
-      // can read perfectly.
-      //
-      // Measured by `proof:canvaspixels`, which waited 60 seconds for a page
-      // that could not arrive. The single-page version never had the coupling —
-      // it drew unconditionally and treated the model as advisory — and the
-      // scroller reintroduced it by needing a count before it could lay out.
-      // PDF.js has the count and needs nobody's permission for it.
-        pageCount={ready.document.numPages}
-        docId={open.docId}
-        version={open.version}
-        onCurrentPage={reporting === 'first' ? onCurrentPage : ignorePage}
-        onPageBox={onPageBox}
-        mode={mode}
-        onZoomStep={onZoomStep}
-        onShownZoom={reporting === 'first' ? onShownZoom : ignoreZoom}
-        goTo={reporting === 'first' ? goTo : undefined}
-        onActivate={split && compare === undefined ? activateFirst : undefined}
-        // WHERE THIS SCROLLER IS MOUNTING, which with tabs is wherever the
-        // reader left this document. Seeding page 1 here reported them back to
-        // the top of a document they were forty pages into.
-        startAt={current}
-        onWentTo={onWentTo}
-        loupe={loupe}
-        rulers={rulers}
-        showGrid={showGrid}
-        unit={unit}
-        drawing={drawing}
-        editing={editing}
-        panning={panning}
-        search={search}
-        // `undefined` WHERE THE SETTING IS OFF, which is what makes the setting
-        // the only thing that decides. `PageList` falls back to PDF.js for an
-        // absent rasteriser and for one that answers `null`, so the two states
-        // reach the same code and neither can leave a page blank.
-        secondRasteriser={secondRenderer ? secondRasteriser : undefined}
-        tileAbove={tileAbove}
-        quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll} layout={layout}
-        // AUTOSCROLL MOVES THIS PANE, the document's first; the second is a place a reader looks across to.
-        autoscroll={autoscroll}
-        onAutoscrollEnd={onAutoscrollEnd}
-        pageMenu={pageMenu}
-      />
-      {/* THE SECOND VIEWPORT, over the SAME parser.
-          One document, two scrollers: a pane that opened its own view would
-          parse the document twice, start a second worker and hold a second copy
-          of every page it drew — which is the sidebar's argument one component
-          out, and §9.17's renderer budget is a bitmap cache.
-
-          BOTH PANES MAY RENDER THE SAME PAGE AT ONCE, and that is the property
-          this arrangement rests on. Read from the shipped library rather than
-          assumed: `PDFPageProxy.render` holds its in-flight tasks in a **Set**
-          and adds to it (`pdfjs-dist/build/pdf.mjs:15747`, 6.2.108), completing
-          each against its own canvas from one shared operator list. READ, not
-          run — happy-dom has no 2d context, so no test here can execute two
-          concurrent rasterisations, and this is the first caller that asks for
-          them.
-
-          ONE PANE REPORTS AT A TIME. `onCurrentPage`, `onShownZoom` and the
-          go-to request have one owner in `App`, and two reporters would make
-          the status bar follow whichever pane scrolled last — a reader in the
-          left pane pressing PageDown and watching the right one move. So they
-          go to the pane the reader last pressed or focused (`reporting`,
-          above): *focus follows the pane*. */}
-      {split ? (
-        // THE PANE IS THE SAME SEAM AND THE PARSER IS THE DIFFERENCE. With
-        // nothing chosen this is split view — the second viewport over `ready`,
-        // one parse for two panes. With a document chosen it is compare, and a
-        // second document is a second parse by necessity: reading one
-        // document's pages through the other's parser is not an optimisation
-        // available to anybody.
+      split ? (
+        // SPLIT VIEW (row 65): the header and two halves around the same two page lists, over ONE parser.
         //
-        // The picker is rendered either way, because a control that appears
-        // only once you have done the thing it is for is a control nobody
-        // finds. With one document open it offers *this document* alone, which
-        // is a truthful list of the choices.
-        <div className="m-second-pane">
-          <ComparePane
-            client={client}
-            against={compare}
-            onCurrentPage={onComparePage}
-            goTo={compareGoTo}
-            onWentTo={onCompareWentTo}
-            others={others}
-            onPick={onCompare}
-            mode={mode}
-            onZoomStep={onZoomStep}
-            loupe={loupe}
-            rulers={rulers}
-            showGrid={showGrid}
-            unit={unit}
-            tileAbove={tileAbove}
-            quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll} layout={layout}
-          />
-          {compare === undefined ? (
-            <PageList
-              client={client}
-              view={ready}
-              pageCount={ready.document.numPages}
-              docId={open.docId}
-              version={open.version}
-              onCurrentPage={reporting === 'second' ? onCurrentPage : ignorePage}
-              onPageBox={onPageBox}
-              mode={mode}
-              onZoomStep={onZoomStep}
-              onShownZoom={reporting === 'second' ? onShownZoom : ignoreZoom}
-              goTo={reporting === 'second' ? goTo : undefined}
-              // The same page the first pane starts at, so a split opens on
-              // what the reader is looking at rather than at the top.
-              startAt={current}
-              onWentTo={reporting === 'second' ? onWentTo : ignoreWentTo}
-              onActivate={activateSecond}
-              loupe={loupe}
-              rulers={rulers}
-              showGrid={showGrid}
-              unit={unit}
-              label={SPLIT_SECOND_LABEL}
-              // BOTH PANES DRAW, and they are the same document — so an
-              // annotation made in one appears in the other on the next render,
-              // which is what one document in two viewports means. A pane that
-              // could not draw would be a surface where a selected tool
-              // silently does nothing.
-              drawing={drawing}
-              editing={editing}
-              panning={panning}
-              // BOTH PANES PAINT the same matches, for the same reason: it is
-              // one document, and a split where the search highlighted one half
-              // would read as the second pane showing a different document.
-              search={search}
-              // AND BOTH DRAW WITH THE SAME ENGINE, which is the same argument
-              // again: one document in two viewports, and a split where the
-              // halves were rasterised differently would show a difference the
-              // document does not have.
-              secondRasteriser={secondRenderer ? secondRasteriser : undefined}
-              tileAbove={tileAbove}
-              quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll} layout={layout}
-              // THE SAME DOCUMENT, so the same page menu: a page right-clicked in either pane is a
-              // page of this document.
-              pageMenu={pageMenu}
-            />
-          ) : null}
-        </div>
-      ) : null}
-      </>
+        // A half that opened its own view would parse the document twice, start a second worker and hold a second
+        // copy of every page it drew, and §9.17's renderer budget is a bitmap cache. BOTH HALVES MAY RENDER THE SAME
+        // PAGE AT ONCE, and that is the property this rests on. Read from the shipped library rather than assumed:
+        // `PDFPageProxy.render` holds its in-flight tasks in a **Set** and adds to it (`pdfjs-dist/build/pdf.mjs:15747`,
+        // 6.2.108), completing each against its own canvas from one shared operator list. READ, not run — happy-dom
+        // has no 2d context, so no test here can execute two concurrent rasterisations.
+        //
+        // ONE HALF REPORTS AT A TIME. `onCurrentPage`, `onShownZoom` and the go-to request have one owner in `App`,
+        // and two reporters would make the status bar follow whichever half scrolled last. So they go to the half the
+        // reader last pressed or focused (`reporting`, above): *focus follows the pane*.
+        <SplitView
+          pageCount={ready.document.numPages}
+          left={firstPane}
+          right={splitSecondPane}
+          leftPage={leftShown}
+          rightPage={rightShown}
+          onLeftPage={askLeft}
+          onRightPage={askRight}
+          onClose={closeSplit}
+        />
+      ) : (
+        firstPane
+      )
       )
       }
     />
@@ -4253,4 +4294,3 @@ function PageCanvas({
  */
 const ignorePage = (_page: number): void => undefined;
 const ignoreZoom = (_shown: number): void => undefined;
-const ignoreWentTo = (): void => undefined;

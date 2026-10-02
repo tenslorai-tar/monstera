@@ -117,6 +117,9 @@ function harness(
   // produce exactly the same handler result as the one it must.
   const sessioned: DocId[] = [];
   const revealed: boolean[] = [];
+  // THE PATHS `file.reveal` asked to show, for `sessioned`'s reason: a handler that showed nothing answers as one that
+  // showed the wrong file would, unless the path itself is read.
+  const shown: string[] = [];
   // RECORDED for `sessioned`'s reason: the handler forwards one argument, and a handler that dropped
   // it would answer exactly what a correct one answers.
   const webPages: string[] = [];
@@ -206,6 +209,10 @@ function harness(
       revealed.push(true);
       return Promise.resolve(true);
     },
+    revealPath: (path) => {
+      shown.push(path);
+      return Promise.resolve(true);
+    },
     // TWO WORDS AND AN AFFIX LINE, so the handler's answer can be asserted as
     // the dictionary it was handed rather than as *something came back*. The
     // absent case has its own harness below, because `null` here would make
@@ -232,6 +239,7 @@ function harness(
     secrets,
     sessioned,
     settings,
+    shown,
     storeOpened,
     webPages,
   };
@@ -619,6 +627,7 @@ describe('document.open', () => {
           chatHistory: NO_HISTORY,
           pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
           revealLog: () => Promise.resolve(false),
+          revealPath: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
       edit: () => false,
@@ -964,6 +973,7 @@ describe('the recent list', () => {
       chatHistory: NO_HISTORY,
       pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
       revealLog: () => Promise.resolve(false),
+      revealPath: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
       edit: () => false,
@@ -980,6 +990,23 @@ describe('the recent list', () => {
     await handlers['document.openRecent']({ handle });
 
     expect(recent.list()).toStrictEqual([]);
+  });
+});
+
+describe('file.reveal — a toast’s Show in folder', () => {
+  it('shows the path a handle this process minted names, and only that path', async () => {
+    const { handlers, capabilities, shown } = harness({ kind: 'absent' }, () => Promise.resolve(null));
+    const handle = capabilities.mint('C:\\Users\\reader\\Documents\\report.docx');
+    expect(await handlers['file.reveal']({ handle })).toEqual({ ok: true, value: { revealed: true } });
+    expect(shown).toStrictEqual(['C:\\Users\\reader\\Documents\\report.docx']);
+  });
+
+  it('CONTROL: a handle this process never minted shows nothing, and asks the file manager for nothing', async () => {
+    // A WELL-FORMED HANDLE from another registry, so the schema passes it and only the resolve can refuse it.
+    const { handlers, shown } = harness({ kind: 'absent' }, () => Promise.resolve(null));
+    const stranger = new CapabilityRegistry().mint('C:\\elsewhere\\secret.pdf');
+    expect(await handlers['file.reveal']({ handle: stranger })).toEqual({ ok: true, value: { revealed: false } });
+    expect(shown).toStrictEqual([]);
   });
 });
 
@@ -1026,6 +1053,7 @@ settings: createEphemeralSettings(),
       chatHistory: NO_HISTORY,
       pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
       revealLog: () => Promise.resolve(false),
+      revealPath: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
       edit: () => false,
@@ -1082,6 +1110,7 @@ settings: createEphemeralSettings(),
       chatHistory: NO_HISTORY,
       pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
       revealLog: () => Promise.resolve(false),
+      revealPath: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
       edit: () => false,
@@ -1212,6 +1241,7 @@ settings: createEphemeralSettings(),
       chatHistory: NO_HISTORY,
       pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
       revealLog: () => Promise.resolve(false),
+      revealPath: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
       edit: () => false,
@@ -1340,6 +1370,7 @@ settings,
       chatHistory: history,
       pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
       revealLog: () => Promise.resolve(false),
+      revealPath: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
       edit: () => false,
@@ -1507,6 +1538,7 @@ settings: createEphemeralSettings(),
       chatHistory: NO_HISTORY,
       pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
       revealLog: () => Promise.resolve(false),
+      revealPath: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
       edit: () => false,

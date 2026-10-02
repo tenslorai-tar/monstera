@@ -10,6 +10,10 @@ import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
 import { type TextEditing, TextEditPage } from './TextEditLayer.js';
 import { TextLayer, type TextLayerLine, readTextSelection } from './TextLayer.js';
+import { type DifferenceMark, DifferenceLayer } from './DifferenceLayer.js';
+
+/** No marks on a page, one identity for every page without any. */
+const NO_MARKS: readonly DifferenceMark[] = [];
 import { type PageAnnotation, usePageAnnotations } from './usePageAnnotations.js';
 import { usePageRotations } from './usePageRotations.js';
 import { type PageTextAnswer, usePageText } from './usePageText.js';
@@ -241,6 +245,11 @@ export interface PageListProps {
    */
   readonly search: SearchHighlight | undefined;
   /**
+   * A comparison's marks on each page (Side by Side, ADR-0131), or `undefined` where this list shows no comparison.
+   * Required for `search`'s reason: a mark crossing three components and dropped at one leaves every case green.
+   */
+  readonly differences: ReadonlyMap<number, readonly DifferenceMark[]> | undefined;
+  /**
    * §6.1's second engine, or `undefined` where the setting is off.
    *
    * Handed straight to each slot, `search`'s reason: this scroller decides
@@ -376,6 +385,7 @@ export function PageList({
   editing,
   panning = false,
   search,
+  differences,
   secondRasteriser,
   tileAbove,
   quality,
@@ -1010,6 +1020,9 @@ export function PageList({
           // with a neighbour's box would cover the wrong region of the page.
           annotations={sizes.has(page) ? pageAnnotations.get(page) : undefined}
           search={search}
+          // ONE MAP FOR THE LIST, the slot taking its own page's marks: an absent page is no marks, never a lookup the
+          // slot has to know to skip.
+          differences={differences}
           secondRasteriser={secondRasteriser}
           tiled={renderZoom * quality > tileAbove}
           quality={quality}
@@ -1198,6 +1211,7 @@ function PageSlot({
   kind,
   annotations,
   search,
+  differences,
   secondRasteriser,
   tiled,
   quality,
@@ -1225,6 +1239,11 @@ function PageSlot({
   /** This page's existing annotations, or `undefined` before they are known or the slot is measured. */
   readonly annotations: readonly PageAnnotation[] | undefined;
   readonly search: SearchHighlight | undefined;
+  /**
+   * A comparison's marks on each page (Side by Side, ADR-0131), or `undefined` where this list shows no comparison.
+   * Required for `search`'s reason: a mark crossing three components and dropped at one leaves every case green.
+   */
+  readonly differences: ReadonlyMap<number, readonly DifferenceMark[]> | undefined;
   /**
    * §6.1's second engine, or `undefined` where the setting is off.
    *
@@ -1432,6 +1451,15 @@ function PageSlot({
           lines={text}
           page={page}
           search={search}
+        />
+      )}
+      {/* A COMPARISON'S MARKS (ADR-0131), over the text and under the annotations, gated on the slot's own measurement
+          for the text layer's reason: a box placed with a neighbour's geometry would mark the wrong region. */}
+      {differences === undefined || size === undefined ? null : (
+        <DifferenceLayer
+          geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          marks={differences.get(page) ?? NO_MARKS}
+          page={page}
         />
       )}
       {/* OVER THE TEXT LAYER AND UNDER THE SELECTION: a preview of what a burn-in removes covers

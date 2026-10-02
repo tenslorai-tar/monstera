@@ -1,8 +1,16 @@
 import { type AnnotationStamp, type ContractClient, type LibraryEntry, channels, createClient } from '@monstera/contract';
-import { type DocId, type DocVersion, asDocId, asDocVersion, err, ok } from '@monstera/shared';
+import { type DocId, type DocVersion, asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import { TOAST_COPY_SAVED, TOAST_PAGES_SAVED, TOAST_SAVED } from '../messages/en.js';
+import {
+  TOAST_ACTIVE_CONTENT_REMOVED,
+  TOAST_COPY_SAVED,
+  TOAST_DOCUMENT_SIGNED,
+  TOAST_PAGES_SAVED,
+  TOAST_SAVED,
+  TOAST_SENT_TO_PRINTER,
+  TOAST_TRANSITION_SET,
+} from '../messages/en.js';
 import type { CommandContext } from '../registries/commands.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
@@ -101,6 +109,9 @@ import {
  */
 
 const DOC = asDocId('doc-1');
+
+/** The handle a faked write answers for what it wrote (the contract's `WRITTEN`). */
+const WRITTEN = asFileHandle('Handle-written-by-the-fake');
 
 /** Recognising first where the setting is off, which is every export case that is not about it (ADR-0118). */
 const NOTHING_RECOGNISED = (): Promise<undefined> => Promise.resolve(undefined);
@@ -932,7 +943,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const opened: { id: string; props: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ kind: 'copied', bytes: 2048 }));
+      return Promise.resolve(ok({ kind: 'copied', bytes: 2048, written: WRITTEN }));
     });
     const { toast, said } = saving();
 
@@ -1001,9 +1012,9 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ kind: 'copied', bytes: 512 }));
+      return Promise.resolve(ok({ kind: 'copied', bytes: 512, written: WRITTEN }));
     });
-    const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp };
+    const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, toast: () => undefined };
 
     await exportFormDataJsonCommand(deps).run(CONTEXT);
     await exportFormDataXfdfCommand(deps).run(CONTEXT);
@@ -1037,6 +1048,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
     await exportFormDataXfdfCommand({
       client,
+      toast: () => undefined,
       stamp,
       onApplied: () => undefined,
       ask: (id, props) => {
@@ -1641,14 +1653,18 @@ describe('delete pages — the mutation-dialog gate', () => {
     // transition off. `pageTransition.test.ts` proves the kernel writes /S /R
     // for it; this proves the control sends it rather than swallowing it.
     const { client, sent } = recording();
+    const said: unknown[] = [];
 
     await pageTransitionCommand({
       client,
+      toast: (_kind, message) => said.push(message),
       stamp,
       onApplied: () => undefined,
       ask: () => Promise.resolve({ pages: 'all', style: 'replace', durationSeconds: 0 }),
     }).run(CONTEXT);
 
+    // OUT OF SIGHT, so said: a transition plays only when the document is presented.
+    expect(said).toStrictEqual([TOAST_TRANSITION_SET]);
     expect(sent).toStrictEqual([
       {
         id: 'document.execute',
@@ -2292,7 +2308,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
   it('extract sends the parsed range to the destination channel', async () => {
     const { client, sent } = recording({
-      'document.extract': { kind: 'copied', bytes: 8192 },
+      'document.extract': { kind: 'copied', bytes: 8192, written: WRITTEN },
     });
     const opened: unknown[] = [];
 
@@ -2323,7 +2339,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     //
     // The success half also asserts the toast, and the refusal half asserts its absence —
     // `saveCopyCommand`'s pair above, for the same write and the same reason.
-    const quiet = recording({ 'document.extract': { kind: 'copied', bytes: 1 } });
+    const quiet = recording({ 'document.extract': { kind: 'copied', bytes: 1, written: WRITTEN } });
     const quietDialogs: unknown[] = [];
     const worked = saving();
     await extractPagesCommand({
@@ -2365,11 +2381,12 @@ describe('delete pages — the mutation-dialog gate', () => {
 
   it('split sends the GROUPS the dialog built, not a mode', async () => {
     const { client, sent } = recording({
-      'document.split': { kind: 'split', files: 2 },
+      'document.split': { kind: 'split', files: 2, written: WRITTEN },
     });
 
     await splitDocumentCommand({
       client,
+      toast: () => undefined,
       stamp,
       onApplied: () => undefined,
       ask: () => Promise.resolve({ groups: [[0, 1], [2]] }),
@@ -2389,6 +2406,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
     await splitDocumentCommand({
       client,
+      toast: () => undefined,
       stamp,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
@@ -2399,12 +2417,13 @@ describe('delete pages — the mutation-dialog gate', () => {
 
   it('export pages as images sends exactly the pages and encoding the dialog chose', async () => {
     const { client, sent } = recording({
-      'document.exportPageImages': { kind: 'split', files: 2 },
+      'document.exportPageImages': { kind: 'split', files: 2, written: WRITTEN },
     });
     const asked: unknown[] = [];
 
     await exportPageImagesCommand({
       client,
+      toast: () => undefined,
       stamp,
       onApplied: () => undefined,
       ask: (id, props) => {
@@ -2432,6 +2451,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
     await exportPageImagesCommand({
       client,
+      toast: () => undefined,
       stamp,
       onApplied: () => undefined,
       ask: (id, props) => {
@@ -2447,12 +2467,13 @@ describe('delete pages — the mutation-dialog gate', () => {
   });
 
   it('export text dispatches the document and opens no dialog of its own', async () => {
-    const { client, sent } = recording({ 'document.exportText': { kind: 'copied', bytes: 12 } });
+    const { client, sent } = recording({ 'document.exportText': { kind: 'copied', bytes: 12, written: WRITTEN } });
     const asked: unknown[] = [];
 
     await exportTextCommand({
       recogniseFirst: NOTHING_RECOGNISED,
       client,
+      toast: () => undefined,
       stamp,
       onApplied: () => undefined,
       ask: (id, props) => {
@@ -2470,12 +2491,13 @@ describe('delete pages — the mutation-dialog gate', () => {
     // The UI half of the Word export's pair. Each mode is asked for in turn, so a
     // command that sent a fixed mode passes for one of them at most.
     for (const mode of ['text', 'layout', 'rich'] as const) {
-      const { client, sent } = recording({ 'document.exportWord': { kind: 'copied', bytes: 9 } });
+      const { client, sent } = recording({ 'document.exportWord': { kind: 'copied', bytes: 9, written: WRITTEN } });
       const asked: unknown[] = [];
 
       await exportWordCommand({
       recogniseFirst: NOTHING_RECOGNISED,
         client,
+        toast: () => undefined,
         stamp,
         onApplied: () => undefined,
         ask: (id, props) => {
@@ -2490,11 +2512,12 @@ describe('delete pages — the mutation-dialog gate', () => {
   });
 
   it('export to PowerPoint dispatches the document and opens no dialog of its own', async () => {
-    const { client, sent } = recording({ 'document.exportPowerPoint': { kind: 'copied', bytes: 9 } });
+    const { client, sent } = recording({ 'document.exportPowerPoint': { kind: 'copied', bytes: 9, written: WRITTEN } });
     const asked: unknown[] = [];
 
     await exportPowerPointCommand({
       client,
+      toast: () => undefined,
       stamp,
       onApplied: () => undefined,
       ask: (id, props) => {
@@ -2514,12 +2537,13 @@ describe('delete pages — the mutation-dialog gate', () => {
         [[], true, 1],
         [[], false, 0],
       ] as const) {
-        const { client, sent } = recording({ 'document.exportPdfa': { kind: 'copied', bytes: 9, removed, tagsDropped } });
+        const { client, sent } = recording({ 'document.exportPdfa': { kind: 'copied', bytes: 9, removed, tagsDropped, written: WRITTEN } });
         const asked: unknown[] = [];
 
         await exportPdfaCommand({
       recogniseFirst: NOTHING_RECOGNISED,
           client,
+          toast: () => undefined,
           stamp,
           onApplied: () => undefined,
           ask: (id, props) => {
@@ -2547,6 +2571,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         await exportPdfaCommand({
       recogniseFirst: NOTHING_RECOGNISED,
           client,
+          toast: () => undefined,
           stamp,
           onApplied: () => undefined,
           ask: (id, props) => {
@@ -2586,49 +2611,35 @@ describe('delete pages — the mutation-dialog gate', () => {
       expect(command.when?.({ ...CONTEXT, openDocuments: TABS })).toBe(true);
     });
 
-    /** The command with both effects recorded: what it compared, and what it wrote to settings. */
+    /** The command with what it asked Side by Side to show recorded. */
     function sideBySide(focused: DocId | undefined) {
-      const compared: DocId[] = [];
-      const written: { id: string; value: unknown }[] = [];
+      const shown: (readonly [DocId, DocId])[] = [];
       return {
-        compared,
-        written,
+        shown,
         command: openSideBySideCommand({
           focused: () => focused,
-          compare: (docId) => compared.push(docId),
-          settings: {
-            set: (id: string, value: unknown) => {
-              written.push({ id, value });
-            },
-          } as unknown as SettingsStore,
+          show: (left, right) => shown.push([left, right]),
         }),
       };
     }
 
-    it('open side by side compares the RIGHT-CLICKED document AND opens the pane to show it', async () => {
-      const { command, compared, written } = sideBySide(DOC);
+    it('open side by side shows the document on show on the LEFT and the RIGHT-CLICKED one on the right', async () => {
+      const { command, shown } = sideBySide(DOC);
       await command.run({ ...CONTEXT, docId: OTHER, openDocuments: TABS });
       // `CONTEXT.docId` is rewritten to OTHER by the tab menu while DOC stays focused, so a
-      // command reading the focused document would compare DOC against itself here.
-      expect(compared).toStrictEqual([OTHER]);
-      // THE SECOND EFFECT IS THE ONE WITH NO SYMPTOM. The compare pane renders only under split
-      // view, so a command that set the document alone would be a menu item a reader clicks and
-      // watches do nothing — and every assertion about `compared` would still pass.
-      // THE ID IS SPELT OUT rather than read from `SPLIT_VIEW_SETTING`: an assertion built from
-      // the same constant the command uses agrees with it whichever setting that is.
-      expect(written).toStrictEqual([{ id: 'viewing.split', value: true }]);
+      // command reading the focused document from the context would put OTHER on both sides.
+      expect(shown).toStrictEqual([[DOC, OTHER]]);
     });
 
-    it('CONTROL: it is hidden on the tab already on show, and writes nothing if run there', async () => {
+    it('CONTROL: it is hidden on the tab already on show, and shows nothing if run there', async () => {
       // Both halves, for the reason every `when` case here carries: a predicate that hid the item
       // while `run` still acted would be caught by nothing else — and the effect it would have is
-      // the focused document in both panes, which looks like the command working.
-      const { command, compared, written } = sideBySide(DOC);
+      // the focused document on both sides, which looks like the command working.
+      const { command, shown } = sideBySide(DOC);
       expect(command.when?.({ ...CONTEXT, docId: DOC, openDocuments: TABS })).toBe(false);
       expect(command.when?.({ ...CONTEXT, docId: OTHER, openDocuments: TABS })).toBe(true);
       await command.run({ ...CONTEXT, docId: DOC, openDocuments: TABS });
-      expect(compared).toStrictEqual([]);
-      expect(written).toStrictEqual([]);
+      expect(shown).toStrictEqual([]);
     });
 
     it('sits THIRD in the tab menu, after close and close others', () => {
@@ -2693,7 +2704,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
     it('measures the setting chosen, shows the sizes, and saves at THE VERSION MEASURED', async () => {
       const { sent, asked } = await running(
-        { 'document.optimizeMeasure': MEASURED, 'document.optimize': { kind: 'copied', bytes: 120_000, before: 200_000 } },
+        { 'document.optimizeMeasure': MEASURED, 'document.optimize': { kind: 'copied', bytes: 120_000, before: 200_000, written: WRITTEN } },
         [
           { kind: 'measure', setting: 'medium' },
           { kind: 'save', setting: 'medium' },
@@ -2797,6 +2808,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
         await printCommand({
           client,
+          toast: () => undefined,
           stamp,
           settings: printSettings(),
           onApplied: () => undefined,
@@ -2822,6 +2834,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         const asked: unknown[] = [];
         await printCommand({
           client: recording().client,
+          toast: () => undefined,
           stamp,
           settings,
           onApplied: () => undefined,
@@ -2839,6 +2852,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
       await printCommand({
         client,
+        toast: () => undefined,
         onApplied: () => undefined,
         ask: () => Promise.resolve(undefined),
         stamp,
@@ -2859,6 +2873,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
         await printCommand({
           client,
+          toast: () => undefined,
           stamp,
           settings: printSettings(),
           onApplied: () => undefined,
@@ -2869,6 +2884,24 @@ describe('delete pages — the mutation-dialog gate', () => {
         }).run(CONTEXT);
 
         expect(spoken.at(-1)).toStrictEqual(spokenLast);
+      }
+    });
+
+    it('a PRINTED job is confirmed, and a dismissed system dialog confirms nothing', async () => {
+      for (const [answered, expected] of [
+        [{ kind: 'printed', pages: 2 }, [TOAST_SENT_TO_PRINTER]],
+        [{ kind: 'cancelled' }, []],
+      ] as const) {
+        const said: unknown[] = [];
+        await printCommand({
+          client: recording({ 'document.print': answered }).client,
+          toast: (_kind, message) => said.push(message),
+          stamp,
+          settings: printSettings(),
+          onApplied: () => undefined,
+          ask: () => Promise.resolve({ dpi: 300 }),
+        }).run(CONTEXT);
+        expect(said).toStrictEqual(expected);
       }
     });
   });
@@ -2897,7 +2930,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     }
 
     it('opens on the page ON SHOW, moves when asked, and sends every page’s edits with the version read', async () => {
-      const { client, sent } = reviewing({ kind: 'copied', bytes: 9 });
+      const { client, sent } = reviewing({ kind: 'copied', bytes: 9, written: WRITTEN });
       const asked: { id: string; props: unknown }[] = [];
       const answers = [
         { kind: 'page', to: 4, layout: 'one-sheet', engine: 'automatic', edits: [{ table: 0, row: 0, column: 0, text: 'A' }] },
@@ -2906,6 +2939,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
       await exportExcelCommand({
         client,
+        toast: () => undefined,
         tableEngines: () => ['automatic'],
         stamp,
         onApplied: () => undefined,
@@ -2965,7 +2999,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     });
 
     it('opens a page AGAIN with the edits typed on it before', async () => {
-      const { client } = reviewing({ kind: 'copied', bytes: 9 });
+      const { client } = reviewing({ kind: 'copied', bytes: 9, written: WRITTEN });
       const opened: unknown[] = [];
       const typed = [{ table: 0, row: 0, column: 0, text: 'A' }];
       const answers = [
@@ -2976,6 +3010,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
       await exportExcelCommand({
         client,
+        toast: () => undefined,
         tableEngines: () => ['automatic'],
         stamp,
         onApplied: () => undefined,
@@ -2989,11 +3024,12 @@ describe('delete pages — the mutation-dialog gate', () => {
     });
 
     it('stops with REVIEW-CHANGED, exporting nothing, when a page is read at another version', async () => {
-      const { client, sent } = reviewing({ kind: 'copied', bytes: 9 }, (page) => (page === 3 ? 5 : 6));
+      const { client, sent } = reviewing({ kind: 'copied', bytes: 9, written: WRITTEN }, (page) => (page === 3 ? 5 : 6));
       const spoken: unknown[] = [];
 
       await exportExcelCommand({
         client,
+        toast: () => undefined,
         tableEngines: () => ['automatic'],
         stamp,
         onApplied: () => undefined,
@@ -3012,10 +3048,11 @@ describe('delete pages — the mutation-dialog gate', () => {
     });
 
     it('CONTROL: a DISMISSED grid exports nothing', async () => {
-      const { client, sent } = reviewing({ kind: 'copied', bytes: 9 });
+      const { client, sent } = reviewing({ kind: 'copied', bytes: 9, written: WRITTEN });
 
       await exportExcelCommand({
         client,
+        toast: () => undefined,
         tableEngines: () => ['automatic'],
         stamp,
         onApplied: () => undefined,
@@ -3036,6 +3073,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
         await exportExcelCommand({
           client,
+          toast: () => undefined,
           tableEngines: () => ['automatic'],
           stamp,
           onApplied: () => undefined,
@@ -3067,6 +3105,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
       await exportExcelCommand({
         client,
+        toast: () => undefined,
         tableEngines: () => ['automatic', 'claude'],
         stamp,
         onApplied: () => undefined,
@@ -3099,6 +3138,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await exportWordCommand({
       recogniseFirst: NOTHING_RECOGNISED,
       client,
+      toast: () => undefined,
       stamp,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
@@ -3111,11 +3151,12 @@ describe('delete pages — the mutation-dialog gate', () => {
     // The UI half of the layout export's wired pair. The two commands differ in
     // exactly this field, so a layout command that sent `plain` — or omitted the
     // mode — would pass every other case in this file and read MuPDF's text.
-    const { client, sent } = recording({ 'document.exportText': { kind: 'copied', bytes: 12 } });
+    const { client, sent } = recording({ 'document.exportText': { kind: 'copied', bytes: 12, written: WRITTEN } });
 
     await exportLayoutTextCommand({
       recogniseFirst: NOTHING_RECOGNISED,
       client,
+      toast: () => undefined,
       stamp,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
@@ -3135,6 +3176,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       await exportLayoutTextCommand({
       recogniseFirst: NOTHING_RECOGNISED,
         client,
+        toast: () => undefined,
         stamp,
         onApplied: () => undefined,
         ask: (id, props) => {
@@ -3154,6 +3196,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await exportTextCommand({
       recogniseFirst: NOTHING_RECOGNISED,
       client,
+      toast: () => undefined,
       stamp,
       onApplied: () => undefined,
       ask: (id, props) => {
@@ -3176,11 +3219,12 @@ describe('delete pages — the mutation-dialog gate', () => {
       const walks: unknown[] = [];
       const client = createClient(channels, (id) => {
         events.push(`channel ${id}`);
-        return Promise.resolve(ok({ kind: 'copied', bytes: 12, removed: [], tagsDropped: false }));
+        return Promise.resolve(ok({ kind: 'copied', bytes: 12, removed: [], tagsDropped: false, written: WRITTEN }));
       });
       return {
         deps: {
           client,
+          toast: () => undefined,
           stamp,
           onApplied: () => undefined,
           ask: (id) => {
@@ -3249,6 +3293,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
     await exportPageImagesCommand({
       client,
+      toast: () => undefined,
       stamp,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
@@ -3304,6 +3349,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
     await pageTransitionCommand({
       client,
+      toast: () => undefined,
       stamp,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
@@ -3807,15 +3853,19 @@ describe('protectDocumentCommand', () => {
         historyDropped: 0,
       });
       const applied: unknown[] = [];
+      const said: unknown[] = [];
 
       await signDocumentCommand({
         client,
+        toast: (_kind, message) => said.push(message),
         stamp,
         onApplied: (value) => applied.push(value),
         ask: () =>
           Promise.resolve({ passphrase: 'secret', name: 'Grace Hopper', reason: 'Approved' }),
       }).run(CONTEXT);
 
+      // AN UNSEEN SIGNATURE IS SAID, since the page shows nothing new.
+      expect(said).toStrictEqual([TOAST_DOCUMENT_SIGNED]);
       expect(sent).toStrictEqual([
         {
           id: 'document.sign',
@@ -3843,6 +3893,7 @@ describe('protectDocumentCommand', () => {
 
       await signDocumentCommand({
         client,
+        toast: () => undefined,
         stamp,
         onApplied: () => undefined,
         ask: () => Promise.resolve({ passphrase: 'secret', timestamp: 'digicert' }),
@@ -3862,6 +3913,7 @@ describe('protectDocumentCommand', () => {
 
       await signDocumentCommand({
         client,
+        toast: () => undefined,
         stamp,
         onApplied: () => undefined,
         ask: (id, props) => {
@@ -3886,6 +3938,7 @@ describe('protectDocumentCommand', () => {
 
       await signDocumentCommand({
         client,
+        toast: () => undefined,
         stamp,
         onApplied: () => undefined,
         ask: (id, props) => {
@@ -3910,6 +3963,7 @@ describe('protectDocumentCommand', () => {
 
       await signDocumentCommand({
         client,
+        toast: () => undefined,
         stamp,
         onApplied: () => undefined,
         ask: (id) => {
@@ -3926,6 +3980,7 @@ describe('protectDocumentCommand', () => {
 
       await signDocumentCommand({
         client,
+        toast: () => undefined,
         stamp,
         onApplied: () => undefined,
         ask: () => Promise.resolve(undefined),
@@ -3937,6 +3992,25 @@ describe('protectDocumentCommand', () => {
     const PLACEMENT = { page: 2, rect: { x0: 10, y0: 20, x1: 110, y1: 70 } };
     const TYPED = { kind: 'typed', text: 'Grace Hopper', font: 'courier' } as const;
 
+    it('CONTROL: a PLACED signature that signed says nothing, because the page shows it', async () => {
+      const { client } = signingClient({ kind: 'signed', version: asDocVersion(2), byteLength: 4096, historyDropped: 0 });
+      const said: unknown[] = [];
+      const applied: unknown[] = [];
+      await signDocument(
+        {
+          client,
+          toast: (_kind, message) => said.push(message),
+          onApplied: (value) => applied.push(value),
+          ask: (id) => Promise.resolve(id === 'dialog.sign-document' ? { passphrase: '', mark: TYPED } : undefined),
+        },
+        DOC,
+        PLACEMENT,
+      );
+      // SIGNED, so the silence is the decision and not a refusal arriving at the same nothing.
+      expect(applied).toStrictEqual([{ version: asDocVersion(2), byteLength: 4096 }]);
+      expect(said).toStrictEqual([]);
+    });
+
     it('a PLACEMENT opens the dialog placed and sends its look as the appearance', async () => {
       // BOTH HALVES OF THE PAIR: the props the dialog was opened with (which is
       // what makes it ask for a look at all) and the appearance that crossed.
@@ -3946,6 +4020,7 @@ describe('protectDocumentCommand', () => {
       await signDocument(
         {
           client,
+          toast: () => undefined,
           onApplied: () => undefined,
           ask: (id, props) => {
             asked.push({ id, props });
@@ -3974,6 +4049,7 @@ describe('protectDocumentCommand', () => {
 
       await signDocumentCommand({
         client,
+        toast: () => undefined,
         stamp,
         onApplied: () => undefined,
         ask: (id, props) => {
@@ -3990,7 +4066,7 @@ describe('protectDocumentCommand', () => {
       const { client, sent } = signingClient({ kind: 'cancelled' });
 
       await signDocument(
-        { client, onApplied: () => undefined, ask: () => Promise.resolve({ passphrase: '' }) },
+        { client, toast: () => undefined, onApplied: () => undefined, ask: () => Promise.resolve({ passphrase: '' }) },
         DOC,
         PLACEMENT,
       );
@@ -4028,6 +4104,7 @@ describe('protectDocumentCommand', () => {
         await signDocument(
           {
             client,
+            toast: () => undefined,
             onApplied: () => undefined,
             ask: (_id, props) => {
               asked.push(props);
@@ -4057,6 +4134,7 @@ describe('protectDocumentCommand', () => {
         await signDocument(
           {
             client,
+            toast: () => undefined,
             onApplied: () => undefined,
             ask: () => {
               asked += 1;
@@ -4084,6 +4162,7 @@ describe('protectDocumentCommand', () => {
           await signDocument(
             {
               client,
+              toast: () => undefined,
               onApplied: () => undefined,
               ask: (id) => Promise.resolve(id === 'dialog.sign-document' ? { passphrase: '', mark: TYPED, keep: true } : undefined),
             },
@@ -4109,6 +4188,7 @@ describe('protectDocumentCommand', () => {
         await signDocument(
           {
             client,
+            toast: () => undefined,
             onApplied: () => undefined,
             ask: (id, props) => {
               shown.push({ id, props });
@@ -4147,6 +4227,7 @@ describe('protectDocumentCommand', () => {
       for (const factory of [docusignSendCommand, docusignRetrieveCommand]) {
         const without = factory({
           client,
+          toast: () => undefined,
           stamp,
           onApplied: () => undefined,
           ask: () => Promise.resolve(undefined),
@@ -4154,6 +4235,7 @@ describe('protectDocumentCommand', () => {
         });
         const withKey = factory({
           client,
+          toast: () => undefined,
           stamp,
           onApplied: () => undefined,
           ask: () => Promise.resolve(undefined),
@@ -4252,13 +4334,14 @@ describe('protectDocumentCommand', () => {
           answer: { kind: 'nothing-sent' },
           shown: [{ id: 'dialog.docusign-notice', props: { reason: 'nothing-sent' } }],
         },
-        { answer: { kind: 'copied', bytes: 4096 }, shown: [] },
+        { answer: { kind: 'copied', bytes: 4096, written: WRITTEN }, shown: [] },
       ];
       for (const row of rows) {
         const { client, sent } = docusignClient(row.answer);
         const shown: unknown[] = [];
         await docusignRetrieveCommand({
           client,
+          toast: () => undefined,
           stamp,
           onApplied: () => undefined,
           ask: (id, props) => {
@@ -4342,12 +4425,15 @@ describe('protectDocumentCommand', () => {
       // flatten a form somebody meant to keep fillable.
       const { client, sent } = recordingClient();
 
+      const said: unknown[] = [];
       await sanitizeDocumentCommand({
         client,
+        toast: (_kind, message) => said.push(message),
         stamp,
         onApplied: () => undefined,
         ask: () => Promise.resolve({ parts: ['javascript', 'embedded-files'] }),
       }).run(CONTEXT);
+      expect(said).toStrictEqual([TOAST_ACTIVE_CONTENT_REMOVED]);
 
       expect(sent).toStrictEqual([
         {
@@ -4363,14 +4449,16 @@ describe('protectDocumentCommand', () => {
     it('CONTROL: a DISMISSED dialog dispatches nothing', async () => {
       const { client, sent } = recordingClient();
 
+      const said: unknown[] = [];
       await sanitizeDocumentCommand({
         client,
+        toast: (_kind, message) => said.push(message),
         stamp,
         onApplied: () => undefined,
         ask: () => Promise.resolve(undefined),
       }).run(CONTEXT);
 
-      expect(sent).toStrictEqual([]);
+      expect([sent, said]).toStrictEqual([[], []]);
     });
   });
 
@@ -4567,6 +4655,7 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
         const quiet = sending();
         await factory({
           client: quiet.client,
+          toast: () => undefined,
           ask: (_id, props) => {
             opened.push(props);
             return Promise.resolve(undefined);

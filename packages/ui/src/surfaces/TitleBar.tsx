@@ -1,10 +1,26 @@
 import { useLingui } from '@lingui/react';
-import type { ReactElement, ReactNode } from 'react';
+import { type ReactElement, type ReactNode, useSyncExternalStore } from 'react';
 
-import { LAYOUT_MODE_OPTION_TITLES, LAYOUT_MODE_TITLE, PALETTE_PLACEHOLDER } from '../messages/en.js';
+import {
+  LAYOUT_MODE_OPTION_TITLES,
+  LAYOUT_MODE_TITLE,
+  PALETTE_PLACEHOLDER,
+  THEME_SWITCH_HIGH_CONTRAST,
+  THEME_SWITCH_TO_DARK,
+  THEME_SWITCH_TO_LIGHT,
+} from '../messages/en.js';
 import { Icon } from '../primitives/Icon.js';
+import { IconButton } from '../primitives/IconButton.js';
+import { ICONS } from '../primitives/icons.js';
 import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import type { CommandContext, CommandRegistry, UiCommand } from '../registries/commands.js';
+import {
+  HIGH_CONTRAST_QUERIES,
+  SYSTEM_DARK_QUERY,
+  THEME_SETTING,
+  highContrastWanted,
+  shownTheme,
+} from '../settings/appearance.js';
 import { LAYOUT_MODE_SETTING, type LayoutMode } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import { useSetting } from '../useSetting.js';
@@ -12,8 +28,67 @@ import { useSetting } from '../useSetting.js';
 const PALETTE_COMMAND = 'view.command-palette';
 const MODES: readonly LayoutMode[] = ['ribbon', 'studio', 'focus'];
 
+/** Whether any of `queries` matches, read by `read` and re-read when one of them changes. */
+function useMediaAnswer(queries: readonly string[], read: () => boolean): boolean {
+  return useSyncExternalStore(
+    (changed) => {
+      if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => undefined;
+      const watched = queries.map((query) => window.matchMedia(query));
+      for (const query of watched) query.addEventListener('change', changed);
+      return () => {
+        for (const query of watched) query.removeEventListener('change', changed);
+      };
+    },
+    read,
+  );
+}
+
+const systemDark = (): boolean =>
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(SYSTEM_DARK_QUERY).matches;
+
 /**
- * §10.3's title bar: the document tabs, the Ctrl+K command search and the layout switcher — drawn in every layout
+ * The light and dark switch (ADR-0132): one button whose face is the theme a click switches to — a sun while dark is
+ * showing, a moon while light is — running *View › Theme*'s command for it. From *System* that is the opposite of what
+ * is showing. It writes nothing itself; the command writes `appearance.theme`, as Settings does.
+ *
+ * UNDER WINDOWS HIGH CONTRAST it is disabled and still focusable, its tooltip saying why: high contrast overrides the
+ * setting (`applyAppearance`), so a click would change nothing a person could see. High contrast is read through
+ * `highContrastWanted`, the same answer the theme is applied from, so the switch and the window cannot disagree.
+ */
+function ThemeSwitch({
+  registry,
+  context,
+  settings,
+}: {
+  readonly registry: CommandRegistry;
+  readonly context: CommandContext;
+  readonly settings: SettingsStore;
+}): ReactElement | null {
+  const theme = useSetting(settings, THEME_SETTING);
+  const dark = useMediaAnswer([SYSTEM_DARK_QUERY], systemDark);
+  const forced = useMediaAnswer(HIGH_CONTRAST_QUERIES, highContrastWanted);
+  const toLight = registry.get('view.theme-light');
+  const toDark = registry.get('view.theme-dark');
+  if (toLight === undefined || toDark === undefined) return null;
+  const next = shownTheme(theme, dark) === 'dark' ? 'light' : 'dark';
+  return (
+    <IconButton
+      icon={next === 'light' ? ICONS.Sun : ICONS.Moon}
+      label={forced ? THEME_SWITCH_HIGH_CONTRAST : next === 'light' ? THEME_SWITCH_TO_LIGHT : THEME_SWITCH_TO_DARK}
+      size="dense"
+      disabled={forced}
+      focusableWhenDisabled
+      onClick={() => {
+        // Not awaited, for `QuickToolbar`'s reason: nothing here reads the result.
+        void (next === 'light' ? toLight : toDark).run(context);
+      }}
+    />
+  );
+}
+
+/**
+ * §10.3's title bar: the document tabs, the Ctrl+K command search, the light and dark switch and the layout switcher —
+ * drawn in every layout
  * mode, because Focus keeps it: *"the title bar stays because it holds the tabs and the way out"*.
  *
  * ## The tabs have the row
@@ -23,7 +98,10 @@ const MODES: readonly LayoutMode[] = ['ribbon', 'studio', 'focus'];
  * ([ADR-0113](../../../../docs/DECISIONS/0113-the-applications-own-commands-sit-at-the-centre-of-the-menu-row.md)).
  * Nothing here is projected any more: the tabs, the search and the switcher each hold a value.
  *
- * ## Both of the bar's own controls run REGISTERED COMMANDS, and neither writes anything itself
+ * ## Each of the bar's own controls runs REGISTERED COMMANDS, and none writes anything itself
+ *
+ * The light and dark switch (ADR-0132) runs *View › Theme*'s two commands, as the switcher below runs the layout's;
+ * its face is the value it reads (`ThemeSwitch`).
  *
  * The command search is a second surface for `view.command-palette`, as `viewCommands.ts` says it
  * would be. The switcher is a second surface for the three `view.layout-*` commands, and that one is
@@ -87,6 +165,7 @@ export function TitleBar({
           )}
         </button>
       )}
+      <ThemeSwitch registry={registry} context={context} settings={settings} />
       {switchable ? (
         <SegmentedControl<LayoutMode>
           label={LAYOUT_MODE_TITLE}

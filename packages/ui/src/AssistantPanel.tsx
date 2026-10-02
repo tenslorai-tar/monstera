@@ -24,6 +24,7 @@ import { ArrowUp, Copy, Pencil, Plus, RefreshCw, Square, StickyNote } from 'luci
 import {
   Fragment,
   type ReactElement,
+  type ReactNode,
   useCallback,
   useEffect,
   useId,
@@ -73,6 +74,7 @@ import {
   ASSISTANT_NO_VISION,
   ASSISTANT_PROBLEM_PAGE_TOO_LARGE,
   ASSISTANT_PLACEHOLDER,
+  ASSISTANT_QUOTED,
   ASSISTANT_POST_REPLY,
   ASSISTANT_PROBLEM_REJECTED,
   ASSISTANT_PROBLEM_UNAUTHORISED,
@@ -121,6 +123,7 @@ import { pdfjsPageOf } from './pageNumbering.js';
 import { Button } from './primitives/Button.js';
 import { ChoiceMenu } from './primitives/ChoiceMenu.js';
 import { IconButton } from './primitives/IconButton.js';
+import { useOnColor } from './primitives/useOnColor.js';
 import { AI_MODELS_SETTING, AI_PROVIDER_SETTING } from './settings/ai.js';
 import type { SettingsStore } from './settingsStore.js';
 import { useSetting } from './useSetting.js';
@@ -280,6 +283,21 @@ function useConversation(store: DocumentStore | undefined): readonly Conversatio
   return useSyncExternalStore(store?.subscribe ?? NO_SUBSCRIBE, () => store?.getState().conversation ?? NO_TURNS);
 }
 
+/**
+ * One turn of the conversation. A person's sits in a bubble filled with the ACCENT (the owner, 2 October), so its text
+ * is solved against the accent in effect where it is drawn, never stored: the accent is the person's choice and the
+ * theme the window's, and a fixed text colour is right for one pair of them (ADR-0003, `useOnColor`).
+ */
+function Turn({ role, children }: { readonly role: ConversationTurn['role']; readonly children: ReactNode }): ReactElement {
+  const element = useRef<HTMLLIElement>(null);
+  useOnColor(element, 'color', '--text', role === 'user' ? ['--accent'] : [], 'text');
+  return (
+    <li ref={element} className="m-assistant__turn" data-assistant-role={role}>
+      {children}
+    </li>
+  );
+}
+
 /** The conversation's Left · Right · Both choice, or `undefined` until one is made. */
 function useSides(store: DocumentStore | undefined): AskSides | undefined {
   return useSyncExternalStore(store?.subscribe ?? NO_SUBSCRIBE, () => store?.getState().sides);
@@ -397,6 +415,25 @@ export function AssistantPanel({
   const choose = (next: Scope): void => {
     setChosen({ scope: next, after: request?.serial ?? 0 });
   };
+
+  // *ASK AI* QUOTES THE SELECTION in the box, a space after it, for the person to finish (the owner, 2 October). Set
+  // while rendering, from the request, so it lands in the same frame as the panel that shows it; `quotedFrom` makes it
+  // once per request, and `handled` keeps a remount from writing it over what the person has typed since. The quote
+  // marks are a message, because they are a language's own. Nothing is sent, and the Context menu stays on Selection
+  // because the request is what points it (`requestedScope` above).
+  const composer = useRef<HTMLTextAreaElement>(null);
+  const [quotedFrom, setQuotedFrom] = useState<number | undefined>(undefined);
+  if (request?.quote !== undefined && request.serial !== handled && request.serial !== quotedFrom && request.about.docId === docId) {
+    setQuotedFrom(request.serial);
+    setDraft(`${i18n._(ASSISTANT_QUOTED, { text: request.quote })} `);
+  }
+  // THE CURSOR AFTER THE QUOTE, once the box holds it: focus alone puts it wherever the last edit left it.
+  useEffect(() => {
+    const box = composer.current;
+    if (quotedFrom === undefined || box === null) return;
+    box.focus();
+    box.setSelectionRange(box.value.length, box.value.length);
+  }, [quotedFrom]);
 
   // LEFT · RIGHT · BOTH, offered only when it can mean something (ADR-0089): a second document
   // on the right, and a scope that names a page or the document. A selection or a comment belongs
@@ -794,7 +831,7 @@ export function AssistantPanel({
 
       <ol aria-label={i18n._(ASSISTANT_CONVERSATION_LABEL)} className="m-assistant__turns">
         {turns.map((turn, at) => (
-          <li className="m-assistant__turn" data-assistant-role={turn.role} key={`${String(at)}-${turn.role}`}>
+          <Turn role={turn.role} key={`${String(at)}-${turn.role}`}>
             {/* WHO SAID IT, read and not drawn: the bubble's side says so to the eye (`app.css`). */}
             <span className="m-visually-hidden">
               {i18n._(turn.role === 'user' ? ASSISTANT_YOU : ASSISTANT_ASSISTANT)}
@@ -908,7 +945,7 @@ export function AssistantPanel({
                 />
               );
             })()}
-          </li>
+          </Turn>
         ))}
       </ol>
 
@@ -1019,6 +1056,7 @@ export function AssistantPanel({
       {/* NOT UNDER A TOAST: the strip sits at the window's bottom-right, where this ends (`ToastStrip`). */}
       <div className="m-assistant__composer" data-toast-avoid="">
         <textarea
+          ref={composer}
           aria-describedby={hintId}
           aria-label={i18n._(ASSISTANT_COMPOSER_LABEL)}
           className="m-assistant__draft"

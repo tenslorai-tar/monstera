@@ -498,7 +498,8 @@ describe('writeStreamedDocument', () => {
       ELSEWHERE,
     );
 
-    expect(outcome).toStrictEqual({ kind: 'copied', bytes: 13 });
+    // AND IT NAMES WHERE IT WROTE, the path main mints a handle for so a toast can show the file.
+    expect(outcome).toStrictEqual({ kind: 'copied', bytes: 13, destination: ELSEWHERE });
     expect(files.get(ELSEWHERE)).toBe('%PDF-1.7 body');
     expect(files.get(TARGET)).toBe('original');
     // THE ORDERING IS THE ATOMIC WRITE'S: a stream to the temp, then the rename. A writer
@@ -582,7 +583,7 @@ describe('writeDocumentCopy', () => {
       ELSEWHERE,
     );
 
-    expect(outcome).toStrictEqual({ kind: 'copied', bytes: NEW_BYTES.byteLength });
+    expect(outcome).toStrictEqual({ kind: 'copied', bytes: NEW_BYTES.byteLength, destination: ELSEWHERE });
     expect(files.get(ELSEWHERE)).toBe('saved contents');
     // THE ORIGINAL IS UNTOUCHED, and this is the assertion that separates a copy
     // from a save. Without it, an implementation that wrote to `context.path`

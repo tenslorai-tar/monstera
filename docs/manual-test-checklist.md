@@ -134,7 +134,7 @@ is not available.
 - [ ] **Apply redactions** — Redact · `document.apply-redactions` · Help: *Redact (permanently remove) content*
 - [ ] **Mark matches for redaction** — Redact · `document.redact-matches` · Help: *Find and redact words*
 - [ ] **Sign document** — Signatures · `document.sign-document` · Help: *Sign a document digitally*
-- [ ] **Place a visible signature** — Signatures · `protect.signature` · Help: *Add a visible signature*
+- [ ] **Sign with certificate** — Signatures · `protect.signature` · Help: *Add a visible signature*
 - [ ] **Check signatures** — Signatures · `document.check-signatures` · Help: *Check a document's signatures*
 - [ ] **Send to DocuSign** — Signatures · `document.docusign-send` · Help: *Send a document for signing with DocuSign*
 - [ ] **Save signed copy from DocuSign** — Signatures · `document.docusign-retrieve` · Help: *Send a document for signing with DocuSign*
@@ -152,7 +152,7 @@ is not available.
 - [ ] **Export comments as XFDF…** — Comment files · `document.export-annotations-xfdf` · Help: *Export or import comments*
 - [ ] **Export comments as FDF…** — Comment files · `document.export-annotations-fdf` · Help: *Export or import comments*
 - [ ] **Export comments as JSON…** — Comment files · `document.export-annotations-json` · Help: *Export or import comments*
-- [ ] **Compare documents…** — Compare · `document.compare` · Help: *Find the differences between two documents*
+- [ ] **Compare documents…** — Compare · `document.compare` · Help: *Compare two documents side by side*
 
 ## Ribbon › Tools
 
@@ -182,7 +182,7 @@ is not available.
 - [ ] **Show grid** — Display · `view.toggle-grid` · Help: *Show rulers and a grid*
 - [ ] **Dim Pages** — Display · `view.toggle-dark-page` · Help: *Read with dim pages*
 - [ ] **Loupe** — Display · `view.toggle-loupe` · Help: *Magnify part of a page with the loupe*
-- [ ] **Split view** — Display · `view.toggle-split` · Help: *Compare two documents side by side*
+- [ ] **Split view** — Display · `view.toggle-split` · Help: *See two pages of a document at once*
 - [ ] **Make scanned pages searchable** — OCR · `document.ocr` · Help: *Make scanned pages searchable (OCR)*
 - [ ] **Export a searchable copy** — OCR · `document.export-searchable` · Help: *Save a searchable copy of a scan*
 - [ ] **Clean up scanned pages** — OCR · `document.enhance-scans` · Help: *Clean up scanned pages*

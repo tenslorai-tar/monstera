@@ -402,6 +402,7 @@ const handlers: ContractHandlers = {
     Promise.resolve(ok({ stored: [AZURE_KEY_SETTING_ID], available: true })),
   'settings.saveSecret': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
+  'file.reveal': () => Promise.resolve(ok({ revealed: false })),
   'crashReport.pending': () => Promise.resolve(ok({ report: null })),
   'crashReport.share': () => Promise.resolve(ok({ outcome: 'unavailable' as const })),
   'crashReport.dismiss': () => Promise.resolve(ok({ dismissed: true })),

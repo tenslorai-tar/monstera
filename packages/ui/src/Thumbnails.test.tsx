@@ -25,7 +25,7 @@ import { EN } from './messages/en.js';
  */
 
 /** Every rasterisation, as `[pdfjsPage, scale]`. */
-const rasterised: [number, number | { readonly fitWidth: number }][] = [];
+const rasterised: [number, number | { readonly fitWidth: number } | { readonly fitHeight: number }][] = [];
 /** The signal each draw was handed, in order — what a superseded draw is cancelled through. */
 const signals: AbortSignal[] = [];
 /** The rotation each rasterisation was handed, in the same order. */
@@ -38,15 +38,15 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
     _document: unknown,
     pdfjsPage: number,
     _canvas: unknown,
-    scale: number | { readonly fitWidth: number },
+    scale: number | { readonly fitWidth: number } | { readonly fitHeight: number },
     rotation: number | undefined,
     signal: AbortSignal,
   ) => {
     rasterised.push([pdfjsPage, scale]);
     drawnAt.push(rotation);
     signals.push(signal);
-    // A 600 × 800 page, fitted the way the real one fits it: from its own width.
-    const factor = typeof scale === 'number' ? scale : scale.fitWidth / 600;
+    // A 600 × 800 page, fitted the way the real one fits it: from its own width, or its own height.
+    const factor = typeof scale === 'number' ? scale : 'fitWidth' in scale ? scale.fitWidth / 600 : scale.fitHeight / 800;
     return Promise.resolve({ width: 600 * factor, height: 800 * factor });
   },
 }));
@@ -138,7 +138,7 @@ describe('Thumbnails as the Organize grid (ADR-0104)', () => {
             calls.swap += 1;
           }}
           grid={{
-            width: 110,
+            fit: { width: 110 },
             selected,
             onSelect: (pages) => calls.select.push(pages),
             onOpen: (page) => calls.open.push(page),
@@ -183,6 +183,34 @@ describe('Thumbnails as the Organize grid (ADR-0104)', () => {
     expect(ticked.calls.remove).toStrictEqual([[0, 2]]);
     // ENTER DOES NOT ALSO SELECT: it is prevented, so the button's own click does not follow it.
     expect(ticked.calls.select).toStrictEqual([]);
+  });
+
+  it('FULL PAGE draws each page whole at the grid’s HEIGHT, as wide as its page drew; Thumbnail fits a width', async () => {
+    const card = (fit: { readonly width: number } | { readonly height: number }): ReactElement => (
+      <Wrapped>
+        <Thumbnails
+          {...reads()}
+          view={view()}
+          pageCount={4}
+          current={0}
+          onJump={vi.fn()}
+          grid={{ fit, selected: [], onSelect: vi.fn(), onOpen: vi.fn(), onDelete: vi.fn() }}
+        />
+      </Wrapped>
+    );
+    const { container, rerender } = render(card({ height: 400 }));
+    await settle();
+    expect(rasterised).toStrictEqual([[1, { fitHeight: 400 }]]);
+    // THE MOCK PAGE IS 600 × 800, so at 400 tall it draws 300 wide — the canvas takes the page's width, not a column's.
+    const drawn = container.querySelector<HTMLElement>('[data-thumb-page="0"] canvas');
+    expect([drawn?.style.width, drawn?.style.height]).toStrictEqual(['300px', '400px']);
+    // AN UNDRAWN CARD is a portrait page that tall: 400 × 612 / 792, rounded.
+    expect(container.querySelector<HTMLElement>('.m-thumbnails')?.style.getPropertyValue('--m-thumb-width')).toBe('309px');
+
+    // CONTROL: the same grid at a WIDTH draws by width, and the canvas keeps the column's width.
+    rerender(card({ width: 110 }));
+    await settle();
+    expect(rasterised.at(-1)).toStrictEqual([1, { fitWidth: 110 }]);
   });
 
   it('CONTROL: the side strip — no grid — jumps on click, swaps on Shift+click, and Delete does nothing', () => {

@@ -3185,6 +3185,23 @@ describe('applyPlaceImage', () => {
     ]);
   });
 
+  it('A RESIZED image stamp still draws its image: placeAnnotation’s setRect and update() keep the appearance', async () => {
+    // THE PREMISE a moved or resized picture rests on, and nothing measured it until 2026-10-02: `applyPlaceImage`'s
+    // reading of `update()` leaving the appearance intact was taken right after creation, and `placeAnnotation`
+    // calls `setRect` first, which marks the annotation as needing a new appearance. A `/Stamp` whose appearance MuPDF
+    // regenerated would answer `[]` here, the image gone.
+    const resized = await onSession(await placedOn(await fixture()), async (session) => {
+      await applyPlaceAnnotation(session, {
+        kind: 'placeAnnotation',
+        page: 0,
+        placements: [{ index: 0, rect: { x0: 30, y0: 50, x1: 230, y1: 150 } }],
+        version: asDocVersion(1),
+      });
+      return await mupdfWriter.serialise(session);
+    });
+    expect(await stampsOn(resized, 0)).toEqual([{ subtype: '/Stamp', images: ['7x3'] }]);
+  });
+
   it('MARKS IT AS THIS BUILD S, which the walk is what reads', async () => {
     // ADR-0043's mark, at the second creation site. Without it the stamp reads
     // as foreign and the eraser and select tools refuse to touch it — which is

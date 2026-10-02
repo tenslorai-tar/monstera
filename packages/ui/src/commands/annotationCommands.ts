@@ -1078,8 +1078,9 @@ export function placeImageToolCommand(deps: ToolCommandDeps): UiCommand {
  * signatures* at 20, so the group reads invisible, visible, verify.
  */
 export function placeSignatureToolCommand(deps: ToolCommandDeps): UiCommand {
-  // AND HOME › QUICK TOOLS as v5-02's *Sign*. Captioned *Signature* in both places: *Sign* beside
-  // Protect's *Sign document* would read as two names for one thing.
+  // AND HOME › QUICK TOOLS as v5-02's *Sign*. Named *Sign with certificate* in both places since 2 October (the
+  // owner's split): a plain *Signature*, placed with no certificate, is to take Home's slot, and until it exists this
+  // keeps the slot under a name that says what it does.
   return alsoOn(
     toolCommand(PLACE_SIGNATURE_TOOL_ID, { full: PLACE_SIGNATURE_TOOL_TITLE, ribbon: RIBBON_PLACE_SIGNATURE }, 'PenTool', 15, deps, {
       section: 'protect',

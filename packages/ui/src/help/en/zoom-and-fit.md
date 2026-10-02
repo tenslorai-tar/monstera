@@ -12,7 +12,7 @@ Zoom changes how large the pages look on screen. It never changes the document.
 
 1. To zoom in or out, press **Ctrl+=** or **Ctrl+-**, hold **Ctrl** and turn the mouse wheel, or use the zoom buttons on the Float bar or the status bar.
 2. To fit the page to the window's width, choose **Fit width** (**Ctrl+1**). In the rail, **Home** has it in the **Display** group.
-3. To see a whole page at once, choose **Fit page** (**Ctrl+0**). In **Home**, it is under **More** in the **Display** group; in **Tools** it is in the **Display** group.
+3. To see a whole page at once, choose **Fit page** (**Ctrl+0**). In **Home**, it is in the **Display** group right after **Fit width**; in **Tools** it is in the **Display** group.
 4. To pick an exact size, drag the **Zoom level** slider in the status bar.
 
 ![The Display group in the Tools section with Zoom in, Zoom out, Fit width and Fit page](screenshot:zoom-and-fit-1)

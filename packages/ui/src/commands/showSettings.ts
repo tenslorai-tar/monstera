@@ -7,11 +7,14 @@ import {
   SETTINGS_COMMAND_TITLE,
   TOAST_SETTINGS_IMPORTED,
   TOAST_SETTINGS_IMPORTED_PARTLY,
+  TOAST_SETTINGS_NOT_SAVED,
+  TOAST_SETTINGS_SAVED,
   TOAST_SETTINGS_UNREADABLE,
 } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 import type { SettingsStore } from '../settingsStore.js';
 import type { ShowToast } from '../toasts.js';
+import { confirmWritten } from './confirmWritten.js';
 import { reportProblem } from './documentCommands.js';
 
 /**
@@ -123,7 +126,13 @@ export function showSettingsCommand(deps: {
           await deps.client['document.clearRecent']({});
           deps.onRecentCleared();
         }
-        if (answer.action === 'export') await deps.client['settings.export']({});
+        if (answer.action === 'export') {
+          // CONFIRMED where it was written, and SAID where it was not: the answer was discarded until 2 October, so
+          // a settings file that failed to write looked exactly like one that was written.
+          const exported = await deps.client['settings.export']({});
+          if (exported.ok && exported.value.kind === 'written') confirmWritten(deps, TOAST_SETTINGS_SAVED, exported.value.written);
+          if (exported.ok && exported.value.kind === 'write-failed') deps.toast('problem', TOAST_SETTINGS_NOT_SAVED);
+        }
       };
 
       const answer = (await deps.ask(

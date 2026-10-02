@@ -1,4 +1,4 @@
-import { asDocId, asDocVersion } from '@monstera/shared';
+import { asDocId, asDocVersion, channels, contrast } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
@@ -13,13 +13,18 @@ import { bridge } from './pageBridge.js';
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000000a9');
 
-async function openPane(page: Page): Promise<void> {
+async function openPane(page: Page, settings: Record<string, unknown> = {}): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 });
   const bytes = await blockedPages([612, 792], 1);
   await bridge(page, {
     opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'chat.pdf' }],
     documentBytes: new Map([[DOC, bytes]]),
-    settings: { 'appearance.context-panel-open': true, 'appearance.context-panel-tab': 'assistant', 'ai.save-history': true },
+    settings: {
+      'appearance.context-panel-open': true,
+      'appearance.context-panel-tab': 'assistant',
+      'ai.save-history': true,
+      ...settings,
+    },
     // A SAVED CONVERSATION, so the chat is on screen without a provider to ask.
     aiHistory: {
       turns: [
@@ -33,15 +38,28 @@ async function openPane(page: Page): Promise<void> {
   await expect(page.locator('.m-assistant__turn')).toHaveCount(2, { timeout: 10_000 });
 }
 
-test('CONTEXT and SOURCES share one row, and each closed face reads its name', async ({ page }) => {
+test('CONTEXT and SOURCES each read their choice and value, whole and inside the pane', async ({ page }) => {
   await openPane(page);
   const faces = page.locator('.m-assistant [data-choice-menu]');
   await expect(faces).toHaveCount(2);
-  expect(await faces.allTextContents()).toStrictEqual(['Context', 'Sources']);
-  const [context, sources] = [await faces.nth(0).boundingBox(), await faces.nth(1).boundingBox()];
-  if (context === null || sources === null) throw new Error('both menus have boxes');
-  expect(Math.abs(context.y - sources.y)).toBeLessThanOrEqual(2);
-  expect(sources.x).toBeGreaterThan(context.x + context.width);
+  expect(await faces.allTextContents()).toStrictEqual(['Choose context: Page 1', 'Choose sources: Document only']);
+  // ONE ROW NO LONGER: at the pane's default width the row is 306 px and the two faces need 381 (measured 2026-10-02
+  // at 1280 × 800), so Sources wraps under Context. What must hold either way is that each face lies inside the row
+  // and shows every word it reads.
+  const fit = await page.evaluate(() => {
+    const row = document.querySelector('.m-assistant__choices')?.getBoundingClientRect();
+    return [...document.querySelectorAll<HTMLElement>('.m-assistant [data-choice-menu]')].map((face) => {
+      const box = face.getBoundingClientRect();
+      return {
+        inside: row !== undefined && box.left >= row.left - 0.5 && box.right <= row.right + 0.5,
+        whole: face.scrollWidth <= face.clientWidth,
+      };
+    });
+  });
+  expect(fit).toStrictEqual([
+    { inside: true, whole: true },
+    { inside: true, whole: true },
+  ]);
   // NO EXPLANATORY HINT is drawn under the box: the Enter line is a description for a screen reader only, so it is
   // present and occupies no more than the one clipped pixel `.m-visually-hidden` leaves.
   const hint = page.getByText('Enter sends. Shift+Enter starts a new line.');
@@ -75,6 +93,36 @@ test('the CHAT: the person’s message at the right in a filled bubble, the answ
   expect(shape?.answerLeftGap).toBeLessThanOrEqual(1);
   expect(shape?.size).toBe('13px');
 });
+
+// A DEEP BLUE wants light text and an AMBER dark text, so a stored text colour fails one of them: each case asserting
+// its own direction is what shows the text is derived where it is drawn rather than kept.
+for (const [accent, wants] of [
+  ['#1d4ed8', 'lighter'],
+  ['#f59e0b', 'darker'],
+] as const) {
+  test(`a person’s bubble FOLLOWS THE ACCENT ${accent}, with text solved ${wants} than it`, async ({ page }) => {
+    await openPane(page, { 'appearance.accent': accent });
+    const drawn = await page.evaluate(() => {
+      const user = document.querySelector<HTMLElement>('.m-assistant__turn[data-assistant-role="user"]');
+      if (user === null) return null;
+      // THE ACCENT IN EFFECT, read as a colour the way the bubble's background is, so the two compare as equals.
+      const probe = document.createElement('span');
+      probe.style.backgroundColor = 'var(--accent)';
+      user.append(probe);
+      const accentColour = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return { fill: getComputedStyle(user).backgroundColor, text: getComputedStyle(user).color, accentColour };
+    });
+    if (drawn === null) throw new Error('a person’s turn');
+    expect(drawn.fill, accent).toBe(drawn.accentColour);
+    const fill = channels(drawn.fill);
+    const text = channels(drawn.text);
+    if (fill === null || text === null) throw new Error(`colours that parse: ${drawn.fill} and ${drawn.text}`);
+    expect(contrast(text, fill), `${drawn.text} on ${drawn.fill}`).toBeGreaterThanOrEqual(4.5);
+    const brightness = ([r, g, b]: readonly number[]): number => (r ?? 0) + (g ?? 0) + (b ?? 0);
+    expect(brightness(text) > brightness(fill) ? 'lighter' : 'darker', `${drawn.text} on ${drawn.fill}`).toBe(wants);
+  });
+}
 
 test('NEW CHAT is a "+" at the top right of the pane', async ({ page }) => {
   await openPane(page);

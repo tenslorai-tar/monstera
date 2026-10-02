@@ -85,3 +85,12 @@ through the menu bar" reduces to one fact, because every section but Home is a m
 only ribbon placements are in Home must carry a `menu-bar` placement. `CommandRegistry` refuses one that does not, so
 the application's own registry is checked every time it is built, including by every test that renders the shell,
 where a set-equality case would have checked a fixture.
+
+## Correction, 2026-10-02 — Fit page is on Home again, right after Fit width
+
+When this decision moved Home's secondary tools, *Fit page* left Home › Display and stayed in View › Zoom, Tools ›
+Display and the status bar, while *Fit width* kept its place there because v5-02 draws it. The owner's decision of 2
+October puts *Fit page* back on Home › Display directly after *Fit width*: the two fits are one pair a reader reaches
+for together, and finding one without the other on the ribbon a person uses most was the defect. Its View › Zoom,
+Tools › Display and status-bar placements are unchanged, and Decision 3 still holds, since it carries a `menu-bar`
+placement. `fitCommand` in `documentCommands.ts` states it; its case asserts both Home placements and their order.

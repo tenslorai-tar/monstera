@@ -10,6 +10,10 @@ You can choose how Monstera's window looks. This changes the window around your 
 
 ## Steps
 
+To switch between light and dark at once, press the sun or moon button in the title bar, beside the command search. It shows the theme a click switches to, so a sun means "switch to light". If the window follows Windows, it switches to the opposite of what you see.
+
+For the other choices:
+
 1. Open **Settings** and choose the **Appearance** page.
 2. In **Theme**, choose **Match the system**, **Light** or **Dark**.
 3. Under **Accent colour**, choose a colour, or **The theme's own**.
@@ -19,7 +23,7 @@ You can choose how Monstera's window looks. This changes the window around your 
 
 ## Good to know
 
-- High contrast follows Windows on its own: turn on a Windows contrast theme and Monstera follows it.
+- High contrast follows Windows on its own: turn on a Windows contrast theme and Monstera follows it. While it is on, the title bar's sun and moon button is off, because light and dark do not apply.
 - An accent colour too close to the theme's background to stand out is not offered.
 - **Reduce motion** is also on whenever Windows asks for reduced motion.
 - To darken the pages themselves, see "Read with dark pages".

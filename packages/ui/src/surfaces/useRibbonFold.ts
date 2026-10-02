@@ -33,9 +33,9 @@ import type { RibbonSection } from './projections.js';
  *
  * ## When it measures
  *
- * On every resize of the row (a `ResizeObserver`, whose first observation is the first reading), and
- * after a render that drew a button with no width yet, which no resize announces because the row's
- * box does not change when its content overflows.
+ * On every resize of the row or of one of its groups (one `ResizeObserver`, whose first observation is
+ * the first reading), and after a render that drew a button with no width yet. The groups are watched
+ * because the row's box does not change when its content outgrows it.
  */
 export interface RibbonFold {
   /** Attach to the element whose width the groups must fit inside. */
@@ -143,6 +143,8 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
         measure();
       });
       observer.current.observe(element);
+      // THE GROUPS ALREADY ATTACHED: React sets a child's ref before its parent's, so they arrived before this.
+      for (const group of groups.current) if (group !== null) observer.current.observe(group);
     },
     [measure],
   );
@@ -154,10 +156,18 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
     [],
   );
 
+  // EACH GROUP IS OBSERVED TOO, because a group's box is what changes when a caption grows after it was measured —
+  // a label re-rendered, the text drawn larger — while the row's box stays exactly the size it was. Measured
+  // 2026-10-02: captions enlarged on the section on screen left the row 61 px wider than its box, for good, and the
+  // row's `overflow: hidden` cut its last tool. A group that shrinks because the fold hid a button fires this too,
+  // and that reading equals what is kept, so it renders nothing (`sameMetrics`).
   const groupRef = useCallback(
     (index: number) =>
       (element: HTMLDivElement | null): void => {
+        const previous = groups.current[index] ?? null;
+        if (previous !== null && previous !== element) observer.current?.unobserve(previous);
         groups.current[index] = element;
+        if (element !== null) observer.current?.observe(element);
       },
     [],
   );
