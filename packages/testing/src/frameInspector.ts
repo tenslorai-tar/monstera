@@ -71,9 +71,28 @@ export async function installInspector(page: Page, scope: string, zoom?: string)
               : [...root.querySelectorAll<HTMLCanvasElement>(selector)].filter((canvas) =>
                   canvas.checkVisibility({ visibilityProperty: true }),
                 );
+          // THE LOADING STATE IS A FINISHED SCREEN: a page area saying the document is opening shows no page on purpose
+          // (`PageList`'s first frame), where one showing nothing at all is the defect.
+          const opening =
+            root !== null &&
+            [...root.querySelectorAll<HTMLElement>('.m-page-opening')].some((each) =>
+              each.checkVisibility({ visibilityProperty: true }),
+            );
           const pages = shown('.m-page-list canvas.m-page');
-          if (pages.length === 0) reasons.push('no page canvas');
-          const thumbs = shown('canvas.m-thumb-canvas');
+          if (pages.length === 0 && !opening) reasons.push('no page canvas');
+          // A THUMBNAIL NOT DRAWN YET is a placeholder in the surface's tone (`app.css`), which reads as loading; one
+          // painted the page's white with nothing on it reads as an empty page, and that is still unfinished.
+          const pageWhite = ((): string => {
+            const probe = document.createElement('span');
+            probe.style.color = 'var(--page)';
+            document.body.append(probe);
+            const value = getComputedStyle(probe).color;
+            probe.remove();
+            return value;
+          })();
+          const thumbs = shown('canvas.m-thumb-canvas').filter(
+            (canvas) => canvas.dataset['drawn'] !== 'false' || getComputedStyle(canvas).backgroundColor === pageWhite,
+          );
           for (const [kind, canvases] of [
             ['page', pages],
             ['thumbnail', thumbs],

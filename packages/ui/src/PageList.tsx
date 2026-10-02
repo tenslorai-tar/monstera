@@ -17,13 +17,21 @@ const NO_MARKS: readonly DifferenceMark[] = [];
 import { type PageAnnotation, usePageAnnotations } from './usePageAnnotations.js';
 import { usePageRotations } from './usePageRotations.js';
 import { type PageTextAnswer, usePageText } from './usePageText.js';
-import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY, PAGE_LIST_LABEL } from './messages/en.js';
+import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY, PAGE_LIST_LABEL, PAGE_OPENING } from './messages/en.js';
+import { Icon } from './primitives/Icon.js';
 import type { UiTool } from './registries/tools.js';
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
 import { motionReduced } from './settings/appearance.js';
 import type { PageLayout } from './settings/viewing.js';
-import { RenderCancelledError, type SecondRasteriser, pageGeometry, renderPage, renderRegion } from './renderPage.js';
+import {
+  RenderCancelledError,
+  type SecondRasteriser,
+  pageBoxAtOne,
+  pageGeometry,
+  renderPage,
+  renderRegion,
+} from './renderPage.js';
 import { type Tile, tilesCovering } from './tiles.js';
 import type { SearchHighlight } from './searchHighlight.js';
 import { Loupe } from './Loupe.js';
@@ -303,6 +311,12 @@ export interface PageListProps {
    * that can never be the one reporting.
    */
   readonly onActivate?: (() => void) | undefined;
+  /**
+   * Told once, when this scroller's first frame is shown: its starting page drawn at the zoom it is shown at (or
+   * failed to draw). For the reads that may wait for it — the thumbnail strip's — so the first page is the first thing
+   * main's lane works for.
+   */
+  readonly onFirstFrame?: (() => void) | undefined;
 }
 
 /**
@@ -369,6 +383,7 @@ export function PageList({
   version,
   onCurrentPage,
   onPageBox,
+  onFirstFrame,
   mode,
   onZoomStep,
   onShownZoom,
@@ -407,6 +422,19 @@ export function PageList({
   // question of a different container, and a second implementation here would
   // be two opinions about what *near the viewport* means (B3a).
   const { visible, slotRef, slotFor } = useVisiblePages(MARGIN, startAt);
+  // THE SHARED READ, which the strip and the loupe take too. Presence means
+  // answered for THIS version; see `usePageRotations` for the three states.
+  //
+  // DECLARED FIRST AMONG THE READS, so its effect asks first: every read of the document waits in main's one lane for
+  // it, and this is the one the first page cannot draw without. The text and the marks below wait for the first frame.
+  const rotations = usePageRotations(client, docId, version, visible);
+  /**
+   * WHETHER THE FIRST FRAME HAS BEEN SHOWN: the mount's starting page drawn at the zoom it is shown at, and scrolled to
+   * (the owner's rule, *never show an unfinished screen*; the review of 0.1.8.0 saw seconds of empty slots, a flash of
+   * page 2's lower half and a blank before page 1). Until then the pages are laid out and drawn out of sight under a
+   * loading state, so the first frame anybody sees is the finished page; once shown it stays shown for this mount.
+   */
+  const [firstFrame, setFirstFrame] = useState(false);
   /**
    * SINGLE PAGE's page on show, with the request and the layout it was last settled against.
    *
@@ -440,10 +468,13 @@ export function PageList({
   // a caller because `visible` is this component's answer and it changes on
   // every scroll — a caller owning the fetch would re-render on scroll to hand
   // back a set the scroller already had.
-  const pageText = usePageText(client, docId, version, visible);
+  //
+  // NOT BEFORE THE FIRST FRAME, with the marks below: both are reads in main's one lane, and asked at mount they were
+  // queued ahead of the rotation the first page waits for. Neither is drawn before a page is measured anyway.
+  const pageText = usePageText(client, docId, version, firstFrame ? visible : NOTHING_VISIBLE);
   // EVERY PAGE'S MARKS, one read per version: the channel is whole-document, so there is nothing
   // to narrow to the visible set, and the layer is mounted only on slots that are measured.
-  const pageAnnotations = usePageAnnotations(client, docId, version);
+  const pageAnnotations = usePageAnnotations(firstFrame ? client : undefined, docId, version);
   const scroller = useRef<HTMLDivElement | null>(null);
   /** The pane around the scroller, which holds what must not scroll: the rulers and the loupe. */
   const pane = useRef<HTMLDivElement | null>(null);
@@ -505,12 +536,66 @@ export function PageList({
    * fit changing as the reader scrolls, which is a design question about
    * whether *fit* follows the page or the document, and is not answered here.
    */
+  //
+  // **THE STARTING PAGE'S OWN BOX, ASKED BEFORE IT IS DRAWN**, ahead of any measurement. One `getPage` of one page —
+  // not the every-page parse the slots' estimate exists to avoid — and what lets the first drawing be at the fit:
+  // waiting for a drawing to learn the box drew the first page at 100%, then the fit stretched it and redrew it, which
+  // is the jump and the blank the owner saw on first open. Asked once the rotation is answered, so a turned page's box
+  // is the turned one.
+  const [mountedAt] = useState(startAt);
+  const startPage = Math.min(mountedAt, pageCount - 1);
+  const startRotation = rotations.get(startPage);
+  const startAnswered = rotations.has(startPage);
+  const [startBox, setStartBox] = useState<{ readonly key: string; readonly box: Box } | undefined>(undefined);
+  // THE BOX COULD NOT BE READ: the first drawing then learns it, as before this read existed, rather than nothing
+  // drawing at all — a page whose box PDF.js refuses is one whose drawing will say why on its own canvas.
+  const [startBoxRefused, setStartBoxRefused] = useState(false);
+  const startKey = `${String(startPage)}@${String(startRotation)}`;
+  useEffect(() => {
+    if (view === undefined || !startAnswered) return;
+    let cancelled = false;
+    void pageBoxAtOne(view.document, pdfjsPageOf(startPage), startRotation).then(
+      (box) => {
+        if (!cancelled) setStartBox({ key: startKey, box });
+      },
+      () => {
+        if (!cancelled) setStartBoxRefused(true);
+      },
+    );
+    return (): void => {
+      cancelled = true;
+    };
+  }, [startAnswered, startKey, startPage, startRotation, view]);
   const pageBox = useMemo((): Box | undefined => {
     const [first] = [...sizes.values()];
-    return first === undefined
-      ? undefined
-      : { width: first.width / first.drawnAt, height: first.height / first.drawnAt };
-  }, [sizes]);
+    const drawn = first === undefined ? undefined : { width: first.width / first.drawnAt, height: first.height / first.drawnAt };
+    // THE ASKED BOX WHILE THE DRAWING AGREES WITH IT: a drawing's size is `ceil`ed to whole device pixels, so its box
+    // differs from the exact one by under a pixel, and switching to it would move the fit by that much and redraw the
+    // page a moment after it was shown. A drawing that differs by more — a page cropped or resized since — wins.
+    if (startBox !== undefined) {
+      const agrees =
+        first === undefined ||
+        drawn === undefined ||
+        (Math.abs(drawn.width - startBox.box.width) * first.drawnAt <= 1 &&
+          Math.abs(drawn.height - startBox.box.height) * first.drawnAt <= 1);
+      if (agrees) return startBox.box;
+    }
+    return drawn;
+  }, [sizes, startBox]);
+  /** Every slot's size before any page has drawn: the starting page's box, at scale 1, as an unvisited slot takes. */
+  const startEstimate = useMemo(
+    (): Measured | undefined =>
+      startBox === undefined
+        ? undefined
+        : {
+            width: startBox.box.width,
+            height: startBox.box.height,
+            drawnAt: 1,
+            crop: [0, 0, startBox.box.width, startBox.box.height],
+            rotation: startRotation ?? 0,
+          },
+    [startBox, startRotation],
+  );
 
   /**
    * What the reader's mode resolves to, right now.
@@ -523,12 +608,12 @@ export function PageList({
   // FACING PAGES FIT A SPREAD, two pages and the gap between them: fitting one page's width would push its partner
   // off the pane. The gap is taken from the pane rather than added to the pages, because it does not scale with them.
   const spread = layout === 'facing';
-  const shown =
-    resolveZoom(
-      mode,
-      spread && viewport !== undefined ? { width: viewport.width - spreadGap, height: viewport.height } : viewport,
-      spread && pageBox !== undefined ? { width: pageBox.width * 2, height: pageBox.height } : pageBox,
-    ) ?? 1;
+  const resolved = resolveZoom(
+    mode,
+    spread && viewport !== undefined ? { width: viewport.width - spreadGap, height: viewport.height } : viewport,
+    spread && pageBox !== undefined ? { width: pageBox.width * 2, height: pageBox.height } : pageBox,
+  );
+  const shown = resolved ?? 1;
 
   /**
    * The zoom the pages are actually rasterised at, which lags `shown`.
@@ -547,6 +632,10 @@ export function PageList({
    * already used, for free.
    */
   const [renderZoom, setRenderZoom] = useState(shown);
+  // BEFORE THE FIRST FRAME THERE IS NOTHING TO STRETCH, so the zoom a page is drawn at follows the one it is shown at at
+  // once — adjusted while rendering, React's form for state that follows a value — and the first drawing is at the
+  // fit rather than at the fallback and then again 150 ms later.
+  if (!firstFrame && renderZoom !== shown) setRenderZoom(shown);
 
   useEffect(() => {
     if (renderZoom === shown) return;
@@ -564,9 +653,12 @@ export function PageList({
   // Told upward so the commands can step the ladder from what is on screen. A
   // fit's number lives here and nowhere else, so a `+` pressed at fit-width
   // would otherwise step from a mode that has no number.
+  //
+  // NOT THE FALLBACK: a fit with no page box yet resolves to nothing, and reporting the 1 drawn in its place put 100% in
+  // the status bar for the length of an open, then the fit.
   useEffect(() => {
-    onShownZoom(shown);
-  }, [onShownZoom, shown]);
+    if (resolved !== undefined) onShownZoom(resolved);
+  }, [onShownZoom, resolved]);
 
   /**
    * Ctrl+scroll, which is a zoom rather than a scroll.
@@ -715,20 +807,67 @@ export function PageList({
   // revealed nothing (traced 2026-09-18: status at page 1 of 4 while page 3 was measuring). The
   // prop's contract was always *read once, at mount*; this is that, spelt so a re-render cannot
   // change it.
-  const [mountedAt] = useState(startAt);
+  //
+  // **OR ONCE THE STARTING PAGE'S OWN BOX IS KNOWN** (`startBox`, below the first-frame note): every slot is then
+  // estimated from it, so the position is right before anything has drawn, and the starting page is the first drawn.
   const revealedStart = useRef(false);
-  const startPage = Math.min(mountedAt, pageCount - 1);
   const anyMeasured = sizes.size > 0;
+  const sized = anyMeasured || startBox !== undefined;
   useEffect(() => {
     if (revealedStart.current) return;
     if (mountedAt <= 0) {
       revealedStart.current = true;
       return;
     }
-    if (!anyMeasured) return;
+    if (!sized) return;
     revealedStart.current = true;
     slotFor(startPage)?.scrollIntoView({ block: 'start' });
-  }, [anyMeasured, mountedAt, slotFor, startPage]);
+  }, [mountedAt, sized, slotFor, startPage]);
+
+  /**
+   * THE FIRST FRAME, decided: scrolled to the starting page, and EVERY page in the viewport drawn at the zoom it is shown
+   * at — the starting page, and the top of the next where it shows — or failed to draw, which is shown rather than
+   * hidden behind a loading state for ever. Pages in the margin below are not waited for: nobody can see them yet.
+   * Marked for the performance timeline, so what each step of an open costs can be read on the machine that runs it
+   * (`monstera:parsed`, `monstera:rotation`, `monstera:page-box`, `monstera:first-frame`).
+   */
+  const [failedPages, setFailedPages] = useState<ReadonlySet<number>>(new Set());
+  const failed = useCallback((page: number): void => {
+    setFailedPages((current) => (current.has(page) ? current : new Set(current).add(page)));
+  }, []);
+  useEffect(() => {
+    // THE REVEAL'S REF, read rather than mirrored in state: the reveal effect above runs first in the same commit, and
+    // every later change this waits on — a page measured — runs this again.
+    if (firstFrame || !revealedStart.current || resolved === undefined || renderZoom !== shown) return;
+    const box = scroller.current?.getBoundingClientRect();
+    if (box === undefined) return;
+    const scale = devicePixels() * renderZoom * quality;
+    const inView = [...visible].filter((page) => {
+      const slot = slotFor(page)?.getBoundingClientRect();
+      return slot !== undefined && slot.height > 0 && slot.bottom > box.top && slot.top < box.bottom;
+    });
+    const drawn = (page: number): boolean => {
+      const size = sizes.get(page);
+      return failedPages.has(page) || (size !== undefined && Math.abs(size.drawnAt - scale) < 1e-9);
+    };
+    // A SCROLLER WITH NO HEIGHT has no viewport to judge by — laid out nowhere, or not laid out at all — and then the
+    // starting page alone is what the first frame waits for, rather than a page set that can never be complete.
+    const required = box.height > 0 ? inView : [startPage];
+    if (!required.includes(startPage) || !required.every(drawn)) return;
+    setFirstFrame(true);
+    performance.mark('monstera:first-frame');
+    onFirstFrame?.();
+  }, [failedPages, firstFrame, onFirstFrame, quality, renderZoom, resolved, shown, sized, sizes, slotFor, startPage, visible]);
+  useEffect(() => {
+    // MOUNTED, which is the parser open: the list exists only once PDF.js has the document.
+    performance.mark('monstera:parsed');
+  }, []);
+  useEffect(() => {
+    if (startAnswered) performance.mark('monstera:rotation');
+  }, [startAnswered]);
+  useEffect(() => {
+    if (startBox !== undefined) performance.mark('monstera:page-box');
+  }, [startBox]);
 
   /**
    * AUTOSCROLL, one frame at a time: the distance is the pace times the time since the last frame, so a slow frame
@@ -811,10 +950,6 @@ export function PageList({
     },
     [layout, onShow, onZoomStep, pageCount],
   );
-  // THE SHARED READ, which the strip and the loupe take too. Presence means
-  // answered for THIS version; see `usePageRotations` for the three states.
-  const rotations = usePageRotations(client, docId, version, visible);
-
   /**
    * What a slot reports after drawing, as ONE stable callback.
    *
@@ -875,7 +1010,11 @@ export function PageList({
       // and the loupe is placed against this box; inside the scroller both were laid out in its scrolled content.
       className={rulers ? 'm-page-pane m-page-pane--rulers' : 'm-page-pane'}
       ref={pane}
+      // UNTIL THE FIRST FRAME the pages are laid out, observed and drawn out of sight (`app.css`), and the opening state
+      // stands in their place; the attribute is what the stylesheet and the rendered cases read.
+      data-first-frame={firstFrame ? 'shown' : 'pending'}
     >
+      {firstFrame ? null : <OpeningState />}
       {loupe && lens !== undefined ? (
         <div
           className="m-loupe-at"
@@ -990,12 +1129,16 @@ export function PageList({
           mounted={visible.has(page)}
           // `has`, not a truthy `get`: a page answered with `undefined` is
           // answered, and a page answered with `0` is upright. Both draw.
-          draw={visible.has(page) && rotations.has(page)}
+          //
+          // AND NOT BEFORE THE ZOOM IS RESOLVED: a fit with no page box falls back to 1, and a page drawn at that is
+          // the first-open jump — drawn at 100%, then stretched, then drawn again.
+          draw={visible.has(page) && rotations.has(page) && (resolved !== undefined || startBoxRefused)}
           rotation={rotations.get(page)}
-          size={sizes.get(page) ?? lastKnownBefore(sizes, page)}
+          size={sizes.get(page) ?? lastKnownBefore(sizes, page) ?? startEstimate}
           zoom={shown}
           renderZoom={renderZoom}
           onMeasured={measured}
+          onFailed={failed}
           // THE SLOT'S OWN MEASUREMENT, not the inherited estimate: an overlay
           // placed over a page using a neighbour's box would put every
           // rectangle in the wrong frame. `lastKnownBefore` above is a size
@@ -1038,6 +1181,24 @@ export function PageList({
     </div>
   );
 }
+
+/**
+ * WHAT THE PAGE AREA SHOWS UNTIL ITS FIRST PAGE IS DRAWN (§10.5's loading state): one sentence and a turning mark,
+ * centred, never an empty slot. A status, so a screen reader hears that the document is opening; the mark is still
+ * where motion is reduced. Exported because the page area shows it while the parser opens too, before there is a list.
+ */
+export function OpeningState(): ReactElement {
+  const { i18n } = useLingui();
+  return (
+    <div className="m-page-opening" role="status">
+      <Icon name="LoaderCircle" size="control" />
+      <span>{i18n._(PAGE_OPENING)}</span>
+    </div>
+  );
+}
+
+/** The empty visible set, one identity, for a read that must not ask yet. */
+const NOTHING_VISIBLE: ReadonlySet<number> = new Set();
 
 /**
  * The nearest measured page before `page`, as the estimate for an unvisited one.
@@ -1205,6 +1366,7 @@ function PageSlot({
   zoom,
   renderZoom,
   onMeasured,
+  onFailed,
   drawing,
   editing,
   text,
@@ -1231,6 +1393,8 @@ function PageSlot({
   readonly zoom: number;
   readonly renderZoom: number;
   readonly onMeasured: (page: number, measured: Measured) => void;
+  /** Told that this page would not draw, with `onMeasured`'s need to be stable. */
+  readonly onFailed: (page: number) => void;
   readonly drawing: PageListProps['drawing'];
   readonly editing: TextEditing | undefined;
   readonly text: readonly TextLayerLine[] | undefined;
@@ -1377,12 +1541,13 @@ function PageSlot({
         // a CI run only that a draw had thrown.
         canvas.current.dataset['failedReason'] = (error instanceof Error ? error.message : String(error)).slice(0, 200);
       }
+      onFailed(page);
     });
 
     return (): void => {
       superseded.abort();
     };
-  }, [draw, onMeasured, page, quality, renderZoom, rotation, secondRasteriser, tiled, view]);
+  }, [draw, onFailed, onMeasured, page, quality, renderZoom, rotation, secondRasteriser, tiled, view]);
 
   return (
     <div

@@ -1110,6 +1110,8 @@ test('a page ZOOMED WIDER THAN ITS PANE can still be scrolled to its left edge',
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
+  // OPEN FIRST: until its first frame the page area shows the loading state and holds no page canvas to measure.
+  await expect(page.locator('.m-page-pane[data-first-frame="shown"]')).toHaveCount(1);
 
   const bar = page.getByRole('status', { name: 'Document status' });
   await bar.getByRole('slider', { name: 'Zoom level' }).fill('4');

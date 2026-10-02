@@ -66,9 +66,16 @@ export function Thumbnails({
   pageMenu,
   size = 'medium',
   grid,
+  waitForFirstFrame = false,
 }: {
   /** How large the pictures are drawn (the Appearance setting). Medium for a strip with no setting behind it. */
   readonly size?: ThumbnailSize;
+  /**
+   * Whether the strip waits to read or draw anything: `true` while the page area's first frame is not shown yet. Every
+   * read of a document waits in main's one lane, and asked at open the strip's eight pages queued ahead of the first
+   * page the reader is waiting for; waiting, each card is a placeholder of a page's shape (`app.css`).
+   */
+  readonly waitForFirstFrame?: boolean;
   /**
    * Wraps one thumbnail in the page context menu for THAT page (§7) — the shell's
    * `ContextMenuArea`, handed down so this strip never names the registry. Optional for
@@ -140,7 +147,7 @@ export function Thumbnails({
 }): ReactElement {
   const { i18n } = useLingui();
   const { visible, slotRef } = useVisiblePages('50%');
-  const rotations = usePageRotations(client, docId, version, visible);
+  const rotations = usePageRotations(client, docId, version, waitForFirstFrame ? NOTHING_VISIBLE : visible);
   // A REF, not state: the source index is read once by the drop that follows,
   // and re-rendering the whole strip mid-drag would replace the element the
   // browser is dragging.
@@ -287,6 +294,9 @@ export function Thumbnails({
  * the page's own aspect ratio, which is what `renderPage` reports back. A new size REDRAWS, since a picture
  * drawn at 60 px and stretched to 160 is a blurred one.
  */
+/** The empty visible set, one identity, for a strip that must not ask yet. */
+const NOTHING_VISIBLE: ReadonlySet<number> = new Set();
+
 function ThumbCanvas({
   view,
   page,

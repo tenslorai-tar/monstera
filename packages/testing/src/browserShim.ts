@@ -554,6 +554,8 @@ export interface BrowserShimOptions {
    * a case that draws Cloud storage's signed-in and signed-out sections hands their states in.
    */
   readonly cloudStatus?: ChannelResult<'cloud.status'>;
+  /** Milliseconds a channel waits before it answers, by channel: main's time, for a case about what is drawn meanwhile. */
+  readonly delays?: Readonly<Partial<Record<keyof ContractHandlers, number>>>;
   /** What `ai.models` answers. Absent is an empty list, what a build with no provider offers. */
   readonly aiModels?: ChannelResult<'ai.models'>;
   /**
@@ -2323,9 +2325,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     incidents.push(incident);
   });
 
-  const client = createClient(channels, async (id, params) =>
-    acrossTheWire(await wrapped[id](acrossTheWire(params))),
-  );
+  const client = createClient(channels, async (id, params) => {
+    // A CHANNEL MAIN TAKES TIME OVER, where a case says so: the first-open case holds the view model back the way the
+    // engine host does on a large scan, so the frames between the click and the first page are long enough to read.
+    const wait = options.delays?.[id];
+    if (wait !== undefined) await new Promise((resolve) => setTimeout(resolve, wait));
+    return acrossTheWire(await wrapped[id](acrossTheWire(params)));
+  });
 
   return {
     client,

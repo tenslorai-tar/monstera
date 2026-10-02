@@ -408,7 +408,7 @@ import { AUTOSAVE_SETTING, CONFIRM_REDACTION_SETTING, WARN_SIGNATURE_BREAK_SETTI
 import { SIGNATURE_BREAK_DIALOG } from './dialogs/signatureBreak.js';
 import { STALE_COPIES_DIALOG } from './dialogs/staleCopies.js';
 import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
-import { PageList, type PageListProps } from './PageList.js';
+import { OpeningState, PageList, type PageListProps } from './PageList.js';
 import { type Side, SideBySide, type SidePreferences, drawForComparison } from './SideBySide.js';
 import { SplitView } from './SplitView.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
@@ -1822,7 +1822,15 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * is disabled on a page with none rather than a control that selects nothing — a THIRD reader of
    * `document.annotations`, which `usePageAnnotations`' header allows: one answer, several surfaces.
    */
-  const pageMarks = usePageAnnotations(client, open?.docId, open?.version);
+  //
+  // NOT BEFORE THE DOCUMENT'S FIRST FRAME: every read of a document waits in main's one lane, and asked at open this
+  // one was queued ahead of the rotation the first page cannot draw without (the first-open case, `firstOpen.pw.ts`).
+  // Until then the item is disabled, which is true: the page area is still opening.
+  const [framed, setFramed] = useState<ReadonlySet<DocId>>(new Set());
+  const markFramed = useCallback((docId: DocId): void => {
+    setFramed((current) => (current.has(docId) ? current : new Set(current).add(docId)));
+  }, []);
+  const pageMarks = usePageAnnotations(open !== undefined && framed.has(open.docId) ? client : undefined, open?.docId, open?.version);
   const marksOn = useCallback(
     (page: number): number => (pageMarks.get(page) ?? []).filter((mark) => mark.rect !== null).length,
     [pageMarks],
@@ -3202,8 +3210,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       pageBadges,
       smoothScroll,
       layout,
+      onFirstFrame: markFramed,
     }),
-    [client, layout, movedBehind, pageBadges, pageMenu, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, tileAbove, unit],
+    [client, layout, markFramed, movedBehind, pageBadges, pageMenu, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, tileAbove, unit],
   );
 
   return (
@@ -3340,6 +3349,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           client={client}
           document={open}
           onVersionMoved={opened}
+          onFirstFrame={markFramed}
           onCurrentPage={viewed}
           onPageBox={pageBoxed}
           mode={zoomMode}
@@ -3718,6 +3728,7 @@ type BackgroundLayer = Pick<
   | 'pageBadges'
   | 'smoothScroll'
   | 'layout'
+  | 'onFirstFrame'
 >;
 
 const IGNORE = (): void => undefined;
@@ -3852,6 +3863,7 @@ function PageCanvas({
   goTo,
   onWentTo,
   onPageCount,
+  onFirstFrame,
   loupe,
   current,
   onJump,
@@ -3898,6 +3910,8 @@ function PageCanvas({
   readonly goTo: number | undefined;
   readonly onWentTo: () => void;
   readonly onPageCount: (count: number) => void;
+  /** Told once per mount, with this document, when its page area's first frame is shown (`PageList.onFirstFrame`). */
+  readonly onFirstFrame: (docId: DocId) => void;
   readonly loupe: boolean;
   /** The page the reader is on, so the thumbnail strip can mark it. */
   readonly current: number;
@@ -3993,6 +4007,15 @@ function PageCanvas({
   );
 
   const { ready, failed } = useDocumentView(client, open, moved, askPassword);
+  /**
+   * Whether the page area's first frame has been shown (`PageList.onFirstFrame`): until it has, the thumbnail strip
+   * asks main for nothing, so the first page is the first work main's lane does for this document.
+   */
+  const [firstFrameShown, setFirstFrameShown] = useState(false);
+  const firstFrameDone = useCallback((): void => {
+    setFirstFrameShown(true);
+    onFirstFrame(open.docId);
+  }, [onFirstFrame, open.docId]);
 
   /**
    * Whether the second pane of a split is the one the reader is working in — *focus follows the
@@ -4171,15 +4194,20 @@ function PageCanvas({
   }
 
   if (ready === undefined) {
-    // NOT A SPINNER: the parser is what knows how many pages there are, so
-    // until it opens there is nothing honest to lay out. The failure case above
-    // is the one that carries a marker. The document panel is already there, for the
-    // failure case's reason: five of its six panels do not wait for PDF.js.
+    // NO SLOTS: the parser is what knows how many pages there are, so until it opens there is nothing honest to lay
+    // out. The page area says the document is opening (§10.5's loading state) — until the owner's review of 0.1.8.0
+    // it was an empty dark pane for as long as a 210 MB scan's parse took. The failure case above is the one that
+    // carries a marker. The document panel is already there, for the failure case's reason: five of its six panels do
+    // not wait for PDF.js.
     return (
       <DocumentBody
         settings={settings}
         panel={<DocumentPanel settings={settings} panels={panels} pages={null} />}
-        page={<div className="m-page-pane" />}
+        page={
+          <div className="m-page-pane" data-first-frame="pending">
+            <OpeningState />
+          </div>
+        }
         contextPanel={contextPanel} quickToolbar={quickToolbar}
       />
     );
@@ -4209,6 +4237,7 @@ function PageCanvas({
       version={open.version}
       onCurrentPage={split ? reportLeft : reporting === 'first' ? onCurrentPage : ignorePage}
       onPageBox={onPageBox}
+      onFirstFrame={firstFrameDone}
       mode={mode}
       onZoomStep={onZoomStep}
       onShownZoom={reporting === 'first' ? onShownZoom : ignoreZoom}
@@ -4313,6 +4342,9 @@ function PageCanvas({
             onSwap={onSwap}
             pageMenu={pageMenu}
             size={thumbnailSize}
+            // THE FIRST PAGE FIRST: the strip asks main for nothing until the page area has shown its first frame.
+            // Organize's grid shows no first pane, so it never waits.
+            waitForFirstFrame={!firstFrameShown && organize === undefined}
           />
         }
       />

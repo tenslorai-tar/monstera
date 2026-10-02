@@ -1021,6 +1021,8 @@ export const TEXT_EDIT_PROMOTE = messageKey('surface.text-edit.promote');
 export const TEXT_EDIT_ROTATED = messageKey('surface.text-edit.rotated');
 export const TEXT_EDIT_NOT_WRITABLE = messageKey('surface.text-edit.not-writable');
 export const PAGE_IMAGE_ONLY = messageKey('surface.page.image-only');
+/** What the page area says until its first page is drawn, in place of empty slots. */
+export const PAGE_OPENING = messageKey('surface.page.opening');
 export const FIND_REPLACE_WITH = messageKey('surface.find.replace-with');
 export const FIND_REPLACE_ALL = messageKey('surface.find.replace-all');
 export const FIND_REPLACED = messageKey('surface.find.replaced');
@@ -3069,6 +3071,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // reports a raster and no text, which is also what a full-page diagram is,
   // and a message may not claim more than the reading behind it.
   [PAGE_IMAGE_ONLY]: 'This page is a picture, so there is no text to select or search.',
+  [PAGE_OPENING]: 'Opening the document…',
   [EDIT_PAGE_OBJECT_TITLE]: 'Edit an object on this page',
   // SAYS WHAT A ROW IS BEFORE OFFERING ANY, `FlatFieldsBody`'s rule. Each row
   // is a thing drawn on the page and the numbers are where it sits, measured

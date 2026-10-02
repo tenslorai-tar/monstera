@@ -2998,6 +2998,9 @@ optgroup {
    the Organize grid's first card stood 13 px above its neighbours. `Thumbnails.tsx` marks the canvas until it draws. */
 .m-thumb-canvas[data-drawn='false'] {
   aspect-ratio: 612 / 792;
+  /* A PLACEHOLDER, NOT A BLANK PAGE (the owner's review of 0.1.8.0 saw blank thumbnails on first open): until it draws,
+     a card is the surface's own tone, which reads as loading where a white page reads as an empty one. */
+  background: var(--surface2);
 }
 
 /*
@@ -3122,6 +3125,39 @@ optgroup {
  * the scroller, so the horizontal one starts at the scroller's left edge and the vertical one at its top — an offset
  * measured from the scroller's box is an offset along a ruler — and the loupe is placed against this box.
  */
+/* UNTIL THE FIRST FRAME (`PageList`'s `firstFrame`): the pages are laid out, observed and drawn — so the fit is measured
+   and the starting page is drawn at it — out of sight, and the opening state stands in the list's place. Hidden by
+   visibility rather than removed, because a list that is not laid out cannot be measured or scrolled to its page. */
+.m-page-pane[data-first-frame='pending'] > :not(.m-page-opening),
+.m-page-pane[data-first-frame='pending']::before {
+  visibility: hidden;
+}
+
+.m-page-opening {
+  grid-area: list;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+}
+
+.m-page-opening svg {
+  animation: m-turn 1s linear infinite;
+}
+
+:root[data-motion='reduced'] .m-page-opening svg {
+  animation: none;
+}
+
+@keyframes m-turn {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
 .m-page-pane {
   display: grid;
   grid-template: 'list' minmax(0, 1fr) / minmax(0, 1fr);

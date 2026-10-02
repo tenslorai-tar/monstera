@@ -339,6 +339,21 @@ export async function pageGeometry(
 }
 
 /**
+ * A page's box at scale 1 in CSS pixels, turned by `rotation` as `renderPage` would turn it — exact, not `ceil`ed,
+ * because it is the other half of a FIT, and a fit computed from a rounded box is off by up to a pixel per page.
+ * Parses the one page asked for and draws nothing: what lets the first page be drawn at the fit it will be shown at,
+ * where waiting for a first drawing to learn its size drew it at 100% and then again.
+ */
+export async function pageBoxAtOne(
+  document: PDFDocumentProxy,
+  pageNumber: number,
+  rotation: number | undefined,
+): Promise<{ readonly width: number; readonly height: number }> {
+  const viewport = viewportOf(await document.getPage(pageNumber), 1, rotation);
+  return { width: viewport.width, height: viewport.height };
+}
+
+/**
  * Draws one REGION of page `pageNumber` at `scale` into `canvas`, sized to the region — a tile (`tiles.ts`) or the
  * loupe's window. The region is in the page's device pixels at `scale`, origin top-left, as the canvas counts.
  *
