@@ -1,4 +1,4 @@
-import { type CommandOfKind, blocksOfEdit, replacementsOf } from '@monstera/contract';
+import { type CommandOfKind, blocksOfEdit, replacementsOf } from '@monstera/contract/host';
 
 import type { CaptureResult } from './commandLog.js';
 import type { ByteImage } from './engineSeam.js';

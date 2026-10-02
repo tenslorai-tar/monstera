@@ -4,12 +4,14 @@
  *
  * ## The command names a LIST, and both arities are cased here
  *
- * `replaceTextObject` carries `replacements: [{index, text}]` so that a visual
- * line — several text objects, because PDFium answers one rect per run — is one
- * command, one `FPDFPage_GenerateContent` and one undo step. The single-entry
- * cases below are region replacement; the two-object ones are the line edit's
- * shape, and they exist because an execution that took `replacements[0]` and
- * dropped the rest would pass every single-entry case in this file.
+ * `replaceTextObject` names a list of objects — `objects`, one `text` and the
+ * `starts` that cut it, ADR-0142's wire form, built here by the contract's
+ * `replacementFieldsOf` — so that a visual line, several text objects because
+ * PDFium answers one rect per run, is one command, one
+ * `FPDFPage_GenerateContent` and one undo step. The single-entry cases below are
+ * region replacement; the two-object ones are the line edit's shape, and they
+ * exist because an execution that took the first object and dropped the rest
+ * would pass every single-entry case in this file.
  *
  * ## What this is and what `proof:pdfiumadapter` already is
  *
@@ -687,10 +689,12 @@ async function promotionCases() {
   const target = indicesAfter.find((index) => !indicesBefore.includes(index)) ?? indicesAfter[1];
   const edited = await localPdfiumExecution.apply({
     session: promoted,
-    command: /** @type {never} */ ({
+    // TYPED AS THE COMMAND, never cast to `never`: a cast let this case keep the replaced `replacements` shape past
+    // ADR-0142's change, so it compiled and then failed on the one runner that has the library.
+    command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextObject'>} */ ({
       kind: 'replaceTextObject',
       page: 0,
-      replacements: [{ index: target, text: PROMOTED_EDIT }],
+      ...replacementFieldsOf([{ index: target ?? -1, text: PROMOTED_EDIT }]),
       version: 1,
     }),
     source: undefined,
