@@ -13,6 +13,8 @@ interface FakePage {
   readonly lines: readonly string[];
   readonly notes?: readonly { readonly contents: string; readonly rect: readonly [number, number, number, number] }[];
   readonly squares?: readonly { readonly x: number; readonly y: number; readonly size: number }[];
+  /** Its text layer was cut short by the read's bound, as `document.pageTextLayer` says with `truncated`. */
+  readonly truncated?: boolean;
 }
 
 /** Every page is 200 × 200 points, unturned, its crop box at the origin, so display space is PDF space flipped. */
@@ -82,7 +84,7 @@ function clientFor(
       ok({
         version: moved ? asDocVersion(4) : VERSION,
         lines: (pages[page]?.lines ?? []).map((text, index) => ({ text, box: lineBox(text, index) })),
-        truncated: false,
+        truncated: pages[page]?.truncated ?? false,
         kind: 'text' as const,
       }),
     );
@@ -239,6 +241,24 @@ describe('the list and the count', () => {
     const outcome = await compareSides(client, side(LEFT, [terms]), side(RIGHT, [edited]), new AbortController().signal, () => undefined);
     if (outcome.kind !== 'done') throw new Error(`the comparison ended ${outcome.kind}`);
     expect([outcome.result.rows.length, outcome.result.found, outcome.result.more]).toStrictEqual([1, 1, false]);
+  });
+
+  it('counts each matched pair whose text was CUT SHORT on either side, so the panel can say so (DDDDDDD-4)', async () => {
+    // Two pairs clipped — one on the left, one on the right — and one whole: a count of the pages, not of the sides.
+    const left: FakePage[] = [{ ...intro, truncated: true }, terms, close];
+    const right: FakePage[] = [intro, { ...terms, truncated: true }, close];
+    const { client } = clientFor(new Map([[LEFT, left], [RIGHT, right]]));
+    const outcome = await compareSides(client, side(LEFT, left), side(RIGHT, right), new AbortController().signal, () => undefined);
+    if (outcome.kind !== 'done') throw new Error(`the comparison ended ${outcome.kind}`);
+    expect(outcome.result.clipped).toBe(2);
+    // CONTROL: the same documents read whole count none, so the two above are the flags and not the fixture.
+    const whole = await (async () => {
+      const plain = [intro, terms, close];
+      const { client: other } = clientFor(new Map([[LEFT, plain], [RIGHT, plain]]));
+      return compareSides(other, side(LEFT, plain), side(RIGHT, plain), new AbortController().signal, () => undefined);
+    })();
+    if (whole.kind !== 'done') throw new Error(`the comparison ended ${whole.kind}`);
+    expect(whole.result.clipped).toBe(0);
   });
 });
 
