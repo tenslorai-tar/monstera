@@ -140,7 +140,9 @@ test('EVERY SETTINGS PAGE keeps every row’s description at its reading basis o
     );
     rows += found.length;
     for (const row of found) {
-      if (row.width + 0.5 < Math.min(row.basis, row.row)) narrow.push(`${name} › ${row.label}: ${Math.round(row.width)} px of ${Math.round(row.basis)}`);
+      if (row.width + 0.5 < Math.min(row.basis, row.row)) {
+        narrow.push(`${name} › ${row.label}: ${String(Math.round(row.width))} px of ${String(Math.round(row.basis))}`);
+      }
     }
   }
   expect(rows).toBeGreaterThan(20);
