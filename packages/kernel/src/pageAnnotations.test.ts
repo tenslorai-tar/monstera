@@ -11,7 +11,9 @@ import {
   PDFString,
   StandardFonts,
   decodePDFRawStream,
+  degrees,
 } from '@cantoo/pdf-lib';
+import { crc32, deflateSync } from 'node:zlib';
 import {
   KEEPS_THE_ANNOTATION_WALK,
   type AnnotationDraft,
@@ -22,7 +24,7 @@ import {
   type CommandOfKind,
 } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
-import { ColorSpace, Pixmap } from './mupdfRaw.js';
+import { ColorSpace, Matrix, PDFDocument as PDFDocumentRaw, Pixmap } from './mupdfRaw.js';
 import { describe, expect, it } from 'vitest';
 
 import type { MupdfSession } from './engineSeam.js';
@@ -3162,16 +3164,26 @@ describe('applyPlaceImage', () => {
         appearance instanceof PDFStream
           ? appearance.dict.lookup(PDFName.of('Resources'), PDFDict)
           : undefined;
-      const xobjects = resources?.lookup(PDFName.of('XObject'), PDFDict);
       const images: string[] = [];
-      for (const [, value] of xobjects?.entries() ?? []) {
-        const object = value instanceof PDFRef ? document.context.lookup(value) : value;
-        if (!(object instanceof PDFStream)) continue;
-        if (object.dict.lookup(PDFName.of('Subtype')) !== PDFName.of('Image')) continue;
-        const width = object.dict.lookup(PDFName.of('Width'), PDFNumber).asNumber();
-        const height = object.dict.lookup(PDFName.of('Height'), PDFNumber).asNumber();
-        images.push(`${String(width)}x${String(height)}`);
-      }
+      // THROUGH A FORM AS A RENDERER GOES: the picture is reached through a one-unit form since 2026-10-02
+      // (`pictureThroughForm`), which is what keeps MuPDF from resynthesising the stamp — and MuPDF's resynthesis also
+      // names the image, which is why this reading alone never told the two apart.
+      const visit = (xobjects: PDFDict | undefined): void => {
+        for (const [, value] of xobjects?.entries() ?? []) {
+          const object = value instanceof PDFRef ? document.context.lookup(value) : value;
+          if (!(object instanceof PDFStream)) continue;
+          const kind = object.dict.lookup(PDFName.of('Subtype'));
+          if (kind === PDFName.of('Form')) {
+            visit(object.dict.lookup(PDFName.of('Resources'), PDFDict).lookup(PDFName.of('XObject'), PDFDict));
+            continue;
+          }
+          if (kind !== PDFName.of('Image')) continue;
+          const width = object.dict.lookup(PDFName.of('Width'), PDFNumber).asNumber();
+          const height = object.dict.lookup(PDFName.of('Height'), PDFNumber).asNumber();
+          images.push(`${String(width)}x${String(height)}`);
+        }
+      };
+      visit(resources?.lookup(PDFName.of('XObject'), PDFDict));
       return { subtype: subtype instanceof PDFName ? subtype.asString() : 'none', images };
     });
   }
@@ -3200,6 +3212,100 @@ describe('applyPlaceImage', () => {
       return await mupdfWriter.serialise(session);
     });
     expect(await stampsOn(resized, 0)).toEqual([{ subtype: '/Stamp', images: ['7x3'] }]);
+  });
+
+  describe('UPRIGHT AS THE PAGE IS SEEN, through a resize and a reopen (item 5a, 2026-10-02)', () => {
+    /** A 40 × 20 grey PNG whose LEFT half is black, so which way up it is drawn can be read off the pixels. */
+    function halves(): Uint8Array {
+      const chunk = (type: string, data: Buffer): Buffer => {
+        const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+        const length = Buffer.alloc(4);
+        length.writeUInt32BE(data.length);
+        const crc = Buffer.alloc(4);
+        crc.writeUInt32BE(crc32(body));
+        return Buffer.concat([length, body, crc]);
+      };
+      const header = Buffer.alloc(13);
+      header.writeUInt32BE(40, 0);
+      header.writeUInt32BE(20, 4);
+      header.set([8, 0, 0, 0, 0], 8);
+      const rows = Buffer.alloc(20 * 41, 255);
+      for (let y = 0; y < 20; y += 1) {
+        rows[y * 41] = 0;
+        rows.fill(0, y * 41 + 1, y * 41 + 21);
+      }
+      return new Uint8Array(
+        Buffer.concat([
+          Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+          chunk('IHDR', header),
+          chunk('IDAT', deflateSync(rows)),
+          chunk('IEND', Buffer.alloc(0)),
+        ]),
+      );
+    }
+
+    /** The rendered page's dark pixels' box, against the whole stamp's box: is the dark half the LEFT half as seen? */
+    function darkIsLeftHalf(bytes: Uint8Array): { readonly left: boolean; readonly box: readonly number[] } {
+      const document = PDFDocumentRaw.openDocument(bytes, 'application/pdf');
+      try {
+        const pixmap = document.loadPage(0).toPixmap(Matrix.identity, ColorSpace.DeviceGray, false, true);
+        const width = pixmap.getWidth();
+        const samples = pixmap.getPixels();
+        let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
+        for (let at = 0; at < samples.length; at += 1) {
+          if ((samples[at] ?? 255) >= 128) continue;
+          const x = at % width;
+          const y = Math.floor(at / width);
+          [x0, y0, x1, y1] = [Math.min(x0, x), Math.min(y0, y), Math.max(x1, x), Math.max(y1, y)];
+        }
+        // THE DARK HALF IS THE LEFT HALF when it is as tall as it is wide twice over: a 40 × 20 picture's left half is
+        // square, so a dark region twice as tall as wide means the stamp's box is tall and the dark half is its left.
+        return { left: y1 - y0 > 1.5 * (x1 - x0), box: [x0, y0, x1, y1] };
+      } finally {
+        document.destroy();
+      }
+    }
+
+    async function placedAndResized(turn: number): Promise<readonly Uint8Array[]> {
+      const blank = await PDFDocument.create();
+      blank.addPage([400, 600]).setRotation(degrees(turn));
+      const session = await mupdfWriter.open(await blank.save());
+      try {
+        // A USER-SPACE BOX 100 WIDE AND 200 TALL, which the page shows 200 wide and 100 tall at a quarter turn and
+        // 100 by 200 upright — so the left-half reading means "upright" on both.
+        const rect = turn === 90 ? { x0: 100, y0: 100, x1: 300, y1: 200 } : { x0: 100, y0: 100, x1: 200, y1: 300 };
+        await applyPlaceImage(session, { kind: 'placeImage', pages: [0], rect, bytes: halves(), stamp: STAMP });
+        const placed = await mupdfWriter.serialise(session);
+        // RESIZED TO A SQUARE, the shape the old identity matrix could not survive.
+        await applyPlaceAnnotation(session, {
+          kind: 'placeAnnotation',
+          page: 0,
+          placements: [{ index: 0, rect: { x0: 100, y0: 100, x1: 300, y1: 300 } }],
+          version: asDocVersion(1),
+        });
+        const resized = await mupdfWriter.serialise(session);
+        const reopened = await onSession(resized, (again) => mupdfWriter.serialise(again));
+        return [placed, resized, reopened];
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    }
+
+    it('on a page turned a quarter: upright when placed, after a resize to a square, and after a reopen', async () => {
+      const [placed, resized, reopened] = await placedAndResized(90);
+      expect(darkIsLeftHalf(placed ?? new Uint8Array()).left).toBe(true);
+      // SQUARE NOW: the dark half is the left half of a square, so half as wide as tall.
+      for (const bytes of [resized, reopened]) {
+        const { box } = darkIsLeftHalf(bytes ?? new Uint8Array());
+        const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = box;
+        expect(Math.round((y1 - y0 + 1) / (x1 - x0 + 1))).toBe(2);
+      }
+    });
+
+    it('CONTROL: on an upright page the same reading says upright, so the instrument can tell left from top', async () => {
+      const [placed] = await placedAndResized(0);
+      expect(darkIsLeftHalf(placed ?? new Uint8Array()).left).toBe(true);
+    });
   });
 
   it('MARKS IT AS THIS BUILD S, which the walk is what reads', async () => {

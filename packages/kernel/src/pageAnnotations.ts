@@ -1464,7 +1464,7 @@ export const applyPlaceImage: Apply<'mupdf', 'placeImage'> = (
             `so nothing would be visible.`,
         );
       }
-      return { page: found, box };
+      return { page: found, box, upright: signatureBox(command.rect, transform.rotation) };
     });
 
     // THE DECODE IS ALSO BEFORE THE FIRST WRITE, and it is the failure most
@@ -1472,29 +1472,28 @@ export const applyPlaceImage: Apply<'mupdf', 'placeImage'> = (
     // throws on anything it cannot read, which is what validates the file.
     const embedded = document.addImage(decodedImage(command.bytes));
 
-    for (const { page, box } of loaded) {
+    for (const { page, box, upright } of loaded) {
       const annotation = page.createAnnotation('Stamp');
+      // NOT `/Draft`, MuPDF's default name. Measured 2026-10-02 on a page turned 90°: with MuPDF's name and the image
+      // straight in the resources, the saved stamp is MuPDF's own resynthesis (`/Draft`, `BBox [0 0 1 1]`, its `/I`)
+      // and the picture lies on its side; the author and mark written below are what dirty it. With both halves of
+      // {@link pictureThroughForm}'s rule the written appearance is kept, and with it the matrix below.
+      annotation.setIcon(PICTURE_STAMP_NAME);
       annotation.setRect(box);
 
-      // THE BBOX IS THE RECTANGLE'S OWN SIZE AT THE ORIGIN, so the appearance
-      // maps onto `/Rect` one-to-one and the image is not stretched by the
-      // viewer's fitting rule. The `cm` scales the unit square the `Do`
-      // operator draws into that box.
-      const width = box[2] - box[0];
-      const height = box[3] - box[1];
-
+      // UPRIGHT AS THE PAGE IS SEEN, by the signature's own box (B3a): the BBox is the box's SEEN size and `/Matrix`
+      // counter-rotates it, so the picture is upright on a turned page when placed and through any later move or
+      // resize. The `cm` scales the unit square the `Do` operator draws into that box.
       const resources = document.newDictionary();
-      const xobjects = document.newDictionary();
-      xobjects.put(STAMP_IMAGE_NAME, embedded);
-      resources.put('XObject', xobjects);
+      resources.put('XObject', pictureThroughForm(document, STAMP_IMAGE_NAME, embedded));
 
       annotation.setAppearance(
         null,
         null,
-        [1, 0, 0, 1, 0, 0],
-        [0, 0, width, height],
+        [...upright.matrix],
+        [0, 0, upright.seenWide, upright.seenTall],
         resources,
-        `q ${contentNumber(width)} 0 0 ${contentNumber(height)} 0 0 cm /${STAMP_IMAGE_NAME} Do Q`,
+        `q ${contentNumber(upright.seenWide)} 0 0 ${contentNumber(upright.seenTall)} 0 0 cm /${STAMP_IMAGE_NAME} Do Q`,
       );
 
       // THE MARK, at the one place this command creates an annotation, for
@@ -1985,6 +1984,41 @@ function signaturePlacement(
 const SIGNATURE_STAMP_NAME = 'Signature';
 
 /**
+ * An appearance's `/XObject` resources reaching `picture` through a ONE-UNIT FORM — THE ONE RULE (B3a) that keeps
+ * MuPDF from treating a written picture stamp as one it draws itself.
+ *
+ * `pdf_annot_is_standard_stamp` (MuPDF 1.28.0) answers true for an appearance whose `/XObject` resources hold exactly
+ * one IMAGE, and `pdf_update_appearance` then resynthesises the stamp the moment its annotation object is dirty — as
+ * any move or resize leaves it — drawing the picture into the annotation's own rectangle and dropping the written
+ * counter-rotation. Through a form the single XObject is a form, so the written appearance is the one kept. The form
+ * adds no geometry: the caller's `cm` scales the unit square it draws into. Taken by the signature picture and by
+ * *Place image* alike; a third picture stamp takes it too, or it is resynthesised on its first move.
+ */
+function pictureThroughForm(document: PDFDocument, name: string, picture: PDFObject): PDFObject {
+  const inner = document.newDictionary();
+  const innerImages = document.newDictionary();
+  innerImages.put(name, picture);
+  inner.put('XObject', innerImages);
+  const unit = document.newDictionary();
+  unit.put('Type', document.newName('XObject'));
+  unit.put('Subtype', document.newName('Form'));
+  const box = document.newArray();
+  for (const value of [0, 0, 1, 1]) box.push(document.newReal(value));
+  unit.put('BBox', box);
+  unit.put('Resources', inner);
+  const xobjects = document.newDictionary();
+  xobjects.put(name, document.addStream(`/${name} Do`, unit));
+  return xobjects;
+}
+
+/**
+ * The `/Name` a placed picture's stamp carries: not one of MuPDF's fourteen standard names, so the engine's own rule
+ * (*"Don't resynthesize Stamps with non-standard names if they already have an appearance"*) keeps the written
+ * appearance — {@link pictureThroughForm}'s other half.
+ */
+const PICTURE_STAMP_NAME = 'Image';
+
+/**
  * Writes a placed signature: a `/Stamp` whose appearance is the drawing, upright as the page is seen.
  *
  * `applyPlaceImage`'s shape — the appearance is WRITTEN, because no property means *this signature* — with the box and
@@ -2025,20 +2059,7 @@ function writeSignatureStamp(
     resources.put('Font', fonts);
   }
   if (drawing.picture !== undefined && picture !== undefined) {
-    const inner = document.newDictionary();
-    const innerImages = document.newDictionary();
-    innerImages.put(drawing.picture.name, picture);
-    inner.put('XObject', innerImages);
-    const unit = document.newDictionary();
-    unit.put('Type', document.newName('XObject'));
-    unit.put('Subtype', document.newName('Form'));
-    const box = document.newArray();
-    for (const value of [0, 0, 1, 1]) box.push(document.newReal(value));
-    unit.put('BBox', box);
-    unit.put('Resources', inner);
-    const xobjects = document.newDictionary();
-    xobjects.put(drawing.picture.name, document.addStream(`/${drawing.picture.name} Do`, unit));
-    resources.put('XObject', xobjects);
+    resources.put('XObject', pictureThroughForm(document, drawing.picture.name, picture));
   }
   const annotation = target.page.createAnnotation('Stamp');
   annotation.setIcon(SIGNATURE_STAMP_NAME);
