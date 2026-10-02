@@ -1,4 +1,4 @@
-import { ENGINE_ANSWER_FILE_MAX_BYTES } from '@monstera/contract';
+import { ENGINE_ANSWER_FILE_MAX_BYTES, channels } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -7,6 +7,7 @@ import {
   ENGINE_FORM_FIELDS_MAX,
   ENGINE_LAYERS_MAX,
   ENGINE_PAGE_LINKS_MAX,
+  ENGINE_SIGNATURES_MAX,
   SMALLEST_ANNOTATION_BYTES,
   SMALLEST_DESTINATION_BYTES,
   SMALLEST_LAYER_BYTES,
@@ -110,5 +111,20 @@ describe('the document-wide lists’ hostile-host bounds', () => {
     const at = { destinations: over.destinations.slice(1), truncated: true };
     expect(engineChannels['engine/destinations'].result.safeParse(at).success).toBe(true);
     expect(engineChannels['engine/destinations'].result.safeParse(over).success).toBe(false);
+  });
+});
+
+/**
+ * WHETHER A SAVE KEEPS THE SIGNATURES is asked before every save, and its count was bounded at the signature LIST's
+ * 256: a document with more signatures failed every save (JOURNAL, *No document-size refusals*, table A row 14). The
+ * count crosses as one number, and the renderer's warning takes it the same way.
+ */
+describe('a save of a document with more signatures than a list carries', () => {
+  it('the count of 300 crosses from the host, and the save’s warning carries it', () => {
+    expect(300).toBeGreaterThan(ENGINE_SIGNATURES_MAX);
+    expect(engineChannels['engine/signatures-kept'].result.safeParse({ signatures: 300, kept: false }).success).toBe(true);
+    expect(channels['document.save'].result.safeParse({ kind: 'breaks-signatures', signatures: 300 }).success).toBe(true);
+    // CONTROL: the count is still a count — a fraction or a negative is refused.
+    expect(engineChannels['engine/signatures-kept'].result.safeParse({ signatures: -1, kept: false }).success).toBe(false);
   });
 });

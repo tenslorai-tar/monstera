@@ -1,9 +1,12 @@
 import type { X509Certificate } from 'node:crypto';
 
+import { MAX_SIGNATURE_FIELD } from '@monstera/contract/host';
+
 import type * as mupdf from './mupdfRaw.js';
 import forge from 'node-forge';
 
 import { withDocument } from './mupdfWriter.js';
+import { shownName } from './shownName.js';
 import { signatureValues } from './signatureFields.js';
 import type { MupdfSession } from './engineSeam.js';
 import { checkSigner, readContentInfo } from './signedDataCheck.js';
@@ -150,11 +153,14 @@ function readOne(signature: mupdf.PDFObject, bytes: Uint8Array): ReadSignature |
   // name is what the signer chose to display; the CN is what their certificate
   // says they are, and the second is the fallback rather than the answer.
   const stated = signature.get('Name').asString();
+  // SHOWN WITHIN THE WIRE'S BOUND, each a stranger's string: one `/Reason` past it made the answer's schema refuse
+  // every signature the document carries (JOURNAL, *No document-size refusals*, table A row 14). Shortened with an
+  // ellipsis, the mark of *there is more*; the document's own string is untouched.
   return {
-    signer: stated === '' ? subjectField(x509, 'CN') : stated,
-    organisation: subjectField(x509, 'O'),
-    reason: signature.get('Reason').asString(),
-    location: signature.get('Location').asString(),
+    signer: shownName(stated === '' ? subjectField(x509, 'CN') : stated, MAX_SIGNATURE_FIELD),
+    organisation: shownName(subjectField(x509, 'O'), MAX_SIGNATURE_FIELD),
+    reason: shownName(signature.get('Reason').asString(), MAX_SIGNATURE_FIELD),
+    location: shownName(signature.get('Location').asString(), MAX_SIGNATURE_FIELD),
     notBefore: x509?.validFromDate.toISOString() ?? '',
     notAfter: x509?.validToDate.toISOString() ?? '',
     coversDocument: checked.verified,

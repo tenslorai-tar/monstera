@@ -2205,7 +2205,9 @@ export const channels = {
        * NOTHING WAS WRITTEN: the save would rewrite the file and so break this many signatures — a removal or a change
        * of protection is pending, or the file cannot be appended to. Asked with `breakSignatures: false` only.
        */
-      z.object({ kind: z.literal('breaks-signatures'), signatures: z.number().int().positive().max(MAX_SIGNATURES) }),
+      // A COUNT, for the warning's sentence: bounded at MAX_SIGNATURES, the panel's list, a save of a document with more
+      // signatures than a panel draws failed instead of warning (table A row 14).
+      z.object({ kind: z.literal('breaks-signatures'), signatures: z.number().int().positive() }),
       z.object({
         kind: z.literal('refused'),
         reason: z.enum(['contested', 'replaced', 'target-absent', 'unverifiable']),

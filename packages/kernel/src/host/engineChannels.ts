@@ -2557,7 +2557,9 @@ export const engineChannels = {
   'engine/signatures-kept': channel(
     'Says whether the next save of a session this host holds keeps its signatures.',
     z.object({ session: sessionSchema }).strict(),
-    z.object({ signatures: z.number().int().nonnegative().max(ENGINE_SIGNATURES_MAX), kept: z.boolean() }).strict(),
+    // A COUNT, unbounded but for being an integer: it crosses as one number, and bounding it at the list's
+    // ENGINE_SIGNATURES_MAX made every save of a document with more signatures fail (table A row 14).
+    z.object({ signatures: z.number().int().nonnegative(), kept: z.boolean() }).strict(),
     ['no-such-session'],
   ),
 
