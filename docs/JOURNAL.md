@@ -892,6 +892,57 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-02 — Stage audit of `2639b023..cc6305d3` — findings HHHHHHH-1 to HHHHHHH-6
+
+33 commits, 189 files (`git log` and `git diff --stat` over the range): work/cloud-2's commits after its own audit (`e294bea` to `7dfa342`, and the merge `6e741e8`),
+then work/cloud-3's A to C items. Written in the cloud session because the next commit (C.d, ADR-0139) would take the
+range past one batch. Labels H, the next free after GGGGGGG on every branch.
+
+**Proofs modified, read for loosening.** The deletions outside this session's own items are each a rule that became
+stronger: `schemaBound.test.ts` gains the file ceiling, and a case that a non-strict object is unbounded on the wire;
+`hostRoutes.test.ts` replaces the pinned `COMMAND_CARRYING`, `PAST_THE_FRAME` and `UNMEASURED` lists with every kind
+measured on its writer's route, pinning only PDFium's two text edits (item H of this session's list), with a control
+that the pre-read exemption is load-bearing; `pageAnnotations.test.ts` and `pdfiumHostBody.test.ts` move helpers.
+This session's own deletions follow its design changes: the Choose faces (A.b), the Full page width (A.d), the five
+tool windows mounted in their dialog (A.e). Proofs removed: none.
+
+**HHHHHHH-1** (medium, closed in `cc6305d`): B.d put `var(--m-fit-room)` and `var(--m-slot-h)` in `app.css` with no
+fallback. Both are set inline by `PageList`, and `definedTokens.mjs` reads stylesheets alone, so CI's Tests job was red
+on both legs at `2d54f43`. The project's spelling for an inline property is a fallback beside the `var()`; 0px, since
+before the pane is measured there is nothing to centre in. Not run locally because the item's own rendered cases were
+what was run, which is item 3 answered from the subject of a change rather than from a run.
+
+**HHHHHHH-2** (low, closed in `aa73c45`): `c9d27d7`, meant to change one line, also carried two renames `git mv` had
+staged for C.d, because a commit takes the whole index. At `c9d27d7` two imports name files that are gone, so that
+commit does not build. Not pushed; corrected by a new commit rather than a rewrite.
+
+**HHHHHHH-3** (low, closed in `c9d27d7`): `cbdda52` committed a type error in `sideBySide.pw.ts`, a file of the
+testing project, after typechecking the UI project alone. `npm run typecheck` found it before any push: the rule
+*run the project's command, never the underlying tool*, met by its own failure mode.
+
+**HHHHHHH-4** (low, closed in `c85f6d7`): `ffa67df` moved Export to PowerPoint and left `docs/manual-test-checklist.md`
+stale, a file snapshot `App.test.tsx` builds from the registry. The tests run for that item were picked by name; the
+snapshot is reached by any placement, which `vitest related` on `documentCommands.ts` would have included.
+
+**HHHHHHH-5** (medium, open): C.a, the right pane moving by itself after Compare, is not reproduced. `sideBySide.pw.ts`
+holds the behaviour in Chromium 151 under the shim, with scrollbars drawn, at device scales 1 and 1.5 (and, run once,
+1.25 and 1.75, 1280 and 1536 wide, on the old and new builds), and its recorder has a control that sees a scroll. What
+it cannot show is that it would catch the defect the owner recorded, whose environment it lacks: Electron on Windows,
+the real engine, and `text-page.pdf` against `sample5.pdf`. The local agent's run with those files is the owed step.
+
+**HHHHHHH-6** (low, stated): B.b's closing of an open menu on a press on the empty menu row or the title bar is proven
+by the computed `app-region` (no-drag while a menu is open, drag otherwise) and a click Chromium delivers. Chromium
+honours no drag region, so *the press closes the menu and does not move the window* is the Windows shell's to show.
+
+**Would CI see it (item 3), from the runs.** `b4707df`: Guards green; CI red on the accessibility gate (the rendered
+*Ask AI* case A.b broke, fixed in `228bf90`) and the visual baselines. `2d54f43`: Guards green; CI red on HHHHHHH-1 and
+the visual baselines; its accessibility gate green, which is `228bf90` confirmed. The visual baselines are expected
+red on every screen this range changes and are regenerated on Windows only. **Executed or asserted (item 5):** every
+finding above was read in a diff or a run here, except HHHHHHH-5's Windows reproduction and HHHHHHH-6's shell
+behaviour, which are the findings.
+
+---
+
 ## 2026-10-02 — The GPU process's 9×: canvas memory kept for every page drawn, not the surface's lights, grain or blur
 
 The owner's item 4 (CCCCCCC-7), time-boxed to two hours, measure only. `scripts/research/appMemory.mjs` gains
