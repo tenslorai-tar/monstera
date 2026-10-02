@@ -1684,6 +1684,75 @@ describe('a document-wide list answers in parts', () => {
   }
 });
 
+/**
+ * A PAGE PAST ONE PART of its text blocks or its objects (finding AAAAAAA-1, ADR-0130): the real handlers answer it a
+ * part at a time, and EVERY PART PASSES THE CONTRACT'S OWN RESULT SCHEMA — the check that refused such a page as
+ * `internal` when it crossed whole. The fixtures are the breaking sizes: 600 blocks (a dense table page) and 8,400
+ * objects (a page drawn one glyph per object, measured 2026-10-02).
+ */
+describe('a dense page’s blocks and objects answer in parts the contract accepts', () => {
+  const OPENED = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' } as const;
+  const box = { x0: 10, y0: 10, x1: 40, y1: 20 };
+  const blocks = Array.from({ length: 600 }, (_, at) => ({
+    box,
+    lines: [{ runs: [{ index: at, text: `cell ${String(at)}` }], box }],
+    style: { size: 9, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false },
+  }));
+  const objects = Array.from({ length: 8400 }, (_, at) => ({
+    index: at,
+    kind: 'text' as const,
+    left: 10,
+    bottom: 10,
+    right: 12,
+    top: 20,
+    fill: null,
+  }));
+  const commands = {
+    textBlocks: () => Promise.resolve({ version: asDocVersion(7), blocks, truncated: false, rotated: 0, unaddressable: 2 }),
+    pageObjects: () => Promise.resolve({ version: asDocVersion(7), objects, truncated: false }),
+  } as unknown as DocumentCommands;
+  const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands });
+
+  /** Every part from the first, each checked against the channel's own result schema as it arrives. */
+  async function walk(name: 'document.textBlocks' | 'document.pageObjects', itemsOf: (value: object) => readonly unknown[]) {
+    const items: unknown[] = [];
+    let parts = 0;
+    let from: number | null = 0;
+    while (from !== null) {
+      const at: number = from;
+      const answer: { readonly ok: boolean; readonly value?: object & { readonly next: number | null } } = await handlers[name]({
+        docId: A_DOC,
+        page: 0,
+        from: at,
+      });
+      if (!answer.ok || answer.value === undefined) throw new Error(`${name} refused the part from ${String(at)}`);
+      expect(channels[name].result.safeParse(answer.value).success, `${name} part from ${String(at)}`).toBe(true);
+      items.push(...itemsOf(answer.value));
+      from = answer.value.next;
+      parts += 1;
+    }
+    return { items, parts };
+  }
+
+  it('600 text blocks: two parts, both valid, and together the page', async () => {
+    const { items, parts } = await walk('document.textBlocks', (value) => (value as { blocks: unknown[] }).blocks);
+    expect(parts).toBe(2);
+    expect(items).toStrictEqual(blocks);
+  });
+
+  it('8,400 page objects: seventeen parts, all valid, and together the page', async () => {
+    const { items, parts } = await walk('document.pageObjects', (value) => (value as { objects: unknown[] }).objects);
+    expect(parts).toBe(17);
+    expect(items).toStrictEqual(objects);
+  });
+
+  it('CONTROL: the same page answered WHOLE is refused by the contract — the fixture is at the breaking size', () => {
+    const whole = { version: asDocVersion(7), next: null, truncated: false };
+    expect(channels['document.textBlocks'].result.safeParse({ ...whole, blocks, rotated: 0, unaddressable: 2 }).success).toBe(false);
+    expect(channels['document.pageObjects'].result.safeParse({ ...whole, objects }).success).toBe(false);
+  });
+});
+
 /** The handle this registry would mint for a path, without minting a new one. */
 function asFileHandleFrom(registry: CapabilityRegistry, path: string): FileHandle {
   // `mint` is idempotent per path, so this is the handle the handler would have

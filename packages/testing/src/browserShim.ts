@@ -16,6 +16,8 @@ import {
   ACCESSIBILITY_HUMAN_CHECKS,
   MAX_IMAGE_BYTES,
   MAX_LIBRARY_ENTRIES,
+  PAGE_OBJECTS_PART,
+  TEXT_BLOCKS_PART,
   type ChannelParams,
   type LibraryEntry,
   NATIVE_COMPONENT_IDS,
@@ -735,6 +737,23 @@ export interface BrowserShimOptions {
  */
 function acrossTheWire<T>(value: T): T {
   return structuredClone(value);
+}
+
+/**
+ * One part of a seeded list, cut as `main`'s `listPart` cuts it: at most `size` items from `from`, and where the next
+ * part begins. Keyed by the field the channel names its items with, so each handler spreads it into its own answer.
+ */
+function shimPart<T, K extends string>(
+  whole: readonly T[],
+  from: number,
+  size: number,
+  key: K,
+): { readonly next: number | null } & Record<K, readonly T[]> {
+  const end = from + size;
+  return { next: end < whole.length ? end : null, [key]: whole.slice(from, end) } as { readonly next: number | null } & Record<
+    K,
+    readonly T[]
+  >;
 }
 
 /**
@@ -2052,7 +2071,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       );
     },
 
-    'document.textBlocks': ({ docId }) => {
+    'document.textBlocks': ({ docId, from }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
       // THE ENGINE'S ABSENCE IS THE DEFAULT HERE, and that is deliberate rather
@@ -2069,7 +2088,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
         // placeholders: a shim's fixture is text a case wrote down, upright and
         // addressable by construction. A shim that could report otherwise would
         // be inventing a Form XObject nobody built.
-        ok({ version: asDocVersion(current), blocks, truncated: false, rotated: 0, unaddressable: 0 }),
+        // CUT INTO REAL PARTS, so a case can seed a page past one part and watch the surface read it whole.
+        ok({ version: asDocVersion(current), ...shimPart(blocks, from, TEXT_BLOCKS_PART, 'blocks'), truncated: false, rotated: 0, unaddressable: 0 }),
       );
     },
 
@@ -2086,7 +2106,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(err({ code: 'engine-unavailable' }));
     },
 
-    'document.pageObjects': ({ docId }) => {
+    'document.pageObjects': ({ docId, from }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
       // THE ENGINE'S ABSENCE IS THE DEFAULT, `document.textBlocks`' reason.
@@ -2094,7 +2114,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (objects === undefined || objects === null) {
         return Promise.resolve(err({ code: 'engine-unavailable' }));
       }
-      return Promise.resolve(ok({ version: asDocVersion(current), objects, truncated: false }));
+      return Promise.resolve(
+        ok({ version: asDocVersion(current), ...shimPart(objects, from, PAGE_OBJECTS_PART, 'objects'), truncated: false }),
+      );
     },
 
     'document.duplicatePages': ({ docId }) => {

@@ -164,6 +164,8 @@ export {
   ANNOTATIONS_PART,
   DESTINATIONS_PART,
   FORM_FIELDS_PART,
+  PAGE_OBJECTS_PART,
+  TEXT_BLOCKS_PART,
 } from './channels.js';
 export { acceptAnswer, createClient, wrapHandler, wrapHandlers } from './boundary.js';
 export { BRIDGE_KEY, type MonsteraBridge, PRELOAD_CHANNEL_IDS, type PreloadChannelId } from './bridge.js';

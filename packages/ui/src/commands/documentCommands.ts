@@ -252,6 +252,7 @@ import type { Placement } from '../registries/placement.js';
 import { DOCUMENT_PANEL_OPEN_SETTING, DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import type { ShowToast } from '../toasts.js';
+import { readWholeList } from '../readWholeList.js';
 import { confirmDone, confirmWritten } from './confirmWritten.js';
 import type { ZoomDirection, ZoomMode } from '../zoom.js';
 
@@ -3704,18 +3705,21 @@ export function editPageObjectCommand(deps: DocumentCommandDeps): UiCommand {
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;
 
-      const found = await deps.client['document.pageObjects']({
-        docId: context.docId,
-        page: context.page,
-      });
+      const { docId, page: shown } = context;
+      // EVERY PART, read whole at one version (ADR-0130): a page drawn one glyph per object is thousands of objects,
+      // and the indices the dialog answers must all belong to one walk of the page.
+      const found = await readWholeList(
+        (from) => deps.client['document.pageObjects']({ docId, page: shown, from }),
+        (part) => part.objects,
+      );
       if (!found.ok) {
         reportProblem(deps, found.error);
         return;
       }
 
       const chosen = (await deps.ask(EDIT_PAGE_OBJECT_DIALOG_ID, {
-        objects: found.value.objects.map((object) => ({ ...object })),
-        truncated: found.value.truncated,
+        objects: found.value.items.map((object) => ({ ...object })),
+        truncated: found.value.last.truncated,
       })) as EditPageObjectAnswer | undefined;
       // A DISMISSAL DISPATCHES NOTHING, which is the mutation-dialog gate.
       if (chosen === undefined) return;

@@ -390,7 +390,7 @@ async function main() {
     let reopenedBlocks = null;
     if (opened?.ok === true && opened.value.kind === 'opened') {
       const docId = opened.value.docId;
-      blocks = await observed(() => handlers['document.textBlocks']({ docId, page: 0 }));
+      blocks = await observed(() => handlers['document.textBlocks']({ docId, page: 0, from: 0 }));
       const first = blocks?.ok === true ? blocks.value.blocks[0] : undefined;
       if (first !== undefined) {
         edited = await observed(() =>
@@ -416,7 +416,7 @@ async function main() {
       if (saved?.ok === true) {
         const again = await observed(() => handlers['document.open']({}));
         if (again?.ok === true && again.value.kind === 'opened') {
-          reopenedBlocks = await observed(() => handlers['document.textBlocks']({ docId: again.value.docId, page: 0 }));
+          reopenedBlocks = await observed(() => handlers['document.textBlocks']({ docId: again.value.docId, page: 0, from: 0 }));
         }
       }
     }
@@ -490,7 +490,7 @@ async function main() {
     let inlineText = '';
     if (inlineOpened?.ok === true && inlineOpened.value.kind === 'opened') {
       const docId = inlineOpened.value.docId;
-      const inlineBlocks = await observed(() => handlers['document.textBlocks']({ docId, page: 0 }));
+      const inlineBlocks = await observed(() => handlers['document.textBlocks']({ docId, page: 0, from: 0 }));
       const block = inlineBlocks?.ok === true ? inlineBlocks.value.blocks[0] : undefined;
       if (block !== undefined) {
         inlineEdited = await observed(() =>

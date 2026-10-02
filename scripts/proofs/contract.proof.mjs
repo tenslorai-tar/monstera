@@ -1335,9 +1335,9 @@ export const handlers: ContractHandlers = {
   'document.flatFieldCandidates': () =>
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
   'document.textBlocks': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], truncated: false, rotated: 0, unaddressable: 0 })),
+    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, unaddressable: 0 })),
   'document.pageObjects': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), objects: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
   'document.renderPage': ({ width, height }) =>
     Promise.resolve(
       ok({ version: asDocVersion(1), width, height, png: new Uint8Array([0x89, 0x50]) }),
@@ -1523,9 +1523,9 @@ export const handlers: ContractHandlers = {
   'document.flatFieldCandidates': () =>
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
   'document.textBlocks': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], truncated: false, rotated: 0, unaddressable: 0 })),
+    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, unaddressable: 0 })),
   'document.pageObjects': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), objects: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
   'document.renderPage': ({ width, height }) =>
     Promise.resolve(
       ok({ version: asDocVersion(1), width, height, png: new Uint8Array([0x89, 0x50]) }),
@@ -1786,9 +1786,9 @@ export const shim: ContractClient = {
   'document.flatFieldCandidates': () =>
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
   'document.textBlocks': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], truncated: false, rotated: 0, unaddressable: 0 })),
+    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, unaddressable: 0 })),
   'document.pageObjects': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), objects: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
   'document.renderPage': ({ width, height }) =>
     Promise.resolve(
       ok({ version: asDocVersion(1), width, height, png: new Uint8Array([0x89, 0x50]) }),

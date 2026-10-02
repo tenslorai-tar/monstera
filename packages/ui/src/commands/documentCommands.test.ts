@@ -1534,6 +1534,7 @@ describe('delete pages — the mutation-dialog gate', () => {
                   fill: { red: 0, green: 0, blue: 0, alpha: 255 },
                 },
               ],
+              next: null,
               truncated: false,
             }),
           );
@@ -1554,10 +1555,39 @@ describe('delete pages — the mutation-dialog gate', () => {
       }).run(CONTEXT);
 
       expect(sent, `answer ${String(at)}`).toStrictEqual([
-        { id: 'document.pageObjects', params: { docId: DOC, page: 3 } },
+        { id: 'document.pageObjects', params: { docId: DOC, page: 3, from: 0 } },
         { id: 'document.execute', params: { docId: DOC, command: expected[at] } },
       ]);
     }
+  });
+
+  it('EDIT OBJECT reads EVERY PART of a dense page before it offers the chooser (AAAAAAA-1)', async () => {
+    // TWO PARTS, the second starting at 512: a command that asked once would offer the first part as the page.
+    const object = (index: number) => ({ index, kind: 'text' as const, left: 0, bottom: 0, right: 1, top: 1, fill: null });
+    const asked: number[] = [];
+    let offered: unknown;
+    await editPageObjectCommand({
+      client: createClient(channels, (id, params) => {
+        const from = (params as { from: number }).from;
+        asked.push(from);
+        return Promise.resolve(
+          ok(
+            from === 0
+              ? { version: asDocVersion(4), objects: Array.from({ length: 512 }, (_, at) => object(at)), next: 512, truncated: false }
+              : { version: asDocVersion(4), objects: [object(512), object(513)], next: null, truncated: false },
+          ),
+        );
+      }),
+      stamp,
+      onApplied: () => undefined,
+      ask: (_id, props) => {
+        offered = props;
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+
+    expect(asked).toStrictEqual([0, 512]);
+    expect((offered as { objects: unknown[] }).objects).toHaveLength(514);
   });
 
   it('EDIT OBJECT SENDS NOTHING when the chooser is dismissed, or the engine is absent', async () => {
@@ -1570,7 +1600,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       client: createClient(channels, (id) => {
         dismissed.push(id);
         return Promise.resolve(
-          ok({ version: asDocVersion(1), objects: [], truncated: false }),
+          ok({ version: asDocVersion(1), objects: [], next: null, truncated: false }),
         );
       }),
       stamp,

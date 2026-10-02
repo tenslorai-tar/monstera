@@ -4,6 +4,8 @@ import {
   ANNOTATIONS_PART,
   DESTINATIONS_PART,
   FORM_FIELDS_PART,
+  PAGE_OBJECTS_PART,
+  TEXT_BLOCKS_PART,
   type AiModelListAnswer,
   type AiProviderId,
   CHAT_HISTORY_STORED,
@@ -2375,7 +2377,7 @@ function pageWordBoxesHandler(commands: DocumentCommands): ContractHandlers['doc
  * begins, and the walk's `truncated` on the LAST part only
  * ([ADR-0130](../../../docs/DECISIONS/0130-a-documents-size-never-refuses-an-action.md) Decision 2).
  *
- * The one place a part is cut, for the three channels that answer in parts — a second slicing would be a second
+ * The one place a part is cut, for every channel that answers in parts — a second slicing would be a second
  * opinion about where a part ends (B3a). The whole list is read for each part; the read is the one that already
  * crossed whole, and caching it per version is an economy, not a correctness question. A `from` past the end answers
  * an empty last part rather than a refusal: the list is shorter than the caller thought, which is an answer.
@@ -2527,10 +2529,14 @@ function textBlocksHandler(commands: DocumentCommands): ContractHandlers['docume
   return async ({
     docId,
     page,
+    from,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.textBlocks']>>> => {
     try {
       const { version, blocks, truncated, rotated, unaddressable } = await commands.textBlocks(docId, page);
-      return ok({ version, blocks, truncated, rotated, unaddressable });
+      // A PART AT A TIME (ADR-0130): a dense page is thousands of blocks, and answered whole it was refused by the
+      // contract's bound as `internal` (AAAAAAA-1). The page's two counts ride on every part; they are the page's.
+      const part = listPart(blocks, truncated, from, TEXT_BLOCKS_PART);
+      return ok({ version, blocks: part.items, next: part.next, truncated: part.truncated, rotated, unaddressable });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
@@ -2618,10 +2624,13 @@ function pageObjectsHandler(commands: DocumentCommands): ContractHandlers['docum
   return async ({
     docId,
     page,
+    from,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.pageObjects']>>> => {
     try {
       const { version, objects, truncated } = await commands.pageObjects(docId, page);
-      return ok({ version, objects, truncated });
+      // A PART AT A TIME, `textBlocksHandler`'s reason: a page drawn one glyph per object is thousands of objects.
+      const part = listPart(objects, truncated, from, PAGE_OBJECTS_PART);
+      return ok({ version, objects: part.items, next: part.next, truncated: part.truncated });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });

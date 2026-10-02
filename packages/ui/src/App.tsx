@@ -3065,8 +3065,15 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     return {
       version: open.version,
       read: async (page) => {
-        const answer = await client['document.textBlocks']({ docId, page });
-        if (answer.ok) return answer.value;
+        // EVERY PART, read whole at one version (ADR-0130): a dense page is thousands of blocks.
+        const answer = await readWholeList(
+          (from) => client['document.textBlocks']({ docId, page, from }),
+          (part) => part.blocks,
+        );
+        if (answer.ok) {
+          const { version, items, last } = answer.value;
+          return { version, blocks: items, truncated: last.truncated, rotated: last.rotated, unaddressable: last.unaddressable };
+        }
         if (!refusal.reported) {
           refusal.reported = true;
           reportProblem(deps, answer.error);

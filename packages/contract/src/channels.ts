@@ -805,6 +805,19 @@ export const ACCESSIBILITY_HUMAN_CHECKS = [
 export const MAX_TEXT_OBJECTS = 512;
 
 /**
+ * How many text blocks, and how many page objects, one PART of a page's read carries
+ * ([ADR-0130](../../../docs/DECISIONS/0130-a-documents-size-never-refuses-an-action.md) Decision 2).
+ *
+ * A PART, not the page: a dense table page is thousands of blocks, and a page drawn one glyph per object is thousands
+ * of objects (8,400 measured, JOURNAL 2026-10-02, *No document-size refusals*). Both lists were bounded at
+ * {@link MAX_TEXT_OBJECTS} and answered whole, while `main` forwarded every block and up to 45,800 objects — so such a
+ * page was refused as `internal` by this contract, finding AAAAAAA-1. They now cross a part at a time, as the outline
+ * does ({@link listPartFromSchema}). The figure is the old bound, so one part costs what the whole list used to.
+ */
+export const TEXT_BLOCKS_PART = 512;
+export const PAGE_OBJECTS_PART = 512;
+
+/**
  * A box in PDF user space — left, bottom, right, top — as `document.textBlocks`
  * answers one. `z.number()` is finite in zod 4, so a `NaN` from an engine is a
  * refusal at the boundary rather than an outline drawn nowhere.
@@ -4655,10 +4668,12 @@ export const channels = {
    * surface finds out first, before offering anything.
    */
   'document.textBlocks': channel(
-    'A page’s editable text as blocks, in the editing engine’s own object numbering.',
-    z.object({ docId: docIdSchema, page: z.number().int().nonnegative() }),
+    'One part of a page’s editable text as blocks, in the editing engine’s own object numbering.',
+    z.object({ docId: docIdSchema, page: z.number().int().nonnegative(), from: listPartFromSchema }),
     z.object({
       version: docVersionSchema,
+      /** Where the next part begins, or `null` for the last. {@link listPartNextSchema}. */
+      next: listPartNextSchema,
       blocks: z
         .array(
           z
@@ -4697,9 +4712,9 @@ export const channels = {
             })
             .strict(),
         )
-        .max(MAX_TEXT_OBJECTS)
+        .max(TEXT_BLOCKS_PART)
         .readonly(),
-      /** Whether the bound stopped the list. `document.flatFieldCandidates`' flag. */
+      /** Whether the engine's walk stopped at its bound, on the last part only. `document.annotations`' flag. */
       truncated: z.boolean(),
       /**
        * Characters on this page set at an angle, which are not offered for editing
@@ -4763,10 +4778,12 @@ export const channels = {
    * nothing about.
    */
   'document.pageObjects': channel(
-    'Every object on a page, with its kind, its box and its fill, in the editing engine’s numbering.',
-    z.object({ docId: docIdSchema, page: z.number().int().nonnegative() }),
+    'One part of the objects on a page, with each one’s kind, box and fill, in the editing engine’s numbering.',
+    z.object({ docId: docIdSchema, page: z.number().int().nonnegative(), from: listPartFromSchema }),
     z.object({
       version: docVersionSchema,
+      /** Where the next part begins, or `null` for the last. {@link listPartNextSchema}. */
+      next: listPartNextSchema,
       objects: z
         .array(
           z.object({
@@ -4787,9 +4804,9 @@ export const channels = {
               .nullable(),
           }),
         )
-        .max(MAX_TEXT_OBJECTS)
+        .max(PAGE_OBJECTS_PART)
         .readonly(),
-      /** Whether the bound stopped the list. `document.flatFieldCandidates`' flag. */
+      /** Whether the engine's walk stopped at its bound, on the last part only. `document.annotations`' flag. */
       truncated: z.boolean(),
     }),
     ['document-not-open', 'document-poisoned', 'engine-unavailable'],
