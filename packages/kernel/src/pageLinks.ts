@@ -4,7 +4,9 @@ import type * as mupdf from './mupdfRaw.js';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
+import { ENGINE_LINK_URI_MAX, ENGINE_PAGE_LINKS_MAX } from './host/engineChannels.js';
 import { withDocument } from './mupdfWriter.js';
+import { shownName } from './shownName.js';
 import { frameOf, placedRect, touchesPage } from './pageAnnotations.js';
 import { pageInDocument } from './pageScope.js';
 
@@ -80,12 +82,18 @@ export interface LinkBounds {
  * reason: an out-of-range page is a `RangeError` and never an empty array,
  * because empty is what a consumer reads as *no links on this page*.
  */
-export function readPageLinks(session: MupdfSession, page: number): Promise<readonly PageLink[]> {
+export function readPageLinks(session: MupdfSession, page: number): Promise<ListedPageLinks> {
   return withDocument(session, (document) => {
     const pageCount = document.countPages();
     pageInDocument(page, pageCount);
     return linksOn(document, page);
   });
+}
+
+/** One page's links, and whether the walk stopped at {@link ENGINE_PAGE_LINKS_MAX}. */
+export interface ListedPageLinks {
+  readonly links: readonly PageLink[];
+  readonly truncated: boolean;
 }
 
 /**
@@ -259,19 +267,24 @@ function linkTransform(loaded: mupdf.PDFPage): PageTransform {
   return frame;
 }
 
-function linksOn(document: mupdf.PDFDocument, page: number): readonly PageLink[] {
+function linksOn(document: mupdf.PDFDocument, page: number): ListedPageLinks {
   const loaded = document.loadPage(page);
   const links = loaded.getLinks();
   try {
-    return links.map((link) => {
+    // STOPPED AT THE HOST ANSWER'S BOUND AND SAID, as the outline's walk is (ADR-0130 Decision 3).
+    const listed = links.slice(0, ENGINE_PAGE_LINKS_MAX).map((link): PageLink => {
       const [x0, y0, x1, y1] = link.getBounds();
       const bounds: LinkBounds = { x0, y0, x1, y1 };
-      if (link.isExternal()) return { kind: 'external', uri: link.getURI(), bounds };
+      // SHOWN SHORTENED, never refused: one tracking link past the wire's bound made every link on the page
+      // unreadable (`shownName.ts`). Nothing follows this text — the Links panel shows an external link and offers
+      // nothing to press (invariant 24) — so the ellipsis is the whole of what a shortened URI changes.
+      if (link.isExternal()) return { kind: 'external', uri: shownName(link.getURI(), ENGINE_LINK_URI_MAX), bounds };
       // RESOLVED HERE, because the engine is the only thing that knows how to
       // turn a destination into a page — a named destination, an explicit
       // /XYZ, or a page reference all arrive as one string and all mean a page.
       return { kind: 'internal', page: document.resolveLink(link), bounds };
     });
+    return { links: listed, truncated: links.length > ENGINE_PAGE_LINKS_MAX };
   } finally {
     for (const link of links) link.destroy();
   }

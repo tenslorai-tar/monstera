@@ -81,6 +81,7 @@ import {
   type ListedField,
   type Layer,
   type ListedLayers,
+  type ListedPageLinks,
   type PageLink,
   type PageStructure,
   type PageText,
@@ -1392,12 +1393,13 @@ export type DocumentPageLinksReader = (
   docId: DocId,
   sessions: DocumentSessions,
   page: number,
-) => Promise<readonly PageLink[]>;
+) => Promise<ListedPageLinks>;
 
-/** One page's links, stamped with the version the lane read them at. */
+/** One page's links, stamped with the version the lane read them at, and whether the walk stopped at its bound. */
 export interface DocumentPageLinks {
   readonly version: DocVersion;
   readonly links: readonly PageLink[];
+  readonly truncated: boolean;
 }
 
 /** Reads one page's word boxes (ADR-0137), injected for {@link DocumentPageLinksReader}'s reason. */
@@ -2791,7 +2793,7 @@ export class DocumentCommands {
       return this.#pageLinks(docId, sessions, page);
     });
 
-    return { version, links: value };
+    return { version, links: value.links, truncated: value.truncated };
   }
 
   /**

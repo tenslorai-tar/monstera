@@ -187,7 +187,7 @@ async function measure(bytes) {
       for (const read of PAGE_TEXT_READS) {
         await take(`engine/page-text (${read})`, page, async () => ({ json: await readPageTextJson(session, page, read) }));
       }
-      await take('engine/page-links', page, async () => ({ links: await readPageLinks(session, page) }));
+      await take('engine/page-links', page, () => readPageLinks(session, page));
       await take('engine/page-fills', page, async () => ({ fills: await readPageFills(session, page) }));
       await take('engine/flat-fields', page, () => detectFlatFields(session, page));
     }

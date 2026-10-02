@@ -6,15 +6,17 @@ import {
   ENGINE_DESTINATIONS_MAX,
   ENGINE_FORM_FIELDS_MAX,
   ENGINE_LAYERS_MAX,
+  ENGINE_PAGE_LINKS_MAX,
   SMALLEST_ANNOTATION_BYTES,
   SMALLEST_DESTINATION_BYTES,
   SMALLEST_LAYER_BYTES,
+  SMALLEST_LINK_BYTES,
   SMALLEST_FORM_FIELD_BYTES,
   engineChannels,
 } from './engineChannels.js';
 
 /**
- * The four document-wide lists' count bounds are DERIVED (ADR-0130 Decision 3): the most items an answer within the
+ * The listed answers' count bounds are DERIVED (ADR-0130 Decision 3): the most items an answer within the
  * 8 MiB answer ceiling could carry at the smallest one serialises to, and a comma, rounded down to a hundred. Each
  * smallest item is built here, ACCEPTED by the channel's own schema — or the figure would be the size of something the
  * wire refuses — and measured; each literal is held to its division, so a field added to a schema or a ceiling moved
@@ -68,6 +70,23 @@ describe('the document-wide lists’ hostile-host bounds', () => {
     expect(engineChannels['engine/destinations'].result.safeParse(answer).success).toBe(true);
     expect(JSON.stringify(smallest).length).toBe(SMALLEST_DESTINATION_BYTES);
     expect(ENGINE_DESTINATIONS_MAX).toBe(derived(SMALLEST_DESTINATION_BYTES));
+  });
+
+  it('page links: the smallest link the schema accepts, and the bound it derives', () => {
+    const smallest = { kind: 'internal', page: 0, bounds: { x0: 0, y0: 0, x1: 0, y1: 0 } };
+    expect(engineChannels['engine/page-links'].result.safeParse({ links: [smallest], truncated: false }).success).toBe(
+      true,
+    );
+    expect(JSON.stringify(smallest).length).toBe(SMALLEST_LINK_BYTES);
+    expect(ENGINE_PAGE_LINKS_MAX).toBe(derived(SMALLEST_LINK_BYTES));
+  });
+
+  it('CONTROL: the page links bound is enforced — one past it is refused by the channel', () => {
+    const link = { kind: 'internal', page: 0, bounds: { x0: 0, y0: 0, x1: 0, y1: 0 } };
+    const over = { links: Array.from({ length: ENGINE_PAGE_LINKS_MAX + 1 }, () => link), truncated: true };
+    const channel = engineChannels['engine/page-links'].result;
+    expect(channel.safeParse({ ...over, links: over.links.slice(1) }).success).toBe(true);
+    expect(channel.safeParse(over).success).toBe(false);
   });
 
   it('layers: the smallest layer the schema accepts, and the bound it derives', () => {

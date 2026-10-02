@@ -17,6 +17,7 @@ import {
   MAX_IMAGE_BYTES,
   MAX_LIBRARY_ENTRIES,
   LAYERS_PART,
+  PAGE_LINKS_PART,
   PAGE_OBJECTS_PART,
   TEXT_BLOCKS_PART,
   type ChannelParams,
@@ -2138,14 +2139,16 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(ok({ version: asDocVersion(current), groups: [], truncated: false }));
     },
 
-    'document.pageLinks': ({ docId, page }) => {
+    'document.pageLinks': ({ docId, page, from }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
 
+      // CUT IN PARTS as main cuts them, so a scripted page past one part is answered rather than refused.
       return Promise.resolve(
         ok({
           version: asDocVersion(current),
-          links: pageLinks[page] ?? [],
+          ...shimPart(pageLinks[page] ?? [], from, PAGE_LINKS_PART, 'links'),
+          truncated: false,
         }),
       );
     },

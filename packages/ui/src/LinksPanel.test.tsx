@@ -30,7 +30,7 @@ function clientAnswering(
     return Promise.resolve(
       options.refuse === true
         ? err({ code: 'document-busy' })
-        : ok({ version: asDocVersion(1), links }),
+        : ok({ version: asDocVersion(1), links, next: null, truncated: false }),
     );
   });
   return { client, asked };
@@ -68,7 +68,38 @@ describe('LinksPanel', () => {
     // A panel that sent a literal would pass every case below and describe the
     // wrong page for every reader not on it — the same off-by-one class the
     // rotate command shipped with, arriving in a request rather than an index.
-    expect(asked).toStrictEqual([{ docId: DOC, page: 7 }]);
+    expect(asked).toStrictEqual([{ docId: DOC, page: 7, from: 0 }]);
+  });
+
+  it('reads a page’s links in PARTS whole, and says when the host stopped', async () => {
+    // JOURNAL, *No document-size refusals*, table A row 7: past 4,096 links the page's every link was unreadable.
+    const asked: unknown[] = [];
+    const client = createClient(channels, (id, params) => {
+      if (id !== 'document.pageLinks') throw new Error(`unexpected channel ${id}`);
+      asked.push(params);
+      const from = (params as { from: number }).from;
+      return Promise.resolve(
+        from === 0
+          ? ok({ version: asDocVersion(1), links: [INTERNAL], next: 1, truncated: false })
+          : ok({ version: asDocVersion(1), links: [EXTERNAL], next: null, truncated: true }),
+      );
+    });
+    const { container } = render(
+      <Wrapped>
+        <LinksPanel client={client} docId={DOC} page={2} onJump={vi.fn()} />
+      </Wrapped>,
+    );
+    await settle();
+    await settle();
+
+    expect(container.querySelectorAll('.m-links-list li')).toHaveLength(2);
+    expect(container.textContent).toContain('example.org/thing');
+    expect(container.textContent).toContain('more links than can be read');
+    // CONTROL: the second row came from the second part, asked from where the first said.
+    expect(asked).toStrictEqual([
+      { docId: DOC, page: 2, from: 0 },
+      { docId: DOC, page: 2, from: 1 },
+    ]);
   });
 
   it('OFFERS A JUMP for an internal link, with the zero-based page', async () => {

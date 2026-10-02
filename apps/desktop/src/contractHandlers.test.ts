@@ -1783,6 +1783,37 @@ describe('a CAD export’s layers answer in parts the contract accepts', () => {
   });
 });
 
+describe('a link-heavy page’s links answer in parts the contract accepts', () => {
+  const OPENED = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' } as const;
+  const bounds = { x0: 1, y0: 2, x1: 3, y1: 4 };
+  const links = Array.from({ length: 5000 }, (_, index) => ({ kind: 'external' as const, uri: `https://example.org/${String(index)}`, bounds }));
+  const commands = {
+    pageLinks: () => Promise.resolve({ version: asDocVersion(4), links, truncated: false }),
+  } as unknown as DocumentCommands;
+  const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands });
+
+  it('5,000 links: two parts, each valid, and together every link', async () => {
+    const items: unknown[] = [];
+    let parts = 0;
+    let from: number | null = 0;
+    while (from !== null) {
+      const answer = await handlers['document.pageLinks']({ docId: A_DOC, page: 0, from });
+      if (!answer.ok) throw new Error(`the part from ${String(from)} was refused`);
+      expect(channels['document.pageLinks'].result.safeParse(answer.value).success).toBe(true);
+      items.push(...answer.value.links);
+      from = answer.value.next;
+      parts += 1;
+    }
+    expect(parts).toBe(2);
+    expect(items).toStrictEqual(links);
+  });
+
+  it('CONTROL: the same links answered WHOLE are refused by the contract — the fixture is at the breaking size', () => {
+    const whole = { version: asDocVersion(4), links, next: null, truncated: false };
+    expect(channels['document.pageLinks'].result.safeParse(whole).success).toBe(false);
+  });
+});
+
 /** The handle this registry would mint for a path, without minting a new one. */
 function asFileHandleFrom(registry: CapabilityRegistry, path: string): FileHandle {
   // `mint` is idempotent per path, so this is the handle the handler would have

@@ -335,7 +335,7 @@ export function remoteMupdfPageLinks(
     answered(
       'engine/page-links',
       await client['engine/page-links']({ session: sessions.handleFor(session), page }),
-    ).links;
+    );
 }
 
 /**

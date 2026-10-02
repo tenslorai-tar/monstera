@@ -545,25 +545,19 @@ export const MAX_AFFIX_BYTES = 256 * 1024;
 export const MAX_DICTIONARY_BYTES = 4 * 1024 * 1024;
 
 /**
- * How many links one page may report to the renderer.
+ * How many links one part of a page's links carries.
  *
- * A COUNT, because each link is a declared shape whose own fields are bounded —
- * so the only unbounded axis is how many there are. Any constant satisfies
- * invariant 11; the real constraint is the lower one, and a page of a
- * link-heavy index carries hundreds rather than thousands.
- *
- * **The trigger:** the first page refused by this is the evidence the bound is
- * wrong, and the fix is a measurement of what that page contains.
+ * A PART, not the page's links: as the whole page's bound it refused every link on a page past it (JOURNAL, *No
+ * document-size refusals*, table A row 7). A longer list crosses in several ({@link listPartFromSchema}, ADR-0130).
  */
-export const MAX_PAGE_LINKS = 4096;
+export const PAGE_LINKS_PART = 4096;
 
 /**
  * How long a link's URI may be.
  *
- * The one string in that shape a DOCUMENT controls, so it is the one that needs
- * a length. 2048 is the ceiling browsers apply to a URL in practice, which
- * makes it a bound a real document cannot legitimately cross rather than a
- * number chosen here.
+ * The one string in that shape a DOCUMENT controls, so it is the one that needs a length. A real document crosses it —
+ * a tracking link runs past 2,048 — so the host shows a longer URI shortened with an ellipsis rather than refusing the
+ * page's links, and nothing follows the shown text (invariant 24).
  */
 export const MAX_LINK_URI_LENGTH = 2048;
 
@@ -4995,11 +4989,12 @@ export const channels = {
   ),
 
   'document.pageLinks': channel(
-    'The links on one page, with internal destinations already resolved.',
+    'One part of the links on one page, with internal destinations already resolved.',
     z.object({
       docId: docIdSchema,
       /** Zero-based, as every page index that crosses this contract is. */
       page: z.number().int().nonnegative(),
+      from: listPartFromSchema,
     }),
     z.object({
       version: docVersionSchema,
@@ -5015,7 +5010,7 @@ export const channels = {
             z.object({
               kind: z.literal('external'),
               /**
-               * The URI exactly as the document carries it.
+               * The URI as the document carries it, shortened with an ellipsis past {@link MAX_LINK_URI_LENGTH}.
                *
                * **Nothing on either side follows it.** A renderer shows it and
                * asks; opening it is a separate action a person takes, which is
@@ -5026,8 +5021,12 @@ export const channels = {
             }),
           ]),
         )
-        .max(MAX_PAGE_LINKS)
+        .max(PAGE_LINKS_PART)
         .readonly(),
+      /** Where the next part begins, or `null` for the last. {@link listPartNextSchema}. */
+      next: listPartNextSchema,
+      /** Whether the walk stopped at its bound, on the last part only. `document.annotations`' flag. */
+      truncated: z.boolean(),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

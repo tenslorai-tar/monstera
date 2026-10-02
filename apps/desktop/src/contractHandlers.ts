@@ -5,6 +5,7 @@ import {
   DESTINATIONS_PART,
   FORM_FIELDS_PART,
   LAYERS_PART,
+  PAGE_LINKS_PART,
   PAGE_OBJECTS_PART,
   TEXT_BLOCKS_PART,
   type AiModelListAnswer,
@@ -2345,10 +2346,12 @@ function pageLinksHandler(commands: DocumentCommands): ContractHandlers['documen
   return async ({
     docId,
     page,
+    from,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.pageLinks']>>> => {
     try {
-      const { version, links } = await commands.pageLinks(docId, page);
-      return ok({ version, links });
+      const read = await commands.pageLinks(docId, page);
+      const part = listPart(read.links, read.truncated, from, PAGE_LINKS_PART);
+      return ok({ version: read.version, links: part.items, next: part.next, truncated: part.truncated });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

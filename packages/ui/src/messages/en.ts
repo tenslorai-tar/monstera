@@ -984,6 +984,7 @@ export const LAYERS_TRUNCATED = messageKey('surface.layers.truncated');
 export const LINKS_LABEL = messageKey('surface.links.label');
 export const LINKS_EMPTY = messageKey('surface.links.empty');
 export const LINKS_UNAVAILABLE = messageKey('surface.links.unavailable');
+export const LINKS_TRUNCATED = messageKey('surface.links.truncated');
 export const LINKS_TO_PAGE = messageKey('surface.links.to-page');
 export const LINKS_EXTERNAL = messageKey('surface.links.external');
 export const ANNOTATIONS_LABEL = messageKey('surface.annotations.label');
@@ -2988,6 +2989,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [LINKS_LABEL]: 'Links on this page',
   [LINKS_EMPTY]: 'This page has no links.',
   [LINKS_UNAVAILABLE]: 'The links on this page could not be read.',
+  [LINKS_TRUNCATED]: 'This page carries more links than can be read, so the rest are not listed.',
   [LINKS_TO_PAGE]: 'Go to page {page}',
   [LINKS_EXTERNAL]: 'Opens {uri}',
   [ANNOTATIONS_LABEL]: 'Annotations in this document',

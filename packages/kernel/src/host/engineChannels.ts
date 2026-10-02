@@ -186,14 +186,13 @@ export const ENGINE_PAGE_TEXT_MAX_BYTES = 8 * 1024 * 1024;
  * each one is bounded by its own schema — so the only unbounded axis is how
  * many there are.
  *
- * 4096 for the same reason the byte bound is generous: the lower bound is the
- * real constraint. A page of a link-heavy index carries hundreds; a page with
- * four thousand is one no panel could present to a reader anyway.
- *
- * **The trigger:** the first page refused by this is the evidence the bound is
- * wrong, and the fix is a measurement of what such a page contains.
+ * {@link ENGINE_DESTINATIONS_MAX}' derivation: the answer ceiling over {@link SMALLEST_LINK_BYTES} and a comma,
+ * rounded down to a hundred (ADR-0130 Decision 3). It was 4,096 and the answer was refused whole past it, so the page's
+ * every link was unreadable (JOURNAL, *No document-size refusals*, table A row 7); the renderer reads them in parts.
  */
-export const ENGINE_PAGE_LINKS_MAX = 4096;
+export const ENGINE_PAGE_LINKS_MAX = 123_300;
+/** The fewest bytes one link serialises to on this wire. Measured by `engineChannels.test.ts`. */
+export const SMALLEST_LINK_BYTES = 67;
 
 /**
  * How many filled shapes one page's `engine/page-fills` answer may carry. The host is hostile by
@@ -225,9 +224,9 @@ export const ENGINE_WORD_LINE_MAX = 1024;
  * How long a link's URI may be.
  *
  * The one string in this shape that a document controls, so it is the one that
- * needs a length. 2048 is the ceiling every browser applies to a URL in
- * practice, which makes it a bound a real document cannot legitimately cross
- * rather than a number chosen here.
+ * needs a length. A real document DOES cross it — a tracking link runs past 2,048 —
+ * so the reader shows a longer URI shortened (`shownName.ts`) rather than the
+ * answer being refused, and nothing follows the shown text.
  */
 export const ENGINE_LINK_URI_MAX = 2048;
 
@@ -2396,6 +2395,8 @@ export const engineChannels = {
          * than this is a page no reader can use a panel for.
          */
         links: z.array(engineLinkSchema).max(ENGINE_PAGE_LINKS_MAX),
+        /** Whether the bound stopped the walk. See `engine/destinations`. */
+        truncated: z.boolean(),
       })
       .strict(),
     ['no-such-session'],

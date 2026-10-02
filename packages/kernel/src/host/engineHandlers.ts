@@ -29,7 +29,7 @@ import {
   type RecognisedPage,
 } from '../ocrRecognise.js';
 import type { PageFill } from '../cellFills.js';
-import type { PageLink } from '../pageLinks.js';
+import type { ListedPageLinks } from '../pageLinks.js';
 import type { PageWordBoxes } from '../wordBoxes.js';
 import type { PageTextRead } from '../textStructure.js';
 import type { AccessibilityReport } from '../accessibilityRules.js';
@@ -90,7 +90,7 @@ export type HostPageTextReader = (
 export type HostPageLinksReader = (
   session: MupdfSession,
   page: number,
-) => Promise<readonly PageLink[]>;
+) => Promise<ListedPageLinks>;
 
 /** Reads one page's filled shapes — what a table cell's background is joined from. */
 export type HostPageFillsReader = (session: MupdfSession, page: number) => Promise<readonly PageFill[]>;
@@ -834,7 +834,8 @@ export function createEngineHandlers({
       // NO try/catch, for the reader above's reason: a link read of a document
       // the adapter already parsed either works or is a defect, including a
       // page index outside it.
-      return { ok: true, value: { links: [...(await pageLinks(held.session, page))] } };
+      const listed = await pageLinks(held.session, page);
+      return { ok: true, value: { links: [...listed.links], truncated: listed.truncated } };
     },
 
     'engine/page-fills': async ({ session, page }) => {

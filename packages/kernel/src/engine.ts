@@ -15,6 +15,7 @@ export {
   captureAddLink,
   invertAddLink,
   readPageLinks,
+  type ListedPageLinks,
   type PageLink,
   type LinkBounds,
 } from './pageLinks.js';

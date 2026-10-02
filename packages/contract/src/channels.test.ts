@@ -256,6 +256,8 @@ const handlers: ContractHandlers = {
             bounds: { x0: 5, y0: 6, x1: 7, y1: 8 },
           },
         ],
+        next: null,
+        truncated: false,
       }),
     ),
   // A NESTED ENTRY AND A PAGELESS ONE, for the links fixture's reason: a flat

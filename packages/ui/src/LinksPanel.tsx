@@ -8,9 +8,11 @@ import {
   LINKS_EXTERNAL,
   LINKS_LABEL,
   LINKS_TO_PAGE,
+  LINKS_TRUNCATED,
   LINKS_UNAVAILABLE,
 } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
+import { readWholeList } from './readWholeList.js';
 
 /**
  * The links on the page the reader is looking at.
@@ -55,7 +57,11 @@ export function LinksPanel({
     if (docId === undefined || page === undefined) return;
     let cancelled = false;
 
-    void client['document.pageLinks']({ docId, page }).then(
+    // IN PARTS, read whole (ADR-0130): a link-heavy index page can carry thousands.
+    void readWholeList(
+      (from) => client['document.pageLinks']({ docId, page, from }),
+      (part) => part.links,
+    ).then(
       (answer) => {
         if (cancelled) return;
         // A REFUSAL IS ITS OWN STATE, not an empty list. "This page has no
@@ -64,7 +70,7 @@ export function LinksPanel({
         // reassuring answer for a document that is busy or poisoned.
         setState(
           answer.ok
-            ? { kind: 'links', page, links: answer.value.links }
+            ? { kind: 'links', page, links: answer.value.items, truncated: answer.value.last.truncated }
             : { kind: 'unavailable', page },
         );
       },
@@ -123,6 +129,7 @@ export function LinksPanel({
           ))}
         </ul>
       )}
+      {state.kind === 'links' && state.truncated ? <p className="m-links-empty">{i18n._(LINKS_TRUNCATED)}</p> : null}
     </nav>
   );
 }
@@ -144,4 +151,10 @@ type PanelLink =
 type PanelState =
   | { readonly kind: 'idle' }
   | { readonly kind: 'unavailable'; readonly page: number }
-  | { readonly kind: 'links'; readonly page: number; readonly links: readonly PanelLink[] };
+  | {
+      readonly kind: 'links';
+      readonly page: number;
+      readonly links: readonly PanelLink[];
+      /** Whether the host's walk stopped at its bound, which only a hostile document reaches. */
+      readonly truncated: boolean;
+    };
