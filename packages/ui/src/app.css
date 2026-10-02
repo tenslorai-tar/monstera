@@ -3131,8 +3131,11 @@ optgroup {
   scroll-snap-type: y mandatory;
 }
 
+/* SET INLINE BY `PageList`, so each has a fallback here, as `--m-grid` does: before the pane is measured there is no room
+   to centre in, and a margin of 0 is what that is. Without one the whole declaration is invalid wherever either is
+   absent, and `definedTokens.mjs` reads stylesheets alone, so it reports both. */
 .m-page-list--fit-page .m-page-slot {
-  margin-block: calc((var(--m-fit-room) - var(--m-slot-h)) / 2);
+  margin-block: calc((var(--m-fit-room, 0px) - var(--m-slot-h, 0px)) / 2);
   scroll-snap-align: center;
   scroll-snap-stop: always;
 }
