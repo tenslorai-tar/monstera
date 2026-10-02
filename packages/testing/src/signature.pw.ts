@@ -18,6 +18,33 @@ async function section(page: Page, name: string): Promise<void> {
   await page.getByRole('navigation').getByRole('button', { name, exact: true }).first().click();
 }
 
+const SIGNATURE = 'annotate.signature';
+const SIGN_WITH_CERTIFICATE = 'protect.signature';
+
+/**
+ * What the drawn row carries for a command: its own button, or the *More* that holds it. BY ID, because a folded
+ * command has no button to find by name — a count of zero buttons named *Sign with certificate* is what a FOLDED one
+ * reads as too, so a name could not tell carried from absent.
+ */
+function carried(page: Page, id: string): ReturnType<Page['locator']> {
+  return page.locator(`.m-ribbon__tools :is([data-command="${id}"], [data-holds~="${id}"])`);
+}
+
+/**
+ * Presses a command the way a person does at this width: its button where the row draws one, else the group's *More*
+ * and the command in it. At 1280 Home folds Quick tools since PowerPoint joined Export (C.c), so both routes are real.
+ */
+async function press(page: Page, id: string): Promise<void> {
+  const row = page.locator('.m-ribbon__tools');
+  const button = row.locator(`button[data-command="${id}"]`);
+  if ((await button.count()) > 0) {
+    await button.click();
+    return;
+  }
+  await row.locator(`[data-holds~="${id}"]`).first().click();
+  await page.getByRole('menuitem').and(page.locator(`[data-command="${id}"]`)).click();
+}
+
 test('Home › SIGNATURE: the dialog, Use Signature, a click on the page — and the page sends that look there', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   const bytes = await blockedPages([612, 792], 1);
@@ -37,9 +64,8 @@ test('Home › SIGNATURE: the dialog, Use Signature, a click on the page — and
   await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
 
   // HOME'S QUICK TOOLS carry the plain Signature, and no longer Sign with certificate (the owner, 2 October).
-  const ribbon = page.locator('.m-ribbon__tools');
   await section(page, 'Home');
-  await ribbon.getByRole('button', { name: 'Signature', exact: true }).click();
+  await press(page, SIGNATURE);
 
   const dialog = page.getByRole('dialog', { name: 'Signature' });
   await expect(dialog).toBeVisible();
@@ -85,10 +111,9 @@ test('CONTROL: Home no longer carries Sign with certificate, and Protect › Sig
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
-  const ribbon = page.locator('.m-ribbon__tools');
   await section(page, 'Home');
-  await expect(ribbon.getByRole('button', { name: 'Signature', exact: true })).toBeVisible();
-  await expect(ribbon.getByRole('button', { name: 'Sign with certificate' })).toHaveCount(0);
+  await expect(carried(page, SIGNATURE)).toHaveCount(1);
+  await expect(carried(page, SIGN_WITH_CERTIFICATE)).toHaveCount(0);
   await section(page, 'Protect');
-  await expect(ribbon.getByRole('button', { name: 'Sign with certificate' })).toBeVisible();
+  await expect(carried(page, SIGN_WITH_CERTIFICATE)).toHaveCount(1);
 });

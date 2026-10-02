@@ -194,8 +194,9 @@ for (const scene of [
   {
     name: 'Signature',
     open: async (page: Page): Promise<void> => {
-      await openSection(page, 'Home');
-      await page.locator('.m-ribbon__tools').getByRole('button', { name: 'Signature', exact: true }).click();
+      // THE PALETTE, as Split above: this case is about the dialog's columns, and where Home draws Signature at this
+      // width is the ribbon's fold, which `signature.pw.ts` exercises.
+      await runCommand(page, 'Signature');
       await page.getByRole('dialog', { name: 'Signature' }).getByRole('button', { name: 'Type' }).click();
     },
   },
