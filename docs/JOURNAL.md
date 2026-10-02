@@ -892,6 +892,60 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-02 — Stage audit of `24320797..a8fecfd0` — findings EEEEEEE-1 to EEEEEEE-5
+
+The range is 38 commits and 154 files; written ahead of the merge of work/cloud-2 at `b076b30a`, whose files on top of
+this range would pass one batch. Its cloud-2 commits (up to `eff9bc10`) sit inside cloud-2's own audit of
+`173cc5ae..0401c925`, which arrives with that merge, so this one reads the branch's own eleven: the merge at `eff9bc10`
+and its two FEATURES renames and baselines, two package records, the executable's icon (`3e09a395`), 0.1.7.0's failed
+start (`d072c184`), ADR-0136 and the size target's withdrawal (`840603f2`, `ea8a7eeb`), and row 303's open and switch
+figures (`a8fecfd0`). Labels E: D goes to cloud-2's audit at the merge, which wrote it as B, already final on main.
+
+**Classified (item 1).** Root causes, each with its mechanism in the commit: the closure did not read a resolve, and a
+types-only package entry that only a resolve names was left out; the resolution check read a workspace package's
+manifest and not the entry it names; the packager had no check that the program runs. The size target is the owner's
+decision, withdrawn by ADR-0136 rather than silenced. The merge's interaction fixes (a part-less read in
+`sideBySideCompare`, a missing prop in a test, the two toast rules combined) were each a second branch meeting an
+amended seam. No workaround.
+
+**Proofs modified (the load-bearing column), read.** `packageMsix.proof.mjs` +124/−6: four cases added with three
+controls, the case count raised by name; nothing loosened. `shippedModules.proof.mjs` +63/−15: the exact-closure set
+grew by three files and its control now requires both by-path files out; the built-tree case adds nodemode's entry.
+Both mutated in their commits (the rcedit call removed, the resolve read disabled, an unmounted page accepted) and each
+went red. `PageList.test.tsx` and `sideBySideCompare.test.ts` took the parts contract's `next` and the new
+`differences` prop at the merge — stubs following an amended seam, not a weakened assertion. The rest are cloud-2's.
+
+**EEEEEEE-1** (medium, open): the start check cannot reach the engine hosts. It proves `main` builds its graph and the
+renderer mounts; it opens no document, and on the stage it could not if it did — a host started by a process with no
+package identity is refused the runtime (measured today: *Invalid file descriptor to ICU data*, every document poisoned
+after two 10 s connects). So a host entry that cannot load would pass it. The closure covers that class statically —
+every host entry is in `mustReach` and its imports are walked — and a start of a host needs a package identity, which
+`Invoke-CommandInDesktopPackage` gives an INSTALLED package without elevation (measured today). The packager cannot
+install; whether a post-install check belongs to the owner's install step is the owner's.
+
+**EEEEEEE-2** (low, open), item 2a: `moduleSpecifiers` reads a resolve through `require`, `createRequire(…)` or a name
+bound to it, from the parse. The pattern it replaced matched `createRequire(` anywhere, so it also saw
+`module.createRequire(…).resolve(…)`, which the parse rule does not. No shipped source spells that (`git grep`,
+2026-10-02), so nothing is missed today; the narrowing is stated so it is not mistaken for coverage. `spellingDictionaries.ts`
+resolves a computed name, out of reach of both — a third-party package copied whole.
+
+**EEEEEEE-3** (low, open): `peHardening.mjs` keeps its own PE walk beside `peImage.mjs`, with a lookup that answers
+*absent* where the shared one throws. Named in `peImage.mjs`; joining them changes what the hardening proof reports.
+
+**EEEEEEE-4** (low, asserted): *the first icon group is the one Windows shows for the file* is rcedit's behaviour and
+the shell's convention, not something observed in Explorer here. The owner's install of 0.1.8.0 is where it is seen.
+
+**EEEEEEE-5** (low, stated): `frameTimes.mjs`' open and switch figures carry the instrument's own per-frame readback,
+and in `--build installed` the hand-over includes a PowerShell launcher a double-click does not run — which is why the
+row's open figure is read from the tab, not from the hand-over.
+
+**Would CI have caught it (item 3)?** 0.1.7.0's defect: now yes — `proof:shippedmodules --require-build` on both legs
+asserts nodemode's entry is in the built closure; before, no. The icon and start cases run on the Windows leg under
+`--require-runtime` and were green at `afb5bbd7` (CI and Guards). The packager's own start runs only where a package is
+built, which CI does not do. **Executed, or asserted (item 5):** every figure above was run, except EEEEEEE-4.
+
+---
+
 ## 2026-10-02 — Row 303's open and tab-switch figures, read on the INSTALLED 0.1.8.0 (the stage cannot read them)
 
 The owner's item 3: time to the finished frame on a tab switch between the 5-page document and the 210 MB scan, and
