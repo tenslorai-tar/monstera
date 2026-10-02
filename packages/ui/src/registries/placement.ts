@@ -78,8 +78,10 @@ export type Placement =
       readonly group: MessageKey;
       readonly order: number;
       /**
-       * `'secondary'` draws the tool in its group's *More* at EVERY width; absent is primary, which the
-       * width fold alone decides ([ADR-0098](../../../../docs/DECISIONS/0098-a-ribbon-placement-may-be-secondary-and-the-rail-has-a-foot.md)).
+       * `'secondary'` makes the tool one that folds FIRST: it sits after the group's primaries and is drawn in
+       * the row while there is room, in the group's *More* when there is not; absent is primary
+       * ([ADR-0098](../../../../docs/DECISIONS/0098-a-ribbon-placement-may-be-secondary-and-the-rail-has-a-foot.md)
+       * and its correction of 2026-10-02).
        * The owner's design draws fewer tools per group than are placed there and folds the less-used
        * ones, and which those are is a fact about this command IN THIS GROUP — Highlight is primary
        * in two groups at once — so it is on the placement.
@@ -88,8 +90,9 @@ export type Placement =
       /**
        * Placements in one group naming the same `menu` draw as ONE captioned button that opens them
        * ([ADR-0101](../../../../docs/DECISIONS/0101-a-ribbon-placement-may-name-a-menu.md)) — the owner's
-       * Forms › Data is *Export* and *Import* over six format commands. Never with `'secondary'`, which
-       * is already a menu; the registry refuses the pair.
+       * Forms › Data is *Export* and *Import* over six format commands. Never with `'secondary'`: a menu's
+       * members are one button where the first falls, and a secondary is a button of its own after the
+       * primaries, so a member cannot be both; the registry refuses the pair.
        */
       readonly menu?: MessageKey;
     }

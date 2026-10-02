@@ -10,7 +10,7 @@ Page transitions are effects, such as a fade, that PDF readers play when showing
 
 ## Steps
 
-1. In the rail, choose **Organize**. In the **Adjust** group, choose **More**, then **Page transition…**.
+1. In the rail, choose **Organize**, then **Page transition…** in the **Adjust** group. In a narrower window it is under the group's **More**.
 2. Choose **None**, **Dissolve**, **Fade**, **Box** or **Blinds**.
 3. Set **Duration (seconds)**, from 0 to 60.
 4. Choose **This page** or **All pages**, then **Set transition**.

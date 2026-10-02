@@ -1854,10 +1854,10 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every
   await page.getByRole('button', { name: 'Open PDF…' }).click();
 
   const tools = page.locator('.m-ribbon__tools');
-  // A MORE THE WIDTH FILLED. Since ADR-0098 a group's More also holds its secondary tools at every
-  // width, so the button's presence no longer means *this row did not fit*; its count of folded
-  // primaries does. The control below asserts that at least one More exists here, so a selector that
-  // matched nothing could not pass this case.
+  // A MORE THE WIDTH FILLED, by its count of folded tools. Since ADR-0098's correction every tool in a More is
+  // there for width, secondaries included; the count is read rather than the button's presence so this
+  // selector means the same thing it always has. The narrow window below asserts at least one More exists,
+  // so a selector that matched nothing could not pass this case.
   // `[data-width-folded]` FIRST, because the hidden gauge that measures a More's width carries the class
   // and no count, and matched the negation on its own — measured 2026-09-24, the one "folded" More at
   // 1920 was the gauge.
@@ -1871,11 +1871,13 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every
   await expect(tools.locator('.m-ribbon__more:not(.m-ribbon__more-gauge)')).toHaveCount(0);
   const wideButtons = await tools.locator('.m-tool-button[data-command]').count();
   expect(wideButtons).toBeGreaterThan(0);
-  // AND NOTHING FOLDS IN A SECTION THAT DOES CARRY SECONDARIES. This is the control: without it, a ribbon that folded
-  // at every width would pass every assertion below. Tools › Convert keeps its less-used formats in its More, so a More
-  // is here — holding none of the width's — and the selector that finds folded ones is shown to be able to find a More.
-  await page.locator('.m-ribbon__tab[data-ribbon-section="tools"]').click();
-  await expect(tools.locator('.m-ribbon__more[data-width-folded="0"]').first()).toBeVisible();
+  // AND A SECTION THAT CARRIES A SECONDARY DRAWS IT IN THE ROW while there is room (ADR-0098's correction, the owner's
+  // answer of 2 October): Forms › Fields' *Show fields* is a button at 1920, and Forms draws no More. Tools would not
+  // do here — it is fuller than 1920, so its secondaries are the first to fold, which is the rule working. The narrow
+  // window below is where a More must appear, which is the control that the selector can find one.
+  await page.locator('.m-ribbon__tab[data-ribbon-section="forms"]').click();
+  await expect(tools.locator('.m-tool-button[data-command="view.show-fields"]')).toBeVisible();
+  await expect(tools.locator('.m-ribbon__more:not(.m-ribbon__more-gauge)')).toHaveCount(0);
   await expect(more).toHaveCount(0);
   // EACH SECTION'S WIDEST BUTTON, read at the primary width where (nearly) every button is drawn: the
   // fold below may leave at most that much room unused, or it hid a button that fitted.
@@ -2013,8 +2015,15 @@ test('the ribbon tabs checked at 1280 × 800 are exactly the rail’s sections',
   expect(rail).toStrictEqual([...RIBBON_TABS]);
 });
 
-for (const tab of RIBBON_TABS) {
-  test(`the ${tab.toUpperCase()} ribbon at 1280 × 800 cuts no caption and folds no tool while room remains`, async ({ page }) => {
+// THE TWO WIDTHS THE OWNER NAMED for the fold (2 October): the laptop size, and full width, where a secondary tool is
+// now on the row whenever it fits (ADR-0098's correction).
+const FOLD_SIZES = [
+  { width: 1280, height: 800 },
+  { width: 1920, height: 1080 },
+] as const;
+
+for (const size of FOLD_SIZES) for (const tab of RIBBON_TABS) {
+  test(`the ${tab.toUpperCase()} ribbon at ${String(size.width)} × ${String(size.height)} cuts no caption and folds no tool while room remains`, async ({ page }) => {
     // THE OWNER'S REPORT OF 2 OCTOBER: Forms showed a More with room to spare and "List box" cut to "List bo".
     // Not reproduced on this machine's fonts; these are the properties, held per tab where they can be seen.
     await page.setViewportSize({ width: 1920, height: 1080 });
@@ -2029,7 +2038,7 @@ for (const tab of RIBBON_TABS) {
     const widest = await tools
       .locator('.m-tool-button[data-command]')
       .evaluateAll((buttons) => Math.max(...buttons.map((button) => button.getBoundingClientRect().width)));
-    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.setViewportSize(size);
     await expect.poll(() => ribbonOverflow(tools)).toBeLessThanOrEqual(1);
 
     const seen = await tools.evaluate((element) => {
@@ -2070,8 +2079,8 @@ for (const tab of RIBBON_TABS) {
     const detail = JSON.stringify({ ...seen, widest });
     expect(seen.sees, `the clip check can see a cut caption: ${detail}`).toBe(true);
     expect(seen.cut, detail).toStrictEqual([]);
-    // A TOOL FOLDED FOR WIDTH only where the room left could not have held one more. A More holding only a group's
-    // secondary tools (ADR-0098) is drawn at every width, so it is not a fold for width and is not asked about here.
+    // A TOOL FOLDED only where the room left could not have held one more — secondaries included since ADR-0098's
+    // correction, so a More that holds only a group's secondaries with room to spare is the defect this reports.
     if (seen.widthFolded > 0 || seen.rest) expect(seen.room, detail).toBeLessThan(widest);
   });
 }

@@ -391,7 +391,15 @@ async function openPanel(name: string): Promise<void> {
  */
 async function pressCommand(name: string, section?: string): Promise<void> {
   const tried: string[] = [];
-  const found = (): HTMLElement | null => screen.queryByRole('button', { name });
+  // BY ITS NAME, or by its full title where the row draws a shorter caption: the full title is then the button's
+  // accessible description (`ToolButton`), which is how a person reading the title finds the tool on the row. A row
+  // caption drops a title's closing ellipsis (*Export text…* is drawn *Export text*), so that spelling is tried too.
+  const bare = name.replace(/…$/u, '');
+  const found = (): HTMLElement | null =>
+    screen.queryByRole('button', { name }) ??
+    screen.queryAllByRole('button', { description: name })[0] ??
+    screen.queryByRole('button', { name: bare }) ??
+    null;
 
   let control = found();
   if (control === null) {
@@ -409,8 +417,8 @@ async function pressCommand(name: string, section?: string): Promise<void> {
     }
   }
   if (control === null) {
-    // IN A GROUP'S MORE, which is where a SECONDARY tool always is (ADR-0098) and a narrow window
-    // puts a primary one: each More opened and read, then closed again. ONLY IN THE SECTION NAMED
+    // IN A GROUP'S MORE, which is where a narrow window puts a tool — a secondary first (ADR-0098's
+    // correction): each More opened and read, then closed again. ONLY IN THE SECTION NAMED
     // when a case names one: opening every More in all eight sections is some sixty renders, which
     // is what pushed three cases past their time under the full suite, and naming the section is
     // also the stronger claim — the tool is reachable where the design puts it.

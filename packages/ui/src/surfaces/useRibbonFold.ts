@@ -104,8 +104,8 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
         chrome: Math.max(element.getBoundingClientRect().width - buttonsWidth(element), 0),
         gap: buttonGap(element),
       });
-      // THE ROW'S BUTTONS, from the one function that defines them: primaries only, a named menu as one
-      // (ADR-0098, ADR-0101). A secondary is never drawn in the row, so it has no width to fold by.
+      // THE ROW'S BUTTONS, from the one function that defines them: the primaries, a named menu as one, then the
+      // secondaries (ADR-0098's correction, ADR-0101). A button folded away keeps what it was last measured at.
       for (const unit of ribbonUnits(group.entries)) {
         const width = element.querySelector<HTMLElement>(`[data-command="${CSS.escape(unit.key)}"]`)?.getBoundingClientRect().width ?? 0;
         if (width > 0) naturals.set(unit.key, width);
@@ -185,12 +185,7 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
         if (width === undefined) return null;
         buttons.push(width);
       }
-      widths.push({
-        buttons,
-        chrome: frame.chrome,
-        gap: frame.gap,
-        secondaries: group.entries.filter((entry) => entry.secondary).length,
-      });
+      widths.push({ buttons, chrome: frame.chrome, gap: frame.gap });
     }
     return foldRow(widths, metrics.room, metrics.more, metrics.gap);
   }, [metrics, section]);

@@ -18,7 +18,7 @@ To delete a list of pages:
 
 To delete the pages you selected (or the page you are on):
 
-1. In the Organize page grid, select the pages and press **Delete**, or choose **More** in the **Pages** group, then **Delete page**.
+1. In the Organize page grid, select the pages and press **Delete**, or choose **Delete page** in the **Pages** group (under the group's **More** in a narrower window).
 2. You can also right-click a page and choose **Delete page**.
 
 ![The Delete pages window with Pages to delete filled in](screenshot:delete-pages-1)

@@ -386,7 +386,7 @@ export function Ribbon({ registry, context, settings, showing }: RibbonProps): R
                 <RibbonMore
                   context={context}
                   entries={splitFold(group.entries, fold.folds?.[index]).folded}
-                  widthFolded={splitFold(group.entries, fold.folds?.[index]).folded.filter((entry) => !entry.secondary).length}
+                  widthFolded={splitFold(group.entries, fold.folds?.[index]).folded.length}
                   onChosen={() => {
                     if (mode === 'studio') shut();
                   }}
