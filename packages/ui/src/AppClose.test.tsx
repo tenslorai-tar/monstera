@@ -75,7 +75,7 @@ function client(options: {
           ok(
             options.save === 'write-failed'
               ? { kind: 'write-failed' as const }
-              : { kind: 'saved' as const, version: asDocVersion(2), staleCopies: null },
+              : { kind: 'saved' as const, version: asDocVersion(2), cleared: null },
           ),
         );
       case 'document.close':

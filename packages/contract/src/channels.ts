@@ -1189,14 +1189,17 @@ export const MAX_LAUNCH_DOCUMENTS = 32;
 const MAX_UNDO_COPIES = 100_000;
 
 /**
- * What a redaction's or Sanitize's save leaves that may still hold what was removed (the list of 29 September, item
- * 6): the file's older backups by NAME — the names a save gives them, `report.pdf.bak` and on — and how many undo copies
- * of the document this application keeps. No path crosses (invariant L2).
+ * What a redaction's, Sanitize's or flatten's save deleted, permanently, because it may still have held what was removed
+ * ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)): the backups beside
+ * the file that Monstera made and the undo copies, by count; and BY NAME — the names a save gives backups,
+ * `report.pdf.bak` and on — the files with such a name that Monstera did not make, which are kept. No path crosses
+ * (invariant L2).
  */
-const staleCopiesSchema = z
+const clearedCopiesSchema = z
   .object({
-    backups: z.array(z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH)).max(MAX_BACKUP_COPIES),
+    backups: z.number().int().nonnegative().max(MAX_BACKUP_COPIES),
     undoCopies: z.number().int().nonnegative().max(MAX_UNDO_COPIES),
+    kept: z.array(z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH)).max(MAX_BACKUP_COPIES),
   })
   .strict();
 
@@ -2232,11 +2235,11 @@ export const channels = {
         kind: z.literal('saved'),
         version: docVersionSchema,
         /**
-         * Where the save was a redaction's or Sanitize's — it wrote no backup — what it leaves that may still hold what
-         * was removed: older backups beside the file, by NAME (never a path, invariant L2), and how many undo copies of
-         * the document this application keeps. `null` for every other save. The person is asked whether to delete them.
+         * Where the save was a removal's — it wrote no backup — what it deleted that may still have held what was
+         * removed, and the files with a backup's name it kept because Monstera did not make them (ADR-0139). `null`
+         * for every other save.
          */
-        staleCopies: staleCopiesSchema.nullable(),
+        cleared: clearedCopiesSchema.nullable(),
       }),
       /**
        * NOTHING WAS WRITTEN: the save would rewrite the file and so break this many signatures — a removal or a change
@@ -2250,24 +2253,6 @@ export const channels = {
       z.object({ kind: z.literal('write-failed') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
-  ),
-
-  /**
-   * Deletes, PERMANENTLY, the stale copies a redaction's or Sanitize's save reported and the person confirmed: the
-   * named backups, and every undo copy of the document with the history that needs them (the list of 29 September,
-   * item 6). Main recomputes the file's backup names and deletes only those among `backups` — a name that is not one
-   * of this file's backups is never deleted — and answers how many of each went.
-   */
-  'document.deleteStaleCopies': channel(
-    'Deletes the older backups and undo copies a removal’s save left, as the person confirmed.',
-    z.object({ docId: docIdSchema, backups: staleCopiesSchema.shape.backups }).strict(),
-    z
-      .object({
-        backups: z.number().int().nonnegative().max(MAX_BACKUP_COPIES),
-        undoCopies: z.number().int().nonnegative().max(MAX_UNDO_COPIES),
-      })
-      .strict(),
-    ['document-not-open', 'document-busy'],
   ),
 
   /**

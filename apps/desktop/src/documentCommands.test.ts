@@ -1,4 +1,5 @@
 import { existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 
 import { strFromU8, unzipSync } from 'fflate';
 import { tmpdir } from 'node:os';
@@ -53,6 +54,7 @@ import {
   parsePageStructure,
   parsePageTables,
   readDocumentRange,
+  readFileIdentity,
   type RecognisedTable,
   type RegisteredWriter,
   SignatureAppearanceRefusedError,
@@ -117,6 +119,8 @@ import { NO_RECENT_PICTURES } from './recentPictures.js';
 import { type HeldPicture, NO_HELD_PICTURE, createHeldPicture } from './heldPicture.js';
 import { createPersonalLibrary, memoryPictureFiles, unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT } from './engagement.js';
+import { type BackupProvenance, createBackupProvenance } from './backupLedger.js';
+import { createEphemeralSettings } from './settingsFile.js';
 import {
   DocumentCommands,
   NetworkKeyMissing,
@@ -294,7 +298,23 @@ const noSaving: SaveSource = {
   },
   flush: () => Promise.reject(new Error('this case does not save')),
   stage: () => Promise.reject(new Error('this case does not save')),
+  provenance: {
+    made: () => Promise.reject(new Error('this case does not save')),
+    deleteIfMade: () => Promise.reject(new Error('this case does not save')),
+  },
 };
+
+/**
+ * Which backups Monstera made (ADR-0139), held for one case: the product's provenance over a record in memory, the
+ * kernel's real identity reader, and a permanent delete — so a case that saves to disk records and deletes as the
+ * product does, and one that saves to a fake surface records nothing, since its paths have no identity.
+ */
+function ledger(): BackupProvenance {
+  return createBackupProvenance(createEphemeralSettings(), {
+    identity: readFileIdentity,
+    remove: (path) => rm(path, { force: true }),
+  });
+}
 
 /**
  * A fake's `flush`, staged as bytes in hand — what `stagedBytes` does for a session that is bytes in `main`. The
@@ -757,7 +777,7 @@ const INERT = {
   signatures: () => Promise.reject(new Error('this case does not read signatures')),
   // EVERY SAVE ASKS, since item 6 — the answer also says whether the save is a removal's — so the inert answer is the
   // ordinary one: an unsigned document, and not a removal.
-  signaturesKept: () => Promise.resolve({ signatures: 0, kept: true, removal: false }),
+  signaturesKept: () => Promise.resolve({ signatures: 0, kept: true }),
   restore: noRestore,
   annotations: noAnnotations,
   annotationCopy: noAnnotationCopy,
@@ -1366,11 +1386,18 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     async function aSavableDocument(
       /** What the writer says about the next save and the signatures — the real decision unless a case says otherwise. */
       signaturesKept: DocumentCommandsParts['signaturesKept'] = signaturesKeptBySave,
+      /**
+       * `own-session` for a case that RUNS commands: a session of its own, opened from the fixture's bytes, so the
+       * shared session every other case reads is never changed. `shared` for a case that only saves.
+       */
+      sessionOf: 'shared' | 'own-session' = 'shared',
     ): Promise<{
       commands: DocumentCommands;
       saved: DocId;
       path: string;
       before: Uint8Array;
+      /** Rebuilds the document's session from its own bytes and holds the new one — the supervisor's restore, adopt and restart. */
+      rebuild: () => Promise<void>;
     }> {
       savables += 1;
       const path = join(directory, `save-${String(savables)}.pdf`);
@@ -1383,11 +1410,17 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       if (outcome.kind !== 'opened') throw new Error(`fixture did not open: ${outcome.kind}`);
 
       const held = new EngineSessions();
-      held.hold(outcome.docId, { mupdf: session });
+      let current = sessionOf === 'shared' ? session : await mupdfWriter.open(before);
+      held.hold(outcome.docId, { mupdf: current });
 
       return {
         path,
         before,
+        rebuild: async () => {
+          if (sessionOf === 'shared') throw new Error('a case that rebuilds runs commands, so it holds its own session');
+          current = await mupdfWriter.open(await mupdfWriter.serialise(current));
+          held.hold(outcome.docId, { mupdf: current });
+        },
         saved: outcome.docId,
         commands: new DocumentCommands({
           ...LOCAL_READS,
@@ -1396,6 +1429,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           bus: bus(),
           engine: held,
           save: {
+            provenance: ledger(),
             // THE REAL SURFACE AND THE REAL CHECK. Every other case in this
             // file is about a decision; this one is the first caller, and a
             // seam whose every test injects its surfaces is unproven against a
@@ -1426,7 +1460,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       const asked: unknown[] = [];
       const { commands, saved, path, before } = await aSavableDocument((session) => {
         asked.push(session);
-        return Promise.resolve({ signatures: 2, kept: false, removal: false });
+        return Promise.resolve({ signatures: 2, kept: false });
       });
 
       expect(await commands.save(saved, { breakSignatures: false })).toStrictEqual({ kind: 'breaks-signatures', signatures: 2 });
@@ -1441,43 +1475,76 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       expect(Buffer.from(readFileSync(path)).equals(Buffer.from(before))).toBe(false);
     });
 
-    /**
-     * ITEM 6 OF THE 29 SEPTEMBER LIST: a redaction's or Sanitize's save keeps no backup, because the file it replaces
-     * holds what was removed. The writer's answer is stubbed to say *removal*, and everything else is real — the service,
-     * the save pipeline and the disk — so what is asserted is what lands beside the document.
-     */
-    it('a REMOVAL’S save leaves no file beside the document holding the bytes it replaced — CONTROL: an ordinary one does', async () => {
-      const holdsReplaced = (path: string, before: Uint8Array): string[] =>
-        readdirSync(directory)
-          .filter((name) => name.startsWith(basename(path)) && name !== basename(path))
-          .filter((name) => Buffer.from(readFileSync(join(directory, name))).equals(Buffer.from(before)));
+    /** The files beside `path` whose bytes are `before`: a copy of the document a save replaced. */
+    const holdsReplaced = (path: string, before: Uint8Array): string[] =>
+      readdirSync(directory)
+        .filter((name) => name.startsWith(basename(path)) && name !== basename(path))
+        .filter((name) => Buffer.from(readFileSync(join(directory, name))).equals(Buffer.from(before)));
 
-      const removal = await aSavableDocument(() => Promise.resolve({ signatures: 0, kept: true, removal: true }));
+    const sanitize: Command = { kind: 'sanitizeDocument', parts: ['javascript'] };
+
+    /**
+     * THE OWNER'S REVIEW OF 0.1.9.0 (ADR-0139): a redaction's save left a `.bak` of the unredacted file. The save asked
+     * the engine session, and a restore, an adopt or a host restart REBUILDS the session without its mark — modelled
+     * here exactly as the supervisor does it, a new session opened from the old one's bytes and held in its place.
+     * Everything is real: the service, the bus, the engine, the save pipeline and the disk.
+     */
+    it('a REMOVAL keeps no backup EVEN AFTER the session is rebuilt — CONTROL: an ordinary edit backs the file up', async () => {
+      const removal = await aSavableDocument(signaturesKeptBySave, 'own-session');
+      await removal.commands.execute(removal.saved, sanitize);
+      await removal.rebuild();
       const removed = await removal.commands.save(removal.saved, { breakSignatures: false });
-      expect(removed).toMatchObject({ kind: 'saved', staleCopies: { backups: [], undoCopies: 0 } });
+      expect(removed).toMatchObject({ kind: 'saved', backedUp: false, cleared: { backups: 0, kept: [] } });
       expect(holdsReplaced(removal.path, removal.before)).toStrictEqual([]);
 
-      const ordinary = await aSavableDocument(() => Promise.resolve({ signatures: 0, kept: true, removal: false }));
+      const ordinary = await aSavableDocument(signaturesKeptBySave, 'own-session');
+      await ordinary.commands.execute(ordinary.saved, rotateOnce);
+      await ordinary.rebuild();
       const kept = await ordinary.commands.save(ordinary.saved, { breakSignatures: false });
-      expect(kept).toMatchObject({ kind: 'saved', staleCopies: null });
+      expect(kept).toMatchObject({ kind: 'saved', backedUp: true, cleared: null });
       expect(holdsReplaced(ordinary.path, ordinary.before)).toStrictEqual([`${basename(ordinary.path)}.bak`]);
     });
 
-    it('names an OLDER backup a removal’s save left, and deletes it — and only this file’s backups — when asked', async () => {
-      const { commands, saved, path } = await aSavableDocument(() => Promise.resolve({ signatures: 0, kept: true, removal: true }));
-      const older = `${path}.bak`;
-      writeFileSync(older, 'an earlier save, still holding what was removed');
-      const stranger = join(directory, 'someone-else.pdf');
-      writeFileSync(stranger, 'not this document’s');
+    it('a removal’s save DELETES the backup Monstera made, and the undo copies, unasked; the next save backs up again', async () => {
+      const { commands, saved, path, before } = await aSavableDocument(signaturesKeptBySave, 'own-session');
+      // AN ORDINARY SAVE FIRST, which makes the `.bak` holding the original — the copy a later redaction must not leave.
+      await commands.execute(saved, rotateOnce);
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ backedUp: true });
+      expect(holdsReplaced(path, before)).toStrictEqual([`${basename(path)}.bak`]);
 
+      await commands.execute(saved, sanitize);
       const outcome = await commands.save(saved, { breakSignatures: false });
-      expect(outcome).toMatchObject({ kind: 'saved', staleCopies: { backups: [basename(older)] } });
+      expect(outcome).toMatchObject({ kind: 'saved', cleared: { backups: 1, undoCopies: 1, kept: [] } });
+      expect(existsSync(`${path}.bak`)).toBe(false);
 
-      // THE PAGE CANNOT AIM THIS ELSEWHERE: a name that is not one of this file's backup names is never deleted.
-      const deleted = await commands.deleteStaleCopies(saved, [basename(older), basename(stranger)]);
-      expect(deleted.backups).toBe(1);
-      expect(existsSync(older)).toBe(false);
-      expect(existsSync(stranger)).toBe(true);
+      // THE FACT CLEARS WITH THE SAVE: the file holds the removal now, so an ordinary save after it backs up again.
+      await commands.execute(saved, rotateOnce);
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ backedUp: true, cleared: null });
+    });
+
+    it('NEVER deletes a file Monstera did not make, or one changed since — it keeps and names them; nor any other file', async () => {
+      // NOT MONSTERA'S: written by hand under the backup's own name.
+      const foreign = await aSavableDocument(signaturesKeptBySave, 'own-session');
+      const handMade = `${foreign.path}.bak`;
+      writeFileSync(handMade, 'a backup somebody else made');
+      const stranger = join(directory, `${basename(foreign.path)}-notes.txt`);
+      writeFileSync(stranger, 'not a backup at all');
+      await foreign.commands.execute(foreign.saved, sanitize);
+      expect(await foreign.commands.save(foreign.saved, { breakSignatures: false })).toMatchObject({
+        cleared: { backups: 0, kept: [basename(handMade)] },
+      });
+      expect([existsSync(handMade), existsSync(stranger)]).toStrictEqual([true, true]);
+
+      // MONSTERA'S, AND CHANGED SINCE: same file, another size — the ledger's identity no longer matches.
+      const changed = await aSavableDocument(signaturesKeptBySave, 'own-session');
+      await changed.commands.execute(changed.saved, rotateOnce);
+      await changed.commands.save(changed.saved, { breakSignatures: false });
+      writeFileSync(`${changed.path}.bak`, 'edited after Monstera made it');
+      await changed.commands.execute(changed.saved, sanitize);
+      expect(await changed.commands.save(changed.saved, { breakSignatures: false })).toMatchObject({
+        cleared: { backups: 0, kept: [`${basename(changed.path)}.bak`] },
+      });
+      expect(existsSync(`${changed.path}.bak`)).toBe(true);
     });
 
     it('CONTROL: a save that KEEPS them is written without being held — the real decision, on an unsigned document', async () => {
@@ -2403,6 +2470,7 @@ describe('the form data export carries the format all the way to the file', () =
       // THE REAL WRITE PATH, for the save cases' reason: what this claims is
       // that a file lands, and an injected surface cannot say so.
       save: {
+        provenance: ledger(),
         deps: {
           checkWriteTarget: (id) => formService.checkWriteTarget(id),
           surface: nodeFileSurface,
@@ -2522,6 +2590,7 @@ describe('annotations exported to a file and imported from it, through the lane 
       bus: bus(),
       engine: held,
       save: {
+        provenance: ledger(),
         deps: {
           checkWriteTarget: (id) => exchangeService.checkWriteTarget(id),
           surface: nodeFileSurface,
@@ -2740,6 +2809,7 @@ describe('exportPageImages — one image per page, in a folder, all or nothing',
       // THE REAL WRITE PATH, for the form export's reason: what this claims is
       // that files land, and an injected surface cannot say so.
       save: {
+        provenance: ledger(),
         deps: {
           checkWriteTarget: (id) => service.checkWriteTarget(id),
           surface: nodeFileSurface,
@@ -2923,6 +2993,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         return await LOCAL_READS.word(id, sessions, mode);
       },
       save: {
+        provenance: ledger(),
         deps: {
           checkWriteTarget: (id) => textService.checkWriteTarget(id),
           surface: options.surface ?? nodeFileSurface,
@@ -3528,6 +3599,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       bus: bus(),
       engine: held,
       save: {
+        provenance: ledger(),
         deps: {
           checkWriteTarget: (id) => service.checkWriteTarget(id),
           surface: nodeFileSurface,
@@ -4871,6 +4943,7 @@ describe('DocumentCommands — a page edited in another application (ADR-0062)',
         flushes.push(docId);
         return sessionFlush(docId, sessions);
       }),
+      provenance: noSaving.provenance,
     };
   }
 
@@ -5169,6 +5242,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
       bus: bus(),
       engine: held,
       save: {
+        provenance: ledger(),
         deps: {
           checkWriteTarget: (id) => documents.checkWriteTarget(id),
           surface: nodeFileSurface,
@@ -5368,6 +5442,7 @@ describe('DocumentCommands.openFromUrl', () => {
       },
       flush: () => Promise.reject(new Error('a fetch flushes no document')),
       stage: () => Promise.reject(new Error('a fetch flushes no document')),
+      provenance: noSaving.provenance,
     };
   }
 
@@ -5518,6 +5593,7 @@ describe('DocumentCommands.convertOfficeFile (ADR-0120)', () => {
         bus: bus(),
         engine: engine(),
         save: {
+          provenance: ledger(),
           deps: {
             checkWriteTarget: () => Promise.reject(new Error('an import writes a copy, never a save')),
             surface: nodeFileSurface,

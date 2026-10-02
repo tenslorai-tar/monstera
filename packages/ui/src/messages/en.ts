@@ -76,11 +76,10 @@ export const WARN_SIGNATURE_BREAK_DESCRIPTION = messageKey('setting.saving-warn-
 export const SIGNATURE_BREAK_TITLE = messageKey('dialog.signature-break.title');
 export const SIGNATURE_BREAK_EXPLAINS = messageKey('dialog.signature-break.explains');
 export const SIGNATURE_BREAK_APPLY = messageKey('dialog.signature-break.apply');
-export const STALE_COPIES_TITLE = messageKey('dialog.stale-copies.title');
-export const STALE_COPIES_EXPLAINS = messageKey('dialog.stale-copies.explains');
-export const STALE_COPIES_UNDO = messageKey('dialog.stale-copies.undo');
-export const STALE_COPIES_DELETE = messageKey('dialog.stale-copies.delete');
-export const TOAST_STALE_COPIES_DELETED = messageKey('toast.stale-copies-deleted');
+export const KEPT_BACKUPS_TITLE = messageKey('dialog.kept-backups.title');
+export const KEPT_BACKUPS_EXPLAINS = messageKey('dialog.kept-backups.explains');
+export const TOAST_SAVED_CLEARED = messageKey('toast.saved-cleared');
+export const TOAST_SAVED_CLEARED_BACKUPS = messageKey('toast.saved-cleared-backups');
 export const BACKUP_COPIES_DESCRIPTION = messageKey('setting.saving-backup-copies.description');
 /** `saving.backup-copies`' members, each its own exported key as the other option sets are. */
 export const BACKUP_COPIES_ONE = messageKey('setting.saving-backup-copies.one');
@@ -2418,13 +2417,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGNATURE_BREAK_EXPLAINS]:
     '{count, plural, one {This document is digitally signed.} other {This document carries # digital signatures.}} Saving it now rewrites the whole file, so {count, plural, one {the signature} other {the signatures}} will no longer verify. Close this window to keep {count, plural, one {it} other {them}}: your changes stay open and unsaved.',
   [SIGNATURE_BREAK_APPLY]: 'Save anyway',
-  [STALE_COPIES_TITLE]: 'Older copies may still hold what you removed',
-  [STALE_COPIES_EXPLAINS]:
-    'This save kept no backup, because a backup would keep what you redacted or sanitized. These older copies were made before, and may still hold it:',
-  [STALE_COPIES_UNDO]:
-    '{count, plural, one {# undo copy of this document that Monstera keeps. Undo will not go back past this point.} other {# undo copies of this document that Monstera keeps. Undo will not go back past this point.}}',
-  [STALE_COPIES_DELETE]: 'Delete permanently',
-  [TOAST_STALE_COPIES_DELETED]: 'Older copies deleted',
+  [KEPT_BACKUPS_TITLE]: 'Some older copies were kept',
+  [KEPT_BACKUPS_EXPLAINS]:
+    'Monstera permanently deleted the older copies it made, because they held what you removed. {count, plural, one {This file beside the document is named like a backup, but Monstera did not make it, so it was kept. It may still hold what you removed. Delete it yourself if you do not need it:} other {These files beside the document are named like backups, but Monstera did not make them, so they were kept. They may still hold what you removed. Delete them yourself if you do not need them:}}',
+  [TOAST_SAVED_CLEARED]: 'Saved. Older copies that held what you removed were deleted permanently, and undo cannot go back past this save.',
+  [TOAST_SAVED_CLEARED_BACKUPS]: 'Saved. Older copies that held what you removed were deleted permanently.',
   [BACKUP_COPIES_DESCRIPTION]:
     'Each save keeps the version it replaces beside the file, as report.pdf.bak, then .bak2 and so on, newest first. Choosing fewer removes the extra copies at the next save. At least one is kept, except by a save after a redaction or Sanitize, which keeps none.',
   [BACKUP_COPIES_OPTION_TITLES.one]: '1',

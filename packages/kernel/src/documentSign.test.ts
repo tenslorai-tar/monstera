@@ -386,10 +386,11 @@ describe('readSignatures', () => {
         await mupdfWriter.close(session);
       }
     };
-    expect(await asked(unsigned, false)).toStrictEqual({ signatures: 0, kept: true, removal: false, appended: false });
-    expect(await asked(signed, false)).toStrictEqual({ signatures: 1, kept: true, removal: false, appended: true });
-    // THE SAVE THE WARNING IS FOR: a signed document whose next save rewrites it — and, since item 6, keeps no backup.
-    expect(await asked(signed, true)).toStrictEqual({ signatures: 1, kept: false, removal: true, appended: false });
+    expect(await asked(unsigned, false)).toStrictEqual({ signatures: 0, kept: true, appended: false });
+    expect(await asked(signed, false)).toStrictEqual({ signatures: 1, kept: true, appended: true });
+    // THE SAVE THE WARNING IS FOR: a signed document whose next save rewrites it. Whether it keeps a backup is the
+    // document's question in main since ADR-0139, so the engine no longer answers it.
+    expect(await asked(signed, true)).toStrictEqual({ signatures: 1, kept: false, appended: false });
   }, 60_000);
 
   it('CONTROL: an UNSIGNED document is still written anew — the rule is keyed on a signature, not on every save', async () => {

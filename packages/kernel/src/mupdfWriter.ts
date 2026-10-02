@@ -402,24 +402,24 @@ function saveTermsOf(session: MupdfSession): {
  * exactly where there are any and {@link saveTermsOf} chose not to append — a removal, a change of protection, or a
  * document MuPDF repaired.
  *
- * **And whether it is a REMOVAL save** — a redaction or Sanitize has been applied to this session — from the same
- * decision: such a save writes no backup, because a `.bak` of the previous file would keep what was just removed (the
- * list of 29 September, item 6).
+ * **NOT whether the save keeps a backup.** That answered from {@link removals} until 2026-10-02, a mark on THIS
+ * session, and a restore, an adopt or a host restart builds a new session without it — so a redaction's save backed
+ * up the unredacted file (the owner's review of 0.1.9.0). Which save keeps no backup is the document's fact in main
+ * ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)); the mark here
+ * answers only whether this session's serialise collects.
  */
 export function signaturesKeptBySave(session: MupdfSession): Promise<NextSave> {
   return promised(() => {
-    const { signatures, appends, purpose } = saveTermsOf(session);
-    return { signatures, kept: signatures === 0 || appends, removal: purpose === 'removal' };
+    const { signatures, appends } = saveTermsOf(session);
+    return { signatures, kept: signatures === 0 || appends };
   });
 }
 
-/** What the next save of a session does, as {@link signaturesKeptBySave} answers it. */
+/** What the next save of a session does to its signatures, as {@link signaturesKeptBySave} answers it. */
 export interface NextSave {
   readonly signatures: number;
   /** Whether the document's signatures survive it. */
   readonly kept: boolean;
-  /** Whether it is a removal's save, which writes no backup. */
-  readonly removal: boolean;
 }
 
 export const mupdfWriter: EngineWriter<MupdfSession> = {

@@ -31,7 +31,7 @@ Redaction removes content from the document itself, not just covers it. It happe
 - Applying removes the text, pictures and drawings under the marks, plus any comments and form fields there. The document's author, subject and other properties are removed too.
 - A title can itself contain what you are redacting, which is why keeping it is off by default.
 - The only way back is **Undo**, while the document is still open.
-- Saving after a redaction keeps no backup copy, because a backup of the previous file would still hold what you removed. If older backups, or Monstera's own undo copies of the document, are left from before, Monstera lists every one in **Older copies may still hold what you removed**. Choose **Delete permanently** to delete them (they do not go to the Recycle Bin, and Undo can no longer go back past this point), or close the window to keep them.
+- Saving after a redaction keeps no backup copy, because a backup of the previous file would still hold what you removed. The same save permanently deletes the older backups Monstera made of the file and Monstera's own undo copies of the document, and the message after saving says so. They do not go to the Recycle Bin, and Undo can no longer go back past this point. A file beside the document that is named like a backup but that Monstera did not make is never deleted. Monstera names it in **Some older copies were kept**, so you can delete it yourself.
 - **Apply redactions** asks first. If you turn off **Confirm before redacting** in **Settings**, **Saving** page, it removes marked content on the current page straight away, with a filled box, and removes the title too.
 
 <!--

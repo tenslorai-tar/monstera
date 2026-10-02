@@ -54,6 +54,7 @@ import {
   type SessionsByWriter,
   type ExecutionSession,
   type HostedWriter,
+  type SavePurpose,
   type WriterSession,
   hostedOn,
   writerShapes,
@@ -732,6 +733,17 @@ export class CommandBus {
    * @returns how many entries were re-applied
    * @throws whatever an entry's `apply` throws — the caller's clause (i), never a partial silence
    */
+  /**
+   * Tells the document a removal was applied, the moment its `apply` returns
+   * ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)): the one reading of
+   * a declaration's `purpose` for the save, so execute and redo cannot answer it differently. Before the install and
+   * the entry, so a step after the apply that throws still leaves the save keeping no backup — the safe direction for
+   * a session the content has already left.
+   */
+  #recordIfRemoval(spec: { readonly purpose: SavePurpose }, context: DocumentContext): void {
+    if (spec.purpose === 'removal') context.recordRemoval(COMMAND_WRITER);
+  }
+
   async replayPastImage(sessions: SessionsByWriter, context: DocumentContext, inputs: CommandInputs): Promise<number> {
     const pending = context.log.pastImage;
     for (const entry of pending) {
@@ -998,6 +1010,7 @@ export class CommandBus {
     const source = this.#sourceSessionFor(command, inputs.sources);
 
     const applied = await writer.apply({ session, command, source, reads: preRead });
+    this.#recordIfRemoval(spec, context);
 
     // A BYTE-IMAGE WRITER'S RESULT IS THE DOCUMENT, so installing it is part of
     // applying rather than something a caller does afterwards — and it happens
@@ -1254,6 +1267,7 @@ export class CommandBus {
     const source = this.#sourceSessionFor(entry.command, inputs.sources);
 
     const applied = await writer.apply({ session, command: entry.command, source, reads: preRead });
+    this.#recordIfRemoval(spec, context);
     // REACHABLE, unlike `undo`'s: redoing a watermark re-runs it — that is what
     // `replay: 'reapply-intent'` above has just been checked to mean — and the
     // document it produces has to be installed exactly as `execute` installs

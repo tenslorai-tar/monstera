@@ -52,6 +52,7 @@ import { readCloudClients } from './cloudClients.js';
 import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
 import { knownRoots } from './displayLocation.js';
 import { pictureDirectory } from './recentPictures.js';
+import { BACKUP_LEDGER_FILE } from './backupLedger.js';
 import { ENGAGEMENT_FILE } from './engagement.js';
 import { UPDATE_RECORD_FILE } from './updateCheck.js';
 import { documentPathsIn } from './launchDocuments.js';
@@ -479,6 +480,9 @@ startShell(() => {
     // Store application's pages: `shell.openExternal` of a constant from `STORE_URIS`, never of anything a page
     // supplied — a page names `review` or `updates`, and the table is the only place a URI is.
     engagementFile: createJsonFile(app.getPath('userData'), ENGAGEMENT_FILE),
+    // WHICH BACKUPS BESIDE A PERSON'S DOCUMENTS MONSTERA MADE (ADR-0139), so a removal's save deletes those and no
+    // other file. Under `userData` with the other records.
+    backupLedgerFile: createJsonFile(app.getPath('userData'), BACKUP_LEDGER_FILE),
     // WHICH SECURITY RELEASE THE PERSON ACKNOWLEDGED (ADR-0110), in its own document beside the rating record. The
     // manifest's GET is the composition's own default; its address is the contract's, dormant in this build.
     updateRecordFile: createJsonFile(app.getPath('userData'), UPDATE_RECORD_FILE),

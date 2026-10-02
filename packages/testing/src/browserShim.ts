@@ -149,8 +149,6 @@ export interface BrowserShim {
   windowCloses: () => number;
   /** How many times the renderer told main it is listening for close requests. */
   closeListenings: () => number;
-  /** Every deletion of a removal's stale copies the page asked for, in order, with the names it sent. */
-  staleCopiesDeleted: () => readonly { readonly docId: DocId; readonly backups: readonly string[] }[];
 }
 
 /**
@@ -298,8 +296,6 @@ export interface BrowserShimOptions {
 
   /** Documents whose next save would break this many signatures — `document.save` answers so until agreed. */
   readonly saveBreaksSignatures?: ReadonlyMap<string, number>;
-  /** Documents whose save is a removal's: what it reports it left behind (item 6 of the 29 September list). */
-  readonly saveStaleCopies?: ReadonlyMap<string, { readonly backups: string[]; readonly undoCopies: number }>;
 
   /**
    * The person's library, as main would hold it: the entries it starts with, their pictures by id, and what the picker
@@ -831,8 +827,6 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   let closeListenings = 0;
   /** The version each document was last saved at; absent until its first save. */
   const savedAt = new Map<string, number>();
-  /** Every deletion of stale copies the page asked for, in order. */
-  const staleCopiesDeleted: { readonly docId: DocId; readonly backups: readonly string[] }[] = [];
 
   /**
    * What a command reports the document's new size as.
@@ -1249,16 +1243,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
 
       savedAt.set(docId, current);
       return Promise.resolve(
-        ok({ kind: 'saved' as const, version: asDocVersion(current), staleCopies: options.saveStaleCopies?.get(docId) ?? null }),
+        // THE SHIM RUNS NO REMOVAL, so no save of it deletes anything (ADR-0139).
+        ok({ kind: 'saved' as const, version: asDocVersion(current), cleared: null }),
       );
-    },
-
-    // WHAT THE PAGE ASKED TO DELETE, recorded for a case to read — the shim has no files, so the answer counts what was
-    // named and the undo copies the save reported.
-    'document.deleteStaleCopies': ({ docId, backups }) => {
-      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
-      staleCopiesDeleted.push({ docId, backups: [...backups] });
-      return Promise.resolve(ok({ backups: backups.length, undoCopies: options.saveStaleCopies?.get(docId)?.undoCopies ?? 0 }));
     },
 
     /**
@@ -2357,6 +2344,5 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     titleBarOverlays: () => [...titleBarOverlays],
     windowCloses: () => windowCloses,
     closeListenings: () => closeListenings,
-    staleCopiesDeleted: () => [...staleCopiesDeleted],
   };
 }

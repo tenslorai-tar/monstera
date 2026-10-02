@@ -272,9 +272,6 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'settings.import': 'answers a settings file the person picked, refused by its size over MAX_SETTINGS_FILE_BYTES before it is read',
   'window.closeListening': 'carries nothing and answers a boolean',
   'document.unsaved': 'one DocId in, one boolean out',
-  // THE OLDER COPIES A REMOVAL'S SAVE LEFT (item 6): names in, counts out, and neither is the document's — the names
-  // are this file's backups, at most MAX_BACKUP_COPIES of them, and the counts are bounded in the schema.
-  'document.deleteStaleCopies': 'takes at most MAX_BACKUP_COPIES backup names and answers two bounded counts',
   // A DICTIONARY IS LARGE ON PURPOSE and no document contributes to it. Its
   // size is the language's, fixed at build time, bounded by MAX_AFFIX_BYTES and
   // MAX_DICTIONARY_BYTES at both the read and the schema — which is L11's

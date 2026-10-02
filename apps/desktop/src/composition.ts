@@ -98,6 +98,7 @@ import {
   groupIntoBlocks,
   hostedPdfLibExecution,
   nodeFileSurface,
+  readFileIdentity,
   signpdfWriterWith,
   parsePageStructure,
   parsePageTables,
@@ -150,6 +151,7 @@ import { createHeldPicture } from './heldPicture.js';
 import { createPersonalLibrary, memoryPictureFiles } from './personalLibrary.js';
 import { saveNamesFor } from './backupCopies.js';
 import { fileAnswersFor } from './hostFileAnswers.js';
+import { createBackupProvenance } from './backupLedger.js';
 import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
 import { createUpdateCheck, manifestTransport, UPDATE_PROVIDERS } from './updateCheck.js';
 import { createLaunchDocuments } from './launchDocuments.js';
@@ -222,7 +224,7 @@ import type { EditWatchSurface } from './externalEditWatch.js';
 import type { OpenExternalEditor } from './openExternalEditor.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import { type ChatHistory, noChatHistory } from './chatHistory.js';
-import type { SettingsSurface } from './settingsFile.js';
+import { type SettingsSurface, createEphemeralSettings } from './settingsFile.js';
 import type { ShellFailureSink } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
 import type { CrashReports } from './crashReports.js';
@@ -629,6 +631,11 @@ export interface ShellComposition {
    */
   readonly engagementFile?: SettingsSurface;
   /**
+   * Which backups Monstera made (ADR-0139), `backups-made.json` under `userData`, resolved in `entry.ts`. Absent, the
+   * record lives in memory for the run — every unit test's position, and never the product's.
+   */
+  readonly backupLedgerFile?: SettingsSurface;
+  /**
    * Opens one of the Store application's pages — `shell.openExternal` of a constant from `STORE_URIS`, which only
    * `entry.ts` may reach. The rating prompt's *review* uses it in the Store build (absent, the web listing), and
    * `app.openStore` names *updates* for *Help › Check for updates* (ADR-0107) and *listing* for the update
@@ -787,6 +794,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     recentPictureFiles,
     libraryFiles,
     engagementFile,
+    backupLedgerFile = createEphemeralSettings(),
     openStore,
     updateRecordFile,
     fetchUpdateManifest,
@@ -1022,6 +1030,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       },
       flush: currentBytes,
       stage: stagedBytesOf,
+      // WHICH BACKUPS MONSTERA MADE, by the kernel's one identity reader, and deleted with the surface's own `rm`, which
+      // is permanent: a removal's save must not leave its copies in the recycle bin (ADR-0139).
+      provenance: createBackupProvenance(backupLedgerFile, {
+        identity: readFileIdentity,
+        remove: (path) => nodeFileSurface.remove(path),
+      }),
     },
     // THE SAME COMPOSITION POINT AS THE FLUSH, and for the same reason: the
     // geometry reader and the session are both in scope here and nowhere else.

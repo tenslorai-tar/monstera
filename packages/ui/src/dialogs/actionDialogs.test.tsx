@@ -19,7 +19,6 @@ import OpenFromUrlBody from './OpenFromUrlBody.js';
 import ReimportExternalEditBody from './ReimportExternalEditBody.js';
 import SecurityUpdateBody from './SecurityUpdateBody.js';
 import SignatureBreakBody from './SignatureBreakBody.js';
-import StaleCopiesBody from './StaleCopiesBody.js';
 import ApplyRedactionsBody from './ApplyRedactionsBody.js';
 import BatesNumberBody from './BatesNumberBody.js';
 import DocumentPasswordBody from './DocumentPasswordBody.js';
@@ -85,7 +84,6 @@ const GROUP_3: readonly { readonly name: string; readonly body: ReactNode; reado
   },
   { name: 'Close with changes', body: <CloseUnsavedBody name="a.pdf" resolve={ignore} update={ignore} />, firstRow: null },
   { name: 'Re-import an edit', body: <ReimportExternalEditBody page={0} resolve={ignore} update={ignore} />, firstRow: null },
-  { name: 'Old copies', body: <StaleCopiesBody backups={['a.bak']} undoCopies={0} resolve={ignore} update={ignore} />, firstRow: null },
   { name: 'Signature will break', body: <SignatureBreakBody signatures={1} resolve={ignore} update={ignore} />, firstRow: null },
   {
     name: 'View only',

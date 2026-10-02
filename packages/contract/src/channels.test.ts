@@ -115,8 +115,7 @@ const handlers: ContractHandlers = {
   'document.redo': () => Promise.resolve(ok({ kind: 'nothing-to-redo' as const })),
   'document.execute': () =>
     Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0 })),
-  'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1), staleCopies: null })),
-  'document.deleteStaleCopies': () => Promise.resolve(ok({ backups: 0, undoCopies: 0 })),
+  'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1), cleared: null })),
   // CANCELLED rather than copied, for the recent-files fixture's reason one
   // entry up: a byte count is the interesting answer, and a fixture that always
   // returns one cannot show that the dismissal path exists at all.

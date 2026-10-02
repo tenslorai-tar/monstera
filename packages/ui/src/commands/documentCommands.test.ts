@@ -8,6 +8,8 @@ import {
   TOAST_DOCUMENT_SIGNED,
   TOAST_PAGES_SAVED,
   TOAST_SAVED,
+  TOAST_SAVED_CLEARED,
+  TOAST_SAVED_CLEARED_BACKUPS,
   TOAST_SENT_TO_PRINTER,
   TOAST_TRANSITION_SET,
 } from '../messages/en.js';
@@ -477,7 +479,7 @@ describe('save', () => {
     let asked: string | undefined;
     const client = createClient(channels, (id) => {
       asked = id;
-      return Promise.resolve(ok({ kind: 'saved', version: asDocVersion(2), staleCopies: null }));
+      return Promise.resolve(ok({ kind: 'saved', version: asDocVersion(2), cleared: null }));
     });
 
     const shown: { id: string; props: unknown }[] = [];
@@ -508,7 +510,7 @@ describe('save', () => {
         sent.push(params);
         const agreed = (params as { breakSignatures: boolean }).breakSignatures;
         return Promise.resolve(
-          ok(agreed ? { kind: 'saved', version: asDocVersion(3), staleCopies: null } : { kind: 'breaks-signatures', signatures: 2 }),
+          ok(agreed ? { kind: 'saved', version: asDocVersion(3), cleared: null } : { kind: 'breaks-signatures', signatures: 2 }),
         );
       });
       return { client, sent };
@@ -570,55 +572,51 @@ describe('save', () => {
   });
 
   /**
-   * ITEM 6 OF THE 29 SEPTEMBER LIST, at the page: a removal's save reports the older copies that may still hold what
-   * was removed; the page lists every one and deletes exactly those only when the person confirms.
+   * ADR-0139, at the page: a removal's save deleted, unasked, the older copies Monstera made, and the confirmation
+   * says so; a file named like a backup that Monstera did not make was kept, and only a person is told its name.
    */
-  describe('a REMOVAL’S save — the older copies it left', () => {
-    const STALE = { backups: ['report.pdf.bak', 'report.pdf.bak2'], undoCopies: 1 };
-    const removalClient = (staleCopies: typeof STALE | null): { client: ContractClient; sent: { id: string; params: unknown }[] } => {
-      const sent: { id: string; params: unknown }[] = [];
-      const client = createClient(channels, (id, params) => {
-        sent.push({ id, params });
-        if (id === 'document.deleteStaleCopies') return Promise.resolve(ok({ backups: 2, undoCopies: 1 }));
-        return Promise.resolve(ok({ kind: 'saved', version: asDocVersion(4), staleCopies }));
+  describe('a REMOVAL’S save — what it deleted, and what it kept', () => {
+    interface Cleared {
+      backups: number;
+      undoCopies: number;
+      kept: string[];
+    }
+    const removalClient = (cleared: Cleared | null): { client: ContractClient; sent: string[] } => {
+      const sent: string[] = [];
+      const client = createClient(channels, (id) => {
+        sent.push(id);
+        return Promise.resolve(ok({ kind: 'saved', version: asDocVersion(4), cleared }));
       });
       return { client, sent };
     };
-
-    it('LISTS every copy and, confirmed, deletes exactly the names it showed', async () => {
-      const { client, sent } = removalClient(STALE);
-      const shown: { id: string; props: unknown }[] = [];
+    const savedWith = async (cleared: Cleared | null, attendance: 'attended' | 'unattended') => {
+      const { client, sent } = removalClient(cleared);
+      const asked: { id: string; props: unknown }[] = [];
+      const record = saving();
       const ask = (id: string, props: unknown): Promise<unknown> => {
-        shown.push({ id, props });
-        return Promise.resolve({ delete: true });
+        asked.push({ id, props });
+        return Promise.resolve(undefined);
       };
-      expect(await saveDocument({ client, ask, ...saving(), warnSignatureBreak: () => true }, DOC, 'attended')).toBe(true);
-      expect(shown).toStrictEqual([{ id: 'dialog.stale-copies', props: STALE }]);
-      expect(sent.at(-1)).toStrictEqual({ id: 'document.deleteStaleCopies', params: { docId: DOC, backups: STALE.backups } });
+      expect(await saveDocument({ client, ask, ...record }, DOC, attendance)).toBe(true);
+      return { said: record.said.map((toast) => toast.message), asked, sent };
+    };
+
+    it('the confirmation SAYS the copies were deleted — and that undo stops here when undo copies went', async () => {
+      expect((await savedWith({ backups: 2, undoCopies: 1, kept: [] }, 'attended')).said).toStrictEqual([TOAST_SAVED_CLEARED]);
+      expect((await savedWith({ backups: 1, undoCopies: 0, kept: [] }, 'attended')).said).toStrictEqual([TOAST_SAVED_CLEARED_BACKUPS]);
+      // CONTROL: nothing deleted, and an ordinary save, both say the plain word.
+      expect((await savedWith({ backups: 0, undoCopies: 0, kept: [] }, 'attended')).said).toStrictEqual([TOAST_SAVED]);
+      expect((await savedWith(null, 'attended')).said).toStrictEqual([TOAST_SAVED]);
     });
 
-    it('CONTROL: dismissed deletes nothing; unattended never asks; an ordinary save asks nothing', async () => {
-      const dismissed = removalClient(STALE);
-      await saveDocument({ client: dismissed.client, ask: () => Promise.resolve(undefined), ...saving(), warnSignatureBreak: () => true }, DOC, 'attended');
-      expect(dismissed.sent.map((call) => call.id)).toStrictEqual(['document.save']);
-
-      const timer = removalClient(STALE);
-      const shownByTimer: unknown[] = [];
-      await saveDocument(
-        { client: timer.client, ask: (id) => Promise.resolve(shownByTimer.push(id)), ...saving(), warnSignatureBreak: () => true },
-        DOC,
-        'unattended',
-      );
-      expect(shownByTimer).toStrictEqual([]);
-
-      const ordinary = removalClient(null);
-      const shownOrdinary: unknown[] = [];
-      await saveDocument(
-        { client: ordinary.client, ask: (id) => Promise.resolve(shownOrdinary.push(id)), ...saving(), warnSignatureBreak: () => true },
-        DOC,
-        'attended',
-      );
-      expect(shownOrdinary).toStrictEqual([]);
+    it('a file Monstera did not make is NAMED to a person; nothing else is asked, and the page sends nothing more', async () => {
+      const named = await savedWith({ backups: 1, undoCopies: 1, kept: ['report.pdf.bak2'] }, 'attended');
+      expect(named.asked).toStrictEqual([{ id: 'dialog.kept-backups', props: { kept: ['report.pdf.bak2'] } }]);
+      // THE DELETION IS MAIN'S, inside the save: the page asks for nothing after it.
+      expect(named.sent).toStrictEqual(['document.save']);
+      // CONTROL: a timer's save has nobody to tell, and a save that kept nothing names nothing.
+      expect((await savedWith({ backups: 1, undoCopies: 1, kept: ['report.pdf.bak2'] }, 'unattended')).asked).toStrictEqual([]);
+      expect((await savedWith({ backups: 1, undoCopies: 1, kept: [] }, 'attended')).asked).toStrictEqual([]);
     });
   });
 

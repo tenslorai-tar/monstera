@@ -104,6 +104,12 @@ function held(version: number): Held {
         throw new Error('saving does not replace the canonical image');
       },
       bumpVersion: (_writer: CommandWriter): DocVersion => at,
+      // A save READS whether a removal is pending and never records one, so recording throws for this file's reason.
+      recordRemoval: (): never => {
+        throw new Error('saving does not record a removal');
+      },
+      // The pipeline takes the backup choice as an argument; the caller reads this, so no case here does.
+      removedSinceSave: false,
       commandLog: (_writer: CommandWriter): CommandLog => log,
       log,
       markSaved: (_writer: SaveWriter): Promise<DocVersion> => {

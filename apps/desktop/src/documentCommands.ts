@@ -151,6 +151,7 @@ import {
 // renderer-facing type.
 import { basename, join } from 'node:path';
 
+import type { BackupProvenance } from './backupLedger.js';
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
 import {
   EXTERNAL_EDIT_WAIT_MS,
@@ -673,24 +674,21 @@ export type PlaceImageOutcome =
 
 /** What a save came to: the pipeline's outcomes, or a save held back because it would break signatures. */
 export type SaveRequestOutcome =
-  /** Saved — and, where the save was a removal's, what it leaves that may still hold what was removed. */
-  | (Extract<SaveOutcome, { kind: 'saved' }> & { readonly staleCopies: StaleCopies | null })
+  /** Saved — and, where the save was a removal's, which older copies it deleted and which it kept. */
+  | (Extract<SaveOutcome, { kind: 'saved' }> & { readonly cleared: ClearedCopies | null })
   | Exclude<SaveOutcome, { kind: 'saved' }>
   | { readonly kind: 'breaks-signatures'; readonly signatures: number };
 
 /**
- * What a redaction's or Sanitize's save leaves that may still hold what was removed (the list of 29 September, item
- * 6): older backups beside the file, by name, and the undo copies of the document this application keeps.
+ * What a redaction's, Sanitize's or flatten's save deleted, permanently, because it may still have held what was
+ * removed ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)): the backups
+ * beside the file that Monstera made, by count, and the document's undo copies — and, BY NAME, the files with a
+ * backup's name that Monstera did not make, which are kept for the person to decide.
  */
-export interface StaleCopies {
-  readonly backups: readonly string[];
-  readonly undoCopies: number;
-}
-
-/** What {@link DocumentCommands.deleteStaleCopies} deleted: backups by count, and undo copies. */
-export interface StaleCopiesDeleted {
+export interface ClearedCopies {
   readonly backups: number;
   readonly undoCopies: number;
+  readonly kept: readonly string[];
 }
 
 /**
@@ -1029,6 +1027,12 @@ export interface SaveSource {
    * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md) Decision 2 and its addendum).
    */
   readonly stage: DocumentStage;
+  /**
+   * Which backups Monstera made, recorded as each save makes one and asked before a removal's save deletes one
+   * ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)). REQUIRED, so no
+   * composition can save without a record of what it may later delete.
+   */
+  readonly provenance: BackupProvenance;
 }
 
 /** {@link DocumentFlush}, staged. Composed in the same place, for the same reason. */
@@ -5682,64 +5686,53 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      // THE WRITER'S OWN DECISION ABOUT THIS SAVE, asked once: whether it keeps the signatures, and whether it is a
-      // removal's — a redaction or Sanitize — which writes no backup (item 6 of the list of 29 September).
+      // THE WRITER'S OWN DECISION about its signatures, asked once.
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       const next = await this.#signaturesKept(session);
       if (!request.breakSignatures && !next.kept) return { kind: 'breaks-signatures', signatures: next.signatures };
 
+      // THE DOCUMENT'S FACT, read before the save clears it: whether a removal ran since the file was written
+      // (ADR-0139). Never the engine session's mark, which an undo's restore, an adopt or a host restart drops — the
+      // route by which a redaction's save backed up the unredacted file in 0.1.9.0.
+      const removal = context.removedSinceSave;
       // STAGED, so the document's bytes go from the host to the temporary file and never through `main`
       // (ADR-0121's addendum).
+      const names = this.#save.deps.names(context.path);
       const saved = await saveDocument(
         this.#save.deps,
         context,
         () => this.#save.stage(docId, sessions),
-        next.removal ? 'none' : 'keep',
+        removal ? 'none' : 'keep',
       );
       if (saved.kind !== 'saved') return saved;
-      return { ...saved, staleCopies: next.removal ? await this.#staleCopies(context) : null };
+      // THE BACKUP THIS SAVE MADE is the newest name, `atomicWrite`'s own reading of the same list.
+      const [newest] = names.backups;
+      if (saved.backedUp && newest !== undefined) await this.#save.provenance.made(newest);
+      return { ...saved, cleared: removal ? await this.#clearCopies(context) : null };
     });
 
     return value;
   }
 
   /**
-   * What a removal's save leaves that may still hold what was removed: the backups beside the file, by NAME — every
-   * name a backup of this file can have, kept or retired, that is on disk — and how many undo copies of the document
-   * this application keeps. Read in the save's own lane entry, so nothing lands between the save and the list.
+   * Deletes, PERMANENTLY and unasked, every older copy Monstera made that may still hold what a removal took out
+   * ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)): each backup beside
+   * the file — every name a backup of it can have, kept or retired — that the ledger shows Monstera wrote and nothing
+   * has changed since, and every undo copy of the document with the history that needs them. A file with a backup's
+   * name that Monstera did not make is kept and named. In the save's own lane entry, so nothing lands between.
    */
-  async #staleCopies(context: DocumentContext): Promise<StaleCopies> {
+  async #clearCopies(context: DocumentContext): Promise<ClearedCopies> {
     const names = this.#save.deps.names(context.path);
-    const backups: string[] = [];
+    let backups = 0;
+    const kept: string[] = [];
     for (const path of [...names.backups, ...names.retired]) {
-      if (await this.#save.deps.surface.exists(path)) backups.push(basename(path));
+      const outcome = await this.#save.provenance.deleteIfMade(path);
+      if (outcome === 'deleted') backups += 1;
+      else if (outcome === 'not-made') kept.push(basename(path));
     }
-    return { backups, undoCopies: this.#bus.undoCopies(context) };
-  }
-
-  /**
-   * Deletes, PERMANENTLY, the stale copies a person confirmed: the backups among `listed` that are still the
-   * document's and on disk, and every undo copy of the document with the history that needs them (the list of 29
-   * September, item 6).
-   *
-   * **The list is recomputed here, and `listed` only narrows it.** The renderer names what it showed; a name that is
-   * not one of this file's backup names is never deleted, whatever it says — so the page cannot aim this at another
-   * file. Not the recycle bin: a copy kept there would keep what the redaction removed.
-   */
-  async deleteStaleCopies(docId: DocId, listed: readonly string[]): Promise<StaleCopiesDeleted> {
-    const { value } = await this.#documents.run(docId, async (context): Promise<StaleCopiesDeleted> => {
-      const names = this.#save.deps.names(context.path);
-      let backups = 0;
-      for (const path of [...names.backups, ...names.retired]) {
-        if (!listed.includes(basename(path)) || !(await this.#save.deps.surface.exists(path))) continue;
-        await this.#save.deps.surface.remove(path);
-        backups += 1;
-      }
-      const before = this.#bus.undoCopies(context);
-      this.#bus.forgetUndoCopies(context);
-      return { backups, undoCopies: before - this.#bus.undoCopies(context) };
-    });
-    return value;
+    const before = this.#bus.undoCopies(context);
+    this.#bus.forgetUndoCopies(context);
+    return { backups, undoCopies: before - this.#bus.undoCopies(context), kept };
   }
 }

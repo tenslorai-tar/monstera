@@ -2553,15 +2553,13 @@ export const engineChannels = {
   /**
    * How many signatures the document carries and whether the NEXT SAVE keeps them — Part F's warning before a
    * signature-breaking save. Answered from the writer's own decision about that save (`signaturesKeptBySave`), so
-   * nothing is serialised to ask and the answer cannot disagree with the save that follows. And whether that save is a
-   * REMOVAL's, which writes no backup (the list of 29 September, item 6) — the same decision, so one question.
+   * nothing is serialised to ask and the answer cannot disagree with the save that follows. Not whether the save keeps
+   * a backup: that is the document's fact in main (ADR-0139), which no rebuild of this host's session can lose.
    */
   'engine/signatures-kept': channel(
-    'Says whether the next save of a session this host holds keeps its signatures, and whether it is a removal’s.',
+    'Says whether the next save of a session this host holds keeps its signatures.',
     z.object({ session: sessionSchema }).strict(),
-    z
-      .object({ signatures: z.number().int().nonnegative().max(ENGINE_SIGNATURES_MAX), kept: z.boolean(), removal: z.boolean() })
-      .strict(),
+    z.object({ signatures: z.number().int().nonnegative().max(ENGINE_SIGNATURES_MAX), kept: z.boolean() }).strict(),
     ['no-such-session'],
   ),
 

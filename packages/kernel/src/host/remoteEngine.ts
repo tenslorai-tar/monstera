@@ -452,7 +452,7 @@ export function remoteMupdfSignatures(
 }
 
 /**
- * Whether the next save keeps the document's signatures, and whether it is a removal's, over the boundary.
+ * Whether the next save keeps the document's signatures, over the boundary.
  * `signaturesKeptBySave` in the host.
  */
 export function remoteMupdfSignaturesKept(

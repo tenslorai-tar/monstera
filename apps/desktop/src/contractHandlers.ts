@@ -422,7 +422,6 @@ export function createContractHandlers(deps: {
     'document.undo': undoHandler(deps.commands),
     'document.redo': redoHandler(deps.commands),
     'document.save': saveHandler(deps.commands),
-    'document.deleteStaleCopies': deleteStaleCopiesHandler(deps.commands),
     'document.extract': extractHandler(deps.commands, mintWritten),
     'document.snapshotRegion': snapshotRegionHandler(deps.commands, mintWritten),
     'document.exportFormData': exportFormDataHandler(deps.commands, mintWritten),
@@ -880,11 +879,11 @@ function saveHandler(commands: DocumentCommands): ContractHandlers['document.sav
     try {
       const outcome = await commands.save(docId, { breakSignatures });
       if (outcome.kind === 'saved') {
-        const stale = outcome.staleCopies;
+        const cleared = outcome.cleared;
         return ok({
           kind: 'saved',
           version: outcome.version,
-          staleCopies: stale === null ? null : { backups: [...stale.backups], undoCopies: stale.undoCopies },
+          cleared: cleared === null ? null : { backups: cleared.backups, undoCopies: cleared.undoCopies, kept: [...cleared.kept] },
         } as const);
       }
       if (outcome.kind === 'breaks-signatures') {
@@ -900,19 +899,6 @@ function saveHandler(commands: DocumentCommands): ContractHandlers['document.sav
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
-      throw thrown;
-    }
-  };
-}
-
-/** The stale copies a removal's save reported, deleted as the person confirmed — the save handler's classes. */
-function deleteStaleCopiesHandler(commands: DocumentCommands): ContractHandlers['document.deleteStaleCopies'] {
-  return async ({ docId, backups }): Promise<Awaited<ReturnType<ContractHandlers['document.deleteStaleCopies']>>> => {
-    try {
-      return ok(await commands.deleteStaleCopies(docId, backups));
-    } catch (thrown) {
-      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
-      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       throw thrown;
     }
   };

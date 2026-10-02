@@ -448,7 +448,7 @@ export interface EngineHandlerParts {
   readonly access: (session: MupdfSession) => DocumentAccess;
   /** Reads and verifies the document's signatures. `readSignatures`. */
   readonly signatures: HostSignaturesReader;
-  /** How many signatures, whether the next save keeps them, and whether it is a removal's. `signaturesKeptBySave`. */
+  /** How many signatures, and whether the next save keeps them. `signaturesKeptBySave`. */
   readonly signaturesKept: (session: MupdfSession) => Promise<NextSave>;
   readonly files: HostFilesystem;
   readonly probe: HostContainmentProbe;
