@@ -3,7 +3,7 @@ import type { DocId, DocVersion } from '@monstera/shared';
 
 import { SIGNATURE_TOOL_ID } from '../annotations/signatureTool.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
-import { SIGNATURE_ANSWERS, SIGNATURE_DIALOG_ID, type SignatureLook } from '../dialogs/signature.js';
+import { type HeldSignaturePicture, SIGNATURE_ANSWERS, SIGNATURE_DIALOG_ID, type SignatureLook } from '../dialogs/signature.js';
 import { SIGNATURE_PROBLEM_DIALOG_ID } from '../dialogs/signatureProblem.js';
 import { GROUP_QUICK_TOOLS, GROUP_STAMPS, SIGNATURE_TITLE, TOAST_SIGNATURE_LIBRARY_FULL, TOAST_SIGNATURE_NOT_KEEPABLE } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
@@ -31,19 +31,44 @@ export async function chooseSignature(
   urls: LibraryPageDeps['urls'] = BLOB_URLS,
 ): Promise<SignatureLook | undefined> {
   const library: LibraryPageDeps = { client: deps.client, ask: deps.ask, urls };
-  for (;;) {
-    const { kept, release } = await keptEntries(library, 'signature');
-    let answered: unknown;
-    try {
-      answered = await deps.ask(SIGNATURE_DIALOG_ID, { kept });
-    } finally {
-      release();
+  // THE PICTURE MAIN HOLDS for this dialog, once Upload has picked one: carried across every asking, and its `blob:`
+  // address let go when it is replaced or the dialog is done with (ADR-0133's second correction).
+  let picked: HeldSignaturePicture | undefined;
+  let keep: boolean | undefined;
+  try {
+    for (;;) {
+      const { kept, release } = await keptEntries(library, 'signature');
+      let answered: unknown;
+      try {
+        answered = await deps.ask(SIGNATURE_DIALOG_ID, { kept, ...(picked === undefined ? {} : { picked }), ...(keep === undefined ? {} : { keep }) });
+      } finally {
+        release();
+      }
+      const parsed = SIGNATURE_ANSWERS.safeParse(answered);
+      // DISMISSED, or an answer of another shape — a registration defect rather than a person's doing — places nothing.
+      if (!parsed.success) return undefined;
+      if ('mark' in parsed.data) return parsed.data;
+      if ('upload' in parsed.data) {
+        keep = parsed.data.keep;
+        const answer = await deps.client['signature.pickPicture']({});
+        if (!answer.ok) continue;
+        if (answer.value.kind === 'picked') {
+          if (picked !== undefined) urls.revoke(picked.src);
+          const { handle, name, mediaType, bytes } = answer.value;
+          picked = { handle, name, src: urls.make(bytes, mediaType) };
+        } else if (answer.value.kind !== 'cancelled') {
+          // REFUSED BY ITS BYTES OR ITS SIZE, said where the person is looking, before they are asked again.
+          await deps.ask(
+            SIGNATURE_PROBLEM_DIALOG_ID,
+            answer.value.kind === 'too-large' ? { reason: 'too-large', limitBytes: answer.value.limitBytes } : { reason: 'unreadable' },
+          );
+        }
+        continue;
+      }
+      await deps.client['library.remove']({ id: parsed.data.id });
     }
-    const parsed = SIGNATURE_ANSWERS.safeParse(answered);
-    // DISMISSED, or an answer of another shape — a registration defect rather than a person's doing — places nothing.
-    if (!parsed.success) return undefined;
-    if ('mark' in parsed.data) return parsed.data;
-    await deps.client['library.remove']({ id: parsed.data.id });
+  } finally {
+    if (picked !== undefined) urls.revoke(picked.src);
   }
 }
 

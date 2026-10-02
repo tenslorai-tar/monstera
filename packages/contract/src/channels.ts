@@ -3514,6 +3514,34 @@ export const channels = {
     ]),
   ),
 
+  /**
+   * Picks a picture for the plain Signature, to preview before it is placed (ADR-0133's second correction). Main refuses
+   * a file past {@link MAX_IMAGE_BYTES} before reading it, types it by its own bytes, and HOLDS what it read under the
+   * handle it answers, so the picture placed is the one previewed. One is held at a time; a new pick replaces it.
+   */
+  'signature.pickPicture': channel(
+    'Picks a picture to sign with, held by main and answered for a preview.',
+    z.object({}).strict(),
+    z.discriminatedUnion('kind', [
+      z
+        .object({
+          kind: z.literal('picked'),
+          handle: fileHandleSchema,
+          name: z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH),
+          mediaType: z.enum(['image/jpeg', 'image/png']),
+          bytes: z.custom<Uint8Array>(
+            (value) => value instanceof Uint8Array && value.byteLength <= MAX_IMAGE_BYTES,
+            { message: `not a picture of at most ${String(MAX_IMAGE_BYTES)} bytes` },
+          ),
+        })
+        .strict(),
+      z.object({ kind: z.literal('cancelled') }).strict(),
+      /** Not a PNG or a JPEG by its bytes, or it could not be read. */
+      z.object({ kind: z.literal('unreadable') }).strict(),
+      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }).strict(),
+    ]),
+  ),
+
   /** Keeps a typed or drawn signature as the person made it, so it need not be made again. */
   'library.keepSignature': channel(
     'Keeps a typed or drawn signature in the signature library.',

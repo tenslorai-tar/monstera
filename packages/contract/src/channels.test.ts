@@ -167,6 +167,7 @@ const handlers: ContractHandlers = {
   'library.picture': () => Promise.resolve(ok({ kind: 'absent' as const })),
   'library.addPicture': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'library.keepSignature': () => Promise.resolve(ok({ kind: 'full' as const, limit: 16 })),
+  'signature.pickPicture': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'library.remove': () => Promise.resolve(ok({ removed: false })),
   'document.placeBarcode': () => Promise.resolve(ok({ kind: 'refused' as const })),
   'document.exportAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),

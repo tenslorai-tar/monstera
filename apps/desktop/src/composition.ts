@@ -144,6 +144,7 @@ import { type AppInfo, type PickDocument, createContractHandlers } from './contr
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, type PictureFiles, createRecentPictures } from './recentPictures.js';
 import { NO_REQUEST_LOG, createRequestLog, observedHandlers } from './requestLog.js';
+import { createHeldPicture } from './heldPicture.js';
 import { createPersonalLibrary, memoryPictureFiles } from './personalLibrary.js';
 import { saveNamesFor } from './backupCopies.js';
 import { fileAnswersFor } from './hostFileAnswers.js';
@@ -994,6 +995,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       log?.write('library', `index unreadable, set aside: ${detail}`);
     },
   });
+  // THE PICTURE THE SIGNATURE DIALOG PREVIEWED, one slot shared by the channel that picks it and the placement that
+  // places it (ADR-0133's second correction).
+  const heldPicture = createHeldPicture();
 
   // THE CONTAINED pdftotext AND x2t, ONE OF EACH, taken by the exports and imports below and by the assistant's
   // attached files (ADR-0135) — so a file attached to a question is read by the same contained reader an export uses.
@@ -1339,6 +1343,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     image: { pick: pickImage, read: readImage },
     // A KEPT PICTURE OR SIGNATURE, read — never changed — when one is placed or signs.
     library,
+    heldPicture,
     // EDITING A PAGE ELSEWHERE, and every member is a parameter for `image`'s reason:
     // `shell` is Electron's and `fs.watch` is Node's, and this file imports neither (ADR-0062).
     externalEdit: { pick: pickDestination, open: openExternalEditor, watch: editWatch },
@@ -1552,7 +1557,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       commands,
       documents,
       // THE LIBRARY'S CHANNELS: the image picker, and a size before the bounded read, as the image import takes them.
-      library: { store: library, pick: pickImage, size: sizeImage, read: readImage },
+      library: { store: library, pick: pickImage, size: sizeImage, read: readImage, held: heldPicture },
       // THE PAPERCLIP (ADR-0135): any file, each read by the contained reader its family names — `null` where this
       // build has none, which names the file rather than reading it anywhere else.
       attachments: {

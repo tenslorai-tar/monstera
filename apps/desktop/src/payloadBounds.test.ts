@@ -296,6 +296,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'library.picture': 'answers one kept picture, bounded at the library’s 2 MiB',
   'library.addPicture': 'answers one entry, and its picture is main’s picker’s, never a document’s',
   'library.keepSignature': 'answers one entry, the signature the renderer sent',
+  'signature.pickPicture': 'answers one picture main’s picker picked, at MAX_IMAGE_BYTES, never a document’s',
   'library.remove': 'answers a boolean',
   // THE RATING PROMPT (E3): booleans and a three-way choice, about the application and never a document.
   'app.reviewPrompt': 'takes nothing and answers a boolean',

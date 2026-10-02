@@ -112,6 +112,7 @@ import { NO_ATTACHMENTS } from './askAttachments.js';
 import { createContractHandlers } from './contractHandlers.js';
 import { createRecentFiles } from './recentFiles.js';
 import { NO_RECENT_PICTURES } from './recentPictures.js';
+import { type HeldPicture, NO_HELD_PICTURE, createHeldPicture } from './heldPicture.js';
 import { createPersonalLibrary, memoryPictureFiles, unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT } from './engagement.js';
 import {
@@ -720,6 +721,7 @@ const INERT = {
       throw new Error('INERT: this case keeps nothing in the library');
     },
   },
+  heldPicture: NO_HELD_PICTURE,
   // DOCUSIGN REFUSES BY NAME here, like every inert surface: a case that reached it
   // without meaning to fails at the call rather than sending anything anywhere.
   docusign: {
@@ -4216,6 +4218,7 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
     mark: Parameters<DocumentCommands['placeSignature']>[1]['mark'],
     keep: boolean,
     picked: { readonly path: string; readonly bytes: Uint8Array } | null = null,
+    heldPicture: HeldPicture = NO_HELD_PICTURE,
   ): Promise<{ outcome: unknown; kinds: string[]; library: ReturnType<typeof createPersonalLibrary> }> => {
     const kinds: string[] = [];
     const recording: RegisteredWriter<'mupdf'> = {
@@ -4232,6 +4235,7 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
       // A PLACED SIGNATURE IS DRAWN FROM THE BYTES, so placing one flushes (ADR-0084).
       save: { ...noSaving, flush: sessionFlush, stage: stagingFrom(sessionFlush) },
       library,
+      heldPicture,
       documents: service,
       bus: new CommandBus({ mupdf: recording }),
       engine: engine(),
@@ -4282,6 +4286,35 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
   it('a typed name the font cannot draw is refused BEFORE any command reaches the engine', async () => {
     const placed = await placing({ kind: 'typed', text: 'Ada ✓', font: 'courier' }, true);
     expect(placed.outcome).toStrictEqual({ kind: 'unencodable-text' });
+    expect(placed.kinds).toStrictEqual([]);
+  });
+
+  it('a PREVIEWED picture is placed from the bytes main HOLDS, no picker opens, and the handle is released once placed', async () => {
+    const held = createHeldPicture();
+    const handle = asFileHandle('previewed');
+    held.hold(handle, { name: 'Previewed', mediaType: 'image/png', bytes: PICTURE });
+    // THE PICKER ANSWERS NOTHING here (`picked` null): a placement that opened one would come back cancelled.
+    const placed = await placing({ kind: 'image', picked: handle }, true, null, held);
+    expect(placed.outcome).toMatchObject({ kind: 'placed', kept: 'kept' });
+    expect(placed.kinds).toStrictEqual(['placeSignaturePicture']);
+    const [entry] = placed.library.list('signature');
+    expect(entry?.look).toStrictEqual({ kind: 'picture', name: 'Previewed' });
+    expect(placed.library.picture(entry?.id ?? '')?.bytes).toStrictEqual(PICTURE);
+    // RELEASED: the same handle again names nothing, and says so rather than opening a picker.
+    expect(held.held(handle)).toBeUndefined();
+    const again = await placing({ kind: 'image', picked: handle }, true, null, held);
+    expect(again.outcome).toStrictEqual({ kind: 'absent' });
+    expect(again.kinds).toStrictEqual([]);
+  });
+
+  it('CONTROL: a handle that is not the one held places nothing — never another picture, never a picker', async () => {
+    const held = createHeldPicture();
+    held.hold(asFileHandle('the-new-pick'), { name: 'New', mediaType: 'image/png', bytes: PICTURE });
+    const placed = await placing({ kind: 'image', picked: asFileHandle('an-earlier-pick') }, true, {
+      path: 'would-be-picked.png',
+      bytes: PICTURE,
+    }, held);
+    expect(placed.outcome).toStrictEqual({ kind: 'absent' });
     expect(placed.kinds).toStrictEqual([]);
   });
 

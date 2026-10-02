@@ -12,6 +12,7 @@ import {
 } from '@monstera/contract';
 import { z } from 'zod';
 
+import { type HeldPicture, NO_HELD_PICTURE } from './heldPicture.js';
 import type { PictureFiles } from './recentPictures.js';
 
 /**
@@ -38,12 +39,14 @@ export function unusedLibrarySurface(): {
   readonly pick: () => Promise<string | null>;
   readonly size: (path: string) => Promise<number | null>;
   readonly read: (path: string) => Promise<{ readonly kind: 'unreadable' }>;
+  readonly held: HeldPicture;
 } {
   return {
     store: createPersonalLibrary({ files: memoryPictureFiles(), unreadable: () => undefined }),
     pick: () => Promise.resolve(null),
     size: () => Promise.resolve(null),
     read: () => Promise.resolve({ kind: 'unreadable' }),
+    held: NO_HELD_PICTURE,
   };
 }
 

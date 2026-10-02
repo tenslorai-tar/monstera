@@ -5041,8 +5041,22 @@ optgroup {
 }
 
 .m-signature__upload {
-  margin: 0;
-  padding-block: var(--space-10);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+/* THE PICTURE AS IT WILL BE PLACED, on white like the drawing pad: a signature is dark ink on paper, and a dark
+   dialog behind a transparent PNG would hide exactly the strokes the preview is for. */
+.m-signature__picture {
+  align-self: center;
+  max-block-size: calc(var(--space-32) * 3);
+  max-inline-size: 100%;
+  padding: var(--space-8);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--page);
+  object-fit: contain;
 }
 
 .m-signature__problem {

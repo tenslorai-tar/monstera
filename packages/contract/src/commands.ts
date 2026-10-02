@@ -7,6 +7,7 @@ import {
   OCR_ENGINES,
   docIdSchema,
   docVersionSchema,
+  fileHandleSchema,
   ocrLanguagesSchema,
 } from './schemas.js';
 
@@ -3235,15 +3236,18 @@ export function strokesOfPlaced(drawing: PlacedDrawing): Extract<KeepableSignatu
 /**
  * How a visible signature looks, as a RENDERER may ask for it.
  *
- * `image` carries nothing, for `placeImage`'s reason: the picture is a file main
- * picks and reads, so this side has no field to put one in. `saved` names a
+ * `image` carries no picture, for `placeImage`'s reason: the picture is a file main
+ * picks and reads, so this side has no field to put one in. Alone, main picks it
+ * after the click (*Sign with certificate*); with `picked`, it is the picture main
+ * already holds under that handle from `signature.pickPicture`, which the plain
+ * Signature's dialog previewed (ADR-0133's second correction). `saved` names a
  * signature the person kept, by its library id — main looks it up, so a kept
  * picture's bytes never have to travel back.
  */
 export const requestedSignatureMarkSchema = z.discriminatedUnion('kind', [
   typedSignatureMarkSchema,
   drawnSignatureMarkSchema,
-  z.object({ kind: z.literal('image') }).strict(),
+  z.object({ kind: z.literal('image'), picked: fileHandleSchema.optional() }).strict(),
   z.object({ kind: z.literal('saved'), id: libraryIdSchema }).strict(),
 ]);
 

@@ -126,6 +126,61 @@ describe('chooseSignature', () => {
     expect(calls.map(([id]) => id)).toStrictEqual(['library.list', 'library.remove', 'library.list']);
   });
 
+  it('UPLOAD’S PICK asks main to hold a picture, then asks AGAIN with it shown — its blob let go once the dialog is done', async () => {
+    const bytes = Uint8Array.of(0x89, 0x50, 0x4e, 0x47);
+    const calls: string[] = [];
+    const client = createClient(channels, (id) => {
+      calls.push(id);
+      if (id === 'library.list') return Promise.resolve(ok({ entries: [] }));
+      return Promise.resolve(
+        ok({ kind: 'picked', handle: 'held-7', name: 'Mine.png', mediaType: 'image/png', bytes }),
+      );
+    });
+    const made: [Uint8Array, string][] = [];
+    const revoked: string[] = [];
+    const urls = {
+      make: (from: Uint8Array, type: string) => {
+        made.push([from, type]);
+        return `blob:made-${String(made.length)}`;
+      },
+      revoke: (url: string) => {
+        revoked.push(url);
+      },
+    };
+    const look = { mark: { kind: 'image', picked: 'held-7' }, keep: false } as const;
+    const ask = vi.fn().mockResolvedValueOnce({ upload: 'pick', keep: false }).mockResolvedValueOnce(look);
+    expect(await chooseSignature({ client, ask }, urls)).toStrictEqual(look);
+    expect(calls).toStrictEqual(['library.list', 'signature.pickPicture', 'library.list']);
+    // THE SECOND ASKING SHOWS THE PICTURE main answered, by a blob of exactly its bytes, with keep as it was left.
+    expect(made).toStrictEqual([[bytes, 'image/png']]);
+    expect(ask).toHaveBeenNthCalledWith(2, SIGNATURE_DIALOG_ID, {
+      kept: [],
+      picked: { handle: 'held-7', name: 'Mine.png', src: 'blob:made-1' },
+      keep: false,
+    });
+    expect(revoked).toStrictEqual(['blob:made-1']);
+  });
+
+  it('CONTROL: a CANCELLED pick asks again with no picture — and a refused one says why first', async () => {
+    let answer: unknown = { kind: 'cancelled' };
+    const client = createClient(channels, (id) =>
+      Promise.resolve(ok(id === 'library.list' ? { entries: [] } : answer)),
+    );
+    const ask = vi.fn().mockResolvedValueOnce({ upload: 'pick', keep: true }).mockResolvedValueOnce(undefined);
+    await chooseSignature({ client, ask }, { make: () => 'blob:never', revoke: () => undefined });
+    expect(ask).toHaveBeenNthCalledWith(2, SIGNATURE_DIALOG_ID, { kept: [], keep: true });
+
+    answer = { kind: 'unreadable' };
+    const refusedAsk = vi
+      .fn()
+      .mockResolvedValueOnce({ upload: 'pick', keep: true })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+    await chooseSignature({ client, ask: refusedAsk }, { make: () => 'blob:never', revoke: () => undefined });
+    expect(refusedAsk).toHaveBeenNthCalledWith(2, SIGNATURE_PROBLEM_DIALOG_ID, { reason: 'unreadable' });
+    expect(refusedAsk).toHaveBeenNthCalledWith(3, SIGNATURE_DIALOG_ID, { kept: [], keep: true });
+  });
+
   it('a dismissed dialog answers nothing', async () => {
     const { client } = answering(PLACED);
     expect(await chooseSignature({ client, ask: vi.fn().mockResolvedValue(undefined) })).toBeUndefined();

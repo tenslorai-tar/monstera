@@ -303,6 +303,7 @@ describe('browser shim', () => {
       'settings.loadSecrets',
       'settings.save',
       'settings.saveSecret',
+      'signature.pickPicture',
       'spelling.dictionary',
       'window.close',
       'window.closeListening',

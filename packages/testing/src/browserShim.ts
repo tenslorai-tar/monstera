@@ -1397,6 +1397,21 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       libraryPictures.set(id, { mediaType: 'image/png', bytes: picked.bytes });
       return Promise.resolve(ok({ kind: 'added' as const, entry }));
     },
+    // THE LIBRARY'S PICKED PICTURE serves the signature's preview too: the same option names what the picker returns.
+    'signature.pickPicture': () => {
+      const picked = options.library?.pick ?? null;
+      if (picked === null) return Promise.resolve(ok({ kind: 'cancelled' as const }));
+      libraryMinted += 1;
+      return Promise.resolve(
+        ok({
+          kind: 'picked' as const,
+          handle: asFileHandle(`held-picture-${String(libraryMinted)}`),
+          name: picked.name,
+          mediaType: 'image/png' as const,
+          bytes: picked.bytes,
+        }),
+      );
+    },
     'library.keepSignature': ({ mark }) => {
       libraryMinted += 1;
       const entry: LibraryEntry = {

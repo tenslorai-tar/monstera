@@ -166,6 +166,7 @@ import {
   officeImportFormatOf,
 } from './officeConversion.js';
 import { type PdfaSource, PdfaFailedError } from './pdfaConversion.js';
+import type { HeldPicture } from './heldPicture.js';
 import type { PersonalLibrary } from './personalLibrary.js';
 import { type PrintDestination, PrintFailedError } from './printing.js';
 import { type ShareDestination, ShareFailedError, shareTitle } from './sharing.js';
@@ -2072,6 +2073,8 @@ export interface DocumentCommandsParts {
    * signature is kept. See {@link LibraryReader} and {@link LibraryKeeper}.
    */
   readonly library: LibraryReader & LibraryKeeper;
+  /** The picture the plain Signature's dialog previewed, placed from here and released once it is (ADR-0133). */
+  readonly heldPicture: HeldPicture;
   /** Each import format's picker and bounded read. See {@link ImportSource}. */
   readonly imports: Readonly<Record<ImportFormat, ImportSource>>;
   /**
@@ -2272,6 +2275,7 @@ export class DocumentCommands {
   readonly #copy: CopySource;
   readonly #image: ImageSource;
   readonly #library: LibraryReader & LibraryKeeper;
+  readonly #heldPicture: HeldPicture;
   readonly #imports: Readonly<Record<ImportFormat, ImportSource>>;
   readonly #compose: ComposeImport;
   readonly #imageFiles: ImageFilesSource;
@@ -2341,6 +2345,7 @@ export class DocumentCommands {
     this.#copy = parts.copy;
     this.#image = parts.image;
     this.#library = parts.library;
+    this.#heldPicture = parts.heldPicture;
     this.#imports = parts.imports;
     this.#compose = parts.compose;
     this.#imageFiles = parts.imageFiles;
@@ -5533,6 +5538,13 @@ export class DocumentCommands {
       return { kind: 'ready', mark: { kind: 'image', bytes: kept.bytes, mediaType: kept.mediaType }, picked: undefined };
     }
     if (mark.kind !== 'image') return { kind: 'ready', mark, picked: undefined };
+    if (mark.picked !== undefined) {
+      // THE PICTURE THE DIALOG PREVIEWED: its held bytes, never a fresh read of its path and never a picker in its place
+      // — a handle not held (another pick replaced it, or it was placed) is a signature no longer there.
+      const held = this.#heldPicture.held(mark.picked);
+      if (held === undefined) return { kind: 'saved-signature-missing' };
+      return { kind: 'ready', mark: { kind: 'image', bytes: held.bytes, mediaType: held.mediaType }, picked: held.name };
+    }
 
     const picked = await this.#image.pick();
     if (picked === null) return { kind: 'cancelled' };
@@ -5602,6 +5614,8 @@ export class DocumentCommands {
       if (error instanceof DocumentNotOpenError) throw error;
       return { kind: 'unreadable' };
     }
+    // PLACED, so the previewed picture has done its one job: released, and the bytes resident in main go with it.
+    if (request.mark.kind === 'image' && request.mark.picked !== undefined) this.#heldPicture.release(request.mark.picked);
 
     if (!request.keep || request.mark.kind === 'saved') return { kind: 'placed', ...applied, kept: 'not-asked' };
     if (mark.kind !== 'image') {
