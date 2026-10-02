@@ -288,6 +288,7 @@ describe('browser shim', () => {
       'document.viewModel',
       'docusign.retrieve',
       'docusign.send',
+      'file.reveal',
       'library.addPicture',
       'library.keepSignature',
       'library.list',
