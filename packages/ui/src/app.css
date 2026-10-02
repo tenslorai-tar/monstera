@@ -5325,6 +5325,50 @@ optgroup {
   gap: var(--space-8);
 }
 
+/* SAMPLE (item 10, never committed): the plain Signature dialog's pad, preview and kept list. The three samples share
+   one width, so the pattern reads the same in each. */
+.m-signature-sample,
+.m-export-word,
+.m-export-page-images {
+  /* DEFINITE, because the popup shrinks to its content: a percentage here resolved against that and changed nothing. */
+  inline-size: 36rem;
+  max-inline-size: calc(100vw - 6rem);
+  box-sizing: border-box;
+}
+
+.m-signature-sample__pad {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding-block: var(--space-10);
+  border-block-end: 1px solid var(--border-soft);
+}
+
+.m-signature-sample__under {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.m-signature-sample__typed {
+  margin: 0;
+  padding: var(--space-12);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-6);
+  background: var(--bg2);
+  font-size: var(--font-chrome-20, 1.5rem);
+  text-align: center;
+}
+
+.m-signature-sample__typed--helvetica { font-family: Helvetica, Arial, sans-serif; }
+.m-signature-sample__typed--times-roman { font-family: 'Times New Roman', Times, serif; }
+.m-signature-sample__typed--times-italic { font-family: 'Times New Roman', Times, serif; font-style: italic; }
+.m-signature-sample__typed--courier { font-family: 'Courier New', Courier, monospace; }
+
+.m-signature-sample__kept {
+  color: var(--muted);
+}
+
 /*
  * AT THE PAGE AREA'S CORNER, never the window's. A strip fixed at the window's bottom right sits over whatever panel
  * ends there, and it was placed by a guess at where the assistant's composer ends: when the composer lost a line the

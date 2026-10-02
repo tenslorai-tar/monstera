@@ -1,30 +1,25 @@
-import { useLingui } from '@lingui/react';
-import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
 import { useState } from 'react';
 
 import {
   EXPORT_WORD_APPLY,
-  EXPORT_WORD_LAYOUT,
   EXPORT_WORD_MODE,
-  EXPORT_WORD_RICH,
-  EXPORT_WORD_TEXT,
+  SAMPLE_CANCEL,
+  SAMPLE_WORD_LAYOUT,
+  SAMPLE_WORD_LAYOUT_NOTE,
+  SAMPLE_WORD_NOTE,
+  SAMPLE_WORD_RICH,
+  SAMPLE_WORD_RICH_NOTE,
+  SAMPLE_WORD_TEXT,
+  SAMPLE_WORD_TEXT_NOTE,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogChoices, DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { ExportWordAnswer } from './exportWord.js';
 
 type WordMode = ExportWordAnswer['mode'];
 
-/**
- * Each mode and the sentence that says what a person gets, as a record so a
- * fourth mode arrives owing its words.
- */
-const MODES: Readonly<Record<WordMode, MessageKey>> = {
-  rich: EXPORT_WORD_RICH,
-  layout: EXPORT_WORD_LAYOUT,
-  text: EXPORT_WORD_TEXT,
-};
 
 /**
  * The Word export dialog's body: which of the three modes.
@@ -35,34 +30,32 @@ const MODES: Readonly<Record<WordMode, MessageKey>> = {
  * button names that next step, as the other exports' do.
  */
 export default function ExportWordBody({ resolve }: DialogAnswering<ExportWordAnswer>): ReactElement {
-  const { _ } = useLingui();
   const [mode, setMode] = useState<WordMode>('rich');
 
   return (
     <div className="m-export-word">
-      <fieldset className="m-export-word__mode">
-        <legend>{_(EXPORT_WORD_MODE)}</legend>
-        {(Object.keys(MODES) as WordMode[]).map((each) => (
-          <label key={each}>
-            <input
-              type="radio"
-              name="export-word-mode"
-              checked={mode === each}
-              onChange={() => {
-                setMode(each);
-              }}
-            />
-            {_(MODES[each])}
-          </label>
-        ))}
-      </fieldset>
-      <Button
-        label={EXPORT_WORD_APPLY}
-        variant="primary"
-        onClick={() => {
-          resolve({ mode });
-        }}
+      <DialogRow label={EXPORT_WORD_MODE} note={SAMPLE_WORD_NOTE}>
+        {() => null}
+      </DialogRow>
+      <DialogChoices<WordMode>
+        label={EXPORT_WORD_MODE}
+        options={[
+          { value: 'rich', label: SAMPLE_WORD_RICH, note: SAMPLE_WORD_RICH_NOTE },
+          { value: 'layout', label: SAMPLE_WORD_LAYOUT, note: SAMPLE_WORD_LAYOUT_NOTE },
+          { value: 'text', label: SAMPLE_WORD_TEXT, note: SAMPLE_WORD_TEXT_NOTE },
+        ]}
+        value={mode}
+        onChange={setMode}
       />
+      <DialogFooter cancelLabel={SAMPLE_CANCEL}>
+        <Button
+          label={EXPORT_WORD_APPLY}
+          variant="primary"
+          onClick={() => {
+            resolve({ mode });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

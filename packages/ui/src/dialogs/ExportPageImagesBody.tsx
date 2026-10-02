@@ -16,15 +16,23 @@ import {
   EXPORT_PAGE_IMAGES_EMPTY,
   EXPORT_PAGE_IMAGES_FILES,
   EXPORT_PAGE_IMAGES_FORMAT,
-  EXPORT_PAGE_IMAGES_JPEG,
   EXPORT_PAGE_IMAGES_LABEL,
   EXPORT_PAGE_IMAGES_OUT_OF_BOUNDS,
-  EXPORT_PAGE_IMAGES_PNG,
   EXPORT_PAGE_IMAGES_QUALITY,
   EXPORT_PAGE_IMAGES_RANGES,
-  EXPORT_PAGE_IMAGES_WEBP,
+  SAMPLE_CANCEL,
+  SAMPLE_JPEG,
+  SAMPLE_PNG,
+  SAMPLE_WEBP,
+  SAMPLE_DPI_NOTE,
+  SAMPLE_FORMAT_NOTE,
+  SAMPLE_PAGES,
+  SAMPLE_PAGES_NOTE,
+  SAMPLE_QUALITY_NOTE,
   SPLIT_DOCUMENT_APPLY,
 } from '../messages/en.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
+import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import { parsePageRanges } from '../pageRanges.js';
 import type { ExportPageImagesAnswer } from './exportPageImagesResult.js';
 import { renderRangeProblem } from './pageRangeProblem.js';
@@ -99,81 +107,57 @@ export default function ExportPageImagesBody({
 
   return (
     <div className="m-export-page-images">
-      <fieldset className="m-export-page-images__pages">
-        <label>
-          <input
-            type="radio"
-            name="export-pages"
-            checked={everyPage}
-            onChange={() => {
-              setEveryPage(true);
+      <DialogRow label={SAMPLE_PAGES} note={SAMPLE_PAGES_NOTE}>
+        {() => (
+          <SegmentedControl<'all' | 'ranges'>
+            label={SAMPLE_PAGES}
+            options={[
+              { value: 'all', label: EXPORT_PAGE_IMAGES_ALL },
+              { value: 'ranges', label: EXPORT_PAGE_IMAGES_RANGES },
+            ]}
+            value={everyPage ? 'all' : 'ranges'}
+            onChange={(chosen) => {
+              setEveryPage(chosen === 'all');
             }}
           />
-          {_(EXPORT_PAGE_IMAGES_ALL)}
-        </label>
-        <label>
-          <input
-            type="radio"
-            name="export-pages"
-            checked={!everyPage}
-            onChange={() => {
-              setEveryPage(false);
-            }}
-          />
-          {_(EXPORT_PAGE_IMAGES_RANGES)}
-        </label>
-      </fieldset>
+        )}
+      </DialogRow>
       {everyPage ? null : (
-        <Input
-          label={EXPORT_PAGE_IMAGES_LABEL}
-          placeholder={DELETE_PAGES_HINT}
-          value={text}
-          onValueChange={setText}
-        />
+        <DialogRow label={EXPORT_PAGE_IMAGES_LABEL}>
+          {() => (
+            <Input
+              label={EXPORT_PAGE_IMAGES_LABEL}
+              labelShownBeside
+              placeholder={DELETE_PAGES_HINT}
+              value={text}
+              onValueChange={setText}
+            />
+          )}
+        </DialogRow>
       )}
-      <fieldset className="m-export-page-images__format">
-        <legend>{_(EXPORT_PAGE_IMAGES_FORMAT)}</legend>
-        <label>
-          <input
-            type="radio"
-            name="export-format"
-            checked={format === 'png'}
-            onChange={() => {
-              setFormat('png');
-            }}
+      <DialogRow label={EXPORT_PAGE_IMAGES_FORMAT} note={SAMPLE_FORMAT_NOTE}>
+        {() => (
+          <SegmentedControl<PageImageFormat>
+            label={EXPORT_PAGE_IMAGES_FORMAT}
+            options={[
+              { value: 'png', label: SAMPLE_PNG },
+              { value: 'jpeg', label: SAMPLE_JPEG },
+              { value: 'webp', label: SAMPLE_WEBP },
+            ]}
+            value={format}
+            onChange={setFormat}
           />
-          {_(EXPORT_PAGE_IMAGES_PNG)}
-        </label>
-        <label>
-          <input
-            type="radio"
-            name="export-format"
-            checked={format === 'jpeg'}
-            onChange={() => {
-              setFormat('jpeg');
-            }}
-          />
-          {_(EXPORT_PAGE_IMAGES_JPEG)}
-        </label>
-        <label>
-          <input
-            type="radio"
-            name="export-format"
-            checked={format === 'webp'}
-            onChange={() => {
-              setFormat('webp');
-            }}
-          />
-          {_(EXPORT_PAGE_IMAGES_WEBP)}
-        </label>
-      </fieldset>
-      <Input label={EXPORT_PAGE_IMAGES_DPI} value={dpiText} onValueChange={setDpiText} />
+        )}
+      </DialogRow>
+      <DialogRow label={EXPORT_PAGE_IMAGES_DPI} note={SAMPLE_DPI_NOTE}>
+        {() => <Input label={EXPORT_PAGE_IMAGES_DPI} labelShownBeside value={dpiText} onValueChange={setDpiText} />}
+      </DialogRow>
       {format !== 'png' ? (
-        <Input
-          label={EXPORT_PAGE_IMAGES_QUALITY}
-          value={qualityText}
-          onValueChange={setQualityText}
-        />
+        <DialogRow label={EXPORT_PAGE_IMAGES_QUALITY} note={SAMPLE_QUALITY_NOTE}>
+          {() => (
+            <Input label={EXPORT_PAGE_IMAGES_QUALITY} labelShownBeside value={qualityText} onValueChange={setQualityText} />
+          )}
+        </DialogRow>
       ) : null}
       <p className="m-export-page-images__problem" role="status">
         {!inBounds
@@ -187,17 +171,17 @@ export default function ExportPageImagesBody({
             ? _(EXPORT_PAGE_IMAGES_FILES, { files: pages.length })
             : renderRangeProblem(parsed, text, _, EXPORT_PAGE_IMAGES_EMPTY)}
       </p>
-      <Button
-        label={SPLIT_DOCUMENT_APPLY}
-        variant="primary"
-        disabled={!usable}
-        onClick={() => {
-          // GUARDED AGAIN rather than trusting the disabled attribute, for
-          // `SplitDocumentBody`'s reason.
-          if (!usable) return;
-          resolve({ pages: [...pages], format, dpi, quality });
-        }}
-      />
+      <DialogFooter cancelLabel={SAMPLE_CANCEL}>
+        <Button
+          label={SPLIT_DOCUMENT_APPLY}
+          variant="primary"
+          disabled={!usable}
+          onClick={() => {
+            if (!usable) return;
+            resolve({ pages: [...pages], format, dpi, quality });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

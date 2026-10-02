@@ -613,6 +613,80 @@
   color: var(--text);
 }
 
+/* SAMPLE (item 10, never committed): Settings' row, in a dialog. The same tokens as `.m-settings-row`, so the two read
+   as one language: a 13 px semibold name, a 12 px muted note, the control at the right, a soft line between rows. */
+.m-dialog-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8) var(--space-24);
+  padding-block: var(--space-10);
+  border-block-end: 1px solid var(--border-soft);
+}
+
+.m-dialog-row:last-of-type {
+  border-block-end: 0;
+}
+
+.m-dialog-row__text {
+  display: flex;
+  flex: 1 1 22ch;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+.m-dialog-row__label {
+  font-size: var(--font-chrome-13);
+  font-weight: 600;
+}
+
+.m-dialog-row__note {
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+}
+
+.m-dialog-row__control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-inline-size: 0;
+}
+
+/* CHOICES THAT NEED A SENTENCE: a row each, the radio at the start, the whole row the target. */
+.m-dialog-choices {
+  display: flex;
+  flex-direction: column;
+}
+
+.m-dialog-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-10);
+  padding: var(--space-8) var(--space-10);
+  border-radius: var(--radius-6);
+  cursor: pointer;
+}
+
+.m-dialog-choice:hover {
+  background: var(--surface2);
+}
+
+.m-dialog-choice input {
+  margin-block-start: var(--space-2);
+}
+
+/* THE FOOT: Cancel and the one action at the right, above a line, as the end of a Settings page reads. */
+.m-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-8);
+  margin-block-start: var(--space-8);
+  padding-block-start: var(--space-12);
+  border-block-start: 1px solid var(--border-soft);
+}
+
 .m-dialog__body {
   display: flex;
   flex-direction: column;

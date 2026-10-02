@@ -455,6 +455,37 @@ export const EXPORT_PAGE_IMAGES_WEBP = messageKey('dialog.export-page-images.web
 export const EXPORT_PAGE_IMAGES_DPI = messageKey('dialog.export-page-images.dpi');
 export const EXPORT_PAGE_IMAGES_QUALITY = messageKey('dialog.export-page-images.quality');
 export const EXPORT_PAGE_IMAGES_OUT_OF_BOUNDS = messageKey('dialog.export-page-images.out-of-bounds');
+// SAMPLE (item 10, never committed): the dialog pattern's own words.
+export const SAMPLE_CANCEL = messageKey('dialog.sample.cancel');
+export const SAMPLE_PAGES = messageKey('dialog.sample.pages');
+export const SAMPLE_PAGES_NOTE = messageKey('dialog.sample.pages-note');
+export const SAMPLE_FORMAT_NOTE = messageKey('dialog.sample.format-note');
+export const SAMPLE_DPI_NOTE = messageKey('dialog.sample.dpi-note');
+export const SAMPLE_QUALITY_NOTE = messageKey('dialog.sample.quality-note');
+export const SAMPLE_WORD_NOTE = messageKey('dialog.sample.word-note');
+export const SAMPLE_PNG = messageKey('dialog.sample.png');
+export const SAMPLE_JPEG = messageKey('dialog.sample.jpeg');
+export const SAMPLE_WEBP = messageKey('dialog.sample.webp');
+export const SAMPLE_WORD_RICH = messageKey('dialog.sample.word-rich');
+export const SAMPLE_WORD_RICH_NOTE = messageKey('dialog.sample.word-rich-note');
+export const SAMPLE_WORD_LAYOUT = messageKey('dialog.sample.word-layout');
+export const SAMPLE_WORD_LAYOUT_NOTE = messageKey('dialog.sample.word-layout-note');
+export const SAMPLE_WORD_TEXT = messageKey('dialog.sample.word-text');
+export const SAMPLE_WORD_TEXT_NOTE = messageKey('dialog.sample.word-text-note');
+export const SAMPLE_SIGNATURE_TITLE = messageKey('dialog.sample.signature-title');
+export const SAMPLE_SIGNATURE_HOW = messageKey('dialog.sample.signature-how');
+export const SAMPLE_SIGNATURE_DRAW = messageKey('dialog.sample.signature-draw');
+export const SAMPLE_SIGNATURE_TYPE = messageKey('dialog.sample.signature-type');
+export const SAMPLE_SIGNATURE_UPLOAD = messageKey('dialog.sample.signature-upload');
+export const SAMPLE_SIGNATURE_NAME = messageKey('dialog.sample.signature-name');
+export const SAMPLE_SIGNATURE_PICTURE = messageKey('dialog.sample.signature-picture');
+export const SAMPLE_SIGNATURE_PICTURE_NOTE = messageKey('dialog.sample.signature-picture-note');
+export const SAMPLE_SIGNATURE_CHOOSE = messageKey('dialog.sample.signature-choose');
+export const SAMPLE_SIGNATURE_SAVE = messageKey('dialog.sample.signature-save');
+export const SAMPLE_SIGNATURE_SAVE_NOTE = messageKey('dialog.sample.signature-save-note');
+export const SAMPLE_SIGNATURE_USE = messageKey('dialog.sample.signature-use');
+export const SAMPLE_SIGNATURE_KEPT = messageKey('dialog.sample.signature-kept');
+export const SAMPLE_SIGNATURE_KEPT_NOTE = messageKey('dialog.sample.signature-kept-note');
 export const EXPORT_PAGE_IMAGES_FILES = messageKey('dialog.export-page-images.files');
 export const EXPORT_TEXT_COMMAND_TITLE = messageKey('command.export-text.title');
 export const EXPORT_LAYOUT_TEXT_COMMAND_TITLE = messageKey('command.export-layout-text.title');
@@ -4457,6 +4488,36 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_DOCUMENT_FONT_COURIER]: 'Courier',
   [SIGN_DOCUMENT_PAD]: 'Draw your signature here',
   [SIGN_DOCUMENT_CLEAR]: 'Clear',
+  [SAMPLE_CANCEL]: 'Cancel',
+  [SAMPLE_PAGES]: 'Pages',
+  [SAMPLE_PAGES_NOTE]: 'Each page becomes one picture file.',
+  [SAMPLE_FORMAT_NOTE]: 'PNG keeps every detail; JPEG and WebP make smaller files.',
+  [SAMPLE_DPI_NOTE]: 'Dots per inch: 150 for a screen, 300 for print.',
+  [SAMPLE_QUALITY_NOTE]: 'Higher keeps more detail and makes larger files.',
+  [SAMPLE_WORD_NOTE]: 'How closely the Word file follows the pages.',
+  [SAMPLE_PNG]: 'PNG',
+  [SAMPLE_JPEG]: 'JPEG',
+  [SAMPLE_WEBP]: 'WebP',
+  [SAMPLE_WORD_RICH]: 'Editable text',
+  [SAMPLE_WORD_RICH_NOTE]: 'Text and its fonts, flowing like a normal document.',
+  [SAMPLE_WORD_LAYOUT]: 'Page layout',
+  [SAMPLE_WORD_LAYOUT_NOTE]: 'Each line where it sits on the page.',
+  [SAMPLE_WORD_TEXT]: 'Words only',
+  [SAMPLE_WORD_TEXT_NOTE]: 'Just the words, with no layout.',
+  [SAMPLE_SIGNATURE_TITLE]: 'Signature',
+  [SAMPLE_SIGNATURE_HOW]: 'How it looks',
+  [SAMPLE_SIGNATURE_DRAW]: 'Draw',
+  [SAMPLE_SIGNATURE_TYPE]: 'Type',
+  [SAMPLE_SIGNATURE_UPLOAD]: 'Upload',
+  [SAMPLE_SIGNATURE_NAME]: 'Your name',
+  [SAMPLE_SIGNATURE_PICTURE]: 'Picture',
+  [SAMPLE_SIGNATURE_PICTURE_NOTE]: 'A PNG or JPEG of your signature, on a plain background.',
+  [SAMPLE_SIGNATURE_CHOOSE]: 'Choose a picture…',
+  [SAMPLE_SIGNATURE_SAVE]: 'Save for reuse',
+  [SAMPLE_SIGNATURE_SAVE_NOTE]: 'Kept on this computer for next time.',
+  [SAMPLE_SIGNATURE_USE]: 'Use Signature',
+  [SAMPLE_SIGNATURE_KEPT]: 'Your signatures',
+  [SAMPLE_SIGNATURE_KEPT_NOTE]: 'Kept from before. Choose one to use it again.',
   [SIGN_DOCUMENT_IMAGE_NOTE]:
     'You will be asked for a PNG or JPEG picture of your signature first, then for your certificate.',
   [SIGN_DOCUMENT_MARK_MISSING]: 'Type or draw the signature first.',

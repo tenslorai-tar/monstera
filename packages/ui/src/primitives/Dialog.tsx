@@ -2,9 +2,97 @@ import { useLingui } from '@lingui/react';
 import { Dialog as BaseDialog } from '@base-ui/react/dialog';
 import type { MessageKey } from '@monstera/shared';
 import { X } from 'lucide-react';
-import { type ReactElement, type ReactNode, type RefObject, useRef } from 'react';
+import { type ReactElement, type ReactNode, type RefObject, useId, useRef } from 'react';
 
+import { Button } from './Button.js';
 import { IconButton } from './IconButton.js';
+
+/**
+ * SAMPLE (item 10, never committed): one row of a dialog in Settings' visual language — the name and a muted note on
+ * the left, the control on the right, a soft line under it. `children` receives the label's id, so a control without a
+ * label of its own is named by the row.
+ */
+export function DialogRow({
+  label,
+  note,
+  children,
+}: {
+  readonly label: MessageKey;
+  readonly note?: MessageKey | undefined;
+  readonly children: (labelId: string) => ReactNode;
+}): ReactElement {
+  const { _ } = useLingui();
+  const labelId = useId();
+  return (
+    <div className="m-dialog-row">
+      <div className="m-dialog-row__text">
+        <span className="m-dialog-row__label" id={labelId}>
+          {_(label)}
+        </span>
+        {note === undefined ? null : <span className="m-dialog-row__note">{_(note)}</span>}
+      </div>
+      <div className="m-dialog-row__control">{children(labelId)}</div>
+    </div>
+  );
+}
+
+/**
+ * SAMPLE: choices too long for a segmented control, as rows — a radio, a short name, a muted line under it. What a
+ * Settings page does with a choice that needs a sentence, so a dialog never wraps sentences inside one control.
+ */
+export function DialogChoices<Value extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  readonly label: MessageKey;
+  readonly options: readonly { readonly value: Value; readonly label: MessageKey; readonly note: MessageKey }[];
+  readonly value: Value;
+  readonly onChange: (value: Value) => void;
+}): ReactElement {
+  const { _ } = useLingui();
+  const name = useId();
+  return (
+    <div aria-label={_(label)} className="m-dialog-choices" role="radiogroup">
+      {options.map((option) => (
+        <label className="m-dialog-choice" key={option.value}>
+          <input
+            checked={option.value === value}
+            name={name}
+            onChange={() => {
+              onChange(option.value);
+            }}
+            type="radio"
+          />
+          <span className="m-dialog-row__text">
+            <span className="m-dialog-row__label">{_(option.label)}</span>
+            <span className="m-dialog-row__note">{_(option.note)}</span>
+          </span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * SAMPLE: the dialog's foot — Cancel and the one action, at the right, as Settings' own buttons sit. Cancel is Base
+ * UI's Close, which works anywhere inside the dialog, so a body needs no way of its own to dismiss.
+ */
+export function DialogFooter({
+  cancelLabel,
+  children,
+}: {
+  readonly cancelLabel: MessageKey;
+  readonly children: ReactNode;
+}): ReactElement {
+  return (
+    <div className="m-dialog-footer">
+      <BaseDialog.Close nativeButton render={<Button label={cancelLabel} />} />
+      {children}
+    </div>
+  );
+}
 
 /**
  * The one dialog primitive. Every dialog in the application is this (B9).

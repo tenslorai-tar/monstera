@@ -263,6 +263,7 @@ import { PAGE_BARCODES_DIALOG } from './dialogs/pageBarcodes.js';
 import { PLACE_BARCODE_DIALOG } from './dialogs/placeBarcode.js';
 import { PRINT_DIALOG } from './dialogs/print.js';
 import { EXPORT_WORD_DIALOG } from './dialogs/exportWord.js';
+import { SIGNATURE_SAMPLE_DIALOG, SIGNATURE_SAMPLE_DIALOG_ID } from './dialogs/signatureSample.js';
 import { INSERT_FROM_PDF_DIALOG } from './dialogs/insertFromPdf.js';
 import { MERGE_DOCUMENT_DIALOG } from './dialogs/mergeDocument.js';
 import { REPLACE_PAGE_DIALOG } from './dialogs/replacePage.js';
@@ -306,7 +307,7 @@ import {
   CLOSE_UNSAVED_RESULT,
 } from './dialogs/closeUnsaved.js';
 import { useDocumentView } from './useDocumentView.js';
-import { CLOSE_LABEL, SPLIT_SECOND_LABEL, TOAST_DISMISS } from './messages/en.js';
+import { CLOSE_LABEL, SAMPLE_SIGNATURE_TITLE, SPLIT_SECOND_LABEL, TOAST_DISMISS } from './messages/en.js';
 import { annotationTools } from './annotations/annotationTools.js';
 import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
@@ -865,6 +866,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         SPLIT_DOCUMENT_DIALOG,
         EXPORT_PAGE_IMAGES_DIALOG,
         EXPORT_WORD_DIALOG,
+        SIGNATURE_SAMPLE_DIALOG,
         EXPORT_EXCEL_DIALOG,
         SERVICE_REFUSED_DIALOG,
         PRINT_DIALOG,
@@ -2693,6 +2695,15 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         exportTextCommand(exportDeps),
         exportLayoutTextCommand(exportDeps),
         exportWordCommand(exportDeps),
+        // SAMPLE (item 10, never committed): palette-only, so the sample dialog can be opened for a screenshot.
+        {
+          id: 'sample.signature',
+          title: SAMPLE_SIGNATURE_TITLE,
+          placements: [],
+          run: (): void => {
+            void ask(SIGNATURE_SAMPLE_DIALOG_ID, {});
+          },
+        },
         exportPowerPointCommand({ client, onApplied: applied, ask, stamp, toast }),
         exportExcelCommand({
           client,
