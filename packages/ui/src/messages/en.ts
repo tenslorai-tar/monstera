@@ -3421,7 +3421,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_NO_KEY]: 'This provider has no key stored. Add it in Settings › AI; the key stays on this machine.',
   [ASSISTANT_SEARCHES_THE_WEB]:
     'This model searches the web for every answer, so nothing was sent. Choose another model, or turn on Document + web.',
-  [ASSISTANT_WEB_LABEL]: 'Sources',
+  [ASSISTANT_WEB_LABEL]: 'Choose sources',
   [ASSISTANT_WEB_DOCUMENT]: 'Document only',
   [ASSISTANT_WEB_ON]: 'Document + web',
   [ASSISTANT_WEB_ALWAYS]: 'Always searches the web. To use this model, choose Document + web.',
@@ -3450,7 +3450,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AI_PROVIDER_NAMES.groq]: 'Groq',
   [AI_PROVIDER_NAMES.perplexity]: 'Perplexity',
   [AI_PROVIDER_NAMES.deepseek]: 'DeepSeek',
-  [ASSISTANT_ABOUT_LABEL]: 'Context',
+  [ASSISTANT_ABOUT_LABEL]: 'Choose context',
   [ASSISTANT_SENT_PICTURE]: 'Sent a picture of page {page} of {count}',
   [ASSISTANT_SENT_COMMENTS]: '{comments, plural, one {Sent the one comment in this document} other {Sent all # comments in this document}}',
   [ASSISTANT_SENT_COMMENTS_CUT]: '{comments, plural, one {Sent the first comment — the list was too long to send whole} other {Sent the first # comments — the list was too long to send whole}}',

@@ -38,15 +38,28 @@ async function openPane(page: Page, settings: Record<string, unknown> = {}): Pro
   await expect(page.locator('.m-assistant__turn')).toHaveCount(2, { timeout: 10_000 });
 }
 
-test('CONTEXT and SOURCES share one row, and each closed face reads its name', async ({ page }) => {
+test('CONTEXT and SOURCES each read their choice and value, whole and inside the pane', async ({ page }) => {
   await openPane(page);
   const faces = page.locator('.m-assistant [data-choice-menu]');
   await expect(faces).toHaveCount(2);
-  expect(await faces.allTextContents()).toStrictEqual(['Context', 'Sources']);
-  const [context, sources] = [await faces.nth(0).boundingBox(), await faces.nth(1).boundingBox()];
-  if (context === null || sources === null) throw new Error('both menus have boxes');
-  expect(Math.abs(context.y - sources.y)).toBeLessThanOrEqual(2);
-  expect(sources.x).toBeGreaterThan(context.x + context.width);
+  expect(await faces.allTextContents()).toStrictEqual(['Choose context: Page 1', 'Choose sources: Document only']);
+  // ONE ROW NO LONGER: at the pane's default width the row is 306 px and the two faces need 381 (measured 2026-10-02
+  // at 1280 × 800), so Sources wraps under Context. What must hold either way is that each face lies inside the row
+  // and shows every word it reads.
+  const fit = await page.evaluate(() => {
+    const row = document.querySelector('.m-assistant__choices')?.getBoundingClientRect();
+    return [...document.querySelectorAll<HTMLElement>('.m-assistant [data-choice-menu]')].map((face) => {
+      const box = face.getBoundingClientRect();
+      return {
+        inside: row !== undefined && box.left >= row.left - 0.5 && box.right <= row.right + 0.5,
+        whole: face.scrollWidth <= face.clientWidth,
+      };
+    });
+  });
+  expect(fit).toStrictEqual([
+    { inside: true, whole: true },
+    { inside: true, whole: true },
+  ]);
   // NO EXPLANATORY HINT is drawn under the box: the Enter line is a description for a screen reader only, so it is
   // present and occupies no more than the one clipped pixel `.m-visually-hidden` leaves.
   const hint = page.getByText('Enter sends. Shift+Enter starts a new line.');
