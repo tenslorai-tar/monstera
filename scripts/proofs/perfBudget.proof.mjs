@@ -61,8 +61,9 @@ const failures = [];
  * not run as **skipped**, and skipped counts toward the total, so the number is
  * the same everywhere and a case that stops being *generated* is still loud.
  */
-// 34 SINCE THE SCAN SHAPE (2026-09-27): the per-shape pass above is one case a shape, and there are three.
-const DECLARED_CASES = 34;
+// 34 SINCE THE SCAN SHAPE (2026-09-27): the per-shape pass above is one case a shape, and there are three. 35 since
+// 2026-10-02: a declared budget with no measured role still gets a line (the shrink case beside the construction's).
+const DECLARED_CASES = 35;
 
 const roster = createRoster(failures, { cases: DECLARED_CASES });
 
@@ -116,14 +117,26 @@ function generousEntriesExcept(results, underTest) {
     if (result.budget === underTest) continue;
     worst.set(result.budget, Math.max(worst.get(result.budget) ?? 0, result.ratio));
   }
-  return [...worst].map(([budget, ratio]) =>
+  // EVERY DECLARED BUDGET, from the parser, never only the ones a role was measured for (4c). A set derived from the
+  // measurements shrinks exactly when a measurement fails: with the shim unbuilt, no `mupdf-host` role ran, the line
+  // built here named no `mupdf-host`, and the parser — which requires every budget — threw *"no budget declared for
+  // mupdf-host"* from inside the proof, which hid the real reason and left every later case unrun (2026-10-02, in the
+  // cloud sandbox; CI provisions the shim, so it never saw the hole).
+  const declared = [...memoryBudgets().values()]
+    .filter((budget) => budget.kind === 'assertable' && budget.name !== underTest)
+    .map((budget) => budget.name);
+  return declared.map((budget) => {
+    // A BUDGET NO ROLE WAS MEASURED FOR still needs a line, and nothing here judges it, so its multiple is the
+    // largest the parser takes: computed, never a figure, for this file's own guard.
+    const ratio = worst.get(budget);
+    const multiple = ratio === undefined ? Number.MAX_SAFE_INTEGER : Math.ceil(ratio) + 10;
     // THE SET COMES FROM THE PARSER, not from a copy here. Which budgets lost
     // their multiple is one question, and a second opinion about it in a proof
     // would keep agreeing with the parser until the day it did not (B3a).
-    NO_MULTIPLE.has(budget)
+    return NO_MULTIPLE.has(budget)
       ? `${budget} = 64 GB, base 32 GB`
-      : `${budget} = ${String(Math.ceil(ratio) + 10)}x, 64 GB, base 32 GB`,
-  );
+      : `${budget} = ${String(multiple)}x, 64 GB, base 32 GB`;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -183,6 +196,29 @@ function generousEntriesExcept(results, underTest) {
     refused === '',
     `The parser refused it: ${refused.split('\n')[0] ?? ''}. This is the end-to-end form of the ` +
       `case above and it is the one CI actually hit.`,
+  );
+
+  // THE SHRINK (4c): results in which NO role of one declared budget was measured, as on a machine without the shim.
+  // A construction derived from the measurements leaves that budget out and the parser refuses the line, which is
+  // what this proof threw on 2026-10-02. The line must still name it, and still parse.
+  const onlyMain = [{ budget: 'main', ratio: 1 }];
+  let shrunk = '';
+  try {
+    memoryBudgets({
+      text: withEntries([
+        ...generousEntriesExcept(onlyMain, 'main'),
+        ...generousEntriesExcept(onlyMain, 'mupdf-host'),
+        'renderer = provisional',
+      ]),
+    });
+  } catch (error) {
+    shrunk = error instanceof Error ? error.message : String(error);
+  }
+  check(
+    'a declared budget with NO measured role still gets a line, and the parser accepts it',
+    generousEntriesExcept(onlyMain, 'main').some((entry) => entry.startsWith('mupdf-host = ')) && shrunk === '',
+    `entries: ${generousEntriesExcept(onlyMain, 'main').join(' · ') || '(none)'}; the parser said: ` +
+      `${shrunk.split('\n')[0] ?? ''}. A set derived from what was measured shrinks when a measurement fails.`,
   );
 }
 
@@ -307,6 +343,11 @@ const thrown = guarded(() => {
       baseline.results.some((result) => result.role === 'main-service') &&
       baseline.results.every((result) => result.peakBytes > 0),
     `measured: ${baseline.results.map((r) => r.role).join(', ')}\n      ` +
+      // WHY EACH OTHER ROLE WAS NOT, in the gate's own words: on a machine without the shim this names the remedy
+      // (`node scripts/provision/mupdf.mjs`) where a list of the measured roles alone said nothing about it.
+      `not measured: ${
+        baseline.unasserted.map((entry) => `${entry.role} (${entry.reason.split('\n').find((line) => /Refusing|has no meaning|provisional/u.test(line))?.trim() ?? entry.reason.split('\n')[0]})`).join('; ') || '(none)'
+      }\n      ` +
       `The floor is pinned so a role that stopped being measured is loud rather than absent. ` +
       `It is a floor rather than an equality because \`mupdf-host-real\` runs only where a Win32 ` +
       `AppContainer can start — the case below is what stops that becoming a hole. ` +
