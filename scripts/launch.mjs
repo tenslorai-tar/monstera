@@ -44,21 +44,14 @@
  */
 
 import { spawn } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { SHELL_LAUNCH, refuseStaleBuild } from './lib/buildFreshness.mjs';
 import { fileExists } from './lib/fetchVerified.mjs';
-import { shimEnvironment } from './lib/shimBinary.mjs';
+import { developmentEnvironment } from './lib/launchEnvironment.mjs';
 import { electronBinaryPath } from './provision/electron.mjs';
-import { pdfiumEnvironment } from './provision/pdfium.mjs';
-import { gswin64cPath } from './provision/ghostscript.mjs';
-import { x2tPath } from './provision/onlyoffice.mjs';
-import { pdftotextPath } from './provision/poppler.mjs';
-import { tessdataDirectory, tessdataPath } from './provision/tessdata.mjs';
 import { formatError } from './lib/reportError.mjs';
-import { nativeManifest } from './release/nativeManifest.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -92,126 +85,6 @@ async function resolveRuntime() {
   );
 }
 
-/**
- * Where the shell should look for `pdfium.dll`, or nothing.
- *
- * ## Why the launcher answers this and the application does not
- *
- * `electronBinaryPath` is here for a stated reason — a second opinion about
- * where a provisioned artefact lives is B3a — and this is the same sentence with
- * a different binary. `apps/desktop` cannot call `pdfiumLibrary` itself:
- * `scripts/` is plain Node tooling and is not part of what a packaged
- * application ships, so an import would resolve in a checkout and vanish in a
- * build. So the one process that knows both the repository root and how to start
- * the shell passes the answer down.
- *
- * ## Absent is a decided state, not a failure to raise
- *
- * Unlike the runtime, PDFium is not needed to start: it backs the Stage 5
- * editing commands and nothing else. `engineHostPlatform.ts` answers `null` for
- * an unset variable and creates no PDFium host, and a command routed to a writer
- * with no registration is refused **by name** — which is what a user without
- * `npm run provision:pdfium` should get, rather than a shell that will not open.
- *
- * The spelling is `pdfiumEnvironment`'s in `provision/pdfium.mjs`, beside `pdfiumLibrary`: the PDFium host's live
- * harness starts the same host and must pass the same variable.
- *
- * @returns {Record<string, string>} the variables to add to the child's
- *   environment — empty when the library is not provisioned.
- */
-function launchPdfiumEnvironment() {
-  return pdfiumEnvironment(REPO_ROOT);
-}
-
-/**
- * Where every MuPDF host should find `monstera_mupdf.dll` (ADR-0124), or nothing — from
- * `shimEnvironment`, the one spelling. **Passed only when the DLL was built from the source on
- * disk**, because a host binds the shim's exports at its start and a DLL older than its source can
- * lack one. Without it the shell starts with no MuPDF host, and every document opens poisoned with
- * the no-platform reason.
- *
- * @returns {Record<string, string>} the variables to add to the child's environment — empty when
- *   the shim is not built, or not built from this source.
- */
-function mupdfShimEnvironment() {
-  return shimEnvironment({ root: REPO_ROOT });
-}
-
-/**
- * The OCR models' directory, passed the same way and for the same reasons.
- *
- * {@link pdfiumEnvironment}' shape one artefact along: `scripts/provision/
- * tessdata.mjs` owns where a provisioned model lives, `apps/desktop` cannot call
- * it, and absent is a decided state — OCR is offered only where a model is
- * present, so a checkout without `npm run provision:tessdata` gets a shell that
- * opens and does not offer recognition.
- *
- * **Keyed on `eng`'s presence rather than on the directory's.** The directory is
- * created by the first download, so an interrupted provision can leave it empty —
- * and an empty directory passed down is a datadir every recognition fails
- * against, which is the state that reads like a broken feature rather than an
- * unprovisioned one. `eng` is the model CI provisions and the one the surface
- * defaults to.
- *
- * @returns {Promise<Record<string, string>>} the variables to add to the child's
- *   environment — empty when no model is provisioned.
- */
-async function tessdataEnvironment() {
-  if (!(await fileExists(tessdataPath(REPO_ROOT, 'eng')))) return {};
-  return { MONSTERA_TESSDATA_DIRECTORY: tessdataDirectory(REPO_ROOT) };
-}
-
-/**
- * Poppler's `pdftotext`, passed the same way and for the same reasons (ADR-0071).
- *
- * {@link pdfiumEnvironment}' shape one artefact along: `scripts/provision/
- * poppler.mjs` owns where it lives, `apps/desktop` cannot call that, and absent
- * is a decided state — the layout-preserving text export says it is unavailable.
- *
- * @returns {Promise<Record<string, string>>}
- */
-async function popplerEnvironment() {
-  const executable = pdftotextPath(REPO_ROOT);
-  if (!(await fileExists(executable))) return {};
-  return { MONSTERA_POPPLER_EXECUTABLE: executable };
-}
-
-/**
- * Ghostscript's `gswin64c`, passed the same way and for the same reasons (ADR-0075).
- * Absent is a decided state — the PDF/A-2b export says it is unavailable.
- *
- * @returns {Promise<Record<string, string>>}
- */
-async function ghostscriptEnvironment() {
-  const executable = gswin64cPath(REPO_ROOT);
-  if (!(await fileExists(executable))) return {};
-  return { MONSTERA_GHOSTSCRIPT_EXECUTABLE: executable };
-}
-
-/**
- * ONLYOFFICE's `x2t`, passed the same way and for the same reasons (ADR-0120).
- * Absent is a decided state — Office import says it is unavailable.
- *
- * @returns {Promise<Record<string, string>>}
- */
-async function onlyofficeEnvironment() {
-  const executable = x2tPath(REPO_ROOT);
-  if (!(await fileExists(executable))) return {};
-  return { MONSTERA_ONLYOFFICE_EXECUTABLE: executable };
-}
-
-/**
- * THE COMPONENTS' MANIFEST (ADR-0122), generated from the provisioning pins at every launch into `.tools/` — the
- * package carries its own beside the components; a development shell reads this one, so the Components dialog can
- * verify the trees the variables above point at.
- */
-function nativeManifestEnvironment() {
-  const path = resolve(REPO_ROOT, '.tools', 'native-manifest.json');
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(nativeManifest(REPO_ROOT), null, 2)}\n`, 'utf8');
-  return { MONSTERA_NATIVE_MANIFEST: path };
-}
-
 async function main() {
   refuseStaleBuild(REPO_ROOT, SHELL_LAUNCH, 7);
   const binary = await resolveRuntime();
@@ -221,15 +94,11 @@ async function main() {
     // default: `spawn` inherits the whole environment when `env` is omitted, and
     // an object holding only the addition would start the shell with no PATH,
     // no APPDATA and no TEMP.
+    // WHERE EACH NATIVE COMPONENT IS, from the one answer every starter of a development shell takes
+    // (`launchEnvironment.mjs`, which says what each variable is and why an absent one is a decided state).
     env: {
       ...process.env,
-      ...launchPdfiumEnvironment(),
-      ...mupdfShimEnvironment(),
-      ...(await tessdataEnvironment()),
-      ...(await popplerEnvironment()),
-      ...(await ghostscriptEnvironment()),
-      ...(await onlyofficeEnvironment()),
-      ...nativeManifestEnvironment(),
+      ...(await developmentEnvironment(REPO_ROOT)),
     },
     // No shell. The path is composed from a pinned version and a platform key,
     // but a shell would reinterpret whatever the repository root happens to

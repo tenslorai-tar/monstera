@@ -50,6 +50,7 @@ import { chromium } from '@playwright/test';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { buildScanFixture } from '../perf/largeFixture.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
+import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
 
 const ROOT = repoRoot();
 const PORT = 9339;
@@ -63,6 +64,8 @@ function option(name) {
 }
 
 const build = option('build') ?? 'package';
+/** What `npm start` hands a development shell (`launchEnvironment.mjs`); nothing for the package, which finds its own. */
+const DEVELOPMENT_ENV = build === 'dev' ? await developmentEnvironment(ROOT) : {};
 const variant = option('variant') ?? 'none';
 const scenarios = (option('scenarios') ?? 'scroll,drag,menu,draw').split(',');
 const large = process.argv.includes('--large');
@@ -283,7 +286,9 @@ function launch(documentFile) {
     build === 'package'
       ? [join(ROOT, 'release', 'msix', 'test', 'layout', 'Monstera.exe'), common]
       : [electronBinaryPath(ROOT), [resolve(ROOT, 'apps', 'desktop'), ...common]];
-  const child = spawn(command, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  // A DEVELOPMENT SHELL IS HANDED ITS NATIVE COMPONENTS, as `npm start` hands them: without them it has no engine
+  // host, and every document is poisoned for engine commands while it still displays. The package finds its own.
+  const child = spawn(command, args, { stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, ...DEVELOPMENT_ENV } });
   const started = Date.now();
   let stderr = '';
   child.stderr?.on('data', (chunk) => {
