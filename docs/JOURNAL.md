@@ -892,6 +892,85 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-02 — Stage audit of `884eff57..24320797` — findings CCCCCCC-1 to CCCCCCC-7
+
+Owed at one batch of files: merging `work/cloud-2` would have taken the range to 246 files against 200. The range is
+44 commits: this branch's audit record, `work/cloud-screens` merged with its baselines and Help, `work/cloud-ismain` and
+`work/cloud-canary` merged, the page list's layer moved back onto the scroller, three test races, the per-scroll render,
+the shared development environment and `appMemory.mjs`, the palette's lost keys, row 303's record, and the toast over
+Send. Most of the range's content is `work/cloud-screens`'; its own audit (`4a93218f..173cc5ae`, findings BBBBBBB-1 to
+-5 after renumbering) arrives with `work/cloud-2`, so this one reads this branch's commits closely and the merged ones
+by their deleted test lines.
+
+### 1. Root cause or workaround?
+
+Each fix names its mechanism. **CCCCCCC-1** (fixed, `ea7ec9e7`): the cloud-screens merge carried `884eff57`'s
+`will-change` onto the pane, because cloud-screens moved the rule's neighbouring declarations into a new rule and the
+hunk followed the line it was written after — a merge can move a change to another selector with no conflict.
+**CCCCCCC-2** (fixed, `9d250564`): `onCommand` began answering a promise on one branch while another added a caller
+that ignored it; each linted clean, the merge did not. **CCCCCCC-4** (fixed, `1f79c801`): the palette's field took focus
+a frame after the dialog opened, and 12 of 20 openings lost letters — found through an intermittent stamp case on CI.
+
+### 2. Verified against the easy shape only?
+
+**CCCCCCC-5** (three fixed, the class open): three tests read a box before the thing they measured had settled — the
+ruler helper scrolled before the pages had their sizes (`12187ea2`, and cloud-2 fixed the same race its own way), the
+Properties-panel control read the page canvas before layout (`2f3b348b`), and the layer read asked for reasons against
+a tree already replaced (`13f12520`). Each passed on this machine and failed on a slower runner. The easy shape here is
+*fast*; `documentDrawn`, which counts canvases, is the same shape in other cases and is not swept.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+`surfaceLayers.pw.ts` now matches the layer by its owning node rather than by size — a strengthening: the size match
+passed with the rule on the wrong element. `rulers.pw.ts` keeps cloud-2's stricter wait at the merge. `perfBudget.proof`
+(cloud-canary) now counts every declared budget from the parser, with a literal 35.
+
+### 3. Would CI have caught it?
+
+It did, three times: CCCCCCC-4 as the ubuntu stamp timeout, CCCCCCC-5 as two reds and **CCCCCCC-6** (fixed,
+`790cbdf6`): the toast covered Send by 6 px at rest, and the LIVE CHECK read the toast during its 8 px slide-in, so it
+passed whenever it caught the toast low — red here every run, green or red on CI by timing. `main` moved to `790cbdf6`,
+green on both.
+
+### 4. Are the proofs non-vacuous?
+
+Each new case was seen red: the scroll render (30 calls against 15), the palette (10 readings short), the layer by owner
+(the rule on the pane). The deletions read: `recentFiles.test.ts` lost the length-setting cases with the setting
+(`756f8578`); `boardStatus.proof` and `perfBudget.proof` replaced a literal count with a larger literal over a wider set;
+`contractHandlers.test.ts`' AI-key case changed with the confirmation shown on screen (`5ef47837`).
+
+### 4a. Resolution test before measuring?
+
+`appMemory.mjs` refuses to report unless `main` reads one copy per document and a MuPDF host runs. **CCCCCCC-3** (fixed,
+`d9c07167`): its first readings had no host — `frameTimes.mjs` and it spawned Electron without the launcher's native
+components — and the host control is what that taught it.
+
+### 4b. A search with a positive control?
+
+The probes that located CCCCCCC-1 and -6 were each read against the case that should find something: the layer read's
+viewport layer, and the toast against its own box at rest.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+`perfBudget.proof` derives its lines from the parser and pins the count with a literal; `paletteTyping.pw.ts` requires a
+literal twenty readings.
+
+### 5. Executed, or asserted?
+
+Executed. Observations without a mechanism, kept as **CCCCCCC-7** (open): the GPU process holds about 9× the scan after
+reading it, not the layer and not the canvases; LIVE CHECK 1.4.13's tooltip was gone once when the pointer reached it
+and passed alone; the A0 barcode read timed out at 5 s once under the full suite's load and passes alone.
+
+### 6. Architecture before the feature, or underneath it?
+
+No seam changed in this range. `launchEnvironment.mjs` is a move of the launcher's own function, called by three
+starters.
+
+### 7. Do the documents still match the code?
+
+Row 303 was corrected in `93618f48` (a file-backed copy cannot meet 1.5×), and two commit messages are corrected in
+the entry below. **The ADR index's 0130 row** was corrected in `89ae07df`.
+
 ## 2026-10-02 — Row 303 after the merges: what scrolling costs now, and what memory the whole application holds
 
 Item 1's two fixes that waited on `work/cloud-flicker`, and item 2's measurement, which the order put after the tab
