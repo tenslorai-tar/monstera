@@ -892,6 +892,100 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-02 — Stage audit of `0401c925..b076b30a` — findings DDDDDDD-1 to DDDDDDD-6
+
+Owed at one batch of files: the first commit of the owner's round 4 (the one-button footer of 28 dialogs) would have
+taken the unaudited range to 205 files against 200, and the pre-commit gate refused it. **It audits `0401c925..b076b30a`,
+20 commits and 174 files**, all `work/cloud-2`'s: round 3's plain signature (ADR-0133), the frame fix BBBBBBB-1, Side by
+Side's counts and word marks, the Copied confirmation, the ribbon's secondaries (ADR-0098's correction), All Open Docs
+(ADR-0134), attached files (ADR-0135) and the dialog pattern's three groups. `b076b30a` is the sha the local agent is
+merging for 0.1.9.0. The letter is D because main's audits used A, B and C on 1 and 2 October (B on both sides).
+
+### 1. Root cause or workaround?
+
+Each commit states its mechanism. The one fix made under a red board, `b076b30a`, names it: the conversion replaced
+Print's fieldset with a row whose control is a radiogroup, and the layout case still located a fieldset. Nothing
+retries, waits on a fixed time, swallows a throw or special-cases an input.
+
+### 2. Verified against the easy shape only?
+
+**DDDDDDD-1** (medium, closed in the range by `b076b30a`): the dialog conversion was scripted across 19 bodies in
+`9b5890d4` and verified by unit cases in happy-dom, which lays nothing out. The one reader of the dialogs' layout,
+`layoutReview.pw.ts`, ran first on CI, where it timed out on both legs at `f273bde6` (CI run 37000437975). The fix keeps
+both assertions and adds what had been incidental: a rule stacking a row's radiogroup one option to a line, held by a
+mutation (the rule flipped to a row turns the case red). The easy shape was the DOM; the hard one was the laid-out page.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Once, by decision. `99d48b15` replaced the cases holding *secondaries are folded at every width* with cases holding
+*secondaries are drawn while there is room and fold first*, which is ADR-0098's correction (`b73937b0`) and not a
+loosening; the per-tab fold case widened from 1280 to 1280 and 1920. The Tools control that proved the per-tab case's
+selector could find a counted More left with the old meaning; see DDDDDDD-6.
+
+### 3. Would CI have caught it?
+
+From runs: `801b614a` red on two literal rosters (**DDDDDDD-2**, low, closed in `048af86f`): the browser shim's channel
+roll-call lacked `ai.attach`, and the ADR index row for 0135 did not mention the correction appended to it. Both are
+anchors doing their job, found on the board rather than here because neither file is reached by the changed files'
+related tests. `f273bde6`: Guards green, CI red on DDDDDDD-1 and on *Visual baselines*. `b076b30a`: Guards green (run
+37003682132), CI green on every job but *Visual baselines* (run 37003682073), the expected red for a branch that changes
+screens.
+
+### 4. Are the proofs non-vacuous?
+
+The 31 modified proofs were read by their deleted lines. Every deletion is a replacement: the Copied text assertions
+moved to the toast with a control that main copying nothing shows none; the signature's appearance regex moved into a
+helper the read-back case calls; the copy command's three outcome cases gained a toast assertion each; the body tests
+moved to `InDialog` because a footer's Cancel exists only inside the dialog root. Mutated in the range: the Print case
+above, and the All Open Docs share case, where a mutation run found a spy leaking between cases on failure (restored
+before asserting since). Not mutated: the 55 dialogs' shape cases, which assert the footer's first and last button.
+
+### 4a. Instruments: a resolution test before a real measurement
+
+Two classifiers arrived. `askAttachments.ts`' `familyOf` types a file by its bytes first and its extension second, and
+its cases include a PNG named `.txt` and a text file named `.pdf`, so a classifier keyed on the name alone fails them.
+`pictureSize.ts` reads a JPEG's or PNG's dimensions from its header; a truncated header is refused, not read as zero.
+
+### 4b. Searches: a positive control on every run
+
+**DDDDDDD-6** (low, open, an observation): the per-tab fold case sums `data-width-folded` and asks about room only when
+the sum is positive. Its positive control is in the sibling case in the same file, whose narrow window must find a More
+with a count, so a renamed attribute turns the sibling red while the per-tab case would skip. Sound as a pair, and
+recorded because the instrument itself cannot say it saw.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+`askShareOf(count, carried)` divides the one bound by the number of sources, so more sources mean a smaller share: the
+danger is growth and the count is derived, which is the direction derivation is right for. `MAX_ASK_ATTACHMENTS` (8) and
+the shim roster are literals.
+
+### 5. Executed, or asserted?
+
+**DDDDDDD-3** (medium, open, the owner's item for round 4): the cannot-see path, from the list of held files to the check
+of whether the provider accepts pictures, is crossed by no handler case; each half has its own.
+
+**DDDDDDD-4** (medium, open): the attachment readers have never run end to end. pdftotext, x2t and the compose host's
+picture size are Windows-only, so on Linux every attached file but plain text is named *cannot be read here*, and the
+cases inject readers. A text file, a picture, a PDF, an Office file and an unreadable one through the packaged
+application is the local agent's Windows check.
+
+**DDDDDDD-5** (low, open, the owner's item for round 4): Side by Side's word marks place each word by an estimate from
+its line's box and its share of the characters, not by the word's own box.
+
+### 6. Architecture before the feature, or underneath it?
+
+Before, four times: ADR-0133 before the signature's halves, ADR-0098's correction (`b73937b0`) before the ribbon,
+ADR-0134 (`ce8cdd16`) before All Open Docs, ADR-0135 (`e2dc5f9b`) before attached files. The dialog pattern's groups
+register into the primitive's existing parts.
+
+### 7. Do the documents still match the code?
+
+The FEATURES rows for the assistant, the signature and the dialog primitive, and the Help articles *ai-assistant* and
+*add-a-signature*, were written in the commits that changed their subjects. ADR-0135's correction is indexed since
+`048af86f`. The dialog row's *a question for the owner* is answered and rewritten in the next commit.
+
+---
+
 ## 2026-10-02 — Stage audit of `173cc5ae..0401c925` — findings BBBBBBB-1 to BBBBBBB-9
 
 Owed at one batch of files: the plain signature's renderer half would have taken the unaudited range to 208 files
