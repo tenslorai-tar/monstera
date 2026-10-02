@@ -19,7 +19,7 @@ In Side by Side, **Compare** reads both documents and lists every difference, ma
 
 ## What is compared
 
-- **Text changed**: the words that differ, marked where each document has them.
+- **Text changed**: the words that differ, each word marked on its own where each document has it, so a word kept between two changes stays unmarked.
 - **Moved**: text that is the same but sits somewhere else on the page, and pages whose size changed.
 - **Annotation added**, **Annotation removed** and **Annotation changed**: comments and marks, including a changed note or colour.
 - **Picture changed**: images and drawings that differ, where no text change explains them.

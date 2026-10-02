@@ -334,11 +334,10 @@ export interface PairChange {
 /** How much of a change's words its summary carries. */
 export const CHANGE_TEXT_LIMIT = 160;
 
-/** A word with the box it is estimated to occupy and the line it came from. */
+/** A word with the box it is estimated to occupy. */
 interface PlacedWord {
   readonly text: string;
   readonly box: CompareBox;
-  readonly line: number;
 }
 
 /**
@@ -359,7 +358,6 @@ function placeWords(lines: readonly CompareLine[], indices: readonly number[]): 
       const end = start + token.text.length;
       placed.push({
         text: token.text,
-        line: index,
         box: {
           x0: line.box.x0 + (width * start) / length,
           x1: line.box.x0 + (width * end) / length,
@@ -370,22 +368,6 @@ function placeWords(lines: readonly CompareLine[], indices: readonly number[]): 
     }
   }
   return placed;
-}
-
-/** Joins the boxes of words that sit next to each other on one line, so a changed phrase is one mark. */
-function mergeOnLines(words: readonly PlacedWord[]): CompareBox[] {
-  const boxes: CompareBox[] = [];
-  let open: { line: number; box: CompareBox } | undefined;
-  for (const word of words) {
-    if (open?.line === word.line) {
-      open = { line: word.line, box: { ...open.box, x1: Math.max(open.box.x1, word.box.x1) } };
-      continue;
-    }
-    if (open !== undefined) boxes.push(open.box);
-    open = { line: word.line, box: word.box };
-  }
-  if (open !== undefined) boxes.push(open.box);
-  return boxes;
 }
 
 function moved(a: CompareBox, b: CompareBox): boolean {
@@ -447,8 +429,10 @@ function textChanges(left: readonly CompareLine[], right: readonly CompareLine[]
     if (gone.length > 0 || come.length > 0) {
       changes.push({
         kind: 'text',
-        left: mergeOnLines(gone),
-        right: mergeOnLines(come),
+        // WORD BY WORD (the owner's answer of 2 October, and ADR-0131 Decision 5's *removed tokens are boxed*): one box
+        // per changed token, never one across a phrase, so the words a phrase kept between two edits stay unmarked.
+        left: gone.map((word) => word.box),
+        right: come.map((word) => word.box),
         removed: cut(gone),
         inserted: cut(come),
       });
