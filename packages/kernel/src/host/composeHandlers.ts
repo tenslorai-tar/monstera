@@ -2,6 +2,7 @@ import type { Handlers } from '@monstera/contract';
 
 import { type ComposePageSize, ComposeRefused } from '../composeLayout.js';
 import type { ImportImage } from '../imageCompose.js';
+import { pictureSize } from '../pictureSize.js';
 import {
   WorkbookUnreadable,
   WorkbookUnsplittable,
@@ -10,7 +11,7 @@ import {
   workbookOutline,
   workbookPart,
 } from '../workbookParts.js';
-import type { ComposeChannels } from './composeChannels.js';
+import { type ComposeChannels, MAX_PICTURE_SIDE } from './composeChannels.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
 import type { HostArea, HostFilesystem, HostSessions } from './engineHandlers.js';
 
@@ -236,6 +237,20 @@ export function createComposeHandlers({
       }
       if (part === null) return { ok: true, value: { kind: 'nothing' } };
       return { ok: true, value: { kind: 'written', bytes: await files.writeOutput(held.outputDirectory, into, part) } };
+    },
+
+    // A PICTURE'S SIZE (ADR-0135): the transport's miss returned as a code, a header the reader cannot use, or one
+    // stating a side past what a conforming file can, answered `unreadable` — the file's, never a fault.
+    'engine/image-size': async ({ session, from, mediaType }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+      const source = await readSource(held, from);
+      if (source === null) return { ok: false, error: { code: 'asset-missing' } };
+      const size = await pictureSize(source, mediaType);
+      if (size === null || size.width > MAX_PICTURE_SIDE || size.height > MAX_PICTURE_SIDE) {
+        return { ok: true, value: { kind: 'unreadable' } };
+      }
+      return { ok: true, value: { kind: 'sized', width: size.width, height: size.height } };
     },
 
     'engine/pdf-pages': async ({ session, from }) => {

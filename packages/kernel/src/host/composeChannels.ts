@@ -95,6 +95,12 @@ const composeResultSchema = z.discriminatedUnion('kind', [
  */
 const MAX_REWRITE_DPI = 2400;
 
+/**
+ * The largest side a picture's header may state and be answered: PNG's own limit, 2^31 − 1 (RFC 2083 §11.2.2), which a
+ * JPEG's 16-bit sides sit far below. A size past it is a header no conforming file writes, answered `unreadable`.
+ */
+export const MAX_PICTURE_SIDE = 2 ** 31 - 1;
+
 /** Sheets in one workbook this outline answers. Excel's own is memory; a workbook past this is a crafted one. */
 export const MAX_WORKBOOK_SHEETS = 4096;
 
@@ -278,6 +284,29 @@ export const composeChannels = {
         })
         .strict(),
       z.object({ kind: z.literal('unreadable'), item: z.number().int().min(0).max(MAX_WORKBOOK_PARTS - 1) }).strict(),
+    ]),
+    ['no-such-session', 'asset-missing'],
+  ),
+
+  /**
+   * A picture's size in pixels, read from its header (ADR-0135 Decision 4): what main needs to know whether a picture
+   * attached to a question is inside the provider's limits, and the only thing about the picture main reads. The media
+   * type is the image import's enum, so the two routes name one set of readers. `unreadable` is the file's.
+   */
+  'engine/image-size': channel(
+    'Answers the pixel size a picture in the area states in its header.',
+    z
+      .object({ session: sessionSchema, from: outputNameSchema, mediaType: insertImagePageSchema.shape.mediaType })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      z
+        .object({
+          kind: z.literal('sized'),
+          width: z.number().int().positive().max(MAX_PICTURE_SIDE),
+          height: z.number().int().positive().max(MAX_PICTURE_SIDE),
+        })
+        .strict(),
+      z.object({ kind: z.literal('unreadable') }).strict(),
     ]),
     ['no-such-session', 'asset-missing'],
   ),

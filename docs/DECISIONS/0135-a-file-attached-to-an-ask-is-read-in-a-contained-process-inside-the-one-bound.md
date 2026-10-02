@@ -102,3 +102,18 @@ compose host already reads image headers for its own import (ADR-0060).
   *cannot be read here*; text files are read. The contained paths are crossed by the main cases with fakes and, for
   the new host channel, by the host body's cases; the live route is crossed only by a run on Windows.
 - Chat history keeps each turn's file names, never a handle, since a handle means nothing after a restart.
+
+## Correction, 2026-10-02 (the same day, while building it)
+
+Three details differ from the text above, each found by writing the code, and the text above is left as it was
+decided:
+
+- **Files past the eight are COUNTED, not named.** `ai.attach` answers `dropped` as a number: a picker can return any
+  number of paths, and a list of their names would be an answer with no bound. The chip row says how many were not
+  attached.
+- **Main answers the share it applied**, as `share` on `ai.ask`'s answer whenever the bound was divided. The renderer
+  cannot compute it any more: it does not know which files are pictures until main has read their first bytes, so a
+  number it worked out itself would be a second opinion that is wrong whenever a picture is attached (B3).
+- **A carried selection or comment is not cut to a share.** It has its own smaller bound, `MAX_ASK_SELECTION`, and
+  stays whole; the shares divide what is left of `MAX_ASK_CONTEXT` after it, so the ask stays inside the one bound
+  (`askShareOf(count, carried)`).

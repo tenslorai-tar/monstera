@@ -2585,7 +2585,8 @@ export class DocumentCommands {
     // A PICTURE IS NOT A WINDOW: `askPicture` answers that scope, so this one cannot be handed it. NOR IS EVERY OPEN
     // DOCUMENT: the handler reads each of those as its own `document` window (ADR-0134), so this reads one document.
     about: Exclude<AskAbout, { readonly scope: 'page-image' | 'documents' }>,
-    pair?: { readonly label: AskLabel; readonly bound: number },
+    /** One of several: its share of the bound, and its side or place where it has one (a lone window beside files has none). */
+    pair?: { readonly label?: AskLabel; readonly bound: number },
   ): Promise<AskWindow> {
     const { docId } = about;
     const { value } = await this.#documents.run(docId, async () => {

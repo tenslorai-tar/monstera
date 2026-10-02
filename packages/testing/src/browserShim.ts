@@ -2171,6 +2171,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // A BROWSER HAS NO FILE TO IMPORT, which is main's answer for a picker dismissed.
     'settings.import': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
     'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),
+    // NO FILE PICKER IN A BROWSER: what `main` answers a picker the person cancelled.
+    'ai.attach': () => Promise.resolve(ok({ files: [], dropped: 0 })),
     'ai.stop': () => Promise.resolve(ok({ stopped: false })),
     // NO ANSWER HERE HOLDS A SOURCE, because no answer here streams (`ai.ask` answers not-started).
     'ai.openSource': () => Promise.resolve(ok({ opened: false })),

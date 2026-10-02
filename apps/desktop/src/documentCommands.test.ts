@@ -24,6 +24,7 @@ import {
   type Incident,
   wrapHandler,
   IncidentLog,
+  MAX_ASK_ATTACHMENTS,
   MAX_ASK_CONTEXT,
   askShareOf,
   MAX_MARKDOWN_BYTES,
@@ -95,7 +96,7 @@ import {
   withDocument,
   composeWordDocument,
 } from '@monstera/kernel/engine';
-import { type DocId, type DocVersion, asDocId, asDocVersion } from '@monstera/shared';
+import { type DocId, type DocVersion, asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
 
 /** Large enough that capacity is never what these tests are measuring. */
 const AMPLE_CEILING = 64 * 1024 * 1024;
@@ -107,6 +108,7 @@ import { executeCommandHandler } from './commandHandlers.js';
 import { createAssistant } from './assistant.js';
 import { noChatHistory } from './chatHistory.js';
 import { unconfiguredCloud } from './cloudSession.js';
+import { NO_ATTACHMENTS } from './askAttachments.js';
 import { createContractHandlers } from './contractHandlers.js';
 import { createRecentFiles } from './recentFiles.js';
 import { NO_RECENT_PICTURES } from './recentPictures.js';
@@ -1189,6 +1191,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         openStore: () => Promise.resolve(false),
           closeListening: () => false,
         cloud: unconfiguredCloud(),
+        attachments: NO_ATTACHMENTS,
           readDictionary: () => Promise.resolve(null),
           ocrLanguages: () => Promise.resolve([]),
           components: () => Promise.resolve([]),
@@ -1713,11 +1716,12 @@ describe('search is E2s first consumer, through the composition point', () => {
       expect(sent.system).toContain(`Doc 1 is "${searchCommands().nameOf(searchable) ?? ''}".`);
       expect(sent.system).toContain(`at most ${String(askShareOf(2))} characters`);
       // EACH READ WITH ITS SHARE AND ITS PLACE, the number the turn states and the marker the model is told.
-      expect(reads.mock.calls.map(([, pair]) => pair)).toStrictEqual([
+      const bounds = reads.mock.calls.map(([, pair]) => pair);
+      reads.mockRestore();
+      expect(bounds).toStrictEqual([
         { label: 0, bound: askShareOf(2) },
         { label: 1, bound: askShareOf(2) },
       ]);
-      reads.mockRestore();
     });
 
     it('a document closed by the time it is read is SKIPPED AND NAMED, and the others still go', async () => {
@@ -1846,9 +1850,135 @@ describe('search is E2s first consumer, through the composition point', () => {
       expect(half.text.startsWith('[Left page 1]')).toBe(true);
     });
 
+    describe('FILES ATTACHED to a question, through the handler (ADR-0135)', () => {
+      /** Files on an in-memory disk, read only by the readers the handler is given; pdftotext and x2t are absent. */
+      function attaching(disk: Record<string, Uint8Array>) {
+        const capabilities = new CapabilityRegistry();
+        const pictures: [Uint8Array, string][] = [];
+        const attachments = {
+          pick: () => Promise.resolve(Object.keys(disk)),
+          readers: {
+            size: (path: string) => Promise.resolve(disk[path]?.byteLength ?? null),
+            read: (path: string, limit: number) => Promise.resolve(disk[path]?.slice(0, limit) ?? null),
+            pdfText: null,
+            officePdf: null,
+            pictureSize: (bytes: Uint8Array, mediaType: string) => {
+              pictures.push([bytes, mediaType]);
+              return Promise.resolve({ width: 800, height: 600 });
+            },
+          },
+        };
+        return { capabilities, attachments, pictures };
+      }
+      const NOTES = new TextEncoder().encode('The review is on 17 March.');
+      const PHOTO = Uint8Array.of(0xff, 0xd8, 0xff, 0xe0, 1, 2, 3);
+
+      it('a page, a text file and a picture: the window and the file share the bound, the picture rides the last turn, each is reported', async () => {
+        const files = attaching({ '/work/notes.txt': NOTES, '/work/photo.jpg': PHOTO });
+        const { bodies, handlers } = askHandlers(undefined, files);
+        const picked = await handlers['ai.attach']({});
+        expect(picked.ok && picked.value).toMatchObject({
+          files: [
+            { name: 'notes.txt', bytes: NOTES.byteLength },
+            { name: 'photo.jpg', bytes: PHOTO.byteLength },
+          ],
+          dropped: 0,
+        });
+        const handles = picked.ok ? picked.value.files.map((file) => file.handle) : [];
+        // THE DECISION: the page is read with its share, because a text file shares the bound — a picture does not.
+        const reads = vi.spyOn(DocumentCommands.prototype, 'askWindow');
+        const answer = await handlers['ai.ask']({
+          subscription: 'ask-10',
+          provider: 'anthropic',
+          model: 'claude-opus-5',
+          messages: [{ role: 'user', text: 'When is the review?' }],
+          about: { scope: 'page', docId: searchable, page: 1 },
+          attachments: handles,
+          web: false,
+        });
+        await new Promise((settle) => setTimeout(settle, 0));
+
+        // RESTORED BEFORE ANY ASSERTION, so a failure here cannot leave the spy counting the next case's reads.
+        const bounds = reads.mock.calls.map(([, pair]) => pair);
+        reads.mockRestore();
+        expect(bounds).toStrictEqual([{ bound: askShareOf(2) }]);
+        expect(answer.ok && answer.value).toMatchObject({
+          files: [{ sent: { firstPage: 0, pageCount: 1, truncated: false } }, { pictured: true }],
+          share: askShareOf(2),
+        });
+        // THE PICTURE WENT TO THE HOST TO BE SIZED, and its bytes went on unchanged.
+        expect(files.pictures).toStrictEqual([[PHOTO, 'image/jpeg']]);
+        const sent = JSON.parse(bodies[0] ?? '{}') as { system?: string; messages?: { content: unknown }[] };
+        expect(sent.system).toContain('[Page 2]\ngamma on the second page');
+        expect(sent.system).toContain('[File 1 page 1]\nThe review is on 17 March.');
+        expect(sent.system).toContain('File 2 is "photo.jpg", a picture');
+        expect(sent.messages?.[0]?.content).toStrictEqual([
+          { type: 'text', text: 'File 2:' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: Buffer.from(PHOTO).toString('base64') } },
+          { type: 'text', text: 'When is the review?' },
+        ]);
+      });
+
+      it('a PDF where this build has no contained pdftotext, and a handle main never minted, are NAMED — and the question still goes', async () => {
+        const files = attaching({ '/work/contract.pdf': new TextEncoder().encode('%PDF-1.7 ...') });
+        const { bodies, handlers } = askHandlers(undefined, files);
+        const picked = await handlers['ai.attach']({});
+        const handles = picked.ok ? picked.value.files.map((file) => file.handle) : [];
+        const answer = await handlers['ai.ask']({
+          subscription: 'ask-11',
+          provider: 'anthropic',
+          model: 'claude-opus-5',
+          messages: [{ role: 'user', text: 'Summarise these' }],
+          attachments: [...handles, asFileHandle('f'.repeat(32))],
+          web: false,
+        });
+        await new Promise((settle) => setTimeout(settle, 0));
+
+        expect(answer.ok && answer.value).toMatchObject({
+          started: true,
+          files: [{ unread: 'cannot-read-here' }, { unread: 'not-found' }],
+        });
+        const sent = JSON.parse(bodies[0] ?? '{}') as { system?: string };
+        expect(sent.system).toContain('File 1 is "contract.pdf", and nothing from it is here because this kind of file cannot be read on this computer.');
+        expect(sent.system).toContain('File 2 is "a file that could not be found"');
+        // ALONE, the files' instruction says the ground rule itself.
+        expect(sent.system).toContain('Use only this text, not outside knowledge.');
+      });
+
+      it('past eight picked files, eight are kept and the rest COUNTED', async () => {
+        const disk = Object.fromEntries(Array.from({ length: 11 }, (_, at) => [`/work/${String(at)}.txt`, NOTES]));
+        const { handlers } = askHandlers(undefined, attaching(disk));
+        const picked = await handlers['ai.attach']({});
+        expect(picked.ok && picked.value.files.length).toBe(MAX_ASK_ATTACHMENTS);
+        expect(picked.ok && picked.value.dropped).toBe(11 - MAX_ASK_ATTACHMENTS);
+      });
+
+      it('CONTROL: with no file attached the window takes the whole bound and the answer carries no files and no share', async () => {
+        const { handlers } = askHandlers(undefined, attaching({}));
+        const reads = vi.spyOn(DocumentCommands.prototype, 'askWindow');
+        const answer = await handlers['ai.ask']({
+          subscription: 'ask-12',
+          provider: 'anthropic',
+          model: 'claude-opus-5',
+          messages: [{ role: 'user', text: 'Where?' }],
+          about: { scope: 'page', docId: searchable, page: 1 },
+          web: false,
+        });
+        const bounds = reads.mock.calls.map(([, pair]) => pair);
+        reads.mockRestore();
+        expect(bounds).toStrictEqual([undefined]);
+        expect(answer.ok && answer.value).not.toHaveProperty('files');
+        expect(answer.ok && answer.value).not.toHaveProperty('share');
+      });
+    });
+
     /** The handlers over this file's documents, with the provider's request bodies recorded. */
     function askHandlers(
       askPicture?: AskPictureReader,
+      files?: {
+        readonly capabilities: CapabilityRegistry;
+        readonly attachments: Parameters<typeof createContractHandlers>[0]['attachments'];
+      },
     ): { bodies: string[]; handlers: ReturnType<typeof createContractHandlers> } {
       const bodies: string[] = [];
       const fetchImpl = ((_url: string, init?: { body?: string }) => {
@@ -1864,7 +1994,7 @@ describe('search is E2s first consumer, through the composition point', () => {
           fetchImpl,
         }),
         appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
-        capabilities: new CapabilityRegistry(),
+        capabilities: files?.capabilities ?? new CapabilityRegistry(),
         commands: searchCommands(askPicture),
         documents: searchService,
         openedDocument: () => Promise.resolve(),
@@ -1888,6 +2018,7 @@ describe('search is E2s first consumer, through the composition point', () => {
         openStore: () => Promise.resolve(false),
         closeListening: () => false,
         cloud: unconfiguredCloud(),
+        attachments: files?.attachments ?? NO_ATTACHMENTS,
         readDictionary: () => Promise.resolve(null),
         ocrLanguages: () => Promise.resolve([]),
         components: () => Promise.resolve([]),

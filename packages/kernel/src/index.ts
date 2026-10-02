@@ -207,7 +207,9 @@ export {
 export {
   CLAUDE_MAX_EDGE,
   CLAUDE_MAX_IMAGE_ENCODED_BYTES,
+  CLAUDE_MAX_IMAGE_SIDE,
   CLAUDE_MAX_VISUAL_TOKENS,
+  encodedLength,
   type ClaudeCredentials,
   ClaudeRecognitionRefused,
   type ClaudeRefusal,
@@ -234,9 +236,11 @@ export {
 // A PAGE'S TRANSLATION (ADR-0097): the instruction, the request and the one reading of the answer.
 export { readTranslation, translationInstruction, translationRequest } from './translation.js';
 export {
+  type AskFileListed,
   type AskManyDocument,
   type AskWindow,
   type ReadPageText,
+  askFilesInstruction,
   askInstruction,
   askManyInstruction,
   askPairInstruction,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { MAX_ASK_DOCUMENTS, askAboutSchema, askCitation, askPageMarker, askShareOf, citationsIn } from './askAbout.js';
+import { MAX_ASK_ATTACHMENTS, MAX_ASK_DOCUMENTS, askAboutSchema, askCitation, askPageMarker, askShareOf, citationsIn } from './askAbout.js';
 import { channels } from './channels.js';
 
 describe('the page frame an ask and its answer share', () => {
@@ -163,6 +163,33 @@ describe('every open document (ADR-0134)', () => {
 
   it('never pairs: a second document beside every open document is refused', () => {
     expect(request({ scope: 'documents', docIds: ids(2) }, { scope: 'document', docId: 'x' })).toBe(false);
+  });
+
+  it('ATTACHED FILES (ADR-0135): up to eight, each named once; a ninth or a repeat is refused', () => {
+    const handles = (count: number): string[] => Array.from({ length: count }, (_, at) => `h${String(at)}`);
+    const asked = (attachments: unknown): boolean =>
+      channels['ai.ask'].params.safeParse({
+        subscription: 's1-abc',
+        provider: 'anthropic',
+        model: 'm',
+        messages: [{ role: 'user', text: 'what is in these?' }],
+        attachments,
+        web: false,
+      }).success;
+    expect(asked(handles(MAX_ASK_ATTACHMENTS))).toBe(true);
+    expect(asked(handles(MAX_ASK_ATTACHMENTS + 1))).toBe(false);
+    expect(asked(['h0', 'h1', 'h0'])).toBe(false);
+    // CONTROL: an ask with no files is unchanged.
+    expect(asked(undefined)).toBe(true);
+  });
+
+  it('a file is marked [File 2 page 3], and its citation stays TEXT: no open document holds it', () => {
+    expect(askPageMarker(2, { file: 1 })).toBe('[File 2 page 3]');
+    expect(askCitation(2, { file: 1 })).toBe('[File 2 p. 3]');
+    expect(citationsIn('see [File 2 p. 3] and [Doc 2 p. 3]')).toStrictEqual([
+      { text: 'see [File 2 p. 3] and ' },
+      { cited: 2, label: '[Doc 2 p. 3]', document: 1 },
+    ]);
   });
 
   it('each document’s share is the bound divided by how many, the one number main applies and the turn states', () => {

@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises';
+import { open, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import {
@@ -32,6 +32,7 @@ import {
   createFormDataOpenPicker,
   createImagePicker,
   createImagesPicker,
+  createAttachmentPicker,
   createCsvPicker,
   createMarkdownPicker,
   createOfficeImportPicker,
@@ -411,6 +412,24 @@ startShell(() => {
     sizeImage: async (path: string) => {
       try {
         return (await stat(path)).size;
+      } catch {
+        return null;
+      }
+    },
+    // FILES ATTACHED TO A QUESTION (ADR-0135): any file, several at once, and a read of at most the bytes asked for —
+    // the family needs eight, a text file four for every character of its share — so a large file is never read whole
+    // to decide anything. A file that went between the pick and the ask reads as `null`, said as not found.
+    pickAttachments: createAttachmentPicker(),
+    readAttachment: async (path: string, limit: number) => {
+      try {
+        const file = await open(path, 'r');
+        try {
+          const buffer = new Uint8Array(limit);
+          const { bytesRead } = await file.read(buffer, 0, limit, 0);
+          return buffer.subarray(0, bytesRead);
+        } finally {
+          await file.close();
+        }
       } catch {
         return null;
       }

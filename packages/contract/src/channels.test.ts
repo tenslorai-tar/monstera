@@ -383,6 +383,7 @@ const handlers: ContractHandlers = {
   'settings.export': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'settings.import': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),
+  'ai.attach': () => Promise.resolve(ok({ files: [], dropped: 0 })),
   'ai.stop': () => Promise.resolve(ok({ stopped: false })),
   'ai.openSource': () => Promise.resolve(ok({ opened: false })),
   'ai.translatePage': () => Promise.resolve(ok({ kind: 'nothing-to-translate' as const })),

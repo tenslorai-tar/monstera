@@ -10,7 +10,8 @@ import {
   type ASK_UNREAD_REASONS,
   askShareOf,
   CLOUD_PROVIDER_IDS,
-  MAX_ASK_CONTEXT,
+  MAX_ASK_ATTACHMENTS,
+  servesVision,
   MAX_LIBRARY_ENTRIES,
   MAX_LIBRARY_PICTURE_BYTES,
   MAX_RASTER_BYTES,
@@ -33,6 +34,8 @@ import {
   type AiModelList,
   type AskManyDocument,
   type AskWindow,
+  type ChatImage,
+  askFilesInstruction,
   askInstruction,
   askManyInstruction,
   askPairInstruction,
@@ -70,6 +73,7 @@ import {
   PageTooLargeToPicture,
 } from './documentCommands.js';
 import type { Assistant } from './assistant.js';
+import { type AttachmentReaders, classifyAttachments, readAttachments, textSourcesIn } from './askAttachments.js';
 import type { ChatHistory } from './chatHistory.js';
 import type { CrashReports } from './crashReports.js';
 import type { LaunchDocuments } from './launchDocuments.js';
@@ -348,6 +352,12 @@ export function createContractHandlers(deps: {
   readonly closeListening: () => boolean;
   /** Cloud storage (ADR-0091): sign-ins, listings, working copies and their links. REQUIRED, for `titleBarOverlay`'s reason. */
   readonly cloud: CloudStorage;
+  /**
+   * Files attached to a question (ADR-0135): the picker, which answers paths, and the contained readers each family
+   * goes to — each `null` where this build has none. REQUIRED, for `titleBarOverlay`'s reason: a composition that
+   * forgot it would answer every file *cannot be read here*, which reads as a fact about the machine.
+   */
+  readonly attachments: { readonly pick: () => Promise<readonly string[]>; readonly readers: AttachmentReaders };
 }): MainHandlers {
   // THE HANDLE EVERY WRITE ANSWERS for what it wrote (`WRITTEN`), from the registry that mints every other: a path
   // this process wrote becomes a capability the renderer may name and cannot read.
@@ -538,7 +548,18 @@ export function createContractHandlers(deps: {
       return Promise.resolve(ok({ saved: true }));
     },
     'ai.history.clear': () => Promise.resolve(ok({ cleared: deps.chatHistory.clear() })),
-    'ai.ask': async ({ subscription, provider, model, messages, about, alongside, web }) => {
+    // THE PAPERCLIP (ADR-0135): main runs the picker, mints a handle per path and answers what a chip draws. The handle
+    // is the only thing the renderer can name the file by, and only an ask turns it back into a path.
+    'ai.attach': async () => {
+      const picked = await deps.attachments.pick();
+      const kept = picked.slice(0, MAX_ASK_ATTACHMENTS);
+      const files = [];
+      for (const path of kept) {
+        files.push({ handle: deps.capabilities.mint(path), name: basename(path), bytes: (await deps.attachments.readers.size(path)) ?? 0 });
+      }
+      return ok({ files, dropped: picked.length - kept.length });
+    },
+    'ai.ask': async ({ subscription, provider, model, messages, about, alongside, web, attachments = [] }) => {
       // THE WINDOW IS READ HERE, INSIDE THE ASK THAT SENDS IT (ADR-0088 Decision 5): nothing
       // about a document is read until a person asks, and what was read is answered so the
       // turn can say which pages went.
@@ -554,6 +575,29 @@ export function createContractHandlers(deps: {
         (alongside.scope === 'page' || alongside.scope === 'document')
           ? { scope: about.scope, left: about, right: alongside }
           : null;
+      // ATTACHED FILES (ADR-0135): each file's family first, from its first bytes, so the share is known before any
+      // document or file is windowed. A handle this run never minted names no file, and is said as not found.
+      const attached = await classifyAttachments(
+        attachments.map((handle) => {
+          const path = deps.capabilities.resolve(handle) ?? null;
+          return { name: path === null ? 'a file that could not be found' : basename(path), path };
+        }),
+        deps.attachments.readers,
+      );
+      const fileSources = textSourcesIn(attached);
+      // EVERY TEXT SOURCE AN EQUAL SHARE OF THE ONE BOUND (Decision 5): each document window and each file that is not
+      // a picture. A carried selection or comment stays whole — it has its own, smaller bound — and the rest is shared.
+      const windows =
+        about === undefined || about.scope === 'page-image' || about.scope === 'selection' || about.scope === 'comment'
+          ? 0
+          : about.scope === 'documents'
+            ? about.docIds.length
+            : paired !== null
+              ? 2
+              : 1;
+      const carried = about?.scope === 'selection' || about?.scope === 'comment' ? about.text.length : 0;
+      const share = askShareOf(Math.max(1, windows + fileSources), carried);
+      const divided = fileSources > 0;
       let window: AskWindow | null = null;
       let second: AskWindow | null = null;
       // A PICTURE ASK (ADR-0090): the page drawn in the host, sent with the last turn.
@@ -564,7 +608,6 @@ export function createContractHandlers(deps: {
       // first one's reason, since it would ask about nothing.
       let many: { readonly system: string; readonly among: AskAmong[] } | null = null;
       if (about?.scope === 'documents') {
-        const share = askShareOf(about.docIds.length);
         const read: (AskManyDocument & { readonly place: number })[] = [];
         const unread: string[] = [];
         const among: AskAmong[] = [];
@@ -590,20 +633,20 @@ export function createContractHandlers(deps: {
         if (many !== null) {
           // READ ABOVE, where each document's failure is its own rather than the ask's.
         } else if (paired !== null) {
-          const bound = Math.floor(MAX_ASK_CONTEXT / 2);
-          window = await deps.commands.askWindow(paired.left, { label: 'left', bound });
-          second = await deps.commands.askWindow(paired.right, { label: 'right', bound });
+          window = await deps.commands.askWindow(paired.left, { label: 'left', bound: share });
+          second = await deps.commands.askWindow(paired.right, { label: 'right', bound: share });
         } else if (about?.scope === 'page-image') {
           picture = await deps.commands.askPicture(about);
         } else if (about !== undefined && about.scope !== 'documents') {
-          window = await deps.commands.askWindow(about);
+          // ALONE IT TAKES THE WHOLE BOUND; beside files, its share.
+          window = divided ? await deps.commands.askWindow(about, { bound: share }) : await deps.commands.askWindow(about);
         }
       } catch (thrown) {
         const code = askUnreadCode(thrown);
         if (code !== undefined) return err({ code });
         throw thrown;
       }
-      const system =
+      const context =
         many !== null
           ? many.system
           : paired !== null && window !== null && second !== null
@@ -613,6 +656,19 @@ export function createContractHandlers(deps: {
               : window !== null && about !== undefined && about.scope !== 'page-image'
                 ? askInstruction(window, about.scope, web)
                 : undefined;
+      // THE FILES, read after the documents and one at a time, each by its contained reader; a file that is not read
+      // is named in the instruction and the answer, and never refuses the question (Decision 6).
+      const listedModel = deps.assistant.held(provider).models.find((each) => each.id === model);
+      const read =
+        attached.length === 0
+          ? null
+          : await readAttachments(attached, deps.attachments.readers, share, listedModel === undefined || servesVision(listedModel));
+      const files = read === null ? undefined : askFilesInstruction(read.listed, share, web, context === undefined);
+      const system = context === undefined ? files : files === undefined ? context : `${context}\n\n${files}`;
+      const images: ChatImage[] = [
+        ...(picture?.png == null ? [] : [{ mediaType: 'image/png' as const, base64: Buffer.from(picture.png).toString('base64') }]),
+        ...(read?.images ?? []),
+      ];
       const started = deps.assistant.ask({
         subscription,
         provider,
@@ -620,9 +676,7 @@ export function createContractHandlers(deps: {
         messages,
         web,
         ...(system === undefined ? {} : { system }),
-        ...(picture?.png == null
-          ? {}
-          : { image: { mediaType: 'image/png' as const, base64: Buffer.from(picture.png).toString('base64') } }),
+        ...(images.length === 0 ? {} : { images }),
       });
       // A SUBSCRIPTION ALREADY STREAMING IS A DECLARED REFUSAL, not a quiet `false`: the
       // renderer must be able to say why nothing happened.
@@ -632,6 +686,9 @@ export function createContractHandlers(deps: {
             sent: picture?.sent ?? window?.sent ?? null,
             ...(second === null ? {} : { alongside: second.sent }),
             ...(many === null ? {} : { among: many.among }),
+            ...(read === null ? {} : { files: [...read.files] }),
+            // THE SHARE MAIN APPLIED, whenever it divided the bound, so the turn states the number that was used.
+            ...(many !== null || divided ? { share } : {}),
           })
         : err({ code: 'subscription-in-use' });
     },

@@ -143,6 +143,18 @@ export function createImagesPicker(): PickImportFiles {
 }
 
 /**
+ * The open dialog for files to attach to an assistant question (ADR-0135): ANY file, several at once, and no filter,
+ * because the family is read from each file's own bytes and a file this build cannot read is named, never hidden from
+ * the picker. Cancelled is an empty list — nothing attached is the whole answer.
+ */
+export function createAttachmentPicker(): () => Promise<readonly string[]> {
+  return async (): Promise<readonly string[]> => {
+    const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections', 'dontAddToRecent'] });
+    return result.canceled ? [] : result.filePaths;
+  };
+}
+
+/**
  * The open dialog for a form-data file, narrowed to the format asked for.
  *
  * A PARAMETER for `createFormDataPicker`'s reason and not this file's: the

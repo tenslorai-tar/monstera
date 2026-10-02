@@ -43,11 +43,13 @@ export const MAX_ASK_SELECTION = 16_384;
 export const MAX_ASK_DOCUMENTS = 16;
 
 /**
- * Each document's share of the bound in an ask about `count` of them — THE ONE RULE, which `main` reads windows by
- * and the turn's line states, so the number a person is shown is the number that was applied (ADR-0134 Decision 2).
+ * Each text source's share of the bound in an ask carrying `count` of them — THE ONE RULE, which `main` reads windows
+ * and attached files by and answers on the turn, so the number a person is shown is the number that was applied
+ * (ADR-0134 Decision 2, ADR-0135 Decision 5). `carried` is a selection or comment the ask carries whole, which the
+ * shares divide what is left of.
  */
-export function askShareOf(count: number): number {
-  return Math.floor(MAX_ASK_CONTEXT / Math.max(count, 1));
+export function askShareOf(count: number, carried = 0): number {
+  return Math.floor(Math.max(MAX_ASK_CONTEXT - carried, 0) / Math.max(count, 1));
 }
 
 /**
@@ -173,13 +175,23 @@ const SIDE_WORD: Readonly<Record<AskSide, string>> = { left: 'Left', right: 'Rig
  * document's PLACE, zero-based, in an *All Open Docs* ask (ADR-0134). One type, so the frame below is one frame with
  * three spellings — `[Page 3]`, `[Left page 3]`, `[Doc 2 page 3]` — and never two frames that drift apart (B3a).
  */
-export type AskLabel = AskSide | number;
+export type AskLabel = AskSide | number | AskFileLabel;
 
 /**
- * How a label is written to the model: *Left*, *Right*, or *Doc 2* for the document in the second place — the one
- * spelling the markers, the citations and an instruction's own sentences all use.
+ * A file attached to the question, by its place, zero-based (ADR-0135): the fourth spelling of the one frame,
+ * `[File 2 page 3]`. A file's citation is never a link, since no open document holds it, so {@link citationsIn} does
+ * not read it and it stays text.
+ */
+export interface AskFileLabel {
+  readonly file: number;
+}
+
+/**
+ * How a label is written to the model: *Left*, *Right*, *Doc 2* for the document in the second place, or *File 2* for
+ * the second attached file — the one spelling the markers, the citations and an instruction's own sentences all use.
  */
 export function askLabelWord(label: AskLabel): string {
+  if (typeof label === 'object') return `File ${String(label.file + 1)}`;
   return typeof label === 'number' ? `Doc ${String(label + 1)}` : SIDE_WORD[label];
 }
 
@@ -251,3 +263,31 @@ export const askAmongSchema = z.union([
 ]);
 
 export type AskAmong = z.infer<typeof askAmongSchema>;
+
+/** Files one question carries (ADR-0135 Decision 1). */
+export const MAX_ASK_ATTACHMENTS = 8;
+
+/**
+ * Why an attached file was not read (ADR-0135 Decision 6), each a sentence the turn says: a handle `main` never minted
+ * or whose file has gone; a file past what is read or sent; a kind this build does not read; a reader that refused it;
+ * a picture for a model whose list says it cannot see; a reader this build does not have here.
+ */
+export const ASK_FILE_UNREAD = [
+  'not-found',
+  'too-large',
+  'not-supported',
+  'unreadable',
+  'cannot-see',
+  'cannot-read-here',
+] as const;
+
+export type AskFileUnread = (typeof ASK_FILE_UNREAD)[number];
+
+/** What one attached file carried, in the question's order: its window, that it went as a picture, or why neither. */
+export const askFileSchema = z.union([
+  z.object({ sent: askSentSchema }).strict(),
+  z.object({ pictured: z.literal(true) }).strict(),
+  z.object({ unread: z.enum(ASK_FILE_UNREAD) }).strict(),
+]);
+
+export type AskFile = z.infer<typeof askFileSchema>;

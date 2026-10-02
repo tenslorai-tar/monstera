@@ -124,8 +124,16 @@ export function fitsClaudeImage(width: number, height: number): boolean {
  */
 export const CLAUDE_MAX_IMAGE_ENCODED_BYTES = 10_485_760;
 
+/**
+ * The largest side, in pixels, the API accepts at all — *"The maximum dimensions per image are 8000x8000 px"*
+ * (*Vision*, Request limits, read 2026-10-02 at platform.claude.com/docs/en/build-with-claude/vision). A picture past
+ * {@link CLAUDE_MAX_EDGE} and inside this is downscaled by the service; past this it is refused. It applies while a
+ * request carries at most 20 images, which the eight attachments and a page picture stay under.
+ */
+export const CLAUDE_MAX_IMAGE_SIDE = 8000;
+
 /** The base64 length of `bytes` raw bytes, which is what the limit above counts. */
-function encodedLength(bytes: number): number {
+export function encodedLength(bytes: number): number {
   return Math.ceil(bytes / 3) * 4;
 }
 

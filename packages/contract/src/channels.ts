@@ -2,7 +2,17 @@ import { MATCH_TEXT_WINDOW } from '@monstera/shared';
 import { z } from 'zod';
 
 import { AI_PROVIDER_IDS } from './aiProviders.js';
-import { MAX_ASK_DOCUMENTS, askAboutSchema, askAmongSchema, askSentSchema, namesEachOnce, pairsWith } from './askAbout.js';
+import {
+  MAX_ASK_ATTACHMENTS,
+  MAX_ASK_CONTEXT,
+  MAX_ASK_DOCUMENTS,
+  askAboutSchema,
+  askAmongSchema,
+  askFileSchema,
+  askSentSchema,
+  namesEachOnce,
+  pairsWith,
+} from './askAbout.js';
 import {
   CLOUD_PROVIDER_IDS,
   CLOUD_REFUSALS,
@@ -5208,8 +5218,16 @@ export const channels = {
          * whether a document's text may reach a search engine — is not a default's to decide.
          */
         web: z.boolean(),
+        /**
+         * Files attached to this question (ADR-0135): handles `ai.attach` minted, each read by its contained reader
+         * when the ask is sent. Absent and empty mean the same.
+         */
+        attachments: z.array(fileHandleSchema).max(MAX_ASK_ATTACHMENTS).optional(),
       })
       .strict()
+      .refine((request) => new Set(request.attachments ?? []).size === (request.attachments ?? []).length, {
+        message: 'an ask names each attached file once',
+      })
       .refine((request) => request.alongside === undefined || pairsWith(request.about, request.alongside), {
         message: 'a second document pairs only with a different one, in the same page or document scope',
       })
@@ -5219,17 +5237,50 @@ export const channels = {
     /**
      * `sent` is what the window carried, and `null` for an ask about nothing or about every open document; `alongside`
      * is the second window's, present exactly when the ask had one; `among` is each document's of an *All Open Docs*
-     * ask, in its order — its window, or why it was not read (ADR-0134).
+     * ask, in its order — its window, or why it was not read (ADR-0134); `files` is each attached file's, in its order,
+     * present exactly when the ask carried one (ADR-0135).
      */
     z.object({
       started: z.boolean(),
       sent: askSentSchema.nullable(),
       alongside: askSentSchema.optional(),
       among: z.array(askAmongSchema).max(MAX_ASK_DOCUMENTS).optional(),
+      files: z.array(askFileSchema).max(MAX_ASK_ATTACHMENTS).optional(),
+      /** Each text source's characters, present whenever the bound was divided — `askShareOf`'s answer, as applied. */
+      share: z.number().int().nonnegative().max(MAX_ASK_CONTEXT).optional(),
     }),
     // THE DOCUMENT'S REFUSALS, because an ask about one reads it in its lane first — and a page
     // too large to draw within the image limits, which a picture ask refuses by name (ADR-0090).
     ['subscription-in-use', 'document-not-open', 'document-busy', 'document-poisoned', 'page-too-large'],
+  ),
+
+  /**
+   * Picks files to attach to the next question (ADR-0135 Decision 1). `main` runs the picker, which takes any file
+   * and several at once, and mints a handle for each: the renderer gets the handle, the name and the size to draw a
+   * chip, never a path. The first `MAX_ASK_ATTACHMENTS` are kept and the rest counted in `dropped`. A cancelled picker
+   * answers an empty list.
+   */
+  'ai.attach': channel(
+    'Picks files to attach to the next assistant question.',
+    z.object({}).strict(),
+    z
+      .object({
+        files: z
+          .array(
+            z
+              .object({
+                handle: fileHandleSchema,
+                name: z.string().max(MAX_DOCUMENT_NAME_LENGTH),
+                bytes: z.number().int().nonnegative(),
+              })
+              .strict(),
+          )
+          .max(MAX_ASK_ATTACHMENTS),
+        /** How many picked files were past the eight, counted rather than named so the answer is bounded whatever was picked. */
+        dropped: z.number().int().nonnegative(),
+      })
+      .strict(),
+    [],
   ),
 
   /**

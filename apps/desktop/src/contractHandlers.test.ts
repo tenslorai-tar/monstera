@@ -31,6 +31,7 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { CloudOutcomeRefused, type CloudStorage, unconfiguredCloud } from './cloudSession.js';
+import { type AttachmentReaders, NO_ATTACHMENTS } from './askAttachments.js';
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, createRecentPictures } from './recentPictures.js';
@@ -108,6 +109,8 @@ function harness(
     readonly openSettingsFile?: () => Promise<string | null>;
     /** Cloud storage, for the cases about it; a build with no provider configured otherwise. */
     readonly cloud?: CloudStorage;
+    /** The paperclip's picker and readers (ADR-0135); nothing picked and nothing readable otherwise. */
+    readonly attachments?: { readonly pick: () => Promise<readonly string[]>; readonly readers: AttachmentReaders };
   } = {},
 ) {
   const capabilities = new CapabilityRegistry();
@@ -205,6 +208,7 @@ function harness(
     openStore: () => Promise.resolve(false),
     closeListening: () => false,
     cloud: overrides.cloud ?? unconfiguredCloud(),
+    attachments: overrides.attachments ?? NO_ATTACHMENTS,
     revealLog: () => {
       revealed.push(true);
       return Promise.resolve(true);
@@ -636,6 +640,7 @@ describe('document.open', () => {
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
     cloud: unconfiguredCloud(),
+    attachments: NO_ATTACHMENTS,
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
       components: () => Promise.resolve([]),
@@ -982,6 +987,7 @@ describe('the recent list', () => {
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
     cloud: unconfiguredCloud(),
+    attachments: NO_ATTACHMENTS,
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
       components: () => Promise.resolve([]),
@@ -1062,6 +1068,7 @@ settings: createEphemeralSettings(),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
     cloud: unconfiguredCloud(),
+    attachments: NO_ATTACHMENTS,
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
       components: () => Promise.resolve([]),
@@ -1119,6 +1126,7 @@ settings: createEphemeralSettings(),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
+    attachments: NO_ATTACHMENTS,
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
       components: () => Promise.resolve([]),
@@ -1250,6 +1258,7 @@ settings: createEphemeralSettings(),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
+    attachments: NO_ATTACHMENTS,
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
       components: () => Promise.resolve([]),
@@ -1379,6 +1388,7 @@ settings,
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
+    attachments: NO_ATTACHMENTS,
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
       components: () => Promise.resolve([]),
@@ -1547,6 +1557,7 @@ settings: createEphemeralSettings(),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud,
+      attachments: NO_ATTACHMENTS,
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
       components: () => Promise.resolve([]),

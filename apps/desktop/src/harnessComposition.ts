@@ -138,6 +138,12 @@ export function harnessSurfaces(
     pickImages: () => {
       throw new Error(`${harness} makes no PDF from images, so nothing may pick them`);
     },
+    pickAttachments: () => {
+      throw new Error(`${harness} asks the assistant nothing, so nothing may pick a file for it`);
+    },
+    readAttachment: () => {
+      throw new Error(`${harness} asks the assistant nothing, so nothing may read a file for it`);
+    },
     sizeImage: () => {
       throw new Error(`${harness} makes no PDF from images, so nothing may size one`);
     },
