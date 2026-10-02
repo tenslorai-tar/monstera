@@ -53,7 +53,8 @@
  * landed in it. So the dialog is reached only through the run's own window — the one whose tab reads `check.pdf` —
  * and never by launching or activating the application by name.
  *
- * Usage: node scripts/research/installedCheck.mjs --document <absolute .pdf>
+ * Usage: node scripts/research/installedCheck.mjs --document <absolute .pdf with text> --scan <absolute .pdf whose
+ *   first page has no text> [--build installed|dev] [--steps edit,ocr,export,import,attach] [--shots <folder>]
  */
 
 import { execFileSync, spawn } from 'node:child_process';
@@ -155,8 +156,12 @@ function writeDocx(path) {
   writeFileSync(path, zipSync({ '[Content_Types].xml': strToU8(types), '_rels/.rels': strToU8(rels), 'word/document.xml': strToU8(body) }));
 }
 
-/** @param {string} path */
-const textOf = (path) => execFileSync(pdftotextPath(ROOT), ['-enc', 'UTF-8', path, '-'], { encoding: 'utf8', maxBuffer: 64 << 20 });
+/** A document's text as pdftotext reads it, or one page's. @param {string} path @param {number} [page] */
+const textOf = (path, page) =>
+  execFileSync(pdftotextPath(ROOT), ['-enc', 'UTF-8', ...(page === undefined ? [] : ['-f', String(page), '-l', String(page)]), path, '-'], {
+    encoding: 'utf8',
+    maxBuffer: 64 << 20,
+  });
 
 /** Waits until a file's modification time moves past `after`, or throws. @param {string} path @param {number} after */
 async function savedAfter(path, after, limitMs = 60_000) {
@@ -193,15 +198,29 @@ async function runCommand(page, title) {
 
 const documentPath = option('document');
 if (documentPath === undefined || !existsSync(documentPath)) throw new Error('--document <absolute .pdf> is required and must exist.');
-if (monsteraPids().length > 0) {
+/**
+ * `installed` (the default) or `dev`: this checkout's build through the provisioned runtime, handed its native
+ * components as `npm start` hands them, on a scratch profile — for a change that has not reached a package yet. Its
+ * hosts are contained the development way (ADR-0027's grant), not the package's, so a dev run says the commands work
+ * through real hosts, never what an install does.
+ */
+const build = option('build') ?? 'installed';
+if (build !== 'installed' && build !== 'dev') throw new Error('--build is installed or dev');
+/** Which steps run: `edit,ocr,export,import,attach`, every one by default. */
+const only = option('steps')?.split(',');
+const want = (/** @type {string} */ step) => only === undefined || only.includes(step);
+if (build === 'installed' && monsteraPids().length > 0) {
   console.log('REFUSED: Monstera is running. Close it first; this check never closes the owner\'s windows.');
   process.exit(2);
 }
 if (portListeners().length > 0) throw new Error(`port ${String(PORT)} is held; end that process first`);
-const [family = '', location = '', version = ''] = powershell(
-  `$p = Get-AppxPackage -Name '${PACKAGE_NAME}'; if ($null -eq $p) { exit 3 }; "$($p.PackageFamilyName)|$($p.InstallLocation)|$($p.Version)"`,
-).split('|');
-if (family === '') throw new Error('the test package is not installed');
+const [family = '', location = '', version = ''] =
+  build === 'installed'
+    ? powershell(
+        `$p = Get-AppxPackage -Name '${PACKAGE_NAME}'; if ($null -eq $p) { exit 3 }; "$($p.PackageFamilyName)|$($p.InstallLocation)|$($p.Version)"`,
+      ).split('|')
+    : ['', '', 'development build'];
+if (build === 'installed' && family === '') throw new Error('the test package is not installed');
 
 const work = join(ROOT, '..', `installed-check-${String(Date.now())}`);
 mkdirSync(work, { recursive: true });
@@ -212,7 +231,14 @@ writeDocx(docx);
 const notes = join(work, 'notes.txt');
 writeFileSync(notes, 'A text file attached in the installed-app check.\n');
 const exported = join(work, 'export.docx');
-const logBefore = shellLog(family);
+const scanPath = option('scan');
+const scanCopy = scanPath === undefined ? undefined : join(work, 'scan.pdf');
+if (scanPath !== undefined && scanCopy !== undefined) copyFileSync(scanPath, scanCopy);
+/** A development run's own profile, inside the temporary folder, so its shell log is this run's alone. */
+const devProfile = join(work, 'profile');
+/** Where this run's shell log lives: the package's storage, or the development run's profile. */
+const logOf = () => (build === 'installed' ? shellLog(family) : existsSync(join(devProfile, 'logs', 'shell.log')) ? { path: join(devProfile, 'logs', 'shell.log'), length: statSync(join(devProfile, 'logs', 'shell.log')).size } : null);
+const logBefore = logOf();
 /** @type {{ step: string, ok: boolean, detail: string }[]} */
 const steps = [];
 const record = (/** @type {string} */ step, /** @type {boolean} */ ok, /** @type {string} */ detail) => {
@@ -220,18 +246,56 @@ const record = (/** @type {string} */ step, /** @type {boolean} */ ok, /** @type
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${step}: ${detail}`);
 };
 
-console.log(`installed ${version}`);
-const exe = join(location, 'Monstera.exe');
-spawn(
-  'powershell.exe',
-  [
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    `Invoke-CommandInDesktopPackage -PackageFamilyName ${quoted(family)} -AppId 'Monstera' -Command ${quoted(exe)} -Args ${quoted(`"--remote-debugging-port=${String(PORT)}" "${copy}"`)}`,
-  ],
-  { stdio: 'ignore' },
-);
+console.log(build === 'installed' ? `installed ${version}` : 'development build');
+if (build === 'installed') {
+  const exe = join(location, 'Monstera.exe');
+  spawn(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `Invoke-CommandInDesktopPackage -PackageFamilyName ${quoted(family)} -AppId 'Monstera' -Command ${quoted(exe)} -Args ${quoted(`"--remote-debugging-port=${String(PORT)}" "${copy}"`)}`,
+    ],
+    { stdio: 'ignore' },
+  );
+} else {
+  const { developmentEnvironment } = await import('../lib/launchEnvironment.mjs');
+  const { electronBinaryPath } = await import('../provision/electron.mjs');
+  spawn(
+    electronBinaryPath(ROOT),
+    [join(ROOT, 'apps', 'desktop'), `--user-data-dir=${devProfile}`, `--remote-debugging-port=${String(PORT)}`, copy],
+    { stdio: 'ignore', env: { ...process.env, ...(await developmentEnvironment(ROOT)) } },
+  );
+}
+
+/**
+ * Opens a second document in the running application the way *Open with* does: a second launch on the same profile,
+ * which loses the single-instance lock and hands its argument over. It quits by itself at the lock.
+ *
+ * @param {string} path
+ */
+async function handOver(path) {
+  if (build === 'installed') {
+    spawn(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `Invoke-CommandInDesktopPackage -PackageFamilyName ${quoted(family)} -AppId 'Monstera' -Command ${quoted(join(location, 'Monstera.exe'))} -Args ${quoted(`"${path}"`)}`,
+      ],
+      { stdio: 'ignore' },
+    );
+    return;
+  }
+  const { developmentEnvironment } = await import('../lib/launchEnvironment.mjs');
+  const { electronBinaryPath } = await import('../provision/electron.mjs');
+  spawn(electronBinaryPath(ROOT), [join(ROOT, 'apps', 'desktop'), `--user-data-dir=${devProfile}`, path], {
+    stdio: 'ignore',
+    env: { ...process.env, ...(await developmentEnvironment(ROOT)) },
+  });
+}
 
 /** @type {number | undefined} */
 let appPid;
@@ -256,11 +320,14 @@ try {
     if (page === undefined) await new Promise((done) => setTimeout(done, 500));
   }
   if (page === undefined) throw new Error('no window showed the document within a minute');
+  // A FRESH PROFILE OPENS ON THE FIRST-RUN SCREEN, which holds the keyboard until it is skipped; the owner's profile
+  // never shows it, so the installed runs met it only in a development one.
+  await page.getByRole('button', { name: 'Skip' }).click({ timeout: 5000 }).catch(() => undefined);
   await page.waitForTimeout(3000);
   const firstTab = await page.locator('[data-tab-select][aria-current="true"]').getAttribute('data-tab-select');
 
   // 1. EDIT TEXT AND SAVE.
-  try {
+  if (want('edit')) try {
     await runCommand(page, 'Edit text on the page');
     const block = page.locator('[data-text-edit-layer] [data-text-block]').first();
     await block.waitFor({ timeout: 30_000 });
@@ -281,23 +348,56 @@ try {
     record('edit text and save', false, String(error).slice(0, 300));
   }
 
-  // 2. OCR ONE PAGE, at the dialog's defaults, and save.
-  try {
-    const before = statSync(copy).mtimeMs;
-    const bytesBefore = readFileSync(copy);
+  // 2. OCR ONE PAGE of a SCANNED copy, at the dialog's defaults, and save. Recognition leaves a page that already
+  // carries text alone (measured: *Nothing needed recognising — every page here already carries text*), so the edited
+  // document cannot show it; `--scan` names one whose first page has none, opened as *Open with* opens a second one.
+  if (want('ocr')) try {
+    if (scanCopy === undefined) throw new Error('--scan <absolute .pdf whose first page has no text> is needed for OCR');
+    const wordsBefore = textOf(scanCopy, 1).split(/\s+/u).filter(Boolean).length;
+    if (wordsBefore > 0) throw new Error(`the --scan document's first page already has ${String(wordsBefore)} words, so recognition would leave it alone`);
+    const tabsBefore = await page.locator('[data-tab-select]').count();
+    await handOver(scanCopy);
+    const opened = Date.now();
+    while ((await page.locator('[data-tab-select]').count()) <= tabsBefore && Date.now() - opened < 60_000) await page.waitForTimeout(500);
+    if ((await page.locator('[data-tab-select]').count()) <= tabsBefore) throw new Error('the scanned copy never opened in a tab');
+    await page.waitForTimeout(3000);
+    const before = statSync(scanCopy).mtimeMs;
     await runCommand(page, 'Make scanned pages searchable');
     await page.getByRole('button', { name: /^Recognise$/u }).click({ timeout: 15_000 });
-    await page.waitForTimeout(15_000);
+    // UNTIL THE DOCUMENT IS CHANGED, or something says why not: a fixed wait could not tell a recognition still running
+    // from one that failed from one that changed nothing — and the answer can be a dialog, not only a toast.
+    /** @type {string[]} */
+    let said = [];
+    const began = Date.now();
+    while (Date.now() - began < 180_000) {
+      const unsaved = await page.locator('[data-tab-select][aria-current="true"]').getByText('Unsaved changes').count();
+      said = (await page.locator('[role="alert"], .m-toast, [role="dialog"]').allTextContents()).filter((/** @type {string} */ text) => text.trim() !== '');
+      if (unsaved > 0 || said.length > 0) break;
+      await page.waitForTimeout(1000);
+    }
+    // THE OUTCOME IS A DIALOG, and while it is open it holds the keyboard: a save pressed then reaches the dialog, not
+    // the document (measured). Its whole text is recorded and its OK pressed before the save.
+    const outcome = await page.locator('[role="dialog"]').allInnerTexts();
+    console.log(
+      `  after recognition, ${String(Math.round((Date.now() - began) / 1000))} s: ${outcome.length > 0 ? `the dialog said ${JSON.stringify(outcome.map((/** @type {string} */ text) => text.replace(/\s+/gu, ' ').trim()))}` : said.length > 0 ? `said ${JSON.stringify(said)}` : 'marked unsaved'}`,
+    );
+    // `--shots <folder>` keeps a picture of the window at this point, for a step whose screen said nothing readable.
+    const shots = option('shots');
+    if (shots !== undefined) await page.screenshot({ path: join(shots, 'after-recognition.png') });
+    if (outcome.length > 0) {
+      await page.locator('[role="dialog"]').getByRole('button', { name: /^OK$/u }).click({ timeout: 5000 });
+      await page.waitForTimeout(1000);
+    }
     await page.keyboard.press('Control+S');
-    await savedAfter(copy, before, 120_000);
-    const changed = !readFileSync(copy).equals(bytesBefore);
-    record('OCR one page and save', changed, changed ? 'the saved file changed after recognition' : 'the saved file is unchanged');
+    await savedAfter(scanCopy, before, 120_000);
+    const wordsAfter = textOf(scanCopy, 1).split(/\s+/u).filter(Boolean).length;
+    record('OCR one page and save', wordsAfter > 0, `page 1 of the saved scan reads ${String(wordsAfter)} words, from ${String(wordsBefore)}`);
   } catch (error) {
     record('OCR one page and save', false, String(error).slice(0, 300));
   }
 
   // 3. EXPORT TO WORD, through main's save dialog.
-  try {
+  if (want('export')) try {
     await runCommand(page, 'Export to Word…');
     void page.getByRole('button', { name: /^Choose where to save/u }).click({ timeout: 15_000 }).catch(() => undefined);
     const began = askForDialog('export to Word', exported);
@@ -311,7 +411,7 @@ try {
   }
 
   // 4. IMPORT A WORD FILE as a new PDF.
-  try {
+  if (want('import')) try {
     const tabsBefore = await page.locator('[data-tab-select]').count();
     await runCommand(page, 'New PDF from Word, Excel or PowerPoint…');
     const began = askForDialog('import a Word file', docx);
@@ -333,7 +433,7 @@ try {
   }
 
   // 5. ATTACH A TEXT FILE IN THE ASSISTANT, never sent.
-  try {
+  if (want('attach')) try {
     await page.getByRole('tab', { name: 'Assistant' }).first().click();
     await page.waitForTimeout(1000);
     void page.getByRole('button', { name: 'Attach files' }).first().click().catch(() => undefined);
@@ -363,23 +463,29 @@ try {
   closeWindow(/** @type {number} */ (appPid));
   await page.waitForTimeout(500).catch(() => undefined);
 } finally {
-  for (let i = 0; i < 60 && monsteraPids().length > 0; i += 1) await new Promise((done) => setTimeout(done, 500));
-  const left = monsteraPids();
-  if (left.length > 0) console.log(`NOT CLOSED: Monstera processes ${left.join(', ')} are still running; the window did not close by itself.`);
+  /** Whether the run's application is still alive: any Monstera process for an install, its own PID for a dev run. */
+  const alive = () =>
+    build === 'installed'
+      ? monsteraPids().length > 0
+      : appPid !== undefined && execFileSync('tasklist', ['/FI', `PID eq ${String(appPid)}`, '/NH'], { encoding: 'utf8' }).includes(String(appPid));
+  for (let i = 0; i < 60 && alive(); i += 1) await new Promise((done) => setTimeout(done, 500));
+  if (alive()) console.log('NOT CLOSED: the run\'s application is still running; its window did not close by itself.');
 
-  // CONTAINED: the run's lines of the shell log.
-  const logAfter = shellLog(family);
-  if (logAfter === null) record('engine hosts contained', false, 'no shell log in the package storage');
+  // CONTAINED: the run's lines of the shell log. Main's `package-data` lock exists only in a package.
+  const logAfter = logOf();
+  if (logAfter === null) record('engine hosts contained', false, 'no shell log for this run');
   else {
     const from = logBefore !== null && logBefore.path === logAfter.path ? logBefore.length : 0;
     const lines = readFileSync(logAfter.path, 'utf8').slice(from).split('\n').filter((line) => line.trim() !== '');
-    const failures = lines.filter((line) => /engine-host-gone|not contained/u.test(line));
-    const locked = lines.some((line) => line.includes('package-data'));
+    // A HOST FAILURE, not the shell ending its hosts as it quits: that line reads `code=shutdown` (MuPDF's wording) or
+    // `ended (shutdown)` (PDFium's), says itself that nothing is a fault, and the run's own close writes one per host.
+    const failures = lines.filter((line) => /engine-host-gone|not contained/u.test(line) && !/code=shutdown|\(shutdown\)/u.test(line));
+    const locked = build === 'dev' || lines.some((line) => line.includes('package-data'));
     const worked = steps.filter((s) => s.step.startsWith('edit') || s.step.startsWith('OCR')).every((s) => s.ok);
     record(
       'engine hosts contained',
       failures.length === 0 && locked && worked,
-      `${String(lines.length)} new log line(s); package-data ${locked ? 'locked' : 'NOT read'}; ${String(failures.length)} host failure(s)` +
+      `${String(lines.length)} new log line(s); package-data ${build === 'dev' ? 'not applicable (no package)' : locked ? 'locked' : 'NOT read'}; ${String(failures.length)} host failure(s)` +
         `${failures.length > 0 ? `: ${failures[0]?.slice(0, 200) ?? ''}` : ''}; the hosts' commands ${worked ? 'worked' : 'did not all work'}`,
     );
   }

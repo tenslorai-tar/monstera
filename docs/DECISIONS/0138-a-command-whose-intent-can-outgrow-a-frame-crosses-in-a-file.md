@@ -116,3 +116,25 @@ evidence: the figures are schema bounds, and no document here was run to a refus
 schema admits more than a frame, written plainly as well as at worst, so a large enough outline or recognition is
 refused by `client.ts`; how large a real dense page's recognition is was not measured. The decision does not rest on
 it, because ADR-0125 routes by what the schema admits and not by what a corpus has produced.
+
+## Correction, 2026-10-02 — Windows measured: a params file costs about 15–24 ms, not 0.4
+
+Decision 2's *Windows is not measured* is answered, on the owner's machine, the same way the Linux figure was read —
+`node:fs/promises` write, read and removal of one file, 1,000 runs at 1 KB and 50 at 1.6 MB, two runs of each:
+
+| folder | 1 KB, median (p95) | 1.6 MB, median (p95) |
+|---|---|---|
+| a scratch folder under the development profile, beside the hosts' session areas | 21.9 and 23.7 ms (59–65) | 29.0 and 30.5 ms (38–95) |
+| `%TEMP%` | 15.1 and 15.4 ms (22–26) | 23 ms, and 199 ms in a first run (p95 774) |
+
+against Linux's 0.38 ms and 2.2 ms. A control with no file reads 0.001 ms, so the timer separates the work. What makes
+a small file cost forty to sixty times Linux's here is not established; a virus scanner inspecting each new file is the
+hypothesis, not a finding. So every PDFium and pdf-lib command pays roughly 15–30 ms on Windows for its params, and a
+first call after a quiet spell can pay far more.
+
+**The route works live on Windows**: on the development build at the merge of `7dfa3421`, an edit (PDFium's apply)
+and a page's recognition (pdf-lib's `ocrPage`) each crossed in a params file through real contained hosts, were saved,
+and read back — the marker in the edited text, 293 words on a page that had none (`scripts/research/installedCheck.mjs
+--build dev --steps edit,ocr`). The proofs that start real hosts or the real library pass here too —
+`hostFileAnswersLive`, `hostRecovery`, `composeHostLive` and the five PDFium proofs — but none of them sends a params
+file, so they say nothing about this route on their own.
