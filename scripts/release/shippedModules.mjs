@@ -10,15 +10,24 @@
  * `dist/` — the proofs run them from there — and a naming rule would only move the failure to the next helper somebody
  * names naturally. Whether a module ships is a fact about the program: can the application reach it?
  *
- * ## Two kinds of edge, both read from the module's own text
+ * ## Three kinds of edge, all read from the module's own text
  *
  * - an IMPORT — static, `export … from`, or `import()` with a literal specifier — relative to the file, or into a
  *   workspace package through that package's own `exports` map (B3a: the map is the authority Node resolves by);
+ * - a RESOLVE — `require.resolve('x')` or `createRequire(…).resolve('x')`, through either receiver or a name bound to
+ *   `createRequire(…)` — followed exactly as an import of `x` is, because Node resolves it to the same file and THROWS
+ *   when that file is absent, whether or not anything then loads it. The shell finds the reader's directory this way
+ *   (`readerHostSurface.ts`): `@monstera/nodemode`'s entry is types only and erased to `export {}`, the desktop
+ *   imports it with `import type` alone, and so the entry was reached by nothing while the shell's first act on
+ *   starting was to resolve it. 0.1.7.0 shipped without it and did not start;
  * - a FILE NAMED BY LITERAL — `'preload.cjs'`, `'readerWorker.js'`, the host entry table — because that is how the
  *   shell starts a preload, a worker and every contained host: by path, which no import names. Every string literal
  *   ending `.js`, `.mjs` or `.cjs` in a reached module reaches each candidate with that file name.
  *
- * A path COMPUTED without a literal would be invisible, and the module it names would be left out of the package. So
+ * A module reached by ANY of the three is then read like the entry, so a worker started by path has its own imports
+followed — the proof holds that with a by-path module that imports a sibling nothing else names.
+
+A path COMPUTED without a literal would be invisible, and the module it names would be left out of the package. So
  * the caller names modules the application is known to load by path, and the closure REFUSES to answer when one of
  * them is not in it — the positive control, run every time, because a closure that could see nothing would otherwise
  * report a very small package.
@@ -81,6 +90,52 @@ export function candidateModules(roots) {
 }
 
 /**
+ * Every module specifier a JavaScript file names literally: its imports, read by the compiler's own scanner
+ * (`ts.preProcessFile`: static and dynamic imports and `require` calls, never the inside of a string), and its RESOLVES.
+ *
+ * ONE reader for both questions asked of a module's text — what the package must hold (`moduleClosure`) and whether
+ * what it names is there (`packageMsix.mjs`' resolution check). They were two: the check read resolves through a
+ * pattern and the closure did not read them at all, so the check asked about the reader's package and the closure
+ * left its entry out (B3a).
+ *
+ * A resolve is a call of `.resolve` on `require`, on `createRequire(…)` itself, or on a name this file binds to
+ * `createRequire(…)`, with a string literal first; `Promise.resolve('x')` is none of those. A receiver passed in from
+ * elsewhere, or a specifier built at run time, is out of reach — which is why the packager also STARTS what it built.
+ *
+ * @param {string} text
+ * @param {typeof import('typescript')} ts
+ * @returns {string[]}
+ */
+export function moduleSpecifiers(text, ts) {
+  const named = ts.preProcessFile(text, true, true).importedFiles.map((file) => file.fileName);
+  const source = ts.createSourceFile('module.js', text, ts.ScriptTarget.Latest, false, ts.ScriptKind.JS);
+  /** @param {import('typescript').Node} node */
+  const isCreateRequire = (node) => ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'createRequire';
+  /** @type {Set<string>} */
+  const receivers = new Set(['require']);
+  /** @type {import('typescript').CallExpression[]} */
+  const calls = [];
+  /** @param {import('typescript').Node} node */
+  const visit = (node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer !== undefined && isCreateRequire(node.initializer)) {
+      receivers.add(node.name.text);
+    }
+    if (ts.isCallExpression(node)) calls.push(node);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  for (const call of calls) {
+    const callee = call.expression;
+    const [first] = call.arguments;
+    if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== 'resolve' || first === undefined) continue;
+    const receiver = callee.expression;
+    const resolves = (ts.isIdentifier(receiver) && receivers.has(receiver.text)) || isCreateRequire(receiver);
+    if (resolves && (ts.isStringLiteral(first) || ts.isNoSubstitutionTemplateLiteral(first))) named.push(first.text);
+  }
+  return named;
+}
+
+/**
  * The file a workspace specifier names, through the package's `exports` map — `import`, then `default`, as Node picks
  * for an ES module importer.
  *
@@ -88,7 +143,7 @@ export function candidateModules(roots) {
  * @param {(name: string) => string | null} packageDir
  * @returns {string | null} null where the specifier is not a workspace package's
  */
-function workspaceTarget(specifier, packageDir) {
+export function workspaceTarget(specifier, packageDir) {
   const match = /^(@monstera\/[^/]+)(\/.*)?$/u.exec(specifier);
   if (match === null) return null;
   const directory = packageDir(match[1] ?? '');
@@ -131,8 +186,7 @@ export function moduleClosure(input) {
     reached.add(file);
     const text = readFileSync(file, 'utf8');
 
-    const { importedFiles } = input.ts.preProcessFile(text, true, true);
-    for (const { fileName: specifier } of importedFiles) {
+    for (const specifier of moduleSpecifiers(text, input.ts)) {
       if (specifier.startsWith('.')) {
         const target = resolve(dirname(file), specifier);
         if (!existsSync(target)) throw new Error(`${file} imports ${specifier}, which is not there: the closure is reading a broken tree.`);

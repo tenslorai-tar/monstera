@@ -97,3 +97,18 @@ the one rcedit replaces and Windows shows — and the package is refused unless 
 byte. `proof:packagemsix` applies the packager's own step to a copy of the provisioned `electron.exe` and reads it
 back, against the same copy without the step, which shows Electron's four images and not the brand's seven; the
 Windows leg of CI requires those cases.
+
+## Correction, 2026-10-02 — 0.1.7.0 did not start, and a package now has to
+
+Decision 3's *nothing ships that does not resolve* read a package's presence, and decision E's closure read imports
+and literal file names. Neither saw `createRequire(import.meta.url).resolve('@monstera/nodemode')` in
+`readerHostSurface.ts`: the package's entry is types only, the desktop imports it with `import type`, and so the
+closure left `dist/index.js` out while the shell's first act was to resolve it. The installed 0.1.7.0 showed *A
+JavaScript error occurred in the main process* and no window. Reproduced on the 0.1.7.0 stage (alive, no page, nothing
+on either stream for 25 s), which started in 5.0 s with that one file put back.
+
+Three changes, each for the class: a resolve is an edge, read by one function both checks take
+(`moduleSpecifiers`); a staged workspace package must hold the entry its `exports` name; and the staged `Monstera.exe`
+is STARTED before packing and must reach a window on the application's page whose renderer mounts, with the stage
+unchanged by the run. The third is the one that does not depend on knowing the next edge: every earlier check read
+files, and a file list says which files exist, not that the program runs.

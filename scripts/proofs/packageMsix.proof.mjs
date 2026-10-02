@@ -5,11 +5,12 @@
  * missing package — each with the control that separates it from a check that refuses or accepts everything.
  *
  * And the executable's icon: the packager's own step is applied to a copy of the provisioned `electron.exe` and the
- * icon is read back from its resources, against the same file without the step.
+ * icon is read back from its resources, against the same file without the step. And the start check that refuses a
+ * package whose program does not start, against three applications the provisioned runtime starts by folder.
  *
- * It builds no package and needs no SDK. The icon cases need a Windows executable and rcedit, which runs one, so they
- * run where Windows is; elsewhere they are named as not run, and `--require-runtime` — which the Windows leg passes —
- * makes that a failure.
+ * It builds no package and needs no SDK. The icon and start cases need a Windows executable, so they run where Windows
+ * is; elsewhere they are named as not run, and `--require-runtime` — which the Windows leg passes — makes that a
+ * failure.
  *
  * Usage: node scripts/proofs/packageMsix.proof.mjs [--require-runtime]
  */
@@ -24,6 +25,7 @@ import { applicationIcon, carriesIcon, icoImages } from '../lib/peIcons.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { partialOutcome } from '../lib/unverifiable.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
+import { startsToWindow } from '../release/startCheck.mjs';
 import {
   BRAND_ICON,
   UNSIGNED_OID,
@@ -47,10 +49,13 @@ const RUNTIME_CASES = [
   "the packager's step leaves the executable carrying the brand's icon, read back from its resources",
   "CONTROL: the same executable without the step shows an icon, and it is not the brand's",
   "CONTROL: an .ico one byte different from the brand's is not reported as carried",
+  'the start check passes an application whose window loads its page and mounts',
+  "CONTROL: one whose main throws before its window — 0.1.7.0's shape, silent on every stream — is not started, and no window is why",
+  'CONTROL: one whose window loads its page and never mounts is not started, and the mount is why',
 ];
 
 /** Cases decidable without one. These run on every machine. */
-const PURE_CASES = 10;
+const PURE_CASES = 11;
 
 const roster = createRoster(failures, { cases: RUNTIME_PRESENT ? PURE_CASES + RUNTIME_CASES.length : PURE_CASES });
 
@@ -172,6 +177,19 @@ try {
     JSON.stringify(missing),
   );
 
+  // 0.1.7.0's SHAPE: a workspace package staged as its manifest, without the entry its `exports` names, which the shell
+  // RESOLVES. CONTROL: the same tree with the entry present names nothing — so the report is the missing file's.
+  write('node_modules/@monstera/nodemode/package.json', JSON.stringify({ name: '@monstera/nodemode', exports: { '.': { default: './dist/index.js' } } }));
+  write('dist/reader.js', "import { createRequire } from 'node:module';\nexport const at = createRequire(import.meta.url).resolve('@monstera/nodemode');\n");
+  const withoutEntry = unresolvedImports(app, ts).filter((line) => line.includes('nodemode'));
+  write('node_modules/@monstera/nodemode/dist/index.js', 'export {};\n');
+  const withEntry = unresolvedImports(app, ts).filter((line) => line.includes('nodemode'));
+  check(
+    "a workspace package staged without the entry its exports name is reported for the file that resolves it — and not once the entry is there",
+    withoutEntry.length === 1 && (withoutEntry[0] ?? '').startsWith(`${join('dist', 'reader.js')}: @monstera/nodemode`) && withEntry.length === 0,
+    `without: ${JSON.stringify(withoutEntry)}; with: ${JSON.stringify(withEntry)}`,
+  );
+
   // THE POSITIVE CONTROL'S OWN CASE: with zod gone the check cannot see, and must say so rather than report nothing.
   rmSync(join(app, 'node_modules', 'zod'), { recursive: true });
   const blind = thrown(() => unresolvedImports(app, ts));
@@ -217,6 +235,35 @@ try {
     const lastByte = altered.readUInt32LE(lastEntry + 12) + altered.readUInt32LE(lastEntry + 8) - 1;
     altered.writeUInt8(altered.readUInt8(lastByte) ^ 1, lastByte);
     check(RUNTIME_CASES[2] ?? '', !carriesIcon(readFileSync(branded), altered), 'the last image differs in its last byte');
+
+    // THREE APPLICATIONS the provisioned runtime starts by folder, differing only in how far they get.
+    /** @param {string} name @param {string} main @param {string} page */
+    const application = (name, main, page) => {
+      const folder = join(scratch, name);
+      mkdirSync(join(folder, 'renderer'), { recursive: true });
+      writeFileSync(join(folder, 'package.json'), JSON.stringify({ name: `start-${name}`, main: 'main.cjs' }));
+      writeFileSync(join(folder, 'main.cjs'), main);
+      writeFileSync(join(folder, 'renderer', 'index.html'), page);
+      return folder;
+    };
+    const opens =
+      "const { app, BrowserWindow } = require('electron');\nconst { join } = require('node:path');\n" +
+      "app.whenReady().then(() => { void new BrowserWindow({ show: false }).loadFile(join(__dirname, 'renderer', 'index.html')); });\n";
+    const mounts = '<!doctype html><title>start</title><div id="root"><p>mounted</p></div>\n';
+    const good = await startsToWindow({ command: ELECTRON_BINARY, args: [application('good', opens, mounts)], timeoutMs: 30_000 });
+    check(RUNTIME_CASES[3] ?? '', good.started, `${String(good.ms)} ms: ${good.reason}`);
+    const throws = await startsToWindow({
+      command: ELECTRON_BINARY,
+      args: [application('throws', "throw new Error('thrown before the window, as 0.1.7.0 threw');\n", mounts)],
+      timeoutMs: 10_000,
+    });
+    check(RUNTIME_CASES[4] ?? '', !throws.started && throws.reason.startsWith('no window loaded'), `${String(throws.ms)} ms: ${throws.reason}`);
+    const empty = await startsToWindow({
+      command: ELECTRON_BINARY,
+      args: [application('empty', opens, '<!doctype html><title>start</title><div id="root"></div>\n')],
+      timeoutMs: 10_000,
+    });
+    check(RUNTIME_CASES[5] ?? '', !empty.started && empty.reason.includes('had not mounted'), `${String(empty.ms)} ms: ${empty.reason}`);
   }
 
   if (failures.length > 0) {

@@ -29,6 +29,12 @@
  * person's first click. The lookup carries a positive control — `zod`, which the contract imports, must be found —
  * because a search that could see nothing reports the same clean result as one that found everything.
  *
+ * ## Nothing ships that does not start
+ *
+ * Both checks above read files, and 0.1.7.0 passed both and did not start: the closure had left out a file the shell
+ * only resolves. So before packing, the staged `Monstera.exe` is started and must reach a window whose renderer mounts
+ * (`startCheck.mjs`); a stage the start changed is refused too, since whatever it wrote would be packed.
+ *
  * Usage: node scripts/release/packageMsix.mjs --flavour test|store --version A.B.C.0 --out <folder> [--replace-older]
  */
 import { execFileSync } from 'node:child_process';
@@ -65,7 +71,8 @@ import { pdfiumLibrary } from '../provision/pdfium.mjs';
 import { pdftotextPath } from '../provision/poppler.mjs';
 import { tessdataDirectory } from '../provision/tessdata.mjs';
 import { nativeManifest } from './nativeManifest.mjs';
-import { moduleClosure, modulesLoadedByPath } from './shippedModules.mjs';
+import { moduleClosure, moduleSpecifiers, modulesLoadedByPath, workspaceTarget } from './shippedModules.mjs';
+import { startsToWindow } from './startCheck.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -226,29 +233,17 @@ export function packageNameOf(specifier) {
 const BUILTINS = new Set(builtinModules);
 
 /**
- * The bare specifiers a JavaScript file names literally.
- *
- * **The compiler's own import scanner reads them** (`ts.preProcessFile`): static and dynamic imports and `require`
- * calls, and never the inside of a string. A text pattern was the first version here, and on its first run it reported
- * eleven "imports" that were prose — `Promise.resolve('ended')`, an error message saying `from 'the harness'` — which is
- * a second opinion about what a module imports, where TypeScript already owns the answer (B3a).
- *
- * One form the scanner does not report, because it names a module's PATH rather than importing it:
- * `require.resolve('x')` and `createRequire(...).resolve('x')`, which the kernel uses to find its WebAssembly. Those
- * two receivers are matched by name, and `Promise.resolve` never is. A specifier built at run time is out of reach of
- * both, which is stated rather than hidden.
+ * The bare specifiers a JavaScript file names literally — imports and resolves, read by `moduleSpecifiers`, the one
+ * reader the module closure takes too (B3a). A text pattern was the first version here, and on its first run it
+ * reported eleven "imports" that were prose — `Promise.resolve('ended')`, an error message saying `from 'the harness'`.
  *
  * @param {string} source
  * @param {typeof import('typescript')} ts
  * @returns {string[]}
  */
 export function bareSpecifiers(source, ts) {
-  const named = ts.preProcessFile(source, true, true).importedFiles.map((file) => file.fileName);
-  for (const match of source.matchAll(/(?:\brequire|\bcreateRequire\([^()]*\))\.resolve\(\s*['"]([^'"\n]+)['"]\s*\)/gu)) {
-    named.push(match[1] ?? '');
-  }
   const found = new Set();
-  for (const specifier of named) {
+  for (const specifier of moduleSpecifiers(source, ts)) {
     if (specifier === '' || specifier.startsWith('.') || specifier.startsWith('/') || /^[a-z]+:/iu.test(specifier)) continue;
     if (BUILTINS.has(specifier) || BUILTINS.has(packageNameOf(specifier))) continue;
     if (specifier === 'electron') continue;
@@ -304,11 +299,36 @@ export function unresolvedImports(appRoot, ts) {
       scanned += 1;
       for (const specifier of bareSpecifiers(readFileSync(file, 'utf8'), ts)) {
         if (!packageFound(file, packageNameOf(specifier), appRoot)) missing.push(`${relative(appRoot, file)}: ${specifier}`);
+        // A WORKSPACE PACKAGE IS STAGED BY THE CLOSURE, file by file, so its manifest being present says nothing about
+        // the file its `exports` names — 0.1.7.0 shipped `@monstera/nodemode/package.json` without the entry it
+        // names, and this check passed it. Third-party packages are copied whole, so presence answers for them.
+        const target = workspaceTarget(specifier, (name) => {
+          const directory = join(appRoot, 'node_modules', ...name.split('/'));
+          return existsSync(join(directory, 'package.json')) ? directory : null;
+        });
+        if (target !== null && !existsSync(target)) {
+          missing.push(`${relative(appRoot, file)}: ${specifier} (its package is staged, ${relative(appRoot, target)} is not)`);
+        }
       }
     }
   }
   if (scanned === 0) throw new Error('The resolution check scanned no file: an empty input is a broken read.');
   return missing;
+}
+
+/**
+ * Every file under the stage, with its size and modification time — what a start is compared on.
+ *
+ * @param {string} stage
+ * @returns {Map<string, string>}
+ */
+function stageListing(stage) {
+  return new Map(
+    filesUnder(stage).map((path) => {
+      const stat = statSync(path);
+      return [relative(stage, path), `${String(stat.size)}@${String(stat.mtimeMs)}`];
+    }),
+  );
 }
 
 /**
@@ -559,6 +579,18 @@ async function main() {
   execFileSync(tools.makepri, ['new', '/pr', images, '/cf', priconfig, '/mn', join(images, 'AppxManifest.xml'), '/of', join(stage, 'resources.pri'), '/o'], { stdio: 'pipe' });
   cpSync(join(images, 'Assets'), join(stage, 'Assets'), { recursive: true });
   writeFileSync(join(stage, 'AppxManifest.xml'), manifestXml);
+
+  // THE PROGRAM STARTS, or there is no package (`startCheck.mjs`): every check above reads files, and 0.1.7.0 passed
+  // all of them and did not start. The stage is compared before and after, because whatever a start wrote into it
+  // would be packed.
+  step('start');
+  const before = stageListing(stage);
+  const start = await startsToWindow({ command: join(stage, EXECUTABLE) });
+  if (!start.started) throw new Error(`The staged ${EXECUTABLE} does not start, so it is not packed: ${start.reason}`);
+  const after = stageListing(stage);
+  const changed = [...new Set([...before.keys(), ...after.keys()])].filter((path) => before.get(path) !== after.get(path));
+  if (changed.length > 0) throw new Error(`Starting the stage changed what it holds, which would be packed:\n  ${changed.join('\n  ')}`);
+  step(`  the staged ${EXECUTABLE} started: its renderer mounted after ${String(start.ms)} ms, and the stage is unchanged`);
 
   step('pack');
   mkdirSync(out, { recursive: true });
