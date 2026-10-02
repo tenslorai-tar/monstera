@@ -38,10 +38,13 @@
  * Usage: node scripts/lib/scannerCanary.proof.mjs
  */
 
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 
-import { divergenceNotice, verifyScannerCapability } from './scannerCanary.mjs';
+import { buildCorpus, divergenceNotice, ownRepositoryEnv, verifyScannerCapability } from './scannerCanary.mjs';
 import { formatError } from './reportError.mjs';
 import { GITLEAKS_VERSION, gitleaksBinaryPath, provisionGitleaks } from '../provision/gitleaks.mjs';
 
@@ -122,20 +125,118 @@ function check(label, condition, detail) {
   else failures.push(`${label}\n      ${detail}`);
 }
 
+/**
+ * A FOREIGN repository — the one a hook's environment would name — and what it holds before the canary runs.
+ *
+ * It stands in for the real repository a linked worktree's hook points `GIT_DIR` at (AAAAAAA-1). Built through
+ * `ownRepositoryEnv` itself, so a `GIT_` variable in the environment running this proof cannot aim the fixture
+ * somewhere else.
+ *
+ * @returns {{ root: string, config: () => string, index: () => Buffer, environment: Record<string, string> }}
+ */
+function foreignRepository() {
+  const root = mkdtempSync(join(tmpdir(), 'monstera-foreign-'));
+  const git = (/** @type {string[]} */ args) => spawnSync('git', args, { cwd: root, env: ownRepositoryEnv() });
+  git(['init', '-q']);
+  git(['config', 'user.email', 'foreign@monstera.invalid']);
+  git(['config', 'user.name', 'foreign']);
+  writeFileSync(join(root, 'kept.txt'), 'the foreign repository’s own staged file\n', 'utf8');
+  git(['add', 'kept.txt']);
+  const gitDir = join(root, '.git');
+  return {
+    root,
+    config: () => readFileSync(join(gitDir, 'config'), 'utf8'),
+    index: () => readFileSync(join(gitDir, 'index')),
+    // WHAT A PRE-COMMIT HOOK IN A LINKED WORKTREE EXPORTS, as absolute paths: GIT_DIR and GIT_INDEX_FILE, and no
+    // GIT_WORK_TREE, so git takes the process's own directory as the work tree and stages ITS files into the index
+    // named here. With GIT_WORK_TREE set as well, an unfixed canary re-stages the foreign file and rewrites an
+    // identical index, and the index case below could not tell the bug from the fix.
+    environment: { GIT_DIR: gitDir, GIT_INDEX_FILE: join(gitDir, 'index') },
+  };
+}
+
+/**
+ * Runs `work` with `extra` set in this process's environment, as a hook would have it, and restores it after.
+ *
+ * @template T
+ * @param {Record<string, string>} extra
+ * @param {() => T} work
+ * @returns {T}
+ */
+function underEnvironment(extra, work) {
+  const before = Object.fromEntries(Object.keys(extra).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, extra);
+  try {
+    return work();
+  } finally {
+    for (const [key, value] of Object.entries(before)) {
+      if (value === undefined) Reflect.deleteProperty(process.env, key);
+      else process.env[key] = value;
+    }
+  }
+}
+
+/** AAAAAAA-1's cases, which need no scanner: the corpus is built in its own repository whatever the hook exported. */
+function corpusCases() {
+  const foreign = foreignRepository();
+  const corpus = mkdtempSync(join(tmpdir(), 'monstera-canary-proof-'));
+  try {
+    const [config, index] = [foreign.config(), foreign.index()];
+    const families = underEnvironment(foreign.environment, () => buildCorpus(corpus));
+
+    check(
+      'with a FOREIGN repository named by GIT_DIR and GIT_INDEX_FILE, as a hook names it, its config is untouched',
+      foreign.config() === config,
+      `the canary wrote into the repository the environment named:\n${foreign.config()}\n      ` +
+        `This is AAAAAAA-1: in a linked worktree a hook's GIT_DIR is that real repository.`,
+    );
+    check(
+      'and its index is byte for byte what it was',
+      foreign.index().equals(index),
+      'the foreign index changed, so the canary staged its corpus there instead of in its own repository.',
+    );
+
+    // THE POSITIVE HALF, without which the two above pass for a canary that built nothing at all.
+    const listed = spawnSync('git', ['ls-files'], { cwd: corpus, env: ownRepositoryEnv(), encoding: 'utf8' });
+    const staged = listed.stdout.split('\n').filter((line) => line !== '').sort();
+    const expected = families.map((family) => family.file).sort();
+    check(
+      'and the corpus is staged in ITS OWN repository, every family file in it',
+      staged.length > 0 && JSON.stringify(staged) === JSON.stringify(expected),
+      `the corpus's own index lists ${JSON.stringify(staged)}; the families are ${JSON.stringify(expected)}.`,
+    );
+
+    // THE HELPER ITSELF: every git variable gone, gitleaks' own kept, whatever the case of the key.
+    const cleaned = ownRepositoryEnv({ GIT_DIR: 'a', git_index_file: 'b', GITLEAKS_CONFIG_TOML: 'c', PATH: 'd' });
+    check(
+      'ownRepositoryEnv drops every GIT_ variable in any case, and keeps GITLEAKS_ and the rest',
+      JSON.stringify(cleaned) === JSON.stringify({ GITLEAKS_CONFIG_TOML: 'c', PATH: 'd' }),
+      `it answered ${JSON.stringify(cleaned)}.`,
+    );
+  } finally {
+    rmSync(corpus, { recursive: true, force: true });
+    rmSync(foreign.root, { recursive: true, force: true });
+  }
+}
+
 async function main() {
+  corpusCases();
+
   const legacyPath = gitleaksBinaryPath({ version: LEGACY_VERSION, builds: LEGACY_BUILDS });
   if (legacyPath === '') {
     process.stdout.write(
       `  --  skipped: gitleaks ${LEGACY_VERSION} published no build for this platform, so the ` +
         `differential fixture cannot exist here.\n`,
     );
-    return 0;
+    // THE CORPUS CASES STILL COUNT: they need no scanner, so a platform without the old build reports them.
+    return report();
   }
 
   // Control first. If the canary does not pass the PINNED build, a failure
   // against the old one says nothing — it would just mean the canary is broken.
+  const pinnedBinary = await provisionGitleaks();
   const pinned = verifyScannerCapability({
-    binary: await provisionGitleaks(),
+    binary: pinnedBinary,
     pinnedVersion: GITLEAKS_VERSION,
     force: true,
   });
@@ -145,6 +246,28 @@ async function main() {
     `${pinned.problems.join('\n      ')}\n      Without this, the case below cannot distinguish ` +
       `"the old scanner is weaker" from "the canary is broken".`,
   );
+
+  // THE WHOLE CANARY under a hook's environment: gitleaks starts git too, and with GIT_INDEX_FILE inherited it scanned
+  // the foreign index and found none of the corpus's families. So the canary must still pass, and leave it untouched.
+  const foreign = foreignRepository();
+  try {
+    const index = foreign.index();
+    const hooked = underEnvironment(foreign.environment, () =>
+      verifyScannerCapability({ binary: pinnedBinary, pinnedVersion: GITLEAKS_VERSION, force: true }),
+    );
+    check(
+      'under a FOREIGN repository’s GIT_ variables the pinned build still passes, scanning the corpus',
+      hooked.ok,
+      `${hooked.problems.join('\n      ')}\n      The scan read the repository the environment named.`,
+    );
+    check(
+      'and the foreign index is untouched by the whole run',
+      foreign.index().equals(index),
+      'the foreign index changed during the canary run.',
+    );
+  } finally {
+    rmSync(foreign.root, { recursive: true, force: true });
+  }
 
   const legacy = await provisionGitleaks({ version: LEGACY_VERSION, builds: LEGACY_BUILDS });
   const verdict = verifyScannerCapability({
@@ -194,6 +317,11 @@ async function main() {
   // Leave nothing behind: the fixture is a test artefact, not a provisioned tool.
   await rm(dirname(legacyPath), { recursive: true, force: true });
 
+  return report();
+}
+
+/** Prints every case's outcome and answers the exit status: one place, so neither exit path can skip it. */
+function report() {
   if (failures.length > 0) {
     process.stderr.write(
       `\nScanner canary proof — ${failures.length} failure(s):\n\n` +

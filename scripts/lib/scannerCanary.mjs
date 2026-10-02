@@ -225,6 +225,30 @@ function reportedVersion(binary) {
 }
 
 /**
+ * The environment for a git process that must act on the repository in ITS OWN working directory.
+ *
+ * ## Why every `GIT_` variable goes
+ *
+ * A git hook runs with `GIT_DIR` exported, often with `GIT_INDEX_FILE` and `GIT_WORK_TREE` beside it, and git gives
+ * those precedence over the repository a process's working directory holds. The canary runs from the pre-commit hook
+ * and starts git, and gitleaks starts git, in a temporary directory; with the hook's environment inherited, every one
+ * of those processes acted on the hook's repository instead. In the main checkout `GIT_DIR` is the relative `.git`,
+ * which resolves inside the temporary directory, so nothing showed; in a linked worktree it is an absolute path into
+ * the real repository, and the canary wrote `core.bare=true` and its own identity into the shared config and replaced
+ * the worktree's index with its corpus (finding AAAAAAA-1, observed 2026-10-01).
+ *
+ * Every `GIT_` key rather than a list of the ones that bit: git reads many (`GIT_OBJECT_DIRECTORY`, `GIT_COMMON_DIR`,
+ * `GIT_CONFIG_*` and more), and a list would be the next one away from the same defect. `GITLEAKS_` keys do not match.
+ * Case-insensitive, because Windows' environment is.
+ *
+ * @param {NodeJS.ProcessEnv} [env] the environment to start from
+ * @returns {NodeJS.ProcessEnv}
+ */
+export function ownRepositoryEnv(env = process.env) {
+  return Object.fromEntries(Object.entries(env).filter(([key]) => !/^git_/iu.test(key)));
+}
+
+/**
  * Writes the corpus into a fresh git repository and stages it.
  *
  * Exported so the proof can drive the same corpus through a deliberately
@@ -236,7 +260,8 @@ function reportedVersion(binary) {
  * @returns {readonly Family[]}
  */
 export function buildCorpus(directory) {
-  const git = (/** @type {string[]} */ args) => spawnSync('git', args, { cwd: directory });
+  // THE CORPUS'S OWN REPOSITORY, never the one a hook's environment names (`ownRepositoryEnv`).
+  const git = (/** @type {string[]} */ args) => spawnSync('git', args, { cwd: directory, env: ownRepositoryEnv() });
   git(['init', '-q']);
   // No commit is ever made, but git refuses to stage without an identity.
   git(['config', 'user.email', 'canary@monstera.invalid']);
@@ -319,7 +344,8 @@ function measure(binary) {
       // Hostile: an allow-everything config offered through the environment. If
       // --config ever stops being passed, every family below goes missing at
       // once and this canary says so.
-      env: { ...process.env, GITLEAKS_CONFIG_TOML: HOSTILE_CONFIG },
+      // And the git that gitleaks starts reads the corpus's index, not the hook's (`ownRepositoryEnv`).
+      env: { ...ownRepositoryEnv(), GITLEAKS_CONFIG_TOML: HOSTILE_CONFIG },
       captureOutput: true,
       extraArgs: ['--report-format', 'json', '--report-path', '-'],
     });
