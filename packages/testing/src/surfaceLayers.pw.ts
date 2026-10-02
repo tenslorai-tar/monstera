@@ -22,6 +22,8 @@ interface Layer {
   readonly layerId: string;
   readonly width: number;
   readonly height: number;
+  /** The DOM node that owns the layer, where it has one. */
+  readonly backendNodeId?: number;
 }
 
 /** Every composited layer, with Chromium's reasons for compositing it. */
@@ -96,18 +98,22 @@ test('the page list is composited on its own layer, so the compositor scrolls it
   // GENEROUS, because this waits for a page to rasterise and is not a product bound (`pagePosition.pw.ts`).
   await expect(page.locator('.m-page-list .m-page').first()).toBeVisible({ timeout: 20_000 });
 
-  const box = await page.locator('.m-page-list').first().evaluate((list) => ({ width: list.clientWidth, height: list.clientHeight }));
   const cdp = await page.context().newCDPSession(page);
+  // THE LIST'S OWN NODE, by the id a layer names its owner with. A layer's bounds are not the element's box (measured
+  // 2026-10-02: 575 × 558 against a 556 × 540 border box), so matching by size reports a present layer as absent.
+  const { root } = await cdp.send('DOM.getDocument');
+  const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector: '.m-page-list' });
+  const { node } = await cdp.send('DOM.describeNode', { nodeId });
   const found = await layers(page, cdp);
 
   // THE CONTROL: the read sees the viewport's own layer.
   expect(found.some(({ reasons }) => reasons.includes('Viewport'))).toBe(true);
-  // THE CLAIM: a layer composited for its `will-change` whose size is the list's own box, not the window's.
+  // THE CLAIM: the page list owns a layer, composited for its `will-change`.
   const listLayers = found.filter(
-    ({ layer, reasons }) =>
-      reasons.includes('WillChangeTransform') &&
-      Math.abs(layer.width - box.width) <= 20 &&
-      Math.abs(layer.height - box.height) <= 1,
+    ({ layer, reasons }) => layer.backendNodeId === node.backendNodeId && reasons.includes('WillChangeTransform'),
   );
-  expect(listLayers.length, JSON.stringify({ box, layers: found.map(({ layer, reasons }) => [layer.width, layer.height, reasons]) })).toBeGreaterThanOrEqual(1);
+  expect(
+    listLayers.length,
+    JSON.stringify({ list: node.backendNodeId, layers: found.map(({ layer, reasons }) => [layer.backendNodeId, layer.width, layer.height, reasons]) }),
+  ).toBe(1);
 });

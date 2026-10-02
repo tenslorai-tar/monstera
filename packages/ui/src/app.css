@@ -3021,6 +3021,18 @@ optgroup {
   overflow-y: auto;
   padding-block: var(--space-16);
   grid-area: list;
+  /*
+   * ITS OWN LAYER, so the compositor scrolls it. Without one Chromium scrolls it on the main thread and repaints its
+   * whole area each frame (the trace's frames read `SCROLL_MAIN_THREAD`): it declines to composite a scroller holding
+   * LCD-antialiased text over a transparent background at a pixel ratio under 1.5, and the text here is PDF.js'
+   * transparent text layer, which nobody sees. Measured 2026-10-02 with `scripts/research/frameTimes.mjs` (development
+   * build, `perf-baseline.pdf`, three runs each): scrolling at 100% dropped 11-14 frames without it and 0 with it, the
+   * GPU process 464-515 ms against 138-144 ms. The rulers' ticks may move by a pixel, the layer's snapping.
+   *
+   * ON THE SCROLLER, never the pane around it: a layer on the pane holds the scroller's contents in a layer that does
+   * not scroll, which is the main-thread scroll again. `surfaceLayers.pw.ts` names the owning node for that reason.
+   */
+  will-change: transform;
 }
 
 /*
@@ -3047,15 +3059,6 @@ optgroup {
   min-inline-size: 0;
   /* THE CONTAINING BLOCK FOR THE LOUPE, which is placed from the pointer's offset in this box. */
   position: relative;
-  /*
-   * ITS OWN LAYER, so the compositor scrolls it. Without one Chromium scrolls it on the main thread and repaints its
-   * whole area each frame (the trace's frames read `SCROLL_MAIN_THREAD`): it declines to composite a scroller holding
-   * LCD-antialiased text over a transparent background at a pixel ratio under 1.5, and the text here is PDF.js'
-   * transparent text layer, which nobody sees. Measured 2026-10-02 with `scripts/research/frameTimes.mjs` (development
-   * build, `perf-baseline.pdf`, three runs each): scrolling at 100% dropped 11-14 frames without it and 0 with it, the
-   * GPU process 464-515 ms against 138-144 ms. The rulers' ticks may move by a pixel, the layer's snapping.
-   */
-  will-change: transform;
 }
 
 /* THE CORNER where the two rulers meet, in the rulers' own surface so the pair reads as one frame. */
