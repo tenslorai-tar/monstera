@@ -92,11 +92,15 @@ test('an OPEN choice menu is headed by its name, then its values with the chosen
   const items = group.getByRole('menuitemradio');
   expect(await items.allTextContents()).toStrictEqual(['Page 1', 'Document', 'Comments', 'Picture', 'None']);
   await expect(items.first()).toHaveAttribute('aria-checked', 'true');
-  // THE HEADING IS ABOVE THE FIRST VALUE, drawn, not only a name.
-  const heading = await group.getByText('Context', { exact: true }).boundingBox();
-  const firstItem = await items.first().boundingBox();
-  if (heading === null || firstItem === null) throw new Error('the heading and the first value have boxes');
-  expect(heading.y + heading.height).toBeLessThanOrEqual(firstItem.y + 0.5);
+  // THE HEADING IS ABOVE THE FIRST VALUE, drawn, not only a name — both read in one moment, so a popup still being
+  // placed cannot move one between the two readings.
+  const order = await group.evaluate((element) => {
+    const heading = element.querySelector('.m-choice-menu__heading')?.getBoundingClientRect();
+    const first = element.querySelector('[role="menuitemradio"]')?.getBoundingClientRect();
+    return heading === undefined || first === undefined ? null : { headingBottom: heading.bottom, firstTop: first.top, text: element.querySelector('.m-choice-menu__heading')?.textContent };
+  });
+  expect(order?.text).toBe('Context');
+  expect(order?.headingBottom ?? Infinity).toBeLessThanOrEqual((order?.firstTop ?? 0) + 0.5);
 });
 
 // AT EVERY WIDTH THE PANE ALLOWS (the owner's review of 0.1.9.0, where Send was pushed out of the box and the box
