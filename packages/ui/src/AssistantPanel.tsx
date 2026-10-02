@@ -24,6 +24,7 @@ import { ArrowUp, Copy, Pencil, Plus, RefreshCw, Square, StickyNote } from 'luci
 import {
   Fragment,
   type ReactElement,
+  type ReactNode,
   useCallback,
   useEffect,
   useId,
@@ -121,6 +122,7 @@ import { pdfjsPageOf } from './pageNumbering.js';
 import { Button } from './primitives/Button.js';
 import { ChoiceMenu } from './primitives/ChoiceMenu.js';
 import { IconButton } from './primitives/IconButton.js';
+import { useOnColor } from './primitives/useOnColor.js';
 import { AI_MODELS_SETTING, AI_PROVIDER_SETTING } from './settings/ai.js';
 import type { SettingsStore } from './settingsStore.js';
 import { useSetting } from './useSetting.js';
@@ -278,6 +280,21 @@ const NO_TURNS: readonly ConversationTurn[] = [];
 /** The conversation's turns: the document's, or this panel's own on the start screen. */
 function useConversation(store: DocumentStore | undefined): readonly ConversationTurn[] {
   return useSyncExternalStore(store?.subscribe ?? NO_SUBSCRIBE, () => store?.getState().conversation ?? NO_TURNS);
+}
+
+/**
+ * One turn of the conversation. A person's sits in a bubble filled with the ACCENT (the owner, 2 October), so its text
+ * is solved against the accent in effect where it is drawn, never stored: the accent is the person's choice and the
+ * theme the window's, and a fixed text colour is right for one pair of them (ADR-0003, `useOnColor`).
+ */
+function Turn({ role, children }: { readonly role: ConversationTurn['role']; readonly children: ReactNode }): ReactElement {
+  const element = useRef<HTMLLIElement>(null);
+  useOnColor(element, 'color', '--text', role === 'user' ? ['--accent'] : [], 'text');
+  return (
+    <li ref={element} className="m-assistant__turn" data-assistant-role={role}>
+      {children}
+    </li>
+  );
 }
 
 /** The conversation's Left · Right · Both choice, or `undefined` until one is made. */
@@ -794,7 +811,7 @@ export function AssistantPanel({
 
       <ol aria-label={i18n._(ASSISTANT_CONVERSATION_LABEL)} className="m-assistant__turns">
         {turns.map((turn, at) => (
-          <li className="m-assistant__turn" data-assistant-role={turn.role} key={`${String(at)}-${turn.role}`}>
+          <Turn role={turn.role} key={`${String(at)}-${turn.role}`}>
             {/* WHO SAID IT, read and not drawn: the bubble's side says so to the eye (`app.css`). */}
             <span className="m-visually-hidden">
               {i18n._(turn.role === 'user' ? ASSISTANT_YOU : ASSISTANT_ASSISTANT)}
@@ -908,7 +925,7 @@ export function AssistantPanel({
                 />
               );
             })()}
-          </li>
+          </Turn>
         ))}
       </ol>
 
