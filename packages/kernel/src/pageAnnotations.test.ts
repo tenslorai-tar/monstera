@@ -49,6 +49,7 @@ import {
   invertEditAnnotationText,
   applyReplyToAnnotation,
   readAnnotations,
+  redrawPage,
 } from './pageAnnotations.js';
 
 /**
@@ -3845,6 +3846,31 @@ describe('an annotation carries its author, its creation time and its blend', ()
     expect(await darkPixels(moved, movedBox)).toBe(0);
     const listed = await onSession(moved, (session) => readAnnotations(session));
     expect(listed.annotations[0]?.blend).toBe('normal');
+  });
+
+  it('the PAGE form of the redraw keeps Normal too, and CONTROL: the page update alone turns it Multiply', async () => {
+    const normal = await restyled(await drawnOn(await withText(), command({ annotation: HIGHLIGHT })), 'normal');
+    /** The Normal highlight made to need a new appearance, then redrawn by the page — with or without `redrawPage`. */
+    async function redrawn(form: 'redrawPage' | 'update only'): Promise<PDFDict> {
+      const bytes = await onSession(normal, async (session) => {
+        await withDocument(session, (document) => {
+          const page = document.loadPage(0);
+          const annotation = page.getAnnotations()[0];
+          if (annotation === undefined) throw new Error('no annotation');
+          annotation.setColor([0.2, 0.9, 1]);
+          if (form === 'redrawPage') redrawPage(page, [annotation], document);
+          else page.update();
+        });
+        return mupdfWriter.serialise(session);
+      });
+      const [stored] = await dictionaries(bytes);
+      if (stored === undefined) throw new Error('no annotation');
+      return stored;
+    }
+    expect(appearanceBlends(await redrawn('update only'))).toContain('/Multiply');
+    const kept = appearanceBlends(await redrawn('redrawPage'));
+    expect(kept.length).toBeGreaterThan(0);
+    expect(kept.every((mode) => mode === '/Normal')).toBe(true);
   });
 
   it('MULTIPLY on a kind whose appearance has no ExtGState: the prepended state reaches it', async () => {

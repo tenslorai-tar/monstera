@@ -5,12 +5,14 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
- * `redraw` in `pageAnnotations.ts` is the kernel's ONLY caller of MuPDF's `update()` (ADR-0103).
+ * `redraw` and `redrawPage` in `pageAnnotations.ts` are the kernel's ONLY callers of MuPDF's `update()` (ADR-0103).
  *
  * `update()` regenerates an annotation's appearance and discards a blend written into it, so a
  * second caller would turn a mark a person set to Normal back to Multiply at its next move — with
- * nothing in that caller's own file looking wrong. The rule is a named function with callers, and
- * this search is what keeps a ninth call site from being written beside it.
+ * nothing in that caller's own file looking wrong. The rule is two named functions with callers, both ending in the
+ * one `reblend`: `redraw` for one annotation, `redrawPage` for a caller placing many, since the per-annotation form
+ * is quadratic over a page (its comment has the measurement). This search is what keeps a third call site from being
+ * written beside them, and it names the function each call sits in, so a call moved out of its owner is a finding.
  */
 
 const SOURCE = dirname(fileURLToPath(import.meta.url));
@@ -33,16 +35,27 @@ function sources(directory: string): string[] {
  */
 const UPDATE_CALL = /(?:\.\s*update|\[\s*['"`]update['"`]\s*\])\s*(?:\?\.)?\s*\(\s*\)/u;
 
-describe('the one redraw', () => {
+/** The function a line sits in: the nearest declaration above it, by name. */
+const DECLARATION = /^(?:export\s+)?(?:async\s+)?function\s+(\w+)/u;
+
+describe('the two redraws', () => {
   const files = sources(SOURCE);
-  const calls = files.flatMap((file) =>
-    readFileSync(join(SOURCE, file), 'utf8')
-      .split('\n')
-      .map((line, at) => ({ file, line: at + 1, text: line.trim() }))
-      // A COMMENT NAMING THE CALL IS NOT ONE: the redraw's own documentation says `update()`.
-      .filter((entry) => !entry.text.startsWith('*') && !entry.text.startsWith('//'))
-      .filter((entry) => UPDATE_CALL.test(entry.text)),
-  );
+  const calls = files.flatMap((file) => {
+    const lines = readFileSync(join(SOURCE, file), 'utf8').split('\n');
+    let owner = '(top level)';
+    return (
+      lines
+        .map((line, at) => {
+          const text = line.trim();
+          owner = DECLARATION.exec(line)?.[1] ?? owner;
+          return { file, line: at + 1, text, owner };
+        })
+        // A COMMENT NAMING THE CALL IS NOT ONE: the redraw's own documentation says `update()`.
+        .filter((entry) => !entry.text.startsWith('*') && !entry.text.startsWith('//'))
+        .filter((entry) => UPDATE_CALL.test(entry.text))
+    );
+  });
+  const named = calls.map((call) => `${call.file} ${call.owner}: ${call.text}`);
 
   it('the pattern sees every spelling of the call, and not a call that passes something', () => {
     // CONSTRUCTED, because the tree spells only the first: a pattern that saw one spelling would pass the
@@ -58,11 +71,26 @@ describe('the one redraw', () => {
     // THE POSITIVE CONTROL. A search that read no files, or read them wrong, would find nothing and
     // pass the case below.
     expect(files.length).toBeGreaterThan(50);
-    expect(calls.map((call) => `${call.file}: ${call.text}`)).toContain('pageAnnotations.ts: annotation.update();');
+    expect(named).toContain('pageAnnotations.ts redraw: annotation.update();');
+  });
+
+  it('the owner reading can see: a call is named by the function it sits in, not the file', () => {
+    // CONSTRUCTED: the same call text under two declarations reads as two owners.
+    let owner = '(top level)';
+    const owners = ['export function first(): void {', '  a.update();', 'function second(): void {', '  a.update();']
+      .map((line) => {
+        owner = DECLARATION.exec(line)?.[1] ?? owner;
+        return UPDATE_CALL.test(line) ? owner : null;
+      })
+      .filter((found) => found !== null);
+    expect(owners).toStrictEqual(['first', 'second']);
   });
 
   it('and finds no other', () => {
-    // BY FILE AND TEXT, so a second call site is named in the failure rather than counted.
-    expect(calls.map((call) => `${call.file}: ${call.text}`)).toStrictEqual(['pageAnnotations.ts: annotation.update();']);
+    // BY FILE, FUNCTION AND TEXT, so a third call site — or one moved out of its owner — is named in the failure.
+    expect(named).toStrictEqual([
+      'pageAnnotations.ts redrawPage: page.update();',
+      'pageAnnotations.ts redraw: annotation.update();',
+    ]);
   });
 });

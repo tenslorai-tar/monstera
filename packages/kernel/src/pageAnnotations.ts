@@ -1227,10 +1227,7 @@ const BLEND_STATE = 'MonsteraBlend';
  */
 export function redrawPage(page: PDFPage, annotations: readonly PDFAnnotation[], document: PDFDocument): void {
   page.update();
-  for (const annotation of annotations) {
-    const mode = annotation.getObject().get('BM');
-    if (mode.isName()) blendAppearance(annotation, document, mode.asName());
-  }
+  for (const annotation of annotations) reblend(annotation, document);
 }
 
 /**
@@ -1245,6 +1242,11 @@ export function redrawPage(page: PDFPage, annotations: readonly PDFAnnotation[],
  */
 export function redraw(annotation: PDFAnnotation, document: PDFDocument): void {
   annotation.update();
+  reblend(annotation, document);
+}
+
+/** What both redraws do after `update()`: the dictionary's `/BM` written back into the appearance MuPDF just drew. */
+function reblend(annotation: PDFAnnotation, document: PDFDocument): void {
   const mode = annotation.getObject().get('BM');
   if (mode.isName()) blendAppearance(annotation, document, mode.asName());
 }

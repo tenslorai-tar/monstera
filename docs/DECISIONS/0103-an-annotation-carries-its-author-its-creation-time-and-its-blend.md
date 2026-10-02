@@ -128,6 +128,17 @@ Two counts above were wrong when written, both found while building.
   does not do* already says; the three commands that carry one are unchanged.
 
 And one thing the build added: **the instant is bounded** (`annotationInstantSchema`, 40 characters).
+
+## Correction, 2026-10-02
+
+**Two functions redraw, not one.** Importing 5,000 notes onto one page was quadratic: MuPDF's per-annotation
+`update()` walks the page's whole annotation list, so 1,000, 2,000 and 4,000 squares took 344, 1,425 and 5,838 ms
+redrawn one by one and 20, 39 and 75 ms through the page's own `update()` (`scripts/research/importAnnotationsScale.mjs`;
+JOURNAL, *No document-size refusals*, table A row 8). `redrawPage` is that form for a caller placing many, beside
+`redraw`, and both end in the one `reblend`, so the rule this ADR set — every `update()` is followed by the
+dictionary's `/BM` — holds for both. `redrawOwner.test.ts` allows exactly these two calls and names the function each
+sits in; a case proves the page form keeps a Normal mark Normal, with the page update alone turning it Multiply as the
+control.
 `z.iso.datetime()` alone has a pattern and no length, and invariant L11's sweep reported it.
 
 ## Correction, 2026-09-25 (the audit of 5b55d66..1e1bfad)
