@@ -892,6 +892,124 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-02 — Stage audit of `cc6305d3..fcb1adac` — findings IIIIIII-1 to IIIIIII-8
+
+27 commits, 200 files (`npm run audit:scope`), all work/cloud-3: C.d and D (ADR-0139, ADR-0140), E (ADR-0141), and the
+large-document rows of table A in *No document-size refusals* (rows 2 to 13), with item H (ADR-0142). Written because
+row 14's commit would take the range to 202 files and the pre-commit gate refused it. Labels I, the next free after
+HHHHHHH on main and every work branch (read from each branch's JOURNAL).
+
+**Proofs modified, read for loosening.** Three checks became wider, each stated: `redrawOwner.test.ts` allows a second
+`update()`, in `redrawPage`, and became stricter on the other axis, naming the function each call sits in
+(IIIIIII-1); `pageImages.test.ts`' scale floor is the whole page's 0.01, not 1 (row 11, ADR-0090's correction);
+`officeConversion.test.ts`' *answers null past 64 blocks* became *keeps every block, names 64 and counts the rest*
+(row 12). `removalCollects.test.ts` lost the case asking the session whether a save is a removal's, because ADR-0139
+moved that fact to the document and `commandBus.test.ts` holds it. Every other deletion is a shape the range changed:
+page lists became page sets (row 4), the edit commands' wire form (ADR-0142), the layers and links answers in parts.
+Proofs removed: none.
+
+**IIIIIII-1** (medium, closed in `8023c59`): `c69d586` added `redrawPage`, a second `update()` call, and
+`redrawOwner.test.ts` was red on both CI legs at `3323cdc`. The test reads kernel source as text, so `vitest related`
+on the changed files, which is what was run, never selected it. Both redraws now end in one `reblend`, the search names
+each call's function, and a case proves the page form keeps a Normal mark Normal.
+
+**IIIIIII-2** (medium, closed in the commit after this one): `bed8981` imported `@monstera/contract` bare in
+`pdfiumTextEdit.ts`, which the PDFium host loads, and `hostLoad.proof.mjs` was red on Linux at `8023c59`. The rule is
+held by that proof alone, which runs in CI and in no local subset; row 14 then wrote the same import into
+`signatureRead.ts` before the failure was read. Both now take `@monstera/contract/host`, and the proof passes here.
+
+**IIIIIII-3** (medium, closed in the commit after this one): `bed8981` said every proof builds the edit commands
+through the contract's encoders. One case in `pdfiumCommand.proof.mjs` still built `replacements: [...]` behind a
+`/** @type {never} */` cast, so it typechecked and failed on Windows, the one runner with PDFium. The claim was
+asserted from a search for the old field name, which did not look behind casts (item 5). The case is typed as the
+command now. The file's other `never` casts are deliberate: a command routed to another writer, sent to be refused.
+
+**IIIIIII-4** (low, closed in `83d1f49` and `8023c59`): twice in this range an ADR gained a dated correction without
+its index row (`0f25280`, ADR-0129; `4fce56c`, ADR-0090). The index rule is whole-corpus, since a different file breaks
+it, so it runs in Guards only, and Guards was red from the first until `83d1f49`. Proposed, not built: a pre-commit
+rule that fires when an ADR is staged and reads that ADR's own index row, which is two files and still one decision.
+
+**IIIIIII-5** (low, closed in `3323cdc`): two research probes from rows 4 and 8 imported `dist/` without
+`refuseStaleBuild`; Guards' `buildFreshness.proof.mjs` was red at `10b8f41`.
+
+**IIIIIII-6** (low, closed in `4b97a0d`): the browser shim recorded no version for an `opened-incomplete` workbook, so
+its pages would be refused as stale. Found by rendering row 12's dialog, which is what looking at a screen is for.
+
+**IIIIIII-7** (low, open): `markdownImportProblem.ts` says its 255 is restated *because a dialog cannot import that
+constant*, while `pdfaRemovals.ts` and this range's `workbookIncomplete.ts` import contract constants. A comment that
+is false now, and possibly when written.
+
+**IIIIIII-8** (medium, open, the owner's): row 11's class reaches past the vision ask. Claude's OCR and its table read
+still refuse a region past 2,576 px at 72 dpi (*"too large for Claude to read without resizing, even at the smallest
+snapshot scale"*). Recognition reads characters, so a lower floor is the wrong answer there; tiling the region is the
+owed shape, and it is not in table A.
+
+**Would CI see it (item 3), from the runs.** `c679d79`: CI red only on the visual baselines. `83d1f49` and `10b8f41`:
+Guards red on IIIIIII-5. `3323cdc`: Guards green; CI red on IIIIIII-1 on both legs, and the visual baselines.
+`8023c59`: Guards green; CI red on IIIIIII-2 (Linux), IIIIIII-3 (Windows) and the visual baselines. The pushes between
+were cancelled by the next. `fcb1ada` was running when this was written. Three of the eight were found only by CI or
+Guards, and each names a check that no local subset runs.
+
+### 1. Root cause or workaround?
+
+Each fix names its mechanism in its commit: the deep copy through `/Parent` (row 4), MuPDF's per-annotation update
+walking the page (rows 8 and 9), the snapshot's floor enforced by the page rasteriser (row 11), the join's bounded list
+and the 65th block refused (row 12), the missing session (row 13). No workaround: the one interim cap kept, the panel's
+256 signatures, is stated as a crafted-file bound.
+
+### 2. Verified against the easy shape only?
+
+Each row was proven at its breaking size: 4,100 pages, 3,600 bookmarks, 1,100 layers, 5,000 links, 5,000 notes and
+fields, a 5,000-character block, an A0 page, 1,025 sheets and 65 missing blocks, 250 MiB plus one byte. The hard shape
+not reached is the live one: PDFium's proofs run on Windows only (IIIIIII-3), and row 13's sessions have not met either
+provider.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+The edit commands' proofs build through the encoders, so a wrong field is a compile error, except behind a cast
+(IIIIIII-3). `hostRoutes.test.ts`' pinned exceptions shrank to none for the PDFium kinds. Nothing moved from executed
+to asserted.
+
+### 3. Would CI have caught it?
+
+Answered above from the runs.
+
+### 4. Are the proofs non-vacuous?
+
+Each row's case was run against the fix removed or the old bound restored, and went red (the commits name each). The
+redraw owner case reddens with `reblend` taken out of `redrawPage`; the staged-join case with the stage skipped.
+
+### 4a. Resolution test before measuring?
+
+`extractGraftScale.mjs` separated 966 objects from 9, and `importAnnotationsScale.mjs` 6,623 ms from 157 ms, on runs
+that changed only the code under test.
+
+### 4b. A search with a positive control?
+
+`redrawOwner.test.ts` keeps its control, the call inside `redraw`, and gains one that the owner reading separates two
+declarations.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+The hostile-host bounds of rows 6 and 7 are derived from the answer ceiling over a measured smallest item, held to
+their division by `engineChannels.test.ts`, with a control one past each.
+
+### 5. Executed, or asserted?
+
+Executed: every case named, typecheck, lint, the contract proof, the host-load proof, the rendered looks of rows 6 and
+12, and the runs read above. Asserted: row 13 against live providers, PDFium's proofs until the next Windows run, and
+IIIIIII-8's shape.
+
+### 6. Architecture before the feature, or underneath it?
+
+ADR-0139 (`674c3ca`), ADR-0140 (`230636e`), ADR-0141 (`7deb956`) and ADR-0142 (`7859a23`) each precede the work they
+govern, in their own commits.
+
+### 7. Do the documents still match the code?
+
+The FEATURES rows each row touched were updated in its commit, and ADR-0090, ADR-0103 and ADR-0129 carry dated
+corrections with their index rows. IIIIIII-7 is the stale comment found.
+
 ## 2026-10-02 — Stage audit of `2639b023..cc6305d3` — findings HHHHHHH-1 to HHHHHHH-6
 
 33 commits, 189 files (`git log` and `git diff --stat` over the range): work/cloud-2's commits after its own audit (`e294bea` to `7dfa342`, and the merge `6e741e8`),
