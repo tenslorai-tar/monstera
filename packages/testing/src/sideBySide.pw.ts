@@ -97,7 +97,7 @@ async function scrollsFor(page: Page, ms: number): Promise<{ left: number[]; rig
 
 /** The width a pane's scrollbar takes, which the scrollbar cases need to be more than nothing. */
 async function gutterOf(surface: Locator): Promise<number> {
-  return surface.locator('[data-side-half="right"] .m-page-list').evaluate((list) => list.offsetWidth - list.clientWidth);
+  return surface.locator('[data-side-half="right"] .m-page-list').evaluate((list: HTMLElement) => list.offsetWidth - list.clientWidth);
 }
 
 test('CONTROL: the recorder sees a pane move — a scroll made while it records is in what it returns', async ({ page }) => {
