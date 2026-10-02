@@ -21,7 +21,7 @@ The **Forms** tab lists every field in the document with a control to fill it in
 
 - A field the document marks as read-only says **The document marks this field read-only.** Signature fields and buttons cannot be filled here.
 - A list field that holds several choices at once is shown but cannot be changed here.
-- Only the first 4,096 fields are listed; the tab says so if there are more.
+- Every field is listed, however large the form.
 - A form with no fields at all? Try "Find fields on a flat form", or type on it with the Typewriter.
 - Undo with **Ctrl+Z**.
 

@@ -20,7 +20,7 @@ The **Comments** tab of the document panel lists every comment, highlight and sh
 
 - Replies are marked **Reply**. Marks that were already in the document when you opened it are marked **Came with the document**.
 - Each row shows the mark's author.
-- Only the first 4,096 annotations are listed; the tab says so if there are more.
+- Every annotation is listed, however long the review.
 - Links are not listed here; they are in the **Bookmarks** tab.
 
 <!--
