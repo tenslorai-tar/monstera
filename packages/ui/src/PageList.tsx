@@ -571,79 +571,6 @@ export function PageList({
    * ignoring it, the fix is an effect with `{ passive: false }` and not a
    * different gesture.
    */
-  /**
-   * Where the pages on screen lie inside the scroller, in CSS pixels, for the rulers and the grid.
-   *
-   * **Read from the slots' own boxes**, not computed from the page size and
-   * a guessed margin: the slot is centred by CSS and the margin is a token, so
-   * arithmetic here would be a second opinion about a layout the stylesheet
-   * owns — and it would be wrong the day the margin changes.
-   *
-   * EVERY PAGE NEAR THE VIEWPORT, not the first page alone. Measured from page 1 only, the vertical ruler counted on
-   * past page 1's foot, so every later page read a continuation of page 1's numbers (the owner's review of 0.1.6.0).
-   * The pages are the ones `visible` already names, so this asks the slots the observer is watching and no others.
-   *
-   * `origin` is the CURRENT page's corner, which is what the grid is anchored to and what the horizontal ruler measures
-   * from, with the page beside it in a facing row.
-   *
-   * The numbers go NEGATIVE once a page is scrolled past, which is correct:
-   * a ruler whose origin clamped to zero would put its zero mark wherever the
-   * viewport happened to start.
-   */
-  const [pageSpans, setPageSpans] = useState<{
-    readonly origin: { readonly x: number; readonly y: number };
-    readonly across: readonly RulerSpan[];
-    readonly down: readonly RulerSpan[];
-    readonly size: { readonly width: number; readonly height: number };
-  }>({ origin: { x: 0, y: 0 }, across: [], down: [], size: { width: 0, height: 0 } });
-  const pageOrigin = pageSpans.origin;
-
-  const measureOrigin = useCallback((): void => {
-    const box = scroller.current;
-    if (box === null) return;
-    const outer = box.getBoundingClientRect();
-    const pages = (visible.size > 0 ? [...visible] : [FIRST_PAGE.kernel])
-      .sort((a, b) => a - b)
-      .flatMap((page) => {
-        const slot = slotFor(page);
-        if (slot === undefined) return [];
-        const inner = slot.getBoundingClientRect();
-        // A HIDDEN SLOT (single page layout) has no box, and a span of zero would put a page's zero on top of another's.
-        if (inner.height === 0) return [];
-        return [
-          {
-            left: inner.left - outer.left,
-            right: inner.right - outer.left,
-            top: inner.top - outer.top,
-            bottom: inner.bottom - outer.top,
-          },
-        ];
-      });
-    // THE TOPMOST PAGE ON SCREEN. `visible` reaches a viewport beyond the screen either way (`MARGIN`), so its first
-    // page can lie wholly above it; the boxes read here say which pages the scrollport actually shows.
-    const current = pages.find((page) => page.bottom > 0 && page.top < outer.height) ?? pages[0];
-    if (current === undefined) return;
-    setPageSpans({
-      origin: { x: current.left, y: current.top },
-      across: pages
-        .filter((page) => page.top < current.bottom && page.bottom > current.top)
-        .map((page) => ({ start: page.left, end: page.right })),
-      down: pages.map((page) => ({ start: page.top, end: page.bottom })),
-      size: { width: outer.width, height: outer.height },
-    });
-  }, [slotFor, visible]);
-
-  // Recomputed on scroll, on resize, and whenever the page is redrawn at a new
-  // scale — the three things that move the page's corner. A ruler that updated
-  // only on scroll drifts on zoom, silently, and looks right until measured.
-  useEffect(() => {
-    measureOrigin();
-  }, [measureOrigin, shown, viewport, sizes]);
-
-  const onScroll = useCallback((): void => {
-    measureOrigin();
-  }, [measureOrigin]);
-
   const grid = showGrid ? gridSpacing(unit, shown) : undefined;
 
   /**
@@ -924,7 +851,9 @@ export function PageList({
     if (selection === undefined) return;
     const command = fromSelection(selection);
     if (command === undefined) return;
-    drawing.onCommand(command);
+    // NOT AWAITED: whether the version moved decides nothing here — the selection is spent either way — and the
+    // command reports its own refusal.
+    void drawing.onCommand(command);
     // THE SELECTION IS SPENT once it is a mark: left in place it would still offer the selected-text menu for words
     // that are already marked, and the next drag would start from it.
     globalThis.document.getSelection()?.removeAllRanges();
@@ -945,8 +874,18 @@ export function PageList({
           <Loupe view={view} page={lens.page} zoom={shown} rotation={rotations.get(lens.page)} at={lens.at} />
         </div>
       ) : null}
-      {rulers && pageSpans.size.height > 0 ? (
-        <Rulers unit={unit} zoom={shown} size={pageSpans.size} across={pageSpans.across} down={pageSpans.down} />
+      {rulers || grid !== undefined ? (
+        <PageSpans
+          scroller={scroller}
+          slotFor={slotFor}
+          visible={visible}
+          viewport={viewport}
+          sizes={sizes}
+          rulers={rulers}
+          grid={grid !== undefined}
+          unit={unit}
+          zoom={shown}
+        />
       ) : null}
     <div
       // A NAMED, FOCUSABLE REGION: the document scrolls here, and a scroller with nothing focusable inside — a page of
@@ -1002,11 +941,9 @@ export function PageList({
           ? undefined
           : ({
               '--m-grid': `${String(grid)}px`,
-              // THE SAME ORIGIN THE RULER USES, so a grid line is a mark the
-              // reader can find on the ruler. Two regular grids aligned to
-              // different zeros look correct and disagree.
-              '--m-grid-x': `${String(pageOrigin.x)}px`,
-              '--m-grid-y': `${String(pageOrigin.y)}px`,
+              // THE ORIGIN (`--m-grid-x`, `--m-grid-y`) IS `PageSpans`', the one the ruler uses, so a grid line is a
+              // mark the reader can find on the ruler; it is set on this element there, because it moves with every
+              // scroll and this component must not render with it.
             } as React.CSSProperties)
       }
       // ALWAYS NAMED, since it is a focusable region (2026-09-26): *Document pages* alone, and in the split view each
@@ -1022,7 +959,6 @@ export function PageList({
       }
       ref={scroller}
       onWheel={onWheel}
-      onScroll={onScroll}
       onPointerMove={onPointerMove}
       onPointerLeave={onPointerLeave}
       // CAPTURE, so a press on a page's own controls — an annotation, the text layer — still
@@ -1105,6 +1041,125 @@ export function PageList({
  * below is the only size known then, and a wrong estimate is still a better one
  * than none.
  */
+/**
+ * Where the pages on screen lie inside the scroller, in CSS pixels, for the rulers and the grid — measured on every
+ * scroll, and the rulers drawn from it.
+ *
+ * **Read from the slots' own boxes**, not computed from the page size and
+ * a guessed margin: the slot is centred by CSS and the margin is a token, so
+ * arithmetic here would be a second opinion about a layout the stylesheet
+ * owns — and it would be wrong the day the margin changes.
+ *
+ * EVERY PAGE NEAR THE VIEWPORT, not the first page alone. Measured from page 1 only, the vertical ruler counted on
+ * past page 1's foot, so every later page read a continuation of page 1's numbers (the owner's review of 0.1.6.0).
+ * The pages are the ones `visible` already names, so this asks the slots the observer is watching and no others.
+ *
+ * The grid's origin is the CURRENT page's corner, which is also what the horizontal ruler measures from, with the page
+ * beside it in a facing row. The numbers go NEGATIVE once a page is scrolled past, which is correct: a ruler whose
+ * origin clamped to zero would put its zero mark wherever the viewport happened to start.
+ *
+ * ## ITS OWN COMPONENT, so a scroll renders this and nothing else
+ *
+ * The spans move with every scroll event, and while they were `PageList`'s state each event rendered the whole list:
+ * every slot, and around each one its context-menu area, which evaluates the command registry when it renders.
+ * Measured 2026-10-01 on the 210 MB scan: that render cost 1.48 s of an 8.1 s scroll, and 830 ms of garbage
+ * collection beside it. Held here, a scroll renders the rulers; the list renders when a page enters or leaves
+ * `visible`, which is what it draws.
+ *
+ * The grid's origin is the same reading (a grid line is a mark the reader can find on the ruler), so it is written
+ * here as the scroller's two custom properties rather than through `PageList`'s style, which would render it again.
+ */
+function PageSpans({
+  scroller,
+  slotFor,
+  visible,
+  viewport,
+  sizes,
+  rulers,
+  grid,
+  unit,
+  zoom,
+}: {
+  readonly scroller: React.RefObject<HTMLDivElement | null>;
+  readonly slotFor: (page: number) => HTMLElement | undefined;
+  readonly visible: ReadonlySet<number>;
+  /** What moves the pages' corners besides a scroll, with `zoom`: read by nothing here, and a dependency of the measure. */
+  readonly viewport: unknown;
+  readonly sizes: unknown;
+  readonly rulers: boolean;
+  readonly grid: boolean;
+  readonly unit: RulerUnit;
+  readonly zoom: number;
+}): ReactElement | null {
+  const [spans, setSpans] = useState<{
+    readonly across: readonly RulerSpan[];
+    readonly down: readonly RulerSpan[];
+    readonly size: { readonly width: number; readonly height: number };
+  }>({ across: [], down: [], size: { width: 0, height: 0 } });
+
+  // ON SCROLL, and whenever the zoom, the viewport or the page sizes move the pages' corners: a ruler that updated
+  // only on scroll drifts on zoom, silently, and looks right until measured. The first reading is a frame callback
+  // like every other, so the effect itself sets nothing.
+  useEffect(() => {
+    const box = scroller.current;
+    if (box === null) return undefined;
+    const measure = (): void => {
+      const outer = box.getBoundingClientRect();
+      const pages = (visible.size > 0 ? [...visible] : [FIRST_PAGE.kernel])
+        .sort((a, b) => a - b)
+        .flatMap((page) => {
+          const slot = slotFor(page);
+          if (slot === undefined) return [];
+          const inner = slot.getBoundingClientRect();
+          // A HIDDEN SLOT (single page layout) has no box, and a span of zero would put a page's zero on another's.
+          if (inner.height === 0) return [];
+          return [
+            {
+              left: inner.left - outer.left,
+              right: inner.right - outer.left,
+              top: inner.top - outer.top,
+              bottom: inner.bottom - outer.top,
+            },
+          ];
+        });
+      // THE TOPMOST PAGE ON SCREEN. `visible` reaches a viewport beyond the screen either way (`MARGIN`), so its first
+      // page can lie wholly above it; the boxes read here say which pages the scrollport actually shows.
+      const current = pages.find((page) => page.bottom > 0 && page.top < outer.height) ?? pages[0];
+      if (current === undefined) return;
+      if (grid) {
+        box.style.setProperty('--m-grid-x', `${String(current.left)}px`);
+        box.style.setProperty('--m-grid-y', `${String(current.top)}px`);
+      }
+      if (!rulers) return;
+      setSpans({
+        across: pages
+          .filter((page) => page.top < current.bottom && page.bottom > current.top)
+          .map((page) => ({ start: page.left, end: page.right })),
+        down: pages.map((page) => ({ start: page.top, end: page.bottom })),
+        size: { width: outer.width, height: outer.height },
+      });
+    };
+    const first = requestAnimationFrame(measure);
+    box.addEventListener('scroll', measure, { passive: true });
+    return (): void => {
+      cancelAnimationFrame(first);
+      box.removeEventListener('scroll', measure);
+    };
+  }, [grid, rulers, scroller, slotFor, visible, zoom, viewport, sizes]);
+
+  // THE GRID'S ORIGIN LEAVES WITH THE GRID: a property left on the scroller would anchor a grid nobody shows.
+  useEffect(() => {
+    const box = scroller.current;
+    if (grid || box === null) return undefined;
+    box.style.removeProperty('--m-grid-x');
+    box.style.removeProperty('--m-grid-y');
+    return undefined;
+  }, [grid, scroller]);
+
+  if (!rulers || spans.size.height === 0) return null;
+  return <Rulers unit={unit} zoom={zoom} size={spans.size} across={spans.across} down={spans.down} />;
+}
+
 function lastKnownBefore(
   sizes: ReadonlyMap<number, Measured>,
   page: number,

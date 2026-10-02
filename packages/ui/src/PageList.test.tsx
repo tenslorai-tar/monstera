@@ -1620,4 +1620,67 @@ describe('PageList', () => {
       expect(facing.scale).not.toBe(continuous.scale);
     });
   });
+
+  it('a SCROLL does not render the list: the rulers and the grid measure it on their own (row 303)', async () => {
+    // EVERY SLOT A REAL BOX, stacked 300 px apart: happy-dom answers zero for every box, and a measure that finds no
+    // page with a height sets nothing — so with zero boxes the old code also rendered nothing on a scroll, and this
+    // case would pass against the defect it exists to catch.
+    const boxes = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const page = Number(this.dataset['page'] ?? '-1');
+      const top = page >= 0 ? page * 300 - (this.closest('.m-page-list')?.scrollTop ?? 0) : 0;
+      return { x: 0, y: top, left: 0, top, right: 200, bottom: top + 280, width: 200, height: page >= 0 ? 280 : 600, toJSON: () => ({}) };
+    });
+    try {
+      const { client } = clientAnswering();
+      // `pageMenu` IS CALLED ONCE PER SLOT ON EVERY RENDER of the list, which is what makes it the observable: the cost
+      // measured was the slots' menu areas rendering again on every scroll event.
+      const pageMenu = vi.fn((_page: number, slot: ReactElement): ReactNode => slot);
+      const { container } = render(
+        <PageList
+          client={client}
+          view={undefined}
+          pageCount={5}
+          docId={DOC}
+          version={VERSION}
+          onCurrentPage={vi.fn()}
+          mode={SCALE_1}
+          onZoomStep={vi.fn()}
+          onShownZoom={vi.fn()}
+          goTo={undefined}
+          startAt={FIRST_PAGE.kernel}
+          onWentTo={vi.fn()}
+          loupe={false}
+          rulers={true}
+          showGrid={true}
+          unit="in"
+          search={undefined}
+          secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+          pageMenu={pageMenu}
+        />,
+      );
+      await settle();
+      const scroller = container.querySelector<HTMLElement>('.m-page-list');
+      if (scroller === null) throw new Error('no scroller');
+      const before = pageMenu.mock.calls.length;
+      // THE PREMISE: the list did render its slots through the menu.
+      expect(before).toBeGreaterThan(0);
+      for (const top of [120, 240, 360]) {
+        scroller.scrollTop = top;
+        fireEvent.scroll(scroller);
+      }
+      await settle();
+
+      // THE DECISION: no slot rendered again.
+      expect(pageMenu.mock.calls.length).toBe(before);
+      // AND THE SCROLL WAS READ: the grid's origin follows the page now on top, which a listener that never ran would
+      // leave where the first frame put it (or unset).
+      expect(scroller.style.getPropertyValue('--m-grid-y')).not.toBe('');
+      const settledY = scroller.style.getPropertyValue('--m-grid-y');
+      scroller.scrollTop = 30;
+      fireEvent.scroll(scroller);
+      expect(scroller.style.getPropertyValue('--m-grid-y')).not.toBe(settledY);
+    } finally {
+      boxes.mockRestore();
+    }
+  });
 });
