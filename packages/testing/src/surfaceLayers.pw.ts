@@ -26,26 +26,57 @@ interface Layer {
   readonly backendNodeId?: number;
 }
 
-/** Every composited layer, with Chromium's reasons for compositing it. */
+/**
+ * Every composited layer, with Chromium's reasons for compositing it.
+ *
+ * ## READ AGAINST THE NEWEST TREE, because a reason is asked for by layer id
+ *
+ * A page still drawing commits new frames, and each commit may replace the layers: a reason asked for against a tree
+ * that has since been replaced is answered *"No layer matching given id found"* (CI, ubuntu, 2026-10-02, while the
+ * first page was still rasterising). So the read is retried only when a NEWER tree has arrived since the one it
+ * started from — that event is what makes the old ids stale — and a failure with no newer tree is thrown as itself.
+ */
 async function layers(page: Page, cdp: CDPSession): Promise<{ readonly layer: Layer; readonly reasons: string[] }[]> {
-  const changed = new Promise<Layer[]>((settled) => {
-    cdp.on('LayerTree.layerTreeDidChange', (event: { layers?: Layer[] }) => {
-      if (event.layers !== undefined && event.layers.length > 0) settled(event.layers);
-    });
+  let latest: { readonly tree: Layer[]; readonly generation: number } | undefined;
+  let arrived: (() => void) | undefined;
+  cdp.on('LayerTree.layerTreeDidChange', (event: { layers?: Layer[] }) => {
+    if (event.layers === undefined || event.layers.length === 0) return;
+    latest = { tree: event.layers, generation: (latest?.generation ?? 0) + 1 };
+    arrived?.();
+  });
+  const first = new Promise<void>((settled) => {
+    arrived = settled;
   });
   await cdp.send('LayerTree.enable');
   // A MOVE, so a frame is produced and the tree is reported.
   await page.mouse.move(400, 400);
   await page.mouse.move(420, 420);
-  const tree = await changed;
-  return Promise.all(
-    tree.map(async (layer) => {
-      const answer = (await cdp.send('LayerTree.compositingReasons', { layerId: layer.layerId })) as {
-        compositingReasonIds?: string[];
-      };
-      return { layer, reasons: answer.compositingReasonIds ?? [] };
-    }),
-  );
+  await first;
+  for (;;) {
+    const read = latest;
+    if (read === undefined) throw new Error('no layer tree was reported');
+    try {
+      return await Promise.all(
+        read.tree.map(async (layer) => {
+          const answer = (await cdp.send('LayerTree.compositingReasons', { layerId: layer.layerId })) as {
+            compositingReasonIds?: string[];
+          };
+          return { layer, reasons: answer.compositingReasonIds ?? [] };
+        }),
+      );
+    } catch (error) {
+      if (!String(error).includes('No layer matching given id found')) throw error;
+      // THE TREE MOVED; its event may not have reached this side yet. Wait for it, bounded, and read the new tree —
+      // never the same one again.
+      if (latest?.generation === read.generation) {
+        const next = new Promise<void>((settled) => {
+          arrived = settled;
+        });
+        await Promise.race([next, page.waitForTimeout(2000)]);
+      }
+      if (latest?.generation === read.generation) throw error;
+    }
+  }
 }
 
 test('the grain is composited on its own layer, and still drawn over the whole window', async ({ page }) => {
