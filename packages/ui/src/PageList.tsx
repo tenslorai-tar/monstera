@@ -2,7 +2,17 @@ import { useLingui } from '@lingui/react';
 import type { ContractClient, DispatchableCommand } from '@monstera/contract';
 import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 import type React from 'react';
-import { Fragment, type ReactElement, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Fragment,
+  type ReactElement,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { AnnotationLayer } from './AnnotationLayer.js';
 import { AnnotationOverlay } from './AnnotationOverlay.js';
@@ -22,6 +32,7 @@ import { Icon } from './primitives/Icon.js';
 import type { UiTool } from './registries/tools.js';
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
+import { holdPage } from './pageResidency.js';
 import { motionReduced } from './settings/appearance.js';
 import type { PageLayout } from './settings/viewing.js';
 import {
@@ -1556,6 +1567,25 @@ function PageSlot({
       superseded.abort();
     };
   }, [draw, onFailed, onMeasured, page, quality, renderZoom, rotation, secondRasteriser, tiled, view]);
+
+  // HELD DECODED WHILE MOUNTED (`pageResidency.ts`), so a zoom's redraw of a page in the margin does not decode its
+  // images again; released when it leaves the margin, and PDF.js then closes them unless the strip is drawing it.
+  useEffect(() => {
+    if (!mounted || view === undefined) return undefined;
+    return holdPage(view.document, pdfjsPageOf(page));
+  }, [mounted, page, view]);
+
+  // THE CANVAS'S PIXELS GO WITH IT. A canvas taken out of the page keeps its backing store until it is collected, and
+  // with an accelerated 2D canvas that store is GPU memory; sized to nothing, it is released now. Captured when the
+  // canvas mounts, because by the time this cleanup runs the ref has already let go of it.
+  useLayoutEffect(() => {
+    const element = canvas.current;
+    return (): void => {
+      if (element === null) return;
+      element.width = 0;
+      element.height = 0;
+    };
+  }, [mounted, tiled]);
 
   return (
     <div

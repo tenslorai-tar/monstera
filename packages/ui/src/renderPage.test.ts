@@ -2,6 +2,7 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { holdPage } from './pageResidency.js';
 import { RenderCancelledError, pageGeometry, renderPage, renderRegion } from './renderPage.js';
 
 /** A signal nothing aborts, for the cases about what a draw does rather than whether it is superseded. */
@@ -37,11 +38,18 @@ function documentWithViewport(
   readonly sizeAtRender: { width: number; height: number }[];
   /** Every options object `getViewport` was handed, in order. */
   readonly asked: Record<string, unknown>[];
+  /** How many times the page's resources were cleaned up (`pageResidency.ts`). */
+  readonly cleanups: () => number;
 } {
   const sizeAtRender: { width: number; height: number }[] = [];
   const asked: Record<string, unknown>[] = [];
+  let cleanups = 0;
   const page = {
     view,
+    cleanup: () => {
+      cleanups += 1;
+      return true;
+    },
     getViewport: (options: Record<string, unknown>) => {
       asked.push(options);
       // THE VIEWPORT REPORTS ITS OWN ROTATION, which is what PDF.js does and
@@ -59,7 +67,7 @@ function documentWithViewport(
   const document = {
     getPage: () => Promise.resolve(page),
   } as unknown as PDFDocumentProxy;
-  return { document, sizeAtRender, asked };
+  return { document, sizeAtRender, asked, cleanups: () => cleanups };
 }
 
 /**
@@ -97,6 +105,36 @@ afterEach(() => {
 });
 
 describe('renderPage', () => {
+  // D.A, the owner's review of 0.1.9.0: PDF.js keeps a drawn page's decoded images until `cleanup()`, and nothing
+  // called it, so every page ever drawn kept them (`pageResidency.ts`).
+  it('CLEANS the page it drew once nothing holds it; CONTROL: a page a slot holds is not cleaned until released', async () => {
+    const alone = documentWithViewport(300, 400);
+    await renderPage(alone.document, 1, canvasWithContext(), 1, undefined, LIVE);
+    expect(alone.cleanups()).toBe(1);
+
+    const kept = documentWithViewport(300, 400);
+    const release = holdPage(kept.document, 1);
+    await renderPage(kept.document, 1, canvasWithContext(), 1, undefined, LIVE);
+    expect(kept.cleanups()).toBe(0);
+    release();
+    expect(kept.cleanups()).toBe(1);
+    // SPENT: a second call is no second release.
+    release();
+    expect(kept.cleanups()).toBe(1);
+  });
+
+  it('a page HELD but never drawn has nothing to clean, and asks PDF.js for nothing', () => {
+    const asked: number[] = [];
+    const document = {
+      getPage: (page: number) => {
+        asked.push(page);
+        return Promise.reject(new Error('never asked'));
+      },
+    } as unknown as PDFDocumentProxy;
+    holdPage(document, 3)();
+    expect(asked).toStrictEqual([]);
+  });
+
   it('sizes the drawing canvas BEFORE drawing, because sizing it after would clear it', async () => {
     // Setting `width` or `height` on a canvas resets its drawing surface, so a
     // correct render followed by a resize is a blank page — which looks exactly
@@ -125,6 +163,7 @@ describe('renderPage', () => {
     const before = { width: canvas.width, height: canvas.height };
     const page = {
       view: VIEW,
+      cleanup: () => true,
       getViewport: () => ({ width: 301, height: 401, rotation: 0 }),
       render: ({ canvas: drawnOn }: { canvas: HTMLCanvasElement }) => {
         onScreen.push({ width: canvas.width, height: canvas.height });
@@ -329,6 +368,7 @@ describe('renderRegion', () => {
     const calls: { width: number; height: number; transform: unknown; viewport: unknown }[] = [];
     const page = {
       view: VIEW,
+      cleanup: () => true,
       getViewport: (options: Record<string, unknown>) => ({ width: 2000, height: 3000, rotation: options['rotation'] ?? 0, options }),
       render: ({ canvas, transform, viewport }: { canvas: HTMLCanvasElement; transform?: unknown; viewport: unknown }) => {
         calls.push({ width: canvas.width, height: canvas.height, transform, viewport });
@@ -402,6 +442,7 @@ describe('renderPage and a superseded draw', () => {
     let renders = 0;
     const page = {
       view: VIEW,
+      cleanup: () => true,
       getViewport: () => ({ width: 100, height: 100, rotation: 0 }),
       render: () => {
         renders += 1;
@@ -473,6 +514,7 @@ describe('renderPage and a superseded draw', () => {
   it('CONTROL: a render that FAILS on its own is reported as itself, not as superseded', async () => {
     const failing = {
       view: VIEW,
+      cleanup: () => true,
       getViewport: () => ({ width: 100, height: 100, rotation: 0 }),
       render: () => ({ promise: Promise.reject(new Error('a broken content stream')), cancel: () => undefined }),
     };

@@ -1,5 +1,7 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
+import { holdPage, residentPage } from './pageResidency.js';
+
 /**
  * Rasterises one page onto a canvas.
  *
@@ -149,11 +151,31 @@ export async function renderPage(
   signal: AbortSignal,
   raster?: SecondRasteriser,
 ): Promise<RasterisedPage> {
+  // HELD FOR THE DRAW, and released after it whatever happened (`pageResidency.ts`): the page's decoded images are
+  // cleaned once nothing else holds it, so a page drawn once does not keep them for the life of the document.
+  const release = holdPage(document, pageNumber);
+  try {
+    return await drawPage(document, pageNumber, canvas, scale, rotation, signal, raster);
+  } finally {
+    release();
+  }
+}
+
+async function drawPage(
+  document: PDFDocumentProxy,
+  pageNumber: number,
+  canvas: HTMLCanvasElement,
+  scale: number | { readonly fitWidth: number },
+  rotation: number | undefined,
+  signal: AbortSignal,
+  raster?: SecondRasteriser,
+): Promise<RasterisedPage> {
   // READ THROUGH A CALL, because the answer changes across every `await` below and a property
   // read is narrowed by the compiler as if it could not: after one `if (signal.aborted)` it
   // types every later read as `false`, and the checks that matter most would read as dead.
   const superseded = (): boolean => signal.aborted;
   const page = await document.getPage(pageNumber);
+  residentPage(document, pageNumber, page);
   // BEFORE THE CANVAS IS TOUCHED: sizing it clears it, so a superseded draw that got this far
   // would wipe the newer one's pixels.
   if (superseded()) throw new RenderCancelledError(pageNumber);
@@ -370,7 +392,26 @@ export async function renderRegion(
   region: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
   signal: AbortSignal,
 ): Promise<void> {
+  // HELD FOR THE DRAW, `renderPage`'s reason: a tile decodes the page's images as a whole page does.
+  const release = holdPage(document, pageNumber);
+  try {
+    await drawRegion(document, pageNumber, canvas, scale, rotation, region, signal);
+  } finally {
+    release();
+  }
+}
+
+async function drawRegion(
+  document: PDFDocumentProxy,
+  pageNumber: number,
+  canvas: HTMLCanvasElement,
+  scale: number,
+  rotation: number | undefined,
+  region: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+  signal: AbortSignal,
+): Promise<void> {
   const page = await document.getPage(pageNumber);
+  residentPage(document, pageNumber, page);
   // BEFORE THE CANVAS IS TOUCHED, `renderPage`'s reason.
   if (signal.aborted) throw new RenderCancelledError(pageNumber);
   const viewport = viewportOf(page, scale, rotation);
