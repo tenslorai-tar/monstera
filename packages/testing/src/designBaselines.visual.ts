@@ -199,7 +199,18 @@ test('CONTROL: a change in the Properties panel is reported where the page’s b
   // THE HARD SHAPE, asserted rather than assumed: the planted change lies WHOLLY inside the page canvas's box, which is
   // what a mask painted over. A change reaching past that box would be reported under either mechanism, and so would
   // separate nothing — the first version of this case planted a longer word whose last letter did exactly that.
-  const canvasBox = await page.locator('.m-page-list canvas').first().boundingBox();
+  // THE PREMISE WAITED FOR, not read once: `documentDrawn` counts canvases, and a page canvas read before it takes its
+  // laid-out size (CI's Windows runner has read one at its default 300 × 150) reaches under no control at all — which
+  // failed this case at 13f12520 and passed it at 93618f48 on the same code. The page at 100% reaches under the panel.
+  const pageCanvas = page.locator('.m-page-list canvas[data-page-canvas="0"]');
+  await expect
+    .poll(async () => {
+      const box = await pageCanvas.boundingBox();
+      const panel = await page.locator('.m-context-panel').boundingBox();
+      return box !== null && panel !== null && box.x + box.width > panel.x;
+    })
+    .toBe(true);
+  const canvasBox = await pageCanvas.boundingBox();
   if (canvasBox === null) throw new Error('the page canvas is laid out');
   const hidden = await page.evaluate((canvasRight) => {
     const panel = document.querySelector('.m-context-panel');
