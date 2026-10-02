@@ -8,8 +8,10 @@ import {
   type AskSide,
   type AskSides,
   type ASK_UNREAD_REASONS,
+  type AskFileUnread,
   type ContractClient,
   MAX_ANNOTATION_TEXT,
+  MAX_ASK_ATTACHMENTS,
   MAX_ASK_DOCUMENTS,
   MAX_CHAT_TEXT,
   askShareOf,
@@ -23,7 +25,7 @@ import {
 } from '@monstera/contract';
 import type { DocId, MessageKey } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
-import { ArrowUp, Copy, Pencil, Plus, RefreshCw, Square, StickyNote } from 'lucide-react';
+import { ArrowUp, Copy, Paperclip, Pencil, Plus, RefreshCw, Square, StickyNote, X } from 'lucide-react';
 import {
   Fragment,
   type ReactElement,
@@ -42,7 +44,7 @@ import { answerElements } from './answerMarkdown.js';
 import type { AssistantRequest, ReplyTarget } from './assistantRequest.js';
 import type { EventSubscriber } from './bridge.js';
 import { confirmCopied } from './commands/confirmWritten.js';
-import type { AskedDocuments, ConversationTurn, DocumentStore } from './documentStores.js';
+import type { AskedDocuments, AttachedFile, ConversationTurn, DocumentStore } from './documentStores.js';
 import {
   AI_PROVIDER_NAMES,
   ANTHROPIC_OUT_OF_CREDIT,
@@ -70,6 +72,20 @@ import {
   ASSISTANT_UNREAD_DAMAGED,
   ASSISTANT_UNREAD_PAGE,
   ASSISTANT_CITATION_DOCUMENT,
+  ASSISTANT_ATTACH,
+  ASSISTANT_ATTACHED_DROPPED,
+  ASSISTANT_ATTACHED_LIST,
+  ASSISTANT_ATTACHED_REMOVE,
+  ASSISTANT_FILE_CANNOT_READ_HERE,
+  ASSISTANT_FILE_CANNOT_SEE,
+  ASSISTANT_FILE_NOT_FOUND,
+  ASSISTANT_FILE_NOT_SUPPORTED,
+  ASSISTANT_FILE_TOO_LARGE,
+  ASSISTANT_FILE_UNREADABLE,
+  ASSISTANT_SENT_FILE_PICTURE,
+  ASSISTANT_SENT_SHARE_EACH,
+  ASSISTANT_SIZE_KB,
+  ASSISTANT_SIZE_MB,
   ASSISTANT_COMPOSER_LABEL,
   ASSISTANT_CONVERSATION_LABEL,
   ASSISTANT_EMPTY,
@@ -255,6 +271,19 @@ const UNREAD_WORDS: Readonly<Record<(typeof ASK_UNREAD_REASONS)[number], Message
   'page-too-large': ASSISTANT_UNREAD_PAGE,
 };
 
+/** Why an attached file was not read, in words (ADR-0135): the contract's reason for each. */
+const FILE_UNREAD_WORDS: Readonly<Record<AskFileUnread, MessageKey>> = {
+  'not-found': ASSISTANT_FILE_NOT_FOUND,
+  'too-large': ASSISTANT_FILE_TOO_LARGE,
+  'not-supported': ASSISTANT_FILE_NOT_SUPPORTED,
+  unreadable: ASSISTANT_FILE_UNREADABLE,
+  'cannot-see': ASSISTANT_FILE_CANNOT_SEE,
+  'cannot-read-here': ASSISTANT_FILE_CANNOT_READ_HERE,
+};
+
+/** Nothing attached: one stable value, so the default does not change identity every render. */
+const NOTHING_ATTACHED: { readonly files: readonly AttachedFile[]; readonly dropped: number } = { files: [], dropped: 0 };
+
 /**
  * What *All Open Docs* sends when Send is pressed (ADR-0134 Decision 5): the focused document first, then the other
  * tabs in their order, the first {@link MAX_ASK_DOCUMENTS} of them — and the names of the ones past that, said rather
@@ -402,6 +431,9 @@ export function AssistantPanel({
     settings.set(AI_MODELS_SETTING.id, { ...chosenModels, [provider]: next });
   };
   const [draft, setDraft] = useState('');
+  // THE FILES FOR THE NEXT QUESTION (ADR-0135): handles `main` minted, a name and a size each. They go with the next
+  // ask that starts, and are cleared then, as the draft is.
+  const [attached, setAttached] = useState(NOTHING_ATTACHED);
   const [streaming, setStreaming] = useState<string | null>(null);
   const [problem, setProblem] = useState<keyof typeof PROBLEMS | null>(null);
   const [chosen, setChosen] = useState<{ readonly scope: Scope; readonly after: number }>({
@@ -595,7 +627,11 @@ export function AssistantPanel({
 
   const ask = useCallback(
     /** @returns whether the ask began; a request not begun is kept for when it can be. */
-    (text: string, { about, alongside, sides: asked, documents, web = false }: AskRequest, replyTo?: ReplyTarget): boolean => {
+    (
+      text: string,
+      { about, alongside, sides: asked, documents, attachments, web = false }: AskRequest,
+      replyTo?: ReplyTarget,
+    ): boolean => {
       if (text === '' || model === '' || live.current !== null) return false;
       const store = focused?.store;
       const read = (): readonly ConversationTurn[] => (store === undefined ? looseRef.current : store.getState().conversation);
@@ -613,11 +649,13 @@ export function AssistantPanel({
         ...(replyTo === undefined ? {} : { replyTo }),
         ...(asked === undefined ? {} : { sides: asked }),
         ...(documents === undefined ? {} : { documents }),
+        ...(attachments === undefined ? {} : { attached: attachments.map((file) => file.name) }),
         request: {
           about,
           ...(alongside === undefined ? {} : { alongside }),
           ...(asked === undefined ? {} : { sides: asked }),
           ...(documents === undefined ? {} : { documents }),
+          ...(attachments === undefined ? {} : { attachments }),
           web,
         },
         model: models.find((entry) => entry.id === model)?.label ?? model,
@@ -634,17 +672,23 @@ export function AssistantPanel({
         messages: [...before, turn].map((each) => ({ role: each.role, text: each.text })),
         ...(about === undefined ? {} : { about }),
         ...(alongside === undefined ? {} : { alongside }),
+        ...(attachments === undefined ? {} : { attachments: attachments.map((file) => file.handle) }),
         web,
       }).then((result) => {
         if (result.ok && result.value.started) {
           // THE DRAFT IS CLEARED ONLY ONCE THE ASK STARTED. A request that never began must
           // leave a person's words where they typed them.
           setDraft((current) => (current.trim() === text ? '' : current));
+          // AND THE FILES THAT WENT WITH IT, by handle: a file attached while this ask was starting stays for the next.
+          if (attachments !== undefined) {
+            const went = new Set(attachments.map((file) => file.handle));
+            setAttached((current) => ({ files: current.files.filter((file) => !went.has(file.handle)), dropped: 0 }));
+          }
           // WHAT WENT is recorded on the turn that asked, so the line under it is main's answer
           // rather than the scope the panel meant.
           const now = read();
           const at = now.lastIndexOf(turn);
-          const { sent, alongside: second, among } = result.value;
+          const { sent, alongside: second, among, files, share } = result.value;
           if (at !== -1) {
             write(
               now.map((each, index) =>
@@ -654,6 +698,8 @@ export function AssistantPanel({
                       sent,
                       ...(second === undefined ? {} : { alongside: second }),
                       ...(among === undefined ? {} : { among }),
+                      ...(files === undefined ? {} : { files }),
+                      ...(share === undefined ? {} : { share }),
                     }
                   : each,
               ),
@@ -697,9 +743,25 @@ export function AssistantPanel({
     [focused?.docId],
   );
 
+  /**
+   * The paperclip: `main` runs the picker and answers handles. Files already attached stay; past eight, the rest are
+   * counted and said rather than kept, `main`'s rule applied to the whole row.
+   */
+  const attach = useCallback(() => {
+    void client['ai.attach']({}).then((result) => {
+      if (!result.ok) return;
+      setAttached((current) => {
+        const together = [...current.files, ...result.value.files];
+        const kept = together.slice(0, MAX_ASK_ATTACHMENTS);
+        return { files: kept, dropped: result.value.dropped + together.length - kept.length };
+      });
+    });
+  }, [client]);
+
   const send = useCallback(() => {
-    const wanted = newRequest(scope);
-    if (wanted === null) return;
+    const asked = newRequest(scope);
+    if (asked === null) return;
+    const wanted = attached.files.length === 0 ? asked : { ...asked, attachments: attached.files };
     // EDIT AND RESEND: the edited question and everything after it go before the new one is asked.
     // Only when the ask can begin, so a Send that cannot start leaves the conversation as it was.
     if (editing !== null && live.current === null && model !== '' && draft.trim() !== '') {
@@ -707,7 +769,7 @@ export function AssistantPanel({
       setEditing(null);
     }
     ask(draft.trim(), wanted);
-  }, [ask, draft, editing, model, newRequest, scope, setEditing, turns, writeTurns]);
+  }, [ask, attached.files, draft, editing, model, newRequest, scope, setEditing, turns, writeTurns]);
 
   /** *Regenerate* the last answer: the same question, about the same thing, asked again. */
   const regenerate = useCallback(() => {
@@ -801,8 +863,28 @@ export function AssistantPanel({
     return i18n._(ASSISTANT_CAPTION, { model: question?.model ?? '', scope: `${scope}${which}` });
   };
 
-  /** The lines under an asked turn: one, or one per side for a turn asked of both. */
+  /**
+   * The lines under an asked turn: what its context sent, then one line per attached file (ADR-0135) — what went, that
+   * it went as a picture, or why nothing did — each read from the turn's own record.
+   */
   const sentLines = (turn: ConversationTurn): readonly string[] => {
+    const names = turn.attached ?? [];
+    const files = (turn.files ?? []).map((each, at) => {
+      const name = names[at] ?? '';
+      if ('sent' in each) return i18n._(ASSISTANT_SENT_DOCUMENT, { name, sent: sentLine(each.sent) });
+      if ('pictured' in each) return i18n._(ASSISTANT_SENT_FILE_PICTURE, { name });
+      return i18n._(ASSISTANT_SENT_UNREAD, { name, reason: i18n._(FILE_UNREAD_WORDS[each.unread]) });
+    });
+    // THE SHARE, said once, whenever main divided the bound and no document list already says it.
+    const share =
+      turn.share === undefined || turn.documents !== undefined
+        ? []
+        : [i18n._(ASSISTANT_SENT_SHARE_EACH, { characters: number.format(turn.share) })];
+    return [...share, ...contextLines(turn), ...files];
+  };
+
+  /** What an asked turn's context sent: one line, one per side for a turn asked of both, or one per open document. */
+  const contextLines = (turn: ConversationTurn): readonly string[] => {
     // EVERY OPEN DOCUMENT (ADR-0134): the share each had, then one line per document — what went, or why nothing did —
     // then the tabs past the bound, named. Read from the turn's own record, never from the tabs open now.
     if (turn.documents !== undefined && turn.among !== undefined) {
@@ -810,7 +892,9 @@ export function AssistantPanel({
       return [
         i18n._(ASSISTANT_SENT_SHARE, {
           count: turn.documents.asked.length,
-          characters: number.format(askShareOf(turn.documents.asked.length)),
+          // MAIN'S NUMBER where it answered one — with files beside the documents it is smaller than the documents'
+          // count alone gives — and the same rule's answer otherwise.
+          characters: number.format(turn.share ?? askShareOf(turn.documents.asked.length)),
         }),
         ...turn.among.map((each) =>
           'sent' in each
@@ -1158,6 +1242,37 @@ export function AssistantPanel({
       )}
 
       <div className="m-assistant__composer">
+        {/* THE FILES FOR THE NEXT QUESTION (ADR-0135), each a chip with its name, its size and a way to take it off.
+            A name is all the renderer knows of a file; what is in it is read by main, contained, when it is asked. */}
+        {attached.files.length === 0 ? null : (
+          <ul aria-label={i18n._(ASSISTANT_ATTACHED_LIST)} className="m-assistant__chips" data-assistant-attached="">
+            {attached.files.map((file) => (
+              <li className="m-assistant__chip" key={file.handle}>
+                <Paperclip aria-hidden className="m-assistant__chip-icon" />
+                <span className="m-assistant__chip-name">{file.name}</span>
+                <span className="m-assistant__chip-size">
+                  {file.bytes < 1024 * 1024
+                    ? i18n._(ASSISTANT_SIZE_KB, { size: number.format(Math.max(1, Math.round(file.bytes / 1024))) })
+                    : i18n._(ASSISTANT_SIZE_MB, { size: number.format(Math.round(file.bytes / 104_857.6) / 10) })}
+                </span>
+                <IconButton
+                  icon={X}
+                  label={ASSISTANT_ATTACHED_REMOVE}
+                  onClick={() => {
+                    setAttached((current) => ({ files: current.files.filter((each) => each.handle !== file.handle), dropped: 0 }));
+                  }}
+                  size="dense"
+                  values={{ name: file.name }}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+        {attached.dropped === 0 ? null : (
+          <p className="m-assistant__state" data-assistant-attached-dropped="">
+            {i18n._(ASSISTANT_ATTACHED_DROPPED, { count: attached.dropped, limit: MAX_ASK_ATTACHMENTS })}
+          </p>
+        )}
         <textarea
           ref={composer}
           aria-describedby={hintId}
@@ -1181,6 +1296,15 @@ export function AssistantPanel({
           value={draft}
         />
         <div className="m-assistant__composer-foot">
+          {/* THE PAPERCLIP (ADR-0135), first in the foot: any file, several at once, through main's picker. Disabled at
+              eight, the most one question carries, so it is never a control that picks and keeps nothing. */}
+          <IconButton
+            disabled={attached.files.length >= MAX_ASK_ATTACHMENTS}
+            icon={Paperclip}
+            label={ASSISTANT_ATTACH}
+            onClick={attach}
+            size="control"
+          />
           {/* THE PROVIDER AND MODEL, inside the box at its bottom-left (v5-03), each a compact labelled select. EVERY
               PROVIDER IS LISTED, with or without a key: a person choosing where to put a key must be able to see the
               choice, and the no-key line above says what the chosen one needs. */}

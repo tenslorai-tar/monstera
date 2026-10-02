@@ -2821,6 +2821,47 @@ optgroup {
   gap: var(--space-6);
 }
 
+/* THE ATTACHED FILES (ADR-0135): a row of chips inside the box, above the text, wrapping as they need to. A long name is
+   cut with an ellipsis and stays whole in the remove control's name and tooltip. */
+.m-assistant__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.m-assistant__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  max-inline-size: 100%;
+  padding-inline: var(--space-6) var(--space-2);
+  border: 1px solid var(--border-soft); /* decorative: the chip's own remove control is the interactive part */
+  border-radius: var(--radius-6);
+  background: var(--surface2);
+  font-size: var(--font-chrome-11);
+}
+
+.m-assistant__chip-icon {
+  flex: none;
+  inline-size: var(--icon-14);
+  block-size: var(--icon-14);
+}
+
+.m-assistant__chip-name {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-assistant__chip-size {
+  flex: none;
+  color: var(--muted);
+}
+
 .m-assistant__composer-foot > :last-child {
   margin-inline-start: auto;
 }

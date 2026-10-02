@@ -1533,6 +1533,20 @@ export const ASSISTANT_UNREAD_BUSY = messageKey('assistant.unread.busy');
 export const ASSISTANT_UNREAD_DAMAGED = messageKey('assistant.unread.damaged');
 export const ASSISTANT_UNREAD_PAGE = messageKey('assistant.unread.page');
 export const ASSISTANT_CITATION_DOCUMENT = messageKey('assistant.citation.document');
+export const ASSISTANT_ATTACH = messageKey('assistant.attach');
+export const ASSISTANT_ATTACHED_LIST = messageKey('assistant.attached.list');
+export const ASSISTANT_ATTACHED_REMOVE = messageKey('assistant.attached.remove');
+export const ASSISTANT_ATTACHED_DROPPED = messageKey('assistant.attached.dropped');
+export const ASSISTANT_SIZE_KB = messageKey('assistant.size.kb');
+export const ASSISTANT_SIZE_MB = messageKey('assistant.size.mb');
+export const ASSISTANT_SENT_SHARE_EACH = messageKey('assistant.sent.share-each');
+export const ASSISTANT_SENT_FILE_PICTURE = messageKey('assistant.sent.file-picture');
+export const ASSISTANT_FILE_NOT_FOUND = messageKey('assistant.file.not-found');
+export const ASSISTANT_FILE_TOO_LARGE = messageKey('assistant.file.too-large');
+export const ASSISTANT_FILE_NOT_SUPPORTED = messageKey('assistant.file.not-supported');
+export const ASSISTANT_FILE_UNREADABLE = messageKey('assistant.file.unreadable');
+export const ASSISTANT_FILE_CANNOT_SEE = messageKey('assistant.file.cannot-see');
+export const ASSISTANT_FILE_CANNOT_READ_HERE = messageKey('assistant.file.cannot-read-here');
 /** The Assistant's message box placeholder: one fixed line (the owner's decision, 2026-10-01). */
 export const ASSISTANT_PLACEHOLDER = messageKey('assistant.placeholder');
 /** *Ask AI* on a selection: the selected words quoted in the message box, for the person's question to follow. */
@@ -3621,6 +3635,21 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_UNREAD_DAMAGED]: 'it could not be read',
   [ASSISTANT_UNREAD_PAGE]: 'a page in it was too large to read',
   [ASSISTANT_CITATION_DOCUMENT]: 'Go to page {page} of {name}',
+  [ASSISTANT_ATTACH]: 'Attach files',
+  [ASSISTANT_ATTACHED_LIST]: 'Attached files',
+  [ASSISTANT_ATTACHED_REMOVE]: 'Remove {name}',
+  [ASSISTANT_ATTACHED_DROPPED]:
+    '{count, plural, one {One more file was not attached} other {# more files were not attached}}: at most {limit} go with one question.',
+  [ASSISTANT_SIZE_KB]: '{size} KB',
+  [ASSISTANT_SIZE_MB]: '{size} MB',
+  [ASSISTANT_SENT_SHARE_EACH]: 'Up to {characters} characters of each document and file',
+  [ASSISTANT_SENT_FILE_PICTURE]: '{name}: sent as a picture',
+  [ASSISTANT_FILE_NOT_FOUND]: 'it could not be found',
+  [ASSISTANT_FILE_TOO_LARGE]: 'it is too large to send',
+  [ASSISTANT_FILE_NOT_SUPPORTED]: 'this kind of file is not read',
+  [ASSISTANT_FILE_UNREADABLE]: 'it could not be read',
+  [ASSISTANT_FILE_CANNOT_SEE]: 'this model cannot read pictures',
+  [ASSISTANT_FILE_CANNOT_READ_HERE]: 'this kind of file cannot be read on this computer',
   // THE OWNER'S THREE WORDS, for two documents side by side (ADR-0089).
   [ASSISTANT_SIDES_LABEL]: 'Which document',
   [ASSISTANT_SIDE_LEFT]: 'Left',

@@ -14,7 +14,7 @@ The assistant answers questions about your document using an AI provider you cho
 2. In the rail, choose **Review**, then **Open the assistant** in the **AI** group, or press **Ctrl+Shift+A**. The **Assistant** tab opens in the right-hand panel.
 3. Choose the **Provider** and **Model**, beside **Send**. Whatever the provider box shows is where your next message goes.
 4. In the **Choose** row above the message box, open the first menu, the context, and choose what to send: this page, the whole document, the comments, a picture of this page, or **None**, and the text you selected or a comment when there is one. With two or more documents open, **All Open Docs** sends every one of them. Each menu shows what is chosen, for example "Page 4". Nothing is sent until you press **Send**. The second menu, the sources, chooses **Document only** or **Document + web**.
-5. Type your question in the box that says **Ask about this page…**. Press **Enter** to send (**Shift+Enter** starts a new line).
+5. Type your question in the box that says **Ask about this page…**. Press **Enter** to send (**Shift+Enter** starts a new line). To ask about a file you have not opened, choose **Attach files**, the paperclip, and pick up to eight files of any kind; each shows above the box, with an **x** to take it off.
 6. Choose **Go to page …** in an answer to jump to the page it cites.
 
 ![The Assistant tab with Provider, Model, Context and an answer citing a page](screenshot:ai-assistant-1)
@@ -25,6 +25,7 @@ The assistant answers questions about your document using an AI provider you cho
 - Conversations are not kept after the document closes unless you turn on **Save chat history** (**Settings**, **AI** page). Saved chats are encrypted on this computer; clear them with **Clear chat history** on the **Privacy** page.
 - With **Document + web**, your question, and possibly text from the document, goes to a search engine through the provider you chose, and searches may cost extra. Every new chat starts with **Document only**.
 - With **All Open Docs**, the documents open when you press **Send** go, the one you are in first, and they share one limit equally. The line under your question says how much of each could go, what went from each, and any document that could not be read and why. Each answer cites a document and a page, for example "Doc 2 p. 3"; choose it to go to that page, while that document is still open. At most 16 documents go; the line names any past that.
+- **Attached files** are read on this computer before anything is sent: a PDF's text, a Word, Excel or PowerPoint file's text, a text file, and a JPEG or PNG picture, which goes as a picture to a model that can read one. The line under your question says what went from each file and names any file that could not be read, and why; the question still goes. An answer cites a file as, for example, "File 2 p. 3". Text from your documents and files shares one limit equally.
 - The provider bills you directly for what you send. If a model cannot read pictures, sending a picture is not offered.
 - If the key is not accepted or the provider cannot be reached, the assistant says so. What you typed is kept.
 

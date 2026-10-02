@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
 import {
   type AskAmong,
+  type AskFile,
   type AskSent,
   type ContractClient,
+  MAX_ASK_ATTACHMENTS,
   MAX_ASK_DOCUMENTS,
   channels,
   createClient,
@@ -53,6 +55,13 @@ function recording(
   copied = true,
   /** Each document's of an *All Open Docs* ask (ADR-0134), answered only to an ask about several. */
   among?: readonly AskAmong[],
+  /** What the paperclip's picker answers (ADR-0135), and each attached file's outcome with the share main applied. */
+  attaching: {
+    readonly picked?: readonly { handle: string; name: string; bytes: number }[];
+    readonly dropped?: number;
+    readonly files?: readonly AskFile[];
+    readonly share?: number;
+  } = {},
 ): {
   readonly client: ContractClient;
   readonly sent: { id: string; params: unknown }[];
@@ -77,6 +86,8 @@ function recording(
       // THE SECOND WINDOW ONLY WHEN THE ASK HAD A SECOND DOCUMENT, as `main` answers it.
       const paired = (params as { alongside?: unknown }).alongside !== undefined;
       const several = (params as { about?: { scope?: unknown } }).about?.scope === 'documents';
+      // FILES' OUTCOMES ONLY WHEN THE ASK CARRIED FILES, as `main` answers them.
+      const carried = ((params as { attachments?: unknown[] }).attachments ?? []).length > 0;
       return Promise.resolve({
         ok: true,
         value: {
@@ -84,8 +95,13 @@ function recording(
           sent: several ? null : window,
           ...(paired && alongside !== undefined ? { alongside } : {}),
           ...(several && among !== undefined ? { among: [...among] } : {}),
+          ...(carried && attaching.files !== undefined ? { files: [...attaching.files] } : {}),
+          ...(carried && attaching.share !== undefined ? { share: attaching.share } : {}),
         },
       });
+    }
+    if (id === 'ai.attach') {
+      return Promise.resolve({ ok: true, value: { files: [...(attaching.picked ?? [])], dropped: attaching.dropped ?? 0 } });
     }
     if (id === 'ai.stop') return Promise.resolve({ ok: true, value: { stopped: true } });
     if (id === 'ai.openSource') return Promise.resolve({ ok: true, value: { opened: true } });
@@ -151,6 +167,7 @@ async function drawn(options: {
   readonly among?: readonly AskAmong[];
   readonly openDocuments?: AssistantPanelProps['openDocuments'];
   readonly onGoToDocument?: AssistantPanelProps['onGoToDocument'];
+  readonly attaching?: Parameters<typeof recording>[6];
 } = {}) {
   const wire = events();
   const settings = options.settings ?? new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
@@ -161,6 +178,7 @@ async function drawn(options: {
     options.alongside,
     options.copied ?? true,
     options.among,
+    options.attaching,
   );
   // EVERY TOAST THE PANEL RAISES, in order: a copy's confirmation goes through the window's toast.
   const toasts: unknown[][] = [];
@@ -1199,6 +1217,106 @@ describe('the assistant about a document (ADR-0088)', () => {
       expect(screen.getByText('[Doc 2 p. 3]')).toBeTruthy();
       // CONTROL: the document still open keeps its link.
       expect(screen.getByRole('button', { name: 'Go to page 1 of Notes.pdf' })).toBeTruthy();
+    });
+  });
+
+  describe('files attached to a question: the paperclip (ADR-0135)', () => {
+    const NOTES = { handle: 'h-notes', name: 'notes.txt', bytes: 2_048 };
+    const PHOTO = { handle: 'h-photo', name: 'photo.jpg', bytes: 3_250_000 };
+    const BLOB = { handle: 'h-blob', name: 'blob.bin', bytes: 10 };
+
+    function lastAsk(sent: readonly { id: string; params: unknown }[]): { attachments?: unknown } {
+      return sent.filter((entry) => entry.id === 'ai.ask').at(-1)?.params ?? {};
+    }
+
+    async function clip(): Promise<void> {
+      fireEvent.click(screen.getByRole('button', { name: 'Attach files' }));
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+
+    it('asks MAIN to pick, shows each file as a chip with its name and size, and sends the handles in order', async () => {
+      const { sent } = await drawn({ focused: focusedOn(), attaching: { picked: [NOTES, PHOTO] } });
+      await clip();
+      expect(sent.filter((entry) => entry.id === 'ai.attach')).toHaveLength(1);
+      const chips = within(screen.getByRole('list', { name: 'Attached files' })).getAllByRole('listitem');
+      expect(chips.map((chip) => chip.textContent)).toStrictEqual(['notes.txt2 KB', 'photo.jpg3.1 MB']);
+      type('What do these say?');
+      await send();
+      expect(lastAsk(sent).attachments).toStrictEqual(['h-notes', 'h-photo']);
+      // GONE ONCE THE ASK STARTED, as the draft is.
+      expect(screen.queryByRole('list', { name: 'Attached files' })).toBeNull();
+    });
+
+    it('says under the question what went from EACH file — its pages, a picture, or why not — and the share main applied', async () => {
+      await drawn({
+        focused: focusedOn(),
+        window: { firstPage: 6, lastPage: 6, pageCount: 9, characters: 40, truncated: false },
+        attaching: {
+          picked: [NOTES, PHOTO, BLOB],
+          files: [
+            { sent: { firstPage: 0, lastPage: 0, pageCount: 1, characters: 30, truncated: false } },
+            { pictured: true },
+            { unread: 'not-supported' },
+          ],
+          share: 50_000,
+        },
+      });
+      await clip();
+      type('Compare');
+      await send();
+      expect(screen.getByText('Up to 50,000 characters of each document and file')).toBeTruthy();
+      expect(screen.getByText('Sent page 7 of 9')).toBeTruthy();
+      expect(screen.getByText('notes.txt: Sent page 1 of 1')).toBeTruthy();
+      expect(screen.getByText('photo.jpg: sent as a picture')).toBeTruthy();
+      expect(screen.getByText('blob.bin: not read, this kind of file is not read')).toBeTruthy();
+    });
+
+    it('a chip’s own control takes THAT file off, named for it, and the ask carries the rest', async () => {
+      const { sent } = await drawn({ focused: focusedOn(), attaching: { picked: [NOTES, PHOTO] } });
+      await clip();
+      fireEvent.click(screen.getByRole('button', { name: 'Remove notes.txt' }));
+      type('And this one?');
+      await send();
+      expect(lastAsk(sent).attachments).toStrictEqual(['h-photo']);
+    });
+
+    it('past eight, eight are kept, the rest COUNTED in a sentence, and the paperclip is off until one is removed', async () => {
+      const ten = Array.from({ length: 10 }, (_, at) => ({ handle: `h${String(at)}`, name: `${String(at)}.txt`, bytes: 1 }));
+      await drawn({ focused: focusedOn(), attaching: { picked: ten.slice(0, MAX_ASK_ATTACHMENTS), dropped: 2 } });
+      await clip();
+      expect(within(screen.getByRole('list', { name: 'Attached files' })).getAllByRole('listitem')).toHaveLength(MAX_ASK_ATTACHMENTS);
+      expect(screen.getByText('2 more files were not attached: at most 8 go with one question.')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Attach files' }).hasAttribute('disabled')).toBe(true);
+      fireEvent.click(screen.getByRole('button', { name: 'Remove 0.txt' }));
+      expect(screen.getByRole('button', { name: 'Attach files' }).hasAttribute('disabled')).toBe(false);
+    });
+
+    it('REGENERATE sends the same files again', async () => {
+      const { sent, push } = await drawn({ focused: focusedOn(), attaching: { picked: [NOTES] } });
+      await clip();
+      type('Summarise');
+      await send();
+      const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
+      push('ai.delta', { subscription, text: 'A summary.' });
+      push('ai.done', { subscription, stopped: false, web: NO_WEB });
+      fireEvent.click(screen.getByRole('button', { name: 'Regenerate this answer' }));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(sent.filter((entry) => entry.id === 'ai.ask').map((entry) => (entry.params as { attachments?: unknown }).attachments)).toStrictEqual([
+        ['h-notes'],
+        ['h-notes'],
+      ]);
+    });
+
+    it('CONTROL: with nothing attached an ask carries no attachments and no chip row is drawn', async () => {
+      const { sent } = await drawn({ focused: focusedOn() });
+      expect(screen.queryByRole('list', { name: 'Attached files' })).toBeNull();
+      type('Plain question');
+      await send();
+      expect(lastAsk(sent)).not.toHaveProperty('attachments');
     });
   });
 });

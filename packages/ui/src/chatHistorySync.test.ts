@@ -1,5 +1,5 @@
-import { type ContractClient, MAX_CHAT_TURNS, channels, createClient } from '@monstera/contract';
-import { asDocId, asDocVersion, ok } from '@monstera/shared';
+import { type ContractClient, MAX_CHAT_TURNS, channels, createClient, savedTurnsSchema } from '@monstera/contract';
+import { asDocId, asDocVersion, asFileHandle, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { savedTurns, syncConversation } from './chatHistorySync.js';
@@ -138,5 +138,18 @@ describe('keeping a conversation saved (ADR-0093)', () => {
     expect(saved).toHaveLength(MAX_CHAT_TURNS);
     expect(saved[0]?.text).toBe('t3');
     expect(saved.some((turn) => 'posted' in turn)).toBe(false);
+  });
+
+  it('keeps an asked turn’s FILE NAMES and never its handles (ADR-0135), and the schema main saves with accepts it', () => {
+    const turn: ConversationTurn = {
+      role: 'user',
+      text: 'What do these say?',
+      attached: ['notes.txt', 'photo.jpg'],
+      request: { about: undefined, attachments: [{ handle: asFileHandle('h-notes'), name: 'notes.txt', bytes: 3 }] },
+    };
+    const saved = savedTurns([turn]);
+    expect(saved).toStrictEqual([{ role: 'user', text: 'What do these say?', attached: ['notes.txt', 'photo.jpg'] }]);
+    expect(JSON.stringify(saved)).not.toContain('h-notes');
+    expect(savedTurnsSchema.safeParse(saved).success).toBe(true);
   });
 });

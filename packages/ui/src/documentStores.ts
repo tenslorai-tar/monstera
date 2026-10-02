@@ -1,7 +1,8 @@
-import type { AskAbout, AskAmong, AskSent, AskSides } from '@monstera/contract';
+import type { AskAbout, AskAmong, AskFile, AskSent, AskSides } from '@monstera/contract';
 import {
   type DocId,
   type DocVersion,
+  type FileHandle,
   type PriorPageOrder,
   remapPageIndex,
 } from '@monstera/shared';
@@ -14,6 +15,13 @@ import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
 export interface AskedDocuments {
   readonly asked: readonly { readonly docId: DocId; readonly name: string }[];
   readonly notSent: readonly string[];
+}
+
+/** A file attached to a question (ADR-0135): the handle `main` minted, and what a chip shows. */
+export interface AttachedFile {
+  readonly handle: FileHandle;
+  readonly name: string;
+  readonly bytes: number;
 }
 
 /** One turn of a document's assistant conversation. */
@@ -44,6 +52,12 @@ export interface ConversationTurn {
   readonly documents?: AskedDocuments;
   /** Each of those documents' windows, or why it was not read, as `main` answered (ADR-0134). */
   readonly among?: readonly AskAmong[];
+  /** The names of the files attached to an asked turn, in order (ADR-0135) — names only, since a handle means nothing later. */
+  readonly attached?: readonly string[];
+  /** Each attached file's window, that it went as a picture, or why it was not read, as `main` answered (ADR-0135). */
+  readonly files?: readonly AskFile[];
+  /** Each text source's characters when the bound was divided, as `main` applied it (ADR-0135's correction). */
+  readonly share?: number;
   /**
    * What an asked turn was about, as it was sent — so *Regenerate* asks the same thing again rather
    * than whatever the *Asking about* line says now.
@@ -54,6 +68,8 @@ export interface ConversationTurn {
     readonly sides?: { readonly asked: AskSides; readonly right: DocId };
     /** The documents an *All Open Docs* ask named, so *Regenerate* names the same ones (ADR-0134). */
     readonly documents?: AskedDocuments;
+    /** The files attached, so *Regenerate* sends them again while this run's handles still name them (ADR-0135). */
+    readonly attachments?: readonly AttachedFile[];
     /** *Document + web* (ADR-0108); absent is *Document only*, which a turn saved before the switch was. */
     readonly web?: boolean;
   };

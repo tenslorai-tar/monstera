@@ -485,6 +485,21 @@ export type AiModelListAnswer = z.infer<typeof aiModelListSchema>;
  * what `main` validates a decrypted conversation against, so one schema says what a saved turn is.
  * Text may be empty only for an answer that was stopped before its first word.
  */
+/**
+ * How long a document's name may be.
+ *
+ * NTFS bounds a single path component at 255 UTF-16 code units, so this is that
+ * limit rather than a number chosen here — the name main sends is a file name,
+ * and a bound looser than the filesystem's would be admitting a value no file
+ * can have. **It bounds the string and does not shorten it**: truncating a name
+ * on the way to the renderer would put a lie in the one place a reader checks
+ * which document they are looking at.
+ *
+ * DECLARED ABOVE ITS FIRST READER, `savedTurnSchema`: a schema is built when the module loads, and a `const` read
+ * before its declaration throws there.
+ */
+export const MAX_DOCUMENT_NAME_LENGTH = 255;
+
 export const savedTurnSchema = z
   .object({
     role: z.enum(['user', 'assistant']),
@@ -492,6 +507,8 @@ export const savedTurnSchema = z
     sent: askSentSchema.optional(),
     /** The model an asked turn went to, as its picker named it — so a restored answer keeps its caption. */
     model: z.string().max(MAX_MODEL_ID).optional(),
+    /** The names of the files an asked turn carried (ADR-0135) — never a handle, which means nothing after a restart. */
+    attached: z.array(z.string().max(MAX_DOCUMENT_NAME_LENGTH)).max(MAX_ASK_ATTACHMENTS).optional(),
   })
   .strict();
 
@@ -841,18 +858,6 @@ export const MAX_RASTER_PIXELS = 16_777_216;
  */
 export const MAX_RASTER_BYTES = 32 * 1024 * 1024;
 export const MAX_FLAT_FIELD_LABEL = 128;
-
-/**
- * How long a document's name may be.
- *
- * NTFS bounds a single path component at 255 UTF-16 code units, so this is that
- * limit rather than a number chosen here — the name main sends is a file name,
- * and a bound looser than the filesystem's would be admitting a value no file
- * can have. **It bounds the string and does not shorten it**: truncating a name
- * on the way to the renderer would put a lie in the one place a reader checks
- * which document they are looking at.
- */
-export const MAX_DOCUMENT_NAME_LENGTH = 255;
 
 /** The folders a recent file's location may be named by: the three a person keeps files in, and each cloud's. */
 export const KNOWN_FOLDERS = ['documents', 'downloads', 'desktop', ...CLOUD_PROVIDER_IDS] as const;

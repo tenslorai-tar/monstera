@@ -34,6 +34,7 @@ export function savedTurns(turns: readonly ConversationTurn[]): SavedTurn[] {
     text: turn.text.slice(0, MAX_CHAT_TEXT),
     ...(turn.sent === undefined || turn.sent === null ? {} : { sent: turn.sent }),
     ...(turn.model === undefined ? {} : { model: turn.model.slice(0, MAX_MODEL_ID) }),
+    ...(turn.attached === undefined ? {} : { attached: [...turn.attached] }),
   }));
 }
 
@@ -70,6 +71,7 @@ export function syncConversation(
         text: turn.text,
         ...(turn.sent === undefined ? {} : { sent: turn.sent }),
         ...(turn.model === undefined ? {} : { model: turn.model }),
+        ...(turn.attached === undefined ? {} : { attached: turn.attached }),
       }));
       loaded = turns;
       store.getState().converse(turns);
