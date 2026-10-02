@@ -74,7 +74,10 @@ export const CLOUD_REFUSALS = [
   'unexpected-answer',
   /** The file changed in the cloud since it was opened here; Save back did not overwrite it. */
   'changed-elsewhere',
-  /** The document is larger than the provider's simple upload takes. */
+  /**
+   * The provider refused the upload as too large (HTTP 413) — its own limit or the person's storage. A document past the
+   * provider's simple upload is sent in a session since 2026-10-02, so this build no longer refuses one itself.
+   */
   'too-large',
   /** The file is not a PDF, or is larger than a document may be. */
   'not-a-pdf',

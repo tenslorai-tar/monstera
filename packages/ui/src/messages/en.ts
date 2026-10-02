@@ -3612,7 +3612,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CLOUD_PROBLEMS['unexpected-answer']]: 'The provider’s answer could not be read.',
   [CLOUD_PROBLEMS['changed-elsewhere']]:
     'The file changed in cloud storage since you opened it, so it was not overwritten. Your changes are saved on this computer.',
-  [CLOUD_PROBLEMS['too-large']]: 'The document is too large to send in one piece.',
+  [CLOUD_PROBLEMS['too-large']]: 'The cloud service refused the document as too large. Your storage may be full.',
   [CLOUD_PROBLEMS['not-a-pdf']]: 'That file is not a PDF Monstera can open.',
   // BUILD-PROMPT E5's FIRST-RUN STEP. Skip is said to be fine, because it is: nothing but the
   // assistant needs a key.
