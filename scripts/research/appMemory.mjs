@@ -246,8 +246,16 @@ async function run(label, documents) {
       await readToEnd(page);
     }
     await page.waitForTimeout(5000);
+    // EVERY CANVAS THE RENDERER STILL HOLDS, and its pixels: a 2D canvas Chromium accelerates is backed by the GPU
+    // process, four bytes a pixel, so this is the figure the GPU's share is compared with.
+    const canvases = await page.evaluate(() => {
+      const all = /** @type {{ width: number, height: number }[]} */ ([
+        .../** @type {any} */ (globalThis).document.querySelectorAll('canvas'),
+      ]);
+      return { count: all.length, pixels: all.reduce((sum, canvas) => sum + canvas.width * canvas.height, 0) };
+    });
     const processes = treeMemory(/** @type {number} */ (child.pid));
-    return { label, processes, roles: byRole(processes), tabs: count, root: /** @type {number} */ (child.pid) };
+    return { label, processes, roles: byRole(processes), tabs: count, root: /** @type {number} */ (child.pid), canvases };
   } finally {
     await end(child, userData);
   }
@@ -295,6 +303,10 @@ try {
         oneOverFile: oneOver,
         twoOverFile: twoOver,
         processes: { one: one.processes.length, two: two.processes.length },
+        canvases: {
+          one: { count: one.canvases.count, rgbaMiB: mib(one.canvases.pixels * 4) },
+          two: { count: two.canvases.count, rgbaMiB: mib(two.canvases.pixels * 4) },
+        },
         // WHERE EACH HOST HANGS, and an explicit NONE: a reading with no host would otherwise just omit the role.
         hosts: {
           one: one.processes.filter((p) => p.role.startsWith('host')).map((p) => `${p.role} parent=${String(p.parent === one.root ? 'main' : p.parent)}`),

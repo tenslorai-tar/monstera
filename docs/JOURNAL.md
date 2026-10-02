@@ -892,6 +892,56 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-02 — Row 303 after the merges: what scrolling costs now, and what memory the whole application holds
+
+Item 1's two fixes that waited on `work/cloud-flicker`, and item 2's measurement, which the order put after the tab
+switch's merge (ADR-0129 keeps every open document's view alive). All figures are the development build at 1600 × 852
+unless said; every comparison is two arms of one launch path, alternating.
+
+**Scrolling.** (1) **The page list composited** (`884eff57`, repaired by `ea7ec9e7`): on `perf-baseline.pdf`, 11–14
+frames dropped at 100% without the layer and 0 with it, three runs each; the GPU process 464–515 ms against 138–144 ms.
+(2) **A scroll no longer renders the list** (`9d250564`): every scroll event set new state on `PageList` for the
+rulers' spans, rendering every slot and its context-menu area; the spans now live in `PageSpans`. On the 210 MB scan,
+two runs each: 350–372 dropped at 100% before and 218–256 after, main-thread script 7.4–7.6 s against 4.2–4.6 s; at
+190%, 191–220 against 82–130, script 5.1–5.4 s against 1.8–2.4 s. **What still dominates the scan's scroll is script**
+(4.2 s of an 8 s window): the second half of the owed fix, one context menu per surface built when it opens, would cut
+what each remaining render costs and is not built.
+
+**And every development measurement before `d9c07167` ran with NO engine host.** `frameTimes.mjs` spawned Electron
+without the launcher's environment, so the composition root had no host platform and documents displayed while
+poisoned for engine commands — found by `appMemory.mjs`, whose tree held no host, and the kept log's *"No engine host
+platform was supplied"*. The comparisons above are within one launch path and stand; absolutes from those runs are of a
+shell without its engine. The package figures of 2026-10-01 had their host.
+
+**Memory** (`scripts/research/appMemory.mjs`, new: three launches — the start screen, the scan read to its end, the
+scan and a copy in two tabs — every process read by private bytes, the hosts found by their entry files; it refuses to
+report unless `main` reads about one copy per document and a MuPDF host runs). Over the empty launch, against the file
+(201 MiB), across five readings with the host present:
+
+| role | one document | two documents |
+|---|---|---|
+| `main` | 1.01–1.03× | 2.01–2.05× |
+| MuPDF host (its whole process; no empty-launch baseline, as no host runs there) | 2.05–2.07× | 3.06–3.08× |
+| renderer | 1.32–2.59× | 2.63–4.35× |
+| GPU process | 8.99–9.04× | 8.6–9.3× |
+
+**The GPU process holds about 9× the file, and its mechanism is not established.** It is not the page list's layer
+(8.99× with the layer removed) and not the page canvases: the renderer holds 213 of them for 212 pages, 37.6 MiB of
+pixels, against 1.86 GB. The renderer's spread is too wide to attribute anything to; **`d9c07167`'s message put 2.56–2.59×
+beside *with the layer* and 1.63–1.64× beside *without* — a later reading with the layer was 1.32×, so that attribution
+is withdrawn.**
+
+**Item 2's question, answered.** A file-backed copy in `main` removes at most `main`'s 1.0× — about one fourteenth of
+what the application holds after reading this document — and costs a rewrite of the range route ADR-0031 and ADR-0121
+rest on. **The 1.5× row cannot be met by it**: the host alone is 2×, and the renderer and the GPU process are larger
+still. **Recommendation: do not build it now.** Find the GPU process's 9× first — it is the largest share by a factor
+of four — then read the renderer with enough runs to have a spread, and only then decide what `main` should hold. The
+row's status says this.
+
+**Corrections to two commit messages of this range.** `ea7ec9e7` says the size match took the pane's layer for the
+list's *on the first run*: on the first run (`884eff57`) the rule was on the list and the match was right; it failed only
+after the merge moved the rule. And `d9c07167`'s renderer attribution, above.
+
 ## 2026-10-02 — Stage audit of `4a93218f..884eff57` — findings AAAAAAA-1 to AAAAAAA-6
 
 Owed at one batch of files: merging `work/cloud-screens` would have taken the unaudited range to 233 files against 200,
