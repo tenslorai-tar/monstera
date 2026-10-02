@@ -224,6 +224,7 @@ import type { ShellFailureSink } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
 import type { CrashReports } from './crashReports.js';
 import type { ConverterPlatform } from './converterSession.js';
+import type { AttachmentReaders } from './askAttachments.js';
 import { createLayoutTextSource } from './layoutText.js';
 import { type WorkbookComposer, createOfficeSource } from './officeConversion.js';
 import { createPdfaSource } from './pdfaConversion.js';
@@ -508,6 +509,10 @@ export interface ShellComposition {
   readonly readCsv: ImportSource['read'];
   /** Which images a new PDF is made from. Electron's open dialog, several files at once. */
   readonly pickImages: ImageFilesSource['pick'];
+  /** Which files go with an assistant question (ADR-0135). Electron's open dialog, any file, several at once. */
+  readonly pickAttachments: () => Promise<readonly string[]>;
+  /** At most `limit` bytes from the start of a picked file, or `null` when it went. */
+  readonly readAttachment: AttachmentReaders['read'];
   /**
    * A picked image's size, from a `stat`. Nothing is read, so the import's bounds are
    * decided with no picked byte in `main`; the read itself is `readImage`.
@@ -760,6 +765,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     readCsv,
     pickImages,
     sizeImage,
+    pickAttachments,
+    readAttachment,
     pickCertificate,
     readCertificate,
     openInBrowser,
@@ -987,6 +994,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       log?.write('library', `index unreadable, set aside: ${detail}`);
     },
   });
+
+  // THE CONTAINED pdftotext AND x2t, ONE OF EACH, taken by the exports and imports below and by the assistant's
+  // attached files (ADR-0135) — so a file attached to a question is read by the same contained reader an export uses.
+  const layoutTextSource = layoutTextPlatform === null ? null : createLayoutTextSource(layoutTextPlatform, failures);
+  const officeConvert =
+    officeImport === null ? null : createOfficeSource(officeImport.platform, failures, composeHost?.workbooks ?? null);
 
   const commands = new DocumentCommands({
     documents,
@@ -1455,18 +1468,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pickOffice,
     // LAYOUT-PRESERVING TEXT, the contained pdftotext — `null` where it cannot run,
     // so the export answers unavailable rather than extracting anywhere else (ADR-0071).
-    layoutText: layoutTextPlatform === null ? null : createLayoutTextSource(layoutTextPlatform, failures),
+    layoutText: layoutTextSource,
     // PDF/A-2b, the contained Ghostscript — `null` where it cannot run, for layout text's reason (ADR-0075).
     pdfa: pdfaPlatform === null ? null : createPdfaSource(pdfaPlatform, failures),
     // OFFICE IMPORT, the contained x2t — `null` where it cannot run, for layout text's reason (ADR-0120).
-    officeImport:
-      officeImport === null
-        ? null
-        : {
-            source: officeImport.source,
-            // A WORKBOOK IN PARTS through the compose host (decision C), which alone reads the file's sheets.
-            convert: createOfficeSource(officeImport.platform, failures, composeHost?.workbooks ?? null),
-          },
+    // A WORKBOOK IN PARTS through the compose host (decision C), which alone reads the file's sheets.
+    officeImport: officeImport === null || officeConvert === null ? null : { source: officeImport.source, convert: officeConvert },
     // OPTIMIZE, MuPDF's image rewriter in the compose host (ADR-0087). A host started without the
     // native library answers `unavailable` itself, so this is `null` only where there is no host.
     optimizer: composeHost === null ? null : composeHost.optimize,
@@ -1546,6 +1553,18 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       documents,
       // THE LIBRARY'S CHANNELS: the image picker, and a size before the bounded read, as the image import takes them.
       library: { store: library, pick: pickImage, size: sizeImage, read: readImage },
+      // THE PAPERCLIP (ADR-0135): any file, each read by the contained reader its family names — `null` where this
+      // build has none, which names the file rather than reading it anywhere else.
+      attachments: {
+        pick: pickAttachments,
+        readers: {
+          size: sizeImage,
+          read: readAttachment,
+          pdfText: layoutTextSource,
+          officePdf: officeConvert,
+          pictureSize: composeHost === null ? null : composeHost.imageSize,
+        },
+      },
       // THE ASSISTANT (ADR-0081, ADR-0082). It reads keys from the same store every other
       // network feature reads, and pushes its answers through the shell's `sendEvent` —
       // `null` where there is no window to push to, which is every unit test, and then
@@ -2999,6 +3018,7 @@ function composeHostBinding(
   readonly optimize: OptimizeSource;
   readonly keepInlineImages: PdfiumInputKeeper;
   readonly workbooks: WorkbookComposer;
+  readonly imageSize: NonNullable<AttachmentReaders['pictureSize']>;
   readonly close: () => Promise<void>;
 } {
   /** What one built host holds. Cleared together, or not at all. */
@@ -3376,6 +3396,19 @@ function composeHostBinding(
           },
         };
       },
+    },
+
+    // A PICTURE ATTACHED TO A QUESTION (ADR-0135): its bytes into the area, its header read in the host, and the copy
+    // gone whatever the call answered, for `compose`'s reason. A failure code is a fault; `unreadable` is the file's.
+    imageSize: async (bytes, mediaType) => {
+      const built = await ensure();
+      const from = areas.mintName();
+      await writeFile(join(built.paths.snapshot, from), bytes);
+      const answer = await built.client['engine/image-size']({ session: built.session, from, mediaType }).finally(() =>
+        rm(join(built.paths.snapshot, from), { force: true }),
+      );
+      if (!answer.ok) throw new Error(`the compose host could not size the picture: ${answer.error.code}`);
+      return answer.value.kind === 'sized' ? { width: answer.value.width, height: answer.value.height } : null;
     },
 
     close: async () => {

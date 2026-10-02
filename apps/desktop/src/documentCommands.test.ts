@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync,
 import { strFromU8, unzipSync } from 'fflate';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
+import { crc32, deflateSync } from 'node:zlib';
 
 import {
   PDFArray,
@@ -15,7 +16,7 @@ import {
   decodePDFRawStream,
   rgb,
 } from '@cantoo/pdf-lib';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   type Command,
@@ -23,11 +24,14 @@ import {
   type Incident,
   wrapHandler,
   IncidentLog,
+  MAX_ASK_ATTACHMENTS,
   MAX_ASK_CONTEXT,
+  askShareOf,
   MAX_MARKDOWN_BYTES,
   MAX_CSV_BYTES,
   MAX_OFFICE_IMPORT_BYTES,
   MAX_IMAGE_BYTES,
+  MAX_LIBRARY_PICTURE_BYTES,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
   type WordMode,
@@ -92,7 +96,7 @@ import {
   withDocument,
   composeWordDocument,
 } from '@monstera/kernel/engine';
-import { type DocId, type DocVersion, asDocId, asDocVersion } from '@monstera/shared';
+import { type DocId, type DocVersion, asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
 
 /** Large enough that capacity is never what these tests are measuring. */
 const AMPLE_CEILING = 64 * 1024 * 1024;
@@ -104,10 +108,11 @@ import { executeCommandHandler } from './commandHandlers.js';
 import { createAssistant } from './assistant.js';
 import { noChatHistory } from './chatHistory.js';
 import { unconfiguredCloud } from './cloudSession.js';
+import { NO_ATTACHMENTS } from './askAttachments.js';
 import { createContractHandlers } from './contractHandlers.js';
 import { createRecentFiles } from './recentFiles.js';
 import { NO_RECENT_PICTURES } from './recentPictures.js';
-import { unusedLibrarySurface } from './personalLibrary.js';
+import { createPersonalLibrary, memoryPictureFiles, unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT } from './engagement.js';
 import {
   DocumentCommands,
@@ -703,8 +708,18 @@ type Varying = Pick<DocumentCommandsParts, 'documents' | 'bus' | 'engine'>;
  */
 const INERT = {
   save: noSaving,
-  // AN EMPTY LIBRARY: nothing kept, so a kept picture or signature named here is absent.
-  library: { picture: () => null, lookup: () => undefined },
+  // AN EMPTY LIBRARY: nothing kept, so a kept picture or signature named here is absent. Its two writes refuse by name,
+  // like every inert surface: a case that keeps without meaning to fails at the call.
+  library: {
+    picture: () => null,
+    lookup: () => undefined,
+    keepSignature: () => {
+      throw new Error('INERT: this case keeps nothing in the library');
+    },
+    addPicture: () => {
+      throw new Error('INERT: this case keeps nothing in the library');
+    },
+  },
   // DOCUSIGN REFUSES BY NAME here, like every inert surface: a case that reached it
   // without meaning to fails at the call rather than sending anything anywhere.
   docusign: {
@@ -1176,6 +1191,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         openStore: () => Promise.resolve(false),
           closeListening: () => false,
         cloud: unconfiguredCloud(),
+        attachments: NO_ATTACHMENTS,
           readDictionary: () => Promise.resolve(null),
           ocrLanguages: () => Promise.resolve([]),
           components: () => Promise.resolve([]),
@@ -1672,6 +1688,82 @@ describe('search is E2s first consumer, through the composition point', () => {
       expect(answer.value.sent?.characters ?? 0).toBeLessThanOrEqual(MAX_ASK_CONTEXT / 2);
     });
 
+    it('EVERY OPEN DOCUMENT through the handler: each window reaches the provider under its place and name, each is reported (ADR-0134)', async () => {
+      const { bodies, handlers } = askHandlers();
+      // THE DECISION, not the end state: these fixtures are far smaller than any share, so a handler that read each
+      // with the whole bound would produce the same windows. What separates is the bound each read was asked for.
+      const reads = vi.spyOn(DocumentCommands.prototype, 'askWindow');
+      const answer = await handlers['ai.ask']({
+        subscription: 'ask-7',
+        provider: 'anthropic',
+        model: 'claude-opus-5',
+        messages: [{ role: 'user', text: 'What do they say?' }],
+        about: { scope: 'documents', docIds: [searchable, other] },
+        web: false,
+      });
+      await new Promise((settle) => setTimeout(settle, 0));
+
+      expect(answer.ok).toBe(true);
+      if (!answer.ok) return;
+      expect(answer.value.sent).toBeNull();
+      expect(answer.value.among).toMatchObject([
+        { docId: searchable, sent: { firstPage: 0, lastPage: 1, pageCount: 2 } },
+        { docId: other, sent: { firstPage: 0, lastPage: 0, pageCount: 1 } },
+      ]);
+      const sent = JSON.parse(bodies[0] ?? '{}') as { system?: string };
+      expect(sent.system).toContain('[Doc 1 page 2]\ngamma on the second page');
+      expect(sent.system).toContain('[Doc 2 page 1]\nomega on the other file');
+      expect(sent.system).toContain(`Doc 1 is "${searchCommands().nameOf(searchable) ?? ''}".`);
+      expect(sent.system).toContain(`at most ${String(askShareOf(2))} characters`);
+      // EACH READ WITH ITS SHARE AND ITS PLACE, the number the turn states and the marker the model is told.
+      const bounds = reads.mock.calls.map(([, pair]) => pair);
+      reads.mockRestore();
+      expect(bounds).toStrictEqual([
+        { label: 0, bound: askShareOf(2) },
+        { label: 1, bound: askShareOf(2) },
+      ]);
+    });
+
+    it('a document closed by the time it is read is SKIPPED AND NAMED, and the others still go', async () => {
+      const closed = asDocId('00000000-0000-4000-8000-0000000c105e');
+      const { bodies, handlers } = askHandlers();
+      const answer = await handlers['ai.ask']({
+        subscription: 'ask-8',
+        provider: 'anthropic',
+        model: 'claude-opus-5',
+        messages: [{ role: 'user', text: 'What do they say?' }],
+        about: { scope: 'documents', docIds: [searchable, closed] },
+        web: false,
+      });
+      await new Promise((settle) => setTimeout(settle, 0));
+
+      expect(answer.ok).toBe(true);
+      if (!answer.ok) return;
+      expect(answer.value.among).toMatchObject([{ docId: searchable }, { docId: closed, unread: 'document-not-open' }]);
+      const sent = JSON.parse(bodies[0] ?? '{}') as { system?: string };
+      expect(sent.system).toContain('[Doc 1 page 2]\ngamma on the second page');
+      expect(sent.system).toContain('could not be read');
+      // NEVER THE ID: it means nothing to a model.
+      expect(sent.system).not.toContain(closed);
+    });
+
+    it('CONTROL: when NO document can be read the ask is refused with that reason, and nothing reaches the provider', async () => {
+      const { bodies, handlers } = askHandlers();
+      const answer = await handlers['ai.ask']({
+        subscription: 'ask-9',
+        provider: 'anthropic',
+        model: 'claude-opus-5',
+        messages: [{ role: 'user', text: 'What do they say?' }],
+        about: {
+          scope: 'documents',
+          docIds: [asDocId('00000000-0000-4000-8000-0000000c1051'), asDocId('00000000-0000-4000-8000-0000000c1052')],
+        },
+        web: false,
+      });
+      expect(answer.ok ? null : answer.error.code).toBe('document-not-open');
+      expect(bodies).toStrictEqual([]);
+    });
+
     it('A PICTURE ASK through the handler: the drawn page reaches the provider with the last turn, and a picture is what went (ADR-0090)', async () => {
       // BYTES THE CASE CHOSE, so the provider's body can be checked for exactly them: the host's
       // drawing is the composition's, and what this crosses is handler → part → assistant → adapter.
@@ -1750,7 +1842,7 @@ describe('search is E2s first consumer, through the composition point', () => {
     it('THE HALF BOUND, read where it is applied: a side stops at half the window a lone ask would fill', async () => {
       const bound = 40;
       const alone = await searchCommands().askWindow({ scope: 'document', docId: searchable });
-      const half = await searchCommands().askWindow({ scope: 'document', docId: searchable }, { side: 'left', bound });
+      const half = await searchCommands().askWindow({ scope: 'document', docId: searchable }, { label: 'left', bound });
 
       expect(alone.sent.truncated).toBe(false);
       expect(half.sent.truncated).toBe(true);
@@ -1758,9 +1850,135 @@ describe('search is E2s first consumer, through the composition point', () => {
       expect(half.text.startsWith('[Left page 1]')).toBe(true);
     });
 
+    describe('FILES ATTACHED to a question, through the handler (ADR-0135)', () => {
+      /** Files on an in-memory disk, read only by the readers the handler is given; pdftotext and x2t are absent. */
+      function attaching(disk: Record<string, Uint8Array>) {
+        const capabilities = new CapabilityRegistry();
+        const pictures: [Uint8Array, string][] = [];
+        const attachments = {
+          pick: () => Promise.resolve(Object.keys(disk)),
+          readers: {
+            size: (path: string) => Promise.resolve(disk[path]?.byteLength ?? null),
+            read: (path: string, limit: number) => Promise.resolve(disk[path]?.slice(0, limit) ?? null),
+            pdfText: null,
+            officePdf: null,
+            pictureSize: (bytes: Uint8Array, mediaType: string) => {
+              pictures.push([bytes, mediaType]);
+              return Promise.resolve({ width: 800, height: 600 });
+            },
+          },
+        };
+        return { capabilities, attachments, pictures };
+      }
+      const NOTES = new TextEncoder().encode('The review is on 17 March.');
+      const PHOTO = Uint8Array.of(0xff, 0xd8, 0xff, 0xe0, 1, 2, 3);
+
+      it('a page, a text file and a picture: the window and the file share the bound, the picture rides the last turn, each is reported', async () => {
+        const files = attaching({ '/work/notes.txt': NOTES, '/work/photo.jpg': PHOTO });
+        const { bodies, handlers } = askHandlers(undefined, files);
+        const picked = await handlers['ai.attach']({});
+        expect(picked.ok && picked.value).toMatchObject({
+          files: [
+            { name: 'notes.txt', bytes: NOTES.byteLength },
+            { name: 'photo.jpg', bytes: PHOTO.byteLength },
+          ],
+          dropped: 0,
+        });
+        const handles = picked.ok ? picked.value.files.map((file) => file.handle) : [];
+        // THE DECISION: the page is read with its share, because a text file shares the bound — a picture does not.
+        const reads = vi.spyOn(DocumentCommands.prototype, 'askWindow');
+        const answer = await handlers['ai.ask']({
+          subscription: 'ask-10',
+          provider: 'anthropic',
+          model: 'claude-opus-5',
+          messages: [{ role: 'user', text: 'When is the review?' }],
+          about: { scope: 'page', docId: searchable, page: 1 },
+          attachments: handles,
+          web: false,
+        });
+        await new Promise((settle) => setTimeout(settle, 0));
+
+        // RESTORED BEFORE ANY ASSERTION, so a failure here cannot leave the spy counting the next case's reads.
+        const bounds = reads.mock.calls.map(([, pair]) => pair);
+        reads.mockRestore();
+        expect(bounds).toStrictEqual([{ bound: askShareOf(2) }]);
+        expect(answer.ok && answer.value).toMatchObject({
+          files: [{ sent: { firstPage: 0, pageCount: 1, truncated: false } }, { pictured: true }],
+          share: askShareOf(2),
+        });
+        // THE PICTURE WENT TO THE HOST TO BE SIZED, and its bytes went on unchanged.
+        expect(files.pictures).toStrictEqual([[PHOTO, 'image/jpeg']]);
+        const sent = JSON.parse(bodies[0] ?? '{}') as { system?: string; messages?: { content: unknown }[] };
+        expect(sent.system).toContain('[Page 2]\ngamma on the second page');
+        expect(sent.system).toContain('[File 1 page 1]\nThe review is on 17 March.');
+        expect(sent.system).toContain('File 2 is "photo.jpg", a picture');
+        expect(sent.messages?.[0]?.content).toStrictEqual([
+          { type: 'text', text: 'File 2:' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: Buffer.from(PHOTO).toString('base64') } },
+          { type: 'text', text: 'When is the review?' },
+        ]);
+      });
+
+      it('a PDF where this build has no contained pdftotext, and a handle main never minted, are NAMED — and the question still goes', async () => {
+        const files = attaching({ '/work/contract.pdf': new TextEncoder().encode('%PDF-1.7 ...') });
+        const { bodies, handlers } = askHandlers(undefined, files);
+        const picked = await handlers['ai.attach']({});
+        const handles = picked.ok ? picked.value.files.map((file) => file.handle) : [];
+        const answer = await handlers['ai.ask']({
+          subscription: 'ask-11',
+          provider: 'anthropic',
+          model: 'claude-opus-5',
+          messages: [{ role: 'user', text: 'Summarise these' }],
+          attachments: [...handles, asFileHandle('f'.repeat(32))],
+          web: false,
+        });
+        await new Promise((settle) => setTimeout(settle, 0));
+
+        expect(answer.ok && answer.value).toMatchObject({
+          started: true,
+          files: [{ unread: 'cannot-read-here' }, { unread: 'not-found' }],
+        });
+        const sent = JSON.parse(bodies[0] ?? '{}') as { system?: string };
+        expect(sent.system).toContain('File 1 is "contract.pdf", and nothing from it is here because this kind of file cannot be read on this computer.');
+        expect(sent.system).toContain('File 2 is "a file that could not be found"');
+        // ALONE, the files' instruction says the ground rule itself.
+        expect(sent.system).toContain('Use only this text, not outside knowledge.');
+      });
+
+      it('past eight picked files, eight are kept and the rest COUNTED', async () => {
+        const disk = Object.fromEntries(Array.from({ length: 11 }, (_, at) => [`/work/${String(at)}.txt`, NOTES]));
+        const { handlers } = askHandlers(undefined, attaching(disk));
+        const picked = await handlers['ai.attach']({});
+        expect(picked.ok && picked.value.files.length).toBe(MAX_ASK_ATTACHMENTS);
+        expect(picked.ok && picked.value.dropped).toBe(11 - MAX_ASK_ATTACHMENTS);
+      });
+
+      it('CONTROL: with no file attached the window takes the whole bound and the answer carries no files and no share', async () => {
+        const { handlers } = askHandlers(undefined, attaching({}));
+        const reads = vi.spyOn(DocumentCommands.prototype, 'askWindow');
+        const answer = await handlers['ai.ask']({
+          subscription: 'ask-12',
+          provider: 'anthropic',
+          model: 'claude-opus-5',
+          messages: [{ role: 'user', text: 'Where?' }],
+          about: { scope: 'page', docId: searchable, page: 1 },
+          web: false,
+        });
+        const bounds = reads.mock.calls.map(([, pair]) => pair);
+        reads.mockRestore();
+        expect(bounds).toStrictEqual([undefined]);
+        expect(answer.ok && answer.value).not.toHaveProperty('files');
+        expect(answer.ok && answer.value).not.toHaveProperty('share');
+      });
+    });
+
     /** The handlers over this file's documents, with the provider's request bodies recorded. */
     function askHandlers(
       askPicture?: AskPictureReader,
+      files?: {
+        readonly capabilities: CapabilityRegistry;
+        readonly attachments: Parameters<typeof createContractHandlers>[0]['attachments'];
+      },
     ): { bodies: string[]; handlers: ReturnType<typeof createContractHandlers> } {
       const bodies: string[] = [];
       const fetchImpl = ((_url: string, init?: { body?: string }) => {
@@ -1776,7 +1994,7 @@ describe('search is E2s first consumer, through the composition point', () => {
           fetchImpl,
         }),
         appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
-        capabilities: new CapabilityRegistry(),
+        capabilities: files?.capabilities ?? new CapabilityRegistry(),
         commands: searchCommands(askPicture),
         documents: searchService,
         openedDocument: () => Promise.resolve(),
@@ -1800,6 +2018,7 @@ describe('search is E2s first consumer, through the composition point', () => {
         openStore: () => Promise.resolve(false),
         closeListening: () => false,
         cloud: unconfiguredCloud(),
+        attachments: files?.attachments ?? NO_ATTACHMENTS,
         readDictionary: () => Promise.resolve(null),
         ocrLanguages: () => Promise.resolve([]),
         components: () => Promise.resolve([]),
@@ -3790,7 +4009,7 @@ describe('sign — a visible signature', () => {
       };
       const commands = new DocumentCommands({
         ...INERT,
-        library,
+        library: { ...INERT.library, ...library },
         documents: service,
         bus: new CommandBus({ mupdf: localMupdfWriter, signpdf: recording }),
         engine: engine(),
@@ -3921,6 +4140,7 @@ describe('placeImage — a KEPT stamp picture (the stamp library)', () => {
     const commands = new DocumentCommands({
       ...INERT,
       library: {
+        ...INERT.library,
         picture: (id) => (id === KEPT ? { mediaType: 'image/png', bytes: BYTES } : null),
         lookup: () => undefined,
       },
@@ -3951,6 +4171,210 @@ describe('placeImage — a KEPT stamp picture (the stamp library)', () => {
     const placed = await placing('00000000-0000-4000-8000-0000000000ff');
     expect(placed.outcome).toStrictEqual({ kind: 'absent' });
     expect(placed.carried).toStrictEqual([]);
+  });
+});
+
+describe('placeSignature — a plain signature, resolved as a certificate signature is, then kept (ADR-0133)', () => {
+  beforeAll(openDocument);
+
+  const RECT = { x0: 100, y0: 100, x1: 250, y1: 150 } as const;
+  const STAMP = { author: 'A. Tester', created: '2026-10-02T12:00:00Z' } as const;
+  /**
+   * A real 40 × 20 black PNG, built here from its chunks with Node's own deflate and CRC (B10: no committed binary), so
+   * the picture placement reaches a decoder that reads it.
+   */
+  const PICTURE = ((): Uint8Array => {
+    const chunk = (type: string, data: Buffer): Buffer => {
+      const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+      const length = Buffer.alloc(4);
+      length.writeUInt32BE(data.length);
+      const crc = Buffer.alloc(4);
+      crc.writeUInt32BE(crc32(body));
+      return Buffer.concat([length, body, crc]);
+    };
+    const header = Buffer.alloc(13);
+    header.writeUInt32BE(40, 0);
+    header.writeUInt32BE(20, 4);
+    header.set([8, 2, 0, 0, 0], 8);
+    // Each row: filter byte 0, then 40 black RGB pixels.
+    const rows = Buffer.alloc(20 * (1 + 40 * 3));
+    return new Uint8Array(
+      Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        chunk('IHDR', header),
+        chunk('IDAT', deflateSync(rows)),
+        chunk('IEND', Buffer.alloc(0)),
+      ]),
+    );
+  })();
+
+  /**
+   * Places through a writer that RECORDS each command's kind and then applies it for real, against a real library in
+   * memory — so a case can assert both which command reached the engine and what the library holds afterwards.
+   */
+  const placing = async (
+    mark: Parameters<DocumentCommands['placeSignature']>[1]['mark'],
+    keep: boolean,
+    picked: { readonly path: string; readonly bytes: Uint8Array } | null = null,
+  ): Promise<{ outcome: unknown; kinds: string[]; library: ReturnType<typeof createPersonalLibrary> }> => {
+    const kinds: string[] = [];
+    const recording: RegisteredWriter<'mupdf'> = {
+      ...localMupdfWriter,
+      apply: (request) => {
+        const command: unknown = request.command;
+        kinds.push((command as { readonly kind: string }).kind);
+        return localMupdfWriter.apply(request);
+      },
+    };
+    const library = createPersonalLibrary({ files: memoryPictureFiles(), unreadable: () => undefined });
+    const commands = new DocumentCommands({
+      ...INERT,
+      // A PLACED SIGNATURE IS DRAWN FROM THE BYTES, so placing one flushes (ADR-0084).
+      save: { ...noSaving, flush: sessionFlush, stage: stagingFrom(sessionFlush) },
+      library,
+      documents: service,
+      bus: new CommandBus({ mupdf: recording }),
+      engine: engine(),
+      image: {
+        pick: () => Promise.resolve(picked?.path ?? null),
+        read: () =>
+          Promise.resolve(picked === null ? { kind: 'unreadable' as const } : { kind: 'read' as const, bytes: picked.bytes }),
+      },
+    });
+    const outcome = await commands.placeSignature(docId, { page: 0, rect: RECT, mark, keep, stamp: STAMP });
+    return { outcome, kinds, library };
+  };
+
+  it('a TYPED mark reaches the engine as placeSignatureMark, and Save for reuse KEEPS it as it was made', async () => {
+    const mark = { kind: 'typed', text: 'Ada Lovelace', font: 'times-italic' } as const;
+    const placed = await placing(mark, true);
+    expect(placed.outcome).toMatchObject({ kind: 'placed', kept: 'kept' });
+    expect(placed.kinds).toStrictEqual(['placeSignatureMark']);
+    expect(placed.library.list('signature').map((entry) => entry.look)).toStrictEqual([mark]);
+  });
+
+  it('CONTROL: with Save for reuse off, the same mark is placed and the library is left empty', async () => {
+    const placed = await placing({ kind: 'typed', text: 'Ada Lovelace', font: 'times-italic' }, false);
+    expect(placed.outcome).toMatchObject({ kind: 'placed', kept: 'not-asked' });
+    expect(placed.library.list('signature')).toStrictEqual([]);
+  });
+
+  it('a PICKED PICTURE reaches the engine as placeSignaturePicture, and is kept under its file’s own name', async () => {
+    const placed = await placing({ kind: 'image' }, true, { path: '/somewhere/private/My signature.png', bytes: PICTURE });
+    expect(placed.outcome).toMatchObject({ kind: 'placed', kept: 'kept' });
+    expect(placed.kinds).toStrictEqual(['placeSignaturePicture']);
+    const [entry] = placed.library.list('signature');
+    // THE NAME, NEVER THE FOLDER: the library takes the base name without its extension.
+    expect(entry?.look).toStrictEqual({ kind: 'picture', name: 'My signature' });
+    expect(placed.library.picture(entry?.id ?? '')?.bytes).toStrictEqual(PICTURE);
+  });
+
+  it('a picture past the LIBRARY’S bound is placed and answered not-keepable, and nothing is kept', async () => {
+    // Padded past 2 MiB after a real PNG's bytes: MuPDF still reads the picture, and the library must not keep it,
+    // because every kept picture crosses to the renderer under that bound.
+    const large = new Uint8Array(MAX_LIBRARY_PICTURE_BYTES + 1);
+    large.set(PICTURE);
+    const placed = await placing({ kind: 'image' }, true, { path: 'big.png', bytes: large });
+    expect(placed.outcome).toMatchObject({ kind: 'placed', kept: 'not-keepable' });
+    expect(placed.library.list('signature')).toStrictEqual([]);
+  });
+
+  it('a typed name the font cannot draw is refused BEFORE any command reaches the engine', async () => {
+    const placed = await placing({ kind: 'typed', text: 'Ada ✓', font: 'courier' }, true);
+    expect(placed.outcome).toStrictEqual({ kind: 'unencodable-text' });
+    expect(placed.kinds).toStrictEqual([]);
+  });
+
+  it('a CANCELLED picker places nothing and keeps nothing', async () => {
+    const placed = await placing({ kind: 'image' }, true, null);
+    expect(placed.outcome).toStrictEqual({ kind: 'cancelled' });
+    expect(placed.kinds).toStrictEqual([]);
+  });
+
+  it('a KEPT look is read from the library, placed, and not kept a second time', async () => {
+    const library = createPersonalLibrary({ files: memoryPictureFiles(), unreadable: () => undefined });
+    const added = library.keepSignature({ kind: 'drawn', strokes: [[[0, 0], [1, 0.2]]] });
+    if (added.kind !== 'added') throw new Error('the case could not keep its fixture');
+    const kinds: string[] = [];
+    const commands = new DocumentCommands({
+      ...INERT,
+      save: { ...noSaving, flush: sessionFlush, stage: stagingFrom(sessionFlush) },
+      library,
+      documents: service,
+      bus: new CommandBus({
+        mupdf: {
+          ...localMupdfWriter,
+          apply: (request) => {
+            const command: unknown = request.command;
+            kinds.push((command as { readonly kind: string }).kind);
+            return localMupdfWriter.apply(request);
+          },
+        },
+      }),
+      engine: engine(),
+    });
+    const outcome = await commands.placeSignature(docId, {
+      page: 0,
+      rect: RECT,
+      mark: { kind: 'saved', id: added.entry.id },
+      keep: true,
+      stamp: STAMP,
+    });
+    expect(outcome).toMatchObject({ kind: 'placed', kept: 'not-asked' });
+    expect(kinds).toStrictEqual(['placeSignatureMark']);
+    expect(library.list('signature')).toHaveLength(1);
+  });
+
+  it('UNDONE: the placed signature is gone again, from the checkpoint the bus took for it', async () => {
+    // THE HELD SESSIONS ARE THE CASE'S OWN, because an undo that restores a checkpoint REBUILDS the session: the one read
+    // afterwards must be the one the restore put back, not the module's.
+    const held = engine();
+    let restores = 0;
+    // THE FLUSH READS WHAT IS HELD NOW, since the restore replaces the session the module variable names.
+    const flushHeld: DocumentFlush = (id, sessions) => {
+      const mupdf = sessions.mupdf;
+      if (mupdf === undefined || held.sessions(id)?.mupdf !== mupdf) throw new Error('flushed a session not held');
+      return mupdfWriter.serialise(mupdf);
+    };
+    const commands = new DocumentCommands({
+      ...INERT,
+      save: { ...noSaving, flush: flushHeld, stage: stagingFrom(flushHeld) },
+      library: createPersonalLibrary({ files: memoryPictureFiles(), unreadable: () => undefined }),
+      documents: service,
+      bus: new CommandBus({ mupdf: localMupdfWriter }),
+      engine: held,
+      // THE SUPERVISOR'S OWN RECYCLE, the layer import's composition: the checkpoint written to a file and reopened.
+      restore: (id, write) =>
+        held.recycle(id, async () => {
+          restores += 1;
+          const path = join(directory, `signature-restore-${String(restores)}.pdf`);
+          await write(path);
+          return { mupdf: await mupdfWriter.open(readFileSync(path)) };
+        }),
+    });
+    const stamps = async (): Promise<number> => {
+      const mupdf = held.sessions(docId)?.mupdf;
+      if (mupdf === undefined) throw new Error('the document holds no session');
+      return (await readAnnotations(mupdf)).annotations.filter((each) => each.page === 0 && each.kind === 'stamp').length;
+    };
+    // THE CONTROL FOR THE UNDO BELOW: a placement that wrote nothing would make "one fewer" impossible to reach and
+    // "the same as before" true without any undo.
+    const before = await stamps();
+    const outcome = await commands.placeSignature(docId, {
+      page: 0,
+      rect: RECT,
+      mark: { kind: 'typed', text: 'Grace Hopper', font: 'helvetica' },
+      keep: false,
+      stamp: STAMP,
+    });
+    expect(outcome).toMatchObject({ kind: 'placed' });
+    expect(await stamps()).toBe(before + 1);
+
+    const undone = await commands.undo(docId);
+    if (undone === undefined) throw new Error('the undo stepped nothing');
+    // FROM A CHECKPOINT: the command answers not captured, so undo restores rather than inverting.
+    expect(restores).toBe(1);
+    expect(await stamps()).toBe(before);
   });
 });
 

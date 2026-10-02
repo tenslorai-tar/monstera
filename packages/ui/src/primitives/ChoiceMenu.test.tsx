@@ -13,9 +13,9 @@ function Messages({ children }: { children: ReactNode }): ReactElement {
 }
 
 /**
- * A choice whose closed face reads only its NAME. The owner's design shows *Context*, not the value, so the value
- * has to reach a screen reader some other way; these cases hold that the name carries it, that choosing reports it,
- * and that a disabled value cannot be chosen.
+ * A choice whose closed face reads only its VALUE. What the value is a value of has to reach a screen reader some
+ * other way; these cases hold that the name carries it, that choosing reports it, and that a disabled value cannot
+ * be chosen.
  */
 type Scope = 'page' | 'document' | 'nothing';
 
@@ -38,17 +38,18 @@ function drawn(value: Scope = 'page', onChange = vi.fn()): { onChange: ReturnTyp
 }
 
 describe('ChoiceMenu', () => {
-  it('reads its choice AND the chosen value closed, and those words are its name', () => {
+  it('shows the chosen value closed, and its name says what is chosen and contains what is shown', () => {
     drawn();
-    const face = screen.getByRole('button', { name: 'Choose context: Page 7' });
-    // THE SAME WORDS on the face and in the name, so a sighted person and a screen reader are told one thing.
-    expect(face.textContent).toBe('Choose context: Page 7');
-    expect(face.hasAttribute('aria-label')).toBe(false);
+    const face = screen.getByRole('button', { name: 'Context: Page 7' });
+    // THE FACE IS THE VALUE ALONE, and the name CONTAINS it (WCAG 2.5.3), so a person who says what they see reaches
+    // the control by voice, and a screen reader is told what the value is a value of.
+    expect(face.textContent).toBe('Page 7');
+    expect(face.getAttribute('aria-label')).toContain(face.textContent);
   });
 
   it('opens to its values as radio items, the chosen one checked, and reports the one chosen', async () => {
     const { onChange } = drawn();
-    fireEvent.click(screen.getByRole('button', { name: 'Choose context: Page 7' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Context: Page 7' }));
     const values = await screen.findAllByRole('menuitemradio');
     expect(values.map((value) => value.textContent)).toStrictEqual(['Page 7', 'Document', 'None']);
     expect(values[0]?.getAttribute('aria-checked')).toBe('true');
@@ -63,7 +64,7 @@ describe('ChoiceMenu', () => {
 
   it('CONTROL: a disabled value is shown and cannot be chosen', async () => {
     const { onChange } = drawn();
-    fireEvent.click(screen.getByRole('button', { name: 'Choose context: Page 7' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Context: Page 7' }));
     const none = (await screen.findAllByRole('menuitemradio')).find((value) => value.textContent === 'None');
     if (none === undefined) throw new Error('the menu offers None, disabled');
     expect(none.getAttribute('aria-disabled')).toBe('true');

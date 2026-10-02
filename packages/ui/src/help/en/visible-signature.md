@@ -4,13 +4,13 @@ title: Add a visible signature
 summary: Draw a box, then type, draw or use a picture of your signature, and sign with your certificate.
 keywords: [visible signature, signature box, draw signature, type signature, signature image, sign here, handwritten signature]
 commands: [protect.signature]
-contexts: [dialog.sign-document, protect, home]
+contexts: [dialog.sign-document, protect]
 ---
-A visible signature shows your signature on the page and signs the document digitally at the same time.
+A visible signature shows your signature on the page and signs the document digitally at the same time. To put your signature on the page without a certificate, see "Add your signature".
 
 ## Steps
 
-1. In the rail, choose **Protect**, then **Sign with certificate** in the **Signatures** group. It is also in **Home**, **Quick tools**.
+1. In the rail, choose **Protect**, then **Sign with certificate** in the **Signatures** group.
 2. Drag a box where the signature should appear.
 3. In **How the signature looks**, choose:
    - **Type it**, then type your **Signature** and pick a **Font**;
@@ -27,7 +27,7 @@ A visible signature shows your signature on the page and signs the document digi
 - The signature appears upright even on turned pages.
 - If the typed font cannot draw a character, Monstera says so; try another font or plain letters.
 - To use a signature again next time, tick **Keep this signature for next time** when you type or draw it. It is kept once the document is signed.
-- Under **Use one of my signatures**, **Add a picture…** keeps a picture of your signature, and **Remove** takes one away. Kept signatures stay on this computer, and up to 16 are kept.
+- Under **Use one of my signatures**, **Add a picture…** keeps a picture of your signature, and **Remove** takes one away. Kept signatures stay on this computer, and up to 16 are kept. Signatures saved with **Signature** appear here too.
 
 <!--
 Screenshots to capture:

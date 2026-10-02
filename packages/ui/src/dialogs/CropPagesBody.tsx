@@ -13,6 +13,7 @@ import {
   CROP_PAGES_TOP,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { CropPagesAnswer } from './cropPagesResult.js';
@@ -66,32 +67,36 @@ export default function CropPagesBody({
   return (
     <div className="m-crop-pages">
       {EDGES.map(({ key, label }) => (
-        <Input
-          key={key}
-          label={label}
-          value={edges[key]}
-          onValueChange={(next) => {
-            setEdges({ ...edges, [key]: next });
-          }}
-        />
+        <DialogRow key={key} label={label}>
+          <Input
+            label={label}
+            labelShownBeside
+            value={edges[key]}
+            onValueChange={(next) => {
+              setEdges({ ...edges, [key]: next });
+            }}
+          />
+        </DialogRow>
       ))}
       <PageScopeChoice className="m-crop-pages__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
       <p className="m-crop-pages__problem" role="status">
         {parsed === null ? _(problemOf(edges)) : ''}
       </p>
-      <Button
-        label={CROP_PAGES_APPLY}
-        variant="primary"
-        disabled={parsed === null}
-        onClick={() => {
-          // GUARDED AGAIN rather than trusting the disabled attribute, for
-          // `DeletePagesBody`'s reason: the schema behind `resolve` refuses a
-          // negative margin, and a mismatch would be a thrown
-          // `DialogResultRejected` over the user's document.
-          if (parsed === null) return;
-          resolve({ pages: everyPage ? 'all' : [...pages], margins: parsed });
-        }}
-      />
+      <DialogFooter>
+        <Button
+          label={CROP_PAGES_APPLY}
+          variant="primary"
+          disabled={parsed === null}
+          onClick={() => {
+            // GUARDED AGAIN rather than trusting the disabled attribute, for
+            // `DeletePagesBody`'s reason: the schema behind `resolve` refuses a
+            // negative margin, and a mismatch would be a thrown
+            // `DialogResultRejected` over the user's document.
+            if (parsed === null) return;
+            resolve({ pages: everyPage ? 'all' : [...pages], margins: parsed });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

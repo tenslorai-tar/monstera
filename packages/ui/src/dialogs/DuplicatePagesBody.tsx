@@ -10,6 +10,7 @@ import {
 } from '../messages/en.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { DuplicatePagesAnswer } from './duplicatePagesResult.js';
 
@@ -68,20 +69,22 @@ export default function DuplicatePagesBody({
           ))}
         </ul>
       )}
-      <Button
-        label={DUPLICATE_PAGES_REMOVE}
-        values={{ count: extras.length }}
-        variant="primary"
-        disabled={extras.length === 0}
-        onClick={() => {
-          // GUARDED AGAIN rather than trusting the disabled attribute, for
-          // `DeletePagesBody`'s reason: the result schema refuses an empty
-          // list, and a mismatch would be a thrown `DialogResultRejected` over
-          // the user's document.
-          if (extras.length === 0) return;
-          resolve({ pages: extras });
-        }}
-      />
+      <DialogFooter>
+        <Button
+          label={DUPLICATE_PAGES_REMOVE}
+          values={{ count: extras.length }}
+          variant="primary"
+          disabled={extras.length === 0}
+          onClick={() => {
+            // GUARDED AGAIN rather than trusting the disabled attribute, for
+            // `DeletePagesBody`'s reason: the result schema refuses an empty
+            // list, and a mismatch would be a thrown `DialogResultRejected` over
+            // the user's document.
+            if (extras.length === 0) return;
+            resolve({ pages: extras });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

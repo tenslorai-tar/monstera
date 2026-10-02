@@ -40,7 +40,6 @@ import {
   SIGN_DOCUMENT_LOOK_TYPED,
   SIGN_DOCUMENT_KEEP,
   SIGN_DOCUMENT_KEPT_ADD,
-  SIGN_DOCUMENT_KEPT_DRAWN,
   SIGN_DOCUMENT_KEPT_EMPTY,
   SIGN_DOCUMENT_KEPT_REMOVE,
   SIGN_DOCUMENT_MARK_MISSING,
@@ -51,8 +50,10 @@ import {
   SIGN_DOCUMENT_TOO_LONG,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
+import { KeptSignatureLook } from './KeptSignatureLook.js';
 import type { KeptSignature, SignDocumentAnswers } from './signDocument.js';
 import type { PadStroke } from './SignaturePad.js';
 import { SignaturePad } from './SignaturePad.js';
@@ -121,16 +122,6 @@ const LOOK_TITLES: Readonly<Record<Look, MessageKey>> = {
   saved: SIGN_DOCUMENT_LOOK_KEPT,
 };
 
-/**
- * A drawn signature's strokes as one SVG path in the pad's own unit (0–1 across, y down), so a kept drawing shows as it
- * was drawn at any size — the viewBox scales it, and the stroke's colour is the text's token.
- */
-function strokesPath(strokes: readonly (readonly (readonly [number, number])[])[]): string {
-  return strokes
-    .map((stroke) => stroke.map(([across, down], index) => `${index === 0 ? 'M' : 'L'}${String(across)} ${String(down)}`).join(' '))
-    .join(' ');
-}
-
 /** Each face's name, keyed on the contract's own list. */
 const FONT_TITLES: Readonly<Record<(typeof SIGNATURE_FONTS)[number], MessageKey>> = {
   helvetica: SIGN_DOCUMENT_FONT_HELVETICA,
@@ -166,11 +157,7 @@ export default function SignDocumentBody({
   resolve,
 }: { readonly placed: boolean; readonly kept: readonly KeptSignature[] } & DialogAnswering<SignDocumentAnswers>): ReactElement {
   const { _ } = useLingui();
-  const certifyId = useId();
-  const lookId = useId();
-  const fontId = useId();
   const [certify, setCertify] = useState<CertifyChoice>('approve');
-  const timestampId = useId();
   // NO TIMESTAMP TO BEGIN WITH, and that is a decision rather than a default: a
   // timestamp sends a fingerprint of the signature to a third party, which is a
   // person's choice to make with the note beside the control in front of them.
@@ -229,10 +216,9 @@ export default function SignDocumentBody({
 
       {placed ? (
         <div className="m-sign-document__look">
-          <label className="m-document-choice" htmlFor={lookId}>
-            {_(SIGN_DOCUMENT_LOOK)}
+          <DialogRow label={SIGN_DOCUMENT_LOOK}>
             <select
-              id={lookId}
+              aria-label={_(SIGN_DOCUMENT_LOOK)}
               data-sign-look=""
               onChange={(event) => {
                 setLook(event.target.value as Look);
@@ -245,15 +231,16 @@ export default function SignDocumentBody({
                 </option>
               ))}
             </select>
-          </label>
+          </DialogRow>
 
           {look === 'typed' ? (
             <>
-              <Input invalid={tooLong === SIGN_DOCUMENT_TEXT} label={SIGN_DOCUMENT_TEXT} onValueChange={setText} value={text} />
-              <label className="m-document-choice" htmlFor={fontId}>
-                {_(SIGN_DOCUMENT_FONT)}
+              <DialogRow label={SIGN_DOCUMENT_TEXT}>
+                <Input invalid={tooLong === SIGN_DOCUMENT_TEXT} label={SIGN_DOCUMENT_TEXT} labelShownBeside onValueChange={setText} value={text} />
+              </DialogRow>
+              <DialogRow label={SIGN_DOCUMENT_FONT}>
                 <select
-                  id={fontId}
+                  aria-label={_(SIGN_DOCUMENT_FONT)}
                   data-sign-font=""
                   onChange={(event) => {
                     setFont(event.target.value as (typeof SIGNATURE_FONTS)[number]);
@@ -266,7 +253,7 @@ export default function SignDocumentBody({
                     </option>
                   ))}
                 </select>
-              </label>
+              </DialogRow>
             </>
           ) : null}
 
@@ -317,20 +304,7 @@ export default function SignDocumentBody({
                         setChosenKept(entry.id);
                       }}
                     />
-                    {entry.look.kind === 'typed' ? (
-                      <span className={`m-sign-document__kept-typed m-sign-font--${entry.look.font}`}>{entry.look.text}</span>
-                    ) : entry.look.kind === 'drawn' ? (
-                      <svg
-                        className="m-sign-document__kept-drawn"
-                        viewBox="0 0 1 0.5"
-                        role="img"
-                        aria-label={_(SIGN_DOCUMENT_KEPT_DRAWN, { number: index + 1 })}
-                      >
-                        <path d={strokesPath(entry.look.strokes)} />
-                      </svg>
-                    ) : (
-                      <img className="m-sign-document__kept-picture" src={entry.look.src} alt={entry.look.name} />
-                    )}
+                    <KeptSignatureLook entry={entry} number={index + 1} />
                   </label>
                   <Button
                     label={SIGN_DOCUMENT_KEPT_REMOVE}
@@ -351,41 +325,54 @@ export default function SignDocumentBody({
         </div>
       ) : null}
 
-      <Input
-        invalid={tooLong === SIGN_DOCUMENT_PASSPHRASE}
-        label={SIGN_DOCUMENT_PASSPHRASE}
-        onValueChange={setPassphrase}
-        secret
-        value={passphrase}
-      />
+      <DialogRow label={SIGN_DOCUMENT_PASSPHRASE}>
+        <Input
+          invalid={tooLong === SIGN_DOCUMENT_PASSPHRASE}
+          label={SIGN_DOCUMENT_PASSPHRASE}
+          labelShownBeside
+          onValueChange={setPassphrase}
+          secret
+          value={passphrase}
+        />
+      </DialogRow>
       {/* THE SIGNER'S OWN NAME, so the browser's fill-in can offer it (WCAG 1.3.5). */}
-      <Input
-        invalid={tooLong === SIGN_DOCUMENT_NAME}
-        label={SIGN_DOCUMENT_NAME}
-        onValueChange={setName}
-        purpose="name"
-        value={name}
-      />
-      <Input invalid={tooLong === SIGN_DOCUMENT_REASON} label={SIGN_DOCUMENT_REASON} onValueChange={setReason} value={reason} />
-      <Input
-        invalid={tooLong === SIGN_DOCUMENT_LOCATION}
-        label={SIGN_DOCUMENT_LOCATION}
-        onValueChange={setLocation}
-        value={location}
-      />
-      <Input
-        invalid={tooLong === SIGN_DOCUMENT_CONTACT}
-        label={SIGN_DOCUMENT_CONTACT}
-        onValueChange={setContactInfo}
-        value={contactInfo}
-      />
+      <DialogRow label={SIGN_DOCUMENT_NAME}>
+        <Input
+          invalid={tooLong === SIGN_DOCUMENT_NAME}
+          label={SIGN_DOCUMENT_NAME}
+          labelShownBeside
+          onValueChange={setName}
+          purpose="name"
+          value={name}
+        />
+      </DialogRow>
+      <DialogRow label={SIGN_DOCUMENT_REASON}>
+        <Input invalid={tooLong === SIGN_DOCUMENT_REASON} label={SIGN_DOCUMENT_REASON} labelShownBeside onValueChange={setReason} value={reason} />
+      </DialogRow>
+      <DialogRow label={SIGN_DOCUMENT_LOCATION}>
+        <Input
+          invalid={tooLong === SIGN_DOCUMENT_LOCATION}
+          label={SIGN_DOCUMENT_LOCATION}
+          labelShownBeside
+          onValueChange={setLocation}
+          value={location}
+        />
+      </DialogRow>
+      <DialogRow label={SIGN_DOCUMENT_CONTACT}>
+        <Input
+          invalid={tooLong === SIGN_DOCUMENT_CONTACT}
+          label={SIGN_DOCUMENT_CONTACT}
+          labelShownBeside
+          onValueChange={setContactInfo}
+          value={contactInfo}
+        />
+      </DialogRow>
 
-      <label className="m-document-choice" htmlFor={certifyId}>
-        {_(SIGN_DOCUMENT_CERTIFY)}
+      <DialogRow label={SIGN_DOCUMENT_CERTIFY}>
         {/* A NATIVE `<select>`, for `DocumentChoice`'s reason: §9.27's pinned
             CSP admits no inline style, so the primitive set has no select. */}
         <select
-          id={certifyId}
+          aria-label={_(SIGN_DOCUMENT_CERTIFY)}
           data-sign-certify=""
           onChange={(event) => {
             setCertify(event.target.value as CertifyChoice);
@@ -398,13 +385,12 @@ export default function SignDocumentBody({
             </option>
           ))}
         </select>
-      </label>
+      </DialogRow>
 
-      <label className="m-document-choice" htmlFor={timestampId}>
-        {_(SIGN_DOCUMENT_TIMESTAMP)}
+      <DialogRow label={SIGN_DOCUMENT_TIMESTAMP}>
         {/* A NATIVE `<select>`, for the certify control's reason above. */}
         <select
-          id={timestampId}
+          aria-label={_(SIGN_DOCUMENT_TIMESTAMP)}
           data-sign-timestamp=""
           onChange={(event) => {
             setTimestamp(event.target.value as TimestampChoice);
@@ -417,7 +403,7 @@ export default function SignDocumentBody({
             </option>
           ))}
         </select>
-      </label>
+      </DialogRow>
       {/* THE SENTENCE ADR-0058 Decision 1 PROMISED, on screen beside the choice:
           what leaves the machine, and what an observer on the network learns. */}
       <p className="m-sign-document__note">{_(SIGN_DOCUMENT_TIMESTAMP_NOTE)}</p>
@@ -429,41 +415,43 @@ export default function SignDocumentBody({
             ? _(SIGN_DOCUMENT_MARK_MISSING)
             : ''}
       </p>
-      <Button
-        disabled={over || missing}
-        label={SIGN_DOCUMENT_APPLY}
-        onClick={() => {
-          if (over || missing) return;
-          const named = stated(name);
-          const why = stated(reason);
-          const where = stated(location);
-          const contact = stated(contactInfo);
-          resolve({
-            // THE PASSPHRASE IS NOT TRIMMED, and the four beside it are: PDF
-            // hands a passphrase to a hash, so a trailing space is part of it,
-            // while a `/Reason` of three spaces is one a reader displays blank.
-            passphrase,
-            ...(named === undefined ? {} : { name: named.value }),
-            ...(why === undefined ? {} : { reason: why.value }),
-            ...(where === undefined ? {} : { location: where.value }),
-            ...(contact === undefined ? {} : { contactInfo: contact.value }),
-            // `approve` BECOMES AN ABSENT FIELD, which is what the payload
-            // means by *not a certification*. Sending the word would put a
-            // fourth member in a schema whose three are all `/DocMDP` levels.
-            ...(certify === 'approve' ? {} : { certify }),
-            // `none` BECOMES AN ABSENT FIELD, for `approve`'s reason: the payload's
-            // enum names only authorities.
-            ...(timestamp === 'none' ? {} : { timestamp }),
-            // A MARK ONLY FOR A PLACEMENT. The ribbon's invisible signature has
-            // nowhere to draw one, and answering the default look anyway would
-            // hand the command a field it has no rectangle for.
-            ...(placed && mark !== undefined ? { mark } : {}),
-            // KEEP ONLY WHAT THIS DIALOG MADE: a typed or drawn look, with the box ticked.
-            ...(placed && keep && (look === 'typed' || look === 'drawn') ? { keep: true as const } : {}),
-          });
-        }}
-        variant="primary"
-      />
+      <DialogFooter>
+        <Button
+          disabled={over || missing}
+          label={SIGN_DOCUMENT_APPLY}
+          onClick={() => {
+            if (over || missing) return;
+            const named = stated(name);
+            const why = stated(reason);
+            const where = stated(location);
+            const contact = stated(contactInfo);
+            resolve({
+              // THE PASSPHRASE IS NOT TRIMMED, and the four beside it are: PDF
+              // hands a passphrase to a hash, so a trailing space is part of it,
+              // while a `/Reason` of three spaces is one a reader displays blank.
+              passphrase,
+              ...(named === undefined ? {} : { name: named.value }),
+              ...(why === undefined ? {} : { reason: why.value }),
+              ...(where === undefined ? {} : { location: where.value }),
+              ...(contact === undefined ? {} : { contactInfo: contact.value }),
+              // `approve` BECOMES AN ABSENT FIELD, which is what the payload
+              // means by *not a certification*. Sending the word would put a
+              // fourth member in a schema whose three are all `/DocMDP` levels.
+              ...(certify === 'approve' ? {} : { certify }),
+              // `none` BECOMES AN ABSENT FIELD, for `approve`'s reason: the payload's
+              // enum names only authorities.
+              ...(timestamp === 'none' ? {} : { timestamp }),
+              // A MARK ONLY FOR A PLACEMENT. The ribbon's invisible signature has
+              // nowhere to draw one, and answering the default look anyway would
+              // hand the command a field it has no rectangle for.
+              ...(placed && mark !== undefined ? { mark } : {}),
+              // KEEP ONLY WHAT THIS DIALOG MADE: a typed or drawn look, with the box ticked.
+              ...(placed && keep && (look === 'typed' || look === 'drawn') ? { keep: true as const } : {}),
+            });
+          }}
+          variant="primary"
+        />
+      </DialogFooter>
     </div>
   );
 }

@@ -64,9 +64,10 @@ export interface RibbonEntry {
   readonly command: UiCommand;
   readonly order: number;
   /**
-   * Drawn in the group's *More* at every width (ADR-0098). The registry refuses a group with no
-   * primary at all; this is `false` for the first entry of a group whose primaries are all hidden by
-   * `when`, so a group never draws as a caption over a lone *More*.
+   * Folds first: drawn after the group's primaries while there is room, and in its *More* when there is not
+   * (ADR-0098 and its correction of 2026-10-02). The registry refuses a group with no primary at all; this is
+   * `false` for the first entry of a group whose primaries are all hidden by `when`, so a group never draws as a
+   * caption over a lone *More*.
    */
   readonly secondary: boolean;
   /** The menu this entry is drawn under, or `undefined` for its own button (ADR-0101). */

@@ -38,7 +38,7 @@ function commandOf(id: string, title: string, placements: readonly Placement[], 
 }
 
 beforeAll(() => {
-  activateCatalogue('en', { ...EN, 'test.modes.save': 'Save', 'test.modes.rotate': 'Rotate' });
+  activateCatalogue('en', { ...EN, 'test.modes.save': 'Save', 'test.modes.rotate': 'Rotate', 'test.modes.flip-menu': 'Flip' });
 });
 
 function Wrapped({ children }: { children: ReactNode }): ReactElement {
@@ -241,9 +241,15 @@ describe('a toggle’s state, as the ribbon announces it (WCAG 4.1.2)', () => {
 });
 
 describe('SHOW ME, as the ribbon rings it (ADR-0112 Decision 4)', () => {
-  // A SECONDARY beside Rotate, so it is drawn inside the group's More: the ring must land on the trigger.
+  // A NAMED MENU of two beside Rotate (ADR-0101), so its second member is drawn inside a closed menu: the ring must
+  // land on the trigger. A secondary did this until ADR-0098's correction put secondaries in the row when there is
+  // room, which there always is under happy-dom, where nothing is measured and nothing folds.
+  const FLIP_MENU = messageKey('test.modes.flip-menu');
+  const FLIP_ACROSS = commandOf('b.flip-across', 'test.modes.rotate', [
+    { surface: 'ribbon', section: 'organize', group: GROUP_ADJUST, order: 20, menu: FLIP_MENU },
+  ]);
   const SECONDARY = commandOf('b.flip', 'test.modes.rotate', [
-    { surface: 'ribbon', section: 'organize', group: GROUP_ADJUST, order: 20, prominence: 'secondary' },
+    { surface: 'ribbon', section: 'organize', group: GROUP_ADJUST, order: 30, menu: FLIP_MENU },
   ]);
 
   function drawShowing(stored: Record<string, unknown>): {
@@ -251,7 +257,7 @@ describe('SHOW ME, as the ribbon rings it (ADR-0112 Decision 4)', () => {
   } {
     const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
     settings.hydrate({ [RIBBON_SECTION_SETTING.id]: 'organize', ...stored });
-    const registry = new CommandRegistry([SAVE, ROTATE, SECONDARY]);
+    const registry = new CommandRegistry([SAVE, ROTATE, FLIP_ACROSS, SECONDARY]);
     const tree = (showing: { readonly id: string; readonly stamp: number } | undefined): ReactElement => (
       <Wrapped>
         <Ribbon registry={registry} context={CONTEXT} settings={settings} showing={showing} />

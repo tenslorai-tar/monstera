@@ -12,7 +12,7 @@ Import as layer lays the first page of another document over the page you are on
 
 1. Open the other document so it has its own tab, then switch back.
 2. Go to the page to lay it on.
-3. In the rail, choose **Organize**. In the **Pages** group, choose **More**, then **Import page as layer…**.
+3. In the rail, choose **Organize**, then **Import page as layer…** in the **Pages** group. In a narrower window it is under the group's **More**.
 4. In **Take the first page of**, choose the other document, then **Import as layer**.
 5. Use the **Layers** tab of the document panel to show or hide it.
 

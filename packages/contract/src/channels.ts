@@ -2,7 +2,17 @@ import { MATCH_TEXT_WINDOW } from '@monstera/shared';
 import { z } from 'zod';
 
 import { AI_PROVIDER_IDS } from './aiProviders.js';
-import { askAboutSchema, askSentSchema, pairsWith } from './askAbout.js';
+import {
+  MAX_ASK_ATTACHMENTS,
+  MAX_ASK_CONTEXT,
+  MAX_ASK_DOCUMENTS,
+  askAboutSchema,
+  askAmongSchema,
+  askFileSchema,
+  askSentSchema,
+  namesEachOnce,
+  pairsWith,
+} from './askAbout.js';
 import {
   CLOUD_PROVIDER_IDS,
   CLOUD_REFUSALS,
@@ -475,6 +485,21 @@ export type AiModelListAnswer = z.infer<typeof aiModelListSchema>;
  * what `main` validates a decrypted conversation against, so one schema says what a saved turn is.
  * Text may be empty only for an answer that was stopped before its first word.
  */
+/**
+ * How long a document's name may be.
+ *
+ * NTFS bounds a single path component at 255 UTF-16 code units, so this is that
+ * limit rather than a number chosen here — the name main sends is a file name,
+ * and a bound looser than the filesystem's would be admitting a value no file
+ * can have. **It bounds the string and does not shorten it**: truncating a name
+ * on the way to the renderer would put a lie in the one place a reader checks
+ * which document they are looking at.
+ *
+ * DECLARED ABOVE ITS FIRST READER, `savedTurnSchema`: a schema is built when the module loads, and a `const` read
+ * before its declaration throws there.
+ */
+export const MAX_DOCUMENT_NAME_LENGTH = 255;
+
 export const savedTurnSchema = z
   .object({
     role: z.enum(['user', 'assistant']),
@@ -482,6 +507,8 @@ export const savedTurnSchema = z
     sent: askSentSchema.optional(),
     /** The model an asked turn went to, as its picker named it — so a restored answer keeps its caption. */
     model: z.string().max(MAX_MODEL_ID).optional(),
+    /** The names of the files an asked turn carried (ADR-0135) — never a handle, which means nothing after a restart. */
+    attached: z.array(z.string().max(MAX_DOCUMENT_NAME_LENGTH)).max(MAX_ASK_ATTACHMENTS).optional(),
   })
   .strict();
 
@@ -839,18 +866,6 @@ export const MAX_RASTER_PIXELS = 16_777_216;
  */
 export const MAX_RASTER_BYTES = 32 * 1024 * 1024;
 export const MAX_FLAT_FIELD_LABEL = 128;
-
-/**
- * How long a document's name may be.
- *
- * NTFS bounds a single path component at 255 UTF-16 code units, so this is that
- * limit rather than a number chosen here — the name main sends is a file name,
- * and a bound looser than the filesystem's would be admitting a value no file
- * can have. **It bounds the string and does not shorten it**: truncating a name
- * on the way to the renderer would put a lie in the one place a reader checks
- * which document they are looking at.
- */
-export const MAX_DOCUMENT_NAME_LENGTH = 255;
 
 /** The folders a recent file's location may be named by: the three a person keeps files in, and each cloud's. */
 export const KNOWN_FOLDERS = ['documents', 'downloads', 'desktop', ...CLOUD_PROVIDER_IDS] as const;
@@ -3415,6 +3430,54 @@ export const channels = {
   ),
 
   /**
+   * A plain signature placed on a page with no certificate
+   * ([ADR-0133](../../../docs/DECISIONS/0133-a-signatures-mark-is-drawn-once-for-both-writers.md)).
+   *
+   * The look is asked for as *Sign with certificate* asks for it — typed, drawn, a kept one by id, or a picture main
+   * picks now — and main resolves it through the same function, so a kept picture's bytes never cross and a picked one's
+   * never reach the renderer. **`keep` is main's to act on, after the mark is placed**, for every look: a typed or drawn
+   * one is kept as it was made, a picked picture as a signature picture. A full library still places the mark and says
+   * so in `kept`, rather than refusing the placement.
+   */
+  'document.placeSignature': channel(
+    'Places a signature with no certificate on a page of an open document, and keeps it when asked.',
+    z
+      .object({
+        docId: docIdSchema,
+        page: z.number().int().nonnegative(),
+        rect: annotationRectSchema,
+        mark: requestedSignatureMarkSchema,
+        keep: z.boolean(),
+        /** Who placed it and when — the renderer's to say, main's to write (ADR-0103). */
+        stamp: annotationStampSchema,
+      })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('placed'),
+        version: docVersionSchema,
+        byteLength: z.number().int().nonnegative(),
+        historyDropped: z.number().int().nonnegative(),
+        /**
+         * Whether it went into the library: kept; not asked for, or already kept; the library was full; or a picture
+         * the library cannot keep — past its own bound, or not a PNG or a JPEG by its bytes — though it was placed.
+         */
+        kept: z.enum(['kept', 'not-asked', 'library-full', 'not-keepable']),
+      }),
+      /** The picture picker was closed. */
+      z.object({ kind: z.literal('cancelled') }),
+      /** The picked file is not a PNG or a JPEG this build can decode. */
+      z.object({ kind: z.literal('unreadable') }),
+      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+      /** The kept signature named is no longer kept — removed since the dialog opened. */
+      z.object({ kind: z.literal('absent') }),
+      /** The typed name holds a character the chosen standard font cannot draw. */
+      z.object({ kind: z.literal('unencodable-text') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
    * THE PERSON'S LIBRARY (`libraryEntrySchema`): what it holds of one kind, oldest first. Read from main's own folder
    * each time, so two windows never disagree about it.
    */
@@ -5171,19 +5234,69 @@ export const channels = {
          * whether a document's text may reach a search engine — is not a default's to decide.
          */
         web: z.boolean(),
+        /**
+         * Files attached to this question (ADR-0135): handles `ai.attach` minted, each read by its contained reader
+         * when the ask is sent. Absent and empty mean the same.
+         */
+        attachments: z.array(fileHandleSchema).max(MAX_ASK_ATTACHMENTS).optional(),
       })
       .strict()
+      .refine((request) => new Set(request.attachments ?? []).size === (request.attachments ?? []).length, {
+        message: 'an ask names each attached file once',
+      })
       .refine((request) => request.alongside === undefined || pairsWith(request.about, request.alongside), {
         message: 'a second document pairs only with a different one, in the same page or document scope',
+      })
+      .refine((request) => namesEachOnce(request.about), {
+        message: 'an ask about every open document names each document once',
       }),
     /**
-     * `sent` is what the window carried, and `null` for an ask about nothing; `alongside` is the
-     * second window's, present exactly when the ask had one.
+     * `sent` is what the window carried, and `null` for an ask about nothing or about every open document; `alongside`
+     * is the second window's, present exactly when the ask had one; `among` is each document's of an *All Open Docs*
+     * ask, in its order — its window, or why it was not read (ADR-0134); `files` is each attached file's, in its order,
+     * present exactly when the ask carried one (ADR-0135).
      */
-    z.object({ started: z.boolean(), sent: askSentSchema.nullable(), alongside: askSentSchema.optional() }),
+    z.object({
+      started: z.boolean(),
+      sent: askSentSchema.nullable(),
+      alongside: askSentSchema.optional(),
+      among: z.array(askAmongSchema).max(MAX_ASK_DOCUMENTS).optional(),
+      files: z.array(askFileSchema).max(MAX_ASK_ATTACHMENTS).optional(),
+      /** Each text source's characters, present whenever the bound was divided — `askShareOf`'s answer, as applied. */
+      share: z.number().int().nonnegative().max(MAX_ASK_CONTEXT).optional(),
+    }),
     // THE DOCUMENT'S REFUSALS, because an ask about one reads it in its lane first — and a page
     // too large to draw within the image limits, which a picture ask refuses by name (ADR-0090).
     ['subscription-in-use', 'document-not-open', 'document-busy', 'document-poisoned', 'page-too-large'],
+  ),
+
+  /**
+   * Picks files to attach to the next question (ADR-0135 Decision 1). `main` runs the picker, which takes any file
+   * and several at once, and mints a handle for each: the renderer gets the handle, the name and the size to draw a
+   * chip, never a path. The first `MAX_ASK_ATTACHMENTS` are kept and the rest counted in `dropped`. A cancelled picker
+   * answers an empty list.
+   */
+  'ai.attach': channel(
+    'Picks files to attach to the next assistant question.',
+    z.object({}).strict(),
+    z
+      .object({
+        files: z
+          .array(
+            z
+              .object({
+                handle: fileHandleSchema,
+                name: z.string().max(MAX_DOCUMENT_NAME_LENGTH),
+                bytes: z.number().int().nonnegative(),
+              })
+              .strict(),
+          )
+          .max(MAX_ASK_ATTACHMENTS),
+        /** How many picked files were past the eight, counted rather than named so the answer is bounded whatever was picked. */
+        dropped: z.number().int().nonnegative(),
+      })
+      .strict(),
+    [],
   ),
 
   /**

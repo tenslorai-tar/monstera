@@ -164,8 +164,10 @@ test('a DIALOG’S OPTION GROUP has no bare frame, and each option is a line of 
   await runCommand(page, 'Print…');
   const dialog = page.getByRole('dialog', { name: 'Print' });
   await expect(dialog).toBeVisible();
-  expect(await dialog.locator('fieldset').evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe('0px');
-  const radios = dialog.getByRole('radio');
+  // THE PATTERN'S GROUP: a row named for the question, its options a radiogroup in the row's control (2026-10-02).
+  const group = dialog.getByRole('radiogroup', { name: 'Print quality' });
+  expect(await group.evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe('0px');
+  const radios = group.getByRole('radio');
   const tops = await Promise.all([0, 1, 2].map(async (at) => (await boxOf(radios.nth(at))).y));
   // ONE TO A LINE: three distinct rows, top to bottom, rather than a run of three that wraps mid-sentence.
   expect(tops[1]).toBeGreaterThan(tops[0] ?? Number.POSITIVE_INFINITY);

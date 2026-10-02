@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 
 import { STALE_COPIES_DELETE, STALE_COPIES_EXPLAINS, STALE_COPIES_UNDO } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 
 /**
@@ -26,13 +27,15 @@ export default function StaleCopiesBody({
         ))}
         {undoCopies > 0 ? <li>{_(STALE_COPIES_UNDO, { count: undoCopies })}</li> : null}
       </ul>
-      <Button
-        label={STALE_COPIES_DELETE}
-        variant="primary"
-        onClick={() => {
-          resolve({ delete: true });
-        }}
-      />
+      <DialogFooter>
+        <Button
+          label={STALE_COPIES_DELETE}
+          variant="primary"
+          onClick={() => {
+            resolve({ delete: true });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

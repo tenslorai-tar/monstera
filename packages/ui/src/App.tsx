@@ -12,6 +12,7 @@ import {
   type MeasureScale,
   type DispatchableCommand,
   type UpdateStatus,
+  type WindowEditAction,
 } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
@@ -107,6 +108,7 @@ import {
   zoomCommand,
   actualSizeCommand,
 } from './commands/documentCommands.js';
+import { confirmCopied } from './commands/confirmWritten.js';
 import { editCommands } from './commands/editCommands.js';
 import { exitCommand, startScreenCommand } from './commands/windowCommands.js';
 import { checkForUpdatesCommand } from './commands/checkForUpdates.js';
@@ -312,7 +314,11 @@ import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
 import { stickyNoteCommand } from './annotations/pointTools.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
-import { SELECT_TOOL_ID, selectionOfPage } from './annotations/selectTool.js';
+import { SELECT_TOOL_ID, selectionOfNewest, selectionOfPage } from './annotations/selectTool.js';
+import { SIGNATURE_TOOL_ID } from './annotations/signatureTool.js';
+import { chooseSignature, placePlainSignature, signatureCommand } from './commands/signatureCommands.js';
+import { SIGNATURE_DIALOG, type SignatureLook } from './dialogs/signature.js';
+import { SIGNATURE_PROBLEM_DIALOG } from './dialogs/signatureProblem.js';
 import { applyCarrying } from './commands/applyCarrying.js';
 import {
   deleteSelectionCommand,
@@ -831,6 +837,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         REDACT_MATCHES_DIALOG,
         SANITIZE_DOCUMENT_DIALOG,
         SIGN_DOCUMENT_DIALOG,
+        SIGNATURE_DIALOG,
+        SIGNATURE_PROBLEM_DIALOG,
         SIGN_PROBLEM_DIALOG,
         SIGNATURES_DIALOG,
         DOCUSIGN_SEND_DIALOG,
@@ -1600,6 +1608,23 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   );
 
   /**
+   * Goes to a page of ANOTHER open document — an *All Open Docs* answer's citation (ADR-0134). That document's own
+   * store takes the jump, so its Back returns from it as any jump's does, then it comes to the front and the scroller
+   * is asked for the page, exactly as `navigator.jumpTo` asks for one in the document already in front.
+   */
+  const goToDocument = useCallback(
+    (docId: DocId, page: number): void => {
+      stores.get(docId)?.getState().jumpTo(page);
+      activate(docId);
+      setGoTo(page);
+    },
+    [activate, stores],
+  );
+
+  /** The tabs as the assistant needs them: each document's id and the name its tab shows (ADR-0134). */
+  const assistantDocuments = useMemo(() => tabs.map(({ docId, name }) => ({ docId, name })), [tabs]);
+
+  /**
    * The Organize grid's gestures (ADR-0104), `undefined` outside Organize — which is what keeps the reading
    * view on every other section. The selection is the document store's; Delete is `deletePages` through the
    * one dispatcher, undone like any command, so it asks nothing first.
@@ -2143,6 +2168,46 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   );
 
   /**
+   * THE PLAIN SIGNATURE'S LOOK, held between the dialog and the click (ADR-0133). The click that consumes it clears it,
+   * so a second click never places the same look twice. State, so the tool registry rebuilt on it reads the look the
+   * dialog answered rather than one captured before.
+   */
+  const [signatureLook, setSignatureLook] = useState<SignatureLook | undefined>(undefined);
+  /** The Signature command: the dialog first, then the click armed with the look it answered — the owner's order. */
+  const startSignature = useCallback((): void => {
+    void (async (): Promise<void> => {
+      const look = await chooseSignature({ client, ask });
+      if (look === undefined) return;
+      setSignatureLook(look);
+      setToolId(SIGNATURE_TOOL_ID);
+    })();
+  }, [ask, client]);
+  /**
+   * Where the click puts it. A tool armed without a look — chosen from the palette, or pressed again after a placement
+   * — asks first, so a click never places nothing. Once it lands, the select tool holds the new mark, so a drag moves
+   * it and a corner resizes it, and a further click is a selection rather than a second signature.
+   */
+  const onPlacePlainSignature = useCallback(
+    (page: number, rect: AnnotationRect): void => {
+      if (activeId === undefined) return;
+      const held = signatureLook;
+      setSignatureLook(undefined);
+      void (async (): Promise<void> => {
+        const look = held ?? (await chooseSignature({ client, ask }));
+        if (look === undefined) return;
+        const version = await placePlainSignature({ client, ask, onApplied: applied, stamp, toast }, activeId, page, rect, look);
+        if (version === undefined) return;
+        const walk = await listAnnotations();
+        // THE WALK MUST BE THE PLACEMENT'S: a read at any other version could name a mark that landed in between.
+        const placed = walk?.version === version ? selectionOfNewest(walk, page) : undefined;
+        setToolId(SELECT_TOOL_ID);
+        if (placed !== undefined) setPicked(placed);
+      })();
+    },
+    [activeId, applied, ask, client, listAnnotations, signatureLook, stamp, toast],
+  );
+
+  /**
    * Where a barcode goes: `onPlaceSignature`'s shape — one page, the one the box was drawn on —
    * ending in the barcode dialog (ADR-0076).
    */
@@ -2240,6 +2305,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           languages: () => ocrLanguages,
           onPlaceImage,
           onPlaceSignature,
+          onPlacePlainSignature,
           onPlaceBarcode,
           // THE STAMP LIBRARY: the kept pictures for the chooser, keeping and removing one, and placing one.
           ...stampLibrary({ client, ask, urls: BLOB_URLS }),
@@ -2255,6 +2321,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       onPlaceBarcode,
       onPlaceImage,
       onPlaceSignature,
+      onPlacePlainSignature,
       onPlaceStampPicture,
       onSnapshot,
       readSelection,
@@ -2426,6 +2493,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       defaults?: readonly UiCommand[];
       dropped?: readonly string[];
     } = {};
+    // THE BROWSER'S OWN VERB, run by main on this window — the one call both the page's text copy and a field's verbs
+    // make. A COPY CONFIRMS on main's answer that it ran (`done`), through every copy's one confirmation.
+    const windowEdit = (action: WindowEditAction): void => {
+      void client['window.edit']({ action }).then((answer) => {
+        if (action === 'copy' && answer.ok && answer.value.done) confirmCopied({ toast });
+      });
+    };
     const textDeps: TextSelectionDeps = {
       selection: () => textSelection,
       place: dispatch,
@@ -2433,7 +2507,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // THE BROWSER'S OWN COPY, run by main on this window: the selection is still the
       // page's (the menu keeps it), and what it copies as is what the chord would copy.
       copy: () => {
-        void client['window.edit']({ action: 'copy' });
+        windowEdit('copy');
       },
       search: (text) => {
         showSearchPanel(settings);
@@ -2443,7 +2517,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     // THE PAGE'S HALVES OF THE EDIT MENU, held by name so *Cut*, *Copy*, *Paste* and *Select all* run these very
     // commands rather than a second copy of them (`editCommands.ts`).
     const textCopy = copySelectionCommand(textDeps);
-    const marksCopyDeps = { ...selectionDeps, client, ask, onCopied: setCopiedCount };
+    const marksCopyDeps = { ...selectionDeps, client, ask, onCopied: setCopiedCount, toast };
     const marksCopy = copyAnnotationsCommand(marksCopyDeps);
     const marksDelete = deleteSelectionCommand(selectionDeps);
     const marksPaste = pasteAnnotationsCommand({ client, onApplied: applied, ask, stamp, hasCopied: readHasCopied });
@@ -2478,9 +2552,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // close, and the Store's updates page.
         ...editCommands({
           field: focusedField,
-          native: (action) => {
-            void client['window.edit']({ action });
-          },
+          native: windowEdit,
           copyText: textCopy,
           copyMarks: marksCopy,
           copyMarksFor: (context) => copySelectedAnnotations(marksCopyDeps, context),
@@ -2747,6 +2819,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // EDIT TEXT, a MODE in the tool slot (ADR-0096): it toggles as a drawing
         // tool's command does, and `editing` below is what the mode draws.
         editTextCommand({ activeTool: readTool, onSelect: setToolId }),
+        signatureCommand({
+          activeTool: readTool,
+          onStart: startSignature,
+          onStop: () => {
+            setToolId(undefined);
+          },
+        }),
         handToolCommand({ activeTool: readTool, onSelect: setToolId }),
         selectTextCommand({ onSelect: setToolId, activeTool: readTool }),
         editPageObjectCommand({ client, onApplied: applied, ask, stamp }),
@@ -2844,6 +2923,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   }, [
       // THE KEYS A PERSON CHOSE, so a change in the shortcuts dialog rebuilds the registry and the new key works at once.
       chosenShortcuts,
+      startSignature,
       // THE ZOOM STEP, through the function `+` and `−` ask: a changed step rebuilds them, or they would step by the old.
       stepZoomBy,
       activate,
@@ -3209,7 +3289,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           <StartScreen registry={registry} context={context} problem={openProblem} />
           {/* THE CRASH REPORT OFFER (ADR-0109), above the recent list and its reopen offer: data with its own
               controls, which draws nothing unless the last run left a report not yet offered. */}
-          <CrashReportOffer client={client} />
+          <CrashReportOffer client={client} toast={toast} />
           {/* BESIDE the projection, not inside it: a recent file is data with a
               control, not a registered command, and registering one per row
               would mean rebuilding the registry whenever the list changed. */}
@@ -3306,6 +3386,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                 // jump takes, so Back returns from it.
                 <AssistantPanel
                   client={client}
+                  toast={toast}
                   settings={settings}
                   focused={
                     activeId === undefined || store === undefined
@@ -3313,6 +3394,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                       : { docId: activeId, store, page: currentPage }
                   }
                   onGoTo={navigator.jumpTo}
+                  // EVERY OPEN TAB, for *All Open Docs*, and the jump its citations take to another one (ADR-0134).
+                  openDocuments={assistantDocuments}
+                  onGoToDocument={goToDocument}
                   // NO DOCUMENT BESIDE, so *Left · Right · Both* is not offered (ADR-0089). Its second document came
                   // from the compare pane, which Side by Side replaced; Side by Side covers this panel while it is
                   // open, so the two-document ask has no route until the owner decides where it belongs (ADR-0131).

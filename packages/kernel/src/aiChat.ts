@@ -48,10 +48,18 @@ export interface ChatMessage {
   readonly text: string;
 }
 
-/** A picture, base64-encoded, as all three shapes take one. PNG is what the host draws. */
+/**
+ * A picture, base64-encoded, as all three shapes take one. PNG is what the host draws; a picture attached to a question
+ * is sent as it was picked, PNG or JPEG (ADR-0135).
+ */
 export interface ChatImage {
-  readonly mediaType: 'image/png';
+  readonly mediaType: 'image/png' | 'image/jpeg';
   readonly base64: string;
+  /**
+   * The words before it, *File 2:*, so the model can tell several pictures apart and the instruction can name each
+   * (*Vision*, "Multiple images", read 2026-10-02). Absent for the one picture of a page.
+   */
+  readonly label?: string;
 }
 
 /** Why an answer did not happen, or did not finish. */
@@ -96,10 +104,10 @@ export interface ChatRequest {
    */
   readonly system?: string;
   /**
-   * A picture sent with the LAST user turn, in each shape's own form (ADR-0090). Earlier turns
-   * carry text only, so a conversation does not re-send a picture per question.
+   * The pictures sent with the LAST user turn, in each shape's own form (ADR-0090, ADR-0135), in order. Earlier turns
+   * carry text only, so a conversation does not re-send a picture per question. Absent and empty mean the same.
    */
-  readonly image?: ChatImage;
+  readonly images?: readonly ChatImage[];
   /**
    * *Document + web* (ADR-0108): the provider's own search tool goes with the request. `false` sends none, turns a
    * provider's default search off where it has one (Perplexity), and refuses a model that always searches.
@@ -155,7 +163,7 @@ const MISTRAL_CONVERSATIONS = 'https://api.mistral.ai/v1/conversations';
 
 /** The request one provider takes, or `null` when there is nothing to send it to. */
 export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'fetchImpl'>): Prepared | null {
-  const { provider, model, key, endpoint = '', messages, system, image, web } = request;
+  const { provider, model, key, endpoint = '', messages, system, images = [], web } = request;
   if (key === '' || model === '' || messages.length === 0) return null;
   const adapter = AI_PROVIDERS[provider].adapter;
   // THE WEB ONLY WHERE THIS PROVIDER AND MODEL CAN SEARCH — `webSearchOf` is the one reading (ADR-0108); a provider
@@ -164,9 +172,15 @@ export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'f
   // AN EMPTY INSTRUCTION IS NO INSTRUCTION: each shape refuses or ignores an empty one
   // differently, so none is sent.
   const instruction = system === undefined || system === '' ? null : system;
-  // THE TURN THE PICTURE RIDES ON: the last one the person wrote, which is the one asking.
-  const pictured = image === undefined ? -1 : messages.map((message) => message.role).lastIndexOf('user');
-  const dataUrl = image === undefined ? '' : `data:${image.mediaType};base64,${image.base64}`;
+  // THE TURN THE PICTURES RIDE ON: the last one the person wrote, which is the one asking.
+  const pictured = images.length === 0 ? -1 : messages.map((message) => message.role).lastIndexOf('user');
+  const dataUrlOf = (image: ChatImage): string => `data:${image.mediaType};base64,${image.base64}`;
+  /**
+   * Every picture as one shape's parts, in order, each after its label where it has one — ONE walk over the list, so
+   * the five shapes differ only in how a word and a picture are spelt, never in which pictures go or in what order.
+   */
+  const picturesAs = (word: (text: string) => object, picture: (image: ChatImage) => object): object[] =>
+    images.flatMap((image) => [...(image.label === undefined ? [] : [word(image.label)]), picture(image)]);
 
   if (searching && (provider === 'openai' || provider === 'xai' || provider === 'azure-openai')) {
     // THE RESPONSES API, one body for the three (the Azure page's wire format is OpenAI's). A deployment's name is
@@ -191,12 +205,15 @@ export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'f
         max_output_tokens: MAX_OUTPUT_TOKENS,
         ...(instruction === null ? {} : { instructions: instruction }),
         input: messages.map((message, at) =>
-          at === pictured && image !== undefined
+          at === pictured
             ? {
                 role: message.role,
                 content: [
                   { type: 'input_text', text: message.text },
-                  { type: 'input_image', image_url: dataUrl },
+                  ...picturesAs(
+                    (text) => ({ type: 'input_text', text }),
+                    (image) => ({ type: 'input_image', image_url: dataUrlOf(image) }),
+                  ),
                 ],
               }
             : { role: message.role, content: message.text },
@@ -219,12 +236,15 @@ export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'f
         store: false,
         ...(instruction === null ? {} : { instructions: instruction }),
         inputs: messages.map((message, at) =>
-          at === pictured && image !== undefined
+          at === pictured
             ? {
                 role: message.role,
                 content: [
                   { type: 'text', text: message.text },
-                  { type: 'image_url', image_url: dataUrl },
+                  ...picturesAs(
+                    (text) => ({ type: 'text', text }),
+                    (image) => ({ type: 'image_url', image_url: dataUrlOf(image) }),
+                  ),
                 ],
               }
             : { role: message.role, content: message.text },
@@ -250,11 +270,14 @@ export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'f
         ...(searching ? { tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: MAX_WEB_SEARCHES }] } : {}),
         // ANTHROPIC'S IMAGE BLOCK, before the text as its vision guide places it.
         messages: messages.map((message, at) =>
-          at === pictured && image !== undefined
+          at === pictured
             ? {
                 role: message.role,
                 content: [
-                  { type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.base64 } },
+                  ...picturesAs(
+                    (text) => ({ type: 'text', text }),
+                    (image) => ({ type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.base64 } }),
+                  ),
                   { type: 'text', text: message.text },
                 ],
               }
@@ -277,8 +300,14 @@ export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'f
           role: message.role === 'assistant' ? 'model' : 'user',
           // GEMINI'S INLINE DATA PART, beside the text part of the same turn.
           parts:
-            at === pictured && image !== undefined
-              ? [{ inline_data: { mime_type: image.mediaType, data: image.base64 } }, { text: message.text }]
+            at === pictured
+              ? [
+                  ...picturesAs(
+                    (text) => ({ text }),
+                    (image) => ({ inline_data: { mime_type: image.mediaType, data: image.base64 } }),
+                  ),
+                  { text: message.text },
+                ]
               : [{ text: message.text }],
         })),
       }),
@@ -301,12 +330,15 @@ export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'f
       ...(instruction === null ? [] : [{ role: 'system', content: instruction }]),
       // THE OPENAI FORMAT'S `image_url` PART, carrying the picture as a data URL.
       ...messages.map((message, at) =>
-        at === pictured && image !== undefined
+        at === pictured
           ? {
               role: message.role,
               content: [
                 { type: 'text', text: message.text },
-                { type: 'image_url', image_url: { url: dataUrl } },
+                ...picturesAs(
+                  (text) => ({ type: 'text', text }),
+                  (image) => ({ type: 'image_url', image_url: { url: dataUrlOf(image) } }),
+                ),
               ],
             }
           : { role: message.role, content: message.text },

@@ -302,7 +302,7 @@ describe('prepareChat', () => {
     const image = { mediaType: 'image/png', base64: 'iVBORw0KGgo=' } as const;
     const body = (provider: 'anthropic' | 'gemini' | 'openai', withImage: boolean) =>
       JSON.parse(
-        prepareChat({ provider, model: 'm', key: 'k', messages: TALK, web: false, ...(withImage ? { image } : {}) })?.body ??
+        prepareChat({ provider, model: 'm', key: 'k', messages: TALK, web: false, ...(withImage ? { images: [image] } : {}) })?.body ??
           '{}',
       ) as Record<string, unknown>;
 
@@ -325,6 +325,39 @@ describe('prepareChat', () => {
       expect(openAi[0]?.content).toBe('Hello');
       expect(openAi[2]?.content).toStrictEqual([
         { type: 'text', text: 'Read the table' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' } },
+      ]);
+    });
+
+    it('SEVERAL PICTURES attached to a question (ADR-0135) all ride the last turn, in order, each after its label', () => {
+      const pictures = [
+        { mediaType: 'image/jpeg', base64: '/9j/AAAA', label: 'File 1:' },
+        { mediaType: 'image/png', base64: 'iVBORw0KGgo=', label: 'File 3:' },
+      ] as const;
+      const of = (provider: 'anthropic' | 'gemini' | 'openai'): Record<string, unknown> =>
+        JSON.parse(prepareChat({ provider, model: 'm', key: 'k', messages: TALK, web: false, images: pictures })?.body ?? '{}') as Record<
+          string,
+          unknown
+        >;
+      expect((of('anthropic')['messages'] as { content: unknown }[])[2]?.content).toStrictEqual([
+        { type: 'text', text: 'File 1:' },
+        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: '/9j/AAAA' } },
+        { type: 'text', text: 'File 3:' },
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0KGgo=' } },
+        { type: 'text', text: 'Read the table' },
+      ]);
+      expect((of('gemini')['contents'] as { parts: unknown }[])[2]?.parts).toStrictEqual([
+        { text: 'File 1:' },
+        { inline_data: { mime_type: 'image/jpeg', data: '/9j/AAAA' } },
+        { text: 'File 3:' },
+        { inline_data: { mime_type: 'image/png', data: 'iVBORw0KGgo=' } },
+        { text: 'Read the table' },
+      ]);
+      expect((of('openai')['messages'] as { content: unknown }[])[2]?.content).toStrictEqual([
+        { type: 'text', text: 'Read the table' },
+        { type: 'text', text: 'File 1:' },
+        { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,/9j/AAAA' } },
+        { type: 'text', text: 'File 3:' },
         { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' } },
       ]);
     });

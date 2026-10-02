@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
-import { I18nProvider } from '@lingui/react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 
-import { activateCatalogue, i18n } from '../i18n.js';
+import { activateCatalogue } from '../i18n.js';
+import { InDialog } from './inDialog.js';
 import { EN } from '../messages/en.js';
 import { MAX_SIGNATURE_FIELD } from '@monstera/contract';
 import type { KeptSignature, SignDocumentAnswer } from './signDocument.js';
@@ -24,7 +24,7 @@ import SignDocumentBody from './SignDocumentBody.js';
 
 function Wrapped({ children }: { children: ReactNode }): ReactElement {
   activateCatalogue('en', EN);
-  return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
+  return <InDialog>{children}</InDialog>;
 }
 
 /** Renders the body and collects what it resolves with. */

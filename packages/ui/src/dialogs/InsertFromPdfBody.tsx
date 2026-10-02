@@ -11,6 +11,7 @@ import {
 import { type DocumentChoice, DocumentChoiceSelect } from './DocumentChoice.js';
 import type { InsertFromPdfAnswer } from './insertFromPdfResult.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 
@@ -62,23 +63,27 @@ export default function InsertFromPdfBody({
         onChange={setSource}
         marker="insert-from-pdf"
       />
-      <Input label={INSERT_FROM_PDF_POSITION} value={position} onValueChange={setPosition} />
+      <DialogRow label={INSERT_FROM_PDF_POSITION}>
+        <Input label={INSERT_FROM_PDF_POSITION} labelShownBeside value={position} onValueChange={setPosition} />
+      </DialogRow>
       <p className="m-insert-from-pdf__hint" role="status">
         {_(INSERT_FROM_PDF_RANGE, { last: pageCount + 1 })}
       </p>
-      <Button
-        label={INSERT_FROM_PDF_APPLY}
-        variant="primary"
-        disabled={!usable}
-        onClick={() => {
-          // GUARDED AGAIN rather than trusting the disabled attribute, for
-          // `DeletePagesBody`'s reason: this is the only place that can produce
-          // a value and the schema behind `resolve` refuses a negative index.
-          if (!usable) return;
-          // THE ONE CONVERSION. 1-based on screen, 0-based on the wire.
-          resolve({ source, at: parsed - 1 });
-        }}
-      />
+      <DialogFooter>
+        <Button
+          label={INSERT_FROM_PDF_APPLY}
+          variant="primary"
+          disabled={!usable}
+          onClick={() => {
+            // GUARDED AGAIN rather than trusting the disabled attribute, for
+            // `DeletePagesBody`'s reason: this is the only place that can produce
+            // a value and the schema behind `resolve` refuses a negative index.
+            if (!usable) return;
+            // THE ONE CONVERSION. 1-based on screen, 0-based on the wire.
+            resolve({ source, at: parsed - 1 });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

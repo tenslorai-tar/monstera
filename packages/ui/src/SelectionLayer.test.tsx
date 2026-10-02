@@ -3,7 +3,7 @@ import { asDocVersion } from '@monstera/shared';
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import type { AnnotationSelection } from './annotations/selectTool.js';
+import { type AnnotationSelection, CORNER_REACH } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
 
 /**
@@ -47,13 +47,31 @@ describe('SelectionLayer', () => {
     const { container } = render(
       <SelectionLayer geometry={GEOMETRY} page={3} selection={SELECTION} />,
     );
-    const box = container.querySelector('[data-selection-index="1"]');
+    const box = container.querySelector('[data-selection-index="1"] .m-selection-box');
     // (60, 390) is the visible box's corner plus (10, 10) in PDF units, which
     // at zoom 2 is (20, 20) on screen; the box is 40 by 40 points, so 80 by 80.
     expect(box?.getAttribute('x')).toBe('20');
     expect(box?.getAttribute('y')).toBe('20');
     expect(box?.getAttribute('width')).toBe('80');
     expect(box?.getAttribute('height')).toBe('80');
+  });
+
+  it('DRAWS A HANDLE ON EACH CORNER, centred on it and as wide as the select tool’s grab reach (ADR-0133)', () => {
+    const { container } = render(<SelectionLayer geometry={GEOMETRY} page={3} selection={SELECTION} />);
+    const handles = [...container.querySelectorAll('[data-selection-index="1"] [data-selection-handle]')];
+    // EACH CENTRE IS A CORNER of the 80 × 80 box at (20, 20), so the handles sit where the tool's reach is measured
+    // from. A handle drawn anywhere else would promise a resize the press there does not make.
+    const centres = handles.map((handle) => [
+      Number(handle.getAttribute('x')) + CORNER_REACH / 2,
+      Number(handle.getAttribute('y')) + CORNER_REACH / 2,
+    ]);
+    expect(centres).toStrictEqual([
+      [20, 20],
+      [100, 20],
+      [20, 100],
+      [100, 100],
+    ]);
+    expect(handles.every((handle) => handle.getAttribute('width') === String(CORNER_REACH))).toBe(true);
   });
 
   it('draws NOTHING on a page the selection is not on', () => {

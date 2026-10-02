@@ -505,7 +505,7 @@ function Differences({
       ) : (
         <>
           <p className="m-side__note" data-side-count="">
-            {i18n._(SIDE_COUNT, { count: state.result.rows.length })}
+            {i18n._(SIDE_COUNT, { count: state.result.found })}
           </p>
           {state.result.more ? <p className="m-side__note">{i18n._(SIDE_MORE, { count: state.result.rows.length })}</p> : null}
           {state.result.clipped > 0 ? <p className="m-side__note">{i18n._(SIDE_CLIPPED, { count: state.result.clipped })}</p> : null}

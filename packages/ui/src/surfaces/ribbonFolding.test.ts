@@ -16,7 +16,7 @@ import { innerWidthOf } from './useRibbonFold.js';
 /** A group of `count` buttons, each `each` wide, with `chrome` of padding and separator. */
 function group(count: number, each = 60, chrome = 10): GroupWidths {
   // NO GAP, so every case above the gap's own states its arithmetic in buttons and chrome alone.
-  return { buttons: Array.from({ length: count }, () => each), chrome, gap: 0, secondaries: 0 };
+  return { buttons: Array.from({ length: count }, () => each), chrome, gap: 0 };
 }
 
 const MORE = 40;
@@ -79,7 +79,7 @@ describe('foldGroups', () => {
     // Three 60 px buttons, 10 of chrome, 8 between neighbours: 10 + 180 + 2 × 8 = 206. Without the
     // gaps it is 190, so 200 available separates the two: a fold that ignored gaps draws all three
     // and runs 6 px past its row, which is what one section did at 1024 on 2026-09-24.
-    const spaced: GroupWidths = { buttons: [60, 60, 60], chrome: 10, gap: 8, secondaries: 0 };
+    const spaced: GroupWidths = { buttons: [60, 60, 60], chrome: 10, gap: 8 };
 
     // Folded to one button and a More: 10 + 60 + 40 + 8 = 118, inside 200. Two and a More would be
     // 10 + 120 + 40 + 16 = 186, also inside — and the loop stops at the first fold that fits.
@@ -117,8 +117,8 @@ describe('foldGroups', () => {
     // More costs more than the 30 px button it hid. A rule that asked only whether the next step
     // helps would refuse to fold this group at all and leave the row over its budget with a 200 px
     // button still on screen. Its floor, 10 + 200 + 40 = 250, is what makes the fold worth starting.
-    const wide: GroupWidths = { buttons: [200, 30, 30], chrome: 10, gap: 0, secondaries: 0 };
-    const narrow: GroupWidths = { buttons: [30, 30, 30], chrome: 10, gap: 0, secondaries: 0 };
+    const wide: GroupWidths = { buttons: [200, 30, 30], chrome: 10, gap: 0 };
+    const narrow: GroupWidths = { buttons: [30, 30, 30], chrome: 10, gap: 0 };
 
     const folded = foldGroups([wide, narrow], 340, MORE);
 
@@ -132,32 +132,20 @@ describe('foldGroups', () => {
     // One button of 30 and a More of 40: every fold of this group makes it wider, at every depth.
     // So it keeps both buttons and the row stays too wide — the honest answer, against a loop that
     // would hide a control and gain nothing.
-    const stubborn: GroupWidths = { buttons: [30, 30], chrome: 10, gap: 0, secondaries: 0 };
+    const stubborn: GroupWidths = { buttons: [30, 30], chrome: 10, gap: 0 };
 
     expect(foldGroups([stubborn], 1, MORE)).toStrictEqual([{ shown: 2, more: false }]);
   });
 
   it('CONTROL: the same groups at their natural width are untouched, so a fold means a shortage', () => {
     // Without this, every case above could be satisfied by a function that always folds.
-    const wide: GroupWidths = { buttons: [200, 30, 30], chrome: 10, gap: 0, secondaries: 0 };
-    const narrow: GroupWidths = { buttons: [30, 30, 30], chrome: 10, gap: 0, secondaries: 0 };
+    const wide: GroupWidths = { buttons: [200, 30, 30], chrome: 10, gap: 0 };
+    const narrow: GroupWidths = { buttons: [30, 30, 30], chrome: 10, gap: 0 };
 
     expect(foldGroups([wide, narrow], 370, MORE)).toStrictEqual([
       { shown: 3, more: false },
       { shown: 3, more: false },
     ]);
-  });
-
-  it('a group holding SECONDARIES draws its More at a width with room for everything, and pays for it', () => {
-    // ADR-0098: secondaries are folded at every width. Three primaries of 60, 10 of chrome and one
-    // secondary: 10 + 180 + the More's 40 = 230 — so 230 fits with every primary shown and a More.
-    const withSecondary: GroupWidths = { ...group(3), secondaries: 1 };
-    expect(foldGroups([withSecondary], 230, MORE)).toStrictEqual([{ shown: 3, more: true }]);
-    // ONE PIXEL SHORT folds a primary, which proves the More was charged: without it, 190 would fit
-    // in 229 with room to spare and nothing would fold.
-    expect(foldGroups([withSecondary], 229, MORE)).toStrictEqual([{ shown: 2, more: true }]);
-    // CONTROL: the same group with no secondaries at 190 draws no More at all.
-    expect(foldGroups([group(3)], 190, MORE)).toStrictEqual([{ shown: 3, more: false }]);
   });
 
   it('an EMPTY row of groups is an empty answer, not a hang', () => {
@@ -291,22 +279,32 @@ describe('splitFold — nothing is lost when a group folds', () => {
     expect(buttons(ribbonUnits([tool('a'), tool('b')]))).toStrictEqual(['a', 'b']);
   });
 
-  it('SECONDARIES are folded from the first frame and at every width, AFTER the width-folded primaries', () => {
-    // ADR-0098. Interleaved on purpose: the projection orders by `order`, and a secondary can sit
-    // between two primaries — the partition must still keep every primary ahead of every secondary.
+  it('SECONDARIES are drawn in the row while there is room, after the primaries, and are the FIRST to fold', () => {
+    // ADR-0098's correction of 2 October. Interleaved on purpose: the projection orders by `order`, and a
+    // secondary can sit between two primaries — the row must still put every primary ahead of every secondary.
     const mixed = [tool('open'), tool('save-copy', true), tool('save'), tool('pdfa', true), tool('print')];
 
-    // NOT MEASURED YET: every primary drawn, every secondary already in the More.
-    expect(buttons(splitFold(mixed, undefined).shown)).toStrictEqual(['open', 'save', 'print']);
-    expect(ids(splitFold(mixed, undefined).folded)).toStrictEqual(['save-copy', 'pdfa']);
+    // NOT MEASURED YET: every tool drawn, the secondaries after the primaries, nothing folded.
+    expect(buttons(splitFold(mixed, undefined).shown)).toStrictEqual(['open', 'save', 'print', 'save-copy', 'pdfa']);
+    expect(ids(splitFold(mixed, undefined).folded)).toStrictEqual([]);
 
-    // ROOM FOR EVERY PRIMARY: the secondaries are still folded.
+    // ROOM FOR EVERYTHING: the secondaries are in the row, and there is no More to fill.
+    expect(ids(splitFold(mixed, { shown: 5, more: false }).folded)).toStrictEqual([]);
+
+    // ONE SHORT: the LAST secondary leaves first; every primary stays.
+    expect(ids(splitFold(mixed, { shown: 4, more: true }).folded)).toStrictEqual(['pdfa']);
+    // ROOM FOR THE PRIMARIES ONLY: both secondaries are in the More, in the row's order.
     expect(ids(splitFold(mixed, { shown: 3, more: true }).folded)).toStrictEqual(['save-copy', 'pdfa']);
 
-    // NARROW: the width-folded primary comes FIRST in the More, as the more-used tool.
+    // NARROWER: a primary folds only after every secondary, and comes FIRST in the More, as the more-used tool.
     const narrow = splitFold(mixed, { shown: 2, more: true });
     expect(buttons(narrow.shown)).toStrictEqual(['open', 'save']);
     expect(ids(narrow.folded)).toStrictEqual(['print', 'save-copy', 'pdfa']);
+  });
+
+  it('CONTROL: with no secondaries the row is the placement order, so the reordering above is what `secondary` causes', () => {
+    const plain = [tool('open'), tool('save-copy'), tool('save')];
+    expect(buttons(ribbonUnits(plain))).toStrictEqual(['open', 'save-copy', 'save']);
   });
 });
 

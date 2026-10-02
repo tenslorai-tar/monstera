@@ -1,4 +1,4 @@
-import type { AskAbout } from '@monstera/contract';
+import type { AskAboutOne } from '@monstera/contract';
 import type { DocVersion, MessageKey } from '@monstera/shared';
 
 /**
@@ -14,7 +14,8 @@ import type { DocVersion, MessageKey } from '@monstera/shared';
  */
 export type AssistantRequest = {
   readonly serial: number;
-  readonly about: AskAbout;
+  /** ONE document: a command points the panel at what it was invoked on, never at every open document (ADR-0134). */
+  readonly about: AskAboutOne;
   /** The note an answer may be posted to as a reply — *Draft a reply* only. */
   readonly replyTo?: ReplyTarget;
 } & (
@@ -48,4 +49,4 @@ export interface ReplyTarget {
 export type AssistantNext = MessageKey | { readonly quote: string };
 
 /** How a command asks — `App`'s one entry point, which also reveals the panel. */
-export type AskAssistant = (about: AskAbout, next?: AssistantNext, replyTo?: ReplyTarget) => void;
+export type AskAssistant = (about: AskAboutOne, next?: AssistantNext, replyTo?: ReplyTarget) => void;

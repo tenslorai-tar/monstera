@@ -10,7 +10,7 @@ Insert image adds a picture as a page of its own, sized to the picture.
 
 ## Steps
 
-1. In the rail, choose **Organize**. In the **Pages** group, choose **More**, then **Insert image…**.
+1. In the rail, choose **Organize**, then **Insert image…** in the **Pages** group. In a narrower window it is under the group's **More**.
 2. Pick a JPEG or PNG file.
 
 ![The Pages group's More menu with Insert image…](screenshot:insert-an-image-as-a-page-1)

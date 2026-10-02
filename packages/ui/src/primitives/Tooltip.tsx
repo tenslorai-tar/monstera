@@ -33,18 +33,20 @@ export interface TooltipProps {
    * control with a visible label it is the fuller description, which the label abbreviates.
    */
   readonly label: MessageKey;
+  /** What the label's placeholders say — the control's own, so the tooltip and the name never differ. */
+  readonly values?: Readonly<Record<string, string | number>> | undefined;
   /** The control, rendered as the trigger. It must carry its own accessible name. */
   readonly children: ReactElement;
 }
 
-export function Tooltip({ label, children }: TooltipProps): ReactElement {
+export function Tooltip({ label, values, children }: TooltipProps): ReactElement {
   const { _ } = useLingui();
   return (
     <BaseTooltip.Root>
       <BaseTooltip.Trigger render={children} />
       <BaseTooltip.Portal>
         <BaseTooltip.Positioner sideOffset={6}>
-          <BaseTooltip.Popup className="m-tooltip">{_(label)}</BaseTooltip.Popup>
+          <BaseTooltip.Popup className="m-tooltip">{_(label, values)}</BaseTooltip.Popup>
         </BaseTooltip.Positioner>
       </BaseTooltip.Portal>
     </BaseTooltip.Root>

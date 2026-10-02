@@ -11,6 +11,7 @@ import {
   type LineEnding,
   MAX_ANNOTATION_AUTHOR,
   type TextDirection,
+  strokesOfPlaced,
 } from '@monstera/contract/host';
 import {
   type PageTransform,
@@ -30,12 +31,14 @@ import type {
 } from './mupdfRaw.js';
 
 import type { CaptureResult } from './commandLog.js';
+import { contentNumber } from './contentNumber.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { ENGINE_ANNOTATIONS_MAX } from './host/engineChannels.js';
 import { decodedImage, withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
 import { snapRotation } from './rotatePages.js';
 import { pageInDocument } from './pageScope.js';
+import { type SignatureBox, type SignatureDrawing, drawSignature, signatureBox } from './signatureDrawing.js';
 
 /**
  * Writing one annotation a tool drew.
@@ -1492,7 +1495,7 @@ export const applyPlaceImage: Apply<'mupdf', 'placeImage'> = (
         [1, 0, 0, 1, 0, 0],
         [0, 0, width, height],
         resources,
-        `q ${formatted(width)} 0 0 ${formatted(height)} 0 0 cm /${STAMP_IMAGE_NAME} Do Q`,
+        `q ${contentNumber(width)} 0 0 ${contentNumber(height)} 0 0 cm /${STAMP_IMAGE_NAME} Do Q`,
       );
 
       // THE MARK, at the one place this command creates an annotation, for
@@ -1502,18 +1505,6 @@ export const applyPlaceImage: Apply<'mupdf', 'placeImage'> = (
       writeStamp(annotation, command.stamp);
     }
   });
-
-/**
- * A number as a content stream defines one.
- *
- * `String(1e-7)` is `"1e-7"`, which is not a number in a content stream — the
- * background row paid for this and its symptom there was a blank page. Fixed
- * notation, and the same reason applies here: a rectangle a hundredth of a
- * point across is representable in the payload.
- */
-function formatted(value: number): string {
-  return value.toFixed(4);
-}
 
 /**
  * What kind an annotation on the page IS, as a surface may name it.
@@ -1965,6 +1956,172 @@ export const invertPlaceImage: Invert<'mupdf', 'placeImage'> = (): Promise<void>
   throw new Error(
     'a placed image has no inverse yet; undo restores the checkpoint the bus took (ADR-0037)',
   );
+};
+
+/** A placed signature's page, checked, and the box it goes in as the page is seen. */
+function signaturePlacement(
+  document: PDFDocument,
+  page: number,
+  rect: AnnotationRect,
+): { readonly page: PDFPage; readonly placed: [number, number, number, number]; readonly box: SignatureBox } {
+  const found = pageAt(document, page, document.countPages());
+  const transform = transformFor(found);
+  const placed = placedRect(rect, transform);
+  if (!touchesPage(placed, transform)) {
+    throw new RangeError(
+      `that signature lies entirely outside page ${String(page)}, whose displayed region is ` +
+        `${String(transform.viewport.width)} by ${String(transform.viewport.height)} units, so nothing would be visible.`,
+    );
+  }
+  return { page: found, placed, box: signatureBox(rect, transform.rotation) };
+}
+
+/**
+ * The `/Name` a placed signature's stamp carries: not one of MuPDF's standard stamps, which is the engine's own
+ * exemption from resynthesis — see {@link writeSignatureStamp}.
+ */
+const SIGNATURE_STAMP_NAME = 'Signature';
+
+/**
+ * Writes a placed signature: a `/Stamp` whose appearance is the drawing, upright as the page is seen.
+ *
+ * `applyPlaceImage`'s shape — the appearance is WRITTEN, because no property means *this signature* — with the box and
+ * the stream from `signatureDrawing.ts` (ADR-0133), the module *Sign with certificate* draws through too. `/BBox` is the
+ * box's seen size and `/Matrix` counter-rotates it, because MuPDF writes both exactly as given
+ * (`pdf_set_annot_appearance`, 1.28.0): nothing here relies on the engine converting from the displayed frame.
+ *
+ * ## The appearance must not look like one MuPDF draws itself, or MuPDF replaces it
+ *
+ * Measured 2026-10-02 on MuPDF 1.28.0, and read in its source: `pdf_create_annot` names every new stamp `/Draft`, and
+ * `pdf_update_appearance` resynthesises a stamp whose annotation object is dirty — as writing the author and the
+ * authored mark leave it — unless `pdf_annot_is_standard_stamp` answers false. It answers true for the fourteen
+ * standard names AND for an appearance whose `/XObject` resources hold exactly one image, which is MuPDF's own
+ * stamp-image shape. So a typed or drawn signature came back as the word *Draft*, and a picture as that picture
+ * stretched over the whole box.
+ *
+ * Two things answer it, both MuPDF's own rule rather than a way round it: the stamp is named {@link SIGNATURE_STAMP_NAME}
+ * (*"Don't resynthesize Stamps with non-standard names if they already have an appearance"*, the engine's comment),
+ * and a picture is reached through a one-unit form that draws it, so the appearance's single XObject is a form and not
+ * an image. The form adds no geometry: the drawing's `cm` scales the unit square either draws into.
+ */
+function writeSignatureStamp(
+  document: PDFDocument,
+  target: ReturnType<typeof signaturePlacement>,
+  drawing: SignatureDrawing,
+  picture: PDFObject | undefined,
+  stamp: AnnotationStamp,
+): void {
+  const resources = document.newDictionary();
+  if (drawing.font !== undefined) {
+    const font = document.newDictionary();
+    font.put('Type', document.newName('Font'));
+    font.put('Subtype', document.newName('Type1'));
+    font.put('BaseFont', document.newName(drawing.font.baseFont));
+    font.put('Encoding', document.newName('WinAnsiEncoding'));
+    const fonts = document.newDictionary();
+    fonts.put(drawing.font.name, document.addObject(font));
+    resources.put('Font', fonts);
+  }
+  if (drawing.picture !== undefined && picture !== undefined) {
+    const inner = document.newDictionary();
+    const innerImages = document.newDictionary();
+    innerImages.put(drawing.picture.name, picture);
+    inner.put('XObject', innerImages);
+    const unit = document.newDictionary();
+    unit.put('Type', document.newName('XObject'));
+    unit.put('Subtype', document.newName('Form'));
+    const box = document.newArray();
+    for (const value of [0, 0, 1, 1]) box.push(document.newReal(value));
+    unit.put('BBox', box);
+    unit.put('Resources', inner);
+    const xobjects = document.newDictionary();
+    xobjects.put(drawing.picture.name, document.addStream(`/${drawing.picture.name} Do`, unit));
+    resources.put('XObject', xobjects);
+  }
+  const annotation = target.page.createAnnotation('Stamp');
+  annotation.setIcon(SIGNATURE_STAMP_NAME);
+  annotation.setRect(target.placed);
+  annotation.setAppearance(
+    null,
+    null,
+    [...target.box.matrix],
+    [0, 0, target.box.seenWide, target.box.seenTall],
+    resources,
+    drawing.content,
+  );
+  markAuthored(annotation);
+  writeStamp(annotation, stamp);
+}
+
+/**
+ * Places a plain signature, typed or drawn, on one page (ADR-0133).
+ *
+ * **Three steps, and only the last writes.** The page is resolved and the box checked first, so a page the document
+ * does not have or a box off the page refuses before anything is drawn; the mark is drawn next, outside the document,
+ * because its only wait is the font tables loading; then the stamp is written in one synchronous pass.
+ */
+export const applyPlaceSignatureMark: Apply<'mupdf', 'placeSignatureMark'> = async (
+  session: MupdfSession,
+  command: CommandOfKind<'placeSignatureMark'>,
+): Promise<void> => {
+  const { box } = await withDocument(session, (document) => signaturePlacement(document, command.page, command.rect));
+  // A DRAWING CROSSES FLATTENED, so the command fits the host's frame (`placedMarkOf`); the strokes are taken back here,
+  // at the one step that draws them.
+  const mark = command.mark.kind === 'drawn' ? { kind: 'drawn' as const, strokes: strokesOfPlaced(command.mark) } : command.mark;
+  const drawing = await drawSignature(mark, box.seenWide, box.seenTall);
+  await withDocument(session, (document) => {
+    writeSignatureStamp(document, signaturePlacement(document, command.page, command.rect), drawing, undefined, command.stamp);
+  });
+};
+
+/**
+ * Places a plain signature that is a picture, as {@link applyPlaceSignatureMark} places a typed one.
+ *
+ * **MuPDF's decoder validates the bytes**, `applyPlaceImage`'s rule, before anything is written; the media type rides
+ * the payload for the certificate route's decoder choice and is not read here, because MuPDF decides by reading the
+ * bytes (B3a, `placeImageSchema`'s comment).
+ */
+export const applyPlaceSignaturePicture: Apply<'mupdf', 'placeSignaturePicture'> = async (
+  session: MupdfSession,
+  command: CommandOfKind<'placeSignaturePicture'>,
+): Promise<void> => {
+  const { box } = await withDocument(session, (document) => signaturePlacement(document, command.page, command.rect));
+  const image = decodedImage(command.bytes);
+  const drawing = await drawSignature(
+    { kind: 'picture', width: image.getWidth(), height: image.getHeight() },
+    box.seenWide,
+    box.seenTall,
+  );
+  await withDocument(session, (document) => {
+    writeSignatureStamp(
+      document,
+      signaturePlacement(document, command.page, command.rect),
+      drawing,
+      document.addImage(image),
+      command.stamp,
+    );
+  });
+};
+
+/** {@link capturePlaceImage}'s answer, for one page: the page is resolved first, for that function's reason. */
+export function capturePlaceSignature(
+  session: MupdfSession,
+  command: CommandOfKind<'placeSignatureMark' | 'placeSignaturePicture'>,
+): Promise<CaptureResult<never>> {
+  return withDocument(session, (document) => {
+    pageAt(document, command.page, document.countPages());
+    return {
+      captured: false,
+      reason:
+        'a placed signature cannot be recorded as prior state: removing it again needs a handle naming which ' +
+        'annotation on the page it is, and this command mints one whose identity is not in its payload',
+    };
+  });
+}
+
+/** Unreachable, for {@link invertAddAnnotation}'s reason. */
+export const invertPlaceSignature = (): Promise<void> => {
+  throw new Error('a placed signature has no inverse yet; undo restores the checkpoint the bus took (ADR-0037)');
 };
 
 /**

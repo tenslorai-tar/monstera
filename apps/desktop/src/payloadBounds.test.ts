@@ -14,6 +14,7 @@ import { type DocId, asDocVersion } from '@monstera/shared';
 import { createAssistant } from './assistant.js';
 import { noChatHistory } from './chatHistory.js';
 import { unconfiguredCloud } from './cloudSession.js';
+import { NO_ATTACHMENTS } from './askAttachments.js';
 import { type AppInfo, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
 import { createRecentFiles } from './recentFiles.js';
@@ -177,6 +178,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     openStore: () => Promise.resolve(false),
     closeListening: () => false,
     cloud: unconfiguredCloud(),
+    attachments: NO_ATTACHMENTS,
     readDictionary: () => Promise.resolve(null),
     ocrLanguages: () => Promise.resolve([]),
     components: () => Promise.resolve([]),
@@ -220,6 +222,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'ai.models.held': 'carries nothing in; one bounded list per registered provider out, whatever the document',
   'ai.ask': 'every field is bounded: the subscription id, the model id, and the conversation’s turns',
   'ai.stop': 'one bounded subscription id',
+  'ai.attach': 'at most eight files, each a handle, a bounded name and a size, and a count of the rest — never a byte of any file',
   'ai.openSource': 'a bounded answer id and a place below the sources’ bound',
   // A page's blocks, each bounded by `MAX_REPLACED_TEXT`, at most `MAX_EDIT_BLOCKS` — a page's
   // words, never a document's — and it needs an engine session to read them.
@@ -448,6 +451,8 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // That is the same *no raster crosses* answer the snapshot above gives, in
   // the opposite direction and on a boundary this file does not govern.
   'document.placeImage': 'needs an engine session and an image picker',
+  // ANSWERS A VERSION, TWO COUNTS AND A WORD (ADR-0133): nothing it returns can grow with the document or the mark.
+  'document.placeSignature': 'needs an engine session, and an image picker for a picture',
   'document.placeBarcode': 'needs an engine session and the barcode writer',
   'document.exportAnnotations': 'needs an engine session and a file picker',
   // BOUNDED BY THE RULE SET — 32 rules of 16 pages each — never by the document.

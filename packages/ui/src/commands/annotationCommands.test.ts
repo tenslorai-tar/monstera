@@ -8,6 +8,7 @@ import {
   GROUP_REDACT,
   GROUP_SHAPES,
   GROUP_STAMPS,
+  TOAST_COPIED,
 } from '../messages/en.js';
 import { CommandRegistry } from '../registries/commands.js';
 import { ribbonModel } from '../surfaces/projections.js';
@@ -208,16 +209,20 @@ describe('rectangleToolCommand', () => {
       languages: () => ['eng'],
       onPlaceImage: () => undefined,
       onPlaceSignature: () => undefined,
+      onPlacePlainSignature: () => undefined,
       onPlaceBarcode: () => undefined,
       stampPictures: () => Promise.resolve({ pictures: [], release: () => undefined }),
       addStampPicture: () => Promise.resolve(),
       removeStampPicture: () => Promise.resolve(),
       onPlaceStampPicture: () => undefined,
     }).map((tool) => tool.id);
-    const commandIds = shapeToolCommands({
-      activeTool: () => undefined,
-      onSelect: () => undefined,
-    }).map((command) => command.id);
+    // THE PLAIN SIGNATURE'S COMMAND IS ITS OWN MODULE'S (ADR-0133): it opens a dialog before it arms the tool, so it is
+    // built from different dependencies — and it is still the one command its tool has.
+    const { signatureCommand } = await import('./signatureCommands.js');
+    const commandIds = [
+      ...shapeToolCommands({ activeTool: () => undefined, onSelect: () => undefined }),
+      signatureCommand({ activeTool: () => undefined, onStart: () => undefined, onStop: () => undefined }),
+    ].map((command) => command.id);
 
     // SETS, SORTED, so the message names which id is missing rather than
     // reporting that two lists differ in length.
@@ -727,6 +732,7 @@ describe('copyAnnotationsCommand', () => {
     const sent: { id: string; params: unknown }[] = [];
     const asked: { id: string; props: unknown }[] = [];
     const copied: number[] = [];
+    const toasts: unknown[][] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
       return Promise.resolve(ok(answer));
@@ -735,7 +741,11 @@ describe('copyAnnotationsCommand', () => {
       sent,
       asked,
       copied,
+      toasts,
       command: copyAnnotationsCommand({
+        toast: (...raised) => {
+          toasts.push(raised);
+        },
         selection: () => selection,
         onDelete: () => undefined,
         onPlace: () => undefined,
@@ -750,8 +760,10 @@ describe('copyAnnotationsCommand', () => {
   }
 
   it('asks main to copy EXACTLY the selection — its page, every index, and the version it was read at', async () => {
-    const { command, sent, copied } = copying(SELECTION, { kind: 'copied', copied: 2, skipped: 0 });
+    const { command, sent, copied, toasts } = copying(SELECTION, { kind: 'copied', copied: 2, skipped: 0 });
     await command.run(WITH_DOCUMENT);
+    // AND IT SAYS SO, through every copy's one confirmation (the owner's answer of 2 October).
+    expect(toasts).toStrictEqual([['done', TOAST_COPIED]]);
     // THE SELECTION'S PAGE (2) AND VERSION (7), not the context's page (2 here by coincidence of
     // the fixture) or version (1). The handles are positions in the walk the selection was read
     // at, so sending the shell's current version would let a stale copy through.
@@ -766,17 +778,20 @@ describe('copyAnnotationsCommand', () => {
 
   it('a selection with nothing exchangeable is TOLD so, and nothing is counted as copied', async () => {
     // A Copy that did nothing looks exactly like one that worked until the paste finds nothing.
-    const { command, asked, copied } = copying(SELECTION, { kind: 'nothing-copyable' });
+    const { command, asked, copied, toasts } = copying(SELECTION, { kind: 'nothing-copyable' });
     await command.run(WITH_DOCUMENT);
     expect(asked).toStrictEqual([{ id: 'dialog.command-problem', props: { code: 'not-copyable' } }]);
     expect(copied).toStrictEqual([]);
+    // NO *Copied* FOR A COPY THAT DID NOT HAPPEN: the problem dialog is the one thing said.
+    expect(toasts).toStrictEqual([]);
   });
 
   it('a stale selection is told with the stale-target sentence, and nothing is counted', async () => {
-    const { command, asked, copied } = copying(SELECTION, { kind: 'stale' });
+    const { command, asked, copied, toasts } = copying(SELECTION, { kind: 'stale' });
     await command.run(WITH_DOCUMENT);
     expect(asked).toStrictEqual([{ id: 'dialog.command-problem', props: { code: 'stale-target' } }]);
     expect(copied).toStrictEqual([]);
+    expect(toasts).toStrictEqual([]);
   });
 
   it('CONTROL: hidden with nothing selected, and sends nothing if run', async () => {

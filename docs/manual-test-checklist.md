@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 220 — and the checks only the installed window can answer.
+Every command the application registers — 221 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -36,6 +36,7 @@ is not available.
 - [ ] **Redo** — File · `document.redo` · Help: *Undo and redo changes*
 - [ ] **Hand — drag to move the pages** — Quick tools · `view.hand` · Help: *Move between pages*
 - [ ] **Select text** — Quick tools · `view.select-text` · Help: *Select and copy text*
+- [ ] **Signature** — Quick tools · `annotate.signature` · Help: *Add your signature*
 
 ## Ribbon › Organize
 

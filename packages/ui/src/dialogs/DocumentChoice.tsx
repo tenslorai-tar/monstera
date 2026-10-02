@@ -1,7 +1,8 @@
 import { useLingui } from '@lingui/react';
 import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
-import { useId } from 'react';
+
+import { DialogRow } from '../primitives/Dialog.js';
 
 /** One open document, as a picker needs to name it. */
 export interface DocumentChoice {
@@ -54,13 +55,13 @@ export function DocumentChoiceSelect({
   readonly marker: string;
 }): ReactElement {
   const { _ } = useLingui();
-  const pickerId = useId();
 
+  // A ROW OF THE DIALOG PATTERN (2026-10-02): the question at the left, the picker at the right. The row prints the
+  // question; the select is named by the same words, so what is seen and what is announced are one string.
   return (
-    <label className="m-document-choice" htmlFor={pickerId}>
-      {_(label)}
+    <DialogRow label={label}>
       <select
-        id={pickerId}
+        aria-label={_(label)}
         data-document-choice={marker}
         value={value}
         onChange={(event) => {
@@ -73,6 +74,6 @@ export function DocumentChoiceSelect({
           </option>
         ))}
       </select>
-    </label>
+    </DialogRow>
   );
 }

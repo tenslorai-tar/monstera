@@ -13,6 +13,7 @@ import { renderRangeProblem } from './pageRangeProblem.js';
 import { formatPageRanges, parsePageRanges } from '../pageRanges.js';
 import type { DeletePagesAnswer } from './deletePagesResult.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 
@@ -61,36 +62,41 @@ export default function DeletePagesBody({
 
   return (
     <div className="m-delete-pages">
-      <Input
-        label={DELETE_PAGES_LABEL}
-        placeholder={DELETE_PAGES_HINT}
-        value={text}
-        onValueChange={setText}
-      />
+      <DialogRow label={DELETE_PAGES_LABEL}>
+        <Input
+          label={DELETE_PAGES_LABEL}
+          labelShownBeside
+          placeholder={DELETE_PAGES_HINT}
+          value={text}
+          onValueChange={setText}
+        />
+      </DialogRow>
       <p className="m-delete-pages__problem" role="status">
         {everything
           ? _(DELETE_PAGES_EVERYTHING)
           : renderRangeProblem(parsed, text, _, DELETE_PAGES_EMPTY)}
       </p>
-      <Button
-        label={DELETE_PAGES_APPLY}
-        variant="primary"
-        disabled={!parsed.ok || everything}
-        onClick={() => {
-          // GUARDED AGAIN rather than trusting the disabled attribute. A
-          // disabled control is a rendering decision; this is the only place
-          // that can produce a value, and the schema behind `resolve` refuses
-          // an empty list — so a mismatch between the two would be a thrown
-          // `DialogResultRejected` over the user's document.
-          if (!parsed.ok || everything) return;
-          // COPIED, because `parsePageRanges` answers a `readonly` array and
-          // zod's inferred shape is mutable. The copy is the honest conversion
-          // rather than a cast: the parser's guarantee is that nothing changes
-          // ITS array, and handing the same reference to a mutable field would
-          // be that guarantee stated and not held.
-          resolve({ pages: [...parsed.value] });
-        }}
-      />
+      <DialogFooter>
+        <Button
+          label={DELETE_PAGES_APPLY}
+          variant="primary"
+          disabled={!parsed.ok || everything}
+          onClick={() => {
+            // GUARDED AGAIN rather than trusting the disabled attribute. A
+            // disabled control is a rendering decision; this is the only place
+            // that can produce a value, and the schema behind `resolve` refuses
+            // an empty list — so a mismatch between the two would be a thrown
+            // `DialogResultRejected` over the user's document.
+            if (!parsed.ok || everything) return;
+            // COPIED, because `parsePageRanges` answers a `readonly` array and
+            // zod's inferred shape is mutable. The copy is the honest conversion
+            // rather than a cast: the parser's guarantee is that nothing changes
+            // ITS array, and handing the same reference to a mutable field would
+            // be that guarantee stated and not held.
+            resolve({ pages: [...parsed.value] });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

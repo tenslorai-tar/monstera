@@ -16,6 +16,7 @@ import {
   FORM_FIELD_REMOVE_OPTION,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { IconButton } from '../primitives/IconButton.js';
 import { Input } from '../primitives/Input.js';
 import type { FormFieldAnswer } from './formFieldResult.js';
@@ -117,10 +118,14 @@ export function FormFieldForm({
 
   return (
     <div className="m-form-field">
-      <Input label={label} onValueChange={setName} value={name} />
+      <DialogRow label={label}>
+        <Input label={label} labelShownBeside onValueChange={setName} value={name} />
+      </DialogRow>
 
       {collects === 'option' ? (
-        <Input label={FORM_FIELD_OPTION_LABEL} onValueChange={setOption} value={option} />
+        <DialogRow label={FORM_FIELD_OPTION_LABEL}>
+          <Input label={FORM_FIELD_OPTION_LABEL} labelShownBeside onValueChange={setOption} value={option} />
+        </DialogRow>
       ) : null}
 
       {collects === 'options' ? (
@@ -138,9 +143,11 @@ export function FormFieldForm({
             // nothing and read as *this project bans index keys and here is the
             // exception*, which is a comment claiming a control that does not
             // exist.
-            <div className="m-form-field__option" key={index}>
+            // ONE ROW PER OPTION, its remove control beside its field in the row's control.
+            <DialogRow key={index} label={FORM_FIELD_OPTIONS_LABEL}>
               <Input
                 label={FORM_FIELD_OPTIONS_LABEL}
+                labelShownBeside
                 onValueChange={(next) => {
                   setOptions(options.map((held, at) => (at === index ? next : held)));
                 }}
@@ -157,7 +164,7 @@ export function FormFieldForm({
                 }}
                 size="control"
               />
-            </div>
+            </DialogRow>
           ))}
           <Button
             disabled={options.length >= MAX_FIELD_OPTIONS}
@@ -172,23 +179,25 @@ export function FormFieldForm({
       <p className="m-form-field__problem" role="status">
         {problem === '' ? '' : _(problem)}
       </p>
-      <Button
-        disabled={!usable}
-        label={apply}
-        onClick={() => {
-          // GUARDED AGAIN rather than trusting the disabled attribute, for
-          // `AnnotationTextForm`'s reason: the schema behind `resolve` refuses
-          // an empty name, so a mismatch would throw over the user's document
-          // rather than doing nothing.
-          if (!usable) return;
-          resolve({
-            name,
-            ...(collects === 'option' ? { option } : {}),
-            ...(collects === 'options' ? { options: filled } : {}),
-          });
-        }}
-        variant="primary"
-      />
+      <DialogFooter>
+        <Button
+          disabled={!usable}
+          label={apply}
+          onClick={() => {
+            // GUARDED AGAIN rather than trusting the disabled attribute, for
+            // `AnnotationTextForm`'s reason: the schema behind `resolve` refuses
+            // an empty name, so a mismatch would throw over the user's document
+            // rather than doing nothing.
+            if (!usable) return;
+            resolve({
+              name,
+              ...(collects === 'option' ? { option } : {}),
+              ...(collects === 'options' ? { options: filled } : {}),
+            });
+          }}
+          variant="primary"
+        />
+      </DialogFooter>
     </div>
   );
 }

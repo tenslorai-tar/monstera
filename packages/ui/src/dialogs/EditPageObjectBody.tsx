@@ -24,6 +24,7 @@ import {
   OBJECT_KIND_UNKNOWN,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { EditPageObjectAnswer } from './editPageObjectResult.js';
@@ -215,42 +216,22 @@ export default function EditPageObjectBody({
           </fieldset>
 
           <div className="m-edit-page-object__numbers">
-            <Input label={EDIT_PAGE_OBJECT_MOVE_X} onValueChange={setMoveX} value={moveX} />
-            <Input label={EDIT_PAGE_OBJECT_MOVE_Y} onValueChange={setMoveY} value={moveY} />
-            <Input label={EDIT_PAGE_OBJECT_SCALE_X} onValueChange={setScaleX} value={scaleX} />
-            <Input label={EDIT_PAGE_OBJECT_SCALE_Y} onValueChange={setScaleY} value={scaleY} />
+            <DialogRow label={EDIT_PAGE_OBJECT_MOVE_X}>
+              <Input label={EDIT_PAGE_OBJECT_MOVE_X} labelShownBeside onValueChange={setMoveX} value={moveX} />
+            </DialogRow>
+            <DialogRow label={EDIT_PAGE_OBJECT_MOVE_Y}>
+              <Input label={EDIT_PAGE_OBJECT_MOVE_Y} labelShownBeside onValueChange={setMoveY} value={moveY} />
+            </DialogRow>
+            <DialogRow label={EDIT_PAGE_OBJECT_SCALE_X}>
+              <Input label={EDIT_PAGE_OBJECT_SCALE_X} labelShownBeside onValueChange={setScaleX} value={scaleX} />
+            </DialogRow>
+            <DialogRow label={EDIT_PAGE_OBJECT_SCALE_Y}>
+              <Input label={EDIT_PAGE_OBJECT_SCALE_Y} labelShownBeside onValueChange={setScaleY} value={scaleY} />
+            </DialogRow>
           </div>
-          <Button
-            disabled={!placeable}
-            label={EDIT_PAGE_OBJECT_PLACE}
-            onClick={() => {
-              // GUARDED AGAIN rather than trusting the disabled attribute, for
-              // `FlatFieldsBody`'s reason: the result schema refuses a scale
-              // outside its bounds, and a resolve that reached it would surface
-              // as an internal error over a button the reader could press.
-              if (
-                object === undefined ||
-                move.x === null ||
-                move.y === null ||
-                scale.x === null ||
-                scale.y === null ||
-                !placeable
-              ) {
-                return;
-              }
-              resolve({
-                action: 'place',
-                index: object.index,
-                moveBy: { x: move.x, y: move.y },
-                scaleBy: { x: scale.x, y: scale.y },
-              });
-            }}
-            variant="primary"
-          />
-
-          <label className="m-edit-page-object__colour">
-            {_(EDIT_PAGE_OBJECT_COLOUR)}
+          <DialogRow label={EDIT_PAGE_OBJECT_COLOUR}>
             <input
+              aria-label={_(EDIT_PAGE_OBJECT_COLOUR)}
               disabled={object?.fill == null}
               onChange={(event) => {
                 setColour(event.target.value);
@@ -258,43 +239,70 @@ export default function EditPageObjectBody({
               type="color"
               value={colour}
             />
-          </label>
+          </DialogRow>
           {object?.fill === null ? (
             <p className="m-edit-page-object__no-fill" role="status">
               {_(EDIT_PAGE_OBJECT_NO_FILL)}
             </p>
           ) : null}
-          <Button
-            disabled={object?.fill == null}
-            label={EDIT_PAGE_OBJECT_RECOLOR}
-            onClick={() => {
-              if (object?.fill == null) return;
-              resolve({
-                action: 'recolor',
-                index: object.index,
-                // THE ALPHA IS THE OBJECT'S OWN, not 255. A colour input has no
-                // opacity, so taking one would mean this control silently made
-                // every translucent object opaque — a second change nobody asked
-                // for, riding on the one they did.
-                colour: { ...fromHex(colour), alpha: object.fill.alpha },
-              });
-            }}
-          />
 
-          {/* NO `variant`, so the default bounded button rather than the filled
-              one. `Button` offers `primary` and `default` and nothing between —
-              so *less prominent than the placement* is the default, which is
-              what this needs: removal is the only action here with no inverse,
-              and the filled treatment would make the costliest mistake the
-              easiest button to reach for. */}
-          <Button
-            disabled={object === undefined}
-            label={EDIT_PAGE_OBJECT_DELETE}
-            onClick={() => {
-              if (object === undefined) return;
-              resolve({ action: 'delete', index: object.index });
-            }}
-          />
+          {/* THE PATTERN'S FOOTER: Cancel, then removal, recolouring and placing, the placement last as the primary.
+              Removal has no variant — the default bounded button rather than the filled one — because it is the only
+              action here with no inverse, and the filled treatment would make the costliest mistake the easiest to
+              reach for. */}
+          <DialogFooter>
+            <Button
+              disabled={object === undefined}
+              label={EDIT_PAGE_OBJECT_DELETE}
+              onClick={() => {
+                if (object === undefined) return;
+                resolve({ action: 'delete', index: object.index });
+              }}
+            />
+            <Button
+              disabled={object?.fill == null}
+              label={EDIT_PAGE_OBJECT_RECOLOR}
+              onClick={() => {
+                if (object?.fill == null) return;
+                resolve({
+                  action: 'recolor',
+                  index: object.index,
+                  // THE ALPHA IS THE OBJECT'S OWN, not 255. A colour input has no
+                  // opacity, so taking one would mean this control silently made
+                  // every translucent object opaque — a second change nobody asked
+                  // for, riding on the one they did.
+                  colour: { ...fromHex(colour), alpha: object.fill.alpha },
+                });
+              }}
+            />
+            <Button
+              disabled={!placeable}
+              label={EDIT_PAGE_OBJECT_PLACE}
+              onClick={() => {
+                // GUARDED AGAIN rather than trusting the disabled attribute, for
+                // `FlatFieldsBody`'s reason: the result schema refuses a scale
+                // outside its bounds, and a resolve that reached it would surface
+                // as an internal error over a button the reader could press.
+                if (
+                  object === undefined ||
+                  move.x === null ||
+                  move.y === null ||
+                  scale.x === null ||
+                  scale.y === null ||
+                  !placeable
+                ) {
+                  return;
+                }
+                resolve({
+                  action: 'place',
+                  index: object.index,
+                  moveBy: { x: move.x, y: move.y },
+                  scaleBy: { x: scale.x, y: scale.y },
+                });
+              }}
+              variant="primary"
+            />
+          </DialogFooter>
         </>
       )}
     </div>

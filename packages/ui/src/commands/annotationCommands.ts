@@ -139,6 +139,8 @@ import {
 import type { IconName } from '../primitives/icons.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
 import type { SectionId } from '../registries/placement.js';
+import type { ShowToast } from '../toasts.js';
+import { confirmCopied } from './confirmWritten.js';
 import { hasDocument } from './documentCommands.js';
 
 /**
@@ -759,6 +761,8 @@ export function copyAnnotationsCommand(
     readonly client: ContractClient;
     readonly ask: (id: string, props: unknown) => Promise<unknown>;
     readonly onCopied: (count: number) => void;
+    /** Where the copy is confirmed — every copy's one confirmation (`confirmCopied`). */
+    readonly toast: ShowToast;
   },
 ): UiCommand {
   return {
@@ -768,7 +772,9 @@ export function copyAnnotationsCommand(
     placements: [{ surface: 'context-menu', context: 'annotation', order: 40 }],
     when: () => deps.selection() !== undefined,
     run: async (context): Promise<void> => {
-      await copySelectedAnnotations(deps, context);
+      // CONFIRMED HERE AND NOT IN THE COPY ITSELF: *Cut* copies through `copySelectedAnnotations` too, and a cut says
+      // nothing about the clipboard — the marks leaving the page is its effect.
+      if (await copySelectedAnnotations(deps, context)) confirmCopied(deps);
     },
   };
 }
@@ -1078,15 +1084,15 @@ export function placeImageToolCommand(deps: ToolCommandDeps): UiCommand {
  * signatures* at 20, so the group reads invisible, visible, verify.
  */
 export function placeSignatureToolCommand(deps: ToolCommandDeps): UiCommand {
-  // AND HOME › QUICK TOOLS as v5-02's *Sign*. Named *Sign with certificate* in both places since 2 October (the
-  // owner's split): a plain *Signature*, placed with no certificate, is to take Home's slot, and until it exists this
-  // keeps the slot under a name that says what it does.
-  return alsoOn(
-    toolCommand(PLACE_SIGNATURE_TOOL_ID, { full: PLACE_SIGNATURE_TOOL_TITLE, ribbon: RIBBON_PLACE_SIGNATURE }, 'PenTool', 15, deps, {
-      section: 'protect',
-      group: GROUP_SIGNATURES,
-    }),
-    { surface: 'ribbon', section: 'home', group: GROUP_QUICK_TOOLS, order: 108 },
+  // UNDER PROTECT ONLY since 2 October (the owner: *"Home shows only the simple Signature. Sign with certificate is
+  // under Protect only."*). Home's Quick tools slot at 108 is the plain Signature's (`signatureCommands.ts`).
+  return toolCommand(
+    PLACE_SIGNATURE_TOOL_ID,
+    { full: PLACE_SIGNATURE_TOOL_TITLE, ribbon: RIBBON_PLACE_SIGNATURE },
+    'PenTool',
+    15,
+    deps,
+    { section: 'protect', group: GROUP_SIGNATURES },
   );
 }
 

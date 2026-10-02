@@ -10,7 +10,7 @@ The **Forms** tab lists every field in the document with a control to fill it in
 
 ## Steps
 
-1. In the document panel, choose the **Forms** tab. (Or in the rail choose **Forms**, then **Fields list** in the **Fields** group, under **More**.)
+1. In the document panel, choose the **Forms** tab. (Or in the rail choose **Forms**, then **Fields list** in the **Fields** group; in a narrower window it is under the group's **More**.)
 2. Each row shows the field's name, its kind and its page. Choose **Go to page …** to see it on the page.
 3. Fill it in: type in a text field and press **Enter** or move away; tick a **Tick box** or **Option**; pick from a **Dropdown** or **List**.
 4. Save the document to keep what you entered.

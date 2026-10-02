@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import { AI_PROVIDER_IDS, type AiProviderId } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
-import { type ReactElement, useId, useState } from 'react';
+import { type ReactElement, useState } from 'react';
 
 import {
   AI_PROVIDER_NAMES,
@@ -19,6 +19,7 @@ import {
   AI_SETUP_UNREADABLE,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { AiSetupAnswer, AiSetupProblem } from './aiSetup.js';
@@ -58,7 +59,6 @@ export default function AiSetupBody({
   readonly provider?: AiProviderId | undefined;
 } & DialogAnswering<AiSetupAnswer>): ReactElement {
   const { _ } = useLingui();
-  const providerId = useId();
   const [provider, setProvider] = useState<AiProviderId>(previous ?? 'anthropic');
   const [key, setKey] = useState('');
   const [endpoint, setEndpoint] = useState('');
@@ -70,11 +70,10 @@ export default function AiSetupBody({
   return (
     <div className="m-ai-setup">
       <p className="m-ai-setup__intro">{_(AI_SETUP_INTRO)}</p>
-      <label className="m-document-choice" htmlFor={providerId}>
-        {_(AI_SETUP_PROVIDER)}
+      <DialogRow label={AI_SETUP_PROVIDER}>
         <select
+          aria-label={_(AI_SETUP_PROVIDER)}
           data-ai-setup-provider=""
-          id={providerId}
           onChange={(event) => {
             setProvider(event.target.value as AiProviderId);
           }}
@@ -86,23 +85,29 @@ export default function AiSetupBody({
             </option>
           ))}
         </select>
-      </label>
+      </DialogRow>
       {secretsAvailable ? (
-        <Input label={AI_SETUP_KEY} onValueChange={setKey} secret value={key} />
+        <DialogRow label={AI_SETUP_KEY}>
+          <Input label={AI_SETUP_KEY} labelShownBeside onValueChange={setKey} secret value={key} />
+        </DialogRow>
       ) : (
         <p className="m-ai-setup__problem" role="status">
           {_(AI_SETUP_STORAGE_UNAVAILABLE)}
         </p>
       )}
       {needsEndpoint && secretsAvailable ? (
-        <Input label={AI_SETUP_ENDPOINT} onValueChange={setEndpoint} value={endpoint} />
+        <DialogRow label={AI_SETUP_ENDPOINT}>
+          <Input label={AI_SETUP_ENDPOINT} labelShownBeside onValueChange={setEndpoint} value={endpoint} />
+        </DialogRow>
       ) : null}
       {problem === undefined ? null : (
         <p className="m-ai-setup__problem" data-ai-setup-problem={problem} role="status">
           {_(PROBLEM_TEXT[problem])}
         </p>
       )}
-      <div className="m-ai-setup__actions">
+      {/* THE PATTERN'S FOOTER: Cancel, which is *not now*; Skip, which also stops the first-run offer; and the check.
+          Skip stays as large as the check (the owner's ruling, 2026-09-22). */}
+      <DialogFooter>
         <Button
           label={AI_SETUP_SKIP}
           onClick={() => {
@@ -118,7 +123,7 @@ export default function AiSetupBody({
           }}
           variant="primary"
         />
-      </div>
+      </DialogFooter>
     </div>
   );
 }

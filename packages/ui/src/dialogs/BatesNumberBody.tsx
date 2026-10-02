@@ -19,6 +19,7 @@ import {
   BATES_NUMBER_SUFFIX,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
@@ -95,76 +96,94 @@ export default function BatesNumberBody({
 
   return (
     <div className="m-bates-number">
-      <Input
-        label={BATES_NUMBER_PREFIX}
-        value={prefix}
-        onValueChange={(next) => {
-          setPrefix(next);
-        }}
-      />
-      <Input
-        label={BATES_NUMBER_START}
-        value={start}
-        onValueChange={(next) => {
-          setStart(next);
-        }}
-      />
-      <Input
-        label={BATES_NUMBER_DIGITS}
-        value={digits}
-        onValueChange={(next) => {
-          setDigits(next);
-        }}
-      />
-      <Input
-        label={BATES_NUMBER_SUFFIX}
-        value={suffix}
-        onValueChange={(next) => {
-          setSuffix(next);
-        }}
-      />
+      <DialogRow label={BATES_NUMBER_PREFIX}>
+        <Input
+          label={BATES_NUMBER_PREFIX}
+          labelShownBeside
+          value={prefix}
+          onValueChange={(next) => {
+            setPrefix(next);
+          }}
+        />
+      </DialogRow>
+      <DialogRow label={BATES_NUMBER_START}>
+        <Input
+          label={BATES_NUMBER_START}
+          labelShownBeside
+          value={start}
+          onValueChange={(next) => {
+            setStart(next);
+          }}
+        />
+      </DialogRow>
+      <DialogRow label={BATES_NUMBER_DIGITS}>
+        <Input
+          label={BATES_NUMBER_DIGITS}
+          labelShownBeside
+          value={digits}
+          onValueChange={(next) => {
+            setDigits(next);
+          }}
+        />
+      </DialogRow>
+      <DialogRow label={BATES_NUMBER_SUFFIX}>
+        <Input
+          label={BATES_NUMBER_SUFFIX}
+          labelShownBeside
+          value={suffix}
+          onValueChange={(next) => {
+            setSuffix(next);
+          }}
+        />
+      </DialogRow>
       <p className="m-bates-number__preview">
         {ready ? previewOf(prefix, suffix, startValue, digitsValue) : _(BATES_NUMBER_PREVIEW)}
       </p>
       {/* A NAMED GROUP WHOSE CHOICE IS ANNOUNCED (WCAG 1.3.1, 4.1.2): the segmented control, not a row of buttons
           that showed the choice only by which one was filled. */}
-      <SegmentedControl
-        label={BATES_NUMBER_EDGE}
-        options={EDGES.map(({ key, label }) => ({ value: key, label }))}
-        value={edge}
-        onChange={setEdge}
-      />
-      <SegmentedControl
-        label={BATES_NUMBER_SLOT}
-        options={SLOTS.map(({ key, label }) => ({ value: key, label }))}
-        value={slot}
-        onChange={setSlot}
-      />
+      <DialogRow label={BATES_NUMBER_EDGE}>
+        <SegmentedControl
+          label={BATES_NUMBER_EDGE}
+          options={EDGES.map(({ key, label }) => ({ value: key, label }))}
+          value={edge}
+          onChange={setEdge}
+        />
+      </DialogRow>
+      <DialogRow label={BATES_NUMBER_SLOT}>
+        <SegmentedControl
+          label={BATES_NUMBER_SLOT}
+          options={SLOTS.map(({ key, label }) => ({ value: key, label }))}
+          value={slot}
+          onChange={setSlot}
+        />
+      </DialogRow>
       <PageScopeChoice className="m-bates-number__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
       <p className="m-bates-number__problem" role="status">
         {ready ? '' : _(BATES_NUMBER_NOT_A_NUMBER)}
       </p>
-      <Button
-        label={BATES_NUMBER_APPLY}
-        variant="primary"
-        disabled={!ready}
-        onClick={() => {
-          // GUARDED AGAIN rather than trusting the disabled attribute, for
-          // `CropPagesBody`'s reason.
-          if (startValue === null || digitsValue === null || !ready) return;
-          resolve({
-            pages: everyPage ? 'all' : [...pages],
-            prefix,
-            suffix,
-            start: startValue,
-            digits: digitsValue,
-            edge,
-            slot,
-            fontSize: Number(DEFAULT_SIZE),
-            marginPoints: Number(DEFAULT_MARGIN),
-          });
-        }}
-      />
+      <DialogFooter>
+        <Button
+          label={BATES_NUMBER_APPLY}
+          variant="primary"
+          disabled={!ready}
+          onClick={() => {
+            // GUARDED AGAIN rather than trusting the disabled attribute, for
+            // `CropPagesBody`'s reason.
+            if (startValue === null || digitsValue === null || !ready) return;
+            resolve({
+              pages: everyPage ? 'all' : [...pages],
+              prefix,
+              suffix,
+              start: startValue,
+              digits: digitsValue,
+              edge,
+              slot,
+              fontSize: Number(DEFAULT_SIZE),
+              marginPoints: Number(DEFAULT_MARGIN),
+            });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

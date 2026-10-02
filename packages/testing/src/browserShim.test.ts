@@ -188,6 +188,7 @@ describe('browser shim', () => {
     // touch separately, so it grows by hand when a channel lands.
     expect(Object.keys(shim.client).sort()).toEqual([
       'ai.ask',
+      'ai.attach',
       'ai.checkKey',
       'ai.history.clear',
       'ai.history.load',
@@ -267,6 +268,7 @@ describe('browser shim', () => {
       'document.pasteAnnotations',
       'document.placeBarcode',
       'document.placeImage',
+      'document.placeSignature',
       'document.print',
       'document.readRange',
       'document.recent',

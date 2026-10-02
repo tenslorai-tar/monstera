@@ -1,5 +1,14 @@
 // @vitest-environment happy-dom
-import { type AskSent, type ContractClient, channels, createClient } from '@monstera/contract';
+import {
+  type AskAmong,
+  type AskFile,
+  type AskSent,
+  type ContractClient,
+  MAX_ASK_ATTACHMENTS,
+  MAX_ASK_DOCUMENTS,
+  channels,
+  createClient,
+} from '@monstera/contract';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { I18nProvider } from '@lingui/react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
@@ -15,7 +24,7 @@ import {
   ASSISTANT_PROMPT_SUMMARISE_COMMENTS,
 } from './messages/en.js';
 import { activateCatalogue, i18n } from './i18n.js';
-import { EN } from './messages/en.js';
+import { EN, TOAST_COPIED } from './messages/en.js';
 import { SettingsRegistry } from './registries/settings.js';
 import { ALL_SETTINGS } from './settings/all.js';
 import { SettingsStore } from './settingsStore.js';
@@ -42,6 +51,17 @@ function recording(
   started = true,
   window: AskSent | null = null,
   alongside?: AskSent,
+  /** What main answers a copy: whether the text reached the clipboard. */
+  copied = true,
+  /** Each document's of an *All Open Docs* ask (ADR-0134), answered only to an ask about several. */
+  among?: readonly AskAmong[],
+  /** What the paperclip's picker answers (ADR-0135), and each attached file's outcome with the share main applied. */
+  attaching: {
+    readonly picked?: readonly { handle: string; name: string; bytes: number }[];
+    readonly dropped?: number;
+    readonly files?: readonly AskFile[];
+    readonly share?: number;
+  } = {},
 ): {
   readonly client: ContractClient;
   readonly sent: { id: string; params: unknown }[];
@@ -65,14 +85,27 @@ function recording(
     if (id === 'ai.ask') {
       // THE SECOND WINDOW ONLY WHEN THE ASK HAD A SECOND DOCUMENT, as `main` answers it.
       const paired = (params as { alongside?: unknown }).alongside !== undefined;
+      const several = (params as { about?: { scope?: unknown } }).about?.scope === 'documents';
+      // FILES' OUTCOMES ONLY WHEN THE ASK CARRIED FILES, as `main` answers them.
+      const carried = ((params as { attachments?: unknown[] }).attachments ?? []).length > 0;
       return Promise.resolve({
         ok: true,
-        value: { started, sent: window, ...(paired && alongside !== undefined ? { alongside } : {}) },
+        value: {
+          started,
+          sent: several ? null : window,
+          ...(paired && alongside !== undefined ? { alongside } : {}),
+          ...(several && among !== undefined ? { among: [...among] } : {}),
+          ...(carried && attaching.files !== undefined ? { files: [...attaching.files] } : {}),
+          ...(carried && attaching.share !== undefined ? { share: attaching.share } : {}),
+        },
       });
+    }
+    if (id === 'ai.attach') {
+      return Promise.resolve({ ok: true, value: { files: [...(attaching.picked ?? [])], dropped: attaching.dropped ?? 0 } });
     }
     if (id === 'ai.stop') return Promise.resolve({ ok: true, value: { stopped: true } });
     if (id === 'ai.openSource') return Promise.resolve({ ok: true, value: { opened: true } });
-    if (id === 'window.copyText') return Promise.resolve({ ok: true, value: { copied: true } });
+    if (id === 'window.copyText') return Promise.resolve({ ok: true, value: { copied } });
     throw new Error(`this case does not answer ${id}`);
   });
   return { client, sent };
@@ -130,6 +163,11 @@ async function drawn(options: {
   readonly onNote?: AssistantPanelProps['onNote'];
   readonly onGoToBeside?: (page: number) => void;
   readonly settings?: SettingsStore;
+  readonly copied?: boolean;
+  readonly among?: readonly AskAmong[];
+  readonly openDocuments?: AssistantPanelProps['openDocuments'];
+  readonly onGoToDocument?: AssistantPanelProps['onGoToDocument'];
+  readonly attaching?: Parameters<typeof recording>[6];
 } = {}) {
   const wire = events();
   const settings = options.settings ?? new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
@@ -138,17 +176,27 @@ async function drawn(options: {
     options.started ?? true,
     options.window ?? null,
     options.alongside,
+    options.copied ?? true,
+    options.among,
+    options.attaching,
   );
+  // EVERY TOAST THE PANEL RAISES, in order: a copy's confirmation goes through the window's toast.
+  const toasts: unknown[][] = [];
   const panel = (props: Partial<AssistantPanelProps> & { readonly mount?: number }): ReactElement => (
     <Wrapped>
       <Host
         client={client}
+        toast={(...raised) => {
+          toasts.push(raised);
+        }}
         focused={options.focused}
         beside={options.beside}
         onGoToBeside={options.onGoToBeside}
         onGoTo={options.onGoTo}
         onReply={options.onReply}
         onNote={options.onNote}
+        openDocuments={options.openDocuments}
+        onGoToDocument={options.onGoToDocument}
         request={options.request}
         storedSecrets={options.stored ?? [ANTHROPIC_KEY]}
         settings={settings}
@@ -164,6 +212,7 @@ async function drawn(options: {
   });
   return {
     sent,
+    toasts,
     push: wire.push,
     /** Redraws the panel with some props changed, as `App` would on a tab switch; a new `mount`
      * remounts the panel under a host that keeps the handled serial, as `App` does. */
@@ -180,17 +229,14 @@ function type(text: string): void {
   fireEvent.change(screen.getByLabelText('Ask about this document'), { target: { value: text } });
 }
 
-/** What each choice menu's face reads before its value. */
-const FACE = { Context: 'Choose context', Sources: 'Choose sources' } as const;
-
-/** A choice menu's face — *Choose context: …* or *Choose sources: …* — found by the name it reads, value and all. */
+/** A choice menu — *Context: …* or *Sources: …* — found by its name, which reads what is chosen and the value. */
 function choiceButton(menu: 'Context' | 'Sources'): HTMLElement {
-  return screen.getByRole('button', { name: new RegExp(`^${FACE[menu]}: `, 'u') });
+  return screen.getByRole('button', { name: new RegExp(`^${menu}: `, 'u') });
 }
 
-/** What a choice menu says is chosen, from the words on its face, which are also its name. */
+/** What a choice menu says is chosen: the words on its face, which are the value alone. */
 function chosenIn(menu: 'Context' | 'Sources'): string {
-  return choiceButton(menu).textContent.slice(FACE[menu].length + 2);
+  return choiceButton(menu).textContent;
 }
 
 /** Opens a choice menu and answers its values as offered, each a radio item. */
@@ -1060,6 +1106,219 @@ describe('the assistant about a document (ADR-0088)', () => {
       expect(screen.queryByRole('button', { name: /Go to page 3/u })).toBeNull();
     });
   });
+
+  describe('every open document: All Open Docs (ADR-0134)', () => {
+    const DOC_C = asDocId('00000000-0000-4000-8000-00000000000c');
+    /** The tabs in their order, with the focused document SECOND, so focused-first is a reorder rather than the input. */
+    const LEASE = { docId: DOC_B, name: 'Lease.pdf' };
+    const CONTRACT = { docId: DOC_A, name: 'Contract.pdf' };
+    const NOTES = { docId: DOC_C, name: 'Notes.pdf' };
+    const TABS = [LEASE, CONTRACT, NOTES];
+
+    function lastAsk(sent: readonly { id: string; params: unknown }[]): { about?: unknown } {
+      return sent.filter((entry) => entry.id === 'ai.ask').at(-1)?.params ?? {};
+    }
+
+    it('is offered with two or more documents open, and sends every one, the focused document first', async () => {
+      const { sent } = await drawn({ focused: focusedOn(), openDocuments: TABS });
+      await chooseIn('Context', 'All Open Docs');
+      expect(chosenIn('Context')).toBe('All Open Docs');
+      type('What do they have in common?');
+      await send();
+      expect(lastAsk(sent).about).toStrictEqual({ scope: 'documents', docIds: [DOC_A, DOC_B, DOC_C] });
+    });
+
+    it('CONTROL: with ONE document open the choice is not offered', async () => {
+      await drawn({ focused: focusedOn(), openDocuments: [{ docId: DOC_A, name: 'Contract.pdf' }] });
+      const values = await valuesIn('Context');
+      expect(valueNamed(values, 'Document')).toBeDefined();
+      expect(valueNamed(values, 'All Open Docs')).toBeUndefined();
+    });
+
+    it('takes only the documents open AT SEND: a tab closed after the choice is not asked about', async () => {
+      const { sent, redraw } = await drawn({ focused: focusedOn(), openDocuments: TABS });
+      await chooseIn('Context', 'All Open Docs');
+      await redraw({ openDocuments: [LEASE, CONTRACT] });
+      type('Compare');
+      await send();
+      expect(lastAsk(sent).about).toStrictEqual({ scope: 'documents', docIds: [DOC_A, DOC_B] });
+    });
+
+    it(`past ${String(MAX_ASK_DOCUMENTS)} open, sends the first ${String(MAX_ASK_DOCUMENTS)} and NAMES the rest rather than refusing`, async () => {
+      const many = Array.from({ length: MAX_ASK_DOCUMENTS + 1 }, (_, at) => ({
+        docId: asDocId(`00000000-0000-4000-8000-${String(at + 1).padStart(12, '0')}`),
+        name: `File ${String(at + 1)}.pdf`,
+      }));
+      const focused = focusedOn(many[0]?.docId);
+      const { sent, push } = await drawn({
+        focused,
+        openDocuments: many,
+        among: many.slice(0, MAX_ASK_DOCUMENTS).map((each) => ({
+          docId: each.docId,
+          sent: { firstPage: 0, lastPage: 0, pageCount: 1, characters: 10, truncated: false },
+        })),
+      });
+      await chooseIn('Context', 'All Open Docs');
+      type('Summarise');
+      await send();
+      const about = lastAsk(sent).about as { docIds: readonly string[] };
+      expect(about.docIds).toStrictEqual(many.slice(0, MAX_ASK_DOCUMENTS).map((each) => each.docId));
+      expect(screen.getByText(`Not sent, more than ${String(MAX_ASK_DOCUMENTS)} were open: File 17.pdf`)).toBeTruthy();
+      const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
+      push('ai.done', { subscription, stopped: false, web: NO_WEB });
+    });
+
+    it('says each document’s share, what went from each, and which one was NOT read and why', async () => {
+      const { sent, push } = await drawn({
+        focused: focusedOn(),
+        openDocuments: [LEASE, CONTRACT],
+        among: [
+          { docId: DOC_A, sent: { firstPage: 0, lastPage: 8, pageCount: 9, characters: 400, truncated: false } },
+          { docId: DOC_B, unread: 'document-not-open' },
+        ],
+      });
+      await chooseIn('Context', 'All Open Docs');
+      type('Compare');
+      await send();
+      expect(screen.getByText('2 documents, up to 50,000 characters of each')).toBeTruthy();
+      expect(screen.getByText('Contract.pdf: Sent pages 1 to 9 of 9')).toBeTruthy();
+      expect(screen.getByText('Lease.pdf: not read, it was closed')).toBeTruthy();
+      const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
+      push('ai.done', { subscription, stopped: false, web: NO_WEB });
+    });
+
+    it('links a [Doc n p. m] citation to THAT document’s page while it is open, and leaves it text once closed', async () => {
+      const gone: { docId: string; page: number }[] = [];
+      const { sent, push, redraw } = await drawn({
+        focused: focusedOn(),
+        openDocuments: TABS,
+        onGoToDocument: (docId, page) => gone.push({ docId, page }),
+        among: TABS.map((each) => ({
+          docId: each.docId,
+          sent: { firstPage: 0, lastPage: 3, pageCount: 4, characters: 40, truncated: false },
+        })),
+      });
+      await chooseIn('Context', 'All Open Docs');
+      type('Where is the deadline?');
+      await send();
+      const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
+      push('ai.delta', { subscription, text: 'In [Doc 2 p. 3] and [Doc 3 p. 1]; [Doc 4 p. 1] names nothing asked.' });
+      push('ai.done', { subscription, stopped: false, web: NO_WEB });
+
+      // DOC 2 IS THE SECOND ASKED — Lease.pdf, the first TAB — so a citation resolved against the tabs would land on
+      // Contract.pdf instead. Kernel page 2 for the shown page 3.
+      fireEvent.click(screen.getByRole('button', { name: 'Go to page 3 of Lease.pdf' }));
+      expect(gone).toStrictEqual([{ docId: DOC_B, page: 2 }]);
+      expect(screen.queryByRole('button', { name: /Go to page 1 of/u })).toBeTruthy();
+      expect(screen.getByText('[Doc 4 p. 1]')).toBeTruthy();
+
+      await redraw({ openDocuments: [CONTRACT, NOTES] });
+      expect(screen.queryByRole('button', { name: /of Lease\.pdf/u })).toBeNull();
+      expect(screen.getByText('[Doc 2 p. 3]')).toBeTruthy();
+      // CONTROL: the document still open keeps its link.
+      expect(screen.getByRole('button', { name: 'Go to page 1 of Notes.pdf' })).toBeTruthy();
+    });
+  });
+
+  describe('files attached to a question: the paperclip (ADR-0135)', () => {
+    const NOTES = { handle: 'h-notes', name: 'notes.txt', bytes: 2_048 };
+    const PHOTO = { handle: 'h-photo', name: 'photo.jpg', bytes: 3_250_000 };
+    const BLOB = { handle: 'h-blob', name: 'blob.bin', bytes: 10 };
+
+    function lastAsk(sent: readonly { id: string; params: unknown }[]): { attachments?: unknown } {
+      return sent.filter((entry) => entry.id === 'ai.ask').at(-1)?.params ?? {};
+    }
+
+    async function clip(): Promise<void> {
+      fireEvent.click(screen.getByRole('button', { name: 'Attach files' }));
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+
+    it('asks MAIN to pick, shows each file as a chip with its name and size, and sends the handles in order', async () => {
+      const { sent } = await drawn({ focused: focusedOn(), attaching: { picked: [NOTES, PHOTO] } });
+      await clip();
+      expect(sent.filter((entry) => entry.id === 'ai.attach')).toHaveLength(1);
+      const chips = within(screen.getByRole('list', { name: 'Attached files' })).getAllByRole('listitem');
+      expect(chips.map((chip) => chip.textContent)).toStrictEqual(['notes.txt2 KB', 'photo.jpg3.1 MB']);
+      type('What do these say?');
+      await send();
+      expect(lastAsk(sent).attachments).toStrictEqual(['h-notes', 'h-photo']);
+      // GONE ONCE THE ASK STARTED, as the draft is.
+      expect(screen.queryByRole('list', { name: 'Attached files' })).toBeNull();
+    });
+
+    it('says under the question what went from EACH file — its pages, a picture, or why not — and the share main applied', async () => {
+      await drawn({
+        focused: focusedOn(),
+        window: { firstPage: 6, lastPage: 6, pageCount: 9, characters: 40, truncated: false },
+        attaching: {
+          picked: [NOTES, PHOTO, BLOB],
+          files: [
+            { sent: { firstPage: 0, lastPage: 0, pageCount: 1, characters: 30, truncated: false } },
+            { pictured: true },
+            { unread: 'not-supported' },
+          ],
+          share: 50_000,
+        },
+      });
+      await clip();
+      type('Compare');
+      await send();
+      expect(screen.getByText('Up to 50,000 characters of each document and file')).toBeTruthy();
+      expect(screen.getByText('Sent page 7 of 9')).toBeTruthy();
+      expect(screen.getByText('notes.txt: Sent page 1 of 1')).toBeTruthy();
+      expect(screen.getByText('photo.jpg: sent as a picture')).toBeTruthy();
+      expect(screen.getByText('blob.bin: not read, this kind of file is not read')).toBeTruthy();
+    });
+
+    it('a chip’s own control takes THAT file off, named for it, and the ask carries the rest', async () => {
+      const { sent } = await drawn({ focused: focusedOn(), attaching: { picked: [NOTES, PHOTO] } });
+      await clip();
+      fireEvent.click(screen.getByRole('button', { name: 'Remove notes.txt' }));
+      type('And this one?');
+      await send();
+      expect(lastAsk(sent).attachments).toStrictEqual(['h-photo']);
+    });
+
+    it('past eight, eight are kept, the rest COUNTED in a sentence, and the paperclip is off until one is removed', async () => {
+      const ten = Array.from({ length: 10 }, (_, at) => ({ handle: `h${String(at)}`, name: `${String(at)}.txt`, bytes: 1 }));
+      await drawn({ focused: focusedOn(), attaching: { picked: ten.slice(0, MAX_ASK_ATTACHMENTS), dropped: 2 } });
+      await clip();
+      expect(within(screen.getByRole('list', { name: 'Attached files' })).getAllByRole('listitem')).toHaveLength(MAX_ASK_ATTACHMENTS);
+      expect(screen.getByText('2 more files were not attached: at most 8 go with one question.')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Attach files' }).hasAttribute('disabled')).toBe(true);
+      fireEvent.click(screen.getByRole('button', { name: 'Remove 0.txt' }));
+      expect(screen.getByRole('button', { name: 'Attach files' }).hasAttribute('disabled')).toBe(false);
+    });
+
+    it('REGENERATE sends the same files again', async () => {
+      const { sent, push } = await drawn({ focused: focusedOn(), attaching: { picked: [NOTES] } });
+      await clip();
+      type('Summarise');
+      await send();
+      const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
+      push('ai.delta', { subscription, text: 'A summary.' });
+      push('ai.done', { subscription, stopped: false, web: NO_WEB });
+      fireEvent.click(screen.getByRole('button', { name: 'Regenerate this answer' }));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(sent.filter((entry) => entry.id === 'ai.ask').map((entry) => (entry.params as { attachments?: unknown }).attachments)).toStrictEqual([
+        ['h-notes'],
+        ['h-notes'],
+      ]);
+    });
+
+    it('CONTROL: with nothing attached an ask carries no attachments and no chip row is drawn', async () => {
+      const { sent } = await drawn({ focused: focusedOn() });
+      expect(screen.queryByRole('list', { name: 'Attached files' })).toBeNull();
+      type('Plain question');
+      await send();
+      expect(lastAsk(sent)).not.toHaveProperty('attachments');
+    });
+  });
 });
 
 describe('the chat extras (the owner’s design, 2026-09-15)', () => {
@@ -1115,7 +1374,7 @@ describe('the chat extras (the owner’s design, 2026-09-15)', () => {
   it('COPY sends the answer to main’s clipboard and says Copied only when main says it went', async () => {
     // Through `window.copyText`, because the renderer holds no clipboard permission (§2): live, the
     // browser's own clipboard write was refused with the window focused.
-    const { sent } = await answered();
+    const { sent, toasts } = await answered();
     fireEvent.click(screen.getByRole('button', { name: 'Copy this answer' }));
     await act(async () => {
       await Promise.resolve();
@@ -1124,7 +1383,19 @@ describe('the chat extras (the owner’s design, 2026-09-15)', () => {
     expect(sent.filter((entry) => entry.id === 'window.copyText').map((entry) => entry.params)).toStrictEqual([
       { text: 'On 17 March.' },
     ]);
-    expect(screen.getByText('Copied')).toBeTruthy();
+    // EVERY COPY'S ONE CONFIRMATION, the window's toast.
+    expect(toasts).toStrictEqual([['done', TOAST_COPIED]]);
+  });
+
+  it('CONTROL: a copy main says did not reach the clipboard says nothing', async () => {
+    const { sent, toasts } = await answered({ copied: false });
+    fireEvent.click(screen.getByRole('button', { name: 'Copy this answer' }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(sent.some((entry) => entry.id === 'window.copyText')).toBe(true);
+    expect(toasts).toStrictEqual([]);
   });
 
   it('ADD AS NOTE hands the answer to the page, once, and then says it was added', async () => {

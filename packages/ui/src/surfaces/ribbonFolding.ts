@@ -40,13 +40,6 @@ export interface GroupWidths {
    * section 4.7 px past its row at 1024.
    */
   readonly gap: number;
-  /**
-   * How many of this group's tools are SECONDARY (ADR-0098), drawn in its *More* at every width.
-   *
-   * They are not in `buttons`, because they are never drawn in the row and so have no width to fold
-   * by. What they cost the row is the *More* itself, which a group carrying any secondary always draws.
-   */
-  readonly secondaries: number;
 }
 
 /** What the ribbon draws for one group. */
@@ -66,7 +59,7 @@ export interface GroupFold {
 function widthOf(group: GroupWidths, shown: number, moreWidth: number): number {
   let total = group.chrome;
   for (let index = 0; index < shown; index += 1) total += group.buttons[index] ?? 0;
-  const folded = shown < group.buttons.length || group.secondaries > 0;
+  const folded = shown < group.buttons.length;
   if (folded) total += moreWidth;
   const items = shown + (folded ? 1 : 0);
   return total + group.gap * Math.max(items - 1, 0);
@@ -140,7 +133,7 @@ export function foldGroups(
 
   return state.map((entry) => ({
     shown: entry.shown,
-    more: entry.shown < entry.group.buttons.length || entry.group.secondaries > 0,
+    more: entry.shown < entry.group.buttons.length,
   }));
 }
 
@@ -231,18 +224,27 @@ interface UnitEntry {
 }
 
 /**
- * A group's PRIMARY entries as the buttons its row draws.
+ * A group's entries as the buttons its row draws, in the order the row draws them: its PRIMARIES, then its
+ * SECONDARIES (ADR-0098's correction of 2 October).
  *
  * **The one place a button is defined**, which the fold's measurement and the drawing both call: a
  * second opinion about whether two menu members are one button would make the fold charge for a
  * width the row never draws. Members of a menu are gathered where the first of them falls, in their
- * own order; secondaries are not buttons and are left out.
+ * own order.
+ *
+ * **The order is the fold's**: `foldGroups` takes buttons from the end, so the secondaries after the primaries are
+ * what leave the row first, and on a window wide enough nothing leaves at all. A secondary is never a menu member
+ * (ARCHITECTURE §7: a menu does not combine with `secondary`), so each is a button of its own.
  */
 export function ribbonUnits<T extends UnitEntry>(entries: readonly T[]): readonly RibbonUnit<T>[] {
   const units: { key: string; menu: MessageKey | undefined; entries: T[] }[] = [];
   const byMenu = new Map<MessageKey, { key: string; menu: MessageKey | undefined; entries: T[] }>();
+  const secondaries: { key: string; menu: MessageKey | undefined; entries: T[] }[] = [];
   for (const entry of entries) {
-    if (entry.secondary) continue;
+    if (entry.secondary) {
+      secondaries.push({ key: entry.command.id, menu: undefined, entries: [entry] });
+      continue;
+    }
     if (entry.menu === undefined) {
       units.push({ key: entry.command.id, menu: undefined, entries: [entry] });
       continue;
@@ -256,7 +258,7 @@ export function ribbonUnits<T extends UnitEntry>(entries: readonly T[]): readonl
     byMenu.set(entry.menu, unit);
     units.push(unit);
   }
-  return units;
+  return [...units, ...secondaries];
 }
 
 /**
@@ -268,15 +270,13 @@ export function ribbonUnits<T extends UnitEntry>(entries: readonly T[]): readonl
  * narrowed would be a control that stops existing at a width — and as two separate slices at a call
  * site it is a property nothing states.
  *
- * `undefined` is *not measured yet*, which draws every PRIMARY and folds only the secondaries. It is
- * deliberately not the same as a fold that hides nothing: before the first measurement there is
- * nothing to fold from, and treating the two alike would draw a folded ribbon for one frame on a
- * window wide enough for the whole of it. Secondaries are folded from the first frame, because they
- * are folded at every width (ADR-0098) and would otherwise flash in the row once.
+ * `undefined` is *not measured yet*, which draws every button and folds nothing: before the first
+ * measurement there is nothing to fold from, and folding against a guess would draw a folded ribbon
+ * for one frame on a window wide enough for the whole of it.
  *
- * **The *More* lists the width-folded primaries FIRST, then the secondaries.** A primary folded
- * because the window is narrow is one of the group's more-used tools, so it comes before the ones the
- * design always keeps out of the row.
+ * **The *More* lists the folded buttons in the row's order**, which is the folded primaries FIRST,
+ * then the secondaries (ADR-0098's corrections): a primary folded because the window is narrow is one
+ * of the group's more-used tools, so it comes before the ones that leave the row first.
  */
 export function splitFold<T extends UnitEntry>(
   entries: readonly T[],
@@ -288,11 +288,10 @@ export function splitFold<T extends UnitEntry>(
   readonly folded: readonly T[];
 } {
   const units = ribbonUnits(entries);
-  const secondaries = entries.filter((entry) => entry.secondary);
-  if (fold === undefined) return { shown: units, folded: secondaries };
+  if (fold === undefined) return { shown: units, folded: [] };
   return {
     shown: units.slice(0, fold.shown),
-    folded: [...units.slice(fold.shown).flatMap((unit) => unit.entries), ...secondaries],
+    folded: units.slice(fold.shown).flatMap((unit) => unit.entries),
   };
 }
 

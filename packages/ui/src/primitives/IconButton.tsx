@@ -37,6 +37,8 @@ export interface IconButtonProps {
    * "Close" rather than "cross".
    */
   label: MessageKey;
+  /** What the label's placeholders say — *Remove {name}* — read by the name and the tooltip alike. */
+  values?: Readonly<Record<string, string | number>> | undefined;
   /**
    * Which of §10.4's four uses this control is. The pixel size follows from it,
    * in `primitives.css` — see {@link IconSize} for why it is not written here.
@@ -62,6 +64,7 @@ export interface IconButtonProps {
 export function IconButton({
   icon: Icon,
   label,
+  values,
   size,
   disabled = false,
   onClick,
@@ -84,9 +87,9 @@ export function IconButton({
   );
 
   return (
-    <Tooltip label={label}>
+    <Tooltip label={label} values={values}>
       <BaseButton
-        aria-label={_(label)}
+        aria-label={_(label, values)}
         aria-pressed={pressed}
         className={
           variant === 'primary'

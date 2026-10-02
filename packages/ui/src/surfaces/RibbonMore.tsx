@@ -45,9 +45,9 @@ export function RibbonMore({
    */
   readonly named?: { readonly label: MessageKey; readonly icon: IconName; readonly measuredAs: string };
   /**
-   * How many of a *More*'s entries are primaries the WIDTH folded, as opposed to secondaries, which
-   * are in it at every width (ADR-0098). Written on the trigger so a layout check can tell *this row
-   * did not fit* from *this group has secondaries* — the same button either way.
+   * How many tools the WIDTH folded into a group's *More* — since ADR-0098's correction of 2 October, every tool
+   * in it, secondaries included, because a secondary is in the row whenever there is room. Written on the trigger
+   * so a layout check can read how much a row gave up without opening the menu.
    */
   readonly widthFolded?: number;
   /**

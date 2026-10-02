@@ -8,6 +8,7 @@ import { unconfiguredCloud } from './cloudSession.js';
 import { type AppInfo, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
 import { NO_RECENT_PICTURES } from './recentPictures.js';
+import { NO_ATTACHMENTS } from './askAttachments.js';
 import { unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT } from './engagement.js';
 import {
@@ -192,6 +193,7 @@ function handlers() {
       throw new Error('registration cases must not reach the window');
     },
     cloud: unconfiguredCloud(),
+    attachments: NO_ATTACHMENTS,
     revealLog: () => {
       throw new Error('registration cases must not reach the log');
     },

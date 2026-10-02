@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import { type AiProviderId, TRANSLATION_LANGUAGE_IDS, type TranslationLanguage } from '@monstera/contract';
-import { type ReactElement, useId, useState } from 'react';
+import { type ReactElement, useState } from 'react';
 
 import {
   AI_PROVIDER_NAMES,
@@ -14,6 +14,7 @@ import {
   TRANSLATION_LANGUAGE_NAMES,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { TranslatePageAnswer } from './translatePage.js';
 
@@ -38,8 +39,6 @@ export default function TranslatePageBody({
   resolve,
 }: { readonly providers: readonly AiProviderId[] } & DialogAnswering<TranslatePageAnswer>): ReactElement {
   const { i18n, _ } = useLingui();
-  const languageId = useId();
-  const providerId = useId();
   const [language, setLanguage] = useState<TranslationLanguage | ''>('');
   const [provider, setProvider] = useState<AiProviderId | undefined>(providers[0]);
 
@@ -60,11 +59,10 @@ export default function TranslatePageBody({
   return (
     <div className="m-translate">
       <p className="m-translate__intro">{_(TRANSLATE_PAGE_INTRO)}</p>
-      <label className="m-document-choice" htmlFor={languageId}>
-        {_(TRANSLATE_PAGE_LANGUAGE)}
+      <DialogRow label={TRANSLATE_PAGE_LANGUAGE}>
         <select
+          aria-label={_(TRANSLATE_PAGE_LANGUAGE)}
           data-translate-language=""
-          id={languageId}
           onChange={(event) => {
             setLanguage(event.target.value as TranslationLanguage | '');
           }}
@@ -79,12 +77,11 @@ export default function TranslatePageBody({
             </option>
           ))}
         </select>
-      </label>
-      <label className="m-document-choice" htmlFor={providerId}>
-        {_(TRANSLATE_PAGE_PROVIDER)}
+      </DialogRow>
+      <DialogRow label={TRANSLATE_PAGE_PROVIDER}>
         <select
+          aria-label={_(TRANSLATE_PAGE_PROVIDER)}
           data-translate-provider=""
-          id={providerId}
           onChange={(event) => {
             setProvider(event.target.value as AiProviderId);
           }}
@@ -96,9 +93,9 @@ export default function TranslatePageBody({
             </option>
           ))}
         </select>
-      </label>
+      </DialogRow>
       <p className="m-translate__limits">{_(TRANSLATE_PAGE_LIMITS)}</p>
-      <div className="m-translate__actions">
+      <DialogFooter>
         <Button
           disabled={language === ''}
           label={TRANSLATE_PAGE_START}
@@ -108,7 +105,7 @@ export default function TranslatePageBody({
           }}
           variant="primary"
         />
-      </div>
+      </DialogFooter>
     </div>
   );
 }

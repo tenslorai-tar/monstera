@@ -391,7 +391,15 @@ async function openPanel(name: string): Promise<void> {
  */
 async function pressCommand(name: string, section?: string): Promise<void> {
   const tried: string[] = [];
-  const found = (): HTMLElement | null => screen.queryByRole('button', { name });
+  // BY ITS NAME, or by its full title where the row draws a shorter caption: the full title is then the button's
+  // accessible description (`ToolButton`), which is how a person reading the title finds the tool on the row. A row
+  // caption drops a title's closing ellipsis (*Export text…* is drawn *Export text*), so that spelling is tried too.
+  const bare = name.replace(/…$/u, '');
+  const found = (): HTMLElement | null =>
+    screen.queryByRole('button', { name }) ??
+    screen.queryAllByRole('button', { description: name })[0] ??
+    screen.queryByRole('button', { name: bare }) ??
+    null;
 
   let control = found();
   if (control === null) {
@@ -409,8 +417,8 @@ async function pressCommand(name: string, section?: string): Promise<void> {
     }
   }
   if (control === null) {
-    // IN A GROUP'S MORE, which is where a SECONDARY tool always is (ADR-0098) and a narrow window
-    // puts a primary one: each More opened and read, then closed again. ONLY IN THE SECTION NAMED
+    // IN A GROUP'S MORE, which is where a narrow window puts a tool — a secondary first (ADR-0098's
+    // correction): each More opened and read, then closed again. ONLY IN THE SECTION NAMED
     // when a case names one: opening every More in all eight sections is some sixty renders, which
     // is what pushed three cases past their time under the full suite, and naming the section is
     // also the stronger claim — the tool is reachable where the design puts it.
@@ -3073,6 +3081,13 @@ describe('App', () => {
       // Each still separates: routed to the wrong pane, either command has nowhere to go and both boxes stay 1 and 2.
       it('a press in the SECOND pane sends the page there, and only there', async () => {
         expect(await boxesAfter('Previous page', 1)).toStrictEqual(['1', '1']);
+        // ONLY THERE, which the case above cannot see: a Previous sent to BOTH halves also reads 1 and 1, because the
+        // left half opens on the first page and has nowhere to go. A Next is the direction only the LEFT half can take
+        // here, so a broadcast moves it to 2 while the right half, already at the last page, stays. Measured: with both
+        // halves taking the request this reads 2 and 2. The mirror for the first pane cannot be built on two pages,
+        // because its Previous is disabled on page 1 and sends nothing at all.
+        cleanup();
+        expect(await boxesAfter('Next page', 1)).toStrictEqual(['1', '2']);
       });
 
       it('CONTROL: with no press, and after a press in the first, it goes to the first pane', async () => {
@@ -3613,6 +3628,52 @@ describe('the menu bar, in the shell (ADR-0107)', () => {
       { id: 'window.edit', params: { action: 'cut' } },
     ]);
     expect(document.activeElement).toBe(field);
+    // A CUT IS NOT A COPY TO CONFIRM: the text leaving the field is its effect.
+    expect(screen.queryByText('Copied')).toBeNull();
+  });
+
+  /** Edit › Copy with text selected in the find field, main answering whether the copy ran. */
+  async function copiedInField(done: boolean): Promise<readonly Sent[]> {
+    const { client, sent } = answeringClient({ ...OPEN_DOCUMENT_ANSWERS, 'window.edit': { done } });
+    render(<App client={client} settings={freshSettings()} />);
+    await withDocumentOpen();
+    await openPanel('Search');
+    const field = screen.getByLabelText<HTMLInputElement>('Find on this page');
+    await act(async () => {
+      fireEvent.change(field, { target: { value: 'needle' } });
+      field.focus();
+      field.setSelectionRange(0, 6);
+      await Promise.resolve();
+    });
+    const before = sent.length;
+    const bar = screen.getByRole('menubar');
+    await act(async () => {
+      fireEvent.click(within(bar).getByRole('menuitem', { name: 'Edit' }));
+      await Promise.resolve();
+    });
+    // BY ITS COMMAND: the Edit menu also lists the page's own text Copy (disabled here), under the same name.
+    const item = screen.getAllByRole('menuitem', { name: 'Copy' }).find((each) => each.dataset['command'] === 'edit.copy');
+    if (item === undefined) throw new Error('Edit › Copy is not in the menu');
+    await act(async () => {
+      fireEvent.click(item);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    return sent.slice(before);
+  }
+
+  it('Edit › Copy says Copied once main says the copy ran — every copy’s one confirmation', async () => {
+    const sent = await copiedInField(true);
+    expect(sent.filter((call) => call.id === 'window.edit')).toStrictEqual([{ id: 'window.edit', params: { action: 'copy' } }]);
+    expect(screen.getByText('Copied')).toBeTruthy();
+  });
+
+  it('CONTROL: a copy main says did not run says nothing', async () => {
+    const sent = await copiedInField(false);
+    expect(sent.some((call) => call.id === 'window.edit')).toBe(true);
+    expect(screen.queryByText('Copied')).toBeNull();
   });
 });
 

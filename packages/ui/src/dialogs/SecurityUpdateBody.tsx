@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 
 import { SECURITY_UPDATE_OPEN_STORE, SECURITY_UPDATE_TEXT, SECURITY_UPDATE_UNDERSTOOD } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { SecurityUpdateAnswer } from './securityUpdate.js';
 
@@ -22,7 +23,15 @@ export default function SecurityUpdateBody({
   return (
     <div className="m-security-update">
       <p>{_(SECURITY_UPDATE_TEXT, { version })}</p>
-      <div className="m-security-update__actions">
+      {/* THE PATTERN'S FOOTER WITHOUT A CANCEL: *I understand* is this notice's dismissal and is recorded as read, which
+          a Cancel would not be (`updateStatus.ts`). The primary is last. */}
+      <DialogFooter ownDismissal>
+        <Button
+          label={SECURITY_UPDATE_UNDERSTOOD}
+          onClick={() => {
+            resolve('understood');
+          }}
+        />
         <Button
           label={SECURITY_UPDATE_OPEN_STORE}
           onClick={() => {
@@ -30,13 +39,7 @@ export default function SecurityUpdateBody({
           }}
           variant="primary"
         />
-        <Button
-          label={SECURITY_UPDATE_UNDERSTOOD}
-          onClick={() => {
-            resolve('understood');
-          }}
-        />
-      </div>
+      </DialogFooter>
     </div>
   );
 }

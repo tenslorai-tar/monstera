@@ -6,15 +6,19 @@ import {
   DELETE_PAGES_HINT,
   SPLIT_DOCUMENT_APPLY,
   SPLIT_DOCUMENT_EACH_PAGE,
+  SPLIT_DOCUMENT_EACH_PAGE_NOTE,
   SPLIT_DOCUMENT_EMPTY,
   SPLIT_DOCUMENT_FILES,
+  SPLIT_DOCUMENT_HOW,
   SPLIT_DOCUMENT_LABEL,
   SPLIT_DOCUMENT_RANGES,
+  SPLIT_DOCUMENT_RANGES_NOTE,
 } from '../messages/en.js';
 import { parsePageGroups } from '../pageRanges.js';
 import { renderRangeProblem } from './pageRangeProblem.js';
 import type { SplitDocumentAnswer } from './splitDocumentResult.js';
 import { Button } from '../primitives/Button.js';
+import { DialogChoices, DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 
@@ -64,37 +68,27 @@ export default function SplitDocumentBody({
 
   return (
     <div className="m-split-document">
-      <fieldset className="m-split-document__mode">
-        <label>
-          <input
-            type="radio"
-            name="split-mode"
-            checked={eachPage}
-            onChange={() => {
-              setEachPage(true);
-            }}
-          />
-          {_(SPLIT_DOCUMENT_EACH_PAGE)}
-        </label>
-        <label>
-          <input
-            type="radio"
-            name="split-mode"
-            checked={!eachPage}
-            onChange={() => {
-              setEachPage(false);
-            }}
-          />
-          {_(SPLIT_DOCUMENT_RANGES)}
-        </label>
-      </fieldset>
+      <DialogChoices<'each' | 'ranges'>
+        label={SPLIT_DOCUMENT_HOW}
+        options={[
+          { value: 'each', label: SPLIT_DOCUMENT_EACH_PAGE, note: SPLIT_DOCUMENT_EACH_PAGE_NOTE },
+          { value: 'ranges', label: SPLIT_DOCUMENT_RANGES, note: SPLIT_DOCUMENT_RANGES_NOTE },
+        ]}
+        value={eachPage ? 'each' : 'ranges'}
+        onChange={(chosen) => {
+          setEachPage(chosen === 'each');
+        }}
+      />
       {eachPage ? null : (
-        <Input
-          label={SPLIT_DOCUMENT_LABEL}
-          placeholder={DELETE_PAGES_HINT}
-          value={text}
-          onValueChange={setText}
-        />
+        <DialogRow label={SPLIT_DOCUMENT_LABEL}>
+          <Input
+            label={SPLIT_DOCUMENT_LABEL}
+            labelShownBeside
+            placeholder={DELETE_PAGES_HINT}
+            value={text}
+            onValueChange={setText}
+          />
+        </DialogRow>
       )}
       <p className="m-split-document__problem" role="status">
         {eachPage
@@ -103,21 +97,23 @@ export default function SplitDocumentBody({
             ? _(SPLIT_DOCUMENT_FILES, { files: groups.length })
             : renderRangeProblem(parsed, text, _, SPLIT_DOCUMENT_EMPTY)}
       </p>
-      <Button
-        label={SPLIT_DOCUMENT_APPLY}
-        variant="primary"
-        disabled={!usable}
-        onClick={() => {
-          // GUARDED AGAIN rather than trusting the disabled attribute, for
-          // `DeletePagesBody`'s reason: the schema behind `resolve` refuses an
-          // empty list of groups.
-          if (!usable) return;
-          // COPIED out of the readonly arrays the parser answers, because zod's
-          // inferred shape is mutable. The copy is the honest conversion rather
-          // than a cast.
-          resolve({ groups: groups.map((group) => [...group]) });
-        }}
-      />
+      <DialogFooter>
+        <Button
+          label={SPLIT_DOCUMENT_APPLY}
+          variant="primary"
+          disabled={!usable}
+          onClick={() => {
+            // GUARDED AGAIN rather than trusting the disabled attribute, for
+            // `DeletePagesBody`'s reason: the schema behind `resolve` refuses an
+            // empty list of groups.
+            if (!usable) return;
+            // COPIED out of the readonly arrays the parser answers, because zod's
+            // inferred shape is mutable. The copy is the honest conversion rather
+            // than a cast.
+            resolve({ groups: groups.map((group) => [...group]) });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

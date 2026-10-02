@@ -1283,6 +1283,41 @@ const declarations = {
     asset: 'bytes',
     purpose: 'ordinary',
   },
+  // A PLAIN SIGNATURE (ADR-0133): `placeImage`'s classification on every axis, for its reasons — a `/Stamp` carrying
+  // its own appearance, so it moves, resizes and deletes as any mark; undone by checkpoint because the inverse would be
+  // "the last stamp on the page"; reproducible because the drawing is a pure function of the mark and the box.
+  placeSignatureMark: {
+    kind: 'placeSignatureMark',
+    display: 'image',
+    writer: 'mupdf',
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    targets: 'none',
+    reads: 'none',
+    // NO ASSET: the mark crosses the JSON wire in the frame. A drawing does so in its placed form, at most
+    // `MAX_PLACED_SIGNATURE_POINTS` points, which is under three quarters of the frame at its worst encoding
+    // (`hostRoutes.test.ts`); a kept drawing at its own bound measured ten times the frame (finding DDDDDDD-1).
+    asset: 'none',
+    purpose: 'ordinary',
+  },
+  // The picture look: the one difference from the line above is the asset, for `placeImage`'s reason.
+  placeSignaturePicture: {
+    kind: 'placeSignaturePicture',
+    display: 'image',
+    writer: 'mupdf',
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    targets: 'none',
+    reads: 'none',
+    asset: 'bytes',
+    purpose: 'ordinary',
+  },
   styleAnnotation: {
     kind: 'styleAnnotation',
     display: 'image',

@@ -12,6 +12,7 @@ import { formatPageRanges, parsePageRanges } from '../pageRanges.js';
 import type { ExtractPagesAnswer } from './extractPagesResult.js';
 import { renderRangeProblem } from './pageRangeProblem.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 
@@ -49,30 +50,35 @@ export default function ExtractPagesBody({
 
   return (
     <div className="m-extract-pages">
-      <Input
-        label={EXTRACT_PAGES_LABEL}
-        placeholder={DELETE_PAGES_HINT}
-        value={text}
-        onValueChange={setText}
-      />
+      <DialogRow label={EXTRACT_PAGES_LABEL}>
+        <Input
+          label={EXTRACT_PAGES_LABEL}
+          labelShownBeside
+          placeholder={DELETE_PAGES_HINT}
+          value={text}
+          onValueChange={setText}
+        />
+      </DialogRow>
       <p className="m-extract-pages__problem" role="status">
         {renderRangeProblem(parsed, text, _, EXTRACT_PAGES_EMPTY)}
       </p>
-      <Button
-        label={EXTRACT_PAGES_APPLY}
-        variant="primary"
-        disabled={!parsed.ok}
-        onClick={() => {
-          // GUARDED AGAIN rather than trusting the disabled attribute, for
-          // `DeletePagesBody`'s reason: this is the only place that can produce
-          // a value, and the schema behind `resolve` refuses an empty list.
-          if (!parsed.ok) return;
-          // COPIED, because `parsePageRanges` answers a `readonly` array and
-          // zod's inferred shape is mutable. The copy is the honest conversion
-          // rather than a cast.
-          resolve({ pages: [...parsed.value] });
-        }}
-      />
+      <DialogFooter>
+        <Button
+          label={EXTRACT_PAGES_APPLY}
+          variant="primary"
+          disabled={!parsed.ok}
+          onClick={() => {
+            // GUARDED AGAIN rather than trusting the disabled attribute, for
+            // `DeletePagesBody`'s reason: this is the only place that can produce
+            // a value, and the schema behind `resolve` refuses an empty list.
+            if (!parsed.ok) return;
+            // COPIED, because `parsePageRanges` answers a `readonly` array and
+            // zod's inferred shape is mutable. The copy is the honest conversion
+            // rather than a cast.
+            resolve({ pages: [...parsed.value] });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

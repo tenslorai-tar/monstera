@@ -1,0 +1,44 @@
+import { useLingui } from '@lingui/react';
+import type { ReactElement } from 'react';
+
+import { SIGN_DOCUMENT_KEPT_DRAWN } from '../messages/en.js';
+import type { KeptSignature } from './signDocument.js';
+
+/**
+ * A drawn signature's strokes as one SVG path in the pad's own unit (0–1 across, y down), so a kept drawing shows as it
+ * was drawn at any size — the viewBox scales it.
+ */
+function strokesPath(strokes: readonly (readonly (readonly [number, number])[])[]): string {
+  return strokes
+    .map((stroke) => stroke.map(([across, down], index) => `${index === 0 ? 'M' : 'L'}${String(across)} ${String(down)}`).join(' '))
+    .join(' ');
+}
+
+/**
+ * How a kept signature looks, in either dialog that offers the library (ADR-0133: ONE library, shown one way).
+ *
+ * A typed one in the face it will be drawn in, a drawing as its strokes, a picture by its `blob:` address. *Sign with
+ * certificate* and the plain *Signature* both render a kept entry through this, so the two can never show the same
+ * signature differently.
+ *
+ * @param number the entry's place in the list, from one — a drawing has no words of its own to be named by
+ */
+export function KeptSignatureLook({ entry, number }: { readonly entry: KeptSignature; readonly number: number }): ReactElement {
+  const { _ } = useLingui();
+  if (entry.look.kind === 'typed') {
+    return <span className={`m-sign-document__kept-typed m-sign-font--${entry.look.font}`}>{entry.look.text}</span>;
+  }
+  if (entry.look.kind === 'drawn') {
+    return (
+      <svg
+        aria-label={_(SIGN_DOCUMENT_KEPT_DRAWN, { number })}
+        className="m-sign-document__kept-drawn"
+        role="img"
+        viewBox="0 0 1 0.5"
+      >
+        <path d={strokesPath(entry.look.strokes)} />
+      </svg>
+    );
+  }
+  return <img alt={entry.look.name} className="m-sign-document__kept-picture" src={entry.look.src} />;
+}

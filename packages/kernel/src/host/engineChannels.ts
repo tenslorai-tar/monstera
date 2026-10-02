@@ -5,6 +5,8 @@ import {
   DOCUMENT_PASSWORD_MAX_CHARS,
   addAnnotationSchema,
   placeImageSchema,
+  placeSignatureMarkSchema,
+  placeSignaturePictureSchema,
   deleteFormFieldsSchema,
   fieldFillSchema,
   MAX_ANNOTATION_TEXT,
@@ -1058,6 +1060,10 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   // (B3a) — and the derivation is in the direction 4c allows: a field added to
   // the payload arrives here on its own, and the one field removed is named.
   placeImageSchema.omit({ bytes: true }),
+  // A PLACED SIGNATURE (ADR-0133): the typed or drawn look carries no asset and crosses as it is; the picture look is
+  // the fourth asset-bearing kind, `.omit` for `placeImage`'s reason.
+  placeSignatureMarkSchema,
+  placeSignaturePictureSchema.omit({ bytes: true }),
   styleAnnotationSchema,
   editAnnotationTextSchema,
   setAnnotationAuthorSchema,

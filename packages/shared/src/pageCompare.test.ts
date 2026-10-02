@@ -106,6 +106,28 @@ describe('a matched pair — each kind of change, boxed on both pages', () => {
     expect(change?.right).toStrictEqual([{ x0: 60, y0: 10, x1: 75, y1: 20 }]);
   });
 
+  it('WORD BY WORD: two changed words side by side are two boxes, never one across the phrase', () => {
+    // The owner's answer of 2 October. "thirty calendar" against "sixty business": two changed words next to each
+    // other on each side. Characters 22-28 and 29-37 on the left, 22-27 and 28-36 on the right, five points each from
+    // x = 10 — so the space between them is in no box, which one box across the phrase would cover.
+    const changes = comparePair(
+      page([line('Payment is due within thirty calendar days', 10, 10)]),
+      page([line('Payment is due within sixty business days', 10, 10)]),
+    );
+    expect(changes).toHaveLength(1);
+    const [change] = changes;
+    expect(change?.left).toStrictEqual([
+      { x0: 120, y0: 10, x1: 150, y1: 20 },
+      { x0: 155, y0: 10, x1: 195, y1: 20 },
+    ]);
+    expect(change?.right).toStrictEqual([
+      { x0: 120, y0: 10, x1: 145, y1: 20 },
+      { x0: 150, y0: 10, x1: 190, y1: 20 },
+    ]);
+    // THE SUMMARY STILL NAMES THE PHRASE, as one row: the boxes are per word, the change is one.
+    expect([change?.removed, change?.inserted]).toStrictEqual(['thirty calendar', 'sixty business']);
+  });
+
   it('a PUNCTUATION edit is a text change, and a CJK edit boxes the character rather than the line', () => {
     const stop = comparePair(page([line('The quick brown fox.', 10, 10)]), page([line('The quick brown fox,', 10, 10)]));
     expect(stop.map((change) => [change.removed, change.inserted])).toStrictEqual([['.', ',']]);

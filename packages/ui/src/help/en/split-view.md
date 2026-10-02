@@ -13,7 +13,7 @@ Split view puts two pages of the same document next to each other, so you can re
 1. In the rail, choose **Home**, then **Split view** in the **Display** group. (It is also in **Tools**, **Display** group.)
 2. In the bar at the top, type a page number in **Left page:** or **Right page:** and press **Enter**. Each half shows its page, with its number above it, and scrolls on its own.
 3. Choose **Both** with the arrow to move both halves back or forward one page together. Each stops at the first or last page.
-4. Choose **Close** in the bar, or press **Esc**, to go back to one page view.
+4. Choose **Close** in the bar to go back to one page view. **Esc** does the same while you are working in the split view.
 
 ![A document in split view with the Split View bar, page 2 on the left and page 40 on the right](screenshot:split-view-1)
 

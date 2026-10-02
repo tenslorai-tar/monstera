@@ -17,6 +17,7 @@ import {
   HEADER_FOOTER_TOKENS,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { HeaderFooterAnswer } from './headerFooterResult.js';
@@ -103,63 +104,74 @@ export default function HeaderFooterBody({
 
   return (
     <div className="m-header-footer">
+      {/* ONE ROW PER EDGE, its three places as the control: each field keeps its own visible name — Left, Centre,
+          Right — since three bare boxes in a row would not say which is which. */}
       {EDGES.map(({ key: edge, label: edgeLabel }) => (
-        <fieldset key={edge} className="m-header-footer__edge">
-          <legend>{_(edgeLabel)}</legend>
-          {SLOTS.map(({ key: slot, label }) => (
-            <Input
-              key={slot}
-              label={label}
-              value={slots[edge][slot]}
-              onValueChange={(next) => {
-                setSlots({ ...slots, [edge]: { ...slots[edge], [slot]: next } });
-              }}
-            />
-          ))}
-        </fieldset>
+        <DialogRow key={edge} label={edgeLabel}>
+          <div className="m-dialog-row__fields">
+            {SLOTS.map(({ key: slot, label }) => (
+              <Input
+                key={slot}
+                label={label}
+                value={slots[edge][slot]}
+                onValueChange={(next) => {
+                  setSlots({ ...slots, [edge]: { ...slots[edge], [slot]: next } });
+                }}
+              />
+            ))}
+          </div>
+        </DialogRow>
       ))}
       <p className="m-header-footer__tokens">{_(HEADER_FOOTER_TOKENS)}</p>
-      <Input
-        label={HEADER_FOOTER_SIZE}
-        value={fontSize}
-        onValueChange={(next) => {
-          setFontSize(next);
-        }}
-      />
-      <Input
-        label={HEADER_FOOTER_MARGIN}
-        value={margin}
-        onValueChange={(next) => {
-          setMargin(next);
-        }}
-      />
+      <DialogRow label={HEADER_FOOTER_SIZE}>
+        <Input
+          label={HEADER_FOOTER_SIZE}
+          labelShownBeside
+          value={fontSize}
+          onValueChange={(next) => {
+            setFontSize(next);
+          }}
+        />
+      </DialogRow>
+      <DialogRow label={HEADER_FOOTER_MARGIN}>
+        <Input
+          label={HEADER_FOOTER_MARGIN}
+          labelShownBeside
+          value={margin}
+          onValueChange={(next) => {
+            setMargin(next);
+          }}
+        />
+      </DialogRow>
       <PageScopeChoice className="m-header-footer__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
       <p className="m-header-footer__problem" role="status">
         {ready ? '' : _(problemOf(anySlot))}
       </p>
-      <Button
-        label={HEADER_FOOTER_APPLY}
-        variant="primary"
-        disabled={!ready}
-        onClick={() => {
-          // GUARDED AGAIN rather than trusting the disabled attribute, for
-          // `CropPagesBody`'s reason: the schema behind `resolve` refuses a
-          // margin over 500, and a mismatch would be a thrown
-          // `DialogResultRejected` over the user's document.
-          if (size === null || inset === null || !ready) return;
-          resolve({
-            pages: everyPage ? 'all' : [...pages],
-            // TRIMMED HERE, once. A slot of spaces is a slot the person left
-            // empty, and the kernel's *empty means unused* test is
-            // `length === 0` — so untrimmed whitespace would draw an invisible
-            // text object the kernel has no reason to skip.
-            header: trimmed(slots.header),
-            footer: trimmed(slots.footer),
-            fontSize: size,
-            marginPoints: inset,
-          });
-        }}
-      />
+      <DialogFooter>
+        <Button
+          label={HEADER_FOOTER_APPLY}
+          variant="primary"
+          disabled={!ready}
+          onClick={() => {
+            // GUARDED AGAIN rather than trusting the disabled attribute, for
+            // `CropPagesBody`'s reason: the schema behind `resolve` refuses a
+            // margin over 500, and a mismatch would be a thrown
+            // `DialogResultRejected` over the user's document.
+            if (size === null || inset === null || !ready) return;
+            resolve({
+              pages: everyPage ? 'all' : [...pages],
+              // TRIMMED HERE, once. A slot of spaces is a slot the person left
+              // empty, and the kernel's *empty means unused* test is
+              // `length === 0` — so untrimmed whitespace would draw an invisible
+              // text object the kernel has no reason to skip.
+              header: trimmed(slots.header),
+              footer: trimmed(slots.footer),
+              fontSize: size,
+              marginPoints: inset,
+            });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

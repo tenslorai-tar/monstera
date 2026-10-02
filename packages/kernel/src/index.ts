@@ -207,7 +207,9 @@ export {
 export {
   CLAUDE_MAX_EDGE,
   CLAUDE_MAX_IMAGE_ENCODED_BYTES,
+  CLAUDE_MAX_IMAGE_SIDE,
   CLAUDE_MAX_VISUAL_TOKENS,
+  encodedLength,
   type ClaudeCredentials,
   ClaudeRecognitionRefused,
   type ClaudeRefusal,
@@ -234,9 +236,13 @@ export {
 // A PAGE'S TRANSLATION (ADR-0097): the instruction, the request and the one reading of the answer.
 export { readTranslation, translationInstruction, translationRequest } from './translation.js';
 export {
+  type AskFileListed,
+  type AskManyDocument,
   type AskWindow,
   type ReadPageText,
+  askFilesInstruction,
   askInstruction,
+  askManyInstruction,
   askPairInstruction,
   askPictureInstruction,
   carriedWindow,
@@ -350,6 +356,9 @@ export {
   TimestampRefusedError,
   TimestampUnreachableError,
 } from './signingRefusals.js';
+// THE TYPED-SIGNATURE RULE, for main to answer before a placed signature crosses to the host (ADR-0133). The module
+// loads its font tables on demand and imports no engine, so the barrel stays free of both (ADR-0026).
+export { drawsInStandardFont } from './signatureDrawing.js';
 export {
   DocumentBusyError,
   type DocumentContext,

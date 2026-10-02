@@ -1,7 +1,7 @@
 import type { ContractClient } from '@monstera/contract';
 import type { FileHandle, MessageKey } from '@monstera/shared';
 
-import { TOAST_SHOW_IN_FOLDER } from '../messages/en.js';
+import { TOAST_COPIED, TOAST_SHOW_IN_FOLDER } from '../messages/en.js';
 import type { ShowToast } from '../toasts.js';
 
 /** What confirming a write needs: where the toast goes, and how to ask main to show the file. */
@@ -43,4 +43,17 @@ export function confirmWritten(deps: ConfirmWrittenDeps, message: MessageKey, wr
  */
 export function confirmDone(deps: Pick<ConfirmWrittenDeps, 'toast'>, message: MessageKey): void {
   deps.toast('done', message);
+}
+
+/**
+ * Says a copy reached the clipboard — EVERY copy's confirmation, whatever was copied (the owner's answer of 2 October):
+ * text on the page or in a field, marks, an answer of the assistant's, an address. The clipboard is out of sight like a
+ * print job, so it is {@link confirmDone}'s case with one sentence for all of them.
+ *
+ * **Called on main's word only**: each copy runs in main, which answers whether it did (`window.edit`'s `done`,
+ * `window.copyText`'s `copied`, the marks' count). A toast shown before that answer would say *Copied* for a copy that
+ * failed.
+ */
+export function confirmCopied(deps: Pick<ConfirmWrittenDeps, 'toast'>): void {
+  confirmDone(deps, TOAST_COPIED);
 }

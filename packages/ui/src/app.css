@@ -1851,6 +1851,14 @@ optgroup {
   width: 100%;
 }
 
+/* THE FORMATS, a row's control: each radio beside its word, wrapping inside the control. */
+.m-place-barcode__formats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-4) var(--space-12);
+}
+
 /*
  * THE STAMP CHOOSER: each built-in stamp as a stamp looks — its word in capitals inside a border — two to a row, so
  * eight fit without a scroll. The border is `--border-control`, a control's 3:1 edge, and the word `--text`.
@@ -2511,15 +2519,22 @@ optgroup {
   border-block-start: 1px solid var(--border-soft); /* decorative: separates the conversation from the ask; the controls draw their own */
 }
 
-/* CONTEXT AND SOURCES, ONE ROW (the owner's review of 0.1.6.0): two menus whose closed faces read their names. */
+/* ONE ROW, NEVER WRAPPED (the owner, 2 October): *Choose*, the Context menu, the Sources menu. Each menu's face is its
+   value alone, which is what makes one row fit the pane's default width; `assistantPane.pw.ts` measures it. */
 .m-assistant__choices {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-6);
+  min-inline-size: 0;
 }
 
-/* A CHOICE MENU'S FACE (`ChoiceMenu`): its name and a chevron, in the pane's small control shape. The trigger is the
+.m-assistant__choose {
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+  font-weight: 600;
+}
+
+/* A CHOICE MENU'S FACE (`ChoiceMenu`): its value and a chevron, in the pane's small control shape. The trigger is the
    control, so it takes the boundary token that solves for 3:1. */
 .m-choice-menu {
   display: inline-flex;
@@ -2752,11 +2767,6 @@ optgroup {
   margin-block-start: var(--space-4);
 }
 
-.m-assistant__done {
-  color: var(--muted);
-  font-size: var(--font-chrome-11);
-}
-
 .m-assistant__caption {
   margin-inline-start: auto;
   color: var(--muted);
@@ -2817,6 +2827,47 @@ optgroup {
   display: flex;
   align-items: center;
   gap: var(--space-6);
+}
+
+/* THE ATTACHED FILES (ADR-0135): a row of chips inside the box, above the text, wrapping as they need to. A long name is
+   cut with an ellipsis and stays whole in the remove control's name and tooltip. */
+.m-assistant__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.m-assistant__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  max-inline-size: 100%;
+  padding-inline: var(--space-6) var(--space-2);
+  border: 1px solid var(--border-soft); /* decorative: the chip's own remove control is the interactive part */
+  border-radius: var(--radius-6);
+  background: var(--surface2);
+  font-size: var(--font-chrome-11);
+}
+
+.m-assistant__chip-icon {
+  flex: none;
+  inline-size: var(--icon-14);
+  block-size: var(--icon-14);
+}
+
+.m-assistant__chip-name {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-assistant__chip-size {
+  flex: none;
+  color: var(--muted);
 }
 
 .m-assistant__composer-foot > :last-child {
@@ -3806,9 +3857,11 @@ optgroup {
 }
 
 /* THE SETTINGS ROWS' DROP-DOWNS TOO (v5-10 draws them as fields): they were browser-default boxes beside styled segmented
-   controls and text fields, so one dialog read as two families. */
+   controls and text fields, so one dialog read as two families. A dialog row's (the dialog pattern, 2026-10-02) is the
+   same field. */
 .m-document-choice select,
-.m-settings-row__control select {
+.m-settings-row__control select,
+.m-dialog-row__control select {
   padding: var(--space-8);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-4);
@@ -3816,7 +3869,8 @@ optgroup {
 }
 
 .m-document-choice select:focus-visible,
-.m-settings-row__control select:focus-visible {
+.m-settings-row__control select:focus-visible,
+.m-dialog-row__control select:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
@@ -4741,6 +4795,16 @@ optgroup {
   vector-effect: non-scaling-stroke;
 }
 
+/* A CORNER HANDLE (ADR-0133): a small square in the box's accent with the page's white inside, so it reads on any
+   mark and on the paper around it. Its size is `CORNER_REACH`, set where it is drawn, because the select tool grabs
+   within that reach and the two must be one number. */
+.m-selection-handle {
+  fill: var(--page);
+  stroke: var(--accent);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
 /*
  * Existing annotations drawn over their page by their kind's renderer
  * (`registries/annotationTypes.tsx`). INERT, for `.m-selection-layer`'s reason:
@@ -4868,9 +4932,11 @@ optgroup {
   background: var(--surface);
 }
 
+/* A KEPT DRAWING ON THE PAPER IT LANDS ON: black ink on the page's white, as it will be drawn (`--signature-ink`). */
 .m-sign-document__kept-drawn {
   aspect-ratio: 2 / 1;
-  color: var(--text);
+  background: var(--page);
+  color: var(--signature-ink);
 }
 
 .m-sign-document__kept-drawn path {
@@ -4921,14 +4987,92 @@ optgroup {
  * before a single pointermove arrives. The aspect ratio matches the viewBox, so
  * a stroke lands under the pointer rather than stretched away from it.
  */
+/* A WHITE PAD in every theme (the owner, 2 October): the ink is drawn as it will land, black on the page's paper. */
 .m-signature-pad {
   width: 100%;
   aspect-ratio: 3 / 1;
   border: 1px solid var(--border-control);
   border-radius: var(--radius-4);
-  background: var(--surface);
-  color: var(--text);
+  background: var(--page);
+  color: var(--signature-ink);
   touch-action: none;
+}
+
+/* THE SIGNATURE DIALOG (ADR-0133), in the dialog pattern: the kept signatures as a row of buttons a person clicks to
+   use, the pad with its hint and Clear under it, and each style choice drawn in its own face. */
+.m-signature__kept {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0 0 var(--space-10);
+  list-style: none;
+  border-block-end: 1px solid var(--border-soft); /* decorative: as a row's */
+}
+
+.m-signature__kept-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-4);
+}
+
+.m-signature__kept-use {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: calc(var(--space-32) * 3);
+  padding: var(--space-6);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-6);
+  background: var(--page);
+  color: var(--signature-ink);
+  cursor: pointer;
+}
+
+.m-signature__kept-use:hover {
+  border-color: var(--accent);
+}
+
+.m-signature__kept-use:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* A kept typed name inside a use button takes the ink of the paper it sits on, not the dialog's text colour. */
+.m-signature__kept-use .m-sign-document__kept-typed {
+  color: var(--signature-ink);
+}
+
+.m-signature__pad {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding-block: var(--space-10);
+  border-block-end: 1px solid var(--border-soft); /* decorative: as a row's */
+}
+
+.m-signature__under-pad {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.m-signature__face {
+  font-size: var(--font-content-20);
+}
+
+.m-signature__upload {
+  margin: 0;
+  padding-block: var(--space-10);
+}
+
+.m-signature__problem {
+  margin: 0;
+  min-block-size: 1lh;
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
 }
 
 .m-signature-pad polyline {

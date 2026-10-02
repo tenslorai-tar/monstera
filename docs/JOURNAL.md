@@ -1292,6 +1292,168 @@ ranges; where the 100 MiB Office check is made. **The owner's question:** class 
 build would take them is the three marked ✓ that fail as `internal` (objects and blocks, page lists, the TOC frame),
 then the panels (layers, links), then imports. The memory ceiling waits on item 2's decision.
 
+## 2026-10-02 — Stage audit of `173cc5ae..0401c925` — findings DDDDDDD-1 to DDDDDDD-9
+
+*Renumbered at the merge of `b076b30a` (2026-10-02): this audit was written on work/cloud-2 as BBBBBBB-1 to
+BBBBBBB-10, and main already holds BBBBBBB-1 to BBBBBBB-5 for the audit of `4a93218f..173cc5ae`. A label on main is
+final, so these are DDDDDDD-1 to DDDDDDD-10 here and in every line the branch brought in.*
+
+Owed at one batch of files: the plain signature's renderer half would have taken the unaudited range to 208 files
+against 200, and the pre-commit gate refused it. Merging `origin/main` would not have helped: main's own unaudited range
+already holds 131 files, and the union comes to about 354. **It audits `173cc5ae..0401c925`, 47 commits and 190 files**:
+`work/cloud-2`'s own 28 commits of 2 October and the two merges. **Main's 17 commits in the range** (`21bfccdd` to
+`48ea697c`) came in through the merge `41d5bda8` and were audited on main in `89ae07df`, which is not on this branch;
+they are not audited twice. The watermark advances to `0401c925`. The staged renderer half was read alongside and is the
+next range's; what reading it found is noted under DDDDDDD-9.
+
+The diffs were read in three parts, each by a separate reader, and every finding below was checked again against the
+tree before it was written down: the cases re-read, the mutation run, the size measured.
+
+### 1. Root cause or workaround?
+
+Each fix states a mechanism, and none of the range's commits retries, waits on a fixed time, swallows a throw or
+special-cases an input. `4bb00e68` waits on a condition (the slot's proportions reaching the page's 792/612); the cause
+was the fixture scrolling before the pages had their sizes. `b7ad1c6f` anchors the toast strip to the page area rather
+than moving the offset. Nothing workaround-shaped.
+
+### 2. Verified against the easy shape only?
+
+**DDDDDDD-1** (high, open, owed first): a drawn signature was sized against the renderer wire and never against the
+engine host's. The schema admits 64 strokes of 1,024 points; the pad pushes unrounded doubles. Measured with a script
+that builds the largest `placeSignatureMark` the schema accepts: **2,692,503 bytes of JSON against
+`ENGINE_HOST_FRAME_MAX_BYTES`, 262,144**. At the pad's density about 6,380 points fit. Past that the host client refuses
+the request as too large and `placeSignature` rethrows it for a drawn mark, so a person who draws a long signature sees
+an undeclared failure. Every fixture is a three-point stroke, which is the easy shape. The comment in
+`commandDeclarations.ts` calling a drawn mark "a few hundred bytes of intent" is wrong for the same reason.
+
+**DDDDDDD-2** (medium, closed after this record): split view's *only there* stopped being checked. The case before
+`e01b3f53` asserted where the scroll landed, which caught a command sent to both panes. The new one reads the two page
+boxes on a two-page fixture, where the left half opens on the first page: a Previous sent to both halves reads `1, 1`
+exactly as one sent to the right half alone. Measured by routing the request to both halves: the case stayed green.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+**DDDDDDD-8** (low, open): `f219c372` removed the `--bubble`/`--on-bubble` pair, which `check:tokencontrast` held in all
+three themes, and the new rendered case checks two accents in the default theme only. High contrast, where the accent is
+cleared, is checked by nothing. The same file's LOOKS loop applies the colour scheme and the theme setting by hand rather
+than through `bridgeUnder`, a second opinion about what a look is (B3a), and asserts no `data-theme`, so a theme that
+failed to apply would test the light screen three times.
+
+Removed with their subject: the compare pane's walk and dialog cases (`d24408bc`), the assistant's two-document ask
+(ADR-0089's route, which Side by Side replaced), and `266edae8`'s one-row assertions, restored stronger by `535f310b`.
+
+### 3. Would CI have caught it?
+
+Read from the runs: `eff9bc10` (run 36972907467) green on every CI job but *Visual baselines*, the expected red for a
+branch that changes screens; Guards green. `92f39b3b` was red on the manual checklist and `37360678` on the ADR index;
+each was fixed by the next commit. **The five commits after `eff9bc10` have not been pushed**, so CI has not run them;
+their evidence is this machine's. DDDDDDD-1 is invisible to both: no case crosses the engine host with a drawing larger
+than three points.
+
+### 4. Are the proofs non-vacuous?
+
+Mutated: the plain signature's kernel cases (a picture counted as ink while MuPDF drew *Draft* over it, which the
+read-back case now separates), `proof:contract`'s newest-kind probe (it fails with the kind missing from the union and
+fails differently with a second one missing), and the split view case above. Nothing loosened at HEAD among the 37
+modified proofs except DDDDDDD-2.
+
+**DDDDDDD-6** (low, open), cases that cannot fail as named:
+
+- `AppTabs.test.tsx`, *with Side by Side closed, the assistant offers no Left · Right · Both*: App passes no second
+  document at all, so no build shows *Both* here.
+- `sideBySideCompare.test.ts`, the page-by-page CONTROL: it runs the content walk, not page-by-number pairing, and
+  asserts only that some row exists, which the content walk also produces.
+- `pageCompare.test.ts`, a page compared with itself, and a CONTROL that only shows two different pages differ.
+- `renderedScreen.pw.ts`, *and nowhere else*: no difference layer on pages 2 and 3 also holds for pages never measured.
+- `Dialog.test.tsx`, *a row shows its question and note beside its control*: nothing checks *beside*.
+- `layoutReview.pw.ts`: a settings row with no text part measures as width 0 and basis 0 and cannot fail, yet counts
+  towards the twenty rows the case requires.
+- `pageAnnotations.test.ts`, the resized image stamp (`c5754c2f`): only the end state is asserted, not that the
+  rectangle moved.
+
+### 4a. Instruments: a resolution test before a real measurement
+
+No instrument arrived in this side's commits. The five the range adds (`frameTimes.mjs`, `readerAbort.mjs`,
+`historyRange.mjs`, `hookFiles.mjs`, `surfaceLayers.pw.ts`) are main's, audited in `89ae07df`.
+
+### 4b. Searches: a positive control on every run
+
+The ribbon's group observer case (`dfa9b02b`) squeezes one tool on purpose and must see the row overflow first. The
+settings-row probe of `a80e8e56` has a weak control, set out under DDDDDDD-6: its run checks that OCR is a page, not
+that *Recognition languages* was measured.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+No. `proof:contract`'s union count and `payloadBounds`' exclusions are literals the shrinker must touch separately; the
+channel roll-calls are literal lists.
+
+### 5. Executed, or asserted?
+
+Executed: every figure above, DDDDDDD-1's size included. Asserted, and said so here:
+
+**DDDDDDD-9** (low, open), the signature pair's uncrossed middle and its claims:
+
+- No test calls `contractHandlers`' `document.placeSignature`, and none runs `placeSignatureMark` or
+  `placeSignaturePicture` through the engine host's routing, its asset join, or the dynamic import of
+  `@pdf-lib/standard-fonts` inside the contained host. Main's cases run an in-process bus.
+- *Undoable by checkpoint* is asserted (`captured === false`), never executed by an undo.
+- The *not keepable* toast, `selectionOfNewest` and the off-page refusal's *writes nothing* have no case.
+- The browser shim's `placedSignatures()` is used by nothing, and its keep rule differs from main's.
+- ADR-0133 Decision 3 says a picture is typed by its bytes; main takes the type from the extension, and only the engine
+  and the library type by bytes. Decision 1's *the host's fixed cost does not grow* is reasoned, not measured.
+
+**DDDDDDD-7** (low, open): of the fourteen writers `9302f817` moved onto `confirmWritten`, two are asserted to confirm
+(the comment export and Export text); the others pass `toast: () => undefined`, so a writer that stopped confirming
+stays green, and FEATURES' *each confirmation* says more than the cases hold. `ShellComposition.revealPath` is optional
+with a fallback that answers `false`, the dropped-dependency shape ADR-0069 made every apply field required to close.
+
+### 6. Architecture before the feature, or underneath it?
+
+Before, three times: ADR-0131 (`6b4aea70`) before Side by Side (`d24408bc`), ADR-0132 (`21b4c94a`, corrected in
+`1174b73b`) before the switch (`6ce5d0eb`), ADR-0133 (`f528d6e1`) before the kernel half (`954ec7bc`). The dialog pattern
+(`7eaa254b`) adds three parts to the existing `Dialog` primitive; ARCHITECTURE defines no dialog-body seam, so no
+amendment was owed.
+
+### 7. Do the documents still match the code?
+
+**DDDDDDD-3** (medium, closed after this record): `sideBySideCompare.ts` said *the counts above it stay whole* while the
+panel's count read the list, which stops at 1,000. A comparison of a rewritten document would have said *1000
+differences*.
+
+**DDDDDDD-4** (low, open): coverage that left with the compare pane and has no successor: a page whose text was cut
+short (`clipped`), and each half reading its own document, which the rendered case cannot show because both halves
+load the same bytes.
+
+**DDDDDDD-5** (low, closed after this record), five statements in four places that the range left behind:
+
+- FEATURES' assistant row still lists *Left · Right · Both with two documents*.
+- ADR-0132 Decision 2 still says *neither command exists* under high contrast; its correction withdrew Decision 1's
+  sentence and not this one, the compound-claim shape.
+- `app.css`: two comments still say a choice menu's face reads its name, where it now reads its value.
+- The split view article says *press Esc*; Esc closes it only while the focus is inside the split.
+
+### Correction, 2026-10-02: DDDDDDD-1 closed, and the class it belongs to measured
+
+**DDDDDDD-1 is closed at the shape, not at the call site.** `placeSignatureMark` now carries a drawing in a placed form,
+one list of at most 3,072 points with where each stroke starts, which main makes with the contract's `placedMarkOf`:
+a longer drawing is thinned, each stroke keeping both its ends, never refused. Its worst encoding is now under three
+quarters of the frame (ADR-0133's correction).
+
+**Why the route rule did not see it.** `hostRoutes.test.ts` already checks every framed request against the frame, and
+pins the command-carrying channels as exceptions, because a command object is not `.strict()` and so reads as unbounded
+whole. Asked kind by kind, closed, the commands have sizes, and the case now does that and pins what is left by exact
+set: a kind that joins either list goes red. Measured across the command union:
+
+- **DDDDDDD-10** (medium, open): `createFormField`'s worst is 33,928,509 bytes written plainly (256 fields of 256
+  options at the field bounds), past the frame like the drawing was. Detection is what creates fields in bulk.
+- 22 kinds cannot be measured at all, because a nested object in them is not strict. Until they are, the check is blind
+  to those 22, and it says so by naming them.
+
+The control is the drawing's own: the command re-declared with a kept drawing's strokes is reported past the frame by
+the same reading.
+
+---
+
 ## 2026-10-01 — Stage audit of `4a93218f..173cc5ae` — findings BBBBBBB-1 to BBBBBBB-5
 
 *Renumbered at the merge into `work/2026-10-01` (2026-10-02): this entry labelled its findings AAAAAAA-1 to

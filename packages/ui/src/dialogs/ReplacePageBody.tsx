@@ -6,6 +6,7 @@ import { REPLACE_PAGE_APPLY, REPLACE_PAGE_LABEL, REPLACE_PAGE_WHICH } from '../m
 import { type DocumentChoice, DocumentChoiceSelect } from './DocumentChoice.js';
 import type { ReplacePageAnswer } from './replacePageResult.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 
 /**
@@ -47,15 +48,17 @@ export default function ReplacePageBody({
         onChange={setSource}
         marker="replace-page"
       />
-      <Button
-        label={REPLACE_PAGE_APPLY}
-        variant="primary"
-        disabled={source === ''}
-        onClick={() => {
-          if (source === '') return;
-          resolve({ source });
-        }}
-      />
+      <DialogFooter>
+        <Button
+          label={REPLACE_PAGE_APPLY}
+          variant="primary"
+          disabled={source === ''}
+          onClick={() => {
+            if (source === '') return;
+            resolve({ source });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

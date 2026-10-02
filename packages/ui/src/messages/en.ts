@@ -37,6 +37,7 @@ import { messageKey } from '@monstera/shared';
 
 export const OPEN_DOCUMENT_TITLE = messageKey('command.open-document.title');
 export const CLOSE_LABEL = messageKey('action.close.label');
+export const DIALOG_CANCEL = messageKey('action.dialog-cancel.label');
 export const DOCUMENT_SURFACE_LABEL = messageKey('surface.document.label');
 export const THEME_TITLE = messageKey('setting.appearance-theme.title');
 export const BACKGROUND_GLOW_TITLE = messageKey('setting.appearance-background-glow.title');
@@ -259,6 +260,7 @@ export const RESIZE_PAGES_TABLOID = messageKey('dialog.resize-pages.tabloid');
 export const RESIZE_PAGES_WIDTH = messageKey('dialog.resize-pages.width');
 export const RESIZE_PAGES_HEIGHT = messageKey('dialog.resize-pages.height');
 export const RESIZE_PAGES_UNIFORM_NOTE = messageKey('dialog.resize-pages.uniform-note');
+export const RESIZE_PAGES_PRESETS = messageKey('dialog.resize-pages.presets');
 export const RESIZE_PAGES_APPLY = messageKey('dialog.resize-pages.apply');
 export const RESIZE_PAGES_NOT_A_SIZE = messageKey('dialog.resize-pages.not-a-size');
 export const RESIZE_PAGES_COMMAND_TITLE = messageKey('command.resize-pages.title');
@@ -308,6 +310,9 @@ export const SPLIT_DOCUMENT_COMMAND_TITLE = messageKey('command.split-document.t
 export const SPLIT_DOCUMENT_TITLE = messageKey('dialog.split-document.title');
 export const SPLIT_DOCUMENT_EACH_PAGE = messageKey('dialog.split-document.each-page');
 export const SPLIT_DOCUMENT_RANGES = messageKey('dialog.split-document.ranges');
+export const SPLIT_DOCUMENT_HOW = messageKey('dialog.split-document.how');
+export const SPLIT_DOCUMENT_EACH_PAGE_NOTE = messageKey('dialog.split-document.each-page-note');
+export const SPLIT_DOCUMENT_RANGES_NOTE = messageKey('dialog.split-document.ranges-note');
 export const SPLIT_DOCUMENT_LABEL = messageKey('dialog.split-document.label');
 export const SPLIT_DOCUMENT_EMPTY = messageKey('dialog.split-document.empty');
 export const SPLIT_DOCUMENT_FILES = messageKey('dialog.split-document.files');
@@ -318,9 +323,13 @@ export const EXPORT_WORD_COMMAND_TITLE = messageKey('command.export-word.title')
 export const EXPORT_POWERPOINT_COMMAND_TITLE = messageKey('command.export-powerpoint.title');
 export const EXPORT_WORD_TITLE = messageKey('dialog.export-word.title');
 export const EXPORT_WORD_MODE = messageKey('dialog.export-word.mode');
+export const EXPORT_WORD_MODE_NOTE = messageKey('dialog.export-word.mode-note');
 export const EXPORT_WORD_RICH = messageKey('dialog.export-word.rich');
+export const EXPORT_WORD_RICH_NOTE = messageKey('dialog.export-word.rich-note');
 export const EXPORT_WORD_LAYOUT = messageKey('dialog.export-word.layout');
+export const EXPORT_WORD_LAYOUT_NOTE = messageKey('dialog.export-word.layout-note');
 export const EXPORT_WORD_TEXT = messageKey('dialog.export-word.text');
+export const EXPORT_WORD_TEXT_NOTE = messageKey('dialog.export-word.text-note');
 export const EXPORT_WORD_APPLY = messageKey('dialog.export-word.apply');
 export const EXPORT_PDFA_COMMAND_TITLE = messageKey('command.export-pdfa.title');
 export const PDFA_REMOVALS_TITLE = messageKey('dialog.pdfa-removals.title');
@@ -444,16 +453,21 @@ export const EXPORT_EXCEL_TABLE = messageKey('dialog.export-excel.table');
 export const EXPORT_EXCEL_CELL = messageKey('dialog.export-excel.cell');
 export const EXPORT_EXCEL_CLIPPED = messageKey('dialog.export-excel.clipped');
 export const EXPORT_EXCEL_TRUNCATED = messageKey('dialog.export-excel.truncated');
+export const EXPORT_PAGE_IMAGES_PAGES = messageKey('dialog.export-page-images.pages');
+export const EXPORT_PAGE_IMAGES_PAGES_NOTE = messageKey('dialog.export-page-images.pages-note');
 export const EXPORT_PAGE_IMAGES_ALL = messageKey('dialog.export-page-images.all');
 export const EXPORT_PAGE_IMAGES_RANGES = messageKey('dialog.export-page-images.ranges');
 export const EXPORT_PAGE_IMAGES_LABEL = messageKey('dialog.export-page-images.label');
 export const EXPORT_PAGE_IMAGES_EMPTY = messageKey('dialog.export-page-images.empty');
 export const EXPORT_PAGE_IMAGES_FORMAT = messageKey('dialog.export-page-images.format');
+export const EXPORT_PAGE_IMAGES_FORMAT_NOTE = messageKey('dialog.export-page-images.format-note');
 export const EXPORT_PAGE_IMAGES_PNG = messageKey('dialog.export-page-images.png');
 export const EXPORT_PAGE_IMAGES_JPEG = messageKey('dialog.export-page-images.jpeg');
 export const EXPORT_PAGE_IMAGES_WEBP = messageKey('dialog.export-page-images.webp');
 export const EXPORT_PAGE_IMAGES_DPI = messageKey('dialog.export-page-images.dpi');
+export const EXPORT_PAGE_IMAGES_DPI_NOTE = messageKey('dialog.export-page-images.dpi-note');
 export const EXPORT_PAGE_IMAGES_QUALITY = messageKey('dialog.export-page-images.quality');
+export const EXPORT_PAGE_IMAGES_QUALITY_NOTE = messageKey('dialog.export-page-images.quality-note');
 export const EXPORT_PAGE_IMAGES_OUT_OF_BOUNDS = messageKey('dialog.export-page-images.out-of-bounds');
 export const EXPORT_PAGE_IMAGES_FILES = messageKey('dialog.export-page-images.files');
 export const EXPORT_TEXT_COMMAND_TITLE = messageKey('command.export-text.title');
@@ -946,7 +960,6 @@ export const CRASH_REPORT_SHARE = messageKey('surface.crash-report.share');
 export const CRASH_REPORT_DISMISS = messageKey('surface.crash-report.dismiss');
 export const CRASH_REPORT_ADDRESS_LABEL = messageKey('surface.crash-report.address');
 export const CRASH_REPORT_COPY = messageKey('surface.crash-report.copy');
-export const CRASH_REPORT_COPIED = messageKey('surface.crash-report.copied');
 export const CRASH_REPORT_FRAGMENTS = messageKey('surface.crash-report.fragments');
 export const CRASH_REPORT_SHARE_FAILED = messageKey('surface.crash-report.share-failed');
 export const PRIVACY_RECENT_PREVIEWS_DESCRIPTION = messageKey('setting.privacy.recent-previews.description');
@@ -1304,6 +1317,7 @@ export const TOAST_COPY_SAVED = messageKey('toast.copy-saved');
 export const TOAST_SMALLER_COPY_SAVED = messageKey('toast.smaller-copy-saved');
 export const TOAST_PAGES_SAVED = messageKey('toast.pages-saved');
 export const TOAST_SHOW_IN_FOLDER = messageKey('toast.show-in-folder');
+export const TOAST_COPIED = messageKey('toast.copied');
 export const TOAST_FILES_SAVED = messageKey('toast.files-saved');
 export const TOAST_IMAGES_SAVED = messageKey('toast.images-saved');
 export const TOAST_TEXT_SAVED = messageKey('toast.text-saved');
@@ -1371,11 +1385,10 @@ export const ASSISTANT_EDIT = messageKey('assistant.edit');
 export const ASSISTANT_EDITING = messageKey('assistant.editing');
 export const ASSISTANT_EDIT_CANCEL = messageKey('assistant.edit-cancel');
 export const ASSISTANT_COPY = messageKey('assistant.copy');
-export const ASSISTANT_COPIED = messageKey('assistant.copied');
 export const ASSISTANT_ADD_NOTE = messageKey('assistant.add-note');
 export const ASSISTANT_NOTED = messageKey('assistant.noted');
 export const ASSISTANT_NEW_CHAT = messageKey('assistant.new-chat');
-/** A `ChoiceMenu`'s accessible name: what is chosen, and the value chosen, since its face shows only the first. */
+/** A `ChoiceMenu`'s accessible name: what is chosen, and the value chosen, since its face shows only the second. */
 export const CHOICE_MENU_NAME = messageKey('menu.choice.name');
 export const ASSISTANT_CAPTION = messageKey('assistant.caption');
 export const ASSISTANT_SCOPE_PAGE = messageKey('assistant.scope.page');
@@ -1442,6 +1455,8 @@ export const AI_PROVIDER_NAMES = {
   deepseek: AI_PROVIDER_DEEPSEEK,
 } as const satisfies Record<AiProviderId, MessageKey>;
 export const ASSISTANT_ABOUT_LABEL = messageKey('assistant.about');
+/** The word before the Context and Sources menus, which names the row they make. */
+export const ASSISTANT_CHOOSE = messageKey('assistant.choose');
 export const ASSISTANT_SENT_PICTURE = messageKey('assistant.sent.picture');
 export const ASSISTANT_SENT_COMMENTS = messageKey('assistant.sent.comments');
 export const ASSISTANT_SENT_COMMENTS_CUT = messageKey('assistant.sent.comments-cut');
@@ -1511,6 +1526,32 @@ export const ASSISTANT_SIDES_NEEDED = messageKey('assistant.sides.needed');
 export const ASSISTANT_SENT_LEFT = messageKey('assistant.sent.left');
 export const ASSISTANT_SENT_RIGHT = messageKey('assistant.sent.right');
 export const ASSISTANT_CITATION_RIGHT = messageKey('assistant.citation.right');
+/** *All Open Docs* (ADR-0134): the Context menu's choice, its caption scope, the lines under the turn, its citation. */
+export const ASSISTANT_CHIP_ALL = messageKey('assistant.chip.all');
+export const ASSISTANT_SCOPE_ALL = messageKey('assistant.scope.all');
+export const ASSISTANT_SENT_SHARE = messageKey('assistant.sent.share');
+export const ASSISTANT_SENT_DOCUMENT = messageKey('assistant.sent.document');
+export const ASSISTANT_SENT_UNREAD = messageKey('assistant.sent.unread');
+export const ASSISTANT_SENT_NOT_SENT = messageKey('assistant.sent.not-sent');
+export const ASSISTANT_UNREAD_CLOSED = messageKey('assistant.unread.closed');
+export const ASSISTANT_UNREAD_BUSY = messageKey('assistant.unread.busy');
+export const ASSISTANT_UNREAD_DAMAGED = messageKey('assistant.unread.damaged');
+export const ASSISTANT_UNREAD_PAGE = messageKey('assistant.unread.page');
+export const ASSISTANT_CITATION_DOCUMENT = messageKey('assistant.citation.document');
+export const ASSISTANT_ATTACH = messageKey('assistant.attach');
+export const ASSISTANT_ATTACHED_LIST = messageKey('assistant.attached.list');
+export const ASSISTANT_ATTACHED_REMOVE = messageKey('assistant.attached.remove');
+export const ASSISTANT_ATTACHED_DROPPED = messageKey('assistant.attached.dropped');
+export const ASSISTANT_SIZE_KB = messageKey('assistant.size.kb');
+export const ASSISTANT_SIZE_MB = messageKey('assistant.size.mb');
+export const ASSISTANT_SENT_SHARE_EACH = messageKey('assistant.sent.share-each');
+export const ASSISTANT_SENT_FILE_PICTURE = messageKey('assistant.sent.file-picture');
+export const ASSISTANT_FILE_NOT_FOUND = messageKey('assistant.file.not-found');
+export const ASSISTANT_FILE_TOO_LARGE = messageKey('assistant.file.too-large');
+export const ASSISTANT_FILE_NOT_SUPPORTED = messageKey('assistant.file.not-supported');
+export const ASSISTANT_FILE_UNREADABLE = messageKey('assistant.file.unreadable');
+export const ASSISTANT_FILE_CANNOT_SEE = messageKey('assistant.file.cannot-see');
+export const ASSISTANT_FILE_CANNOT_READ_HERE = messageKey('assistant.file.cannot-read-here');
 /** The Assistant's message box placeholder: one fixed line (the owner's decision, 2026-10-01). */
 export const ASSISTANT_PLACEHOLDER = messageKey('assistant.placeholder');
 /** *Ask AI* on a selection: the selected words quoted in the message box, for the person's question to follow. */
@@ -1987,6 +2028,30 @@ export const GROUP_SIGNATURES = messageKey('surface.ribbon.group.signatures');
 
 export const SIGN_DOCUMENT_COMMAND_TITLE = messageKey('command.sign-document.title');
 export const SIGN_DOCUMENT_TITLE = messageKey('dialog.sign-document.title');
+// THE PLAIN SIGNATURE (ADR-0133): its command, its dialog, and what placing it can come to.
+export const SIGNATURE_TITLE = messageKey('dialog.signature.title');
+export const SIGNATURE_KEPT = messageKey('dialog.signature.kept');
+export const SIGNATURE_KEPT_NOTE = messageKey('dialog.signature.kept-note');
+export const SIGNATURE_KEPT_USE = messageKey('dialog.signature.kept-use');
+export const SIGNATURE_MAKE = messageKey('dialog.signature.make');
+export const SIGNATURE_DRAW = messageKey('dialog.signature.draw');
+export const SIGNATURE_TYPE = messageKey('dialog.signature.type');
+export const SIGNATURE_UPLOAD = messageKey('dialog.signature.upload');
+export const SIGNATURE_PAD_HINT = messageKey('dialog.signature.pad-hint');
+export const SIGNATURE_NAME = messageKey('dialog.signature.name');
+export const SIGNATURE_STYLE = messageKey('dialog.signature.style');
+export const SIGNATURE_TOO_LONG = messageKey('dialog.signature.too-long');
+export const SIGNATURE_UPLOAD_NOTE = messageKey('dialog.signature.upload-note');
+export const SIGNATURE_SAVE = messageKey('dialog.signature.save');
+export const SIGNATURE_SAVE_NOTE = messageKey('dialog.signature.save-note');
+export const SIGNATURE_USE = messageKey('dialog.signature.use');
+export const SIGNATURE_PROBLEM_TITLE = messageKey('dialog.signature-problem.title');
+export const SIGNATURE_PROBLEM_UNREADABLE = messageKey('dialog.signature-problem.unreadable');
+export const SIGNATURE_PROBLEM_TOO_LARGE = messageKey('dialog.signature-problem.too-large');
+export const SIGNATURE_PROBLEM_ABSENT = messageKey('dialog.signature-problem.absent');
+export const SIGNATURE_PROBLEM_UNENCODABLE = messageKey('dialog.signature-problem.unencodable');
+export const TOAST_SIGNATURE_LIBRARY_FULL = messageKey('toast.signature.library-full');
+export const TOAST_SIGNATURE_NOT_KEEPABLE = messageKey('toast.signature.not-keepable');
 export const SIGN_DOCUMENT_EXPLAINS = messageKey('dialog.sign-document.explains');
 export const SIGN_DOCUMENT_PASSPHRASE = messageKey('dialog.sign-document.passphrase');
 export const SIGN_DOCUMENT_NAME = messageKey('dialog.sign-document.name');
@@ -2174,7 +2239,6 @@ export const CLOSE_UNSAVED_TITLE = messageKey('dialog.close-unsaved.title');
 export const CLOSE_UNSAVED_QUESTION = messageKey('dialog.close-unsaved.question');
 export const CLOSE_UNSAVED_SAVE = messageKey('dialog.close-unsaved.save');
 export const CLOSE_UNSAVED_DISCARD = messageKey('dialog.close-unsaved.discard');
-export const CLOSE_UNSAVED_CANCEL = messageKey('dialog.close-unsaved.cancel');
 export const SAVE_PROBLEM_TITLE = messageKey('dialog.save-problem.title');
 export const SAVE_WORK_INTACT = messageKey('dialog.save-problem.intact');
 export const SAVE_REFUSED_CONTESTED = messageKey('dialog.save-problem.contested');
@@ -2304,6 +2368,7 @@ export const CLOUD_PROBLEMS = {
 export const EN: Readonly<Record<MessageKey, string>> = {
   [OPEN_DOCUMENT_TITLE]: 'Open PDF…',
   [CLOSE_LABEL]: 'Close',
+  [DIALOG_CANCEL]: 'Cancel',
   [DOCUMENT_SURFACE_LABEL]: 'Document',
   [THEME_TITLE]: 'Theme',
   // v5-10's Appearance rows. *Also on when Windows asks* is true of the build: `applyMotion` reads both.
@@ -2873,7 +2938,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CRASH_REPORT_DISMISS]: 'Not now',
   [CRASH_REPORT_ADDRESS_LABEL]: 'Share it with your mail app, or send it to {address}.',
   [CRASH_REPORT_COPY]: 'Copy address',
-  [CRASH_REPORT_COPIED]: 'Copied',
   [CRASH_REPORT_FRAGMENTS]:
     'A report can contain parts of the documents that were open, and their file names. It leaves this computer only if you share it.',
   [CRASH_REPORT_SHARE_FAILED]: 'The Windows Share window couldn’t open, so nothing was shared.',
@@ -3358,6 +3422,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_SMALLER_COPY_SAVED]: 'Smaller copy saved',
   [TOAST_PAGES_SAVED]: 'Pages saved',
   [TOAST_SHOW_IN_FOLDER]: 'Show in folder',
+  [TOAST_COPIED]: 'Copied',
   [TOAST_FILES_SAVED]: 'Files saved',
   [TOAST_IMAGES_SAVED]: 'Images saved',
   [TOAST_TEXT_SAVED]: 'Text file saved',
@@ -3409,7 +3474,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_EDITING]: 'Editing your last question. Send replaces it and its answer.',
   [ASSISTANT_EDIT_CANCEL]: 'Cancel',
   [ASSISTANT_COPY]: 'Copy this answer',
-  [ASSISTANT_COPIED]: 'Copied',
   [ASSISTANT_ADD_NOTE]: 'Add this answer to the page as a note',
   [ASSISTANT_NOTED]: 'Added to the page as a note',
   [ASSISTANT_NEW_CHAT]: 'New chat',
@@ -3432,7 +3496,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_NO_KEY]: 'This provider has no key stored. Add it in Settings › AI; the key stays on this machine.',
   [ASSISTANT_SEARCHES_THE_WEB]:
     'This model searches the web for every answer, so nothing was sent. Choose another model, or turn on Document + web.',
-  [ASSISTANT_WEB_LABEL]: 'Choose sources',
+  [ASSISTANT_WEB_LABEL]: 'Sources',
   [ASSISTANT_WEB_DOCUMENT]: 'Document only',
   [ASSISTANT_WEB_ON]: 'Document + web',
   [ASSISTANT_WEB_ALWAYS]: 'Always searches the web. To use this model, choose Document + web.',
@@ -3461,7 +3525,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AI_PROVIDER_NAMES.groq]: 'Groq',
   [AI_PROVIDER_NAMES.perplexity]: 'Perplexity',
   [AI_PROVIDER_NAMES.deepseek]: 'DeepSeek',
-  [ASSISTANT_ABOUT_LABEL]: 'Choose context',
+  [ASSISTANT_ABOUT_LABEL]: 'Context',
+  [ASSISTANT_CHOOSE]: 'Choose',
   [ASSISTANT_SENT_PICTURE]: 'Sent a picture of page {page} of {count}',
   [ASSISTANT_SENT_COMMENTS]: '{comments, plural, one {Sent the one comment in this document} other {Sent all # comments in this document}}',
   [ASSISTANT_SENT_COMMENTS_CUT]: '{comments, plural, one {Sent the first comment — the list was too long to send whole} other {Sent the first # comments — the list was too long to send whole}}',
@@ -3564,6 +3629,32 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_SENT_NOTHING]: 'No text was found to send',
   [ASSISTANT_CITATION]: 'Go to page {page}',
   [ASSISTANT_CITATION_RIGHT]: 'Go to page {page} of the document on the right',
+  [ASSISTANT_CHIP_ALL]: 'All Open Docs',
+  [ASSISTANT_SCOPE_ALL]: 'all open documents',
+  [ASSISTANT_SENT_SHARE]: '{count} documents, up to {characters} characters of each',
+  [ASSISTANT_SENT_DOCUMENT]: '{name}: {sent}',
+  [ASSISTANT_SENT_UNREAD]: '{name}: not read, {reason}',
+  [ASSISTANT_SENT_NOT_SENT]: 'Not sent, more than {limit} were open: {names}',
+  [ASSISTANT_UNREAD_CLOSED]: 'it was closed',
+  [ASSISTANT_UNREAD_BUSY]: 'it was busy with another change',
+  [ASSISTANT_UNREAD_DAMAGED]: 'it could not be read',
+  [ASSISTANT_UNREAD_PAGE]: 'a page in it was too large to read',
+  [ASSISTANT_CITATION_DOCUMENT]: 'Go to page {page} of {name}',
+  [ASSISTANT_ATTACH]: 'Attach files',
+  [ASSISTANT_ATTACHED_LIST]: 'Attached files',
+  [ASSISTANT_ATTACHED_REMOVE]: 'Remove {name}',
+  [ASSISTANT_ATTACHED_DROPPED]:
+    '{count, plural, one {One more file was not attached} other {# more files were not attached}}: at most {limit} go with one question.',
+  [ASSISTANT_SIZE_KB]: '{size} KB',
+  [ASSISTANT_SIZE_MB]: '{size} MB',
+  [ASSISTANT_SENT_SHARE_EACH]: 'Up to {characters} characters of each document and file',
+  [ASSISTANT_SENT_FILE_PICTURE]: '{name}: sent as a picture',
+  [ASSISTANT_FILE_NOT_FOUND]: 'it could not be found',
+  [ASSISTANT_FILE_TOO_LARGE]: 'it is too large to send',
+  [ASSISTANT_FILE_NOT_SUPPORTED]: 'this kind of file is not read',
+  [ASSISTANT_FILE_UNREADABLE]: 'it could not be read',
+  [ASSISTANT_FILE_CANNOT_SEE]: 'this model cannot read pictures',
+  [ASSISTANT_FILE_CANNOT_READ_HERE]: 'this kind of file cannot be read on this computer',
   // THE OWNER'S THREE WORDS, for two documents side by side (ADR-0089).
   [ASSISTANT_SIDES_LABEL]: 'Which document',
   [ASSISTANT_SIDE_LEFT]: 'Left',
@@ -3886,6 +3977,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RESIZE_PAGES_LETTER]: 'Letter',
   [RESIZE_PAGES_LEGAL]: 'Legal',
   [RESIZE_PAGES_TABLOID]: 'Tabloid',
+  [RESIZE_PAGES_PRESETS]: 'Paper size',
   [RESIZE_PAGES_WIDTH]: 'Width (points)',
   [RESIZE_PAGES_HEIGHT]: 'Height (points)',
   [RESIZE_PAGES_UNIFORM_NOTE]:
@@ -3964,6 +4056,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SPLIT_DOCUMENT_TITLE]: 'Split into several PDFs',
   [SPLIT_DOCUMENT_EACH_PAGE]: 'One file for each page',
   [SPLIT_DOCUMENT_RANGES]: 'One file for each range',
+  [SPLIT_DOCUMENT_HOW]: 'How to split',
+  [SPLIT_DOCUMENT_EACH_PAGE_NOTE]: 'Every page becomes a PDF of its own.',
+  [SPLIT_DOCUMENT_RANGES_NOTE]: 'Each range you type becomes one PDF, for example 1-3, 4-6.',
   [SPLIT_DOCUMENT_LABEL]: 'Ranges',
   [SPLIT_DOCUMENT_EMPTY]: 'Type the ranges to split into, for example 1-3, 4-6.',
   // THE NUMBER A READER CHECKS BEFORE PRESSING, and it says where they go —
@@ -3976,9 +4071,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_POWERPOINT_COMMAND_TITLE]: 'Export to PowerPoint…',
   [EXPORT_WORD_TITLE]: 'Export to Word',
   [EXPORT_WORD_MODE]: 'What to keep',
-  [EXPORT_WORD_RICH]: 'Text and its fonts — editable, flows like a normal document',
-  [EXPORT_WORD_LAYOUT]: 'The page layout — each line where it sits on the page',
-  [EXPORT_WORD_TEXT]: 'Just the words',
+  [EXPORT_WORD_MODE_NOTE]: 'How closely the Word file follows the pages.',
+  [EXPORT_WORD_RICH]: 'Editable text',
+  [EXPORT_WORD_RICH_NOTE]: 'Text and its fonts, flowing like a normal document.',
+  [EXPORT_WORD_LAYOUT]: 'Page layout',
+  [EXPORT_WORD_LAYOUT_NOTE]: 'Each line where it sits on the page.',
+  [EXPORT_WORD_TEXT]: 'Words only',
+  [EXPORT_WORD_TEXT_NOTE]: 'Just the words, with no pictures and no layout.',
   [EXPORT_WORD_APPLY]: 'Choose where to save…',
   [EXPORT_PDFA_COMMAND_TITLE]: 'Export as PDF/A…',
   [PDFA_REMOVALS_TITLE]: 'Saved as PDF/A',
@@ -4115,16 +4214,21 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_EXCEL_CELL]: 'Table {table}, row {row}, column {column}',
   [EXPORT_EXCEL_CLIPPED]: 'This cell is too long to show whole, so it cannot be changed here.',
   [EXPORT_EXCEL_TRUNCATED]: 'This page has more cells than can be shown. The ones not shown are exported as found.',
+  [EXPORT_PAGE_IMAGES_PAGES]: 'Pages',
+  [EXPORT_PAGE_IMAGES_PAGES_NOTE]: 'Each page becomes one picture file.',
   [EXPORT_PAGE_IMAGES_ALL]: 'Every page',
   [EXPORT_PAGE_IMAGES_RANGES]: 'These pages',
-  [EXPORT_PAGE_IMAGES_LABEL]: 'Pages',
+  [EXPORT_PAGE_IMAGES_LABEL]: 'Page numbers',
   [EXPORT_PAGE_IMAGES_EMPTY]: 'Type the pages to export, for example 1-3, 5.',
   [EXPORT_PAGE_IMAGES_FORMAT]: 'Format',
-  [EXPORT_PAGE_IMAGES_PNG]: 'PNG — exact, larger files',
-  [EXPORT_PAGE_IMAGES_JPEG]: 'JPEG — smaller files, some detail lost',
-  [EXPORT_PAGE_IMAGES_WEBP]: 'WebP — smaller still, some detail lost',
-  [EXPORT_PAGE_IMAGES_DPI]: 'Resolution (dots per inch)',
-  [EXPORT_PAGE_IMAGES_QUALITY]: 'Quality (1–100)',
+  [EXPORT_PAGE_IMAGES_FORMAT_NOTE]: 'PNG keeps every detail. JPEG and WebP make smaller files and lose a little.',
+  [EXPORT_PAGE_IMAGES_PNG]: 'PNG',
+  [EXPORT_PAGE_IMAGES_JPEG]: 'JPEG',
+  [EXPORT_PAGE_IMAGES_WEBP]: 'WebP',
+  [EXPORT_PAGE_IMAGES_DPI]: 'Resolution',
+  [EXPORT_PAGE_IMAGES_DPI_NOTE]: 'Dots per inch: 150 for a screen, 300 for print.',
+  [EXPORT_PAGE_IMAGES_QUALITY]: 'Quality',
+  [EXPORT_PAGE_IMAGES_QUALITY_NOTE]: 'From 1 to 100. Higher keeps more detail and makes larger files.',
   // THE BOUNDS ARE IN THE MESSAGE, because a disabled button with no reason is a
   // control that looks broken.
   [EXPORT_PAGE_IMAGES_OUT_OF_BOUNDS]:
@@ -4462,6 +4566,31 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_DOCUMENT_IMAGE_NOTE]:
     'You will be asked for a PNG or JPEG picture of your signature first, then for your certificate.',
   [SIGN_DOCUMENT_MARK_MISSING]: 'Type or draw the signature first.',
+  [SIGNATURE_TITLE]: 'Signature',
+  [SIGNATURE_KEPT]: 'Your signatures',
+  [SIGNATURE_KEPT_NOTE]: 'Choose one, then click where it goes.',
+  [SIGNATURE_KEPT_USE]: 'Use your signature {number}',
+  [SIGNATURE_MAKE]: 'New signature',
+  [SIGNATURE_DRAW]: 'Draw',
+  [SIGNATURE_TYPE]: 'Type',
+  [SIGNATURE_UPLOAD]: 'Upload',
+  [SIGNATURE_PAD_HINT]: 'Draw your signature above',
+  [SIGNATURE_NAME]: 'Your name',
+  [SIGNATURE_STYLE]: 'Style',
+  [SIGNATURE_TOO_LONG]: 'A name can be at most {limit} characters.',
+  [SIGNATURE_UPLOAD_NOTE]:
+    'Choose Use Signature, click where it goes on the page, then pick a PNG or JPEG picture of your signature.',
+  [SIGNATURE_SAVE]: 'Save for reuse',
+  [SIGNATURE_SAVE_NOTE]: 'Kept on this computer, ready to place again here or with Sign with certificate.',
+  [SIGNATURE_USE]: 'Use Signature',
+  [SIGNATURE_PROBLEM_TITLE]: 'The signature was not placed',
+  [SIGNATURE_PROBLEM_UNREADABLE]: 'That file is not a PNG or JPEG picture this app can read. Nothing was placed.',
+  [SIGNATURE_PROBLEM_TOO_LARGE]: 'That picture is larger than {limit} megabytes. Nothing was placed.',
+  [SIGNATURE_PROBLEM_ABSENT]: 'That saved signature has been removed. Nothing was placed.',
+  [SIGNATURE_PROBLEM_UNENCODABLE]:
+    'The name has a character this signature style cannot draw. Nothing was placed. Try typing it with plain letters.',
+  [TOAST_SIGNATURE_LIBRARY_FULL]: 'Signature placed. Your saved signatures are full, so this one was not kept.',
+  [TOAST_SIGNATURE_NOT_KEEPABLE]: 'Signature placed. This picture could not be kept for reuse.',
   [PLACE_SIGNATURE_TOOL_TITLE]: 'Sign with certificate',
 
   [SIGNATURES_COMMAND_TITLE]: 'Check signatures',
@@ -4630,7 +4759,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CLOSE_UNSAVED_QUESTION]: '“{name}” has changes that are not saved. Save them before closing?',
   [CLOSE_UNSAVED_SAVE]: 'Save',
   [CLOSE_UNSAVED_DISCARD]: 'Don’t save',
-  [CLOSE_UNSAVED_CANCEL]: 'Cancel',
   // "Undo history" and not "history": the document's own history is what a
   // reader will assume, and this dialog is about neither the file nor its
   // contents.

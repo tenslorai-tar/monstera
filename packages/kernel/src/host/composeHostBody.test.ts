@@ -286,6 +286,7 @@ describe('the compose host channel set', () => {
         'engine/probe-containment',
         'engine/join-pdfs',
         'engine/pdf-pages',
+        'engine/image-size',
         'engine/workbook-outline',
         'engine/workbook-part',
       ].sort(),
@@ -670,6 +671,28 @@ describe('the compose host — a workbook in parts (decision C)', () => {
     expect(params.safeParse({ ...base, rows: { from: 6, to: 5 } }).success).toBe(false);
     expect(params.safeParse({ ...base, rows: { from: 0, to: 5 } }).success).toBe(false);
     expect(params.safeParse({ ...base, sheet: 4096, rows: null }).success).toBe(false);
+  });
+
+  it('SIZES A PICTURE attached to a question (ADR-0135): its header’s size, unreadable for bytes that are not one, and a missing file as the transport’s', async () => {
+    const files = emptyFiles();
+    const { session } = await openArea(files);
+    // A JPEG's start-of-frame stating 3024 x 4032, the rest of a file a reader needs nothing more of.
+    files.read.set(
+      `${AREA.snapshotDirectory}|${IN}`,
+      Uint8Array.of(0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x0f, 0xc0, 0x0b, 0xd0, 0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01, 0xff, 0xd9),
+    );
+    files.read.set(`${AREA.snapshotDirectory}|${SECOND}`, NOT_A_FILE);
+
+    stream.feed(request('s1', 'engine/image-size', { session, from: IN, mediaType: 'image/jpeg' }));
+    await stream.whenSent(2);
+    stream.feed(request('s2', 'engine/image-size', { session, from: SECOND, mediaType: 'image/png' }));
+    await stream.whenSent(3);
+    stream.feed(request('s3', 'engine/image-size', { session, from: 'abad1dea', mediaType: 'image/png' }));
+    await stream.whenSent(4);
+
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'sized', width: 3024, height: 4032 } } });
+    expect(answerIn(stream.sent[2])).toMatchObject({ body: { ok: true, value: { kind: 'unreadable' } } });
+    expect(answerIn(stream.sent[3])).toMatchObject({ body: { ok: false, error: { code: 'asset-missing' } } });
   });
 
   it('counts a PDF’s pages, and answers one it cannot read as unreadable', async () => {

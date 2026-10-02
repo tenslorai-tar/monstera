@@ -76,8 +76,8 @@ export interface AskRequest {
   readonly messages: readonly ChatMessage[];
   /** The document window's instruction, built by the handler that read it (ADR-0088). */
   readonly system?: string;
-  /** A picture of a page, sent with the last turn (ADR-0090). */
-  readonly image?: ChatImage;
+  /** The pictures sent with the last turn: a page's (ADR-0090), and any attached to the question (ADR-0135). */
+  readonly images?: readonly ChatImage[];
   /** *Document + web* or *Document only* — the person's switch, required for `ai.ask`'s reason (ADR-0108). */
   readonly web: boolean;
 }
@@ -112,7 +112,7 @@ export interface Assistant {
    * every ask goes through: one resolver of how each provider is asked (B3a). Never with the web: a translation is
    * of the page's own words.
    */
-  readonly complete: (request: Omit<AskRequest, 'subscription' | 'image' | 'web'>) => Promise<ChatAnswer>;
+  readonly complete: (request: Omit<AskRequest, 'subscription' | 'images' | 'web'>) => Promise<ChatAnswer>;
 }
 
 /** The pieces one delta becomes, each within the event's bound. */
@@ -194,7 +194,7 @@ export function createAssistant(parts: AssistantParts): Assistant {
 
     held: (provider) => fetched.get(provider) ?? unaskedList(provider),
 
-    ask: ({ subscription, provider, model, messages, system, image, web }) => {
+    ask: ({ subscription, provider, model, messages, system, images, web }) => {
       if (live.has(subscription)) return { started: false };
       const controller = new AbortController();
       live.set(subscription, controller);
@@ -208,7 +208,7 @@ export function createAssistant(parts: AssistantParts): Assistant {
         endpoint: endpointFor(provider),
         messages,
         ...(system === undefined ? {} : { system }),
-        ...(image === undefined ? {} : { image }),
+        ...(images === undefined || images.length === 0 ? {} : { images }),
         web,
         signal: controller.signal,
         onDelta: (text) => {

@@ -2,7 +2,7 @@ import { type ContractClient, channels, createClient } from '@monstera/contract'
 import { type DocId, asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import { type CompareRow, type CompareSide, type DrawnPage, compareSides } from './sideBySideCompare.js';
+import { type CompareRow, type CompareSide, type DrawnPage, MAX_COMPARE_CHANGES, compareSides } from './sideBySideCompare.js';
 
 const LEFT = asDocId('00000000-0000-4000-8000-00000000c1a1');
 const RIGHT = asDocId('00000000-0000-4000-8000-00000000c1b2');
@@ -161,6 +161,30 @@ describe('Side by Side — the four fixtures ADR-0131 names, through the walk th
   it('CONTROL: two identical documents report nothing', async () => {
     const picture: FakePage = { ...terms, squares: [{ x: 60, y: 60, size: 30 }], notes: [{ contents: 'Same', rect: [10, 10, 30, 30] }] };
     expect(await compare([intro, picture, close], [intro, picture, close])).toStrictEqual([]);
+  });
+});
+
+describe('the list and the count', () => {
+  it('the LIST stops at MAX_COMPARE_CHANGES and the COUNT does not', async () => {
+    // A page whose every other line changed: each changed line sits between two kept ones, so it is its own text
+    // change. Five more than the list holds, so the cap is what decides the list.
+    const hunks = MAX_COMPARE_CHANGES + 5;
+    const before: FakePage = { lines: Array.from({ length: hunks * 2 }, (_, at) => (at % 2 === 0 ? `kept line ${String(at)}` : `old wording ${String(at)}`)) };
+    const after: FakePage = { lines: Array.from({ length: hunks * 2 }, (_, at) => (at % 2 === 0 ? `kept line ${String(at)}` : `new phrasing ${String(at)}`)) };
+    const { client } = clientFor(new Map([[LEFT, [before]], [RIGHT, [after]]]));
+    const outcome = await compareSides(client, side(LEFT, [before]), side(RIGHT, [after]), new AbortController().signal, () => undefined);
+    if (outcome.kind !== 'done') throw new Error(`the comparison ended ${outcome.kind}`);
+    expect(outcome.result.rows).toHaveLength(MAX_COMPARE_CHANGES);
+    expect(outcome.result.found).toBe(hunks);
+    expect(outcome.result.more).toBe(true);
+  });
+
+  it('CONTROL: under the cap the count and the list agree, and nothing says there is more', async () => {
+    const edited: FakePage = { lines: ['Payment is due within sixty days of the invoice'] };
+    const { client } = clientFor(new Map([[LEFT, [terms]], [RIGHT, [edited]]]));
+    const outcome = await compareSides(client, side(LEFT, [terms]), side(RIGHT, [edited]), new AbortController().signal, () => undefined);
+    if (outcome.kind !== 'done') throw new Error(`the comparison ended ${outcome.kind}`);
+    expect([outcome.result.rows.length, outcome.result.found, outcome.result.more]).toStrictEqual([1, 1, false]);
   });
 });
 

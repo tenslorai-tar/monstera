@@ -10,6 +10,7 @@ import {
 import { type DocumentChoice, DocumentChoiceSelect } from './DocumentChoice.js';
 import type { ImportPageAsLayerAnswer } from './importPageAsLayerResult.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 
 /**
@@ -46,15 +47,17 @@ export default function ImportPageAsLayerBody({
         onChange={setSource}
         marker="import-page-as-layer"
       />
-      <Button
-        label={IMPORT_PAGE_AS_LAYER_APPLY}
-        variant="primary"
-        disabled={source === ''}
-        onClick={() => {
-          if (source === '') return;
-          resolve({ source });
-        }}
-      />
+      <DialogFooter>
+        <Button
+          label={IMPORT_PAGE_AS_LAYER_APPLY}
+          variant="primary"
+          disabled={source === ''}
+          onClick={() => {
+            if (source === '') return;
+            resolve({ source });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

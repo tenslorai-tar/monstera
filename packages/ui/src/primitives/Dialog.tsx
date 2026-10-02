@@ -2,8 +2,10 @@ import { useLingui } from '@lingui/react';
 import { Dialog as BaseDialog } from '@base-ui/react/dialog';
 import type { MessageKey } from '@monstera/shared';
 import { X } from 'lucide-react';
-import { type ReactElement, type ReactNode, type RefObject, useRef } from 'react';
+import { type ReactElement, type ReactNode, type RefObject, useId, useRef } from 'react';
 
+import { DIALOG_CANCEL } from '../messages/en.js';
+import { Button } from './Button.js';
 import { IconButton } from './IconButton.js';
 
 /**
@@ -134,5 +136,120 @@ export function Dialog({
         </BaseDialog.Popup>
       </BaseDialog.Portal>
     </BaseDialog.Root>
+  );
+}
+
+/*
+ * THE DIALOG PATTERN (the owner adopted it 2026-10-02, from the samples of Export pages as images, Export to Word and
+ * Signature): a dialog's body is Settings' visual language. Each question is a ROW — its name and a muted note on the
+ * left, its control on the right — a choice that needs a sentence per option is a list of CHOICES, and the body ends in
+ * a FOOTER with Cancel and the one action at the right. They live here, beside `Dialog`, so every body is composed of
+ * the same three parts and the spacing between them is one set of rules rather than one per dialog.
+ */
+
+/**
+ * One question: its name and an optional note on the left, the control on the right. The control names itself (every
+ * primitive takes a `label`), so the row's name is what is seen and the control's is what is announced; a control
+ * shown beside its row passes `labelShownBeside` so the name is not printed twice.
+ */
+export function DialogRow({
+  label,
+  note,
+  children,
+}: {
+  readonly label: MessageKey;
+  readonly note?: MessageKey | undefined;
+  readonly children: ReactNode;
+}): ReactElement {
+  const { _ } = useLingui();
+  return (
+    <div className="m-dialog-row">
+      <div className="m-dialog-row__text">
+        <span className="m-dialog-row__label">{_(label)}</span>
+        {note === undefined ? null : <span className="m-dialog-row__note">{_(note)}</span>}
+      </div>
+      <div className="m-dialog-row__control">{children}</div>
+    </div>
+  );
+}
+
+/** One option of `DialogChoices`: a short name, and the sentence that says what a person gets. */
+export interface DialogChoice<Value extends string> {
+  readonly value: Value;
+  readonly label: MessageKey;
+  readonly note: MessageKey;
+}
+
+/**
+ * A choice whose options each need a sentence, as rows: a radio, a short name, the sentence under it. A segmented
+ * control holds names, not sentences, and a sentence wrapped inside one is the defect this replaces.
+ *
+ * The group is named by its heading through `aria-labelledby`, so a screen reader announces the question once, on
+ * entering the group, and each radio by its own name.
+ */
+export function DialogChoices<Value extends string>({
+  label,
+  note,
+  options,
+  value,
+  onChange,
+}: {
+  readonly label: MessageKey;
+  readonly note?: MessageKey | undefined;
+  readonly options: readonly DialogChoice<Value>[];
+  readonly value: Value;
+  readonly onChange: (value: Value) => void;
+}): ReactElement {
+  const { _ } = useLingui();
+  const heading = useId();
+  const name = useId();
+  return (
+    <div aria-labelledby={heading} className="m-dialog-choices" role="radiogroup">
+      <div className="m-dialog-row__text" id={heading}>
+        <span className="m-dialog-row__label">{_(label)}</span>
+        {note === undefined ? null : <span className="m-dialog-row__note">{_(note)}</span>}
+      </div>
+      {options.map((option) => (
+        <label className="m-dialog-choice" key={option.value}>
+          <input
+            checked={option.value === value}
+            name={name}
+            onChange={() => {
+              onChange(option.value);
+            }}
+            type="radio"
+          />
+          <span className="m-dialog-row__text">
+            <span className="m-dialog-row__label">{_(option.label)}</span>
+            <span className="m-dialog-row__note">{_(option.note)}</span>
+          </span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The body's foot: Cancel, then the action, at the right. Cancel is Base UI's `Close`, which works anywhere inside the
+ * popup and closes it exactly as the header's close control does, so a body needs no dismissal of its own and
+ * Cancel cannot mean anything different from the X. Its words are the primitive's, so every dialog says the same.
+ */
+export function DialogFooter({
+  children,
+  ownDismissal = false,
+}: {
+  readonly children: ReactNode;
+  /**
+   * The body's own buttons include the answer a dismissal is — *Later*, *Understood* — which the command records, so a
+   * Cancel beside it would be a second way to say the same thing that records nothing. Then the footer draws no Cancel;
+   * the header's close still dismisses.
+   */
+  readonly ownDismissal?: boolean;
+}): ReactElement {
+  return (
+    <div className="m-dialog-footer">
+      {ownDismissal ? null : <BaseDialog.Close nativeButton render={<Button label={DIALOG_CANCEL} />} />}
+      {children}
+    </div>
   );
 }

@@ -12,6 +12,7 @@ import {
   DOCUSIGN_SEND_SUBJECT,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { DOCUSIGN_SEND_RESULT, type DocusignSendAnswer } from './docusignSend.js';
@@ -53,25 +54,33 @@ export default function DocusignSendBody({
 
   return (
     <div className="m-docusign-send">
-      <Input label={DOCUSIGN_SEND_SUBJECT} onValueChange={setEmailSubject} value={emailSubject} />
+      <DialogRow label={DOCUSIGN_SEND_SUBJECT}>
+        <Input label={DOCUSIGN_SEND_SUBJECT} labelShownBeside onValueChange={setEmailSubject} value={emailSubject} />
+      </DialogRow>
 
       <ol className="m-docusign-send__signers">
         {signers.map((row, index) => (
           <li className="m-docusign-send__signer" data-docusign-signer={index} key={index}>
-            <Input
-              label={DOCUSIGN_SEND_SIGNER_NAME}
-              onValueChange={(value) => {
-                change(index, 'name', value);
-              }}
-              value={row.name}
-            />
-            <Input
-              label={DOCUSIGN_SEND_SIGNER_EMAIL}
-              onValueChange={(value) => {
-                change(index, 'email', value);
-              }}
-              value={row.email}
-            />
+            <DialogRow label={DOCUSIGN_SEND_SIGNER_NAME}>
+              <Input
+                label={DOCUSIGN_SEND_SIGNER_NAME}
+                labelShownBeside
+                onValueChange={(value) => {
+                  change(index, 'name', value);
+                }}
+                value={row.name}
+              />
+            </DialogRow>
+            <DialogRow label={DOCUSIGN_SEND_SIGNER_EMAIL}>
+              <Input
+                label={DOCUSIGN_SEND_SIGNER_EMAIL}
+                labelShownBeside
+                onValueChange={(value) => {
+                  change(index, 'email', value);
+                }}
+                value={row.email}
+              />
+            </DialogRow>
             {/* ONE SIGNER STAYS: an envelope with nobody to sign it is not one
                 DocuSign sends, so the last row has no remove control to press. */}
             {signers.length > 1 ? (
@@ -93,14 +102,16 @@ export default function DocusignSendBody({
       />
 
       <p className="m-docusign-send__note">{_(DOCUSIGN_SEND_NOTE)}</p>
-      <Button
-        disabled={!parsed.success}
-        label={DOCUSIGN_SEND_APPLY}
-        onClick={() => {
-          if (parsed.success) resolve(parsed.data);
-        }}
-        variant="primary"
-      />
+      <DialogFooter>
+        <Button
+          disabled={!parsed.success}
+          label={DOCUSIGN_SEND_APPLY}
+          onClick={() => {
+            if (parsed.success) resolve(parsed.data);
+          }}
+          variant="primary"
+        />
+      </DialogFooter>
     </div>
   );
 }

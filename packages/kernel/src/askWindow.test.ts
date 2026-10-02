@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  askFilesInstruction,
   askInstruction,
+  askManyInstruction,
   askPairInstruction,
   askPictureInstruction,
   carriedWindow,
@@ -231,5 +233,70 @@ describe('two documents side by side (ADR-0089)', () => {
     expect(instruction.endsWith(`${left.text}\n${right.text}`)).toBe(true);
     // One document's form must not appear, or a citation could name a page in either.
     expect(instruction).not.toContain('cite it as [p. 3]');
+  });
+});
+
+describe('every open document (ADR-0134)', () => {
+  it('marks each page with its document’s PLACE, through the same marker the pair uses', async () => {
+    const second = await readAskWindow([1], 2, pagesOf(['', 'beta']).read, 100, 1);
+    expect(second.text).toBe('[Doc 2 page 2]\nbeta\n\n');
+  });
+
+  it('lists each document by place and name, states the share, names the unread, and asks every claim to cite both', async () => {
+    const first = await readAskWindow([0], 1, pagesOf(['alpha']).read, 100, 0);
+    const third = await readAskWindow([0, 1], 4, pagesOf(['g1', 'g2']).read, 100, 2);
+    const instruction = askManyInstruction(
+      [
+        { name: 'contract.pdf', window: first, place: 0 },
+        { name: 'notes.pdf', window: third, place: 2 },
+      ],
+      ['closed.pdf'],
+      33_333,
+      false,
+    );
+    expect(instruction).toContain('at most 33333 characters');
+    expect(instruction).toContain('Doc 1 is "contract.pdf". Doc 1 is from page 1 of 1.');
+    expect(instruction).toContain('Doc 3 is "notes.pdf". Doc 3 covers pages 1 to 2 of 4.');
+    expect(instruction).toContain('"closed.pdf" could not be read');
+    expect(instruction).toContain('Cite every claim with its document and page, as [Doc 1 p. 3]');
+    expect(instruction.endsWith(`${first.text}\n${third.text}`)).toBe(true);
+    // NEITHER OTHER SPELLING: a plain or side citation from this answer would name no document.
+    expect(instruction).not.toContain('[p. 3]');
+    expect(instruction).not.toContain('[Left');
+  });
+
+  it('CONTROL: with every document read, no sentence says one could not be', async () => {
+    const first = await readAskWindow([0], 1, pagesOf(['alpha']).read, 100, 0);
+    expect(askManyInstruction([{ name: 'a.pdf', window: first, place: 0 }], [], 50_000, false)).not.toContain('could not be read');
+  });
+});
+
+describe('files attached to a question (ADR-0135)', () => {
+  it('lists each file by its place and name — its window, a picture, or why nothing went — and asks for [File n p. m]', async () => {
+    const notes = await readAskWindow([0], 1, pagesOf(['the review is in March']).read, 1_000, { file: 0 });
+    const instruction = askFilesInstruction(
+      [
+        { name: 'notes.txt', place: 0, window: notes },
+        { name: 'photo.jpg', place: 1, pictured: true },
+        { name: 'blob.bin', place: 2, unread: 'not-supported' },
+      ],
+      33_333,
+      false,
+      true,
+    );
+    expect(instruction).toContain('The person attached 3 files to the question.');
+    expect(instruction).toContain('File 1 is "notes.txt". File 1 is from page 1 of 1.');
+    expect(instruction).toContain('File 2 is "photo.jpg", a picture, attached after the words "File 2:".');
+    expect(instruction).toContain('File 3 is "blob.bin", and nothing from it is here because it is a kind of file that is not read.');
+    expect(instruction).toContain('at most 33333 characters');
+    expect(instruction).toContain('cite it with its page, as [File 1 p. 3]');
+    expect(instruction).toContain('[File 1 page 1]\nthe review is in March');
+    // ALONE, the ground rule is said here.
+    expect(instruction).toContain('Use only this text, not outside knowledge.');
+  });
+
+  it('CONTROL: beside a document’s instruction the ground rule is NOT said again, and with no text file there is no share and no marker', () => {
+    const instruction = askFilesInstruction([{ name: 'photo.jpg', place: 0, pictured: true }], 50_000, false, false);
+    expect(instruction).toBe('The person attached a file to the question. File 1 is "photo.jpg", a picture, attached after the words "File 1:".');
   });
 });

@@ -7,9 +7,14 @@ import {
   type AskSent,
   type AskSide,
   type AskSides,
+  type ASK_UNREAD_REASONS,
+  type AskFileUnread,
   type ContractClient,
   MAX_ANNOTATION_TEXT,
+  MAX_ASK_ATTACHMENTS,
+  MAX_ASK_DOCUMENTS,
   MAX_CHAT_TEXT,
+  askShareOf,
   type DispatchableCommand,
   type WebSearchAbsence,
   choiceReadsImages,
@@ -20,7 +25,7 @@ import {
 } from '@monstera/contract';
 import type { DocId, MessageKey } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
-import { ArrowUp, Copy, Pencil, Plus, RefreshCw, Square, StickyNote } from 'lucide-react';
+import { ArrowUp, Copy, Paperclip, Pencil, Plus, RefreshCw, Square, StickyNote, X } from 'lucide-react';
 import {
   Fragment,
   type ReactElement,
@@ -38,7 +43,8 @@ import { AnswerGrounding } from './AnswerGrounding.js';
 import { answerElements } from './answerMarkdown.js';
 import type { AssistantRequest, ReplyTarget } from './assistantRequest.js';
 import type { EventSubscriber } from './bridge.js';
-import type { ConversationTurn, DocumentStore } from './documentStores.js';
+import { confirmCopied } from './commands/confirmWritten.js';
+import type { AskedDocuments, AttachedFile, ConversationTurn, DocumentStore } from './documentStores.js';
 import {
   AI_PROVIDER_NAMES,
   ANTHROPIC_OUT_OF_CREDIT,
@@ -47,6 +53,7 @@ import {
   ASSISTANT_ASSISTANT,
   ASSISTANT_CHIP_COMMENT,
   ASSISTANT_CHIP_COMMENTS,
+  ASSISTANT_CHOOSE,
   ASSISTANT_CHIP_DOCUMENT,
   ASSISTANT_CHIP_NOTHING,
   ASSISTANT_CHIP_PAGE,
@@ -54,6 +61,31 @@ import {
   ASSISTANT_CHIP_SELECTION,
   ASSISTANT_CITATION,
   ASSISTANT_CITATION_RIGHT,
+  ASSISTANT_CHIP_ALL,
+  ASSISTANT_SCOPE_ALL,
+  ASSISTANT_SENT_SHARE,
+  ASSISTANT_SENT_DOCUMENT,
+  ASSISTANT_SENT_UNREAD,
+  ASSISTANT_SENT_NOT_SENT,
+  ASSISTANT_UNREAD_CLOSED,
+  ASSISTANT_UNREAD_BUSY,
+  ASSISTANT_UNREAD_DAMAGED,
+  ASSISTANT_UNREAD_PAGE,
+  ASSISTANT_CITATION_DOCUMENT,
+  ASSISTANT_ATTACH,
+  ASSISTANT_ATTACHED_DROPPED,
+  ASSISTANT_ATTACHED_LIST,
+  ASSISTANT_ATTACHED_REMOVE,
+  ASSISTANT_FILE_CANNOT_READ_HERE,
+  ASSISTANT_FILE_CANNOT_SEE,
+  ASSISTANT_FILE_NOT_FOUND,
+  ASSISTANT_FILE_NOT_SUPPORTED,
+  ASSISTANT_FILE_TOO_LARGE,
+  ASSISTANT_FILE_UNREADABLE,
+  ASSISTANT_SENT_FILE_PICTURE,
+  ASSISTANT_SENT_SHARE_EACH,
+  ASSISTANT_SIZE_KB,
+  ASSISTANT_SIZE_MB,
   ASSISTANT_COMPOSER_LABEL,
   ASSISTANT_CONVERSATION_LABEL,
   ASSISTANT_EMPTY,
@@ -100,7 +132,6 @@ import {
   ASSISTANT_YOU,
   ASSISTANT_ADD_NOTE,
   ASSISTANT_CAPTION,
-  ASSISTANT_COPIED,
   ASSISTANT_COPY,
   ASSISTANT_EDIT,
   ASSISTANT_EDIT_CANCEL,
@@ -120,6 +151,7 @@ import {
   ASSISTANT_SCOPE_SELECTION,
 } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
+import type { ShowToast } from './toasts.js';
 import { Button } from './primitives/Button.js';
 import { ChoiceMenu } from './primitives/ChoiceMenu.js';
 import { IconButton } from './primitives/IconButton.js';
@@ -178,6 +210,8 @@ export interface BesideDocument {
 export interface AssistantPanelProps {
   readonly client: ContractClient;
   readonly subscribe: EventSubscriber;
+  /** Where a copied answer is confirmed: the window's toast, every copy's one confirmation (`confirmCopied`). */
+  readonly toast: ShowToast;
   /** Which provider keys this machine has stored, from `settings.loadSecrets`. */
   readonly storedSecrets: readonly string[];
   /** Where the provider and each provider's model are kept (ADR-0117) — the picker below writes them. */
@@ -207,11 +241,14 @@ export interface AssistantPanelProps {
   readonly beside?: BesideDocument | undefined;
   /** Goes to a page of the document on the right, zero-based. */
   readonly onGoToBeside?: ((page: number) => void) | undefined;
+  /**
+   * The tabs open now, in their order, by id and the name each shows — what *All Open Docs* sends at Send, and what
+   * decides whether it is offered at all: with fewer than two it is not (ADR-0134).
+   */
+  readonly openDocuments?: readonly { readonly docId: DocId; readonly name: string }[] | undefined;
+  /** Goes to a page of another open document, zero-based — an *All Open Docs* answer's citation (ADR-0134). */
+  readonly onGoToDocument?: ((docId: DocId, page: number) => void) | undefined;
 }
-
-/** What one ask sends: its document or documents, and the side it went to with two. */
-/** How long *Copied* shows beside an answer, in milliseconds — long enough to read, then gone. */
-const COPIED_MS = 2000;
 
 /** Which document a two-document answer was about, for its caption. */
 const SIDE_WORDS = {
@@ -222,6 +259,48 @@ const SIDE_WORDS = {
 
 /** What one ask is about — the same shape a turn records, so Regenerate can ask it again. */
 type AskRequest = NonNullable<ConversationTurn['request']>;
+
+/** No tabs passed: a stable empty list, so the default does not change identity every render. */
+const NO_DOCUMENTS: readonly { readonly docId: DocId; readonly name: string }[] = [];
+
+/** Why a document was not read, in words (ADR-0134): the contract's reason for each. */
+const UNREAD_WORDS: Readonly<Record<(typeof ASK_UNREAD_REASONS)[number], MessageKey>> = {
+  'document-not-open': ASSISTANT_UNREAD_CLOSED,
+  'document-busy': ASSISTANT_UNREAD_BUSY,
+  'document-poisoned': ASSISTANT_UNREAD_DAMAGED,
+  'page-too-large': ASSISTANT_UNREAD_PAGE,
+};
+
+/** Why an attached file was not read, in words (ADR-0135): the contract's reason for each. */
+const FILE_UNREAD_WORDS: Readonly<Record<AskFileUnread, MessageKey>> = {
+  'not-found': ASSISTANT_FILE_NOT_FOUND,
+  'too-large': ASSISTANT_FILE_TOO_LARGE,
+  'not-supported': ASSISTANT_FILE_NOT_SUPPORTED,
+  unreadable: ASSISTANT_FILE_UNREADABLE,
+  'cannot-see': ASSISTANT_FILE_CANNOT_SEE,
+  'cannot-read-here': ASSISTANT_FILE_CANNOT_READ_HERE,
+};
+
+/** Nothing attached: one stable value, so the default does not change identity every render. */
+const NOTHING_ATTACHED: { readonly files: readonly AttachedFile[]; readonly dropped: number } = { files: [], dropped: 0 };
+
+/**
+ * What *All Open Docs* sends when Send is pressed (ADR-0134 Decision 5): the focused document first, then the other
+ * tabs in their order, the first {@link MAX_ASK_DOCUMENTS} of them — and the names of the ones past that, said rather
+ * than refused. `undefined` with fewer than two, when the choice is not offered.
+ */
+function allOpen(
+  focused: DocId,
+  open: readonly { readonly docId: DocId; readonly name: string }[],
+): AskedDocuments | undefined {
+  const own = open.find((each) => each.docId === focused);
+  if (own === undefined || open.length < 2) return undefined;
+  const ordered = [own, ...open.filter((each) => each.docId !== focused)];
+  return {
+    asked: ordered.slice(0, MAX_ASK_DOCUMENTS),
+    notSent: ordered.slice(MAX_ASK_DOCUMENTS).map((each) => each.name),
+  };
+}
 
 /** A subscription id: short, unique per ask, and inside the event schema's alphabet. */
 function newSubscription(): string {
@@ -273,7 +352,7 @@ const READINESS = {
  * What the Context choice can be. A selection or a comment exists only when a command gave one,
  * and is offered under its own name — the menu and the instruction both say which.
  */
-type Scope = 'page' | 'page-image' | 'document' | 'comments' | 'selection' | 'comment' | 'nothing';
+type Scope = 'page' | 'page-image' | 'document' | 'comments' | 'selection' | 'comment' | 'all' | 'nothing';
 
 const NO_SUBSCRIBE = (): (() => void) => () => undefined;
 const NO_TURNS: readonly ConversationTurn[] = [];
@@ -312,6 +391,7 @@ const SIDE_CHOICES = [
 export function AssistantPanel({
   client,
   subscribe,
+  toast,
   storedSecrets,
   settings,
   focused,
@@ -323,12 +403,15 @@ export function AssistantPanel({
   onNote,
   beside,
   onGoToBeside,
+  openDocuments = NO_DOCUMENTS,
+  onGoToDocument,
 }: AssistantPanelProps): ReactElement {
   const { i18n } = useLingui();
   const providerId = useId();
   const modelId = useId();
   const hintId = useId();
   const sidesName = useId();
+  const chooseId = useId();
   // THE PROVIDER AND EACH PROVIDER'S MODEL ARE SETTINGS (ADR-0117): this picker writes them, `main` reads Anthropic's for
   // the recogniser, and a choice survives the panel closing. The list itself is fetched here, per provider.
   const provider = useSetting(settings, AI_PROVIDER_SETTING);
@@ -348,6 +431,9 @@ export function AssistantPanel({
     settings.set(AI_MODELS_SETTING.id, { ...chosenModels, [provider]: next });
   };
   const [draft, setDraft] = useState('');
+  // THE FILES FOR THE NEXT QUESTION (ADR-0135): handles `main` minted, a name and a size each. They go with the next
+  // ask that starts, and are cleared then, as the draft is.
+  const [attached, setAttached] = useState(NOTHING_ATTACHED);
   const [streaming, setStreaming] = useState<string | null>(null);
   const [problem, setProblem] = useState<keyof typeof PROBLEMS | null>(null);
   const [chosen, setChosen] = useState<{ readonly scope: Scope; readonly after: number }>({
@@ -508,6 +594,14 @@ export function AssistantPanel({
       if (chosen === 'page-image') {
         return canSee ? { about: { scope: 'page-image', docId: focused.docId, page: focused.page } } : null;
       }
+      // EVERY OPEN DOCUMENT, as the tabs stand at Send (ADR-0134). With fewer than two left — a tab closed since the
+      // choice — it is this document, which is what *all* of one document is.
+      if (chosen === 'all') {
+        const documents = allOpen(focused.docId, openDocuments);
+        return documents === undefined
+          ? { about: { scope: 'document', docId: focused.docId } }
+          : { about: { scope: 'documents', docIds: documents.asked.map((each) => each.docId) }, documents };
+      }
       const on = (docId: DocId, page: number): AskAbout =>
         chosen === 'page' ? { scope: 'page', docId, page } : { scope: 'document', docId };
       const left = on(focused.docId, focused.page);
@@ -519,7 +613,7 @@ export function AssistantPanel({
       if (sides === 'right') return { about: right, sides: record };
       return { about: left, alongside: right, sides: record };
     },
-    [beside, canSee, focused, selection, sides],
+    [beside, canSee, focused, openDocuments, selection, sides],
   );
 
   /** A NEW ask's request: the scope's, with the switch as it stands now (ADR-0108). *Regenerate* keeps its own. */
@@ -533,7 +627,11 @@ export function AssistantPanel({
 
   const ask = useCallback(
     /** @returns whether the ask began; a request not begun is kept for when it can be. */
-    (text: string, { about, alongside, sides: asked, web = false }: AskRequest, replyTo?: ReplyTarget): boolean => {
+    (
+      text: string,
+      { about, alongside, sides: asked, documents, attachments, web = false }: AskRequest,
+      replyTo?: ReplyTarget,
+    ): boolean => {
       if (text === '' || model === '' || live.current !== null) return false;
       const store = focused?.store;
       const read = (): readonly ConversationTurn[] => (store === undefined ? looseRef.current : store.getState().conversation);
@@ -550,10 +648,14 @@ export function AssistantPanel({
         text,
         ...(replyTo === undefined ? {} : { replyTo }),
         ...(asked === undefined ? {} : { sides: asked }),
+        ...(documents === undefined ? {} : { documents }),
+        ...(attachments === undefined ? {} : { attached: attachments.map((file) => file.name) }),
         request: {
           about,
           ...(alongside === undefined ? {} : { alongside }),
           ...(asked === undefined ? {} : { sides: asked }),
+          ...(documents === undefined ? {} : { documents }),
+          ...(attachments === undefined ? {} : { attachments }),
           web,
         },
         model: models.find((entry) => entry.id === model)?.label ?? model,
@@ -570,21 +672,36 @@ export function AssistantPanel({
         messages: [...before, turn].map((each) => ({ role: each.role, text: each.text })),
         ...(about === undefined ? {} : { about }),
         ...(alongside === undefined ? {} : { alongside }),
+        ...(attachments === undefined ? {} : { attachments: attachments.map((file) => file.handle) }),
         web,
       }).then((result) => {
         if (result.ok && result.value.started) {
           // THE DRAFT IS CLEARED ONLY ONCE THE ASK STARTED. A request that never began must
           // leave a person's words where they typed them.
           setDraft((current) => (current.trim() === text ? '' : current));
+          // AND THE FILES THAT WENT WITH IT, by handle: a file attached while this ask was starting stays for the next.
+          if (attachments !== undefined) {
+            const went = new Set(attachments.map((file) => file.handle));
+            setAttached((current) => ({ files: current.files.filter((file) => !went.has(file.handle)), dropped: 0 }));
+          }
           // WHAT WENT is recorded on the turn that asked, so the line under it is main's answer
           // rather than the scope the panel meant.
           const now = read();
           const at = now.lastIndexOf(turn);
-          const { sent, alongside: second } = result.value;
+          const { sent, alongside: second, among, files, share } = result.value;
           if (at !== -1) {
             write(
               now.map((each, index) =>
-                index === at ? { ...each, sent, ...(second === undefined ? {} : { alongside: second }) } : each,
+                index === at
+                  ? {
+                      ...each,
+                      sent,
+                      ...(second === undefined ? {} : { alongside: second }),
+                      ...(among === undefined ? {} : { among }),
+                      ...(files === undefined ? {} : { files }),
+                      ...(share === undefined ? {} : { share }),
+                    }
+                  : each,
               ),
             );
           }
@@ -626,9 +743,25 @@ export function AssistantPanel({
     [focused?.docId],
   );
 
+  /**
+   * The paperclip: `main` runs the picker and answers handles. Files already attached stay; past eight, the rest are
+   * counted and said rather than kept, `main`'s rule applied to the whole row.
+   */
+  const attach = useCallback(() => {
+    void client['ai.attach']({}).then((result) => {
+      if (!result.ok) return;
+      setAttached((current) => {
+        const together = [...current.files, ...result.value.files];
+        const kept = together.slice(0, MAX_ASK_ATTACHMENTS);
+        return { files: kept, dropped: result.value.dropped + together.length - kept.length };
+      });
+    });
+  }, [client]);
+
   const send = useCallback(() => {
-    const wanted = newRequest(scope);
-    if (wanted === null) return;
+    const asked = newRequest(scope);
+    if (asked === null) return;
+    const wanted = attached.files.length === 0 ? asked : { ...asked, attachments: attached.files };
     // EDIT AND RESEND: the edited question and everything after it go before the new one is asked.
     // Only when the ask can begin, so a Send that cannot start leaves the conversation as it was.
     if (editing !== null && live.current === null && model !== '' && draft.trim() !== '') {
@@ -636,7 +769,7 @@ export function AssistantPanel({
       setEditing(null);
     }
     ask(draft.trim(), wanted);
-  }, [ask, draft, editing, model, newRequest, scope, setEditing, turns, writeTurns]);
+  }, [ask, attached.files, draft, editing, model, newRequest, scope, setEditing, turns, writeTurns]);
 
   /** *Regenerate* the last answer: the same question, about the same thing, asked again. */
   const regenerate = useCallback(() => {
@@ -646,18 +779,6 @@ export function AssistantPanel({
     writeTurns(turns.slice(0, at));
     if (!ask(question.text, question.request ?? { about: undefined }, question.replyTo)) writeTurns(turns);
   }, [ask, model, turns, writeTurns]);
-
-  /** A short-lived *Copied* beside the answer that was copied, by its index. */
-  const [copied, setCopied] = useState<number | null>(null);
-  useEffect(() => {
-    if (copied === null) return;
-    const timer = setTimeout(() => {
-      setCopied(null);
-    }, COPIED_MS);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [copied]);
 
   // A COMMAND'S REQUEST points the panel and may ask at once. Keyed by `serial`, so the same
   // words asked twice are two asks.
@@ -735,14 +856,56 @@ export function AssistantPanel({
             'page-image': () => i18n._(ASSISTANT_SCOPE_PICTURE, { page }),
             selection: () => i18n._(ASSISTANT_SCOPE_SELECTION),
             comment: () => i18n._(ASSISTANT_SCOPE_COMMENT),
+            documents: () => i18n._(ASSISTANT_SCOPE_ALL),
           }[about.scope]();
     const side = question?.request?.sides?.asked;
     const which = side === undefined ? '' : ` · ${i18n._(SIDE_WORDS[side])}`;
     return i18n._(ASSISTANT_CAPTION, { model: question?.model ?? '', scope: `${scope}${which}` });
   };
 
-  /** The lines under an asked turn: one, or one per side for a turn asked of both. */
+  /**
+   * The lines under an asked turn: what its context sent, then one line per attached file (ADR-0135) — what went, that
+   * it went as a picture, or why nothing did — each read from the turn's own record.
+   */
   const sentLines = (turn: ConversationTurn): readonly string[] => {
+    const names = turn.attached ?? [];
+    const files = (turn.files ?? []).map((each, at) => {
+      const name = names[at] ?? '';
+      if ('sent' in each) return i18n._(ASSISTANT_SENT_DOCUMENT, { name, sent: sentLine(each.sent) });
+      if ('pictured' in each) return i18n._(ASSISTANT_SENT_FILE_PICTURE, { name });
+      return i18n._(ASSISTANT_SENT_UNREAD, { name, reason: i18n._(FILE_UNREAD_WORDS[each.unread]) });
+    });
+    // THE SHARE, said once, whenever main divided the bound and no document list already says it.
+    const share =
+      turn.share === undefined || turn.documents !== undefined
+        ? []
+        : [i18n._(ASSISTANT_SENT_SHARE_EACH, { characters: number.format(turn.share) })];
+    return [...share, ...contextLines(turn), ...files];
+  };
+
+  /** What an asked turn's context sent: one line, one per side for a turn asked of both, or one per open document. */
+  const contextLines = (turn: ConversationTurn): readonly string[] => {
+    // EVERY OPEN DOCUMENT (ADR-0134): the share each had, then one line per document — what went, or why nothing did —
+    // then the tabs past the bound, named. Read from the turn's own record, never from the tabs open now.
+    if (turn.documents !== undefined && turn.among !== undefined) {
+      const named = new Map(turn.documents.asked.map((each) => [each.docId, each.name]));
+      return [
+        i18n._(ASSISTANT_SENT_SHARE, {
+          count: turn.documents.asked.length,
+          // MAIN'S NUMBER where it answered one — with files beside the documents it is smaller than the documents'
+          // count alone gives — and the same rule's answer otherwise.
+          characters: number.format(turn.share ?? askShareOf(turn.documents.asked.length)),
+        }),
+        ...turn.among.map((each) =>
+          'sent' in each
+            ? i18n._(ASSISTANT_SENT_DOCUMENT, { name: named.get(each.docId) ?? '', sent: sentLine(each.sent) })
+            : i18n._(ASSISTANT_SENT_UNREAD, { name: named.get(each.docId) ?? '', reason: i18n._(UNREAD_WORDS[each.unread]) }),
+        ),
+        ...(turn.documents.notSent.length === 0
+          ? []
+          : [i18n._(ASSISTANT_SENT_NOT_SENT, { limit: MAX_ASK_DOCUMENTS, names: turn.documents.notSent.join(', ') })]),
+      ];
+    }
     if (turn.sent === undefined || turn.sent === null) return [];
     if (turn.alongside === undefined) return [sentLine(turn.sent)];
     return [
@@ -774,11 +937,33 @@ export function AssistantPanel({
    * Markdown around it is {@link answerElements}'; this is only ever handed text, never code.
    */
   const answerTextFor =
-    (asked: ConversationTurn['sides']) =>
+    (asked: ConversationTurn['sides'], documents?: ConversationTurn['documents']) =>
     (text: string, key: string): ReactElement => (
       <Fragment key={key}>
         {citationsIn(text).map((piece, at) => {
           if (!('cited' in piece)) return <span key={at}>{piece.text}</span>;
+          // A DOCUMENT BY ITS PLACE (ADR-0134): resolved against what the turn asked about, and a link only while that
+          // document is still open — a citation of a document closed since is text, never a jump to the wrong file.
+          if (piece.document !== undefined) {
+            const cited = documents?.asked[piece.document];
+            const open = cited !== undefined && openDocuments.some((each) => each.docId === cited.docId);
+            if (cited === undefined || !open || onGoToDocument === undefined) return <span key={at}>{piece.label}</span>;
+            return (
+              <button
+                aria-label={i18n._(ASSISTANT_CITATION_DOCUMENT, { page: pdfjsPageOf(piece.cited), name: cited.name })}
+                className="m-assistant__citation"
+                data-assistant-citation={piece.cited}
+                data-assistant-citation-document={cited.docId}
+                key={at}
+                onClick={() => {
+                  onGoToDocument(cited.docId, piece.cited);
+                }}
+                type="button"
+              >
+                {piece.label}
+              </button>
+            );
+          }
           const target = citationTarget(piece.side, asked);
           if (target === undefined) return <span key={at}>{piece.label}</span>;
           return (
@@ -840,7 +1025,7 @@ export function AssistantPanel({
               // RENDERED MARKDOWN, the owner's specification: headings, lists, tables, code —
               // built as elements from the tokens, so no HTML from the answer reaches the page.
               <div className="m-assistant__text m-assistant__answer">
-                {answerElements(turn.text, answerTextFor(turns[at - 1]?.sides))}
+                {answerElements(turn.text, answerTextFor(turns[at - 1]?.sides, turns[at - 1]?.documents))}
               </div>
             ) : (
               <p className="m-assistant__text">{turn.text}</p>
@@ -885,10 +1070,10 @@ export function AssistantPanel({
                   icon={Copy}
                   label={ASSISTANT_COPY}
                   onClick={() => {
-                    // THROUGH MAIN: the renderer holds no clipboard permission (§2). *Copied* shows only
-                    // when main says the text went, never as a hope.
+                    // THROUGH MAIN: the renderer holds no clipboard permission (§2). *Copied* is every copy's one
+                    // confirmation (`confirmCopied`), shown only when main says the text went, never as a hope.
                     void client['window.copyText']({ text: turn.text.slice(0, MAX_CHAT_TEXT) }).then((answer) => {
-                      if (answer.ok && answer.value.copied) setCopied(at);
+                      if (answer.ok && answer.value.copied) confirmCopied({ toast });
                     });
                   }}
                   size="dense"
@@ -907,9 +1092,6 @@ export function AssistantPanel({
                     size="dense"
                   />
                 )}
-                <span aria-live="polite" className="m-assistant__done">
-                  {copied === at ? i18n._(ASSISTANT_COPIED) : ''}
-                </span>
                 {turns[at - 1]?.model !== undefined && (
                   <span className="m-assistant__caption">{captionFor(turns[at - 1])}</span>
                 )}
@@ -961,12 +1143,16 @@ export function AssistantPanel({
           />
         </div>
       )}
-      {/* THE FOOT: Context and Sources as two menus on one row over the message box (the owner's review of 0.1.6.0;
-          until then two rows of chips under the labels *Asking about* and *Answer from*), then the box itself with the
-          provider and model at its bottom-left and the send arrow at its bottom-right. */}
+      {/* THE FOOT: the word *Choose*, then Context and Sources as two menus, ON ONE ROW over the message box (the
+          owner, 2 October; each menu's face is its value alone, so the row fits the pane), then the box itself with
+          the provider and model at its bottom-left and the send arrow at its bottom-right. The word names the group,
+          so a screen reader hears *Choose* once on entering it and each menu by its own name. */}
       {focused !== undefined && (
         <div className="m-assistant__about" data-assistant-about="">
-          <div className="m-assistant__choices">
+          <div aria-labelledby={chooseId} className="m-assistant__choices" role="group">
+            <span className="m-assistant__choose" id={chooseId}>
+              {i18n._(ASSISTANT_CHOOSE)}
+            </span>
             <ChoiceMenu<Scope>
               label={ASSISTANT_ABOUT_LABEL}
               onChange={choose}
@@ -986,6 +1172,8 @@ export function AssistantPanel({
                   values: { page: pdfjsPageOf(beside !== undefined && sides === 'right' ? beside.page : focused.page) },
                 },
                 { value: 'document' as const, label: ASSISTANT_CHIP_DOCUMENT },
+                // EVERY OPEN DOCUMENT (ADR-0134), offered only when there is more than one to ask about.
+                ...(openDocuments.length < 2 ? [] : [{ value: 'all' as const, label: ASSISTANT_CHIP_ALL }]),
                 { value: 'comments' as const, label: ASSISTANT_CHIP_COMMENTS },
                 // DISABLED, NOT DROPPED, for a model that says it cannot see (ADR-0081's rule).
                 { value: 'page-image' as const, label: ASSISTANT_CHIP_PICTURE, disabled: !canSee },
@@ -1055,6 +1243,37 @@ export function AssistantPanel({
 
       {/* NOT UNDER A TOAST: the strip sits at the window's bottom-right, where this ends (`ToastStrip`). */}
       <div className="m-assistant__composer" data-toast-avoid="">
+        {/* THE FILES FOR THE NEXT QUESTION (ADR-0135), each a chip with its name, its size and a way to take it off.
+            A name is all the renderer knows of a file; what is in it is read by main, contained, when it is asked. */}
+        {attached.files.length === 0 ? null : (
+          <ul aria-label={i18n._(ASSISTANT_ATTACHED_LIST)} className="m-assistant__chips" data-assistant-attached="">
+            {attached.files.map((file) => (
+              <li className="m-assistant__chip" key={file.handle}>
+                <Paperclip aria-hidden className="m-assistant__chip-icon" />
+                <span className="m-assistant__chip-name">{file.name}</span>
+                <span className="m-assistant__chip-size">
+                  {file.bytes < 1024 * 1024
+                    ? i18n._(ASSISTANT_SIZE_KB, { size: number.format(Math.max(1, Math.round(file.bytes / 1024))) })
+                    : i18n._(ASSISTANT_SIZE_MB, { size: number.format(Math.round(file.bytes / 104_857.6) / 10) })}
+                </span>
+                <IconButton
+                  icon={X}
+                  label={ASSISTANT_ATTACHED_REMOVE}
+                  onClick={() => {
+                    setAttached((current) => ({ files: current.files.filter((each) => each.handle !== file.handle), dropped: 0 }));
+                  }}
+                  size="dense"
+                  values={{ name: file.name }}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+        {attached.dropped === 0 ? null : (
+          <p className="m-assistant__state" data-assistant-attached-dropped="">
+            {i18n._(ASSISTANT_ATTACHED_DROPPED, { count: attached.dropped, limit: MAX_ASK_ATTACHMENTS })}
+          </p>
+        )}
         <textarea
           ref={composer}
           aria-describedby={hintId}
@@ -1078,6 +1297,15 @@ export function AssistantPanel({
           value={draft}
         />
         <div className="m-assistant__composer-foot">
+          {/* THE PAPERCLIP (ADR-0135), first in the foot: any file, several at once, through main's picker. Disabled at
+              eight, the most one question carries, so it is never a control that picks and keeps nothing. */}
+          <IconButton
+            disabled={attached.files.length >= MAX_ASK_ATTACHMENTS}
+            icon={Paperclip}
+            label={ASSISTANT_ATTACH}
+            onClick={attach}
+            size="control"
+          />
           {/* THE PROVIDER AND MODEL, inside the box at its bottom-left (v5-03), each a compact labelled select. EVERY
               PROVIDER IS LISTED, with or without a key: a person choosing where to put a key must be able to see the
               choice, and the no-key line above says what the chosen one needs. */}

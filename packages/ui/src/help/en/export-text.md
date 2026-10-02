@@ -10,7 +10,7 @@ Export text writes every page's words into one text file. **Export text with lay
 
 ## Steps
 
-1. In the rail, choose **Tools**. In the **Convert** group, choose **More**.
+1. In the rail, choose **Tools**, then go to the **Convert** group. These two are among its last tools, so in a narrower window they are under the group's **More**.
 2. Choose **Export text…** for plain text, or **Layout text…** (**Export text with layout…**) to keep the layout.
 3. Choose where to save the file.
 

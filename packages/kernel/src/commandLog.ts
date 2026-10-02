@@ -471,6 +471,10 @@ export interface CommandPrior {
    * ADR-0041's handle is what unblocks both, and it unblocks them together.
    */
   readonly placeImage: never;
+  /** A placed signature, typed or drawn (ADR-0133): `placeImage`'s reason, unchanged. */
+  readonly placeSignatureMark: never;
+  /** A placed signature that is a picture: `placeImage`'s reason, unchanged. */
+  readonly placeSignaturePicture: never;
   /**
    * The value a field held, and **which widget puts it back**.
    *

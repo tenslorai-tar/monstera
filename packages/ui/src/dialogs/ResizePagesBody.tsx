@@ -12,10 +12,12 @@ import {
   RESIZE_PAGES_LETTER,
   RESIZE_PAGES_NOT_A_SIZE,
   RESIZE_PAGES_TABLOID,
+  RESIZE_PAGES_PRESETS,
   RESIZE_PAGES_UNIFORM_NOTE,
   RESIZE_PAGES_WIDTH,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
@@ -75,53 +77,62 @@ export default function ResizePagesBody({
 
   return (
     <div className="m-resize-pages">
-      <fieldset className="m-resize-pages__presets">
-        {PRESETS.map((preset) => (
-          <Button
-            key={preset.key}
-            label={preset.label}
-            // NO `primary` VARIANT ON A PRESET. It is a button that fills two
-            // fields, not a selection — showing one as chosen would be the
-            // second state this dialog does not keep, drawn on screen.
-            onClick={() => {
-              setWidth(String(preset.width));
-              setHeight(String(preset.height));
-            }}
-          />
-        ))}
-      </fieldset>
-      <Input
-        label={RESIZE_PAGES_WIDTH}
-        value={width}
-        onValueChange={(next) => {
-          setWidth(next);
-        }}
-      />
-      <Input
-        label={RESIZE_PAGES_HEIGHT}
-        value={height}
-        onValueChange={(next) => {
-          setHeight(next);
-        }}
-      />
-      <p className="m-resize-pages__note">{_(RESIZE_PAGES_UNIFORM_NOTE)}</p>
+      <DialogRow label={RESIZE_PAGES_PRESETS} note={RESIZE_PAGES_UNIFORM_NOTE}>
+        <div className="m-dialog-row__buttons">
+          {PRESETS.map((preset) => (
+            <Button
+              key={preset.key}
+              label={preset.label}
+              // NO `primary` VARIANT ON A PRESET. It is a button that fills two
+              // fields, not a selection — showing one as chosen would be the
+              // second state this dialog does not keep, drawn on screen.
+              onClick={() => {
+                setWidth(String(preset.width));
+                setHeight(String(preset.height));
+              }}
+            />
+          ))}
+        </div>
+      </DialogRow>
+      <DialogRow label={RESIZE_PAGES_WIDTH}>
+        <Input
+          label={RESIZE_PAGES_WIDTH}
+          labelShownBeside
+          value={width}
+          onValueChange={(next) => {
+            setWidth(next);
+          }}
+        />
+      </DialogRow>
+      <DialogRow label={RESIZE_PAGES_HEIGHT}>
+        <Input
+          label={RESIZE_PAGES_HEIGHT}
+          labelShownBeside
+          value={height}
+          onValueChange={(next) => {
+            setHeight(next);
+          }}
+        />
+      </DialogRow>
       <PageScopeChoice className="m-resize-pages__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
       <p className="m-resize-pages__problem" role="status">
         {ready ? '' : _(RESIZE_PAGES_NOT_A_SIZE)}
       </p>
-      <Button
-        label={RESIZE_PAGES_APPLY}
-        variant="primary"
-        disabled={!ready}
-        onClick={() => {
-          // GUARDED AGAIN rather than trusting the disabled attribute, for
-          // `CropPagesBody`'s reason: the schema behind `resolve` refuses a
-          // size outside the format's bounds, and a mismatch would be a thrown
-          // `DialogResultRejected` over the user's document.
-          if (widthPoints === null || heightPoints === null) return;
-          resolve({ pages: everyPage ? 'all' : [...pages], widthPoints, heightPoints });
-        }}
-      />
+      <DialogFooter>
+        <Button
+          label={RESIZE_PAGES_APPLY}
+          variant="primary"
+          disabled={!ready}
+          onClick={() => {
+            // GUARDED AGAIN rather than trusting the disabled attribute, for
+            // `CropPagesBody`'s reason: the schema behind `resolve` refuses a
+            // size outside the format's bounds, and a mismatch would be a thrown
+            // `DialogResultRejected` over the user's document.
+            if (widthPoints === null || heightPoints === null) return;
+            resolve({ pages: everyPage ? 'all' : [...pages], widthPoints, heightPoints });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

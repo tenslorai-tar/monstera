@@ -12,7 +12,7 @@ When you choose **Organize** in the rail, the pages area shows every page of the
 
 1. In the rail, choose **Organize**.
 2. Click a card to select it. **Ctrl+click** adds or removes a card; **Shift+click** selects a run of cards. The line above the cards says how many are selected.
-3. With pages selected, choose **Rotate page** or **Delete page** (under **More** in the **Pages** group) to act on all of them, or press **Delete** to remove them.
+3. With pages selected, choose **Rotate page** or **Delete page** in the **Pages** group (in a narrower window **Delete page** is under the group's **More**) to act on all of them, or press **Delete** to remove them.
 4. Drag a card to move that page.
 5. Press **Enter** or double-click a card to open that page for reading in **Home**.
 6. Above the cards, choose **Thumbnail** to see many pages at once, or **Full page** to see each page whole, as tall as the window allows.

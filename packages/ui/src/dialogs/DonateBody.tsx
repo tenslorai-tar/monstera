@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 
 import { DONATE_LATER, DONATE_LICENCE, DONATE_OPEN, DONATE_WHERE } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { DonateAnswer } from './donate.js';
 
@@ -23,7 +24,15 @@ export default function DonateBody({ resolve }: DialogAnswering<DonateAnswer>): 
     <div className="m-donate">
       <p>{_(DONATE_LICENCE)}</p>
       <p>{_(DONATE_WHERE)}</p>
-      <div className="m-donate__actions">
+      {/* THE PATTERN'S FOOTER WITHOUT A CANCEL: *Later* is this dialog's own word for not now, and a Cancel beside it
+          would say the same thing twice. The primary is last. */}
+      <DialogFooter ownDismissal>
+        <Button
+          label={DONATE_LATER}
+          onClick={() => {
+            resolve('later');
+          }}
+        />
         <Button
           label={DONATE_OPEN}
           onClick={() => {
@@ -31,13 +40,7 @@ export default function DonateBody({ resolve }: DialogAnswering<DonateAnswer>): 
           }}
           variant="primary"
         />
-        <Button
-          label={DONATE_LATER}
-          onClick={() => {
-            resolve('later');
-          }}
-        />
-      </div>
+      </DialogFooter>
     </div>
   );
 }

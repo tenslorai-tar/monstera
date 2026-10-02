@@ -12,6 +12,7 @@ import {
   CLOUD_VIEW_ONLY_SAVE_COPY,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { CLOUD_VIEW_ONLY_RESULT, CloudViewOnlyMoment } from './cloudViewOnly.js';
 
@@ -35,7 +36,7 @@ export default function CloudViewOnlyBody({
   return (
     <div className="m-cloud__outcome" data-cloud-view-only={moment}>
       <p>{_(TEXT[moment], { provider: name })}</p>
-      <div className="m-cloud__actions">
+      <DialogFooter>
         <Button
           label={CLOUD_VIEW_ONLY_SAVE_COPY}
           values={{ provider: name }}
@@ -44,7 +45,7 @@ export default function CloudViewOnlyBody({
           }}
           variant="primary"
         />
-      </div>
+      </DialogFooter>
     </div>
   );
 }

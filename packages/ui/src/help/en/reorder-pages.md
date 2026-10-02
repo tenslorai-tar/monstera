@@ -11,7 +11,7 @@ You can put pages in a different order by dragging them or by moving them one pl
 ## Steps
 
 1. In the rail, choose **Organize**, and drag a page card to its new place. You can also drag page pictures in the **Pages** tab of the document panel.
-2. To move the page you are on by one place, choose **More** in the **Pages** group, then **Move page up** or **Move page down**.
+2. To move the page you are on by one place, choose **Move page up** or **Move page down** in the **Pages** group (under the group's **More** in a narrower window).
 3. From the keyboard, move to a page picture or card and press **Alt+Up** or **Alt+Down** to move that page one place.
 
 ![A page card being dragged to a new place in the Organize grid](screenshot:reorder-pages-1)
