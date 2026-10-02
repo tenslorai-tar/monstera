@@ -182,6 +182,10 @@ async function drawn(options: {
   );
   // EVERY TOAST THE PANEL RAISES, in order: a copy's confirmation goes through the window's toast.
   const toasts: unknown[][] = [];
+  // A DOCUMENT AND ITS STORE WHERE A CASE NAMES NONE: the panel is drawn only for an open document, which holds the
+  // conversation, and one store for the whole case so a remount reads the same conversation.
+  const focusedDocId = asDocId('00000000-0000-4000-8000-0000000000f0');
+  const focused = options.focused ?? { docId: focusedDocId, store: createDocumentStore(focusedDocId, asDocVersion(1)), page: 0 };
   const panel = (props: Partial<AssistantPanelProps> & { readonly mount?: number }): ReactElement => (
     <Wrapped>
       <Host
@@ -189,7 +193,7 @@ async function drawn(options: {
         toast={(...raised) => {
           toasts.push(raised);
         }}
-        focused={options.focused}
+        focused={focused}
         beside={options.beside}
         onGoToBeside={options.onGoToBeside}
         onGoTo={options.onGoTo}

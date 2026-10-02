@@ -3390,6 +3390,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           contextPanel={
             <ContextPanel
               assistant={
+                // ONLY FOR A DOCUMENT WITH ITS STORE: the conversation lives in that store, so the panel has nothing
+                // to hold one in otherwise and is not drawn.
+                activeId === undefined || store === undefined ? null : (
                 // THE ASSISTANT TAB (ADR-0083). It takes the same stored-secret list the
                 // other key-gated surfaces take, so *which providers have a key* is
                 // answered in one place, and the event subscriber `App` was given.
@@ -3401,11 +3404,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                   client={client}
                   toast={toast}
                   settings={settings}
-                  focused={
-                    activeId === undefined || store === undefined
-                      ? undefined
-                      : { docId: activeId, store, page: currentPage }
-                  }
+                  focused={{ docId: activeId, store, page: currentPage }}
                   onGoTo={navigator.jumpTo}
                   // EVERY OPEN TAB, for *All Open Docs*, and the jump its citations take to another one (ADR-0134).
                   openDocuments={assistantDocuments}
@@ -3421,6 +3420,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                   storedSecrets={storedSecrets}
                   subscribe={subscribe}
                 />
+                )
               }
               settings={settings}
             >
