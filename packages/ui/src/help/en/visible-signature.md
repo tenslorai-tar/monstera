@@ -10,7 +10,7 @@ A visible signature shows your signature on the page and signs the document digi
 
 ## Steps
 
-1. In the rail, choose **Protect**, then **Signature** in the **Signatures** group (**Place a visible signature**). It is also in **Home**, **Quick tools**.
+1. In the rail, choose **Protect**, then **Sign with certificate** in the **Signatures** group. It is also in **Home**, **Quick tools**.
 2. Drag a box where the signature should appear.
 3. In **How the signature looks**, choose:
    - **Type it**, then type your **Signature** and pick a **Font**;
@@ -31,5 +31,5 @@ A visible signature shows your signature on the page and signs the document digi
 
 <!--
 Screenshots to capture:
-1. visible-signature-1 — After dragging a box with Signature; dialog.sign-document with Draw it and a drawn signature. Frame the dialog.
+1. visible-signature-1 — After dragging a box with Sign with certificate; dialog.sign-document with Draw it and a drawn signature. Frame the dialog.
 -->

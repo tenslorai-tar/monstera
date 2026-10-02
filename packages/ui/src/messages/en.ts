@@ -4460,7 +4460,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_DOCUMENT_IMAGE_NOTE]:
     'You will be asked for a PNG or JPEG picture of your signature first, then for your certificate.',
   [SIGN_DOCUMENT_MARK_MISSING]: 'Type or draw the signature first.',
-  [PLACE_SIGNATURE_TOOL_TITLE]: 'Place a visible signature',
+  [PLACE_SIGNATURE_TOOL_TITLE]: 'Sign with certificate',
 
   [SIGNATURES_COMMAND_TITLE]: 'Check signatures',
   [SIGNATURES_TITLE]: 'Signatures',
@@ -4598,7 +4598,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_COMMENTS_EXPORT_JSON]: 'Export JSON',
   [RIBBON_PROTECT_DOCUMENT]: 'Permissions',
   [RIBBON_REDACT_MATCHES]: 'Redact matches',
-  [RIBBON_PLACE_SIGNATURE]: 'Signature',
+  [RIBBON_PLACE_SIGNATURE]: 'Sign with certificate',
   [RIBBON_DIAGNOSTICS]: 'Diagnostics',
   [RIBBON_NEW_FROM_MARKDOWN]: 'From Markdown',
   [RIBBON_APPEND_MARKDOWN]: 'Append Markdown',
