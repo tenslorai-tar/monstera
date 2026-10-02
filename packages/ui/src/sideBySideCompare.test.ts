@@ -258,4 +258,23 @@ describe('the walk — what it reads, and when it stops', () => {
     expect(outcome.kind).toBe('cancelled');
     expect(reads).toStrictEqual(['left:0', 'left:1']);
   });
+
+  // A STOP INSIDE A DRAW: `renderPage` rejects an aborted draw, and the walk read that as a page that could not be
+  // drawn — Side by Side's Stop then said *"A page could not be drawn"* (found writing C.b's Stop case, 2026-10-02).
+  it('a stop that lands INSIDE a draw is cancelled, not failed; CONTROL: the same rejection unstopped fails the walk', async () => {
+    const documents = new Map([[LEFT, [intro, terms]], [RIGHT, [intro, terms]]]);
+    const rejecting = (stopNow: AbortController | undefined): CompareSide => ({
+      ...side(LEFT, [intro, terms]),
+      draw: () => {
+        stopNow?.abort();
+        return Promise.reject(new Error('the draw was superseded'));
+      },
+    });
+    const stop = new AbortController();
+    const stopped = await compareSides(clientFor(documents).client, rejecting(stop), side(RIGHT, [intro, terms]), stop.signal, () => undefined);
+    expect(stopped.kind).toBe('cancelled');
+
+    const failing = compareSides(clientFor(documents).client, rejecting(undefined), side(RIGHT, [intro, terms]), new AbortController().signal, () => undefined);
+    await expect(failing).rejects.toThrow('the draw was superseded');
+  });
 });

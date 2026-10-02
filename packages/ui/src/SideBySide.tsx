@@ -1,13 +1,12 @@
 import { useLingui } from '@lingui/react';
 import type { ContractClient } from '@monstera/contract';
 import type { CompareBox, DocId, DocVersion, MessageKey } from '@monstera/shared';
-import { ZoomIn, ZoomOut } from 'lucide-react';
+import { X, ZoomIn, ZoomOut } from 'lucide-react';
 import { type KeyboardEvent, type ReactElement, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import type { DifferenceMark } from './DifferenceLayer.js';
 import type { DocumentView } from './documentView.js';
 import {
-  SIDE_CANCEL,
   SIDE_CLIPPED,
   SIDE_CLOSE,
   SIDE_CLOSE_TEXT,
@@ -15,6 +14,7 @@ import {
   SIDE_COMPARING,
   SIDE_COUNT,
   SIDE_DIFFERENCES,
+  SIDE_DIFFERENCES_CLOSE,
   SIDE_DOCUMENT,
   SIDE_FAILED,
   SIDE_HALF_LABEL,
@@ -40,6 +40,7 @@ import {
   SIDE_ROW_REPLACED,
   SIDE_ROW_RIGHT,
   SIDE_ROW_TEXT,
+  SIDE_STOP,
   SIDE_SUBTITLE,
   SIDE_TITLE,
   SIDE_ZOOM,
@@ -189,7 +190,13 @@ export function SideBySide({
   // KEYED ON THE PAIR, so a comparison of two other documents is never shown: picking another document drops it by
   // render, rather than by an effect that would show the stale list for a frame first.
   const pairKey = `${left.docId}@${String(left.version)}|${right.docId}@${String(right.version)}`;
-  const [comparing, setComparing] = useState<{ readonly key: string; readonly state: Comparing }>({ key: pairKey, state: { kind: 'idle' } });
+  // `listed`: whether the Differences panel is open. Its close hides the panel and every mark with it, and keeps the
+  // finished comparison, which is still the answer for this pair until either half changes.
+  const [comparing, setComparing] = useState<{ readonly key: string; readonly state: Comparing; readonly listed: boolean }>({
+    key: pairKey,
+    state: { kind: 'idle' },
+    listed: false,
+  });
   const [chosen, setChosen] = useState<number | undefined>(undefined);
   const [goTo, setGoTo] = useState<{ readonly left: number | undefined; readonly right: number | undefined }>({
     left: undefined,
@@ -197,11 +204,18 @@ export function SideBySide({
   });
   if (comparing.key !== pairKey) {
     if (comparing.state.kind === 'running') comparing.state.stop.abort();
-    setComparing({ key: pairKey, state: { kind: 'idle' } });
+    setComparing({ key: pairKey, state: { kind: 'idle' }, listed: false });
     setChosen(undefined);
   }
   const state = comparing.state;
-  const result: ComparisonResult | undefined = state.kind === 'done' ? state.result : undefined;
+  const listed = comparing.listed && state.kind !== 'idle';
+  // NO MARKS WITHOUT THE PANEL: a tint on a page with no list beside it names a change nobody can read.
+  const result: ComparisonResult | undefined = listed && state.kind === 'done' ? state.result : undefined;
+  // THE ANSWER FOR THIS PAIR IS ALREADY HELD: the state resets whenever either half's document or version moves, so a
+  // finished comparison is current by construction, and walking both documents again would find the same list.
+  const current = state.kind === 'done';
+  // ON SHOW ALREADY: the panel is open on the current answer, so Compare has nothing to do.
+  const answered = listed && current;
 
   const section = useRef<HTMLElement>(null);
   // FOCUS ARRIVES HERE ON OPENING, so Esc works at once: the control that opened it is now covered.
@@ -221,10 +235,14 @@ export function SideBySide({
     const leftReady = leftView.ready;
     const rightReady = rightView.ready;
     if (leftReady === undefined || rightReady === undefined) return;
+    if (current) {
+      setComparing((held) => ({ ...held, listed: true }));
+      return;
+    }
     const stop = new AbortController();
     const key = pairKey;
     setChosen(undefined);
-    setComparing({ key, state: { kind: 'running', done: 0, total: 0, stop } });
+    setComparing({ key, state: { kind: 'running', done: 0, total: 0, stop }, listed: true });
     const sideOf = (document: SideDocument, view: DocumentView) => ({
       docId: document.docId,
       version: view.version,
@@ -232,18 +250,29 @@ export function SideBySide({
       draw: (page: number, signal: AbortSignal) => draw(view, page, signal),
     });
     compareSides(client, sideOf(left, leftReady), sideOf(right, rightReady), stop.signal, (done, total) => {
-      setComparing((current) => (current.key === key && current.state.kind === 'running' ? { key, state: { ...current.state, done, total } } : current));
+      setComparing((held) =>
+        held.key === key && held.state.kind === 'running' ? { ...held, state: { ...held.state, done, total } } : held,
+      );
     }).then(
       (outcome) => {
-        setComparing((current) =>
-          current.key !== key ? current : { key, state: outcome.kind === 'cancelled' ? { kind: 'idle' } : outcome },
+        setComparing((held) =>
+          held.key !== key ? held : { ...held, state: outcome.kind === 'cancelled' ? { kind: 'idle' } : outcome },
         );
       },
       // A PAGE THAT COULD NOT BE DRAWN ends the walk and says so; the list is not shown, because a part reads as the whole.
       () => {
-        setComparing((current) => (current.key !== key ? current : { key, state: { kind: 'failed' } }));
+        setComparing((held) => (held.key !== key ? held : { ...held, state: { kind: 'failed' } }));
       },
     );
+  };
+
+  // CLOSES THE PANEL, stopping a walk still running, and gives the focus back to the surface so the next Esc closes
+  // Side by Side: the control that had it is gone with the panel.
+  const closeList = (): void => {
+    if (state.kind === 'running') state.stop.abort();
+    setChosen(undefined);
+    setComparing((held) => ({ ...held, listed: false }));
+    section.current?.focus();
   };
 
   const marks = useMemo(() => marksOf(result?.rows ?? [], chosen), [result, chosen]);
@@ -256,7 +285,9 @@ export function SideBySide({
   const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
     if (event.key !== 'Escape' || event.defaultPrevented) return;
     event.preventDefault();
-    onClose();
+    // THE INNERMOST FIRST: an open Differences panel closes before the surface it sits in.
+    if (listed) closeList();
+    else onClose();
   };
 
   return (
@@ -273,31 +304,35 @@ export function SideBySide({
         <span className="m-split__of">{i18n._(SIDE_SUBTITLE)}</span>
         <span className="m-split__spacer" />
         {state.kind === 'running' ? (
-          <>
-            <span className="m-split__of" data-side-progress="" role="status">
-              {i18n._(SIDE_COMPARING, { done: state.done, total: Math.max(state.total, state.done) })}
-            </span>
-            <button className="m-split__both" onClick={() => { state.stop.abort(); }} type="button">
-              {i18n._(SIDE_CANCEL)}
-            </button>
-          </>
-        ) : (
-          <button
-            className="m-split__both"
-            data-side-compare=""
-            disabled={leftView.ready === undefined || rightView.ready === undefined}
-            onClick={start}
-            type="button"
-          >
-            {i18n._(SIDE_COMPARE)}
-          </button>
-        )}
+          <span className="m-split__of" data-side-progress="" role="status">
+            {i18n._(SIDE_COMPARING, { done: state.done, total: Math.max(state.total, state.done) })}
+          </span>
+        ) : null}
+        {/* COMPARE BECOMES STOP: ONE BUTTON, its words and action swapped, never two. Two would unmount the one the
+            person just pressed, the focus would fall to the page's body, and Esc would then reach nothing here.
+            ARIA-DISABLED, NOT DISABLED, for the same reason: while the panel shows the current answer there is nothing
+            to compare, and a natively disabled button drops the focus it holds. Base UI's focusable-disabled button is
+            not the spelling either: it cancels every key but Tab, Esc included, so the surface below would skip it. */}
+        <button
+          aria-disabled={answered ? 'true' : undefined}
+          className="m-split__both"
+          data-side-compare={state.kind === 'running' ? undefined : ''}
+          data-side-stop={state.kind === 'running' ? '' : undefined}
+          disabled={state.kind !== 'running' && (leftView.ready === undefined || rightView.ready === undefined)}
+          onClick={() => {
+            if (state.kind === 'running') state.stop.abort();
+            else if (!answered) start();
+          }}
+          type="button"
+        >
+          {i18n._(state.kind === 'running' ? SIDE_STOP : SIDE_COMPARE)}
+        </button>
         <button aria-label={i18n._(SIDE_CLOSE)} className="m-split__both" data-side-close="" onClick={onClose} type="button">
           <Icon name="X" size="dense" />
           {i18n._(SIDE_CLOSE_TEXT)}
         </button>
       </header>
-      <div className={`m-side__body${state.kind === 'idle' ? '' : ' m-side__body--listed'}`}>
+      <div className={`m-side__body${listed ? ' m-side__body--listed' : ''}`}>
         <Half
           client={client}
           side="left"
@@ -328,7 +363,9 @@ export function SideBySide({
           onOpenFile={onOpenFile}
           preferences={preferences}
         />
-        {state.kind === 'idle' ? null : <Differences state={state} chosen={chosen} onChoose={choose} />}
+        {comparing.listed && state.kind !== 'idle' ? (
+          <Differences state={state} chosen={chosen} onChoose={choose} onClose={closeList} />
+        ) : null}
       </div>
     </section>
   );
@@ -482,18 +519,24 @@ function Differences({
   state,
   chosen,
   onChoose,
+  onClose,
 }: {
   readonly state: Exclude<Comparing, { readonly kind: 'idle' }>;
   readonly chosen: number | undefined;
   readonly onChoose: (index: number, row: CompareRow) => void;
+  /** Hides the panel and its marks; a walk still running stops. */
+  readonly onClose: () => void;
 }): ReactElement {
   const { i18n } = useLingui();
   const headingId = useId();
   return (
     <aside aria-labelledby={headingId} className="m-side__list" data-side-differences="">
-      <h2 className="m-side__heading" id={headingId}>
-        {i18n._(SIDE_DIFFERENCES)}
-      </h2>
+      <div className="m-side__list-head">
+        <h2 className="m-side__heading" id={headingId}>
+          {i18n._(SIDE_DIFFERENCES)}
+        </h2>
+        <IconButton icon={X} label={SIDE_DIFFERENCES_CLOSE} onClick={onClose} size="dense" />
+      </div>
       {state.kind === 'running' ? null : state.kind === 'refused' ? (
         <p className="m-side__note">{i18n._(SIDE_REFUSED)}</p>
       ) : state.kind === 'moved' ? (

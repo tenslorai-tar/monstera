@@ -640,8 +640,9 @@ export const SIDE_ZOOM_IN = messageKey('surface.side-by-side.zoom-in');
 export const SIDE_ZOOM = messageKey('surface.side-by-side.zoom');
 export const SIDE_COMPARE = messageKey('surface.side-by-side.compare');
 export const SIDE_COMPARING = messageKey('surface.side-by-side.comparing');
-export const SIDE_CANCEL = messageKey('surface.side-by-side.cancel');
+export const SIDE_STOP = messageKey('surface.side-by-side.stop');
 export const SIDE_DIFFERENCES = messageKey('surface.side-by-side.differences');
+export const SIDE_DIFFERENCES_CLOSE = messageKey('surface.side-by-side.differences-close');
 export const SIDE_COUNT = messageKey('surface.side-by-side.count');
 export const SIDE_NONE = messageKey('surface.side-by-side.none');
 export const SIDE_MORE = messageKey('surface.side-by-side.more');
@@ -2582,8 +2583,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIDE_ZOOM]: '{percent}%',
   [SIDE_COMPARE]: 'Compare',
   [SIDE_COMPARING]: 'Comparing… {done} of {total}',
-  [SIDE_CANCEL]: 'Cancel',
+  [SIDE_STOP]: 'Stop',
   [SIDE_DIFFERENCES]: 'Differences',
+  [SIDE_DIFFERENCES_CLOSE]: 'Close Differences',
   [SIDE_COUNT]: '{count, plural, one {# difference} other {# differences}}',
   [SIDE_NONE]: 'No differences found.',
   [SIDE_MORE]: 'There are more differences than can be listed. Only the first {count} are shown.',

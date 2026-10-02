@@ -4208,7 +4208,7 @@ optgroup {
   cursor: pointer;
 }
 
-.m-split__both:disabled {
+.m-split__both:is(:disabled, [aria-disabled='true']) {
   color: var(--faint);
   cursor: default;
 }
@@ -4315,6 +4315,14 @@ optgroup {
   background: var(--bg2);
   border-inline-start: 1px solid var(--border); /* decorative: the list's edge; its rows draw their own state */
   font-size: var(--font-chrome-12);
+}
+
+/* THE PANEL'S HEADING AND ITS CLOSE on one line, the close at the end where a panel's close is looked for. */
+.m-side__list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
 }
 
 .m-side__heading {

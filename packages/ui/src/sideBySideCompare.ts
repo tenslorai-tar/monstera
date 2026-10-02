@@ -105,6 +105,24 @@ export async function compareSides(
   signal: AbortSignal,
   onProgress: (done: number, total: number) => void,
 ): Promise<ComparisonOutcome> {
+  try {
+    return await walk(client, left, right, signal, onProgress);
+  } catch (error) {
+    // A STOP THAT LANDS INSIDE A DRAW rejects it: `renderPage` throws `RenderCancelledError` for an aborted signal,
+    // which is how it tells its caller the draw was superseded. The walk was asked to stop, so that is its outcome,
+    // never "a page could not be drawn". Unaborted, a rejection is the failure it says it is.
+    if (signal.aborted) return { kind: 'cancelled' };
+    throw error;
+  }
+}
+
+async function walk(
+  client: ContractClient,
+  left: CompareSide,
+  right: CompareSide,
+  signal: AbortSignal,
+  onProgress: (done: number, total: number) => void,
+): Promise<ComparisonOutcome> {
   // READ THROUGH A CALL, for `checkSpellingCommand`'s reason: the signal moves across every await.
   const aborted = (): boolean => signal.aborted;
 
