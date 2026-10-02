@@ -48,6 +48,7 @@
 
 import { readStagedBlobs, repoRoot } from './gitScope.mjs';
 import { filesInCommit } from './gitScope.mjs';
+import { isMain } from './isMain.mjs';
 
 /**
  * An export clause with a module specifier.
@@ -196,7 +197,7 @@ export function report(result) {
   );
 }
 
-if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
+if (isMain(import.meta.url)) {
   const outcome = scan();
   process.stdout.write(report(outcome));
   process.exitCode = outcome.blind !== null || outcome.violations.length > 0 ? 1 : 0;

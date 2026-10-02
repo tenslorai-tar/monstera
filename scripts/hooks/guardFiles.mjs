@@ -41,14 +41,14 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { extname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { extname, join } from 'node:path';
 
 // The git scope this guard reads is a decision, not an implementation detail —
 // see scripts/lib/gitScope.mjs for the four scopes, where they are rooted, and
 // why reaching for the filesystem instead is almost always the wrong question.
 import { git, indexEntries, readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
 import { hookModeViolation } from '../lib/hookFiles.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 const MAX_BYTES = 5 * 1024 * 1024;
 
@@ -738,8 +738,7 @@ export function formatFailures(failures, scope) {
   );
 }
 
-const invokedDirectly =
-  process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const invokedDirectly = isMain(import.meta.url);
 
 if (invokedDirectly) {
   /** @type {'staged' | 'tree' | 'history'} */

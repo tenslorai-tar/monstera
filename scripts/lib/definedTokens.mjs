@@ -53,6 +53,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import { repoRoot } from './gitScope.mjs';
+import { isMain } from './isMain.mjs';
 
 /** Where stylesheets may live. Anything outside these is not this rule's business. */
 const ROOTS = ['packages', 'apps'];
@@ -257,7 +258,7 @@ export function report(result) {
   );
 }
 
-if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
+if (isMain(import.meta.url)) {
   const result = scan();
 
   // THE CONTROL IS CHECKED BEFORE THE VERDICT IS PRINTED, in both directions.

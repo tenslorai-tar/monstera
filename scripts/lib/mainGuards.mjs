@@ -1,7 +1,7 @@
 // @ts-check
 /**
- * Every entry point CI enters guards its main body through {@link isMain}, or
- * not at all (finding AAAA-5).
+ * Every script module guards its main body through {@link isMain}, or not at
+ * all (finding AAAA-5).
  *
  * ## The defect, and why nothing could see it
  *
@@ -20,78 +20,114 @@
  * ## The rule, and what it deliberately permits
  *
  * A file may run its body unconditionally — every proof here does. What it may
- * not do is *guard* the body with a hand-written comparison, because that is the
- * expression with a platform-dependent wrong answer. So: any file in the roster
- * naming `import.meta.url` must reach it through `isMain`.
+ * not do is *decide by hand* whether it is the entry point, because every hand
+ * spelling of that decision has a wrong answer somewhere. So: no script module
+ * reads `process.argv[1]` except through `isMain`.
  *
- * ## The roster is DERIVED
+ * ## Why the pattern is the READ, and not one comparison
  *
- * From {@link wrappableEntryPoints}, which already owns "which script paths do
- * this repository's npm scripts invoke with node" and is what the workflows
- * enter. A hand-kept list of files-needing-a-guard would be the second wiring
- * place, and it would be one short on the day it mattered.
+ * This scan first matched `import.meta.url ===` alone, and reported *ok* over a
+ * tree holding 39 hand-written guards in three other spellings (counted by this
+ * scan's present pattern, 2026-10-01 on 5f5a747a):
  *
- * This check does not prove a module wired a guard at all — only a process that
- * runs it can show that, which is why each scan also carries a case spawning it
- * against a fixture that would pass if its guard were absent.
+ * | spelling | where it is wrong |
+ * |---|---|
+ * | `import.meta.url.endsWith(argv[1])` | a path with a space or any character a URL escapes: the url says `%20`, argv says a space, and the guard never fires |
+ * | `argv[1].endsWith('name.mjs')` | any entry point with the same file name, in any directory |
+ * | `resolve(argv[1]) === fileURLToPath(import.meta.url)` | nowhere yet; it is a second opinion about a question `isMain` owns (B3a) |
+ *
+ * The first is the AAAA-5 failure one character class over: run from
+ * `with space/guard.mjs`, it answered `false` where `isMain` answered `true`
+ * (2026-10-01). Every one of those spellings READS `process.argv[1]`, and
+ * reading it is the thing only the resolver should do, so the read is what is
+ * matched. A comparison pattern describes the defect that has been seen; the
+ * read describes the class.
+ *
+ * ## What it reads: every `.mjs` under `scripts/`
+ *
+ * Not only the npm-invoked entry points ({@link wrappableEntryPoints}), which
+ * this scan took until 2026-10-01: a git hook, a workflow step and a spike are
+ * entered too, and four hand-written guards sat outside that roster. The rule is
+ * about how a module decides it is main, which does not depend on who enters it.
+ *
+ * Out of reach, stated: a read spelt without the index — `process.argv.at(1)`,
+ * or a destructured `const [, entry] = process.argv`. None exists today.
  *
  * Usage: node scripts/lib/mainGuards.mjs [--root <dir>]
  */
 
-import { readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative, resolve, sep } from 'node:path';
 
-import { wrappableEntryPoints } from './annotateCoverage.mjs';
 import { repoRoot } from './gitScope.mjs';
 import { isMain } from './isMain.mjs';
 
 /**
- * A COMPARISON of the entry-point URL, which is the only shape at issue.
+ * A hand-written read of the entry script's path, in any of its spellings.
  *
- * Not any mention. `fileURLToPath(import.meta.url)` to locate a module's own
- * directory is an unrelated and correct use, and the first version of this scan
- * matched it — reporting 38 files, nearly all of them fine. That was this
- * instrument failing its own resolution test before it measured anything (audit
- * item 4a), and it is the shape the escape guard's false positives warn about: a
- * scan that cries wolf is a scan someone turns off.
+ * Not any mention of `import.meta.url`. `fileURLToPath(import.meta.url)` to
+ * locate a module's own directory is an unrelated and correct use, and the first
+ * version of this scan matched it — reporting 38 files, nearly all of them fine.
+ * That was this instrument failing its own resolution test before it measured
+ * anything (audit item 4a), and it is the shape the escape guard's false
+ * positives warn about: a scan that cries wolf is a scan someone turns off.
  */
-const COMPARES_META_URL = /import\.meta\.url\s*===|===\s*import\.meta\.url/u;
+const READS_ENTRY = /process\.argv\[1\]|import\.meta\.url\s*===|===\s*import\.meta\.url/u;
 
 /** Reaching it through the one resolver. */
 const VIA_IS_MAIN = /isMain\s*\(\s*import\.meta\.url\s*\)/u;
 
 /**
+ * The three modules that name the read on purpose: the resolver that owns it,
+ * this scan, which spells its patterns, and the proof that drives the resolver
+ * by removing `argv[1]`.
+ */
+const OWNERS = new Set(['scripts/lib/isMain.mjs', 'scripts/lib/mainGuards.mjs', 'scripts/proofs/mainGuards.proof.mjs']);
+
+/**
+ * Every `.mjs` under `<root>/scripts`, as forward-slash paths relative to the root.
+ *
+ * @param {string} root
+ * @returns {string[]}
+ */
+function scriptModules(root) {
+  /** @type {string[]} */
+  const found = [];
+  /** @param {string} directory */
+  const walk = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.name === 'node_modules') continue;
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.isFile() && entry.name.endsWith('.mjs')) found.push(relative(root, path).split(sep).join('/'));
+    }
+  };
+  walk(join(root, 'scripts'));
+  return found.sort();
+}
+
+/**
  * @param {{ root?: string }} [options]
- * @returns {{ entryPoints: string[], guarded: string[], handRolled: string[] }}
+ * @returns {{ modules: string[], guarded: string[], handRolled: string[] }}
  */
 export function scanMainGuards(options = {}) {
   const root = options.root ?? repoRoot();
-  const { paths } = wrappableEntryPoints(root);
-  if (paths.length === 0) {
-    throw new Error('Derived no entry points. An empty roster is a broken parse, not a clean tree.');
+  const modules = scriptModules(root);
+  if (modules.length === 0) {
+    throw new Error('Found no script modules. An empty roster is a broken walk, not a clean tree.');
   }
 
   /** @type {string[]} */
   const guarded = [];
   /** @type {string[]} */
   const handRolled = [];
-  for (const path of paths) {
-    let text;
-    try {
-      text = readFileSync(join(root, path), 'utf8');
-    } catch {
-      // A manifest naming a path that does not exist is a different check's
-      // business (`check:docs` resolves every scripts/ path), and swallowing it
-      // here would let this scan report a clean tree for a repository it could
-      // not read.
-      continue;
-    }
-    // This module names both patterns in its own prose and its own code.
-    if (path === 'scripts/lib/mainGuards.mjs') continue;
-    if (VIA_IS_MAIN.test(text)) guarded.push(path);
-    else if (COMPARES_META_URL.test(text)) handRolled.push(path);
+  for (const path of modules) {
+    if (OWNERS.has(path)) continue;
+    const text = readFileSync(join(root, path), 'utf8');
+    if (READS_ENTRY.test(text)) handRolled.push(path);
+    else if (VIA_IS_MAIN.test(text)) guarded.push(path);
   }
-  return { entryPoints: paths, guarded, handRolled };
+  return { modules, guarded, handRolled };
 }
 
 /**
@@ -100,28 +136,30 @@ export function scanMainGuards(options = {}) {
  */
 export function report(options = {}) {
   // A file this scan is KNOWN to be able to find guarding itself correctly. If
-  // the roster, the read or the pattern breaks, this goes red instead of the
+  // the walk, the read or the pattern breaks, this goes red instead of the
   // violation count quietly reaching zero.
   const control = options.control ?? 'scripts/lib/emittedTemplates.mjs';
-  const { entryPoints, guarded, handRolled } = scanMainGuards(options);
+  const { modules, guarded, handRolled } = scanMainGuards(options);
 
   let output = '';
   for (const path of handRolled) {
     output +=
-      `  FAILED  ${path} compares import.meta.url without isMain()\n` +
-      `          A hand-built \`file://\` string never equals import.meta.url on Windows, so the\n` +
-      `          guard does not fire and the script exits 0 having done nothing — which every\n` +
-      `          check in this repository reads as a pass.\n`;
+      `  FAILED  ${path} reads process.argv[1] by hand instead of calling isMain(import.meta.url)\n` +
+      `          Every hand spelling of "am I the entry point" is wrong somewhere: a url beside a\n` +
+      `          path disagrees on Windows and wherever a URL escapes a character, and a file-name\n` +
+      `          suffix matches any script with that name. Where it is wrong the guard does not\n` +
+      `          fire and the script exits 0 having done nothing — which every check here reads\n` +
+      `          as a pass.\n`;
   }
   if (handRolled.length === 0) {
     output +=
-      `  ok  ${String(guarded.length)} of ${String(entryPoints.length)} entry point(s) guard main ` +
-      `through isMain(); the rest run unconditionally\n`;
+      `  ok  ${String(guarded.length)} of ${String(modules.length)} script module(s) guard main ` +
+      `through isMain(); none decides it by hand\n`;
   }
   output += guarded.includes(control)
     ? `  ok  and the scan located ${control}, so that result means something\n`
     : `  FAILED  the scan did not locate ${control}, which is known to guard main correctly.\n` +
-      `          A roster that reads nothing reports every file as compliant.\n`;
+      `          A walk that reads nothing reports every file as compliant.\n`;
 
   return { ok: handRolled.length === 0 && guarded.includes(control), output };
 }

@@ -57,6 +57,7 @@ import { join } from 'node:path';
 
 import { repoRoot } from './gitScope.mjs';
 import { WORKFLOW_DIR } from './workflowPins.mjs';
+import { isMain } from './isMain.mjs';
 
 /** The one expression that protects `main`'s running run. */
 const PROTECTS_MAIN = /github\.ref\s*!=\s*'refs\/heads\/main'/u;
@@ -209,7 +210,7 @@ export function scanWorkflows(root = repoRoot()) {
   return { violations, controlFound, filesScanned: files.length };
 }
 
-if (process.argv[1]?.endsWith('mainNeverCancels.mjs')) {
+if (isMain(import.meta.url)) {
   const { violations, controlFound, filesScanned } = scanWorkflows();
 
   if (!controlFound) {

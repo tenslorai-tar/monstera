@@ -38,6 +38,7 @@ import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 
 import { formatError } from '../lib/reportError.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -150,7 +151,7 @@ export async function writeStoreAssets(directory) {
   return STORE_ASSETS.length;
 }
 
-if (process.argv[1]?.endsWith('storeAssets.mjs')) {
+if (isMain(import.meta.url)) {
   const directory = process.argv[2] ?? STORE_ASSETS_DIRECTORY;
   writeStoreAssets(directory).then(
     (count) => {

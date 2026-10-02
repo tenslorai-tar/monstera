@@ -82,10 +82,10 @@
 
 import { readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { filesInCommit, repoRoot } from './gitScope.mjs';
 import { loadTypeScript } from './loadTypeScript.mjs';
+import { isMain } from './isMain.mjs';
 
 /** @typedef {typeof import('typescript')} TypeScriptApi */
 
@@ -486,10 +486,7 @@ export async function main() {
 }
 
 /* c8 ignore start */
-// `resolve(argv[1]) === fileURLToPath(import.meta.url)` is the form six other
-// entry points here use. A hand-built `file://` prefix is wrong on Windows and a
-// suffix match is a looser question than the one being asked.
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   process.exitCode = await main();
 }
 /* c8 ignore stop */

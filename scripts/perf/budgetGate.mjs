@@ -39,6 +39,7 @@ import { repoRoot } from '../lib/gitScope.mjs';
 import { assertableBudget, memoryBudgets } from '../lib/memoryBudgets.mjs';
 import { buildDenseFixture, buildLargeFixture, buildScanFixture } from './largeFixture.mjs';
 import { formatBytes, measurePeak } from './peakRss.mjs';
+import { isMain } from '../lib/isMain.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = repoRoot();
@@ -315,7 +316,7 @@ export function runAllShapes(root = ROOT) {
   ];
 }
 
-if (process.argv[1]?.endsWith('budgetGate.mjs')) {
+if (isMain(import.meta.url)) {
   const runs = runAllShapes();
 
   if (process.argv.includes('--json')) {
