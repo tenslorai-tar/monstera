@@ -3023,6 +3023,8 @@ optgroup {
   min-inline-size: 0;
   /* THE CONTAINING BLOCK FOR THE LOUPE, which is placed from the pointer's offset in this box. */
   position: relative;
+  /* WHERE THE TOAST STRIP SITS (`.m-toasts`); with two panes the last one, the right, names it. */
+  anchor-name: --m-page-area;
 }
 
 /* THE CORNER where the two rulers meet, in the rulers' own surface so the pair reads as one frame. */
@@ -5320,10 +5322,17 @@ optgroup {
   gap: var(--space-8);
 }
 
+/*
+ * AT THE PAGE AREA'S CORNER, never the window's. A strip fixed at the window's bottom right sits over whatever panel
+ * ends there, and it was placed by a guess at where the assistant's composer ends: when the composer lost a line the
+ * guess was off and a toast covered Send by half a pixel on Windows. Anchored to the page pane, no panel's control can
+ * be under it. With no page pane (the start screen) the anchor is missing and the fallbacks are the window's corner.
+ */
 .m-toasts {
   position: fixed;
-  inset-block-end: calc(var(--space-24) + var(--space-16));
-  inset-inline-end: var(--space-16);
+  position-anchor: --m-page-area;
+  inset-block-end: calc(anchor(end, var(--space-24)) + var(--space-16));
+  inset-inline-end: calc(anchor(end, 0px) + var(--space-16));
   z-index: 3;
   display: flex;
   flex-direction: column;

@@ -2238,6 +2238,13 @@ test('LIVE CHECK toasts: a toast never covers the assistant’s Send button', as
   if (a === null || b === null) throw new Error('a box is missing');
   const overlaps = a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
   expect(overlaps, `toast ${JSON.stringify(a)} against Send ${JSON.stringify(b)}`).toBe(false);
+  // THE CLASS, not the one button: the strip sits in the page area, so NO control of the panel can be under it. It
+  // missed Send by a guessed offset until the composer lost a line and the guess covered Send by 0.56 px on Windows.
+  const [pane, panel] = [await page.locator('.m-page-pane').last().boundingBox(), await page.locator('.m-context-panel').boundingBox()];
+  if (pane === null || panel === null) throw new Error('the page pane and the context panel');
+  expect(a.x + a.width, 'the toast ends inside the page area').toBeLessThanOrEqual(pane.x + pane.width);
+  expect(a.y + a.height, 'and above its foot').toBeLessThanOrEqual(pane.y + pane.height);
+  expect(a.x + a.width, 'so it stops short of the panel').toBeLessThanOrEqual(panel.x);
 });
 
 test('LIVE CHECK Studio: the overlay goes when focus leaves it for another part of the window', async ({ page }) => {
