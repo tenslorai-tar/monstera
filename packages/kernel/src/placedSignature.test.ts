@@ -1,5 +1,5 @@
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, decodePDFRawStream, degrees } from '@cantoo/pdf-lib';
-import type { AnnotationRect, CommandOfKind } from '@monstera/contract';
+import { type AnnotationRect, type KeepableSignature, placedMarkOf } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
 import { beforeAll, describe, expect, it } from 'vitest';
 
@@ -83,8 +83,8 @@ function inkIn(
   return { samples, columns: columns.size };
 }
 
-const typed: CommandOfKind<'placeSignatureMark'>['mark'] = { kind: 'typed', text: 'Grace Hopper', font: 'times-italic' };
-const drawn: CommandOfKind<'placeSignatureMark'>['mark'] = {
+const typed = { kind: 'typed', text: 'Grace Hopper', font: 'times-italic' } as const;
+const drawn: KeepableSignature = {
   kind: 'drawn',
   strokes: [
     [
@@ -106,7 +106,7 @@ beforeAll(() => {
 /** Places one look on `bytes` and answers the saved document. */
 async function placed(
   bytes: Uint8Array,
-  look: 'typed' | 'drawn' | 'picture' | CommandOfKind<'placeSignatureMark'>['mark'],
+  look: 'typed' | 'drawn' | 'picture' | KeepableSignature,
   rect: AnnotationRect = BOX,
 ): Promise<Uint8Array> {
   return await onSession(bytes, async (session) => {
@@ -121,7 +121,8 @@ async function placed(
       });
     } else {
       const mark = look === 'typed' ? typed : look === 'drawn' ? drawn : look;
-      await applyPlaceSignatureMark(session, { kind: 'placeSignatureMark', page: 0, rect, mark, stamp: STAMP });
+      // IN THE PLACED FORM, as main mints it: the one fitting a drawing crosses through.
+      await applyPlaceSignatureMark(session, { kind: 'placeSignatureMark', page: 0, rect, mark: placedMarkOf(mark), stamp: STAMP });
     }
     return await mupdfWriter.serialise(session);
   });
@@ -174,6 +175,28 @@ describe('a placed signature', () => {
       await expectWrittenAppearance(await placed(await blankPage(), look), look);
     },
   );
+
+  it('a drawing at the KEPT bound, thinned to the placed one, still draws inside its box', async () => {
+    // 64 strokes of 1,024 points: the drawing BBBBBBB-1 measured at ten times the host's frame. Each stroke a zigzag
+    // across the pad, so a thinning that dropped a stroke or its ends would leave columns of the box empty. Four times
+    // as wide as it is tall, so the ink is fitted to the box's WIDTH (200 × 80) and every column is the drawing's.
+    const zigzags = (perStroke: number): KeepableSignature => ({
+      kind: 'drawn',
+      strokes: Array.from({ length: 64 }, (_, row) =>
+        Array.from({ length: perStroke }, (_, at) => [at / (perStroke - 1), (row + (at % 2)) / 264] as [number, number]),
+      ),
+    });
+    const inked = async (mark: KeepableSignature): Promise<{ samples: number; columns: number }> => {
+      const page = rendered(await placed(await blankPage(), mark));
+      return inkIn(page, seen(page.transform, BOX));
+    };
+    // THE CONTROL: the same shape at 48 points a stroke, 3,072 in all — exactly the placed bound, so never thinned.
+    const within = await inked(zigzags(48));
+    const thinned = await inked(zigzags(1024));
+    expect(thinned.samples).toBeGreaterThan(50);
+    // THE SAME COLUMNS: a thinning that cut strokes short, or dropped their last points, would end the ink early.
+    expect(thinned.columns).toBeGreaterThanOrEqual(within.columns - 2);
+  });
 
   it('a PICTURE keeps its proportions inside the box rather than filling it', async () => {
     // 40 × 20 in a 200 × 80 box: fitted by height to 72 tall and 144 wide, so the ink spans about 0.72 of the box's

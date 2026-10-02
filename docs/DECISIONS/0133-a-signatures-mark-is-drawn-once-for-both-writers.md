@@ -105,3 +105,20 @@ report, not a decision taken under the feature.
   a FreeText's text does not scale with its box, and neither kind can be the picture look, so the three looks would be
   three different objects.
 - **One command with optional bytes.** A third value on the asset axis for one kind; two kinds keep the axis as it is.
+
+## Correction, 2026-10-02 — a drawing crosses in a placed form, and a picture is routed by its extension
+
+Found by the stage audit of `173cc5ae..0401c925` (JOURNAL, findings BBBBBBB-1 and BBBBBBB-9). Two sentences above are
+corrected here rather than edited:
+
+- Decision 2's *"`placeSignatureMark` … carries no asset"* is still true, and it left out what the mark then has to fit.
+  The command crosses the MuPDF host's pipe in one frame, and a drawing at the kept bound (64 strokes of 1,024 points)
+  measured 2,692,503 bytes against a 262,144-byte frame. **The command now carries a drawing in a placed form**: every
+  point in one list of at most `MAX_PLACED_SIGNATURE_POINTS` (3,072), with where each stroke starts. Main makes that
+  form with the contract's `placedMarkOf`, which thins a longer drawing (each stroke keeps both its ends) rather than
+  refusing it, and the apply takes it back to strokes with `strokesOfPlaced` before the drawing module sees it. What is
+  kept, and what *Sign with certificate* draws in main, is unchanged. One list rather than nested strokes because the
+  size check reads a schema's declared maximums and a total across nested arrays is invisible to it.
+- Decision 3's *"bounded and typed by its bytes"*: main routes a picked picture by its file's extension
+  (`imageMediaType`), and the decoder is what validates the bytes, as for *Place image*. Only the engine and the library
+  read the picture's type from its bytes.

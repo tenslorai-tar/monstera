@@ -11,6 +11,7 @@ import {
   type LineEnding,
   MAX_ANNOTATION_AUTHOR,
   type TextDirection,
+  strokesOfPlaced,
 } from '@monstera/contract/host';
 import {
   type PageTransform,
@@ -2066,7 +2067,10 @@ export const applyPlaceSignatureMark: Apply<'mupdf', 'placeSignatureMark'> = asy
   command: CommandOfKind<'placeSignatureMark'>,
 ): Promise<void> => {
   const { box } = await withDocument(session, (document) => signaturePlacement(document, command.page, command.rect));
-  const drawing = await drawSignature(command.mark, box.seenWide, box.seenTall);
+  // A DRAWING CROSSES FLATTENED, so the command fits the host's frame (`placedMarkOf`); the strokes are taken back here,
+  // at the one step that draws them.
+  const mark = command.mark.kind === 'drawn' ? { kind: 'drawn' as const, strokes: strokesOfPlaced(command.mark) } : command.mark;
+  const drawing = await drawSignature(mark, box.seenWide, box.seenTall);
   await withDocument(session, (document) => {
     writeSignatureStamp(document, signaturePlacement(document, command.page, command.rect), drawing, undefined, command.stamp);
   });

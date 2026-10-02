@@ -3153,6 +3153,85 @@ export type LibraryEntry = z.infer<typeof libraryEntrySchema>;
 /** A signature a person may keep as it is made: typed or drawn. A picture is added by main's picker. */
 export const keepableSignatureSchema = z.discriminatedUnion('kind', [typedSignatureMarkSchema, drawnSignatureMarkSchema]);
 
+/** One of {@link keepableSignatureSchema}'s looks: what is kept, and what both signature writers draw from. */
+export type KeepableSignature = z.infer<typeof keepableSignatureSchema>;
+
+/**
+ * How many points a drawing may carry where it is PLACED — `placeSignatureMark`, which crosses the MuPDF host's pipe
+ * in one frame (finding BBBBBBB-1, 2026-10-02).
+ *
+ * A kept drawing may carry 64 strokes of 1,024 points, a bound chosen for the renderer's wire; built at that bound
+ * with a pad's unrounded numbers, the placing command measured **2,692,503 bytes against `ENGINE_HOST_FRAME_MAX_BYTES`,
+ * 262,144**, and the host client refused it as too large. A point encodes to at most 52 bytes here — two numbers of 24
+ * characters, their brackets, the comma between and the one after — so 3,072 are 159,744 bytes, under three quarters
+ * of the frame, where `hostRoutes.test.ts` holds every command kind it can measure. A drawing longer than this is
+ * thinned to fit by {@link placedMarkOf}, never refused: at this many points the strokes are closer together than the
+ * pixels they are drawn on.
+ */
+export const MAX_PLACED_SIGNATURE_POINTS = 3072;
+
+/**
+ * A drawing as the placing command carries it: every point in one list, and where each stroke starts in it.
+ *
+ * **One list rather than strokes of points, so the bound is in the SHAPE**: `maxEncodedBytes` reads a schema's
+ * declared maximums, and a total across nested arrays is a refinement it cannot see — the bound would hold at parse
+ * and the size check would still read 64 × 1,024 (B5). The refinement left is the starts' order, which no size depends
+ * on.
+ */
+const placedDrawingSchema = z
+  .object({
+    kind: z.literal('drawn'),
+    points: z.array(signaturePointSchema).min(2).max(MAX_PLACED_SIGNATURE_POINTS),
+    /** Where each stroke begins in `points`: the first at 0, each after the one before, every stroke two points or more. */
+    starts: z.array(z.number().int().min(0).max(MAX_PLACED_SIGNATURE_POINTS)).min(1).max(MAX_SIGNATURE_STROKES),
+  })
+  .strict()
+  .refine(
+    ({ points, starts }) =>
+      starts[0] === 0 && starts.every((start, at) => (starts[at + 1] ?? points.length) - start >= 2),
+    { message: 'each stroke starts after the one before and has at least two points' },
+  );
+
+/** See {@link placedDrawingSchema}. */
+export type PlacedDrawing = z.infer<typeof placedDrawingSchema>;
+
+/** A signature's look as `placeSignatureMark` carries it: typed as kept, or a drawing in its placed form. */
+const placedSignatureMarkSchema = z.discriminatedUnion('kind', [typedSignatureMarkSchema, placedDrawingSchema]);
+
+/** See {@link placedSignatureMarkSchema}. */
+export type PlacedSignatureMark = z.infer<typeof placedSignatureMarkSchema>;
+
+/**
+ * A kept look in the form the placing command carries — the ONE place a drawing is fitted to
+ * {@link MAX_PLACED_SIGNATURE_POINTS} and flattened (B3a).
+ *
+ * **Thinned, never cut**: while the drawing is too long, every stroke longer than two points keeps its first point,
+ * every other point after it, and its last. Each pass about halves the drawing and keeps every stroke and both its ends,
+ * so the shape survives at a lower resolution; cutting the points past the bound would drop the end of the signature.
+ */
+export function placedMarkOf(mark: KeepableSignature): PlacedSignatureMark {
+  if (mark.kind === 'typed') return mark;
+  let strokes = mark.strokes;
+  const total = (): number => strokes.reduce((sum, stroke) => sum + stroke.length, 0);
+  while (total() > MAX_PLACED_SIGNATURE_POINTS) {
+    strokes = strokes.map((stroke) =>
+      stroke.length <= 2 ? stroke : stroke.filter((_, at) => at % 2 === 0 || at === stroke.length - 1),
+    );
+  }
+  const starts: number[] = [];
+  const points: PlacedDrawing['points'] = [];
+  for (const stroke of strokes) {
+    starts.push(points.length);
+    points.push(...stroke);
+  }
+  return { kind: 'drawn', points, starts };
+}
+
+/** A placed drawing's strokes again, for the module that draws them — {@link placedMarkOf}'s inverse. */
+export function strokesOfPlaced(drawing: PlacedDrawing): Extract<KeepableSignature, { kind: 'drawn' }>['strokes'] {
+  return drawing.starts.map((start, at) => drawing.points.slice(start, drawing.starts[at + 1] ?? drawing.points.length));
+}
+
 /**
  * How a visible signature looks, as a RENDERER may ask for it.
  *
@@ -3227,7 +3306,8 @@ export const placeSignatureMarkSchema = z
     page: z.number().int().nonnegative(),
     /** The box it occupies, in PDF user space; the mark is fitted inside it, upright as the page is seen. */
     rect: annotationRectSchema,
-    mark: keepableSignatureSchema,
+    /** The look, a drawing in its placed form so the command fits the host's frame ({@link placedMarkOf}). */
+    mark: placedSignatureMarkSchema,
     /** Who placed it and when (ADR-0103). */
     stamp: annotationStampSchema,
   })

@@ -41,6 +41,7 @@ import {
   type TimestampAuthority,
   type TextBlockStyle,
   type WordMode,
+  placedMarkOf,
   sourceIdsOf,
 } from '@monstera/contract';
 // DECLARATIONS, not specs. This reads `spec.writer` and calls nothing on it, so
@@ -5586,7 +5587,9 @@ export class DocumentCommands {
         docId,
         mark.kind === 'image'
           ? { kind: 'placeSignaturePicture', page, rect, bytes: mark.bytes, mediaType: mark.mediaType, stamp }
-          : { kind: 'placeSignatureMark', page, rect, mark, stamp },
+          : // A DRAWING IS FITTED TO THE HOST'S FRAME HERE, by the contract's one fitting (`placedMarkOf`): thinned if it is
+            // longer than a frame carries, never refused (finding BBBBBBB-1).
+            { kind: 'placeSignatureMark', page, rect, mark: placedMarkOf(mark), stamp },
       );
     } catch (error) {
       // `placeImage`'s catch and its reason, for a PICTURE only: the decoder refusing the picked bytes is an outcome.

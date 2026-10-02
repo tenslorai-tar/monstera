@@ -1,4 +1,4 @@
-import type { AnnotationRect, CommandOfKind } from '@monstera/contract/host';
+import type { AnnotationRect, KeepableSignature } from '@monstera/contract/host';
 import { snapRotation } from '@monstera/shared';
 
 import { contentNumber } from './contentNumber.js';
@@ -15,8 +15,11 @@ import { SignatureAppearanceRefusedError } from './signingRefusals.js';
  * upright, and each writer turns the names into objects of its own document.
  */
 
-/** A typed or drawn mark, as the commands carry it. */
-export type KeptMark = CommandOfKind<'placeSignatureMark'>['mark'];
+/**
+ * A typed or drawn mark, as it is kept and as both writers draw it. The placing command carries a drawing flattened
+ * (`placedMarkOf`), and its apply takes it back to strokes before it reaches this module.
+ */
+export type KeptMark = KeepableSignature;
 
 /** A picture mark, by the one thing the drawing needs from it: its size in pixels. */
 export interface PictureMark {

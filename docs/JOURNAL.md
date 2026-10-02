@@ -1028,6 +1028,26 @@ load the same bytes.
 - `app.css`: two comments still say a choice menu's face reads its name, where it now reads its value.
 - The split view article says *press Esc*; Esc closes it only while the focus is inside the split.
 
+### Correction, 2026-10-02: BBBBBBB-1 closed, and the class it belongs to measured
+
+**BBBBBBB-1 is closed at the shape, not at the call site.** `placeSignatureMark` now carries a drawing in a placed form,
+one list of at most 3,072 points with where each stroke starts, which main makes with the contract's `placedMarkOf`:
+a longer drawing is thinned, each stroke keeping both its ends, never refused. Its worst encoding is now under three
+quarters of the frame (ADR-0133's correction).
+
+**Why the route rule did not see it.** `hostRoutes.test.ts` already checks every framed request against the frame, and
+pins the command-carrying channels as exceptions, because a command object is not `.strict()` and so reads as unbounded
+whole. Asked kind by kind, closed, the commands have sizes, and the case now does that and pins what is left by exact
+set: a kind that joins either list goes red. Measured across the command union:
+
+- **BBBBBBB-10** (medium, open): `createFormField`'s worst is 33,928,509 bytes written plainly (256 fields of 256
+  options at the field bounds), past the frame like the drawing was. Detection is what creates fields in bulk.
+- 22 kinds cannot be measured at all, because a nested object in them is not strict. Until they are, the check is blind
+  to those 22, and it says so by naming them.
+
+The control is the drawing's own: the command re-declared with a kept drawing's strokes is reported past the frame by
+the same reading.
+
 ---
 
 ## 2026-10-01 — Stage audit of `4a93218f..173cc5ae` — findings AAAAAAA-1 to AAAAAAA-5

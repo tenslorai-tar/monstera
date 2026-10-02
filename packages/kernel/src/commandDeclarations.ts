@@ -1297,7 +1297,9 @@ const declarations = {
     sources: 'none',
     targets: 'none',
     reads: 'none',
-    // A typed or drawn mark is a few hundred bytes of intent and crosses the JSON wire as it is.
+    // NO ASSET: the mark crosses the JSON wire in the frame. A drawing does so in its placed form, at most
+    // `MAX_PLACED_SIGNATURE_POINTS` points, which is under three quarters of the frame at its worst encoding
+    // (`hostRoutes.test.ts`); a kept drawing at its own bound measured ten times the frame (finding BBBBBBB-1).
     asset: 'none',
     purpose: 'ordinary',
   },

@@ -1,7 +1,9 @@
 import {
   ENGINE_HOST_FRAME_MAX_BYTES,
+  WORST_BYTES_PER_CHAR,
   commandSchema,
   hostRouteViolations,
+  keepableSignatureSchema,
   maxEncodedBytes,
   unboundedMembers,
 } from '@monstera/contract';
@@ -54,6 +56,54 @@ describe('the engine hosts’ declared routes', () => {
       expect(requests.sort()).toStrictEqual([...COMMAND_CARRYING[host as keyof typeof HOSTS]].sort());
     });
   }
+
+  /**
+   * EACH COMMAND KIND, CLOSED, FITS THE FRAME — the check the request rule above cannot make, because a command object
+   * is open and so reads as unbounded whole (finding BBBBBBB-1). Asked kind by kind with `.strict()`, a command's own
+   * fields have a worst size, and a kind whose worst is past the frame is a person's ordinary action refused as too
+   * large. `placeSignatureMark` was one: a drawing at its kept bound measured 2,692,503 bytes.
+   *
+   * Two kinds of exception, each pinned by exact set so a kind that joins is red and one that leaves must be taken off:
+   */
+  const PAST_THE_FRAME: readonly string[] = [
+    // BBBBBBB-10, open: 256 fields of 256 options each, at the field bounds, is 34 MB written plainly.
+    'createFormField',
+  ];
+  /** A nested object that is not `.strict()` reads as unbounded, so these kinds cannot be measured at all yet. */
+  const UNMEASURED: readonly string[] = [
+    'insertImagePage', 'mergeDocument', 'replacePage', 'importPageAsLayer', 'removeAnnotation', 'placeAnnotation',
+    'placeImage', 'placeSignaturePicture', 'styleAnnotation', 'editAnnotationText', 'setAnnotationAuthor',
+    'replyToAnnotation', 'fillFormField', 'deleteFormFields', 'signDocument', 'importFormData', 'importAnnotations',
+    'replaceTextObject', 'placePageObject', 'recolorPageObjects', 'deletePageObjects', 'editTextBlock',
+  ];
+  const worstOf = (option: (typeof commandSchema.options)[number]): number =>
+    maxEncodedBytes(option.strict(), WORST_BYTES_PER_CHAR);
+
+  it('every command kind it can measure fits the frame at its worst, and the exceptions are exactly the pinned ones', () => {
+    const past: string[] = [];
+    const unmeasured: string[] = [];
+    for (const option of commandSchema.options) {
+      const worst = worstOf(option);
+      if (worst === Infinity) unmeasured.push(option.shape.kind.value);
+      else if (worst > ENGINE_HOST_FRAME_MAX_BYTES) past.push(option.shape.kind.value);
+    }
+    expect(past.sort()).toStrictEqual([...PAST_THE_FRAME].sort());
+    expect(unmeasured.sort()).toStrictEqual([...UNMEASURED].sort());
+  });
+
+  it('a placed drawing at its bound is under three quarters of the frame', () => {
+    const placing = commandSchema.options.find((option) => option.shape.kind.value === 'placeSignatureMark');
+    if (placing === undefined) throw new Error('placeSignatureMark is not in the command union');
+    expect(worstOf(placing)).toBeLessThan(ENGINE_HOST_FRAME_MAX_BYTES * 0.75);
+  });
+
+  /** THE CONTROL: the command as it was, carrying a kept drawing's strokes, is past the frame by the same reading. */
+  it('CONTROL: placeSignatureMark carrying a kept drawing, as before BBBBBBB-1, is past the frame', () => {
+    const placing = commandSchema.options.find((option) => option.shape.kind.value === 'placeSignatureMark');
+    if (placing === undefined) throw new Error('placeSignatureMark is not in the command union');
+    const before = placing.extend({ mark: keepableSignatureSchema });
+    expect(maxEncodedBytes(before.strict(), WORST_BYTES_PER_CHAR)).toBeGreaterThan(ENGINE_HOST_FRAME_MAX_BYTES);
+  });
 
   /** Decision D: every page list is a bounded page set, so no array or string anywhere in a command is unbounded. */
   it('no array or string in the command union is unbounded — page lists included', () => {
