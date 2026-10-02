@@ -731,8 +731,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const [toastStore] = useState(() => createToastStore());
   const toasts = useSyncExternalStore(toastStore.subscribe, () => toastStore.getState().toasts);
   const toast = useCallback<ShowToast>(
-    (kind, message) => {
-      toastStore.getState().show(kind, message);
+    (kind, message, action) => {
+      toastStore.getState().show(kind, message, action);
     },
     [toastStore],
   );
@@ -2068,9 +2068,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const onSnapshot = useCallback(
     (page: number, rect: AnnotationRect, snapshotScale: number): void => {
       if (activeId === undefined) return;
-      void snapshotRegion({ client, ask }, activeId, page, rect, snapshotScale);
+      void snapshotRegion({ client, ask, toast }, activeId, page, rect, snapshotScale);
     },
-    [activeId, ask, client],
+    [activeId, ask, client, toast],
   );
 
   /**
@@ -2133,9 +2133,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const onPlaceSignature = useCallback(
     (page: number, rect: AnnotationRect): void => {
       if (activeId === undefined) return;
-      void signDocument({ client, ask, onApplied: applied }, activeId, { page, rect });
+      void signDocument({ client, ask, onApplied: applied, toast }, activeId, { page, rect });
     },
-    [activeId, applied, ask, client],
+    [activeId, applied, ask, client, toast],
   );
 
   /**
@@ -2452,6 +2452,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       onApplied: applied,
       ask,
       stamp,
+      // EVERY WRITE CONFIRMS through `confirmWritten`, which needs where the toast goes.
+      toast,
       recogniseFirst: (docId: DocId, pageCount: number) =>
         recogniseBeforeExport(
           {
@@ -2574,8 +2576,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         deletePagesCommand({ client, onApplied: applied, ask, stamp }),
         cropPagesCommand({ client, onApplied: applied, ask, stamp }),
         protectDocumentCommand({ client, onApplied: applied, ask, stamp }),
-        sanitizeDocumentCommand({ client, onApplied: applied, ask, stamp }),
-        signDocumentCommand({ client, onApplied: applied, ask, stamp }),
+        sanitizeDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
+        signDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
         signaturesCommand({ client, onApplied: applied, ask, stamp }),
         docusignSendCommand({
           client,
@@ -2589,6 +2591,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onApplied: applied,
           ask,
           stamp,
+          toast,
           docusignReady: () => docusignKeyStored,
         }),
         redactMatchesCommand({ client, onApplied: applied, ask, stamp }),
@@ -2603,7 +2606,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         watermarkPagesCommand({ client, onApplied: applied, ask, stamp }),
         headerFooterCommand({ client, onApplied: applied, ask, stamp }),
         batesNumberCommand({ client, onApplied: applied, ask, stamp }),
-        pageTransitionCommand({ client, onApplied: applied, ask, stamp }),
+        pageTransitionCommand({ client, onApplied: applied, ask, stamp, toast }),
         pageBackgroundCommand({ client, onApplied: applied, ask, stamp }),
         resizePagesCommand({ client, onApplied: applied, ask, stamp }),
         deskewPagesCommand({ client, onApplied: applied, ask, stamp }),
@@ -2631,6 +2634,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onApplied: applied,
           ask,
           stamp,
+          toast,
           track,
           servicesReady: () => azureReady || claudeKeyStored,
           ocrLanguages: storedOcrLanguages,
@@ -2684,17 +2688,18 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onActivate: activate,
         }),
         extractPagesCommand({ client, onApplied: applied, ask, stamp, toast }),
-        splitDocumentCommand({ client, onApplied: applied, ask, stamp }),
-        exportPageImagesCommand({ client, onApplied: applied, ask, stamp }),
+        splitDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
+        exportPageImagesCommand({ client, onApplied: applied, ask, stamp, toast }),
         exportTextCommand(exportDeps),
         exportLayoutTextCommand(exportDeps),
         exportWordCommand(exportDeps),
-        exportPowerPointCommand({ client, onApplied: applied, ask, stamp }),
+        exportPowerPointCommand({ client, onApplied: applied, ask, stamp, toast }),
         exportExcelCommand({
           client,
           onApplied: applied,
           ask,
           stamp,
+          toast,
           // THE SAME TWO FACTS the OCR tool's engines are offered on (`cloudReady`, `claudeReady`
           // below): a service is offered where its key is stored, and nowhere else (ADR-0086).
           tableEngines: () => [
@@ -2703,7 +2708,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             ...(claudeKeyStored ? (['claude'] as const) : []),
           ],
         }),
-        printCommand({ client, onApplied: applied, ask, stamp, settings }),
+        printCommand({ client, onApplied: applied, ask, stamp, settings, toast }),
         emailCommand({ client, onApplied: applied, ask, stamp }),
         exportPdfaCommand(exportDeps),
         optimizeCommand({ client, onApplied: applied, ask, stamp, track, toast }),
@@ -2718,9 +2723,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // to Side by Side rather than a second owner of it: Review › Compare writes the same value.
         openSideBySideCommand({ focused: readActiveId, show: showSideBySide }),
         saveCopyCommand({ client, onApplied: applied, ask, stamp, toast }),
-        exportFormDataJsonCommand({ client, onApplied: applied, ask, stamp }),
-        exportFormDataXfdfCommand({ client, onApplied: applied, ask, stamp }),
-        exportFormDataFdfCommand({ client, onApplied: applied, ask, stamp }),
+        exportFormDataJsonCommand({ client, onApplied: applied, ask, stamp, toast }),
+        exportFormDataXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
+        exportFormDataFdfCommand({ client, onApplied: applied, ask, stamp, toast }),
         importFormDataJsonCommand({ client, onApplied: applied, ask, stamp }),
         importFormDataXfdfCommand({ client, onApplied: applied, ask, stamp }),
         importFormDataFdfCommand({ client, onApplied: applied, ask, stamp }),
@@ -2730,9 +2735,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         importAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp }),
         // THE CLIPBOARD'S PASTE, beside the import it is: main mints the same command.
         marksPaste,
-        exportAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp }),
-        exportAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp }),
-        exportAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp }),
+        exportAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
+        exportAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp, toast }),
+        exportAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp, toast }),
         detectFlatFieldsCommand({ client, onApplied: applied, ask, stamp }),
         flattenFormCommand({ client, onApplied: applied, ask, stamp }),
         // EDIT TEXT, a MODE in the tool slot (ADR-0096): it toggles as a drawing

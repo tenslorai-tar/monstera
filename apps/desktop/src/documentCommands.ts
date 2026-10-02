@@ -2166,12 +2166,26 @@ export type OptimizeMeasurement =
 
 /** What writing an optimized copy did. */
 export type OptimizeOutcome =
-  | { readonly kind: 'copied'; readonly bytes: number; readonly before: number }
+  | { readonly kind: 'copied'; readonly bytes: number; readonly before: number; readonly destination: string }
   | Exclude<CopyOutcome, { readonly kind: 'copied' }>
   | { readonly kind: 'not-smaller'; readonly before: number; readonly after: number }
   | { readonly kind: 'changed' }
   | { readonly kind: 'unreadable' }
   | { readonly kind: 'unavailable' };
+
+/**
+ * What a write of many files did — a split, the pages as images: the kernel's `SplitOutcome`, its success naming the
+ * FOLDER the person chose, main's only as `CopyOutcome`'s destination is. The folder and not a file in it, because a
+ * person asked for a folder and looks for the files there.
+ */
+export type FolderOutcome =
+  | (Extract<SplitOutcome, { readonly kind: 'split' }> & { readonly destination: string })
+  | Exclude<SplitOutcome, { readonly kind: 'split' }>;
+
+/** The kernel's split answer with its folder, for {@link FolderOutcome}. */
+function inFolder(outcome: SplitOutcome, directory: string): FolderOutcome {
+  return outcome.kind === 'split' ? { ...outcome, destination: directory } : outcome;
+}
 
 /** What a PDF/A-2b export did: a copy's outcomes, with what the conversion removed; or no converter; or no PDF/A. */
 export type ExportPdfaOutcome =
@@ -2181,6 +2195,8 @@ export type ExportPdfaOutcome =
       readonly removed: readonly string[];
       /** The document was tagged, and the PDF/A file carries no structure tree. */
       readonly tagsDropped: boolean;
+      /** Where the copy went: main's only, as `CopyOutcome`'s is. */
+      readonly destination: string;
     }
   | Exclude<CopyOutcome, { readonly kind: 'copied' }>
   | { readonly kind: 'unavailable' }
@@ -4158,7 +4174,7 @@ export class DocumentCommands {
    * @throws `DocumentNotOpenError` before any dialog appears, for `saveCopy`'s
    * reason.
    */
-  async split(docId: DocId, groups: readonly (readonly number[])[]): Promise<SplitOutcome | undefined> {
+  async split(docId: DocId, groups: readonly (readonly number[])[]): Promise<FolderOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'split');
 
@@ -4183,7 +4199,7 @@ export class DocumentCommands {
       );
     });
 
-    return value;
+    return inFolder(value, directory);
   }
 
   /**
@@ -4305,7 +4321,7 @@ export class DocumentCommands {
           },
           destination,
         );
-        return outcome.kind === 'copied' ? { kind: 'copied', bytes: outcome.bytes, removed, tagsDropped } : outcome;
+        return outcome.kind === 'copied' ? { kind: 'copied', bytes: outcome.bytes, removed, tagsDropped, destination } : outcome;
       } catch (thrown) {
         if (thrown instanceof PdfaFailedError) return { kind: 'failed' };
         throw thrown;
@@ -4380,7 +4396,7 @@ export class DocumentCommands {
           () => Promise.resolve(copy.output),
           destination,
         );
-        return outcome.kind === 'copied' ? { kind: 'copied', bytes: outcome.bytes, before: pdf.length } : outcome;
+        return outcome.kind === 'copied' ? { kind: 'copied', bytes: outcome.bytes, before: pdf.length, destination } : outcome;
       } finally {
         await copy.discard();
       }
@@ -4861,7 +4877,7 @@ export class DocumentCommands {
       readonly dpi: number;
       readonly quality: number;
     },
-  ): Promise<SplitOutcome | undefined> {
+  ): Promise<FolderOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export pages as images');
 
@@ -4899,7 +4915,7 @@ export class DocumentCommands {
       );
     });
 
-    return value;
+    return inFolder(value, directory);
   }
 
   /**

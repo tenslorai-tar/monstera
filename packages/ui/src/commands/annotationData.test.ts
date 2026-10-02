@@ -1,10 +1,11 @@
 import { channels, createClient } from '@monstera/contract';
-import { asDocId, asDocVersion, messageKey, ok } from '@monstera/shared';
+import { asDocId, asDocVersion, asFileHandle, messageKey, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { IMPORT_ANNOTATIONS_PROBLEM_DIALOG_ID } from '../dialogs/importAnnotationsProblem.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
-import { GROUP_COMMENT_FILES } from '../messages/en.js';
+import { GROUP_COMMENT_FILES, TOAST_COMMENTS_SAVED } from '../messages/en.js';
+import type { ToastAction } from '../primitives/Toast.js';
 import { type CommandContext, CommandRegistry, type UiCommand } from '../registries/commands.js';
 import { dispatchChord, shortcutsFor } from '../surfaces/shortcuts.js';
 import {
@@ -28,17 +29,24 @@ import { editCommands } from './editCommands.js';
 const DOC = asDocId('00000000-0000-4000-8000-0000000000aa');
 const CONTEXT = { docId: DOC, version: asDocVersion(1), hasSelection: false, dirty: false, page: 0, pageCount: 1 } as CommandContext;
 
+/** The handle a faked write answers for what it wrote. */
+const WRITTEN = asFileHandle('Handle-comments-written');
+
 function harness(answer: unknown): {
-  deps: Parameters<typeof importAnnotationsJsonCommand>[0];
+  deps: Parameters<typeof exportAnnotationsJsonCommand>[0];
   sent: { id: string; params: unknown }[];
   opened: { id: string; props: unknown }[];
   applied: unknown[];
+  said: { kind: string; message: string; action: ToastAction | undefined }[];
 } {
   const sent: { id: string; params: unknown }[] = [];
   const opened: { id: string; props: unknown }[] = [];
   const applied: unknown[] = [];
+  const said: { kind: string; message: string; action: ToastAction | undefined }[] = [];
   const client = createClient(channels, (id, params) => {
     sent.push({ id, params });
+    // A TOAST'S SHOW IN FOLDER asks main to reveal, and main answers whether it did.
+    if (id === 'file.reveal') return Promise.resolve(ok({ revealed: true }));
     return Promise.resolve(ok(answer as never));
   });
   return {
@@ -52,10 +60,14 @@ function harness(answer: unknown): {
         applied.push(value);
       },
       stamp: () => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' }),
+      toast: (kind, message, action) => {
+        said.push({ kind, message, action });
+      },
     },
     sent,
     opened,
     applied,
+    said,
   };
 }
 
@@ -96,10 +108,20 @@ describe('the comment-file commands', () => {
     expect(opened).toStrictEqual([{ id: SAVE_PROBLEM_DIALOG_ID, props: { outcome: 'unrepresentable' } }]);
   });
 
-  it('CONTROL: a copied export opens nothing', async () => {
-    const { deps, opened } = harness({ kind: 'copied', bytes: 120 });
+  it('a copied export opens no dialog and CONFIRMS, and its Show in folder reveals the file the write answered', async () => {
+    const { deps, opened, said, sent } = harness({ kind: 'copied', bytes: 120, written: WRITTEN });
     await exportAnnotationsJsonCommand(deps).run(CONTEXT);
     expect(opened).toStrictEqual([]);
+    expect(said.map(({ kind, message }) => [kind, message])).toStrictEqual([['done', TOAST_COMMENTS_SAVED]]);
+    said[0]?.action?.run();
+    // THE HANDLE THE WRITE ANSWERED, not one the renderer could name: the reveal asks for exactly that file.
+    expect(sent.at(-1)).toStrictEqual({ id: 'file.reveal', params: { handle: WRITTEN } });
+  });
+
+  it('CONTROL: a cancelled export says nothing at all', async () => {
+    const { deps, opened, said } = harness({ kind: 'cancelled' });
+    await exportAnnotationsJsonCommand(deps).run(CONTEXT);
+    expect([opened, said]).toStrictEqual([[], []]);
   });
 
   it('sits in Review › Comment files, imports first', () => {

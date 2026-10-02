@@ -29,6 +29,7 @@ import {
   type FileHandle,
   asDocId,
   asDocVersion,
+  asFileHandle,
   countWords,
   err,
   findInLines,
@@ -137,6 +138,8 @@ export interface BrowserShim {
    * boolean perfectly.
    */
   revealedLog: () => number;
+  /** Every written file the renderer asked main to show in its folder, in order. */
+  revealedFiles: () => readonly FileHandle[];
   /** Every overlay the renderer asked main to paint, in order — the title bar's colours as it computed them. */
   titleBarOverlays: () => readonly { readonly color: string; readonly symbolColor: string; readonly height: number }[];
   /** How many times the renderer told main the window may close — `revealedLog`'s reason for a count. */
@@ -800,6 +803,14 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // settings object has something to assert against.
   const secrets: Record<string, string> = { ...(options.secrets ?? {}) };
   let revealedLog = 0;
+  // A WRITE ANSWERS A HANDLE FOR WHAT IT WROTE, and here nothing was written: each is a fresh name the shim alone
+  // minted, so a reveal can be checked against the exact write that answered it.
+  let writes = 0;
+  const wrote = (): FileHandle => {
+    writes += 1;
+    return asFileHandle(`shim-written-${String(writes)}`);
+  };
+  const revealedFiles: FileHandle[] = [];
   /** Whether the seeded crash report was shared or dismissed — then it is offered no more. */
   let crashReportDone = false;
   /** The seeded update status, which an acknowledgement moves as main's record does. */
@@ -1433,7 +1444,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (typeof chosen === 'object') {
         return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
       }
-      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen, written: wrote() }));
     },
     // DOCUSIGN, answered as the case needs to see a control REACH it. What a
     // browser-shim case can assert about sending is which channel the command called
@@ -1465,7 +1476,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (typeof chosen === 'object') {
         return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
       }
-      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen, written: wrote() }));
     },
     // THE SAME OPTION A FOURTH TIME, and the format is ignored for the region's
     // reason: what a browser-shim case can assert about an export is which
@@ -1487,7 +1498,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (typeof chosen === 'object') {
         return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
       }
-      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen, written: wrote() }));
     },
     'document.importAnnotations': ({ docId }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
@@ -1534,7 +1545,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (typeof chosen === 'object') {
         return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
       }
-      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen, written: wrote() }));
     },
     // THE SAME `copyDestination` OPTION AGAIN, for the extract's reason. The
     // success answers `files` from the group count, which is the one thing a
@@ -1550,7 +1561,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (typeof chosen === 'object') {
         return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
       }
-      return Promise.resolve(ok({ kind: 'split' as const, files: groups.length }));
+      return Promise.resolve(ok({ kind: 'split' as const, files: groups.length, written: wrote() }));
     },
     // THE SPLIT'S SHIM, one file per page: `files` is the page count asked for,
     // which is again a function of the request rather than of any document.
@@ -1564,7 +1575,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (typeof chosen === 'object') {
         return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
       }
-      return Promise.resolve(ok({ kind: 'split' as const, files: pages.length }));
+      return Promise.resolve(ok({ kind: 'split' as const, files: pages.length, written: wrote() }));
     },
     // THE COPY'S SHIM, for the same option: a text export is one file at a
     // destination, and the byte count is the option's own number.
@@ -1578,7 +1589,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (typeof chosen === 'object') {
         return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
       }
-      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen, written: wrote() }));
     },
     // THE PDF/A EXPORT'S SHIM: a browser has no contained converter, which is main's
     // `unavailable` for a machine where none is provisioned.
@@ -1603,7 +1614,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       const held = versions.get(docId);
       if (held === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
       if (held !== version) return Promise.resolve(ok({ kind: 'changed' as const }));
-      return Promise.resolve(ok({ kind: 'copied' as const, bytes: SHIM_OPTIMIZED[setting], before: 100_000 }));
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: SHIM_OPTIMIZED[setting], before: 100_000, written: wrote() }));
     },
     // THE PRINT'S SHIM: a browser has no system print dialog to show, which is main's
     // `unavailable` answer for a platform without one.
@@ -1630,7 +1641,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (typeof chosen === 'object') {
         return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
       }
-      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen, written: wrote() }));
     },
     // THE POWERPOINT EXPORT'S SHIM, the same option and the same single-file outcomes.
     'document.exportPowerPoint': ({ docId }) => {
@@ -1643,7 +1654,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (typeof chosen === 'object') {
         return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
       }
-      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen, written: wrote() }));
     },
     // THE WORD EXPORT'S SHIM, the text export's option: one file at a destination.
     'document.exportWord': ({ docId }) => {
@@ -1656,7 +1667,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (typeof chosen === 'object') {
         return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
       }
-      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen, written: wrote() }));
     },
     'document.saveCopy': ({ docId }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
@@ -1668,7 +1679,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (typeof chosen === 'object') {
         return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
       }
-      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen, written: wrote() }));
     },
 
     // THE STALE RULE IS MODELLED, and it is the one behaviour here that is not
@@ -2162,6 +2173,11 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       revealedLog += 1;
       return Promise.resolve(ok({ revealed: false }));
     },
+    // RECORDED, NOT PERFORMED, for `log.reveal`'s reason: no file manager here, so the answer is false.
+    'file.reveal': ({ handle }) => {
+      revealedFiles.push(handle);
+      return Promise.resolve(ok({ revealed: false }));
+    },
     // A CRASH REPORT IS WHAT THE CASE SEEDS (ADR-0109): none unless `crashReport` is given, and once shared or
     // dismissed it is offered no more — main's rule, stated as data rather than simulated with files.
     'crashReport.pending': () =>
@@ -2249,6 +2265,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     },
     incidents,
     revealedLog: () => revealedLog,
+    revealedFiles: () => [...revealedFiles],
     titleBarOverlays: () => [...titleBarOverlays],
     windowCloses: () => windowCloses,
     closeListenings: () => closeListenings,

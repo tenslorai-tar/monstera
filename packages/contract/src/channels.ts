@@ -407,6 +407,17 @@ export const MAX_SECRET_SETTING = 8 * 1024;
  */
 export const SETTINGS_SECRET_CHANNELS = ['settings.loadSecrets', 'settings.saveSecret'] as const;
 
+/**
+ * What every write that put a file on disk answers beside its own fields: a handle for what it wrote — the file, or
+ * for a write of many files the folder they went into — which `file.reveal` shows in the file manager.
+ *
+ * **ONE SHAPE, spread into each success** rather than a field written fourteen times: *how a write names what it
+ * wrote* is one rule, and a channel that spelt it differently would be a second opinion the renderer's one
+ * confirmation path would have to know about (B3a). A handle and never a path, for invariant 2's reason: the renderer
+ * can ask for the file to be shown and cannot learn where it is.
+ */
+export const WRITTEN = { written: fileHandleSchema } as const;
+
 /** The browser's own edit commands `window.edit` runs, named as `webContents` names its methods. */
 export const WINDOW_EDIT_ACTIONS = ['cut', 'copy', 'paste', 'selectAll'] as const;
 export type WindowEditAction = (typeof WINDOW_EDIT_ACTIONS)[number];
@@ -2299,7 +2310,7 @@ export const channels = {
       pages: z.array(z.number().int().nonnegative()).min(1).max(MAX_EXTRACT_PAGES),
     }),
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
@@ -2446,7 +2457,7 @@ export const channels = {
       scale: z.number().positive(),
     }),
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
@@ -2498,7 +2509,7 @@ export const channels = {
         .max(MAX_SPLIT_PARTS),
     }),
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('split'), files: z.number().int().positive() }),
+      z.object({ kind: z.literal('split'), files: z.number().int().positive(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
@@ -2537,7 +2548,7 @@ export const channels = {
       })
       .strict(),
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('split'), files: z.number().int().positive() }),
+      z.object({ kind: z.literal('split'), files: z.number().int().positive(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
@@ -2575,7 +2586,7 @@ export const channels = {
     'Writes the document’s form data to a file the user picks.',
     z.object({ docId: docIdSchema, format: formDataFormatSchema }),
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
@@ -2612,7 +2623,7 @@ export const channels = {
     'Writes the document’s text to a plain-text file the user picks.',
     z.object({ docId: docIdSchema, mode: z.enum(['plain', 'layout']) }).strict(),
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
@@ -2635,7 +2646,7 @@ export const channels = {
     'Writes the document as a Word file the user picks.',
     z.object({ docId: docIdSchema, mode: z.enum(WORD_MODES) }).strict(),
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
@@ -2652,7 +2663,7 @@ export const channels = {
     'Writes the document as a PowerPoint deck the user picks.',
     z.object({ docId: docIdSchema }).strict(),
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
@@ -2711,7 +2722,7 @@ export const channels = {
         message: 'the review grid’s edits are MuPDF’s tables’, so only the automatic engine takes them',
       }),
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
@@ -2753,6 +2764,7 @@ export const channels = {
         removed: z.array(z.string().max(MAX_PDFA_REMOVAL_CHARS)).max(MAX_PDFA_REMOVALS).readonly(),
         /** The document was tagged and the file carries no structure tree — which Ghostscript does not print. */
         tagsDropped: z.boolean(),
+        ...WRITTEN,
       }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
@@ -2812,6 +2824,7 @@ export const channels = {
         kind: z.literal('copied'),
         bytes: z.number().int().nonnegative(),
         before: z.number().int().nonnegative(),
+        ...WRITTEN,
       }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
@@ -2869,7 +2882,7 @@ export const channels = {
     'Writes a copy of an open document to a destination the user picks.',
     z.object({ docId: docIdSchema }),
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
@@ -3264,7 +3277,7 @@ export const channels = {
     'Saves the signed copy of the envelope this document was last sent as.',
     z.object({ docId: docIdSchema }),
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
@@ -3491,7 +3504,7 @@ export const channels = {
     'Writes the document’s annotations to a file the user picks.',
     z.object({ docId: docIdSchema, format: annotationDataFormatSchema }),
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
@@ -5289,7 +5302,7 @@ export const channels = {
     'Writes the settings, without secrets, to a JSON file the user picks.',
     z.object({}).strict(),
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('written'), settings: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('written'), settings: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('write-failed') }),
     ]),
@@ -5418,6 +5431,26 @@ export const channels = {
   'log.reveal': channel(
     'Shows the diagnostics log in the OS file manager. No path crosses.',
     z.object({}),
+    z.object({ revealed: z.boolean() }),
+  ),
+
+  /**
+   * Shows a file a write just put on disk in the OS file manager — a toast's *Show in folder*.
+   *
+   * ## A HANDLE IN, and nothing out but whether it was shown
+   *
+   * `log.reveal`'s argument one step on: the renderer names what to show by the `FileHandle` the write answered
+   * (`WRITTEN`), main resolves it to the path it wrote, and no path crosses either way. A file is shown selected in its
+   * folder; a folder a write of many files went into is opened.
+   *
+   * ## `revealed: false` is a state, for `log.reveal`'s reason
+   *
+   * A handle main does not hold, or a file moved or deleted since it was written, is something a person did, not a
+   * failure of this build, so it answers `false` and the toast says nothing more rather than raising an incident.
+   */
+  'file.reveal': channel(
+    'Shows a file a write produced in the OS file manager, by its handle. No path crosses.',
+    z.object({ handle: fileHandleSchema }).strict(),
     z.object({ revealed: z.boolean() }),
   ),
 

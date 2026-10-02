@@ -1298,6 +1298,25 @@ export const TOAST_SAVED = messageKey('toast.saved');
 export const TOAST_COPY_SAVED = messageKey('toast.copy-saved');
 export const TOAST_SMALLER_COPY_SAVED = messageKey('toast.smaller-copy-saved');
 export const TOAST_PAGES_SAVED = messageKey('toast.pages-saved');
+export const TOAST_SHOW_IN_FOLDER = messageKey('toast.show-in-folder');
+export const TOAST_FILES_SAVED = messageKey('toast.files-saved');
+export const TOAST_IMAGES_SAVED = messageKey('toast.images-saved');
+export const TOAST_TEXT_SAVED = messageKey('toast.text-saved');
+export const TOAST_WORD_SAVED = messageKey('toast.word-saved');
+export const TOAST_POWERPOINT_SAVED = messageKey('toast.powerpoint-saved');
+export const TOAST_EXCEL_SAVED = messageKey('toast.excel-saved');
+export const TOAST_PDFA_SAVED = messageKey('toast.pdfa-saved');
+export const TOAST_FORM_DATA_SAVED = messageKey('toast.form-data-saved');
+export const TOAST_COMMENTS_SAVED = messageKey('toast.comments-saved');
+export const TOAST_SIGNED_COPY_SAVED = messageKey('toast.signed-copy-saved');
+export const TOAST_SETTINGS_SAVED = messageKey('toast.settings-saved');
+export const TOAST_SEARCHABLE_SAVED = messageKey('toast.searchable-saved');
+export const TOAST_SNAPSHOT_SAVED = messageKey('toast.snapshot-saved');
+export const TOAST_SETTINGS_NOT_SAVED = messageKey('toast.settings-not-saved');
+export const TOAST_SENT_TO_PRINTER = messageKey('toast.sent-to-printer');
+export const TOAST_DOCUMENT_SIGNED = messageKey('toast.document-signed');
+export const TOAST_ACTIVE_CONTENT_REMOVED = messageKey('toast.active-content-removed');
+export const TOAST_TRANSITION_SET = messageKey('toast.transition-set');
 export const TOAST_SAVED_BACK = messageKey('toast.saved-back');
 export const THUMBNAILS_LABEL = messageKey('surface.thumbnails.label');
 /**
@@ -3327,6 +3346,25 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_COPY_SAVED]: 'Copy saved',
   [TOAST_SMALLER_COPY_SAVED]: 'Smaller copy saved',
   [TOAST_PAGES_SAVED]: 'Pages saved',
+  [TOAST_SHOW_IN_FOLDER]: 'Show in folder',
+  [TOAST_FILES_SAVED]: 'Files saved',
+  [TOAST_IMAGES_SAVED]: 'Images saved',
+  [TOAST_TEXT_SAVED]: 'Text file saved',
+  [TOAST_WORD_SAVED]: 'Word file saved',
+  [TOAST_POWERPOINT_SAVED]: 'PowerPoint file saved',
+  [TOAST_EXCEL_SAVED]: 'Excel file saved',
+  [TOAST_PDFA_SAVED]: 'PDF/A file saved',
+  [TOAST_FORM_DATA_SAVED]: 'Form data saved',
+  [TOAST_COMMENTS_SAVED]: 'Comments saved',
+  [TOAST_SIGNED_COPY_SAVED]: 'Signed copy saved',
+  [TOAST_SETTINGS_SAVED]: 'Settings saved to a file',
+  [TOAST_SEARCHABLE_SAVED]: 'Searchable copy saved',
+  [TOAST_SNAPSHOT_SAVED]: 'Snapshot saved',
+  [TOAST_SETTINGS_NOT_SAVED]: 'The settings file could not be written. Nothing was changed.',
+  [TOAST_SENT_TO_PRINTER]: 'Sent to the printer',
+  [TOAST_DOCUMENT_SIGNED]: 'Document signed. Save to keep the signature.',
+  [TOAST_ACTIVE_CONTENT_REMOVED]: 'Active content removed. Save to keep the change.',
+  [TOAST_TRANSITION_SET]: 'Page transition set. It plays when the document is presented.',
   [TOAST_SAVED_BACK]: 'Saved to cloud storage',
   [STATUS_ZOOM_SLIDER]: 'Zoom level',
   [THUMBNAILS_LABEL]: 'Page thumbnails',

@@ -5375,6 +5375,29 @@ optgroup {
   overflow-wrap: anywhere;
 }
 
+/* A TOAST'S ONE ACTION (Show in folder): a text button in the accent's text colour, with the control edge so it reads
+   as something to press in forced colours too, where the colour is discarded. */
+.m-toast__action {
+  flex: none;
+  padding: var(--space-2) var(--space-8);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: transparent;
+  color: var(--accent-text);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.m-toast__action:hover {
+  background: var(--surface2);
+}
+
+.m-toast__action:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
 @keyframes m-toast-in {
   from {
     opacity: 0;

@@ -19,10 +19,12 @@ import {
   RIBBON_COMMENTS_EXPORT_FDF,
   RIBBON_COMMENTS_EXPORT_JSON,
   PASTE_ANNOTATIONS_TITLE,
+  TOAST_COMMENTS_SAVED,
 } from '../messages/en.js';
 import type { IconName } from '../primitives/icons.js';
 import type { UiCommand } from '../registries/commands.js';
-import { type DocumentCommandDeps, hasDocument, reportProblem } from './documentCommands.js';
+import { confirmWritten } from './confirmWritten.js';
+import { type DocumentCommandDeps, type WritesAFile, hasDocument, reportProblem } from './documentCommands.js';
 
 /**
  * Review › Comment files — the document's comments to a file, and a file's comments into the
@@ -41,7 +43,7 @@ function exportAnnotationsCommand(
   ribbonTitle: MessageKey,
   order: number,
   icon: IconName,
-): (deps: DocumentCommandDeps) => UiCommand {
+): (deps: DocumentCommandDeps & WritesAFile) => UiCommand {
   return (deps) => ({
     id,
     title,
@@ -56,7 +58,11 @@ function exportAnnotationsCommand(
         reportProblem(deps, answer.error);
         return;
       }
-      if (answer.value.kind === 'copied' || answer.value.kind === 'cancelled') return;
+      if (answer.value.kind === 'copied') {
+        confirmWritten(deps, TOAST_COMMENTS_SAVED, answer.value.written);
+        return;
+      }
+      if (answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
         outcome:
           answer.value.kind === 'write-failed'

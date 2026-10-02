@@ -545,6 +545,12 @@ export interface ShellComposition {
    * `shell.openPath`, built in `entry.ts` because this file imports no Electron (ADR-0062).
    */
   readonly openExternalEditor: OpenExternalEditor;
+  /**
+   * Shows a path a write produced in the file manager — `shell.showItemInFolder` for a file, `shell.openPath` for a
+   * folder — built in `entry.ts` for `openExternalEditor`'s reason. Optional, for `secrets`' reason below: a graph
+   * built for a unit test has no file manager, and answering `false` (nothing shown) is that state said honestly.
+   */
+  readonly revealPath?: ((path: string) => Promise<boolean>) | undefined;
   /** The watch on a page sent out — `fs.watch`, built in `entry.ts` for the same reason. */
   readonly editWatch: EditWatchSurface;
   /** Where settings are stored. Required — see the note above. */
@@ -758,6 +764,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     readCertificate,
     openInBrowser,
     openExternalEditor,
+    revealPath,
     editWatch,
     settings,
     secrets,
@@ -1623,6 +1630,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // test in this repository — genuinely has no directory to reveal, and
       // saying so is the honest answer rather than a silent success.
       revealLog: log === null ? (): Promise<boolean> => Promise.resolve(false) : log.reveal,
+      revealPath: revealPath ?? ((): Promise<boolean> => Promise.resolve(false)),
       crashReports,
       launchDocuments: launched,
       // THE UPDATE CHECK (ADR-0110): this build's channel picks the provider, the contract's address decides whether

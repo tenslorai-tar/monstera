@@ -219,7 +219,21 @@ import {
   OPEN_SIDE_BY_SIDE_TITLE,
   CLOSE_TAB_TITLE,
   TOAST_COPY_SAVED,
+  TOAST_EXCEL_SAVED,
+  TOAST_FILES_SAVED,
+  TOAST_FORM_DATA_SAVED,
+  TOAST_IMAGES_SAVED,
   TOAST_PAGES_SAVED,
+  TOAST_PDFA_SAVED,
+  TOAST_POWERPOINT_SAVED,
+  TOAST_SIGNED_COPY_SAVED,
+  TOAST_SNAPSHOT_SAVED,
+  TOAST_ACTIVE_CONTENT_REMOVED,
+  TOAST_DOCUMENT_SIGNED,
+  TOAST_SENT_TO_PRINTER,
+  TOAST_TRANSITION_SET,
+  TOAST_TEXT_SAVED,
+  TOAST_WORD_SAVED,
   TOAST_SAVED,
   TOAST_STALE_COPIES_DELETED,
   TOAST_SMALLER_COPY_SAVED,
@@ -235,6 +249,7 @@ import type { Placement } from '../registries/placement.js';
 import { DOCUMENT_PANEL_OPEN_SETTING, DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import type { ShowToast } from '../toasts.js';
+import { confirmDone, confirmWritten } from './confirmWritten.js';
 import type { ZoomDirection, ZoomMode } from '../zoom.js';
 
 /**
@@ -383,7 +398,11 @@ async function reportRecognisedBeforeExport(
 }
 
 /**
- * What a command that WRITES A FILE needs on top of the bag, and only those commands.
+ * What a command that WRITES A FILE, or FINISHES OUT OF SIGHT, needs on top of the bag, and only those commands.
+ *
+ * *Out of sight* is a change nothing on screen shows: a job handed to the printer, a signature with no appearance,
+ * active content removed, a transition that plays only in a presentation. Those confirm through `confirmDone`, the
+ * file writers through `confirmWritten`, both in `confirmWritten.ts`.
  *
  * ## Why a confirmation is a dependency and not a return value
  *
@@ -394,8 +413,8 @@ async function reportRecognisedBeforeExport(
  *
  * ## Why it is an intersection rather than a field on {@link DocumentCommandDeps}
  *
- * Four commands in this file write a file. Forty do not, and putting `toast` on the bag would
- * hand all forty a capability the feature set has no use for, which is the same argument
+ * Most commands in this file change what the page shows, which is their confirmation, and putting `toast` on the bag
+ * would hand all of them a capability they have no use for, which is the same argument
  * `track` and `servicesReady` are already intersections for. It also keeps the type honest
  * about who reports: a reader of `rotatePageCommand` can see it cannot toast.
  */
@@ -560,11 +579,12 @@ export async function applyDocumentCommand(
  *
  * `extractPagesCommand`'s tail exactly: report a channel refusal where every
  * other one is reported, raise the save dialog for the two outcomes a person
- * can act on, and say nothing at all on success — a file appearing where the
- * user asked for it is its own confirmation.
+ * can act on. A command that writes a file confirms its success through
+ * `confirmWritten`; this sentence used to say a file appearing where the user
+ * asked was its own confirmation, and the owner retired that for the class.
  */
 export async function snapshotRegion(
-  deps: Pick<DocumentCommandDeps, 'ask' | 'client'>,
+  deps: Pick<DocumentCommandDeps, 'ask' | 'client'> & WritesAFile,
   docId: DocId,
   page: number,
   rect: AnnotationRect,
@@ -575,7 +595,11 @@ export async function snapshotRegion(
     reportProblem(deps, answer.error);
     return;
   }
-  if (answer.value.kind === 'copied' || answer.value.kind === 'cancelled') return;
+  if (answer.value.kind === 'copied') {
+    confirmWritten(deps, TOAST_SNAPSHOT_SAVED, answer.value.written);
+    return;
+  }
+  if (answer.value.kind === 'cancelled') return;
   void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
     outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
   });
@@ -1433,7 +1457,7 @@ export function batesNumberCommand(deps: DocumentCommandDeps): UiCommand {
  * not need to. Which engine writes a command is its declaration's business, and
  * the registry is what makes that true rather than a convention.
  */
-export function pageTransitionCommand(deps: DocumentCommandDeps): UiCommand {
+export function pageTransitionCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.page-transition',
     icon: 'Presentation',
@@ -1451,12 +1475,14 @@ export function pageTransitionCommand(deps: DocumentCommandDeps): UiCommand {
         | undefined;
       if (answer === undefined) return;
 
-      await applyDocumentCommand(deps, context.docId, {
+      // OUT OF SIGHT: a transition plays only when the document is presented, so the page shows nothing new.
+      const applied = await applyDocumentCommand(deps, context.docId, {
         kind: 'setPageTransition',
         pages: answer.pages === 'all' ? 'all' : [...answer.pages],
         style: answer.style,
         durationSeconds: answer.durationSeconds,
       });
+      if (applied) confirmDone(deps, TOAST_TRANSITION_SET);
     },
   };
 }
@@ -2397,8 +2423,8 @@ async function deleteStaleCopies(
  *
  * The channel is the same destination path — main picks, builds and writes, and
  * nothing crosses — so the outcomes are `saveCopy`'s and are handled the same
- * way: `copied` and `cancelled` say nothing, and the two failures open the save
- * problem dialog.
+ * way: `copied` confirms (`confirmWritten`), `cancelled` says nothing, and the
+ * two failures open the save problem dialog.
  *
  * The dialog runs BEFORE the channel call, which puts two dialogs in sequence
  * for one action — a range, then main's file picker. That is the honest
@@ -2436,7 +2462,7 @@ export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile): Ui
         return;
       }
       if (answer.value.kind === 'copied') {
-        deps.toast('done', TOAST_PAGES_SAVED);
+        confirmWritten(deps, TOAST_PAGES_SAVED, answer.value.written);
         return;
       }
       if (answer.value.kind === 'cancelled') return;
@@ -2454,11 +2480,11 @@ export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile): Ui
  * two-dialog ordering for the same reason: main cannot offer a folder for a
  * split nobody has described yet.
  *
- * The outcomes are the destination path's, so `split` and `cancelled` say
- * nothing and the two failures open the save problem dialog — the same
- * treatment a copy gets, because it is the same write.
+ * The outcomes are the destination path's, so `split` confirms with the folder
+ * to show, `cancelled` says nothing and the two failures open the save problem
+ * dialog — the same treatment a copy gets, because it is the same write.
  */
-export function splitDocumentCommand(deps: DocumentCommandDeps): UiCommand {
+export function splitDocumentCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.split',
     icon: 'Scissors',
@@ -2483,7 +2509,11 @@ export function splitDocumentCommand(deps: DocumentCommandDeps): UiCommand {
         reportProblem(deps, answer.error);
         return;
       }
-      if (answer.value.kind === 'split' || answer.value.kind === 'cancelled') return;
+      if (answer.value.kind === 'split') {
+        confirmWritten(deps, TOAST_FILES_SAVED, answer.value.written);
+        return;
+      }
+      if (answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
         outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
       });
@@ -2496,10 +2526,10 @@ export function splitDocumentCommand(deps: DocumentCommandDeps): UiCommand {
  *
  * **No dialog of its own**: there is nothing to choose before the save dialog,
  * which main runs. `saveCopyCommand`'s outcomes, because it is the same
- * single-file destination path — `copied` and `cancelled` say nothing, and the
- * two failures reach the save problem dialog.
+ * single-file destination path — `copied` confirms, `cancelled` says nothing,
+ * and the two failures reach the save problem dialog.
  */
-export function exportTextCommand(deps: DocumentCommandDeps & RecognisesFirst): UiCommand {
+export function exportTextCommand(deps: DocumentCommandDeps & RecognisesFirst & WritesAFile): UiCommand {
   return {
     id: 'document.export-text',
     icon: 'FileText',
@@ -2521,7 +2551,7 @@ export function exportTextCommand(deps: DocumentCommandDeps & RecognisesFirst): 
  * the two exports differ in which engine reads the page and in nothing a person
  * does, so one outcome handler serves both.
  */
-export function exportLayoutTextCommand(deps: DocumentCommandDeps & RecognisesFirst): UiCommand {
+export function exportLayoutTextCommand(deps: DocumentCommandDeps & RecognisesFirst & WritesAFile): UiCommand {
   return {
     id: 'document.export-layout-text',
     icon: 'FileText',
@@ -2540,7 +2570,7 @@ export function exportLayoutTextCommand(deps: DocumentCommandDeps & RecognisesFi
  * A dismissed mode dialog dispatches nothing. The outcomes are a copy's, reported
  * the way {@link exportTextCommand}'s are.
  */
-export function exportWordCommand(deps: DocumentCommandDeps & RecognisesFirst): UiCommand {
+export function exportWordCommand(deps: DocumentCommandDeps & RecognisesFirst & WritesAFile): UiCommand {
   return {
     id: 'document.export-word',
     icon: 'FileText',
@@ -2566,7 +2596,11 @@ export function exportWordCommand(deps: DocumentCommandDeps & RecognisesFirst): 
         reportProblem(deps, answer.error);
         return;
       }
-      if (answer.value.kind === 'copied' || answer.value.kind === 'cancelled') return;
+      if (answer.value.kind === 'copied') {
+        confirmWritten(deps, TOAST_WORD_SAVED, answer.value.written);
+        return;
+      }
+      if (answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
         outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
       });
@@ -2580,7 +2614,7 @@ export function exportWordCommand(deps: DocumentCommandDeps & RecognisesFirst): 
  * **No dialog of its own**, `exportTextCommand`'s reason: there is nothing to
  * choose before the save dialog, which main runs.
  */
-export function exportPowerPointCommand(deps: DocumentCommandDeps): UiCommand {
+export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.export-powerpoint',
     icon: 'FileImage',
@@ -2596,7 +2630,11 @@ export function exportPowerPointCommand(deps: DocumentCommandDeps): UiCommand {
         reportProblem(deps, answer.error);
         return;
       }
-      if (answer.value.kind === 'copied' || answer.value.kind === 'cancelled') return;
+      if (answer.value.kind === 'copied') {
+        confirmWritten(deps, TOAST_POWERPOINT_SAVED, answer.value.written);
+        return;
+      }
+      if (answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
         outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
       });
@@ -2622,7 +2660,7 @@ export function exportPowerPointCommand(deps: DocumentCommandDeps): UiCommand {
  * no text.
  */
 export function exportExcelCommand(
-  deps: DocumentCommandDeps & {
+  deps: DocumentCommandDeps & WritesAFile & {
     /**
      * The engines this machine can read tables with (ADR-0086): `automatic` always, a service
      * where its key is stored. A function, read when the command runs, so a key stored after
@@ -2699,7 +2737,11 @@ export function exportExcelCommand(
         return;
       }
       const outcome = answer.value;
-      if (outcome.kind === 'copied' || outcome.kind === 'cancelled') return;
+      if (outcome.kind === 'copied') {
+        confirmWritten(deps, TOAST_EXCEL_SAVED, outcome.written);
+        return;
+      }
+      if (outcome.kind === 'cancelled') return;
       if (outcome.kind === 'no-tables') {
         void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
           outcome: outcome.picturePages > 0 ? 'no-tables-no-text' : 'no-tables',
@@ -2731,7 +2773,7 @@ export function exportExcelCommand(
  *
  * **No dialog of its own before the save dialog**, `exportPowerPointCommand`'s reason.
  */
-export function exportPdfaCommand(deps: DocumentCommandDeps & RecognisesFirst): UiCommand {
+export function exportPdfaCommand(deps: DocumentCommandDeps & RecognisesFirst & WritesAFile): UiCommand {
   return {
     id: 'document.export-pdfa',
     icon: 'FileCheck',
@@ -2755,6 +2797,9 @@ export function exportPdfaCommand(deps: DocumentCommandDeps & RecognisesFirst): 
         case 'cancelled':
           return;
         case 'copied':
+          // THE FILE IS WRITTEN EITHER WAY, so it is confirmed either way; what the conversion removed is the
+          // dialog's to say, over the toast, when there is anything to say.
+          confirmWritten(deps, TOAST_PDFA_SAVED, outcome.written);
           if (outcome.removed.length > 0 || outcome.tagsDropped) {
             void deps.ask(PDFA_REMOVALS_DIALOG_ID, { removed: outcome.removed, tagsDropped: outcome.tagsDropped });
           }
@@ -2850,7 +2895,7 @@ export function optimizeCommand(
         const outcome = saved.value;
         switch (outcome.kind) {
           case 'copied':
-            deps.toast('done', TOAST_SMALLER_COPY_SAVED);
+            confirmWritten(deps, TOAST_SMALLER_COPY_SAVED, outcome.written);
             return;
           case 'cancelled':
             return;
@@ -2885,7 +2930,7 @@ export function optimizeCommand(
  * The dialog starts on Settings › Rendering › *Print quality*, read when the command runs, so a change there applies
  * to the next print without a restart.
  */
-export function printCommand(deps: DocumentCommandDeps & { readonly settings: SettingsStore }): UiCommand {
+export function printCommand(deps: DocumentCommandDeps & WritesAFile & { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'document.print',
     icon: 'Printer',
@@ -2908,7 +2953,12 @@ export function printCommand(deps: DocumentCommandDeps & { readonly settings: Se
         reportProblem(deps, answer.error);
         return;
       }
-      if (answer.value.kind === 'printed' || answer.value.kind === 'cancelled') return;
+      if (answer.value.kind === 'cancelled') return;
+      // THE JOB LEAVES FOR THE PRINTER, out of sight: without this a printed document and a dismissed dialog look alike.
+      if (answer.value.kind === 'printed') {
+        confirmDone(deps, TOAST_SENT_TO_PRINTER);
+        return;
+      }
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
         outcome: answer.value.kind === 'unavailable' ? 'print-unavailable' : 'print-failed',
       });
@@ -2953,7 +3003,7 @@ export function emailCommand(deps: DocumentCommandDeps): UiCommand {
 }
 
 async function runTextExport(
-  deps: DocumentCommandDeps & RecognisesFirst,
+  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile,
   context: CommandContext,
   mode: 'plain' | 'layout',
 ): Promise<void> {
@@ -2969,6 +3019,8 @@ async function runTextExport(
   }
   switch (answer.value.kind) {
     case 'copied':
+      confirmWritten(deps, TOAST_TEXT_SAVED, answer.value.written);
+      return;
     case 'cancelled':
       return;
     case 'write-failed':
@@ -2990,10 +3042,11 @@ async function runTextExport(
  * Writes the chosen pages as PNG or JPEG images in a folder the user picks.
  *
  * {@link splitDocumentCommand}'s shape and outcomes, because main runs the same
- * folder write with an image where a document was: `split` and `cancelled` say
- * nothing, and the two failures reach the save problem dialog.
+ * folder write with an image where a document was: `split` confirms with the
+ * folder to show, `cancelled` says nothing, and the two failures reach the save
+ * problem dialog.
  */
-export function exportPageImagesCommand(deps: DocumentCommandDeps): UiCommand {
+export function exportPageImagesCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.export-page-images',
     icon: 'FileImage',
@@ -3024,7 +3077,11 @@ export function exportPageImagesCommand(deps: DocumentCommandDeps): UiCommand {
         reportProblem(deps, answer.error);
         return;
       }
-      if (answer.value.kind === 'split' || answer.value.kind === 'cancelled') return;
+      if (answer.value.kind === 'split') {
+        confirmWritten(deps, TOAST_IMAGES_SAVED, answer.value.written);
+        return;
+      }
+      if (answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
         outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
       });
@@ -3062,7 +3119,7 @@ function exportFormDataCommand(
   ribbonTitle: MessageKey,
   order: number,
   icon: IconName,
-): (deps: DocumentCommandDeps) => UiCommand {
+): (deps: DocumentCommandDeps & WritesAFile) => UiCommand {
   return (deps) => ({
     id,
     title,
@@ -3082,7 +3139,11 @@ function exportFormDataCommand(
         reportProblem(deps, answer.error);
         return;
       }
-      if (answer.value.kind === 'copied' || answer.value.kind === 'cancelled') return;
+      if (answer.value.kind === 'copied') {
+        confirmWritten(deps, TOAST_FORM_DATA_SAVED, answer.value.written);
+        return;
+      }
+      if (answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
         outcome:
           answer.value.kind === 'write-failed'
@@ -3347,7 +3408,7 @@ export function saveCopyCommand(deps: DocumentCommandDeps & WritesAFile): UiComm
       // changing nothing on screen reads as a save that did not happen retires that reasoning
       // for the whole class. The destination dialog closing is the platform's, not ours.
       if (answer.value.kind === 'copied') {
-        deps.toast('done', TOAST_COPY_SAVED);
+        confirmWritten(deps, TOAST_COPY_SAVED, answer.value.written);
         return;
       }
       if (answer.value.kind === 'cancelled') return;
@@ -3690,7 +3751,7 @@ export function signaturesCommand(deps: DocumentCommandDeps): UiCommand {
  * and a dismissal is the third outcome, which opens nothing because they did it
  * on purpose.
  */
-export function signDocumentCommand(deps: DocumentCommandDeps): UiCommand {
+export function signDocumentCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.sign-document',
     icon: 'Signature',
@@ -3719,7 +3780,7 @@ export function signDocumentCommand(deps: DocumentCommandDeps): UiCommand {
  * visible one, which is the display-only defect with a credential attached.
  */
 export async function signDocument(
-  deps: Pick<DocumentCommandDeps, 'ask' | 'client' | 'onApplied'>,
+  deps: Pick<DocumentCommandDeps, 'ask' | 'client' | 'onApplied'> & WritesAFile,
   docId: DocId,
   placement?: SignaturePlacement,
   /** `blob:` addresses for kept pictures — the browser's own unless a case counts them. */
@@ -3781,6 +3842,8 @@ export async function signDocument(
     if (signed.value.historyDropped > 0) {
       void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: signed.value.historyDropped });
     }
+    // AN UNSEEN SIGNATURE IS SAID: with no rectangle nothing on the page changes. A placed one is its own confirmation.
+    if (placement === undefined) confirmDone(deps, TOAST_DOCUMENT_SIGNED);
     return;
   }
   // VOIDED for `reportProblem`'s reason: this dialog declares no result, so
@@ -3846,7 +3909,7 @@ export function docusignSendCommand(deps: DocumentCommandDeps & DocusignReadines
  * A copy that appears where the person asked is its own confirmation.
  */
 export function docusignRetrieveCommand(
-  deps: DocumentCommandDeps & DocusignReadiness,
+  deps: DocumentCommandDeps & DocusignReadiness & WritesAFile,
 ): UiCommand {
   return {
     id: 'document.docusign-retrieve',
@@ -3864,6 +3927,8 @@ export function docusignRetrieveCommand(
       const outcome = answer.value;
       switch (outcome.kind) {
         case 'copied':
+          confirmWritten(deps, TOAST_SIGNED_COPY_SAVED, outcome.written);
+          return;
         case 'cancelled':
           return;
         case 'write-failed':
@@ -3900,7 +3965,7 @@ export function docusignRetrieveCommand(
  * about the document a person hands to **somebody else**, whose reader makes
  * its own choices.
  */
-export function sanitizeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
+export function sanitizeDocumentCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.sanitize',
     icon: 'ShieldCheck',
@@ -3914,10 +3979,12 @@ export function sanitizeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
         | undefined;
       if (answer === undefined) return;
 
-      await applyDocumentCommand(deps, context.docId, {
+      // OUT OF SIGHT: scripts, actions and embedded files are not drawn, so removing them changes nothing on the page.
+      const applied = await applyDocumentCommand(deps, context.docId, {
         kind: 'sanitizeDocument',
         parts: [...answer.parts],
       });
+      if (applied) confirmDone(deps, TOAST_ACTIVE_CONTENT_REMOVED);
     },
   };
 }

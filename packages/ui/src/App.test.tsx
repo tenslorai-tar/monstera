@@ -7,7 +7,7 @@ import {
   channels,
   createClient,
 } from '@monstera/contract';
-import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
+import { asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
 import { act, cleanup, fireEvent, render as renderBare, screen, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -1278,7 +1278,7 @@ describe('App', () => {
         'document.pageTextLayer': { version: asDocVersion(1), lines: [], truncated: false, kind: 'image-only' as const },
         'app.ocrLanguages': { languages: ['eng', 'deu'] },
         'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
-        'document.exportText': { kind: 'copied' as const, bytes: 10 },
+        'document.exportText': { kind: 'copied' as const, bytes: 10, written: asFileHandle('Handle-text-export') },
       };
 
       it('with the setting on, Export text recognises every picture page in the STORED language, then exports', async () => {
@@ -1319,6 +1319,25 @@ describe('App', () => {
           expect(sent.some((call) => call.id === 'document.exportText')).toBe(true);
         });
         expect(sent.filter((call) => call.id === 'document.execute')).toStrictEqual([]);
+      });
+
+      it('THROUGH THE COMPOSITION: an export that lands is confirmed, and Show in folder reveals the file it wrote', async () => {
+        // THE PAIR'S UI HALF crossing App's own wiring: the toast is the shell's, and its action reaches main by the
+        // handle the export answered. A root that dropped `toast` from the export's dependencies compiles nowhere,
+        // and one that showed a toast without the action would pass every command case.
+        const { client, sent } = answeringClient({ ...SCANNED, 'file.reveal': { revealed: true } });
+        render(<App client={client} settings={freshSettings()} />);
+        await withDocumentOpen();
+
+        await pressCommand('Export text…');
+        const show = await screen.findByRole('button', { name: 'Show in folder' });
+        expect(screen.getByText('Text file saved')).toBeTruthy();
+        fireEvent.click(show);
+        await vi.waitFor(() => {
+          expect(sent.filter((call) => call.id === 'file.reveal').map((call) => call.params)).toStrictEqual([
+            { handle: 'Handle-text-export' },
+          ]);
+        });
       });
     });
 

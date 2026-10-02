@@ -28,6 +28,17 @@ export interface ToastMessage {
   readonly kind: ToastKind;
   /** The line the person reads. A `MessageKey`, so B9's ban on literal strings holds here too. */
   readonly message: MessageKey;
+  /**
+   * One thing the person may do about it — *Show in folder* after a file was written. Absent for most toasts. One and
+   * not several: a toast is read in passing, and a row of choices is a dialog drawn too small.
+   */
+  readonly action?: ToastAction | undefined;
+}
+
+/** A toast's one action: its label, and what it does. Choosing it also takes the toast away. */
+export interface ToastAction {
+  readonly label: MessageKey;
+  readonly run: () => void;
 }
 
 /**
@@ -109,6 +120,19 @@ function ToastRow({
     >
       <Icon name={toast.kind === 'done' ? 'CircleCheck' : 'CircleAlert'} size="dense" />
       <p className="m-toast__message">{_(toast.message)}</p>
+      {toast.action === undefined ? null : (
+        <button
+          className="m-toast__action"
+          data-toast-action=""
+          onClick={() => {
+            toast.action?.run();
+            onDismiss(id);
+          }}
+          type="button"
+        >
+          {_(toast.action.label)}
+        </button>
+      )}
       <IconButton
         icon={X}
         label={dismissLabel}
