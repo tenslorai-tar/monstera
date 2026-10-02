@@ -28,6 +28,7 @@ is not available.
 - [ ] **Export pages as images…** — Export · `document.export-page-images` · Help: *Save pages as pictures*
 - [ ] **Export to Word…** — Export · `document.export-word` · Help: *Export to Word*
 - [ ] **Export tables to Excel…** — Export · `document.export-excel` · Help: *Export tables to Excel*
+- [ ] **Export to PowerPoint…** — Export · `document.export-powerpoint` · Help: *Export to PowerPoint*
 - [ ] **Email…** — Export · `document.email` · Help: *Email or share a document*
 - [ ] **Open PDF…** — File · `document.open` · Help: *Open a password-protected PDF*
 - [ ] **Save** — File · `document.save` · Help: *Save your changes*
@@ -165,7 +166,6 @@ is not available.
 - [ ] **Keyboard shortcuts** — Application · `app.keyboard-shortcuts` · Help: *See and change keyboard shortcuts*
 - [ ] **Export as PDF/A…** — Convert · `document.export-pdfa` · Help: *Save an archival copy (PDF/A)*
 - [ ] **Save a smaller copy…** — Convert · `document.optimize` · Help: *Make a smaller copy of a PDF*
-- [ ] **Export to PowerPoint…** — Convert · `document.export-powerpoint` · Help: *Export to PowerPoint*
 - [ ] **Export text…** — Convert · `document.export-text` · Help: *Save the text as a text file*
 - [ ] **Export text with layout…** — Convert · `document.export-layout-text` · Help: *Save the text as a text file*
 - [ ] **New PDF from Word, Excel or PowerPoint…** — Create · `document.new-from-office` · Help: *Make a PDF from a Word, Excel or PowerPoint file*
