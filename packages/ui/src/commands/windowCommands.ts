@@ -35,6 +35,7 @@ export function exitCommand(deps: { readonly closeWindow: () => Promise<void> })
   return {
     id: 'app.exit',
     title: EXIT_TITLE,
+    icon: 'LogOut',
     placements: [{ surface: 'menu-bar', menu: 'file', group: 3, order: 90 }],
     run: () => deps.closeWindow(),
   };

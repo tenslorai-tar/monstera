@@ -113,6 +113,7 @@ export function editCommands(deps: EditDeps): readonly UiCommand[] {
   const paste: UiCommand = {
     id: 'edit.paste',
     title: EDIT_PASTE_TITLE,
+    icon: 'ClipboardPaste',
     shortcut: 'Ctrl+V',
     placements: [{ surface: 'menu-bar', menu: 'edit', group: 1, order: 30 }],
     // A FIELD IS ALWAYS PASTABLE: the renderer may not read the clipboard (§2), so whether it holds text is not known
@@ -130,6 +131,7 @@ export function editCommands(deps: EditDeps): readonly UiCommand[] {
   const selectAll: UiCommand = {
     id: 'edit.select-all',
     title: EDIT_SELECT_ALL_TITLE,
+    icon: 'TextSelect',
     shortcut: 'Ctrl+A',
     placements: [{ surface: 'menu-bar', menu: 'edit', group: 1, order: 40 }],
     when: (context) => deps.field() !== undefined || can(deps.selectAllMarks, context),

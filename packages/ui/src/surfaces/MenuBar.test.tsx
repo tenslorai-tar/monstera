@@ -22,8 +22,9 @@ const CONTEXT: CommandContext = {
   openDocuments: [],
 };
 
+/** A command with a glyph, which the registry requires of every command a menu lists. */
 function command(id: string, title: string, placements: readonly Placement[], over: Partial<UiCommand> = {}): UiCommand {
-  return { id, title: messageKey(title), placements, run: () => undefined, ...over };
+  return { id, title: messageKey(title), placements, icon: 'File', run: () => undefined, ...over };
 }
 
 beforeAll(() => {
@@ -90,6 +91,35 @@ describe('MenuBar (ADR-0107)', () => {
     });
     expect(run).toHaveBeenCalledTimes(1);
     expect(run).toHaveBeenCalledWith(CONTEXT);
+  });
+
+  // THE GLYPH COLUMN (the owner's review of 0.1.8.0: the menus listed text only): every item draws its OWN command's
+  // icon in the column before its title, a disabled item's too, hidden from the item's name.
+  it('every item draws its command’s icon in the column before the title, a disabled one included', async () => {
+    render(
+      drawn([
+        command('a.open', 'test.menu.open', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 1 }], { icon: 'FolderOpen' }),
+        command('a.print', 'test.menu.print', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 2 }], {
+          icon: 'Printer',
+          when: () => false,
+        }),
+      ]),
+    );
+    await open('File');
+    const items = [await screen.findByRole('menuitem', { name: 'Open' }), screen.getByRole('menuitem', { name: 'Print' })];
+    // EACH ITEM'S OWN GLYPH, told apart by lucide's class for it: the same icon on every row would pass a bare count.
+    expect(items.map((each) => each.querySelector('.m-menu-bar__icon svg')?.getAttribute('class'))).toStrictEqual([
+      expect.stringContaining('lucide-folder-open'),
+      expect.stringContaining('lucide-printer'),
+    ]);
+    // BEFORE THE TITLE, and out of the name.
+    for (const each of items) {
+      const icon = each.querySelector('.m-menu-bar__icon');
+      const title = each.querySelector('.m-menu-bar__title');
+      expect(icon?.nextElementSibling).toBe(title);
+      expect(icon?.getAttribute('aria-hidden')).toBe('true');
+    }
+    expect(items[1]?.getAttribute('aria-disabled')).toBe('true');
   });
 
   it('a command that sets a state is a CHECKABLE item, checked exactly when it is on', async () => {

@@ -257,12 +257,15 @@ optgroup {
    whether or not a group has marks. Given to the items through the shared item's two properties, never by a layout
    rule of the menu bar's own: `.m-context-menu-item` is the one class that lays an item out
    (`scripts/lib/layoutOwnership.mjs`). */
+/* THE MARK, THE GLYPH, THE TITLE AND THE CHORD: the check for a command that is on, then each command's icon in one
+   column so every title starts at one edge, then the words and the key at the end. */
 .m-menu-bar__popup {
-  --menu-item-columns: var(--icon-16) minmax(0, 1fr) auto;
+  --menu-item-columns: var(--icon-14) var(--icon-14) minmax(0, 1fr) auto;
   --menu-item-gap: var(--space-8);
 }
 
-.m-menu-bar__mark {
+.m-menu-bar__mark,
+.m-menu-bar__icon {
   display: inline-flex;
 }
 
@@ -5959,7 +5962,13 @@ body {
 
 /* EVERY FLOATING SURFACE (v5): menus, the context menu, a group's More, the command palette — the float surface, its
    glass and its shadow, rounded 12; items 30 tall, rounded 6. */
+/* NEVER TALLER THAN THE ROOM ITS SIDE OF THE TRIGGER HAS: `--available-height` is set by Base UI's positioner on the
+   element around the popup, and a menu longer than it scrolls inside rather than running past the window, where its
+   last items could not be reached at all. */
 .m-context-menu {
+  box-sizing: border-box;
+  max-block-size: var(--available-height, none);
+  overflow-y: auto;
   min-inline-size: var(--context-menu-min);
   padding: var(--space-4) var(--space-6);
   border: 1px solid var(--border); /* decorative: the menu's edge; every item draws its own focus state */
@@ -5969,7 +5978,10 @@ body {
   box-shadow: var(--float-shadow);
 }
 
+/* THIRTY TALL, PADDING INCLUDED: under the default content-box the minimum was the content's alone, so every item drew
+   38 px (measured 2026-10-02 in Chromium 151, `cloud-3`), and the View menu ran 74 px past a 1280 × 800 window. */
 .m-context-menu-item {
+  box-sizing: border-box;
   min-block-size: var(--menu-item);
   border-radius: var(--radius-6);
   font-size: var(--font-chrome-12);

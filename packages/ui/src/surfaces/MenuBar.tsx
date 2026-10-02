@@ -181,6 +181,12 @@ export function MenuBar({
         <span className="m-menu-bar__mark" aria-hidden="true">
           {checked === true ? <Icon name="Check" size="dense" /> : null}
         </span>
+        {/* THE COMMAND'S GLYPH in its own column, so every title starts at one edge (the owner's review of 0.1.8.0).
+            Decorative: the item's name is its title. It takes the item's colour, so a disabled item's glyph is muted
+            with its words. The registry refuses a command in a menu without one. */}
+        <span className="m-menu-bar__icon" aria-hidden="true">
+          {command.icon === undefined ? null : <Icon name={command.icon} size="dense" />}
+        </span>
         <span className="m-menu-bar__title">{_(command.title)}</span>
         {/* THE CHORD IS SEEN, AND ANNOUNCED AS A SHORTCUT: `aria-keyshortcuts` on the item carries it to assistive
             technology, so the visible text is kept out of the item's name — *Open*, not *OpenCtrl+O*. */}

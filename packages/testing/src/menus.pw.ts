@@ -160,4 +160,42 @@ test('a DISABLED menu item looks disabled: muted, and no highlight under the poi
   const background = await disabled.evaluate((element) => getComputedStyle(element).backgroundColor);
   expect(background).toBe('rgba(0, 0, 0, 0)');
   expect(await disabled.evaluate((element) => getComputedStyle(element).cursor)).toBe('default');
+  // ITS GLYPH IS MUTED WITH IT: the icon strokes in the item's own colour, and CONTROL, the enabled one's does not.
+  const stroke = (locator: Locator): Promise<string> =>
+    locator.locator('.m-menu-bar__icon svg').evaluate((svg) => getComputedStyle(svg).color);
+  expect(await stroke(disabled)).toBe(muted);
+  expect(await stroke(enabled)).not.toBe(muted);
+});
+
+// EVERY MENU, EVERY ITEM (the owner's review of 0.1.8.0: the menus listed text only): each item draws a glyph in the
+// one icon column, so every title starts at the same edge, and the menu fits the window — the View menu ran 74 px past
+// a 1280 × 800 window while each item drew 38 px for v5's 30, and its last items could not be reached.
+test('every MENU draws a glyph for every item in one column, titles aligned, and fits the window at 1280 × 800', async ({ page }) => {
+  await openDocument(page);
+  const triggers = page.locator('.m-menu-bar__trigger');
+  const names = await triggers.allTextContents();
+  expect(names.length).toBeGreaterThan(8);
+  for (const name of names) {
+    await page.getByRole('menubar').getByRole('menuitem', { name, exact: true }).click();
+    const popup = page.locator('.m-menu-bar__popup');
+    await expect(popup).toBeVisible();
+    const read = await popup.evaluate((menu) => {
+      const items = [...menu.querySelectorAll<HTMLElement>('.m-menu-bar__item')];
+      const box = menu.getBoundingClientRect();
+      return {
+        count: items.length,
+        bare: items.filter((item) => item.querySelector('.m-menu-bar__icon svg') === null).map((item) => item.textContent),
+        titleEdges: [...new Set(items.map((item) => Math.round(item.querySelector('.m-menu-bar__title')?.getBoundingClientRect().left ?? -1)))],
+        heights: [...new Set(items.map((item) => Math.round(item.getBoundingClientRect().height)))],
+        inside: box.top >= 0 && box.bottom <= window.innerHeight,
+      };
+    });
+    expect(read.count, name).toBeGreaterThan(0);
+    expect(read.bare, name).toStrictEqual([]);
+    expect(read.titleEdges, name).toHaveLength(1);
+    expect(read.heights, name).toStrictEqual([30]);
+    expect(read.inside, name).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(popup).toBeHidden();
+  }
 });

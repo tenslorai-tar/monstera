@@ -379,6 +379,20 @@ export class CommandRegistry {
         named.set(key, command.id);
       }
     }
+    // EVERY COMMAND A MENU LISTS DRAWS ITS GLYPH (the owner's review of 0.1.8.0: the menu row's menus listed text
+    // only). The menu bar draws each item's icon in one column so the titles align, and a command with none would be
+    // the one row whose title sits in the icon's place. Which menu a placement lands in is `menuOf`'s, the rule the bar
+    // draws by, so a ribbon command in Organize is held as well as an explicit menu-bar placement. Every offender is
+    // named at once, because the fix for one is the fix for all.
+    const iconless = [...this.#byId.values()]
+      .filter((command) => command.icon === undefined && command.placements.some((placement) => menuOf(placement) !== undefined))
+      .map((command) => command.id);
+    if (iconless.length > 0) {
+      throw new Error(
+        `${iconless.map((id) => `"${id}"`).join(', ')} ${iconless.length === 1 ? 'is in a menu and names' : 'are in a menu and name'} ` +
+          `no icon. The menu bar draws every item's glyph in one column; give each an \`icon\` from primitives/icons.ts.`,
+      );
+    }
     // EVERY RIBBON COMMAND IS IN SOME MENU (ADR-0107 Decision 3 and its correction). Every section but Home is a menu
     // by construction, so the one way to miss is a command placed in Home alone with no menu-bar placement. Refused
     // here, so the application's own registry is checked every time it is built — by every test that renders the

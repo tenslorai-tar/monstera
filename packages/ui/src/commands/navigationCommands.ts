@@ -146,6 +146,7 @@ export function goToCommand(): UiCommand {
   return {
     id: 'view.go-to',
     title: GO_TO_TITLE,
+    icon: 'CornerDownRight',
     shortcut: 'Ctrl+Shift+G',
     // EDIT, after the clipboard: finding a place in the document, beside Find in the Edit section's groups (ADR-0107).
     placements: [{ surface: 'menu-bar', menu: 'edit', group: 2, order: 10 }],

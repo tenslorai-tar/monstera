@@ -879,6 +879,7 @@ export function actualSizeCommand(deps: ZoomDeps): UiCommand {
   return {
     id: 'view.actual-size',
     title: ACTUAL_SIZE_TITLE,
+    icon: 'Scan',
     placements: [{ surface: 'menu-bar', menu: 'view', group: 2, order: 30, caption: MENU_GROUP_ZOOM }],
     when: hasDocument,
     run: (): void => {

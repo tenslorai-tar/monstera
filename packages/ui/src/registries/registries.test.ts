@@ -108,6 +108,27 @@ describe('CommandRegistry', () => {
     expect(registry.size).toBe(2);
   });
 
+  // THE MENU BAR DRAWS EVERY ITEM'S GLYPH (the owner's review of 0.1.8.0): a command a menu lists with no icon would be
+  // the one row whose title sits in the icon's column. Every offender is named at once, so the fix is one pass.
+  it('refuses commands a MENU lists with no icon, naming every one of them', () => {
+    expect(
+      () =>
+        new CommandRegistry([
+          command('edit.paste', { placements: [{ surface: 'menu-bar', menu: 'edit', group: 1, order: 30 }] }),
+          command('app.exit', { placements: [{ surface: 'menu-bar', menu: 'file', group: 3, order: 90 }] }),
+        ]),
+    ).toThrow(/"edit\.paste", "app\.exit" are in a menu and name no icon/u);
+  });
+
+  it('CONTROL: the same menu commands WITH icons are accepted, and a palette-only command still may omit one', () => {
+    const registry = new CommandRegistry([
+      command('edit.paste', { icon: 'ClipboardPaste', placements: [{ surface: 'menu-bar', menu: 'edit', group: 1, order: 30 }] }),
+      command('app.exit', { icon: 'LogOut', placements: [{ surface: 'menu-bar', menu: 'file', group: 3, order: 90 }] }),
+      command('edit.palette-only'),
+    ]);
+    expect(registry.size).toBe(3);
+  });
+
   it('treats an absent `when` as always, and a false one as ABSENT rather than disabled', () => {
     const registry = new CommandRegistry([
       command('edit.always'),
