@@ -1,13 +1,14 @@
 import { useLingui } from '@lingui/react';
 import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
-import { Fragment, type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import type { DocumentView } from './documentView.js';
 import { THUMBNAILS_LABEL, THUMBNAIL_PAGE } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { RenderCancelledError, renderPage } from './renderPage.js';
 import { THUMBNAIL_SIZES, type ThumbnailSize } from './settings/appearance.js';
+import { type MenuAt, inPageMenu } from './surfaces/ContextMenu.js';
 import { usePageRotations } from './usePageRotations.js';
 import { useVisiblePages } from './useVisiblePages.js';
 
@@ -63,7 +64,7 @@ export function Thumbnails({
   onJump,
   onMove,
   onSwap,
-  pageMenu,
+  menuAt,
   size = 'medium',
   grid,
   waitForFirstFrame = false,
@@ -77,12 +78,12 @@ export function Thumbnails({
    */
   readonly waitForFirstFrame?: boolean;
   /**
-   * Wraps one thumbnail in the page context menu for THAT page (§7) — the shell's
-   * `ContextMenuArea`, handed down so this strip never names the registry. Optional for
-   * `onMove`'s reason: a strip with no document commands behind it, the compare pane's,
-   * renders no menu rather than one whose items act on the other document.
+   * The page context menu (§7) for the thumbnail a right-click lands on: ONE menu around the strip (`PageMenuArea`),
+   * asking the shell for that page's menu, so this strip never names the registry. Optional for `onMove`'s reason: a
+   * strip with no document commands behind it, the compare pane's, renders no menu rather than one whose items act on
+   * the other document.
    */
-  readonly pageMenu?: ((page: number, thumbnail: ReactElement) => ReactNode) | undefined;
+  readonly menuAt?: MenuAt<number> | undefined;
   /**
    * Where the strip reads each page's rotation — the same read the spine takes
    * ({@link usePageRotations}), so a page turned in the document is turned here.
@@ -167,9 +168,9 @@ export function Thumbnails({
       // together and `app.css` lays both out — the token rule's own line: values that are genuinely dynamic.
       style={{ '--m-thumb-columns': String(columns), '--m-thumb-width': `${String(width)}px` } as React.CSSProperties}
     >
-      {Array.from({ length: pageCount }, (_, page) => {
+      {inPageMenu(menuAt, Array.from({ length: pageCount }, (_, page) => {
         const ticked = grid?.selected.includes(page) === true;
-        const thumbnail = (
+        return (
         <button
           key={page}
           type="button"
@@ -278,10 +279,7 @@ export function Thumbnails({
           </span>
         </button>
         );
-        // THE KEY ON THE OUTERMOST ELEMENT, so wrapping a thumbnail in its menu does not make React
-        // treat every page as new on each render.
-        return pageMenu === undefined ? thumbnail : <Fragment key={page}>{pageMenu(page, thumbnail)}</Fragment>;
-      })}
+      }))}
     </nav>
   );
 }

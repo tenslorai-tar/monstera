@@ -17,6 +17,7 @@ import {
 import type { DocId, DocVersion } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -410,7 +411,7 @@ import { OpeningState, PageList, type PageListProps } from './PageList.js';
 import { type Side, SideBySide, type SidePreferences, drawForComparison } from './SideBySide.js';
 import { SplitView } from './SplitView.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
-import { ContextMenuArea } from './surfaces/ContextMenu.js';
+import { type MenuAt, NO_MENU, menuGroups } from './surfaces/ContextMenu.js';
 import { type TextSelection, readTextSelection } from './TextLayer.js';
 import {
   type TextSelectionDeps,
@@ -3162,27 +3163,23 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * `when` is asked about it. On the page holding the selected annotations the annotation group comes first: the
    * selection's page is where its actions belong.
    *
-   * A NAMED CALLBACK rather than inline, because a background layer takes it too (ADR-0129): it wraps each page
-   * and thumbnail slot, and a layer that wrapped them in anything else would put a different component at that
-   * position, so bringing it forward would remount every slot and its canvas. Behind, the layer is inert, so its
-   * menus cannot open on the focused document's context.
+   * ASKED AT THE RIGHT-CLICK by the one menu each list draws (`PageMenuArea`), and given to the layer on show only. A
+   * background layer takes `NO_MENU` (ADR-0129): it is inert, so its menu cannot open, and it draws the same area
+   * component, so bringing it forward remounts no slot. This changes with the focused context, which a tab switch
+   * changes, so it is kept out of `background` — in it, every kept layer re-rendered on every switch.
    */
-  const pageMenu = useCallback(
-    (page: number, element: ReactElement): ReactNode => (
-      <ContextMenuArea
-        registry={registry}
-        // THE RIGHT-CLICKED PAGE, and the selection only when that page is in it: a right-click on a page
-        // outside what is ticked means THAT page, so the menu's commands must not act on the ticked ones.
-        context={{ ...context, page, selectedPages: context.selectedPages.includes(page) ? context.selectedPages : NO_PAGES }}
-        menus={[
-          ...(textSelection?.page === page ? (['selection'] as const) : []),
-          ...(selection?.page === page ? (['annotation'] as const) : []),
-          'page',
-        ]}
-      >
-        {element}
-      </ContextMenuArea>
-    ),
+  const menuAt = useCallback<MenuAt<number>>(
+    (page) => {
+      // THE RIGHT-CLICKED PAGE, and the selection only when that page is in it: a right-click on a page
+      // outside what is ticked means THAT page, so the menu's commands must not act on the ticked ones.
+      const at = { ...context, page, selectedPages: context.selectedPages.includes(page) ? context.selectedPages : NO_PAGES };
+      const groups = menuGroups(registry, at, [
+        ...(textSelection?.page === page ? (['selection'] as const) : []),
+        ...(selection?.page === page ? (['annotation'] as const) : []),
+        'page',
+      ]);
+      return groups.length === 0 ? undefined : { context: at, groups };
+    },
     [context, registry, selection?.page, textSelection?.page],
   );
 
@@ -3197,7 +3194,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       settings,
       requestPassword,
       onVersionMoved: movedBehind,
-      pageMenu,
+      menuAt: NO_MENU,
       rulers,
       showGrid,
       unit,
@@ -3210,7 +3207,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       layout,
       onFirstFrame: markFramed,
     }),
-    [client, layout, markFramed, movedBehind, pageBadges, pageMenu, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, tileAbove, unit],
+    [client, layout, markFramed, movedBehind, pageBadges, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, tileAbove, unit],
   );
 
   return (
@@ -3254,15 +3251,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           // §7's TAB MENU, with the right-clicked tab's document as the context's — so *Close* closes
           // that tab. Its page and version are the focused document's only when it IS the focused
           // one: a tab in the background has no page on show, and an item must not act on another's.
-          menu={(docId, contents) => (
-            <ContextMenuArea
-              registry={registry}
-              context={docId === context.docId ? context : { ...context, docId, version: undefined, page: undefined, pageCount: undefined }}
-              menus={['tab']}
-            >
-              {contents}
-            </ContextMenuArea>
-          )}
+          menuAt={(docId) => {
+            const at = docId === context.docId ? context : { ...context, docId, version: undefined, page: undefined, pageCount: undefined };
+            const groups = menuGroups(registry, at, ['tab']);
+            return groups.length === 0 ? undefined : { context: at, groups };
+          }}
           tabs={tabStrip}
           activeId={activeId}
           onSelect={activate}
@@ -3343,6 +3336,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             zoom, so a switch changes props and never remounts. Each layer carries its own boundary, keyed with it. */}
         {tabs.map((tab) => (
         <DocumentLayer key={tab.docId} tab={tab} store={stores.get(tab.docId)} background={tab.docId === open.docId ? undefined : background}>
+        {/* THE ELEMENT ONLY FOR THE LAYER ON SHOW: a layer behind draws its own, and handed this one too it would
+            take a new prop on every render here and could never skip one. */}
+        {tab.docId !== open.docId ? undefined : (
         <PageCanvas
           client={client}
           document={open}
@@ -3381,7 +3377,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           // `PageCanvas`' row beside the page area (design pass D).
           // §10.3's FLOATING QUICK TOOLBAR, placed inside the page area it floats over (pass F).
           quickToolbar={<QuickToolbar registry={registry} context={context} settings={settings} />}
-          pageMenu={pageMenu}
+          menuAt={menuAt}
           contextPanel={
             <ContextPanel
               assistant={
@@ -3499,6 +3495,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             ),
           }}
         />
+        )}
         </DocumentLayer>
         ))}
         </div>
@@ -3713,7 +3710,7 @@ type BackgroundLayer = Pick<
   | 'settings'
   | 'requestPassword'
   | 'onVersionMoved'
-  | 'pageMenu'
+  | 'menuAt'
   | 'rulers'
   | 'showGrid'
   | 'unit'
@@ -3756,8 +3753,16 @@ const NO_PANELS: PageCanvasProps['panels'] = { bookmarks: null, comments: null, 
  * `visibility: hidden` over the same box (`app.css`), not `display: none`: a box with no layout loses its scroll
  * offset and its observers report every page gone, which would unmount the very canvases this keeps. `inert`
  * and `aria-hidden` take it out of the focus order, find-in-page and the accessibility tree.
+ *
+ * ## Memoised, so a switch renders two layers and not all of them
+ *
+ * A layer behind takes the same `tab`, `store` and `background` on every render of `App`, so it skips each one —
+ * a tab switch renders the layer leaving and the layer arriving, and none of the others. Before 2026-10-02 every
+ * layer was handed the focused context through the page menu and the element on show as `children`, so every
+ * render of `App` rendered every kept document's every page and thumbnail: measured in Chromium 151 with a 5-page
+ * and a 40-page document, 194 page slots and 160 thumbnails rendered across one switch (item D.b).
  */
-function DocumentLayer({
+const DocumentLayer = memo(function DocumentLayer({
   tab,
   store,
   background,
@@ -3767,8 +3772,8 @@ function DocumentLayer({
   readonly store: DocumentStore | undefined;
   /** The shared props when this layer is behind; `undefined` when it is the one on show. */
   readonly background: BackgroundLayer | undefined;
-  /** The `PageCanvas` element `App` builds for the document on show. */
-  readonly children: ReactElement;
+  /** The `PageCanvas` element `App` builds for the document on show, and only for it. */
+  readonly children?: ReactElement | undefined;
 }): ReactElement {
   const state = useSyncExternalStore(store?.subscribe ?? NO_DOCUMENT_SUBSCRIBE, () => store?.getState());
   const behind = background !== undefined;
@@ -3821,12 +3826,12 @@ function DocumentLayer({
             quickToolbar={null}
           />
         ) : (
-          children
+          (children ?? null)
         )}
       </ErrorBoundary>
     </div>
   );
-}
+});
 
 /**
  * Page 1 of the open document, rasterised.
@@ -3886,7 +3891,7 @@ function PageCanvas({
   panels,
   contextPanel,
   quickToolbar,
-  pageMenu,
+  menuAt,
 }: {
   readonly client: ContractClient;
   readonly document: OpenDocument;
@@ -3894,11 +3899,11 @@ function PageCanvas({
   readonly onPageBox: (page: number, crop: readonly [number, number, number, number]) => void;
   readonly onVersionMoved: (next: OpenedDocument) => void;
   /**
-   * Wraps a thumbnail or a page slot in the page context menu for that page (§7), built by `App`
-   * where the registry is. Handed to this document's thumbnails and both of its panes; never to
-   * Side by Side's halves, whose pages may belong to another document.
+   * The page context menu (§7) for the page a right-click lands on, built by `App` where the registry is. Handed to
+   * this document's thumbnails, its organize grid and both of its panes, each of which draws ONE menu around its
+   * pages; never to Side by Side's halves, whose pages may belong to another document.
    */
-  readonly pageMenu: (page: number, element: ReactElement) => ReactNode;
+  readonly menuAt: MenuAt<number>;
   readonly onCurrentPage: (page: number) => void;
   readonly mode: ZoomMode;
   readonly onZoomStep: (direction: ZoomDirection) => void;
@@ -4267,7 +4272,7 @@ function PageCanvas({
       // AUTOSCROLL MOVES THIS PANE, the document's first; the second is a place a reader looks across to.
       autoscroll={autoscroll}
       onAutoscrollEnd={onAutoscrollEnd}
-      pageMenu={pageMenu}
+      menuAt={menuAt}
     />
   );
   // SPLIT VIEW'S RIGHT HALF, over the SAME parser: one document in two viewports costs one more set of visible page
@@ -4306,7 +4311,7 @@ function PageCanvas({
       pageBadges={pageBadges}
       smoothScroll={smoothScroll}
       layout="single"
-      pageMenu={pageMenu}
+      menuAt={menuAt}
     />
   );
 
@@ -4336,7 +4341,7 @@ function PageCanvas({
             onJump={onJump}
             onMove={onMove}
             onSwap={onSwap}
-            pageMenu={pageMenu}
+            menuAt={menuAt}
             size={thumbnailSize}
             // THE FIRST PAGE FIRST: the strip asks main for nothing until the page area has shown its first frame.
             // Organize's grid shows no first pane, so it never waits.
@@ -4362,7 +4367,7 @@ function PageCanvas({
           onOpen={organize.onOpen}
           onMove={onMove}
           onDelete={organize.onDelete}
-          pageMenu={pageMenu}
+          menuAt={menuAt}
         />
       ) : (
       split ? (

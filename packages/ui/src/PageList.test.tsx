@@ -120,6 +120,23 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
   renderRegion: () => Promise.resolve(),
 }));
 
+/**
+ * How many times a list's BODY has run. `PageList` calls `useVisiblePages` once per render, so counting the calls
+ * through the real hook counts the list's renders — and only the list's: a child that renders on its own state, as
+ * the rulers' spans do on a scroll, is not one.
+ */
+const listRenders = vi.hoisted(() => ({ count: 0 }));
+vi.mock('./useVisiblePages.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./useVisiblePages.js')>();
+  return {
+    ...actual,
+    useVisiblePages: (...args: Parameters<typeof actual.useVisiblePages>): ReturnType<typeof actual.useVisiblePages> => {
+      listRenders.count += 1;
+      return actual.useVisiblePages(...args);
+    },
+  };
+});
+
 /** Every observer built during a case, with the callback it was given. */
 let observers: { callback: IntersectionObserverCallback; observed: Element[] }[] = [];
 
@@ -311,7 +328,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined} differences={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
-        pageMenu={undefined}
+        menuAt={undefined}
       />,
     );
     await settle();
@@ -345,7 +362,7 @@ describe('PageList', () => {
           unit="in"
           search={undefined} differences={undefined}
           secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
-          pageMenu={undefined}
+          menuAt={undefined}
           panning={panning}
         />,
       );
@@ -404,7 +421,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined} differences={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
-        pageMenu={undefined}
+        menuAt={undefined}
       />,
     );
     await settle();
@@ -446,7 +463,7 @@ describe('PageList', () => {
         quality={2}
         pageBadges={false}
         smoothScroll={false} layout="continuous"
-        pageMenu={undefined}
+        menuAt={undefined}
       />,
     );
     await settle();
@@ -486,7 +503,7 @@ describe('PageList', () => {
           quality={1}
           pageBadges={pageBadges}
           smoothScroll={false} layout="continuous"
-          pageMenu={undefined}
+          menuAt={undefined}
         />,
       );
       await settle();
@@ -531,7 +548,7 @@ describe('PageList', () => {
           quality={quality}
           pageBadges={false}
           smoothScroll={false} layout="continuous"
-          pageMenu={undefined}
+          menuAt={undefined}
         />,
       );
       await settle();
@@ -588,7 +605,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined} differences={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
-        pageMenu={undefined}
+        menuAt={undefined}
       />,
     );
     await settle();
@@ -624,7 +641,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined} differences={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
-        pageMenu={undefined}
+        menuAt={undefined}
       />,
     );
     await settle();
@@ -667,7 +684,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined} differences={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
-        pageMenu={undefined}
+        menuAt={undefined}
       />,
     );
     await settle();
@@ -701,7 +718,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined} differences={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
-        pageMenu={undefined}
+        menuAt={undefined}
       />,
     );
     await settle();
@@ -731,7 +748,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined} differences={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
-        pageMenu={undefined}
+        menuAt={undefined}
       />,
     );
     await settle();
@@ -773,7 +790,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined} differences={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
-        pageMenu={undefined}
+        menuAt={undefined}
       />,
     );
     await settle();
@@ -806,7 +823,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined} differences={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
-        pageMenu={undefined}
+        menuAt={undefined}
       />,
     );
     await settle();
@@ -852,7 +869,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined} differences={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
-        pageMenu={undefined}
+        menuAt={undefined}
       />,
     );
     await settle();
@@ -918,7 +935,7 @@ describe('PageList', () => {
       pageBadges: false,
       smoothScroll: false,
       layout: 'continuous' as const,
-      pageMenu: undefined,
+      menuAt: undefined,
     };
     const { rerender } = render(<PageList {...props} view={viewDrawing()} version={VERSION} />);
     await settle();
@@ -960,7 +977,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined} differences={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
-        pageMenu={undefined}
+        menuAt={undefined}
       />,
     );
     await settle();
@@ -1004,7 +1021,7 @@ describe('PageList', () => {
       pageBadges: false,
       smoothScroll: false,
       layout: 'continuous' as const,
-      pageMenu: undefined,
+      menuAt: undefined,
     };
     const { container, rerender } = render(<PageList {...props} startAt={2} />);
     const scrolled = recordScrolls(container);
@@ -1042,7 +1059,7 @@ describe('PageList', () => {
       pageBadges: false,
       smoothScroll: false,
       layout: 'continuous' as const,
-      pageMenu: undefined,
+      menuAt: undefined,
     };
     const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
     await settle();
@@ -1090,7 +1107,7 @@ describe('PageList', () => {
       pageBadges: false,
       smoothScroll: false,
       layout: 'continuous' as const,
-      pageMenu: undefined,
+      menuAt: undefined,
     };
     const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
     await settle();
@@ -1141,7 +1158,7 @@ describe('PageList', () => {
         pageBadges: false,
         smoothScroll,
         layout: 'continuous' as const,
-        pageMenu: undefined,
+        menuAt: undefined,
       };
       const { container, rerender, unmount } = render(<PageList {...props} goTo={undefined} />);
       await settle();
@@ -1203,7 +1220,7 @@ describe('PageList', () => {
           unit="in"
           search={undefined} differences={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
-        pageMenu={undefined}
+        menuAt={undefined}
         />,
       );
       await settle();
@@ -1232,7 +1249,7 @@ describe('PageList', () => {
             unit="in"
             search={undefined} differences={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
-        pageMenu={undefined}
+        menuAt={undefined}
           />,
         );
         await Promise.resolve();
@@ -1272,7 +1289,7 @@ describe('PageList', () => {
             unit="in"
             search={undefined} differences={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
-        pageMenu={undefined}
+        menuAt={undefined}
           />,
         );
         await act(async () => {
@@ -1299,7 +1316,7 @@ describe('PageList', () => {
             unit="in"
             search={undefined} differences={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
-        pageMenu={undefined}
+        menuAt={undefined}
           />,
         );
 
@@ -1344,7 +1361,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined} differences={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
-        pageMenu={undefined}
+        menuAt={undefined}
       />,
     );
     await settle();
@@ -1391,7 +1408,7 @@ describe('PageList', () => {
       pageBadges: false,
       smoothScroll: false,
       layout,
-      pageMenu: undefined,
+      menuAt: undefined,
     });
     /** The pages whose slots are in the layout — not hidden. */
     const shownPages = (container: HTMLElement): number[] =>
@@ -1632,9 +1649,8 @@ describe('PageList', () => {
     });
     try {
       const { client } = clientAnswering();
-      // `pageMenu` IS CALLED ONCE PER SLOT ON EVERY RENDER of the list, which is what makes it the observable: the cost
-      // measured was the slots' menu areas rendering again on every scroll event.
-      const pageMenu = vi.fn((_page: number, slot: ReactElement): ReactNode => slot);
+      // THE LIST'S OWN RENDERS are the observable (`listRenders`): the cost measured was every slot rendering again on
+      // every scroll event, and a slot renders when the list does.
       const { container } = render(
         <PageList
           client={client}
@@ -1655,14 +1671,14 @@ describe('PageList', () => {
           unit="in"
           search={undefined} differences={undefined}
           secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
-          pageMenu={pageMenu}
+          menuAt={undefined}
         />,
       );
       await settle();
       const scroller = container.querySelector<HTMLElement>('.m-page-list');
       if (scroller === null) throw new Error('no scroller');
-      const before = pageMenu.mock.calls.length;
-      // THE PREMISE: the list did render its slots through the menu.
+      const before = listRenders.count;
+      // THE PREMISE: the count sees this list — its mount at least.
       expect(before).toBeGreaterThan(0);
       for (const top of [120, 240, 360]) {
         scroller.scrollTop = top;
@@ -1670,8 +1686,8 @@ describe('PageList', () => {
       }
       await settle();
 
-      // THE DECISION: no slot rendered again.
-      expect(pageMenu.mock.calls.length).toBe(before);
+      // THE DECISION: nothing in the list rendered again.
+      expect(listRenders.count).toBe(before);
       // AND THE SCROLL WAS READ: the grid's origin follows the page now on top, which a listener that never ran would
       // leave where the first frame put it (or unset).
       expect(scroller.style.getPropertyValue('--m-grid-y')).not.toBe('');

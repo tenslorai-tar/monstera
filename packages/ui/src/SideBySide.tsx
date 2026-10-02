@@ -507,7 +507,7 @@ function Half({
           // CONTINUOUS, the owner's design: each half scrolls through its whole document.
           layout="continuous"
           // NO PAGE MENU: every page item acts on the document in the tab, and these pages are not that.
-          pageMenu={undefined}
+          menuAt={undefined}
         />
       )}
     </div>

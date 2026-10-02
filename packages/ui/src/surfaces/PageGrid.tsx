@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
-import { type ReactElement, type ReactNode, useLayoutEffect, useRef, useState } from 'react';
+import { type ReactElement, useLayoutEffect, useRef, useState } from 'react';
 
 import type { DocumentView } from '../documentView.js';
 import {
@@ -16,6 +16,7 @@ import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import { ORGANIZE_GRID_SIZE_SETTING, ORGANIZE_THUMBNAIL_WIDTH } from '../settings/appearance.js';
 import type { SettingsStore } from '../settingsStore.js';
 import { Thumbnails } from '../Thumbnails.js';
+import type { MenuAt } from './ContextMenu.js';
 import { useSetting } from '../useSetting.js';
 
 const SIZE_OPTIONS = [
@@ -74,7 +75,7 @@ export function PageGrid({
   onOpen,
   onMove,
   onDelete,
-  pageMenu,
+  menuAt,
 }: {
   readonly client: ContractClient;
   readonly docId: DocId;
@@ -89,7 +90,7 @@ export function PageGrid({
   readonly onOpen: (page: number) => void;
   readonly onMove: (from: number, to: number) => void;
   readonly onDelete: (pages: readonly number[]) => void;
-  readonly pageMenu: (page: number, element: ReactElement) => ReactNode;
+  readonly menuAt: MenuAt<number>;
 }): ReactElement {
   const { i18n } = useLingui();
   const size = useSetting(settings, ORGANIZE_GRID_SIZE_SETTING);
@@ -144,7 +145,7 @@ export function PageGrid({
         current={current}
         onJump={onOpen}
         onMove={onMove}
-        pageMenu={pageMenu}
+        menuAt={menuAt}
         grid={{ width, selected, onSelect, onOpen, onDelete }}
       />
     </section>

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
 import { type DocId, asDocId } from '@monstera/shared';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -25,7 +25,7 @@ const NOTHING = {
   onSelect: (): void => undefined,
   onClose: (): void => undefined,
   onOpen: (): void => undefined,
-  menu: (_docId: DocId, contents: ReactElement): ReactNode => contents,
+  menuAt: (): undefined => undefined,
 };
 
 function Wrapped({ children }: { children: ReactNode }): ReactElement {
@@ -132,29 +132,30 @@ describe('DocumentTabs', () => {
     expect(container.querySelector('.m-tabs')).toBeNull();
   });
 
-  it('hands EACH tab’s own controls to the menu with THAT tab’s document (§7)', () => {
-    // The tab menu acts on the document it is handed, so a strip that passed the active document
-    // for every tab would close the one on show from any tab's *Close*. The active tab here is the
-    // SECOND, so a menu given the active id each time is red.
-    const wrapped: DocId[] = [];
+  it('asks the menu for THAT tab’s document when a tab’s control is right-clicked, through ONE menu (§7)', () => {
+    // The tab menu acts on the document it is asked for, so a strip that asked for the active document
+    // from every tab would close the one on show from any tab's *Close*. The active tab here is the
+    // SECOND, so a strip asking for the active id each time is red.
+    const asked: DocId[] = [];
     const { container } = render(
       <Wrapped>
         <DocumentTabs
           {...NOTHING}
           tabs={TABS}
           activeId={SECOND}
-          menu={(docId, contents) => {
-            wrapped.push(docId);
-            return <span data-menu-for={docId}>{contents}</span>;
+          menuAt={(docId) => {
+            asked.push(docId);
+            return undefined;
           }}
         />
       </Wrapped>,
     );
 
-    expect(wrapped).toStrictEqual([FIRST, SECOND]);
-    // THE CONTROLS ARE INSIDE THEIR OWN TAB'S MENU, and the list keeps `<li>` as its only children.
-    expect(container.querySelector(`[data-menu-for="${FIRST}"] [data-tab-select="${FIRST}"]`)).not.toBeNull();
-    expect(container.querySelector(`[data-menu-for="${SECOND}"] [data-tab-close="${SECOND}"]`)).not.toBeNull();
+    fireEvent.contextMenu(only(container, `[data-tab-select="${FIRST}"]`, HTMLButtonElement));
+    fireEvent.contextMenu(only(container, `[data-tab-close="${SECOND}"]`, HTMLButtonElement));
+    expect(asked).toStrictEqual([FIRST, SECOND]);
+    // ONE MENU FOR THE STRIP, never one per tab — and the list keeps `<li>` as its only children.
+    expect(container.querySelectorAll('.m-context-menu-region')).toHaveLength(1);
     expect([...container.querySelectorAll('.m-tab-list > *')].every((child) => child.tagName === 'LI')).toBe(true);
   });
 });

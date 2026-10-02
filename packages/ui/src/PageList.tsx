@@ -3,9 +3,7 @@ import type { ContractClient, DispatchableCommand } from '@monstera/contract';
 import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 import type React from 'react';
 import {
-  Fragment,
   type ReactElement,
-  type ReactNode,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -48,7 +46,8 @@ import type { SearchHighlight } from './searchHighlight.js';
 import { Loupe } from './Loupe.js';
 import { Rulers } from './Rulers.js';
 import { type RulerSpan, type RulerUnit, gridSpacing } from './rulerGeometry.js';
-import { useVisiblePages } from './useVisiblePages.js';
+import { type MenuAt, inPageMenu } from './surfaces/ContextMenu.js';
+import { pageSlotAt, useVisiblePages } from './useVisiblePages.js';
 import { type Box, type ZoomDirection, type ZoomMode, resolveZoom } from './zoom.js';
 
 /**
@@ -308,13 +307,12 @@ export interface PageListProps {
    */
   readonly onAutoscrollEnd?: (() => void) | undefined;
   /**
-   * Wraps one page's slot in the page context menu for THAT page (§7), or `undefined` for a pane
-   * with no document commands behind it. Per slot rather than around the scroller, because the
-   * reader can see several pages at once: a menu over the whole list would act on the current page
-   * whichever page was right-clicked — `SHOWN_PAGE`'s defect, arriving through a gesture. Required
-   * and `| undefined` for `secondRasteriser`'s reason.
+   * The page context menu (§7) for the page a right-click lands on, or `undefined` for a pane with no document
+   * commands behind it. ONE menu around the slots (`PageMenuArea`), which asks for the page the target sits in when
+   * the right-click happens — so it acts on the page right-clicked, never the current one, which would be
+   * `SHOWN_PAGE`'s defect arriving through a gesture. Required and `| undefined` for `secondRasteriser`'s reason.
    */
-  readonly pageMenu: ((page: number, slot: ReactElement) => ReactNode) | undefined;
+  readonly menuAt: MenuAt<number> | undefined;
   /**
    * Called when the reader presses in this pane or moves focus into it — *focus follows the
    * pane*. With two panes the owner routes the reports above to the one last used, so the status
@@ -420,7 +418,7 @@ export function PageList({
   layout,
   autoscroll,
   onAutoscrollEnd,
-  pageMenu,
+  menuAt,
   onActivate,
 }: PageListProps): ReactElement {
   const { i18n } = useLingui();
@@ -723,17 +721,13 @@ export function PageList({
         return;
       }
       if (!loupe) return;
-      const target = event.target instanceof HTMLElement ? event.target.closest('[data-page]') : null;
-      if (!(target instanceof HTMLElement) || box === null) {
+      const target = pageSlotAt(event.target);
+      if (target === undefined || box === null) {
         setLens(undefined);
         return;
       }
-      const page = Number(target.dataset['page'] ?? '-1');
-      if (!Number.isInteger(page) || page < 0) {
-        setLens(undefined);
-        return;
-      }
-      const slot = target.getBoundingClientRect();
+      const { page } = target;
+      const slot = target.element.getBoundingClientRect();
       const outer = (pane.current ?? box).getBoundingClientRect();
       setLens({
         page,
@@ -1134,8 +1128,7 @@ export function PageList({
       onPointerDownCapture={onActivate}
       onFocusCapture={onActivate}
     >
-      {Array.from({ length: pageCount }, (_, page) => {
-        const slot = (
+      {inPageMenu(menuAt, Array.from({ length: pageCount }, (_, page) => (
         <PageSlot
           key={page}
           page={page}
@@ -1192,10 +1185,7 @@ export function PageList({
           scroller={scroller}
           hidden={layout === 'single' && page !== onShow}
         />
-        );
-        // THE KEY ON THE OUTERMOST ELEMENT, `Thumbnails`' reason.
-        return pageMenu === undefined ? slot : <Fragment key={page}>{pageMenu(page, slot)}</Fragment>;
-      })}
+      )))}
     </div>
     </div>
   );
