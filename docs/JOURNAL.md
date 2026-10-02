@@ -967,6 +967,66 @@ read by nothing.
 and whether either leg provisions FFFFFFF-1's readers and exercises them was not checked here. **Executed or asserted (item 5):** everything
 above was read in the diff or run here, except FFFFFFF-1's readers, which is the finding.
 
+*The checklist, item by item — added 2026-10-02 after Guards' document-scope proof refused this entry at `938802a7`
+for answering none of the items under its own heading; the prose above stands as written.*
+
+### 1. Root cause or workaround?
+
+The merge's three interactions were each a second branch meeting an amended seam and were resolved by keeping both
+halves (the composer's clearance and chips are one element). The label renumbering follows the owner's rule for ADR
+numbers: final on main, the unmerged one renumbered. No workaround in the range.
+
+### 2. Verified against the easy shape only?
+
+The renumbering was checked against the hard shape — a line the branch changed that could hold one of main's labels —
+by comparing each line with HEAD's copy, and FEATURES held none of main's. The attachments' hard shapes (a picture
+too large, an Office file x2t rejects) were not exercised here; the Windows run is FFFFFFF-1's.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Yes, twice, both stated above: *Copied* moved from on-screen text to the toast path, with the negative cases now
+asserting no toast after the copy call; the Word export's labels moved from whole strings to their first words
+(FFFFFFF-3).
+
+### 3. Would CI have caught it?
+
+Answered above: the merge's own run is read once after the push (it is this refusal). The attachment readers' run on
+a Windows leg was not checked.
+
+### 4. Are the proofs non-vacuous?
+
+The deletions read in the modified proofs each carry a replacing assertion with a control (the fold's reordering
+control, the copy call asserted before the absent toast). No mutation was run in this range beyond the branch's own.
+
+### 4a. Resolution test before measuring?
+
+No instrument in the range measured a quantity.
+
+### 4b. A search with a positive control?
+
+The renumbering scan is a search: its control is the note recording the renumber, which it must find and does, and
+`git grep` for BBBBBBB-6 to -10 outside that note returned nothing.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+Nothing in this range adds or changes a roster's count.
+
+### 5. Executed, or asserted?
+
+Executed: the renumbering check, the proofs' diffs read, typecheck and build on the merged tree, the 0.1.9.0 package's
+start. Asserted: the attachment readers (FFFFFFF-1).
+
+### 6. Architecture before the feature, or underneath it?
+
+ADR-0134, ADR-0135 and ADR-0098's correction each landed as their own commits before the features they govern
+(`ce8cdd16` before `9a2e5e79`, `e2dc5f9b` before `15a5b15c`, `b73937b0` before `99d48b15`). ADR-0133's own commit
+precedes this range and was not read here.
+
+### 7. Do the documents still match the code?
+
+Row 303 kept this branch's wording; the ADR index's 0132 row took the branch's newer text, which matches its ADR.
+FFFFFFF-2 records that the visual suite cannot show most screens this range changed.
+
 ---
 
 ## 2026-10-02 — Stage audit of `24320797..a8fecfd0` — findings EEEEEEE-1 to EEEEEEE-5
