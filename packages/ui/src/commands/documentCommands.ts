@@ -832,9 +832,9 @@ export function fitCommand(fit: 'width' | 'page', deps: ZoomDeps): UiCommand {
         order: fit === 'width' ? 30 : 40,
         prominence: 'secondary',
       },
-      // AND HOME › DISPLAY for Fit width, which v5-02 draws first there. Fit page is not drawn on Home; it is in View ›
-      // Zoom and Tools › Display (ADR-0107 moved Home's secondaries).
-      ...(fit === 'width' ? [{ surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 200 } as const] : []),
+      // AND HOME › DISPLAY, Fit width first as v5-02 draws it and Fit page right after it (the owner's decision of
+      // 2 October, ADR-0107's dated correction): the two fits are one pair a reader reaches for together.
+      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: fit === 'width' ? 200 : 202 },
       { surface: 'menu-bar', menu: 'view', group: 2, order: fit === 'width' ? 40 : 50, caption: MENU_GROUP_ZOOM },
       // §10.3's "fit mode", at the end of the zoom cluster after the percentage.
       { surface: 'status-bar', cluster: 'zoom', side: 'after', order: fit === 'width' ? 20 : 30 },
