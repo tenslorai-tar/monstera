@@ -892,6 +892,48 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-02 — Stage audit of `a8fecfd0..2639b023` — findings FFFFFFF-1 to FFFFFFF-3
+
+28 commits, 195 files: work/cloud-2's twenty after its own audit (`0401c925..b076b30a`), and this branch's audit, its
+merge at `b076b30a` and the 0.1.9.0 record. Written because the merge's baselines would pass one batch. Labels F: E is
+this branch's previous audit, D cloud-2's renumbered one.
+
+**The merge itself.** Every label the branch brought as BBBBBBB-6 to -10 is DDDDDDD now: `git grep` at the merge
+finds BBBBBBB-6 to -10 only in the JOURNAL's own note recording the renumber, and every file the branch named one in
+carries D. Row 303 reads as this branch wrote it. The composer keeps `data-toast-avoid` with the attachment chips
+inside it — the toast clearance and the branch's chips are one element, so the clearance now covers the chips too,
+which is the direction the owner's *a toast never covers the composer* wants.
+
+**Proofs modified, read for loosening.** The deletions in the range are each a design the branch changed, with the
+replacing assertion at least as strong: `ribbonFolding.test.ts` drops *a group holding secondaries charges its More*
+with the rule ADR-0098's correction withdrew, and adds *secondaries are drawn while there is room and fold first*,
+with a control that the reordering is what `secondary` causes; `ChoiceMenu.test.tsx` follows the one-row Choose bar —
+the face shows the value and the accessible name, *Context: Page 7*, is asserted to contain the face's text, which is
+WCAG 2.5.3's rule; `CrashReportOffer.test.tsx` and `annotationCommands.test.ts` move *Copied* from on-screen text to
+the one toast path, the negative cases asserting no toast after asserting the copy was asked for. The dialog tests
+change their wrapper to the dialog the registry mounts (`InDialog`), which is where the footer's Cancel exists.
+
+**FFFFFFF-1** (medium, open): the attachment readers have never run where they ship. pdftotext, x2t and the compose
+host's `engine/image-size` are Windows binaries and the cloud could not run them; the branch's cases stub each reader.
+The owner's list puts a Windows run of five attachments after this merge; until it is recorded, *a file attached to a
+question is read* is asserted for every family but text.
+
+**FFFFFFF-2** (low, open): the visual suite holds a baseline for one dialog (Keyboard shortcuts), the start screen,
+each ribbon section, one panel and the open document. The range converted 55 dialogs, the assistant pane and Side by
+Side, and none of those screens has a baseline to differ from, so the regeneration after this merge could show only
+the ribbon. Whether those screens owe baselines is the owner's; the dialog pattern's own tests hold the structure.
+
+**FFFFFFF-3** (low, stated): `ExportWordBody.test.tsx` asserts the three mode labels by their first words
+(`/^Page layout/`, `/^Words only/`, `/^Editable text/`) where it held whole strings. The labels' text changed with the
+pattern, and a prefix keeps the case on the mode rather than on its wording; what the rest of each label says is now
+read by nothing.
+
+**Would CI see it (item 3).** Not read here for the branch's own runs; this merge's run is read once after the push,
+and whether either leg provisions FFFFFFF-1's readers and exercises them was not checked here. **Executed or asserted (item 5):** everything
+above was read in the diff or run here, except FFFFFFF-1's readers, which is the finding.
+
+---
+
 ## 2026-10-02 — Stage audit of `24320797..a8fecfd0` — findings EEEEEEE-1 to EEEEEEE-5
 
 The range is 38 commits and 154 files; written ahead of the merge of work/cloud-2 at `b076b30a`, whose files on top of
