@@ -78,6 +78,29 @@ async function documentDrawn(page: Page): Promise<void> {
   await expect.poll(() => page.locator('canvas:visible').count()).toBeGreaterThanOrEqual(2);
 }
 
+/** Runs a command through the palette by its EXACT title — a prefix can match a longer command listed first. */
+async function runCommand(page: Page, title: string): Promise<void> {
+  await page.keyboard.press('Control+K');
+  await page.locator('.m-palette-query').fill(title);
+  await page.getByRole('option', { name: title, exact: true }).click();
+}
+
+/**
+ * The dialogs the owner approved on 2026-10-02 — one per group of the dialog pattern — and the footers of that day's
+ * round: a report's Close, About's and Components' Close-first rows, Set up AI's single Skip. Each is captured on its
+ * own, so a change inside one is not diluted by the window's pixel count. `ready` names what arrives last: a
+ * registered dialog is `lazy`, so its title alone is a dialog with an empty body.
+ */
+const DIALOGS: readonly { command: string; title: string; file: string; ready: string }[] = [
+  { command: 'Delete pages…', title: 'Delete pages', file: 'delete-pages', ready: 'Delete pages' },
+  { command: 'Watermark…', title: 'Watermark', file: 'watermark', ready: 'Add watermark' },
+  { command: 'Donate', title: 'Support Monstera', file: 'donate', ready: 'Close' },
+  { command: 'Word count', title: 'Word count', file: 'word-count', ready: 'Close' },
+  { command: 'About', title: 'About Monstera', file: 'about', ready: 'Close' },
+  { command: 'Components', title: 'Components', file: 'components', ready: 'Close' },
+  { command: 'Set up AI…', title: 'Set up the AI assistant', file: 'ai-setup', ready: 'Skip' },
+];
+
 /**
  * Parks the pointer over the page area, whose raster is hidden from the capture.
  *
@@ -237,3 +260,104 @@ test('CONTROL: a change in the Properties panel is reported where the page’s b
   }
   expect(reported, 'a control hidden in the Properties panel passed the comparison').toMatch(/different/u);
 });
+
+/** Two documents whose first lines differ by two words, so Side by Side has something to mark. */
+const LEFT = asDocId('00000000-0000-4000-8000-0000000000c1');
+const RIGHT = asDocId('00000000-0000-4000-8000-0000000000c2');
+
+for (const look of LOOKS) {
+  test(`${look.name}: the approved dialogs, the round's footers, Signature's Upload row and Side by Side match their baselines`, async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const left = await blankPdf();
+    const right = await blankPdf();
+    await bridgeUnder(page, look, {
+      opens: [
+        { kind: 'opened', docId: LEFT, version: asDocVersion(1), byteLength: left.byteLength, name: 'Before.pdf' },
+        { kind: 'opened', docId: RIGHT, version: asDocVersion(1), byteLength: right.byteLength, name: 'After.pdf' },
+      ],
+      documentBytes: new Map([
+        [LEFT, left],
+        [RIGHT, right],
+      ]),
+      documentPageLines: new Map([
+        [LEFT, [['The quick brown fox jumps over the lazy dog.']]],
+        [RIGHT, [['The quick red fox leaps over the lazy dog.']]],
+      ]),
+    });
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await documentDrawn(page);
+    await page.getByRole('button', { name: 'Open another document' }).click();
+    await expect(page.locator('[data-tab-select]')).toHaveCount(2);
+    await documentDrawn(page);
+
+    // EDIT › TEXT WITH TEXT SELECTED: its one Copy (`edit.copy`) shows only while something is selected, so the section's
+    // own baseline, which selects nothing, cannot show the round's change to this group.
+    // THE LINE'S TEXT SELECTED THROUGH THE DOCUMENT'S SELECTION, which is what the application reads (`selectionchange`);
+    // what is captured is the ribbon's answer to a selection, not the gesture that made one.
+    await page.locator('[data-ribbon-section="edit"]').click();
+    const line = page.locator('[data-document-layer="active"] [data-text-layer="0"] [data-text-line="0"]');
+    await expect(line).toHaveCount(1);
+    await line.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      document.getSelection()?.removeAllRanges();
+      document.getSelection()?.addRange(range);
+    });
+    expect(await page.evaluate(() => document.getSelection()?.toString().trim() ?? '')).not.toBe('');
+    const textGroup = page.locator('.m-ribbon__group').filter({ has: page.locator('.m-ribbon__caption', { hasText: /^Text$/u }) });
+    await expect(textGroup.getByRole('button', { name: 'Copy', exact: true })).toBeVisible();
+    await parkPointer(page);
+    await expect(textGroup).toHaveScreenshot(`${look.name}-ribbon-edit-text-selected.png`);
+
+    for (const { command, title, file, ready } of DIALOGS) {
+      await runCommand(page, command);
+      const dialog = page.getByRole('dialog', { name: title });
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByRole('button', { name: ready, exact: true }).first()).toBeVisible();
+      await parkPointer(page);
+      await expect(dialog).toHaveScreenshot(`${look.name}-dialog-${file}.png`);
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+    }
+
+    // SIGNATURE'S UPLOAD ROW: the picture is chosen in the dialog and previewed before it is used (ADR-0133).
+    await runCommand(page, 'Signature');
+    const signature = page.getByRole('dialog', { name: 'Signature' });
+    await expect(signature).toBeVisible();
+    // A SEGMENT IS A TOGGLE BUTTON (`SegmentedControl` is Base UI's ToggleGroup, `aria-pressed`), not a radio.
+    await signature.getByRole('button', { name: 'Upload', exact: true }).click();
+    await expect(signature.getByRole('button', { name: 'Choose picture…' })).toBeVisible();
+    await parkPointer(page);
+    await expect(signature).toHaveScreenshot(`${look.name}-dialog-signature-upload.png`);
+    await page.keyboard.press('Escape');
+    await expect(signature).toBeHidden();
+
+    // SIDE BY SIDE, before a comparison and so without its Differences list, which changes next round.
+    // FROM THE TAB MENU, where the command lives (`openSideBySideCommand`): on the tab NOT on show, beside the one that is
+    // — and the one on show goes LEFT, so Before is brought forward first and the picture reads Before | After.
+    await page.locator(`[data-tab-select="${LEFT}"]`).click();
+    await documentDrawn(page);
+    await page.locator(`[data-tab-select="${RIGHT}"]`).click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Open side by side' }).click();
+    const side = page.locator('[data-side-by-side]');
+    await expect(side).toBeVisible();
+    await expect(side.locator('[data-side-compare]')).toBeEnabled();
+    await parkPointer(page);
+    await expect(page).toHaveScreenshot(`${look.name}-side-by-side.png`, { stylePath: RASTER_HIDDEN });
+
+    // AND ITS WORD MARKS, each half on its own so the list beside them is not in either picture.
+    await side.locator('[data-side-compare]').click();
+    await expect(side.locator('[data-difference]').first()).toBeVisible();
+    await parkPointer(page);
+    for (const half of ['left', 'right'] as const) {
+      await expect(side.locator(`[data-side-half="${half}"]`)).toHaveScreenshot(`${look.name}-side-by-side-marks-${half}.png`, {
+        stylePath: RASTER_HIDDEN,
+      });
+    }
+  });
+}
