@@ -15,7 +15,7 @@ When you choose **Organize** in the rail, the pages area shows every page of the
 3. With pages selected, choose **Rotate page** or **Delete page** (under **More** in the **Pages** group) to act on all of them, or press **Delete** to remove them.
 4. Drag a card to move that page.
 5. Press **Enter** or double-click a card to open that page for reading in **Home**.
-6. To make the cards bigger or smaller, choose **Medium** or **Large** above them.
+6. Above the cards, choose **Thumbnail** to see many pages at once, or **Full page** to see each page whole, as tall as the window allows.
 
 ![The Organize section showing page cards, two of them selected, with the page count and hint line above](screenshot:organize-pages-grid-1)
 
@@ -29,5 +29,5 @@ When you choose **Organize** in the rail, the pages area shows every page of the
 
 <!--
 Screenshots to capture:
-1. organize-pages-grid-1 — A 12-page document with Organize chosen in the rail, pages 3 and 5 selected. Frame the grid header (count, "2 selected", hint, Medium/Large) and the first rows of cards.
+1. organize-pages-grid-1 — A 12-page document with Organize chosen in the rail, pages 3 and 5 selected. Frame the grid header (count, "2 selected", hint, Thumbnail/Full page) and the first rows of cards.
 -->

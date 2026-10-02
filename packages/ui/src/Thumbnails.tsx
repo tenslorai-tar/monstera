@@ -11,6 +11,9 @@ import { THUMBNAIL_SIZES, type ThumbnailSize } from './settings/appearance.js';
 import { usePageRotations } from './usePageRotations.js';
 import { useVisiblePages } from './useVisiblePages.js';
 
+/** A US Letter portrait page's width per unit of height, 612 / 792 — the placeholder shape `app.css` gives an undrawn card. */
+const PORTRAIT_WIDTH_PER_HEIGHT = 612 / 792;
+
 /**
  * The page thumbnails, down the side.
  *
@@ -126,7 +129,12 @@ export function Thumbnails({
    */
   readonly grid?:
     | {
-        readonly width: number;
+        /**
+         * What a card fits: a WIDTH, every page as wide as the next (*Thumbnail*), or a HEIGHT, every page whole at
+         * the height the grid has (*Full page*). One or the other, never both, so a card cannot be asked to fit two
+         * boxes it disagrees with.
+         */
+        readonly fit: { readonly width: number } | { readonly height: number };
         readonly selected: readonly number[];
         readonly onSelect: (pages: readonly number[]) => void;
         readonly onOpen: (page: number) => void;
@@ -145,7 +153,10 @@ export function Thumbnails({
   const anchor = useRef<number | null>(null);
 
   const strip = THUMBNAIL_SIZES[size];
-  const width = grid?.width ?? strip.width;
+  const fit = grid?.fit ?? { width: strip.width };
+  // A HEIGHT'S CARD is laid out as a portrait page that tall until it draws, the stylesheet's own placeholder shape.
+  const width = 'width' in fit ? fit.width : Math.round(fit.height * PORTRAIT_WIDTH_PER_HEIGHT);
+  const byHeight = 'height' in fit ? fit.height : undefined;
   const { columns } = strip;
 
   return (
@@ -257,6 +268,7 @@ export function Thumbnails({
             view={view}
             page={page}
             width={width}
+            byHeight={byHeight}
             draw={visible.has(page) && rotations.has(page)}
             rotation={rotations.get(page)}
           />
@@ -287,12 +299,15 @@ function ThumbCanvas({
   view,
   page,
   width,
+  byHeight,
   draw,
   rotation,
 }: {
   readonly view: DocumentView | undefined;
   readonly page: number;
   readonly width: number;
+  /** Organize's *Full page*: the page drawn whole at this height, its width its own. Otherwise it fits `width`. */
+  readonly byHeight: number | undefined;
   readonly draw: boolean;
   /** The view model's rotation, or `undefined` where it did not answer for this version. */
   readonly rotation: number | undefined;
@@ -314,7 +329,7 @@ function ThumbCanvas({
         view.document,
         pdfjsPageOf(page),
         element,
-        { fitWidth: width },
+        byHeight === undefined ? { fitWidth: width } : { fitHeight: byHeight },
         rotation,
         superseded.signal,
       );
@@ -333,7 +348,7 @@ function ThumbCanvas({
     return (): void => {
       superseded.abort();
     };
-  }, [draw, page, rotation, view, width]);
+  }, [byHeight, draw, page, rotation, view, width]);
 
   return (
     <canvas
@@ -345,7 +360,8 @@ function ThumbCanvas({
       style={
         size === undefined
           ? undefined
-          : { width: `${String(width)}px`, height: `${String(size.height)}px` }
+          : // A WIDTH'S CARD keeps the column's width exactly; a height's is as wide as its page drew.
+            { width: `${String(byHeight === undefined ? width : size.width)}px`, height: `${String(size.height)}px` }
       }
     />
   );

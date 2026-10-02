@@ -56,12 +56,12 @@ export const THUMBNAIL_SIZE_OPTION_TITLES = {
 } as const;
 export const FOCUS_HINT = messageKey('surface.focus.hint');
 export const ORGANIZE_GRID_SIZE_TITLE = messageKey('setting.appearance-organize-grid-size.title');
-export const ORGANIZE_GRID_MEDIUM = messageKey('setting.appearance-organize-grid-size.medium');
-export const ORGANIZE_GRID_LARGE = messageKey('setting.appearance-organize-grid-size.large');
+export const ORGANIZE_GRID_THUMBNAIL = messageKey('setting.appearance-organize-grid-size.thumbnail');
+export const ORGANIZE_GRID_FULL_PAGE = messageKey('setting.appearance-organize-grid-size.full-page');
 /** `appearance.organize-grid-size`'s members, each its own exported key as the other option sets are. */
 export const ORGANIZE_GRID_SIZE_OPTION_TITLES = {
-  medium: ORGANIZE_GRID_MEDIUM,
-  large: ORGANIZE_GRID_LARGE,
+  thumbnail: ORGANIZE_GRID_THUMBNAIL,
+  'full-page': ORGANIZE_GRID_FULL_PAGE,
 } as const;
 export const ORGANIZE_GRID_LABEL = messageKey('surface.organize.label');
 export const ORGANIZE_GRID_COUNT = messageKey('surface.organize.count');
@@ -2294,9 +2294,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [THUMBNAIL_SIZE_OPTION_TITLES.large]: 'Large',
   // THE CHORD IS A VALUE, read off the shortcut map, as the start screen's F1 hint's is.
   [FOCUS_HINT]: 'Focus mode · {chord} to return',
-  [ORGANIZE_GRID_SIZE_TITLE]: 'Card size',
-  [ORGANIZE_GRID_SIZE_OPTION_TITLES.medium]: 'Medium',
-  [ORGANIZE_GRID_SIZE_OPTION_TITLES.large]: 'Large',
+  [ORGANIZE_GRID_SIZE_TITLE]: 'Page view',
+  [ORGANIZE_GRID_SIZE_OPTION_TITLES.thumbnail]: 'Thumbnail',
+  [ORGANIZE_GRID_SIZE_OPTION_TITLES['full-page']]: 'Full page',
   [ORGANIZE_GRID_LABEL]: 'Pages to organize',
   [ORGANIZE_GRID_COUNT]: '{count, plural, one {# page} other {# pages}}',
   [ORGANIZE_GRID_SELECTED]: '{count} selected',

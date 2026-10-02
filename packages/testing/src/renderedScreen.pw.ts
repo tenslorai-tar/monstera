@@ -2794,6 +2794,51 @@ test('the ORGANIZE GRID spans the whole page area at 1920 × 1080, as many colum
   expect(measured.state.heights[LANDSCAPE] ?? 0, detail).toBeLessThan(Math.min(...portrait) - 10);
 });
 
+// ORGANIZE'S FULL PAGE (the owner's sub-tabs, 2026-10-02): every page WHOLE, as tall as the grid allows. Only real
+// layout can show this — the height is read from the laid-out grid, and happy-dom lays nothing out.
+test('ORGANIZE’S FULL PAGE shows each page whole at the grid’s height at 1280 × 800, a landscape page as wide as it is', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const pdf = await PDFDocument.create();
+  for (let at = 0; at < 6; at += 1) pdf.addPage(at === LANDSCAPE ? [792, 612] : [612, 792]);
+  const bytes = await pdf.save();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000eb');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'lease.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    settings: { 'appearance.ribbon-section': 'organize' },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const grid = page.getByRole('region', { name: 'Pages to organize' });
+  await grid.getByRole('button', { name: 'Full page' }).click();
+  await expect(grid.locator('[data-thumb-page="0"] canvas[data-drawn="true"]')).toBeAttached();
+  await expect(grid.locator(`[data-thumb-page="${String(LANDSCAPE)}"] canvas[data-drawn="true"]`)).toBeAttached();
+
+  const measured = await page.evaluate((landscape) => {
+    const strip = document.querySelector('.m-page-grid .m-thumbnails')?.getBoundingClientRect();
+    const box = (at: number): DOMRect | undefined =>
+      document.querySelector(`.m-page-grid [data-thumb-page="${String(at)}"] canvas`)?.getBoundingClientRect();
+    const first = box(0);
+    const wide = box(landscape);
+    return {
+      stripTop: strip?.top ?? 0,
+      stripBottom: strip?.bottom ?? 0,
+      first: first === undefined ? null : { top: first.top, bottom: first.bottom, width: first.width, height: first.height },
+      wide: wide === undefined ? null : { width: wide.width, height: wide.height },
+    };
+  }, LANDSCAPE);
+  const detail = JSON.stringify(measured);
+  // WHOLE: the first page's picture ends inside the grid's box, so it is read without scrolling past it.
+  expect(measured.first?.bottom ?? Infinity, detail).toBeLessThanOrEqual(measured.stripBottom);
+  // AND LARGE: it takes most of that height. A thumbnail is 142 px tall; the grid here is about 560.
+  expect(measured.first?.height ?? 0, detail).toBeGreaterThan((measured.stripBottom - measured.stripTop) * 0.8);
+  // CONTROL: a landscape page is drawn at the SAME height and is wider, so the cards fit a height and not a width.
+  expect(Math.abs((measured.wide?.height ?? 0) - (measured.first?.height ?? 0)), detail).toBeLessThanOrEqual(1);
+  expect(measured.wide?.width ?? 0, detail).toBeGreaterThan((measured.first?.width ?? 0) + 50);
+});
+
 // THE MENU BAR (ADR-0107), in every theme: the window's top row above the title bar, reached from the keyboard by F10,
 // walked with the arrows, an open menu marking the current theme and disabling what cannot run — and passing the gate
 // with a menu OPEN, which is the state a screen reader meets it in.
