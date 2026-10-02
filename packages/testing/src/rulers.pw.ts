@@ -27,6 +27,10 @@ async function openScrolledToSecondPage(page: Page, settings: Record<string, unk
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   await expect(page.locator('.m-page-slot')).toHaveCount(3);
+  // MEASURED BEFORE SCROLLING: until a page is drawn every slot sits at its 260 px minimum, so an offset computed then
+  // lands inside page 1 once the estimates grow — measured 2026-10-02, a scroll of 92 px left page 2 at y = 939, below
+  // the window, whenever the first page was measured after this step (a composited page list measures it later).
+  await expect.poll(async () => (await page.locator('.m-page-slot').nth(1).boundingBox())?.height ?? 0).toBeGreaterThan(500);
   await expect(page.locator('.m-ruler-v')).toBeVisible();
   // PAGE 2'S TOP 200 px INTO THE SCROLLER: a whole screen of scrolling at any fit, with page 1's foot above it.
   await page.evaluate(() => {
