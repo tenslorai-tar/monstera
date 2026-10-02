@@ -16,8 +16,12 @@ import {
   serialiseAnnotationData,
   withDocument,
 } from '../../packages/kernel/dist/engine.js';
+import { HOST_READS, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { repoRoot } from '../lib/gitScope.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 
+// THE KERNEL, CONTRACT AND SHARED BUILDS this measures, refused when older than their sources.
+refuseStaleBuild(repoRoot(), HOST_READS, 3);
 bindNativeEngine();
 
 const blank = await PDFDocument.create();

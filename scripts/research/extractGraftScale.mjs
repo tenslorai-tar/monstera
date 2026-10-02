@@ -19,8 +19,12 @@ import {
   mupdfWriter,
 } from '../../packages/kernel/dist/engine.js';
 import { asDocId } from '../../packages/shared/dist/index.js';
+import { HOST_READS, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { repoRoot } from '../lib/gitScope.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 
+// THE KERNEL, CONTRACT AND SHARED BUILDS this measures, refused when older than their sources.
+refuseStaleBuild(repoRoot(), HOST_READS, 3);
 bindNativeEngine();
 
 /**
