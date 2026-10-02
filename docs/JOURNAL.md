@@ -981,6 +981,22 @@ identity into the shared config and replaced the worktree's index with its corpu
 blocked only because the secret scan then found the corpus's planted secrets. In the main checkout `GIT_DIR` is the
 relative `.git`, which resolves inside the temporary directory, which is why it never showed.
 
+### Correction, 2026-10-02: 4a and 4b answered apart
+
+The heading *4a, 4b* above answered two items under one, and the document check counts each by its own heading, so
+Guards refused this entry on `41d5bda8` and `dfa9b02b`. The answers are unchanged; they are set out here as the two
+items they are.
+
+#### 4a. Instruments: a resolution test before a real measurement
+
+The frame inspector reproduced the blank frame on the commit before the fix it then measured, so it was shown able to
+see the state it exists to find before it judged the fix. No other instrument arrived in the range.
+
+#### 4b. Searches: a positive control on every run
+
+The widened main-guard scan must locate `emittedTemplates.mjs` on every run and refuses to report when it does not;
+the canvas harness prints the canvases it saw, so an empty walk is visible. AAAAAAA-5 (above) stays open.
+
 ---
 
 ## 2026-10-01 — The taskbar icon filled 87% of its height; the exe still carries Electron's icon
