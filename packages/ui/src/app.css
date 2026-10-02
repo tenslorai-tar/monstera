@@ -6224,6 +6224,15 @@ body {
   padding: var(--space-8) var(--space-16) var(--space-16);
 }
 
+/* FULL PAGE (the owner's review of 0.1.9.0): ONE page to a row at the grid's whole width, read top to bottom as the
+   Home view reads, never two side by side. The gutter is kept whether or not the pages overflow, so the width
+   `PageGrid` measures does not change when they first do. */
+.m-page-grid[data-page-view='full-page'] > .m-thumbnails--grid {
+  grid-template-columns: max-content;
+  justify-content: center;
+  scrollbar-gutter: stable;
+}
+
 /* A TICKED CARD: the accent round it, which is what v5-09 draws, and heavier than the current page's line. */
 .m-thumb.is-selected {
   border-color: var(--accent);

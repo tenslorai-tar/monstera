@@ -138,7 +138,8 @@ export const THUMBNAIL_SIZE_SETTING: SettingDefinition<z.ZodEnum<{ small: 'small
 /**
  * The Organize grid's view (ADR-0104) — the owner's *Thumbnail* | *Full page* of 2 October, drawn by the grid itself.
  * *Thumbnail* is v5-09's Medium card: six columns across the canvas at a 1280 px window, read off the export.
- * *Full page* draws every page whole at the height the grid has, so a page is read without scrolling past it.
+ * *Full page* draws one page to a row at the grid's whole width, read top to bottom as the Home view reads (the
+ * owner's review of 0.1.9.0; until then it drew each page at the grid's height, two or more side by side).
  *
  * REMEMBERED, not a Settings row: the control for it is the grid's own segmented control, as a panel's width's
  * is its splitter.
