@@ -1374,7 +1374,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     let savables = 0;
 
     /**
-     * ITS OWN FILE AND ITS OWN SERVICE, deliberately.
+     * ITS OWN FILE, ITS OWN SERVICE AND ITS OWN SESSION, deliberately.
      *
      * These cases WRITE, and the shared fixture is opened once in `beforeAll`
      * and read by every other case in this file. A save over it would leave
@@ -1382,15 +1382,14 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
      * `pdfBytes` wrote — which would not fail, and that is the problem: a
      * fixture quietly replaced mid-file is the kind of coupling that surfaces
      * as an unrelated case going red weeks later.
+     *
+     * THE SESSION TOO, opened here from the same bytes. The shared `session` is assigned by a SIBLING block's
+     * `beforeAll(openDocument)`, so these cases held it only when that block had run first: run alone (`-t`), every
+     * save case met an undefined session and `MissingSessionError` (item L of the cloud-3 list, 2026-10-02).
      */
     async function aSavableDocument(
       /** What the writer says about the next save and the signatures — the real decision unless a case says otherwise. */
       signaturesKept: DocumentCommandsParts['signaturesKept'] = signaturesKeptBySave,
-      /**
-       * `own-session` for a case that RUNS commands: a session of its own, opened from the fixture's bytes, so the
-       * shared session every other case reads is never changed. `shared` for a case that only saves.
-       */
-      sessionOf: 'shared' | 'own-session' = 'shared',
     ): Promise<{
       commands: DocumentCommands;
       saved: DocId;
@@ -1410,14 +1409,13 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       if (outcome.kind !== 'opened') throw new Error(`fixture did not open: ${outcome.kind}`);
 
       const held = new EngineSessions();
-      let current = sessionOf === 'shared' ? session : await mupdfWriter.open(before);
+      let current = await mupdfWriter.open(before);
       held.hold(outcome.docId, { mupdf: current });
 
       return {
         path,
         before,
         rebuild: async () => {
-          if (sessionOf === 'shared') throw new Error('a case that rebuilds runs commands, so it holds its own session');
           current = await mupdfWriter.open(await mupdfWriter.serialise(current));
           held.hold(outcome.docId, { mupdf: current });
         },
@@ -1490,14 +1488,14 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
      * Everything is real: the service, the bus, the engine, the save pipeline and the disk.
      */
     it('a REMOVAL keeps no backup EVEN AFTER the session is rebuilt — CONTROL: an ordinary edit backs the file up', async () => {
-      const removal = await aSavableDocument(signaturesKeptBySave, 'own-session');
+      const removal = await aSavableDocument();
       await removal.commands.execute(removal.saved, sanitize);
       await removal.rebuild();
       const removed = await removal.commands.save(removal.saved, { breakSignatures: false });
       expect(removed).toMatchObject({ kind: 'saved', backedUp: false, cleared: { backups: 0, kept: [] } });
       expect(holdsReplaced(removal.path, removal.before)).toStrictEqual([]);
 
-      const ordinary = await aSavableDocument(signaturesKeptBySave, 'own-session');
+      const ordinary = await aSavableDocument();
       await ordinary.commands.execute(ordinary.saved, rotateOnce);
       await ordinary.rebuild();
       const kept = await ordinary.commands.save(ordinary.saved, { breakSignatures: false });
@@ -1506,7 +1504,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     });
 
     it('a removal’s save DELETES the backup Monstera made, and the undo copies, unasked; the next save backs up again', async () => {
-      const { commands, saved, path, before } = await aSavableDocument(signaturesKeptBySave, 'own-session');
+      const { commands, saved, path, before } = await aSavableDocument();
       // AN ORDINARY SAVE FIRST, which makes the `.bak` holding the original — the copy a later redaction must not leave.
       await commands.execute(saved, rotateOnce);
       expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ backedUp: true });
@@ -1524,7 +1522,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
 
     it('NEVER deletes a file Monstera did not make, or one changed since — it keeps and names them; nor any other file', async () => {
       // NOT MONSTERA'S: written by hand under the backup's own name.
-      const foreign = await aSavableDocument(signaturesKeptBySave, 'own-session');
+      const foreign = await aSavableDocument();
       const handMade = `${foreign.path}.bak`;
       writeFileSync(handMade, 'a backup somebody else made');
       const stranger = join(directory, `${basename(foreign.path)}-notes.txt`);
@@ -1536,7 +1534,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       expect([existsSync(handMade), existsSync(stranger)]).toStrictEqual([true, true]);
 
       // MONSTERA'S, AND CHANGED SINCE: same file, another size — the ledger's identity no longer matches.
-      const changed = await aSavableDocument(signaturesKeptBySave, 'own-session');
+      const changed = await aSavableDocument();
       await changed.commands.execute(changed.saved, rotateOnce);
       await changed.commands.save(changed.saved, { breakSignatures: false });
       writeFileSync(`${changed.path}.bak`, 'edited after Monstera made it');
