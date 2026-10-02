@@ -38,6 +38,7 @@ import { messageKey } from '@monstera/shared';
 export const OPEN_DOCUMENT_TITLE = messageKey('command.open-document.title');
 export const CLOSE_LABEL = messageKey('action.close.label');
 export const DIALOG_CANCEL = messageKey('action.dialog-cancel.label');
+export const DIALOG_OK = messageKey('action.dialog-ok.label');
 export const DOCUMENT_SURFACE_LABEL = messageKey('surface.document.label');
 export const THEME_TITLE = messageKey('setting.appearance-theme.title');
 export const BACKGROUND_GLOW_TITLE = messageKey('setting.appearance-background-glow.title');
@@ -2042,6 +2043,11 @@ export const SIGNATURE_NAME = messageKey('dialog.signature.name');
 export const SIGNATURE_STYLE = messageKey('dialog.signature.style');
 export const SIGNATURE_TOO_LONG = messageKey('dialog.signature.too-long');
 export const SIGNATURE_UPLOAD_NOTE = messageKey('dialog.signature.upload-note');
+export const SIGNATURE_PICTURE = messageKey('dialog.signature.picture');
+export const SIGNATURE_UPLOAD_CHOOSE = messageKey('dialog.signature.upload-choose');
+export const SIGNATURE_UPLOAD_CHOOSE_ANOTHER = messageKey('dialog.signature.upload-choose-another');
+export const SIGNATURE_PICTURE_SHOWN = messageKey('dialog.signature.picture-shown');
+export const SIGNATURE_PICTURE_MISSING = messageKey('dialog.signature.picture-missing');
 export const SIGNATURE_SAVE = messageKey('dialog.signature.save');
 export const SIGNATURE_SAVE_NOTE = messageKey('dialog.signature.save-note');
 export const SIGNATURE_USE = messageKey('dialog.signature.use');
@@ -2369,6 +2375,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [OPEN_DOCUMENT_TITLE]: 'Open PDF…',
   [CLOSE_LABEL]: 'Close',
   [DIALOG_CANCEL]: 'Cancel',
+  [DIALOG_OK]: 'OK',
   [DOCUMENT_SURFACE_LABEL]: 'Document',
   [THEME_TITLE]: 'Theme',
   // v5-10's Appearance rows. *Also on when Windows asks* is true of the build: `applyMotion` reads both.
@@ -4578,8 +4585,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGNATURE_NAME]: 'Your name',
   [SIGNATURE_STYLE]: 'Style',
   [SIGNATURE_TOO_LONG]: 'A name can be at most {limit} characters.',
-  [SIGNATURE_UPLOAD_NOTE]:
-    'Choose Use Signature, click where it goes on the page, then pick a PNG or JPEG picture of your signature.',
+  [SIGNATURE_UPLOAD_NOTE]: 'A PNG or JPEG picture of your signature, shown here before you place it.',
+  [SIGNATURE_PICTURE]: 'Picture',
+  [SIGNATURE_UPLOAD_CHOOSE]: 'Choose picture…',
+  [SIGNATURE_UPLOAD_CHOOSE_ANOTHER]: 'Choose another…',
+  [SIGNATURE_PICTURE_SHOWN]: 'Your signature picture, {name}',
+  [SIGNATURE_PICTURE_MISSING]: 'Choose a picture first.',
   [SIGNATURE_SAVE]: 'Save for reuse',
   [SIGNATURE_SAVE_NOTE]: 'Kept on this computer, ready to place again here or with Sign with certificate.',
   [SIGNATURE_USE]: 'Use Signature',

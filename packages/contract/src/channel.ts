@@ -43,9 +43,10 @@ export interface Channel<
    */
   readonly answer: AnswerRoute;
   /**
-   * How a request's params cross a byte-stream boundary (ADR-0125's addendum): `frame` for params bounded by their
-   * shape — every intent — and `file` for params that carry prior state back to the host, written by main into the
-   * session's snapshot directory, which the host may only read.
+   * How a request's params cross a byte-stream boundary (ADR-0125's addendum): `frame` for params that fit a frame at
+   * their schema's worst, and `file` for params that do not — prior state going back to the host, and since ADR-0138 a
+   * command whose intent can outgrow a frame — written by main into the session's snapshot directory, which the host
+   * may only read.
    */
   readonly request: AnswerRoute;
 }
@@ -103,6 +104,24 @@ export function fileRequested<
   failures: readonly TFailure[] = [],
 ): Channel<TParams, TResult, TFailure> {
   return { summary, params, result, failures, answer: 'frame', request: 'file' };
+}
+
+/**
+ * Declares a channel routed through a file BOTH WAYS: its params, as {@link fileRequested}'s, and its successful answer,
+ * as {@link fileAnswered}'s, which is where `answer-too-large` is added. A PDFium capture is the one: it carries a
+ * command whose text can outgrow a frame, and answers a prior that can too (ADR-0138).
+ */
+export function fileRequestedAndAnswered<
+  TParams extends z.ZodType,
+  TResult extends z.ZodType,
+  const TFailure extends string = never,
+>(
+  summary: string,
+  params: TParams,
+  result: TResult,
+  failures: readonly TFailure[] = [],
+): Channel<TParams, TResult, TFailure | typeof ANSWER_TOO_LARGE> {
+  return { ...fileAnswered(summary, params, result, failures), request: 'file' };
 }
 
 /**

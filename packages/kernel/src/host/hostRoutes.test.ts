@@ -1,11 +1,16 @@
 import {
+  type ChannelMap,
+  ENGINE_ANSWER_FILE_MAX_BYTES,
   ENGINE_HOST_FRAME_MAX_BYTES,
   WORST_BYTES_PER_CHAR,
   commandSchema,
+  createFormFieldSchema,
+  createdFieldPlacementSchema,
   hostRouteViolations,
   keepableSignatureSchema,
   maxEncodedBytes,
   unboundedMembers,
+  MAX_CREATED_FIELDS,
 } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
@@ -24,85 +29,146 @@ import { pdfiumChannels } from './pdfiumChannels.js';
  */
 const HOSTS = { 'MuPDF host': engineChannels, 'PDFium host': pdfiumChannels, 'compose host': composeChannels };
 
+const violationsOf = (channels: ChannelMap) =>
+  hostRouteViolations(channels, ENGINE_HOST_FRAME_MAX_BYTES, ENGINE_ANSWER_FILE_MAX_BYTES);
+
 /**
- * THE ONE REQUEST-DIRECTION BOUND THAT STAYS: the channels whose params carry a COMMAND. Pinned by exact set, per host,
- * so a channel that joins this list is red and one that leaves it has to be taken off.
+ * THE REQUESTS NO SCHEMA CAN BOUND, pinned by exact set per host so a channel that joins is red and one that leaves
+ * must be taken off (ADR-0138 Decision 4). Every one is file-requested; no framed request is past the frame.
  *
- * ## Why they are here, corrected with decision D
- *
- * This said a command's only unbounded member was a page list. Decision D made page lists bounded page SETS (runs,
- * `pageSet.ts`), and the case below now asserts no array or string in a command is unbounded — yet these channels
- * still exceed a frame at their schema's worst, because a command object is not `.strict()` and the walk reads an
- * object that may carry more keys as unbounded, which it must (the stage audit's YYYYYY-4, wider than recorded). So
- * the channels stay framed, and what a request this side cannot frame does is decision D's other half: `client.ts`
- * refuses THAT call (`RequestTooLarge`) and ends nothing.
+ * - `engine/invert`: its params are a capture's answer, which crossed under the same ceiling to reach main.
+ * - `engine/applyPdfLib`: its pre-read is `engine/ocr-page`'s or `engine/destinations`' answer, by the same argument;
+ *   the case below holds the rest of its params to the ceiling.
+ * - PDFium's `engine/apply` and `engine/capture`: open, and the owner's. `replaceTextObject` and `editTextBlock`
+ *   multiply per-entry bounds whose real limit is a page's total, and above the ceiling the call is refused as itself.
  */
-const COMMAND_CARRYING: Readonly<Record<keyof typeof HOSTS, readonly string[]>> = {
-  'MuPDF host': ['engine/apply', 'engine/capture', 'engine/applyPdfLib'],
-  'PDFium host': ['engine/apply', 'engine/capture'],
+const PAST_THE_ROUTE: Readonly<Record<keyof typeof HOSTS, readonly string[]>> = {
+  'MuPDF host': ['engine/invert', 'engine/applyPdfLib'],
+  'PDFium host': ['engine/invert', 'engine/apply', 'engine/capture'],
   'compose host': [],
 };
 
 describe('the engine hosts’ declared routes', () => {
   for (const [host, channels] of Object.entries(HOSTS)) {
     it(`${host}: every answer's route carries what its schema admits`, () => {
-      expect(hostRouteViolations(channels, ENGINE_HOST_FRAME_MAX_BYTES).filter((found) => found.direction === 'answer')).toStrictEqual([]);
+      expect(violationsOf(channels).filter((found) => found.direction === 'answer')).toStrictEqual([]);
     });
 
-    it(`${host}: the only framed params that can outgrow a frame are the ones carrying a command`, () => {
-      const requests = hostRouteViolations(channels, ENGINE_HOST_FRAME_MAX_BYTES)
-        .filter((found) => found.direction === 'request')
-        .map((found) => found.channel);
-      expect(requests.sort()).toStrictEqual([...COMMAND_CARRYING[host as keyof typeof HOSTS]].sort());
+    it(`${host}: no framed request outgrows the frame, and the file requests past the ceiling are the pinned ones`, () => {
+      const requests = violationsOf(channels).filter((found) => found.direction === 'request');
+      const map: ChannelMap = channels;
+      expect(requests.filter((found) => map[found.channel]?.request === 'frame')).toStrictEqual([]);
+      expect(requests.map((found) => found.channel).sort()).toStrictEqual([...PAST_THE_ROUTE[host as keyof typeof HOSTS]].sort());
     });
   }
 
-  /**
-   * EACH COMMAND KIND, CLOSED, FITS THE FRAME — the check the request rule above cannot make, because a command object
-   * is open and so reads as unbounded whole (finding DDDDDDD-1). Asked kind by kind with `.strict()`, a command's own
-   * fields have a worst size, and a kind whose worst is past the frame is a person's ordinary action refused as too
-   * large. `placeSignatureMark` was one: a drawing at its kept bound measured 2,692,503 bytes.
-   *
-   * Two kinds of exception, each pinned by exact set so a kind that joins is red and one that leaves must be taken off:
-   */
-  const PAST_THE_FRAME: readonly string[] = [
-    // DDDDDDD-10, open: 256 fields of 256 options each, at the field bounds, is 34 MB written plainly.
-    'createFormField',
-  ];
-  /** A nested object that is not `.strict()` reads as unbounded, so these kinds cannot be measured at all yet. */
-  const UNMEASURED: readonly string[] = [
-    'insertImagePage', 'mergeDocument', 'replacePage', 'importPageAsLayer', 'removeAnnotation', 'placeAnnotation',
-    'placeImage', 'placeSignaturePicture', 'styleAnnotation', 'editAnnotationText', 'setAnnotationAuthor',
-    'replyToAnnotation', 'fillFormField', 'deleteFormFields', 'signDocument', 'importFormData', 'importAnnotations',
-    'replaceTextObject', 'placePageObject', 'recolorPageObjects', 'deletePageObjects', 'editTextBlock',
-  ];
-  const worstOf = (option: (typeof commandSchema.options)[number]): number =>
-    maxEncodedBytes(option.strict(), WORST_BYTES_PER_CHAR);
+  /** The pre-read is exempt by the route that brought it; the command beside it is not. */
+  it('engine/applyPdfLib, its pre-read left out, fits the file ceiling at its worst', () => {
+    const rest = engineChannels['engine/applyPdfLib'].params.omit({ reads: true });
+    expect(maxEncodedBytes(rest, WORST_BYTES_PER_CHAR, 'input')).toBeLessThan(ENGINE_ANSWER_FILE_MAX_BYTES);
+  });
 
-  it('every command kind it can measure fits the frame at its worst, and the exceptions are exactly the pinned ones', () => {
+  /** THE CONTROL: with the pre-read in, the same channel is past the ceiling, so the exemption above is load-bearing. */
+  it('CONTROL: and with its pre-read in, it is past the ceiling', () => {
+    expect(maxEncodedBytes(engineChannels['engine/applyPdfLib'].params, WORST_BYTES_PER_CHAR, 'input')).toBeGreaterThan(
+      ENGINE_ANSWER_FILE_MAX_BYTES,
+    );
+  });
+});
+
+/**
+ * EACH COMMAND KIND, ON ITS WRITER'S CHANNEL, FITS THAT CHANNEL'S ROUTE (ADR-0138). Read as the wire parses it: the
+ * union each host's `engine/apply` declares, on the input side, with no `.strict()` forced on. A kind past its route is
+ * a person's ordinary action refused as too large.
+ */
+const WRITERS = {
+  mupdf: engineChannels['engine/apply'],
+  'pdf-lib': engineChannels['engine/applyPdfLib'],
+  pdfium: pdfiumChannels['engine/apply'],
+};
+
+/** Where a kind on that writer's channel has to fit. */
+const capacityOf = (route: 'frame' | 'file'): number =>
+  route === 'frame' ? ENGINE_HOST_FRAME_MAX_BYTES : ENGINE_ANSWER_FILE_MAX_BYTES;
+
+/** Kinds past their writer's route, by exact set: PDFium's two text edits, open (see `PAST_THE_ROUTE`). */
+const KINDS_PAST_THE_ROUTE: readonly string[] = ['replaceTextObject', 'editTextBlock'];
+
+type KindOption = z.ZodObject<{ kind: z.ZodLiteral<string> }>;
+
+function kindsOf(union: z.ZodType): readonly KindOption[] {
+  return (union as unknown as { readonly options: readonly KindOption[] }).options;
+}
+
+describe('every command kind, on its writer’s channel', () => {
+  it('has a worst at all: no kind reads as unbounded on the wire', () => {
+    const unbounded = Object.values(WRITERS).flatMap((writer) =>
+      kindsOf(writer.params.shape.command)
+        .filter((option) => maxEncodedBytes(option, WORST_BYTES_PER_CHAR, 'input') === Infinity)
+        .map((option) => option.shape.kind.value),
+    );
+    expect(unbounded).toStrictEqual([]);
+  });
+
+  /** The 22 kinds the audit could not measure, and the 31 that only measured because the check forced `.strict()`. */
+  it('CONTROL: a command object that is not strict reads as unbounded on the wire', () => {
+    const open = z.object({ kind: z.literal('rotatePages'), page: z.number().int().min(0).max(10) });
+    expect(maxEncodedBytes(open, WORST_BYTES_PER_CHAR, 'input')).toBe(Infinity);
+    expect(maxEncodedBytes(open.strict(), WORST_BYTES_PER_CHAR, 'input')).toBeLessThan(100);
+  });
+
+  it('fits its writer’s route at its worst, and the exceptions are exactly the pinned ones', () => {
     const past: string[] = [];
-    const unmeasured: string[] = [];
-    for (const option of commandSchema.options) {
-      const worst = worstOf(option);
-      if (worst === Infinity) unmeasured.push(option.shape.kind.value);
-      else if (worst > ENGINE_HOST_FRAME_MAX_BYTES) past.push(option.shape.kind.value);
+    for (const writer of Object.values(WRITERS)) {
+      for (const option of kindsOf(writer.params.shape.command)) {
+        if (maxEncodedBytes(option, WORST_BYTES_PER_CHAR, 'input') > capacityOf(writer.request)) {
+          past.push(option.shape.kind.value);
+        }
+      }
     }
-    expect(past.sort()).toStrictEqual([...PAST_THE_FRAME].sort());
-    expect(unmeasured.sort()).toStrictEqual([...UNMEASURED].sort());
+    expect(past.sort()).toStrictEqual([...KINDS_PAST_THE_ROUTE].sort());
+  });
+
+  /**
+   * Each writer's union is the command union's members routed there, so no kind that crosses a host escapes the three
+   * channels. `signDocument` is the one that crosses none: `signpdf` is pure JavaScript, composed in `main`.
+   */
+  it('the three writers’ unions carry every kind of the command union but the one written in main', () => {
+    const carried = Object.values(WRITERS).flatMap((writer) =>
+      kindsOf(writer.params.shape.command).map((option) => option.shape.kind.value),
+    );
+    expect(new Set([...carried, 'signDocument'])).toStrictEqual(
+      new Set(commandSchema.options.map((option) => option.shape.kind.value)),
+    );
+    expect(carried).not.toContain('signDocument');
+  });
+
+  it('createFormField, carrying many simple fields or one of any kind, fits the file ceiling (DDDDDDD-10)', () => {
+    expect(maxEncodedBytes(createFormFieldSchema, WORST_BYTES_PER_CHAR, 'input')).toBeLessThan(
+      ENGINE_ANSWER_FILE_MAX_BYTES,
+    );
+  });
+
+  /** THE CONTROL: the shape it had, any field kind up to the bound, is far past the ceiling by the same reading. */
+  it('CONTROL: createFormField as it was, any kind up to 256 fields, is past the ceiling', () => {
+    const before = createFormFieldSchema
+      .extend({ fields: z.array(createdFieldPlacementSchema).min(1).max(MAX_CREATED_FIELDS) })
+      .strict();
+    expect(maxEncodedBytes(before, WORST_BYTES_PER_CHAR, 'input')).toBeGreaterThan(ENGINE_ANSWER_FILE_MAX_BYTES * 10);
   });
 
   it('a placed drawing at its bound is under three quarters of the frame', () => {
     const placing = commandSchema.options.find((option) => option.shape.kind.value === 'placeSignatureMark');
     if (placing === undefined) throw new Error('placeSignatureMark is not in the command union');
-    expect(worstOf(placing)).toBeLessThan(ENGINE_HOST_FRAME_MAX_BYTES * 0.75);
+    expect(maxEncodedBytes(placing, WORST_BYTES_PER_CHAR, 'input')).toBeLessThan(ENGINE_HOST_FRAME_MAX_BYTES * 0.75);
   });
 
   /** THE CONTROL: the command as it was, carrying a kept drawing's strokes, is past the frame by the same reading. */
   it('CONTROL: placeSignatureMark carrying a kept drawing, as before DDDDDDD-1, is past the frame', () => {
     const placing = commandSchema.options.find((option) => option.shape.kind.value === 'placeSignatureMark');
     if (placing === undefined) throw new Error('placeSignatureMark is not in the command union');
-    const before = placing.extend({ mark: keepableSignatureSchema });
-    expect(maxEncodedBytes(before.strict(), WORST_BYTES_PER_CHAR)).toBeGreaterThan(ENGINE_HOST_FRAME_MAX_BYTES);
+    const before = placing.extend({ mark: keepableSignatureSchema }).strict();
+    expect(maxEncodedBytes(before, WORST_BYTES_PER_CHAR, 'input')).toBeGreaterThan(ENGINE_HOST_FRAME_MAX_BYTES);
   });
 
   /** Decision D: every page list is a bounded page set, so no array or string anywhere in a command is unbounded. */
@@ -118,7 +184,9 @@ describe('the engine hosts’ declared routes', () => {
     const before = z.object({ kind: z.literal('rotatePages'), pages: z.array(z.number().int().nonnegative()).min(1) });
     expect(unboundedMembers(before, 'command')).toStrictEqual(['array  command.properties.pages']);
   });
+});
 
+describe('the walk can see', () => {
   /**
    * THE WALK CAN SEE THE CHANNEL THE OWNER HIT. An empty list above is the reassuring answer, and a walk that answered
    * small for everything would print it too.
@@ -130,16 +198,20 @@ describe('the engine hosts’ declared routes', () => {
   /** The owner's defect, re-declared: the same channel framed, as it was in 0.1.5.0, is reported. */
   it('CONTROL: and engine/text-runs declared in the frame, as 0.1.5.0 shipped it, is reported', () => {
     const shipped = { 'engine/text-runs': { ...pdfiumChannels['engine/text-runs'], answer: 'frame' as const } };
-    expect(hostRouteViolations(shipped, ENGINE_HOST_FRAME_MAX_BYTES)).toMatchObject([
-      { channel: 'engine/text-runs', direction: 'answer' },
-    ]);
+    expect(violationsOf(shipped)).toMatchObject([{ channel: 'engine/text-runs', direction: 'answer' }]);
   });
 
   /** Undo's pair, re-declared before its addendum: the prior framed back as invert's params is reported. */
   it('CONTROL: engine/invert with its params framed, as before the addendum, is reported', () => {
     const framed = { 'engine/invert': { ...engineChannels['engine/invert'], request: 'frame' as const } };
-    expect(hostRouteViolations(framed, ENGINE_HOST_FRAME_MAX_BYTES)).toMatchObject([
-      { channel: 'engine/invert', direction: 'request' },
+    expect(violationsOf(framed)).toMatchObject([{ channel: 'engine/invert', direction: 'request' }]);
+  });
+
+  /** ADR-0138's own control: the pdf-lib channel framed, as it was, is reported past the frame. */
+  it('CONTROL: engine/applyPdfLib with its params framed, as before ADR-0138, is reported past the frame', () => {
+    const framed = { 'engine/applyPdfLib': { ...engineChannels['engine/applyPdfLib'], request: 'frame' as const } };
+    expect(violationsOf(framed)).toMatchObject([
+      { channel: 'engine/applyPdfLib', direction: 'request', reason: expect.stringMatching(/frame/u) as unknown },
     ]);
   });
 });

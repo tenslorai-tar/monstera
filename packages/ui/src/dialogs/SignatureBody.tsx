@@ -19,12 +19,17 @@ import {
   SIGNATURE_MAKE,
   SIGNATURE_NAME,
   SIGNATURE_PAD_HINT,
+  SIGNATURE_PICTURE,
+  SIGNATURE_PICTURE_MISSING,
+  SIGNATURE_PICTURE_SHOWN,
   SIGNATURE_SAVE,
   SIGNATURE_SAVE_NOTE,
   SIGNATURE_STYLE,
   SIGNATURE_TOO_LONG,
   SIGNATURE_TYPE,
   SIGNATURE_UPLOAD,
+  SIGNATURE_UPLOAD_CHOOSE,
+  SIGNATURE_UPLOAD_CHOOSE_ANOTHER,
   SIGNATURE_UPLOAD_NOTE,
   SIGNATURE_USE,
 } from '../messages/en.js';
@@ -34,7 +39,7 @@ import { Input } from '../primitives/Input.js';
 import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { KeptSignatureLook } from './KeptSignatureLook.js';
-import type { SignatureAnswers } from './signature.js';
+import type { HeldSignaturePicture, SignatureAnswers } from './signature.js';
 import type { KeptSignature } from './signDocument.js';
 import type { PadStroke } from './SignaturePad.js';
 import { SignaturePad } from './SignaturePad.js';
@@ -60,35 +65,42 @@ const FACES: Readonly<Record<(typeof SIGNATURE_FONTS)[number], MessageKey>> = {
  * It answers at once with that look, and the person then clicks on the page. Nothing in the rows below applies to it:
  * it is already kept, so *Save for reuse* has nothing to do.
  *
- * ## An upload is picked after the click
+ * ## An upload is previewed before it is placed
  *
- * Main picks and reads a picture, as it does for *Sign with certificate* and *Place image*, so the renderer never holds
- * it — and main does that when the mark is placed. The tab says so; showing the picture here first would need main to
- * hold a picked file between the dialog and the click, which is the owner's to decide (ADR-0133 Decision 5).
+ * *Choose picture…* is an answer: the opener asks main to pick and hold one, then asks again with it in `picked`, so the
+ * picture shown here is the one main will place (ADR-0133's second correction). The renderer shows it by a `blob:`
+ * address and names it by the handle main gave; it never holds a path.
  *
  * ## *Use Signature* waits for something to draw
  *
- * A drawn look needs a stroke and a typed one a name; an upload has its picture still to come, so it is ready at once.
- * The status line says what is missing rather than leaving a disabled button to explain itself.
+ * A drawn look needs a stroke, a typed one a name and an upload its picture. The status line says what is missing
+ * rather than leaving a disabled button to explain itself.
  */
 export default function SignatureBody({
   kept,
+  picked,
+  keep: keptChoice,
   resolve,
-}: { readonly kept: readonly KeptSignature[] } & DialogAnswering<SignatureAnswers>): ReactElement {
+}: {
+  readonly kept: readonly KeptSignature[];
+  readonly picked?: HeldSignaturePicture | undefined;
+  readonly keep?: boolean | undefined;
+} & DialogAnswering<SignatureAnswers>): ReactElement {
   const { _ } = useLingui();
   const facesName = useId();
   const keepId = useId();
-  const [way, setWay] = useState<Way>('draw');
+  // ASKED AGAIN WITH A PICTURE, the dialog opens where the person was: on Upload, showing it.
+  const [way, setWay] = useState<Way>(picked === undefined ? 'draw' : 'upload');
   const [strokes, setStrokes] = useState<readonly PadStroke[]>([]);
   const [name, setName] = useState('');
   const [face, setFace] = useState<(typeof SIGNATURE_FONTS)[number]>('times-italic');
   // TICKED, the owner's default: a signature made here is usually one a person will place again.
-  const [keep, setKeep] = useState(true);
+  const [keep, setKeep] = useState(keptChoice ?? true);
 
   const tooLong = name.trim().length > MAX_SIGNATURE_FIELD;
   /** The look to place, or `undefined` while the chosen way has nothing to draw. */
   const mark = ((): RequestedSignatureMark | undefined => {
-    if (way === 'upload') return { kind: 'image' };
+    if (way === 'upload') return picked === undefined ? undefined : { kind: 'image', picked: picked.handle };
     if (way === 'draw') {
       return strokes.length === 0
         ? undefined
@@ -191,7 +203,26 @@ export default function SignatureBody({
         </>
       ) : null}
 
-      {way === 'upload' ? <p className="m-dialog-row__note m-signature__upload">{_(SIGNATURE_UPLOAD_NOTE)}</p> : null}
+      {way === 'upload' ? (
+        <div className="m-signature__upload">
+          <DialogRow label={SIGNATURE_PICTURE} note={SIGNATURE_UPLOAD_NOTE}>
+            <Button
+              label={picked === undefined ? SIGNATURE_UPLOAD_CHOOSE : SIGNATURE_UPLOAD_CHOOSE_ANOTHER}
+              onClick={() => {
+                resolve({ upload: 'pick', keep });
+              }}
+            />
+          </DialogRow>
+          {picked === undefined ? null : (
+            <img
+              alt={_(SIGNATURE_PICTURE_SHOWN, { name: picked.name })}
+              className="m-signature__picture"
+              data-signature-picture=""
+              src={picked.src}
+            />
+          )}
+        </div>
+      ) : null}
 
       <DialogRow label={SIGNATURE_SAVE} note={SIGNATURE_SAVE_NOTE}>
         <input
@@ -207,7 +238,11 @@ export default function SignatureBody({
       </DialogRow>
 
       <p className="m-signature__problem" role="status">
-        {tooLong ? _(SIGNATURE_TOO_LONG, { limit: MAX_SIGNATURE_FIELD }) : mark === undefined ? _(SIGN_DOCUMENT_MARK_MISSING) : ''}
+        {tooLong
+          ? _(SIGNATURE_TOO_LONG, { limit: MAX_SIGNATURE_FIELD })
+          : mark === undefined
+            ? _(way === 'upload' ? SIGNATURE_PICTURE_MISSING : SIGN_DOCUMENT_MARK_MISSING)
+            : ''}
       </p>
       <DialogFooter>
         <Button

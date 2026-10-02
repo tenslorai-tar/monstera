@@ -30,6 +30,7 @@ export const PAGE_STRUCTURE_DIALOG_ID = 'dialog.pageStructure';
 export const PAGE_STRUCTURE_DIALOG = declareDialog({
   id: PAGE_STRUCTURE_DIALOG_ID,
   title: PAGE_STRUCTURE_TITLE,
+  informs: 'report',
   props: z.discriminatedUnion('kind', [
     z.object({
       kind: z.literal('read'),

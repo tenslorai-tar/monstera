@@ -25,7 +25,7 @@ export default function SecurityUpdateBody({
       <p>{_(SECURITY_UPDATE_TEXT, { version })}</p>
       {/* THE PATTERN'S FOOTER WITHOUT A CANCEL: *I understand* is this notice's dismissal and is recorded as read, which
           a Cancel would not be (`updateStatus.ts`). The primary is last. */}
-      <DialogFooter ownDismissal>
+      <DialogFooter dismissal="own">
         <Button
           label={SECURITY_UPDATE_UNDERSTOOD}
           onClick={() => {

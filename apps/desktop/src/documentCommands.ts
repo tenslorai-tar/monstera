@@ -135,6 +135,7 @@ import {
   NoTablesToWrite,
   type RecognisedTable,
   RecognisedTableRefused,
+  type PageWordBoxes,
 } from '@monstera/kernel';
 import type { BarcodeWriteFormat } from '@monstera/kernel/barcode';
 import {
@@ -167,6 +168,7 @@ import {
   officeImportFormatOf,
 } from './officeConversion.js';
 import { type PdfaSource, PdfaFailedError } from './pdfaConversion.js';
+import type { HeldPicture } from './heldPicture.js';
 import type { PersonalLibrary } from './personalLibrary.js';
 import { type PrintDestination, PrintFailedError } from './printing.js';
 import { type ShareDestination, ShareFailedError, shareTitle } from './sharing.js';
@@ -1390,6 +1392,9 @@ export interface DocumentPageLinks {
   readonly links: readonly PageLink[];
 }
 
+/** Reads one page's word boxes (ADR-0137), injected for {@link DocumentPageLinksReader}'s reason. */
+export type DocumentWordBoxesReader = (docId: DocId, sessions: DocumentSessions, page: number) => Promise<PageWordBoxes>;
+
 /**
  * Reads the document's outline.
  *
@@ -2022,6 +2027,8 @@ export interface DocumentCommandsParts {
   /** One page as a picture for a vision ask (ADR-0090). */
   readonly askPicture: AskPictureReader;
   readonly pageLinks: DocumentPageLinksReader;
+  /** One page's word boxes, for Side by Side's marks (ADR-0137). */
+  readonly wordBoxes: DocumentWordBoxesReader;
   readonly destinations: DocumentDestinationsReader;
   /** How a page becomes characters — `ocrPage`'s pre-read (ADR-0051). */
   readonly ocr: DocumentOcrReader;
@@ -2075,6 +2082,8 @@ export interface DocumentCommandsParts {
    * signature is kept. See {@link LibraryReader} and {@link LibraryKeeper}.
    */
   readonly library: LibraryReader & LibraryKeeper;
+  /** The picture the plain Signature's dialog previewed, placed from here and released once it is (ADR-0133). */
+  readonly heldPicture: HeldPicture;
   /** Each import format's picker and bounded read. See {@link ImportSource}. */
   readonly imports: Readonly<Record<ImportFormat, ImportSource>>;
   /**
@@ -2241,6 +2250,7 @@ export class DocumentCommands {
   readonly #networkTables: NetworkTableReader;
   readonly #askPicture: AskPictureReader;
   readonly #pageLinks: DocumentPageLinksReader;
+  readonly #wordBoxes: DocumentWordBoxesReader;
   readonly #destinations: DocumentDestinationsReader;
   readonly #ocr: DocumentOcrReader;
   readonly #layers: DocumentLayersReader;
@@ -2275,6 +2285,7 @@ export class DocumentCommands {
   readonly #copy: CopySource;
   readonly #image: ImageSource;
   readonly #library: LibraryReader & LibraryKeeper;
+  readonly #heldPicture: HeldPicture;
   readonly #imports: Readonly<Record<ImportFormat, ImportSource>>;
   readonly #compose: ComposeImport;
   readonly #imageFiles: ImageFilesSource;
@@ -2324,6 +2335,7 @@ export class DocumentCommands {
     this.#networkTables = parts.networkTables;
     this.#askPicture = parts.askPicture;
     this.#pageLinks = parts.pageLinks;
+    this.#wordBoxes = parts.wordBoxes;
     this.#destinations = parts.destinations;
     this.#ocr = parts.ocr;
     this.#layers = parts.layers;
@@ -2344,6 +2356,7 @@ export class DocumentCommands {
     this.#copy = parts.copy;
     this.#image = parts.image;
     this.#library = parts.library;
+    this.#heldPicture = parts.heldPicture;
     this.#imports = parts.imports;
     this.#compose = parts.compose;
     this.#imageFiles = parts.imageFiles;
@@ -2769,6 +2782,26 @@ export class DocumentCommands {
     });
 
     return { version, links: value };
+  }
+
+  /**
+   * One page's word boxes (ADR-0137), in the lane and stamped with the version for {@link pageLinks}' reason: Side by
+   * Side pairs them with a text layer read at a version, and boxes of another version would mark the wrong words.
+   *
+   * @throws the same set `viewModel` throws, for the same reasons.
+   */
+  async pageWordBoxes(docId: DocId, page: number): Promise<{ readonly version: DocVersion } & PageWordBoxes> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#wordBoxes(docId, sessions, page);
+    });
+
+    return { version, ...value };
   }
 
   /**
@@ -5538,6 +5571,13 @@ export class DocumentCommands {
       return { kind: 'ready', mark: { kind: 'image', bytes: kept.bytes, mediaType: kept.mediaType }, picked: undefined };
     }
     if (mark.kind !== 'image') return { kind: 'ready', mark, picked: undefined };
+    if (mark.picked !== undefined) {
+      // THE PICTURE THE DIALOG PREVIEWED: its held bytes, never a fresh read of its path and never a picker in its place
+      // — a handle not held (another pick replaced it, or it was placed) is a signature no longer there.
+      const held = this.#heldPicture.held(mark.picked);
+      if (held === undefined) return { kind: 'saved-signature-missing' };
+      return { kind: 'ready', mark: { kind: 'image', bytes: held.bytes, mediaType: held.mediaType }, picked: held.name };
+    }
 
     const picked = await this.#image.pick();
     if (picked === null) return { kind: 'cancelled' };
@@ -5607,6 +5647,8 @@ export class DocumentCommands {
       if (error instanceof DocumentNotOpenError) throw error;
       return { kind: 'unreadable' };
     }
+    // PLACED, so the previewed picture has done its one job: released, and the bytes resident in main go with it.
+    if (request.mark.kind === 'image' && request.mark.picked !== undefined) this.#heldPicture.release(request.mark.picked);
 
     if (!request.keep || request.mark.kind === 'saved') return { kind: 'placed', ...applied, kept: 'not-asked' };
     if (mark.kind !== 'image') {

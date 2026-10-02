@@ -18,6 +18,7 @@ export const SCAN_OUTCOME_DIALOG_ID = 'dialog.scan-outcome';
 export const SCAN_OUTCOME_DIALOG = declareDialog({
   id: SCAN_OUTCOME_DIALOG_ID,
   title: SCAN_OUTCOME_TITLE,
+  informs: 'message',
   props: z
     .object({
       /** How many scanned pages were looked at. */

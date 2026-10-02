@@ -3,7 +3,9 @@ import { cleanup, render } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import AboutBody from './AboutBody.js';
 import AiSetupBody from './AiSetupBody.js';
+import ComponentsBody from './ComponentsBody.js';
 import AnnotationNoteBody from './AnnotationNoteBody.js';
 import CloseUnsavedBody from './CloseUnsavedBody.js';
 import CloudViewOnlyBody from './CloudViewOnlyBody.js';
@@ -59,7 +61,6 @@ const BODIES: readonly { readonly name: string; readonly body: ReactNode; readon
     // A LIST TO CONFIRM, not questions: no row, and the footer all the same.
     firstRow: null,
   },
-  { name: 'Set up AI', body: <AiSetupBody secretsAvailable resolve={ignore} update={ignore} />, firstRow: 'Provider' },
 ];
 
 /** Group 3: the shared text forms and the dialogs whose answers are buttons. Same shape, same assertion. */
@@ -124,6 +125,30 @@ describe('the text forms and button dialogs in the dialog pattern', () => {
     render(<InDialog><DonateBody resolve={ignore} update={ignore} /></InDialog>);
     const donate = [...(document.querySelector('.m-dialog-footer')?.querySelectorAll('button') ?? [])];
     expect(donate.map((button) => button.textContent)).toStrictEqual(['Not now', 'Open the donation page']);
+  });
+});
+
+describe('the footers the owner chose for three dialogs (2026-10-02)', () => {
+  const footer = (): (string | null)[] =>
+    [...(document.querySelector('.m-dialog-footer')?.querySelectorAll('button') ?? [])].map((button) => button.textContent);
+
+  it('Set up AI: Skip is the only dismissal — no Cancel beside it', () => {
+    render(<InDialog><AiSetupBody secretsAvailable resolve={ignore} update={ignore} /></InDialog>);
+    expect(footer()).toStrictEqual(['Skip', 'Check and save']);
+  });
+
+  it('About: Close first, then its two buttons, in the footer', () => {
+    render(
+      <InDialog>
+        <AboutBody version="1.2.3.0" installChannel="store" checksForUpdates={false} resolve={ignore} update={ignore} />
+      </InDialog>,
+    );
+    expect(footer()).toStrictEqual(['Close', 'Source code', 'Third-party licences']);
+  });
+
+  it('Components: a report — Close first, then Verify files', () => {
+    render(<InDialog><ComponentsBody components={[]} verified={false} resolve={ignore} update={ignore} /></InDialog>);
+    expect(footer()).toStrictEqual(['Close', 'Verify files']);
   });
 });
 

@@ -359,6 +359,8 @@ export const pdfiumChannels = {
     // page's font cannot carry (ADR-0096). On the apply only — capture and invert
     // cannot produce it — and on this engine only.
     wire: { ...byteImageWire, applyFailures: ['text-not-writable'] as const },
+    // IN A FILE (ADR-0138): `replaceTextObject` and `editTextBlock` multiply per-entry text bounds past a frame.
+    commandRoute: 'file',
   }),
 
   /**

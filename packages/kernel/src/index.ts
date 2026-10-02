@@ -133,6 +133,7 @@ export {
   type HostPageFillsReader,
   type HostPageLinksReader,
   type HostPageTextReader,
+  type HostWordBoxesReader,
   type HostSession,
   type HostSessions,
   type HostSnapshot,
@@ -339,7 +340,9 @@ export {
   remoteMupdfPageFills,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
+  remoteMupdfWordBoxes,
 } from './host/remoteEngine.js';
+export type { PageWordBoxes } from './wordBoxes.js';
 export { type CellFill, type PageFill, cellFillOf, withCellFills } from './cellFills.js';
 export {
   type CanonicalPath,

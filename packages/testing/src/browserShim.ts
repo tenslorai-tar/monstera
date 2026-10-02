@@ -1397,6 +1397,21 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       libraryPictures.set(id, { mediaType: 'image/png', bytes: picked.bytes });
       return Promise.resolve(ok({ kind: 'added' as const, entry }));
     },
+    // THE LIBRARY'S PICKED PICTURE serves the signature's preview too: the same option names what the picker returns.
+    'signature.pickPicture': () => {
+      const picked = options.library?.pick ?? null;
+      if (picked === null) return Promise.resolve(ok({ kind: 'cancelled' as const }));
+      libraryMinted += 1;
+      return Promise.resolve(
+        ok({
+          kind: 'picked' as const,
+          handle: asFileHandle(`held-picture-${String(libraryMinted)}`),
+          name: picked.name,
+          mediaType: 'image/png' as const,
+          bytes: picked.bytes,
+        }),
+      );
+    },
     'library.keepSignature': ({ mark }) => {
       libraryMinted += 1;
       const entry: LibraryEntry = {
@@ -2104,6 +2119,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           links: pageLinks[page] ?? [],
         }),
       );
+    },
+
+    // NO ENGINE, SO NO WORD BOXES: every line keeps the estimate, which is what a read that boxed nothing means.
+    'document.pageWordBoxes': ({ docId }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(ok({ version: asDocVersion(current), lines: [], truncated: false }));
     },
 
     // SETTINGS SURVIVE WITHIN ONE SHIM, and do not survive constructing another.

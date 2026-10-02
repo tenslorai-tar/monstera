@@ -26,7 +26,7 @@ export default function DonateBody({ resolve }: DialogAnswering<DonateAnswer>): 
       <p>{_(DONATE_WHERE)}</p>
       {/* THE PATTERN'S FOOTER WITHOUT A CANCEL: *Later* is this dialog's own word for not now, and a Cancel beside it
           would say the same thing twice. The primary is last. */}
-      <DialogFooter ownDismissal>
+      <DialogFooter dismissal="own">
         <Button
           label={DONATE_LATER}
           onClick={() => {

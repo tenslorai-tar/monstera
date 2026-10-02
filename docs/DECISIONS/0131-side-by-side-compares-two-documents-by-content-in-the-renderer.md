@@ -72,6 +72,13 @@
   in eight-point cells, so a change smaller than a few points can be missed or merged with a neighbour.
 - **A scan has no words**, so its pages are matched and compared visually only.
 
+### Correction, 2026-10-02 — the first limit is withdrawn
+
+The owner answered it (round 4, answer d): the engine now answers each word's box, and the estimate above is what a
+line keeps only where the engine's tokens and the text layer's disagree, or past the answer's bound
+([ADR-0137](0137-a-words-box-is-the-engines-read-on-request.md)). The sentence above records what was believed when
+this was written and is left as it was.
+
 ## Consequence for ADR-0089
 
 The two-document ask took its second document from the compare pane. Side by Side fills the window, which covers the

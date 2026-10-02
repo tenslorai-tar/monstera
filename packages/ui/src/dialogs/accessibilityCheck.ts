@@ -15,6 +15,7 @@ export const ACCESSIBILITY_DIALOG_ID = 'dialog.accessibility-check';
 export const ACCESSIBILITY_DIALOG = declareDialog({
   id: ACCESSIBILITY_DIALOG_ID,
   title: ACCESSIBILITY_TITLE,
+  informs: 'report',
   props: z.discriminatedUnion('kind', [
     z.object({
       kind: z.literal('checked'),

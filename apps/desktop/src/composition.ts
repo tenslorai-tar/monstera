@@ -76,6 +76,7 @@ import {
   type HostPageFillsReader,
   type HostPageLinksReader,
   type HostPageTextReader,
+  type HostWordBoxesReader,
   type HostTermination,
   type PageGeometryReader,
   type PdfiumArea,
@@ -126,6 +127,7 @@ import {
   remoteMupdfPageFills,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
+  remoteMupdfWordBoxes,
   remoteMupdfWriter,
   serialiseIntoFile,
   type StagedImage,
@@ -144,6 +146,7 @@ import { type AppInfo, type PickDocument, createContractHandlers } from './contr
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, type PictureFiles, createRecentPictures } from './recentPictures.js';
 import { NO_REQUEST_LOG, createRequestLog, observedHandlers } from './requestLog.js';
+import { createHeldPicture } from './heldPicture.js';
 import { createPersonalLibrary, memoryPictureFiles } from './personalLibrary.js';
 import { saveNamesFor } from './backupCopies.js';
 import { fileAnswersFor } from './hostFileAnswers.js';
@@ -994,6 +997,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       log?.write('library', `index unreadable, set aside: ${detail}`);
     },
   });
+  // THE PICTURE THE SIGNATURE DIALOG PREVIEWED, one slot shared by the channel that picks it and the placement that
+  // places it (ADR-0133's second correction).
+  const heldPicture = createHeldPicture();
 
   // THE CONTAINED pdftotext AND x2t, ONE OF EACH, taken by the exports and imports below and by the assistant's
   // attached files (ADR-0135) — so a file attached to a question is read by the same contained reader an export uses.
@@ -1067,6 +1073,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       const read = parsePageTables(await engineHost.pageText(session, page, 'table'));
       if (read.tables.length === 0) return read;
       return { ...read, tables: withCellFills(read.tables, await engineHost.pageFills(session, page)) };
+    },
+    // A PAGE'S WORD BOXES (ADR-0137), the host's walk of its characters, crossed as data.
+    wordBoxes: (docId, sessions, page) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.wordBoxes(session, page);
     },
     // THE OUTLINE, composed here for the reads above's reason and taking no
     // page, because an outline is a property of the document rather than of a
@@ -1339,6 +1351,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     image: { pick: pickImage, read: readImage },
     // A KEPT PICTURE OR SIGNATURE, read — never changed — when one is placed or signs.
     library,
+    heldPicture,
     // EDITING A PAGE ELSEWHERE, and every member is a parameter for `image`'s reason:
     // `shell` is Electron's and `fs.watch` is Node's, and this file imports neither (ADR-0062).
     externalEdit: { pick: pickDestination, open: openExternalEditor, watch: editWatch },
@@ -1552,7 +1565,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       commands,
       documents,
       // THE LIBRARY'S CHANNELS: the image picker, and a size before the bounded read, as the image import takes them.
-      library: { store: library, pick: pickImage, size: sizeImage, read: readImage },
+      library: { store: library, pick: pickImage, size: sizeImage, read: readImage, held: heldPicture },
       // THE PAPERCLIP (ADR-0135): any file, each read by the contained reader its family names — `null` where this
       // build has none, which names the file rather than reading it anywhere else.
       attachments: {
@@ -1795,6 +1808,8 @@ function engineSessionOpener(
   readonly pageLinks: HostPageLinksReader;
   /** One page's filled shapes, from whichever host is live — a table cell's background. */
   readonly pageFills: HostPageFillsReader;
+  /** One page's word boxes, from whichever host is live (ADR-0137). */
+  readonly wordBoxes: HostWordBoxesReader;
   /** The document's outline, from whichever host is live. */
   readonly destinations: HostDestinationsReader;
   /** One page's recognised text, from whichever host is live. */
@@ -2044,6 +2059,20 @@ function engineSessionOpener(
       );
     }
     return pageFills(session, page);
+  };
+
+  /** The word-box read's half of the same registration. See {@link pageText}. */
+  let wordBoxes: HostWordBoxesReader | null = null;
+
+  const readWordBoxesThroughHost: HostWordBoxesReader = (session, page) => {
+    if (wordBoxes === null) {
+      throw new Error(
+        'A word-box read reached the engine with no host word-box reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return wordBoxes(session, page);
   };
 
   /** The outline's half of the same registration. See {@link pageText}. */
@@ -2405,6 +2434,7 @@ function engineSessionOpener(
     pageText = remoteMupdfPageText(client, remote);
     pageLinks = remoteMupdfPageLinks(client, remote);
     pageFills = remoteMupdfPageFills(client, remote);
+    wordBoxes = remoteMupdfWordBoxes(client, remote);
     destinations = remoteMupdfDestinations(client, remote);
     ocr = remoteMupdfOcr(client, remote);
     layers = remoteMupdfLayers(client, remote);
@@ -2682,6 +2712,7 @@ function engineSessionOpener(
     pageText: readPageTextThroughHost,
     pageLinks: readPageLinksThroughHost,
     pageFills: readPageFillsThroughHost,
+    wordBoxes: readWordBoxesThroughHost,
     destinations: readDestinationsThroughHost,
     ocr: recogniseThroughHost,
     layers: readLayersThroughHost,

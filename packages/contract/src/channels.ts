@@ -240,6 +240,9 @@ export const MAX_TEXT_LAYER_LINES = 2048;
  */
 export const MAX_TEXT_LAYER_LINE = 1024;
 
+/** How many words one `document.pageWordBoxes` answer boxes (ADR-0137); the host's own bound is held equal to it. */
+export const MAX_PAGE_WORD_BOXES = 16_384;
+
 /**
  * The most structure elements `document.pageStructure` carries for one page.
  *
@@ -3522,6 +3525,34 @@ export const channels = {
     ]),
   ),
 
+  /**
+   * Picks a picture for the plain Signature, to preview before it is placed (ADR-0133's second correction). Main refuses
+   * a file past {@link MAX_IMAGE_BYTES} before reading it, types it by its own bytes, and HOLDS what it read under the
+   * handle it answers, so the picture placed is the one previewed. One is held at a time; a new pick replaces it.
+   */
+  'signature.pickPicture': channel(
+    'Picks a picture to sign with, held by main and answered for a preview.',
+    z.object({}).strict(),
+    z.discriminatedUnion('kind', [
+      z
+        .object({
+          kind: z.literal('picked'),
+          handle: fileHandleSchema,
+          name: z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH),
+          mediaType: z.enum(['image/jpeg', 'image/png']),
+          bytes: z.custom<Uint8Array>(
+            (value) => value instanceof Uint8Array && value.byteLength <= MAX_IMAGE_BYTES,
+            { message: `not a picture of at most ${String(MAX_IMAGE_BYTES)} bytes` },
+          ),
+        })
+        .strict(),
+      z.object({ kind: z.literal('cancelled') }).strict(),
+      /** Not a PNG or a JPEG by its bytes, or it could not be read. */
+      z.object({ kind: z.literal('unreadable') }).strict(),
+      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }).strict(),
+    ]),
+  ),
+
   /** Keeps a typed or drawn signature as the person made it, so it need not be made again. */
   'library.keepSignature': channel(
     'Keeps a typed or drawn signature in the signature library.',
@@ -4944,6 +4975,37 @@ export const channels = {
    * page, and handing it the destination string as well would give it a second
    * way to act on a link it must not interpret (§3.2).
    */
+  /**
+   * One page's word boxes ([ADR-0137](../../../docs/DECISIONS/0137-a-words-box-is-the-engines-read-on-request.md)):
+   * each line the engine walked, with its text, its box and each token's box. Side by Side pairs them with the text
+   * layer's lines by `pairWordBoxes` and keeps the estimate for any line that does not pair.
+   */
+  'document.pageWordBoxes': channel(
+    'One page’s lines with each word’s box, for marking changed words where they are printed.',
+    z.object({
+      docId: docIdSchema,
+      /** Zero-based, as every page index that crosses this contract is. */
+      page: z.number().int().nonnegative(),
+    }),
+    z.object({
+      version: docVersionSchema,
+      lines: z
+        .array(
+          z
+            .object({
+              text: z.string().max(MAX_TEXT_LAYER_LINE),
+              box: z.object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() }).strict(),
+              boxes: z.array(z.number()).max(MAX_PAGE_WORD_BOXES * 4),
+            })
+            .strict(),
+        )
+        .max(4 * MAX_TEXT_LAYER_LINES),
+      /** Whether lines were left unboxed for the bound; their words keep the estimate. */
+      truncated: z.boolean(),
+    }),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
   'document.pageLinks': channel(
     'The links on one page, with internal destinations already resolved.',
     z.object({

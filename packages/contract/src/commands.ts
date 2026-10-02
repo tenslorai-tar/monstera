@@ -7,6 +7,7 @@ import {
   OCR_ENGINES,
   docIdSchema,
   docVersionSchema,
+  fileHandleSchema,
   ocrLanguagesSchema,
 } from './schemas.js';
 
@@ -46,7 +47,7 @@ export const rotatePagesSchema = z.object({
   pages: pageSetSchema,
   /** Clockwise quarter turns. 0 is not a command; it is a no-op with a log entry. */
   quarterTurns: z.union([z.literal(1), z.literal(2), z.literal(3)]),
-});
+}).strict();
 
 /**
  * The command union.
@@ -87,7 +88,7 @@ export const setLayerVisibilitySchema = z.object({
   layer: z.number().int().nonnegative(),
   /** What it becomes. The inverse carries what it was. */
   visible: z.boolean(),
-});
+}).strict();
 
 /**
  * Move one page to another position.
@@ -125,7 +126,7 @@ export const movePageSchema = z.object({
   from: z.number().int().nonnegative(),
   /** Zero-based index it occupies afterwards. */
   to: z.number().int().nonnegative(),
-});
+}).strict();
 
 /**
  * Remove pages from the document.
@@ -156,7 +157,7 @@ export const deletePagesSchema = z.object({
   kind: z.literal('deletePages'),
   /** Zero-based pages, as single pages and runs (`pageSet.ts`), in the document as it stands. */
   pages: pageSetSchema,
-});
+}).strict();
 
 /**
  * Duplicate pages, placing each copy immediately after its source.
@@ -183,7 +184,7 @@ export const duplicatePageSchema = z.object({
   kind: z.literal('duplicatePage'),
   /** Zero-based pages to copy, as single pages and runs (`pageSet.ts`), in the document as it stands. */
   pages: pageSetSchema,
-});
+}).strict();
 
 /**
  * Exchange two pages.
@@ -210,7 +211,7 @@ export const swapPagesSchema = z.object({
   a: z.number().int().nonnegative(),
   /** Zero-based index of the other. */
   b: z.number().int().nonnegative(),
-});
+}).strict();
 
 /**
  * Insert an empty page.
@@ -236,7 +237,7 @@ export const insertBlankPageSchema = z.object({
   kind: z.literal('insertBlankPage'),
   /** Zero-based index the new page occupies afterwards. */
   at: z.number().int().nonnegative(),
-});
+}).strict();
 
 /**
  * Crop pages by insetting their visible box.
@@ -288,7 +289,7 @@ export const cropPagesSchema = z.object({
       left: z.number().nonnegative(),
     })
     .strict(),
-});
+}).strict();
 
 /**
  * Draw a text watermark across pages.
@@ -342,7 +343,7 @@ export const watermarkPagesSchema = z.object({
   rotationDegrees: z.number().min(-360).max(360),
   /** Type size in points. Bounded above so one command cannot ask for a page-sized glyph run. */
   fontSize: z.number().positive().max(1000),
-});
+}).strict();
 
 /**
  * The three slots one edge of a page carries.
@@ -404,7 +405,7 @@ export const headerFooterPagesSchema = z.object({
    * turned ninety degrees. Bounded so a margin cannot push the text off a page.
    */
   marginPoints: z.number().nonnegative().max(500),
-});
+}).strict();
 
 /**
  * Bates numbering — a continuous sequence stamped across the pages named.
@@ -450,7 +451,7 @@ export const batesNumberPagesSchema = z.object({
   fontSize: z.number().positive().max(1000),
   /** How far in from the page's edge, in points. */
   marginPoints: z.number().nonnegative().max(500),
-});
+}).strict();
 
 /**
  * Set a page's presentation transition (`/Trans`).
@@ -498,7 +499,7 @@ export const setPageTransitionSchema = z.object({
    * through, and below by zero because `/D 0` is a legal instantaneous change.
    */
   durationSeconds: z.number().min(0).max(60),
-});
+}).strict();
 
 /**
  * Fill pages with a background colour, **behind** their existing content.
@@ -531,7 +532,7 @@ export const setPageBackgroundSchema = z.object({
   red: z.number().min(0).max(1),
   green: z.number().min(0).max(1),
   blue: z.number().min(0).max(1),
-});
+}).strict();
 
 /**
  * Resize pages to a target box, scaling their content to fit.
@@ -574,7 +575,7 @@ export const resizePagesSchema = z.object({
    */
   widthPoints: z.number().gt(0).max(14_400),
   heightPoints: z.number().gt(0).max(14_400),
-});
+}).strict();
 
 /**
  * Straighten crooked pages — turn a scan that went through the feeder at an
@@ -619,7 +620,7 @@ export const deskewPagesSchema = z.object({
   kind: z.literal('deskewPages'),
   /** Which pages. `'all'` is resolved by the kernel, which holds the count. */
   pages: z.union([z.literal('all'), pageSetSchema]),
-});
+}).strict();
 
 /**
  * Level the scanned images on the named pages.
@@ -648,7 +649,7 @@ export const enhancePagesSchema = z.object({
   kind: z.literal('enhancePages'),
   /** Which pages, as single pages and runs (`pageSet.ts`). Zero-based, at least one. */
   pages: pageSetSchema,
-});
+}).strict();
 
 /**
  * Find the sheet of paper in each named page's photograph and straighten it into the page.
@@ -668,7 +669,7 @@ export const straightenScansSchema = z.object({
   kind: z.literal('straightenScans'),
   /** Which pages, as single pages and runs (`pageSet.ts`). Zero-based, at least one. */
   pages: pageSetSchema,
-});
+}).strict();
 
 /**
  * The largest image this build will make a page from.
@@ -742,7 +743,7 @@ export const insertImagePageSchema = z.object({
    * this field, for `documentPicker.ts`' reason about filters being a hint.
    */
   mediaType: z.enum(['image/jpeg', 'image/png']),
-});
+}).strict();
 
 /**
  * Build a table of contents page from the document's own outline.
@@ -790,7 +791,7 @@ export const generateTocSchema = z.object({
    * frame, so `at: pageCount` appends and the kernel clamps to the count.
    */
   at: z.number().int().nonnegative(),
-});
+}).strict();
 
 /**
  * Append another OPEN document's pages into this one.
@@ -828,7 +829,7 @@ export const mergeDocumentSchema = z.object({
    * frame, so `at: pageCount` appends and the kernel clamps to the count.
    */
   at: z.number().int().nonnegative(),
-});
+}).strict();
 
 /**
  * Replace one page with another open document's pages.
@@ -869,7 +870,7 @@ export const replacePageSchema = z.object({
    * (ADR-0062's 2026-09-14 correction).
    */
   version: docVersionSchema,
-});
+}).strict();
 
 /**
  * How long an optional-content group's name may be — on the way IN and on the way OUT.
@@ -927,7 +928,7 @@ export const importPageAsLayerSchema = z.object({
    * since would put the layer on another page. The bus refuses a stale one.
    */
   version: docVersionSchema,
-});
+}).strict();
 
 /**
  * The largest coordinate an annotation may name, in PDF units.
@@ -1184,7 +1185,7 @@ export const ocrPageSchema = z.object({
    * for **a region only**.
    */
   engine: z.enum(OCR_ENGINES),
-}).refine((command) => command.engine === 'tesseract' || command.region !== undefined, {
+}).strict().refine((command) => command.engine === 'tesseract' || command.region !== undefined, {
   message:
     'Only Tesseract is offered on a whole page. A network engine sends what it is given to a ' +
     'service, so a page-scoped request would send more of the document than the reader asked ' +
@@ -2230,7 +2231,7 @@ export const fillFormFieldSchema = z.object({
   value: fieldFillSchema,
   /** The version that answer carried. Refused if the document has moved. */
   version: docVersionSchema,
-});
+}).strict();
 
 /**
  * Add one annotation to one page.
@@ -2290,7 +2291,7 @@ export const addAnnotationSchema = z.object({
   annotation: annotationDraftSchema,
   /** Who drew it and when (ADR-0103). */
   stamp: annotationStampSchema,
-});
+}).strict();
 
 /**
  * How many annotations one removal may name.
@@ -2372,7 +2373,7 @@ export const removeAnnotationSchema = z.object({
   indices: z.array(z.number().int().nonnegative()).min(1).max(MAX_REMOVED_ANNOTATIONS).readonly(),
   /** The version that answer carried. Refused if the document has moved. */
   version: docVersionSchema,
-});
+}).strict();
 
 /**
  * How many annotations one placement may move.
@@ -2426,14 +2427,14 @@ export const placeAnnotationSchema = z.object({
         index: z.number().int().nonnegative(),
         /** The box it should occupy, in PDF user space. */
         rect: annotationRectSchema,
-      }),
+      }).strict(),
     )
     .min(1)
     .max(MAX_PLACED_ANNOTATIONS)
     .readonly(),
   /** The version that answer carried. Refused if the document has moved. */
   version: docVersionSchema,
-});
+}).strict();
 
 /**
  * How many pages one image may be stamped onto in a single command.
@@ -2518,7 +2519,7 @@ export const placeImageSchema = z.object({
   ),
   /** Who placed it and when (ADR-0103). */
   stamp: annotationStampSchema,
-});
+}).strict();
 
 /**
  * The URI schemes a link this build writes may carry.
@@ -2640,7 +2641,7 @@ export const addLinkSchema = z.object({
   /** The rectangle it covers, in PDF user space. */
   rect: annotationRectSchema,
   target: linkTargetSchema,
-});
+}).strict();
 
 /**
  * How many annotations one restyle may name.
@@ -2706,6 +2707,7 @@ export const styleAnnotationSchema = z
     /** The version that answer carried. Refused if the document has moved. */
     version: docVersionSchema,
   })
+  .strict()
   // A RESTYLE THAT NAMES NO PROPERTY IS NOT A COMMAND: it would move the version and put an undo
   // step in the log for a document that did not change.
   .refine(
@@ -2768,7 +2770,7 @@ export const editAnnotationTextSchema = z.object({
   text: z.string().max(MAX_ANNOTATION_TEXT),
   /** The version that answer carried. Refused if the document has moved. */
   version: docVersionSchema,
-});
+}).strict();
 
 /**
  * Rewrites who ONE annotation says made it — its `/T` (ADR-0103 Decision 3).
@@ -2787,7 +2789,7 @@ export const setAnnotationAuthorSchema = z.object({
   author: annotationAuthorSchema,
   /** The version that answer carried. Refused if the document has moved. */
   version: docVersionSchema,
-});
+}).strict();
 
 /**
  * Answers one annotation with another — §7's *reply* on the annotation menu.
@@ -2838,7 +2840,7 @@ export const replyToAnnotationSchema = z.object({
   stamp: annotationStampSchema,
   /** The version that answer carried. Refused if the document has moved. */
   version: docVersionSchema,
-});
+}).strict();
 
 /**
  * The commands naming annotations that leave the page's annotation walk as it was: every mark in
@@ -2918,7 +2920,7 @@ export const deleteFormFieldsSchema = z.object({
   indices: z.array(z.number().int().nonnegative()).min(1).max(MAX_DELETED_FIELDS).readonly(),
   /** The version that answer carried. Refused if the document has moved. */
   version: docVersionSchema,
-});
+}).strict();
 
 /**
  * Burns every form field's appearance into the page and removes the form.
@@ -2954,7 +2956,7 @@ export const deleteFormFieldsSchema = z.object({
  */
 export const flattenFormFieldsSchema = z.object({
   kind: z.literal('flattenFormFields'),
-});
+}).strict();
 
 /**
  * How long a signature's descriptive fields may be.
@@ -3234,15 +3236,18 @@ export function strokesOfPlaced(drawing: PlacedDrawing): Extract<KeepableSignatu
 /**
  * How a visible signature looks, as a RENDERER may ask for it.
  *
- * `image` carries nothing, for `placeImage`'s reason: the picture is a file main
- * picks and reads, so this side has no field to put one in. `saved` names a
+ * `image` carries no picture, for `placeImage`'s reason: the picture is a file main
+ * picks and reads, so this side has no field to put one in. Alone, main picks it
+ * after the click (*Sign with certificate*); with `picked`, it is the picture main
+ * already holds under that handle from `signature.pickPicture`, which the plain
+ * Signature's dialog previewed (ADR-0133's second correction). `saved` names a
  * signature the person kept, by its library id — main looks it up, so a kept
  * picture's bytes never have to travel back.
  */
 export const requestedSignatureMarkSchema = z.discriminatedUnion('kind', [
   typedSignatureMarkSchema,
   drawnSignatureMarkSchema,
-  z.object({ kind: z.literal('image') }).strict(),
+  z.object({ kind: z.literal('image'), picked: fileHandleSchema.optional() }).strict(),
   z.object({ kind: z.literal('saved'), id: libraryIdSchema }).strict(),
 ]);
 
@@ -3423,7 +3428,7 @@ export const signDocumentSchema = z.object({
    * signature like any other change.
    */
   appearance: signaturePlacementSchema.extend({ mark: signatureMarkSchema }).strict().optional(),
-});
+}).strict();
 
 /**
  * What a sanitise takes out, by the name a person reads.
@@ -3466,7 +3471,7 @@ export type PdfSanitizePart = (typeof PDF_SANITIZE_PARTS)[number];
 export const sanitizeDocumentSchema = z.object({
   kind: z.literal('sanitizeDocument'),
   parts: z.array(z.enum(PDF_SANITIZE_PARTS)).min(1).max(PDF_SANITIZE_PARTS.length),
-});
+}).strict();
 
 /**
  * The longest find or replacement string this boundary will carry.
@@ -3549,7 +3554,7 @@ export const markMatchesForRedactionSchema = z.object({
   /** What to look for. Bounded like every string that crosses. */
   query: z.string().min(1).max(MAX_FIND_TEXT),
   pages: z.union([z.literal('all'), pageSetSchema]),
-});
+}).strict();
 
 /**
  * What a burned-in redaction leaves where the content was.
@@ -3648,7 +3653,7 @@ export const applyRedactionsSchema = z.object({
    * checkbox is off, and says a title can itself contain what was redacted.
    */
   keepTitle: z.boolean(),
-});
+}).strict();
 
 /**
  * The encryption schemes this build will WRITE.
@@ -3737,7 +3742,7 @@ export const setDocumentProtectionSchema = z.object({
   ownerPassword: z.string().min(1).max(DOCUMENT_PASSWORD_MAX_CHARS).optional(),
   /** What a reader without the owner password may do. Absent means everything. */
   permissions: z.array(z.enum(PDF_PERMISSIONS)).max(PDF_PERMISSIONS.length).optional(),
-});
+}).strict();
 
 /**
  * How large a form-data file this build will read.
@@ -3936,7 +3941,7 @@ export const importAnnotationsSchema = z.object({
     })
     .strict()
     .optional(),
-});
+}).strict();
 
 /**
  * Fills every field a data file names, matching by the field's own name.
@@ -3991,7 +3996,7 @@ export const importFormDataSchema = z.object({
     (value) => value instanceof Uint8Array && value.byteLength <= MAX_FORM_DATA_BYTES,
     { message: 'not form data this build will read, or larger than the bound' },
   ),
-});
+}).strict();
 
 /**
  * How long a created field's name may be.
@@ -4062,24 +4067,39 @@ const fieldNameSchema = z
  * A person who draws a field and then types in it sends two commands, which is
  * also what they did.
  */
+const createdTextField = z.object({ type: z.literal('text') }).strict();
+const createdCheckboxField = z.object({ type: z.literal('checkbox') }).strict();
+const createdRadioField = z
+  .object({
+    type: z.literal('radio'),
+    /**
+     * Which option in the group this widget is.
+     *
+     * **A radio group is one field with several widgets** — measured on the
+     * fill row, where both of a two-option group answer the same name — so a
+     * create names the group and the option separately. Drawing a second
+     * option into an existing group is this command again with the same
+     * `name` and a different `option`, which is what the gesture is.
+     */
+    option: z.string().min(1).max(MAX_FIELD_OPTION),
+  })
+  .strict();
+
+/**
+ * The kinds that carry no list of options: text, check box and radio. A create of SEVERAL fields takes only these
+ * (ADR-0138 Decision 3), which is what flat field detection sends; a choice field arrives one to a create, as a drawing
+ * tool sends it.
+ */
+export const simpleCreatedFieldSchema = z.discriminatedUnion('type', [
+  createdTextField,
+  createdCheckboxField,
+  createdRadioField,
+]);
+
 export const createdFieldSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('text') }).strict(),
-  z.object({ type: z.literal('checkbox') }).strict(),
-  z
-    .object({
-      type: z.literal('radio'),
-      /**
-       * Which option in the group this widget is.
-       *
-       * **A radio group is one field with several widgets** — measured on the
-       * fill row, where both of a two-option group answer the same name — so a
-       * create names the group and the option separately. Drawing a second
-       * option into an existing group is this command again with the same
-       * `name` and a different `option`, which is what the gesture is.
-       */
-      option: z.string().min(1).max(MAX_FIELD_OPTION),
-    })
-    .strict(),
+  createdTextField,
+  createdCheckboxField,
+  createdRadioField,
   z
     .object({
       type: z.literal('dropdown'),
@@ -4150,7 +4170,10 @@ export const createdFieldPlacementSchema = z.object({
   /** What the field is called. A path, not a label — see {@link MAX_FIELD_NAME}. */
   name: fieldNameSchema,
   field: createdFieldSchema,
-});
+}).strict();
+
+/** One of several fields a create mints: {@link createdFieldPlacementSchema} with a kind that carries no options. */
+const simpleFieldPlacementSchema = createdFieldPlacementSchema.extend({ field: simpleCreatedFieldSchema }).strict();
 
 export const createFormFieldSchema = z.object({
   kind: z.literal('createFormField'),
@@ -4169,9 +4192,16 @@ export const createFormFieldSchema = z.object({
    * The page is shared for the same reason the rectangle is shared on
    * `placeImage`: *these fields, on this page* is what the request means, and a
    * per-field page would be a different feature nobody asked for.
+   *
+   * **MANY SIMPLE FIELDS, OR ONE OF ANY KIND** (ADR-0138 Decision 3). Detection sends text fields and a tool sends
+   * one, so no caller sends several choice fields — and that combination was the whole of the command's worst, 256
+   * fields of 256 options each, 202 MB. Either shape is a list, so a reader iterates it the same way.
    */
-  fields: z.array(createdFieldPlacementSchema).min(1).max(MAX_CREATED_FIELDS),
-});
+  fields: z.union([
+    z.array(simpleFieldPlacementSchema).min(1).max(MAX_CREATED_FIELDS),
+    z.tuple([createdFieldPlacementSchema]),
+  ]),
+}).strict();
 
 /**
  * How many characters one replaced text run may carry.
@@ -4291,6 +4321,7 @@ export const replaceTextObjectSchema = z
     /** The version that answer carried. Refused if the document has moved. */
     version: docVersionSchema,
   })
+  .strict()
   .refine(
     (command) =>
       new Set(command.replacements.map((replacement) => replacement.index)).size ===
@@ -4386,7 +4417,7 @@ export const placePageObjectSchema = z.object({
     .strict(),
   /** The version that answer carried. Refused if the document has moved. */
   version: docVersionSchema,
-});
+}).strict();
 
 /**
  * Recolours a page's objects — **text objects included**.
@@ -4425,7 +4456,7 @@ export const recolorPageObjectsSchema = z.object({
     })
     .strict(),
   version: docVersionSchema,
-});
+}).strict();
 
 /**
  * Removes objects from a page.
@@ -4451,7 +4482,7 @@ export const deletePageObjectsSchema = z.object({
   /** The objects to remove, in the engine's own numbering. */
   indices: z.array(z.number().int().nonnegative()).min(1).max(MAX_EDITED_OBJECTS),
   version: docVersionSchema,
-});
+}).strict();
 
 /**
  * Normalize-then-edit: promote a page's Form XObject content into the page.
@@ -4500,7 +4531,7 @@ export const deletePageObjectsSchema = z.object({
 export const promoteFormObjectsSchema = z.object({
   kind: z.literal('promoteFormObjects'),
   page: z.number().int().nonnegative(),
-});
+}).strict();
 
 
 /**
@@ -4576,7 +4607,7 @@ export const replaceAllTextSchema = z.object({
   caseSensitive: z.boolean().optional(),
   wholeWord: z.boolean().optional(),
   regex: z.boolean().optional(),
-});
+}).strict();
 
 /**
  * How many lines a block edit may name, and how many a person may type into one.

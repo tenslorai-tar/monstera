@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  type ChannelMap,
   ENGINE_HOST_FRAME_MAX_BYTES,
   FRAME_HEADER_BYTES,
   encodeFrame,
@@ -275,11 +276,28 @@ function answerIn(frame: Uint8Array | undefined): unknown {
   return JSON.parse(new TextDecoder().decode(frame.subarray(FRAME_HEADER_BYTES)));
 }
 
-/** One request, framed exactly as main frames it — with the answer's file name when the channel answers in one. */
-function request(id: string, channel: string, params: unknown, answerInto?: string): Uint8Array {
+/** The name main mints for a file-requested call's params in these cases. */
+const PARAMS = 'feedc0de';
+
+/**
+ * One request, framed exactly as main frames it — with the answer's file name when the channel answers in one, and its
+ * params written into the snapshot directory when the channel takes them in a file (ADR-0138). Which channels do is
+ * read off the channel map, as `hostFileAnswers.ts` reads it, so this cannot frame a call main would route otherwise.
+ */
+function request(id: string, channel: string, params: unknown, answerInto?: string, files?: Files): Uint8Array {
+  let carried: Record<string, unknown> = { params };
+  // A channel the host does not declare frames inline: a case may ask for one to see it refused.
+  const declared: ChannelMap = pdfiumChannels;
+  if (declared[channel]?.request === 'file') {
+    if (files === undefined) throw new Error(`"${channel}" takes its params in a file; hand the case's files`);
+    const bytes = new TextEncoder().encode(JSON.stringify(params));
+    files.read.set(`${AREA.snapshotDirectory}|${PARAMS}`, bytes);
+    const session = (params as { readonly session: string }).session;
+    carried = { paramsFile: { session, name: PARAMS, bytes: bytes.byteLength } };
+  }
   return encodeFrame(
     new TextEncoder().encode(
-      JSON.stringify(answerInto === undefined ? { id, channel, params } : { id, channel, params, answerInto }),
+      JSON.stringify(answerInto === undefined ? { id, channel, ...carried } : { id, channel, ...carried, answerInto }),
     ),
     ENGINE_HOST_FRAME_MAX_BYTES,
   );
@@ -351,7 +369,7 @@ describe('the PDFium host body', () => {
         },
         from: IN,
         into: OUT,
-      }),
+      }, undefined, files),
     );
     await stream.whenSent(2);
 
@@ -381,7 +399,7 @@ describe('the PDFium host body', () => {
         },
         from: IN,
         into: OUT,
-      }),
+      }, undefined, files),
     );
     await stream.whenSent(2);
 
@@ -420,7 +438,7 @@ describe('the PDFium host body', () => {
         // this case's subject.
         from: 'fadedface',
         into: OUT,
-      }),
+      }, undefined, files),
     );
     await stream.whenSent(2);
 
@@ -457,6 +475,7 @@ describe('the PDFium host body', () => {
           from: IN,
         },
         ANSWER,
+        files,
       ),
     );
     await stream.whenSent(2);

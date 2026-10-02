@@ -1,4 +1,4 @@
-import { libraryIdSchema, requestedSignatureMarkSchema } from '@monstera/contract';
+import { fileHandleSchema, libraryIdSchema, requestedSignatureMarkSchema } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -20,7 +20,19 @@ export const SIGNATURE_DIALOG_ID = 'dialog.signature';
 export const SIGNATURE_ANSWERS = z.union([
   z.object({ mark: requestedSignatureMarkSchema, keep: z.boolean() }).strict(),
   z.object({ library: z.literal('remove'), id: libraryIdSchema }).strict(),
+  /**
+   * Upload's *Choose picture…*: the opener asks main to pick and hold one, then asks again with it to preview
+   * (ADR-0133's second correction). *Save for reuse* travels with it so asking again does not reset it.
+   */
+  z.object({ upload: z.literal('pick'), keep: z.boolean() }).strict(),
 ]);
+
+/** A picture main holds for this dialog: the handle the placement names, its file's name, and a `blob:` to show it. */
+export const HELD_SIGNATURE_PICTURE = z
+  .object({ handle: fileHandleSchema, name: z.string().min(1), src: z.string().startsWith('blob:') })
+  .strict();
+
+export type HeldSignaturePicture = z.infer<typeof HELD_SIGNATURE_PICTURE>;
 
 export type SignatureAnswers = z.infer<typeof SIGNATURE_ANSWERS>;
 
@@ -30,8 +42,13 @@ export type SignatureLook = Extract<SignatureAnswers, { mark: unknown }>;
 export const SIGNATURE_DIALOG = declareDialog({
   id: SIGNATURE_DIALOG_ID,
   title: SIGNATURE_TITLE,
-  /** `kept` is the signature library — the one *Sign with certificate* offers too — for one-click reuse. */
-  props: z.object({ kept: z.array(KEPT_SIGNATURE).readonly() }).strict(),
+  /**
+   * `kept` is the signature library — the one *Sign with certificate* offers too — for one-click reuse. `picked` is the
+   * picture main holds after Upload's pick, shown before it is placed; `keep` is *Save for reuse* as it was left.
+   */
+  props: z
+    .object({ kept: z.array(KEPT_SIGNATURE).readonly(), picked: HELD_SIGNATURE_PICTURE.optional(), keep: z.boolean().optional() })
+    .strict(),
   result: SIGNATURE_ANSWERS,
   component: lazy(() => import('./SignatureBody.js')),
 });

@@ -40,6 +40,7 @@ export const GENERATE_TOC_PROBLEM_DIALOG_ID = 'dialog.generate-toc-problem';
 export const GENERATE_TOC_PROBLEM_DIALOG = declareDialog({
   id: GENERATE_TOC_PROBLEM_DIALOG_ID,
   title: GENERATE_TOC_PROBLEM_TITLE,
+  informs: 'message',
   props: z.discriminatedUnion('reason', [
     z.object({ reason: z.literal('no-outline') }).strict(),
   ]),

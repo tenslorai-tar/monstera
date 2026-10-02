@@ -29,6 +29,55 @@ export interface CompareBox {
 export interface CompareLine {
   readonly text: string;
   readonly box: CompareBox;
+  /**
+   * Each token's own box, as the engine read it (ADR-0137): one per token `tokensOf` cuts from `text`, in order. Absent,
+   * or of another count, and each word is placed by the estimate — the line still compares.
+   */
+  readonly words?: readonly CompareBox[] | undefined;
+}
+
+/** A line as the engine's word-box read answers it (ADR-0137): its text, its box, and its tokens' boxes, flat. */
+export interface WalkedWordLine {
+  readonly text: string;
+  readonly box: CompareBox;
+  /** `x0, y0, x1, y1` for each token `tokensOf(text)` cuts, in order; empty past the read's bound. */
+  readonly boxes: readonly number[];
+}
+
+/** How far two reads' boxes of the same line may differ and still be that line, in points. */
+const SAME_LINE_POINTS = 1;
+
+/**
+ * Gives each text-layer line the engine's token boxes — THE ONE PAIRING RULE (B3a), taken by Side by Side and by the
+ * kernel's proof alike.
+ *
+ * The word-box read is unsegmented and the text layer is segmented, so the same lines arrive in another order: a line
+ * is paired with a walked line of the SAME TEXT whose box is the same box within a point, each walked line used once.
+ * A line with no such partner, or whose tokens the read did not box, keeps no boxes and is placed by the estimate.
+ */
+export function pairWordBoxes(lines: readonly CompareLine[], walked: readonly WalkedWordLine[]): CompareLine[] {
+  const used = new Set<number>();
+  const near = (a: CompareBox, b: CompareBox): boolean =>
+    Math.abs(a.x0 - b.x0) <= SAME_LINE_POINTS &&
+    Math.abs(a.y0 - b.y0) <= SAME_LINE_POINTS &&
+    Math.abs(a.x1 - b.x1) <= SAME_LINE_POINTS &&
+    Math.abs(a.y1 - b.y1) <= SAME_LINE_POINTS;
+  return lines.map((line) => {
+    const at = walked.findIndex((each, index) => !used.has(index) && each.text === line.text && near(each.box, line.box));
+    const partner = walked[at];
+    if (partner === undefined || partner.boxes.length === 0) return line;
+    used.add(at);
+    const words: CompareBox[] = [];
+    for (let index = 0; index + 3 < partner.boxes.length; index += 4) {
+      words.push({
+        x0: partner.boxes[index] ?? 0,
+        y0: partner.boxes[index + 1] ?? 0,
+        x1: partner.boxes[index + 2] ?? 0,
+        y1: partner.boxes[index + 3] ?? 0,
+      });
+    }
+    return { ...line, words };
+  });
 }
 
 /** One annotation, its rectangle already in display space (or `null`, for one with no rectangle). */
@@ -334,15 +383,16 @@ export interface PairChange {
 /** How much of a change's words its summary carries. */
 export const CHANGE_TEXT_LIMIT = 160;
 
-/** A word with the box it is estimated to occupy. */
+/** A word with the box it occupies. */
 interface PlacedWord {
   readonly text: string;
   readonly box: CompareBox;
 }
 
 /**
- * A line's words, each boxed by its share of the line's characters — the stated limit of ADR-0131: the kernel reports
- * line boxes, so in a proportional font a word of narrow letters is boxed slightly off.
+ * A line's words, each with its box: the ENGINE'S box where the line carries one per token (ADR-0137), and otherwise
+ * its share of the line's characters — which in a proportional face boxes a word after narrow letters well to the right
+ * of where it is printed, so it is only the answer for a line the engine did not box.
  */
 function placeWords(lines: readonly CompareLine[], indices: readonly number[]): PlacedWord[] {
   const placed: PlacedWord[] = [];
@@ -353,19 +403,23 @@ function placeWords(lines: readonly CompareLine[], indices: readonly number[]): 
     const width = line.box.x1 - line.box.x0;
     // THE SEGMENTER'S TOKENS, not a whitespace split: a line of Chinese is one whitespace run, and a one-character
     // edit in it would box the whole line (`wordCount.ts` states the rule).
-    for (const token of tokensOf(line.text)) {
+    const tokens = [...tokensOf(line.text)];
+    // THE ENGINE'S BOXES ONLY WHEN THEY ARE THESE TOKENS: the same segmenter over the same read gives the same count,
+    // and a count that differs (a line the text layer clipped) means the pairing cannot be trusted.
+    const own = line.words?.length === tokens.length ? line.words : undefined;
+    tokens.forEach((token, at) => {
       const start = token.index;
       const end = start + token.text.length;
       placed.push({
         text: token.text,
-        box: {
+        box: own?.[at] ?? {
           x0: line.box.x0 + (width * start) / length,
           x1: line.box.x0 + (width * end) / length,
           y0: line.box.y0,
           y1: line.box.y1,
         },
       });
-    }
+    });
   }
   return placed;
 }

@@ -16,6 +16,7 @@ import {
   MAX_ASK_ATTACHMENTS,
   servesVision,
   MAX_LIBRARY_ENTRIES,
+  MAX_IMAGE_BYTES,
   MAX_LIBRARY_PICTURE_BYTES,
   MAX_RASTER_BYTES,
   MAX_RASTER_PIXELS,
@@ -84,7 +85,8 @@ import type { UpdateCheck } from './updateCheck.js';
 import { CloudOutcomeRefused, type CloudStorage } from './cloudSession.js';
 import { type KnownRoot, displayLocationOf } from './displayLocation.js';
 import type { RecentPictures } from './recentPictures.js';
-import type { PersonalLibrary } from './personalLibrary.js';
+import type { HeldPicture } from './heldPicture.js';
+import { type PersonalLibrary, pictureTypeOf } from './personalLibrary.js';
 import type { ReviewPrompt } from './engagement.js';
 import type { ComponentStatus } from './componentStatus.js';
 import type { RecentFiles } from './recentFiles.js';
@@ -252,6 +254,8 @@ export function createContractHandlers(deps: {
     readonly pick: PickImage;
     readonly size: (path: string) => Promise<number | null>;
     readonly read: ImageSource['read'];
+    /** The plain Signature's previewed picture, the slot `DocumentCommands.placeSignature` places from. */
+    readonly held: HeldPicture;
   };
   /** The Store rating prompt (E3). REQUIRED, for `recentRoots`' reason. */
   readonly reviewPrompt: ReviewPrompt;
@@ -459,6 +463,7 @@ export function createContractHandlers(deps: {
       );
     },
     'library.addPicture': addLibraryPictureHandler(deps.library),
+    'signature.pickPicture': pickSignaturePictureHandler(deps.library, deps.capabilities),
     'library.keepSignature': ({ mark }) => Promise.resolve(ok(deps.library.store.keepSignature(mark))),
     'library.remove': ({ id }) => Promise.resolve(ok({ removed: deps.library.store.remove(id) })),
     'document.placeBarcode': placeBarcodeHandler(deps.commands),
@@ -475,6 +480,7 @@ export function createContractHandlers(deps: {
     'document.pageStructure': pageStructureHandler(deps.commands),
     'document.pageTables': pageTablesHandler(deps.commands),
     'document.pageLinks': pageLinksHandler(deps.commands),
+    'document.pageWordBoxes': pageWordBoxesHandler(deps.commands),
     'document.destinations': destinationsHandler(deps.commands),
     'document.layers': layersHandler(deps.commands),
     'document.signatures': signaturesHandler(deps.commands),
@@ -1366,6 +1372,39 @@ function addLibraryPictureHandler(library: {
       );
     }
     return ok(library.store.addPicture(kind, basename(picked), read.bytes));
+  };
+}
+
+/**
+ * Picks a picture for the plain Signature and HOLDS what it read (ADR-0133's second correction): the size before any
+ * read, the bounded read, then the type from the bytes by the library's own resolver — so a file that is not a picture
+ * is refused here, where the person is looking, rather than after the click. The bytes answered are the bytes held,
+ * so the preview is of exactly what will be placed.
+ */
+function pickSignaturePictureHandler(
+  library: {
+    readonly pick: PickImage;
+    readonly size: (path: string) => Promise<number | null>;
+    readonly read: ImageSource['read'];
+    readonly held: HeldPicture;
+  },
+  capabilities: CapabilityRegistry,
+): ContractHandlers['signature.pickPicture'] {
+  return async () => {
+    const picked = await library.pick();
+    if (picked === null) return ok({ kind: 'cancelled' } as const);
+    const size = await library.size(picked);
+    if (size === null) return ok({ kind: 'unreadable' } as const);
+    if (size > MAX_IMAGE_BYTES) return ok({ kind: 'too-large', limitBytes: MAX_IMAGE_BYTES } as const);
+    const read = await library.read(picked);
+    if (read.kind === 'too-large') return ok({ kind: 'too-large', limitBytes: MAX_IMAGE_BYTES } as const);
+    if (read.kind !== 'read') return ok({ kind: 'unreadable' } as const);
+    const mediaType = pictureTypeOf(read.bytes);
+    if (mediaType === null) return ok({ kind: 'unreadable' } as const);
+    const handle = capabilities.mint(picked);
+    const name = basename(picked);
+    library.held.hold(handle, { name, mediaType, bytes: read.bytes });
+    return ok({ kind: 'picked', handle, name, mediaType, bytes: read.bytes } as const);
   };
 }
 
@@ -2321,6 +2360,21 @@ function pageLinksHandler(commands: DocumentCommands): ContractHandlers['documen
     try {
       const { version, links } = await commands.pageLinks(docId, page);
       return ok({ version, links });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** One page's word boxes (ADR-0137), with the link read's three refusals for its reason. */
+function pageWordBoxesHandler(commands: DocumentCommands): ContractHandlers['document.pageWordBoxes'] {
+  return async ({ docId, page }): Promise<Awaited<ReturnType<ContractHandlers['document.pageWordBoxes']>>> => {
+    try {
+      const { version, lines, truncated } = await commands.pageWordBoxes(docId, page);
+      return ok({ version, lines: lines.map((line) => ({ text: line.text, box: { ...line.box }, boxes: [...line.boxes] })), truncated });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

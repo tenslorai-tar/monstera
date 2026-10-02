@@ -46,6 +46,7 @@ export type RecognisedWalk = z.infer<typeof OCR_OUTCOME_PROPS>;
 export const OCR_OUTCOME_DIALOG = declareDialog({
   id: OCR_OUTCOME_DIALOG_ID,
   title: OCR_OUTCOME_TITLE,
+  informs: 'message',
   props: OCR_OUTCOME_PROPS,
   component: lazy(() => import('./OcrOutcomeBody.js')),
 });

@@ -14,7 +14,7 @@ Signature puts your handwritten, typed or pictured signature on a page. It does 
 2. In the **Signature** window, under **New signature**, choose:
    - **Draw**, then draw on the white pad above **Draw your signature above** (**Clear** starts again);
    - **Type**, then type **Your name** and pick a **Style**;
-   - **Upload**; you will pick a PNG or JPEG after you click the page.
+   - **Upload**, then **Choose picture…** and pick a PNG or JPEG; the picture is shown in the window before you place it (**Choose another…** picks again).
 3. Leave **Save for reuse** ticked to keep the signature for next time, or untick it for a one-off.
 4. Choose **Use Signature**, then click the page where the signature should go.
 

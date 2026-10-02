@@ -37,6 +37,7 @@ export const MERGE_DOCUMENT_NONE_DIALOG_ID = 'dialog.merge-document-none';
 export const MERGE_DOCUMENT_NONE_DIALOG = declareDialog({
   id: MERGE_DOCUMENT_NONE_DIALOG_ID,
   title: MERGE_DOCUMENT_NONE_TITLE,
+  informs: 'message',
   props: z.object({}).strict(),
   component: lazy(() => import('./MergeDocumentNoneBody.js')),
 });

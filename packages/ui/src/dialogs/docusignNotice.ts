@@ -40,6 +40,7 @@ export type DocusignNotice = (typeof DOCUSIGN_NOTICES)[number];
 export const DOCUSIGN_NOTICE_DIALOG = declareDialog({
   id: DOCUSIGN_NOTICE_DIALOG_ID,
   title: DOCUSIGN_NOTICE_TITLE,
+  informs: 'report',
   props: z
     .object({
       reason: z.enum(DOCUSIGN_NOTICES),

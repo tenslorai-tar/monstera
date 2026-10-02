@@ -3,6 +3,7 @@ import {
   AZURE_KEY_SETTING_ID,
   BARCODE_FORMATS,
   MAX_BARCODE_TEXT,
+  MAX_IMAGE_BYTES,
   MAX_LIBRARY_PICTURE_BYTES,
   MAX_PAGE_BARCODES,
   MAX_SETTINGS_FILE_BYTES,
@@ -35,6 +36,7 @@ import { type AttachmentReaders, NO_ATTACHMENTS } from './askAttachments.js';
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, createRecentPictures } from './recentPictures.js';
+import { createHeldPicture } from './heldPicture.js';
 import { unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
 import type { DocumentCommands } from './documentCommands.js';
@@ -316,7 +318,11 @@ describe('the person’s library (library.*, and document.placeImage with a kept
   const PNG = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 5);
 
   /** A library surface over a memory folder whose picker answers `picked` and whose reads are recorded. */
-  function libraryPicking(picked: string | null, size: number): {
+  function libraryPicking(
+    picked: string | null,
+    size: number,
+    bytes: Uint8Array = PNG,
+  ): {
     readonly surface: ReturnType<typeof unusedLibrarySurface>;
     readonly read: string[];
   } {
@@ -327,7 +333,7 @@ describe('the person’s library (library.*, and document.placeImage with a kept
       size: () => Promise.resolve(size),
       read: (path: string) => {
         read.push(path);
-        return Promise.resolve({ kind: 'read' as const, bytes: PNG });
+        return Promise.resolve({ kind: 'read' as const, bytes });
       },
     } as unknown as ReturnType<typeof unusedLibrarySurface>;
     return { surface, read };
@@ -358,6 +364,39 @@ describe('the person’s library (library.*, and document.placeImage with a kept
       'library.addPicture'
     ]({ kind: 'stamp' });
     expect(small.read).toStrictEqual(['small.png']);
+  });
+
+  it('signature.pickPicture HOLDS the bytes it answers, under the handle it answers (ADR-0133’s second correction)', async () => {
+    const held = createHeldPicture();
+    const { surface } = libraryPicking(join('C:', 'Users', 'someone', 'My signature.png'), PNG.byteLength);
+    const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
+      library: { ...surface, held },
+    });
+    const answer = await handlers['signature.pickPicture']({});
+    if (!answer.ok || answer.value.kind !== 'picked') throw new Error(`no picture was picked: ${JSON.stringify(answer)}`);
+    expect(answer.value.name).toBe('My signature.png');
+    expect(answer.value.mediaType).toBe('image/png');
+    // THE PREVIEW IS OF WHAT WILL BE PLACED: the slot holds exactly the bytes answered, under exactly that handle.
+    expect(held.held(answer.value.handle)?.bytes).toStrictEqual(answer.value.bytes);
+    expect(answer.value.bytes).toStrictEqual(PNG);
+  });
+
+  it('signature.pickPicture refuses what is not a picture BY ITS BYTES and holds nothing — CONTROL: past the bound, unread', async () => {
+    const held = createHeldPicture();
+    // NAMED .png AND READ IN FULL: the bytes are a PDF's header, so only a type read from the bytes refuses it.
+    const notAPicture = libraryPicking('a picture.png', 4, Uint8Array.of(0x25, 0x50, 0x44, 0x46)).surface;
+    const refused = await harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
+      library: { ...notAPicture, held },
+    }).handlers['signature.pickPicture']({});
+    expect(refused.ok ? refused.value : undefined).toStrictEqual({ kind: 'unreadable' });
+    const large = libraryPicking('huge.png', MAX_IMAGE_BYTES + 1);
+    const tooLarge = await harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
+      library: { ...large.surface, held },
+    }).handlers['signature.pickPicture']({});
+    expect(tooLarge.ok ? tooLarge.value : undefined).toStrictEqual({ kind: 'too-large', limitBytes: MAX_IMAGE_BYTES });
+    expect(large.read).toStrictEqual([]);
+    // NOTHING HELD by either refusal, so no later placement can find a picture the person was told was refused.
+    expect(held.held(asFileHandle('anything'))).toBeUndefined();
   });
 
   it('FORWARDS a kept picture’s id to the placement — the delegate that could drop it, asserted at the handler', async () => {

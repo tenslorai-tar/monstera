@@ -76,6 +76,8 @@ function clientFor(lines: ReadonlyMap<DocId, string>): { client: ContractClient;
     if (id === 'document.viewModel') {
       return Promise.resolve(ok({ version: VERSION, pageCount: 1, rotations: [0] }));
     }
+    // NO ENGINE BOXES here: the words are placed by the estimate, which is this surface's concern only in that a mark exists.
+    if (id === 'document.pageWordBoxes') return Promise.resolve(ok({ version: VERSION, lines: [], truncated: false }));
     if (id !== 'document.pageTextLayer') throw new Error(`unexpected channel ${id}`);
     read.push(docId);
     const text = lines.get(docId) ?? '';

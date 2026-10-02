@@ -9,6 +9,7 @@ export { commandSpecs, declaredSpecs, localMupdfExecution } from './commandSpecs
 export { readPageGeometry } from './pageGeometry.js';
 export { readPageText, readPageTextJson, type PageTextResult } from './pageText.js';
 export { readPageFills } from './pageFills.js';
+export { readPageWordBoxes } from './wordBoxes.js';
 export {
   applyAddLink,
   captureAddLink,

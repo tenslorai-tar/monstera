@@ -4,7 +4,7 @@ import type { MessageKey } from '@monstera/shared';
 import { X } from 'lucide-react';
 import { type ReactElement, type ReactNode, type RefObject, useId, useRef } from 'react';
 
-import { DIALOG_CANCEL } from '../messages/en.js';
+import { CLOSE_LABEL, DIALOG_CANCEL, DIALOG_OK } from '../messages/en.js';
 import { Button } from './Button.js';
 import { IconButton } from './IconButton.js';
 
@@ -236,20 +236,39 @@ export function DialogChoices<Value extends string>({
  */
 export function DialogFooter({
   children,
-  ownDismissal = false,
+  dismissal = 'cancel',
 }: {
-  readonly children: ReactNode;
+  readonly children?: ReactNode;
   /**
-   * The body's own buttons include the answer a dismissal is — *Later*, *Understood* — which the command records, so a
-   * Cancel beside it would be a second way to say the same thing that records nothing. Then the footer draws no Cancel;
-   * the header's close still dismisses.
+   * What the footer's closing button says, which is decided by what the dialog IS (the owner, 2026-10-02):
+   *
+   * - `cancel` — it asks something, and closing declines;
+   * - `ok` — a message, which asks nothing: its one button acknowledges;
+   * - `close` — a report or a window of facts: its one button puts it away;
+   * - `own` — the body's own buttons include the answer a dismissal is (*Skip*, *I understand*), which the command
+   *   records, so a Cancel beside it would be a second way to say the same thing that records nothing. The footer
+   *   draws none; the header's close still dismisses.
+   *
+   * With no `children` the closing button is the dialog's only action, so it is the primary one.
    */
-  readonly ownDismissal?: boolean;
+  readonly dismissal?: 'cancel' | 'ok' | 'close' | 'own';
 }): ReactElement {
+  const only = children === undefined;
   return (
     <div className="m-dialog-footer">
-      {ownDismissal ? null : <BaseDialog.Close nativeButton render={<Button label={DIALOG_CANCEL} />} />}
+      {dismissal === 'own' ? null : (
+        <BaseDialog.Close
+          nativeButton
+          render={<Button label={DISMISSAL[dismissal]} {...(only ? { variant: 'primary' as const } : {})} />}
+        />
+      )}
       {children}
     </div>
   );
 }
+
+const DISMISSAL: Readonly<Record<'cancel' | 'ok' | 'close', MessageKey>> = {
+  cancel: DIALOG_CANCEL,
+  ok: DIALOG_OK,
+  close: CLOSE_LABEL,
+};

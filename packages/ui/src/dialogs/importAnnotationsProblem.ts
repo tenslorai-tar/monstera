@@ -14,6 +14,7 @@ export const IMPORT_ANNOTATIONS_PROBLEM_DIALOG_ID = 'dialog.import-annotations-p
 export const IMPORT_ANNOTATIONS_PROBLEM_DIALOG = declareDialog({
   id: IMPORT_ANNOTATIONS_PROBLEM_DIALOG_ID,
   title: IMPORT_ANNOTATIONS_PROBLEM_TITLE,
+  informs: 'message',
   props: z.discriminatedUnion('reason', [
     z.object({ reason: z.literal('unreadable') }),
     z.object({ reason: z.literal('too-large'), limitBytes: z.number().int().positive() }),

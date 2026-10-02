@@ -64,6 +64,13 @@ export interface DialogEntry<
    */
   readonly result?: Result | undefined;
   /**
+   * What a dialog with no {@link result} IS, which decides its one button (the owner, 2026-10-02): a `message` ends in
+   * *OK*, a `report` in *Close*. The host draws that footer after the body, so a body that asks nothing has no
+   * dismissal of its own to forget. {@link declareDialog} requires it exactly when `result` is absent and refuses it
+   * otherwise, so an informational dialog without a footer, or a question with a stray one, does not compile.
+   */
+  readonly informs?: 'message' | 'report' | undefined;
+  /**
    * The lazily-loaded body. `<Dialog>` supplies the chrome.
    *
    * Its props are the schema's output **plus `resolve`**, which is deliberately
@@ -137,7 +144,7 @@ export interface DialogAnswering<Result> {
 export function declareDialog<
   Schema extends z.ZodType<object>,
   Result extends z.ZodType = z.ZodNever,
->(entry: Omit<DialogEntry<Schema, Result>, 'mount'>): DialogEntry<Schema, Result> {
+>(entry: Omit<DialogEntry<Schema, Result>, 'mount' | 'informs'> & Informs<Result>): DialogEntry<Schema, Result> {
   return {
     ...entry,
     mount: (props, resolve, update) => {
@@ -172,6 +179,14 @@ export function declareDialog<
   };
 }
 
+/**
+ * `informs` is REQUIRED for a dialog that cannot answer and ABSENT for one that can. Tuple-wrapped so a union `Result`
+ * is not distributed: the question is whether the schema is `never`, not whether some member of it is.
+ */
+type Informs<Result extends z.ZodType> = [Result] extends [z.ZodNever]
+  ? { readonly informs: 'message' | 'report' }
+  : { readonly informs?: never };
+
 /** What an open call was refused for. */
 export class DialogPropsRejected extends Error {
   override readonly name = 'DialogPropsRejected';
@@ -204,7 +219,7 @@ export class DialogPropsRejected extends Error {
  * `declareDialog` built where both types were still in scope. So the property
  * that could be lost here is one nothing here uses.
  */
-export type RegisteredDialog = Pick<DialogEntry, 'id' | 'title' | 'mount'> & {
+export type RegisteredDialog = Pick<DialogEntry, 'id' | 'title' | 'mount' | 'informs'> & {
   readonly props: z.ZodType;
   readonly result?: z.ZodType | undefined;
 };

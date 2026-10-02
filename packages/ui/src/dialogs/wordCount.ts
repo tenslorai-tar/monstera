@@ -28,6 +28,7 @@ export const WORD_COUNT_DIALOG_ID = 'dialog.wordCount';
 export const WORD_COUNT_DIALOG = declareDialog({
   id: WORD_COUNT_DIALOG_ID,
   title: WORD_COUNT_TITLE,
+  informs: 'report',
   props: z.object({
     words: z.number().int().nonnegative(),
     characters: z.number().int().nonnegative(),

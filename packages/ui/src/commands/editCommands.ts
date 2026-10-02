@@ -1,6 +1,6 @@
 import type { WindowEditAction } from '@monstera/contract';
 
-import { EDIT_COPY_TITLE, EDIT_CUT_TITLE, EDIT_PASTE_TITLE, EDIT_SELECT_ALL_TITLE } from '../messages/en.js';
+import { EDIT_COPY_TITLE, EDIT_CUT_TITLE, EDIT_PASTE_TITLE, EDIT_SELECT_ALL_TITLE, GROUP_TEXT } from '../messages/en.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
 
 /**
@@ -88,7 +88,12 @@ export function editCommands(deps: EditDeps): readonly UiCommand[] {
     title: EDIT_COPY_TITLE,
     icon: 'Copy',
     shortcut: 'Ctrl+C',
-    placements: [{ surface: 'menu-bar', menu: 'edit', group: 1, order: 20 }],
+    placements: [
+      { surface: 'menu-bar', menu: 'edit', group: 1, order: 20 },
+      // AND EDIT › TEXT, D4's *select and copy*: the one Copy, which copies the page's selected text when that is what
+      // is selected — so the ribbon and the menu offer the same action under the same name, once each.
+      { surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 50 },
+    ],
     when: (context) => {
       const field = deps.field();
       if (field !== undefined) return selectsText(field);

@@ -43,6 +43,7 @@ export const SIGN_PROBLEMS = SIGN_REFUSALS;
 export const SIGN_PROBLEM_DIALOG = declareDialog({
   id: SIGN_PROBLEM_DIALOG_ID,
   title: SIGN_PROBLEM_TITLE,
+  informs: 'message',
   props: z.object({
     reason: z.enum(SIGN_PROBLEMS),
   }),

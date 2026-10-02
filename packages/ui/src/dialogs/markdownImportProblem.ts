@@ -85,6 +85,7 @@ export type MarkdownImportProblem = z.infer<typeof markdownImportProblemSchema>;
 export const MARKDOWN_IMPORT_PROBLEM_DIALOG = declareDialog({
   id: MARKDOWN_IMPORT_PROBLEM_DIALOG_ID,
   title: MARKDOWN_IMPORT_PROBLEM_TITLE,
+  informs: 'message',
   props: markdownImportProblemSchema,
   component: lazy(() => import('./MarkdownImportProblemBody.js')),
 });

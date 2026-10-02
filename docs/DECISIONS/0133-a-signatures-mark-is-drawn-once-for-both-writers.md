@@ -122,3 +122,27 @@ corrected here rather than edited:
 - Decision 3's *"bounded and typed by its bytes"*: main routes a picked picture by its file's extension
   (`imageMediaType`), and the decoder is what validates the bytes, as for *Place image*. Only the engine and the library
   read the picture's type from its bytes.
+
+## Correction, 2026-10-02 — an uploaded picture is picked in the dialog and previewed (supersedes Decision 5)
+
+Decision 5 left the question to the owner, and the owner answered it (round 4, answer e): *Signature › Upload previews
+the picture before Use Signature*. Decision 5's route stays for *Sign with certificate*, whose picture is still picked
+after the click; for the plain Signature it is superseded:
+
+- **Upload's own button picks.** The body answers `{ upload: 'pick' }` and its opener calls a new channel,
+  `signature.pickPicture`. Main runs the picker, refuses a file past `MAX_IMAGE_BYTES` before reading it, reads it
+  bounded, and types it by its bytes with `pictureTypeOf` (the library's resolver, B3a), so a file named `.png` that is
+  not a picture is refused here rather than at the decoder after the click.
+- **Main holds what it read, not the path.** The bytes are kept in one slot under a handle minted by the capability
+  registry, and the channel answers the handle, the file's own name, the type and the bytes. The opener shows them as a
+  `blob:` URL and asks again with the picture in the props, as removing a kept signature already asks again, because a
+  dialog's props are fixed while it is open. Holding the bytes rather than re-reading the path at the click is what makes
+  the preview true: a file changed between the two would otherwise place something the person never saw.
+- **Use Signature answers `{ kind: 'image', picked }`.** `#markFor` takes the held bytes for that handle; a handle not
+  held, or held for an earlier pick, is `absent`, never a picker opened in its place. The slot holds one picture and is
+  emptied when the mark is placed or a new picture is picked, so the bytes resident in main are bounded by one picture.
+- **Save for reuse is unchanged** (the owner's answer 2 of round 3): a held picture is kept, at the library's own bound,
+  only once it is placed and only when ticked.
+
+The renderer receiving a picture's bytes is not the rule against document bytes: a kept picture already reaches the
+chooser this way (`library.picture`), and a picture the person just picked is theirs, not the document's.

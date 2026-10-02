@@ -170,6 +170,7 @@ describe('DialogRegistry', () => {
     id: 'dialog.rename',
     title: messageKey('dialog.rename.title'),
     props: z.object({ name: z.string().min(1) }),
+    informs: 'message',
     // The component is never mounted here; these cases are about the schema
     // gate, which is the half that runs before anything renders.
     component: null as never,
@@ -187,6 +188,28 @@ describe('DialogRegistry', () => {
     expect(registry.openWith('dialog.rename', { name: 'chapter one' }).props).toStrictEqual({
       name: 'chapter one',
     });
+  });
+
+  it('a dialog that cannot answer MUST say what it is, and one that can MUST NOT (the one-button footer)', () => {
+    // The assertion is the compiler's: each `@ts-expect-error` turns into an error of its own the day the line it
+    // guards compiles, so a declaration that drops the requirement goes red in `npm run typecheck`.
+    // @ts-expect-error — informational, and says neither `message` nor `report`
+    const silent = declareDialog({
+      id: 'dialog.silent',
+      title: messageKey('dialog.silent.title'),
+      props: z.object({}),
+      component: null as never,
+    });
+    const stray = declareDialog({
+      id: 'dialog.stray',
+      title: messageKey('dialog.stray.title'),
+      props: z.object({}),
+      result: z.literal('yes'),
+      // @ts-expect-error — it answers, so it has its own footer and no host one
+      informs: 'message',
+      component: null as never,
+    });
+    expect([silent.id, stray.informs]).toStrictEqual(['dialog.silent', 'message']);
   });
 
   it('refuses an unregistered id rather than opening nothing', () => {

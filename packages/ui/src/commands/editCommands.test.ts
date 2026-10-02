@@ -2,6 +2,7 @@
 import { asDocId, asDocVersion, messageKey } from '@monstera/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { GROUP_TEXT } from '../messages/en.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
 import { type EditDeps, editCommands } from './editCommands.js';
 
@@ -137,7 +138,11 @@ describe('the Edit menu’s verbs, on the PAGE', () => {
     ]);
     expect(['edit.cut', 'edit.copy', 'edit.paste', 'edit.select-all'].map((id) => byId(id).placements)).toStrictEqual([
       [{ surface: 'menu-bar', menu: 'edit', group: 1, order: 10 }],
-      [{ surface: 'menu-bar', menu: 'edit', group: 1, order: 20 }],
+      // AND EDIT › TEXT, where Copy is the one Copy since item 5b (the menu lists it once).
+      [
+        { surface: 'menu-bar', menu: 'edit', group: 1, order: 20 },
+        { surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 50 },
+      ],
       [{ surface: 'menu-bar', menu: 'edit', group: 1, order: 30 }],
       [{ surface: 'menu-bar', menu: 'edit', group: 1, order: 40 }],
     ]);

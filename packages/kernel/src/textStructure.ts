@@ -229,6 +229,14 @@ export function stextOptionsFor(read: PageTextRead): string {
 export const PICTURE_READ_OPTIONS: string = STEXT_OPTIONS.preserveImages;
 
 /**
+ * The word boxes' read (ADR-0137's correction): the shared set WITHOUT segmentation, for the picture read's reason —
+ * MuPDF's walk does not enter a structure block, and segmentation puts every text block inside one (measured
+ * 2026-10-02, 0 lines walked over the shared read, 1 of 1 over this). Segmentation regroups blocks and does not make
+ * lines, so the lines are the shared read's lines in another order, paired back by their text and box.
+ */
+export const WORD_BOX_READ_OPTIONS: string = STEXT_OPTIONS.preserveImages;
+
+/**
  * A rectangle in the page's **display space**, as two corners rather than a size.
  *
  * ## This said `FitzRect` and `FitzPoint` until 2026-09-08, and that was wrong

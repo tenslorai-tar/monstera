@@ -1,6 +1,7 @@
-import { asDocId, asDocVersion, messageKey } from '@monstera/shared';
+import { type MessageKey, asDocId, asDocVersion, messageKey } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
+import { COPY_SELECTION_TITLE, EDIT_COPY_TITLE, EDIT_CUT_TITLE } from '../messages/en.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from '../registries/commands.js';
 import { SECTION_IDS, type Placement } from '../registries/placement.js';
 import {
@@ -472,6 +473,39 @@ describe('menuBarModel (ADR-0107)', () => {
       command('e.undo', [{ surface: 'menu-bar', menu: 'edit', group: 0, order: 10 }]),
     ]);
     expect(itemIds(menuOf(registry, 'edit'))).toStrictEqual([['e.undo', 'e.redo'], ['e.cut'], ['e.section']]);
+  });
+
+  it('a command on BOTH halves of Edit is listed ONCE, where the application groups put it (item 5b)', () => {
+    const registry = new CommandRegistry([
+      command('e.copy', [
+        { surface: 'menu-bar', menu: 'edit', group: 1, order: 20 },
+        { surface: 'ribbon', section: 'edit', group: MARKUP, order: 50 },
+      ]),
+      command('e.section', [{ surface: 'ribbon', section: 'edit', group: MARKUP, order: 10 }]),
+    ]);
+    expect(itemIds(menuOf(registry, 'edit'))).toStrictEqual([['e.copy'], ['e.section']]);
+  });
+
+  it('the REGISTRY refuses two commands one menu would draw under the SAME WORDS — two keys that both say Copy', () => {
+    // THE DEFECT ITSELF: `edit.copy` and `text.copy` were two keys whose English is the same word, so a check by key
+    // would have passed them. CONTROL: the same two words in DIFFERENT menus, and different words in one menu, stand.
+    const copy = (id: string, title: MessageKey, placement: Placement): UiCommand => command(id, [placement], { title });
+    expect(
+      () =>
+        new CommandRegistry([
+          copy('m.copy', EDIT_COPY_TITLE, { surface: 'menu-bar', menu: 'edit', group: 1, order: 20 }),
+          copy('t.copy', COPY_SELECTION_TITLE, { surface: 'ribbon', section: 'edit', group: MARKUP, order: 50 }),
+        ]),
+    ).toThrow(/"m\.copy" and "t\.copy" are both "Copy" in the edit menu/u);
+    expect(
+      () =>
+        new CommandRegistry([
+          copy('m.copy', EDIT_COPY_TITLE, { surface: 'menu-bar', menu: 'edit', group: 1, order: 20 }),
+          copy('t.copy', COPY_SELECTION_TITLE, { surface: 'context-menu', context: 'selection', order: 10 }),
+          copy('o.copy', COPY_SELECTION_TITLE, { surface: 'ribbon', section: 'organize', group: MARKUP, order: 1 }),
+          copy('m.cut', EDIT_CUT_TITLE, { surface: 'menu-bar', menu: 'edit', group: 1, order: 10 }),
+        ]),
+    ).not.toThrow();
   });
 
   it('an application group takes its CAPTION from its placements, and a group without one has none', () => {

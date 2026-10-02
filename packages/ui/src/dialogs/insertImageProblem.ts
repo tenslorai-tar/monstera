@@ -39,6 +39,7 @@ export const INSERT_IMAGE_PROBLEM_DIALOG_ID = 'dialog.insert-image-problem';
 export const INSERT_IMAGE_PROBLEM_DIALOG = declareDialog({
   id: INSERT_IMAGE_PROBLEM_DIALOG_ID,
   title: INSERT_IMAGE_PROBLEM_TITLE,
+  informs: 'message',
   props: z.discriminatedUnion('reason', [
     z.object({ reason: z.literal('unreadable') }),
     z.object({ reason: z.literal('too-large'), limitBytes: z.number().int().positive() }),

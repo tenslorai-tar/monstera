@@ -3,7 +3,7 @@ import { Suspense, useCallback, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
 import { ErrorBoundary } from '../ErrorBoundary.js';
-import { Dialog } from '../primitives/Dialog.js';
+import { Dialog, DialogFooter } from '../primitives/Dialog.js';
 import type { DialogRegistry } from '../registries/dialogs.js';
 import { ViewProblem } from './ViewProblem.js';
 
@@ -244,7 +244,12 @@ export function DialogHost({
           2026-09-21, a chunk the build had replaced. Keyed on the open dialog, so the
           next one starts clean. */}
       <ErrorBoundary key={open.id} fallback={() => <ViewProblem scope="dialog" />}>
-        <Suspense fallback={pending}>{entry.mount(open.props, onResolve, onUpdate)}</Suspense>
+        <Suspense fallback={pending}>
+          {entry.mount(open.props, onResolve, onUpdate)}
+          {/* A dialog that asks nothing ends in its one button, from its declaration (`informs`). Inside the
+              Suspense, so the button never stands under a body that has not loaded. */}
+          {entry.informs === undefined ? null : <DialogFooter dismissal={entry.informs === 'message' ? 'ok' : 'close'} />}
+        </Suspense>
       </ErrorBoundary>
     </Dialog>
   );

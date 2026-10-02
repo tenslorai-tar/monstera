@@ -255,7 +255,8 @@ export interface SignatureBox {
 }
 
 /**
- * Where a mark goes, as the page is seen.
+ * Where a mark goes, as the page is seen — THE ONE UPRIGHT BOX for a written stamp appearance: the signature's mark,
+ * and *Place image*'s picture since 2026-10-02 (`applyPlaceImage`), which drew on its side on a turned page without it.
  *
  * **The rectangle is ordered here**: a placement runs whichever way the pointer went and the schema leaves ordering to
  * the kernel. One with no area is refused rather than drawn, because a signature nobody can see placed as a visible one

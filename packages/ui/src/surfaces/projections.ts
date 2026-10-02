@@ -2,9 +2,11 @@ import type { MessageKey } from '@monstera/shared';
 
 import type { CommandContext, CommandRegistry, UiCommand } from '../registries/commands.js';
 import {
+  MENU_BAR_SECTIONS,
   SECTION_IDS,
   type MenuBarMenu,
   type MenuBarPlacement,
+  type MenuId,
   type MenuContext,
   type Placement,
   type SectionId,
@@ -557,15 +559,11 @@ export interface MenuBarGroup {
 /** One menu on the bar: an application menu, or a ribbon section's. */
 export interface MenuBarMenuModel {
   /** An application menu, or one of the sections that is a menu — never Home, which is not. */
-  readonly id: MenuBarMenu | (typeof MENU_BAR_SECTIONS)[number];
+  readonly id: MenuId;
   readonly groups: readonly MenuBarGroup[];
 }
 
-/**
- * The section menus, in v5-14's order, which is the prototype's and not the rail's (ADR-0107). Home is not a menu: its
- * tools are placed on the application menus.
- */
-export const MENU_BAR_SECTIONS = ['organize', 'comment', 'forms', 'review', 'protect', 'tools'] as const satisfies readonly SectionId[];
+export { MENU_BAR_SECTIONS };
 
 /**
  * THE MENU BAR (§7, §10.3, [ADR-0107](../../../../docs/DECISIONS/0107-the-menu-bar-is-a-projection.md)): *File · Edit ·
@@ -613,9 +611,26 @@ export function menuBarModel(registry: CommandRegistry, context: CommandContext)
       items: group.entries.map((entry) => item(entry.command)),
     }));
 
+  // A COMMAND IS IN A MENU ONCE: the Edit menu is its application groups and then the Edit section, and a command in
+  // both (Copy, on the menu and on Edit › Text) is listed where the application groups put it. Groups the rule
+  // empties are dropped rather than drawn as a caption over nothing.
+  const once = (groups: readonly MenuBarGroup[]): MenuBarGroup[] => {
+    const seen = new Set<string>();
+    return groups
+      .map((group) => ({
+        caption: group.caption,
+        items: group.items.filter((each) => {
+          if (seen.has(each.command.id)) return false;
+          seen.add(each.command.id);
+          return true;
+        }),
+      }))
+      .filter((group) => group.items.length > 0);
+  };
+
   const menus: MenuBarMenuModel[] = [
     { id: 'file', groups: applicationGroups('file') },
-    { id: 'edit', groups: [...applicationGroups('edit'), ...sectionGroups('edit')] },
+    { id: 'edit', groups: once([...applicationGroups('edit'), ...sectionGroups('edit')]) },
     { id: 'view', groups: applicationGroups('view') },
     ...MENU_BAR_SECTIONS.map((section) => ({ id: section, groups: sectionGroups(section) })),
     { id: 'window', groups: applicationGroups('window') },

@@ -68,6 +68,8 @@ const MUPDF_READS = [
   // A PAGE'S FILLS ARE ONE OF MuPDF'S READS: drawing the page parses it, and a table cell's
   // background is joined from them in main (`cellFills.ts`).
   'engine/page-fills',
+  // A PAGE'S WORD BOXES ARE ONE OF MuPDF'S READS: its characters' quads, walked from the structured text (ADR-0137).
+  'engine/word-boxes',
   // RECOGNITION IS ONE OF MuPDF'S READS, and that is §3's matrix rather than a
   // filing choice: it consumes a bitmap this engine produced, in the process
   // that produced it. A second engine owes none of it.
@@ -122,6 +124,8 @@ const OTHER = {
   // not to an engine, and a fixture inventing a third arrangement would be
   // testing something the design says cannot exist.
   wire: byteImageWire,
+  // THE ROUTE MuPDF'S OWN CALL DOES NOT TAKE, for `wire`'s reason: a factory that ignored it would pass with `frame`.
+  commandRoute: 'file',
 } as const;
 
 describe('the core channel set', () => {
@@ -164,6 +168,19 @@ describe('the core channel set', () => {
         .success,
       'a capture must not carry `into`: it reads prior state and produces no bytes',
     ).toBe(false);
+  });
+
+  it('takes the command’s route from the engine’s declaration, on apply and capture both (ADR-0138)', () => {
+    const declared = coreEngineChannels(OTHER);
+    expect([declared['engine/apply'].request, declared['engine/capture'].request]).toStrictEqual(['file', 'file']);
+    // A CAPTURE ROUTED BOTH WAYS keeps the one failure its answer route introduces.
+    expect(declared['engine/capture'].answer).toBe('file');
+    expect(declared['engine/capture'].failures).toContain('answer-too-large');
+    // AND THE OTHER DECLARATION: MuPDF's commands stay in the frame, so the route is read, not fixed.
+    expect([engineChannels['engine/apply'].request, engineChannels['engine/capture'].request]).toStrictEqual([
+      'frame',
+      'frame',
+    ]);
   });
 
   it('declares the engine’s own transfer failure on invert, and MuPDF’s does not', () => {

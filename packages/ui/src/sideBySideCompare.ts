@@ -12,6 +12,7 @@ import {
   alignPages,
   comparePair,
   needsPicture,
+  pairWordBoxes,
   pdfPoint,
   signPage,
   toViewport,
@@ -169,11 +170,17 @@ export async function compareSides(
     if (before.kind !== 'read') return { kind: before.kind };
     if (after.kind !== 'read') return { kind: after.kind };
     if (before.truncated || after.truncated) clipped += 1;
+    // THE ENGINE'S WORD BOXES (ADR-0137), read only for a pair whose text differs: a page whose lines are the same has
+    // no changed word to mark, and the read is a host round trip per page.
+    const changedText = before.lines.length !== after.lines.length || before.lines.some((line, at) => line.text !== after.lines[at]?.text);
+    const [beforeLines, afterLines] = changedText
+      ? await Promise.all([withWords(client, left, entry.left, before.lines), withWords(client, right, entry.right, after.lines)])
+      : [before.lines, after.lines];
     const [leftDrawn, rightDrawn] = await Promise.all([left.draw(entry.left, signal), right.draw(entry.right, signal)]);
     if (aborted()) return { kind: 'cancelled' };
     const changes = comparePair(
-      pageOf(before.lines, leftMarks.get(entry.left), leftDrawn),
-      pageOf(after.lines, rightMarks.get(entry.right), rightDrawn),
+      pageOf(beforeLines, leftMarks.get(entry.left), leftDrawn),
+      pageOf(afterLines, rightMarks.get(entry.right), rightDrawn),
     );
     for (const change of changes) add({ kind: change.kind, left: entry.left, right: entry.right, change });
     step();
@@ -232,6 +239,22 @@ async function linesOf(client: ContractClient, side: CompareSide, page: number):
   // A MOVED VERSION STOPS THE WALK, a refused read refuses it: the second says nothing about how the documents differ.
   if (answer.value.version !== side.version) return { kind: 'moved' };
   return { kind: 'read', lines: answer.value.lines, truncated: answer.value.truncated };
+}
+
+/**
+ * The page's lines with the engine's word boxes paired in by the shared rule (`pairWordBoxes`). A refused read, or one
+ * of another version, leaves the lines as they were, and their words are placed by the estimate: the comparison is
+ * never stopped for want of a box.
+ */
+async function withWords(
+  client: ContractClient,
+  side: CompareSide,
+  page: number,
+  lines: readonly CompareLine[],
+): Promise<readonly CompareLine[]> {
+  const answer = await client['document.pageWordBoxes']({ docId: side.docId, page });
+  if (!answer.ok || answer.value.version !== side.version) return lines;
+  return pairWordBoxes(lines, answer.value.lines);
 }
 
 /** The page's size in display space at scale 1: the crop box, turned. */

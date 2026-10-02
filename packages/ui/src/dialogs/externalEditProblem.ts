@@ -25,6 +25,7 @@ export const EXTERNAL_EDIT_PROBLEM_DIALOG_ID = 'dialog.external-edit-problem';
 export const EXTERNAL_EDIT_PROBLEM_DIALOG = declareDialog({
   id: EXTERNAL_EDIT_PROBLEM_DIALOG_ID,
   title: EXTERNAL_EDIT_PROBLEM_TITLE,
+  informs: 'message',
   props: z.object({ reason: z.enum(EXTERNAL_EDIT_PROBLEMS) }),
   component: lazy(() => import('./ExternalEditProblemBody.js')),
 });

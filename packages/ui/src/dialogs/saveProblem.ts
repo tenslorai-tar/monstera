@@ -38,6 +38,7 @@ export const SAVE_PROBLEM_DIALOG_ID = 'dialog.save-problem';
 export const SAVE_PROBLEM_DIALOG = declareDialog({
   id: SAVE_PROBLEM_DIALOG_ID,
   title: SAVE_PROBLEM_TITLE,
+  informs: 'message',
   props: z.object({
     outcome: z.enum([
       'contested',
