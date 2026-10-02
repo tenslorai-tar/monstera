@@ -61,7 +61,9 @@ export function openAssistantCommand(deps: { readonly open: () => void }): UiCom
  * A command names the scope — the words selected, or the note's text — and, for all but *Ask
  * AI*, the question. `App`'s one `ask` reveals the panel and hands it the request, so the
  * conversation, the *Asking about* line and the provider stay the panel's. *Ask AI* points the
- * panel and asks nothing: the person types the question.
+ * panel and asks nothing: it QUOTES the selection in the message box with the cursor after it, so
+ * the person types the question about the words they can see (the owner, 2 October). *Explain*,
+ * *Summarise* and *Translate* still send at once.
  *
  * ## The selection is read when the item is chosen
  *
@@ -98,10 +100,8 @@ export function assistantSelectionCommands(deps: AssistantCommandDeps): readonly
       if (context.docId === undefined || selection === undefined) return;
       // CUT TO THE CHANNEL'S BOUND rather than refused there: a long selection is still a
       // question about its opening, and the window's line says what went.
-      deps.ask(
-        { scope: 'selection', docId: context.docId, page: selection.page, text: selection.text.slice(0, MAX_ASK_SELECTION) },
-        prompt,
-      );
+      const text = selection.text.slice(0, MAX_ASK_SELECTION);
+      deps.ask({ scope: 'selection', docId: context.docId, page: selection.page, text }, prompt ?? { quote: text });
     },
   }));
 }

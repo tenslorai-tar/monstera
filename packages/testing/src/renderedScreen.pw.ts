@@ -796,6 +796,41 @@ test('SELECTED TEXT opens the selected-text menu above the page’s, in the owne
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(selected);
 });
 
+test('right-click › ASK AI quotes the selected words in the assistant’s box, the cursor after them, and sends nothing', async ({ page }) => {
+  // THE WHOLE PATH in the production build: the command's quote, `App`'s request and the panel's box. The unit cases
+  // hold each half; only this one crosses the composition between them.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const bytes = await threePagePdf();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000e4');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'three.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    pageLines: [['Quarterly totals for the north', 'Nothing further is owed']],
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const line = page.locator('[data-text-layer="0"] [data-text-line="0"]');
+  await expect(line).toHaveCount(1);
+  const box = await line.boundingBox();
+  if (box === null) throw new Error('the first line has no box');
+  await page.mouse.move(box.x + 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+  const selected = (await page.evaluate(() => document.getSelection()?.toString() ?? '')).trim();
+  expect(selected).not.toBe('');
+
+  await line.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } });
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Ask AI' }).click();
+  const draft = page.getByLabel('Ask about this document');
+  await expect(draft).toHaveValue(`“${selected}” `);
+  await expect(draft).toBeFocused();
+  const caret = await draft.evaluate((element: HTMLTextAreaElement) => [element.selectionStart, element.selectionEnd, element.value.length]);
+  expect(caret[0]).toBe(caret[2]);
+  expect(caret[1]).toBe(caret[2]);
+  await expect(page.locator('.m-assistant [data-choice-menu]').first()).toHaveText('Choose context: Selection');
+});
+
 test('a triple-click on a page’s LAST LINE still opens the selected-text menu, on that line', async ({
   page,
 }) => {

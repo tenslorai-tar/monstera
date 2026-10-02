@@ -74,6 +74,7 @@ import {
   ASSISTANT_NO_VISION,
   ASSISTANT_PROBLEM_PAGE_TOO_LARGE,
   ASSISTANT_PLACEHOLDER,
+  ASSISTANT_QUOTED,
   ASSISTANT_POST_REPLY,
   ASSISTANT_PROBLEM_REJECTED,
   ASSISTANT_PROBLEM_UNAUTHORISED,
@@ -414,6 +415,25 @@ export function AssistantPanel({
   const choose = (next: Scope): void => {
     setChosen({ scope: next, after: request?.serial ?? 0 });
   };
+
+  // *ASK AI* QUOTES THE SELECTION in the box, a space after it, for the person to finish (the owner, 2 October). Set
+  // while rendering, from the request, so it lands in the same frame as the panel that shows it; `quotedFrom` makes it
+  // once per request, and `handled` keeps a remount from writing it over what the person has typed since. The quote
+  // marks are a message, because they are a language's own. Nothing is sent, and the Context menu stays on Selection
+  // because the request is what points it (`requestedScope` above).
+  const composer = useRef<HTMLTextAreaElement>(null);
+  const [quotedFrom, setQuotedFrom] = useState<number | undefined>(undefined);
+  if (request?.quote !== undefined && request.serial !== handled && request.serial !== quotedFrom && request.about.docId === docId) {
+    setQuotedFrom(request.serial);
+    setDraft(`${i18n._(ASSISTANT_QUOTED, { text: request.quote })} `);
+  }
+  // THE CURSOR AFTER THE QUOTE, once the box holds it: focus alone puts it wherever the last edit left it.
+  useEffect(() => {
+    const box = composer.current;
+    if (quotedFrom === undefined || box === null) return;
+    box.focus();
+    box.setSelectionRange(box.value.length, box.value.length);
+  }, [quotedFrom]);
 
   // LEFT · RIGHT · BOTH, offered only when it can mean something (ADR-0089): a second document
   // on the right, and a scope that names a page or the document. A selection or a comment belongs
@@ -1035,6 +1055,7 @@ export function AssistantPanel({
 
       <div className="m-assistant__composer">
         <textarea
+          ref={composer}
           aria-describedby={hintId}
           aria-label={i18n._(ASSISTANT_COMPOSER_LABEL)}
           className="m-assistant__draft"

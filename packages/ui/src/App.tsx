@@ -1635,13 +1635,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   // open, and a marker it held reset on remount and replayed the last request.
   const [assistantHandled, setAssistantHandled] = useState<number | undefined>(undefined);
   const askAssistant = useCallback<AskAssistant>(
-    (about, prompt, replyTo) => {
+    (about, next, replyTo) => {
       settings.set(CONTEXT_PANEL_OPEN_SETTING.id, true);
       settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
       setAssistantRequest((last) => ({
         serial: (last?.serial ?? 0) + 1,
         about,
-        ...(prompt === undefined ? {} : { prompt }),
+        ...(next === undefined ? {} : typeof next === 'string' ? { prompt: next } : { quote: next.quote }),
         ...(replyTo === undefined ? {} : { replyTo }),
       }));
     },

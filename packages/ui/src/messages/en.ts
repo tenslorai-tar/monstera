@@ -1508,6 +1508,8 @@ export const ASSISTANT_SENT_RIGHT = messageKey('assistant.sent.right');
 export const ASSISTANT_CITATION_RIGHT = messageKey('assistant.citation.right');
 /** The Assistant's message box placeholder: one fixed line (the owner's decision, 2026-10-01). */
 export const ASSISTANT_PLACEHOLDER = messageKey('assistant.placeholder');
+/** *Ask AI* on a selection: the selected words quoted in the message box, for the person's question to follow. */
+export const ASSISTANT_QUOTED = messageKey('assistant.quoted');
 export const ASK_AI_SELECTION_TITLE = messageKey('command.ai.ask-selection');
 export const EXPLAIN_SELECTION_TITLE = messageKey('command.ai.explain-selection');
 export const SUMMARISE_SELECTION_TITLE = messageKey('command.ai.summarise-selection');
@@ -3562,6 +3564,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_SENT_LEFT]: 'Left: {sent}',
   [ASSISTANT_SENT_RIGHT]: 'Right: {sent}',
   [ASSISTANT_PLACEHOLDER]: 'Ask about this page…',
+  [ASSISTANT_QUOTED]: '“{text}”',
   [ASK_AI_SELECTION_TITLE]: 'Ask AI',
   [EXPLAIN_SELECTION_TITLE]: 'Explain',
   [SUMMARISE_SELECTION_TITLE]: 'Summarise',

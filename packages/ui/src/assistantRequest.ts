@@ -12,17 +12,30 @@ import type { DocVersion, MessageKey } from '@monstera/shared';
  * `serial` is what makes a second identical request a new one: *Explain* twice on the same
  * words is two asks, and a value compared by content would be one.
  */
-export interface AssistantRequest {
+export type AssistantRequest = {
   readonly serial: number;
   readonly about: AskAbout;
-  /**
-   * Asked at once when present, as a key the panel resolves — the question a person reads in
-   * their own conversation is in their language. Absent, the panel is pointed and waits.
-   */
-  readonly prompt?: MessageKey;
   /** The note an answer may be posted to as a reply — *Draft a reply* only. */
   readonly replyTo?: ReplyTarget;
-}
+} & (
+  | {
+      /**
+       * Asked at once when present, as a key the panel resolves — the question a person reads in
+       * their own conversation is in their language. Absent, the panel is pointed and waits.
+       */
+      readonly prompt?: MessageKey;
+      readonly quote?: never;
+    }
+  | {
+      /**
+       * Words the panel QUOTES in the message box, followed by a space and the cursor, so the person types their
+       * question after them (*Ask AI* on a selection, the owner's design of 2 October). Nothing is sent. Never beside a
+       * prompt: one request either asks or drafts, and the type cannot carry both.
+       */
+      readonly quote: string;
+      readonly prompt?: never;
+    }
+);
 
 /** A note, by the walk identity `replyToAnnotation` names it with (ADR-0041). */
 export interface ReplyTarget {
@@ -31,5 +44,8 @@ export interface ReplyTarget {
   readonly version: DocVersion;
 }
 
+/** What follows the pointing: a question asked at once, or words quoted in the box for the person to finish. */
+export type AssistantNext = MessageKey | { readonly quote: string };
+
 /** How a command asks — `App`'s one entry point, which also reveals the panel. */
-export type AskAssistant = (about: AskAbout, prompt?: MessageKey, replyTo?: ReplyTarget) => void;
+export type AskAssistant = (about: AskAbout, next?: AssistantNext, replyTo?: ReplyTarget) => void;

@@ -718,6 +718,32 @@ describe('the assistant about a document (ADR-0088)', () => {
     await closeChoices();
   });
 
+  const box = (): HTMLTextAreaElement => screen.getByLabelText('Ask about this document');
+  const QUOTING: AssistantRequest = {
+    serial: 1,
+    about: { scope: 'selection', docId: DOC_A, page: 2, text: 'the indemnity clause' },
+    quote: 'the indemnity clause',
+  };
+
+  it('ASK AI quotes the words in the box with a space and the cursor after them, sends nothing, and stays on Selection', async () => {
+    const { sent } = await drawn({ focused: focusedOn(), request: QUOTING });
+    const field = box();
+    expect(field.value).toBe('“the indemnity clause” ');
+    expect(document.activeElement).toBe(field);
+    expect([field.selectionStart, field.selectionEnd]).toStrictEqual([field.value.length, field.value.length]);
+    expect(sent.some((entry) => entry.id === 'ai.ask')).toBe(false);
+    expect(chosenIn('Context')).toBe('Selection');
+  });
+
+  it('CONTROL: a quote already handled is not written again when the panel remounts', async () => {
+    const { redraw } = await drawn({ focused: focusedOn(), request: QUOTING });
+    expect(box().value).toBe('“the indemnity clause” ');
+    // A REMOUNT under the host that keeps the handled serial, as `App` does when the panel closes and opens: the box
+    // starts empty, and a quote written again would put back words the person may have sent or deleted.
+    await redraw({ mount: 2 });
+    expect(box().value).toBe('');
+  });
+
   it('names a COMMENT as a comment in the menu, and asks with the comment scope', async () => {
     const request: AssistantRequest = {
       serial: 1,
