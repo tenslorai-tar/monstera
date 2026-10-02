@@ -892,6 +892,38 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-02 — The installed-app check on 0.1.9.0: two steps shown, three still a person's, one defect, one incident
+
+The owner's item: on the installed 0.1.9.0, on a copy of a corpus document, edit text and save, OCR a page, import a
+Word file, export to Word, attach a text file without sending, and confirm the engine hosts start contained — kept as
+a script to rerun after every install. It is `scripts/research/installedCheck.mjs`; the corpus document is the third
+in name order (the one row 303 reads), never the one whose name reads as a CV.
+
+**Shown on the installed build:**
+- **Edit text and save works**: the marker appended through *Edit text on the page*, committed with Escape and saved
+  with Ctrl+S, is in the saved file as pdftotext reads it. An edit is a PDFium host command, and a host's writer is
+  bound only after its containment verdict, so this is a contained PDFium host working; the run's shell log held
+  main's `package-data` line and no host failure.
+- **Importing a Word file works**: finished by hand through the two dialogs, the converted page drew in a new tab with
+  the file's text. **And it showed a defect, for the cloud agent: a console window titled with `x2t.exe`'s path opened
+  on screen while the converter ran** — a person importing an Office file sees a black window appear.
+
+**Not yet shown:** OCR, Export to Word and attaching a file. The first runs failed on the script, not the product: it
+looked commands up by prefixes that matched the wrong entries (*Recognise text* matched *Recognise text in a box*) or
+by titles the palette does not carry (*Edit text*, *Export to Word*). It now looks each up by its exact title and says
+what the palette held when one is missing. Its first way of answering file dialogs, Windows UI Automation from the
+script, did not work and sends input to the application by script, which the rule for driving it forbids; the script
+now opens each dialog, prints the path to type, and waits for the step's effect.
+
+**The incident, recorded so it is not repeated.** To bring the run's dialog forward, computer use was asked to activate
+*Monstera PDF Editor* by name. That opened a DIFFERENT installed program of the same name (v2.1.8, under
+`AppData\Local\Programs`), which reopened one of the owner's own documents; the click, a paste of a path and an Enter
+meant for the dialog may have reached it. Nothing was saved there; it was left open for the owner, untouched, and the
+GUI work stopped. The run's own instance was ended by its PID, its temporary folder removed. The script's header now
+says to reach a dialog only through the run's own window, never by naming the application.
+
+---
+
 ## 2026-10-02 — The GPU process's 9×: canvas memory kept for every page drawn, not the surface's lights, grain or blur
 
 The owner's item 4 (CCCCCCC-7), time-boxed to two hours, measure only. `scripts/research/appMemory.mjs` gains

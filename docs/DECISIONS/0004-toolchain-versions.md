@@ -252,3 +252,17 @@ test that must fake `DOMMatrix` or a window bridge just to exercise a save is
 evidence the boundary is wrong.* Until happy-dom was installed there was nothing
 to erode it with. Installing it created the capability, and a capability with a
 rule over it and no mechanism is what this project's record says gets spent.
+
+## Addition — 2026-10-02 — rcedit, a build-time tool
+
+| Package | Version | Licence | Scope |
+|---|---|---|---|
+| rcedit | 5.0.2 | MIT | devDependency, pinned exact; the packager's icon step (ADR-0123's 2026-10-02 correction) |
+
+The Electron organisation's tool, read from the registry on 2026-10-02, with one dependency tree
+(`cross-spawn-windows-exe` and its own, Apache-2.0 and MIT). It writes the brand's icon into
+`Monstera.exe`'s resources while packaging; nothing of it ships — the executable gains an icon, not code.
+
+**Not in `NOTICE`, by the owner's decision of 2026-10-02**: `generateNotice.mjs` lists what ships, and a
+build-time tool listed there would be as wrong as a shipped one left out. This table is where the project's
+build tools are recorded, so this is where rcedit is.
