@@ -4,7 +4,6 @@ import { type ReactElement, useEffect, useState } from 'react';
 
 import {
   CRASH_REPORT_ADDRESS_LABEL,
-  CRASH_REPORT_COPIED,
   CRASH_REPORT_COPY,
   CRASH_REPORT_DISMISS,
   CRASH_REPORT_FRAGMENTS,
@@ -12,7 +11,9 @@ import {
   CRASH_REPORT_SHARE,
   CRASH_REPORT_SHARE_FAILED,
 } from './messages/en.js';
+import { confirmCopied } from './commands/confirmWritten.js';
 import { Button } from './primitives/Button.js';
+import type { ShowToast } from './toasts.js';
 
 /**
  * Where a person may send a crash report by hand — the owner's address, 2026-09-26 (ADR-0109). **Not live**: shown
@@ -31,10 +32,16 @@ export const CRASH_REPORT_ADDRESS = 'report@monsterapdf.com';
  *
  * Like `RecentFiles`, it projects no command: one datum from main, with its own controls (ADR-0068's rule for data).
  */
-export function CrashReportOffer({ client }: { readonly client: ContractClient }): ReactElement | null {
+export function CrashReportOffer({
+  client,
+  toast,
+}: {
+  readonly client: ContractClient;
+  /** Where the copied address is confirmed: every copy's one confirmation (`confirmCopied`). */
+  readonly toast: ShowToast;
+}): ReactElement | null {
   const { _ } = useLingui();
   const [report, setReport] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const [problem, setProblem] = useState(false);
 
   useEffect(() => {
@@ -84,11 +91,10 @@ export function CrashReportOffer({ client }: { readonly client: ContractClient }
           onClick={() => {
             // THROUGH MAIN: the renderer holds no clipboard permission (§2), and *Copied* shows only when main says so.
             void client['window.copyText']({ text: CRASH_REPORT_ADDRESS }).then((answer) => {
-              if (answer.ok && answer.value.copied) setCopied(true);
+              if (answer.ok && answer.value.copied) confirmCopied({ toast });
             });
           }}
         />
-        <span aria-live="polite">{copied ? _(CRASH_REPORT_COPIED) : ''}</span>
       </p>
       <p className="m-crash-offer__warning">{_(CRASH_REPORT_FRAGMENTS)}</p>
       {problem ? (

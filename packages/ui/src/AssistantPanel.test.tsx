@@ -15,7 +15,7 @@ import {
   ASSISTANT_PROMPT_SUMMARISE_COMMENTS,
 } from './messages/en.js';
 import { activateCatalogue, i18n } from './i18n.js';
-import { EN } from './messages/en.js';
+import { EN, TOAST_COPIED } from './messages/en.js';
 import { SettingsRegistry } from './registries/settings.js';
 import { ALL_SETTINGS } from './settings/all.js';
 import { SettingsStore } from './settingsStore.js';
@@ -42,6 +42,8 @@ function recording(
   started = true,
   window: AskSent | null = null,
   alongside?: AskSent,
+  /** What main answers a copy: whether the text reached the clipboard. */
+  copied = true,
 ): {
   readonly client: ContractClient;
   readonly sent: { id: string; params: unknown }[];
@@ -72,7 +74,7 @@ function recording(
     }
     if (id === 'ai.stop') return Promise.resolve({ ok: true, value: { stopped: true } });
     if (id === 'ai.openSource') return Promise.resolve({ ok: true, value: { opened: true } });
-    if (id === 'window.copyText') return Promise.resolve({ ok: true, value: { copied: true } });
+    if (id === 'window.copyText') return Promise.resolve({ ok: true, value: { copied } });
     throw new Error(`this case does not answer ${id}`);
   });
   return { client, sent };
@@ -130,6 +132,7 @@ async function drawn(options: {
   readonly onNote?: AssistantPanelProps['onNote'];
   readonly onGoToBeside?: (page: number) => void;
   readonly settings?: SettingsStore;
+  readonly copied?: boolean;
 } = {}) {
   const wire = events();
   const settings = options.settings ?? new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
@@ -138,11 +141,17 @@ async function drawn(options: {
     options.started ?? true,
     options.window ?? null,
     options.alongside,
+    options.copied ?? true,
   );
+  // EVERY TOAST THE PANEL RAISES, in order: a copy's confirmation goes through the window's toast.
+  const toasts: unknown[][] = [];
   const panel = (props: Partial<AssistantPanelProps> & { readonly mount?: number }): ReactElement => (
     <Wrapped>
       <Host
         client={client}
+        toast={(...raised) => {
+          toasts.push(raised);
+        }}
         focused={options.focused}
         beside={options.beside}
         onGoToBeside={options.onGoToBeside}
@@ -164,6 +173,7 @@ async function drawn(options: {
   });
   return {
     sent,
+    toasts,
     push: wire.push,
     /** Redraws the panel with some props changed, as `App` would on a tab switch; a new `mount`
      * remounts the panel under a host that keeps the handled serial, as `App` does. */
@@ -1112,7 +1122,7 @@ describe('the chat extras (the owner’s design, 2026-09-15)', () => {
   it('COPY sends the answer to main’s clipboard and says Copied only when main says it went', async () => {
     // Through `window.copyText`, because the renderer holds no clipboard permission (§2): live, the
     // browser's own clipboard write was refused with the window focused.
-    const { sent } = await answered();
+    const { sent, toasts } = await answered();
     fireEvent.click(screen.getByRole('button', { name: 'Copy this answer' }));
     await act(async () => {
       await Promise.resolve();
@@ -1121,7 +1131,19 @@ describe('the chat extras (the owner’s design, 2026-09-15)', () => {
     expect(sent.filter((entry) => entry.id === 'window.copyText').map((entry) => entry.params)).toStrictEqual([
       { text: 'On 17 March.' },
     ]);
-    expect(screen.getByText('Copied')).toBeTruthy();
+    // EVERY COPY'S ONE CONFIRMATION, the window's toast.
+    expect(toasts).toStrictEqual([['done', TOAST_COPIED]]);
+  });
+
+  it('CONTROL: a copy main says did not reach the clipboard says nothing', async () => {
+    const { sent, toasts } = await answered({ copied: false });
+    fireEvent.click(screen.getByRole('button', { name: 'Copy this answer' }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(sent.some((entry) => entry.id === 'window.copyText')).toBe(true);
+    expect(toasts).toStrictEqual([]);
   });
 
   it('ADD AS NOTE hands the answer to the page, once, and then says it was added', async () => {

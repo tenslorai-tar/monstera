@@ -955,7 +955,6 @@ export const CRASH_REPORT_SHARE = messageKey('surface.crash-report.share');
 export const CRASH_REPORT_DISMISS = messageKey('surface.crash-report.dismiss');
 export const CRASH_REPORT_ADDRESS_LABEL = messageKey('surface.crash-report.address');
 export const CRASH_REPORT_COPY = messageKey('surface.crash-report.copy');
-export const CRASH_REPORT_COPIED = messageKey('surface.crash-report.copied');
 export const CRASH_REPORT_FRAGMENTS = messageKey('surface.crash-report.fragments');
 export const CRASH_REPORT_SHARE_FAILED = messageKey('surface.crash-report.share-failed');
 export const PRIVACY_RECENT_PREVIEWS_DESCRIPTION = messageKey('setting.privacy.recent-previews.description');
@@ -1313,6 +1312,7 @@ export const TOAST_COPY_SAVED = messageKey('toast.copy-saved');
 export const TOAST_SMALLER_COPY_SAVED = messageKey('toast.smaller-copy-saved');
 export const TOAST_PAGES_SAVED = messageKey('toast.pages-saved');
 export const TOAST_SHOW_IN_FOLDER = messageKey('toast.show-in-folder');
+export const TOAST_COPIED = messageKey('toast.copied');
 export const TOAST_FILES_SAVED = messageKey('toast.files-saved');
 export const TOAST_IMAGES_SAVED = messageKey('toast.images-saved');
 export const TOAST_TEXT_SAVED = messageKey('toast.text-saved');
@@ -1380,7 +1380,6 @@ export const ASSISTANT_EDIT = messageKey('assistant.edit');
 export const ASSISTANT_EDITING = messageKey('assistant.editing');
 export const ASSISTANT_EDIT_CANCEL = messageKey('assistant.edit-cancel');
 export const ASSISTANT_COPY = messageKey('assistant.copy');
-export const ASSISTANT_COPIED = messageKey('assistant.copied');
 export const ASSISTANT_ADD_NOTE = messageKey('assistant.add-note');
 export const ASSISTANT_NOTED = messageKey('assistant.noted');
 export const ASSISTANT_NEW_CHAT = messageKey('assistant.new-chat');
@@ -2908,7 +2907,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CRASH_REPORT_DISMISS]: 'Not now',
   [CRASH_REPORT_ADDRESS_LABEL]: 'Share it with your mail app, or send it to {address}.',
   [CRASH_REPORT_COPY]: 'Copy address',
-  [CRASH_REPORT_COPIED]: 'Copied',
   [CRASH_REPORT_FRAGMENTS]:
     'A report can contain parts of the documents that were open, and their file names. It leaves this computer only if you share it.',
   [CRASH_REPORT_SHARE_FAILED]: 'The Windows Share window couldn’t open, so nothing was shared.',
@@ -3393,6 +3391,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_SMALLER_COPY_SAVED]: 'Smaller copy saved',
   [TOAST_PAGES_SAVED]: 'Pages saved',
   [TOAST_SHOW_IN_FOLDER]: 'Show in folder',
+  [TOAST_COPIED]: 'Copied',
   [TOAST_FILES_SAVED]: 'Files saved',
   [TOAST_IMAGES_SAVED]: 'Images saved',
   [TOAST_TEXT_SAVED]: 'Text file saved',
@@ -3444,7 +3443,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_EDITING]: 'Editing your last question. Send replaces it and its answer.',
   [ASSISTANT_EDIT_CANCEL]: 'Cancel',
   [ASSISTANT_COPY]: 'Copy this answer',
-  [ASSISTANT_COPIED]: 'Copied',
   [ASSISTANT_ADD_NOTE]: 'Add this answer to the page as a note',
   [ASSISTANT_NOTED]: 'Added to the page as a note',
   [ASSISTANT_NEW_CHAT]: 'New chat',

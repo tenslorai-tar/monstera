@@ -2759,11 +2759,6 @@ optgroup {
   margin-block-start: var(--space-4);
 }
 
-.m-assistant__done {
-  color: var(--muted);
-  font-size: var(--font-chrome-11);
-}
-
 .m-assistant__caption {
   margin-inline-start: auto;
   color: var(--muted);

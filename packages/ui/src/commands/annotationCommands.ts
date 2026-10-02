@@ -139,6 +139,8 @@ import {
 import type { IconName } from '../primitives/icons.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
 import type { SectionId } from '../registries/placement.js';
+import type { ShowToast } from '../toasts.js';
+import { confirmCopied } from './confirmWritten.js';
 import { hasDocument } from './documentCommands.js';
 
 /**
@@ -759,6 +761,8 @@ export function copyAnnotationsCommand(
     readonly client: ContractClient;
     readonly ask: (id: string, props: unknown) => Promise<unknown>;
     readonly onCopied: (count: number) => void;
+    /** Where the copy is confirmed — every copy's one confirmation (`confirmCopied`). */
+    readonly toast: ShowToast;
   },
 ): UiCommand {
   return {
@@ -768,7 +772,9 @@ export function copyAnnotationsCommand(
     placements: [{ surface: 'context-menu', context: 'annotation', order: 40 }],
     when: () => deps.selection() !== undefined,
     run: async (context): Promise<void> => {
-      await copySelectedAnnotations(deps, context);
+      // CONFIRMED HERE AND NOT IN THE COPY ITSELF: *Cut* copies through `copySelectedAnnotations` too, and a cut says
+      // nothing about the clipboard — the marks leaving the page is its effect.
+      if (await copySelectedAnnotations(deps, context)) confirmCopied(deps);
     },
   };
 }

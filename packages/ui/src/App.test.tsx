@@ -3620,6 +3620,52 @@ describe('the menu bar, in the shell (ADR-0107)', () => {
       { id: 'window.edit', params: { action: 'cut' } },
     ]);
     expect(document.activeElement).toBe(field);
+    // A CUT IS NOT A COPY TO CONFIRM: the text leaving the field is its effect.
+    expect(screen.queryByText('Copied')).toBeNull();
+  });
+
+  /** Edit › Copy with text selected in the find field, main answering whether the copy ran. */
+  async function copiedInField(done: boolean): Promise<readonly Sent[]> {
+    const { client, sent } = answeringClient({ ...OPEN_DOCUMENT_ANSWERS, 'window.edit': { done } });
+    render(<App client={client} settings={freshSettings()} />);
+    await withDocumentOpen();
+    await openPanel('Search');
+    const field = screen.getByLabelText<HTMLInputElement>('Find on this page');
+    await act(async () => {
+      fireEvent.change(field, { target: { value: 'needle' } });
+      field.focus();
+      field.setSelectionRange(0, 6);
+      await Promise.resolve();
+    });
+    const before = sent.length;
+    const bar = screen.getByRole('menubar');
+    await act(async () => {
+      fireEvent.click(within(bar).getByRole('menuitem', { name: 'Edit' }));
+      await Promise.resolve();
+    });
+    // BY ITS COMMAND: the Edit menu also lists the page's own text Copy (disabled here), under the same name.
+    const item = screen.getAllByRole('menuitem', { name: 'Copy' }).find((each) => each.dataset['command'] === 'edit.copy');
+    if (item === undefined) throw new Error('Edit › Copy is not in the menu');
+    await act(async () => {
+      fireEvent.click(item);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    return sent.slice(before);
+  }
+
+  it('Edit › Copy says Copied once main says the copy ran — every copy’s one confirmation', async () => {
+    const sent = await copiedInField(true);
+    expect(sent.filter((call) => call.id === 'window.edit')).toStrictEqual([{ id: 'window.edit', params: { action: 'copy' } }]);
+    expect(screen.getByText('Copied')).toBeTruthy();
+  });
+
+  it('CONTROL: a copy main says did not run says nothing', async () => {
+    const sent = await copiedInField(false);
+    expect(sent.some((call) => call.id === 'window.edit')).toBe(true);
+    expect(screen.queryByText('Copied')).toBeNull();
   });
 });
 

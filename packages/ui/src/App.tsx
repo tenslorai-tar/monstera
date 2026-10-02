@@ -12,6 +12,7 @@ import {
   type MeasureScale,
   type DispatchableCommand,
   type UpdateStatus,
+  type WindowEditAction,
 } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
@@ -107,6 +108,7 @@ import {
   zoomCommand,
   actualSizeCommand,
 } from './commands/documentCommands.js';
+import { confirmCopied } from './commands/confirmWritten.js';
 import { editCommands } from './commands/editCommands.js';
 import { exitCommand, startScreenCommand } from './commands/windowCommands.js';
 import { checkForUpdatesCommand } from './commands/checkForUpdates.js';
@@ -2470,6 +2472,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       defaults?: readonly UiCommand[];
       dropped?: readonly string[];
     } = {};
+    // THE BROWSER'S OWN VERB, run by main on this window — the one call both the page's text copy and a field's verbs
+    // make. A COPY CONFIRMS on main's answer that it ran (`done`), through every copy's one confirmation.
+    const windowEdit = (action: WindowEditAction): void => {
+      void client['window.edit']({ action }).then((answer) => {
+        if (action === 'copy' && answer.ok && answer.value.done) confirmCopied({ toast });
+      });
+    };
     const textDeps: TextSelectionDeps = {
       selection: () => textSelection,
       place: dispatch,
@@ -2477,7 +2486,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // THE BROWSER'S OWN COPY, run by main on this window: the selection is still the
       // page's (the menu keeps it), and what it copies as is what the chord would copy.
       copy: () => {
-        void client['window.edit']({ action: 'copy' });
+        windowEdit('copy');
       },
       search: (text) => {
         showSearchPanel(settings);
@@ -2487,7 +2496,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     // THE PAGE'S HALVES OF THE EDIT MENU, held by name so *Cut*, *Copy*, *Paste* and *Select all* run these very
     // commands rather than a second copy of them (`editCommands.ts`).
     const textCopy = copySelectionCommand(textDeps);
-    const marksCopyDeps = { ...selectionDeps, client, ask, onCopied: setCopiedCount };
+    const marksCopyDeps = { ...selectionDeps, client, ask, onCopied: setCopiedCount, toast };
     const marksCopy = copyAnnotationsCommand(marksCopyDeps);
     const marksDelete = deleteSelectionCommand(selectionDeps);
     const marksPaste = pasteAnnotationsCommand({ client, onApplied: applied, ask, stamp, hasCopied: readHasCopied });
@@ -2522,9 +2531,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // close, and the Store's updates page.
         ...editCommands({
           field: focusedField,
-          native: (action) => {
-            void client['window.edit']({ action });
-          },
+          native: windowEdit,
           copyText: textCopy,
           copyMarks: marksCopy,
           copyMarksFor: (context) => copySelectedAnnotations(marksCopyDeps, context),
@@ -3261,7 +3268,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           <StartScreen registry={registry} context={context} problem={openProblem} />
           {/* THE CRASH REPORT OFFER (ADR-0109), above the recent list and its reopen offer: data with its own
               controls, which draws nothing unless the last run left a report not yet offered. */}
-          <CrashReportOffer client={client} />
+          <CrashReportOffer client={client} toast={toast} />
           {/* BESIDE the projection, not inside it: a recent file is data with a
               control, not a registered command, and registering one per row
               would mean rebuilding the registry whenever the list changed. */}
@@ -3358,6 +3365,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                 // jump takes, so Back returns from it.
                 <AssistantPanel
                   client={client}
+                  toast={toast}
                   settings={settings}
                   focused={
                     activeId === undefined || store === undefined

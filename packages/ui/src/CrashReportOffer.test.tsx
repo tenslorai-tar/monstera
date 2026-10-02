@@ -7,7 +7,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { CRASH_REPORT_ADDRESS, CrashReportOffer } from './CrashReportOffer.js';
 import { activateCatalogue, i18n } from './i18n.js';
-import { EN } from './messages/en.js';
+import { EN, TOAST_COPIED } from './messages/en.js';
 
 /**
  * The start screen's crash report offer (ADR-0109): the UI half of the pair whose main half is `crashReports.test.ts`
@@ -47,11 +47,22 @@ function client(
 
 const REPORT = { id: 'b0a1c2.dmp', crashedAt: '2026-09-26T10:00:00.000Z' };
 
-async function drawn(wire: ReturnType<typeof client>): Promise<void> {
-  render(<CrashReportOffer client={wire.client} />, { wrapper: Wrapped });
+/** Draws the offer, and answers every toast it raised: a copy's confirmation goes through the window's toast. */
+async function drawn(wire: ReturnType<typeof client>): Promise<unknown[][]> {
+  const toasts: unknown[][] = [];
+  render(
+    <CrashReportOffer
+      client={wire.client}
+      toast={(...raised) => {
+        toasts.push(raised);
+      }}
+    />,
+    { wrapper: Wrapped },
+  );
   await act(async () => {
     await Promise.resolve();
   });
+  return toasts;
 }
 
 describe('the crash report offer (ADR-0109)', () => {
@@ -103,24 +114,24 @@ describe('the crash report offer (ADR-0109)', () => {
 
   it('COPY ADDRESS copies exactly the address, through main, and says so only when main did', async () => {
     const wire = client(REPORT);
-    await drawn(wire);
+    const toasts = await drawn(wire);
     fireEvent.click(screen.getByRole('button', { name: 'Copy address' }));
     await act(async () => {
       await Promise.resolve();
     });
     expect(wire.sent.find((call) => call.id === 'window.copyText')?.params).toStrictEqual({ text: 'report@monsterapdf.com' });
-    expect(screen.getByText('Copied')).toBeDefined();
+    expect(toasts).toStrictEqual([['done', TOAST_COPIED]]);
   });
 
   it('CONTROL: when main copied nothing, the offer does not say Copied', async () => {
     const wire = client(REPORT, 'offered', false);
-    await drawn(wire);
+    const toasts = await drawn(wire);
     fireEvent.click(screen.getByRole('button', { name: 'Copy address' }));
     await act(async () => {
       await Promise.resolve();
     });
     // THE CALL WAS MADE, so the absence below is about main's answer rather than about a press that sent nothing.
     expect(wire.sent.some((call) => call.id === 'window.copyText')).toBe(true);
-    expect(screen.queryByText('Copied')).toBeNull();
+    expect(toasts).toStrictEqual([]);
   });
 });

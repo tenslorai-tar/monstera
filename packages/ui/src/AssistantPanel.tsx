@@ -38,6 +38,7 @@ import { AnswerGrounding } from './AnswerGrounding.js';
 import { answerElements } from './answerMarkdown.js';
 import type { AssistantRequest, ReplyTarget } from './assistantRequest.js';
 import type { EventSubscriber } from './bridge.js';
+import { confirmCopied } from './commands/confirmWritten.js';
 import type { ConversationTurn, DocumentStore } from './documentStores.js';
 import {
   AI_PROVIDER_NAMES,
@@ -101,7 +102,6 @@ import {
   ASSISTANT_YOU,
   ASSISTANT_ADD_NOTE,
   ASSISTANT_CAPTION,
-  ASSISTANT_COPIED,
   ASSISTANT_COPY,
   ASSISTANT_EDIT,
   ASSISTANT_EDIT_CANCEL,
@@ -121,6 +121,7 @@ import {
   ASSISTANT_SCOPE_SELECTION,
 } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
+import type { ShowToast } from './toasts.js';
 import { Button } from './primitives/Button.js';
 import { ChoiceMenu } from './primitives/ChoiceMenu.js';
 import { IconButton } from './primitives/IconButton.js';
@@ -179,6 +180,8 @@ export interface BesideDocument {
 export interface AssistantPanelProps {
   readonly client: ContractClient;
   readonly subscribe: EventSubscriber;
+  /** Where a copied answer is confirmed: the window's toast, every copy's one confirmation (`confirmCopied`). */
+  readonly toast: ShowToast;
   /** Which provider keys this machine has stored, from `settings.loadSecrets`. */
   readonly storedSecrets: readonly string[];
   /** Where the provider and each provider's model are kept (ADR-0117) — the picker below writes them. */
@@ -209,10 +212,6 @@ export interface AssistantPanelProps {
   /** Goes to a page of the document on the right, zero-based. */
   readonly onGoToBeside?: ((page: number) => void) | undefined;
 }
-
-/** What one ask sends: its document or documents, and the side it went to with two. */
-/** How long *Copied* shows beside an answer, in milliseconds — long enough to read, then gone. */
-const COPIED_MS = 2000;
 
 /** Which document a two-document answer was about, for its caption. */
 const SIDE_WORDS = {
@@ -313,6 +312,7 @@ const SIDE_CHOICES = [
 export function AssistantPanel({
   client,
   subscribe,
+  toast,
   storedSecrets,
   settings,
   focused,
@@ -649,18 +649,6 @@ export function AssistantPanel({
     if (!ask(question.text, question.request ?? { about: undefined }, question.replyTo)) writeTurns(turns);
   }, [ask, model, turns, writeTurns]);
 
-  /** A short-lived *Copied* beside the answer that was copied, by its index. */
-  const [copied, setCopied] = useState<number | null>(null);
-  useEffect(() => {
-    if (copied === null) return;
-    const timer = setTimeout(() => {
-      setCopied(null);
-    }, COPIED_MS);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [copied]);
-
   // A COMMAND'S REQUEST points the panel and may ask at once. Keyed by `serial`, so the same
   // words asked twice are two asks.
   //
@@ -887,10 +875,10 @@ export function AssistantPanel({
                   icon={Copy}
                   label={ASSISTANT_COPY}
                   onClick={() => {
-                    // THROUGH MAIN: the renderer holds no clipboard permission (§2). *Copied* shows only
-                    // when main says the text went, never as a hope.
+                    // THROUGH MAIN: the renderer holds no clipboard permission (§2). *Copied* is every copy's one
+                    // confirmation (`confirmCopied`), shown only when main says the text went, never as a hope.
                     void client['window.copyText']({ text: turn.text.slice(0, MAX_CHAT_TEXT) }).then((answer) => {
-                      if (answer.ok && answer.value.copied) setCopied(at);
+                      if (answer.ok && answer.value.copied) confirmCopied({ toast });
                     });
                   }}
                   size="dense"
@@ -909,9 +897,6 @@ export function AssistantPanel({
                     size="dense"
                   />
                 )}
-                <span aria-live="polite" className="m-assistant__done">
-                  {copied === at ? i18n._(ASSISTANT_COPIED) : ''}
-                </span>
                 {turns[at - 1]?.model !== undefined && (
                   <span className="m-assistant__caption">{captionFor(turns[at - 1])}</span>
                 )}
