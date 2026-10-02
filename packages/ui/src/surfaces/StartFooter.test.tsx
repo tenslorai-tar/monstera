@@ -28,6 +28,7 @@ const context: CommandContext = {
 
 const about: UiCommand = {
   id: 'app.about',
+  feedback: { kind: 'visible' },
   icon: 'Info',
   title: ABOUT_COMMAND_TITLE,
   placements: [{ surface: 'start-screen', slot: 'footer', order: 1 }],
@@ -36,6 +37,7 @@ const about: UiCommand = {
 
 const help = (shortcut: string): UiCommand => ({
   id: 'app.help',
+  feedback: { kind: 'visible' },
   icon: 'CircleHelp',
   title: HELP_COMMAND_TITLE,
   shortcut,

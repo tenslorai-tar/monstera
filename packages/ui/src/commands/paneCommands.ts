@@ -1,5 +1,5 @@
 import { NEXT_PANE_TITLE, PREVIOUS_PANE_TITLE } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 
 /**
  * F6 and Shift+F6 move the focus between the window's panes (the owner's 27 September list, item 12; WCAG 2.1.1).
@@ -56,6 +56,8 @@ export function paneCommands(): readonly UiCommand[] {
   return [
     {
       id: 'view.next-pane',
+      // FOCUS MOVES, and its ring is drawn where it lands.
+      feedback: VISIBLE,
       title: NEXT_PANE_TITLE,
       shortcut: 'F6',
       placements: [],
@@ -65,6 +67,7 @@ export function paneCommands(): readonly UiCommand[] {
     },
     {
       id: 'view.previous-pane',
+      feedback: VISIBLE,
       title: PREVIOUS_PANE_TITLE,
       shortcut: 'Shift+F6',
       placements: [],

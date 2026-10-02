@@ -2658,7 +2658,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // whole of the mutation-dialog gate (ADR-0038).
         deletePagesCommand({ client, onApplied: applied, ask, stamp }),
         cropPagesCommand({ client, onApplied: applied, ask, stamp }),
-        protectDocumentCommand({ client, onApplied: applied, ask, stamp }),
+        protectDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
         sanitizeDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
         signDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
         signaturesCommand({ client, onApplied: applied, ask, stamp }),
@@ -2809,13 +2809,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         exportFormDataJsonCommand({ client, onApplied: applied, ask, stamp, toast }),
         exportFormDataXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
         exportFormDataFdfCommand({ client, onApplied: applied, ask, stamp, toast }),
-        importFormDataJsonCommand({ client, onApplied: applied, ask, stamp }),
-        importFormDataXfdfCommand({ client, onApplied: applied, ask, stamp }),
-        importFormDataFdfCommand({ client, onApplied: applied, ask, stamp }),
+        importFormDataJsonCommand({ client, onApplied: applied, ask, stamp, toast }),
+        importFormDataXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
+        importFormDataFdfCommand({ client, onApplied: applied, ask, stamp, toast }),
         // THE COMMENTS' FILES, Review › Comment files (ADR-0077).
-        importAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp }),
-        importAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp }),
-        importAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp }),
+        importAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
+        importAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp, toast }),
+        importAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp, toast }),
         // THE CLIPBOARD'S PASTE, beside the import it is: main mints the same command.
         marksPaste,
         exportAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),

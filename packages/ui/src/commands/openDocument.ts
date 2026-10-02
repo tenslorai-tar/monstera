@@ -3,7 +3,7 @@ import { type DocId, type DocVersion, type Failure, type Result, ok } from '@mon
 
 import type { DropOpener } from '../bridge.js';
 import { GROUP_FILE, OPEN_DOCUMENT_TITLE, RIBBON_OPEN } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 
 /**
  * The first registered command with a working `run`.
@@ -84,6 +84,7 @@ export interface OpenDocumentDeps {
 export function openDocumentCommand(deps: OpenDocumentDeps): UiCommand {
   return {
     id: 'document.open',
+    feedback: VISIBLE,
     icon: 'FolderOpen',
     title: OPEN_DOCUMENT_TITLE,
     // v5-02's Home › File caption. The start screen's button keeps the full *Open PDF…*.

@@ -232,6 +232,8 @@ import {
   TOAST_DOCUMENT_SIGNED,
   TOAST_SENT_TO_PRINTER,
   TOAST_TRANSITION_SET,
+  TOAST_FORM_DATA_IMPORTED,
+  TOAST_PROTECTION_SET,
   TOAST_TEXT_SAVED,
   TOAST_WORD_SAVED,
   TOAST_SAVED,
@@ -245,7 +247,7 @@ import {
   ZOOM_OUT_TITLE,
 } from '../messages/en.js';
 import type { IconName } from '../primitives/icons.js';
-import { type CommandContext, targetPages, type UiCommand } from '../registries/commands.js';
+import { type CommandContext, RESULT_DIALOG, targetPages, TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
 import type { Placement } from '../registries/placement.js';
 import { DOCUMENT_PANEL_OPEN_SETTING, DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
@@ -796,6 +798,7 @@ export async function placeImage(
 export function zoomCommand(direction: 'in' | 'out', deps: StepDeps): UiCommand {
   return {
     id: direction === 'in' ? 'view.zoom-in' : 'view.zoom-out',
+    feedback: VISIBLE,
     icon: direction === 'in' ? 'ZoomIn' : 'ZoomOut',
     title: direction === 'in' ? ZOOM_IN_TITLE : ZOOM_OUT_TITLE,
     shortcut: direction === 'in' ? 'Ctrl+=' : 'Ctrl+-',
@@ -845,6 +848,7 @@ export function fitCommand(fit: 'width' | 'page', deps: ZoomDeps): UiCommand {
   const mode: ZoomMode = fit === 'width' ? { kind: 'fit-width' } : { kind: 'fit-page' };
   return {
     id: fit === 'width' ? 'view.fit-width' : 'view.fit-page',
+    feedback: VISIBLE,
     icon: fit === 'width' ? 'MoveHorizontal' : 'Maximize',
     title: fit === 'width' ? FIT_WIDTH_TITLE : FIT_PAGE_TITLE,
     shortcut: fit === 'width' ? 'Ctrl+1' : 'Ctrl+0',
@@ -879,6 +883,7 @@ export function actualSizeCommand(deps: ZoomDeps): UiCommand {
   const mode: ZoomMode = { kind: 'scale', scale: 1 };
   return {
     id: 'view.actual-size',
+    feedback: VISIBLE,
     title: ACTUAL_SIZE_TITLE,
     icon: 'Scan',
     placements: [{ surface: 'menu-bar', menu: 'view', group: 2, order: 30, caption: MENU_GROUP_ZOOM }],
@@ -913,6 +918,7 @@ export function showPanelCommand(deps: { readonly settings: SettingsStore }, pan
   const shown = SHOWN_PANELS[panel];
   return {
     id: shown.id,
+    feedback: VISIBLE,
     icon: shown.icon,
     title: shown.title,
     placements: [
@@ -988,6 +994,7 @@ export function movePageCommand(deps: DocumentCommandDeps, direction: 'earlier' 
   const earlier = direction === 'earlier';
   return {
     id: earlier ? 'document.move-page-earlier' : 'document.move-page-later',
+    feedback: VISIBLE,
     icon: earlier ? 'MoveUp' : 'MoveDown',
     title: earlier ? MOVE_PAGE_EARLIER_TITLE : MOVE_PAGE_LATER_TITLE,
     // LAST IN THE GROUP, because these two come and go as the page on show reaches an end: at the
@@ -1011,6 +1018,7 @@ export function movePageCommand(deps: DocumentCommandDeps, direction: 'earlier' 
 export function findCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'document.find',
+    feedback: VISIBLE,
     icon: 'Search',
     title: FIND_TITLE,
     shortcut: 'Ctrl+F',
@@ -1088,6 +1096,7 @@ export function rotatePageCommand(
   const { id, title, icon, order } = spec;
   return {
     id,
+    feedback: VISIBLE,
     title,
     // ONE OF THE THREE HAS NO SHORT FORM, so this reads it off the table rather
     // than spelling it — `in` narrows where a property access on the union does
@@ -1152,6 +1161,7 @@ export function rotatePageCommand(
 export function insertBlankPageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.insert-blank-page',
+    feedback: VISIBLE,
     icon: 'FilePlus',
     title: INSERT_BLANK_PAGE_TITLE,
     ribbonTitle: RIBBON_INSERT_BLANK,
@@ -1185,6 +1195,7 @@ export function insertBlankPageCommand(deps: DocumentCommandDeps): UiCommand {
 export function duplicatePageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.duplicate-page',
+    feedback: VISIBLE,
     icon: 'CopyPlus',
     title: DUPLICATE_PAGE_TITLE,
     placements: [
@@ -1233,6 +1244,7 @@ export function duplicatePageCommand(deps: DocumentCommandDeps): UiCommand {
 export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.delete-page',
+    feedback: VISIBLE,
     icon: 'FileMinus',
     title: DELETE_PAGE_TITLE,
     placements: [
@@ -1282,6 +1294,7 @@ export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
 export function deletePagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.delete-pages',
+    feedback: VISIBLE,
     icon: 'Trash2',
     title: DELETE_PAGES_COMMAND_TITLE,
     placements: [
@@ -1326,6 +1339,7 @@ export function deletePagesCommand(deps: DocumentCommandDeps): UiCommand {
 export function cropPagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.crop-pages',
+    feedback: VISIBLE,
     icon: 'Crop',
     title: CROP_PAGES_COMMAND_TITLE,
     placements: [
@@ -1383,6 +1397,7 @@ export function cropPagesCommand(deps: DocumentCommandDeps): UiCommand {
 export function headerFooterCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.header-footer',
+    feedback: VISIBLE,
     icon: 'PanelTop',
     title: HEADER_FOOTER_COMMAND_TITLE,
     ribbonTitle: RIBBON_HEADER_FOOTER,
@@ -1421,6 +1436,7 @@ export function headerFooterCommand(deps: DocumentCommandDeps): UiCommand {
 export function batesNumberCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.bates-number',
+    feedback: VISIBLE,
     icon: 'Hash',
     title: BATES_NUMBER_COMMAND_TITLE,
     placements: [
@@ -1462,6 +1478,8 @@ export function batesNumberCommand(deps: DocumentCommandDeps): UiCommand {
 export function pageTransitionCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.page-transition',
+    // A TRANSITION PLAYS ONLY WHEN THE DOCUMENT IS PRESENTED, so nothing on the page shows it was set.
+    feedback: TOASTS,
     icon: 'Presentation',
     title: PAGE_TRANSITION_COMMAND_TITLE,
     ribbonTitle: RIBBON_PAGE_TRANSITION,
@@ -1499,6 +1517,7 @@ export function pageTransitionCommand(deps: DocumentCommandDeps & WritesAFile): 
 export function resizePagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.resize-pages',
+    feedback: VISIBLE,
     icon: 'Scaling',
     title: RESIZE_PAGES_COMMAND_TITLE,
     placements: [
@@ -1546,6 +1565,7 @@ export function resizePagesCommand(deps: DocumentCommandDeps): UiCommand {
 export function deskewPagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.deskew-pages',
+    feedback: VISIBLE,
     icon: 'RotateCwSquare',
     title: DESKEW_PAGES_COMMAND_TITLE,
     ribbonTitle: RIBBON_DESKEW,
@@ -1584,6 +1604,7 @@ export function deskewPagesCommand(deps: DocumentCommandDeps): UiCommand {
 export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.insert-image',
+    feedback: VISIBLE,
     icon: 'ImagePlus',
     title: INSERT_IMAGE_COMMAND_TITLE,
     placements: [
@@ -1668,6 +1689,7 @@ export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
 export function generateTocCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.generate-toc',
+    feedback: VISIBLE,
     icon: 'ListOrdered',
     title: GENERATE_TOC_COMMAND_TITLE,
     ribbonTitle: RIBBON_GENERATE_TOC,
@@ -1724,6 +1746,7 @@ export function generateTocCommand(deps: DocumentCommandDeps): UiCommand {
 export function mergeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.merge',
+    feedback: VISIBLE,
     icon: 'Merge',
     title: MERGE_DOCUMENT_COMMAND_TITLE,
     ribbonTitle: RIBBON_MERGE,
@@ -1787,6 +1810,7 @@ export function mergeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
 export function insertFromPdfCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.insert-from-pdf',
+    feedback: VISIBLE,
     icon: 'FileInput',
     title: INSERT_FROM_PDF_COMMAND_TITLE,
     ribbonTitle: RIBBON_INSERT_FROM_PDF,
@@ -1845,6 +1869,7 @@ export function insertFromPdfCommand(deps: DocumentCommandDeps): UiCommand {
 export function replacePageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.replace-page',
+    feedback: VISIBLE,
     icon: 'Replace',
     title: REPLACE_PAGE_COMMAND_TITLE,
     placements: [
@@ -1901,6 +1926,7 @@ export function replacePageCommand(deps: DocumentCommandDeps): UiCommand {
 export function importPageAsLayerCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.import-page-as-layer',
+    feedback: VISIBLE,
     icon: 'Layers',
     title: IMPORT_PAGE_AS_LAYER_COMMAND_TITLE,
     ribbonTitle: RIBBON_IMPORT_LAYER,
@@ -1951,6 +1977,7 @@ export function importPageAsLayerCommand(deps: DocumentCommandDeps): UiCommand {
 export function pageBackgroundCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.page-background',
+    feedback: VISIBLE,
     icon: 'PaintBucket',
     title: PAGE_BACKGROUND_COMMAND_TITLE,
     ribbonTitle: RIBBON_PAGE_BACKGROUND,
@@ -1984,6 +2011,7 @@ const DEFAULT_PAGE_BACKGROUND = { red: 0.98, green: 0.97, blue: 0.94 } as const;
 export function watermarkPagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.watermark-pages',
+    feedback: VISIBLE,
     icon: 'Droplet',
     title: WATERMARK_PAGES_COMMAND_TITLE,
     placements: [
@@ -2034,6 +2062,7 @@ export function watermarkPagesCommand(deps: DocumentCommandDeps): UiCommand {
 export function findDuplicatePagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.find-duplicate-pages',
+    feedback: RESULT_DIALOG,
     icon: 'CopyCheck',
     title: FIND_DUPLICATES_COMMAND_TITLE,
     ribbonTitle: RIBBON_FIND_DUPLICATES,
@@ -2078,6 +2107,7 @@ export function findDuplicatePagesCommand(deps: DocumentCommandDeps): UiCommand 
 export function undoCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.undo',
+    feedback: VISIBLE,
     icon: 'Undo2',
     title: UNDO_TITLE,
     shortcut: 'Ctrl+Z',
@@ -2114,6 +2144,7 @@ export function undoCommand(deps: DocumentCommandDeps): UiCommand {
 export function redoCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.redo',
+    feedback: VISIBLE,
     icon: 'Redo2',
     title: REDO_TITLE,
     shortcut: 'Ctrl+Y',
@@ -2189,6 +2220,7 @@ export function saveCommand(deps: {
 } & WritesItsOwnFile): UiCommand {
   return {
     id: 'document.save',
+    feedback: TOASTS,
     icon: 'Save',
     title: SAVE_TITLE,
     shortcut: 'Ctrl+S',
@@ -2219,6 +2251,7 @@ export function closeTabCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.close-tab',
+    feedback: VISIBLE,
     icon: 'X',
     title: CLOSE_TAB_TITLE,
     shortcut: 'Ctrl+W',
@@ -2261,6 +2294,7 @@ export function openSideBySideCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.open-side-by-side',
+    feedback: VISIBLE,
     title: OPEN_SIDE_BY_SIDE_TITLE,
     placements: [{ surface: 'context-menu', context: 'tab', order: 30 }],
     when: (context) => context.docId !== undefined && context.docId !== deps.focused(),
@@ -2287,6 +2321,7 @@ export function closeOthersCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.close-others',
+    feedback: VISIBLE,
     icon: 'X',
     title: CLOSE_OTHERS_TITLE,
     placements: [
@@ -2428,6 +2463,7 @@ export async function saveDocument(
 export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.extract-pages',
+    feedback: TOASTS,
     icon: 'FileOutput',
     title: EXTRACT_PAGES_COMMAND_TITLE,
     placements: [
@@ -2480,6 +2516,7 @@ export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile): Ui
 export function splitDocumentCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.split',
+    feedback: TOASTS,
     icon: 'Scissors',
     title: SPLIT_DOCUMENT_COMMAND_TITLE,
     placements: [
@@ -2525,6 +2562,7 @@ export function splitDocumentCommand(deps: DocumentCommandDeps & WritesAFile): U
 export function exportTextCommand(deps: DocumentCommandDeps & RecognisesFirst & WritesAFile): UiCommand {
   return {
     id: 'document.export-text',
+    feedback: TOASTS,
     icon: 'FileText',
     title: EXPORT_TEXT_COMMAND_TITLE,
     // HOME › FILE, beside Save a copy: `docs/FEATURES.md` places D10 under Home ›
@@ -2547,6 +2585,7 @@ export function exportTextCommand(deps: DocumentCommandDeps & RecognisesFirst & 
 export function exportLayoutTextCommand(deps: DocumentCommandDeps & RecognisesFirst & WritesAFile): UiCommand {
   return {
     id: 'document.export-layout-text',
+    feedback: TOASTS,
     icon: 'FileText',
     title: EXPORT_LAYOUT_TEXT_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_LAYOUT_TEXT,
@@ -2566,6 +2605,7 @@ export function exportLayoutTextCommand(deps: DocumentCommandDeps & RecognisesFi
 export function exportWordCommand(deps: DocumentCommandDeps & RecognisesFirst & WritesAFile): UiCommand {
   return {
     id: 'document.export-word',
+    feedback: TOASTS,
     icon: 'FileText',
     title: EXPORT_WORD_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_WORD,
@@ -2610,6 +2650,7 @@ export function exportWordCommand(deps: DocumentCommandDeps & RecognisesFirst & 
 export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.export-powerpoint',
+    feedback: TOASTS,
     // A SLIDE, not the page-picture glyph *Export page images* already draws: two exports sharing one icon read as one.
     icon: 'Presentation',
     title: EXPORT_POWERPOINT_COMMAND_TITLE,
@@ -2670,6 +2711,7 @@ export function exportExcelCommand(
 ): UiCommand {
   return {
     id: 'document.export-excel',
+    feedback: TOASTS,
     icon: 'FileSpreadsheet',
     title: EXPORT_EXCEL_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_EXCEL,
@@ -2775,6 +2817,7 @@ export function exportExcelCommand(
 export function exportPdfaCommand(deps: DocumentCommandDeps & RecognisesFirst & WritesAFile): UiCommand {
   return {
     id: 'document.export-pdfa',
+    feedback: TOASTS,
     icon: 'FileCheck',
     title: EXPORT_PDFA_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_PDFA,
@@ -2844,6 +2887,7 @@ export function optimizeCommand(
 ): UiCommand {
   return {
     id: 'document.optimize',
+    feedback: TOASTS,
     icon: 'Shrink',
     title: OPTIMIZE_COMMAND_TITLE,
     ribbonTitle: RIBBON_OPTIMIZE,
@@ -2932,6 +2976,7 @@ export function optimizeCommand(
 export function printCommand(deps: DocumentCommandDeps & WritesAFile & { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'document.print',
+    feedback: TOASTS,
     icon: 'Printer',
     title: PRINT_COMMAND_TITLE,
     placements: [
@@ -2976,6 +3021,7 @@ export function printCommand(deps: DocumentCommandDeps & WritesAFile & { readonl
 export function emailCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.email',
+    feedback: TOASTS,
     icon: 'Mail',
     title: EMAIL_COMMAND_TITLE,
     // v5-02's Home › Export › *Share*, the owner's own mapping: sharing a document is emailing it.
@@ -3048,6 +3094,7 @@ async function runTextExport(
 export function exportPageImagesCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.export-page-images',
+    feedback: TOASTS,
     icon: 'FileImage',
     title: EXPORT_PAGE_IMAGES_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_PAGE_IMAGES,
@@ -3121,6 +3168,7 @@ function exportFormDataCommand(
 ): (deps: DocumentCommandDeps & WritesAFile) => UiCommand {
   return (deps) => ({
     id,
+    feedback: TOASTS,
     title,
     ribbonTitle,
     icon,
@@ -3206,9 +3254,11 @@ function importFormDataCommand(
   ribbonTitle: MessageKey,
   order: number,
   icon: IconName,
-): (deps: DocumentCommandDeps) => UiCommand {
+): (deps: DocumentCommandDeps & WritesAFile) => UiCommand {
   return (deps) => ({
     id,
+    // THE VALUES LAND IN FIELDS ON ANY PAGE, often not the one on show, so the import says it ran (ADR-0141).
+    feedback: TOASTS,
     title,
     ribbonTitle,
     icon,
@@ -3241,6 +3291,7 @@ function importFormDataCommand(
         return;
       }
       deps.onApplied({ version: answer.value.version, byteLength: answer.value.byteLength });
+      confirmDone(deps, TOAST_FORM_DATA_IMPORTED);
       // INVARIANT 18, after `onApplied` and guarded on a positive count, which
       // is `applyDocumentCommand`'s ordering — this command takes the same
       // route through the bus and can trim the same history.
@@ -3317,6 +3368,7 @@ export async function flattenForm(deps: DocumentCommandDeps, docId: DocId): Prom
 export function flattenFormCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.flatten-form',
+    feedback: VISIBLE,
     icon: 'Layers',
     title: FORMS_FLATTEN,
     ribbonTitle: RIBBON_FLATTEN_FORM,
@@ -3332,6 +3384,7 @@ export function flattenFormCommand(deps: DocumentCommandDeps): UiCommand {
 export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.find-flat-fields',
+    feedback: RESULT_DIALOG,
     icon: 'SquareDashedMousePointer',
     title: FLAT_FIELDS_COMMAND_TITLE,
     // v5-08's Forms › Manage › *Detect*: this proposes fields where a page has only drawn boxes.
@@ -3387,6 +3440,7 @@ export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
 export function saveCopyCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.save-copy',
+    feedback: TOASTS,
     icon: 'SaveAll',
     title: SAVE_COPY_TITLE,
     ribbonTitle: RIBBON_SAVE_COPY,
@@ -3456,6 +3510,7 @@ export function editTextCommand(deps: {
 }): UiCommand {
   return {
     id: EDIT_TEXT_TOOL_ID,
+    feedback: VISIBLE,
     icon: 'Type',
     title: EDIT_TEXT_COMMAND_TITLE,
     ribbonTitle: RIBBON_EDIT_TEXT,
@@ -3484,6 +3539,7 @@ export function handToolCommand(deps: {
 }): UiCommand {
   return {
     id: HAND_TOOL_ID,
+    feedback: VISIBLE,
     icon: 'Hand',
     title: HAND_TOOL_TITLE,
     ribbonTitle: RIBBON_HAND,
@@ -3514,6 +3570,7 @@ export function selectTextCommand(deps: {
 }): UiCommand {
   return {
     id: 'view.select-text',
+    feedback: VISIBLE,
     icon: 'TextCursor',
     title: SELECT_TEXT_TITLE,
     ribbonTitle: RIBBON_TEXT,
@@ -3638,6 +3695,7 @@ export async function commitTextBlock(
 export function editPageObjectCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.edit-page-object',
+    feedback: VISIBLE,
     icon: 'SquarePen',
     title: EDIT_PAGE_OBJECT_COMMAND_TITLE,
     ribbonTitle: RIBBON_EDIT_OBJECT,
@@ -3710,6 +3768,7 @@ export function editPageObjectCommand(deps: DocumentCommandDeps): UiCommand {
 export function signaturesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.check-signatures',
+    feedback: RESULT_DIALOG,
     icon: 'BadgeCheck',
     title: SIGNATURES_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_SIGNATURES, order: 20 }],
@@ -3753,6 +3812,8 @@ export function signaturesCommand(deps: DocumentCommandDeps): UiCommand {
 export function signDocumentCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.sign-document',
+    // UNSEEN FROM HERE: the ribbon's signature has no rectangle, so nothing on the page changes (`signDocument`).
+    feedback: TOASTS,
     icon: 'Signature',
     title: SIGN_DOCUMENT_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_SIGNATURES, order: 10 }],
@@ -3875,6 +3936,7 @@ export interface DocusignReadiness {
 export function docusignSendCommand(deps: DocumentCommandDeps & DocusignReadiness): UiCommand {
   return {
     id: 'document.docusign-send',
+    feedback: RESULT_DIALOG,
     icon: 'Send',
     title: DOCUSIGN_SEND_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_SIGNATURES, order: 30 }],
@@ -3912,6 +3974,7 @@ export function docusignRetrieveCommand(
 ): UiCommand {
   return {
     id: 'document.docusign-retrieve',
+    feedback: TOASTS,
     icon: 'Inbox',
     title: DOCUSIGN_RETRIEVE_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_SIGNATURES, order: 31 }],
@@ -3967,6 +4030,7 @@ export function docusignRetrieveCommand(
 export function sanitizeDocumentCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.sanitize',
+    feedback: TOASTS,
     icon: 'ShieldCheck',
     title: SANITIZE_DOCUMENT_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_ENCRYPTION, order: 20 }],
@@ -4000,6 +4064,7 @@ export function sanitizeDocumentCommand(deps: DocumentCommandDeps & WritesAFile)
 export function redactMatchesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.redact-matches',
+    feedback: VISIBLE,
     icon: 'TextSearch',
     title: REDACT_MATCHES_COMMAND_TITLE,
     ribbonTitle: RIBBON_REDACT_MATCHES,
@@ -4043,6 +4108,7 @@ export function applyRedactionsCommand(
 ): UiCommand {
   return {
     id: 'document.apply-redactions',
+    feedback: VISIBLE,
     icon: 'ShieldAlert',
     title: APPLY_REDACTIONS_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_REDACT, order: 10 }],
@@ -4092,9 +4158,11 @@ export function applyRedactionsCommand(
  * person that — a protection command that appeared to have done something to
  * the file on screen would be claiming an effect that has not happened yet.
  */
-export function protectDocumentCommand(deps: DocumentCommandDeps): UiCommand {
+export function protectDocumentCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.protect',
+    // NOTHING ON THE PAGE SHOWS A PASSWORD, and it takes effect at the next save (ADR-0141).
+    feedback: TOASTS,
     icon: 'Lock',
     title: PROTECT_DOCUMENT_COMMAND_TITLE,
     ribbonTitle: RIBBON_PROTECT_DOCUMENT,
@@ -4108,7 +4176,7 @@ export function protectDocumentCommand(deps: DocumentCommandDeps): UiCommand {
       // A DISMISSAL DISPATCHES NOTHING, which is the mutation-dialog gate.
       if (answer === undefined) return;
 
-      await applyDocumentCommand(deps, context.docId, {
+      const applied = await applyDocumentCommand(deps, context.docId, {
         kind: 'setDocumentProtection',
         encryption: answer.encryption,
         ...(answer.userPassword === undefined ? {} : { userPassword: answer.userPassword }),
@@ -4119,6 +4187,7 @@ export function protectDocumentCommand(deps: DocumentCommandDeps): UiCommand {
         // who unticked nothing chose to withhold nothing.
         permissions: [...answer.permissions],
       });
+      if (applied) confirmDone(deps, TOAST_PROTECTION_SET);
     },
   };
 }

@@ -22,7 +22,7 @@ import {
   RIBBON_STRAIGHTEN_PHOTOS,
   TOAST_SEARCHABLE_SAVED,
 } from '../messages/en.js';
-import { type CommandContext, targetPages, type UiCommand } from '../registries/commands.js';
+import { type CommandContext, RESULT_DIALOG, targetPages, TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
 import type { TrackTask } from '../runningTask.js';
 import { confirmWritten } from './confirmWritten.js';
 import {
@@ -93,6 +93,8 @@ export function recogniseTextCommand(
 ): UiCommand {
   return {
     id: 'document.ocr',
+    // THE TEXT IT ADDS IS INVISIBLE BY DESIGN, so the walk ends in its outcome dialog.
+    feedback: RESULT_DIALOG,
     icon: 'ScanText',
     title: OCR_COMMAND_TITLE,
     ribbonTitle: RIBBON_OCR,
@@ -171,6 +173,7 @@ export function enhanceScansCommand(
 ): UiCommand {
   return {
     id: 'document.enhance-scans',
+    feedback: VISIBLE,
     icon: 'WandSparkles',
     title: ENHANCE_COMMAND_TITLE,
     ribbonTitle: RIBBON_ENHANCE,
@@ -251,6 +254,7 @@ export function straightenScansCommand(
 ): UiCommand {
   return {
     id: 'document.straighten-scans',
+    feedback: VISIBLE,
     icon: 'ScanLine',
     title: SCAN_COMMAND_TITLE,
     ribbonTitle: RIBBON_STRAIGHTEN_PHOTOS,
@@ -416,6 +420,7 @@ export function exportSearchableCommand(
 ): UiCommand {
   return {
     id: 'document.export-searchable',
+    feedback: TOASTS,
     icon: 'FileSearch',
     title: OCR_EXPORT_COMMAND_TITLE,
     ribbonTitle: RIBBON_OCR_EXPORT,

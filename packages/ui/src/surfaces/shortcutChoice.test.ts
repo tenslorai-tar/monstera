@@ -9,6 +9,7 @@ import { displayChord, shortcutRows, validateChord, withChosenShortcuts } from '
 const TITLE = messageKey('command.test.title');
 const command = (id: string, shortcut?: string, alsoShortcuts?: readonly string[]): UiCommand => ({
   id,
+  feedback: { kind: 'visible' },
   title: TITLE,
   placements: [],
   run: () => undefined,

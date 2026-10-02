@@ -36,7 +36,7 @@ const ANY_TITLE = messageKey('command.any.label');
 function command(id: string, placements: readonly Placement[], over: Partial<UiCommand> = {}): UiCommand {
   // AN ICON BY DEFAULT, because the registry refuses a command drawn on a surface
   // without one; these cases are about ordering, not about glyphs.
-  return { id, title: ANY_TITLE, icon: 'File', placements, run: () => undefined, ...over };
+  return { id, title: ANY_TITLE, icon: 'File', placements, run: () => undefined, feedback: { kind: 'visible' }, ...over };
 }
 
 const ids = (entries: readonly { readonly command: UiCommand }[]): string[] =>
@@ -196,7 +196,13 @@ describe('secondary placements and the rail (ADR-0098)', () => {
 
   it('the registry refuses a RAIL command with no icon, since the rail draws a glyph', () => {
     // BUILT WITHOUT THE HELPER, which supplies an icon by default.
-    const bare: UiCommand = { id: 'app.settings', title: ANY_TITLE, placements: [{ surface: 'rail', order: 1 }], run: () => undefined };
+    const bare: UiCommand = {
+      id: 'app.settings',
+      title: ANY_TITLE,
+      placements: [{ surface: 'rail', order: 1 }],
+      run: () => undefined,
+      feedback: { kind: 'visible' },
+    };
     expect(() => new CommandRegistry([bare])).toThrow(/placed on the rail and names no icon/u);
   });
 });

@@ -2,7 +2,7 @@ import type { ContractClient } from '@monstera/contract';
 
 import { ABOUT_DIALOG_ID, ABOUT_RESULT } from '../dialogs/about.js';
 import { ABOUT_COMMAND_TITLE, GROUP_APPLICATION } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import { checksForUpdates } from '../updateStatus.js';
 
 /**
@@ -28,6 +28,7 @@ export function showAboutCommand(deps: {
 }): UiCommand {
   return {
     id: 'app.about',
+    feedback: VISIBLE,
     icon: 'Info',
     title: ABOUT_COMMAND_TITLE,
     placements: [

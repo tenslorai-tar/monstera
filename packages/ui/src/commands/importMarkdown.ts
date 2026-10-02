@@ -22,7 +22,7 @@ import {
   RIBBON_NEW_FROM_CAMERA,
   RIBBON_APPEND_MARKDOWN,
 } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import { type DocumentCommandDeps, hasDocument, reportProblem } from './documentCommands.js';
 
 /**
@@ -143,6 +143,8 @@ export function newFromMarkdownCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.new-from-markdown',
+    // THE NEW DOCUMENT OPENS IN A TAB, like every `new-from` command here.
+    feedback: VISIBLE,
     icon: 'FileCode',
     title: NEW_FROM_MARKDOWN_COMMAND_TITLE,
     ribbonTitle: RIBBON_NEW_FROM_MARKDOWN,
@@ -188,6 +190,7 @@ export function newFromCsvCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.new-from-csv',
+    feedback: VISIBLE,
     icon: 'Sheet',
     title: NEW_FROM_CSV_COMMAND_TITLE,
     ribbonTitle: RIBBON_NEW_FROM_CSV,
@@ -234,6 +237,7 @@ export function newFromOfficeCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.new-from-office',
+    feedback: VISIBLE,
     icon: 'FileText',
     title: NEW_FROM_OFFICE_COMMAND_TITLE,
     ribbonTitle: RIBBON_NEW_FROM_OFFICE,
@@ -279,6 +283,7 @@ export function newFromImagesCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.new-from-images',
+    feedback: VISIBLE,
     icon: 'Images',
     title: NEW_FROM_IMAGES_COMMAND_TITLE,
     ribbonTitle: RIBBON_NEW_FROM_IMAGES,
@@ -324,6 +329,7 @@ export function newFromCaptureCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.new-from-camera',
+    feedback: VISIBLE,
     icon: 'Webcam',
     title: NEW_FROM_CAMERA_COMMAND_TITLE,
     ribbonTitle: RIBBON_NEW_FROM_CAMERA,
@@ -380,6 +386,7 @@ export function appendMarkdownCommand(
 ): UiCommand {
   return {
     id: 'document.append-markdown',
+    feedback: VISIBLE,
     icon: 'ListPlus',
     title: APPEND_MARKDOWN_COMMAND_TITLE,
     ribbonTitle: RIBBON_APPEND_MARKDOWN,

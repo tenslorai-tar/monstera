@@ -1,6 +1,6 @@
 import { KEYBOARD_SHORTCUTS_DIALOG_ID, KEYBOARD_SHORTCUTS_RESULT } from '../dialogs/keyboardShortcuts.js';
 import { GROUP_APPLICATION, KEYBOARD_SHORTCUTS_COMMAND_TITLE } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import { SHORTCUTS_SETTING } from '../settings/keyboard.js';
 import type { SettingsStore } from '../settingsStore.js';
 import { normaliseChord } from '../surfaces/projections.js';
@@ -36,6 +36,7 @@ export function keyboardShortcutsCommand(deps: {
 }): UiCommand {
   return {
     id: 'app.keyboard-shortcuts',
+    feedback: VISIBLE,
     icon: 'Keyboard',
     title: KEYBOARD_SHORTCUTS_COMMAND_TITLE,
     shortcut: 'Ctrl+/',

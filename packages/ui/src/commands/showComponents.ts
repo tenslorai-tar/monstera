@@ -2,7 +2,7 @@ import type { ContractClient } from '@monstera/contract';
 
 import { COMPONENTS_DIALOG_ID, COMPONENTS_RESULT } from '../dialogs/components.js';
 import { COMPONENTS_COMMAND_TITLE, GROUP_APPLICATION } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 
 /**
  * Opens Components: the native components this build runs, and whether their files match the manifest
@@ -31,6 +31,7 @@ export function showComponentsCommand(deps: {
 }): UiCommand {
   return {
     id: 'app.components',
+    feedback: VISIBLE,
     icon: 'ClipboardCheck',
     title: COMPONENTS_COMMAND_TITLE,
     placements: [

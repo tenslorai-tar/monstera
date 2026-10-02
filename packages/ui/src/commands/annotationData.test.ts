@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { IMPORT_ANNOTATIONS_PROBLEM_DIALOG_ID } from '../dialogs/importAnnotationsProblem.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
-import { GROUP_COMMENT_FILES, TOAST_COMMENTS_SAVED } from '../messages/en.js';
+import { GROUP_COMMENT_FILES, TOAST_COMMENTS_IMPORTED, TOAST_COMMENTS_SAVED } from '../messages/en.js';
 import type { ToastAction } from '../primitives/Toast.js';
 import { type CommandContext, CommandRegistry, type UiCommand } from '../registries/commands.js';
 import { dispatchChord, shortcutsFor } from '../surfaces/shortcuts.js';
@@ -88,18 +88,21 @@ describe('the comment-file commands', () => {
     }
   });
 
-  it('an import that added comments reports the new version, and opens nothing', async () => {
-    const { deps, opened, applied } = harness({ kind: 'imported', version: 2, byteLength: 900, historyDropped: 0 });
+  it('an import that added comments reports the new version, opens nothing, and SAYS it imported (ADR-0141)', async () => {
+    const { deps, opened, applied, said } = harness({ kind: 'imported', version: 2, byteLength: 900, historyDropped: 0 });
     await importAnnotationsXfdfCommand(deps).run(CONTEXT);
     expect(applied).toStrictEqual([{ version: 2, byteLength: 900 }]);
     expect(opened).toStrictEqual([]);
+    // THE MARKS LAND ON ANY PAGE, often not the one on show, so the import says it ran.
+    expect(said.map(({ kind, message }) => [kind, message])).toStrictEqual([['done', TOAST_COMMENTS_IMPORTED]]);
   });
 
-  it('an import that added nothing SAYS so, and applies nothing', async () => {
-    const { deps, opened, applied } = harness({ kind: 'unreadable' });
+  it('an import that added nothing SAYS so, applies nothing, and confirms nothing', async () => {
+    const { deps, opened, applied, said } = harness({ kind: 'unreadable' });
     await importAnnotationsFdfCommand(deps).run(CONTEXT);
     expect(opened).toStrictEqual([{ id: IMPORT_ANNOTATIONS_PROBLEM_DIALOG_ID, props: { reason: 'unreadable' } }]);
     expect(applied).toStrictEqual([]);
+    expect(said).toStrictEqual([]);
   });
 
   it('an XFDF export XML cannot carry names the format as the problem', async () => {
@@ -170,7 +173,14 @@ describe('pasteAnnotationsCommand — main mints the import from the clipboard i
     expect(command.placements).toStrictEqual([{ surface: 'context-menu', context: 'page', order: 25 }]);
     // THE CHORD IS EDIT › PASTE'S since the menu bar (ADR-0107), so the registry holds both: the owner's meaning of
     // Ctrl+V on the page reaches this command through it, with no field holding the focus.
-    const idle: UiCommand = { id: 'test.idle', title: messageKey('command.idle.title'), placements: [], when: () => false, run: () => undefined };
+    const idle: UiCommand = {
+      id: 'test.idle',
+      title: messageKey('command.idle.title'),
+      placements: [],
+      when: () => false,
+      run: () => undefined,
+      feedback: { kind: 'visible' },
+    };
     const registry = new CommandRegistry([
       command,
       ...editCommands({

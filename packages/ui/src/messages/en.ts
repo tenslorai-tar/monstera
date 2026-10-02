@@ -1337,6 +1337,9 @@ export const TOAST_SENT_TO_PRINTER = messageKey('toast.sent-to-printer');
 export const TOAST_DOCUMENT_SIGNED = messageKey('toast.document-signed');
 export const TOAST_ACTIVE_CONTENT_REMOVED = messageKey('toast.active-content-removed');
 export const TOAST_TRANSITION_SET = messageKey('toast.transition-set');
+export const TOAST_PROTECTION_SET = messageKey('toast.protection-set');
+export const TOAST_FORM_DATA_IMPORTED = messageKey('toast.form-data-imported');
+export const TOAST_COMMENTS_IMPORTED = messageKey('toast.comments-imported');
 export const TOAST_SAVED_BACK = messageKey('toast.saved-back');
 export const THUMBNAILS_LABEL = messageKey('surface.thumbnails.label');
 /**
@@ -3448,6 +3451,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_DOCUMENT_SIGNED]: 'Document signed. Save to keep the signature.',
   [TOAST_ACTIVE_CONTENT_REMOVED]: 'Active content removed. Save to keep the change.',
   [TOAST_TRANSITION_SET]: 'Page transition set. It plays when the document is presented.',
+  [TOAST_PROTECTION_SET]: 'Password and permissions set. They are applied when you save.',
+  [TOAST_FORM_DATA_IMPORTED]: 'Form data imported into the fields.',
+  [TOAST_COMMENTS_IMPORTED]: 'Comments imported.',
   [TOAST_SAVED_BACK]: 'Saved to cloud storage',
   [STATUS_ZOOM_SLIDER]: 'Zoom level',
   [THUMBNAILS_LABEL]: 'Page thumbnails',

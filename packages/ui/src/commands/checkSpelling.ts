@@ -8,7 +8,7 @@ import {
   SPELL_CHECK_PROGRESS,
 } from '../messages/en.js';
 import type { TrackTask } from '../runningTask.js';
-import type { CommandContext, UiCommand } from '../registries/commands.js';
+import { type CommandContext, type UiCommand, VISIBLE } from '../registries/commands.js';
 import { PERSONAL_DICTIONARY_SETTING } from '../settings/editing.js';
 import type { SettingsStore } from '../settingsStore.js';
 import { type Misspelling, buildChecker, collectMisspellings } from '../spelling/checker.js';
@@ -85,6 +85,7 @@ export function checkSpellingCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.spell-check',
+    feedback: VISIBLE,
     icon: 'SpellCheck',
     title: SPELL_CHECK_COMMAND_TITLE,
     // EDIT › PROOFING, beside word count. Both read the whole document's text

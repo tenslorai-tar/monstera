@@ -26,6 +26,7 @@ const context: CommandContext = {
 
 const leave = (available: boolean, shortcut = 'Escape'): UiCommand => ({
   id: 'view.leave-focus',
+  feedback: { kind: 'visible' },
   title: messageKey('test.leave-focus'),
   shortcut,
   placements: [],

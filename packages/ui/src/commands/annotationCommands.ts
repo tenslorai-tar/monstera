@@ -137,7 +137,7 @@ import {
   UNDERLINE_TOOL_TITLE,
 } from '../messages/en.js';
 import type { IconName } from '../primitives/icons.js';
-import type { CommandContext, UiCommand } from '../registries/commands.js';
+import { type CommandContext, TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
 import type { SectionId } from '../registries/placement.js';
 import type { ShowToast } from '../toasts.js';
 import { confirmCopied } from './confirmWritten.js';
@@ -270,6 +270,8 @@ function toolCommand(
   const named = typeof title === 'string' ? { full: title, ribbon: undefined } : title;
   return {
     id,
+    // ARMING A TOOL IS SHOWN: its button pressed, and the pointer the tool's.
+    feedback: VISIBLE,
     title: named.full,
     ...(named.ribbon === undefined ? {} : { ribbonTitle: named.ribbon }),
     icon,
@@ -578,6 +580,7 @@ function alsoOnThePill(command: UiCommand, order: number): UiCommand {
 export function deleteSelectionCommand(deps: SelectionCommandDeps): UiCommand {
   return {
     id: 'annotate.delete-selection',
+    feedback: VISIBLE,
     title: DELETE_SELECTION_TITLE,
     // LAST IN THE ANNOTATION MENU, which is the owner's order for it (§7's row, 2026-09-19):
     // edit, reply, properties, copy, delete. The numbers between are what the owed items take.
@@ -641,6 +644,7 @@ export function editSelectionCommand(
   };
   return {
     id: 'annotate.edit-selection',
+    feedback: VISIBLE,
     title: EDIT_SELECTION_TITLE,
     // FIRST, which is the owner's order for this menu: edit, reply, properties,
     // copy, delete.
@@ -705,6 +709,7 @@ export function replySelectionCommand(
   };
   return {
     id: 'annotate.reply-selection',
+    feedback: VISIBLE,
     title: REPLY_SELECTION_TITLE,
     // SECOND, which is the owner's order for this menu: edit, reply,
     // properties, copy, delete. And first at the Properties tab's foot (ADR-0102).
@@ -767,6 +772,7 @@ export function copyAnnotationsCommand(
 ): UiCommand {
   return {
     id: 'annotate.copy-selection',
+    feedback: TOASTS,
     title: COPY_ANNOTATIONS_TITLE,
     // FOURTH, the owner's order for this menu: edit, reply, properties, copy, delete.
     placements: [{ surface: 'context-menu', context: 'annotation', order: 40 }],
@@ -829,6 +835,7 @@ export function selectAllMarksCommand(deps: {
 }): UiCommand {
   return {
     id: 'annotate.select-all',
+    feedback: VISIBLE,
     title: SELECT_ALL_MARKS_TITLE,
     placements: [],
     when: (context) => context.page !== undefined && deps.marksOn(context.page) > 0,
@@ -859,6 +866,7 @@ export function selectionPropertiesCommand(
 ): UiCommand {
   return {
     id: 'annotate.properties',
+    feedback: VISIBLE,
     title: SELECTION_PROPERTIES_TITLE,
     placements: [{ surface: 'context-menu', context: 'annotation', order: 30 }],
     when: () => deps.selection() !== undefined,
@@ -931,6 +939,7 @@ export function nudgeSelectionCommand(
   const step = far ? NUDGE_FAR : NUDGE;
   return {
     id: `annotate.nudge-${direction}${far ? '-far' : ''}`,
+    feedback: VISIBLE,
     title: ARROW_TITLES[direction],
     // NO SURFACE. An arrow key is the whole of this control: eight buttons for
     // one-point moves would be a toolbar nobody uses, and the palette reaches

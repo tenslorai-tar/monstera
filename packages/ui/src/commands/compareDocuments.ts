@@ -1,7 +1,7 @@
 import type { DocId } from '@monstera/shared';
 
 import { COMPARE_COMMAND_TITLE, GROUP_COMPARE, GROUP_DISPLAY, RIBBON_COMPARE } from '../messages/en.js';
-import type { CommandContext, UiCommand } from '../registries/commands.js';
+import { type CommandContext, type UiCommand, VISIBLE } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
 
 /**
@@ -21,6 +21,7 @@ export function compareDocumentsCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.compare',
+    feedback: VISIBLE,
     icon: 'Columns2',
     title: COMPARE_COMMAND_TITLE,
     ribbonTitle: RIBBON_COMPARE,

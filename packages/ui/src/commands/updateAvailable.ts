@@ -1,7 +1,7 @@
 import type { ContractClient, UpdateStatus } from '@monstera/contract';
 
 import { UPDATE_AVAILABLE_TITLE } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import { isUpdateOffered } from '../updateStatus.js';
 
 /**
@@ -25,6 +25,8 @@ export function updateAvailableCommand(deps: {
 }): UiCommand {
   return {
     id: 'app.update-available',
+    // THE STORE OPENS on the listing.
+    feedback: VISIBLE,
     icon: 'Download',
     title: UPDATE_AVAILABLE_TITLE,
     placements: [{ surface: 'menu-bar-commands', tone: 'plain', order: 3 }],

@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   TOAST_ACTIVE_CONTENT_REMOVED,
+  TOAST_FORM_DATA_IMPORTED,
+  TOAST_PROTECTION_SET,
   TOAST_COPY_SAVED,
   TOAST_DOCUMENT_SIGNED,
   TOAST_PAGES_SAVED,
@@ -1072,7 +1074,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         ok({ kind: 'imported', version: asDocVersion(2), byteLength: 99, historyDropped: 0 }),
       );
     });
-    const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp };
+    const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, toast: () => undefined };
 
     await importFormDataJsonCommand(deps).run(CONTEXT);
     await importFormDataXfdfCommand(deps).run(CONTEXT);
@@ -1083,6 +1085,29 @@ describe('delete pages — the mutation-dialog gate', () => {
       { id: 'document.importFormData', params: { docId: DOC, format: 'xfdf' } },
       { id: 'document.importFormData', params: { docId: DOC, format: 'fdf' } },
     ]);
+  });
+
+  it('SAYS the form data was imported, and only when it was: the values land in fields on any page (ADR-0141)', async () => {
+    // THE CONTROL IS IN THE SAME CASE: a dismissal and a refused file must say nothing, so a confirmation fired on
+    // any answer — or before the answer — fails here as surely as a missing one.
+    const saidFor: Record<string, unknown[]> = {};
+    const answers = {
+      imported: ok({ kind: 'imported' as const, version: asDocVersion(2), byteLength: 99, historyDropped: 0 }),
+      cancelled: ok({ kind: 'cancelled' as const }),
+      unreadable: ok({ kind: 'unreadable' as const }),
+    };
+    for (const [name, answer] of Object.entries(answers)) {
+      const { toast, said } = saving();
+      const client = createClient(channels, () => Promise.resolve(answer));
+      await importFormDataJsonCommand({ client, stamp, onApplied: () => undefined, ask: () => Promise.resolve(undefined), toast }).run(CONTEXT);
+      saidFor[name] = said;
+    }
+
+    expect(saidFor).toStrictEqual({
+      imported: [{ kind: 'done', message: TOAST_FORM_DATA_IMPORTED }],
+      cancelled: [],
+      unreadable: [],
+    });
   });
 
   it('REPORTS the document moved after an import, which is what makes it a mutation', async () => {
@@ -1103,6 +1128,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       stamp,
       onApplied: (value) => applied.push(value),
       ask: () => Promise.resolve(undefined),
+      toast: () => undefined,
     }).run(CONTEXT);
 
     expect(applied).toStrictEqual([{ version: asDocVersion(7), byteLength: 4096 }]);
@@ -1121,6 +1147,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         client,
         stamp,
         onApplied: () => undefined,
+        toast: () => undefined,
         ask: (id, props) => {
           opened.push({ id, props });
           return Promise.resolve(undefined);
@@ -1142,6 +1169,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       client,
       stamp,
       onApplied: () => undefined,
+      toast: () => undefined,
       ask: (id, props) => {
         opened.push({ id, props });
         return Promise.resolve(undefined);
@@ -3634,13 +3662,15 @@ describe('protectDocumentCommand', () => {
     return { client, sent };
   }
 
-  it('dispatches EXACTLY what the dialog answered, permissions included', async () => {
+  it('dispatches EXACTLY what the dialog answered, permissions included — and SAYS it was set (ADR-0141)', async () => {
     const { client, sent } = recordingClient();
+    const { toast, said } = saving();
 
     await protectDocumentCommand({
       client,
       stamp,
       onApplied: () => undefined,
+      toast,
       ask: () =>
         Promise.resolve({
           encryption: 'aes-256',
@@ -3669,6 +3699,8 @@ describe('protectDocumentCommand', () => {
         },
       },
     ]);
+    // NOTHING ON THE PAGE SHOWS A PASSWORD, so the command says it was set, and when it applies.
+    expect(said).toStrictEqual([{ kind: 'done', message: TOAST_PROTECTION_SET }]);
   });
 
   it('sends a REMOVAL with no passwords on it', async () => {
@@ -3681,6 +3713,7 @@ describe('protectDocumentCommand', () => {
       client,
       stamp,
       onApplied: () => undefined,
+      toast: () => undefined,
       ask: () => Promise.resolve({ encryption: 'none', permissions: [] }),
     }).run(CONTEXT);
 
@@ -3695,17 +3728,20 @@ describe('protectDocumentCommand', () => {
     ]);
   });
 
-  it('CONTROL: a DISMISSED dialog dispatches nothing', async () => {
+  it('CONTROL: a DISMISSED dialog dispatches nothing, and says nothing', async () => {
     const { client, sent } = recordingClient();
+    const { toast, said } = saving();
 
     await protectDocumentCommand({
       client,
       stamp,
       onApplied: () => undefined,
+      toast,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
 
     expect(sent).toStrictEqual([]);
+    expect(said).toStrictEqual([]);
   });
 
   /**

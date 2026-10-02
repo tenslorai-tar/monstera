@@ -44,6 +44,7 @@ type Spy = UiCommand & { readonly run: Mock<(context: CommandContext) => void> }
 function spies(): { readonly palette: Spy; readonly ribbon: Spy; readonly studio: Spy; readonly focus: Spy } {
   const spy = (id: string, shortcut?: string): Spy => ({
     id,
+    feedback: { kind: 'visible' },
     title: id === 'view.command-palette' ? PALETTE_TITLE : LAYOUT_FOCUS_COMMAND_TITLE,
     placements: [],
     ...(shortcut === undefined ? {} : { shortcut }),
@@ -146,6 +147,7 @@ describe('TitleBar', () => {
     // Donate button here; the menu bar's own cases prove the same command IS drawn there.
     const donate: Spy = {
       id: 'app.donate',
+      feedback: { kind: 'visible' },
       title: DONATE_COMMAND_TITLE,
       icon: 'Heart',
       placements: [{ surface: 'menu-bar-commands', tone: 'gold', order: 1 }],
@@ -159,8 +161,20 @@ describe('TitleBar', () => {
   describe('the LIGHT AND DARK SWITCH (ADR-0132)', () => {
     /** Stand-ins for View › Theme's two commands, recording and writing nothing. */
     const themeSpies = (): { readonly light: Spy; readonly dark: Spy } => ({
-      light: { id: 'view.theme-light', title: THEME_LIGHT_COMMAND_TITLE, placements: [], run: vi.fn<(context: CommandContext) => void>() },
-      dark: { id: 'view.theme-dark', title: THEME_DARK_COMMAND_TITLE, placements: [], run: vi.fn<(context: CommandContext) => void>() },
+      light: {
+        id: 'view.theme-light',
+        title: THEME_LIGHT_COMMAND_TITLE,
+        placements: [],
+        run: vi.fn<(context: CommandContext) => void>(),
+        feedback: { kind: 'visible' },
+      },
+      dark: {
+        id: 'view.theme-dark',
+        title: THEME_DARK_COMMAND_TITLE,
+        placements: [],
+        run: vi.fn<(context: CommandContext) => void>(),
+        feedback: { kind: 'visible' },
+      },
     });
 
     /** The platform's answers: which of these media queries match. */

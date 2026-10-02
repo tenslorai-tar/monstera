@@ -1,7 +1,7 @@
 import type { WindowEditAction } from '@monstera/contract';
 
 import { EDIT_COPY_TITLE, EDIT_CUT_TITLE, EDIT_PASTE_TITLE, EDIT_SELECT_ALL_TITLE, GROUP_TEXT } from '../messages/en.js';
-import type { CommandContext, UiCommand } from '../registries/commands.js';
+import { type CommandContext, TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
 
 /**
  * The Edit menu's clipboard verbs — *Cut*, *Copy*, *Paste* and *Select all* — acting on WHAT HAS FOCUS
@@ -66,6 +66,8 @@ function inField(deps: EditDeps, field: HTMLElement, action: WindowEditAction): 
 export function editCommands(deps: EditDeps): readonly UiCommand[] {
   const cut: UiCommand = {
     id: 'edit.cut',
+    // WHAT WAS CUT LEAVES THE FIELD OR THE PAGE, in view.
+    feedback: VISIBLE,
     title: EDIT_CUT_TITLE,
     icon: 'Scissors',
     shortcut: 'Ctrl+X',
@@ -85,6 +87,8 @@ export function editCommands(deps: EditDeps): readonly UiCommand[] {
   };
   const copy: UiCommand = {
     id: 'edit.copy',
+    // EVERY COPY CONFIRMS (`confirmCopied`): in a field through `windowEdit`, on the page through the copy it runs.
+    feedback: TOASTS,
     title: EDIT_COPY_TITLE,
     icon: 'Copy',
     shortcut: 'Ctrl+C',
@@ -112,6 +116,7 @@ export function editCommands(deps: EditDeps): readonly UiCommand[] {
   };
   const paste: UiCommand = {
     id: 'edit.paste',
+    feedback: VISIBLE,
     title: EDIT_PASTE_TITLE,
     icon: 'ClipboardPaste',
     shortcut: 'Ctrl+V',
@@ -130,6 +135,7 @@ export function editCommands(deps: EditDeps): readonly UiCommand[] {
   };
   const selectAll: UiCommand = {
     id: 'edit.select-all',
+    feedback: VISIBLE,
     title: EDIT_SELECT_ALL_TITLE,
     icon: 'TextSelect',
     shortcut: 'Ctrl+A',

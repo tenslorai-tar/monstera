@@ -24,7 +24,7 @@ const CONTEXT: CommandContext = {
 
 /** A command with a glyph, which the registry requires of every command a menu lists. */
 function command(id: string, title: string, placements: readonly Placement[], over: Partial<UiCommand> = {}): UiCommand {
-  return { id, title: messageKey(title), placements, icon: 'File', run: () => undefined, ...over };
+  return { id, title: messageKey(title), placements, icon: 'File', run: () => undefined, feedback: { kind: 'visible' }, ...over };
 }
 
 beforeAll(() => {

@@ -228,7 +228,31 @@ export interface UiCommand {
   readonly checked?: (context: CommandContext) => boolean;
   /** Required. See the note above about what that does and does not buy. */
   readonly run: (context: CommandContext) => void | Promise<void>;
+  /**
+   * How a person learns this command did what they asked
+   * ([ADR-0141](../../../../docs/DECISIONS/0141-every-command-declares-how-a-person-learns-it-worked.md)). Required, so
+   * the question is asked of every command when it is written, and *silent* is a choice with a reason rather than
+   * something nobody decided. It is about SUCCESS: a failure says so through the command's own error path whatever this
+   * declares. Where a command has more than one route — a dialog, then a write — it names the one a person waits on.
+   */
+  readonly feedback: CommandFeedback;
 }
+
+/** One of ADR-0141's four answers to *how does a person learn it worked*. */
+export type CommandFeedback =
+  /** Drawn where the person is looking: the page, a pane, a panel or window it opens, the tool it arms, the theme it sets. */
+  | { readonly kind: 'visible' }
+  /** Finished out of sight, and says so: `confirmWritten` for a file, `confirmDone` otherwise, `confirmCopied` for a copy. */
+  | { readonly kind: 'toast' }
+  /** The answer is a result dialog's content: a check, a count, a list found. */
+  | { readonly kind: 'dialog' }
+  /** Nothing, and why — written where the command is, for the next person to judge. */
+  | { readonly kind: 'none'; readonly reason: string };
+
+/** The three answers that carry nothing else, named once so a command reads `feedback: VISIBLE` rather than spelling it. */
+export const VISIBLE: CommandFeedback = { kind: 'visible' };
+export const TOASTS: CommandFeedback = { kind: 'toast' };
+export const RESULT_DIALOG: CommandFeedback = { kind: 'dialog' };
 
 /**
  * The composed set of commands.
@@ -299,6 +323,14 @@ export class CommandRegistry {
           `"${command.id}" is placed on the ${drawn.surface} and names no icon. That surface ` +
             `draws a glyph at one of §10.4's four sizes; give the command an \`icon\` from ` +
             `primitives/icons.ts.`,
+        );
+      }
+      // SILENT WITH A REASON, never silent with none (ADR-0141): the type makes `feedback` present, and this makes
+      // a `none` say why — an empty string would pass the compiler and decide nothing.
+      if (command.feedback.kind === 'none' && command.feedback.reason.trim() === '') {
+        throw new Error(
+          `"${command.id}" declares no feedback and gives no reason. Say how a person learns it worked — ` +
+            `visible, a toast, a result dialog — or write why it shows nothing (ADR-0141).`,
         );
       }
       const existing = this.#byId.get(command.id);

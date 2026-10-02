@@ -19,7 +19,7 @@ import {
   SUMMARISE_SELECTION_TITLE,
   TRANSLATE_SELECTION_TITLE,
 } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
 import type { TextSelection } from '../TextLayer.js';
 
@@ -37,6 +37,7 @@ import type { TextSelection } from '../TextLayer.js';
 export function openAssistantCommand(deps: { readonly open: () => void }): UiCommand {
   return {
     id: 'ai.open-assistant',
+    feedback: VISIBLE,
     icon: 'Sparkles',
     title: OPEN_ASSISTANT_TITLE,
     shortcut: 'Ctrl+Shift+A',
@@ -92,6 +93,8 @@ const SELECTION_ITEMS: readonly {
 export function assistantSelectionCommands(deps: AssistantCommandDeps): readonly UiCommand[] {
   return SELECTION_ITEMS.map(({ id, title, prompt, order }) => ({
     id,
+    // THE ANSWER IS WRITTEN IN THE ASSISTANT PANE, which the ask opens.
+    feedback: VISIBLE,
     title,
     placements: [{ surface: 'context-menu', context: 'selection', order }] as const,
     when: () => deps.selection() !== undefined,
@@ -119,6 +122,7 @@ export function assistantSelectionCommands(deps: AssistantCommandDeps): readonly
 export function summariseCommentsCommand(deps: { readonly ask: AskAssistant }): UiCommand {
   return {
     id: 'ai.summarise-comments',
+    feedback: VISIBLE,
     icon: 'MessageSquareQuote',
     title: SUMMARISE_COMMENTS_TITLE,
     placements: [{ surface: 'ribbon', section: 'review', group: GROUP_AI, order: 10 }],
@@ -150,6 +154,7 @@ export function draftReplyCommand(deps: {
   };
   return {
     id: 'ai.draft-reply',
+    feedback: VISIBLE,
     title: DRAFT_REPLY_TITLE,
     // AFTER *Reply*, which is the person's own: the owner's order for this menu puts reply second.
     placements: [{ surface: 'context-menu', context: 'annotation', order: 25 }],

@@ -1,5 +1,5 @@
 import { EXIT_TITLE, START_SCREEN_TITLE } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
 
 /**
@@ -21,6 +21,7 @@ import { hasDocument } from './documentCommands.js';
 export function startScreenCommand(deps: { readonly showStart: () => void }): UiCommand {
   return {
     id: 'app.start-screen',
+    feedback: VISIBLE,
     icon: 'House',
     title: START_SCREEN_TITLE,
     placements: [{ surface: 'menu-bar', menu: 'file', group: 0, order: 40 }],
@@ -34,6 +35,8 @@ export function startScreenCommand(deps: { readonly showStart: () => void }): Ui
 export function exitCommand(deps: { readonly closeWindow: () => Promise<void> }): UiCommand {
   return {
     id: 'app.exit',
+    // THE WINDOW CLOSES, after the unsaved-work question where there is one.
+    feedback: VISIBLE,
     title: EXIT_TITLE,
     icon: 'LogOut',
     placements: [{ surface: 'menu-bar', menu: 'file', group: 3, order: 90 }],

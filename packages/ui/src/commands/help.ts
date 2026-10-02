@@ -3,7 +3,7 @@ import type { MessageKey } from '@monstera/shared';
 import { HELP_DIALOG_ID, HELP_RESULT } from '../dialogs/help.js';
 import { helpFor } from '../help/articles.js';
 import { GROUP_APPLICATION, HELP_COMMAND_TITLE } from '../messages/en.js';
-import type { CommandContext, UiCommand } from '../registries/commands.js';
+import { type CommandContext, type UiCommand, VISIBLE } from '../registries/commands.js';
 
 /** Where F1 was pressed from with no document: the start screen's own articles. */
 export const START_SCREEN_CONTEXT = 'start-screen';
@@ -43,6 +43,7 @@ export function helpCommand(deps: {
 }): UiCommand {
   return {
     id: 'app.help',
+    feedback: VISIBLE,
     icon: 'CircleHelp',
     title: HELP_COMMAND_TITLE,
     shortcut: 'F1',

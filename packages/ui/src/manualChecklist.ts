@@ -57,6 +57,23 @@ const SURFACE_HEADINGS: Readonly<Record<string, string>> = {
  * @param label how a catalogue key is shown — the screen's own words
  * @param sectionTitles each ribbon section's caption key
  */
+/**
+ * What a command says it shows when it worked (ADR-0141), as the installed-window pass checks it: the declaration is a
+ * claim, and this list is where a person holds the build to it.
+ */
+function feedbackOf(command: UiCommand): string {
+  switch (command.feedback.kind) {
+    case 'visible':
+      return 'Shows: on screen';
+    case 'toast':
+      return 'Shows: a toast';
+    case 'dialog':
+      return 'Shows: a result dialog';
+    case 'none':
+      return `Shows: nothing, because ${command.feedback.reason}`;
+  }
+}
+
 export function manualChecklist(
   commands: readonly UiCommand[],
   articles: readonly Article[],
@@ -69,7 +86,7 @@ export function manualChecklist(
   }
   const line = (command: UiCommand, where: string): string => {
     const article = taughtBy.get(command.id);
-    return `- [ ] **${label(command.title)}**${where === '' ? '' : ` — ${where}`} · \`${command.id}\`${article === undefined ? '' : ` · Help: *${article}*`}`;
+    return `- [ ] **${label(command.title)}**${where === '' ? '' : ` — ${where}`} · \`${command.id}\` · ${feedbackOf(command)}${article === undefined ? '' : ` · Help: *${article}*`}`;
   };
 
   const bySection = new Map<SectionId, { group: string; order: number; text: string }[]>();

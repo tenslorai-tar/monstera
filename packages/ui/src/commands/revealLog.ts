@@ -1,7 +1,7 @@
 import type { ContractClient } from '@monstera/contract';
 
 import { GROUP_APPLICATION, REVEAL_LOG_TITLE, RIBBON_DIAGNOSTICS } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 
 /**
  * Shows the diagnostics log in the OS file manager.
@@ -28,6 +28,8 @@ import type { UiCommand } from '../registries/commands.js';
 export function revealLogCommand(deps: { readonly client: ContractClient }): UiCommand {
   return {
     id: 'log.reveal',
+    // FILE EXPLORER OPENS with the log selected.
+    feedback: VISIBLE,
     icon: 'ScrollText',
     title: REVEAL_LOG_TITLE,
     ribbonTitle: RIBBON_DIAGNOSTICS,

@@ -49,6 +49,7 @@ function recording(): { registry: CommandRegistry; runs: { id: string; page: num
   const runs: { id: string; page: number | undefined }[] = [];
   const command = (id: string, title: string, menu: 'page' | 'tab', order: number): UiCommand => ({
     id,
+    feedback: { kind: 'visible' },
     // Existing catalogue keys, so the rendered text is a real title rather than a raw key.
     title: messageKey(title),
     placements: [{ surface: 'context-menu', context: menu, order }],

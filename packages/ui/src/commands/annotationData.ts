@@ -19,11 +19,12 @@ import {
   RIBBON_COMMENTS_EXPORT_FDF,
   RIBBON_COMMENTS_EXPORT_JSON,
   PASTE_ANNOTATIONS_TITLE,
+  TOAST_COMMENTS_IMPORTED,
   TOAST_COMMENTS_SAVED,
 } from '../messages/en.js';
 import type { IconName } from '../primitives/icons.js';
-import type { UiCommand } from '../registries/commands.js';
-import { confirmWritten } from './confirmWritten.js';
+import { TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
+import { confirmDone, confirmWritten } from './confirmWritten.js';
 import { type DocumentCommandDeps, type WritesAFile, hasDocument, reportProblem } from './documentCommands.js';
 
 /**
@@ -46,6 +47,7 @@ function exportAnnotationsCommand(
 ): (deps: DocumentCommandDeps & WritesAFile) => UiCommand {
   return (deps) => ({
     id,
+    feedback: TOASTS,
     title,
     ribbonTitle,
     icon,
@@ -82,9 +84,11 @@ function importAnnotationsCommand(
   /** The ribbon's own caption, two words; the full title becomes its tooltip. */
   ribbonTitle: MessageKey,
   order: number,
-): (deps: DocumentCommandDeps) => UiCommand {
+): (deps: DocumentCommandDeps & WritesAFile) => UiCommand {
   return (deps) => ({
     id,
+    // THE MARKS LAND ON ANY PAGE, often not the one on show, so the import says it ran (ADR-0141).
+    feedback: TOASTS,
     title,
     ribbonTitle,
     icon: 'FileUp',
@@ -110,6 +114,7 @@ function importAnnotationsCommand(
         return;
       }
       deps.onApplied({ version: answer.value.version, byteLength: answer.value.byteLength });
+      confirmDone(deps, TOAST_COMMENTS_IMPORTED);
       // INVARIANT 18, after `onApplied`, for `importFormDataCommand`'s reason.
       if (answer.value.historyDropped > 0) {
         void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: answer.value.historyDropped });
@@ -152,6 +157,7 @@ export function pasteAnnotationsCommand(
 ): UiCommand {
   return {
     id: 'annotate.paste',
+    feedback: VISIBLE,
     title: PASTE_ANNOTATIONS_TITLE,
     // NO CHORD OF ITS OWN: Ctrl+V is `edit.paste`'s, which runs this when no text field has the focus (ADR-0107).
     placements: [{ surface: 'context-menu', context: 'page', order: 25 }],

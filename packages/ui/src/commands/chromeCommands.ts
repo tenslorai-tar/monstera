@@ -19,7 +19,7 @@ import {
   THEME_SYSTEM_COMMAND_TITLE,
 } from '../messages/en.js';
 import type { IconName } from '../primitives/icons.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import { THEME_SETTING, type Theme } from '../settings/appearance.js';
 import {
   CONTEXT_PANEL_OPEN_SETTING,
@@ -66,6 +66,7 @@ import { hasDocument } from './documentCommands.js';
 export function toggleQuickToolbarCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.toggle-quick-toolbar',
+    feedback: VISIBLE,
     icon: 'PanelLeftDashed',
     title: QUICK_TOOLBAR_TOGGLE_TITLE,
     ribbonTitle: QUICK_TOOLBAR_TOGGLE_SHORT,
@@ -99,6 +100,7 @@ export function toggleQuickToolbarCommand(deps: { readonly settings: SettingsSto
 export function resetFloatBarCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.reset-float-bar',
+    feedback: VISIBLE,
     title: FLOAT_BAR_RESET_TITLE,
     icon: 'RotateCcw',
     placements: [{ surface: 'menu-bar', menu: 'window', group: 1, order: 31 }],
@@ -113,6 +115,7 @@ export function resetFloatBarCommand(deps: { readonly settings: SettingsStore })
 export function togglePanelCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.toggle-panel',
+    feedback: VISIBLE,
     icon: 'PanelLeft',
     title: DOCUMENT_PANEL_TOGGLE_TITLE,
     shortcut: 'Ctrl+Shift+B',
@@ -166,6 +169,7 @@ export function layoutModeCommands(deps: { readonly settings: SettingsStore }): 
 
   const modeCommand = (mode: LayoutMode): UiCommand => ({
     id: `view.layout-${mode}`,
+    feedback: VISIBLE,
     title: LAYOUT_TITLES[mode],
     icon: LAYOUT_ICONS[mode],
     // No chord for Ribbon and Studio: §10.3 names none, and Escape is Focus's way out. Focus has one because a mode
@@ -182,6 +186,7 @@ export function layoutModeCommands(deps: { readonly settings: SettingsStore }): 
 
   const leaveFocus: UiCommand = {
     id: 'view.leave-focus',
+    feedback: VISIBLE,
     title: LEAVE_FOCUS_COMMAND_TITLE,
     shortcut: 'Escape',
     placements: [],
@@ -198,6 +203,7 @@ export function layoutModeCommands(deps: { readonly settings: SettingsStore }): 
 export function toggleContextPanelCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.toggle-context-panel',
+    feedback: VISIBLE,
     icon: 'PanelRight',
     title: CONTEXT_PANEL_TOGGLE_TITLE,
     shortcut: 'Ctrl+Shift+J',
@@ -217,6 +223,7 @@ export function toggleContextPanelCommand(deps: { readonly settings: SettingsSto
 export function showPropertiesCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.show-properties',
+    feedback: VISIBLE,
     icon: 'PanelRight',
     title: SHOW_PROPERTIES_TITLE,
     placements: [{ surface: 'menu-bar', menu: 'window', group: 0, order: 70, caption: MENU_GROUP_PANELS }],
@@ -246,6 +253,7 @@ const THEMES: readonly { readonly theme: Theme; readonly title: MessageKey; read
 export function themeCommands(deps: { readonly settings: SettingsStore }): readonly UiCommand[] {
   return THEMES.map(({ theme, title, order, icon }) => ({
     id: `view.theme-${theme}`,
+    feedback: VISIBLE,
     title,
     icon,
     placements: [{ surface: 'menu-bar', menu: 'view', group: 1, order, caption: MENU_GROUP_THEME }],
