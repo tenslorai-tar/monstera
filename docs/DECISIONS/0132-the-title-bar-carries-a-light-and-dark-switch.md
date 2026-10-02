@@ -71,3 +71,8 @@ dialog writes. Two sentences above are therefore wrong, and are corrected here r
 
 **The switch's name is its own**, *Switch to light theme* or *Switch to dark theme*, because it says what a click does;
 the commands keep their titles, *Light theme* and *Dark theme*, which name a choice in a list.
+
+**And a third sentence, found by the stage audit of `173cc5ae..0401c925`** (finding BBBBBBB-5): Decision 2's *"and
+neither command exists"* under Windows high contrast is withdrawn with the first. The commands have no `when` at any
+time; under high contrast it is the SWITCH that is disabled and says why, while *View › Theme* keeps both choosable,
+since the choice is stored and takes effect once Windows stops asking for high contrast.

@@ -2511,7 +2511,6 @@ optgroup {
   border-block-start: 1px solid var(--border-soft); /* decorative: separates the conversation from the ask; the controls draw their own */
 }
 
-/* CONTEXT AND SOURCES, ONE ROW (the owner's review of 0.1.6.0): two menus whose closed faces read their names. */
 /* ONE ROW, NEVER WRAPPED (the owner, 2 October): *Choose*, the Context menu, the Sources menu. Each menu's face is its
    value alone, which is what makes one row fit the pane's default width; `assistantPane.pw.ts` measures it. */
 .m-assistant__choices {
@@ -2527,7 +2526,7 @@ optgroup {
   font-weight: 600;
 }
 
-/* A CHOICE MENU'S FACE (`ChoiceMenu`): its name and a chevron, in the pane's small control shape. The trigger is the
+/* A CHOICE MENU'S FACE (`ChoiceMenu`): its value and a chevron, in the pane's small control shape. The trigger is the
    control, so it takes the boundary token that solves for 3:1. */
 .m-choice-menu {
   display: inline-flex;
