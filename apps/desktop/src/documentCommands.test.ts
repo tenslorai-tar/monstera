@@ -19,6 +19,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
+  type AiModel,
   type Command,
   channels,
   type Incident,
@@ -1947,6 +1948,40 @@ describe('search is E2s first consumer, through the composition point', () => {
         expect(sent.system).toContain('Use only this text, not outside knowledge.');
       });
 
+      it('a model that SAYS it cannot see: the picture is named cannot-see and sent NOWHERE — CONTROL: one that did not say is sent it', async () => {
+        const capable = { vision: null, streaming: null } as const;
+        const blind = { id: 'claude-text-only', label: 'Text only', capabilities: { vision: false, streaming: null } };
+        const asking = async (model: string, models: readonly AiModel[]) => {
+          const files = attaching({ '/work/photo.jpg': PHOTO });
+          const { bodies, handlers } = askHandlers(undefined, files, models);
+          const picked = await handlers['ai.attach']({});
+          const answer = await handlers['ai.ask']({
+            subscription: `ask-vision-${model}`,
+            provider: 'anthropic',
+            model,
+            messages: [{ role: 'user', text: 'What is in the photo?' }],
+            attachments: picked.ok ? picked.value.files.map((file) => file.handle) : [],
+            web: false,
+          });
+          await new Promise((settle) => setTimeout(settle, 0));
+          return { answer, files, sent: JSON.parse(bodies[0] ?? '{}') as { system?: string; messages?: { content: unknown }[] } };
+        };
+
+        // THE HELD LIST says the chosen model has no vision, so the handler's one rule (`servesVision`) refuses it.
+        const refused = await asking('claude-text-only', [blind]);
+        expect(refused.answer.ok && refused.answer.value).toMatchObject({ started: true, files: [{ unread: 'cannot-see' }] });
+        // NOT SIZED AND NOT SENT: the bytes reached neither the compose host nor the request.
+        expect(refused.files.pictures).toStrictEqual([]);
+        expect(JSON.stringify(refused.sent.messages)).not.toContain(Buffer.from(PHOTO).toString('base64'));
+        expect(refused.sent.system).toContain('File 1 is "photo.jpg"');
+
+        // CONTROL, the same picture and the same list's shape: a model whose capabilities are unknown is sent it.
+        const sent = await asking('claude-anything', [{ id: 'claude-anything', label: 'Anything', capabilities: capable }]);
+        expect(sent.answer.ok && sent.answer.value).toMatchObject({ files: [{ pictured: true }] });
+        expect(sent.files.pictures).toStrictEqual([[PHOTO, 'image/jpeg']]);
+        expect(JSON.stringify(sent.sent.messages)).toContain(Buffer.from(PHOTO).toString('base64'));
+      });
+
       it('past eight picked files, eight are kept and the rest COUNTED', async () => {
         const disk = Object.fromEntries(Array.from({ length: 11 }, (_, at) => [`/work/${String(at)}.txt`, NOTES]));
         const { handlers } = askHandlers(undefined, attaching(disk));
@@ -1981,20 +2016,24 @@ describe('search is E2s first consumer, through the composition point', () => {
         readonly capabilities: CapabilityRegistry;
         readonly attachments: Parameters<typeof createContractHandlers>[0]['attachments'];
       },
+      /** The models the assistant holds for the provider, as a fetched list would say them; absent, its own list. */
+      models?: readonly AiModel[],
     ): { bodies: string[]; handlers: ReturnType<typeof createContractHandlers> } {
       const bodies: string[] = [];
       const fetchImpl = ((_url: string, init?: { body?: string }) => {
         bodies.push(init?.body ?? '');
         return Promise.resolve(answered());
       }) as unknown as typeof fetch;
+      const assistant = createAssistant({
+        secret: (id) => (id === 'ai.anthropic-key' ? 'a-key' : undefined),
+        setting: (definition) => definition.fallback,
+        send: () => undefined,
+        openInBrowser: () => Promise.resolve(),
+        fetchImpl,
+      });
       const handlers = createContractHandlers({
-        assistant: createAssistant({
-          secret: (id) => (id === 'ai.anthropic-key' ? 'a-key' : undefined),
-          setting: (definition) => definition.fallback,
-          send: () => undefined,
-          openInBrowser: () => Promise.resolve(),
-          fetchImpl,
-        }),
+        assistant:
+          models === undefined ? assistant : { ...assistant, held: (provider) => ({ ...assistant.held(provider), models }) },
         appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
         capabilities: files?.capabilities ?? new CapabilityRegistry(),
         commands: searchCommands(askPicture),
