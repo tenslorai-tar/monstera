@@ -213,3 +213,13 @@ YYYYYY-4). The five command channels exceed a frame at their schema's worst for 
 command object is not `.strict()`, so the walk reads it as able to carry more keys and so unbounded, which it must.
 With page lists bounded the anchor now asserts that no array or string in a command is unbounded, with a control that
 the old index list is reported; the channels stay pinned, and their oversized request is the refusal above.
+
+## Correction, 2026-10-02 — three of the five command channels cross in a file (ADR-0138)
+
+**Point 10 and the correction above both read the commands on the wrong side, and are corrected here rather than
+edited.** The check forced `.strict()` on each kind and read the output side of each transform, so it measured a
+schema the wire does not parse and could not represent a `DocVersion`. Read on the wire's side with every command
+object made strict at its source, MuPDF's kinds fit the frame and MuPDF's apply and capture leave the pinned list.
+`engine/applyPdfLib` and PDFium's apply and capture do not, and now take their params by Decision 7's route, so
+Decision 7 no longer names one channel. A file-requested channel is now held to the 8 MiB ceiling at worst, with its
+exceptions pinned. [ADR-0138](0138-a-command-whose-intent-can-outgrow-a-frame-crosses-in-a-file.md) has the figures.
