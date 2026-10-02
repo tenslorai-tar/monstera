@@ -51,6 +51,12 @@ export interface IconButtonProps {
   variant?: 'primary' | undefined;
   /** `ToolButton`'s `pressed`: the state a toggle sets, written as `aria-pressed`, and nothing for a plain button. */
   pressed?: boolean | undefined;
+  /**
+   * Disabled but still reachable: `aria-disabled` instead of the native attribute, so focus and a pointer still reach
+   * it and its tooltip can say WHY it is off. A natively disabled button fires no hover, so a reason in its tooltip is
+   * one nobody can read.
+   */
+  focusableWhenDisabled?: boolean | undefined;
 }
 
 export function IconButton({
@@ -61,6 +67,7 @@ export function IconButton({
   onClick,
   variant,
   pressed,
+  focusableWhenDisabled,
 }: IconButtonProps): ReactElement {
   // Subscribed rather than resolved once — see `Button` for why the module
   // function is the wrong call here.
@@ -87,6 +94,7 @@ export function IconButton({
             : `m-icon-button m-icon-button--${size}`
         }
         disabled={disabled}
+        focusableWhenDisabled={focusableWhenDisabled}
         nativeButton
         onClick={onClick}
         ref={element}

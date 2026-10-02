@@ -281,7 +281,9 @@ optgroup {
   flex: none;
   align-items: center;
   gap: var(--space-8);
-  min-inline-size: 16rem;
+  /* NARROWER since the light and dark switch joined the row (ADR-0132): the tabs keep the width. `flex: none`, so the
+     placeholder and the chord set the width whenever they need more than this floor, and are never cut. */
+  min-inline-size: 12rem;
   margin-inline-start: auto;
   padding: var(--space-4) var(--space-8);
   border: 1px solid var(--border-control);

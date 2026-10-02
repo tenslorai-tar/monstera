@@ -2255,6 +2255,45 @@ test('LIVE CHECK 2.1.2, 2.4.3 and 2.4.7: Tab walks the document screen in readin
   expect(status, JSON.stringify(order)).toBe(order.length - 1);
 });
 
+for (const [theme, offers] of [
+  ['light', 'Switch to dark theme'],
+  ['dark', 'Switch to light theme'],
+] as const) {
+  test(`${theme}: the TITLE BAR's light and dark switch offers the other theme, and the search keeps its words at 1280 × 800`, async ({
+    page,
+  }) => {
+    // ADR-0132 at the owner's size, with a document open so the tabs take their share of the row.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await bridgeWithDocument(page, { 'appearance.theme': theme }, 1);
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    const bar = page.locator('.m-title-bar');
+    await expect(bar.getByRole('button', { name: offers })).toBeVisible();
+
+    const fit = await bar.evaluate((element) => {
+      const search = element.querySelector<HTMLElement>('.m-command-search');
+      const chord = element.querySelector<HTMLElement>('.m-command-search__chord');
+      const words = search?.querySelector<HTMLElement>('span');
+      const searchBox = search?.getBoundingClientRect();
+      const chordBox = chord?.getBoundingClientRect();
+      return {
+        // THE PLACEHOLDER WHOLE: its own text fits the box it is laid out in.
+        placeholder: words !== null && words !== undefined && words.scrollWidth <= words.clientWidth + 1,
+        // THE CHORD INSIDE THE SEARCH, not pushed past its edge.
+        chord: searchBox !== undefined && chordBox !== undefined && chordBox.right <= searchBox.right + 0.5,
+        // AND THE ROW ITSELF scrolls nothing sideways: every control is laid out inside it.
+        row: element.scrollWidth <= element.clientWidth + 1,
+      };
+    });
+    expect(fit).toStrictEqual({ placeholder: true, chord: true, row: true });
+
+    // A CLICK writes the other theme, through View › Theme's command.
+    await bar.getByRole('button', { name: offers }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme === 'light' ? 'dark' : 'light');
+  });
+}
+
 test('LIVE CHECK toasts: a toast never covers the assistant’s Send button', async ({ page }) => {
   // The review's "toasts over Send": the toast strip sits at the window's bottom-right, which is where the assistant's
   // composer ends. A save's toast is the one this screen raises on its own.

@@ -222,6 +222,18 @@ export const HIGH_CONTRAST_QUERIES = [
  * environment — a shell that assumed high contrast because it could not ask
  * would be the reassuring answer pointing the wrong way.
  */
+/** The operating system's own scheme, which `system` follows. */
+export const SYSTEM_DARK_QUERY = '(prefers-color-scheme: dark)';
+
+/**
+ * The scheme on show: the setting's, or under `system` the operating system's. What the title bar's light and dark
+ * switch reads to decide its face and its next step (ADR-0132): from `system` a click picks the opposite of THIS.
+ */
+export function shownTheme(theme: Theme, systemDark: boolean): 'light' | 'dark' {
+  if (theme !== 'system') return theme;
+  return systemDark ? 'dark' : 'light';
+}
+
 export function highContrastWanted(): boolean {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
   return HIGH_CONTRAST_QUERIES.some((query) => window.matchMedia(query).matches);

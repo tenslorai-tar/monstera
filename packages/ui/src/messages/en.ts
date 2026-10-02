@@ -852,6 +852,10 @@ export const VERTICAL_RULER_LABEL = messageKey('surface.ruler.vertical.label');
 export const ACCENT_TITLE = messageKey('setting.appearance.accent.title');
 export const PALETTE_LABEL = messageKey('surface.palette.label');
 export const PALETTE_PLACEHOLDER = messageKey('surface.palette.placeholder');
+/** The title bar's light and dark switch (ADR-0132): what a click does, and why it is off under high contrast. */
+export const THEME_SWITCH_TO_LIGHT = messageKey('surface.theme-switch.to-light');
+export const THEME_SWITCH_TO_DARK = messageKey('surface.theme-switch.to-dark');
+export const THEME_SWITCH_HIGH_CONTRAST = messageKey('surface.theme-switch.high-contrast');
 export const PALETTE_EMPTY = messageKey('surface.palette.empty');
 export const PALETTE_TITLE = messageKey('command.palette.title');
 export const DESTINATIONS_LABEL = messageKey('surface.destinations.label');
@@ -2737,6 +2741,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ACCENT_TITLE]: 'Accent colour',
   [PALETTE_LABEL]: 'Command palette',
   [PALETTE_PLACEHOLDER]: 'Search commands',
+  [THEME_SWITCH_TO_LIGHT]: 'Switch to light theme',
+  [THEME_SWITCH_TO_DARK]: 'Switch to dark theme',
+  [THEME_SWITCH_HIGH_CONTRAST]: 'Windows high contrast is on, so light and dark follow it',
   [PALETTE_EMPTY]: 'No command matches.',
   [PALETTE_TITLE]: 'Command palette',
   [DESTINATIONS_LABEL]: 'Outline',
