@@ -892,6 +892,96 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-02 — Stage audit of `4a93218f..884eff57` — findings AAAAAAA-1 to AAAAAAA-6
+
+Owed at one batch of files: merging `work/cloud-screens` would have taken the unaudited range to 233 files against 200,
+and the pre-commit gate refused that commit. The range is 35 commits: the last audit's record and its two repairs, the
+reader crash, three of row 303's fixes and its record, `work/2026-10-01-hook-mode` merged, item 3 (settings `main`
+reads), §9.17's 100 MB, item 6 (the taskbar icon), the reader proof's rewrite, ADR-0130 and its two builds and the
+record of every size cap, the board's lookup, `work/cloud-flicker` merged with its baselines, and the page list's
+layer. The 31 modified proofs were read by their deleted lines.
+
+### 1. Root cause or workaround?
+
+Each fix states its mechanism in its commit: a thread terminated inside a native call (`napi_throw` fails, exit 134);
+a cursor stylesheet rewritten on every pointer move; a catalogue compiled per call; a noise tile and a scroller
+re-rasterised under every repaint; a page drawn one glyph per object; lists answered whole to a guess. **AAAAAAA-2**
+(fixed in the range): the board reader asked for the repository's eight newest runs and filtered by sha, which held
+while one seat pushed; with the cloud agent pushing, a green commit read BLIND, and `--once` printed nothing at all.
+`5c452f4f` asks GitHub with `head_sha`; the cloud fixed the silent `--once` the same day through a library function
+with a proof, and that one is kept at the merge.
+
+### 2. Verified against the easy shape only?
+
+The parts loop is proven against a version that moves between parts (it restarts, asserting the calls), and `main`'s
+cut over 5,000 items with the flag set on every part; the live harness reads 5,000 fields through the real host. The
+join's hard shapes — a space with no run, a descender, tight leading — are cases. Not run: text set at an angle is
+never joined (upright only, a stated limit).
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Twice. `proof:readerdispose`'s race control could not be won on a Windows Server 2022 runner (twenty processes, no
+abort), so the control became a check of the instrument and the race went to `scripts/research/readerAbort.mjs`
+(`310f4d7f`): the abort is now reproduced on this machine only, and CI holds the channel's disposal order alone. And
+three caps moved from guesses to derived bounds held by literal-against-division cases — an anchor, not a derivation
+(item 4c's direction: a schema that grows shrinks the bound and turns the case red).
+
+### 3. Would CI have caught it?
+
+From runs: `48ea697c` green on both (CI #1021, Guards #1028) and `main` moved there. `e2f432ba` and `72d80628` are red on
+Guards for one reason, **AAAAAAA-4**: `documentScope.proof.mjs` reads the ADR index, which still called ADR-0130 plain
+*Accepted* after its two corrections. CI could not have caught **AAAAAAA-1**: no fixture has more than 512 objects or
+blocks on a page.
+
+### 4. Are the proofs non-vacuous?
+
+The deletions are corrections, each read: `engineReaderChannel.test.ts` lost *dispose terminates* with the terminate
+itself; the cloud's `AppErrorBoundary` and `AppTabs` cases now assert the SAME scroller node and nothing re-requested,
+where a remount would be a new node; `bootstrapHooks.proof.mjs`' shim checks were widened from pre-commit to every
+hook. New cases were each seen red against their defect: the parts handler (flag on every part), the page list's layer
+(the CSS line removed: 0 layers), the glyph join (61 pdfiumcommand cases, each fix seen red first). **AAAAAAA-6** (low,
+open): the walks' `truncated` branches at the new bounds (44,100 / 77,600 / 239,600 items) have no case — the branch
+no fixture reaches, a few lines each, and a fixture of that size is minutes.
+
+### 4a. Resolution test before measuring?
+
+`frameTimes.mjs` refuses to report unless idle (16.6 ms, 0 dropped) and a 40 ms spin (p95 50 ms, about 70 dropped,
+script largest) separate; its first run failed its own sum check and was repaired. The page list's measurement was
+three alternating runs each, 11–14 against 0, the spread smaller than the difference.
+
+### 4b. A search with a positive control?
+
+`surfaceLayers.pw.ts` must find the viewport's layer before *no list layer* means anything; `engineChannels.test.ts`
+must see one entry past the bound refused; the record of size caps names which rows were re-read and which were taken
+from a trace (B6).
+
+### 4c. Does a check derive its extent from the set it governs?
+
+`STORED_SETTINGS` is a literal list with a literal count (12, now 11 with the cloud's withdrawal of the recent-list
+length), so an omission is a red case; the three hostile-host bounds are literals held to a division.
+
+### 5. Executed, or asserted?
+
+Executed, with three left as observations: a pre-push typecheck that exited 139 once and passed on the next run with a
+larger heap (not reproduced); three related tests that failed beside a typecheck and passed alone; and
+**AAAAAAA-3** (low, open, a task is offered): `documentCommands.test.ts`' save cases read a session only another
+describe's hook creates, so the case fails run alone and passes in its file.
+
+### 6. Architecture before the feature, or underneath it?
+
+Before, each time: ADR-0130 (`eae29bf6`) before `ef15da04` and `c5cdef64`; §9.17's amendment before row 362's close;
+ADR-0129 (`9235c10a`, the cloud's) before `e6252ae9`. The join as built differed from Decision 1's wording in two
+clauses and the ADR carries a dated correction (`91dddd85`).
+
+### 7. Do the documents still match the code?
+
+**AAAAAAA-1** (medium, open): `document.textBlocks` and `document.pageObjects` answer `internal` for a page past 512
+blocks or objects — the contract's `.max(512)` rejects what `main` forwards — while both truncation messages exist and
+are unreachable; recorded with the rest of the class in *No document-size refusals*. **AAAAAAA-4** (low): a correction
+is a claim too — the index row was not swept when the ADR it summarises was corrected; repaired in this commit.
+**AAAAAAA-5** (low, open): the Help articles *comments-list* and *fill-in-a-form* still say only the first 4,096 are
+listed; they were the cloud agent's until `work/cloud-screens` merges, which is the next commit.
+
 ## 2026-10-02 — No document-size refusals: what every cap a document can reach does today
 
 The owner's rule (2026-10-01): a person is never told an action cannot be done because of their document.
