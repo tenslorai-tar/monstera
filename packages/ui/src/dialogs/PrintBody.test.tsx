@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
-import { I18nProvider } from '@lingui/react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { activateCatalogue, i18n } from '../i18n.js';
+import { activateCatalogue } from '../i18n.js';
+import { InDialog } from './inDialog.js';
 import { EN } from '../messages/en.js';
 import PrintBody from './PrintBody.js';
 
@@ -16,7 +16,7 @@ import PrintBody from './PrintBody.js';
 
 function Wrapped({ children }: { children: ReactNode }): ReactElement {
   activateCatalogue('en', EN);
-  return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
+  return <InDialog>{children}</InDialog>;
 }
 
 afterEach(() => {
@@ -36,7 +36,8 @@ describe('PrintBody', () => {
         </Wrapped>,
       );
       fireEvent.click(screen.getByRole('radio', { name: label }));
-      fireEvent.click(screen.getByRole('button'));
+      // BY NAME: in the dialog, the footer's Cancel and the header's close are buttons too.
+      fireEvent.click(screen.getByRole('button', { name: 'Choose a printer…' }));
       expect(resolve).toHaveBeenCalledWith({ dpi });
       cleanup();
     }
@@ -50,7 +51,8 @@ describe('PrintBody', () => {
           <PrintBody dpi={dpi} resolve={resolve} update={() => undefined} />
         </Wrapped>,
       );
-      fireEvent.click(screen.getByRole('button'));
+      // BY NAME: in the dialog, the footer's Cancel and the header's close are buttons too.
+      fireEvent.click(screen.getByRole('button', { name: 'Choose a printer…' }));
       expect(resolve).toHaveBeenCalledWith({ dpi });
       cleanup();
     }

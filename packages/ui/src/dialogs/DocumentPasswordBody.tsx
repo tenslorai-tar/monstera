@@ -12,6 +12,7 @@ import {
   DOCUMENT_PASSWORD_WRONG,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { DocumentPasswordAnswer } from './documentPassword.js';
@@ -61,12 +62,15 @@ export default function DocumentPasswordBody({
           with tabs there may be several. It is the name and never the path,
           which is the only thing the renderer has (invariant L2). */}
       <p className="m-annotation-text__problem">{_(DOCUMENT_PASSWORD_ASKS, { name })}</p>
-      <Input
-        label={DOCUMENT_PASSWORD_LABEL}
-        onValueChange={setPassword}
-        secret
-        value={password}
-      />
+      <DialogRow label={DOCUMENT_PASSWORD_LABEL}>
+        <Input
+          label={DOCUMENT_PASSWORD_LABEL}
+          labelShownBeside
+          onValueChange={setPassword}
+          secret
+          value={password}
+        />
+      </DialogRow>
       <p className="m-annotation-text__problem" role="status">
         {over
           ? _(DOCUMENT_PASSWORD_TOO_LONG)
@@ -78,18 +82,20 @@ export default function DocumentPasswordBody({
               _(retry ? DOCUMENT_PASSWORD_WRONG : DOCUMENT_PASSWORD_EMPTY)
             : ''}
       </p>
-      <Button
-        disabled={!usable}
-        label={DOCUMENT_PASSWORD_APPLY}
-        onClick={() => {
-          // GUARDED AGAIN rather than trusting the disabled attribute: the
-          // result schema refuses an empty string, so a mismatch would throw
-          // `DialogResultRejected` over a document nobody has opened yet.
-          if (!usable) return;
-          resolve({ password });
-        }}
-        variant="primary"
-      />
+      <DialogFooter>
+        <Button
+          disabled={!usable}
+          label={DOCUMENT_PASSWORD_APPLY}
+          onClick={() => {
+            // GUARDED AGAIN rather than trusting the disabled attribute: the
+            // result schema refuses an empty string, so a mismatch would throw
+            // `DialogResultRejected` over a document nobody has opened yet.
+            if (!usable) return;
+            resolve({ password });
+          }}
+          variant="primary"
+        />
+      </DialogFooter>
     </div>
   );
 }

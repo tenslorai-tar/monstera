@@ -14,6 +14,7 @@ import {
   SANITIZE_PART_JAVASCRIPT,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { SanitizeDocumentAnswer } from './sanitizeDocument.js';
 
@@ -47,42 +48,45 @@ export default function SanitizeDocumentBody({
 
   return (
     <div className="m-sanitize-document">
-      <fieldset className="m-sanitize-document__parts">
-        <legend>{_(SANITIZE_DOCUMENT_EXPLAINS)}</legend>
-        {PDF_SANITIZE_PARTS.map((part) => (
-          <label key={part}>
-            <input
-              checked={parts.includes(part)}
-              data-sanitize-part={part}
-              onChange={(event) => {
-                setParts((current) =>
-                  event.target.checked
-                    ? [...current, part]
-                    : current.filter((held) => held !== part),
-                );
-              }}
-              type="checkbox"
-            />
-            {_(PART_TITLES[part])}
-          </label>
-        ))}
-      </fieldset>
+      <DialogRow label={SANITIZE_DOCUMENT_EXPLAINS}>
+        <div aria-label={_(SANITIZE_DOCUMENT_EXPLAINS)} className="m-sanitize-document__parts" role="group">
+          {PDF_SANITIZE_PARTS.map((part) => (
+            <label key={part}>
+              <input
+                checked={parts.includes(part)}
+                data-sanitize-part={part}
+                onChange={(event) => {
+                  setParts((current) =>
+                    event.target.checked
+                      ? [...current, part]
+                      : current.filter((held) => held !== part),
+                  );
+                }}
+                type="checkbox"
+              />
+              {_(PART_TITLES[part])}
+            </label>
+          ))}
+        </div>
+      </DialogRow>
 
       <p className="m-sanitize-document__problem" role="status">
         {usable ? '' : _(SANITIZE_DOCUMENT_EMPTY)}
       </p>
-      <Button
-        disabled={!usable}
-        label={SANITIZE_DOCUMENT_APPLY}
-        onClick={() => {
-          // GUARDED AGAIN rather than trusting the disabled attribute: the
-          // result schema refuses an empty list, so a mismatch would throw
-          // `DialogResultRejected` over the user's document.
-          if (!usable) return;
-          resolve({ parts: [...parts] });
-        }}
-        variant="primary"
-      />
+      <DialogFooter>
+        <Button
+          disabled={!usable}
+          label={SANITIZE_DOCUMENT_APPLY}
+          onClick={() => {
+            // GUARDED AGAIN rather than trusting the disabled attribute: the
+            // result schema refuses an empty list, so a mismatch would throw
+            // `DialogResultRejected` over the user's document.
+            if (!usable) return;
+            resolve({ parts: [...parts] });
+          }}
+          variant="primary"
+        />
+      </DialogFooter>
     </div>
   );
 }

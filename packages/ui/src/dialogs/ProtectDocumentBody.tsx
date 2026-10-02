@@ -8,7 +8,7 @@ import {
 } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
-import { useId, useState } from 'react';
+import { useState } from 'react';
 
 import {
   PERMISSION_ANNOTATE,
@@ -34,6 +34,7 @@ import {
   PROTECT_DOCUMENT_USER,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { ProtectDocumentAnswer } from './protectDocument.js';
@@ -93,7 +94,6 @@ export default function ProtectDocumentBody({
   resolve,
 }: DialogAnswering<ProtectDocumentAnswer>): ReactElement {
   const { _ } = useLingui();
-  const schemeId = useId();
   const [encryption, setEncryption] = useState<PdfEncryption>('aes-256');
   const [userPassword, setUserPassword] = useState('');
   const [ownerPassword, setOwnerPassword] = useState('');
@@ -109,13 +109,12 @@ export default function ProtectDocumentBody({
 
   return (
     <div className="m-protect-document">
-      <label className="m-document-choice" htmlFor={schemeId}>
-        {_(PROTECT_DOCUMENT_SCHEME)}
+      <DialogRow label={PROTECT_DOCUMENT_SCHEME}>
         {/* A NATIVE `<select>`, for `DocumentChoice`'s reason: Base UI's popup
             injects a `<style>` element and §9.27's pinned CSP admits no inline
             style, so the primitive set has no select. */}
         <select
-          id={schemeId}
+          aria-label={_(PROTECT_DOCUMENT_SCHEME)}
           data-protect-scheme=""
           onChange={(event) => {
             setEncryption(event.target.value as PdfEncryption);
@@ -128,44 +127,51 @@ export default function ProtectDocumentBody({
             </option>
           ))}
         </select>
-      </label>
+      </DialogRow>
 
       {removing ? (
         <p className="m-protect-document__note">{_(PROTECT_DOCUMENT_REMOVES)}</p>
       ) : (
         <>
-          <Input
-            label={PROTECT_DOCUMENT_USER}
-            onValueChange={setUserPassword}
-            secret
-            value={userPassword}
-          />
-          <Input
-            label={PROTECT_DOCUMENT_OWNER}
-            onValueChange={setOwnerPassword}
-            secret
-            value={ownerPassword}
-          />
-          <fieldset className="m-protect-document__permissions">
-            <legend>{_(PROTECT_DOCUMENT_PERMISSIONS)}</legend>
-            {PDF_PERMISSIONS.map((permission) => (
-              <label key={permission}>
-                <input
-                  checked={granted.includes(permission)}
-                  data-protect-permission={permission}
-                  onChange={(event) => {
-                    setGranted((current) =>
-                      event.target.checked
-                        ? [...current, permission]
-                        : current.filter((held) => held !== permission),
-                    );
-                  }}
-                  type="checkbox"
-                />
-                {_(PERMISSION_TITLES[permission])}
-              </label>
-            ))}
-          </fieldset>
+          <DialogRow label={PROTECT_DOCUMENT_USER}>
+            <Input
+              label={PROTECT_DOCUMENT_USER}
+              labelShownBeside
+              onValueChange={setUserPassword}
+              secret
+              value={userPassword}
+            />
+          </DialogRow>
+          <DialogRow label={PROTECT_DOCUMENT_OWNER}>
+            <Input
+              label={PROTECT_DOCUMENT_OWNER}
+              labelShownBeside
+              onValueChange={setOwnerPassword}
+              secret
+              value={ownerPassword}
+            />
+          </DialogRow>
+          <DialogRow label={PROTECT_DOCUMENT_PERMISSIONS}>
+            <div aria-label={_(PROTECT_DOCUMENT_PERMISSIONS)} className="m-protect-document__permissions" role="group">
+              {PDF_PERMISSIONS.map((permission) => (
+                <label key={permission}>
+                  <input
+                    checked={granted.includes(permission)}
+                    data-protect-permission={permission}
+                    onChange={(event) => {
+                      setGranted((current) =>
+                        event.target.checked
+                          ? [...current, permission]
+                          : current.filter((held) => held !== permission),
+                      );
+                    }}
+                    type="checkbox"
+                  />
+                  {_(PERMISSION_TITLES[permission])}
+                </label>
+              ))}
+            </div>
+          </DialogRow>
           <p className="m-protect-document__note">{_(PROTECT_DOCUMENT_EXPLAINS)}</p>
         </>
       )}
@@ -173,31 +179,33 @@ export default function ProtectDocumentBody({
       <p className="m-protect-document__problem" role="status">
         {usable ? '' : _(PROTECT_DOCUMENT_NEEDS_A_PASSWORD)}
       </p>
-      <Button
-        disabled={!usable}
-        label={removing ? PROTECT_DOCUMENT_REMOVE : PROTECT_DOCUMENT_APPLY}
-        onClick={() => {
-          // GUARDED AGAIN rather than trusting the disabled attribute: the
-          // result schema refuses both incoherent shapes, and a mismatch would
-          // throw `DialogResultRejected` over the user's document.
-          if (!usable) return;
-          resolve(
-            removing
-              ? { encryption: 'none', permissions: [...PDF_PERMISSIONS] }
-              : {
-                  encryption,
-                  // OMITTED rather than sent empty. An empty string is a
-                  // password the schema refuses, and *no user password* is a
-                  // real and useful state: the document opens for everybody and
-                  // only its permissions are protected.
-                  ...(userPassword.length > 0 ? { userPassword } : {}),
-                  ...(ownerPassword.length > 0 ? { ownerPassword } : {}),
-                  permissions: [...granted],
-                },
-          );
-        }}
-        variant="primary"
-      />
+      <DialogFooter>
+        <Button
+          disabled={!usable}
+          label={removing ? PROTECT_DOCUMENT_REMOVE : PROTECT_DOCUMENT_APPLY}
+          onClick={() => {
+            // GUARDED AGAIN rather than trusting the disabled attribute: the
+            // result schema refuses both incoherent shapes, and a mismatch would
+            // throw `DialogResultRejected` over the user's document.
+            if (!usable) return;
+            resolve(
+              removing
+                ? { encryption: 'none', permissions: [...PDF_PERMISSIONS] }
+                : {
+                    encryption,
+                    // OMITTED rather than sent empty. An empty string is a
+                    // password the schema refuses, and *no user password* is a
+                    // real and useful state: the document opens for everybody and
+                    // only its permissions are protected.
+                    ...(userPassword.length > 0 ? { userPassword } : {}),
+                    ...(ownerPassword.length > 0 ? { ownerPassword } : {}),
+                    permissions: [...granted],
+                  },
+            );
+          }}
+          variant="primary"
+        />
+      </DialogFooter>
     </div>
   );
 }

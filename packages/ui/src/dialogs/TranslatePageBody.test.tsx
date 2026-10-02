@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
-import { I18nProvider } from '@lingui/react';
 import type { MessageKey } from '@monstera/shared';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { activateCatalogue, i18n } from '../i18n.js';
+import { activateCatalogue } from '../i18n.js';
+import { InDialog } from './inDialog.js';
 import { EN, TRANSLATE_PAGE_INTRO, TRANSLATE_PAGE_NO_PROVIDER, TRANSLATE_PAGE_START } from '../messages/en.js';
 import TranslatePageBody from './TranslatePageBody.js';
 import type { TranslatePageAnswer } from './translatePage.js';
@@ -16,7 +16,7 @@ import type { TranslatePageAnswer } from './translatePage.js';
 
 function Wrapped({ children }: { children: ReactNode }): ReactElement {
   activateCatalogue('en', EN);
-  return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
+  return <InDialog>{children}</InDialog>;
 }
 
 afterEach(() => {
@@ -46,13 +46,14 @@ describe('the translation dialog', () => {
 
   it('answers the language chosen and the provider shown first, then the one chosen', () => {
     const answered: TranslatePageAnswer[] = [];
-    const { container } = render(
+    render(
       <Wrapped>
         <TranslatePageBody providers={['openai', 'anthropic']} resolve={(answer) => answered.push(answer)} update={() => undefined} />
       </Wrapped>,
     );
-    const language = container.querySelector<HTMLSelectElement>('[data-translate-language]');
-    const provider = container.querySelector<HTMLSelectElement>('[data-translate-provider]');
+    // THE DOCUMENT, not the render's container: the dialog draws its body in a portal, as the registry mounts it.
+    const language = document.querySelector<HTMLSelectElement>('[data-translate-language]');
+    const provider = document.querySelector<HTMLSelectElement>('[data-translate-provider]');
     if (language === null || provider === null) throw new Error('the dialog drew no selects');
     fireEvent.change(language, { target: { value: 'fr' } });
     fireEvent.click(screen.getByRole('button', { name: english(TRANSLATE_PAGE_START) }));
@@ -68,12 +69,12 @@ describe('the translation dialog', () => {
   });
 
   it('offers only providers with a key, and with none says where to add one — and offers no start', () => {
-    const { container } = render(
+    render(
       <Wrapped>
         <TranslatePageBody providers={['mistral']} resolve={() => undefined} update={() => undefined} />
       </Wrapped>,
     );
-    const options = [...(container.querySelector('[data-translate-provider]')?.querySelectorAll('option') ?? [])];
+    const options = [...(document.querySelector('[data-translate-provider]')?.querySelectorAll('option') ?? [])];
     expect(options.map((option) => option.value)).toStrictEqual(['mistral']);
     cleanup();
 

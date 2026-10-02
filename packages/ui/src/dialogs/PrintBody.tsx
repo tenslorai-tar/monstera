@@ -5,6 +5,7 @@ import { useState } from 'react';
 
 import { PRINT_APPLY, PRINT_DPI, PRINT_DPI_150, PRINT_DPI_300, PRINT_DPI_600 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { PrintAnswer } from './print.js';
 
@@ -30,29 +31,32 @@ export default function PrintBody({ dpi: starting, resolve }: { readonly dpi: Dp
 
   return (
     <div className="m-print">
-      <fieldset className="m-print__dpi">
-        <legend>{_(PRINT_DPI)}</legend>
-        {([150, 300, 600] as const).map((each) => (
-          <label key={each}>
-            <input
-              type="radio"
-              name="print-dpi"
-              checked={dpi === each}
-              onChange={() => {
-                setDpi(each);
-              }}
-            />
-            {_(RESOLUTIONS[each])}
-          </label>
-        ))}
-      </fieldset>
-      <Button
-        label={PRINT_APPLY}
-        variant="primary"
-        onClick={() => {
-          resolve({ dpi });
-        }}
-      />
+      <DialogRow label={PRINT_DPI}>
+        <div aria-label={_(PRINT_DPI)} className="m-print__dpi" role="radiogroup">
+          {([150, 300, 600] as const).map((each) => (
+            <label key={each}>
+              <input
+                type="radio"
+                name="print-dpi"
+                checked={dpi === each}
+                onChange={() => {
+                  setDpi(each);
+                }}
+              />
+              {_(RESOLUTIONS[each])}
+            </label>
+          ))}
+        </div>
+      </DialogRow>
+      <DialogFooter>
+        <Button
+          label={PRINT_APPLY}
+          variant="primary"
+          onClick={() => {
+            resolve({ dpi });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

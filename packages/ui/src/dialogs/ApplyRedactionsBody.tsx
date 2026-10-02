@@ -7,7 +7,7 @@ import {
 } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
-import { useId, useState } from 'react';
+import { useState } from 'react';
 
 import {
   APPLY_REDACTIONS_APPLY,
@@ -25,6 +25,7 @@ import {
   APPLY_REDACTIONS_WARNS,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { type ApplyRedactionsAnswer, applyRedactionsDefaults } from './applyRedactions.js';
@@ -65,10 +66,6 @@ export default function ApplyRedactionsBody({
   resolve,
 }: { readonly page: number } & DialogAnswering<ApplyRedactionsAnswer>): ReactElement {
   const { _ } = useLingui();
-  const scopeId = useId();
-  const coverId = useId();
-  const imagesId = useId();
-  const titleId = useId();
   // FROM THE ONE DEFINITION a burn-in without asking applies (`applyRedactionsDefaults`), so what this dialog starts
   // on and what *Confirm before redacting: off* does cannot drift apart. The title is removed by default — ADR-0079:
   // removal is the side that cannot leak, so keeping it is something a person asks for.
@@ -82,10 +79,9 @@ export default function ApplyRedactionsBody({
     <div className="m-apply-redactions">
       <p className="m-apply-redactions__warning">{_(APPLY_REDACTIONS_WARNS)}</p>
 
-      <label className="m-document-choice" htmlFor={scopeId}>
-        {_(APPLY_REDACTIONS_SCOPE)}
+      <DialogRow label={APPLY_REDACTIONS_SCOPE}>
         <select
-          id={scopeId}
+          aria-label={_(APPLY_REDACTIONS_SCOPE)}
           data-redact-scope=""
           onChange={(event) => {
             setScope(event.target.value === 'all' ? 'all' : 'page');
@@ -97,12 +93,11 @@ export default function ApplyRedactionsBody({
           </option>
           <option value="all">{_(APPLY_REDACTIONS_SCOPE_ALL)}</option>
         </select>
-      </label>
+      </DialogRow>
 
-      <label className="m-document-choice" htmlFor={coverId}>
-        {_(APPLY_REDACTIONS_COVER)}
+      <DialogRow label={APPLY_REDACTIONS_COVER}>
         <select
-          id={coverId}
+          aria-label={_(APPLY_REDACTIONS_COVER)}
           data-redact-cover=""
           onChange={(event) => {
             setCover(event.target.value as PdfRedactCover);
@@ -115,12 +110,11 @@ export default function ApplyRedactionsBody({
             </option>
           ))}
         </select>
-      </label>
+      </DialogRow>
 
-      <label className="m-document-choice" htmlFor={imagesId}>
-        {_(APPLY_REDACTIONS_IMAGES)}
+      <DialogRow label={APPLY_REDACTIONS_IMAGES}>
         <select
-          id={imagesId}
+          aria-label={_(APPLY_REDACTIONS_IMAGES)}
           data-redact-images=""
           onChange={(event) => {
             setImages(event.target.value as PdfRedactImages);
@@ -133,7 +127,7 @@ export default function ApplyRedactionsBody({
             </option>
           ))}
         </select>
-      </label>
+      </DialogRow>
 
       {/* OFF, AND THE LABEL SAYS WHAT IT RISKS. The other three controls choose between
           outcomes that are all safe; this one chooses to keep something a burn-in would
@@ -142,27 +136,27 @@ export default function ApplyRedactionsBody({
           a title can contain is a decision. A checkbox and not a select because it is
           the only control here whose two states are not peers: off is the safe side and
           stays the default however often somebody wants the other. */}
-      <label className="m-document-choice" htmlFor={titleId}>
+      <DialogRow label={APPLY_REDACTIONS_KEEP_TITLE} note={APPLY_REDACTIONS_KEEP_TITLE_WARNS}>
         <input
+          aria-label={_(APPLY_REDACTIONS_KEEP_TITLE)}
           checked={keepTitle}
           data-redact-keep-title=""
-          id={titleId}
           onChange={(event) => {
             setKeepTitle(event.target.checked);
           }}
           type="checkbox"
         />
-        {_(APPLY_REDACTIONS_KEEP_TITLE)}
-      </label>
-      <p className="m-apply-redactions__note">{_(APPLY_REDACTIONS_KEEP_TITLE_WARNS)}</p>
+      </DialogRow>
 
-      <Button
-        label={APPLY_REDACTIONS_APPLY}
-        onClick={() => {
-          resolve({ pages: scope === 'all' ? 'all' : [page], cover, images, keepTitle });
-        }}
-        variant="primary"
-      />
+      <DialogFooter>
+        <Button
+          label={APPLY_REDACTIONS_APPLY}
+          onClick={() => {
+            resolve({ pages: scope === 'all' ? 'all' : [page], cover, images, keepTitle });
+          }}
+          variant="primary"
+        />
+      </DialogFooter>
     </div>
   );
 }

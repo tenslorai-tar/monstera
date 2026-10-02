@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
-import { I18nProvider } from '@lingui/react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { activateCatalogue, i18n } from '../i18n.js';
+import { activateCatalogue } from '../i18n.js';
+import { InDialog } from './inDialog.js';
 import { EN } from '../messages/en.js';
 import OptimizeBody from './OptimizeBody.js';
 import type { OptimizeProps } from './optimize.js';
@@ -18,7 +18,7 @@ import type { OptimizeProps } from './optimize.js';
 
 function Wrapped({ children }: { children: ReactNode }): ReactElement {
   activateCatalogue('en', EN);
-  return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
+  return <InDialog>{children}</InDialog>;
 }
 
 afterEach(() => {

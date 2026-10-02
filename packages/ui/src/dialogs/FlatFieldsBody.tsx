@@ -9,6 +9,7 @@ import {
   FLAT_FIELDS_TRUNCATED,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { FlatFieldsAnswer } from './flatFieldsResult.js';
 
@@ -85,20 +86,22 @@ export default function FlatFieldsBody({
             ))}
           </ul>
           <p className="m-flat-fields__kinds">{_(FLAT_FIELDS_ALL_TEXT)}</p>
-          <Button
-            disabled={accepted.length === 0}
-            label={FLAT_FIELDS_ACCEPT}
-            onClick={() => {
-              // GUARDED AGAIN rather than trusting the disabled attribute, for
-              // `DuplicatePagesBody`'s reason: the result schema refuses an
-              // empty list, and a resolve that reached it would surface as an
-              // internal error over a button the reader could press.
-              if (accepted.length === 0) return;
-              resolve({ accepted });
-            }}
-            values={{ count: accepted.length }}
-            variant="primary"
-          />
+          <DialogFooter>
+            <Button
+              disabled={accepted.length === 0}
+              label={FLAT_FIELDS_ACCEPT}
+              onClick={() => {
+                // GUARDED AGAIN rather than trusting the disabled attribute, for
+                // `DuplicatePagesBody`'s reason: the result schema refuses an
+                // empty list, and a resolve that reached it would surface as an
+                // internal error over a button the reader could press.
+                if (accepted.length === 0) return;
+                resolve({ accepted });
+              }}
+              values={{ count: accepted.length }}
+              variant="primary"
+            />
+          </DialogFooter>
         </>
       )}
     </div>

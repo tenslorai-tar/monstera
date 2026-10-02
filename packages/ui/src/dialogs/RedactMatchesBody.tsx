@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import { MAX_FIND_TEXT } from '@monstera/contract';
 import type { ReactElement } from 'react';
-import { useId, useState } from 'react';
+import { useState } from 'react';
 
 import {
   REDACT_MATCHES_APPLY,
@@ -15,6 +15,7 @@ import {
 } from '../messages/en.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { RedactMatchesAnswer } from './redactMatches.js';
@@ -41,7 +42,6 @@ export default function RedactMatchesBody({
   resolve,
 }: { readonly page: number } & DialogAnswering<RedactMatchesAnswer>): ReactElement {
   const { _ } = useLingui();
-  const scopeId = useId();
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState<'all' | 'page'>('all');
 
@@ -54,12 +54,13 @@ export default function RedactMatchesBody({
 
   return (
     <div className="m-redact-matches">
-      <Input label={REDACT_MATCHES_LABEL} onValueChange={setQuery} value={query} />
+      <DialogRow label={REDACT_MATCHES_LABEL}>
+        <Input label={REDACT_MATCHES_LABEL} labelShownBeside onValueChange={setQuery} value={query} />
+      </DialogRow>
 
-      <label className="m-document-choice" htmlFor={scopeId}>
-        {_(REDACT_MATCHES_SCOPE)}
+      <DialogRow label={REDACT_MATCHES_SCOPE}>
         <select
-          id={scopeId}
+          aria-label={_(REDACT_MATCHES_SCOPE)}
           data-redact-matches-scope=""
           onChange={(event) => {
             setScope(event.target.value === 'all' ? 'all' : 'page');
@@ -71,24 +72,26 @@ export default function RedactMatchesBody({
             {_(REDACT_MATCHES_SCOPE_PAGE, { page: pdfjsPageOf(page) })}
           </option>
         </select>
-      </label>
+      </DialogRow>
 
       <p className="m-redact-matches__note">{_(REDACT_MATCHES_EXPLAINS)}</p>
       <p className="m-redact-matches__problem" role="status">
         {over ? _(REDACT_MATCHES_TOO_LONG) : query.length === 0 ? _(REDACT_MATCHES_EMPTY) : ''}
       </p>
-      <Button
-        disabled={!usable}
-        label={REDACT_MATCHES_APPLY}
-        onClick={() => {
-          // GUARDED AGAIN rather than trusting the disabled attribute: the
-          // result schema refuses an empty query, so a mismatch would throw
-          // `DialogResultRejected` over the user's document.
-          if (!usable) return;
-          resolve({ query, pages: scope === 'all' ? 'all' : [page] });
-        }}
-        variant="primary"
-      />
+      <DialogFooter>
+        <Button
+          disabled={!usable}
+          label={REDACT_MATCHES_APPLY}
+          onClick={() => {
+            // GUARDED AGAIN rather than trusting the disabled attribute: the
+            // result schema refuses an empty query, so a mismatch would throw
+            // `DialogResultRejected` over the user's document.
+            if (!usable) return;
+            resolve({ query, pages: scope === 'all' ? 'all' : [page] });
+          }}
+          variant="primary"
+        />
+      </DialogFooter>
     </div>
   );
 }

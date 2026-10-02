@@ -13,6 +13,7 @@ import {
   OCR_UNAVAILABLE,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { openingLanguages } from './ocr.js';
 import { KEYS_ARTICLE, type OcrAnswer } from './ocrResult.js';
@@ -100,31 +101,34 @@ export default function OcrBody({
   return (
     <div className="m-ocr">
       {/* A NAMED GROUP (WCAG 4.1.2): a fieldset whose legend says what the boxes choose. */}
-      <fieldset className="m-ocr__languages">
-        <legend>{_(OCR_LANGUAGE)}</legend>
-        {languages.map((language) => (
-          <label className="m-ocr__language" key={language}>
-            <input
-              checked={held.includes(language)}
-              data-ocr-language={language}
-              disabled={!ocrLanguagesSchema.safeParse(toggled(language)).success}
-              onChange={() => {
-                setHeld(toggled(language));
-              }}
-              type="checkbox"
-            />
-            {_(OCR_LANGUAGE_NAMES[language])}
-          </label>
-        ))}
-      </fieldset>
+      <DialogRow label={OCR_LANGUAGE}>
+        <div aria-label={_(OCR_LANGUAGE)} className="m-ocr__languages" role="group">
+          {languages.map((language) => (
+            <label className="m-ocr__language" key={language}>
+              <input
+                checked={held.includes(language)}
+                data-ocr-language={language}
+                disabled={!ocrLanguagesSchema.safeParse(toggled(language)).success}
+                onChange={() => {
+                  setHeld(toggled(language));
+                }}
+                type="checkbox"
+              />
+              {_(OCR_LANGUAGE_NAMES[language])}
+            </label>
+          ))}
+        </div>
+      </DialogRow>
       <PageScopeChoice className="m-ocr__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
-      <Button
-        label={OCR_START}
-        variant="primary"
-        onClick={() => {
-          resolve({ pages: everyPage ? 'all' : [...pages], languages: run.data });
-        }}
-      />
+      <DialogFooter>
+        <Button
+          label={OCR_START}
+          variant="primary"
+          onClick={() => {
+            resolve({ pages: everyPage ? 'all' : [...pages], languages: run.data });
+          }}
+        />
+      </DialogFooter>
       {handwriting}
     </div>
   );

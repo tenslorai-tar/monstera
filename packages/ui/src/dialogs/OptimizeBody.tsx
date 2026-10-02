@@ -16,6 +16,7 @@ import {
   OPTIMIZE_SIZES,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { OptimizeAnswer, OptimizeProps } from './optimize.js';
 
@@ -56,22 +57,23 @@ export default function OptimizeBody({
   return (
     <div className="m-optimize">
       <p>{_(OPTIMIZE_KEEPS)}</p>
-      <fieldset className="m-export-excel__layout">
-        <legend>{_(OPTIMIZE_QUALITY)}</legend>
-        {OPTIMIZE_SETTING_NAMES.map((each) => (
-          <label key={each}>
-            <input
-              type="radio"
-              name="optimize-setting"
-              checked={setting === each}
-              onChange={() => {
-                setSetting(each);
-              }}
-            />
-            {_(NAMES[each])}
-          </label>
-        ))}
-      </fieldset>
+      <DialogRow label={OPTIMIZE_QUALITY}>
+        <div aria-label={_(OPTIMIZE_QUALITY)} className="m-export-excel__layout" role="radiogroup">
+          {OPTIMIZE_SETTING_NAMES.map((each) => (
+            <label key={each}>
+              <input
+                type="radio"
+                name="optimize-setting"
+                checked={setting === each}
+                onChange={() => {
+                  setSetting(each);
+                }}
+              />
+              {_(NAMES[each])}
+            </label>
+          ))}
+        </div>
+      </DialogRow>
 
       {shown === null ? null : (
         <p role="status">
@@ -88,7 +90,9 @@ export default function OptimizeBody({
         </p>
       )}
 
-      <div className="m-optimize__actions">
+      {/* THE PATTERN'S FOOTER: Cancel, then measuring, then saving once a measurement found a smaller file — the
+          action of the moment is the primary one. */}
+      <DialogFooter>
         <Button
           label={OPTIMIZE_MEASURE}
           variant={shown !== null && shown.after < shown.before ? 'default' : 'primary'}
@@ -105,7 +109,7 @@ export default function OptimizeBody({
             }}
           />
         ) : null}
-      </div>
+      </DialogFooter>
     </div>
   );
 }

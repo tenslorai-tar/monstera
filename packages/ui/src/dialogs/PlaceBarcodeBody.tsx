@@ -2,7 +2,7 @@ import { useLingui } from '@lingui/react';
 import type { BARCODE_FORMATS } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
-import { useId, useState } from 'react';
+import { useState } from 'react';
 
 import {
   PLACE_BARCODE_APPLY,
@@ -17,6 +17,7 @@ import {
   PLACE_BARCODE_TEXT,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { PlaceBarcodeAnswer } from './placeBarcode.js';
 
@@ -48,7 +49,6 @@ export default function PlaceBarcodeBody({
   resolve,
 }: { readonly refused?: PlaceBarcodeAnswer | undefined } & DialogAnswering<PlaceBarcodeAnswer>): ReactElement {
   const { _ } = useLingui();
-  const textId = useId();
   const [text, setText] = useState(refused?.text ?? '');
   const [format, setFormat] = useState<Format>(refused?.format ?? 'QRCode');
 
@@ -59,40 +59,45 @@ export default function PlaceBarcodeBody({
           {_(PLACE_BARCODE_REFUSED)}
         </p>
       )}
-      <label htmlFor={textId}>{_(PLACE_BARCODE_TEXT)}</label>
-      <textarea
-        id={textId}
-        className="m-place-barcode__text"
-        value={text}
-        rows={3}
-        onChange={(event) => {
-          setText(event.target.value);
-        }}
-      />
-      <fieldset className="m-place-barcode__formats">
-        <legend>{_(PLACE_BARCODE_FORMAT)}</legend>
-        {(Object.keys(FORMATS) as Format[]).map((each) => (
-          <label key={each}>
-            <input
-              type="radio"
-              name="place-barcode-format"
-              checked={format === each}
-              onChange={() => {
-                setFormat(each);
-              }}
-            />
-            {_(FORMATS[each])}
-          </label>
-        ))}
-      </fieldset>
-      <Button
-        label={PLACE_BARCODE_APPLY}
-        variant="primary"
-        disabled={text.length === 0}
-        onClick={() => {
-          resolve({ text, format });
-        }}
-      />
+      <DialogRow label={PLACE_BARCODE_TEXT}>
+        <textarea
+          aria-label={_(PLACE_BARCODE_TEXT)}
+          className="m-place-barcode__text"
+          value={text}
+          rows={3}
+          onChange={(event) => {
+            setText(event.target.value);
+          }}
+        />
+      </DialogRow>
+      {/* NATIVE RADIOS IN A NAMED GROUP, the row's words naming it: four formats, each a word. */}
+      <DialogRow label={PLACE_BARCODE_FORMAT}>
+        <div aria-label={_(PLACE_BARCODE_FORMAT)} className="m-place-barcode__formats" role="radiogroup">
+          {(Object.keys(FORMATS) as Format[]).map((each) => (
+            <label key={each}>
+              <input
+                type="radio"
+                name="place-barcode-format"
+                checked={format === each}
+                onChange={() => {
+                  setFormat(each);
+                }}
+              />
+              {_(FORMATS[each])}
+            </label>
+          ))}
+        </div>
+      </DialogRow>
+      <DialogFooter>
+        <Button
+          label={PLACE_BARCODE_APPLY}
+          variant="primary"
+          disabled={text.length === 0}
+          onClick={() => {
+            resolve({ text, format });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

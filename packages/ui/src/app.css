@@ -1851,6 +1851,14 @@ optgroup {
   width: 100%;
 }
 
+/* THE FORMATS, a row's control: each radio beside its word, wrapping inside the control. */
+.m-place-barcode__formats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-4) var(--space-12);
+}
+
 /*
  * THE STAMP CHOOSER: each built-in stamp as a stamp looks — its word in capitals inside a border — two to a row, so
  * eight fit without a scroll. The border is `--border-control`, a control's 3:1 edge, and the word `--text`.

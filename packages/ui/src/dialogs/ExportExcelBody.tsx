@@ -26,6 +26,7 @@ import {
   EXPORT_EXCEL_TRUNCATED,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { ExportExcelAnswer, ExportExcelProps } from './exportExcel.js';
 
@@ -93,22 +94,23 @@ export default function ExportExcelBody({
   const answer = (): ExportExcelAnswer['edits'] => (engine === 'automatic' ? [...edits.values()] : []);
 
   const layoutChoice = (
-    <fieldset className="m-export-excel__layout">
-      <legend>{_(EXPORT_EXCEL_LAYOUT)}</legend>
-      {(Object.keys(LAYOUTS) as SheetLayout[]).map((each) => (
-        <label key={each}>
-          <input
-            type="radio"
-            name="export-excel-layout"
-            checked={layout === each}
-            onChange={() => {
-              setLayout(each);
-            }}
-          />
-          {_(LAYOUTS[each])}
-        </label>
-      ))}
-    </fieldset>
+    <DialogRow label={EXPORT_EXCEL_LAYOUT}>
+      <div aria-label={_(EXPORT_EXCEL_LAYOUT)} className="m-export-excel__layout" role="radiogroup">
+        {(Object.keys(LAYOUTS) as SheetLayout[]).map((each) => (
+          <label key={each}>
+            <input
+              type="radio"
+              name="export-excel-layout"
+              checked={layout === each}
+              onChange={() => {
+                setLayout(each);
+              }}
+            />
+            {_(LAYOUTS[each])}
+          </label>
+        ))}
+      </div>
+    </DialogRow>
   );
 
   // §10.5's NO-KEY STATE: with no service's key stored there is no engine to choose, and a dialog
@@ -119,22 +121,23 @@ export default function ExportExcelBody({
         {_(EXPORT_EXCEL_SERVICES_NO_KEY)}
       </p>
     ) : (
-      <fieldset className="m-export-excel__layout">
-        <legend>{_(EXPORT_EXCEL_ENGINE)}</legend>
-        {engines.map((each) => (
-          <label key={each}>
-            <input
-              type="radio"
-              name="export-excel-engine"
-              checked={engine === each}
-              onChange={() => {
-                setEngine(each);
-              }}
-            />
-            {_(ENGINES[each])}
-          </label>
-        ))}
-      </fieldset>
+      <DialogRow label={EXPORT_EXCEL_ENGINE}>
+        <div aria-label={_(EXPORT_EXCEL_ENGINE)} className="m-export-excel__layout" role="radiogroup">
+          {engines.map((each) => (
+            <label key={each}>
+              <input
+                type="radio"
+                name="export-excel-engine"
+                checked={engine === each}
+                onChange={() => {
+                  setEngine(each);
+                }}
+              />
+              {_(ENGINES[each])}
+            </label>
+          ))}
+        </div>
+      </DialogRow>
     );
 
   if (engine !== 'automatic') {
@@ -216,13 +219,15 @@ export default function ExportExcelBody({
       {truncated ? <p>{_(EXPORT_EXCEL_TRUNCATED)}</p> : null}
 
       {layoutChoice}
-      <Button
-        label={EXPORT_EXCEL_APPLY}
-        variant="primary"
-        onClick={() => {
-          resolve({ kind: 'export', layout, engine, edits: answer() });
-        }}
-      />
+      <DialogFooter>
+        <Button
+          label={EXPORT_EXCEL_APPLY}
+          variant="primary"
+          onClick={() => {
+            resolve({ kind: 'export', layout, engine, edits: answer() });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

@@ -13,6 +13,7 @@ import {
   STAMP_TITLES,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { StampAnswer, StampPicture } from './stampResult.js';
 
@@ -82,7 +83,9 @@ export default function StampBody({
           </div>
         ))}
       </fieldset>
-      <div className="m-stamp-chooser__actions">
+      {/* THE PATTERN'S FOOTER: Cancel, then adding a picture, then the one action. The stamps above stay a gallery —
+          a stamp is chosen by how it looks, which a row of words cannot show. */}
+      <DialogFooter>
         <Button
           label={STAMP_DIALOG_ADD_PICTURE}
           onClick={() => {
@@ -96,7 +99,7 @@ export default function StampBody({
             resolve('stamp' in choice ? { stamp: choice.stamp } : { picture: choice.picture });
           }}
         />
-      </div>
+      </DialogFooter>
     </div>
   );
 }

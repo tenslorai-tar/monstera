@@ -15,6 +15,7 @@ import {
   WATERMARK_PAGES_TEXT,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
@@ -91,51 +92,65 @@ export default function WatermarkPagesBody({
 
   return (
     <div className="m-watermark-pages">
-      <Input
-        label={WATERMARK_PAGES_TEXT}
-        value={text}
-        onValueChange={(next) => {
-          setText(next);
-        }}
-      />
-      <Input
-        label={WATERMARK_PAGES_OPACITY}
-        value={appearance.opacity}
-        onValueChange={(next) => {
-          setAppearance({ ...appearance, opacity: next });
-        }}
-      />
-      <Input
-        label={WATERMARK_PAGES_ROTATION}
-        value={appearance.rotationDegrees}
-        onValueChange={(next) => {
-          setAppearance({ ...appearance, rotationDegrees: next });
-        }}
-      />
-      <Input
-        label={WATERMARK_PAGES_SIZE}
-        value={appearance.fontSize}
-        onValueChange={(next) => {
-          setAppearance({ ...appearance, fontSize: next });
-        }}
-      />
+      <DialogRow label={WATERMARK_PAGES_TEXT}>
+        <Input
+          label={WATERMARK_PAGES_TEXT}
+          labelShownBeside
+          value={text}
+          onValueChange={(next) => {
+            setText(next);
+          }}
+        />
+      </DialogRow>
+      <DialogRow label={WATERMARK_PAGES_OPACITY}>
+        <Input
+          label={WATERMARK_PAGES_OPACITY}
+          labelShownBeside
+          value={appearance.opacity}
+          onValueChange={(next) => {
+            setAppearance({ ...appearance, opacity: next });
+          }}
+        />
+      </DialogRow>
+      <DialogRow label={WATERMARK_PAGES_ROTATION}>
+        <Input
+          label={WATERMARK_PAGES_ROTATION}
+          labelShownBeside
+          value={appearance.rotationDegrees}
+          onValueChange={(next) => {
+            setAppearance({ ...appearance, rotationDegrees: next });
+          }}
+        />
+      </DialogRow>
+      <DialogRow label={WATERMARK_PAGES_SIZE}>
+        <Input
+          label={WATERMARK_PAGES_SIZE}
+          labelShownBeside
+          value={appearance.fontSize}
+          onValueChange={(next) => {
+            setAppearance({ ...appearance, fontSize: next });
+          }}
+        />
+      </DialogRow>
       <PageScopeChoice className="m-watermark-pages__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
       <p className="m-watermark-pages__problem" role="status">
         {ready ? '' : _(problemOf(trimmed, appearance))}
       </p>
-      <Button
-        label={WATERMARK_PAGES_APPLY}
-        variant="primary"
-        disabled={!ready}
-        onClick={() => {
-          // GUARDED AGAIN rather than trusting the disabled attribute, for
-          // `CropPagesBody`'s reason: the schema behind `resolve` refuses an
-          // opacity above 1, and a mismatch would be a thrown
-          // `DialogResultRejected` over the user's document.
-          if (parsed === null || trimmed.length === 0) return;
-          resolve({ pages: everyPage ? 'all' : [...pages], text: trimmed, ...parsed });
-        }}
-      />
+      <DialogFooter>
+        <Button
+          label={WATERMARK_PAGES_APPLY}
+          variant="primary"
+          disabled={!ready}
+          onClick={() => {
+            // GUARDED AGAIN rather than trusting the disabled attribute, for
+            // `CropPagesBody`'s reason: the schema behind `resolve` refuses an
+            // opacity above 1, and a mismatch would be a thrown
+            // `DialogResultRejected` over the user's document.
+            if (parsed === null || trimmed.length === 0) return;
+            resolve({ pages: everyPage ? 'all' : [...pages], text: trimmed, ...parsed });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

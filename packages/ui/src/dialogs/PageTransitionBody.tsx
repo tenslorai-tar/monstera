@@ -15,6 +15,7 @@ import {
   PAGE_TRANSITION_STYLE,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
@@ -70,38 +71,44 @@ export default function PageTransitionBody({
   return (
     <div className="m-page-transition">
       {/* A NAMED GROUP WHOSE CHOICE IS ANNOUNCED (WCAG 1.3.1, 4.1.2), `BatesNumberBody`'s rule. */}
-      <SegmentedControl
-        label={PAGE_TRANSITION_STYLE}
-        options={STYLES.map(({ key, label }) => ({ value: key, label }))}
-        value={style}
-        onChange={setStyle}
-        wrap
-      />
-      <p className="m-page-transition__note">{_(PAGE_TRANSITION_REPLACE_NOTE)}</p>
-      <Input
-        label={PAGE_TRANSITION_DURATION}
-        value={duration}
-        onValueChange={(next) => {
-          setDuration(next);
-        }}
-      />
+      <DialogRow label={PAGE_TRANSITION_STYLE} note={PAGE_TRANSITION_REPLACE_NOTE}>
+        <SegmentedControl
+          label={PAGE_TRANSITION_STYLE}
+          options={STYLES.map(({ key, label }) => ({ value: key, label }))}
+          value={style}
+          onChange={setStyle}
+          wrap
+        />
+      </DialogRow>
+      <DialogRow label={PAGE_TRANSITION_DURATION}>
+        <Input
+          label={PAGE_TRANSITION_DURATION}
+          labelShownBeside
+          value={duration}
+          onValueChange={(next) => {
+            setDuration(next);
+          }}
+        />
+      </DialogRow>
       <PageScopeChoice className="m-page-transition__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
       <p className="m-page-transition__problem" role="status">
         {ready ? '' : _(PAGE_TRANSITION_NOT_A_NUMBER)}
       </p>
-      <Button
-        label={PAGE_TRANSITION_APPLY}
-        variant="primary"
-        disabled={!ready}
-        onClick={() => {
-          // GUARDED AGAIN rather than trusting the disabled attribute, for
-          // `CropPagesBody`'s reason: the schema behind `resolve` refuses a
-          // duration over 60, and a mismatch would be a thrown
-          // `DialogResultRejected` over the user's document.
-          if (seconds === null) return;
-          resolve({ pages: everyPage ? 'all' : [...pages], style, durationSeconds: seconds });
-        }}
-      />
+      <DialogFooter>
+        <Button
+          label={PAGE_TRANSITION_APPLY}
+          variant="primary"
+          disabled={!ready}
+          onClick={() => {
+            // GUARDED AGAIN rather than trusting the disabled attribute, for
+            // `CropPagesBody`'s reason: the schema behind `resolve` refuses a
+            // duration over 60, and a mismatch would be a thrown
+            // `DialogResultRejected` over the user's document.
+            if (seconds === null) return;
+            resolve({ pages: everyPage ? 'all' : [...pages], style, durationSeconds: seconds });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

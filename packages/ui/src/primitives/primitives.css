@@ -651,6 +651,19 @@
   min-inline-size: 0;
 }
 
+/* SEVERAL FIELDS AS ONE ROW'S CONTROL (a header's left, centre and right): side by side, each with its own name over
+   it, sharing the control's width. */
+.m-dialog-row__fields {
+  display: flex;
+  gap: var(--space-6);
+  min-inline-size: 0;
+}
+
+.m-dialog-row__fields > * {
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+
 /* SEVERAL BUTTONS AS ONE ROW'S CONTROL (Resize's paper sizes): they wrap within the control rather than past it. */
 .m-dialog-row__buttons {
   display: flex;

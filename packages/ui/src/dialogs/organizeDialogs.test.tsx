@@ -1,17 +1,14 @@
 // @vitest-environment happy-dom
-import { I18nProvider } from '@lingui/react';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { activateCatalogue, i18n } from '../i18n.js';
-import { CLOSE_LABEL, DELETE_PAGES_TITLE, EN } from '../messages/en.js';
-import { Dialog } from '../primitives/Dialog.js';
 import CropPagesBody from './CropPagesBody.js';
 import DeletePagesBody from './DeletePagesBody.js';
 import DuplicatePagesBody from './DuplicatePagesBody.js';
 import ExtractPagesBody from './ExtractPagesBody.js';
 import ImportPageAsLayerBody from './ImportPageAsLayerBody.js';
+import { InDialog } from './inDialog.js';
 import InsertFromPdfBody from './InsertFromPdfBody.js';
 import MergeDocumentBody from './MergeDocumentBody.js';
 import ReplacePageBody from './ReplacePageBody.js';
@@ -27,14 +24,7 @@ import SplitDocumentBody from './SplitDocumentBody.js';
 
 /** IN THE DIALOG, as the registry mounts it: the footer's Cancel exists only inside one. */
 function inDialog(body: ReactNode, onOpenChange: (open: boolean) => void = () => undefined): ReactElement {
-  activateCatalogue('en', EN);
-  return (
-    <I18nProvider i18n={i18n}>
-      <Dialog closeLabel={CLOSE_LABEL} onOpenChange={onOpenChange} open title={DELETE_PAGES_TITLE}>
-        {body}
-      </Dialog>
-    </I18nProvider>
-  );
+  return <InDialog onOpenChange={onOpenChange}>{body}</InDialog>;
 }
 
 const CHOICES = [
