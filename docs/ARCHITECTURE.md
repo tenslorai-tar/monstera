@@ -997,12 +997,16 @@ effect that can be re-applied.
 fsync, rename, Windows `EPERM`/`EBUSY` retry ladder) → stamp saved version. **The
 `.bak` of the file a save replaces is written for every save except a removal's**:
 `saveDocument` takes `backups: 'keep' | 'none'` as a required argument, and the
-writer's one answer about the next save (`signaturesKeptBySave`, which already
-reads the session's one-way removal mark) says which. A backup of the file a
-redaction replaces is a copy of what it removed, beside the redacted file. Older
-backups and the undo copies that may still hold removed content are named to the
-person after a removal's save and deleted only on their confirmation
-(`document.deleteStaleCopies`).
+DOCUMENT says which: `DocumentContext` records that a removal-purpose command was
+applied since the file was last written (set by the bus on execute and redo,
+cleared by `markSaved`), because an engine session's mark does not survive the
+rebuilds a restore, an adopt or a host restart perform
+([ADR-0139](DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)).
+A backup of the file a redaction replaces is a copy of what it removed, beside
+the redacted file. **A removal's save deletes, permanently and unasked, every older
+copy Monstera made**: the backups beside the file that main's ledger records by
+file identity, and the document's undo copies. A file with a backup's name that
+Monstera did not make is kept, and the save's confirmation names it.
 
 **The pipeline has one mode, and the purpose of the save chooses it** — never a
 default, never a setting ([ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md)):
@@ -2845,6 +2849,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-02 | **A removal's save deletes the backups Monstera made, and the removal is the document's fact** (§4, *Save is one pipeline*). The owner's review of 0.1.9.0 found a `.bak` beside a redacted file. Measured: the save's backup decision read a mark on the engine session, and a restore, an adopt or a host restart rebuilds the session without it, so the next save backed up the unredacted file and listed nothing. An earlier ordinary save's `.bak` also survived whenever nobody was asked (autosave) or the person kept it. The fact now lives on the document in main. A removal's save deletes, unasked, the backups main's ledger shows it made, plus the undo copies, and names any file with a backup's name that it did not make. | the 2026-10-01 row's *"named to the person … deleted only on their confirmation"*, and *"the writer's one answer about the next save … says which"* | [ADR-0139](DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md) |
 | 2026-10-02 | **A command whose intent can outgrow a frame crosses in a file** (§5's host pipe). Read on the side the JSON is parsed against, with every command object closed and a `DocId` bounded at 64 characters, MuPDF's 35 kinds fit the frame (largest 247,050 B at worst). `createFormField` (202 MB at worst), the pdf-lib channel's pre-read (an OCR page's recognition, an outline) and PDFium's two text edits do not, so a large enough recognition or outline is refused as too large (the schema's figure; no real page was run to it). `engine/applyPdfLib` and PDFium's `engine/apply` and `engine/capture` take their params by ADR-0125's file route; the route is declared per engine. `createFormField` carries many simple fields or one of any kind. A file-requested channel must fit the 8 MiB ceiling at worst; `engine/invert` and the pre-read are bounded by the answers that brought them, and PDFium's two edits stay open. Rejected: forcing strict in the check, raising the frame, a file for every command, a size threshold, lowering field bounds | ADR-0125's addenda: one file-requested channel, and five command channels pinned in the frame | [0138](DECISIONS/0138-a-command-whose-intent-can-outgrow-a-frame-crosses-in-a-file.md) |
 | 2026-10-02 | **A secondary ribbon tool is drawn in the row when there is room** (§7's `Placement`, ADR-0098's correction). The owner's answer of 2 October: secondaries go on the row when there is room and under *More* only when there is not. A group's row is its primaries, then its secondaries, and the width fold takes buttons from the end, so every secondary folds before any primary and a window wide enough for the group draws no *More*. Rejected: secondaries interleaved by `order` (a narrowing row would lose a tool from its middle), a breakpoint, a setting | ADR-0098 Decision 1's *in its group's More at every width* | [0098](DECISIONS/0098-a-ribbon-placement-may-be-secondary-and-the-rail-has-a-foot.md) |
 | 2026-10-02 | **A signature's mark is drawn by one module, for the signing writer and for MuPDF alike** (§3's annotation-appearance and digital-signature rows). The owner chose route B for the plain *Signature*: `signatureDrawing.ts`, importing neither engine, answers a mark's content stream, the resources it names and the matrix that keeps it upright; the signing writer wraps it as the widget's appearance and MuPDF as a `/Stamp`'s. Two MuPDF commands, `placeSignatureMark` (typed or drawn) and `placeSignaturePicture` (bytes, as `placeImage`'s), undone by checkpoint. Main resolves the look through the function *Sign with certificate* uses and keeps it after placing, a picked picture included. Placed by a click at a default size, then moved and resized as any mark, with the corners now drawn. Rejected: a PNG drawn in the renderer (route A), pdf-lib writing the stamp, FreeText and Ink, one command with optional bytes | §3's two rows, which named no drawing of a signature's mark | [0133](DECISIONS/0133-a-signatures-mark-is-drawn-once-for-both-writers.md) |
