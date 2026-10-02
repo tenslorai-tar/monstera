@@ -63,6 +63,10 @@
  * `--redact-mark` is black in every theme because the burn-in paints MuPDF's black
  * boxes (`pageRedact.ts`, `cover === 'solid'`), and the preview shows that result;
  * `--page` is white in every theme, so the pair is the same everywhere.
+ *
+ * `--signature-ink` is black in every theme for the same kind of reason: a signature's
+ * mark is drawn black on the page (`signatureDrawing.ts`, `0 g` and `0 G`), and the pad
+ * and a kept drawing show it as it will land — on `--page`, the paper it lands on.
  */
 
 /* ─── roles ─────────────────────────────────────────────────────────────────
@@ -103,6 +107,7 @@
  * @role accent-grad-top fill
  * @role accent-grad-bottom fill
  * @role redact-mark graphic @on page
+ * @role signature-ink graphic @on page
  * @role text text @on ground bg bg2 surface surface2 canvas float list active dialog-head-wash
  * @role muted text @on ground bg bg2 surface surface2 canvas float list
  * @role faint text @on ground bg bg2 surface canvas
@@ -166,6 +171,7 @@
   --light-ring: #4ad083;
   --light-halo: #3bc677;
   --redact-mark: #000000;
+  --signature-ink: #000000;
   --text: #eef1ef;
   /* v5 was #a8b3ad / #8e9a94 / #4ad083 / 0.36 alpha: each moved the least (toward white, 1% steps) that clears its
      floor on every colour its surfaces present over the lit ground. --faint lands on --muted's value: over this ground
@@ -276,6 +282,7 @@
   --light-ring: #16a34a;
   --light-halo: #16a34a;
   --redact-mark: #000000;
+  --signature-ink: #000000;
   --text: #131816;
   /* v5 was #4c5752 / #55615b / #15803d / 0.42 alpha, each moved the least (toward black) that clears its floor. */
   --muted: #4a5550;
@@ -386,6 +393,7 @@
   --light-ring: #3ff08f;
   --light-halo: #3ff08f;
   --redact-mark: #000000;
+  --signature-ink: #000000;
   --text: #ffffff;
   --muted: #e6e6e6;
   --faint: #bfbfbf;

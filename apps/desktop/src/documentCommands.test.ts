@@ -4117,6 +4117,58 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
     expect(kinds).toStrictEqual(['placeSignatureMark']);
     expect(library.list('signature')).toHaveLength(1);
   });
+
+  it('UNDONE: the placed signature is gone again, from the checkpoint the bus took for it', async () => {
+    // THE HELD SESSIONS ARE THE CASE'S OWN, because an undo that restores a checkpoint REBUILDS the session: the one read
+    // afterwards must be the one the restore put back, not the module's.
+    const held = engine();
+    let restores = 0;
+    // THE FLUSH READS WHAT IS HELD NOW, since the restore replaces the session the module variable names.
+    const flushHeld: DocumentFlush = (id, sessions) => {
+      const mupdf = sessions.mupdf;
+      if (mupdf === undefined || held.sessions(id)?.mupdf !== mupdf) throw new Error('flushed a session not held');
+      return mupdfWriter.serialise(mupdf);
+    };
+    const commands = new DocumentCommands({
+      ...INERT,
+      save: { ...noSaving, flush: flushHeld, stage: stagingFrom(flushHeld) },
+      library: createPersonalLibrary({ files: memoryPictureFiles(), unreadable: () => undefined }),
+      documents: service,
+      bus: new CommandBus({ mupdf: localMupdfWriter }),
+      engine: held,
+      // THE SUPERVISOR'S OWN RECYCLE, the layer import's composition: the checkpoint written to a file and reopened.
+      restore: (id, write) =>
+        held.recycle(id, async () => {
+          restores += 1;
+          const path = join(directory, `signature-restore-${String(restores)}.pdf`);
+          await write(path);
+          return { mupdf: await mupdfWriter.open(readFileSync(path)) };
+        }),
+    });
+    const stamps = async (): Promise<number> => {
+      const mupdf = held.sessions(docId)?.mupdf;
+      if (mupdf === undefined) throw new Error('the document holds no session');
+      return (await readAnnotations(mupdf)).annotations.filter((each) => each.page === 0 && each.kind === 'stamp').length;
+    };
+    // THE CONTROL FOR THE UNDO BELOW: a placement that wrote nothing would make "one fewer" impossible to reach and
+    // "the same as before" true without any undo.
+    const before = await stamps();
+    const outcome = await commands.placeSignature(docId, {
+      page: 0,
+      rect: RECT,
+      mark: { kind: 'typed', text: 'Grace Hopper', font: 'helvetica' },
+      keep: false,
+      stamp: STAMP,
+    });
+    expect(outcome).toMatchObject({ kind: 'placed' });
+    expect(await stamps()).toBe(before + 1);
+
+    const undone = await commands.undo(docId);
+    if (undone === undefined) throw new Error('the undo stepped nothing');
+    // FROM A CHECKPOINT: the command answers not captured, so undo restores rather than inverting.
+    expect(restores).toBe(1);
+    expect(await stamps()).toBe(before);
+  });
 });
 
 describe('composeMarkdownFile: what an import answers before anything is written', () => {

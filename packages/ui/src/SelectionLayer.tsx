@@ -3,7 +3,7 @@ import type { ReactElement } from 'react';
 
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { overlayTransform } from './annotations/annotationSpace.js';
-import type { AnnotationSelection } from './annotations/selectTool.js';
+import { type AnnotationSelection, CORNER_REACH } from './annotations/selectTool.js';
 
 /**
  * What is selected, drawn over the page.
@@ -64,20 +64,35 @@ export function SelectionLayer({
       {selection.items.map((item) => {
         const a = toViewport(pdfPoint(item.rect.x0, item.rect.y0), transform);
         const b = toViewport(pdfPoint(item.rect.x1, item.rect.y1), transform);
+        const left = Math.min(a.x, b.x);
+        const top = Math.min(a.y, b.y);
+        const right = Math.max(a.x, b.x);
+        const bottom = Math.max(a.y, b.y);
         return (
-          <rect
-            className="m-selection-box"
-            // THE WALK INDEX IS THE KEY, and here it is the right one: the
-            // items are a set of handles at one version, so an index identifies
-            // a row across a re-render in a way its position in the array does
-            // not once a marquee replaces the selection.
-            data-selection-index={String(item.index)}
-            height={Math.abs(b.y - a.y)}
-            key={item.index}
-            width={Math.abs(b.x - a.x)}
-            x={Math.min(a.x, b.x)}
-            y={Math.min(a.y, b.y)}
-          />
+          // THE WALK INDEX IS THE KEY, and here it is the right one: the items are a set of handles at one version, so
+          // an index identifies a row across a re-render in a way its position in the array does not once a marquee
+          // replaces the selection.
+          <g data-selection-index={String(item.index)} key={item.index}>
+            <rect className="m-selection-box" height={bottom - top} width={right - left} x={left} y={top} />
+            {/* THE FOUR CORNERS, DRAWN (ADR-0133): a square `CORNER_REACH` across on each, centred on it, which is the
+                select tool's own grab radius — so what is drawn is exactly where a press resizes. */}
+            {[
+              [left, top],
+              [right, top],
+              [left, bottom],
+              [right, bottom],
+            ].map(([x = 0, y = 0]) => (
+              <rect
+                className="m-selection-handle"
+                data-selection-handle=""
+                height={CORNER_REACH}
+                key={`${String(x)},${String(y)}`}
+                width={CORNER_REACH}
+                x={x - CORNER_REACH / 2}
+                y={y - CORNER_REACH / 2}
+              />
+            ))}
+          </g>
         );
       })}
     </svg>

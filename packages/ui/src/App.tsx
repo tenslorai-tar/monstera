@@ -312,7 +312,11 @@ import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
 import { stickyNoteCommand } from './annotations/pointTools.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
-import { SELECT_TOOL_ID, selectionOfPage } from './annotations/selectTool.js';
+import { SELECT_TOOL_ID, selectionOfNewest, selectionOfPage } from './annotations/selectTool.js';
+import { SIGNATURE_TOOL_ID } from './annotations/signatureTool.js';
+import { chooseSignature, placePlainSignature, signatureCommand } from './commands/signatureCommands.js';
+import { SIGNATURE_DIALOG, type SignatureLook } from './dialogs/signature.js';
+import { SIGNATURE_PROBLEM_DIALOG } from './dialogs/signatureProblem.js';
 import { applyCarrying } from './commands/applyCarrying.js';
 import {
   deleteSelectionCommand,
@@ -830,6 +834,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         REDACT_MATCHES_DIALOG,
         SANITIZE_DOCUMENT_DIALOG,
         SIGN_DOCUMENT_DIALOG,
+        SIGNATURE_DIALOG,
+        SIGNATURE_PROBLEM_DIALOG,
         SIGN_PROBLEM_DIALOG,
         SIGNATURES_DIALOG,
         DOCUSIGN_SEND_DIALOG,
@@ -2139,6 +2145,46 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   );
 
   /**
+   * THE PLAIN SIGNATURE'S LOOK, held between the dialog and the click (ADR-0133). The click that consumes it clears it,
+   * so a second click never places the same look twice. State, so the tool registry rebuilt on it reads the look the
+   * dialog answered rather than one captured before.
+   */
+  const [signatureLook, setSignatureLook] = useState<SignatureLook | undefined>(undefined);
+  /** The Signature command: the dialog first, then the click armed with the look it answered — the owner's order. */
+  const startSignature = useCallback((): void => {
+    void (async (): Promise<void> => {
+      const look = await chooseSignature({ client, ask });
+      if (look === undefined) return;
+      setSignatureLook(look);
+      setToolId(SIGNATURE_TOOL_ID);
+    })();
+  }, [ask, client]);
+  /**
+   * Where the click puts it. A tool armed without a look — chosen from the palette, or pressed again after a placement
+   * — asks first, so a click never places nothing. Once it lands, the select tool holds the new mark, so a drag moves
+   * it and a corner resizes it, and a further click is a selection rather than a second signature.
+   */
+  const onPlacePlainSignature = useCallback(
+    (page: number, rect: AnnotationRect): void => {
+      if (activeId === undefined) return;
+      const held = signatureLook;
+      setSignatureLook(undefined);
+      void (async (): Promise<void> => {
+        const look = held ?? (await chooseSignature({ client, ask }));
+        if (look === undefined) return;
+        const version = await placePlainSignature({ client, ask, onApplied: applied, stamp, toast }, activeId, page, rect, look);
+        if (version === undefined) return;
+        const walk = await listAnnotations();
+        // THE WALK MUST BE THE PLACEMENT'S: a read at any other version could name a mark that landed in between.
+        const placed = walk?.version === version ? selectionOfNewest(walk, page) : undefined;
+        setToolId(SELECT_TOOL_ID);
+        if (placed !== undefined) setPicked(placed);
+      })();
+    },
+    [activeId, applied, ask, client, listAnnotations, signatureLook, stamp, toast],
+  );
+
+  /**
    * Where a barcode goes: `onPlaceSignature`'s shape — one page, the one the box was drawn on —
    * ending in the barcode dialog (ADR-0076).
    */
@@ -2236,6 +2282,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           languages: () => ocrLanguages,
           onPlaceImage,
           onPlaceSignature,
+          onPlacePlainSignature,
           onPlaceBarcode,
           // THE STAMP LIBRARY: the kept pictures for the chooser, keeping and removing one, and placing one.
           ...stampLibrary({ client, ask, urls: BLOB_URLS }),
@@ -2251,6 +2298,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       onPlaceBarcode,
       onPlaceImage,
       onPlaceSignature,
+      onPlacePlainSignature,
       onPlaceStampPicture,
       onSnapshot,
       readSelection,
@@ -2743,6 +2791,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // EDIT TEXT, a MODE in the tool slot (ADR-0096): it toggles as a drawing
         // tool's command does, and `editing` below is what the mode draws.
         editTextCommand({ activeTool: readTool, onSelect: setToolId }),
+        signatureCommand({
+          activeTool: readTool,
+          onStart: startSignature,
+          onStop: () => {
+            setToolId(undefined);
+          },
+        }),
         handToolCommand({ activeTool: readTool, onSelect: setToolId }),
         selectTextCommand({ onSelect: setToolId, activeTool: readTool }),
         editPageObjectCommand({ client, onApplied: applied, ask, stamp }),
@@ -2840,6 +2895,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   }, [
       // THE KEYS A PERSON CHOSE, so a change in the shortcuts dialog rebuilds the registry and the new key works at once.
       chosenShortcuts,
+      startSignature,
       // THE ZOOM STEP, through the function `+` and `−` ask: a changed step rebuilds them, or they would step by the old.
       stepZoomBy,
       activate,

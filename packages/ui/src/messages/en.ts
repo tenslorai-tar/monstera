@@ -1998,6 +1998,30 @@ export const GROUP_SIGNATURES = messageKey('surface.ribbon.group.signatures');
 
 export const SIGN_DOCUMENT_COMMAND_TITLE = messageKey('command.sign-document.title');
 export const SIGN_DOCUMENT_TITLE = messageKey('dialog.sign-document.title');
+// THE PLAIN SIGNATURE (ADR-0133): its command, its dialog, and what placing it can come to.
+export const SIGNATURE_TITLE = messageKey('dialog.signature.title');
+export const SIGNATURE_KEPT = messageKey('dialog.signature.kept');
+export const SIGNATURE_KEPT_NOTE = messageKey('dialog.signature.kept-note');
+export const SIGNATURE_KEPT_USE = messageKey('dialog.signature.kept-use');
+export const SIGNATURE_MAKE = messageKey('dialog.signature.make');
+export const SIGNATURE_DRAW = messageKey('dialog.signature.draw');
+export const SIGNATURE_TYPE = messageKey('dialog.signature.type');
+export const SIGNATURE_UPLOAD = messageKey('dialog.signature.upload');
+export const SIGNATURE_PAD_HINT = messageKey('dialog.signature.pad-hint');
+export const SIGNATURE_NAME = messageKey('dialog.signature.name');
+export const SIGNATURE_STYLE = messageKey('dialog.signature.style');
+export const SIGNATURE_TOO_LONG = messageKey('dialog.signature.too-long');
+export const SIGNATURE_UPLOAD_NOTE = messageKey('dialog.signature.upload-note');
+export const SIGNATURE_SAVE = messageKey('dialog.signature.save');
+export const SIGNATURE_SAVE_NOTE = messageKey('dialog.signature.save-note');
+export const SIGNATURE_USE = messageKey('dialog.signature.use');
+export const SIGNATURE_PROBLEM_TITLE = messageKey('dialog.signature-problem.title');
+export const SIGNATURE_PROBLEM_UNREADABLE = messageKey('dialog.signature-problem.unreadable');
+export const SIGNATURE_PROBLEM_TOO_LARGE = messageKey('dialog.signature-problem.too-large');
+export const SIGNATURE_PROBLEM_ABSENT = messageKey('dialog.signature-problem.absent');
+export const SIGNATURE_PROBLEM_UNENCODABLE = messageKey('dialog.signature-problem.unencodable');
+export const TOAST_SIGNATURE_LIBRARY_FULL = messageKey('toast.signature.library-full');
+export const TOAST_SIGNATURE_NOT_KEEPABLE = messageKey('toast.signature.not-keepable');
 export const SIGN_DOCUMENT_EXPLAINS = messageKey('dialog.sign-document.explains');
 export const SIGN_DOCUMENT_PASSPHRASE = messageKey('dialog.sign-document.passphrase');
 export const SIGN_DOCUMENT_NAME = messageKey('dialog.sign-document.name');
@@ -4483,6 +4507,31 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_DOCUMENT_IMAGE_NOTE]:
     'You will be asked for a PNG or JPEG picture of your signature first, then for your certificate.',
   [SIGN_DOCUMENT_MARK_MISSING]: 'Type or draw the signature first.',
+  [SIGNATURE_TITLE]: 'Signature',
+  [SIGNATURE_KEPT]: 'Your signatures',
+  [SIGNATURE_KEPT_NOTE]: 'Choose one, then click where it goes.',
+  [SIGNATURE_KEPT_USE]: 'Use your signature {number}',
+  [SIGNATURE_MAKE]: 'New signature',
+  [SIGNATURE_DRAW]: 'Draw',
+  [SIGNATURE_TYPE]: 'Type',
+  [SIGNATURE_UPLOAD]: 'Upload',
+  [SIGNATURE_PAD_HINT]: 'Draw your signature above',
+  [SIGNATURE_NAME]: 'Your name',
+  [SIGNATURE_STYLE]: 'Style',
+  [SIGNATURE_TOO_LONG]: 'A name can be at most {limit} characters.',
+  [SIGNATURE_UPLOAD_NOTE]:
+    'Choose Use Signature, click where it goes on the page, then pick a PNG or JPEG picture of your signature.',
+  [SIGNATURE_SAVE]: 'Save for reuse',
+  [SIGNATURE_SAVE_NOTE]: 'Kept on this computer, ready to place again here or with Sign with certificate.',
+  [SIGNATURE_USE]: 'Use Signature',
+  [SIGNATURE_PROBLEM_TITLE]: 'The signature was not placed',
+  [SIGNATURE_PROBLEM_UNREADABLE]: 'That file is not a PNG or JPEG picture this app can read. Nothing was placed.',
+  [SIGNATURE_PROBLEM_TOO_LARGE]: 'That picture is larger than {limit} megabytes. Nothing was placed.',
+  [SIGNATURE_PROBLEM_ABSENT]: 'That saved signature has been removed. Nothing was placed.',
+  [SIGNATURE_PROBLEM_UNENCODABLE]:
+    'The name has a character this signature style cannot draw. Nothing was placed. Try typing it with plain letters.',
+  [TOAST_SIGNATURE_LIBRARY_FULL]: 'Signature placed. Your saved signatures are full, so this one was not kept.',
+  [TOAST_SIGNATURE_NOT_KEEPABLE]: 'Signature placed. This picture could not be kept for reuse.',
   [PLACE_SIGNATURE_TOOL_TITLE]: 'Sign with certificate',
 
   [SIGNATURES_COMMAND_TITLE]: 'Check signatures',

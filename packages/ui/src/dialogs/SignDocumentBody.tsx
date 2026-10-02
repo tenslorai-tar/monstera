@@ -40,7 +40,6 @@ import {
   SIGN_DOCUMENT_LOOK_TYPED,
   SIGN_DOCUMENT_KEEP,
   SIGN_DOCUMENT_KEPT_ADD,
-  SIGN_DOCUMENT_KEPT_DRAWN,
   SIGN_DOCUMENT_KEPT_EMPTY,
   SIGN_DOCUMENT_KEPT_REMOVE,
   SIGN_DOCUMENT_MARK_MISSING,
@@ -53,6 +52,7 @@ import {
 import { Button } from '../primitives/Button.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
+import { KeptSignatureLook } from './KeptSignatureLook.js';
 import type { KeptSignature, SignDocumentAnswers } from './signDocument.js';
 import type { PadStroke } from './SignaturePad.js';
 import { SignaturePad } from './SignaturePad.js';
@@ -120,16 +120,6 @@ const LOOK_TITLES: Readonly<Record<Look, MessageKey>> = {
   image: SIGN_DOCUMENT_LOOK_IMAGE,
   saved: SIGN_DOCUMENT_LOOK_KEPT,
 };
-
-/**
- * A drawn signature's strokes as one SVG path in the pad's own unit (0–1 across, y down), so a kept drawing shows as it
- * was drawn at any size — the viewBox scales it, and the stroke's colour is the text's token.
- */
-function strokesPath(strokes: readonly (readonly (readonly [number, number])[])[]): string {
-  return strokes
-    .map((stroke) => stroke.map(([across, down], index) => `${index === 0 ? 'M' : 'L'}${String(across)} ${String(down)}`).join(' '))
-    .join(' ');
-}
 
 /** Each face's name, keyed on the contract's own list. */
 const FONT_TITLES: Readonly<Record<(typeof SIGNATURE_FONTS)[number], MessageKey>> = {
@@ -317,20 +307,7 @@ export default function SignDocumentBody({
                         setChosenKept(entry.id);
                       }}
                     />
-                    {entry.look.kind === 'typed' ? (
-                      <span className={`m-sign-document__kept-typed m-sign-font--${entry.look.font}`}>{entry.look.text}</span>
-                    ) : entry.look.kind === 'drawn' ? (
-                      <svg
-                        className="m-sign-document__kept-drawn"
-                        viewBox="0 0 1 0.5"
-                        role="img"
-                        aria-label={_(SIGN_DOCUMENT_KEPT_DRAWN, { number: index + 1 })}
-                      >
-                        <path d={strokesPath(entry.look.strokes)} />
-                      </svg>
-                    ) : (
-                      <img className="m-sign-document__kept-picture" src={entry.look.src} alt={entry.look.name} />
-                    )}
+                    <KeptSignatureLook entry={entry} number={index + 1} />
                   </label>
                   <Button
                     label={SIGN_DOCUMENT_KEPT_REMOVE}

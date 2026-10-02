@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { overlayTransform } from './annotationSpace.js';
 import type { ErasableAnnotation } from './eraserTool.js';
 import type { AnnotationSelection } from './selectTool.js';
-import { SELECT_TOOL_ID, carrySelection, selectTool, selectionOfPage } from './selectTool.js';
+import { SELECT_TOOL_ID, carrySelection, selectTool, selectionOfNewest, selectionOfPage } from './selectTool.js';
 
 /**
  * The select tool's controller, driven without a DOM.
@@ -374,5 +374,24 @@ describe('selectionOfPage (ADR-0107, Edit › Select all)', () => {
     const walk = { version: VERSION, annotations: [A, { ...B, page: 5, rect: null }] };
     expect(selectionOfPage(walk, 5)).toBeUndefined();
     expect(selectionOfPage(walk, 9)).toBeUndefined();
+  });
+});
+
+describe('selectionOfNewest (ADR-0133, the signature just placed)', () => {
+  const VERSION = asDocVersion(6);
+
+  it('selects the page’s HIGHEST index, which is the mark just added, and only it', () => {
+    // THE NEWER MARK IS LISTED FIRST and another page holds a higher index still, so a rule taking the last entry or
+    // the highest index anywhere selects the wrong one.
+    const walk = { version: VERSION, annotations: [B, A, { ...A, page: 4, index: 9 }] };
+    expect(selectionOfNewest(walk, 3)).toStrictEqual({
+      page: 3,
+      version: VERSION,
+      items: [{ index: 2, rect: B_RECT, ...CARRIED }],
+    });
+  });
+
+  it('CONTROL: a page with no mark is nothing selected', () => {
+    expect(selectionOfNewest({ version: VERSION, annotations: [A] }, 5)).toBeUndefined();
   });
 });

@@ -11,6 +11,7 @@ import { placeBarcodeTool, placeImageTool, placeSignatureTool } from './placeIma
 import { pointTools } from './pointTools.js';
 import type { SelectDeps } from './selectTool.js';
 import { selectTool } from './selectTool.js';
+import { type SignatureToolDeps, signatureTool } from './signatureTool.js';
 import type { OcrRegionDeps } from './ocrRegionTool.js';
 import { claudeRegionTool, cloudRegionTool, ocrRegionTool } from './ocrRegionTool.js';
 import type { SnapshotDeps } from './snapshotTool.js';
@@ -90,6 +91,7 @@ export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
     // picker. Composed here for the reason every tool is: this is the list the
     // registry mounts and `annotationCommands.test.ts` joins against.
     placeSignatureTool(deps),
+    signatureTool(deps),
     // AND A THIRD TIME, ending in the barcode dialog (ADR-0076).
     placeBarcodeTool(deps),
     // NOT ANNOTATION TOOLS EITHER, and composed here for the reason the two
@@ -126,5 +128,6 @@ export type AnnotationToolDeps = TextToolDeps &
   OcrRegionDeps &
   PlaceImageDeps &
   PlaceSignatureDeps &
+  SignatureToolDeps &
   PlaceBarcodeDeps &
   StampDeps;

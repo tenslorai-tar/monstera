@@ -127,6 +127,23 @@ async function placed(
   });
 }
 
+/**
+ * Reads the saved first annotation's `/AP /N` back and requires it to be the drawing this build wrote for `look`, under
+ * the stamp name that keeps MuPDF from naming it `/Draft`. An ink count cannot tell the two apart: MuPDF's resynthesised
+ * stamp is dark in grey too.
+ */
+async function expectWrittenAppearance(saved: Uint8Array, look: 'typed' | 'drawn' | 'picture'): Promise<void> {
+  const document = await PDFDocument.load(saved);
+  const annot = document.getPages()[0]?.node.lookup(PDFName.of('Annots'), PDFArray).lookup(0, PDFDict);
+  expect(annot?.lookup(PDFName.of('Name'))).toBe(PDFName.of('Signature'));
+  const stream = annot?.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N'));
+  if (!(stream instanceof PDFRawStream)) throw new Error('no appearance stream was written');
+  const content = Buffer.from(decodePDFRawStream(stream).decode()).toString('latin1');
+  const expected = { typed: /\/F0 [\d.]+ Tf/u, drawn: /[\d.]+ [\d.]+ l\n/u, picture: /\/Im0 Do/u }[look];
+  expect(content).toMatch(expected);
+  expect(content).not.toMatch(/Draft/u);
+}
+
 describe('a placed signature', () => {
   it.each(['typed', 'drawn', 'picture'] as const)(
     'THE OBSERVABLE: a %s signature renders INK inside its box, after a save and a reopen',
@@ -154,16 +171,7 @@ describe('a placed signature', () => {
       // THE CASE THE INK COUNT ALONE COULD NOT BE: MuPDF names a new stamp /Draft and redraws a standard stamp whose
       // object is dirty, as the word *Draft* in red — dark in grey, so a pixel count passed for it — and a picture as
       // itself stretched over the box. So the saved stream is read back and must be the drawing's.
-      const saved = await placed(await blankPage(), look);
-      const document = await PDFDocument.load(saved);
-      const annot = document.getPages()[0]?.node.lookup(PDFName.of('Annots'), PDFArray).lookup(0, PDFDict);
-      expect(annot?.lookup(PDFName.of('Name'))).toBe(PDFName.of('Signature'));
-      const stream = annot?.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N'));
-      if (!(stream instanceof PDFRawStream)) throw new Error('no appearance stream was written');
-      const content = Buffer.from(decodePDFRawStream(stream).decode()).toString('latin1');
-      const expected = { typed: /\/F0 [\d.]+ Tf/u, drawn: /[\d.]+ [\d.]+ l\n/u, picture: /\/Im0 Do/u }[look];
-      expect(content).toMatch(expected);
-      expect(content).not.toMatch(/Draft/u);
+      await expectWrittenAppearance(await placed(await blankPage(), look), look);
     },
   );
 
@@ -210,11 +218,12 @@ describe('a placed signature', () => {
     expect(Math.max(...(groups[1] ?? [across])) / across, 'the DOT is below it').toBeLessThan(0.2);
   });
 
-  it.each(['typed', 'drawn'] as const)(
+  it.each(['typed', 'drawn', 'picture'] as const)(
     'a RESIZED %s signature still draws, inside its NEW box: placeAnnotation keeps the written appearance',
     async (look) => {
-      // `pageAnnotations.test.ts` measured this for an image stamp; a typed mark names a font resource and a drawn one
-      // none, so each is asked here rather than assumed from the picture's reading.
+      // Each look is asked rather than assumed from another's reading: a typed mark names a font resource, a drawn one
+      // none, and a picture an image behind a form. The stream is read back too, because ink alone would pass for a
+      // stamp MuPDF had redrawn as its own.
       const grown: AnnotationRect = { x0: 50, y0: 300, x1: 350, y1: 420 };
       const resized = await onSession(await placed(await blankPage(), look), async (session) => {
         await applyPlaceAnnotation(session, {
@@ -228,6 +237,7 @@ describe('a placed signature', () => {
       const page = rendered(resized);
       expect(inkIn(page, seen(page.transform, grown)).samples, 'ink inside the new box').toBeGreaterThan(50);
       expect(inkIn(page, seen(page.transform, BOX)).samples, 'and none left in the old one').toBe(0);
+      await expectWrittenAppearance(resized, look);
     },
     60_000,
   );

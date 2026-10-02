@@ -4737,6 +4737,16 @@ optgroup {
   vector-effect: non-scaling-stroke;
 }
 
+/* A CORNER HANDLE (ADR-0133): a small square in the box's accent with the page's white inside, so it reads on any
+   mark and on the paper around it. Its size is `CORNER_REACH`, set where it is drawn, because the select tool grabs
+   within that reach and the two must be one number. */
+.m-selection-handle {
+  fill: var(--page);
+  stroke: var(--accent);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
 /*
  * Existing annotations drawn over their page by their kind's renderer
  * (`registries/annotationTypes.tsx`). INERT, for `.m-selection-layer`'s reason:
@@ -4864,9 +4874,11 @@ optgroup {
   background: var(--surface);
 }
 
+/* A KEPT DRAWING ON THE PAPER IT LANDS ON: black ink on the page's white, as it will be drawn (`--signature-ink`). */
 .m-sign-document__kept-drawn {
   aspect-ratio: 2 / 1;
-  color: var(--text);
+  background: var(--page);
+  color: var(--signature-ink);
 }
 
 .m-sign-document__kept-drawn path {
@@ -4917,14 +4929,92 @@ optgroup {
  * before a single pointermove arrives. The aspect ratio matches the viewBox, so
  * a stroke lands under the pointer rather than stretched away from it.
  */
+/* A WHITE PAD in every theme (the owner, 2 October): the ink is drawn as it will land, black on the page's paper. */
 .m-signature-pad {
   width: 100%;
   aspect-ratio: 3 / 1;
   border: 1px solid var(--border-control);
   border-radius: var(--radius-4);
-  background: var(--surface);
-  color: var(--text);
+  background: var(--page);
+  color: var(--signature-ink);
   touch-action: none;
+}
+
+/* THE SIGNATURE DIALOG (ADR-0133), in the dialog pattern: the kept signatures as a row of buttons a person clicks to
+   use, the pad with its hint and Clear under it, and each style choice drawn in its own face. */
+.m-signature__kept {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0 0 var(--space-10);
+  list-style: none;
+  border-block-end: 1px solid var(--border-soft); /* decorative: as a row's */
+}
+
+.m-signature__kept-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-4);
+}
+
+.m-signature__kept-use {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: calc(var(--space-32) * 3);
+  padding: var(--space-6);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-6);
+  background: var(--page);
+  color: var(--signature-ink);
+  cursor: pointer;
+}
+
+.m-signature__kept-use:hover {
+  border-color: var(--accent);
+}
+
+.m-signature__kept-use:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* A kept typed name inside a use button takes the ink of the paper it sits on, not the dialog's text colour. */
+.m-signature__kept-use .m-sign-document__kept-typed {
+  color: var(--signature-ink);
+}
+
+.m-signature__pad {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding-block: var(--space-10);
+  border-block-end: 1px solid var(--border-soft); /* decorative: as a row's */
+}
+
+.m-signature__under-pad {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.m-signature__face {
+  font-size: var(--font-content-20);
+}
+
+.m-signature__upload {
+  margin: 0;
+  padding-block: var(--space-10);
+}
+
+.m-signature__problem {
+  margin: 0;
+  min-block-size: 1lh;
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
 }
 
 .m-signature-pad polyline {

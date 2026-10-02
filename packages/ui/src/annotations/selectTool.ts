@@ -174,6 +174,23 @@ export function selectionOfPage(walk: AnnotationSnapshot, page: number): Annotat
   return items.length === 0 ? undefined : { page, version: walk.version, items };
 }
 
+/**
+ * The mark a creation just added to `page`, selected at the walk's own version — what a placed signature is held as, so
+ * a drag moves it and a corner resizes it (ADR-0133). `undefined` when the page draws none.
+ *
+ * **The highest index on the page**, because a creation appends: MuPDF's `createAnnotation` adds the new object at the
+ * end of `/Annots`, and the walk's index is a position in it ([ADR-0041]). The caller passes a walk read at the
+ * version the creation answered, so no other mark can have landed after it in between.
+ */
+export function selectionOfNewest(walk: AnnotationSnapshot, page: number): AnnotationSelection | undefined {
+  let newest: ErasableAnnotation | undefined;
+  for (const entry of walk.annotations) {
+    if (entry.page === page && (newest === undefined || entry.index > newest.index)) newest = entry;
+  }
+  const item = newest === undefined ? undefined : selectedFrom(newest);
+  return item === undefined ? undefined : { page, version: walk.version, items: [item] };
+}
+
 export interface SelectDeps {
   /** The same read the eraser holds. */
   readonly annotations: () => Promise<AnnotationSnapshot | undefined>;
@@ -190,12 +207,14 @@ export interface SelectDeps {
 /**
  * How close to a corner counts as grabbing it, in CSS pixels.
  *
- * A hit target rather than a drawn size — nothing draws handles yet, and this is
- * the radius a person's aim actually needs. Comfortably larger than
- * {@link MINIMUM_MARQUEE}, so a press that grabs a corner and slips is a resize
- * rather than a marquee that happens to start on one.
+ * The radius a person's aim actually needs, comfortably larger than {@link MINIMUM_MARQUEE}, so a press that grabs a
+ * corner and slips is a resize rather than a marquee that happens to start on one.
+ *
+ * **Exported because the handles are DRAWN from it** (ADR-0133 Decision 4): `SelectionLayer` draws each corner's handle
+ * as a square this many pixels across, centred on the corner, so every drawn pixel of a handle lies inside the reach —
+ * the drawn handle and the hit target are one number, and a handle cannot promise a grab the tool would not make.
  */
-const CORNER_REACH = 8;
+export const CORNER_REACH = 8;
 
 /** The four corners of a box, in the overlay's own pixels. */
 function cornersOf(box: {

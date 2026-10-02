@@ -208,16 +208,20 @@ describe('rectangleToolCommand', () => {
       languages: () => ['eng'],
       onPlaceImage: () => undefined,
       onPlaceSignature: () => undefined,
+      onPlacePlainSignature: () => undefined,
       onPlaceBarcode: () => undefined,
       stampPictures: () => Promise.resolve({ pictures: [], release: () => undefined }),
       addStampPicture: () => Promise.resolve(),
       removeStampPicture: () => Promise.resolve(),
       onPlaceStampPicture: () => undefined,
     }).map((tool) => tool.id);
-    const commandIds = shapeToolCommands({
-      activeTool: () => undefined,
-      onSelect: () => undefined,
-    }).map((command) => command.id);
+    // THE PLAIN SIGNATURE'S COMMAND IS ITS OWN MODULE'S (ADR-0133): it opens a dialog before it arms the tool, so it is
+    // built from different dependencies — and it is still the one command its tool has.
+    const { signatureCommand } = await import('./signatureCommands.js');
+    const commandIds = [
+      ...shapeToolCommands({ activeTool: () => undefined, onSelect: () => undefined }),
+      signatureCommand({ activeTool: () => undefined, onStart: () => undefined, onStop: () => undefined }),
+    ].map((command) => command.id);
 
     // SETS, SORTED, so the message names which id is missing rather than
     // reporting that two lists differ in length.
