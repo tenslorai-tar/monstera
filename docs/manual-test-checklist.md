@@ -134,7 +134,7 @@ is not available.
 - [ ] **Apply redactions** — Redact · `document.apply-redactions` · Help: *Redact (permanently remove) content*
 - [ ] **Mark matches for redaction** — Redact · `document.redact-matches` · Help: *Find and redact words*
 - [ ] **Sign document** — Signatures · `document.sign-document` · Help: *Sign a document digitally*
-- [ ] **Place a visible signature** — Signatures · `protect.signature` · Help: *Add a visible signature*
+- [ ] **Sign with certificate** — Signatures · `protect.signature` · Help: *Add a visible signature*
 - [ ] **Check signatures** — Signatures · `document.check-signatures` · Help: *Check a document's signatures*
 - [ ] **Send to DocuSign** — Signatures · `document.docusign-send` · Help: *Send a document for signing with DocuSign*
 - [ ] **Save signed copy from DocuSign** — Signatures · `document.docusign-retrieve` · Help: *Send a document for signing with DocuSign*
