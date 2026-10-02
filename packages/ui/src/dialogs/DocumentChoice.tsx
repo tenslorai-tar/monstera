@@ -21,7 +21,7 @@ export interface DocumentChoice {
  *
  * ## A NATIVE `<select>`, and that is invariant 27 rather than taste
  *
- * `ComparePane.tsx` records it: Base UI's `SelectPopup` injects a `<style>`
+ * `docs/FEATURES.md`'s design-substrate row records it: Base UI's `SelectPopup` injects a `<style>`
  * element, and §9.27's pinned CSP admits no inline style. So the primitive set
  * has no select, and a picker is written with the platform's own control until
  * that trigger fires. It is also the accessible default — operable by keyboard,
@@ -30,9 +30,8 @@ export interface DocumentChoice {
  *
  * ## No empty option
  *
- * `ComparePane`'s picker has a legitimate empty state — *the same document* is
- * a choice a reader returns to. These do not: every caller opens only when
- * there is at least one choice, and *no document* is expressed by dismissing.
+ * Every caller opens only when there is at least one choice, and *no document*
+ * is expressed by dismissing.
  * An empty first option would be a value the result schema then has to refuse,
  * which is a failure state invented by the control.
  *

@@ -395,6 +395,13 @@ export interface BrowserShimOptions {
   readonly pageLines?: readonly (readonly string[])[];
 
   /**
+   * One document's lines in place of {@link pageLines}, for a case about two documents whose text differs — Side by
+   * Side's comparison (ADR-0131). Every page-text channel reads through the same lookup, so a document's search, word
+   * count and text layer cannot describe two different texts.
+   */
+  readonly documentPageLines?: ReadonlyMap<DocId, readonly (readonly string[])[]>;
+
+  /**
    * What `window.edit` runs through — main's attached window, for a shim that has a page. Absent,
    * the channel answers `done: false`, main's own answer with no window attached.
    */
@@ -825,6 +832,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // a test holding the array it seeded would watch it empty underneath.
   const viewModels = [...(options.viewModels ?? [])];
   const pageLines = options.pageLines ?? [];
+  /** A document's page lines: its own where the case gave some, the shared fixture's otherwise. */
+  const linesOf = (docId: DocId): readonly (readonly string[])[] => options.documentPageLines?.get(docId) ?? pageLines;
   const pageImages = options.pageImages ?? [];
   const pageLinks = options.pageLinks ?? [];
   const destinations = options.destinations ?? [];
@@ -1737,7 +1746,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       // moved to `@monstera/shared` — which both this package and the kernel
       // may import — so there is one answer rather than two that agree for a
       // while (B3a).
-      const found = findInLines(pageLines[page] ?? [], query, { ...options, limit: limit + 1 });
+      const found = findInLines(linesOf(docId)[page] ?? [], query, { ...options, limit: limit + 1 });
       if (!found.ok) {
         // The same refusal the real handler makes, and it is reachable here:
         // the channel accepts any non-empty string, so an unparseable pattern
@@ -1774,7 +1783,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
 
-      const all = pageLines[page] ?? [];
+      const all = linesOf(docId)[page] ?? [];
       const kept = all.slice(0, limit);
       return Promise.resolve(
         ok({
@@ -1819,7 +1828,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
 
       return Promise.resolve(
-        ok({ version: asDocVersion(current), ...countWords(pageLines[page] ?? []) }),
+        ok({ version: asDocVersion(current), ...countWords(linesOf(docId)[page] ?? []) }),
       );
     },
 
@@ -1837,7 +1846,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
       return Promise.resolve(
-        ok({ version: asDocVersion(current), pageCount: pageLines.length, tables: [], truncated: false }),
+        ok({ version: asDocVersion(current), pageCount: linesOf(docId).length, tables: [], truncated: false }),
       );
     },
 
@@ -1850,7 +1859,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           version: asDocVersion(current),
           nodes: [],
           truncated: false,
-          untaggedLines: (pageLines[page] ?? []).length,
+          untaggedLines: (linesOf(docId)[page] ?? []).length,
           images: 0,
         }),
       );

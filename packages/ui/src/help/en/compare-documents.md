@@ -1,31 +1,39 @@
 ---
 id: compare-documents
 title: Find the differences between two documents
-summary: List every line of text that differs between two open documents, page by page.
-keywords: [compare, differences, diff, changes between versions, redline, what changed, version comparison]
+summary: Compare two documents in Side by Side and see every change in text, layout, annotations and pictures, marked on both pages.
+keywords: [compare, differences, diff, changes between versions, redline, what changed, version comparison, inserted page]
 commands: [document.compare]
-contexts: [dialog.compare-documents, dialog.compare-result, review, home]
+contexts: [review, home]
 ---
-Compare documents checks the words on each page of this document against the page with the same number in another open document, and lists the lines that differ.
+In Side by Side, **Compare** reads both documents and lists every difference, marked on the pages of both halves.
 
 ## Steps
 
-1. Open both documents, so each has a tab.
-2. In the rail, choose **Review**, then **Compare…** in the **Compare** group (**Compare documents…**). It is also in **Home**, **Display** group.
-3. In **Compare this document with**, choose the other document, then **Compare**.
-4. The **Differences** window lists, for each page, the lines **Only in this document** and **Only in** the other.
+1. Open Side by Side with the two documents (**Review** › **Compare…**). See "Compare two documents side by side".
+2. Choose **Compare**. While it works, the bar shows how far it has got; choose **Cancel** to stop.
+3. The **Differences** list shows each change with the pages it is on, left and right.
+4. Choose a change to take both halves to it. Its marks are drawn stronger than the others.
 
-![The Differences window listing changed lines on two pages](screenshot:compare-documents-1)
+![Side by Side with the Differences list and a changed sentence marked on both pages](screenshot:compare-documents-1)
+
+## What is compared
+
+- **Text changed**: the words that differ, marked where each document has them.
+- **Moved**: text that is the same but sits somewhere else on the page, and pages whose size changed.
+- **Annotation added**, **Annotation removed** and **Annotation changed**: comments and marks, including a changed note or colour.
+- **Picture changed**: images and drawings that differ, where no text change explains them.
+- **Page added** and **Page removed**: pages only one document has. The pages after them are still matched to their counterparts, so one added page does not make every later page look different.
 
 ## Good to know
 
-- Only words are compared, not pictures or layout.
-- Pages are paired by number, so a page added in the middle makes every later page look different.
-- Extra pages in either document are counted but not compared.
-- Up to 1,000 changed lines are listed; the count still covers them all.
-- To read two documents next to each other, see "Compare two documents side by side".
+- Pages are matched by what is on them, not by their number. Scanned pages with no text are matched by how they look.
+- A word is marked by its share of its line, so in some fonts a mark can sit slightly off the word.
+- Very small changes to pictures can be missed.
+- Up to 1,000 differences are listed.
+- If a document changes while it is being compared, choose **Compare** again.
 
 <!--
 Screenshots to capture:
-1. compare-documents-1 — Two versions of a contract open; dialog.compare-result showing differences on two pages. Frame the dialog.
+1. compare-documents-1 — Two versions of a contract in Side by Side after Compare; one text change chosen in the Differences list. Frame the whole surface.
 -->

@@ -1,27 +1,31 @@
 ---
 id: compare-side-by-side
 title: Compare two documents side by side
-summary: Show another open document in the second pane, next to the one you are reading.
-keywords: [side by side, compare, two documents, second pane, parallel, open side by side]
-commands: [document.open-side-by-side, view.toggle-split]
-contexts: [home]
+summary: Side by Side shows two open documents next to each other, each with its own list, zoom and scrolling.
+keywords: [side by side, compare, two documents, parallel, open side by side, versions, open another pdf]
+commands: [document.compare, document.open-side-by-side]
+contexts: [home, review]
 ---
-With two documents open, you can show one beside the other to read them together.
+Side by Side fills the window with two documents, one in each half, so you can read them together.
 
 ## Steps
 
-1. Open both documents.
-2. Right-click the tab of the document you want on the right, and choose **Open side by side**.
-3. To change which document is on the right, use the **Compare with** list above the second pane. Choose **This document** to go back to two views of the same document.
+1. In the rail, choose **Review**, then **Compare…** (**Compare documents…**). It is also in **Home**, **Display** group. Or right-click the tab of a document and choose **Open side by side**.
+2. The document you were reading is on the left. In each half, use the list at the top to choose any open document, including one with changes you have not saved yet.
+3. To bring in a file that is not open, choose **Open another PDF…** in that half. It opens in a new tab as well.
+4. Each half scrolls through its whole document on its own. Use **Zoom out** and **Zoom in** beside the percentage to zoom one half.
+5. Choose **Compare** to find the differences. See "Find the differences between two documents".
+6. Choose **Close** or press **Esc** to go back to the document you were reading.
 
-![Two different documents side by side with the Compare with list above the right pane](screenshot:compare-side-by-side-1)
+![Two versions of a contract in Side by Side, each half with its own list and zoom](screenshot:compare-side-by-side-1)
 
 ## Good to know
 
-- The right-hand document is for reading only; it keeps its own position as you scroll the left one.
-- For a list of the words that differ between two documents, see "Find the differences between two documents".
+- Nothing in Side by Side changes either document.
+- The ribbon, the panels and the status bar are hidden while Side by Side is open, and come back as they were when you close it.
+- To see two pages of the same document, use split view instead. See "See two pages of a document at once".
 
 <!--
 Screenshots to capture:
-1. compare-side-by-side-1 — Two open documents; use tab menu › Open side by side. Frame both panes and the "Compare with" picker.
+1. compare-side-by-side-1 — Two versions of a contract open; Review › Compare. Frame the whole Side by Side surface with both toolbars.
 -->

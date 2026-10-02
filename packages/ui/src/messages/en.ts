@@ -401,24 +401,7 @@ export const IMPORT_ANNOTATIONS_PROBLEM_TITLE = messageKey('dialog.import-annota
 export const IMPORT_ANNOTATIONS_UNREADABLE = messageKey('dialog.import-annotations.unreadable');
 export const IMPORT_ANNOTATIONS_TOO_LARGE = messageKey('dialog.import-annotations.too-large');
 export const COMPARE_COMMAND_TITLE = messageKey('command.compare-documents.title');
-export const COMPARE_PROGRESS = messageKey('task.compare-documents');
 export const OPTIMIZE_CHECKING = messageKey('task.optimize-checking');
-export const COMPARE_DOCUMENTS_TITLE = messageKey('dialog.compare-documents.title');
-export const COMPARE_DOCUMENTS_LABEL = messageKey('dialog.compare-documents.label');
-export const COMPARE_DOCUMENTS_APPLY = messageKey('dialog.compare-documents.apply');
-export const COMPARE_RESULT_TITLE = messageKey('dialog.compare-result.title');
-export const COMPARE_RESULT_NONE = messageKey('dialog.compare-result.none');
-export const COMPARE_RESULT_REFUSED = messageKey('dialog.compare-result.refused');
-export const COMPARE_RESULT_WHAT = messageKey('dialog.compare-result.what');
-export const COMPARE_RESULT_SUMMARY = messageKey('dialog.compare-result.summary');
-export const COMPARE_RESULT_PARTIAL = messageKey('dialog.compare-result.partial');
-export const COMPARE_RESULT_EXTRA_HERE = messageKey('dialog.compare-result.extra-here');
-export const COMPARE_RESULT_EXTRA_OTHER = messageKey('dialog.compare-result.extra-other');
-export const COMPARE_RESULT_CLIPPED = messageKey('dialog.compare-result.clipped');
-export const COMPARE_RESULT_TRUNCATED = messageKey('dialog.compare-result.truncated');
-export const COMPARE_RESULT_PAGE = messageKey('dialog.compare-result.page');
-export const COMPARE_RESULT_REMOVED = messageKey('dialog.compare-result.removed');
-export const COMPARE_RESULT_ADDED = messageKey('dialog.compare-result.added');
 export const READ_BARCODES_COMMAND_TITLE = messageKey('command.read-barcodes.title');
 export const PLACE_BARCODE_TOOL_TITLE = messageKey('command.organize.place-barcode');
 export const PAGE_BARCODES_TITLE = messageKey('dialog.page-barcodes.title');
@@ -628,6 +611,44 @@ export const SPLIT_BOTH_BACK = messageKey('surface.split.both-back');
 export const SPLIT_BOTH_FORWARD = messageKey('surface.split.both-forward');
 export const SPLIT_CLOSE = messageKey('surface.split.close');
 export const SPLIT_HALF_PAGE = messageKey('surface.split.half-page');
+export const SIDE_TITLE = messageKey('surface.side-by-side.title');
+export const SIDE_SUBTITLE = messageKey('surface.side-by-side.subtitle');
+export const SIDE_CLOSE = messageKey('surface.side-by-side.close');
+export const SIDE_CLOSE_TEXT = messageKey('surface.side-by-side.close-text');
+export const SIDE_LEFT = messageKey('surface.side-by-side.left');
+export const SIDE_RIGHT = messageKey('surface.side-by-side.right');
+export const SIDE_DOCUMENT = messageKey('surface.side-by-side.document');
+export const SIDE_HALF_LABEL = messageKey('surface.side-by-side.half-label');
+export const SIDE_OPEN = messageKey('surface.side-by-side.open');
+export const SIDE_ZOOM_OUT = messageKey('surface.side-by-side.zoom-out');
+export const SIDE_ZOOM_IN = messageKey('surface.side-by-side.zoom-in');
+export const SIDE_ZOOM = messageKey('surface.side-by-side.zoom');
+export const SIDE_COMPARE = messageKey('surface.side-by-side.compare');
+export const SIDE_COMPARING = messageKey('surface.side-by-side.comparing');
+export const SIDE_CANCEL = messageKey('surface.side-by-side.cancel');
+export const SIDE_DIFFERENCES = messageKey('surface.side-by-side.differences');
+export const SIDE_COUNT = messageKey('surface.side-by-side.count');
+export const SIDE_NONE = messageKey('surface.side-by-side.none');
+export const SIDE_MORE = messageKey('surface.side-by-side.more');
+export const SIDE_CLIPPED = messageKey('surface.side-by-side.clipped');
+export const SIDE_REFUSED = messageKey('surface.side-by-side.refused');
+export const SIDE_MOVED = messageKey('surface.side-by-side.moved');
+export const SIDE_FAILED = messageKey('surface.side-by-side.failed');
+export const SIDE_ROW_TEXT = messageKey('surface.side-by-side.row-text');
+export const SIDE_ROW_LAYOUT = messageKey('surface.side-by-side.row-layout');
+export const SIDE_ROW_PAGE_SIZE = messageKey('surface.side-by-side.row-page-size');
+export const SIDE_ROW_ANNOTATION_ADDED = messageKey('surface.side-by-side.row-annotation-added');
+export const SIDE_ROW_ANNOTATION_REMOVED = messageKey('surface.side-by-side.row-annotation-removed');
+export const SIDE_ROW_ANNOTATION_CHANGED = messageKey('surface.side-by-side.row-annotation-changed');
+export const SIDE_ROW_GRAPHICS = messageKey('surface.side-by-side.row-graphics');
+export const SIDE_ROW_INSERTED = messageKey('surface.side-by-side.row-inserted');
+export const SIDE_ROW_REMOVED = messageKey('surface.side-by-side.row-removed');
+export const SIDE_ROW_REPLACED = messageKey('surface.side-by-side.row-replaced');
+export const SIDE_ROW_DELETED_TEXT = messageKey('surface.side-by-side.row-deleted-text');
+export const SIDE_ROW_ADDED_TEXT = messageKey('surface.side-by-side.row-added-text');
+export const SIDE_ROW_PAGES = messageKey('surface.side-by-side.row-pages');
+export const SIDE_ROW_LEFT = messageKey('surface.side-by-side.row-left');
+export const SIDE_ROW_RIGHT = messageKey('surface.side-by-side.row-right');
 export const RULERS_TITLE = messageKey('setting.viewing.rulers.title');
 export const GRID_TITLE = messageKey('setting.viewing.grid.title');
 export const RECTANGLE_TOOL_TITLE = messageKey('command.annotate-rectangle.title');
@@ -851,9 +872,6 @@ export const FIND_MATCH_ON_PAGE = messageKey('surface.find.match-on-page');
 export const FIND_NEXT_MATCH = messageKey('surface.find.next-match');
 export const FIND_PREVIOUS_MATCH = messageKey('surface.find.previous-match');
 export const FIND_MATCH_POSITION = messageKey('surface.find.match-position');
-export const COMPARE_PICK = messageKey('surface.compare.pick');
-export const COMPARE_SAME = messageKey('surface.compare.same');
-export const COMPARE_SECOND_LABEL = messageKey('surface.compare.second-label');
 export const TAB_STRIP_LABEL = messageKey('surface.tabs.label');
 export const TAB_CLOSE = messageKey('surface.tabs.close');
 export const TAB_OPEN_ANOTHER = messageKey('surface.tabs.open-another');
@@ -2447,6 +2465,45 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SPLIT_BOTH_FORWARD]: 'Both forward one page',
   [SPLIT_CLOSE]: 'Close split view',
   [SPLIT_HALF_PAGE]: 'Page {page}',
+  [SIDE_TITLE]: 'Side by Side',
+  [SIDE_SUBTITLE]: 'Compare two open documents',
+  [SIDE_CLOSE]: 'Close Side by Side',
+  [SIDE_CLOSE_TEXT]: 'Close',
+  [SIDE_LEFT]: 'Left',
+  [SIDE_RIGHT]: 'Right',
+  [SIDE_DOCUMENT]: '{side} document',
+  [SIDE_HALF_LABEL]: '{side}: {name}',
+  [SIDE_OPEN]: 'Open another PDF…',
+  [SIDE_ZOOM_OUT]: 'Zoom out',
+  [SIDE_ZOOM_IN]: 'Zoom in',
+  [SIDE_ZOOM]: '{percent}%',
+  [SIDE_COMPARE]: 'Compare',
+  [SIDE_COMPARING]: 'Comparing… {done} of {total}',
+  [SIDE_CANCEL]: 'Cancel',
+  [SIDE_DIFFERENCES]: 'Differences',
+  [SIDE_COUNT]: '{count, plural, one {# difference} other {# differences}}',
+  [SIDE_NONE]: 'No differences found.',
+  [SIDE_MORE]: 'There are more differences than can be listed. Only the first {count} are shown.',
+  [SIDE_CLIPPED]:
+    '{count, plural, one {One page has more text than can be compared at once, so part of its text was not compared.} other {# pages have more text than can be compared at once, so part of their text was not compared.}}',
+  [SIDE_REFUSED]: 'The documents could not be compared. One of them may be busy or no longer open.',
+  [SIDE_MOVED]: 'A document changed while it was being compared. Compare again to see its differences.',
+  [SIDE_FAILED]: 'A page could not be drawn, so the comparison stopped. Nothing was changed in either document.',
+  [SIDE_ROW_TEXT]: 'Text changed',
+  [SIDE_ROW_LAYOUT]: 'Moved',
+  [SIDE_ROW_PAGE_SIZE]: 'Page size changed',
+  [SIDE_ROW_ANNOTATION_ADDED]: 'Annotation added',
+  [SIDE_ROW_ANNOTATION_REMOVED]: 'Annotation removed',
+  [SIDE_ROW_ANNOTATION_CHANGED]: 'Annotation changed',
+  [SIDE_ROW_GRAPHICS]: 'Picture changed',
+  [SIDE_ROW_INSERTED]: 'Page added',
+  [SIDE_ROW_REMOVED]: 'Page removed',
+  [SIDE_ROW_REPLACED]: '“{removed}” → “{inserted}”',
+  [SIDE_ROW_DELETED_TEXT]: 'Removed “{text}”',
+  [SIDE_ROW_ADDED_TEXT]: 'Added “{text}”',
+  [SIDE_ROW_PAGES]: 'Left page {left} · Right page {right}',
+  [SIDE_ROW_LEFT]: 'Left page {page}',
+  [SIDE_ROW_RIGHT]: 'Right page {page}',
   [RULERS_TITLE]: 'Show rulers',
   [GRID_TITLE]: 'Show grid',
   [RECTANGLE_TOOL_TITLE]: 'Rectangle',
@@ -2685,12 +2742,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // far they have to go as much as where they are, and "match 7" alone is the
   // half that tells them neither.
   [FIND_MATCH_POSITION]: 'Match {position} of {count}',
-  [COMPARE_PICK]: 'Compare with',
   // THE DEFAULT IS THIS DOCUMENT AGAIN, which is split view. Naming it as an
   // option rather than as an absence is what makes it something a reader can
   // return to.
-  [COMPARE_SAME]: 'This document',
-  [COMPARE_SECOND_LABEL]: 'Second view: {name}',
   [TAB_STRIP_LABEL]: 'Open documents',
   // THE FILE'S NAME IS IN THE CONTROL'S NAME. Six tabs give six close buttons,
   // and six of them called "Close" are six controls a screen-reader user
@@ -3963,30 +4017,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [IMPORT_ANNOTATIONS_TOO_LARGE]:
     'Nothing was added. Monstera reads comment files up to {megabytes} MB, and that one is larger.',
   [COMPARE_COMMAND_TITLE]: 'Compare documents…',
-  [COMPARE_PROGRESS]: 'Comparing pages',
   [OPTIMIZE_CHECKING]: 'Checking the size of a smaller copy',
-  [COMPARE_DOCUMENTS_TITLE]: 'Compare documents',
-  [COMPARE_DOCUMENTS_LABEL]: 'Compare this document with',
-  [COMPARE_DOCUMENTS_APPLY]: 'Compare',
-  [COMPARE_RESULT_TITLE]: 'Differences',
-  [COMPARE_RESULT_NONE]: 'Open the other document in a tab first, then compare.',
-  [COMPARE_RESULT_REFUSED]: 'The documents could not be compared. One of them may be busy or no longer open.',
-  [COMPARE_RESULT_WHAT]:
-    'This compares the words on each page with the page at the same number in {name}. Pictures and layout are not compared, and a page added in the middle shifts every page after it.',
-  [COMPARE_RESULT_SUMMARY]:
-    '{count, plural, =0 {No lines differ in the {pages} pages both documents have.} one {One line differs in the {pages} pages both documents have.} other {# lines differ in the {pages} pages both documents have.}}',
-  [COMPARE_RESULT_PARTIAL]:
-    'Compared {counted} of {total} pages. A document changed during the comparison, so the rest were not compared.',
-  [COMPARE_RESULT_EXTRA_HERE]:
-    '{count, plural, one {This document has one more page, which was not compared.} other {This document has # more pages, which were not compared.}}',
-  [COMPARE_RESULT_EXTRA_OTHER]:
-    '{count, plural, one {{name} has one more page, which was not compared.} other {{name} has # more pages, which were not compared.}}',
-  [COMPARE_RESULT_CLIPPED]:
-    '{count, plural, one {One page has more text than can be read at once, so some of its lines may be missing from the comparison.} other {# pages have more text than can be read at once, so some of their lines may be missing from the comparison.}}',
-  [COMPARE_RESULT_TRUNCATED]: 'There are more differences than can be listed. Only the first ones are shown.',
-  [COMPARE_RESULT_PAGE]: 'Page {page}',
-  [COMPARE_RESULT_REMOVED]: 'Only in this document',
-  [COMPARE_RESULT_ADDED]: 'Only in {name}',
   [READ_BARCODES_COMMAND_TITLE]: 'Read barcodes',
   [PLACE_BARCODE_TOOL_TITLE]: 'Add a barcode',
   [PAGE_BARCODES_TITLE]: 'Barcodes on this page',

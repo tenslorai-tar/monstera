@@ -838,13 +838,13 @@ test('a triple-click on a page’s LAST LINE still opens the selected-text menu,
   await expect(page.getByRole('menuitem', { name: 'Explain' })).toBeVisible();
 });
 
-test('OPEN SIDE BY SIDE puts the right-clicked tab’s document in the second pane (§7)', async ({
+test('OPEN SIDE BY SIDE puts the right-clicked tab’s document in Side by Side’s right half (§7, ADR-0131)', async ({
   page,
 }) => {
   // The tab menu in the production build, with TWO documents open — which is what makes this case
   // able to fail. The menu rewrites the context's `docId` to the tab that was right-clicked, so a
-  // command reading the focused document would compare the document already on show, and the
-  // picker below would answer with the wrong id rather than with nothing.
+  // command reading the focused document would put the document already on show on both sides,
+  // and the right half's list below would answer with the wrong id rather than with nothing.
   //
   // It is here and not in a live run because a second document can only be opened through the
   // native file dialog, which no instrument drives.
@@ -880,15 +880,69 @@ test('OPEN SIDE BY SIDE puts the right-clicked tab’s document in the second pa
 
   await page.getByRole('menuitem', { name: 'Open side by side' }).click();
 
-  // THE PANE ITSELF, which only renders under split view — so this also says the command turned
-  // that on. A version that wrote the document alone would leave nothing here at all.
-  // THE LAYER ON SHOW: the other document's layer is kept behind it under the same split (ADR-0129), with a
-  // hidden picker of its own.
-  const picker = page.locator('[data-document-layer="active"] [data-compare-pick="true"]');
-  await expect(picker).toBeVisible();
-  // AND THE PICKER'S VALUE IS THE ID, not merely that something is compared: the command writes
-  // the same state the picker owns, and a wrong id would still fill the pane.
-  await expect(picker).toHaveValue(first);
+  // THE SURFACE, over the ribbon and the page area, and each half's list naming its document by id: a wrong id would
+  // still fill a half, so the values are what separates the command from one that reads the wrong document.
+  await expect(page.locator('section[data-side-by-side]')).toBeVisible();
+  await expect(page.locator('.m-ribbon__tools')).toBeHidden();
+  await expect(page.locator('[data-side-pick="left"]')).toHaveValue(second);
+  await expect(page.locator('[data-side-pick="right"]')).toHaveValue(first);
+  // ESC RETURNS THE WINDOW AS IT WAS.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('section[data-side-by-side]')).toHaveCount(0);
+  await expect(page.locator('.m-ribbon__tools')).toBeVisible();
+});
+
+test('SIDE BY SIDE’S COMPARE marks a changed line on BOTH pages and lists it (ADR-0131)', async ({ page }) => {
+  // TWO DOCUMENTS WHOSE TEXT DIFFERS ON ONE LINE of page 1, and nowhere else. The same bytes draw both, so the
+  // pictures agree and the one difference is the text — a mark on a page the walk did not pair, or on one side only,
+  // is what this case exists to catch, and only real layout can show it: happy-dom measures no page.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const bytes = await threePagePdf();
+  const first = asDocId('00000000-0000-4000-8000-0000000000e9');
+  const second = asDocId('00000000-0000-4000-8000-0000000000ea');
+  const text = (owed: string): readonly (readonly string[])[] => [
+    ['Quarterly totals for the north', owed],
+    ['The second page is the same in both'],
+    ['The third page is the same in both'],
+  ];
+  await bridge(page, {
+    opens: [
+      { kind: 'opened', docId: first, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'first.pdf' },
+      { kind: 'opened', docId: second, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'second.pdf' },
+    ],
+    documentBytes: new Map([
+      [first, bytes],
+      [second, bytes],
+    ]),
+    documentPageLines: new Map([
+      [first, text('Nothing further is owed')],
+      [second, text('Nothing more is owed')],
+    ]),
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await page.locator('.m-ribbon__tools').getByRole('button', { name: 'Open', exact: true }).click();
+  // REVIEW › COMPARE, the ribbon's route in: `second.pdf` is in front, so it is the left half.
+  await page.locator('nav.m-ribbon__rail').getByRole('button', { name: 'Review' }).click();
+  await page.locator('.m-ribbon__tools').getByRole('button', { name: 'Compare', exact: true }).click();
+  const surface = page.locator('section[data-side-by-side]');
+  await expect(surface).toBeVisible();
+
+  await surface.locator('[data-side-compare]').click();
+  await expect(surface.locator('[data-side-count]')).toHaveText('1 difference');
+  const row = surface.locator('[data-side-row="text"]');
+  await expect(row).toContainText('Left page 1 · Right page 1');
+  await expect(row).toContainText('“more” → “further”');
+  await row.click();
+
+  // ON BOTH HALVES, on page 1, and drawn as the chosen change.
+  for (const side of ['left', 'right'] as const) {
+    const mark = surface.locator(`[data-side-half="${side}"] [data-difference-layer="0"] .m-difference--text.m-difference--active`);
+    await expect(mark).toHaveCount(1);
+    await expect(mark).toBeVisible();
+  }
+  // AND NOWHERE ELSE: pages 2 and 3 are the same in both, so a mark there is a pairing defect.
+  await expect(surface.locator('[data-difference-layer="1"], [data-difference-layer="2"]')).toHaveCount(0);
 });
 
 test('each TEXT-LAYER LINE’S GLYPHS SPAN ITS BOX, so a selection lands on the ink it covers', async ({ page }) => {

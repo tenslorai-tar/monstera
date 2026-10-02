@@ -43,8 +43,12 @@
    not measured, and are named constants beside the code.
 
 5. **Four kinds of change on a matched pair, each boxed on BOTH pages.**
-   - **Text:** a word-level longest common subsequence; removed words are boxed on the left page, inserted on the right.
-   - **Layout:** a word present on both pages whose box moved more than six points, and a page whose size changed.
+   - **Text:** lines aligned first, then a token-level longest common subsequence over each run of changed lines;
+     removed tokens are boxed on the left page, inserted on the right. Tokens are the platform segmenter's, the one
+     `wordCount.ts` reads (B3a), punctuation included, so `fox.` against `fox,` is a change and a line of Chinese is
+     not one token.
+   - **Layout:** a line present on both pages whose box moved more than six points, a word inside an edited run that
+     moved to another line, and a page whose size changed.
    - **Annotations:** matched by kind and overlapping rectangle; reported added, removed, or changed (contents, colour,
      or rectangle).
    - **Images and graphics:** cells of the two rasters that differ, and that no text or layout box on that page
@@ -53,7 +57,9 @@
 6. **A summary list jumps to each change.** One row per change in page order, naming its kind and its page on each
    side; choosing a row takes both halves to those pages, where the marks are drawn.
 
-7. **Bounds.** At any moment two pages' lines and two rasters are held. The alignment table is pages × pages, so it is
+7. **Bounds.** At any moment two pages' lines and two rasters are held, plus one signature per page — the alignment
+   needs them all at once, so a signature is word hashes and, for a page matched by its picture, a 32 × 32 ink grid,
+   never text or a raster. The alignment table is pages × pages, so it is
    banded past 4,000,000 cells: a band of 400 pages beyond the difference in length. A document is never refused for
    its length (the owner's principle). The list holds at most `MAX_COMPARE_CHANGES` rows and says when it stopped.
 
@@ -62,8 +68,8 @@
 - **A word's box is estimated** inside the kernel's line box by its share of the line's characters, so in a
   proportional font a narrow-letter word is boxed slightly off. Exact boxes need character positions from the kernel,
   which is a new channel; it is left until the owner has seen this comparison.
-- **The visual comparison is coarse:** rasters at a fifth of a point per pixel, compared in cells, so a change smaller
-  than a few points can be missed or merged with a neighbour.
+- **The visual comparison is coarse:** rasters at half a pixel per point (a Letter page is 306 × 396 pixels), compared
+  in eight-point cells, so a change smaller than a few points can be missed or merged with a neighbour.
 - **A scan has no words**, so its pages are matched and compared visually only.
 
 ## Consequence for ADR-0089

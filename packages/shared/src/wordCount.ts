@@ -99,6 +99,27 @@ export function* wordsOf(lines: readonly string[]): Generator<string> {
   }
 }
 
+/** One segment of a line that is not whitespace, and where it starts. */
+export interface TextToken {
+  readonly text: string;
+  /** Its offset in the line, in UTF-16 units. */
+  readonly index: number;
+  readonly isWord: boolean;
+}
+
+/**
+ * A line's tokens — every segment that is not whitespace, words and punctuation alike — from the same segmenter
+ * {@link wordsOf} reads. A comparison needs punctuation where a count does not: `fox.` against `fox,` is an edit a
+ * reader wants shown, and a word-only list would report that line as unchanged. The segments are the same; only which
+ * ones a caller keeps differs, so the two cannot disagree about where a word ends.
+ */
+export function* tokensOf(line: string): Generator<TextToken> {
+  for (const segment of SEGMENTER.segment(line)) {
+    if (WHITESPACE.test(segment.segment)) continue;
+    yield { text: segment.segment, index: segment.index, isWord: segment.isWordLike === true };
+  }
+}
+
 export function countWords(lines: readonly string[]): WordCount {
   const text = lines.join(' ');
 

@@ -2586,49 +2586,35 @@ describe('delete pages — the mutation-dialog gate', () => {
       expect(command.when?.({ ...CONTEXT, openDocuments: TABS })).toBe(true);
     });
 
-    /** The command with both effects recorded: what it compared, and what it wrote to settings. */
+    /** The command with what it asked Side by Side to show recorded. */
     function sideBySide(focused: DocId | undefined) {
-      const compared: DocId[] = [];
-      const written: { id: string; value: unknown }[] = [];
+      const shown: (readonly [DocId, DocId])[] = [];
       return {
-        compared,
-        written,
+        shown,
         command: openSideBySideCommand({
           focused: () => focused,
-          compare: (docId) => compared.push(docId),
-          settings: {
-            set: (id: string, value: unknown) => {
-              written.push({ id, value });
-            },
-          } as unknown as SettingsStore,
+          show: (left, right) => shown.push([left, right]),
         }),
       };
     }
 
-    it('open side by side compares the RIGHT-CLICKED document AND opens the pane to show it', async () => {
-      const { command, compared, written } = sideBySide(DOC);
+    it('open side by side shows the document on show on the LEFT and the RIGHT-CLICKED one on the right', async () => {
+      const { command, shown } = sideBySide(DOC);
       await command.run({ ...CONTEXT, docId: OTHER, openDocuments: TABS });
       // `CONTEXT.docId` is rewritten to OTHER by the tab menu while DOC stays focused, so a
-      // command reading the focused document would compare DOC against itself here.
-      expect(compared).toStrictEqual([OTHER]);
-      // THE SECOND EFFECT IS THE ONE WITH NO SYMPTOM. The compare pane renders only under split
-      // view, so a command that set the document alone would be a menu item a reader clicks and
-      // watches do nothing — and every assertion about `compared` would still pass.
-      // THE ID IS SPELT OUT rather than read from `SPLIT_VIEW_SETTING`: an assertion built from
-      // the same constant the command uses agrees with it whichever setting that is.
-      expect(written).toStrictEqual([{ id: 'viewing.split', value: true }]);
+      // command reading the focused document from the context would put OTHER on both sides.
+      expect(shown).toStrictEqual([[DOC, OTHER]]);
     });
 
-    it('CONTROL: it is hidden on the tab already on show, and writes nothing if run there', async () => {
+    it('CONTROL: it is hidden on the tab already on show, and shows nothing if run there', async () => {
       // Both halves, for the reason every `when` case here carries: a predicate that hid the item
       // while `run` still acted would be caught by nothing else — and the effect it would have is
-      // the focused document in both panes, which looks like the command working.
-      const { command, compared, written } = sideBySide(DOC);
+      // the focused document on both sides, which looks like the command working.
+      const { command, shown } = sideBySide(DOC);
       expect(command.when?.({ ...CONTEXT, docId: DOC, openDocuments: TABS })).toBe(false);
       expect(command.when?.({ ...CONTEXT, docId: OTHER, openDocuments: TABS })).toBe(true);
       await command.run({ ...CONTEXT, docId: DOC, openDocuments: TABS });
-      expect(compared).toStrictEqual([]);
-      expect(written).toStrictEqual([]);
+      expect(shown).toStrictEqual([]);
     });
 
     it('sits THIRD in the tab menu, after close and close others', () => {

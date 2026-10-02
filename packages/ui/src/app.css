@@ -1811,30 +1811,6 @@ optgroup {
 }
 
 /*
- * The comparison's list: the list exception's two rules, and each line's side above its text so
- * a long line wraps under its label rather than beside it.
- */
-.m-compare-result__changes {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.m-compare-result__changes li {
-  display: flex;
-  flex-direction: column;
-  padding-block: var(--space-4);
-}
-
-.m-compare-result__side {
-  color: var(--muted);
-}
-
-.m-compare-result__text {
-  overflow-wrap: anywhere;
-}
-
-/*
  * The accessibility check's two lists: the list exception's rules, and each rule's verdict, words
  * and pages on one wrapping line so a long rule name does not push its verdict off the row.
  */
@@ -4110,30 +4086,180 @@ optgroup {
 }
 
 /*
- * The second pane: its picker above whichever scroller it is showing.
- *
- * A grid with the picker at its natural height and the scroller taking the
- * rest, so the two panes' pages line up at the same y — which is the whole of
- * what side-by-side comparison is for, and a picker that pushed one pane down
- * would undo it.
+ * SIDE BY SIDE (ADR-0131): from the ribbon's row to the status bar's, across both columns, so the menu and title bars
+ * stay. What it covers is hidden rather than unmounted — every document's layer keeps its state — and `visibility`
+ * takes it out of the tab order and the accessibility tree as well as out of sight.
  */
-.m-second-pane {
+.m-side {
+  grid-row: ribbon-start / status-end;
+  grid-column: 1 / -1;
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-block-size: 0;
+  background: var(--canvas);
+}
+
+.m-side:focus {
+  outline: none;
+}
+
+/* `.m-ribbon` is `display: contents`, and `visibility` inherits through it to the rail and the tool strip. */
+.m-document-surface[data-covered-by='side-by-side'] > :is(.m-ribbon, .m-body-area, .m-status-bar) {
+  visibility: hidden;
+}
+
+/* TWO EQUAL HALVES, and the summary list beside them once a comparison has run. */
+.m-side__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   min-block-size: 0;
 }
 
-.m-compare {
-  display: contents;
+.m-side__body--listed {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(24ch, 32ch);
 }
 
-.m-compare-pick {
+.m-side__half {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+.m-side__half + .m-side__half {
+  border-inline-start: 1px solid var(--border); /* decorative: the divider between the halves; nothing is clicked on it */
+}
+
+.m-side__tools {
   display: flex;
-  gap: var(--space-8);
-  align-items: baseline;
-  padding: var(--space-2) var(--space-4);
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-8);
+  align-items: center;
+  padding: var(--space-4) var(--space-8);
   background: var(--bg2);
+  border-block-end: 1px solid var(--border); /* decorative: separates the toolbar from the pages; its controls draw their own edges */
+  font-size: var(--font-chrome-12);
+}
+
+.m-side__pick {
+  max-inline-size: 28ch;
+}
+
+.m-side__zoom {
+  min-inline-size: 5ch;
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.m-side__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-block-size: 0;
+  overflow-y: auto;
+  padding: var(--space-8);
+  background: var(--bg2);
+  border-inline-start: 1px solid var(--border); /* decorative: the list's edge; its rows draw their own state */
+  font-size: var(--font-chrome-12);
+}
+
+.m-side__heading {
+  margin: 0;
+  font-size: var(--font-chrome-12);
+  font-weight: 600;
+}
+
+.m-side__note {
+  margin: 0;
+  color: var(--muted);
+}
+
+.m-side__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.m-side__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  inline-size: 100%;
+  padding: var(--space-4) var(--space-8);
+  border: 0;
+  border-inline-start: 2px solid transparent; /* decorative: reserves the chosen row's mark so choosing moves nothing */
+  border-radius: var(--radius-4);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.m-side__row:hover {
+  background: var(--surface2);
+}
+
+/* NOT COLOUR ALONE: the border survives `forced-colors`, where this rule's background is discarded. */
+.m-side__row[aria-current='true'] {
+  background: var(--accent-soft);
+  border-inline-start-color: var(--accent);
+}
+
+.m-side__where {
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+}
+
+.m-side__detail {
+  overflow-wrap: anywhere;
+}
+
+/*
+ * A comparison's marks over a page, inert, in the text layer's own box. Each kind has its own hue AND its own line,
+ * so the kinds are told apart without colour; the chosen change is drawn stronger in the same hue, as the find bar's
+ * active match is.
+ */
+.m-difference-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.m-difference {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.m-difference--text {
+  background: color-mix(in srgb, var(--gold-bottom) 30%, transparent);
+  border-block-end: 2px solid var(--gold-bottom); /* decorative: a change's mark over the page; nothing is clicked on it */
+}
+
+.m-difference--layout {
+  outline: 2px dashed var(--violet-bottom);
+}
+
+.m-difference--annotation {
+  outline: 2px solid var(--accent);
+}
+
+.m-difference--graphics {
+  outline: 2px dotted var(--gold-bottom);
+  background: color-mix(in srgb, var(--gold-bottom) 12%, transparent);
+}
+
+.m-difference--page {
+  outline: 4px solid var(--accent);
+  outline-offset: -4px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.m-difference--active {
+  outline-width: 3px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 /*
