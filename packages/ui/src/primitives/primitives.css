@@ -628,10 +628,18 @@
 
 .m-dialog-row__text {
   display: flex;
-  flex: 1 1 22ch;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: var(--space-2);
   min-inline-size: 0;
+}
+
+/* IN A ROW, the name takes at least 22 characters' width before the control wraps under it. Only in a row: a flex
+   basis is a length along the CONTAINER's axis, and the same `22ch` on the heading of a column of choices
+   (`.m-dialog-choices`) was a 22ch HEIGHT, an empty band between *What to keep* and its options (the owner's review of
+   0.1.9.0, Export to Word; Split and Signature drew it too). */
+.m-dialog-row > .m-dialog-row__text {
+  flex-basis: 22ch;
 }
 
 .m-dialog-row__label {
