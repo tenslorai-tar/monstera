@@ -1620,7 +1620,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // success answers `files` from the group count, which is the one thing a
     // shim CAN answer honestly here: it is a function of the request rather
     // than of any document.
-    'document.split': ({ docId, groups }) => {
+    'document.split': ({ docId, split }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
       if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
 
@@ -1630,7 +1630,12 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (typeof chosen === 'object') {
         return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
       }
-      return Promise.resolve(ok({ kind: 'split' as const, files: groups.length, written: wrote() }));
+      // ONE FILE PER GROUP, or per page `each` names: a run counts its pages.
+      const files =
+        'each' in split
+          ? split.each.reduce<number>((sum, entry) => sum + (typeof entry === 'number' ? 1 : entry[1] - entry[0] + 1), 0)
+          : split.groups.length;
+      return Promise.resolve(ok({ kind: 'split' as const, files, written: wrote() }));
     },
     // THE SPLIT'S SHIM, one file per page: `files` is the page count asked for,
     // which is again a function of the request rather than of any document.

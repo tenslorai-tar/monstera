@@ -37,7 +37,7 @@ import { ENGINE_ANNOTATIONS_MAX } from './host/engineChannels.js';
 import { decodedImage, withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
 import { snapRotation } from './rotatePages.js';
-import { pageInDocument } from './pageScope.js';
+import { pageInDocument, pagesOf } from './pageScope.js';
 import { type SignatureBox, type SignatureDrawing, drawSignature, signatureBox } from './signatureDrawing.js';
 
 /**
@@ -1438,15 +1438,17 @@ export const applyPlaceImage: Apply<'mupdf', 'placeImage'> = (
 ): Promise<void> =>
   withDocument(session, (document) => {
     const total = document.countPages();
+    // THE PAGE SET LISTED ONCE, by the one expander: a run past the document is refused before it is listed.
+    const pages = pagesOf(command.pages, total);
 
     // DUPLICATES ARE REFUSED RATHER THAN COLLAPSED. Two identical stamps in one
     // place are indistinguishable in the walk that names them, so the second is
     // unerasable except by erasing the first — ADR-0041's argument against
     // content addressing, arriving as a payload that can ask for it.
-    const seen = new Set(command.pages);
-    if (seen.size !== command.pages.length) {
+    const seen = new Set(pages);
+    if (seen.size !== pages.length) {
       throw new RangeError(
-        `the same page is named ${String(command.pages.length - seen.size + 1)} times in one ` +
+        `the same page is named ${String(pages.length - seen.size + 1)} times in one ` +
           `placement. Two stamps in the same box on the same page cannot be told apart afterwards.`,
       );
     }
@@ -1454,7 +1456,7 @@ export const applyPlaceImage: Apply<'mupdf', 'placeImage'> = (
     // EVERY PAGE RESOLVED AND CHECKED FIRST. `pageAt` throws for an index past
     // the end, and a rectangle off the page is this module's other refusal —
     // asked here so that neither can happen once writing has begun.
-    const loaded = command.pages.map((page) => {
+    const loaded = pages.map((page) => {
       const found = pageAt(document, page, total);
       const transform = transformFor(found);
       const box = placedRect(command.rect, transform);
@@ -1939,7 +1941,7 @@ export function capturePlaceImage(
 ): Promise<CaptureResult<never>> {
   return withDocument(session, (document) => {
     const total = document.countPages();
-    for (const page of command.pages) pageAt(document, page, total);
+    for (const page of pagesOf(command.pages, total)) pageAt(document, page, total);
     return {
       captured: false,
       reason:

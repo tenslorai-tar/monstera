@@ -21,6 +21,8 @@ import {
   MAX_STRUCTURE_NAME,
   MAX_STRUCTURE_NODES,
   MAX_SERVICE_DETAIL,
+  type PageSet,
+  pageSetOf,
   type AskAbout,
   type AskSent,
   type AskLabel,
@@ -136,6 +138,7 @@ import {
   type RecognisedTable,
   RecognisedTableRefused,
   type PageWordBoxes,
+  pagesOf,
 } from '@monstera/kernel';
 import type { BarcodeWriteFormat } from '@monstera/kernel/barcode';
 import {
@@ -1448,7 +1451,8 @@ export interface DocumentDestinations {
 export type DocumentExtractReader = (
   docId: DocId,
   sessions: DocumentSessions,
-  pages: readonly number[],
+  /** A page set, listed against the document where the engine is (JOURNAL, *No document-size refusals*). */
+  pages: PageSet,
 ) => Promise<ByteImage>;
 
 /**
@@ -3015,7 +3019,7 @@ export class DocumentCommands {
    */
   async placeBarcode(
     docId: DocId,
-    pages: readonly number[],
+    pages: PageSet,
     rect: AnnotationRect,
     text: string,
     format: BarcodeFormat,
@@ -3752,7 +3756,7 @@ export class DocumentCommands {
    * @throws `DocumentNotOpenError` before any dialog appears, for `saveCopy`'s
    * reason: a document this service does not hold has no name to offer.
    */
-  async extract(docId: DocId, pages: readonly number[]): Promise<CopyOutcome | undefined> {
+  async extract(docId: DocId, pages: PageSet): Promise<CopyOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'extract pages');
 
@@ -4242,7 +4246,11 @@ export class DocumentCommands {
    * @throws `DocumentNotOpenError` before any dialog appears, for `saveCopy`'s
    * reason.
    */
-  async split(docId: DocId, groups: readonly (readonly number[])[]): Promise<FolderOutcome | undefined> {
+  async split(
+    docId: DocId,
+    /** The ranges a person wrote, or one file for each page of a set (JOURNAL, *No document-size refusals*). */
+    split: { readonly groups: readonly PageSet[] } | { readonly each: PageSet },
+  ): Promise<FolderOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'split');
 
@@ -4256,10 +4264,18 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
+      // THE GROUPS LISTED AGAINST THIS VERSION'S PAGE COUNT, inside the lane, by the one expander: a page past the
+      // document is refused before any file is named. `each` is one file per page of its set.
+      const { pageCount } = await this.#geometry(docId, sessions, []);
+      const groups =
+        'each' in split
+          ? pagesOf(split.each, pageCount).map((page) => [page])
+          : split.groups.map((group) => pagesOf(group, pageCount));
+
       return await writeDocumentSplit(
         this.#save.deps,
         this.#copy.checkTarget,
-        (pages) => this.#extract(docId, sessions, pages),
+        (pages) => this.#extract(docId, sessions, pageSetOf(pages)),
         groups.map((pages) => ({
           destination: join(directory, splitPartName(suggest, pages)),
           pages,
@@ -4940,7 +4956,8 @@ export class DocumentCommands {
   async exportPageImages(
     docId: DocId,
     request: {
-      readonly pages: readonly number[];
+      /** A page set: *every page* of a document of any length is one run (JOURNAL, *No document-size refusals*). */
+      readonly pages: PageSet;
       readonly format: PageImageFormat;
       readonly dpi: number;
       readonly quality: number;
@@ -4959,6 +4976,10 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
+      // LISTED AGAINST THIS VERSION, `split`'s rule: a page past the document is refused before any file is named.
+      const { pageCount } = await this.#geometry(docId, sessions, []);
+      const pages = pagesOf(request.pages, pageCount);
+
       return await writeDocumentSplit(
         this.#save.deps,
         this.#copy.checkTarget,
@@ -4976,7 +4997,7 @@ export class DocumentCommands {
             quality: request.quality,
           });
         },
-        request.pages.map((page) => ({
+        pages.map((page) => ({
           destination: join(directory, pageImageName(suggest, page, request.format)),
           pages: [page],
         })),
@@ -5371,7 +5392,8 @@ export class DocumentCommands {
      * argument is assignable to one that passes it). `picture` names a kept stamp; `undefined` opens the picker.
      */
     request: {
-      readonly pages: readonly number[];
+      /** A page set: *every page* is one run (JOURNAL, *No document-size refusals*). */
+      readonly pages: PageSet;
       readonly rect: AnnotationRect;
       readonly stamp: AnnotationStamp;
       readonly picture: string | undefined;

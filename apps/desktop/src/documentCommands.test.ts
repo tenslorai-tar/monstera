@@ -36,6 +36,7 @@ import {
   MAX_LIBRARY_PICTURE_BYTES,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
+  type PageSet,
   type WordMode,
 } from '@monstera/contract';
 import {
@@ -2747,6 +2748,98 @@ describe('pageImageName — the file a page is exported under', () => {
     // A DOTFILE has no extension to replace.
     expect(pageImageName('.pdf', 0, 'png')).toBe('.pdf 1.png');
   });
+});
+
+/**
+ * A DOCUMENT PAST 4,096 PAGES, extracted and split whole (the large-document breakages, table A's page-index row).
+ * Extracting every page, or splitting one file per page, of a longer document failed as `internal`: the renderer's
+ * request, and the engine host's `engine/extract`, were page LISTS capped at 4,096. Both are page sets now, and every
+ * page is one run. 4,100 pages is past the old cap and short enough to split in a test.
+ */
+describe('a document past 4,096 pages is extracted and split whole', () => {
+  const PAGES = 4100;
+  let longService: DocumentService;
+  let longDoc: DocId;
+  let longSession: MupdfSession;
+
+  beforeAll(async () => {
+    const document = await PDFDocument.create();
+    for (let page = 0; page < PAGES; page += 1) document.addPage([100, 100]);
+    const bytes = await document.save();
+    const path = join(directory, 'long.pdf');
+    writeFileSync(path, bytes);
+    const registry = new CapabilityRegistry();
+    longService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
+    const outcome = await longService.open(registry.mint(path));
+    if (outcome.kind !== 'opened') throw new Error(`Fixture did not open: ${outcome.kind}`);
+    longDoc = outcome.docId;
+    longSession = await mupdfWriter.open(bytes);
+  }, 120_000);
+
+  /** The production composition over the long document, picking `file` for a copy and `folder` for a split. */
+  function writingTo(file: string, folder: string, extract: DocumentExtractReader = localExtract): DocumentCommands {
+    const engine = new EngineSessions();
+    engine.hold(longDoc, { mupdf: longSession });
+    return new DocumentCommands({
+      ...LOCAL_READS,
+      extract,
+      documents: longService,
+      bus: bus(),
+      engine,
+      save: {
+        provenance: ledger(),
+        deps: {
+          checkWriteTarget: (id) => longService.checkWriteTarget(id),
+          surface: nodeFileSurface,
+          names: (target) => siblingNames(target, 1),
+          wait: () => Promise.resolve(),
+        },
+        flush: () => Promise.reject(new Error('an extract does not flush the document')),
+        stage: () => Promise.reject(new Error('an extract does not flush the document')),
+      },
+      copy: { pick: () => Promise.resolve(file), checkTarget: (target) => longService.checkCopyTarget(target) },
+      directory: () => Promise.resolve(folder),
+    });
+  }
+
+  it(`EXTRACTS every page of ${String(PAGES)} as ONE RUN, and the copy has them all`, async () => {
+    const file = join(mkdtempSync(join(directory, 'long-extract-')), 'all.pdf');
+    const outcome = await writingTo(file, directory).extract(longDoc, [[0, PAGES - 1]]);
+    expect(outcome?.kind).toBe('copied');
+    expect((await PDFDocument.load(readFileSync(file))).getPageCount()).toBe(PAGES);
+  }, 120_000);
+
+  it(`SPLITS one file per page of ${String(PAGES)} through \`each\`, and writes every one`, async () => {
+    // THE LANE IS THE SUBJECT: main expands `each` and writes a file per page. Each part's extract is the kernel's,
+    // proven against a live document beside this case and in `pageExtract.test.ts`; running it 4,100 times here
+    // measured 207 s (2026-10-02) and would prove nothing those do not. So the reader records what it was asked.
+    const asked: PageSet[] = [];
+    const page = await PDFDocument.create();
+    page.addPage([100, 100]);
+    const onePage = await page.save();
+    const recording: DocumentExtractReader = (_id, _sessions, pages) => {
+      asked.push(pages);
+      return Promise.resolve(onePage);
+    };
+
+    const folder = mkdtempSync(join(directory, 'long-split-'));
+    const outcome = await writingTo(join(directory, 'unused.pdf'), folder, recording).split(longDoc, {
+      each: [[0, PAGES - 1]],
+    });
+    expect(outcome).toEqual({ kind: 'split', files: PAGES, destination: folder });
+    expect(readdirSync(folder).filter((name) => name.endsWith('.pdf'))).toHaveLength(PAGES);
+    // ONE PAGE PER PART, IN ORDER, every page once: a lane that cut the set short or ran past it writes the same
+    // number of files from a different list.
+    expect(asked).toStrictEqual(Array.from({ length: PAGES }, (_, index) => [index]));
+  }, 120_000);
+
+  it('CONTROL: a run past the document is refused before anything is written', async () => {
+    const file = join(mkdtempSync(join(directory, 'long-past-')), 'past.pdf');
+    await expect(writingTo(file, directory).extract(longDoc, [[0, PAGES]])).rejects.toThrow(
+      /Page 4100 is outside this document, which has 4100 page/u,
+    );
+    expect(existsSync(file)).toBe(false);
+  }, 120_000);
 });
 
 describe('exportPageImages — one image per page, in a folder, all or nothing', () => {

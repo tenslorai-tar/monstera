@@ -598,6 +598,27 @@ describe('applyDuplicatePage', () => {
     expect(await widthsOf(copied)).toStrictEqual([100, 101, 101, 102, 103, 103, 104]);
   });
 
+  it('COPIES ONE PAGE, not the document: the objects it adds do not grow with the page count', async () => {
+    // A graft that reaches the leaf's `/Parent` copies every page through `/Kids` (`pageGraft.ts`): measured
+    // 2026-10-02 at 484 objects before and 966 after one duplicate of 160 pages. Two sizes separate *the page* from
+    // *the document*, which one size cannot; the pages carry content, so a copy of them costs objects.
+    async function added(pages: number): Promise<number> {
+      const session = await mupdfWriter.open(await drawnDocument(pages));
+      try {
+        const before = await withDocument(session, (document) => document.countObjects());
+        await applyDuplicatePage(session, { kind: 'duplicatePage', pages: [0] });
+        return (await withDocument(session, (document) => document.countObjects())) - before;
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    }
+
+    const small = await added(4);
+    expect(await added(40)).toBe(small);
+    // CONTROL: the copy is a real object, so a duplicate that added nothing cannot satisfy the equality above.
+    expect(small).toBeGreaterThan(0);
+  });
+
   it('REFUSES the whole set when ONE page is outside, and copies nothing', async () => {
     const session = await mupdfWriter.open(await flatDocument(3));
     try {

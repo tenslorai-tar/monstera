@@ -9,7 +9,9 @@ import {
   type FormDataFormat,
   type FormDataImportFormat,
   type OptimizeSetting,
+  type PageSet,
   type SignaturePlacement,
+  pageSetOf,
   withPageRuns,
   withStamp,
 } from '@monstera/contract';
@@ -651,19 +653,17 @@ export async function snapshotRegion(
  * happened and something must be placed; `'all'` with no count is not *no
  * pages*, and it is certainly not a guess at how many there are.
  */
-export function imagePagesFor(
-  choice: 'this' | 'all',
-  page: number,
-  pageCount: number | undefined,
-): readonly number[] {
+export function imagePagesFor(choice: 'this' | 'all', page: number, pageCount: number | undefined): PageSet {
   if (choice === 'this' || pageCount === undefined) return [page];
-  return Array.from({ length: pageCount }, (_unused, index) => index);
+  // EVERY PAGE AS ONE RUN, never a list of every index: a list met the 4,096 cap (JOURNAL, *No document-size
+  // refusals*), and a run is one entry at any length.
+  return pageCount === 1 ? [0] : [[0, pageCount - 1]];
 }
 
 export async function placeImage(
   deps: Pick<DocumentCommandDeps, 'ask' | 'client' | 'onApplied' | 'stamp'>,
   docId: DocId,
-  pages: readonly number[],
+  pages: PageSet,
   rect: AnnotationRect,
   /**
    * A kept stamp picture's library id, or `undefined` for the file picker. REQUIRED and `| undefined`, so a caller
@@ -2485,7 +2485,8 @@ export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile): Ui
 
       const answer = await deps.client['document.extract']({
         docId: context.docId,
-        pages: chosen.pages,
+        // AS RUNS: a range of any length is one entry (JOURNAL, *No document-size refusals*).
+        pages: pageSetOf(chosen.pages),
       });
       if (!answer.ok) {
         reportProblem(deps, answer.error);
@@ -2514,6 +2515,19 @@ export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile): Ui
  * to show, `cancelled` says nothing and the two failures open the save problem
  * dialog — the same treatment a copy gets, because it is the same write.
  */
+/**
+ * The split's request from the dialog's groups: ONE FILE PER PAGE as `each`, a page set whose run covers any length,
+ * and anything else as `groups`, each written as runs. One page per group is exactly what `each` means, so nothing is
+ * lost; as one group per page it met the contract's 4,096 files at 4,096 pages (JOURNAL, *No document-size refusals*).
+ */
+export function splitRequestOf(
+  groups: readonly (readonly number[])[],
+): { readonly groups: PageSet[] } | { readonly each: PageSet } {
+  const singles = groups.map((group) => (group.length === 1 ? group[0] : undefined));
+  if (singles.every((page): page is number => page !== undefined)) return { each: pageSetOf(singles) };
+  return { groups: groups.map((group) => pageSetOf(group)) };
+}
+
 export function splitDocumentCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.split',
@@ -2534,7 +2548,7 @@ export function splitDocumentCommand(deps: DocumentCommandDeps & WritesAFile): U
 
       const answer = await deps.client['document.split']({
         docId: context.docId,
-        groups: chosen.groups,
+        split: splitRequestOf(chosen.groups),
       });
       if (!answer.ok) {
         reportProblem(deps, answer.error);
@@ -3115,7 +3129,8 @@ export function exportPageImagesCommand(deps: DocumentCommandDeps & WritesAFile)
 
       const answer = await deps.client['document.exportPageImages']({
         docId: context.docId,
-        pages: chosen.pages,
+        // AS RUNS, `extract`'s reason: *every page* is one entry at any length.
+        pages: pageSetOf(chosen.pages),
         format: chosen.format,
         dpi: chosen.dpi,
         quality: chosen.quality,

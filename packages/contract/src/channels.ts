@@ -24,6 +24,7 @@ import {
   cloudStateSchema,
 } from './cloudProviders.js';
 import type { PreloadChannelId } from './bridge.js';
+import { pageSetSchema } from './pageSet.js';
 import { channel, type Channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import { AI_ANSWER_REFUSALS, MAX_WEB_SOURCES, answerIdSchema, subscriptionIdSchema } from './events.js';
 import { TRANSLATION_LANGUAGE_IDS } from './translationLanguages.js';
@@ -32,7 +33,6 @@ import {
   MAX_ANNOTATION_BORDER,
   MAX_REMOVED_ANNOTATIONS,
   MAX_IMAGE_BYTES,
-  MAX_IMAGE_PAGES,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
   MAX_WORKBOOK_ROW,
@@ -594,32 +594,13 @@ export const listPartNextSchema = z.number().int().positive().nullable();
 export const DESTINATIONS_PART = 4096;
 
 /**
- * How many page indices an extract may name.
+ * How many groups a person may write for one split.
  *
- * A **request** bound rather than an answer bound, which is what separates it
- * from every other number here: those cap what a hostile document can make main
- * send to the renderer, and this caps what the renderer can ask main to do.
- * Extracting every page of a long document is an ordinary request, so it is
- * document-shaped rather than a small guard — what it refuses is a list that
- * could not have come from a page count.
- *
- * The kernel bounds it again against the document itself, where the count is
- * known. Two bounds because they answer different questions: *could this have
- * come from a document* and *did it come from THIS one*.
- */
-export const MAX_EXTRACT_PAGES = 4096;
-
-/**
- * How many documents one split may write.
- *
- * {@link MAX_EXTRACT_PAGES}' number, because the case that reaches it is the
- * same one: *one file per page* of a long document produces exactly as many
- * outputs as it has pages. A smaller bound here would refuse the feature's own
- * headline mode on any document past it.
- *
- * The two bounds multiply into a request that is still small — an index per
- * page, however the pages are grouped — so what this refuses is a grouping that
- * could not have come from a page count rather than a large-but-honest one.
+ * A **request** bound, and it bounds only the groups a person TYPED: *one file
+ * per page* travels as `each`, one page set, so a document of any length splits
+ * by page without reaching it (JOURNAL, *No document-size refusals*). Each group
+ * is itself a page set, so the request stays small however many pages a group
+ * spans, and what this refuses is a list of ranges no person wrote.
  */
 export const MAX_SPLIT_PARTS = 4096;
 
@@ -2323,13 +2304,12 @@ export const channels = {
     z.object({
       docId: docIdSchema,
       /**
-       * Zero-based indices, in the order they should appear.
-       *
-       * Bounded by {@link MAX_EXTRACT_PAGES} because this crosses from the
-       * renderer, and by the document itself in the kernel — a page this
-       * document does not have is refused there, where the count is known.
+       * Zero-based pages, in the order they should appear, as a PAGE SET (`pageSet.ts`): *every page* of a document of
+       * any length is one run. It was a list bounded at 4,096 indices, so extracting all of a document past
+       * 4,096 pages failed as `internal` (JOURNAL, *No document-size refusals*). A page this document does not have is
+       * refused where the count is known, before any page is listed.
        */
-      pages: z.array(z.number().int().nonnegative()).min(1).max(MAX_EXTRACT_PAGES),
+      pages: pageSetSchema,
     }),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
@@ -2518,17 +2498,17 @@ export const channels = {
     z.object({
       docId: docIdSchema,
       /**
-       * The outputs, each a non-empty list of zero-based page indices.
+       * The outputs: `groups`, each a page set of its own file — the ranges a person typed, bounded at
+       * {@link MAX_SPLIT_PARTS} files since each is a range they wrote — or `each`, ONE FILE PER PAGE of a page set.
        *
-       * Bounded on both axes: {@link MAX_SPLIT_PARTS} outputs, and
-       * {@link MAX_EXTRACT_PAGES} pages in any one of them. A split of every
-       * page of a long document is the ordinary case, so the first bound is the
-       * document-shaped one.
+       * `each` is the document-shaped form. Splitting every page of a long document is the ordinary case, and as one
+       * group per page it met {@link MAX_SPLIT_PARTS} at 4,096 pages and failed as `internal` (JOURNAL, *No
+       * document-size refusals*); as a page set it is one run at any length, and `main` makes the groups.
        */
-      groups: z
-        .array(z.array(z.number().int().nonnegative()).min(1).max(MAX_EXTRACT_PAGES))
-        .min(1)
-        .max(MAX_SPLIT_PARTS),
+      split: z.union([
+        z.object({ groups: z.array(pageSetSchema).min(1).max(MAX_SPLIT_PARTS) }).strict(),
+        z.object({ each: pageSetSchema }).strict(),
+      ]),
     }),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('split'), files: z.number().int().positive(), ...WRITTEN }),
@@ -2562,8 +2542,11 @@ export const channels = {
     z
       .object({
         docId: docIdSchema,
-        /** Zero-based page indices, one file each. */
-        pages: z.array(z.number().int().nonnegative()).min(1).max(MAX_SPLIT_PARTS),
+        /**
+         * Zero-based pages, one file each, as a page set: *every page* is one run at any length. A list bounded at
+         * {@link MAX_SPLIT_PARTS} failed for a document past 4,096 pages (JOURNAL, *No document-size refusals*).
+         */
+        pages: pageSetSchema,
         format: z.enum(PAGE_IMAGE_FORMATS),
         dpi: z.number().int().min(MIN_PAGE_IMAGE_DPI).max(MAX_PAGE_IMAGE_DPI),
         quality: z.number().int().min(MIN_IMAGE_QUALITY).max(MAX_IMAGE_QUALITY),
@@ -3323,7 +3306,8 @@ export const channels = {
     'Places a barcode of the given text on pages of an open document.',
     z.object({
       docId: docIdSchema,
-      pages: z.array(z.number().int().nonnegative()).min(1).max(MAX_IMAGE_PAGES).readonly(),
+      /** A page set, `placeImage`'s reason: *every page* is one click and one run, at any length. */
+      pages: pageSetSchema,
       rect: annotationRectSchema,
       text: z.string().min(1).max(MAX_BARCODE_TEXT),
       format: z.enum(BARCODE_FORMATS),
@@ -3400,7 +3384,11 @@ export const channels = {
     'Places an image on pages of an open document, from a file the user picks or a picture in their stamp library.',
     z.object({
       docId: docIdSchema,
-      pages: z.array(z.number().int().nonnegative()).min(1).max(MAX_IMAGE_PAGES).readonly(),
+      /**
+       * A page set: stamping *every page* is one click, and as a list bounded at 4,096 indices it failed for a
+       * document past 4,096 pages (JOURNAL, *No document-size refusals*).
+       */
+      pages: pageSetSchema,
       rect: annotationRectSchema,
       /** Who placed it and when — the renderer's to say, main's to write (ADR-0103). */
       stamp: annotationStampSchema,

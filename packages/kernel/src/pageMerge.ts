@@ -4,6 +4,7 @@ import type { PDFDocument, PDFGraftMap } from './mupdfRaw.js';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { withDocuments } from './mupdfWriter.js';
+import { graftingWithoutPageTree } from './pageGraft.js';
 
 /**
  * Another document's pages, copied into this one
@@ -67,7 +68,7 @@ import { withDocuments } from './mupdfWriter.js';
  */
 
 /**
- * Grafts one page and the annotations `graftPage` leaves behind.
+ * Grafts every page of `from` at `at`, with the annotations `graftPage` leaves behind, and answers how many.
  *
  * ## `graftPage` DOES NOT CARRY `/Annots`, measured 2026-09-06
  *
@@ -105,23 +106,33 @@ import { withDocuments } from './mupdfWriter.js';
  * `pageMerge.test.ts` is the control that says the page tree is unaffected —
  * that walk is why this module uses `graftPage` at all.
  */
-function graftPageWithAnnotations(
+function graftPagesWithAnnotations(
   map: PDFGraftMap,
   target: PDFDocument,
   from: PDFDocument,
-  to: number,
-  page: number,
-): void {
-  map.graftPage(to, from, page);
-  const annots = from.loadPage(page).getObject().get('Annots');
-  if (annots.isNull()) return;
+  at: number,
+): number {
+  const pages = from.countPages();
+  for (let page = 0; page < pages; page += 1) map.graftPage(at + page, from, page);
 
-  const onto = target.loadPage(to).getObject();
-  const grafted = map.graftObject(annots);
-  onto.put('Annots', grafted);
-  for (let index = 0; index < grafted.length; index += 1) {
-    grafted.get(index).put('P', onto);
-  }
+  // THE ANNOTATIONS WITH THE SOURCE'S TREE DETACHED, after every page is placed: `graftPage` reads inherited
+  // attributes up `/Parent`, and an annotation's `/P` names a source leaf whose `/Parent` reaches every page of the
+  // source (`pageGraft.ts`) — measured as a second copy of each page's dictionary and of the tree above it.
+  graftingWithoutPageTree(from, () => {
+    for (let page = 0; page < pages; page += 1) {
+      // `findPage` walks `/Kids` and reads no `/Parent`; `loadPage` would build a page from an inheritance it cannot see.
+      const annots = from.findPage(page).get('Annots');
+      if (annots.isNull()) continue;
+
+      const onto = target.loadPage(at + page).getObject();
+      const grafted = map.graftObject(annots);
+      onto.put('Annots', grafted);
+      for (let index = 0; index < grafted.length; index += 1) {
+        grafted.get(index).put('P', onto);
+      }
+    }
+  });
+  return pages;
 }
 
 /**
@@ -168,19 +179,16 @@ export const applyMergeDocument: Apply<'mupdf', 'mergeDocument', 'one'> = (
   withDocuments(session, source, (target, from) => {
     const count = target.countPages();
     const at = Math.min(command.at, count);
-    const pages = from.countPages();
 
-    // ONE MAP FOR THE WHOLE MERGE. See `graftPageWithAnnotations`: it keeps a
+    // ONE MAP FOR THE WHOLE MERGE. See `graftPagesWithAnnotations`: it keeps a
     // source's shared objects shared across the pages that reference them, and
     // it is what puts the annotations in the same identity space as their page.
-    const map = target.newGraftMap();
-    for (let page = 0; page < pages; page += 1) {
-      // READ FROM `from` AND WRITTEN INTO `target`, which is the one line where
-      // a transposition would be silent: both are `PDFDocument` and both are
-      // `MupdfSession` upstream, so nothing in the type system separates them.
-      // `withDocuments` names its parameters for this reason.
-      graftPageWithAnnotations(map, target, from, at + page, page);
-    }
+    //
+    // READ FROM `from` AND WRITTEN INTO `target`, which is the one line where
+    // a transposition would be silent: both are `PDFDocument` and both are
+    // `MupdfSession` upstream, so nothing in the type system separates them.
+    // `withDocuments` names its parameters for this reason.
+    graftPagesWithAnnotations(target.newGraftMap(), target, from, at);
   });
 
 /**
@@ -220,11 +228,7 @@ export const applyReplacePage: Apply<'mupdf', 'replacePage', 'one'> = (
       );
     }
 
-    const pages = from.countPages();
-    const map = target.newGraftMap();
-    for (let page = 0; page < pages; page += 1) {
-      graftPageWithAnnotations(map, target, from, command.at + page, page);
-    }
+    const pages = graftPagesWithAnnotations(target.newGraftMap(), target, from, command.at);
     // SHIFTED BY WHAT WAS JUST INSERTED. See the module note: the replaced page
     // is no longer at `command.at`.
     target.deletePage(command.at + pages);

@@ -11,7 +11,9 @@ import {
   displayLocationSchema,
   preloadChannels,
 } from './channels.js';
+import { placeImageSchema } from './commands.js';
 import type { Incident } from './incident.js';
+import { MAX_PAGE_SET_ENTRIES } from './pageSet.js';
 import { AZURE_KEY_SETTING_ID } from './schemas.js';
 
 /** Discards a diagnostic. The sink is required rather than defaulted. */
@@ -722,6 +724,34 @@ describe('window.titleBarOverlay', () => {
     expect(params.safeParse({ ...valid, symbolColor: 'white' }).success).toBe(false);
     for (const height of [23, 65, 33.5, Number.NaN]) {
       expect(params.safeParse({ ...valid, height }).success, String(height)).toBe(false);
+    }
+  });
+});
+
+describe('pages past 4,096 cross as one page set (JOURNAL, No document-size refusals)', () => {
+  // Every field that names pages of a whole document was a list of indices capped at 4,096, so *every page* of a
+  // longer document failed as `internal`. Each takes a page set now, where every page is one run at any length.
+  const EVERY_PAGE_OF_TEN_THOUSAND = [[0, 9999]];
+  const fields = {
+    'document.extract': channels['document.extract'].params.shape.pages,
+    'document.exportPageImages': channels['document.exportPageImages'].params.shape.pages,
+    'document.placeBarcode': channels['document.placeBarcode'].params.shape.pages,
+    'document.split each': channels['document.split'].params.shape.split,
+    placeImage: placeImageSchema.shape.pages,
+  };
+
+  it('takes every page of a 10,000-page document in each of them', () => {
+    for (const [name, field] of Object.entries(fields)) {
+      const value = name === 'document.split each' ? { each: EVERY_PAGE_OF_TEN_THOUSAND } : EVERY_PAGE_OF_TEN_THOUSAND;
+      expect(field.safeParse(value).success, name).toBe(true);
+    }
+  });
+
+  it('CONTROL: each is still a bounded set, not any list — one entry past the frame is refused', () => {
+    const tooMany = Array.from({ length: MAX_PAGE_SET_ENTRIES + 1 }, (_, index) => index * 2);
+    for (const [name, field] of Object.entries(fields)) {
+      const value = name === 'document.split each' ? { each: tooMany } : tooMany;
+      expect(field.safeParse(value).success, name).toBe(false);
     }
   });
 });

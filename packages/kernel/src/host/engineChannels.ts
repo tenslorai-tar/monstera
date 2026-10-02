@@ -4,6 +4,7 @@ import {
   DOCUMENT_ACCESS_VALUES,
   DOCUMENT_PASSWORD_MAX_CHARS,
   addAnnotationSchema,
+  pageSetSchema,
   placeImageSchema,
   placeSignatureMarkSchema,
   placeSignaturePictureSchema,
@@ -366,22 +367,6 @@ const engineLayerSchema = z
  * invariant 25 while that one is not.
  */
 export const ENGINE_DUPLICATE_PAGES_MAX = 4096;
-
-/**
- * How many page indices an extract may name.
- *
- * {@link ENGINE_DUPLICATE_PAGES_MAX}'s number for a different reason, stated
- * rather than shared: that one bounds an ANSWER a hostile host produces, and
- * this bounds a REQUEST main sends it. Extracting every page of a large
- * document is an ordinary thing to ask, so the bound is the document-shaped one
- * rather than a small guard — what it refuses is a list that could not have
- * come from a page count.
- *
- * Not an import of the other constant: two bounds that happen to agree are not
- * one bound, and tying them would make a change to either silently move the
- * other.
- */
-export const ENGINE_EXTRACT_PAGES_MAX = 4096;
 
 /**
  * How many annotations one answer may list — a bound against a HOSTILE host, derived, and one no real document
@@ -2016,8 +2001,12 @@ export const engineChannels = {
     z
       .object({
         session: sessionSchema,
-        /** Zero-based indices in the session's document, in the order asked. */
-        pages: z.array(z.number().int().nonnegative()).min(1).max(ENGINE_EXTRACT_PAGES_MAX),
+        /**
+         * The pages, in the order asked, as a page set (`pageSet.ts`): its largest encoding fits this frame, and
+         * *every page* of a document of any length is one run. It was a list capped at 4,096, so extracting or
+         * splitting off more failed (JOURNAL, *No document-size refusals*). The host lists it against the document.
+         */
+        pages: pageSetSchema,
         into: outputNameSchema,
       })
       .strict(),

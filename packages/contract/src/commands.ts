@@ -2437,21 +2437,6 @@ export const placeAnnotationSchema = z.object({
 }).strict();
 
 /**
- * How many pages one image may be stamped onto in a single command.
- *
- * `MAX_EXTRACT_PAGES`' argument, which is about what a page selection COSTS
- * rather than about how many pages a document has: the payload grows by an
- * index per page, not by a page per page, and the image is carried once
- * however many pages name it. 4096 is far past any document a person stamps by
- * hand and short of a number that could matter beside the frame's own bound.
- *
- * **Not `MAX_PLACED_ANNOTATIONS`' 1024**, and the difference is which way the
- * number is spent: that one bounds annotations a person selected, and this one
- * bounds pages a person did not — *every page* is one click.
- */
-export const MAX_IMAGE_PAGES = 4096;
-
-/**
  * Places an image on one or more pages, as an annotation that can be moved.
  *
  * ## THIS IS BOTH ROWS — place image AND stamps
@@ -2490,12 +2475,12 @@ export const MAX_IMAGE_PAGES = 4096;
  */
 export const placeImageSchema = z.object({
   kind: z.literal('placeImage'),
-  /** Zero-based indices of the pages it goes on. Order carries no meaning. */
-  pages: z
-    .array(z.number().int().nonnegative())
-    .min(1)
-    .max(MAX_IMAGE_PAGES)
-    .readonly(),
+  /**
+   * The pages it goes on, as a page set (`pageSet.ts`): *every page* is one run at any length. As a list bounded at
+   * 4,096 indices it failed for a document past 4,096 pages (JOURNAL, *No document-size refusals*). A page
+   * named twice is refused by the engine, as before.
+   */
+  pages: pageSetSchema,
   /** The box it occupies on every one of them, in PDF user space. */
   rect: annotationRectSchema,
   /**

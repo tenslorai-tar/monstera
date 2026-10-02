@@ -11,6 +11,7 @@ import {
   swapPermutation,
 } from '@monstera/shared';
 import type { PDFDocument, PDFObject } from './mupdfRaw.js';
+import { graftingWithoutPageTree } from './pageGraft.js';
 import { type PageScope, pagesOf } from './pageScope.js';
 
 import type { CaptureResult } from './commandLog.js';
@@ -416,7 +417,18 @@ export const applyDuplicatePage: Apply<'mupdf', 'duplicatePage'> = (
     // ROOT's box — a landscape page duplicated as a portrait one, with the
     // order and the page count both correct.
     const leaves = leavesWithInheritables(document);
-    const copied = new Set(pages);
+    // COPIED WITH THE TREE DETACHED, and placed after it is restored: a graft that can reach `/Parent` copies every
+    // page of the document (`pageGraft.ts`), and `setKids` reparents what the restore would otherwise put back.
+    const copies = graftingWithoutPageTree(
+      document,
+      () =>
+        new Map(
+          pages.flatMap((page) => {
+            const leaf = leaves[page];
+            return leaf === undefined ? [] : [[page, document.graftObject(leaf)] as const];
+          }),
+        ),
+    );
 
     // GRAFTED FROM THE PUSHED-DOWN LEAF. `leavesWithInheritables` mutates the
     // page objects in place, so this line and `graftObject(findPage(page))` are
@@ -427,7 +439,10 @@ export const applyDuplicatePage: Apply<'mupdf', 'duplicatePage'> = (
     // Each copy goes straight after its own source, which is where `capture` recorded it.
     setKids(
       document,
-      leaves.flatMap((leaf, index) => (copied.has(index) ? [leaf, document.graftObject(leaf)] : [leaf])),
+      leaves.flatMap((leaf, index) => {
+        const copy = copies.get(index);
+        return copy === undefined ? [leaf] : [leaf, copy];
+      }),
     );
   });
 

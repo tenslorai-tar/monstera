@@ -1,4 +1,4 @@
-import type { AnnotationDataFormat, CommandOfKind, FormDataFormat, Handlers } from '@monstera/contract';
+import type { AnnotationDataFormat, CommandOfKind, FormDataFormat, Handlers, PageSet } from '@monstera/contract';
 
 import type { KindsRoutedTo } from '../commandRouting.js';
 import type { CommandExecution } from '../commandSpecs.js';
@@ -201,10 +201,7 @@ export type HostDuplicatesReader = (
  * `extractPages` in the host. It runs THERE rather than in main because it
  * reaches MuPDF, which invariant 20 keeps out of `main` (ADR-0026).
  */
-export type HostExtract = (
-  session: MupdfSession,
-  pages: readonly number[],
-) => Promise<ByteImage>;
+export type HostExtract = (session: MupdfSession, pages: PageSet) => Promise<ByteImage>;
 
 /**
  * A region of one page, as PNG bytes **and the frame they sit in**.

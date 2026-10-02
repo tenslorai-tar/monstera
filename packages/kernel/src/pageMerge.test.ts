@@ -242,6 +242,9 @@ describe('mergeDocument', () => {
       );
       const after = await mupdfWriter.serialise(source);
       expect(await widthsOf(after)).toEqual([200, 210]);
+      // AND ITS TREE IS WHOLE: the annotations are grafted with every source leaf's `/Parent` removed
+      // (`pageGraft.ts`), and nothing but the restore puts it back on a document the merge does not rewrite.
+      expect(await parentsAgreeWithKids(after)).toEqual([true, true]);
     } finally {
       await mupdfWriter.close(target);
       await mupdfWriter.close(source);

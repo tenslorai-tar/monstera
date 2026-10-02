@@ -1815,10 +1815,10 @@ function importAnnotationsHandler(
 function splitHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['document.split'] {
   return async ({
     docId,
-    groups,
+    split,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.split']>>> => {
     try {
-      const outcome = await commands.split(docId, groups);
+      const outcome = await commands.split(docId, split);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'split') return ok({ kind: 'split', files: outcome.files, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);

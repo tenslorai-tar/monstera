@@ -420,7 +420,6 @@ export {
   placeImageSchema,
   placeSignatureMarkSchema,
   placeSignaturePictureSchema,
-  MAX_IMAGE_PAGES,
   removeAnnotationSchema,
   styleAnnotationSchema,
   setAnnotationAuthorSchema,

@@ -2003,7 +2003,9 @@ describe('delete pages — the mutation-dialog gate', () => {
   it('PLACES ON EVERY PAGE when the setting says so — the stamps row', () => {
     // Zero-based and the whole document, so `all` means the pages the document
     // has now rather than the pages it had when the tool was chosen.
-    expect(imagePagesFor('all', 3, 5)).toStrictEqual([0, 1, 2, 3, 4]);
+    // ONE RUN, never a list of every index: a list met the 4,096 cap (JOURNAL, *No document-size refusals*).
+    expect(imagePagesFor('all', 3, 5)).toStrictEqual([[0, 4]]);
+    expect(imagePagesFor('all', 0, 1)).toStrictEqual([0]);
   });
 
   it('FALLS BACK TO THE ONE PAGE when the count is unknown, not to none', () => {
@@ -2384,7 +2386,8 @@ describe('delete pages — the mutation-dialog gate', () => {
     // AND THE PAGES COME OUT UNCHANGED — no arithmetic in the command, because
     // `parsePageRanges` already converted from what the reader typed.
     expect(sent).toStrictEqual([
-      { id: 'document.extract', params: { docId: DOC, pages: [0, 4, 5] } },
+      // AS RUNS: the consecutive 4 and 5 are one entry.
+      { id: 'document.extract', params: { docId: DOC, pages: [0, [4, 5]] } },
     ]);
   });
 
@@ -2448,13 +2451,29 @@ describe('delete pages — the mutation-dialog gate', () => {
       ask: () => Promise.resolve({ groups: [[0, 1], [2]] }),
     }).run(CONTEXT);
 
-    // NO MODE ON THE WIRE. One-per-page and ranges are the same request with
-    // different groups, so a command that sent a discriminant would be a second
-    // way to say what these already say — and the kernel would then have to
-    // agree with the dialog about what each mode means.
+    // NO DIALOG MODE ON THE WIRE: the groups the dialog built, each written as runs. `each` below is not a mode either;
+    // it is the contract's own spelling of *one file per page*, which `main` turns back into one-page groups.
     expect(sent).toStrictEqual([
-      { id: 'document.split', params: { docId: DOC, groups: [[0, 1], [2]] } },
+      { id: 'document.split', params: { docId: DOC, split: { groups: [[[0, 1]], [2]] } } },
     ]);
+  });
+
+  it('split sends ONE FILE PER PAGE as `each`, one run at any length (a document past 4,096 pages)', async () => {
+    const { client, sent } = recording({
+      'document.split': { kind: 'split', files: 5000, written: WRITTEN },
+    });
+    // 5,000 ONE-PAGE GROUPS, which as groups is past the contract's 4,096 files.
+    const groups = Array.from({ length: 5000 }, (_unused, page) => [page]);
+
+    await splitDocumentCommand({
+      client,
+      toast: () => undefined,
+      stamp,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve({ groups }),
+    }).run({ ...CONTEXT, pageCount: 5000 });
+
+    expect(sent).toStrictEqual([{ id: 'document.split', params: { docId: DOC, split: { each: [[0, 4999]] } } }]);
   });
 
   it('CONTROL: a DISMISSED split dialog dispatches nothing', async () => {
