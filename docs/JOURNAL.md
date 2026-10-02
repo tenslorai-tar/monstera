@@ -922,6 +922,22 @@ meant for the dialog may have reached it. Nothing was saved there; it was left o
 GUI work stopped. The run's own instance was ended by its PID, its temporary folder removed. The script's header now
 says to reach a dialog only through the run's own window, never by naming the application.
 
+**Correction, 2026-10-02 (late): ending that instance by its PID left traces in the owner's profile.** A process ended
+from outside writes no clean exit, so the owner's next start said Monstera had closed unexpectedly and offered the
+deleted copy. The check now (895d02df) copies the application's records out of the package's storage before it
+starts anything and puts them back byte for byte after the application has closed. It closes only its own instance,
+by WM_CLOSE, and leaves one that does not close running. The three file-dialog steps are listed as the owner's.
+
+Its first run left the application open, as designed. 0.1.9.0's OCR outcome dialog has no text button, so the click
+on *OK* timed out, the copy stayed unsaved, and the close met a save prompt. The owner answered the prompt, the
+profile was restored, and an independent fingerprint of the records matched the one taken before the run. The
+script now closes that dialog with Escape. It also answers *Don't save* to a save prompt naming one of the run's own
+copies, in the run's page.
+
+Rerun on 0.1.9.0: 4 of 4. Edit and save; OCR, page 1 from 0 to 293 words; hosts contained; no trace in the profile.
+The before and after ordinary starts both showed no closed-unexpectedly notice and the same 4 recent files. The
+fingerprint matched again, and Crashpad gained no dump.
+
 ---
 
 ## 2026-10-02 — The GPU process's 9×: canvas memory kept for every page drawn, not the surface's lights, grain or blur
