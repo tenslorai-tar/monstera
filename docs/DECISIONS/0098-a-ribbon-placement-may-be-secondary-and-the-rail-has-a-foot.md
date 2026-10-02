@@ -105,3 +105,29 @@ naming the group, as Decision 1 says. A `when` rule can still hide every primary
 refusing then would crash the ribbon over a state a person produced by closing a document. So the
 model draws the first remaining entry of such a group as primary. That keeps the property Decision 1
 wanted, never a caption over a lone *More*, without making a context an error. Each has its case.
+
+## Correction, 2026-10-02 — a secondary is drawn in the row when there is room
+
+The owner's answer of 2 October: secondaries go on the row when there is room, and under *More* only when
+there is not. Decision 1's *"a secondary placement is drawn in its group's More at every width"* is
+withdrawn; the sentence is corrected here rather than edited.
+
+**What `prominence: 'secondary'` says now is which tools fold FIRST.** A group's row is its primaries in
+`order`, then its secondaries in `order`, and the width fold takes buttons from the END of that row, one at
+a time as it always has. So every secondary leaves the row before any primary does, and on a window wide
+enough for the whole group nothing is folded and no *More* is drawn. The *More* lists what was folded in the
+row's own order, which is the earlier correction's *primaries first, then the secondaries* by construction.
+
+- **The secondaries sit after the primaries in the row, not between them by `order`.** Interleaved, a
+  narrowing window would take a tool out of the middle of the row, and the tools after it would shift left
+  under the pointer; after the primaries, the row only ever loses its end, which is what every other group
+  does.
+- **A group must hold at least one primary** still holds, and for the same reason: the fold's floor is one
+  button and a *More*, and with primaries first that button is a primary.
+- **Before the first measurement every tool is drawn**, secondaries included, as a fold that hides nothing;
+  the row is then measured and folds if it has to. Folding the secondaries from the first frame existed so
+  that a tool folded at every width never flashed in the row, and no tool is folded at every width now.
+
+Rejected: **a breakpoint at which secondaries appear** (a width is a guess about every window's fonts and
+captions, where the fold measures them), and **a setting to keep secondaries folded** (the owner asked for
+room to be used, and a setting would be a second answer to the same question).
