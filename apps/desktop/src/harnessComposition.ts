@@ -162,6 +162,9 @@ export function harnessSurfaces(
     openExternalEditor: () => {
       throw new Error(`${harness} edits no page elsewhere, so nothing may open an editor`);
     },
+    revealPath: () => {
+      throw new Error(`${harness} shows no file in a folder, so nothing may reveal one`);
+    },
     editWatch: {
       watchDirectory: () => {
         throw new Error(`${harness} edits no page elsewhere, so nothing may watch a folder`);

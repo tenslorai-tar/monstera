@@ -3989,7 +3989,7 @@ export function docusignSendCommand(deps: DocumentCommandDeps & DocusignReadines
  * `main` picks the destination and writes it, so a failed write and a contested
  * destination reach the save-problem dialog exactly as `snapshotRegion`'s do —
  * two sentences for the same outcome would be a second opinion about it (B3a).
- * A copy that appears where the person asked is its own confirmation.
+ * A written copy confirms through `confirmWritten`, as every file write does.
  */
 export function docusignRetrieveCommand(
   deps: DocumentCommandDeps & DocusignReadiness & WritesAFile,

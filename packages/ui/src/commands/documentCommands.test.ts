@@ -1,5 +1,5 @@
 import { type AnnotationStamp, type ContractClient, type LibraryEntry, channels, createClient } from '@monstera/contract';
-import { type DocId, type DocVersion, asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
+import { type DocId, type DocVersion, type MessageKey, asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -8,13 +8,26 @@ import {
   TOAST_PROTECTION_SET,
   TOAST_COPY_SAVED,
   TOAST_DOCUMENT_SIGNED,
+  TOAST_EXCEL_SAVED,
+  TOAST_FILES_SAVED,
+  TOAST_FORM_DATA_SAVED,
+  TOAST_IMAGES_SAVED,
   TOAST_PAGES_SAVED,
+  TOAST_PDFA_SAVED,
+  TOAST_POWERPOINT_SAVED,
   TOAST_SAVED,
   TOAST_SAVED_CLEARED,
   TOAST_SAVED_CLEARED_BACKUPS,
   TOAST_SENT_TO_PRINTER,
+  TOAST_SHOW_IN_FOLDER,
+  TOAST_SIGNED_COPY_SAVED,
+  TOAST_SMALLER_COPY_SAVED,
+  TOAST_SNAPSHOT_SAVED,
+  TOAST_TEXT_SAVED,
   TOAST_TRANSITION_SET,
+  TOAST_WORD_SAVED,
 } from '../messages/en.js';
+import type { ToastAction } from '../primitives/Toast.js';
 import type { CommandContext } from '../registries/commands.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
@@ -89,6 +102,7 @@ import {
   deletePageCommand,
   saveCommand,
   saveDocument,
+  snapshotRegion,
   undoCommand,
 } from './documentCommands.js';
 
@@ -2565,7 +2579,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     }).run(CONTEXT);
 
     expect(sent).toStrictEqual([{ id: 'document.exportText', params: { docId: DOC, mode: 'plain' } }]);
-    // NOTHING WAS ASKED: the save dialog is main's, and a success reports nothing.
+    // NOTHING WAS ASKED: the save dialog is main's, and a success is a toast, never a dialog.
     expect(asked).toStrictEqual([]);
   });
 
@@ -4404,7 +4418,7 @@ describe('protectDocumentCommand', () => {
       });
     });
 
-    it('retrieve routes each outcome: status told, write failure to the save dialog, a copy silent', async () => {
+    it('retrieve routes each outcome: status told, write failure to the save dialog, a copy to no dialog', async () => {
       // THREE OUTCOMES, THREE DESTINATIONS — a command that sent everything to
       // one dialog passes none of the rows below but its own.
       const rows: readonly { answer: unknown; shown: unknown[] }[] = [
@@ -4784,5 +4798,196 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
       { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
     );
     expect(sent).toStrictEqual([{ kind: 'rotatePages', pages: [0], quarterTurns: 1 }]);
+  });
+});
+
+/**
+ * Every file writer in this module, through `confirmWritten`.
+ *
+ * ## One table, because a writer that stops confirming is otherwise green
+ *
+ * The cases above each assert what their writer SENDS, and nearly all of them hand it `toast: () => undefined` — so a
+ * writer that wrote the file and said nothing passed every one of them. Here each writer runs to a successful write
+ * with a recording toast, and the row asserts three things only the confirming path produces: the writer's own
+ * message, a *Show in folder* action, and that the action — and nothing before it — asks main to reveal the handle the
+ * write answered. A writer that confirmed with a neighbour's message, or confirmed through `confirmDone` with no
+ * action, fails its row.
+ */
+describe('every file write confirms, and its Show in folder reveals the file the write answered', () => {
+  interface Said {
+    readonly kind: string;
+    readonly message: string;
+    readonly action: ToastAction | undefined;
+  }
+
+  /** A client answering each channel from `answers` and refusing any other, with a toast and dialogs that record. */
+  function writing(answers: Readonly<Record<string, unknown>>, dialogAnswers: readonly unknown[]) {
+    const sent: { id: string; params: unknown }[] = [];
+    const said: Said[] = [];
+    const asked: string[] = [];
+    const queued = [...dialogAnswers];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      if (id === 'file.reveal') return Promise.resolve(ok({ revealed: true }));
+      const answer = answers[id];
+      if (answer === undefined) throw new Error(`this writer's fixture answers no ${id}`);
+      return Promise.resolve(ok(answer));
+    });
+    const deps = {
+      client,
+      stamp,
+      onApplied: () => undefined,
+      toast: (kind: string, message: MessageKey, action?: ToastAction) => {
+        said.push({ kind, message, action });
+      },
+      ask: (id: string) => {
+        asked.push(id);
+        return Promise.resolve(queued.shift());
+      },
+      recogniseFirst: NOTHING_RECOGNISED,
+      tableEngines: () => ['automatic' as const],
+      track: () => ({ signal: new AbortController().signal, step: () => undefined, end: () => undefined }),
+      docusignReady: () => true,
+    };
+    return { deps, sent, said, asked };
+  }
+
+  type Deps = ReturnType<typeof writing>['deps'];
+  const COPIED = { kind: 'copied', bytes: 9, written: WRITTEN } as const;
+  const SPLIT = { kind: 'split', files: 2, written: WRITTEN } as const;
+
+  const rows: readonly {
+    readonly name: string;
+    readonly message: MessageKey;
+    readonly answers: Readonly<Record<string, unknown>>;
+    readonly dialogs: readonly unknown[];
+    readonly run: (deps: Deps) => void | Promise<void>;
+  }[] = [
+    {
+      name: 'a snapshot',
+      message: TOAST_SNAPSHOT_SAVED,
+      answers: { 'document.snapshotRegion': COPIED },
+      dialogs: [],
+      run: (deps) => snapshotRegion(deps, DOC, 3, { x0: 0, y0: 0, x1: 10, y1: 10 }, 2),
+    },
+    {
+      name: 'extracted pages',
+      message: TOAST_PAGES_SAVED,
+      answers: { 'document.extract': COPIED },
+      dialogs: [{ pages: [0] }],
+      run: (deps) => extractPagesCommand(deps).run(CONTEXT),
+    },
+    {
+      name: 'a split',
+      message: TOAST_FILES_SAVED,
+      answers: { 'document.split': SPLIT },
+      dialogs: [{ groups: [[0], [1]] }],
+      run: (deps) => splitDocumentCommand(deps).run(CONTEXT),
+    },
+    {
+      name: 'page images',
+      message: TOAST_IMAGES_SAVED,
+      answers: { 'document.exportPageImages': SPLIT },
+      dialogs: [{ pages: [0], format: 'png', dpi: 72, quality: 90 }],
+      run: (deps) => exportPageImagesCommand(deps).run(CONTEXT),
+    },
+    {
+      name: 'text',
+      message: TOAST_TEXT_SAVED,
+      answers: { 'document.exportText': COPIED },
+      dialogs: [],
+      run: (deps) => exportTextCommand(deps).run(CONTEXT),
+    },
+    {
+      name: 'text with layout',
+      message: TOAST_TEXT_SAVED,
+      answers: { 'document.exportText': COPIED },
+      dialogs: [],
+      run: (deps) => exportLayoutTextCommand(deps).run(CONTEXT),
+    },
+    {
+      name: 'Word',
+      message: TOAST_WORD_SAVED,
+      answers: { 'document.exportWord': COPIED },
+      dialogs: [{ mode: 'text' }],
+      run: (deps) => exportWordCommand(deps).run(CONTEXT),
+    },
+    {
+      name: 'PowerPoint',
+      message: TOAST_POWERPOINT_SAVED,
+      answers: { 'document.exportPowerPoint': COPIED },
+      dialogs: [],
+      run: (deps) => exportPowerPointCommand(deps).run(CONTEXT),
+    },
+    {
+      name: 'Excel',
+      message: TOAST_EXCEL_SAVED,
+      answers: {
+        'document.pageTables': { version: asDocVersion(5), pageCount: 10, tables: [], truncated: false },
+        'document.exportExcel': COPIED,
+      },
+      dialogs: [{ kind: 'export', layout: 'one-sheet', engine: 'automatic', edits: [] }],
+      run: (deps) => exportExcelCommand(deps).run(CONTEXT),
+    },
+    {
+      name: 'PDF/A',
+      message: TOAST_PDFA_SAVED,
+      answers: { 'document.exportPdfa': { ...COPIED, removed: [], tagsDropped: false } },
+      dialogs: [],
+      run: (deps) => exportPdfaCommand(deps).run(CONTEXT),
+    },
+    {
+      name: 'a smaller copy',
+      message: TOAST_SMALLER_COPY_SAVED,
+      answers: {
+        'document.optimizeMeasure': { kind: 'measured', version: asDocVersion(7), before: 200, after: 100 },
+        'document.optimize': { ...COPIED, before: 200 },
+      },
+      dialogs: [
+        { kind: 'measure', setting: 'high' },
+        { kind: 'save', setting: 'high' },
+      ],
+      run: (deps) => optimizeCommand(deps).run(CONTEXT),
+    },
+    ...([
+      ['JSON', exportFormDataJsonCommand],
+      ['XFDF', exportFormDataXfdfCommand],
+      ['FDF', exportFormDataFdfCommand],
+    ] as const).map(([format, build]) => ({
+      name: `form data as ${format}`,
+      message: TOAST_FORM_DATA_SAVED,
+      answers: { 'document.exportFormData': COPIED },
+      dialogs: [],
+      run: (deps: Deps) => build(deps).run(CONTEXT),
+    })),
+    {
+      name: 'a copy',
+      message: TOAST_COPY_SAVED,
+      answers: { 'document.saveCopy': COPIED },
+      dialogs: [],
+      run: (deps) => saveCopyCommand(deps).run(CONTEXT),
+    },
+    {
+      name: "DocuSign's signed copy",
+      message: TOAST_SIGNED_COPY_SAVED,
+      answers: { 'docusign.retrieve': COPIED },
+      dialogs: [],
+      run: (deps) => docusignRetrieveCommand(deps).run(CONTEXT),
+    },
+  ];
+
+  it.each(rows.map((row) => [row.name, row] as const))('%s', async (_name, row) => {
+    const { deps, sent, said, asked } = writing(row.answers, row.dialogs);
+
+    await row.run(deps);
+
+    // NO PROBLEM WAS RAISED: every dialog opened is the writer's own question, answered from the row.
+    expect(asked).toHaveLength(row.dialogs.length);
+    expect(said.map(({ kind, message }) => [kind, message])).toStrictEqual([['done', row.message]]);
+    expect(said[0]?.action?.label).toBe(TOAST_SHOW_IN_FOLDER);
+    // NOTHING IS REVEALED UNTIL THE ACTION RUNS, and then exactly the handle the write answered.
+    expect(sent.some((call) => call.id === 'file.reveal')).toBe(false);
+    said[0]?.action?.run();
+    expect(sent.at(-1)).toStrictEqual({ id: 'file.reveal', params: { handle: WRITTEN } });
   });
 });

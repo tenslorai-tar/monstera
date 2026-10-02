@@ -1,5 +1,5 @@
 import { AI_PROVIDER_IDS, AZURE_KEY_SETTING_ID, channels, createClient } from '@monstera/contract';
-import { err, ok } from '@monstera/shared';
+import { type FileHandle, asFileHandle, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { SETTINGS_DIALOG_ID } from '../dialogs/settings.js';
@@ -11,8 +11,12 @@ import { AZURE_DI_KEY_SETTING, OCR_LANGUAGE_SETTING } from '../settings/editing.
 import {
   TOAST_SETTINGS_IMPORTED,
   TOAST_SETTINGS_IMPORTED_PARTLY,
+  TOAST_SETTINGS_NOT_SAVED,
+  TOAST_SETTINGS_SAVED,
   TOAST_SETTINGS_UNREADABLE,
+  TOAST_SHOW_IN_FOLDER,
 } from '../messages/en.js';
+import type { ToastAction } from '../primitives/Toast.js';
 import { SettingsStore } from '../settingsStore.js';
 import { showSettingsCommand } from './showSettings.js';
 
@@ -41,6 +45,8 @@ function harness(options: {
   readonly reports?: readonly unknown[];
   /** What `settings.import` answers — a file's values, a dismissed picker, or a file that is not one. */
   readonly imported?: { kind: 'read'; values: Record<string, unknown> } | { kind: 'cancelled' } | { kind: 'unreadable' };
+  /** What `settings.export` answers — a written file, a dismissed picker, or a write that failed. */
+  readonly exported?: { kind: 'written'; settings: number; written: FileHandle } | { kind: 'cancelled' } | { kind: 'write-failed' };
 }): {
   readonly run: () => Promise<void>;
   readonly settings: SettingsStore;
@@ -49,8 +55,10 @@ function harness(options: {
   readonly secretsChanged: () => number;
   readonly recentCleared: () => number;
   readonly toasts: string[];
+  readonly actions: (ToastAction | undefined)[];
 } {
   const toasts: string[] = [];
+  const actions: (ToastAction | undefined)[] = [];
   // THE DIALOG ANSWERS ITS FIRST OPENING ONLY. An import opens Settings again, and a fixture answering `import` every
   // time would loop; the second opening is dismissed, which is a person closing it.
   let opened = 0;
@@ -88,7 +96,8 @@ function harness(options: {
     }
     // THE FOOTER'S TWO CHANNELS, answered so a case can see which of them an action reached.
     if (id === 'ai.history.clear') return Promise.resolve(ok({ cleared: 2 }));
-    if (id === 'settings.export') return Promise.resolve(ok({ kind: 'cancelled' as const }));
+    if (id === 'settings.export') return Promise.resolve(ok(options.exported ?? { kind: 'cancelled' as const }));
+    if (id === 'file.reveal') return Promise.resolve(ok({ revealed: true }));
     if (id === 'document.clearRecent') return Promise.resolve(ok({ cleared: 3 }));
     if (id === 'settings.import') return Promise.resolve(ok(options.imported ?? { kind: 'cancelled' as const }));
     throw new Error(`this fixture answers only the secret and footer channels, not ${id}`);
@@ -111,8 +120,9 @@ function harness(options: {
     onRecentCleared: () => {
       recentCleared += 1;
     },
-    toast: (kind, message) => {
+    toast: (kind, message, action) => {
       toasts.push(`${kind} ${message}`);
+      actions.push(action);
     },
   });
   return {
@@ -134,6 +144,7 @@ function harness(options: {
     secretsChanged: () => changed,
     recentCleared: () => recentCleared,
     toasts,
+    actions,
   };
 }
 
@@ -231,6 +242,33 @@ describe('showSettingsCommand', () => {
     await settle();
     expect(reset.settings.get(THEME_SETTING.id)).toBe(THEME_SETTING.fallback);
     expect(reset.sent.flatMap((call) => footer(call.id))).toStrictEqual([]);
+  });
+
+  it('an export CONFIRMS where it was written, with Show in folder on the handle it answered, and says where it was not', async () => {
+    const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+    const handle = asFileHandle('Handle-settings-written');
+    const EXPORT = { reports: [{ values: {}, secrets: {}, action: 'export' }] } as const;
+
+    const written = harness({ ...EXPORT, exported: { kind: 'written', settings: 12, written: handle } });
+    await written.run();
+    await settle();
+    expect(written.toasts).toStrictEqual([`done ${TOAST_SETTINGS_SAVED}`]);
+    expect(written.actions[0]?.label).toBe(TOAST_SHOW_IN_FOLDER);
+    // NOTHING IS REVEALED UNTIL THE ACTION RUNS, and then the file this write answered.
+    expect(written.sent.some((call) => call.id === 'file.reveal')).toBe(false);
+    written.actions[0]?.run();
+    expect(written.sent.at(-1)).toStrictEqual({ id: 'file.reveal', params: { handle } });
+
+    const failed = harness({ ...EXPORT, exported: { kind: 'write-failed' } });
+    await failed.run();
+    await settle();
+    expect(failed.toasts).toStrictEqual([`problem ${TOAST_SETTINGS_NOT_SAVED}`]);
+
+    // CONTROL: a dismissed picker wrote nothing and says nothing.
+    const cancelled = harness({ ...EXPORT, exported: { kind: 'cancelled' } });
+    await cancelled.run();
+    await settle();
+    expect(cancelled.toasts).toStrictEqual([]);
   });
 
   it('CONTROL: a dismissed dialog writes nothing anywhere', async () => {
