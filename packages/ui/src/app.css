@@ -3837,9 +3837,11 @@ optgroup {
 }
 
 /* THE SETTINGS ROWS' DROP-DOWNS TOO (v5-10 draws them as fields): they were browser-default boxes beside styled segmented
-   controls and text fields, so one dialog read as two families. */
+   controls and text fields, so one dialog read as two families. A dialog row's (the dialog pattern, 2026-10-02) is the
+   same field. */
 .m-document-choice select,
-.m-settings-row__control select {
+.m-settings-row__control select,
+.m-dialog-row__control select {
   padding: var(--space-8);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-4);
@@ -3847,7 +3849,8 @@ optgroup {
 }
 
 .m-document-choice select:focus-visible,
-.m-settings-row__control select:focus-visible {
+.m-settings-row__control select:focus-visible,
+.m-dialog-row__control select:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }

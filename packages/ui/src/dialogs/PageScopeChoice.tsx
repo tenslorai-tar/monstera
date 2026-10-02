@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 
 import { PAGE_SCOPE_ALL, PAGE_SCOPE_LABEL, PAGE_SCOPE_TARGET } from '../messages/en.js';
+import { DialogRow } from '../primitives/Dialog.js';
 import { SegmentedControl } from '../primitives/SegmentedControl.js';
 
 /**
@@ -34,19 +35,23 @@ export function PageScopeChoice({
   readonly onChange: (every: boolean) => void;
   readonly className: string;
 }): ReactElement {
+  // A ROW OF THE DIALOG PATTERN (2026-10-02): *Pages* at the left, the two segments at the right — so the seven dialogs
+  // that draw this take the pattern from here, once.
   return (
-    <div className={className}>
-      <SegmentedControl<'target' | 'all'>
-        label={PAGE_SCOPE_LABEL}
-        options={[
-          { value: 'target', label: PAGE_SCOPE_TARGET, values: { count: pages.length } },
-          { value: 'all', label: PAGE_SCOPE_ALL },
-        ]}
-        value={every ? 'all' : 'target'}
-        onChange={(next) => {
-          onChange(next === 'all');
-        }}
-      />
-    </div>
+    <DialogRow label={PAGE_SCOPE_LABEL}>
+      <div className={className}>
+        <SegmentedControl<'target' | 'all'>
+          label={PAGE_SCOPE_LABEL}
+          options={[
+            { value: 'target', label: PAGE_SCOPE_TARGET, values: { count: pages.length } },
+            { value: 'all', label: PAGE_SCOPE_ALL },
+          ]}
+          value={every ? 'all' : 'target'}
+          onChange={(next) => {
+            onChange(next === 'all');
+          }}
+        />
+      </div>
+    </DialogRow>
   );
 }

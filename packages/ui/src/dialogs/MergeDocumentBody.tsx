@@ -5,6 +5,7 @@ import { MERGE_DOCUMENT_APPLY, MERGE_DOCUMENT_LABEL } from '../messages/en.js';
 import { type DocumentChoice, DocumentChoiceSelect } from './DocumentChoice.js';
 import type { MergeDocumentAnswer } from './mergeDocumentResult.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 
 /**
@@ -36,18 +37,20 @@ export default function MergeDocumentBody({
         onChange={setSource}
         marker="merge"
       />
-      <Button
-        label={MERGE_DOCUMENT_APPLY}
-        variant="primary"
-        disabled={source === ''}
-        onClick={() => {
-          // GUARDED AGAIN rather than trusting the disabled attribute, for
-          // `DeletePagesBody`'s reason: this is the only place that can produce
-          // a value, and the schema behind `resolve` refuses an empty string.
-          if (source === '') return;
-          resolve({ source });
-        }}
-      />
+      <DialogFooter>
+        <Button
+          label={MERGE_DOCUMENT_APPLY}
+          variant="primary"
+          disabled={source === ''}
+          onClick={() => {
+            // GUARDED AGAIN rather than trusting the disabled attribute, for
+            // `DeletePagesBody`'s reason: this is the only place that can produce
+            // a value, and the schema behind `resolve` refuses an empty string.
+            if (source === '') return;
+            resolve({ source });
+          }}
+        />
+      </DialogFooter>
     </div>
   );
 }

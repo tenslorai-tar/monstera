@@ -260,6 +260,7 @@ export const RESIZE_PAGES_TABLOID = messageKey('dialog.resize-pages.tabloid');
 export const RESIZE_PAGES_WIDTH = messageKey('dialog.resize-pages.width');
 export const RESIZE_PAGES_HEIGHT = messageKey('dialog.resize-pages.height');
 export const RESIZE_PAGES_UNIFORM_NOTE = messageKey('dialog.resize-pages.uniform-note');
+export const RESIZE_PAGES_PRESETS = messageKey('dialog.resize-pages.presets');
 export const RESIZE_PAGES_APPLY = messageKey('dialog.resize-pages.apply');
 export const RESIZE_PAGES_NOT_A_SIZE = messageKey('dialog.resize-pages.not-a-size');
 export const RESIZE_PAGES_COMMAND_TITLE = messageKey('command.resize-pages.title');
@@ -309,6 +310,9 @@ export const SPLIT_DOCUMENT_COMMAND_TITLE = messageKey('command.split-document.t
 export const SPLIT_DOCUMENT_TITLE = messageKey('dialog.split-document.title');
 export const SPLIT_DOCUMENT_EACH_PAGE = messageKey('dialog.split-document.each-page');
 export const SPLIT_DOCUMENT_RANGES = messageKey('dialog.split-document.ranges');
+export const SPLIT_DOCUMENT_HOW = messageKey('dialog.split-document.how');
+export const SPLIT_DOCUMENT_EACH_PAGE_NOTE = messageKey('dialog.split-document.each-page-note');
+export const SPLIT_DOCUMENT_RANGES_NOTE = messageKey('dialog.split-document.ranges-note');
 export const SPLIT_DOCUMENT_LABEL = messageKey('dialog.split-document.label');
 export const SPLIT_DOCUMENT_EMPTY = messageKey('dialog.split-document.empty');
 export const SPLIT_DOCUMENT_FILES = messageKey('dialog.split-document.files');
@@ -3972,6 +3976,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RESIZE_PAGES_LETTER]: 'Letter',
   [RESIZE_PAGES_LEGAL]: 'Legal',
   [RESIZE_PAGES_TABLOID]: 'Tabloid',
+  [RESIZE_PAGES_PRESETS]: 'Paper size',
   [RESIZE_PAGES_WIDTH]: 'Width (points)',
   [RESIZE_PAGES_HEIGHT]: 'Height (points)',
   [RESIZE_PAGES_UNIFORM_NOTE]:
@@ -4050,6 +4055,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SPLIT_DOCUMENT_TITLE]: 'Split into several PDFs',
   [SPLIT_DOCUMENT_EACH_PAGE]: 'One file for each page',
   [SPLIT_DOCUMENT_RANGES]: 'One file for each range',
+  [SPLIT_DOCUMENT_HOW]: 'How to split',
+  [SPLIT_DOCUMENT_EACH_PAGE_NOTE]: 'Every page becomes a PDF of its own.',
+  [SPLIT_DOCUMENT_RANGES_NOTE]: 'Each range you type becomes one PDF, for example 1-3, 4-6.',
   [SPLIT_DOCUMENT_LABEL]: 'Ranges',
   [SPLIT_DOCUMENT_EMPTY]: 'Type the ranges to split into, for example 1-3, 4-6.',
   // THE NUMBER A READER CHECKS BEFORE PRESSING, and it says where they go —

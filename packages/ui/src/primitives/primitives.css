@@ -651,6 +651,14 @@
   min-inline-size: 0;
 }
 
+/* SEVERAL BUTTONS AS ONE ROW'S CONTROL (Resize's paper sizes): they wrap within the control rather than past it. */
+.m-dialog-row__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}
+
 /* CHOICES THAT NEED A SENTENCE: the question, then a row per option, the radio at the start and the whole row the
    target. */
 .m-dialog-choices {
