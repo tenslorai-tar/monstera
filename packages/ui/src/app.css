@@ -3117,6 +3117,27 @@ optgroup {
 }
 
 /*
+ * FIT PAGE SHOWS ONE PAGE, AND PAGE DOWN MOVES ONE PAGE (the owner's review of 0.1.8.0: at 1600 × 852 a strip of the next
+ * page showed under page 1 at 63%). A fit page is often held by the WIDTH, so it is shorter than the pane, and the gap
+ * and padding the continuous layout puts between pages are all the space left before the next one — measured at
+ * 1600 × 852 in Chromium 151, page 1 ended at 544 of a 592 px pane and page 2 began at 560. Here each page takes exactly
+ * the pane's height, centred in it by margins computed from the pane (`--m-fit-room`, which `PageList` sets from the box
+ * it measures) and its own height (`--m-slot-h`), with no padding or gap besides, and the scroller snaps to each page,
+ * so a scroll or a Page Down rests on one page and never between two.
+ */
+.m-page-list--fit-page {
+  padding-block: 0;
+  row-gap: 0;
+  scroll-snap-type: y mandatory;
+}
+
+.m-page-list--fit-page .m-page-slot {
+  margin-block: calc((var(--m-fit-room) - var(--m-slot-h)) / 2);
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+}
+
+/*
  * THE PANE: one scroller and what must not scroll with its pages.
  *
  * The rulers and the loupe were the scroller's own absolutely positioned children, and an absolute child of a scroll

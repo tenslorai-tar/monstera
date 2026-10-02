@@ -608,6 +608,8 @@ export function PageList({
   // FACING PAGES FIT A SPREAD, two pages and the gap between them: fitting one page's width would push its partner
   // off the pane. The gap is taken from the pane rather than added to the pages, because it does not scale with them.
   const spread = layout === 'facing';
+  /** Fit page in one column: each page takes the whole pane, so no part of another shows (`.m-page-list--fit-page`). */
+  const fitOnePage = mode.kind === 'fit-page' && layout === 'continuous';
   const resolved = resolveZoom(
     mode,
     spread && viewport !== undefined ? { width: viewport.width - spreadGap, height: viewport.height } : viewport,
@@ -1046,6 +1048,9 @@ export function PageList({
       className={[
         'm-page-list',
         layout === 'facing' ? 'm-page-list--facing' : '',
+        // ONE PAGE TO A SCREEN, centred, at Fit page in a continuous layout (`app.css`); facing pages fit a spread, and
+        // single page already shows one.
+        fitOnePage ? 'm-page-list--fit-page' : '',
         grid === undefined ? '' : 'm-page-list-grid',
         panning ? 'm-page-list--panning' : '',
         selectsText ? 'm-page-list--selects-text' : '',
@@ -1086,13 +1091,16 @@ export function PageList({
       // this passes only the number that has to be computed — which is the
       // token rule's own line: a value that is genuinely dynamic.
       style={
-        grid === undefined
+        grid === undefined && !fitOnePage
           ? undefined
           : ({
-              '--m-grid': `${String(grid)}px`,
+              ...(grid === undefined ? {} : { '--m-grid': `${String(grid)}px` }),
               // THE ORIGIN (`--m-grid-x`, `--m-grid-y`) IS `PageSpans`', the one the ruler uses, so a grid line is a
               // mark the reader can find on the ruler; it is set on this element there, because it moves with every
               // scroll and this component must not render with it.
+              //
+              // FIT PAGE'S ROOM: the scroller's own measured height, each page's share of it.
+              ...(fitOnePage && viewport !== undefined ? { '--m-fit-room': `${String(viewport.height)}px` } : {}),
             } as React.CSSProperties)
       }
       // ALWAYS NAMED, since it is a focusable region (2026-09-26): *Document pages* alone, and in the split view each
@@ -1554,7 +1562,13 @@ function PageSlot({
       className="m-page-slot"
       hidden={hidden}
       ref={slotRef}
-      style={shown === undefined ? undefined : { width: shown.width, height: shown.height }}
+      // ITS HEIGHT ALSO AS A PROPERTY, which Fit page's margins centre it by (`.m-page-list--fit-page`): a value that is
+      // genuinely dynamic, the token rule's own line.
+      style={
+        shown === undefined
+          ? undefined
+          : ({ width: shown.width, height: shown.height, '--m-slot-h': `${String(shown.height)}px` } as React.CSSProperties)
+      }
     >
       {mounted && tiled ? (
         size === undefined || view === undefined ? null : (
