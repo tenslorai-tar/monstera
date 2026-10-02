@@ -123,7 +123,7 @@ function closeWindow(pid) {
   );
 }
 
-/** The newest shell log in the installed package's storage, and its length now. */
+/** The newest shell log in the installed package's storage, and its length now. @param {string} family */
 function shellLog(family) {
   const local = join(process.env['LOCALAPPDATA'] ?? '', 'Packages', family, 'LocalCache');
   /** @type {{ path: string, time: number } | null} */
