@@ -56,3 +56,18 @@ which a rendered case holds in light and dark.
   palette would offer an action whose result depends on state the person cannot see from the list.
 - **A three-way control (System, Light, Dark) in the bar.** That is the Settings row; the owner asked for one button.
 - **Writing `appearance.theme` from the bar.** A second writer of the setting beside Settings (B3).
+
+## Correction, 2026-10-02 — the two commands already existed, and they are not conditional
+
+Decision 1 was written without reading `chromeCommands.ts`: `view.theme-light` and `view.theme-dark` already exist,
+with `view.theme-system`, as the menu bar's *View › Theme* items (ADR-0107), each writing the setting the Settings
+dialog writes. Two sentences above are therefore wrong, and are corrected here rather than edited:
+
+- *"Each exists while it is the switch's next step (`when`)"* is withdrawn. A menu item whose `when` fails is drawn
+  disabled, and *Light theme* must stay choosable from *View › Theme* whatever is showing. The commands are unchanged;
+  **the switch chooses which of them to run** from the theme on show.
+- *"the commands alone write it"* was false: Settings writes `appearance.theme` too. What holds is that **the bar writes
+  nothing itself**; it runs a registered command, as the layout switcher does.
+
+**The switch's name is its own**, *Switch to light theme* or *Switch to dark theme*, because it says what a click does;
+the commands keep their titles, *Light theme* and *Dark theme*, which name a choice in a list.
