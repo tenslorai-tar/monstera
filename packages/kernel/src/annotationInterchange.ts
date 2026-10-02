@@ -1,5 +1,5 @@
 import * as mupdf from './mupdfRaw.js';
-import type { PDFDocument, PDFObject } from './mupdfRaw.js';
+import type { PDFAnnotation, PDFDocument, PDFObject, PDFPage } from './mupdfRaw.js';
 import { z } from 'zod';
 
 import type { AnnotationDataFormat } from '@monstera/contract';
@@ -8,7 +8,7 @@ import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { fdfFile, pdfName, pdfString, xmlCanCarry, xmlEscaped } from './interchangeEncoding.js';
 import { withDocument } from './mupdfWriter.js';
-import { annotationAt, markAuthored, pageAt, redraw } from './pageAnnotations.js';
+import { annotationAt, markAuthored, pageAt, redrawPage } from './pageAnnotations.js';
 import { type XfdfAnnotation, readXfdfAnnotations } from './xfdfReader.js';
 
 /**
@@ -55,8 +55,11 @@ export const INTERCHANGE_SUBTYPES = [
 
 export type InterchangeSubtype = (typeof INTERCHANGE_SUBTYPES)[number];
 
-/** How many annotations one file carries. The XFDF reader's bound and this one are the same number. */
-export const MAX_INTERCHANGE_ANNOTATIONS = 4096;
+/*
+ * NO COUNT OF ANNOTATIONS: a file's bytes are bounded before it is read (`MAX_ANNOTATION_DATA_BYTES`), and reading is
+ * linear in them. A count of 4,096 refused this build's own export of a long review on the way back in — "Nothing was
+ * added" — and protected nothing the byte bound does not (JOURNAL, *No document-size refusals*, table A row 8).
+ */
 
 /** How many points one geometry list holds. */
 export const MAX_INTERCHANGE_POINTS = 4096;
@@ -646,9 +649,6 @@ export function parseAnnotationData(bytes: Uint8Array, format: AnnotationDataFor
     throw new UnreadableAnnotationDataError(error instanceof Error ? error.message : String(error));
   }
   const candidates = format === 'json' ? jsonCandidates(text) : readXfdfAnnotations(text).flatMap(xfdfCandidate);
-  if (candidates.length > MAX_INTERCHANGE_ANNOTATIONS) {
-    throw new UnreadableAnnotationDataError(`it carries more than ${String(MAX_INTERCHANGE_ANNOTATIONS)} annotations`);
-  }
   return candidates.map((candidate, index) => checked(candidate, index));
 }
 
@@ -667,7 +667,7 @@ const jsonFileSchema = z
   .object({
     format: z.literal(ANNOTATION_DATA_JSON_MARKER),
     version: z.literal(ANNOTATION_DATA_JSON_VERSION),
-    annotations: z.array(z.unknown()).max(MAX_INTERCHANGE_ANNOTATIONS),
+    annotations: z.array(z.unknown()),
   })
   .strict();
 
@@ -777,9 +777,6 @@ function parseFdf(bytes: Uint8Array): readonly InterchangeAnnotation[] {
   try {
     const list = document.getTrailer().get('Root').get('FDF').get('Annots');
     if (!list.isArray()) throw new UnreadableAnnotationDataError('it has no /Root /FDF /Annots array');
-    if (list.length > MAX_INTERCHANGE_ANNOTATIONS) {
-      throw new UnreadableAnnotationDataError(`it carries more than ${String(MAX_INTERCHANGE_ANNOTATIONS)} annotations`);
-    }
     const found: InterchangeAnnotation[] = [];
     for (let index = 0; index < list.length; index += 1) {
       const entry = list.get(index);
@@ -867,17 +864,25 @@ export const applyImportAnnotations: Apply<'mupdf', 'importAnnotations'> = (sess
     for (const record of records) {
       if (record.page >= pages) throw new AnnotationPageMissingError(record.page, pages);
     }
+    // EACH PAGE ONCE: its annotations are created, then redrawn together. Redrawn one by one, every record cost as much
+    // as the records already on its page (`redrawPage`): 4,000 notes on one page took 6.5 s.
+    const placed = new Map<number, { readonly page: PDFPage; readonly annotations: PDFAnnotation[] }>();
     for (const record of records) {
-      const annotation = document.loadPage(record.page).createAnnotation(record.subtype);
+      let onPage = placed.get(record.page);
+      if (onPage === undefined) {
+        onPage = { page: document.loadPage(record.page), annotations: [] };
+        placed.set(record.page, onPage);
+      }
+      const annotation = onPage.page.createAnnotation(record.subtype);
       writeEntries(document, annotation.getObject(), record);
       markAuthored(annotation);
-      // DRAWN NOW, and not load-bearing for the file: measured 2026-09-17, with this call removed
-      // MuPDF's save still wrote a correct appearance (`7 w`, `1 0 0 RG`, the inset box) for an
-      // imported square. It is MuPDF's own call for an annotation whose entries changed, and it
-      // gives the session an appearance before any save does. Through `redraw`, the kernel's one
-      // redraw, so an imported `/BM` reaches the appearance too (ADR-0103).
-      redraw(annotation, document);
+      onPage.annotations.push(annotation);
     }
+    // DRAWN NOW, and not load-bearing for the file: measured 2026-09-17, with the redraw removed MuPDF's save still
+    // wrote a correct appearance (`7 w`, `1 0 0 RG`, the inset box) for an imported square. It is MuPDF's own call for an
+    // annotation whose entries changed, and it gives the session an appearance before any save does. Through the
+    // kernel's redraw, so an imported `/BM` reaches the appearance too (ADR-0103).
+    for (const { page, annotations } of placed.values()) redrawPage(page, annotations, document);
   });
 
 function realArray(document: PDFDocument, numbers: readonly number[]): PDFObject {

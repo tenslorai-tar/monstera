@@ -57,14 +57,16 @@
 /** How deeply elements may nest before the file is refused. */
 const MAX_DEPTH = 32;
 
-/** How many fields one file may name. `MAX_LISTED_FIELDS`' argument. */
-const MAX_FIELDS = 4096;
+/**
+ * NO COUNT AND NO FIELD-TEXT BOUND, because the file's bytes are one already (`MAX_FORM_DATA_BYTES`, 8 MiB, checked
+ * before any of this runs) and reading is linear in them. Counts of 4,096 fields and annotations, 256 values and 4,096
+ * characters refused — or, for FDF, cut in silence — files a real form or review produces, and protected nothing the
+ * byte bound does not (JOURNAL, *No document-size refusals*, table A rows 8 and 9). Depth stays bounded: it is the one
+ * axis that costs stack rather than bytes.
+ */
 
-/** How long a name or a value may be. */
+/** How long an annotation's `<defaultappearance>` may be — `interchangeAnnotationSchema`'s own bound on it. */
 const MAX_TEXT = 4096;
-
-/** How many values one field may carry. */
-const MAX_VALUES = 256;
 
 /**
  * How long an annotation's geometry may be as text: an attribute such as `coords` or `vertices`,
@@ -75,9 +77,6 @@ const MAX_GEOMETRY_TEXT = 262_144;
 
 /** How long an annotation's `<contents>` may be. */
 const MAX_CONTENTS_TEXT = 16_384;
-
-/** How many annotations one file may carry. `MAX_FIELDS`' argument. */
-const MAX_ANNOTATIONS = 4096;
 
 /**
  * One annotation element an XFDF carries, as text: what `annotationInterchange.ts` turns into a
@@ -227,9 +226,6 @@ function readAnnots(cursor: Cursor, found: XfdfAnnotation[], depth: number): voi
   for (;;) {
     const tag = nextTag(cursor, '<annots>');
     if (tag === 'end') return;
-    if (found.length >= MAX_ANNOTATIONS) {
-      throw new XfdfRefusedError(`it carries more than ${String(MAX_ANNOTATIONS)} annotations`);
-    }
     let contents: string | undefined;
     let richText: string | undefined;
     let defaultAppearance: string | undefined;
@@ -507,9 +503,6 @@ function readField(
         values.push('');
         continue;
       }
-      if (values.length >= MAX_VALUES) {
-        throw new XfdfRefusedError(`a field names more than ${String(MAX_VALUES)} values`);
-      }
       values.push(readText(cursor));
       continue;
     }
@@ -525,19 +518,16 @@ function readField(
   }
 
   if (values.length > 0) {
-    if (found.length >= MAX_FIELDS) {
-      throw new XfdfRefusedError(`it names more than ${String(MAX_FIELDS)} fields`);
-    }
     // A DOT JOINS THE PATH, which is what a fully-qualified field name is —
     // measured by the create row on 2026-09-08: a dot in a name makes a parent
     // in the field tree, so the nested vocabulary and the flat one describe the
     // same field.
-    found.push({ name: path.join('.').slice(0, MAX_TEXT), values });
+    found.push({ name: path.join('.'), values });
   }
 }
 
-/** One element's text content, up to its close tag, cut at `limit` as a field value is. */
-function readText(cursor: Cursor, limit = MAX_TEXT): string {
+/** One element's text content, up to its close tag, cut at `limit` where a caller names one; a field value is whole. */
+function readText(cursor: Cursor, limit = Number.POSITIVE_INFINITY): string {
   let out = '';
   for (;;) {
     if (cursor.at >= cursor.text.length) {
@@ -613,8 +603,8 @@ interface Tag {
   readonly attributes: ReadonlyMap<string, string>;
 }
 
-/** Reads one tag, or answers `null` when the cursor is not on one. Attribute values are cut at `limit`. */
-function readTag(cursor: Cursor, limit = MAX_TEXT): Tag | null {
+/** Reads one tag, or answers `null` when the cursor is not on one. Attribute values are cut at `limit` where named. */
+function readTag(cursor: Cursor, limit = Number.POSITIVE_INFINITY): Tag | null {
   if (!cursor.text.startsWith('<', cursor.at)) return null;
   const end = cursor.text.indexOf('>', cursor.at);
   if (end === -1) throw new XfdfRefusedError('an unterminated tag');

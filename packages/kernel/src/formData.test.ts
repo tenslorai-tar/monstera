@@ -1,4 +1,5 @@
 import { PDFArray, PDFDocument, PDFName, PDFString, StandardFonts } from '@cantoo/pdf-lib';
+import { MAX_FORM_DATA_BYTES } from '@monstera/contract';
 import * as mupdf from './mupdfRaw.js';
 import { describe, expect, it } from 'vitest';
 
@@ -9,6 +10,7 @@ import {
   NoMatchingFieldsError,
   UnreadableFormDataError,
   UnrepresentableFormDataError,
+  parseFormData,
   readFormData,
   serialiseFormData,
 } from './formData.js';
@@ -536,4 +538,30 @@ describe('serialiseFormData, JSON', () => {
       values: [HOSTILE['hostile.fdf']],
     });
   });
+});
+
+/**
+ * A LARGE FORM'S DATA COMES BACK IN WHOLE, in every format. Table A row 9 of the JOURNAL's *No document-size refusals*:
+ * past 4,096 fields JSON and XFDF refused as unreadable and FDF kept the first 4,096 in silence, and a value past 4,096
+ * characters was refused in JSON and cut in silence in FDF and XFDF. The file's bytes are what bound a stranger's file.
+ */
+describe('parseFormData, a large form', () => {
+  const LONG = 'A comment that runs on. '.repeat(250);
+  const fields: ExportedField[] = Array.from({ length: 5000 }, (_, index) => ({
+    name: `section${String(Math.floor(index / 100))}.field${String(index)}`,
+    values: [index === 4999 ? LONG : `value ${String(index)}`],
+    asName: false,
+  }));
+
+  for (const format of ['json', 'xfdf', 'fdf'] as const) {
+    it(`${format}: 5,000 fields and a 6,000-character value arrive whole`, () => {
+      const bytes = serialiseFormData(fields, format);
+      // CONTROL ON THE INPUT: within the byte bound and past both old bounds, so only a count or a length refused it.
+      expect(bytes.byteLength).toBeLessThan(MAX_FORM_DATA_BYTES);
+      expect(LONG.length).toBeGreaterThan(4096);
+      const read = parseFormData(bytes, format);
+      expect(read).toHaveLength(5000);
+      expect(read.at(-1)).toStrictEqual({ name: 'section49.field4999', values: [LONG] });
+    });
+  }
 });

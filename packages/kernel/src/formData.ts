@@ -311,14 +311,12 @@ export interface ImportedField {
   readonly values: readonly string[];
 }
 
-/** How many fields an imported file may name. `MAX_LISTED_FIELDS`' argument. */
-const MAX_IMPORTED_FIELDS = 4096;
-
-/** How long an imported name or value may be. */
-const MAX_IMPORTED_TEXT = 4096;
-
-/** How many values one imported field may carry. The reader's bound, inbound. */
-const MAX_FIELD_VALUES_IN = 256;
+/*
+ * NO COUNT AND NO TEXT BOUND on an imported file, in any of the three formats: the file's bytes are bounded before it
+ * is read (`MAX_FORM_DATA_BYTES`), and reading is linear in them. Bounds of 4,096 fields, 256 values and 4,096
+ * characters refused a real form's JSON and XFDF and cut its FDF in silence (JOURNAL, *No document-size refusals*, table
+ * A row 9); each format also held its own opinion of what to do past them (`xfdfReader.ts` says the same).
+ */
 
 /**
  * The JSON an import accepts.
@@ -328,20 +326,17 @@ const MAX_FIELD_VALUES_IN = 256;
  * an arbitrary JSON document matches nothing and the import reports success
  * over a file that was never one of ours.
  *
- * Bounded at every axis a stranger controls, for the reason the channel schemas
- * are: a list and a string are the two things a hostile file makes large.
+ * Bounded by the file's bytes, not per axis: see the note above.
  */
 const importedJsonSchema = z.object({
   format: z.literal(FORM_DATA_JSON_MARKER),
   version: z.literal(FORM_DATA_JSON_VERSION),
-  fields: z
-    .array(
-      z.object({
-        name: z.string().max(MAX_IMPORTED_TEXT),
-        values: z.array(z.string().max(MAX_IMPORTED_TEXT)).max(MAX_FIELD_VALUES_IN),
-      }),
-    )
-    .max(MAX_IMPORTED_FIELDS),
+  fields: z.array(
+    z.object({
+      name: z.string(),
+      values: z.array(z.string()),
+    }),
+  ),
 });
 
 /** A form-data file this build will not read. */
@@ -455,16 +450,12 @@ function parseFdf(bytes: Uint8Array): readonly ImportedField[] {
       throw new UnreadableFormDataError('it has no /Root /FDF /Fields array');
     }
     const found: ImportedField[] = [];
-    const length = Math.min(list.length, MAX_IMPORTED_FIELDS);
-    for (let index = 0; index < length; index += 1) {
+    for (let index = 0; index < list.length; index += 1) {
       const entry = list.get(index);
       if (!entry.isDictionary()) continue;
       const name = entry.get('T');
       if (!name.isString()) continue;
-      found.push({
-        name: name.asString().slice(0, MAX_IMPORTED_TEXT),
-        values: fdfEntryValues(entry.get('V')),
-      });
+      found.push({ name: name.asString(), values: fdfEntryValues(entry.get('V')) });
     }
     return found;
   } finally {
@@ -476,18 +467,17 @@ function parseFdf(bytes: Uint8Array): readonly ImportedField[] {
 function fdfEntryValues(value: PDFObject): readonly string[] {
   if (value.isArray()) {
     const found: string[] = [];
-    const length = Math.min(value.length, MAX_FIELD_VALUES_IN);
-    for (let index = 0; index < length; index += 1) {
+    for (let index = 0; index < value.length; index += 1) {
       const entry = value.get(index);
       const text = entry.isName() ? entry.asName() : entry.isString() ? entry.asString() : null;
-      if (text !== null) found.push(text.slice(0, MAX_IMPORTED_TEXT));
+      if (text !== null) found.push(text);
     }
     return found;
   }
   // A NAME IS A BUTTON'S STATE and a string is everything else's, which is the
   // export's own branch read backwards.
-  if (value.isName()) return [value.asName().slice(0, MAX_IMPORTED_TEXT)];
-  if (value.isString()) return [value.asString().slice(0, MAX_IMPORTED_TEXT)];
+  if (value.isName()) return [value.asName()];
+  if (value.isString()) return [value.asString()];
   return [];
 }
 

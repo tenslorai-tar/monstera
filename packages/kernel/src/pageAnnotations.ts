@@ -1216,7 +1216,25 @@ const BLEND_NAMES: Record<AnnotationBlend, string> = { multiply: 'Multiply', nor
 const BLEND_STATE = 'MonsteraBlend';
 
 /**
- * Redraws an annotation's appearance — the ONLY way this kernel calls `update()` (ADR-0103).
+ * Redraws every annotation on a page that changed, in one pass — {@link redraw}'s form for a caller placing many.
+ *
+ * MuPDF's per-annotation `update()` walks the page's whole annotation list, so N annotations redrawn one by one cost
+ * N² — measured 2026-10-02 (`scripts/research/importAnnotationsScale.mjs`): 1,000, 2,000 and 4,000 squares on one
+ * page took 344, 1,425 and 5,838 ms to create and update one by one, and 20, 39 and 75 ms to create and update the page
+ * once, which drew every one of them. The blend re-applied after is {@link redraw}'s, for its reason.
+ *
+ * @param annotations the annotations on `page` this caller created or changed
+ */
+export function redrawPage(page: PDFPage, annotations: readonly PDFAnnotation[], document: PDFDocument): void {
+  page.update();
+  for (const annotation of annotations) {
+    const mode = annotation.getObject().get('BM');
+    if (mode.isName()) blendAppearance(annotation, document, mode.asName());
+  }
+}
+
+/**
+ * Redraws an annotation's appearance — with {@link redrawPage}, the only way this kernel calls `update()` (ADR-0103).
  *
  * `update()` regenerates the appearance stream, and measured 2026-09-24 (MuPDF 1.28.0,
  * `scripts/research/annotationBlend.mjs`) it discards a blend written into that stream and ignores

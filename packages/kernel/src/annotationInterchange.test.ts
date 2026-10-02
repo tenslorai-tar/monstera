@@ -1,7 +1,7 @@
 import { PDFArray, PDFDocument, PDFHexString, PDFName, PDFString, degrees } from '@cantoo/pdf-lib';
-import type { AnnotationDataFormat } from '@monstera/contract';
-import { ColorSpace, Matrix, type PDFPage } from './mupdfRaw.js';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { type AnnotationDataFormat, MAX_ANNOTATION_DATA_BYTES } from '@monstera/contract';
+import { ColorSpace, Matrix, PDFAnnotation, PDFPage } from './mupdfRaw.js';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   AnnotationPageMissingError,
@@ -233,6 +233,75 @@ describe('annotation interchange — exported and imported through all three for
       });
     });
   }
+
+  /**
+   * A LONG REVIEW COMES BACK IN WHOLE. Table A row 8 of the JOURNAL's *No document-size refusals*: a count of 4,096
+   * refused this build's own export of a longer review — "Nothing was added". The file's bytes are what bound a
+   * stranger's file; 5,000 notes are well inside them.
+   */
+  for (const format of ['json', 'xfdf', 'fdf'] as const satisfies readonly AnnotationDataFormat[]) {
+    it(`${format}: 5,000 annotations this build exported are read back, every one`, () => {
+      const notes: InterchangeAnnotation[] = Array.from({ length: 5000 }, (_, index) => ({
+        page: index % 2,
+        subtype: 'Square',
+        rect: [10, 10, 20 + (index % 50), 20],
+        contents: `Note ${String(index)}`,
+      }));
+      const exported = serialiseAnnotationData(notes, format);
+      // CONTROL ON THE INPUT: within the byte bound, so only a count could have refused it.
+      expect(exported.byteLength).toBeLessThan(MAX_ANNOTATION_DATA_BYTES);
+      const read = parseAnnotationData(exported, format);
+      expect(read).toHaveLength(5000);
+      expect(read.at(-1)).toMatchObject({ page: 1, contents: 'Note 4999' });
+    });
+  }
+
+  it('redraws each PAGE once, never each annotation, which is what keeps a long import linear', async () => {
+    // MuPDF's per-annotation update walks the page's whole list (`redrawPage`): 4,000 notes on one page took 6.5 s
+    // redrawn one by one, and 157 ms redrawn by page. The decision is the observable, not the time.
+    const notes: InterchangeAnnotation[] = Array.from({ length: 30 }, (_, index) => ({
+      page: index % 2,
+      subtype: 'Square',
+      rect: [10, 10, 30, 30],
+    }));
+    const perAnnotation = vi.spyOn(PDFAnnotation.prototype, 'update');
+    const perPage = vi.spyOn(PDFPage.prototype, 'update');
+    try {
+      await withSession(blank, async (session) => {
+        await applyImportAnnotations(session, {
+          kind: 'importAnnotations',
+          format: 'json',
+          bytes: serialiseAnnotationData(notes, 'json'),
+        });
+        // CONTROL: every note was drawn, so no redraw at all cannot satisfy the counts below.
+        const drawn = await withDocument(session, (document) =>
+          [0, 1].flatMap((page) => document.loadPage(page).getAnnotations()).filter((a) => !a.getObject().get('AP').isNull()),
+        );
+        expect(drawn).toHaveLength(30);
+      });
+      expect(perAnnotation).not.toHaveBeenCalled();
+      expect(perPage).toHaveBeenCalledTimes(2);
+    } finally {
+      perAnnotation.mockRestore();
+      perPage.mockRestore();
+    }
+  });
+
+  it('json: 5,000 annotations import into a document, all of them', async () => {
+    const notes: InterchangeAnnotation[] = Array.from({ length: 5000 }, (_, index) => ({
+      page: index % 2,
+      subtype: 'Square',
+      rect: [10, 10, 30, 30],
+    }));
+    await withSession(blank, async (session) => {
+      await applyImportAnnotations(session, {
+        kind: 'importAnnotations',
+        format: 'json',
+        bytes: serialiseAnnotationData(notes, 'json'),
+      });
+      expect(await readInterchangeAnnotations(session)).toHaveLength(5000);
+    });
+  }, 60_000);
 
   /**
    * ANOTHER PROGRAM'S FILE, in the shapes PDF-XChange Editor 10.7.5 wrote (measured 2026-09-21 on
