@@ -68,6 +68,25 @@ describe('the engine hosts’ declared routes', () => {
     expect(maxEncodedBytes(rest, WORST_BYTES_PER_CHAR, 'input')).toBeLessThan(ENGINE_ANSWER_FILE_MAX_BYTES);
   });
 
+  /**
+   * GENERATE TOC ON A REAL OUTLINE, the size that failed (JOURNAL, *No document-size refusals*, table A row 5): about
+   * 3,500 bookmarks of ordinary length were past the 256 KiB request frame, so the table of contents failed as
+   * `internal`. The pre-read crosses in a file (ADR-0138); `proof:hostfileanswers` drives that route through the real
+   * host. This holds the outline at the size that broke: admitted by the schema, and past the frame it once travelled in.
+   */
+  it('engine/applyPdfLib takes 3,600 ordinary bookmarks, which no frame carries, by the file route', () => {
+    const outline = Array.from({ length: 3600 }, (_, index) => ({
+      title: `Section ${String(index + 1)}: a heading of ordinary length`,
+      page: index,
+      depth: index % 3,
+    }));
+    const channel = engineChannels['engine/applyPdfLib'];
+    expect(channel.params.shape.reads.safeParse(outline).success).toBe(true);
+    expect(channel.request).toBe('file');
+    // THE INPUT IS AT THE BREAKING SIZE: an outline a frame carries would pass here against the framed route too.
+    expect(new TextEncoder().encode(JSON.stringify(outline)).byteLength).toBeGreaterThan(ENGINE_HOST_FRAME_MAX_BYTES);
+  });
+
   /** THE CONTROL: with the pre-read in, the same channel is past the ceiling, so the exemption above is load-bearing. */
   it('CONTROL: and with its pre-read in, it is past the ceiling', () => {
     expect(maxEncodedBytes(engineChannels['engine/applyPdfLib'].params, WORST_BYTES_PER_CHAR, 'input')).toBeGreaterThan(

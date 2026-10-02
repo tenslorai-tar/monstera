@@ -243,6 +243,23 @@ describe('generateToc', () => {
     ]);
   });
 
+  it('lists every one of 3,600 bookmarks, the outline that once failed to reach the host', async () => {
+    // JOURNAL, *No document-size refusals*, table A row 5: this outline is past the request frame the pre-read used to
+    // travel in (`hostRoutes.test.ts` measures it). Here the command itself, at that size: every row on a sheet, and
+    // the last row's page shifted by every sheet the table took.
+    const count = 3600;
+    const outline: readonly OutlineEntry[] = Array.from({ length: count }, (_unused, index) => ({
+      title: `Section ${String(index + 1)}: a heading of ordinary length`,
+      page: index === count - 1 ? 7 : 0,
+      depth: index % 3,
+    }));
+    const sheets = tocPageCount(count, rowsPerPage(PAGE_SIZE[1]));
+    const built = await applyGenerateToc(await blankDocument(), AT_FRONT, outline);
+    expect((await PDFDocument.load(built)).getPageCount()).toBe(PAGE_COUNT + sheets);
+    const last = await shownOn(built, sheets - 1);
+    expect(last.slice(-2)).toStrictEqual([`Section ${String(count)}: a heading of ordinary length`, String(8 + sheets)]);
+  }, 60_000);
+
   it('appends when `at` is past the end, and then shifts nothing', async () => {
     const built = await applyGenerateToc(
       await blankDocument(),
