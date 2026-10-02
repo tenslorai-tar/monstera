@@ -99,6 +99,11 @@ export function CommandPalette({
           2026-09-22). The first match is highlighted from the start, so name-then-Enter needs no arrow. */}
       <input
         ref={field}
+        // FOCUSED AS IT MOUNTS: `initialFocus` above moves focus a frame after the dialog opens, and the keys a person
+        // types straight after the chord went to the page in that gap — measured 2026-10-02, 12 of 20 openings in
+        // Chromium lost letters ("Stamp" read "mp", "p" or nothing). `initialFocus` names the same field, so the two
+        // agree on where focus belongs; this one gets there before the next key.
+        autoFocus
         className="m-palette-query"
         type="text"
         role="combobox"
