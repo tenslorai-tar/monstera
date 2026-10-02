@@ -7,9 +7,12 @@ import {
   type AskSent,
   type AskSide,
   type AskSides,
+  type ASK_UNREAD_REASONS,
   type ContractClient,
   MAX_ANNOTATION_TEXT,
+  MAX_ASK_DOCUMENTS,
   MAX_CHAT_TEXT,
+  askShareOf,
   type DispatchableCommand,
   type WebSearchAbsence,
   choiceReadsImages,
@@ -39,7 +42,7 @@ import { answerElements } from './answerMarkdown.js';
 import type { AssistantRequest, ReplyTarget } from './assistantRequest.js';
 import type { EventSubscriber } from './bridge.js';
 import { confirmCopied } from './commands/confirmWritten.js';
-import type { ConversationTurn, DocumentStore } from './documentStores.js';
+import type { AskedDocuments, ConversationTurn, DocumentStore } from './documentStores.js';
 import {
   AI_PROVIDER_NAMES,
   ANTHROPIC_OUT_OF_CREDIT,
@@ -56,6 +59,17 @@ import {
   ASSISTANT_CHIP_SELECTION,
   ASSISTANT_CITATION,
   ASSISTANT_CITATION_RIGHT,
+  ASSISTANT_CHIP_ALL,
+  ASSISTANT_SCOPE_ALL,
+  ASSISTANT_SENT_SHARE,
+  ASSISTANT_SENT_DOCUMENT,
+  ASSISTANT_SENT_UNREAD,
+  ASSISTANT_SENT_NOT_SENT,
+  ASSISTANT_UNREAD_CLOSED,
+  ASSISTANT_UNREAD_BUSY,
+  ASSISTANT_UNREAD_DAMAGED,
+  ASSISTANT_UNREAD_PAGE,
+  ASSISTANT_CITATION_DOCUMENT,
   ASSISTANT_COMPOSER_LABEL,
   ASSISTANT_CONVERSATION_LABEL,
   ASSISTANT_EMPTY,
@@ -211,6 +225,13 @@ export interface AssistantPanelProps {
   readonly beside?: BesideDocument | undefined;
   /** Goes to a page of the document on the right, zero-based. */
   readonly onGoToBeside?: ((page: number) => void) | undefined;
+  /**
+   * The tabs open now, in their order, by id and the name each shows — what *All Open Docs* sends at Send, and what
+   * decides whether it is offered at all: with fewer than two it is not (ADR-0134).
+   */
+  readonly openDocuments?: readonly { readonly docId: DocId; readonly name: string }[] | undefined;
+  /** Goes to a page of another open document, zero-based — an *All Open Docs* answer's citation (ADR-0134). */
+  readonly onGoToDocument?: ((docId: DocId, page: number) => void) | undefined;
 }
 
 /** Which document a two-document answer was about, for its caption. */
@@ -222,6 +243,35 @@ const SIDE_WORDS = {
 
 /** What one ask is about — the same shape a turn records, so Regenerate can ask it again. */
 type AskRequest = NonNullable<ConversationTurn['request']>;
+
+/** No tabs passed: a stable empty list, so the default does not change identity every render. */
+const NO_DOCUMENTS: readonly { readonly docId: DocId; readonly name: string }[] = [];
+
+/** Why a document was not read, in words (ADR-0134): the contract's reason for each. */
+const UNREAD_WORDS: Readonly<Record<(typeof ASK_UNREAD_REASONS)[number], MessageKey>> = {
+  'document-not-open': ASSISTANT_UNREAD_CLOSED,
+  'document-busy': ASSISTANT_UNREAD_BUSY,
+  'document-poisoned': ASSISTANT_UNREAD_DAMAGED,
+  'page-too-large': ASSISTANT_UNREAD_PAGE,
+};
+
+/**
+ * What *All Open Docs* sends when Send is pressed (ADR-0134 Decision 5): the focused document first, then the other
+ * tabs in their order, the first {@link MAX_ASK_DOCUMENTS} of them — and the names of the ones past that, said rather
+ * than refused. `undefined` with fewer than two, when the choice is not offered.
+ */
+function allOpen(
+  focused: DocId,
+  open: readonly { readonly docId: DocId; readonly name: string }[],
+): AskedDocuments | undefined {
+  const own = open.find((each) => each.docId === focused);
+  if (own === undefined || open.length < 2) return undefined;
+  const ordered = [own, ...open.filter((each) => each.docId !== focused)];
+  return {
+    asked: ordered.slice(0, MAX_ASK_DOCUMENTS),
+    notSent: ordered.slice(MAX_ASK_DOCUMENTS).map((each) => each.name),
+  };
+}
 
 /** A subscription id: short, unique per ask, and inside the event schema's alphabet. */
 function newSubscription(): string {
@@ -273,7 +323,7 @@ const READINESS = {
  * What the Context choice can be. A selection or a comment exists only when a command gave one,
  * and is offered under its own name — the menu and the instruction both say which.
  */
-type Scope = 'page' | 'page-image' | 'document' | 'comments' | 'selection' | 'comment' | 'nothing';
+type Scope = 'page' | 'page-image' | 'document' | 'comments' | 'selection' | 'comment' | 'all' | 'nothing';
 
 const NO_SUBSCRIBE = (): (() => void) => () => undefined;
 const NO_TURNS: readonly ConversationTurn[] = [];
@@ -324,6 +374,8 @@ export function AssistantPanel({
   onNote,
   beside,
   onGoToBeside,
+  openDocuments = NO_DOCUMENTS,
+  onGoToDocument,
 }: AssistantPanelProps): ReactElement {
   const { i18n } = useLingui();
   const providerId = useId();
@@ -510,6 +562,14 @@ export function AssistantPanel({
       if (chosen === 'page-image') {
         return canSee ? { about: { scope: 'page-image', docId: focused.docId, page: focused.page } } : null;
       }
+      // EVERY OPEN DOCUMENT, as the tabs stand at Send (ADR-0134). With fewer than two left — a tab closed since the
+      // choice — it is this document, which is what *all* of one document is.
+      if (chosen === 'all') {
+        const documents = allOpen(focused.docId, openDocuments);
+        return documents === undefined
+          ? { about: { scope: 'document', docId: focused.docId } }
+          : { about: { scope: 'documents', docIds: documents.asked.map((each) => each.docId) }, documents };
+      }
       const on = (docId: DocId, page: number): AskAbout =>
         chosen === 'page' ? { scope: 'page', docId, page } : { scope: 'document', docId };
       const left = on(focused.docId, focused.page);
@@ -521,7 +581,7 @@ export function AssistantPanel({
       if (sides === 'right') return { about: right, sides: record };
       return { about: left, alongside: right, sides: record };
     },
-    [beside, canSee, focused, selection, sides],
+    [beside, canSee, focused, openDocuments, selection, sides],
   );
 
   /** A NEW ask's request: the scope's, with the switch as it stands now (ADR-0108). *Regenerate* keeps its own. */
@@ -535,7 +595,7 @@ export function AssistantPanel({
 
   const ask = useCallback(
     /** @returns whether the ask began; a request not begun is kept for when it can be. */
-    (text: string, { about, alongside, sides: asked, web = false }: AskRequest, replyTo?: ReplyTarget): boolean => {
+    (text: string, { about, alongside, sides: asked, documents, web = false }: AskRequest, replyTo?: ReplyTarget): boolean => {
       if (text === '' || model === '' || live.current !== null) return false;
       const store = focused?.store;
       const read = (): readonly ConversationTurn[] => (store === undefined ? looseRef.current : store.getState().conversation);
@@ -552,10 +612,12 @@ export function AssistantPanel({
         text,
         ...(replyTo === undefined ? {} : { replyTo }),
         ...(asked === undefined ? {} : { sides: asked }),
+        ...(documents === undefined ? {} : { documents }),
         request: {
           about,
           ...(alongside === undefined ? {} : { alongside }),
           ...(asked === undefined ? {} : { sides: asked }),
+          ...(documents === undefined ? {} : { documents }),
           web,
         },
         model: models.find((entry) => entry.id === model)?.label ?? model,
@@ -582,11 +644,18 @@ export function AssistantPanel({
           // rather than the scope the panel meant.
           const now = read();
           const at = now.lastIndexOf(turn);
-          const { sent, alongside: second } = result.value;
+          const { sent, alongside: second, among } = result.value;
           if (at !== -1) {
             write(
               now.map((each, index) =>
-                index === at ? { ...each, sent, ...(second === undefined ? {} : { alongside: second }) } : each,
+                index === at
+                  ? {
+                      ...each,
+                      sent,
+                      ...(second === undefined ? {} : { alongside: second }),
+                      ...(among === undefined ? {} : { among }),
+                    }
+                  : each,
               ),
             );
           }
@@ -725,6 +794,7 @@ export function AssistantPanel({
             'page-image': () => i18n._(ASSISTANT_SCOPE_PICTURE, { page }),
             selection: () => i18n._(ASSISTANT_SCOPE_SELECTION),
             comment: () => i18n._(ASSISTANT_SCOPE_COMMENT),
+            documents: () => i18n._(ASSISTANT_SCOPE_ALL),
           }[about.scope]();
     const side = question?.request?.sides?.asked;
     const which = side === undefined ? '' : ` · ${i18n._(SIDE_WORDS[side])}`;
@@ -733,6 +803,25 @@ export function AssistantPanel({
 
   /** The lines under an asked turn: one, or one per side for a turn asked of both. */
   const sentLines = (turn: ConversationTurn): readonly string[] => {
+    // EVERY OPEN DOCUMENT (ADR-0134): the share each had, then one line per document — what went, or why nothing did —
+    // then the tabs past the bound, named. Read from the turn's own record, never from the tabs open now.
+    if (turn.documents !== undefined && turn.among !== undefined) {
+      const named = new Map(turn.documents.asked.map((each) => [each.docId, each.name]));
+      return [
+        i18n._(ASSISTANT_SENT_SHARE, {
+          count: turn.documents.asked.length,
+          characters: number.format(askShareOf(turn.documents.asked.length)),
+        }),
+        ...turn.among.map((each) =>
+          'sent' in each
+            ? i18n._(ASSISTANT_SENT_DOCUMENT, { name: named.get(each.docId) ?? '', sent: sentLine(each.sent) })
+            : i18n._(ASSISTANT_SENT_UNREAD, { name: named.get(each.docId) ?? '', reason: i18n._(UNREAD_WORDS[each.unread]) }),
+        ),
+        ...(turn.documents.notSent.length === 0
+          ? []
+          : [i18n._(ASSISTANT_SENT_NOT_SENT, { limit: MAX_ASK_DOCUMENTS, names: turn.documents.notSent.join(', ') })]),
+      ];
+    }
     if (turn.sent === undefined || turn.sent === null) return [];
     if (turn.alongside === undefined) return [sentLine(turn.sent)];
     return [
@@ -764,11 +853,33 @@ export function AssistantPanel({
    * Markdown around it is {@link answerElements}'; this is only ever handed text, never code.
    */
   const answerTextFor =
-    (asked: ConversationTurn['sides']) =>
+    (asked: ConversationTurn['sides'], documents?: ConversationTurn['documents']) =>
     (text: string, key: string): ReactElement => (
       <Fragment key={key}>
         {citationsIn(text).map((piece, at) => {
           if (!('cited' in piece)) return <span key={at}>{piece.text}</span>;
+          // A DOCUMENT BY ITS PLACE (ADR-0134): resolved against what the turn asked about, and a link only while that
+          // document is still open — a citation of a document closed since is text, never a jump to the wrong file.
+          if (piece.document !== undefined) {
+            const cited = documents?.asked[piece.document];
+            const open = cited !== undefined && openDocuments.some((each) => each.docId === cited.docId);
+            if (cited === undefined || !open || onGoToDocument === undefined) return <span key={at}>{piece.label}</span>;
+            return (
+              <button
+                aria-label={i18n._(ASSISTANT_CITATION_DOCUMENT, { page: pdfjsPageOf(piece.cited), name: cited.name })}
+                className="m-assistant__citation"
+                data-assistant-citation={piece.cited}
+                data-assistant-citation-document={cited.docId}
+                key={at}
+                onClick={() => {
+                  onGoToDocument(cited.docId, piece.cited);
+                }}
+                type="button"
+              >
+                {piece.label}
+              </button>
+            );
+          }
           const target = citationTarget(piece.side, asked);
           if (target === undefined) return <span key={at}>{piece.label}</span>;
           return (
@@ -830,7 +941,7 @@ export function AssistantPanel({
               // RENDERED MARKDOWN, the owner's specification: headings, lists, tables, code —
               // built as elements from the tokens, so no HTML from the answer reaches the page.
               <div className="m-assistant__text m-assistant__answer">
-                {answerElements(turn.text, answerTextFor(turns[at - 1]?.sides))}
+                {answerElements(turn.text, answerTextFor(turns[at - 1]?.sides, turns[at - 1]?.documents))}
               </div>
             ) : (
               <p className="m-assistant__text">{turn.text}</p>
@@ -977,6 +1088,8 @@ export function AssistantPanel({
                   values: { page: pdfjsPageOf(beside !== undefined && sides === 'right' ? beside.page : focused.page) },
                 },
                 { value: 'document' as const, label: ASSISTANT_CHIP_DOCUMENT },
+                // EVERY OPEN DOCUMENT (ADR-0134), offered only when there is more than one to ask about.
+                ...(openDocuments.length < 2 ? [] : [{ value: 'all' as const, label: ASSISTANT_CHIP_ALL }]),
                 { value: 'comments' as const, label: ASSISTANT_CHIP_COMMENTS },
                 // DISABLED, NOT DROPPED, for a model that says it cannot see (ADR-0081's rule).
                 { value: 'page-image' as const, label: ASSISTANT_CHIP_PICTURE, disabled: !canSee },

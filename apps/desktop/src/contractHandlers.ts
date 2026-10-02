@@ -5,7 +5,10 @@ import {
   type AiProviderId,
   CHAT_HISTORY_STORED,
   storedSetting,
+  type AskAmong,
   type AskSent,
+  type ASK_UNREAD_REASONS,
+  askShareOf,
   CLOUD_PROVIDER_IDS,
   MAX_ASK_CONTEXT,
   MAX_LIBRARY_ENTRIES,
@@ -28,8 +31,10 @@ import {
 } from '@monstera/contract';
 import {
   type AiModelList,
+  type AskManyDocument,
   type AskWindow,
   askInstruction,
+  askManyInstruction,
   askPairInstruction,
   askPictureInstruction,
   type CapabilityRegistry,
@@ -553,31 +558,61 @@ export function createContractHandlers(deps: {
       let second: AskWindow | null = null;
       // A PICTURE ASK (ADR-0090): the page drawn in the host, sent with the last turn.
       let picture: { readonly png: Uint8Array | null; readonly sent: AskSent } | null = null;
+      // EVERY OPEN DOCUMENT (ADR-0134): each read as its own whole-document window, an equal share of the one bound, in
+      // its own lane, one after another — so what is resident is still one window's worth. A document that cannot be
+      // read is NAMED AND SKIPPED, and the rest go on; only an ask in which none could be read is refused, with the
+      // first one's reason, since it would ask about nothing.
+      let many: { readonly system: string; readonly among: AskAmong[] } | null = null;
+      if (about?.scope === 'documents') {
+        const share = askShareOf(about.docIds.length);
+        const read: (AskManyDocument & { readonly place: number })[] = [];
+        const unread: string[] = [];
+        const among: AskAmong[] = [];
+        for (const [place, docId] of about.docIds.entries()) {
+          // A CLOSED DOCUMENT HAS NO NAME HERE ANY MORE, and its id means nothing to a model, so it is described instead.
+          const name = deps.commands.nameOf(docId) ?? 'a document that closed before it could be read';
+          try {
+            const each = await deps.commands.askWindow({ scope: 'document', docId }, { label: place, bound: share });
+            read.push({ name, window: each, place });
+            among.push({ docId, sent: each.sent });
+          } catch (thrown) {
+            const code = askUnreadCode(thrown);
+            if (code === undefined) throw thrown;
+            unread.push(name);
+            among.push({ docId, unread: code });
+          }
+        }
+        const first = among[0];
+        if (read.length === 0) return err({ code: first !== undefined && 'unread' in first ? first.unread : 'document-not-open' });
+        many = { system: askManyInstruction(read, unread, share, web), among };
+      }
       try {
-        if (paired !== null) {
+        if (many !== null) {
+          // READ ABOVE, where each document's failure is its own rather than the ask's.
+        } else if (paired !== null) {
           const bound = Math.floor(MAX_ASK_CONTEXT / 2);
-          window = await deps.commands.askWindow(paired.left, { side: 'left', bound });
-          second = await deps.commands.askWindow(paired.right, { side: 'right', bound });
+          window = await deps.commands.askWindow(paired.left, { label: 'left', bound });
+          second = await deps.commands.askWindow(paired.right, { label: 'right', bound });
         } else if (about?.scope === 'page-image') {
           picture = await deps.commands.askPicture(about);
-        } else if (about !== undefined) {
+        } else if (about !== undefined && about.scope !== 'documents') {
           window = await deps.commands.askWindow(about);
         }
       } catch (thrown) {
-        if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
-        if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
-        if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
-        if (thrown instanceof PageTooLargeToPicture) return err({ code: 'page-too-large' });
+        const code = askUnreadCode(thrown);
+        if (code !== undefined) return err({ code });
         throw thrown;
       }
       const system =
-        paired !== null && window !== null && second !== null
-          ? askPairInstruction(window, second, paired.scope, web)
-          : picture?.png != null
-            ? askPictureInstruction(picture.sent, web)
-            : window !== null && about !== undefined && about.scope !== 'page-image'
-              ? askInstruction(window, about.scope, web)
-              : undefined;
+        many !== null
+          ? many.system
+          : paired !== null && window !== null && second !== null
+            ? askPairInstruction(window, second, paired.scope, web)
+            : picture?.png != null
+              ? askPictureInstruction(picture.sent, web)
+              : window !== null && about !== undefined && about.scope !== 'page-image'
+                ? askInstruction(window, about.scope, web)
+                : undefined;
       const started = deps.assistant.ask({
         subscription,
         provider,
@@ -596,6 +631,7 @@ export function createContractHandlers(deps: {
             started: true,
             sent: picture?.sent ?? window?.sent ?? null,
             ...(second === null ? {} : { alongside: second.sent }),
+            ...(many === null ? {} : { among: many.among }),
           })
         : err({ code: 'subscription-in-use' });
     },
@@ -2913,6 +2949,19 @@ function openRecentHandler(deps: OpenPathParts): ContractHandlers['document.open
 }
 
 /** A refusal the cloud session named, as the channel carries it; anything else is a defect. */
+/**
+ * Why a document could not be read for an ask — THE ONE MAPPING from the lane's refusals to the contract's reasons, so
+ * a one-document ask's refusal and an *All Open Docs* ask's skipped document say the same thing for the same cause
+ * (ADR-0134). `undefined` for anything else, which the caller rethrows.
+ */
+function askUnreadCode(thrown: unknown): (typeof ASK_UNREAD_REASONS)[number] | undefined {
+  if (thrown instanceof DocumentNotOpenError) return 'document-not-open';
+  if (thrown instanceof DocumentBusyError) return 'document-busy';
+  if (thrown instanceof DocumentPoisonedError) return 'document-poisoned';
+  if (thrown instanceof PageTooLargeToPicture) return 'page-too-large';
+  return undefined;
+}
+
 function cloudRefusal(thrown: unknown): { readonly kind: 'refused'; readonly reason: CloudOutcomeRefused['reason'] } {
   if (thrown instanceof CloudOutcomeRefused) return { kind: 'refused', reason: thrown.reason };
   throw thrown;

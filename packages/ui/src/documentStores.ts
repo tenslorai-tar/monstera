@@ -1,4 +1,4 @@
-import type { AskAbout, AskSent, AskSides } from '@monstera/contract';
+import type { AskAbout, AskAmong, AskSent, AskSides } from '@monstera/contract';
 import {
   type DocId,
   type DocVersion,
@@ -9,6 +9,12 @@ import { type StoreApi, createStore } from 'zustand/vanilla';
 
 import type { ReplyTarget } from './assistantRequest.js';
 import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
+
+/** The documents an *All Open Docs* ask named, and the open tabs past its bound that did not go (ADR-0134). */
+export interface AskedDocuments {
+  readonly asked: readonly { readonly docId: DocId; readonly name: string }[];
+  readonly notSent: readonly string[];
+}
 
 /** One turn of a document's assistant conversation. */
 export interface ConversationTurn {
@@ -31,6 +37,14 @@ export interface ConversationTurn {
    */
   readonly sides?: { readonly asked: AskSides; readonly right: DocId };
   /**
+   * The documents an *All Open Docs* turn asked about (ADR-0134), in the ask's order, by id and the name its tab
+   * showed, and the names of open tabs past the bound that did not go — so a citation's *Doc 2* resolves against
+   * what was asked, never against the tabs open now.
+   */
+  readonly documents?: AskedDocuments;
+  /** Each of those documents' windows, or why it was not read, as `main` answered (ADR-0134). */
+  readonly among?: readonly AskAmong[];
+  /**
    * What an asked turn was about, as it was sent — so *Regenerate* asks the same thing again rather
    * than whatever the *Asking about* line says now.
    */
@@ -38,6 +52,8 @@ export interface ConversationTurn {
     readonly about: AskAbout | undefined;
     readonly alongside?: AskAbout;
     readonly sides?: { readonly asked: AskSides; readonly right: DocId };
+    /** The documents an *All Open Docs* ask named, so *Regenerate* names the same ones (ADR-0134). */
+    readonly documents?: AskedDocuments;
     /** *Document + web* (ADR-0108); absent is *Document only*, which a turn saved before the switch was. */
     readonly web?: boolean;
   };

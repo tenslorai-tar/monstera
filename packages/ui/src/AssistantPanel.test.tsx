@@ -1,5 +1,12 @@
 // @vitest-environment happy-dom
-import { type AskSent, type ContractClient, channels, createClient } from '@monstera/contract';
+import {
+  type AskAmong,
+  type AskSent,
+  type ContractClient,
+  MAX_ASK_DOCUMENTS,
+  channels,
+  createClient,
+} from '@monstera/contract';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { I18nProvider } from '@lingui/react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
@@ -44,6 +51,8 @@ function recording(
   alongside?: AskSent,
   /** What main answers a copy: whether the text reached the clipboard. */
   copied = true,
+  /** Each document's of an *All Open Docs* ask (ADR-0134), answered only to an ask about several. */
+  among?: readonly AskAmong[],
 ): {
   readonly client: ContractClient;
   readonly sent: { id: string; params: unknown }[];
@@ -67,9 +76,15 @@ function recording(
     if (id === 'ai.ask') {
       // THE SECOND WINDOW ONLY WHEN THE ASK HAD A SECOND DOCUMENT, as `main` answers it.
       const paired = (params as { alongside?: unknown }).alongside !== undefined;
+      const several = (params as { about?: { scope?: unknown } }).about?.scope === 'documents';
       return Promise.resolve({
         ok: true,
-        value: { started, sent: window, ...(paired && alongside !== undefined ? { alongside } : {}) },
+        value: {
+          started,
+          sent: several ? null : window,
+          ...(paired && alongside !== undefined ? { alongside } : {}),
+          ...(several && among !== undefined ? { among: [...among] } : {}),
+        },
       });
     }
     if (id === 'ai.stop') return Promise.resolve({ ok: true, value: { stopped: true } });
@@ -133,6 +148,9 @@ async function drawn(options: {
   readonly onGoToBeside?: (page: number) => void;
   readonly settings?: SettingsStore;
   readonly copied?: boolean;
+  readonly among?: readonly AskAmong[];
+  readonly openDocuments?: AssistantPanelProps['openDocuments'];
+  readonly onGoToDocument?: AssistantPanelProps['onGoToDocument'];
 } = {}) {
   const wire = events();
   const settings = options.settings ?? new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
@@ -142,6 +160,7 @@ async function drawn(options: {
     options.window ?? null,
     options.alongside,
     options.copied ?? true,
+    options.among,
   );
   // EVERY TOAST THE PANEL RAISES, in order: a copy's confirmation goes through the window's toast.
   const toasts: unknown[][] = [];
@@ -158,6 +177,8 @@ async function drawn(options: {
         onGoTo={options.onGoTo}
         onReply={options.onReply}
         onNote={options.onNote}
+        openDocuments={options.openDocuments}
+        onGoToDocument={options.onGoToDocument}
         request={options.request}
         storedSecrets={options.stored ?? [ANTHROPIC_KEY]}
         settings={settings}
@@ -1065,6 +1086,119 @@ describe('the assistant about a document (ADR-0088)', () => {
 
       await redraw({ beside: { docId: asDocId('00000000-0000-4000-8000-00000000000c'), page: 0 } });
       expect(screen.queryByRole('button', { name: /Go to page 3/u })).toBeNull();
+    });
+  });
+
+  describe('every open document: All Open Docs (ADR-0134)', () => {
+    const DOC_C = asDocId('00000000-0000-4000-8000-00000000000c');
+    /** The tabs in their order, with the focused document SECOND, so focused-first is a reorder rather than the input. */
+    const LEASE = { docId: DOC_B, name: 'Lease.pdf' };
+    const CONTRACT = { docId: DOC_A, name: 'Contract.pdf' };
+    const NOTES = { docId: DOC_C, name: 'Notes.pdf' };
+    const TABS = [LEASE, CONTRACT, NOTES];
+
+    function lastAsk(sent: readonly { id: string; params: unknown }[]): { about?: unknown } {
+      return sent.filter((entry) => entry.id === 'ai.ask').at(-1)?.params ?? {};
+    }
+
+    it('is offered with two or more documents open, and sends every one, the focused document first', async () => {
+      const { sent } = await drawn({ focused: focusedOn(), openDocuments: TABS });
+      await chooseIn('Context', 'All Open Docs');
+      expect(chosenIn('Context')).toBe('All Open Docs');
+      type('What do they have in common?');
+      await send();
+      expect(lastAsk(sent).about).toStrictEqual({ scope: 'documents', docIds: [DOC_A, DOC_B, DOC_C] });
+    });
+
+    it('CONTROL: with ONE document open the choice is not offered', async () => {
+      await drawn({ focused: focusedOn(), openDocuments: [{ docId: DOC_A, name: 'Contract.pdf' }] });
+      const values = await valuesIn('Context');
+      expect(valueNamed(values, 'Document')).toBeDefined();
+      expect(valueNamed(values, 'All Open Docs')).toBeUndefined();
+    });
+
+    it('takes only the documents open AT SEND: a tab closed after the choice is not asked about', async () => {
+      const { sent, redraw } = await drawn({ focused: focusedOn(), openDocuments: TABS });
+      await chooseIn('Context', 'All Open Docs');
+      await redraw({ openDocuments: [LEASE, CONTRACT] });
+      type('Compare');
+      await send();
+      expect(lastAsk(sent).about).toStrictEqual({ scope: 'documents', docIds: [DOC_A, DOC_B] });
+    });
+
+    it(`past ${String(MAX_ASK_DOCUMENTS)} open, sends the first ${String(MAX_ASK_DOCUMENTS)} and NAMES the rest rather than refusing`, async () => {
+      const many = Array.from({ length: MAX_ASK_DOCUMENTS + 1 }, (_, at) => ({
+        docId: asDocId(`00000000-0000-4000-8000-${String(at + 1).padStart(12, '0')}`),
+        name: `File ${String(at + 1)}.pdf`,
+      }));
+      const focused = focusedOn(many[0]?.docId);
+      const { sent, push } = await drawn({
+        focused,
+        openDocuments: many,
+        among: many.slice(0, MAX_ASK_DOCUMENTS).map((each) => ({
+          docId: each.docId,
+          sent: { firstPage: 0, lastPage: 0, pageCount: 1, characters: 10, truncated: false },
+        })),
+      });
+      await chooseIn('Context', 'All Open Docs');
+      type('Summarise');
+      await send();
+      const about = lastAsk(sent).about as { docIds: readonly string[] };
+      expect(about.docIds).toStrictEqual(many.slice(0, MAX_ASK_DOCUMENTS).map((each) => each.docId));
+      expect(screen.getByText(`Not sent, more than ${String(MAX_ASK_DOCUMENTS)} were open: File 17.pdf`)).toBeTruthy();
+      const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
+      push('ai.done', { subscription, stopped: false, web: NO_WEB });
+    });
+
+    it('says each document’s share, what went from each, and which one was NOT read and why', async () => {
+      const { sent, push } = await drawn({
+        focused: focusedOn(),
+        openDocuments: [LEASE, CONTRACT],
+        among: [
+          { docId: DOC_A, sent: { firstPage: 0, lastPage: 8, pageCount: 9, characters: 400, truncated: false } },
+          { docId: DOC_B, unread: 'document-not-open' },
+        ],
+      });
+      await chooseIn('Context', 'All Open Docs');
+      type('Compare');
+      await send();
+      expect(screen.getByText('2 documents, up to 50,000 characters of each')).toBeTruthy();
+      expect(screen.getByText('Contract.pdf: Sent pages 1 to 9 of 9')).toBeTruthy();
+      expect(screen.getByText('Lease.pdf: not read, it was closed')).toBeTruthy();
+      const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
+      push('ai.done', { subscription, stopped: false, web: NO_WEB });
+    });
+
+    it('links a [Doc n p. m] citation to THAT document’s page while it is open, and leaves it text once closed', async () => {
+      const gone: { docId: string; page: number }[] = [];
+      const { sent, push, redraw } = await drawn({
+        focused: focusedOn(),
+        openDocuments: TABS,
+        onGoToDocument: (docId, page) => gone.push({ docId, page }),
+        among: TABS.map((each) => ({
+          docId: each.docId,
+          sent: { firstPage: 0, lastPage: 3, pageCount: 4, characters: 40, truncated: false },
+        })),
+      });
+      await chooseIn('Context', 'All Open Docs');
+      type('Where is the deadline?');
+      await send();
+      const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
+      push('ai.delta', { subscription, text: 'In [Doc 2 p. 3] and [Doc 3 p. 1]; [Doc 4 p. 1] names nothing asked.' });
+      push('ai.done', { subscription, stopped: false, web: NO_WEB });
+
+      // DOC 2 IS THE SECOND ASKED — Lease.pdf, the first TAB — so a citation resolved against the tabs would land on
+      // Contract.pdf instead. Kernel page 2 for the shown page 3.
+      fireEvent.click(screen.getByRole('button', { name: 'Go to page 3 of Lease.pdf' }));
+      expect(gone).toStrictEqual([{ docId: DOC_B, page: 2 }]);
+      expect(screen.queryByRole('button', { name: /Go to page 1 of/u })).toBeTruthy();
+      expect(screen.getByText('[Doc 4 p. 1]')).toBeTruthy();
+
+      await redraw({ openDocuments: [CONTRACT, NOTES] });
+      expect(screen.queryByRole('button', { name: /of Lease\.pdf/u })).toBeNull();
+      expect(screen.getByText('[Doc 2 p. 3]')).toBeTruthy();
+      // CONTROL: the document still open keeps its link.
+      expect(screen.getByRole('button', { name: 'Go to page 1 of Notes.pdf' })).toBeTruthy();
     });
   });
 });

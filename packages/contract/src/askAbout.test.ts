@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { askAboutSchema, askCitation, askPageMarker, citationsIn } from './askAbout.js';
+import { MAX_ASK_DOCUMENTS, askAboutSchema, askCitation, askPageMarker, askShareOf, citationsIn } from './askAbout.js';
 import { channels } from './channels.js';
 
 describe('the page frame an ask and its answer share', () => {
@@ -113,5 +113,60 @@ describe('two documents side by side (ADR-0089)', () => {
 
   it('CONTROL: an ask with no second document is unchanged', () => {
     expect(request({ scope: 'selection', docId: 'a', page: 0, text: 'x' }, undefined)).toBe(true);
+  });
+});
+
+describe('every open document (ADR-0134)', () => {
+  it('ROUND TRIP per document: a placed marker and its citation name the same page in the same document', () => {
+    // THE THIRD DOCUMENT, PAGE 5, so neither the place nor the page can be off by one and still agree.
+    expect(askPageMarker(4, 2)).toBe('[Doc 3 page 5]');
+    expect(askCitation(4, 2)).toBe('[Doc 3 p. 5]');
+    expect(citationsIn(`see ${askCitation(4, 2)} and ${askCitation(0, 0)}`)).toStrictEqual([
+      { text: 'see ' },
+      { cited: 4, label: '[Doc 3 p. 5]', document: 2 },
+      { text: ' and ' },
+      { cited: 0, label: '[Doc 1 p. 1]', document: 0 },
+    ]);
+  });
+
+  it('a citation of Doc 0 names no document, and stays text as [p. 0] does', () => {
+    expect(citationsIn('[Doc 0 p. 3]')).toStrictEqual([{ text: '[Doc 0 p. 3]' }]);
+  });
+
+  it('CONTROL: the side and plain spellings parse as before, so the one parser still reads all three', () => {
+    expect(citationsIn('[Left p. 2] [p. 2]')).toStrictEqual([
+      { cited: 1, label: '[Left p. 2]', side: 'left' },
+      { text: ' ' },
+      { cited: 1, label: '[p. 2]' },
+    ]);
+  });
+
+  const ids = (count: number): string[] => Array.from({ length: count }, (_, at) => `d${String(at)}`);
+  const request = (about: unknown, alongside: unknown): boolean =>
+    channels['ai.ask'].params.safeParse({
+      subscription: 's1-abc',
+      provider: 'anthropic',
+      model: 'm',
+      messages: [{ role: 'user', text: 'what do they say?' }],
+      about,
+      alongside,
+      web: false,
+    }).success;
+
+  it(`takes two to ${String(MAX_ASK_DOCUMENTS)} different documents, and refuses one, more, or the same twice`, () => {
+    expect(request({ scope: 'documents', docIds: ids(2) }, undefined)).toBe(true);
+    expect(request({ scope: 'documents', docIds: ids(MAX_ASK_DOCUMENTS) }, undefined)).toBe(true);
+    expect(request({ scope: 'documents', docIds: ids(1) }, undefined)).toBe(false);
+    expect(request({ scope: 'documents', docIds: ids(MAX_ASK_DOCUMENTS + 1) }, undefined)).toBe(false);
+    expect(request({ scope: 'documents', docIds: ['d0', 'd1', 'd0'] }, undefined)).toBe(false);
+  });
+
+  it('never pairs: a second document beside every open document is refused', () => {
+    expect(request({ scope: 'documents', docIds: ids(2) }, { scope: 'document', docId: 'x' })).toBe(false);
+  });
+
+  it('each document’s share is the bound divided by how many, the one number main applies and the turn states', () => {
+    expect(askShareOf(3)).toBe(33_333);
+    expect(askShareOf(MAX_ASK_DOCUMENTS)).toBe(6_250);
   });
 });

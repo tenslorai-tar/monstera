@@ -1,9 +1,10 @@
 import {
   type AskAbout,
+  type AskLabel,
   type AskSent,
-  type AskSide,
   MAX_ASK_CONTEXT,
   askCitation,
+  askLabelWord,
   askPageMarker,
 } from '@monstera/contract';
 
@@ -46,7 +47,7 @@ export async function readAskWindow(
   pageCount: number,
   read: ReadPageText,
   bound: number = MAX_ASK_CONTEXT,
-  side?: AskSide,
+  label?: AskLabel,
 ): Promise<AskWindow> {
   let text = '';
   let firstPage: number | null = null;
@@ -54,7 +55,7 @@ export async function readAskWindow(
   let truncated = false;
 
   for (const page of pages) {
-    const piece = `${askPageMarker(page, side)}\n${(await read(page)).trim()}\n\n`;
+    const piece = `${askPageMarker(page, label)}\n${(await read(page)).trim()}\n\n`;
     if (text.length + piece.length <= bound) {
       text += piece;
       firstPage ??= page;
@@ -96,6 +97,7 @@ const WHAT: Readonly<Record<AskAbout['scope'], string>> = {
     'Below are the comments left on a PDF document the person has open, each under the page it is on; ' +
     'a reply is marked as one, and each comment says what kind of mark carries it.',
   'page-image': 'Attached is a picture of one page of a PDF document the person has open.',
+  documents: 'Below is text from each of the PDF documents the person has open.',
 };
 
 /**
@@ -203,6 +205,43 @@ export function askPairInstruction(left: AskWindow, right: AskWindow, scope: 'pa
     `Each page begins with a marker naming its side, such as ${askPageMarker(2, 'left')} or ${askPageMarker(2, 'right')}. ` +
     `When you rely on a page, cite it with its side, as ${askCitation(2, 'left')} or ${askCitation(2, 'right')}. ${groundRule(NOT_IN_TEXT, web)}` +
     `\n\n${left.text}\n${right.text}`
+  );
+}
+
+/** One document of an *All Open Docs* ask, as the instruction lists it: its file's name and its window. */
+export interface AskManyDocument {
+  readonly name: string;
+  readonly window: AskWindow;
+}
+
+/**
+ * The instruction for every open document (ADR-0134): each document listed by its place and its file's name, with its
+ * share of the bound and what that share covered, then its window, marked and cited with its place — `[Doc 2 p. 3]` —
+ * so a claim names the document as well as the page. A document that could not be read is named too, so the model
+ * does not answer as though the person had nothing else open.
+ *
+ * @param documents in the ask's order, the read ones with their place; `unread` the names of those that were not
+ * @param share the characters each document was allowed, the one number the person is shown as well
+ */
+export function askManyInstruction(
+  documents: readonly (AskManyDocument & { readonly place: number })[],
+  unread: readonly string[],
+  share: number,
+  web: boolean,
+): string {
+  const listed = documents
+    .map(({ name, window, place }) => `${askLabelWord(place)} is "${name}". ${coverage(window.sent, askLabelWord(place))}`)
+    .join(' ');
+  const missing =
+    unread.length === 0
+      ? ''
+      : ` ${unread.map((name) => `"${name}"`).join(', ')} could not be read, so nothing from ${unread.length === 1 ? 'it' : 'them'} is below.`;
+  const first = documents[0]?.place ?? 0;
+  return (
+    `${WHAT.documents} Each document had an equal share of at most ${String(share)} characters. ${listed}${missing} ` +
+    `Each page begins with a marker naming its document, such as ${askPageMarker(2, first)}. ` +
+    `Cite every claim with its document and page, as ${askCitation(2, first)}. ${groundRule(NOT_IN_TEXT, web)}` +
+    `\n\n${documents.map(({ window }) => window.text).join('\n')}`
   );
 }
 

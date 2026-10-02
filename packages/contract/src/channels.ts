@@ -2,7 +2,7 @@ import { MATCH_TEXT_WINDOW } from '@monstera/shared';
 import { z } from 'zod';
 
 import { AI_PROVIDER_IDS } from './aiProviders.js';
-import { askAboutSchema, askSentSchema, pairsWith } from './askAbout.js';
+import { MAX_ASK_DOCUMENTS, askAboutSchema, askAmongSchema, askSentSchema, namesEachOnce, pairsWith } from './askAbout.js';
 import {
   CLOUD_PROVIDER_IDS,
   CLOUD_REFUSALS,
@@ -5212,12 +5212,21 @@ export const channels = {
       .strict()
       .refine((request) => request.alongside === undefined || pairsWith(request.about, request.alongside), {
         message: 'a second document pairs only with a different one, in the same page or document scope',
+      })
+      .refine((request) => namesEachOnce(request.about), {
+        message: 'an ask about every open document names each document once',
       }),
     /**
-     * `sent` is what the window carried, and `null` for an ask about nothing; `alongside` is the
-     * second window's, present exactly when the ask had one.
+     * `sent` is what the window carried, and `null` for an ask about nothing or about every open document; `alongside`
+     * is the second window's, present exactly when the ask had one; `among` is each document's of an *All Open Docs*
+     * ask, in its order — its window, or why it was not read (ADR-0134).
      */
-    z.object({ started: z.boolean(), sent: askSentSchema.nullable(), alongside: askSentSchema.optional() }),
+    z.object({
+      started: z.boolean(),
+      sent: askSentSchema.nullable(),
+      alongside: askSentSchema.optional(),
+      among: z.array(askAmongSchema).max(MAX_ASK_DOCUMENTS).optional(),
+    }),
     // THE DOCUMENT'S REFUSALS, because an ask about one reads it in its lane first — and a page
     // too large to draw within the image limits, which a picture ask refuses by name (ADR-0090).
     ['subscription-in-use', 'document-not-open', 'document-busy', 'document-poisoned', 'page-too-large'],

@@ -1521,6 +1521,18 @@ export const ASSISTANT_SIDES_NEEDED = messageKey('assistant.sides.needed');
 export const ASSISTANT_SENT_LEFT = messageKey('assistant.sent.left');
 export const ASSISTANT_SENT_RIGHT = messageKey('assistant.sent.right');
 export const ASSISTANT_CITATION_RIGHT = messageKey('assistant.citation.right');
+/** *All Open Docs* (ADR-0134): the Context menu's choice, its caption scope, the lines under the turn, its citation. */
+export const ASSISTANT_CHIP_ALL = messageKey('assistant.chip.all');
+export const ASSISTANT_SCOPE_ALL = messageKey('assistant.scope.all');
+export const ASSISTANT_SENT_SHARE = messageKey('assistant.sent.share');
+export const ASSISTANT_SENT_DOCUMENT = messageKey('assistant.sent.document');
+export const ASSISTANT_SENT_UNREAD = messageKey('assistant.sent.unread');
+export const ASSISTANT_SENT_NOT_SENT = messageKey('assistant.sent.not-sent');
+export const ASSISTANT_UNREAD_CLOSED = messageKey('assistant.unread.closed');
+export const ASSISTANT_UNREAD_BUSY = messageKey('assistant.unread.busy');
+export const ASSISTANT_UNREAD_DAMAGED = messageKey('assistant.unread.damaged');
+export const ASSISTANT_UNREAD_PAGE = messageKey('assistant.unread.page');
+export const ASSISTANT_CITATION_DOCUMENT = messageKey('assistant.citation.document');
 /** The Assistant's message box placeholder: one fixed line (the owner's decision, 2026-10-01). */
 export const ASSISTANT_PLACEHOLDER = messageKey('assistant.placeholder');
 /** *Ask AI* on a selection: the selected words quoted in the message box, for the person's question to follow. */
@@ -3598,6 +3610,17 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_SENT_NOTHING]: 'No text was found to send',
   [ASSISTANT_CITATION]: 'Go to page {page}',
   [ASSISTANT_CITATION_RIGHT]: 'Go to page {page} of the document on the right',
+  [ASSISTANT_CHIP_ALL]: 'All Open Docs',
+  [ASSISTANT_SCOPE_ALL]: 'all open documents',
+  [ASSISTANT_SENT_SHARE]: '{count} documents, up to {characters} characters of each',
+  [ASSISTANT_SENT_DOCUMENT]: '{name}: {sent}',
+  [ASSISTANT_SENT_UNREAD]: '{name}: not read, {reason}',
+  [ASSISTANT_SENT_NOT_SENT]: 'Not sent, more than {limit} were open: {names}',
+  [ASSISTANT_UNREAD_CLOSED]: 'it was closed',
+  [ASSISTANT_UNREAD_BUSY]: 'it was busy with another change',
+  [ASSISTANT_UNREAD_DAMAGED]: 'it could not be read',
+  [ASSISTANT_UNREAD_PAGE]: 'a page in it was too large to read',
+  [ASSISTANT_CITATION_DOCUMENT]: 'Go to page {page} of {name}',
   // THE OWNER'S THREE WORDS, for two documents side by side (ADR-0089).
   [ASSISTANT_SIDES_LABEL]: 'Which document',
   [ASSISTANT_SIDE_LEFT]: 'Left',

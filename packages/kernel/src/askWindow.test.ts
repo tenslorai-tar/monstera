@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   askInstruction,
+  askManyInstruction,
   askPairInstruction,
   askPictureInstruction,
   carriedWindow,
@@ -231,5 +232,40 @@ describe('two documents side by side (ADR-0089)', () => {
     expect(instruction.endsWith(`${left.text}\n${right.text}`)).toBe(true);
     // One document's form must not appear, or a citation could name a page in either.
     expect(instruction).not.toContain('cite it as [p. 3]');
+  });
+});
+
+describe('every open document (ADR-0134)', () => {
+  it('marks each page with its document’s PLACE, through the same marker the pair uses', async () => {
+    const second = await readAskWindow([1], 2, pagesOf(['', 'beta']).read, 100, 1);
+    expect(second.text).toBe('[Doc 2 page 2]\nbeta\n\n');
+  });
+
+  it('lists each document by place and name, states the share, names the unread, and asks every claim to cite both', async () => {
+    const first = await readAskWindow([0], 1, pagesOf(['alpha']).read, 100, 0);
+    const third = await readAskWindow([0, 1], 4, pagesOf(['g1', 'g2']).read, 100, 2);
+    const instruction = askManyInstruction(
+      [
+        { name: 'contract.pdf', window: first, place: 0 },
+        { name: 'notes.pdf', window: third, place: 2 },
+      ],
+      ['closed.pdf'],
+      33_333,
+      false,
+    );
+    expect(instruction).toContain('at most 33333 characters');
+    expect(instruction).toContain('Doc 1 is "contract.pdf". Doc 1 is from page 1 of 1.');
+    expect(instruction).toContain('Doc 3 is "notes.pdf". Doc 3 covers pages 1 to 2 of 4.');
+    expect(instruction).toContain('"closed.pdf" could not be read');
+    expect(instruction).toContain('Cite every claim with its document and page, as [Doc 1 p. 3]');
+    expect(instruction.endsWith(`${first.text}\n${third.text}`)).toBe(true);
+    // NEITHER OTHER SPELLING: a plain or side citation from this answer would name no document.
+    expect(instruction).not.toContain('[p. 3]');
+    expect(instruction).not.toContain('[Left');
+  });
+
+  it('CONTROL: with every document read, no sentence says one could not be', async () => {
+    const first = await readAskWindow([0], 1, pagesOf(['alpha']).read, 100, 0);
+    expect(askManyInstruction([{ name: 'a.pdf', window: first, place: 0 }], [], 50_000, false)).not.toContain('could not be read');
   });
 });

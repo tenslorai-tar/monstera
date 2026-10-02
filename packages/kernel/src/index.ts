@@ -234,9 +234,11 @@ export {
 // A PAGE'S TRANSLATION (ADR-0097): the instruction, the request and the one reading of the answer.
 export { readTranslation, translationInstruction, translationRequest } from './translation.js';
 export {
+  type AskManyDocument,
   type AskWindow,
   type ReadPageText,
   askInstruction,
+  askManyInstruction,
   askPairInstruction,
   askPictureInstruction,
   carriedWindow,

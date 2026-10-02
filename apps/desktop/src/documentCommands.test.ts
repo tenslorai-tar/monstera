@@ -16,7 +16,7 @@ import {
   decodePDFRawStream,
   rgb,
 } from '@cantoo/pdf-lib';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   type Command,
@@ -25,6 +25,7 @@ import {
   wrapHandler,
   IncidentLog,
   MAX_ASK_CONTEXT,
+  askShareOf,
   MAX_MARKDOWN_BYTES,
   MAX_CSV_BYTES,
   MAX_OFFICE_IMPORT_BYTES,
@@ -1684,6 +1685,81 @@ describe('search is E2s first consumer, through the composition point', () => {
       expect(answer.value.sent?.characters ?? 0).toBeLessThanOrEqual(MAX_ASK_CONTEXT / 2);
     });
 
+    it('EVERY OPEN DOCUMENT through the handler: each window reaches the provider under its place and name, each is reported (ADR-0134)', async () => {
+      const { bodies, handlers } = askHandlers();
+      // THE DECISION, not the end state: these fixtures are far smaller than any share, so a handler that read each
+      // with the whole bound would produce the same windows. What separates is the bound each read was asked for.
+      const reads = vi.spyOn(DocumentCommands.prototype, 'askWindow');
+      const answer = await handlers['ai.ask']({
+        subscription: 'ask-7',
+        provider: 'anthropic',
+        model: 'claude-opus-5',
+        messages: [{ role: 'user', text: 'What do they say?' }],
+        about: { scope: 'documents', docIds: [searchable, other] },
+        web: false,
+      });
+      await new Promise((settle) => setTimeout(settle, 0));
+
+      expect(answer.ok).toBe(true);
+      if (!answer.ok) return;
+      expect(answer.value.sent).toBeNull();
+      expect(answer.value.among).toMatchObject([
+        { docId: searchable, sent: { firstPage: 0, lastPage: 1, pageCount: 2 } },
+        { docId: other, sent: { firstPage: 0, lastPage: 0, pageCount: 1 } },
+      ]);
+      const sent = JSON.parse(bodies[0] ?? '{}') as { system?: string };
+      expect(sent.system).toContain('[Doc 1 page 2]\ngamma on the second page');
+      expect(sent.system).toContain('[Doc 2 page 1]\nomega on the other file');
+      expect(sent.system).toContain(`Doc 1 is "${searchCommands().nameOf(searchable) ?? ''}".`);
+      expect(sent.system).toContain(`at most ${String(askShareOf(2))} characters`);
+      // EACH READ WITH ITS SHARE AND ITS PLACE, the number the turn states and the marker the model is told.
+      expect(reads.mock.calls.map(([, pair]) => pair)).toStrictEqual([
+        { label: 0, bound: askShareOf(2) },
+        { label: 1, bound: askShareOf(2) },
+      ]);
+      reads.mockRestore();
+    });
+
+    it('a document closed by the time it is read is SKIPPED AND NAMED, and the others still go', async () => {
+      const closed = asDocId('00000000-0000-4000-8000-0000000c105e');
+      const { bodies, handlers } = askHandlers();
+      const answer = await handlers['ai.ask']({
+        subscription: 'ask-8',
+        provider: 'anthropic',
+        model: 'claude-opus-5',
+        messages: [{ role: 'user', text: 'What do they say?' }],
+        about: { scope: 'documents', docIds: [searchable, closed] },
+        web: false,
+      });
+      await new Promise((settle) => setTimeout(settle, 0));
+
+      expect(answer.ok).toBe(true);
+      if (!answer.ok) return;
+      expect(answer.value.among).toMatchObject([{ docId: searchable }, { docId: closed, unread: 'document-not-open' }]);
+      const sent = JSON.parse(bodies[0] ?? '{}') as { system?: string };
+      expect(sent.system).toContain('[Doc 1 page 2]\ngamma on the second page');
+      expect(sent.system).toContain('could not be read');
+      // NEVER THE ID: it means nothing to a model.
+      expect(sent.system).not.toContain(closed);
+    });
+
+    it('CONTROL: when NO document can be read the ask is refused with that reason, and nothing reaches the provider', async () => {
+      const { bodies, handlers } = askHandlers();
+      const answer = await handlers['ai.ask']({
+        subscription: 'ask-9',
+        provider: 'anthropic',
+        model: 'claude-opus-5',
+        messages: [{ role: 'user', text: 'What do they say?' }],
+        about: {
+          scope: 'documents',
+          docIds: [asDocId('00000000-0000-4000-8000-0000000c1051'), asDocId('00000000-0000-4000-8000-0000000c1052')],
+        },
+        web: false,
+      });
+      expect(answer.ok ? null : answer.error.code).toBe('document-not-open');
+      expect(bodies).toStrictEqual([]);
+    });
+
     it('A PICTURE ASK through the handler: the drawn page reaches the provider with the last turn, and a picture is what went (ADR-0090)', async () => {
       // BYTES THE CASE CHOSE, so the provider's body can be checked for exactly them: the host's
       // drawing is the composition's, and what this crosses is handler → part → assistant → adapter.
@@ -1762,7 +1838,7 @@ describe('search is E2s first consumer, through the composition point', () => {
     it('THE HALF BOUND, read where it is applied: a side stops at half the window a lone ask would fill', async () => {
       const bound = 40;
       const alone = await searchCommands().askWindow({ scope: 'document', docId: searchable });
-      const half = await searchCommands().askWindow({ scope: 'document', docId: searchable }, { side: 'left', bound });
+      const half = await searchCommands().askWindow({ scope: 'document', docId: searchable }, { label: 'left', bound });
 
       expect(alone.sent.truncated).toBe(false);
       expect(half.sent.truncated).toBe(true);

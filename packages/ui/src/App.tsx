@@ -1607,6 +1607,23 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   );
 
   /**
+   * Goes to a page of ANOTHER open document — an *All Open Docs* answer's citation (ADR-0134). That document's own
+   * store takes the jump, so its Back returns from it as any jump's does, then it comes to the front and the scroller
+   * is asked for the page, exactly as `navigator.jumpTo` asks for one in the document already in front.
+   */
+  const goToDocument = useCallback(
+    (docId: DocId, page: number): void => {
+      stores.get(docId)?.getState().jumpTo(page);
+      activate(docId);
+      setGoTo(page);
+    },
+    [activate, stores],
+  );
+
+  /** The tabs as the assistant needs them: each document's id and the name its tab shows (ADR-0134). */
+  const assistantDocuments = useMemo(() => tabs.map(({ docId, name }) => ({ docId, name })), [tabs]);
+
+  /**
    * The Organize grid's gestures (ADR-0104), `undefined` outside Organize — which is what keeps the reading
    * view on every other section. The selection is the document store's; Delete is `deletePages` through the
    * one dispatcher, undone like any command, so it asks nothing first.
@@ -3373,6 +3390,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                       : { docId: activeId, store, page: currentPage }
                   }
                   onGoTo={navigator.jumpTo}
+                  // EVERY OPEN TAB, for *All Open Docs*, and the jump its citations take to another one (ADR-0134).
+                  openDocuments={assistantDocuments}
+                  onGoToDocument={goToDocument}
                   // NO DOCUMENT BESIDE, so *Left · Right · Both* is not offered (ADR-0089). Its second document came
                   // from the compare pane, which Side by Side replaced; Side by Side covers this panel while it is
                   // open, so the two-document ask has no route until the owner decides where it belongs (ADR-0131).

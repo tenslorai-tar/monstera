@@ -23,7 +23,7 @@ import {
   MAX_SERVICE_DETAIL,
   type AskAbout,
   type AskSent,
-  type AskSide,
+  type AskLabel,
   MAX_ASK_CONTEXT,
   MAX_TABLE_CELL_TEXT,
   MAX_TABLE_CELLS,
@@ -2582,9 +2582,10 @@ export class DocumentCommands {
    * @throws the same set `viewModel` throws, for the same reasons.
    */
   async askWindow(
-    // A PICTURE IS NOT A WINDOW: `askPicture` answers that scope, so this one cannot be handed it.
-    about: Exclude<AskAbout, { readonly scope: 'page-image' }>,
-    pair?: { readonly side: AskSide; readonly bound: number },
+    // A PICTURE IS NOT A WINDOW: `askPicture` answers that scope, so this one cannot be handed it. NOR IS EVERY OPEN
+    // DOCUMENT: the handler reads each of those as its own `document` window (ADR-0134), so this reads one document.
+    about: Exclude<AskAbout, { readonly scope: 'page-image' | 'documents' }>,
+    pair?: { readonly label: AskLabel; readonly bound: number },
   ): Promise<AskWindow> {
     const { docId } = about;
     const { value } = await this.#documents.run(docId, async () => {
@@ -2626,10 +2627,10 @@ export class DocumentCommands {
         pages,
         pageCount,
         async (page) => plainTextOf(await this.#pageText(docId, sessions, page)),
-        // ONE SIDE OF TWO reads its share of the bound and names its side in every marker
-        // (ADR-0089); alone, the whole bound and the plain marker.
+        // ONE OF SEVERAL reads its share of the bound and names its side or its place in every marker (ADR-0089,
+        // ADR-0134); alone, the whole bound and the plain marker.
         pair?.bound ?? MAX_ASK_CONTEXT,
-        pair?.side,
+        pair?.label,
       );
     });
     return value;
