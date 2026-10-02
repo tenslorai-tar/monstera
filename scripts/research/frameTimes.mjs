@@ -18,6 +18,14 @@
  * `--build dev` runs this checkout's build through the provisioned Electron, for a before-and-after on a change; a
  * figure that decides anything is read again from a package.
  *
+ * **The stage cannot measure anything the engine hosts do.** Measured 2026-10-02: a host created by a process with no
+ * package identity is refused the runtime (ADR-0023's 2026-09-30 correction), so on the stage every document waits out
+ * two 10 s connect attempts and is then poisoned — *"Invalid file descriptor to ICU data"* in the shell log — and a
+ * page draws only after that, without the engine's answer. `--build installed` runs the INSTALLED test package inside
+ * its own package context (`Invoke-CommandInDesktopPackage`, no install and no elevation), where the hosts start; its
+ * profile sits outside AppData, and its teardown ends only the tree whose PID answered the port and was not one of the
+ * owner's Monstera processes before the run.
+ *
  * Each launch takes a scratch `--user-data-dir`, which scopes Electron's single-instance lock
  * (`scripts/proofs/shell.proof.mjs` proves the lock follows it). Without one, a launch while the owner's installed
  * application is open would hand its documents to the owner's window. The process tree is ended by PID.
@@ -35,13 +43,33 @@
  * whether or not `requestAnimationFrame` fires, so a main thread that is busy shows here as lag that a compositor
  * scroll may partly hide. The trace's busy times are read either way.
  *
+ * ## Opening a second document, and switching between two (row 303's open and tab-switch figures)
+ *
+ * `--then-open <absolute .pdf>|large` names a second document, and the `open` and `switch` scenarios use it. Both are
+ * read IN THE PAGE, once per animation frame, so every time below is the frame at which a condition first held:
+ *
+ * - a page is DRAWN when its canvas on screen has a non-transparent centre pixel. `renderPage.ts` draws on a scratch
+ *   canvas and presents it in one step (`present`), and an undrawn canvas is transparent throughout, so one pixel
+ *   separates the two — at the cost of one readback per canvas per frame, which this instrument adds to what it times;
+ * - the screen is FINISHED when the document asked for is the current tab and every page and thumbnail canvas on screen
+ *   — inside the window and inside each scrolling ancestor — is drawn;
+ * - the document is QUIET from the first moment after it finished with no long task (over 50 ms, Chromium's
+ *   `longtask` entries) in the second that follows. That is this instrument's reading of *fully usable*: input is
+ *   answered within a frame or two from then on. It is a definition, stated as one.
+ *
+ * `open` hands the second document to the running application the way a file association or *Open with* does — a
+ * second launch, which loses the single-instance lock and passes its arguments over — and times from just before that
+ * launch, so the second process's own start is inside the figure. `switch` clicks each tab in turn, three times each
+ * way, timed from the click event's own timestamp.
+ *
  * Usage: node scripts/research/frameTimes.mjs --build package|dev --document <absolute .pdf> [--large]
- *   [--variant none|no-blur|no-gradients|no-thumbnails] [--scenarios scroll,drag,menu,draw]
+ *   [--variant none|no-blur|no-gradients|no-thumbnails] [--scenarios scroll,drag,menu,draw,open,switch]
+ *   [--then-open <absolute .pdf>|large]
  * `--large` generates the scan-shaped fixture (`scripts/perf/largeFixture.mjs`) and measures that instead.
  */
 
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -56,6 +84,9 @@ const ROOT = repoRoot();
 const PORT = 9339;
 /** Set by the teardown, so an exit it caused is not reported as the application's own. */
 let ending = false;
+/** The measured program's PID: the launched process, or for an installed run the port's listener. */
+/** @type {number | undefined} */
+let appPid;
 
 /** @param {string} name */
 function option(name) {
@@ -64,6 +95,31 @@ function option(name) {
 }
 
 const build = option('build') ?? 'package';
+if (!['package', 'installed', 'dev'].includes(build)) throw new Error('--build is package, installed or dev.');
+
+/** The installed test package, read from Windows: its family name and folder. */
+const INSTALLED = build === 'installed' ? installedPackage() : { family: '', location: '' };
+
+function installedPackage() {
+  const text = execFileSync(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-Command', "$p = Get-AppxPackage -Name 'TenslorInc.MonsteraPDFEditor.Test'; if ($null -eq $p) { exit 3 }; \"$($p.PackageFamilyName)|$($p.InstallLocation)|$($p.Version)\""],
+    { encoding: 'utf8' },
+  ).trim();
+  const [family = '', location = '', version = ''] = text.split('|');
+  if (family === '' || location === '') throw new Error('no installed test package to measure');
+  console.error(`measuring the installed package ${version}`);
+  return { family, location };
+}
+
+/** The PIDs of running Monstera processes — the owner's own, before a run, which a teardown must never end. */
+function monsteraPids() {
+  const text = execFileSync('tasklist', ['/FI', 'IMAGENAME eq Monstera.exe', '/FO', 'CSV', '/NH'], { encoding: 'utf8' });
+  return text
+    .split('\n')
+    .map((line) => Number(line.split('","')[1]))
+    .filter((pid) => Number.isInteger(pid) && pid > 0);
+}
 /** What `npm start` hands a development shell (`launchEnvironment.mjs`); nothing for the package, which finds its own. */
 const DEVELOPMENT_ENV = build === 'dev' ? await developmentEnvironment(ROOT) : {};
 const variant = option('variant') ?? 'none';
@@ -71,6 +127,11 @@ const scenarios = (option('scenarios') ?? 'scroll,drag,menu,draw').split(',');
 const large = process.argv.includes('--large');
 const documentPath = large ? buildScanFixture({ root: ROOT }).path : option('document');
 if (documentPath === undefined) throw new Error('--document <absolute .pdf> or --large is required.');
+const thenOpenOption = option('then-open');
+const secondPath = thenOpenOption === 'large' ? buildScanFixture({ root: ROOT }).path : thenOpenOption;
+if ((scenarios.includes('open') || scenarios.includes('switch')) && secondPath === undefined) {
+  throw new Error('the open and switch scenarios need --then-open <absolute .pdf>|large.');
+}
 
 /** The CSS each variant adds, to measure a candidate by removing it — never shipped, only injected here. */
 const VARIANTS = {
@@ -205,6 +266,59 @@ function busyByThread(events) {
   return out;
 }
 
+/**
+ * The busiest threads between two marks, named by process and thread, in milliseconds — every process the trace holds,
+ * the browser process (`main`) included, so time no thread spent is visible as the window minus the busiest.
+ *
+ * @param {any[]} trace @param {string} startMark @param {string} endMark
+ */
+function busiestThreads(trace, startMark, endMark) {
+  const mark = (/** @type {string} */ name) => trace.find((e) => e.name === name && e.cat?.includes('blink.user_timing'));
+  const start = mark(startMark);
+  const end = mark(endMark);
+  if (start === undefined || end === undefined) throw new Error(`the trace holds no ${start === undefined ? startMark : endMark} mark`);
+  /** @type {Map<string, string>} */
+  const names = new Map();
+  for (const e of trace) {
+    if (e.ph === 'M' && e.name === 'thread_name') names.set(`${e.pid}:${e.tid}`, e.args?.name ?? '');
+    if (e.ph === 'M' && e.name === 'process_name') names.set(String(e.pid), e.args?.name ?? '');
+  }
+  const busyMs = busyByThread(trace.filter((e) => e.ts >= start.ts && e.ts <= end.ts));
+  return {
+    windowMs: Math.round((end.ts - start.ts) / 1000),
+    threads: Object.entries(busyMs)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([key, ms]) => `${names.get(key.split(':')[0] ?? '') ?? '?'} ${String(key.split(':')[0])} / ${names.get(key) ?? '?'}: ${String(ms)} ms`),
+  };
+}
+
+/**
+ * The longest single events on the page's renderer main thread between two marks, by name and with the function a
+ * script event ran where the trace names one — what a long task WAS, which a busy total cannot say.
+ *
+ * @param {any[]} trace @param {string} startMark @param {string} endMark
+ */
+function topEvents(trace, startMark, endMark) {
+  const start = trace.find((e) => e.name === startMark && e.cat?.includes('blink.user_timing'));
+  const end = trace.find((e) => e.name === endMark && e.cat?.includes('blink.user_timing'));
+  if (start === undefined || end === undefined) return [];
+  /** @type {Set<string>} */
+  const mains = new Set();
+  for (const e of trace) {
+    if (e.ph === 'M' && e.name === 'thread_name' && e.args?.name === 'CrRendererMain' && e.pid === start.pid) mains.add(`${e.pid}:${e.tid}`);
+  }
+  return trace
+    .filter((e) => e.ph === 'X' && typeof e.dur === 'number' && e.ts >= start.ts && e.ts <= end.ts && mains.has(`${e.pid}:${e.tid}`) && e.name !== 'RunTask' && !/ThreadControllerImpl|RunTask$/u.test(e.name))
+    .sort((a, b) => b.dur - a.dur)
+    .slice(0, 12)
+    .map((e) => {
+      const data = e.args?.data ?? {};
+      const what = data.functionName || data.url?.split('/').at(-1) || data.type || '';
+      return `${e.name}${what === '' ? '' : ` (${String(what).slice(0, 60)}${data.lineNumber === undefined ? '' : `:${String(data.lineNumber)}`})`} ${String(Math.round(e.dur / 1000))} ms`;
+    });
+}
+
 /** @param {any[]} events */
 function busy(events) {
   return Math.round(Object.values(busyByThread(events)).reduce((sum, ms) => sum + ms, 0) * 10) / 10;
@@ -269,6 +383,41 @@ function portListeners() {
 }
 
 /**
+ * The program and its leading arguments for this run's build: the stage's executable, or the provisioned runtime given
+ * the desktop package's folder.
+ *
+ * @param {string[]} rest
+ * @returns {[string, string[]]}
+ */
+function commandFor(rest) {
+  if (build === 'installed') {
+    // INSIDE THE PACKAGE'S CONTEXT, without an install or an elevation: the program gets the package identity a Start
+    // menu launch gives it, which the stage cannot have. Each argument is quoted for the command line and the whole is
+    // one PowerShell single-quoted string, whose only escape is a doubled quote.
+    const line = rest.map((argument) => `"${argument}"`).join(' ').replaceAll("'", "''");
+    const exe = join(INSTALLED.location, 'Monstera.exe').replaceAll("'", "''");
+    return [
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', `Invoke-CommandInDesktopPackage -PackageFamilyName '${INSTALLED.family}' -AppId 'Monstera' -Command '${exe}' -Args '${line}'`],
+    ];
+  }
+  return build === 'package'
+    ? [join(ROOT, 'release', 'msix', 'test', 'layout', 'Monstera.exe'), rest]
+    : [electronBinaryPath(ROOT), [resolve(ROOT, 'apps', 'desktop'), ...rest]];
+}
+
+/**
+ * A second launch on the same profile, as a file association makes: it loses the single-instance lock to the running
+ * application and hands its document over. Not ended here — it quits on its own at the lock.
+ *
+ * @param {string} documentFile @param {string} userData
+ */
+function handOver(documentFile, userData) {
+  const [command, args] = commandFor([`--user-data-dir=${userData}`, documentFile]);
+  return spawn(command, args, { stdio: 'ignore', env: { ...process.env, ...DEVELOPMENT_ENV } });
+}
+
+/**
  * Launches the application, refusing when something already listens on the port.
  *
  * A run attaches to whatever answers on {@link PORT}, so a process left from an earlier run would be MEASURED in place
@@ -280,12 +429,13 @@ function portListeners() {
 function launch(documentFile) {
   const already = portListeners();
   if (already.length > 0) throw new Error(`port ${String(PORT)} is already held by PID ${already.join(', ')}; end it first`);
-  const userData = mkdtempSync(join(tmpdir(), 'monstera-frames-'));
+  // AN INSTALLED RUN'S PROFILE SITS OUTSIDE AppData: a packaged process's writes under AppData are redirected into the
+  // package's own storage, where a scratch profile would outlive the run in the owner's package data.
+  const scratchRoot = build === 'installed' ? join(ROOT, '..', 'perf-profiles') : tmpdir();
+  mkdirSync(scratchRoot, { recursive: true });
+  const userData = mkdtempSync(join(scratchRoot, 'monstera-frames-'));
   const common = [`--user-data-dir=${userData}`, `--remote-debugging-port=${String(PORT)}`, ...SWITCHES, documentFile];
-  const [command, args] =
-    build === 'package'
-      ? [join(ROOT, 'release', 'msix', 'test', 'layout', 'Monstera.exe'), common]
-      : [electronBinaryPath(ROOT), [resolve(ROOT, 'apps', 'desktop'), ...common]];
+  const [command, args] = commandFor(common);
   // A DEVELOPMENT SHELL IS HANDED ITS NATIVE COMPONENTS, as `npm start` hands them: without them it has no engine
   // host, and every document is poisoned for engine commands while it still displays. The package finds its own.
   const child = spawn(command, args, { stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, ...DEVELOPMENT_ENV } });
@@ -295,7 +445,8 @@ function launch(documentFile) {
     stderr = `${stderr}${String(chunk)}`.slice(-4000);
   });
   child.on('exit', (code, signal) => {
-    if (!ending) console.error(`THE APPLICATION EXITED after ${String(Date.now() - started)} ms, code ${String(code)} signal ${String(signal)}; its stderr ends:\n${stderr}`);
+    // AN INSTALLED RUN'S CHILD IS THE LAUNCHER, which exits once the package has started the program.
+    if (!ending && build !== 'installed') console.error(`THE APPLICATION EXITED after ${String(Date.now() - started)} ms, code ${String(code)} signal ${String(signal)}; its stderr ends:\n${stderr}`);
   });
   return { child, userData };
 }
@@ -313,9 +464,12 @@ function launch(documentFile) {
 async function end(child, userData) {
   ending = true;
   const exited = child.exitCode !== null ? Promise.resolve() : new Promise((done) => child.once('exit', done));
-  if (child.pid !== undefined) {
+  // THE TREE THIS RUN STARTED: the launched process, or for an installed run the program the package started — the
+  // port's listener, checked against the owner's own PIDs when it was found.
+  const root = build === 'installed' ? appPid : child.pid;
+  if (root !== undefined) {
     try {
-      execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+      execFileSync('taskkill', ['/PID', String(root), '/T', '/F'], { stdio: 'ignore' });
     } catch {
       // Already gone: taskkill exits non-zero for a PID with no process, which is the state this wanted.
     }
@@ -489,8 +643,177 @@ async function scrollDown(page) {
   }
 }
 
+/**
+ * Starts the per-frame watch for one document becoming finished and quiet (see the header). `target` is the docId asked
+ * for, or `null` for *a tab that is not `previous`* — an open, whose docId is not known until its tab appears.
+ * `startAt` is the moment timed from, in the page's clock; `click` replaces it with the next tab click's own timestamp.
+ *
+ * @param {any} page @param {{ target: string | null, previous: string | null, click: boolean, probeModel?: boolean }} options
+ * @returns {Promise<number>} the page's clock when the watch began
+ */
+async function watchDocument(page, options) {
+  return page.evaluate((/** @type {{ target: string | null, previous: string | null, click: boolean, probeModel?: boolean }} */ o) => {
+    const w = /** @type {any} */ (globalThis);
+    const state = {
+      start: performance.now(),
+      tabAt: /** @type {number | null} */ (null),
+      firstPageAt: /** @type {number | null} */ (null),
+      finishedAt: /** @type {number | null} */ (null),
+      docId: /** @type {string | null} */ (null),
+      frames: 0,
+      firstSeen: /** @type {object | null} */ (null),
+      modelAt: /** @type {number | null} */ (null),
+      modelAskedAt: /** @type {number | null} */ (null),
+      modelCalls: 0,
+      modelFirstAnswer: /** @type {string | null} */ (null),
+      longTasks: /** @type {[number, number][]} */ ([]),
+      running: true,
+    };
+    w.__watch = state;
+    if (o.click) {
+      w.document.addEventListener(
+        'click',
+        (/** @type {any} */ event) => {
+          if (event.target?.closest?.('[data-tab-select]')) state.start = event.timeStamp;
+        },
+        { capture: true, once: true },
+      );
+    }
+    w.__longTasks?.disconnect();
+    w.__longTasks = new w.PerformanceObserver((/** @type {any} */ list) => {
+      for (const entry of list.getEntries()) state.longTasks.push([entry.startTime, entry.startTime + entry.duration]);
+    });
+    w.__longTasks.observe({ type: 'longtask' });
+    /** Whether an element is on screen: inside the window and inside every scrolling ancestor. */
+    const onScreen = (/** @type {any} */ element) => {
+      if (!element.checkVisibility({ visibilityProperty: true })) return false;
+      const box = element.getBoundingClientRect();
+      if (box.width === 0 || box.bottom <= 0 || box.right <= 0 || box.top >= w.innerHeight || box.left >= w.innerWidth) return false;
+      for (let up = element.parentElement; up !== null; up = up.parentElement) {
+        const overflow = w.getComputedStyle(up).overflowY;
+        if (overflow !== 'auto' && overflow !== 'scroll' && overflow !== 'hidden') continue;
+        const clip = up.getBoundingClientRect();
+        if (box.bottom <= clip.top || box.top >= clip.bottom || box.right <= clip.left || box.left >= clip.right) return false;
+      }
+      return true;
+    };
+    const drawn = (/** @type {any} */ canvas) => {
+      if (canvas.width === 0 || canvas.height === 0) return false;
+      const pixel = canvas.getContext('2d', { willReadFrequently: true })?.getImageData(canvas.width >> 1, canvas.height >> 1, 1, 1).data;
+      return pixel !== undefined && pixel[3] > 0;
+    };
+    const tick = (/** @type {number} */ now) => {
+      if (!state.running) return;
+      state.frames += 1;
+      const current = w.document.querySelector('[data-tab-select][aria-current="true"]')?.dataset.tabSelect ?? null;
+      const wanted = o.target === null ? current !== null && current !== o.previous : current === o.target;
+      if (wanted) {
+        state.docId = current;
+        state.tabAt ??= now;
+        const pages = [...w.document.querySelectorAll('.m-page-list canvas.m-page, .m-page-list canvas.m-page-tile')].filter(onScreen);
+        const thumbs = [...w.document.querySelectorAll('canvas.m-thumb-canvas')].filter(onScreen);
+        // WHAT THE FIRST WATCHED FRAME SAW, so a slow reading says whether nothing was on screen or nothing was drawn.
+        state.firstSeen ??= {
+          pages: pages.length,
+          pagesDrawn: pages.filter(drawn).length,
+          thumbs: thumbs.length,
+          thumbsDrawn: thumbs.filter(drawn).length,
+        };
+        if (state.firstPageAt === null && pages.some(drawn)) state.firstPageAt = now;
+        if (state.finishedAt === null && pages.length > 0 && thumbs.length > 0 && pages.every(drawn) && thumbs.every(drawn)) state.finishedAt = now;
+      }
+      w.requestAnimationFrame(tick);
+    };
+    w.requestAnimationFrame(tick);
+    // WHEN THE VIEW MODEL FIRST ANSWERS for the document's first page — the read a page waits on before it draws
+    // (`usePageRotations`), answered by `main` from the engine host, which no Chromium trace contains. One call in
+    // flight at a time, through the bridge the page itself uses; diagnostic, and it adds that one call to what it times.
+    if (o.probeModel) {
+      void (async () => {
+        while (state.running && state.modelAt === null) {
+          if (state.docId !== null) {
+            const asked = performance.now();
+            const answer = await w.monstera.invoke('document.viewModel', { docId: state.docId, pages: [0] });
+            state.modelCalls += 1;
+            state.modelFirstAnswer ??= JSON.stringify(answer).slice(0, 160);
+            if (answer?.ok === true) {
+              state.modelAt = performance.now();
+              state.modelAskedAt = asked;
+            }
+          }
+          await new Promise((next) => setTimeout(next, 100));
+        }
+      })();
+    }
+    return state.start;
+  }, options);
+}
+
+/**
+ * Waits for the watch to reach quiet — finished, then a second with no long task — or `limitMs`, then reads it back as
+ * milliseconds from its start.
+ *
+ * @param {any} page @param {number} limitMs
+ */
+async function settleWatch(page, limitMs) {
+  const began = Date.now();
+  /** @type {any} */
+  let state;
+  for (;;) {
+    await page.waitForTimeout(250);
+    state = await page.evaluate(() => {
+      const w = /** @type {any} */ (globalThis);
+      return { ...w.__watch, now: performance.now() };
+    });
+    const lastLong = Math.max(0, ...state.longTasks.map((/** @type {[number, number]} */ t) => t[1]));
+    if (state.finishedAt !== null && state.now - Math.max(state.finishedAt, lastLong) > 1100) break;
+    if (Date.now() - began > limitMs) break;
+  }
+  await page.evaluate(() => {
+    const w = /** @type {any} */ (globalThis);
+    w.__watch.running = false;
+    w.__longTasks?.disconnect();
+  });
+  // QUIET: the first moment at or after the finish from which no long task overlaps the next second.
+  /** @type {number | null} */
+  let quietAt = null;
+  if (typeof state.finishedAt === 'number') {
+    let at = state.finishedAt;
+    const tasks = [...state.longTasks].sort((/** @type {[number, number]} */ a, /** @type {[number, number]} */ b) => a[0] - b[0]);
+    for (let moved = true; moved; ) {
+      moved = false;
+      for (const [from, to] of tasks) {
+        if (to > at && from < at + 1000) {
+          at = to;
+          moved = true;
+        }
+      }
+    }
+    quietAt = at;
+  }
+  const since = (/** @type {number | null} */ at) => (at === null ? null : Math.round(at - state.start));
+  const longest = Math.max(0, ...state.longTasks.map((/** @type {[number, number]} */ t) => t[1] - t[0]));
+  return {
+    docId: state.docId,
+    tabMs: since(state.tabAt),
+    firstPageMs: since(state.firstPageAt),
+    finishedMs: since(state.finishedAt),
+    quietMs: quietAt !== null && state.now - quietAt >= 1000 ? since(quietAt) : null,
+    longTasks: state.longTasks.length,
+    longestTaskMs: Math.round(longest),
+    frames: state.frames,
+    firstSeen: state.firstSeen,
+    ...(state.modelCalls > 0
+      ? { modelAnsweredMs: since(state.modelAt), modelAskedMs: since(state.modelAskedAt), modelCalls: state.modelCalls, modelFirstAnswer: state.modelFirstAnswer }
+      : {}),
+    timedOut: state.finishedAt === null,
+  };
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 
+/** The owner's own Monstera processes, read before this run starts one: never the run's, never ended by it. */
+const ownersBefore = build === 'installed' ? monsteraPids() : [];
 const { child, userData } = launch(documentPath);
 /** @type {any[]} */
 const results = [];
@@ -506,8 +829,19 @@ try {
   }
   if (browser === undefined) throw new Error('the application never opened its debugging port');
   const listeners = portListeners();
-  if (!listeners.includes(/** @type {number} */ (child.pid))) {
-    throw new Error(`the port answers from PID ${listeners.join(', ')}, not the launched ${String(child.pid)} (exit code ${String(child.exitCode)})`);
+  if (build === 'installed') {
+    // THE PACKAGE STARTED THE PROGRAM, so its PID is the listener's — and it must be a Monstera process that did not
+    // exist before this run, or the run would measure, and end, the owner's own window.
+    const listener = listeners.length === 1 ? listeners[0] : undefined;
+    if (listener === undefined || ownersBefore.includes(listener) || !monsteraPids().includes(listener)) {
+      throw new Error(`the port answers from PID ${listeners.join(', ')}, which is not a Monstera process this run started`);
+    }
+    appPid = listener;
+  } else {
+    if (!listeners.includes(/** @type {number} */ (child.pid))) {
+      throw new Error(`the port answers from PID ${listeners.join(', ')}, not the launched ${String(child.pid)} (exit code ${String(child.exitCode)})`);
+    }
+    appPid = child.pid;
   }
   // THE PAGE THAT SHOWS THE DOCUMENT, looked for again on each attempt: the first run that connected early found its
   // page closed under it, so the first page listed is not assumed to be the one that lives.
@@ -524,7 +858,7 @@ try {
     throw new Error(`no page showed the document within a minute; pages: ${JSON.stringify(seen)}`);
   }
   const cdp = await browser.newBrowserCDPSession();
-  maximise(/** @type {number} */ (child.pid));
+  maximise(/** @type {number} */ (appPid));
   await page.getByRole('button', { name: 'Skip' }).click({ timeout: 5000 }).catch(() => undefined);
   // A CONSTRUCTED SHEET, because the renderer's CSP refuses an injected `<style>` (`style-src` pins hashes, §9.27) —
   // measured: `addStyleTag` was blocked. A sheet adopted through the CSSOM is not an inline style, so the policy that
@@ -661,6 +995,65 @@ try {
         interval,
       ),
     );
+  }
+
+  if ((scenarios.includes('open') || scenarios.includes('switch')) && secondPath !== undefined) {
+    const first = await page.evaluate(() => {
+      const w = /** @type {any} */ (globalThis);
+      return w.document.querySelector('[data-tab-select][aria-current="true"]')?.dataset.tabSelect ?? null;
+    });
+    if (first === null) throw new Error('no tab is current before the open, so the open cannot be told from it');
+    // CONTROL: a watch for a tab that does not exist must time out with nothing seen, or "finished at once" — the answer
+    // a kept background tab gives — would be indistinguishable from a predicate that holds of anything.
+    await watchDocument(page, { target: 'no-such-document', previous: null, click: false });
+    const nothing = await settleWatch(page, 3000);
+    if (!nothing.timedOut || nothing.tabMs !== null || nothing.firstPageMs !== null) {
+      throw new Error(`THE WATCH IS BLIND: a tab that does not exist read as ${JSON.stringify(nothing)}`);
+    }
+    // CONTROL, the other way: the document on show now must read as finished at once, or the watch cannot see a drawn one.
+    await watchDocument(page, { target: first, previous: null, click: false });
+    const shown = await settleWatch(page, 15_000);
+    if (shown.finishedMs === null) throw new Error(`THE WATCH CANNOT SEE: the settled document on show never read as finished: ${JSON.stringify(shown)}`);
+    results.push({ label: 'CONTROL the document on show', ...shown });
+    // TRACED, so a slow open says which process was busy — or that none was, which is waiting.
+    await startTrace(cdp);
+    await page.evaluate(() => performance.mark('open:start'));
+    await watchDocument(page, { target: null, previous: first, click: false, probeModel: process.argv.includes('--probe-model') });
+    handOver(secondPath, userData);
+    const opened = await settleWatch(page, 120_000);
+    await page.evaluate(() => performance.mark('open:end'));
+    const openTrace = await stopTrace(cdp);
+    const keep = process.env['FRAMES_TRACE_DIR'];
+    if (keep !== undefined) writeFileSync(join(keep, 'open.json'), JSON.stringify(openTrace));
+    results.push({ label: 'open the second document', ...opened, busiest: busiestThreads(openTrace, 'open:start', 'open:end') });
+    if (scenarios.includes('switch') && opened.docId !== null) {
+      // EACH WAY THREE TIMES, the first document's tab first: the second is current after its open.
+      for (let round = 0; round < 3; round += 1) {
+        for (const [label, target] of /** @type {[string, string][]} */ ([['switch to the first document', first], ['switch to the second document', opened.docId]])) {
+          await page.waitForTimeout(1500);
+          // THE FIRST ROUND IS TRACED, so the work that follows a switch is split by kind on the renderer's main thread.
+          const traced = round === 0;
+          if (traced) {
+            await startTrace(cdp);
+            await page.evaluate(() => performance.mark('switch:start'));
+          }
+          await watchDocument(page, { target, previous: null, click: true });
+          await page.locator(`[data-tab-select="${target}"]`).click();
+          const switched = await settleWatch(page, 60_000);
+          /** @type {any} */
+          let trace = {};
+          if (traced) {
+            await page.evaluate(() => performance.mark('switch:end'));
+            const events = await stopTrace(cdp);
+            const keepDir = process.env['FRAMES_TRACE_DIR'];
+            if (keepDir !== undefined) writeFileSync(join(keepDir, `${label.replace(/[^a-z0-9]+/giu, '-')}.json`), JSON.stringify(events));
+            const split = analyse(events, 'switch:start', 'switch:end');
+            trace = { main: split.main, mainBusy: split.mainBusy, windowMs: split.windowMs, topEvents: topEvents(events, 'switch:start', 'switch:end') };
+          }
+          results.push({ label, round: round + 1, ...switched, ...trace });
+        }
+      }
+    }
   }
 
   console.log(JSON.stringify({ build, variant, large, screen, interval, results }, null, 1));

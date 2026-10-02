@@ -892,6 +892,61 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-02 — Row 303's open and tab-switch figures, read on the INSTALLED 0.1.8.0 (the stage cannot read them)
+
+The owner's item 3: time to the finished frame on a tab switch between the 5-page document and the 210 MB scan, and
+the scan's time to its first page and to fully usable, against the row's 3 s, at the owner's 1600 × 852. Measured with
+`scripts/research/frameTimes.mjs`, which gains `open` and `switch` scenarios and `--build installed`. Fix nothing was
+the instruction; what the figures point at is named at the end.
+
+**The instrument, and its controls.** Everything is read in the page once per animation frame, so a time is the frame
+at which a condition first held. A page is *drawn* when its canvas on screen has a non-transparent centre pixel —
+`renderPage.ts` presents a page in one step and an undrawn canvas is transparent throughout. The screen is *finished*
+when the tab asked for is current and every page and thumbnail canvas on screen is drawn; *quiet* is the first moment
+after that with no long task (over 50 ms) in the following second, which is this instrument's definition of *fully
+usable*, stated as one. Two controls run before any reading and the run refuses without them: a watch for a tab that
+does not exist must time out having seen nothing, and the document already on show must read as finished. The idle and
+heavy frame controls run first as before (16.6 ms and 0 dropped; p95 50 ms and 71 dropped). The open is handed over as
+*Open with* does — a second launch on the same profile — and timed from just before that launch; a switch is timed
+from the click event's own timestamp. The readback costs a few milliseconds a frame, inside what it times.
+
+**The stage could not answer this, and the first readings were wrong because of it.** On `release/msix/test/layout`
+the scan's first page came at 22.4–28.7 s, and the 5-page document already on show was still undrawn 13 s after launch.
+The view model — the read a page waits on before it draws (`usePageRotations`) — answered `document-poisoned` every
+time; the stage's shell log: *the engine host was refused at connect: no connection within 10000ms … Invalid file
+descriptor to ICU data*. A host created by a process with no package identity is refused the runtime (ADR-0023's
+2026-09-30 correction), so on the stage every document waits out two 10 s connects, is poisoned, and then draws
+without the engine's answer. The 2026-10-01 frame times were read on the stage too; scrolling does not wait on the
+engine, but every figure that does is the installed build's to give. `--build installed` runs the owner's installed
+package inside its package context (`Invoke-CommandInDesktopPackage`, no install, no elevation), on a scratch profile
+outside AppData, and ends only the tree that answered its port and was not one of the owner's processes before it ran.
+
+**Installed 0.1.8.0, 2026-10-02, three runs (four for the switch), 1600 × 852, the corpus's third document and the
+generated scan:**
+
+| | run 1 | run 2 | run 3 |
+|---|---|---|---|
+| the scan's tab appears, from the hand-over | 3.42 s | 3.56 s | 3.97 s |
+| the view model answers (asked when the tab appeared) | +1.46 s | +2.18 s | +1.16 s |
+| first page drawn, from the tab | 3.38 s | 3.28 s | 3.36 s |
+| finished, from the tab (= quiet) | 4.54 s | 4.53 s | 4.74 s |
+| first page / finished, from the hand-over | 6.80 / 7.97 s | 6.83 / 8.08 s | 7.33 / 8.71 s |
+
+The hand-over figures include a PowerShell launcher a double-click does not run, so *from the tab* is the part the
+application owns; both are past 3 s. **Tab switching**: the finished frame came 3–8 ms after the click in all 24
+switches, both ways — ADR-0129's kept tab is drawn when it is shown. **But every switch is followed by 1.5–2.2 s of
+main-thread work** in 5–9 long tasks of up to 350 ms, so input in the two seconds after a switch waits. Traced (one
+switch each way): 1.3–1.8 s of it is script, and the longest pieces are React's own — the click's synchronous render
+(134–161 ms) and the scheduler's work loop (`MessageChannel`, 148–190 ms slices) — with commits of 130–165 ms between.
+
+**What the figures point at, for the cloud agent:** (1) after a switch, find which components re-render and why
+(React's profiler on a development build; the trace names only React's scheduler, because the bundle ships no map);
+(2) the scan's 3.3 s from tab to first page, of which the engine's answer is 1.2–2.2 s — the page draws only after the
+view model answers, so that read is on the path to the first pixel; (3) the stage cannot measure the engine, so
+`startCheck.mjs`'s *the program starts* is a statement about the window, not the hosts.
+
+---
+
 ## 2026-10-02 — Stage audit of `884eff57..24320797` — findings CCCCCCC-1 to CCCCCCC-7
 
 Owed at one batch of files: merging `work/cloud-2` would have taken the range to 246 files against 200. The range is
