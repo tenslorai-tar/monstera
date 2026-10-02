@@ -1762,6 +1762,23 @@ optgroup {
   color: var(--muted);
 }
 
+/* The rows a workbook's PDF lacks. The sentence and the count sit outside the scroll, so their margins are the body's
+   gap alone; the row numbers line up by tabular figures. */
+.m-workbook-incomplete__said,
+.m-workbook-incomplete__more {
+  margin: 0;
+}
+
+.m-workbook-incomplete__list {
+  margin: 0;
+  padding-inline-start: var(--space-16);
+  font-variant-numeric: tabular-nums;
+}
+
+.m-workbook-incomplete__list li {
+  padding-block: var(--space-2);
+}
+
 /*
  * The Excel review grid: a table of fields, which default flow cannot lay out — so
  * it takes the list exception's reason. The page controls sit on one line with the

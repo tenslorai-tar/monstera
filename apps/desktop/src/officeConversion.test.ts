@@ -8,7 +8,7 @@ import {
   JOB_LIMIT_KILL_ON_JOB_CLOSE,
   JOB_LIMIT_PROCESS_MEMORY,
 } from '@monstera/kernel';
-import { MAX_OFFICE_MISSING_BLOCKS } from '@monstera/contract';
+import { MAX_OFFICE_MISSING_BLOCKS, MAX_WORKBOOK_PARTS } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -19,6 +19,7 @@ import type { ExitReading } from './externalConverter.js';
 import type { ContainerSid, UserSid } from './hostDacl.js';
 import {
   OfficeConversionFailedError,
+  MAX_CONVERSIONS_PER_SHEET,
   MAX_FAILED_PARTS_PER_SHEET,
   type WorkbookComposer,
   type WorkbookSheetOutline,
@@ -27,6 +28,7 @@ import {
   createOfficeSource,
   namedBlocks,
   officeImportFormatOf,
+  toldBlocks,
   x2tInstructions,
 } from './officeConversion.js';
 import type { DirectoryCreationSurface } from './sessionDirectories.js';
@@ -182,9 +184,16 @@ function workbookHost(
     /** Sheets one row of which alone reaches the cut-off. */
     readonly tall?: readonly string[];
   } = {},
-): { readonly composer: WorkbookComposer; readonly held: Map<string, string>; readonly parts: string[] } {
+): {
+  readonly composer: WorkbookComposer;
+  readonly held: Map<string, string>;
+  readonly parts: string[];
+  /** How many PDFs each join was given, in order. */
+  readonly joins: number[];
+} {
   const held = new Map<string, string>();
   const parts: string[] = [];
+  const joins: number[] = [];
   let next = 0;
   const rowsPerPage = options.rowsPerPage ?? 25;
   const composer: WorkbookComposer = {
@@ -220,6 +229,9 @@ function workbookHost(
       return Promise.resolve(Math.min(X2T_MAX_PRINT_PAGES, Math.ceil(rows / rowsPerPage)));
     },
     join: (names) => {
+      // THE CHANNEL'S BOUND, as `engine/join-pdfs`' params refuse a longer list.
+      if (names.length > MAX_WORKBOOK_PARTS) return Promise.reject(new Error(`a join of ${String(names.length)} PDFs`));
+      joins.push(names.length);
       const text = names.map((name) => held.get(name) ?? '?').join('|');
       async function* output(): AsyncIterable<Uint8Array> {
         await Promise.resolve();
@@ -228,7 +240,7 @@ function workbookHost(
       return Promise.resolve({ output: output(), discard: () => undefined });
     },
   };
-  return { composer, held, parts };
+  return { composer, held, parts, joins };
 }
 
 /** The rows each joined part holds, per sheet, from the echoed PDFs. */
@@ -468,6 +480,66 @@ describe('createOfficeSource — a workbook in parts', () => {
     expect(host.held.size).toBe(0);
   });
 
+  it('converts a workbook of more visible sheets than one join takes, joined in stages in order (table A row 12)', async () => {
+    // 1,025 FAKE CONVERSIONS, each through a real session area: 1.8 s on the Linux cloud machine, 2026-10-02, hence the
+    // case's own limit rather than the suite's 5 s.
+    const count = MAX_WORKBOOK_PARTS + 1;
+    const built = platform({ echo: true });
+    const host = workbookHost(Array.from({ length: count }, (_, index) => sheet(`S${String(index)}`, 2)));
+    // CONTROL: one join of every part is refused at the channel's bound — the refusal a person met.
+    await expect(host.composer.join(Array.from({ length: count }, (_, index) => `n${String(index)}`))).rejects.toThrow(
+      /a join of 1025 PDFs/u,
+    );
+
+    const converted = await createOfficeSource(built.platform, () => undefined, host.composer)(
+      'xlsx',
+      new TextEncoder().encode('PK workbook'),
+    );
+
+    expect(joinedBlocks(await drained(converted.output))).toStrictEqual(
+      Array.from({ length: count }, (_, index) => `S${String(index)} 1-2`),
+    );
+    // TWO RUNS, then the two staged PDFs: no join past the bound.
+    expect(host.joins).toStrictEqual([MAX_WORKBOOK_PARTS, 1, 2]);
+    expect(converted.missing).toStrictEqual([]);
+    expect(host.held.size).toBe(0);
+  }, 60_000);
+
+  it('opens a workbook with more blocks missing than the import names, keeping every block (table A row 12)', async () => {
+    // Until 2026-10-02 the 65th missing block failed the import of a workbook whose other sheets had converted.
+    const locked = Array.from({ length: MAX_OFFICE_MISSING_BLOCKS + 1 }, (_, index) => sheet(`L${String(index)}`, 3));
+    const built = platform({ echo: true });
+    const host = workbookHost([...locked, sheet('Fine', 20)], { tall: locked.map((each) => each.name) });
+
+    const converted = await createOfficeSource(built.platform, () => undefined, host.composer)(
+      'xlsx',
+      new TextEncoder().encode('PK workbook'),
+    );
+
+    expect(joinedBlocks(await drained(converted.output))).toStrictEqual(['Fine 1-20']);
+    expect(converted.missing).toHaveLength(MAX_OFFICE_MISSING_BLOCKS + 1);
+    expect(host.held.size).toBe(0);
+  }, 60_000);
+
+  it(`NAMES a sheet past ${String(MAX_CONVERSIONS_PER_SHEET)} conversions, every part of which reaches the cut-off, and keeps the rest`, async () => {
+    // A SHEET WHOSE EVERY PART IS TALL halves to single rows: 2 x 5,000 conversions without the budget. The budget's own
+    // 2,048 took 3.4 s on the Linux cloud machine, 2026-10-02, hence the case's own limit.
+    const built = platform({ echo: true });
+    const host = workbookHost([sheet('Crafted', 5_000), sheet('Fine', 20)], { tall: ['Crafted'] });
+
+    const converted = await createOfficeSource(built.platform, () => undefined, host.composer)(
+      'xlsx',
+      new TextEncoder().encode('PK workbook'),
+    );
+
+    const crafted = built.seen.filter((seen) => seen.inputBytes?.includes('Crafted') === true);
+    expect(crafted).toHaveLength(MAX_CONVERSIONS_PER_SHEET);
+    // EVERY ROW IS NAMED, joined into one run where the halves meet, and the other sheet arrives.
+    expect(converted.missing).toStrictEqual([{ sheet: 'Crafted', from: 1, to: 5_000 }]);
+    expect(joinedBlocks(await drained(converted.output))).toStrictEqual(['Fine 1-20']);
+    expect(host.held.size).toBe(0);
+  }, 120_000);
+
   it('fails the import when NO part converts, and leaves nothing placed', async () => {
     const built = platform({ writes: false, exit: { kind: 'exited', code: 80 } });
     const host = workbookHost([sheet('Data', 10)]);
@@ -507,10 +579,15 @@ describe('namedBlocks — the missing rows as a person is told them', () => {
     ]);
   });
 
-  it('answers null past the contract’s bound rather than naming some and dropping the rest', () => {
+  it('keeps every block past the contract’s bound; toldBlocks names the first and COUNTS the rest (table A row 12)', () => {
     const apart = (count: number): { sheet: string; from: number; to: number }[] =>
       Array.from({ length: count }, (_, index) => ({ sheet: 'A', from: index * 10 + 1, to: index * 10 + 5 }));
-    expect(namedBlocks(apart(MAX_OFFICE_MISSING_BLOCKS))).toHaveLength(MAX_OFFICE_MISSING_BLOCKS);
-    expect(namedBlocks(apart(MAX_OFFICE_MISSING_BLOCKS + 1))).toBeNull();
+    const many = namedBlocks(apart(MAX_OFFICE_MISSING_BLOCKS + 7));
+    expect(many).toHaveLength(MAX_OFFICE_MISSING_BLOCKS + 7);
+    const told = toldBlocks(many);
+    expect(told.missing).toStrictEqual(many.slice(0, MAX_OFFICE_MISSING_BLOCKS));
+    expect(told.more).toBe(7);
+    // CONTROL: at the bound nothing is counted, so `more` is the past-the-bound blocks and not a constant.
+    expect(toldBlocks(namedBlocks(apart(MAX_OFFICE_MISSING_BLOCKS))).more).toBe(0);
   });
 });

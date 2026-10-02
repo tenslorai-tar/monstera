@@ -99,6 +99,7 @@ import type { SecretStoreSurface } from './secretStore.js';
 import type { SettingsSurface } from './settingsFile.js';
 import type { DictionaryBytes } from './spellingDictionaries.js';
 import type { WebPage } from './webPages.js';
+import { toldBlocks } from './officeConversion.js';
 
 /**
  * Where a document comes from, as a value this module can be handed.
@@ -2914,11 +2915,9 @@ function newFromOfficeHandler(
         const opened = (await openPath(deps, converted.destination)).outcome;
         // THE ROWS NOT IN IT RIDE WITH THE OPEN (decision C): a document that opened is told which rows it lacks, and
         // an open that answered anything else answers that — the file on disk is the same either way.
-        return ok(
-          opened.kind === 'opened' && converted.missing.length > 0
-            ? { ...opened, kind: 'opened-incomplete', missing: [...converted.missing] }
-            : opened,
-        );
+        if (opened.kind !== 'opened' || converted.missing.length === 0) return ok(opened);
+        const told = toldBlocks(converted.missing);
+        return ok({ ...opened, kind: 'opened-incomplete', missing: [...told.missing], more: told.more });
       }
     }
   };

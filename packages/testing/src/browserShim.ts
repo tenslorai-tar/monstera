@@ -964,7 +964,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
 
     'document.newFromOffice': () => {
       const answer = queuedOfficeNews.shift() ?? { kind: 'cancelled' as const };
-      if (answer.kind === 'opened') versions.set(answer.docId, answer.version);
+      // A WORKBOOK WITH ROWS MISSING OPENED TOO, and its pages are read at this version like any other.
+      if (answer.kind === 'opened' || answer.kind === 'opened-incomplete') versions.set(answer.docId, answer.version);
       return Promise.resolve(ok(answer));
     },
 

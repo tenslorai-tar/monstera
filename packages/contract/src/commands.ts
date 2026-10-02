@@ -3826,9 +3826,9 @@ export const MAX_WORKBOOK_ROW = 1_048_576;
 /** A sheet name as a file may spell it: Excel's own limit is 31, and a file past it is still read, to this bound. */
 export const MAX_WORKBOOK_SHEET_NAME = 255;
 /**
- * Parts one workbook import converts and joins (decision C). A part is at most x2t's 1,500 pages and is only halved when
- * it reaches that, so this bounds an import at over a million pages — past any workbook, and a stop for a crafted one
- * that halves forever.
+ * Part PDFs ONE JOIN takes (decision C): the compose host's `engine/join-pdfs` list. It bounded a whole workbook import
+ * until 2026-10-02, and a workbook of 1,025 visible sheets was refused at it (JOURNAL, *No document-size refusals*, table
+ * A row 12); main now joins more parts in stages of this many, so it bounds a request, never a workbook.
  */
 export const MAX_WORKBOOK_PARTS = 1024;
 

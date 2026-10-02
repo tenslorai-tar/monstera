@@ -5,6 +5,7 @@ import {
   MAX_BARCODE_TEXT,
   MAX_IMAGE_BYTES,
   MAX_LIBRARY_PICTURE_BYTES,
+  MAX_OFFICE_MISSING_BLOCKS,
   MAX_PAGE_BARCODES,
   MAX_SETTINGS_FILE_BYTES,
   RECENT_PREVIEWS_SETTING_ID,
@@ -459,9 +460,34 @@ describe('document.newFromOffice — the rows a workbook lacks', () => {
 
     expect(result).toStrictEqual({
       ok: true,
-      value: { kind: 'opened-incomplete', docId: A_DOC, version: 1, byteLength: 1024, name: 'Budget.pdf', missing },
+      value: { kind: 'opened-incomplete', docId: A_DOC, version: 1, byteLength: 1024, name: 'Budget.pdf', missing, more: 0 },
     });
     expect(opened).toHaveLength(1);
+  });
+
+  it('opens a workbook with more blocks missing than it names, naming the first and COUNTING the rest (table A row 12)', async () => {
+    // Until 2026-10-02 the 65th block failed the import of a workbook whose every other row had converted.
+    const missing = Array.from({ length: MAX_OFFICE_MISSING_BLOCKS + 5 }, (_, index) => ({
+      sheet: 'Data',
+      from: index * 10 + 1,
+      to: index * 10 + 5,
+    }));
+    const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands: converting(missing) });
+
+    const result = await handlers['document.newFromOffice']({});
+
+    expect(result).toStrictEqual({
+      ok: true,
+      value: {
+        ...OPENED,
+        version: 1,
+        kind: 'opened-incomplete',
+        missing: missing.slice(0, MAX_OFFICE_MISSING_BLOCKS),
+        more: 5,
+      },
+    });
+    // AND THE ANSWER PASSES THE CHANNEL'S OWN SCHEMA, which bounds the named list.
+    expect(channels['document.newFromOffice'].result.safeParse(result.ok ? result.value : null).success).toBe(true);
   });
 
   it('CONTROL: answers plain opened where nothing is missing', async () => {

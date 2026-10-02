@@ -3,6 +3,7 @@ import type { DocId, DocVersion } from '@monstera/shared';
 
 import { CAMERA_CAPTURE_DIALOG_ID, CAMERA_CAPTURE_RESULT } from '../dialogs/cameraCapture.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
+import { WORKBOOK_INCOMPLETE_DIALOG_ID } from '../dialogs/workbookIncomplete.js';
 import {
   MARKDOWN_IMPORT_PROBLEM_DIALOG_ID,
   type MarkdownImportProblem,
@@ -82,12 +83,12 @@ export function markdownImportProblem(
       return { reason: 'absent' };
     case 'at-capacity':
       return { reason: 'at-capacity' };
-    // THE DOCUMENT OPENED, and the rows that did not arrive are named — never lost in silence (decision C).
-    case 'opened-incomplete':
-      return { reason: 'workbook-incomplete', missing: answer.missing };
     // `cancelled` is a person changing their mind; `opened`, `already-open` and
     // `appended` are the document they asked for. Named rather than defaulted, so an
-    // outcome a channel gains later is a lint error here instead of a silence.
+    // outcome a channel gains later is a lint error here instead of a silence. And
+    // `opened-incomplete` OPENED too, so it is no problem of the import's: the rows it
+    // lacks have their own dialog, which the Office command opens (decision C).
+    case 'opened-incomplete':
     case 'cancelled':
     case 'opened':
     case 'already-open':
@@ -257,7 +258,10 @@ export function newFromOfficeCommand(deps: {
           byteLength: result.byteLength,
           name: result.name,
         });
-        if (result.kind === 'opened') return;
+        if (result.kind === 'opened-incomplete') {
+          void deps.ask(WORKBOOK_INCOMPLETE_DIALOG_ID, { missing: result.missing, more: result.more });
+        }
+        return;
       }
       if (result.kind === 'already-open') {
         deps.onAlreadyOpen(result.docId);

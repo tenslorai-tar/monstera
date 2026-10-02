@@ -1253,7 +1253,7 @@ const composedImportOutcomeSchema = z.discriminatedUnion('kind', [
   importWriteFailedSchema,
 ]);
 
-/** How many blocks of a workbook an import may name as not converted. */
+/** How many blocks of a workbook an import NAMES as not converted; past it, `more` counts the rest. */
 export const MAX_OFFICE_MISSING_BLOCKS = 64;
 
 /**
@@ -1286,6 +1286,11 @@ const officeImportOutcomeSchema = z.discriminatedUnion('kind', [
       )
       .min(1)
       .max(MAX_OFFICE_MISSING_BLOCKS),
+    /**
+     * Blocks past the named ones, COUNTED: the document opened, so a workbook with more blocks missing than a dialog
+     * names is told how many rather than refused (table A row 12). Each is in the shell log.
+     */
+    more: z.number().int().min(0),
   }),
   importTooLargeSchema,
   importUnreadableSchema,

@@ -132,6 +132,17 @@ const SIZE_FAILURES: ReadonlySet<ConversionFailure['stage']> = new Set(['timed-o
 /** Failed conversions one sheet may spend on halving before its failing blocks are named instead of tried. */
 export const MAX_FAILED_PARTS_PER_SHEET = 8;
 
+/**
+ * Conversions one sheet may spend in all before its remaining blocks are named instead of tried — the stop for a crafted
+ * sheet whose every block reaches the cut-off, which would otherwise halve to single rows: two conversions a row.
+ *
+ * Derived: the format's 1,048,576 rows at ONE ROW A PAGE need 700 parts of 1,500 pages, and halving from the whole sheet
+ * reaches parts that small in at most 1,024 leaves and the 1,023 parts above them — 2,047 conversions. A real sheet past
+ * it is one printing several pages a row, and then its later rows are NAMED, never a refusal of the workbook (JOURNAL,
+ * *No document-size refusals*, table A row 12).
+ */
+export const MAX_CONVERSIONS_PER_SHEET = 2048;
+
 /** A block of a sheet's rows the PDF does not hold. */
 export interface WorkbookBlock {
   readonly sheet: string;
@@ -235,11 +246,10 @@ export function createOfficeSource(
 }
 
 /**
- * The missing blocks as the person is told them: a block that continues the one before it on the same sheet joined to
- * it, since two halves that each reached the cut-off are one run of rows to a reader. `null` where more remain than the
- * contract names — the import then fails, said, rather than naming some and dropping the rest.
+ * The missing blocks as one run each: a block that continues the one before it on the same sheet joined to it, since two
+ * halves that each reached the cut-off are one run of rows to a reader.
  */
-export function namedBlocks(missing: readonly WorkbookBlock[]): readonly WorkbookBlock[] | null {
+export function namedBlocks(missing: readonly WorkbookBlock[]): readonly WorkbookBlock[] {
   const named: WorkbookBlock[] = [];
   for (const block of missing) {
     const last = named.at(-1);
@@ -249,7 +259,21 @@ export function namedBlocks(missing: readonly WorkbookBlock[]): readonly Workboo
       named.push(block);
     }
   }
-  return named.length > MAX_OFFICE_MISSING_BLOCKS ? null : named;
+  return named;
+}
+
+/**
+ * The blocks as the import answers them: the first {@link MAX_OFFICE_MISSING_BLOCKS} named, and how many more there are.
+ *
+ * The document OPENED either way, so past the bound the person is told the count rather than the import failing — it
+ * failed until 2026-10-02 (*"too many to name"*), refusing a workbook whose every other row had converted (JOURNAL, *No
+ * document-size refusals*, table A row 12). Every block, named or counted, is in the shell log.
+ */
+export function toldBlocks(blocks: readonly WorkbookBlock[]): { readonly missing: readonly WorkbookBlock[]; readonly more: number } {
+  return {
+    missing: blocks.slice(0, MAX_OFFICE_MISSING_BLOCKS),
+    more: Math.max(0, blocks.length - MAX_OFFICE_MISSING_BLOCKS),
+  };
 }
 
 /**
@@ -270,6 +294,10 @@ export function namedBlocks(missing: readonly WorkbookBlock[]): readonly Workboo
  * this can change, so a part that times out or exits without a PDF is halved like one that reached the cut-off. That would be a loop for a workbook x2t fails on for some other
  * reason, so each sheet may spend {@link MAX_FAILED_PARTS_PER_SHEET} failed conversions; past that, its failing blocks are
  * named rather than tried. A converter that could not START is not a size, and fails the import at once.
+ *
+ * Nothing about the workbook's SIZE fails the import: a sheet past {@link MAX_CONVERSIONS_PER_SHEET} conversions has its
+ * remaining blocks named, every block missing is kept for the answer to name or count, and the parts are joined in
+ * stages ({@link joinedInStages}).
  */
 async function convertWorkbook(
   workbooks: WorkbookComposer,
@@ -292,10 +320,8 @@ async function convertWorkbook(
         : [],
     );
     const failedBySheet = new Map<number, number>();
+    const convertedBySheet = new Map<number, number>();
     while (queue.length > 0) {
-      if (done.length + queue.length > MAX_WORKBOOK_PARTS) {
-        throw unreadable(`it needs more than ${String(MAX_WORKBOOK_PARTS)} parts`);
-      }
       const step = queue.shift();
       if (step === undefined) break;
       const rows = step.rows ?? { from: 1, to: step.lastRow };
@@ -315,11 +341,15 @@ async function convertWorkbook(
         if (cut.kind === 'unsplittable') missing.push({ sheet: step.name, ...rows });
         continue;
       }
-      // THE SHEET'S BUDGET IS SPENT: its remaining blocks are named without another conversion.
-      if ((failedBySheet.get(step.index) ?? 0) >= MAX_FAILED_PARTS_PER_SHEET) {
+      // A BUDGET OF THE SHEET'S IS SPENT: its remaining blocks are named without another conversion.
+      if (
+        (failedBySheet.get(step.index) ?? 0) >= MAX_FAILED_PARTS_PER_SHEET ||
+        (convertedBySheet.get(step.index) ?? 0) >= MAX_CONVERSIONS_PER_SHEET
+      ) {
         missing.push({ sheet: step.name, ...rows });
         continue;
       }
+      convertedBySheet.set(step.index, (convertedBySheet.get(step.index) ?? 0) + 1);
       let converted: OfficeConversion;
       try {
         converted = await convert(cut.bytes);
@@ -342,17 +372,50 @@ async function convertWorkbook(
       else halve();
     }
     const named = namedBlocks(missing);
-    if (named === null) {
-      throw unreadable(`more than ${String(MAX_OFFICE_MISSING_BLOCKS)} blocks of it could not be converted, too many to name`);
-    }
     // NOTHING VISIBLE TO PRINT — every sheet empty or hidden: x2t's own answer for the file, as a whole conversion gives it.
     if (done.length === 0 && named.length === 0) return await convert(file);
     // NOTHING CONVERTED AND SOMETHING MISSING is a conversion that produced nothing, not an empty document with a note.
     if (done.length === 0) throw unreadable('no part of it could be converted');
-    const joined = await workbooks.join(done);
+    const joined = await workbooks.join(await joinedInStages(workbooks, done, placed, unreadable));
     if (joined === null) throw unreadable('its parts could not be joined');
     return { output: joined.output, discard: joined.discard, missing: named };
   } finally {
     await Promise.all(placed.map((name) => workbooks.remove(name)));
   }
+}
+
+/**
+ * The parts, as at most {@link MAX_WORKBOOK_PARTS} PDFs for the last join: where there are more — a workbook of more
+ * visible sheets than one join takes — each run of that many is joined and put back in the area, in order, and the runs
+ * joined again. Each stage is one more read of the bytes, and two stages cover a million parts.
+ *
+ * A stage and not a larger join, because the join's list is a host channel's bounded params, and a workbook of 1,025
+ * sheets was refused at it (JOURNAL, *No document-size refusals*, table A row 12).
+ *
+ * @param placed every name put into the area, which the caller removes; each stage's PDF joins it
+ */
+async function joinedInStages(
+  workbooks: WorkbookComposer,
+  parts: readonly string[],
+  placed: string[],
+  unreadable: (detail: string) => OfficeConversionFailedError,
+): Promise<readonly string[]> {
+  let names = parts;
+  while (names.length > MAX_WORKBOOK_PARTS) {
+    const staged: string[] = [];
+    for (let at = 0; at < names.length; at += MAX_WORKBOOK_PARTS) {
+      const run = await workbooks.join(names.slice(at, at + MAX_WORKBOOK_PARTS));
+      if (run === null) throw unreadable('its parts could not be joined');
+      let name: string;
+      try {
+        name = await workbooks.put(run.output);
+      } finally {
+        run.discard();
+      }
+      placed.push(name);
+      staged.push(name);
+    }
+    names = staged;
+  }
+  return names;
 }

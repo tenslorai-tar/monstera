@@ -241,6 +241,7 @@ import {
 } from './commands/annotationData.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG } from './dialogs/insertImageProblem.js';
 import { MARKDOWN_IMPORT_PROBLEM_DIALOG } from './dialogs/markdownImportProblem.js';
+import { WORKBOOK_INCOMPLETE_DIALOG } from './dialogs/workbookIncomplete.js';
 import { OPEN_FROM_URL_DIALOG } from './dialogs/openFromUrl.js';
 import { CAMERA_CAPTURE_DIALOG } from './dialogs/cameraCapture.js';
 import { URL_OPEN_PROBLEM_DIALOG } from './dialogs/urlOpenProblem.js';
@@ -858,6 +859,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         IMPORT_ANNOTATIONS_PROBLEM_DIALOG,
         INSERT_IMAGE_PROBLEM_DIALOG,
         MARKDOWN_IMPORT_PROBLEM_DIALOG,
+        WORKBOOK_INCOMPLETE_DIALOG,
         OPEN_FROM_URL_DIALOG,
         URL_OPEN_PROBLEM_DIALOG,
         CAMERA_CAPTURE_DIALOG,

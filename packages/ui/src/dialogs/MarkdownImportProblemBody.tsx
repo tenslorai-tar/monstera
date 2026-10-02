@@ -22,8 +22,6 @@ import {
   MARKDOWN_IMPORT_UNENCODABLE,
   MARKDOWN_IMPORT_UNENCODABLE_LINE,
   MARKDOWN_IMPORT_UNREADABLE,
-  MARKDOWN_IMPORT_WORKBOOK_BLOCK,
-  MARKDOWN_IMPORT_WORKBOOK_INCOMPLETE,
   MARKDOWN_IMPORT_WRITE_FAILED,
 } from '../messages/en.js';
 import type { MarkdownImportProblem } from './markdownImportProblem.js';
@@ -42,15 +40,6 @@ export default function MarkdownImportProblemBody(props: MarkdownImportProblem):
   return (
     <div className="m-markdown-import-problem">
       <p>{sentence()}</p>
-      {props.reason === 'workbook-incomplete' ? (
-        <ul data-missing-blocks={props.missing.length}>
-          {props.missing.map((block) => (
-            <li key={`${block.sheet}:${String(block.from)}`}>
-              {_(MARKDOWN_IMPORT_WORKBOOK_BLOCK, { sheet: block.sheet, from: block.from, to: block.to })}
-            </li>
-          ))}
-        </ul>
-      ) : null}
     </div>
   );
 
@@ -106,9 +95,6 @@ export default function MarkdownImportProblemBody(props: MarkdownImportProblem):
         return _(MARKDOWN_IMPORT_IMAGES_TOO_LARGE, {
           megabytes: Math.floor(props.limitBytes / (1024 * 1024)),
         });
-      // THE DOCUMENT OPENED, so the sentence says what is in it and the list below names what is not.
-      case 'workbook-incomplete':
-        return _(MARKDOWN_IMPORT_WORKBOOK_INCOMPLETE);
     }
   }
 }
