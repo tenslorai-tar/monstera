@@ -881,7 +881,7 @@ export const replacePageSchema = z.object({
  * and the person who just imported a layer would find the Layers panel unavailable.
  *
  * It moved here from `channels.ts` on 2026-09-14 because `channels.ts` imports this file
- * and the command schema now needs it too; `MAX_LAYERS` stays there, having one reader.
+ * and the command schema now needs it too; `LAYERS_PART` stays there, having one reader.
  * A tab's name is bounded at 255 by `MAX_DOCUMENT_NAME_LENGTH`, so the source tab's name
  * the renderer sends always fits.
  *

@@ -1404,7 +1404,7 @@ export const handlers: ContractHandlers = {
   'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [] })),
   'document.destinations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [], next: null, truncated: false })),
-  'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [] })),
+  'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [], next: null, truncated: false })),
   'document.annotations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), annotations: [], next: null, truncated: false })),
   'document.formFields': () =>
@@ -1592,7 +1592,7 @@ export const handlers: ContractHandlers = {
   'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [] })),
   'document.destinations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [], next: null, truncated: false })),
-  'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [] })),
+  'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [], next: null, truncated: false })),
   'document.annotations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), annotations: [], next: null, truncated: false })),
   'document.formFields': () =>
@@ -1855,7 +1855,7 @@ export const shim: ContractClient = {
   'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [] })),
   'document.destinations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [], next: null, truncated: false })),
-  'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [] })),
+  'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [], next: null, truncated: false })),
   'document.annotations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), annotations: [], next: null, truncated: false })),
   'document.formFields': () =>

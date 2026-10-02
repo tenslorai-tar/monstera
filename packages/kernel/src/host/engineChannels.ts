@@ -311,14 +311,16 @@ export const SMALLEST_DESTINATION_BYTES = 34;
 export const ENGINE_DESTINATION_TITLE_MAX = 512;
 
 /**
- * How many layers may cross, and how long a name may be.
+ * How many layers one answer may carry, and how long a name may be.
  *
- * Much smaller than the outline's, because the shapes differ: a design carries
- * a handful of optional-content groups where a manual carries hundreds of
- * headings. A bound copied from the outline would be one nobody had thought
- * about — the number is supposed to be a statement about what the thing is.
+ * {@link ENGINE_DESTINATIONS_MAX}' derivation: the answer ceiling over {@link SMALLEST_LAYER_BYTES} and a comma,
+ * rounded down to a hundred (ADR-0130 Decision 3). It was 1,024, which a CAD export's layers pass, and the answer was
+ * then refused whole (JOURNAL, *No document-size refusals*, table A row 6). A longer name is shown shortened
+ * (`shownName.ts`) rather than refusing every other layer.
  */
-export const ENGINE_LAYERS_MAX = 1024;
+export const ENGINE_LAYERS_MAX = 226_700;
+/** The fewest bytes one layer serialises to on this wire. Measured by `engineChannels.test.ts`. */
+export const SMALLEST_LAYER_BYTES = 36;
 export const ENGINE_LAYER_NAME_MAX = 256;
 
 /**
@@ -2504,7 +2506,13 @@ export const engineChannels = {
   'engine/layers': fileAnswered(
     'Reads the document’s optional-content groups from a session this host holds.',
     z.object({ session: sessionSchema }).strict(),
-    z.object({ layers: z.array(engineLayerSchema).max(ENGINE_LAYERS_MAX) }).strict(),
+    z
+      .object({
+        layers: z.array(engineLayerSchema).max(ENGINE_LAYERS_MAX),
+        /** Whether the bound stopped the walk. See `engine/destinations`. */
+        truncated: z.boolean(),
+      })
+      .strict(),
     ['no-such-session'],
   ),
 

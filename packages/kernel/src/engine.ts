@@ -28,6 +28,7 @@ export {
   invertSetLayerVisibility,
   readLayers,
   type Layer,
+  type ListedLayers,
 } from './layers.js';
 export {
   applyDeletePages,

@@ -10,7 +10,7 @@ import type { ByteImage, DocumentAccess, EngineWriter, MupdfSession, PreReadValu
 import { DocumentLocked } from '../engineSeam.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
 import type { ListedDestinations } from '../destinations.js';
-import type { Layer } from '../layers.js';
+import type { ListedLayers } from '../layers.js';
 import type { ReadSignature } from '../signatureRead.js';
 import type { FlatFieldCandidate } from '../flatFields.js';
 import type { ListedField } from '../formFields.js';
@@ -129,7 +129,7 @@ export type HostOcrReader = (
 export type HostDestinationsReader = (session: MupdfSession) => Promise<ListedDestinations>;
 
 /** Reads the document's layers. Injected for the readers above's reason. */
-export type HostLayersReader = (session: MupdfSession) => Promise<readonly Layer[]>;
+export type HostLayersReader = (session: MupdfSession) => Promise<ListedLayers>;
 
 /**
  * Reading and verifying a document's signatures.
@@ -863,7 +863,8 @@ export function createEngineHandlers({
     'engine/layers': async ({ session }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
-      return { ok: true, value: { layers: [...(await layers(held.session))] } };
+      const listed = await layers(held.session);
+      return { ok: true, value: { layers: [...listed.layers], truncated: listed.truncated } };
     },
 
     'engine/signatures': async ({ session }) => {

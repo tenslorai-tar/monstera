@@ -2735,7 +2735,12 @@ describe('App', () => {
     // re-read — the control looked dead — and every range read after it named a version main had left.
     const { client, sent } = answeringClient({
       ...OPEN_DOCUMENT_ANSWERS,
-      'document.layers': { version: asDocVersion(1), layers: [{ index: 7, name: 'Draft stamp', visible: false }] },
+      'document.layers': {
+        version: asDocVersion(1),
+        layers: [{ index: 7, name: 'Draft stamp', visible: false }],
+        next: null,
+        truncated: false,
+      },
       'document.execute': { version: asDocVersion(2), byteLength: 1024, historyDropped: 0 },
     });
     render(<App client={client} settings={freshSettings()} />);

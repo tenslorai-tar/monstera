@@ -428,7 +428,7 @@ export function remoteMupdfLayers(
     answered(
       'engine/layers',
       await client['engine/layers']({ session: sessions.handleFor(session) }),
-    ).layers;
+    );
 }
 
 /**

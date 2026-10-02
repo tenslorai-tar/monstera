@@ -2,8 +2,9 @@ import type { OutlineEntry } from '@monstera/contract';
 import type * as mupdf from './mupdfRaw.js';
 
 import type { MupdfSession } from './engineSeam.js';
-import { ENGINE_DESTINATIONS_MAX } from './host/engineChannels.js';
+import { ENGINE_DESTINATION_TITLE_MAX, ENGINE_DESTINATIONS_MAX } from './host/engineChannels.js';
 import { withDocument } from './mupdfWriter.js';
+import { shownName } from './shownName.js';
 
 /**
  * A document's named destinations, as its outline states them.
@@ -158,7 +159,8 @@ function flatten(document: mupdf.PDFDocument): ListedDestinations {
         // with none is a row a reader cannot identify, so it takes the empty
         // string and the panel decides what to show — rather than this dropping
         // it, which would silently renumber everything below it.
-        title: item.title ?? '',
+        // SHORTENED, never refused: one heading past the wire's bound made the whole outline unreadable (`shownName.ts`).
+        title: shownName(item.title ?? '', ENGINE_DESTINATION_TITLE_MAX),
         page: typeof item.page === 'number' ? item.page : null,
         depth,
       });

@@ -517,7 +517,7 @@ export type { AnnotationKindName, ListedAnnotation } from './pageAnnotations.js'
 // TYPE ONLY, for `ListedAnnotation`'s reason: `readFormFields` reaches MuPDF
 // and is on `@monstera/kernel/engine`; the listed shape is a plain object.
 export type { ListedField } from './formFields.js';
-export type { Layer, PriorLayerVisibility } from './layers.js';
+export type { Layer, ListedLayers, PriorLayerVisibility } from './layers.js';
 // TYPE ONLY. `findDuplicatePages` itself is on `@monstera/kernel/engine` with
 // every other value that binds the native library (ADR-0026); the group shape
 // is a plain object and a consumer naming it must not pull MuPDF in.

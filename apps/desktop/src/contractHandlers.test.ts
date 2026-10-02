@@ -1753,6 +1753,36 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
   });
 });
 
+describe('a CAD export’s layers answer in parts the contract accepts', () => {
+  const OPENED = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' } as const;
+  const layers = Array.from({ length: 2500 }, (_, index) => ({ index, name: `Level ${String(index)}`, visible: true }));
+  const commands = {
+    layers: () => Promise.resolve({ version: asDocVersion(4), layers, truncated: false }),
+  } as unknown as DocumentCommands;
+  const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands });
+
+  it('2,500 layers: three parts, each valid, and together every layer', async () => {
+    const items: unknown[] = [];
+    let parts = 0;
+    let from: number | null = 0;
+    while (from !== null) {
+      const answer = await handlers['document.layers']({ docId: A_DOC, from });
+      if (!answer.ok) throw new Error(`the part from ${String(from)} was refused`);
+      expect(channels['document.layers'].result.safeParse(answer.value).success).toBe(true);
+      items.push(...answer.value.layers);
+      from = answer.value.next;
+      parts += 1;
+    }
+    expect(parts).toBe(3);
+    expect(items).toStrictEqual(layers);
+  });
+
+  it('CONTROL: the same layers answered WHOLE are refused by the contract — the fixture is at the breaking size', () => {
+    const whole = { version: asDocVersion(4), layers, next: null, truncated: false };
+    expect(channels['document.layers'].result.safeParse(whole).success).toBe(false);
+  });
+});
+
 /** The handle this registry would mint for a path, without minting a new one. */
 function asFileHandleFrom(registry: CapabilityRegistry, path: string): FileHandle {
   // `mint` is idempotent per path, so this is the handle the handler would have

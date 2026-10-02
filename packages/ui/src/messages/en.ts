@@ -980,6 +980,7 @@ export const RECOVER_LABEL = messageKey('surface.recent.recover-label');
 export const LAYERS_LABEL = messageKey('surface.layers.label');
 export const LAYERS_EMPTY = messageKey('surface.layers.empty');
 export const LAYERS_UNAVAILABLE = messageKey('surface.layers.unavailable');
+export const LAYERS_TRUNCATED = messageKey('surface.layers.truncated');
 export const LINKS_LABEL = messageKey('surface.links.label');
 export const LINKS_EMPTY = messageKey('surface.links.empty');
 export const LINKS_UNAVAILABLE = messageKey('surface.links.unavailable');
@@ -2983,6 +2984,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [LAYERS_LABEL]: 'Layers',
   [LAYERS_EMPTY]: 'This document has no layers.',
   [LAYERS_UNAVAILABLE]: 'The layers could not be read.',
+  [LAYERS_TRUNCATED]: 'This document carries more layers than can be read, so the rest are not listed.',
   [LINKS_LABEL]: 'Links on this page',
   [LINKS_EMPTY]: 'This page has no links.',
   [LINKS_UNAVAILABLE]: 'The links on this page could not be read.',

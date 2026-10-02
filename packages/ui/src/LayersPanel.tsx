@@ -3,7 +3,8 @@ import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 import { type ReactElement, useEffect, useState } from 'react';
 
-import { LAYERS_EMPTY, LAYERS_LABEL, LAYERS_UNAVAILABLE } from './messages/en.js';
+import { LAYERS_EMPTY, LAYERS_LABEL, LAYERS_TRUNCATED, LAYERS_UNAVAILABLE } from './messages/en.js';
+import { readWholeList } from './readWholeList.js';
 
 /**
  * The document's optional-content groups, with a control that turns each one on
@@ -57,12 +58,16 @@ export function LayersPanel({
     if (docId === undefined || version === undefined) return;
     let cancelled = false;
 
-    void client['document.layers']({ docId }).then(
+    // IN PARTS, read whole (ADR-0130): a CAD export carries thousands of layers.
+    void readWholeList(
+      (from) => client['document.layers']({ docId, from }),
+      (part) => part.layers,
+    ).then(
       (answer) => {
         if (cancelled) return;
         setState(
           answer.ok
-            ? { kind: 'layers', docId, layers: answer.value.layers }
+            ? { kind: 'layers', docId, layers: answer.value.items, truncated: answer.value.last.truncated }
             : { kind: 'unavailable', docId },
         );
       },
@@ -110,6 +115,9 @@ export function LayersPanel({
           ))}
         </ul>
       )}
+      {state.kind === 'layers' && state.truncated ? (
+        <p className="m-layers-empty">{i18n._(LAYERS_TRUNCATED)}</p>
+      ) : null}
     </section>
   );
 }
@@ -131,4 +139,10 @@ interface PanelLayer {
 type PanelState =
   | { readonly kind: 'idle' }
   | { readonly kind: 'unavailable'; readonly docId: DocId }
-  | { readonly kind: 'layers'; readonly docId: DocId; readonly layers: readonly PanelLayer[] };
+  | {
+      readonly kind: 'layers';
+      readonly docId: DocId;
+      readonly layers: readonly PanelLayer[];
+      /** Whether the host's walk stopped at its bound, which only a hostile document reaches. */
+      readonly truncated: boolean;
+    };

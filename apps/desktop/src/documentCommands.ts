@@ -80,6 +80,7 @@ import {
   type ListedAnnotation,
   type ListedField,
   type Layer,
+  type ListedLayers,
   type PageLink,
   type PageStructure,
   type PageText,
@@ -1822,12 +1823,13 @@ export interface DocumentPageRaster {
 export type DocumentLayersReader = (
   docId: DocId,
   sessions: DocumentSessions,
-) => Promise<readonly Layer[]>;
+) => Promise<ListedLayers>;
 
-/** The layers, stamped with the version the lane read them at. */
+/** The layers, stamped with the version the lane read them at, and whether the walk stopped at its bound. */
 export interface DocumentLayers {
   readonly version: DocVersion;
   readonly layers: readonly Layer[];
+  readonly truncated: boolean;
 }
 
 /**
@@ -2900,7 +2902,7 @@ export class DocumentCommands {
       return this.#layers(docId, sessions);
     });
 
-    return { version, layers: value };
+    return { version, layers: value.layers, truncated: value.truncated };
   }
 
   /**

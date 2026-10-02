@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createClient, wrapHandlers } from './boundary.js';
 import {
-  MAX_LAYERS,
+  LAYERS_PART,
   MAX_RANGE_BYTES,
   channelIds,
   channels,
@@ -285,6 +285,8 @@ const handlers: ContractHandlers = {
           { index: 0, name: 'Shown', visible: true },
           { index: 1, name: 'Hidden', visible: false },
         ],
+        next: null,
+        truncated: false,
       }),
     ),
   // TWO GROUPS AND `truncated: false`, for the layers fixture's reason: one
@@ -534,26 +536,21 @@ describe('the shipping contract, exercised through its own map', () => {
     }
   });
 
-  it('a layer list past the bound is REFUSED, so the bound is reachable', async () => {
-    // FOUND BY THE STAGE AUDIT of `87540a5..HEAD`. `readLayers` clamped its
-    // own count with `Math.min(groups.length, MAX_LAYERS)`, so the array
-    // reaching this schema had already been cut to fit and `.max(MAX_LAYERS)`
-    // was a check that could not fail — while the reader was shown a subset of
-    // their document's layers with nothing saying so.
-    //
-    // The kernel no longer clamps, and this is what makes that bound live.
-    const many = Array.from({ length: MAX_LAYERS + 1 }, (_unused, index) => ({
+  it('a layer PART past its size is REFUSED, so a long list crosses only as main cuts it', async () => {
+    // A document's layers cross in parts (ADR-0130); a handler that answered the whole list in one would be the
+    // 1,024-layer refusal arriving from the other side, and the bound is what makes that visible.
+    const many = Array.from({ length: LAYERS_PART + 1 }, (_unused, index) => ({
       index,
       name: 'Layer',
       visible: true,
     }));
     const client = createClient(channels, (id, params) =>
       wrapHandlers(channels, { ...handlers, 'document.layers': () =>
-        Promise.resolve(ok({ version: asDocVersion(1), layers: many })),
+        Promise.resolve(ok({ version: asDocVersion(1), layers: many, next: null, truncated: false })),
       }, ignore)[id](params),
     );
 
-    const result = await client['document.layers']({ docId: asDocId('doc-1') });
+    const result = await client['document.layers']({ docId: asDocId('doc-1'), from: 0 });
 
     expect(result.ok).toBe(false);
   });
@@ -562,21 +559,21 @@ describe('the shipping contract, exercised through its own map', () => {
     // `readRange`'s control, for `readRange`'s reason: the case above passes
     // for a schema that refuses every layer list, which is also what a typo in
     // the bound produces and which would take the whole panel with it.
-    const exactly = Array.from({ length: MAX_LAYERS }, (_unused, index) => ({
+    const exactly = Array.from({ length: LAYERS_PART }, (_unused, index) => ({
       index,
       name: 'Layer',
       visible: true,
     }));
     const client = createClient(channels, (id, params) =>
       wrapHandlers(channels, { ...handlers, 'document.layers': () =>
-        Promise.resolve(ok({ version: asDocVersion(1), layers: exactly })),
+        Promise.resolve(ok({ version: asDocVersion(1), layers: exactly, next: LAYERS_PART, truncated: false })),
       }, ignore)[id](params),
     );
 
-    const result = await client['document.layers']({ docId: asDocId('doc-1') });
+    const result = await client['document.layers']({ docId: asDocId('doc-1'), from: 0 });
 
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.layers).toHaveLength(MAX_LAYERS);
+    if (result.ok) expect(result.value.layers).toHaveLength(LAYERS_PART);
   });
 
   it('L11: the bound is on the SIZE, not on the offset, so a late range is served', async () => {

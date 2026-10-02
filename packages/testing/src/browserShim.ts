@@ -1987,8 +1987,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       // the reason `document.viewModel` states: a panel that appeared to lose
       // its layers on the third read would be reacting to a shim behaviour no
       // product code can produce.
+      // ONE PART, the last, as the outline's above: a scripted list is a handful of layers.
       const layers = layerLists.length > 1 ? (layerLists.shift() ?? []) : (layerLists[0] ?? []);
-      return Promise.resolve(ok({ version: asDocVersion(current), layers }));
+      return Promise.resolve(ok({ version: asDocVersion(current), layers, next: null, truncated: false }));
     },
 
     /**

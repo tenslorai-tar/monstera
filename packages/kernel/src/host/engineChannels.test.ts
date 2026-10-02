@@ -5,14 +5,16 @@ import {
   ENGINE_ANNOTATIONS_MAX,
   ENGINE_DESTINATIONS_MAX,
   ENGINE_FORM_FIELDS_MAX,
+  ENGINE_LAYERS_MAX,
   SMALLEST_ANNOTATION_BYTES,
   SMALLEST_DESTINATION_BYTES,
+  SMALLEST_LAYER_BYTES,
   SMALLEST_FORM_FIELD_BYTES,
   engineChannels,
 } from './engineChannels.js';
 
 /**
- * The three document-wide lists' count bounds are DERIVED (ADR-0130 Decision 3): the most items an answer within the
+ * The four document-wide lists' count bounds are DERIVED (ADR-0130 Decision 3): the most items an answer within the
  * 8 MiB answer ceiling could carry at the smallest one serialises to, and a comma, rounded down to a hundred. Each
  * smallest item is built here, ACCEPTED by the channel's own schema — or the figure would be the size of something the
  * wire refuses — and measured; each literal is held to its division, so a field added to a schema or a ceiling moved
@@ -66,6 +68,20 @@ describe('the document-wide lists’ hostile-host bounds', () => {
     expect(engineChannels['engine/destinations'].result.safeParse(answer).success).toBe(true);
     expect(JSON.stringify(smallest).length).toBe(SMALLEST_DESTINATION_BYTES);
     expect(ENGINE_DESTINATIONS_MAX).toBe(derived(SMALLEST_DESTINATION_BYTES));
+  });
+
+  it('layers: the smallest layer the schema accepts, and the bound it derives', () => {
+    const smallest = { index: 0, name: '', visible: true };
+    expect(engineChannels['engine/layers'].result.safeParse({ layers: [smallest], truncated: false }).success).toBe(true);
+    expect(JSON.stringify(smallest).length).toBe(SMALLEST_LAYER_BYTES);
+    expect(ENGINE_LAYERS_MAX).toBe(derived(SMALLEST_LAYER_BYTES));
+  });
+
+  it('CONTROL: the layers bound is enforced — one past it is refused by the channel', () => {
+    const layer = { index: 0, name: '', visible: true };
+    const over = { layers: Array.from({ length: ENGINE_LAYERS_MAX + 1 }, () => layer), truncated: true };
+    expect(engineChannels['engine/layers'].result.safeParse({ ...over, layers: over.layers.slice(1) }).success).toBe(true);
+    expect(engineChannels['engine/layers'].result.safeParse(over).success).toBe(false);
   });
 
   it('CONTROL: the bound is enforced — one entry past it is refused by the channel', () => {

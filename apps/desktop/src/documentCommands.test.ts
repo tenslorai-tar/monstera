@@ -5426,7 +5426,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     // A REOPEN, through a session that never saw the command: the Layers panel's own reader.
     const reopened = await mupdfWriter.open(onDisk);
     try {
-      const layers = await readLayers(reopened);
+      const { layers } = await readLayers(reopened);
       expect(layers.map((layer) => layer.name)).toStrictEqual(['Letterhead']);
     } finally {
       await mupdfWriter.close(reopened);
@@ -5455,7 +5455,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     // AND THE FILE HOLDS THE SECOND EDIT: a refusal reported as a save would leave it out.
     const reopened = await mupdfWriter.open(readFileSync(t.targetPath));
     try {
-      expect((await readLayers(reopened)).map((layer) => layer.name).sort()).toStrictEqual(['First', 'Second']);
+      expect((await readLayers(reopened)).layers.map((layer) => layer.name).sort()).toStrictEqual(['First', 'Second']);
     } finally {
       await mupdfWriter.close(reopened);
     }
@@ -5508,7 +5508,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     const after = t.held.sessions(t.target)?.mupdf;
     if (after === undefined) throw new Error('the restore held no session');
     expect(structures(await PDFDocument.load(await mupdfWriter.serialise(after)), 1)).toStrictEqual(ABSENT);
-    expect(await readLayers(after)).toStrictEqual([]);
+    expect(await readLayers(after)).toStrictEqual({ layers: [], truncated: false });
 
     // AND THE WINDOW IS HANDED THE RESTORED DOCUMENT (ADR-0084): the bytes main serves at the
     // undo's version, taken from the session the restore REBUILT — the flush above refuses the

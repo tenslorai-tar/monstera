@@ -646,14 +646,13 @@ export const outlineEntrySchema = z.object({
 export type OutlineEntry = z.infer<typeof outlineEntrySchema>;
 
 /**
- * How many layers may reach the renderer, and how long a name may be.
+ * How many layers one part carries.
  *
- * Much smaller than the outline's, because the shapes differ: a design carries
- * a handful of optional-content groups where a manual carries hundreds of
- * headings. A bound copied across would be a number nobody had thought about,
- * and the number is meant to be a statement about what the thing is.
+ * A PART, not the document's layers: a CAD export carries thousands, and as the whole list's bound this refused
+ * every one of them (JOURNAL, *No document-size refusals*, table A row 6). A longer list crosses in several
+ * ({@link listPartFromSchema}, ADR-0130), and the host's walk stops only at a derived hostile-host bound and says so.
  */
-export const MAX_LAYERS = 1024;
+export const LAYERS_PART = 1024;
 
 /**
  * How many duplicate pages may be reported in one answer.
@@ -665,10 +664,6 @@ export const MAX_LAYERS = 1024;
  * for `document.searchPage`'s reason: without that flag a caller cannot tell
  * *this document has five hundred duplicates* from *you asked for five
  * hundred*.
- *
- * Bigger than {@link MAX_LAYERS} because the shapes differ again: a person
- * scanning a list of layers is reading a design's structure, where a person
- * looking at duplicates is about to delete them and wants the whole set.
  */
 export const MAX_DUPLICATE_PAGES = 4096;
 
@@ -2005,8 +2000,8 @@ export const channels = {
    * `DocumentService.close` removes the record synchronously and then **awaits
    * the lane**, so work in flight delays the teardown rather than refusing it.
    * There is no busy refusal to report. Declaring one would have put a code in
-   * the result union that nothing can ever produce — the shape this range's
-   * audit found in `MAX_LAYERS`, a branch that reads as coverage and cannot
+   * the result union that nothing can ever produce — the shape of a bound a
+   * reader had already clamped to, a branch that reads as coverage and cannot
    * fire — and a renderer would carry a handler for it forever.
    */
   'document.close': channel(
@@ -4228,11 +4223,11 @@ export const channels = {
    * it would be one whose changes no undo could reach.
    *
    * Whole-document for `document.destinations`' reason: layers are structure,
-   * read once when a document opens.
+   * read once when a document opens. And in PARTS for its reason too (ADR-0130): the renderer reads them whole.
    */
   'document.layers': channel(
-    'The document’s optional-content groups, with each one’s current visibility.',
-    z.object({ docId: docIdSchema }),
+    'One part of the document’s optional-content groups, with each one’s current visibility.',
+    z.object({ docId: docIdSchema, from: listPartFromSchema }),
     z.object({
       version: docVersionSchema,
       layers: z
@@ -4240,12 +4235,17 @@ export const channels = {
           z.object({
             /** The layer's address, as a `setLayerVisibility` command names it. */
             index: z.number().int().nonnegative(),
+            /** Shortened with an ellipsis where the document's name is longer (`shownName.ts`). */
             name: z.string().max(MAX_LAYER_NAME_LENGTH),
             visible: z.boolean(),
           }),
         )
-        .max(MAX_LAYERS)
+        .max(LAYERS_PART)
         .readonly(),
+      /** Where the next part begins, or `null` for the last. {@link listPartNextSchema}. */
+      next: listPartNextSchema,
+      /** Whether the walk stopped at its bound, on the last part only. `document.annotations`' flag. */
+      truncated: z.boolean(),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

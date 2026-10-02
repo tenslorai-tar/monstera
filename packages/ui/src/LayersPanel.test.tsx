@@ -50,7 +50,7 @@ const NO_TOGGLE = (): void => undefined;
  */
 function clientAnswering(
   layers: readonly unknown[],
-  options: { refuse?: boolean } = {},
+  options: { refuse?: boolean; truncated?: boolean } = {},
 ): { client: ContractClient; asked: unknown[]; executed: unknown[] } {
   const asked: unknown[] = [];
   const executed: unknown[] = [];
@@ -62,7 +62,9 @@ function clientAnswering(
     if (id !== 'document.layers') throw new Error(`unexpected channel ${id}`);
     asked.push(params);
     return Promise.resolve(
-      options.refuse === true ? err({ code: 'document-busy' }) : ok({ version: V1, layers }),
+      options.refuse === true
+        ? err({ code: 'document-busy' })
+        : ok({ version: V1, layers, next: null, truncated: options.truncated ?? false }),
     );
   });
   return { client, asked, executed };
@@ -81,6 +83,62 @@ async function settle(): Promise<void> {
 }
 
 describe('LayersPanel', () => {
+  it('reads a list that crosses in PARTS whole, as main cuts a CAD export’s thousands', async () => {
+    // JOURNAL, *No document-size refusals*, table A row 6. A panel that asked once would show the first part as the
+    // document's layers, which is the 1,024 cap arriving one layer up.
+    const asked: unknown[] = [];
+    const client = createClient(channels, (id, params) => {
+      if (id !== 'document.layers') throw new Error(`unexpected channel ${id}`);
+      asked.push(params);
+      const from = (params as { from: number }).from;
+      return Promise.resolve(
+        from === 0
+          ? ok({ version: V1, layers: [{ index: 0, name: 'Walls', visible: true }], next: 1, truncated: false })
+          : ok({ version: V1, layers: [{ index: 1, name: 'Wiring', visible: false }], next: null, truncated: false }),
+      );
+    });
+    const { container } = render(
+      <Wrapped>
+        <LayersPanel client={client} docId={DOC} onToggle={NO_TOGGLE} version={V1} />
+      </Wrapped>,
+    );
+    await settle();
+    await settle();
+
+    expect([...container.querySelectorAll('.m-layer-name')].map((name) => name.textContent)).toStrictEqual([
+      'Walls',
+      'Wiring',
+    ]);
+    // CONTROL: two asks, the second from where the first part said, so the second row came from the second part.
+    expect(asked).toStrictEqual([
+      { docId: DOC, from: 0 },
+      { docId: DOC, from: 1 },
+    ]);
+  });
+
+  it('says when the host stopped at its bound, and lists what it read', async () => {
+    const { client } = clientAnswering(LAYERS, { truncated: true });
+    const { container } = render(
+      <Wrapped>
+        <LayersPanel client={client} docId={DOC} onToggle={NO_TOGGLE} version={V1} />
+      </Wrapped>,
+    );
+    await settle();
+    expect(container.querySelectorAll('input')).toHaveLength(2);
+    expect(container.textContent).toContain('more layers than can be read');
+  });
+
+  it('CONTROL: says nothing of the kind for a list read whole', async () => {
+    const { client } = clientAnswering(LAYERS);
+    const { container } = render(
+      <Wrapped>
+        <LayersPanel client={client} docId={DOC} onToggle={NO_TOGGLE} version={V1} />
+      </Wrapped>,
+    );
+    await settle();
+    expect(container.textContent).not.toContain('more layers than can be read');
+  });
+
   it('renders every layer with the visibility the DOCUMENT holds', async () => {
     const { client } = clientAnswering(LAYERS);
     const { container } = render(
@@ -203,7 +261,10 @@ describe('LayersPanel', () => {
     );
     await settle();
 
-    expect(asked).toStrictEqual([{ docId: DOC }, { docId: DOC }]);
+    expect(asked).toStrictEqual([
+      { docId: DOC, from: 0 },
+      { docId: DOC, from: 0 },
+    ]);
   });
 
   it('asks ONCE per version, not once per render', async () => {
@@ -224,7 +285,7 @@ describe('LayersPanel', () => {
     );
     await settle();
 
-    expect(asked).toStrictEqual([{ docId: DOC }]);
+    expect(asked).toStrictEqual([{ docId: DOC, from: 0 }]);
   });
 
   it('says a REFUSAL differently from a document with no layers', async () => {

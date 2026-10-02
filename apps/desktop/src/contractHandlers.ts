@@ -4,6 +4,7 @@ import {
   ANNOTATIONS_PART,
   DESTINATIONS_PART,
   FORM_FIELDS_PART,
+  LAYERS_PART,
   PAGE_OBJECTS_PART,
   TEXT_BLOCKS_PART,
   type AiModelListAnswer,
@@ -2424,10 +2425,11 @@ function destinationsHandler(
  * `document.execute`, so there is no mutating handler here.
  */
 function layersHandler(commands: DocumentCommands): ContractHandlers['document.layers'] {
-  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.layers']>>> => {
+  return async ({ docId, from }): Promise<Awaited<ReturnType<ContractHandlers['document.layers']>>> => {
     try {
-      const { version, layers } = await commands.layers(docId);
-      return ok({ version, layers });
+      const read = await commands.layers(docId);
+      const part = listPart(read.layers, read.truncated, from, LAYERS_PART);
+      return ok({ version: read.version, layers: part.items, next: part.next, truncated: part.truncated });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
