@@ -48,6 +48,22 @@ for exactly the lines the engine did not box.
 
 Recorded there as a dated correction; this ADR is what replaced it.
 
+## Correction, 2026-10-02 — the walk reads without segmentation, and lines pair by text and box
+
+Measured while building it: MuPDF's `walk` does not enter a structure block, and the substrate read's segmentation puts
+every text block inside one, so the walk over `stextOptionsFor('substrate')` found **no lines** on a one-line page. It is
+the Word export's picture read arriving again (`PICTURE_READ_OPTIONS`, ADR-0072's amendment). So, superseding the two
+sentences above that say otherwise:
+
+- the host walks a read **without segmentation**, `WORD_BOX_READ_OPTIONS` (`preserve-images` alone). Segmentation
+  regroups blocks and does not make lines, so the lines are the substrate's lines in another order;
+- each walked line therefore crosses with **its own text and box** beside its token boxes, and the renderer pairs a text
+  layer line with the walked line of the same text whose box is the same within a point, each used once
+  (`pairWordBoxes` in `pageCompare.ts`, the one pairing rule). A line with no partner keeps the estimate;
+- a walked line is cut at the text layer's 1,024 characters so a long line's cut text still pairs, and the answer carries
+  at most 8,192 lines; the host's three bounds are literals (its half of the contract does not load the renderer's) and
+  `wordBoxes.test.ts` holds each equal to the text layer's own.
+
 ## Rejected
 
 - **Characters' edges on every text layer read.** The text layer is read for selection, search highlighting and the
