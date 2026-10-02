@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync,
 import { strFromU8, unzipSync } from 'fflate';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
+import { crc32, deflateSync } from 'node:zlib';
 
 import {
   PDFArray,
@@ -28,6 +29,7 @@ import {
   MAX_CSV_BYTES,
   MAX_OFFICE_IMPORT_BYTES,
   MAX_IMAGE_BYTES,
+  MAX_LIBRARY_PICTURE_BYTES,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
   type WordMode,
@@ -107,7 +109,7 @@ import { unconfiguredCloud } from './cloudSession.js';
 import { createContractHandlers } from './contractHandlers.js';
 import { createRecentFiles } from './recentFiles.js';
 import { NO_RECENT_PICTURES } from './recentPictures.js';
-import { unusedLibrarySurface } from './personalLibrary.js';
+import { createPersonalLibrary, memoryPictureFiles, unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT } from './engagement.js';
 import {
   DocumentCommands,
@@ -703,8 +705,18 @@ type Varying = Pick<DocumentCommandsParts, 'documents' | 'bus' | 'engine'>;
  */
 const INERT = {
   save: noSaving,
-  // AN EMPTY LIBRARY: nothing kept, so a kept picture or signature named here is absent.
-  library: { picture: () => null, lookup: () => undefined },
+  // AN EMPTY LIBRARY: nothing kept, so a kept picture or signature named here is absent. Its two writes refuse by name,
+  // like every inert surface: a case that keeps without meaning to fails at the call.
+  library: {
+    picture: () => null,
+    lookup: () => undefined,
+    keepSignature: () => {
+      throw new Error('INERT: this case keeps nothing in the library');
+    },
+    addPicture: () => {
+      throw new Error('INERT: this case keeps nothing in the library');
+    },
+  },
   // DOCUSIGN REFUSES BY NAME here, like every inert surface: a case that reached it
   // without meaning to fails at the call rather than sending anything anywhere.
   docusign: {
@@ -3790,7 +3802,7 @@ describe('sign — a visible signature', () => {
       };
       const commands = new DocumentCommands({
         ...INERT,
-        library,
+        library: { ...INERT.library, ...library },
         documents: service,
         bus: new CommandBus({ mupdf: localMupdfWriter, signpdf: recording }),
         engine: engine(),
@@ -3921,6 +3933,7 @@ describe('placeImage — a KEPT stamp picture (the stamp library)', () => {
     const commands = new DocumentCommands({
       ...INERT,
       library: {
+        ...INERT.library,
         picture: (id) => (id === KEPT ? { mediaType: 'image/png', bytes: BYTES } : null),
         lookup: () => undefined,
       },
@@ -3951,6 +3964,158 @@ describe('placeImage — a KEPT stamp picture (the stamp library)', () => {
     const placed = await placing('00000000-0000-4000-8000-0000000000ff');
     expect(placed.outcome).toStrictEqual({ kind: 'absent' });
     expect(placed.carried).toStrictEqual([]);
+  });
+});
+
+describe('placeSignature — a plain signature, resolved as a certificate signature is, then kept (ADR-0133)', () => {
+  beforeAll(openDocument);
+
+  const RECT = { x0: 100, y0: 100, x1: 250, y1: 150 } as const;
+  const STAMP = { author: 'A. Tester', created: '2026-10-02T12:00:00Z' } as const;
+  /**
+   * A real 40 × 20 black PNG, built here from its chunks with Node's own deflate and CRC (B10: no committed binary), so
+   * the picture placement reaches a decoder that reads it.
+   */
+  const PICTURE = ((): Uint8Array => {
+    const chunk = (type: string, data: Buffer): Buffer => {
+      const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+      const length = Buffer.alloc(4);
+      length.writeUInt32BE(data.length);
+      const crc = Buffer.alloc(4);
+      crc.writeUInt32BE(crc32(body));
+      return Buffer.concat([length, body, crc]);
+    };
+    const header = Buffer.alloc(13);
+    header.writeUInt32BE(40, 0);
+    header.writeUInt32BE(20, 4);
+    header.set([8, 2, 0, 0, 0], 8);
+    // Each row: filter byte 0, then 40 black RGB pixels.
+    const rows = Buffer.alloc(20 * (1 + 40 * 3));
+    return new Uint8Array(
+      Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        chunk('IHDR', header),
+        chunk('IDAT', deflateSync(rows)),
+        chunk('IEND', Buffer.alloc(0)),
+      ]),
+    );
+  })();
+
+  /**
+   * Places through a writer that RECORDS each command's kind and then applies it for real, against a real library in
+   * memory — so a case can assert both which command reached the engine and what the library holds afterwards.
+   */
+  const placing = async (
+    mark: Parameters<DocumentCommands['placeSignature']>[1]['mark'],
+    keep: boolean,
+    picked: { readonly path: string; readonly bytes: Uint8Array } | null = null,
+  ): Promise<{ outcome: unknown; kinds: string[]; library: ReturnType<typeof createPersonalLibrary> }> => {
+    const kinds: string[] = [];
+    const recording: RegisteredWriter<'mupdf'> = {
+      ...localMupdfWriter,
+      apply: (request) => {
+        const command: unknown = request.command;
+        kinds.push((command as { readonly kind: string }).kind);
+        return localMupdfWriter.apply(request);
+      },
+    };
+    const library = createPersonalLibrary({ files: memoryPictureFiles(), unreadable: () => undefined });
+    const commands = new DocumentCommands({
+      ...INERT,
+      // A PLACED SIGNATURE IS DRAWN FROM THE BYTES, so placing one flushes (ADR-0084).
+      save: { ...noSaving, flush: sessionFlush, stage: stagingFrom(sessionFlush) },
+      library,
+      documents: service,
+      bus: new CommandBus({ mupdf: recording }),
+      engine: engine(),
+      image: {
+        pick: () => Promise.resolve(picked?.path ?? null),
+        read: () =>
+          Promise.resolve(picked === null ? { kind: 'unreadable' as const } : { kind: 'read' as const, bytes: picked.bytes }),
+      },
+    });
+    const outcome = await commands.placeSignature(docId, { page: 0, rect: RECT, mark, keep, stamp: STAMP });
+    return { outcome, kinds, library };
+  };
+
+  it('a TYPED mark reaches the engine as placeSignatureMark, and Save for reuse KEEPS it as it was made', async () => {
+    const mark = { kind: 'typed', text: 'Ada Lovelace', font: 'times-italic' } as const;
+    const placed = await placing(mark, true);
+    expect(placed.outcome).toMatchObject({ kind: 'placed', kept: 'kept' });
+    expect(placed.kinds).toStrictEqual(['placeSignatureMark']);
+    expect(placed.library.list('signature').map((entry) => entry.look)).toStrictEqual([mark]);
+  });
+
+  it('CONTROL: with Save for reuse off, the same mark is placed and the library is left empty', async () => {
+    const placed = await placing({ kind: 'typed', text: 'Ada Lovelace', font: 'times-italic' }, false);
+    expect(placed.outcome).toMatchObject({ kind: 'placed', kept: 'not-asked' });
+    expect(placed.library.list('signature')).toStrictEqual([]);
+  });
+
+  it('a PICKED PICTURE reaches the engine as placeSignaturePicture, and is kept under its file’s own name', async () => {
+    const placed = await placing({ kind: 'image' }, true, { path: '/somewhere/private/My signature.png', bytes: PICTURE });
+    expect(placed.outcome).toMatchObject({ kind: 'placed', kept: 'kept' });
+    expect(placed.kinds).toStrictEqual(['placeSignaturePicture']);
+    const [entry] = placed.library.list('signature');
+    // THE NAME, NEVER THE FOLDER: the library takes the base name without its extension.
+    expect(entry?.look).toStrictEqual({ kind: 'picture', name: 'My signature' });
+    expect(placed.library.picture(entry?.id ?? '')?.bytes).toStrictEqual(PICTURE);
+  });
+
+  it('a picture past the LIBRARY’S bound is placed and answered not-keepable, and nothing is kept', async () => {
+    // Padded past 2 MiB after a real PNG's bytes: MuPDF still reads the picture, and the library must not keep it,
+    // because every kept picture crosses to the renderer under that bound.
+    const large = new Uint8Array(MAX_LIBRARY_PICTURE_BYTES + 1);
+    large.set(PICTURE);
+    const placed = await placing({ kind: 'image' }, true, { path: 'big.png', bytes: large });
+    expect(placed.outcome).toMatchObject({ kind: 'placed', kept: 'not-keepable' });
+    expect(placed.library.list('signature')).toStrictEqual([]);
+  });
+
+  it('a typed name the font cannot draw is refused BEFORE any command reaches the engine', async () => {
+    const placed = await placing({ kind: 'typed', text: 'Ada ✓', font: 'courier' }, true);
+    expect(placed.outcome).toStrictEqual({ kind: 'unencodable-text' });
+    expect(placed.kinds).toStrictEqual([]);
+  });
+
+  it('a CANCELLED picker places nothing and keeps nothing', async () => {
+    const placed = await placing({ kind: 'image' }, true, null);
+    expect(placed.outcome).toStrictEqual({ kind: 'cancelled' });
+    expect(placed.kinds).toStrictEqual([]);
+  });
+
+  it('a KEPT look is read from the library, placed, and not kept a second time', async () => {
+    const library = createPersonalLibrary({ files: memoryPictureFiles(), unreadable: () => undefined });
+    const added = library.keepSignature({ kind: 'drawn', strokes: [[[0, 0], [1, 0.2]]] });
+    if (added.kind !== 'added') throw new Error('the case could not keep its fixture');
+    const kinds: string[] = [];
+    const commands = new DocumentCommands({
+      ...INERT,
+      save: { ...noSaving, flush: sessionFlush, stage: stagingFrom(sessionFlush) },
+      library,
+      documents: service,
+      bus: new CommandBus({
+        mupdf: {
+          ...localMupdfWriter,
+          apply: (request) => {
+            const command: unknown = request.command;
+            kinds.push((command as { readonly kind: string }).kind);
+            return localMupdfWriter.apply(request);
+          },
+        },
+      }),
+      engine: engine(),
+    });
+    const outcome = await commands.placeSignature(docId, {
+      page: 0,
+      rect: RECT,
+      mark: { kind: 'saved', id: added.entry.id },
+      keep: true,
+      stamp: STAMP,
+    });
+    expect(outcome).toMatchObject({ kind: 'placed', kept: 'not-asked' });
+    expect(kinds).toStrictEqual(['placeSignatureMark']);
+    expect(library.list('signature')).toHaveLength(1);
   });
 });
 

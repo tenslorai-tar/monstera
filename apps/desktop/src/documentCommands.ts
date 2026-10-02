@@ -11,6 +11,7 @@ import {
   type FormDataImportFormat,
   MAX_FORM_DATA_BYTES,
   MAX_IMAGE_BYTES,
+  MAX_LIBRARY_PICTURE_BYTES,
   MAX_MARKDOWN_BYTES,
   MAX_CSV_BYTES,
   MAX_OFFICE_IMPORT_BYTES,
@@ -112,6 +113,7 @@ import {
   type MupdfSession,
   type NextSave,
   type ReadSignature,
+  drawsInStandardFont,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
   SignatureTooLargeError,
@@ -163,6 +165,7 @@ import {
   officeImportFormatOf,
 } from './officeConversion.js';
 import { type PdfaSource, PdfaFailedError } from './pdfaConversion.js';
+import type { PersonalLibrary } from './personalLibrary.js';
 import { type PrintDestination, PrintFailedError } from './printing.js';
 import { type ShareDestination, ShareFailedError, shareTitle } from './sharing.js';
 import { type OpenExternalEditor, isPdfPath } from './openExternalEditor.js';
@@ -694,6 +697,23 @@ export interface LibraryReader {
   picture(id: string): { readonly mediaType: 'image/png' | 'image/jpeg'; readonly bytes: Uint8Array } | null;
   lookup(id: string): LibraryEntry | undefined;
 }
+
+/**
+ * What placing a signature writes to the library (ADR-0133): a typed or drawn mark as it was made, or a picked picture
+ * as a signature picture. The store's own two writes, narrowed to the ones a placement needs.
+ */
+export type LibraryKeeper = Pick<PersonalLibrary, 'keepSignature' | 'addPicture'>;
+
+/** What placing a plain signature came to. */
+export type PlaceSignatureOutcome =
+  | ({ readonly kind: 'placed'; readonly kept: 'kept' | 'not-asked' | 'library-full' | 'not-keepable' } & Applied)
+  | { readonly kind: 'cancelled' }
+  | { readonly kind: 'unreadable' }
+  | { readonly kind: 'too-large'; readonly limitBytes: number }
+  /** The kept signature named is no longer kept. */
+  | { readonly kind: 'absent' }
+  /** The typed name holds a character the chosen standard font cannot draw. */
+  | { readonly kind: 'unencodable-text' };
 
 /**
  * Which decoder an extension routes to, or `null` for one this build has none for.
@@ -2046,8 +2066,11 @@ export interface DocumentCommandsParts {
   /** A picker and a contested-destination check, bundled — see {@link CopySource}. */
   readonly copy: CopySource;
   readonly image: ImageSource;
-  /** The person's library, read when a kept picture is placed or a kept signature signs. See {@link LibraryReader}. */
-  readonly library: LibraryReader;
+  /**
+   * The person's library, read when a kept picture is placed or a kept signature signs, and written when a placed
+   * signature is kept. See {@link LibraryReader} and {@link LibraryKeeper}.
+   */
+  readonly library: LibraryReader & LibraryKeeper;
   /** Each import format's picker and bounded read. See {@link ImportSource}. */
   readonly imports: Readonly<Record<ImportFormat, ImportSource>>;
   /**
@@ -2247,7 +2270,7 @@ export class DocumentCommands {
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
   readonly #image: ImageSource;
-  readonly #library: LibraryReader;
+  readonly #library: LibraryReader & LibraryKeeper;
   readonly #imports: Readonly<Record<ImportFormat, ImportSource>>;
   readonly #compose: ComposeImport;
   readonly #imageFiles: ImageFilesSource;
@@ -5455,11 +5478,7 @@ export class DocumentCommands {
   }
 
   /**
-   * The command's appearance, with a picked picture attached — or why not.
-   *
-   * `insertImage`'s ordering exactly: the extension routes to a decoder before
-   * anything is read, the read is bounded, and the decoder refusing is decided
-   * later by the apply.
+   * The command's appearance, with a picked picture attached — or why not. {@link #markFor}'s answer, placed.
    */
   async #appearanceFor(
     requested: (SignaturePlacement & { readonly mark: RequestedSignatureMark }) | undefined,
@@ -5475,18 +5494,42 @@ export class DocumentCommands {
   > {
     if (requested === undefined) return { kind: 'ready', value: undefined };
     const { mark, page, rect } = requested;
+    const resolved = await this.#markFor(mark);
+    if (resolved.kind !== 'ready') return resolved;
+    return { kind: 'ready', value: { page, rect, mark: resolved.mark } };
+  }
+
+  /**
+   * A requested signature look as a command carries it — **the one resolver for both routes** (ADR-0133 Decision 3):
+   * *Sign with certificate* and the plain *Signature* ask the same question and take this answer.
+   *
+   * `insertImage`'s ordering exactly: the extension routes to a decoder before anything is read, the read is bounded,
+   * and the decoder refusing is decided later by the apply. A picked picture answers its file's own name too, which is
+   * what the library names a kept picture by — never its folder.
+   */
+  async #markFor(mark: RequestedSignatureMark): Promise<
+    | {
+        readonly kind: 'ready';
+        readonly mark: NonNullable<CommandOfKind<'signDocument'>['appearance']>['mark'];
+        readonly picked: string | undefined;
+      }
+    | { readonly kind: 'cancelled' }
+    | { readonly kind: 'image-unreadable' }
+    | { readonly kind: 'image-too-large' }
+    | { readonly kind: 'saved-signature-missing' }
+  > {
     if (mark.kind === 'saved') {
       // A KEPT SIGNATURE, looked up by id: a typed or drawn one is its own look, and a picture's bytes come from the
       // library — so a kept picture never travels to the page and back. Gone since the dialog opened is its own
       // refusal rather than a picture that would not decode.
       const entry = this.#library.lookup(mark.id);
       if (entry?.kind !== 'signature') return { kind: 'saved-signature-missing' };
-      if (entry.look.kind !== 'picture') return { kind: 'ready', value: { page, rect, mark: entry.look } };
+      if (entry.look.kind !== 'picture') return { kind: 'ready', mark: entry.look, picked: undefined };
       const kept = this.#library.picture(mark.id);
       if (kept === null) return { kind: 'saved-signature-missing' };
-      return { kind: 'ready', value: { page, rect, mark: { kind: 'image', bytes: kept.bytes, mediaType: kept.mediaType } } };
+      return { kind: 'ready', mark: { kind: 'image', bytes: kept.bytes, mediaType: kept.mediaType }, picked: undefined };
     }
-    if (mark.kind !== 'image') return { kind: 'ready', value: { page, rect, mark } };
+    if (mark.kind !== 'image') return { kind: 'ready', mark, picked: undefined };
 
     const picked = await this.#image.pick();
     if (picked === null) return { kind: 'cancelled' };
@@ -5495,9 +5538,79 @@ export class DocumentCommands {
     const read = await this.#image.read(picked);
     if (read.kind === 'too-large') return { kind: 'image-too-large' };
     if (read.kind === 'unreadable') return { kind: 'image-unreadable' };
+    return { kind: 'ready', mark: { kind: 'image', bytes: read.bytes, mediaType }, picked: basename(picked) };
+  }
+
+  /**
+   * Places a plain signature, with no certificate, and keeps it when asked (ADR-0133).
+   *
+   * The look is resolved by {@link #markFor}, as a certificate signature's is, so a kept look and a picked picture mean
+   * exactly what they mean there. **A typed name is checked BEFORE the host** by the drawing module's own rule
+   * (`drawsInStandardFont`): the engine host would refuse it too, but its refusal reaches main as a host failure rather
+   * than as the named class, and a person deserves the sentence that says which character.
+   *
+   * ## Keeping comes after the mark is on the page
+   *
+   * A placement the engine refused keeps nothing. A typed or drawn mark is kept as it was made; a picked picture as a
+   * signature picture, with the bytes this call already read — bounded by the library's own bound, which is smaller than
+   * a placed picture's, so a larger one is placed and answered `not-keepable`. A full library is a placed mark that was
+   * not kept, never a refused placement.
+   */
+  async placeSignature(
+    docId: DocId,
+    request: {
+      readonly page: number;
+      readonly rect: AnnotationRect;
+      readonly mark: RequestedSignatureMark;
+      readonly keep: boolean;
+      readonly stamp: AnnotationStamp;
+    },
+  ): Promise<PlaceSignatureOutcome> {
+    if (this.#documents.nameOf(docId) === undefined) {
+      throw new DocumentNotOpenError(docId, 'place a signature');
+    }
+    if (request.mark.kind === 'typed' && !(await drawsInStandardFont(request.mark.text))) {
+      return { kind: 'unencodable-text' };
+    }
+    const resolved = await this.#markFor(request.mark);
+    if (resolved.kind === 'cancelled') return { kind: 'cancelled' };
+    if (resolved.kind === 'image-unreadable') return { kind: 'unreadable' };
+    if (resolved.kind === 'image-too-large') return { kind: 'too-large', limitBytes: MAX_IMAGE_BYTES };
+    if (resolved.kind === 'saved-signature-missing') return { kind: 'absent' };
+
+    const { page, rect, stamp } = request;
+    const { mark } = resolved;
+    let applied: Applied;
+    try {
+      applied = await this.execute(
+        docId,
+        mark.kind === 'image'
+          ? { kind: 'placeSignaturePicture', page, rect, bytes: mark.bytes, mediaType: mark.mediaType, stamp }
+          : { kind: 'placeSignatureMark', page, rect, mark, stamp },
+      );
+    } catch (error) {
+      // `placeImage`'s catch and its reason, for a PICTURE only: the decoder refusing the picked bytes is an outcome.
+      // A typed or drawn mark has no such outcome left — its one refusal was answered above — so anything thrown for
+      // one propagates and the handler turns it into a declared code.
+      if (mark.kind !== 'image') throw error;
+      if (error instanceof DocumentPoisonedError || error instanceof MissingSessionError) throw error;
+      if (error instanceof DocumentNotOpenError) throw error;
+      return { kind: 'unreadable' };
+    }
+
+    if (!request.keep || request.mark.kind === 'saved') return { kind: 'placed', ...applied, kept: 'not-asked' };
+    if (mark.kind !== 'image') {
+      const kept = this.#library.keepSignature(mark);
+      return { kind: 'placed', ...applied, kept: kept.kind === 'added' ? 'kept' : 'library-full' };
+    }
+    if (mark.bytes.byteLength > MAX_LIBRARY_PICTURE_BYTES || resolved.picked === undefined) {
+      return { kind: 'placed', ...applied, kept: 'not-keepable' };
+    }
+    const kept = this.#library.addPicture('signature', resolved.picked, mark.bytes);
     return {
-      kind: 'ready',
-      value: { page, rect, mark: { kind: 'image', bytes: read.bytes, mediaType } },
+      kind: 'placed',
+      ...applied,
+      kept: kept.kind === 'added' ? 'kept' : kept.kind === 'full' ? 'library-full' : 'not-keepable',
     };
   }
 

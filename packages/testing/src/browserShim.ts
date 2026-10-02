@@ -16,6 +16,7 @@ import {
   ACCESSIBILITY_HUMAN_CHECKS,
   MAX_IMAGE_BYTES,
   MAX_LIBRARY_ENTRIES,
+  type ChannelParams,
   type LibraryEntry,
   NATIVE_COMPONENT_IDS,
   SECRET_SETTING_IDS,
@@ -140,6 +141,8 @@ export interface BrowserShim {
   revealedLog: () => number;
   /** Every written file the renderer asked main to show in its folder, in order. */
   revealedFiles: () => readonly FileHandle[];
+  /** Every plain signature the renderer asked main to place, with its arguments, in order (ADR-0133). */
+  placedSignatures: () => readonly ChannelParams<'document.placeSignature'>[];
   /** Every overlay the renderer asked main to paint, in order — the title bar's colours as it computed them. */
   titleBarOverlays: () => readonly { readonly color: string; readonly symbolColor: string; readonly height: number }[];
   /** How many times the renderer told main the window may close — `revealedLog`'s reason for a count. */
@@ -811,6 +814,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     return asFileHandle(`shim-written-${String(writes)}`);
   };
   const revealedFiles: FileHandle[] = [];
+  const placedSignatures: ChannelParams<'document.placeSignature'>[] = [];
   /** Whether the seeded crash report was shared or dismissed — then it is offered no more. */
   let crashReportDone = false;
   /** The seeded update status, which an acknowledgement moves as main's record does. */
@@ -1333,6 +1337,43 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           historyDropped: 0,
         }),
       );
+    },
+    /**
+     * A placed signature (ADR-0133), recorded with every argument so a case can assert what the control sent; whether
+     * a `/Stamp` lands on the page is the kernel's case (`placedSignature.test.ts`). A kept look is resolved and a new
+     * one kept as main does, so a reuse after a keep reaches the same entry.
+     */
+    'document.placeSignature': (request) => {
+      const { docId, mark, keep } = request;
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      placedSignatures.push(request);
+      if (mark.kind === 'saved' && !libraryEntries.some((entry) => entry.id === mark.id)) {
+        return Promise.resolve(ok({ kind: 'absent' as const }));
+      }
+      if (mark.kind === 'image') {
+        const chosen = options.placedImage;
+        if (chosen === undefined) return Promise.resolve(ok({ kind: 'cancelled' as const }));
+        if (chosen === 'unreadable') return Promise.resolve(ok({ kind: 'unreadable' as const }));
+        if (chosen === 'too-large') return Promise.resolve(ok({ kind: 'too-large' as const, limitBytes: MAX_IMAGE_BYTES }));
+      }
+      const version = asDocVersion(current + 1);
+      versions.set(docId, version);
+      let kept: 'kept' | 'not-asked' | 'library-full' = 'not-asked';
+      if (keep && (mark.kind === 'typed' || mark.kind === 'drawn')) {
+        if (libraryEntries.filter((entry) => entry.kind === 'signature').length >= MAX_LIBRARY_ENTRIES) {
+          kept = 'library-full';
+        } else {
+          libraryMinted += 1;
+          libraryEntries = [
+            ...libraryEntries,
+            { id: `00000000-0000-4000-8000-${String(libraryMinted).padStart(12, '0')}`, kind: 'signature', look: mark },
+          ];
+          kept = 'kept';
+        }
+      }
+      return Promise.resolve(ok({ kind: 'placed' as const, version, byteLength: 1, historyDropped: 0, kept }));
     },
     'library.list': ({ kind }) =>
       Promise.resolve(ok({ entries: libraryEntries.filter((entry) => entry.kind === kind) })),
@@ -2266,6 +2307,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     incidents,
     revealedLog: () => revealedLog,
     revealedFiles: () => [...revealedFiles],
+    placedSignatures: () => [...placedSignatures],
     titleBarOverlays: () => [...titleBarOverlays],
     windowCloses: () => windowCloses,
     closeListenings: () => closeListenings,

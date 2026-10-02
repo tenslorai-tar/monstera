@@ -432,6 +432,7 @@ export function createContractHandlers(deps: {
     'document.awaitExternalEdit': awaitExternalEditHandler(deps.commands),
     'document.reimportExternalEdit': reimportExternalEditHandler(deps),
     'document.placeImage': placeImageHandler(deps.commands),
+    'document.placeSignature': placeSignatureHandler(deps.commands),
     'library.list': ({ kind }) => Promise.resolve(ok({ entries: deps.library.store.list(kind) })),
     'library.picture': ({ id }) => {
       const kept = deps.library.store.picture(id);
@@ -1217,6 +1218,20 @@ function placeImageHandler(commands: DocumentCommands): ContractHandlers['docume
         byteLength: outcome.byteLength,
         historyDropped: outcome.historyDropped,
       } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** A plain signature's handler (ADR-0133): {@link placeImageHandler}'s body, the outcome passed through as main named it. */
+function placeSignatureHandler(commands: DocumentCommands): ContractHandlers['document.placeSignature'] {
+  return async ({ docId, page, rect, mark, keep, stamp }) => {
+    try {
+      return ok(await commands.placeSignature(docId, { page, rect, mark, keep, stamp }));
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

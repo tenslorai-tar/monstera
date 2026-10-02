@@ -162,6 +162,7 @@ const handlers: ContractHandlers = {
   'document.awaitExternalEdit': () => Promise.resolve(ok({ kind: 'ended' as const })),
   'document.reimportExternalEdit': () => Promise.resolve(ok({ kind: 'no-edit' as const })),
   'document.placeImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.placeSignature': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'library.list': () => Promise.resolve(ok({ entries: [] })),
   'library.picture': () => Promise.resolve(ok({ kind: 'absent' as const })),
   'library.addPicture': () => Promise.resolve(ok({ kind: 'cancelled' as const })),

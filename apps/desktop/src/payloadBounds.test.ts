@@ -448,6 +448,8 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // That is the same *no raster crosses* answer the snapshot above gives, in
   // the opposite direction and on a boundary this file does not govern.
   'document.placeImage': 'needs an engine session and an image picker',
+  // ANSWERS A VERSION, TWO COUNTS AND A WORD (ADR-0133): nothing it returns can grow with the document or the mark.
+  'document.placeSignature': 'needs an engine session, and an image picker for a picture',
   'document.placeBarcode': 'needs an engine session and the barcode writer',
   'document.exportAnnotations': 'needs an engine session and a file picker',
   // BOUNDED BY THE RULE SET — 32 rules of 16 pages each — never by the document.

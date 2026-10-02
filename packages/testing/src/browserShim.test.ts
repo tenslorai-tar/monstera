@@ -267,6 +267,7 @@ describe('browser shim', () => {
       'document.pasteAnnotations',
       'document.placeBarcode',
       'document.placeImage',
+      'document.placeSignature',
       'document.print',
       'document.readRange',
       'document.recent',

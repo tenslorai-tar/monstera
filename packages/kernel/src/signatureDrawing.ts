@@ -74,6 +74,21 @@ function afm(value: unknown, fallback: number): number {
 const PEN_SHARE = 0.03;
 
 /**
+ * Whether a base-14 font can draw every character of `text` — WinAnsi decides.
+ *
+ * Exported so `main` can answer *that name cannot be drawn* BEFORE a placed signature crosses to the engine host,
+ * whose refusal reaches main as a host failure rather than as {@link SignatureAppearanceRefusedError}. One rule, here,
+ * for that question and for {@link typedDrawing}'s refusal (B3a).
+ */
+export async function drawsInStandardFont(text: string): Promise<boolean> {
+  const { Encodings } = await import('@pdf-lib/standard-fonts');
+  for (const character of text) {
+    if (!Encodings.WinAnsi.canEncodeUnicodeCodePoint(character.codePointAt(0) ?? -1)) return false;
+  }
+  return true;
+}
+
+/**
  * Typed text, set in a base-14 font and centred in the box.
  *
  * **The AFM data is the authority on the font**: `@pdf-lib/standard-fonts` carries the base-14 fonts' own metrics and
@@ -88,20 +103,19 @@ const PEN_SHARE = 0.03;
  * the certificate's typed name off by the kerning of its letters until this module drew it.
  */
 async function typedDrawing(mark: Extract<KeptMark, { kind: 'typed' }>, width: number, height: number): Promise<SignatureDrawing> {
+  if (!(await drawsInStandardFont(mark.text))) {
+    throw new SignatureAppearanceRefusedError(
+      'unencodable-text',
+      'the signature text holds a character the chosen standard font cannot encode',
+    );
+  }
   const { Encodings, Font } = await import('@pdf-lib/standard-fonts');
   const baseFont = FACES[mark.font];
   const font = Font.load(baseFont);
   const codes: number[] = [];
   let advance = 0;
   for (const character of mark.text) {
-    const point = character.codePointAt(0) ?? -1;
-    if (!Encodings.WinAnsi.canEncodeUnicodeCodePoint(point)) {
-      throw new SignatureAppearanceRefusedError(
-        'unencodable-text',
-        'the signature text holds a character the chosen standard font cannot encode',
-      );
-    }
-    const glyph = Encodings.WinAnsi.encodeUnicodeCodePoint(point);
+    const glyph = Encodings.WinAnsi.encodeUnicodeCodePoint(character.codePointAt(0) ?? -1);
     codes.push(glyph.code);
     // 250 for a glyph the AFM gives no width, as pdf-lib does, so the two never disagree about a gap.
     advance += afm(font.getWidthOfGlyph(glyph.name), 250);

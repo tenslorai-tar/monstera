@@ -3407,6 +3407,54 @@ export const channels = {
   ),
 
   /**
+   * A plain signature placed on a page with no certificate
+   * ([ADR-0133](../../../docs/DECISIONS/0133-a-signatures-mark-is-drawn-once-for-both-writers.md)).
+   *
+   * The look is asked for as *Sign with certificate* asks for it — typed, drawn, a kept one by id, or a picture main
+   * picks now — and main resolves it through the same function, so a kept picture's bytes never cross and a picked one's
+   * never reach the renderer. **`keep` is main's to act on, after the mark is placed**, for every look: a typed or drawn
+   * one is kept as it was made, a picked picture as a signature picture. A full library still places the mark and says
+   * so in `kept`, rather than refusing the placement.
+   */
+  'document.placeSignature': channel(
+    'Places a signature with no certificate on a page of an open document, and keeps it when asked.',
+    z
+      .object({
+        docId: docIdSchema,
+        page: z.number().int().nonnegative(),
+        rect: annotationRectSchema,
+        mark: requestedSignatureMarkSchema,
+        keep: z.boolean(),
+        /** Who placed it and when — the renderer's to say, main's to write (ADR-0103). */
+        stamp: annotationStampSchema,
+      })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('placed'),
+        version: docVersionSchema,
+        byteLength: z.number().int().nonnegative(),
+        historyDropped: z.number().int().nonnegative(),
+        /**
+         * Whether it went into the library: kept; not asked for, or already kept; the library was full; or a picture
+         * the library cannot keep — past its own bound, or not a PNG or a JPEG by its bytes — though it was placed.
+         */
+        kept: z.enum(['kept', 'not-asked', 'library-full', 'not-keepable']),
+      }),
+      /** The picture picker was closed. */
+      z.object({ kind: z.literal('cancelled') }),
+      /** The picked file is not a PNG or a JPEG this build can decode. */
+      z.object({ kind: z.literal('unreadable') }),
+      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+      /** The kept signature named is no longer kept — removed since the dialog opened. */
+      z.object({ kind: z.literal('absent') }),
+      /** The typed name holds a character the chosen standard font cannot draw. */
+      z.object({ kind: z.literal('unencodable-text') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
    * THE PERSON'S LIBRARY (`libraryEntrySchema`): what it holds of one kind, oldest first. Read from main's own folder
    * each time, so two windows never disagree about it.
    */
