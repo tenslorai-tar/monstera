@@ -651,6 +651,15 @@
   min-inline-size: 0;
 }
 
+/* A GROUP OF OPTIONS AS ONE ROW'S CONTROL (Print's quality, Optimize's level): one to a line, as the base fieldset
+   rule stacks a fieldset's. Zero specificity, so a group with its own class rule (Barcode's symbologies) keeps it. */
+:where(.m-dialog-row__control > [role='radiogroup']) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-inline-size: 0;
+}
+
 /* SEVERAL FIELDS AS ONE ROW'S CONTROL (a header's left, centre and right): side by side, each with its own name over
    it, sharing the control's width. */
 .m-dialog-row__fields {
