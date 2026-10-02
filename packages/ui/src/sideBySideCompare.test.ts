@@ -1,5 +1,5 @@
 import { type ContractClient, channels, createClient } from '@monstera/contract';
-import { type CompareBox, type DocId, asDocId, asDocVersion, err, ok } from '@monstera/shared';
+import { type CompareBox, type ComparePage, type DocId, asDocId, asDocVersion, comparePair, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { type CompareRow, type CompareSide, type DrawnPage, MAX_COMPARE_CHANGES, compareSides } from './sideBySideCompare.js';
@@ -123,18 +123,31 @@ async function compare(left: readonly FakePage[], right: readonly FakePage[]): P
 const intro: FakePage = { lines: ['The agreement between the parties starts here'] };
 const terms: FakePage = { lines: ['Payment is due within thirty days of the invoice'] };
 const close: FakePage = { lines: ['Either party may end this agreement with notice'] };
+const appendix: FakePage = { lines: ['An appendix that the second version added in'] };
+
+/** A fixture page as the pair comparison takes it, with no picture: what `comparePair` sees of a page alone. */
+function comparable(page: FakePage): ComparePage {
+  return { size: { width: PAGE, height: PAGE }, lines: page.lines.map((text, index) => ({ text, box: lineBox(text, index) })), annotations: [], raster: undefined };
+}
 
 describe('Side by Side — the four fixtures ADR-0131 names, through the walk the overlay runs', () => {
   it('an INSERTED PAGE is one row, and the pages after it are matched to their counterparts and report nothing', async () => {
-    const extra: FakePage = { lines: ['An appendix that the second version added in'] };
-    const rows = await compare([intro, terms, close], [intro, extra, terms, close]);
+    const rows = await compare([intro, terms, close], [intro, appendix, terms, close]);
     expect(rows).toStrictEqual([{ kind: 'inserted', right: 1, box: { x0: 0, y0: 0, x1: PAGE, y1: PAGE } }]);
   });
 
-  it('CONTROL: the same documents compared page by page differ on every page after the insertion', async () => {
-    // WHAT PAGE-BY-NUMBER PAIRS: terms against the appendix, close against terms. Each pair alone differs.
-    const shifted = await compare([terms, close], [{ lines: ['An appendix that the second version added in'] }, terms]);
-    expect(shifted.length).toBeGreaterThan(0);
+  it('CONTROL: the same documents paired page by NUMBER differ on every page after the insertion, and on none before it', () => {
+    // PAGE i AGAINST PAGE i, through the pair comparison itself and no alignment: terms meets the appendix and close
+    // meets terms. So the case above reporting one row is the alignment's doing, not a fixture any pairing passes.
+    const left = [intro, terms, close];
+    const right = [intro, appendix, terms, close];
+    const byNumber = left.map((page, at) => {
+      const other = right[at];
+      if (other === undefined) throw new Error(`no right page ${String(at)}`);
+      return comparePair(comparable(page), comparable(other)).map((change) => change.kind);
+    });
+    expect(byNumber[0]).toStrictEqual([]);
+    expect(byNumber.slice(1).map((kinds) => kinds.includes('text'))).toStrictEqual([true, true]);
   });
 
   it('a TEXT EDIT is a text row naming the words, boxed on both pages', async () => {

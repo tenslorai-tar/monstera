@@ -118,13 +118,15 @@ test('EVERY SETTINGS PAGE keeps every row’s description at its reading basis o
   // THE POSITIVE CONTROL: the page the owner named is among those walked, so an empty walk cannot pass.
   expect(names).toContain('OCR');
   const narrow: string[] = [];
-  let rows = 0;
+  const measured: string[] = [];
   for (const name of names) {
     await pages.filter({ hasText: name }).first().click();
     const found = await dialog.locator('.m-settings-row').evaluateAll((all) =>
       all.map((row) => {
         const text = row.querySelector<HTMLElement>('.m-settings-row__text');
-        if (text === null) return { label: '(no text)', width: 0, basis: 0, row: 1 };
+        // NO TEXT PART HAS NO DESCRIPTION TO MEASURE: every row the dialog draws carries one, so a row without it is
+        // reported rather than measured as zero against a zero basis, which no width can fall short of.
+        if (text === null) return null;
         const probe = document.createElement('span');
         probe.style.cssText = `position:absolute;visibility:hidden;inline-size:${getComputedStyle(text).flexBasis}`;
         text.append(probe);
@@ -138,14 +140,20 @@ test('EVERY SETTINGS PAGE keeps every row’s description at its reading basis o
         };
       }),
     );
-    rows += found.length;
     for (const row of found) {
+      if (row === null) {
+        narrow.push(`${name} › a row with no text part`);
+        continue;
+      }
+      measured.push(row.label);
       if (row.width + 0.5 < Math.min(row.basis, row.row)) {
         narrow.push(`${name} › ${row.label}: ${String(Math.round(row.width))} px of ${String(Math.round(row.basis))}`);
       }
     }
   }
-  expect(rows).toBeGreaterThan(20);
+  // MEASURED ROWS ONLY, and the row the owner named among them, so the twenty are rows whose text was read.
+  expect(measured.length).toBeGreaterThan(20);
+  expect(measured).toContain('Recognition languages');
   expect(narrow).toStrictEqual([]);
 });
 

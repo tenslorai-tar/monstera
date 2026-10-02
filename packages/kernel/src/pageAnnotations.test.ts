@@ -3203,15 +3203,23 @@ describe('applyPlaceImage', () => {
     // reading of `update()` leaving the appearance intact was taken right after creation, and `placeAnnotation`
     // calls `setRect` first, which marks the annotation as needing a new appearance. A `/Stamp` whose appearance MuPDF
     // regenerated would answer `[]` here, the image gone.
-    const resized = await onSession(await placedOn(await fixture()), async (session) => {
+    const RESIZED: AnnotationRect = { x0: 30, y0: 50, x1: 230, y1: 150 };
+    const placed = await placedOn(await fixture());
+    const resized = await onSession(placed, async (session) => {
       await applyPlaceAnnotation(session, {
         kind: 'placeAnnotation',
         page: 0,
-        placements: [{ index: 0, rect: { x0: 30, y0: 50, x1: 230, y1: 150 } }],
+        placements: [{ index: 0, rect: RESIZED }],
         version: asDocVersion(1),
       });
       return await mupdfWriter.serialise(session);
     });
+    // THE BOX BEFORE AND AFTER, so a placement that changed nothing fails here: the appearance read below is what
+    // the stamp was placed with, and a no-op keeps it as surely as a resize that preserved it.
+    const boxes = async (bytes: Uint8Array): Promise<(AnnotationRect | null)[]> =>
+      (await onSession(bytes, (session) => readAnnotations(session))).annotations.map((each) => each.rect);
+    expect(await boxes(placed)).toStrictEqual([BOX]);
+    expect(await boxes(resized)).toStrictEqual([RESIZED]);
     expect(await stampsOn(resized, 0)).toEqual([{ subtype: '/Stamp', images: ['7x3'] }]);
   });
 
