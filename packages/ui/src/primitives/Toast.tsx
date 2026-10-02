@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import { X } from 'lucide-react';
 import type { MessageKey } from '@monstera/shared';
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { Icon } from './Icon.js';
 import { IconButton } from './IconButton.js';
@@ -157,11 +157,34 @@ export function ToastStrip({
   /** How long each stays. Passed in so a test states the duration rather than waiting one. */
   readonly lifetime: number;
 }): ReactElement {
+  const strip = useRef<HTMLDivElement | null>(null);
+  // CLEAR OF WHAT MUST NOT BE COVERED. The strip sits at the window's bottom-right, which is where the assistant's
+  // composer ends, and a save's toast covered its Send button — by 6 px at rest at 1280 × 800 (measured 2026-10-02; a
+  // check that caught the toast mid-slide passed). An element that must stay reachable says so with
+  // `data-toast-avoid`; while a toast is shown, the strip lifts above any such element it would overlap. Nothing moves
+  // when none is on screen, and the primitive names no surface.
+  useLayoutEffect(() => {
+    const own = strip.current;
+    if (own === null) return;
+    if (toasts.length === 0) {
+      own.style.removeProperty('--m-toasts-clear');
+      return;
+    }
+    const mine = own.getBoundingClientRect();
+    let clear = 0;
+    for (const element of globalThis.document.querySelectorAll<HTMLElement>('[data-toast-avoid]')) {
+      const box = element.getBoundingClientRect();
+      const across = box.left < mine.right && mine.left < box.right;
+      if (across && box.height > 0) clear = Math.max(clear, globalThis.innerHeight - box.top);
+    }
+    if (clear > 0) own.style.setProperty('--m-toasts-clear', `${String(clear)}px`);
+    else own.style.removeProperty('--m-toasts-clear');
+  }, [toasts]);
   return (
     // `aria-live` and not `role="alert"`: alert is assertive, and the status bar below is
     // already this window's one `role="status"` region. Two of those would have a screen reader
     // announce a save twice — once here, and once as the bar's own saved-state text changed.
-    <div aria-live="polite" className="m-toasts">
+    <div aria-live="polite" className="m-toasts" ref={strip}>
       {toasts.map((toast) => (
         <ToastRow
           dismissLabel={dismissLabel}

@@ -5099,7 +5099,8 @@ optgroup {
 
 .m-toasts {
   position: fixed;
-  inset-block-end: calc(var(--space-24) + var(--space-16));
+  /* ABOVE whatever marked `data-toast-avoid` it would cover (`ToastStrip` sets `--m-toasts-clear`), else where it was. */
+  inset-block-end: max(calc(var(--space-24) + var(--space-16)), calc(var(--m-toasts-clear, 0px) + var(--space-8)));
   inset-inline-end: var(--space-16);
   z-index: 3;
   display: flex;

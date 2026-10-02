@@ -1016,7 +1016,8 @@ export function AssistantPanel({
         </div>
       )}
 
-      <div className="m-assistant__composer">
+      {/* NOT UNDER A TOAST: the strip sits at the window's bottom-right, where this ends (`ToastStrip`). */}
+      <div className="m-assistant__composer" data-toast-avoid="">
         <textarea
           aria-describedby={hintId}
           aria-label={i18n._(ASSISTANT_COMPOSER_LABEL)}
