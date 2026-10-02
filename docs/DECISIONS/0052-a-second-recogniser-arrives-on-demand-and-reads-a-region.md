@@ -296,3 +296,9 @@ from model weights checked against a digest, even with the same digest check in 
 cache, behind the same consent and clear-caches control; the host has no network. `cdn.jsdelivr.net`
 leaves the download host list. The installer grows by the runtime's 14,036,189 bytes, inside the
 < 150 MB target, which the packaging row re-adds when it is built.
+
+## Correction, 2026-10-02 — there is no installer target
+
+[ADR-0136](0136-the-package-has-no-size-target.md) withdrew the < 150 MB target on the owner's decision of 2026-10-01.
+The runtime's 14,036,189 bytes stand as measured; *inside the target* no longer means anything, and this decision did
+not rest on it.

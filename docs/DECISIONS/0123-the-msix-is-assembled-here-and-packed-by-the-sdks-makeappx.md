@@ -112,3 +112,9 @@ Three changes, each for the class: a resolve is an edge, read by one function bo
 is STARTED before packing and must reach a window on the application's page whose renderer mounts, with the stage
 unchanged by the run. The third is the one that does not depend on knowing the next edge: every earlier check read
 files, and a file list says which files exist, not that the program runs.
+
+## Correction, 2026-10-02 — the 150 MB target is withdrawn
+
+*Not decided here*'s **The 150 MB target** bullet left what to remove, if anything, to the owner. The owner answered on
+2026-10-01: nothing — the size is accepted and growth is fine. [ADR-0136](0136-the-package-has-no-size-target.md)
+withdraws the target, and the packager now prints the package's size with no comparison and no verdict.

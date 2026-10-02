@@ -49,9 +49,10 @@ import { appendRevision, openForWriting } from './pdfLibSession.js';
  * already ships, with a **glyphless CID font**: a `CIDFontType2` with no
  * `/FontFile2`, `Identity-H` encoding, and an identity `/ToUnicode`. So the
  * decision was *graft that shape* or *adopt a Unicode font file*, and only the
- * second costs megabytes, a provisioning entry with a pinned digest, an
- * installer-budget line against the < 150 MB target, and a NOTICE entry
- * (`BUILD-PROMPT.md`:803-806). Graft was measured before it was chosen
+ * second costs megabytes, a provisioning entry with a pinned digest and a
+ * NOTICE entry (`BUILD-PROMPT.md`:803-806) — and, when this was chosen, an
+ * installer-budget line against a < 150 MB target that ADR-0136 has since
+ * withdrawn. Graft was measured before it was chosen
  * (`scripts/research/glyphlessFont.mjs`) and **nothing new ships**.
  *
  * ## What the graft is worth, read back through the reader this build ships

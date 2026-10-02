@@ -25,9 +25,13 @@
  * | `4.0.0` (standard) | 10,923,060 bytes | ~135 MB |
  * | `4.0.0_fast` | 1,984,273 bytes | **18,013,460 bytes** |
  *
- * `BUILD-PROMPT.md`'s installer target is **under 150 MB**, resized only by an
- * ADR. The standard models would take nine-tenths of it for one feature's data;
- * the fast ones take 17.2 MB. Nothing else was traded away to get that number,
+ * The choice was made against `BUILD-PROMPT.md`'s installer target of **under
+ * 150 MB**, which the standard models would have taken nine-tenths of for one
+ * feature's data; the fast ones take 17.2 MB. That target is WITHDRAWN
+ * (ADR-0136, 2026-10-02, the owner's decision that the package's size is
+ * accepted), and this choice is not reopened by that: whether the standard
+ * models are now worth their size is a separate question, not answered here.
+ * Nothing else was traded away to get that number,
  * and the accuracy cost is stated rather than assumed: a real corpus scan reads
  * at **mean confidence 94** through the fast English model
  * (`scripts/research/ocrCost.mjs`).

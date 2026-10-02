@@ -110,9 +110,6 @@ export async function brandExecutable(executable, ico) {
 /** The workspace packages the shell loads in Node or Electron main. `ui` and `testing` are bundled or unshipped. */
 const SHIPPED_WORKSPACES = ['@monstera/desktop', '@monstera/kernel', '@monstera/contract', '@monstera/shared', '@monstera/nodemode'];
 
-/** The package budget the owner set, in bytes. */
-export const SIZE_TARGET = 150 * 1024 * 1024;
-
 /**
  * @typedef {'test' | 'store'} Flavour
  * @typedef {{ readonly name: string; readonly publisher: string; readonly publisherDisplayName: string }} Identity
@@ -608,7 +605,8 @@ async function main() {
   const size = statSync(file).size;
   const megabytes = (size / 1024 / 1024).toFixed(1);
   step(`\n${file}`);
-  step(`${String(size)} bytes (${megabytes} MB) against the 150 MB target: ${size <= SIZE_TARGET ? 'within' : 'OVER'}`);
+  // THE SIZE AND NOTHING ELSE: there is no target to judge it against (ADR-0136, the owner's decision of 2026-10-01).
+  step(`${String(size)} bytes (${megabytes} MB)`);
   step(`version ${version}, ${flavour} flavour, commit ${commit}, MakeAppx from SDK ${tools.version}`);
 }
 
