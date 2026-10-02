@@ -59,9 +59,14 @@ test('HELP › HELP CENTRE, lying over the title bar, is a no-drag region, and o
   await expect(item).toBeVisible();
 
   // THE PREMISES: the title bar is a drag region, and the item lies over it. Without the second the case would pass
-  // for a menu that happened to open below the row, which is the shape where nothing was ever wrong.
+  // for a menu that happened to open below the row, which is the shape where nothing was ever wrong. While a menu is
+  // open the whole row is no-drag (the rule beside `.m-title-bar`), so its region is read on a closed menu.
   const titleBar = page.locator('.m-title-bar');
+  await page.keyboard.press('Escape');
+  await expect(item).toBeHidden();
   expect(await appRegion(titleBar)).toBe('drag');
+  await page.getByRole('menuitem', { name: 'Help', exact: true }).click();
+  await expect(item).toBeVisible();
   const bar = await titleBar.boundingBox();
   const box = await item.boundingBox();
   if (bar === null || box === null) throw new Error('the title bar and the item have boxes');
@@ -165,6 +170,68 @@ test('a DISABLED menu item looks disabled: muted, and no highlight under the poi
     locator.locator('.m-menu-bar__icon svg').evaluate((svg) => getComputedStyle(svg).color);
   expect(await stroke(disabled)).toBe(muted);
   expect(await stroke(enabled)).not.toBe(muted);
+});
+
+// AN OPEN MENU CLOSES ON A PRESS ANYWHERE OUTSIDE IT (the owner's review of 0.1.8.0, where it closed only on a press in
+// the document). What decides it in Electron is the region: a press in a `drag` region goes to the window frame and the
+// page never sees it. So each case asserts the row's computed region is `no-drag` WHILE the menu is open and `drag`
+// again once it closes (CONTROL: it is `drag` before), and then that the page's own handling closes the menu. The real
+// press on the window frame is the local agent's to confirm on Windows.
+for (const where of ['the empty MENU ROW', 'the empty TITLE BAR'] as const) {
+  test(`a press on ${where} closes an open menu, which made that row no-drag while it was open`, async ({ page }) => {
+    await openDocument(page);
+    const row = where === 'the empty MENU ROW' ? page.locator('.m-menu-bar') : page.locator('.m-title-bar');
+    expect(await appRegion(row)).toBe('drag');
+    await page.getByRole('menubar').getByRole('menuitem', { name: 'File', exact: true }).click();
+    const popup = page.locator('.m-menu-bar__popup');
+    await expect(popup).toBeVisible();
+    expect(await appRegion(row)).toBe('no-drag');
+    // AN EMPTY STRETCH of the row: right of the last menu on the menu row, between the tabs and the search on the title
+    // bar — a point where the row's own topmost element is the row or a part of it no person can press, read rather
+    // than assumed. Read through every layer, because an open menu lays Base UI's own transparent overlay over the
+    // window, and that overlay is what the press lands on — in Electron too, once the row under it is no-drag.
+    const point = await row.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const y = box.top + box.height / 2;
+      for (let x = box.right - 40; x > box.left; x -= 8) {
+        const hit = document.elementsFromPoint(x, y).find((each) => element.contains(each));
+        const pressable = hit?.closest('button, input, select, textarea, a, [role="menuitem"], [role="tab"], [role="menu"]');
+        const covered = document.elementFromPoint(x, y)?.closest('[role="menu"]') !== null;
+        if (hit !== undefined && (pressable === null || pressable === undefined) && !covered) return { x, y };
+      }
+      return null;
+    });
+    expect(point, `an empty point on ${where}`).not.toBeNull();
+    await page.mouse.click(point?.x ?? 0, point?.y ?? 0);
+    await expect(popup).toBeHidden();
+    expect(await appRegion(row)).toBe('drag');
+  });
+}
+
+test('a press on the OPEN menu’s title closes it; Esc closes it; and hover switches menus only while one is open', async ({ page }) => {
+  await openDocument(page);
+  const bar = page.getByRole('menubar');
+  const file = bar.getByRole('menuitem', { name: 'File', exact: true });
+  const edit = bar.getByRole('menuitem', { name: 'Edit', exact: true });
+  const popup = page.locator('.m-menu-bar__popup');
+  // CLOSED, A HOVER OPENS NOTHING.
+  await edit.hover();
+  await page.waitForTimeout(300);
+  await expect(popup).toHaveCount(0);
+  // OPEN, a hover moves to the menu under the pointer.
+  await file.click();
+  await expect(popup).toBeVisible();
+  await edit.hover();
+  await expect(edit).toHaveAttribute('aria-expanded', 'true');
+  await expect(file).toHaveAttribute('aria-expanded', 'false');
+  // A PRESS ON THE OPEN MENU'S OWN TITLE closes it.
+  await edit.click();
+  await expect(popup).toBeHidden();
+  // ESC closes one too.
+  await file.click();
+  await expect(popup).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(popup).toBeHidden();
 });
 
 // EVERY MENU, EVERY ITEM (the owner's review of 0.1.8.0: the menus listed text only): each item draws a glyph in the

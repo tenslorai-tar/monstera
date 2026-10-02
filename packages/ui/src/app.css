@@ -161,6 +161,20 @@ optgroup {
 }
 
 /*
+ * WHILE A MENU IS OPEN, THE TWO DRAG ROWS ARE NOT DRAG ROWS (the owner's review of 0.1.8.0: an open menu closed only
+ * on a click in the document, and File, Protect, Forms, Comment and Organize opened one after another). Electron hands
+ * a press inside a `drag` region to the window frame, which starts a window drag and never reaches the page — so the
+ * menu's outside-press dismissal never saw a click on the empty menu row or the title bar. With any menu open both rows
+ * are `no-drag`: the press reaches the page, the menu closes, and no drag starts on that click. Closed, the rule no
+ * longer matches and both rows move the window again. Keyed on what Base UI marks every open menu with
+ * (`role="menu"`, `data-open`), so a menu added tomorrow is covered without joining a list — the dialog backdrop's
+ * reason in `primitives.css`, for menus, which have no backdrop.
+ */
+:root:has([role='menu'][data-open]) :is(.m-menu-bar, .m-title-bar) {
+  -webkit-app-region: no-drag;
+}
+
+/*
  * THE MENU BAR (v5-14, ADR-0107): the window's top row. The system draws its three window controls over the row's end
  * (Window Controls Overlay): `titlebar-area-*` is the part of the row they leave, so the row is at least as tall as
  * that area and its end padding clears the controls. In a browser the variables are undefined and the fallbacks reduce
