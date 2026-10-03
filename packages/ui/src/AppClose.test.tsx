@@ -327,7 +327,10 @@ describe('a tab’s ×', () => {
  * dialog as one that works.
  */
 describe('a tab’s × on a document carrying marks nobody applied (item N1)', () => {
-  const QUESTION = /2 redactions are marked but not applied\. Apply them now\?/u;
+  const QUESTION = /2 parts of this document are marked for redaction, but they have not been removed yet\./u;
+  // ANY COUNT, for the cases that assert the question was NOT asked: a pattern on words the dialog no longer says
+  // would pass whatever happened.
+  const ASKED = /marked for redaction, but/u;
 
   it('CONTROL: a saved document whose only annotation is a square closes without a question', async () => {
     // THE SQUARE IS THE POINT: a close that counted every annotation would ask here.
@@ -337,7 +340,7 @@ describe('a tab’s × on a document carrying marks nobody applied (item N1)', (
 
     await clickTabClose(container, SECOND);
 
-    expect(screen.queryByText(/marked but not applied/u)).toBeNull();
+    expect(screen.queryByText(ASKED)).toBeNull();
     expect(called(sent, 'document.close')).toStrictEqual([{ docId: SECOND }]);
   });
 
@@ -388,7 +391,7 @@ describe('a tab’s × on a document carrying marks nobody applied (item N1)', (
     await answer('Save');
 
     // NOT ASKED AGAIN: the save that follows counts no marks. Its question would be the second dialog in a row.
-    expect(screen.queryByText(/marked but not applied/u)).toBeNull();
+    expect(screen.queryByText(ASKED)).toBeNull();
     const order = sent
       .map((call) => call.id)
       .filter((id) => id === 'document.execute' || id === 'document.save' || id === 'document.close');
@@ -403,7 +406,7 @@ describe('a tab’s × on a document carrying marks nobody applied (item N1)', (
     await clickTabClose(container, SECOND);
     // THE CLOSE'S OWN QUESTION FIRST: the marks question belongs to the write, and Don't save writes nothing.
     await screen.findByText(/“notes\.pdf” has changes that are not saved/u);
-    expect(screen.queryByText(/marked but not applied/u)).toBeNull();
+    expect(screen.queryByText(ASKED)).toBeNull();
     await answer('Save');
     expect(await screen.findByText(QUESTION)).toBeTruthy();
     await answer('Save without applying');
@@ -422,7 +425,7 @@ describe('a tab’s × on a document carrying marks nobody applied (item N1)', (
     await clickTabClose(container, SECOND);
     await answer('Don’t save');
 
-    expect(screen.queryByText(/marked but not applied/u)).toBeNull();
+    expect(screen.queryByText(ASKED)).toBeNull();
     expect(called(sent, 'document.execute')).toStrictEqual([]);
     expect(called(sent, 'document.close')).toStrictEqual([{ docId: SECOND }]);
   });

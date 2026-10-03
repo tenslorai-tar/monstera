@@ -145,7 +145,9 @@ describe('the text forms and button dialogs in the dialog pattern', () => {
           />
         </InDialog>,
       );
-      expect(document.body.textContent).toContain('3 redactions are marked but not applied. Apply them now?');
+      expect(document.body.textContent).toContain(
+        '3 parts of this document are marked for redaction, but they have not been removed yet.',
+      );
       const buttons = [...(document.querySelector('.m-dialog-footer')?.querySelectorAll('button') ?? [])];
       expect(buttons.map((button) => button.textContent)).toStrictEqual(['Cancel', middle[occasion], 'Apply']);
       // EACH BUTTON ANSWERS WHAT IT SAYS — the two that go ahead are not interchangeable.
@@ -155,7 +157,9 @@ describe('the text forms and button dialogs in the dialog pattern', () => {
     }
     cleanup();
     render(<InDialog><PendingRedactionsBody count={1} occasion="save" resolve={ignore} update={ignore} /></InDialog>);
-    expect(document.body.textContent).toContain('1 redaction is marked but not applied. Apply it now?');
+    expect(document.body.textContent).toContain(
+      'One part of this document is marked for redaction, but it has not been removed yet.',
+    );
   });
 
   it('a notice whose own button IS its dismissal draws no Cancel beside it — and CONTROL: one without does', () => {

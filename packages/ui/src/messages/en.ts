@@ -4554,12 +4554,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [APPLY_REDACTIONS_APPLY]: 'Apply redactions',
   // THE OWNER'S SENTENCE (2 October, item N1), with the count.
   [PENDING_REDACTIONS_TITLE]: 'Redactions not applied',
+  // PLAIN WORDS (the owner's review, item 1c): what is still there, who can read it, what Apply does and how long it can
+  // be undone, with no "applied" for a person to decode.
   [PENDING_REDACTIONS_QUESTION]:
-    '{count, plural, one {# redaction is marked but not applied.} other {# redactions are marked but not applied.}} Apply {count, plural, one {it} other {them}} now?',
+    '{count, plural, one {One part of this document is marked for redaction, but it has not been removed yet.} other {# parts of this document are marked for redaction, but they have not been removed yet.}}',
   // WHY IT MATTERS, in the reader's terms: a mark is not yet a redaction. The second sentence is what Apply does — the
   // whole document, a solid cover, the properties removed — because Apply here asks nothing more.
   [PENDING_REDACTIONS_EXPLAINS]:
-    'Until a mark is applied, the content under it is still in the document, and anyone can read or copy it. Applying removes it from every page, along with the document’s author, subject and other properties. The only way back is Undo, in this session.',
+    'Anyone who opens the saved file can still read or copy what is under a mark. Apply removes it for good from every page, together with the document’s author, subject and other details. You can undo it until you close the document.',
   [PENDING_REDACTIONS_APPLY]: 'Apply',
   // THE MIDDLE ANSWER NAMES THE ACTION IT LETS GO AHEAD, so no answer depends on reading the question.
   [PENDING_REDACTIONS_WITHOUT_SAVE]: 'Save without applying',

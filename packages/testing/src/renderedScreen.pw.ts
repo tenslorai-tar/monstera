@@ -3845,7 +3845,7 @@ for (const look of LOOKS) {
 }
 
 // REDACTION MARKS NOBODY APPLIED, in every look (the owner's item N1): the pending mark draws with its label, Ctrl+S
-// asks *2 redactions are marked but not applied* — axe clean — and each answer sends what it says. CONTROL in the same
+// asks *2 parts of this document are marked for redaction* — axe clean — and each answer sends what it says. CONTROL in the same
 // case: until the person answers, nothing was saved and nothing burnt in.
 for (const look of LOOKS) {
   test(`${look.name}: a save with marks pending ASKS first, passes axe, and each answer does its job`, async ({ page }) => {
@@ -3899,7 +3899,7 @@ for (const look of LOOKS) {
     await page.keyboard.press('Control+S');
     const dialog = page.getByRole('dialog', { name: 'Redactions not applied' });
     await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText('2 redactions are marked but not applied. Apply them now?');
+    await expect(dialog).toContainText('2 parts of this document are marked for redaction, but they have not been removed yet.');
     expect(writes()).toStrictEqual([]);
     const results = await new AxeBuilder({ page }).analyze();
     const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
