@@ -26,6 +26,7 @@ import {
   TOAST_SAVED_CLEARED,
   TOAST_SAVED_CLEARED_BACKUPS,
   TOAST_HELD_COPIES_DELETED,
+  TOAST_NOTHING_MARKED,
   TOAST_SENT_TO_PRINTER,
   TOAST_SHOW_IN_FOLDER,
   TOAST_SIGNED_COPY_SAVED,
@@ -4067,14 +4068,100 @@ describe('protectDocumentCommand', () => {
    * `pageRedact.test.ts`, which reads the removed words back out of real bytes.
    */
   describe('applyRedactionsCommand', () => {
+    /** A document carrying `marks` Redact marks beside one square, recording every call and answering a burn-in. */
+    function marked(marks: number): { client: ContractClient; sent: { id: string; params: unknown }[] } {
+      const sent: { id: string; params: unknown }[] = [];
+      const listed = (kind: 'redact' | 'square', index: number): unknown => ({
+        page: 0,
+        index,
+        rect: { x0: 10, y0: 10, x1: 50, y1: 30 },
+        inReplyTo: null,
+        kind,
+        style: { colour: [0, 0, 0], opacity: 1, borderWidth: null },
+        contents: '',
+        authored: true,
+        author: '',
+        created: null,
+        blend: 'normal',
+      });
+      const client = createClient(channels, (id, params) => {
+        sent.push({ id, params });
+        if (id === 'document.annotations') {
+          return Promise.resolve(
+            ok({
+              version: asDocVersion(1),
+              // THE SQUARE IS THE CONTROL in the fixture: a count of every annotation would say 1 with no marks.
+              annotations: [listed('square', 0), ...Array.from({ length: marks }, (_unused, at) => listed('redact', at + 1))],
+              next: null,
+              truncated: false,
+            }),
+          );
+        }
+        return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }));
+      });
+      return { client, sent };
+    }
+
+    it('NOTHING MARKED: says so, opens no Apply dialog and burns in nothing (F-P1)', async () => {
+      const { client, sent } = marked(0);
+      const { toast, said } = saving();
+      const opened: string[] = [];
+
+      for (const confirm of [true, false]) {
+        await applyRedactionsCommand({
+          client,
+          stamp,
+          signatures,
+          toast,
+          onApplied: () => undefined,
+          ask: (id) => {
+            opened.push(id);
+            return Promise.resolve({ pages: 'all', cover: 'solid', images: 'pixels', keepTitle: false });
+          },
+          confirm: () => confirm,
+        }).run(CONTEXT);
+      }
+
+      // THE CALL NOT MADE, with the confirmation on and off: neither the dialog nor the burn-in.
+      expect(opened).toStrictEqual([]);
+      expect(sent.map((call) => call.id)).toStrictEqual(['document.annotations', 'document.annotations']);
+      expect(said).toStrictEqual([
+        { kind: 'problem', message: TOAST_NOTHING_MARKED },
+        { kind: 'problem', message: TOAST_NOTHING_MARKED },
+      ]);
+    });
+
+    it('CONTROL: one mark is enough for Apply to be offered, and nothing is said', async () => {
+      const { client } = marked(1);
+      const { toast, said } = saving();
+      const opened: string[] = [];
+
+      await applyRedactionsCommand({
+        client,
+        stamp,
+        signatures,
+        toast,
+        onApplied: () => undefined,
+        ask: (id) => {
+          opened.push(id);
+          return Promise.resolve(undefined);
+        },
+        confirm: () => true,
+      }).run(CONTEXT);
+
+      expect(opened).toStrictEqual(['dialog.apply-redactions']);
+      expect(said).toStrictEqual([]);
+    });
+
     it('dispatches the scope and both choices, with `all` unexpanded', async () => {
-      const { client, sent } = recordingClient();
+      const { client, sent: calls } = marked(2);
       const opened: { id: string; props: unknown }[] = [];
 
       await applyRedactionsCommand({
         client,
         stamp,
         signatures,
+        toast: () => undefined,
         onApplied: () => undefined,
         ask: (id, props) => {
           opened.push({ id, props });
@@ -4087,6 +4174,9 @@ describe('protectDocumentCommand', () => {
       expect(opened).toStrictEqual([
         { id: 'dialog.apply-redactions', props: { page: CONTEXT.page } },
       ]);
+      // THE MARKS ARE COUNTED FIRST, then the burn-in is the one command sent.
+      expect(calls[0]?.id).toBe('document.annotations');
+      const sent = calls.filter((call) => call.id !== 'document.annotations');
       expect(sent).toStrictEqual([
         {
           id: 'document.execute',
@@ -4116,30 +4206,32 @@ describe('protectDocumentCommand', () => {
     it('CONTROL: a DISMISSED confirm dispatches nothing', async () => {
       // The gate, and it matters more here than anywhere else in this file: the
       // undo is a checkpoint, and a checkpoint goes when the document closes.
-      const { client, sent } = recordingClient();
+      const { client, sent } = marked(2);
 
       await applyRedactionsCommand({
         client,
         stamp,
         signatures,
+        toast: () => undefined,
         onApplied: () => undefined,
         ask: () => Promise.resolve(undefined),
         confirm: () => true,
       }).run(CONTEXT);
 
-      expect(sent).toStrictEqual([]);
+      expect(sent.filter((call) => call.id !== 'document.annotations')).toStrictEqual([]);
     });
 
     it('with *Confirm before redacting* OFF, asks nothing and burns in THIS PAGE with the dialog’s own defaults', async () => {
       // The decision is whether the dialog opens, so the call not made is asserted, not only the dispatch — and the
       // dispatch is the dialog's starting choices, from the one definition both read (`applyRedactionsDefaults`).
-      const { client, sent } = recordingClient();
+      const { client, sent: calls } = marked(2);
       const opened: string[] = [];
 
       await applyRedactionsCommand({
         client,
         stamp,
         signatures,
+        toast: () => undefined,
         onApplied: () => undefined,
         ask: (id) => {
           opened.push(id);
@@ -4149,6 +4241,7 @@ describe('protectDocumentCommand', () => {
       }).run(CONTEXT);
 
       expect(opened).toStrictEqual([]);
+      const sent = calls.filter((call) => call.id !== 'document.annotations');
       expect(sent).toStrictEqual([
         {
           id: 'document.execute',

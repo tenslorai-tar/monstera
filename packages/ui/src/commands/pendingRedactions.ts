@@ -1,4 +1,3 @@
-import type { ContractClient } from '@monstera/contract';
 import type { DocId } from '@monstera/shared';
 
 import { applyRedactionsDefaults } from '../dialogs/applyRedactions.js';
@@ -7,8 +6,8 @@ import {
   PENDING_REDACTIONS_RESULT,
   type PendingRedactionOccasion,
 } from '../dialogs/pendingRedactions.js';
-import { readWholeList } from '../readWholeList.js';
 import { type DocumentCommandDeps, applyDocumentCommand } from './documentCommands.js';
+import { countPendingRedactions } from './redactionMarks.js';
 
 /**
  * Redaction marks nobody has applied, asked about before the document leaves the person's hands — the owner's item N1
@@ -30,29 +29,10 @@ import { type DocumentCommandDeps, applyDocumentCommand } from './documentComman
  * already passes through: the signature warning is main's answer to `document.save` alone, and each export is its own
  * channel. So the question has one owner and the callers take it, rather than each spelling its own.
  *
- * ## The count is `document.annotations`' own answer, never a second walk
- *
- * The kernel's reader names a `/Redact` `redact` — region marks, text marks, marks by search and another
- * application's marks alike — and the layer over each page reads the same list to draw them. Counting those entries
- * is a third reader of one answer, not a second opinion about what a mark is.
+ * The count is `countPendingRedactions`' (`redactionMarks.ts`), which *Apply redactions* reads too. A refused read
+ * asks nothing here: asking *0 redactions are marked* is not possible (the dialog's count is positive), and inventing
+ * a count to ask with would be a claim nothing supports.
  */
-
-/**
- * How many redaction marks the document carries, or `undefined` where main refused the read.
- *
- * **A refusal asks nothing**, and that is deliberate rather than a swallowed failure: the refusals this channel
- * declares — not open, busy, poisoned — are the document's state, so the save, close or export that follows meets the
- * same one on its own call and reports it in the place it belongs. Asking *0 redactions are marked* is not possible
- * (the dialog's count is positive), and inventing a count to ask with would be a claim nothing supports.
- */
-export async function countPendingRedactions(client: ContractClient, docId: DocId): Promise<number | undefined> {
-  const read = await readWholeList(
-    (from) => client['document.annotations']({ docId, from }),
-    (part) => part.annotations,
-  );
-  if (!read.ok) return undefined;
-  return read.value.items.filter((annotation) => annotation.kind === 'redact').length;
-}
 
 /**
  * What became of the question: nothing to ask; the marks were applied; the person went ahead without applying; or the

@@ -23,7 +23,8 @@ import {
   splitDocumentCommand,
   type SignedEditing,
 } from './documentCommands.js';
-import { countPendingRedactions, settlePendingRedactions } from './pendingRedactions.js';
+import { settlePendingRedactions } from './pendingRedactions.js';
+import { countPendingRedactions } from './redactionMarks.js';
 import { exportSearchableCommand } from './recogniseText.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';

@@ -808,6 +808,7 @@ export const TRANSLATE_PAGE_START = messageKey('dialog.translate-page.start');
 export const TRANSLATE_PAGE_PROGRESS = messageKey('task.translate-page');
 export const TOAST_PAGE_TRANSLATED = messageKey('toast.page-translated');
 export const TOAST_NOTHING_TO_TRANSLATE = messageKey('toast.nothing-to-translate');
+export const TOAST_NOTHING_MARKED = messageKey('toast.nothing-marked-for-redaction');
 export const TOAST_TRANSLATE_REJECTED = messageKey('toast.translate-rejected');
 export const TOAST_TRANSLATE_UNREADABLE = messageKey('toast.translate-unreadable');
 export const TOAST_TRANSLATE_NO_MODEL = messageKey('toast.translate-no-model');
@@ -2838,6 +2839,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TRANSLATE_PAGE_PROGRESS]: 'Translating the page',
   [TOAST_PAGE_TRANSLATED]: 'Page translated. Undo puts the original back.',
   [TOAST_NOTHING_TO_TRANSLATE]: 'Nothing on this page needed translating.',
+  [TOAST_NOTHING_MARKED]:
+    'Nothing is marked for redaction. Select text or drag over an area with Mark for redaction first.',
   [TOAST_TRANSLATE_REJECTED]: 'The provider refused to translate this page. Nothing was changed.',
   [TOAST_TRANSLATE_UNREADABLE]:
     'The provider’s answer could not be matched to the page’s text, so nothing was changed. Try again.',

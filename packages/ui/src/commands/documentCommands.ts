@@ -248,6 +248,7 @@ import {
   TOAST_SAVED_CLEARED,
   TOAST_SAVED_CLEARED_BACKUPS,
   TOAST_HELD_COPIES_DELETED,
+  TOAST_NOTHING_MARKED,
   TOAST_SMALLER_COPY_SAVED,
   UNDO_TITLE,
   REDO_TITLE,
@@ -262,6 +263,7 @@ import type { PanelPresence } from '../panelPresence.js';
 import { DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import type { ShowToast } from '../toasts.js';
+import { countPendingRedactions } from './redactionMarks.js';
 import { readWholeList } from '../readWholeList.js';
 import { confirmDone, confirmWritten } from './confirmWritten.js';
 import type { ZoomDirection, ZoomMode } from '../zoom.js';
@@ -4314,6 +4316,8 @@ export function applyRedactionsCommand(
      * the next burn-in. Required: a burn-in that skipped the dialog by default would be the unsafe side.
      */
     readonly confirm: () => boolean;
+    /** Where *Nothing is marked for redaction* is said. */
+    readonly toast: ShowToast;
   },
 ): UiCommand {
   return {
@@ -4325,6 +4329,13 @@ export function applyRedactionsCommand(
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;
+      // NOTHING MARKED IS SAID, never offered (F-P1): an Apply with no marks to burn in is a control that does nothing.
+      // Counted from main's own list of the document's annotations, which is what the marks on the pages are drawn
+      // from. A refused read counts nothing and goes on: the burn-in meets the same refusal and reports it.
+      if ((await countPendingRedactions(deps.client, context.docId)) === 0) {
+        deps.toast('problem', TOAST_NOTHING_MARKED);
+        return;
+      }
       // UNASKED ONLY WHEN THE PERSON TURNED THE CONFIRMATION OFF, and then with exactly what the dialog would have
       // started on — this page, never the whole document (`applyRedactionsDefaults`).
       const answer = deps.confirm()

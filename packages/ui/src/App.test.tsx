@@ -3822,6 +3822,27 @@ describe('Settings › Saving › Confirm before redacting (Part F)', () => {
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
         'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+        // ONE MARK, so Apply has something to burn in: with none it says so and offers nothing (F-P1).
+        'document.annotations': {
+          version: asDocVersion(1),
+          annotations: [
+            {
+              page: 0,
+              index: 0,
+              rect: { x0: 10, y0: 10, x1: 50, y1: 30 },
+              inReplyTo: null,
+              kind: 'redact',
+              style: { colour: [0, 0, 0], opacity: 1, borderWidth: null },
+              contents: '',
+              authored: true,
+              author: '',
+              created: null,
+              blend: 'normal',
+            },
+          ],
+          next: null,
+          truncated: false,
+        },
       });
       const { unmount } = render(<App client={client} settings={settings} />);
       await withDocumentOpen();

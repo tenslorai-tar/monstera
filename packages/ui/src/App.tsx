@@ -2617,6 +2617,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           ask,
           stamp,
           signatures,
+          toast,
           // ANYTHING BUT AN EXPLICIT OFF ASKS: an unread or unexpected value lands on the safe side.
           confirm: () => settings.get(CONFIRM_REDACTION_SETTING.id) !== false,
         }),
