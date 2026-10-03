@@ -3724,3 +3724,85 @@ the allocation that crosses it fails inside MuPDF first, which is the event §3 
   - *Sampling on `main`'s event loop.* Measured starving: an event-loop sampler took 40 samples across a 27 s save
     where about 1,000 were due, and a save is when memory moves. What blocked its loop was not established.
   - *Killing from `main` on the worker's message.* A busy `main` would delay the kill by however long it is busy.
+
+## Correction, 2026-10-03 — a host's ending counts against one document: the one whose call the host was running (P3, the owner's decision)
+
+The live review of 3 October (finding P3): with two documents open, one made the engine fail twice, and the other,
+which had done nothing, answered `document-poisoned`. Three mechanisms, read in the code:
+
+1. `onEngineHostEnded` raised the count of **every document the supervisor held** (`sessions.documentIds()`), idle
+   ones included. 9a says *every document that had a call rejected*, and the DDDD-17 correction says *an idle document
+   is never incremented*. Neither was what ran.
+2. 9a's protection for the innocent was reset-on-success, and `recordSuccess` had **no caller**. Called, it still could
+   not have protected an idle document, which makes no call to succeed.
+3. A document whose session was being created when another document's call ended the host was **counted twice for
+   that one ending**: once by the death handler, which held its entry from `begin`, and once by `onDocumentOpened`'s own
+   catch. It was poisoned at once.
+
+The owner decided that the count, the poisoning and the recovery belong to the document that caused them, never to an
+innocent one. This withdraws 9a's *a host death increments the count of every document that had a call rejected by
+it*, its reset-on-success requirement, the row of its rejected table that rejects attribution, and DDDD-17's *the
+residual is not closed*.
+
+### Decided
+
+- **Main sends each engine host one call at a time.** The host client puts a call on the wire only when no other is
+  waiting for its answer. The rest wait in main, in the order they were made, inside the same bound:
+  `ENGINE_HOST_MAX_IN_FLIGHT` now counts waiting and sent calls together, and exceeding it still ends the connection.
+  So when a host ends, main knows which call it was running, the one sent and unanswered, without asking a host that
+  invariant 25 says may be lying. A call's deadline starts when it is sent, so it times the call's own run and not its
+  wait behind another.
+- **A call belongs to the document whose lane made it.** `DocumentService` already marks the document of the running
+  lane entry (an `AsyncLocalStorage`, kept to refuse lane reentry), and the client asks it as each call is made.
+  - **Every per-document call to the MuPDF and PDFium hosts is made inside that document's lane.** Read 2026-10-03:
+    every path from `DocumentCommands`, the command bus, open, reopen, replay, unlock and restore.
+  - **A merge reads its source inside the target's lane**, so a call naming two sessions belongs to the document the
+    command is for.
+  - **Made outside every lane, and so belonging to no document:** `engine/close` as a document closes, the containment
+    probe of a rebuilt host, and the compose host's calls.
+- **An ending counts against that document alone, at the moment the connection ends.** A crash, a deadline and a
+  memory kill are the same here: each happens during the call the host was running. Every other document's sessions
+  are dropped and rebuilt as 9c says, and nothing counts against them. An ending with no call running, such as a host
+  the system ended between calls, counts against nobody.
+- **The open path no longer counts an ending.** The ending has already counted the right document, and the death
+  handler has queued a reopen in this document's lane behind the open entry, so the entry stops there. A failure that
+  is not an ending, where no host could be built, still spends one of its two attempts as before.
+- **A replay that fails because the host ended is not `replay-failed`.** `replay-failed` is invariant 18 clause (i),
+  for a log that will not re-apply. An ending during a replay is counted like any other ending, and the reopen it
+  queues replays again.
+- **Reset-on-success is withdrawn, and `recordSuccess` deleted.** It existed to undo counts given to documents that
+  caused nothing. With the count exact, it could only undo a correct one: a document whose command ends the host, then
+  answers a read, then ends it again would never reach the bound. Two endings caused by one document's calls poison
+  it. Close-and-reopen is still the way back (DDDD-16 and DDDD-18 unchanged).
+
+### Measured: the cost of one call at a time
+
+2026-10-03, on this machine (Windows 11, 4 logical processors), a real contained host and the real shell. A 1-page
+document's page text was asked for back to back while a 64 MiB, 4-page document's session was created beside it,
+three rounds each way.
+
+| | heavy session created in | light calls, median | light calls, slowest |
+|---|---|---|---|
+| calls overlapping | 406–485 ms | 9–10 ms | 57–78 ms |
+| one at a time | 305–496 ms | 8–9 ms | 113–133 ms |
+
+Most of a session's creation is main writing the snapshot, which is not a host call.
+
+### Stated limits
+
+- **A memory kill counts against the call that crossed the threshold**, which is the document that grew the host.
+  When the documents' sessions alone hold the host near the threshold, a small document's call can be the one that
+  crosses. Not seen; stated so it is not assumed away.
+- **A merge whose source's bytes end the host counts against the target**, the document the command is for.
+- **The PDFium and compose hosts count against nobody, as before.** Their endings clear and rebuild without the death
+  handler; PDFium holds no per-document session.
+
+### Rejected
+
+- *Counting every document with a call in flight.* Calls overlap on a host today, because a handler awaits a file
+  while another runs. That set names more than one document whenever two were busy, and one of them did nothing: this
+  is DDDD-17's residual, kept.
+- *The host reporting which call it is running.* A crashed host reports nothing, and invariant 25 treats the host as
+  possibly compromised. Main's own record of what it sent needs neither.
+- *The host running one call at a time instead of main sending one.* It costs the same, and the attribution would
+  rest on the host keeping to it.
