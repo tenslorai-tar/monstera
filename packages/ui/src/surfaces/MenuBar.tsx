@@ -31,6 +31,7 @@ import type { CommandContext, CommandRegistry, UiCommand } from '../registries/c
 import type { MenuBarSubmenu } from '../registries/placement.js';
 import { GIVES_FOCUS_BACK, cancelsAnotherMenu } from './menuRowClose.js';
 import { LABELLED, type RowFit, nextRowFit } from './menuRowFit.js';
+import { arrivesByArrowKey, firstItem } from './menuRowKeys.js';
 import {
   type MenuBarCommandEntry,
   type MenuBarItem,
@@ -149,6 +150,8 @@ export function MenuBar({
   const hasButtons = buttons.length > 0;
   // WHY EACH ROW MENU LAST CLOSED, as Base UI reported it, keyed by the menu's id.
   const closedFor = useRef(new Map<string, Menu.Root.ChangeEventReason>());
+  // THE TITLE OF EACH ROW MENU THE ARROW KEYS ARE BRINGING, until that menu has finished opening.
+  const byArrowKey = useRef(new Map<string, Element>());
 
   // THE ROW'S SLACK, measured whenever any of its parts changes width — a window resize, a language, a button
   // appearing. Its width less its padding, the three parts as drawn, and the two gaps between them.
@@ -393,6 +396,23 @@ export function MenuBar({
     (): HTMLElement | boolean =>
       GIVES_FOCUS_BACK[closedFor.current.get(id) ?? 'none'] ? (focusBefore() ?? true) : false;
 
+  /** A row menu opening: its title kept when the arrow keys brought it from its neighbour (`menuRowKeys.ts`). */
+  const arriving = (id: string, details: Menu.Root.ChangeEventDetails): void => {
+    if (arrivesByArrowKey(details) && details.trigger !== undefined) byArrowKey.current.set(id, details.trigger);
+    else byArrowKey.current.delete(id);
+  };
+
+  /**
+   * A row menu open, and Base UI done placing the focus in it: one the arrow keys brought moves the focus on to its
+   * first item. The popup is the one its title names in `aria-controls`.
+   */
+  const arrived = (id: string): void => {
+    const title = byArrowKey.current.get(id);
+    byArrowKey.current.delete(id);
+    const popup = document.getElementById(title?.getAttribute('aria-controls') ?? '');
+    if (popup !== null) firstItem(popup)?.focus();
+  };
+
   /** The submenus a menu holds, whose values are read as it opens. */
   const submenusIn = (menu: MenuBarMenuModel): readonly MenuBarSubmenu[] =>
     menu.groups.flatMap((group) => group.items.flatMap((each) => (each.kind === 'submenu' ? [each.id] : [])));
@@ -411,11 +431,15 @@ export function MenuBar({
                   closing(menu.id, details);
                   return;
                 }
+                arriving(menu.id, details);
                 setOpened((count) => count + 1);
                 // ASKED AS THE MENU OPENS, so the answer is in by the time the pointer or the arrow key reaches the
                 // submenu. A failed read leaves the last answer, and before any, no values at all — never a list
                 // claiming to be empty that was only unread.
                 for (const id of submenusIn(menu)) sources[id].read();
+              }}
+              onOpenChangeComplete={(open) => {
+                if (open) arrived(menu.id);
               }}
             >
               <Menu.Trigger className="m-menu-bar__trigger" data-menu={menu.id}>

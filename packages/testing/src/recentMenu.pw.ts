@@ -99,6 +99,24 @@ test('FILE › RECENT lists every file main keeps, a missing one disabled and na
   await expect(page.locator('.m-page-list canvas.m-page').first()).toBeVisible({ timeout: 20_000 });
 });
 
+test('LEFT in File › Recent closes the submenu alone: File stays open, the focus back on Recent (the menubar pattern)', async ({
+  page,
+}) => {
+  await started(page);
+  const popup = await openRecentByKeyboard(page);
+  await expect(popup.getByRole('menuitem', { name: 'Annual report.pdf' })).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(popup).toBeHidden();
+  // FILE IS STILL THE OPEN MENU, and the only one: Left closed the submenu and moved nowhere along the row.
+  expect(
+    await page.evaluate(() => ({
+      menus: document.querySelectorAll('[role="menu"][data-open]').length,
+      row: document.querySelector('.m-menu-bar__trigger[data-popup-open]')?.getAttribute('data-menu') ?? null,
+    })),
+  ).toStrictEqual({ menus: 1, row: 'file' });
+  await expect(page.getByRole('menuitem', { name: 'Recent' })).toBeFocused();
+});
+
 test('CLEAR LIST empties the one list both views show, and the submenu then says so', async ({ page }) => {
   await started(page);
   let popup = await openRecentByKeyboard(page);

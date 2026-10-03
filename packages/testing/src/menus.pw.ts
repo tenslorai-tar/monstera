@@ -298,6 +298,57 @@ test('after a sweep along the row, a CLICK on a title opens its menu and it STAY
   expect(await openMenu(page)).toBe(file.id);
 });
 
+// RIGHT AND LEFT IN AN OPEN MENU (the WAI-ARIA menubar pattern, `menuRowKeys.ts`): on an item with no submenu they open
+// the neighbouring menu with the focus on its first item, and close the one they left. On an item with a submenu Right
+// opens it and Left closes it: `recentMenu.pw.ts`, which has a submenu with files in it. The live review read the old
+// menu left open and the focus moved silently to the next title.
+
+/** The focused element as the case compares it: its role, and the menu it sits in by its title's id. */
+function focused(page: Page): Promise<{ role: string | null; menu: string | null; first: boolean }> {
+  return page.evaluate(() => {
+    const active = document.activeElement;
+    const popup = active?.closest('[role="menu"]') ?? null;
+    const title = popup === null ? null : document.querySelector(`[aria-controls="${popup.id}"]`);
+    const first = [...(popup?.querySelectorAll('[role^="menuitem"]') ?? [])].find(
+      (item) => item.getAttribute('aria-disabled') !== 'true' && !item.hasAttribute('data-disabled'),
+    );
+    return { role: active?.getAttribute('role') ?? null, menu: title?.getAttribute('data-menu') ?? null, first: first !== undefined && first === active };
+  });
+}
+
+/** How many menus are open, and which of the row's. */
+function openMenus(page: Page): Promise<{ count: number; row: string | null }> {
+  return page.evaluate(() => ({
+    count: document.querySelectorAll('[role="menu"][data-open]').length,
+    row: document.querySelector('.m-menu-bar__trigger[data-popup-open]')?.getAttribute('data-menu') ?? null,
+  }));
+}
+
+for (const how of ['F10 and Enter', 'a click on the title, then ArrowDown'] as const) {
+  test(`from ${how}: Right and Left move to the NEIGHBOURING menu, focus on its first item, the old one closed`, async ({ page }) => {
+    await openDocument(page);
+    if (how === 'F10 and Enter') {
+      await page.keyboard.press('F10');
+      await page.keyboard.press('Enter');
+    } else {
+      await page.getByRole('menubar').getByRole('menuitem', { name: 'File', exact: true }).click();
+      await page.keyboard.press('ArrowDown');
+    }
+    await expect.poll(() => focused(page)).toStrictEqual({ role: 'menuitem', menu: 'file', first: true });
+    await page.keyboard.press('ArrowRight');
+    await expect.poll(() => openMenus(page)).toStrictEqual({ count: 1, row: 'edit' });
+    // THE SEPARATING ASSERTION: the focus is ON an item, the first, inside Edit — not on Edit's popup, where Base UI
+    // leaves it, and not on the title.
+    await expect.poll(() => focused(page)).toStrictEqual({ role: 'menuitem', menu: 'edit', first: true });
+    // AND THE KEYS GO ON FROM THERE: ArrowDown leaves the first item for another in the same menu.
+    await page.keyboard.press('ArrowDown');
+    await expect.poll(() => focused(page)).toStrictEqual({ role: 'menuitem', menu: 'edit', first: false });
+    await page.keyboard.press('ArrowLeft');
+    await expect.poll(() => openMenus(page)).toStrictEqual({ count: 1, row: 'file' });
+    await expect.poll(() => focused(page)).toStrictEqual({ role: 'menuitem', menu: 'file', first: true });
+  });
+}
+
 // EVERY MENU, EVERY ITEM (the owner's review of 0.1.8.0: the menus listed text only): each item draws a glyph in the
 // one icon column, so every title starts at the same edge, and the menu fits the window — the View menu ran 74 px past
 // a 1280 × 800 window while each item drew 38 px for v5's 30, and its last items could not be reached.
