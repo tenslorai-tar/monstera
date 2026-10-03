@@ -3674,3 +3674,53 @@ is a second opinion about Windows' naming, and B3a is the rule against it.
 
 **What transfers:** a probe of an identity-dependent API reports on the identity it
 runs in. The outside reading is the control, never the measurement.
+
+## Correction, 2026-10-03 — §3's primary is built, beside a per-call deadline (CR-SEC-09, the owner's decision)
+
+A code review found §3's **primary** was never built: only the backstop, the job's `ProcessMemoryLimit`, existed.
+And nothing turned *no answer* into a kill. A document that makes the engine loop holds the host's one thread, every
+call for every document on that host waits, `engine/close` cannot be answered, and only quitting the application
+ends it. The owner decided both are built. This correction records how, and where §3's wording no longer matches.
+
+### 1. A per-call deadline, a mechanism §3 did not have
+
+`client.ts` said *"There is no timeout, deliberately"*, because a host that is slow and a host that is gone are
+different facts and only the transport can tell them apart. That still holds, and it missed a third state: a host
+**alive and never answering**. Only a duration ends that.
+
+- Each call has a deadline, worked out as it is sent: **120 s plus 5 s per MiB of the documents open then**
+  (`HOST_CALL_DEADLINE`, `budget.ts`). The open documents bound what any one call is handed.
+- A call past its deadline ends the connection with `deadline`. That kills the host and rebuilds it (Decision 9c),
+  and 9a's two deaths poison the document that caused them, so a looping document cannot loop for ever.
+- **Measured, 2026-10-03,** Windows 11 with 4 logical processors, real contained hosts and the kernel calls they
+  make. The slowest legitimate call was a Word export of the 200 MiB scan fixture: 167 s and 275 s in two runs,
+  1.38 s per MiB at the slower. Saving 10,000 pages took 5.1 to 6.9 s, and recognising a page of the scan 2.0 s.
+  5 s per MiB is 3.6 times the slowest rate. A 10 MB document's deadline is about 3 minutes. At the open-document
+  ceiling it is about 2 hours, where such an export may legitimately take about 35 minutes here.
+- **Stated gap:** a compose-host call on a picked file that is not an open document (an image, a Markdown or
+  converted Office file) is bounded by the floor alone.
+- **Rejected:**
+  - *A fixed figure.* It would have to be about 2 hours to cover the ceiling, and would leave a wedge that long on
+    every small document.
+  - *A deadline per channel through each call site.* It would be a second opinion per channel about cost, where the
+    open documents already bound the input.
+  - *A heartbeat.* A long native call blocks it exactly as a loop does.
+  - *No deadline.* That is the finding.
+
+### 2. The sampler, and where §3's *"kills it at the budget"* changes
+
+With the job limit equal to the budget (§2: the whole 3 GB), a sampler that kills **at** the budget could never act:
+the allocation that crosses it fails inside MuPDF first, which is the event §3 says the design is not.
+
+- **Primary.** A worker thread in `main` samples each host's private commit, the figure the job's limit counts,
+  every 100 ms. At **the budget less 512 MiB** it terminates the host itself, having first recorded the reason, so
+  the ending `main` reads is reported as the memory budget rather than as a host that vanished.
+- **Backstop.** The job limit, unchanged at §9.17's 3 GB.
+- **Measured headroom, 2026-10-03,** with a sampler on its own thread (longest gap between samples 533 ms under
+  load): the largest rise in private commit within 100 ms was 234 MiB, and within 250 ms 321 MiB, through opening,
+  saving and a Word export of the 200 MiB fixtures. 512 MiB is 1.6 times the 250 ms figure.
+- **Rejected:**
+  - *Raising the job limit above the budget.* That is the raised number §9.17 refuses.
+  - *Sampling on `main`'s event loop.* Measured starving: an event-loop sampler took 40 samples across a 27 s save
+    where about 1,000 were due, and a save is when memory moves. What blocked its loop was not established.
+  - *Killing from `main` on the worker's message.* A busy `main` would delay the kill by however long it is busy.
