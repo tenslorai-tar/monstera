@@ -372,6 +372,38 @@ describe('applySignDocument', () => {
  * signed document. What separates it is a document that was signed and then
  * **changed**, and the only honest way to make one is to sign and then edit.
  */
+describe('a SECOND signature (CR-DOC-07)', () => {
+  it('is APPENDED, and both signatures verify over the bytes each one covers', async () => {
+    const once = await applySignDocument(unsigned, { ...command, bytes: certificate });
+    const twice = await applySignDocument(once, { ...command, bytes: certificate, name: 'Second signer' });
+
+    // THE FIRST SIGNATURE'S FILE IS UNTOUCHED: the second arrives after it, as an incremental update.
+    expect(Buffer.from(twice.subarray(0, once.byteLength)).equals(Buffer.from(once))).toBe(true);
+
+    const session = await mupdfWriter.open(twice);
+    try {
+      const read = await readSignatures(session, twice);
+      expect(read.map((signature) => signature.signer)).toStrictEqual(['Grace Hopper', 'Second signer']);
+      expect(read.map((signature) => signature.coversDocument)).toStrictEqual([true, true]);
+      // The first covers the file as it was when it was signed; the second covers the whole file.
+      expect(read.map((signature) => signature.coversWholeFile)).toStrictEqual([false, true]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }, 120_000);
+
+  it('CONTROL: one signature covers the whole file it is in', async () => {
+    const once = await applySignDocument(unsigned, { ...command, bytes: certificate });
+    const session = await mupdfWriter.open(once);
+    try {
+      const read = await readSignatures(session, once);
+      expect(read.map((signature) => [signature.coversDocument, signature.coversWholeFile])).toStrictEqual([[true, true]]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }, 60_000);
+});
+
 describe('readSignatures', () => {
   it('CONTROL: an unsigned document reports no signatures', async () => {
     const session = await mupdfWriter.open(unsigned);

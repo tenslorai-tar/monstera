@@ -50,15 +50,6 @@ export function openForWriting(image: ByteImage): Promise<PDFDocument> {
   return PDFDocument.load(image, { updateMetadata: false, forIncrementalUpdate: true });
 }
 
-/**
- * The signer's load: WHOLE, never for an incremental update. `signDocument` is `signpdf`'s command, not pdf-lib's, and
- * its placeholder is written by a whole save (ADR-0054 Decision 3); ADR-0127 decided the pdf-lib commands' route and
- * not the signer's. A document loaded for an incremental update makes `save()` append without being asked, so the
- * signer taking {@link openForWriting} would have changed its route in silence.
- */
-export function openWhole(image: ByteImage): Promise<PDFDocument> {
-  return PDFDocument.load(image, { updateMetadata: false });
-}
 
 /**
  * The one way a pdf-lib command writes its result: the input, byte for byte, with one revision appended (ADR-0127).

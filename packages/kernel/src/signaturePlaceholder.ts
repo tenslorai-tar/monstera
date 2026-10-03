@@ -3,7 +3,7 @@ import type { PDFDocument, PDFPage, PDFRef } from '@cantoo/pdf-lib';
 
 import type { ByteImage } from './engineSeam.js';
 import { PngPixelsRefused, checkPngPixels } from './imageDimensions.js';
-import { openWhole } from './pdfLibSession.js';
+import { appendRevision, openForWriting } from './pdfLibSession.js';
 import { type DrawableMark, drawSignature, signatureBox } from './signatureDrawing.js';
 import { type PlaceholderRequest, type PreparedSignature, reservedSignatureBytes } from './signatureHole.js';
 import { SignatureAppearanceRefusedError } from './signingRefusals.js';
@@ -283,10 +283,15 @@ function placeSignature(
 /**
  * The document with a signature placeholder in it, serialised.
  *
+ * **APPENDED, never saved whole** ([ADR-0149](../../../docs/DECISIONS/0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)):
+ * the placeholder is an incremental update on the image it was handed, so a signature already in that image keeps the
+ * bytes it covers. A whole save rewrote them, and measured 2026-10-03 the first of two signatures then no longer
+ * verified.
+ *
  * **`useObjectStreams: false`**, ADR-0054 Decision 3's second constraint: the
  * signer locates the `/Contents` hole in the raw bytes, so a signature
- * dictionary compressed into an object stream is invisible to it. This is the
- * one save in the codebase that must not compress.
+ * dictionary compressed into an object stream is invisible to it. The appended
+ * revision is written uncompressed for that reason.
  *
  * Exported so the row's proof can assert the placeholder's shape without
  * signing — the byte range's four slots are the whole contract with `@signpdf`,
@@ -294,8 +299,7 @@ function placeSignature(
  * placeholder from one the signer happened to tolerate.
  */
 export async function withSignaturePlaceholder(image: ByteImage, request: PlaceholderRequest): Promise<ByteImage> {
-  // WHOLE, the signer's own route (`openWhole`), never the pdf-lib commands' appended one (ADR-0127).
-  const document = await openWhole(image);
+  const document = await openForWriting(image);
   // THE FIRST PAGE FOR AN INVISIBLE SIGNATURE, which has no page a person
   // chose; the placement's page for a visible one, refused rather than clamped
   // when the document does not have it — a signature drawn on a different page
@@ -314,7 +318,7 @@ export async function withSignaturePlaceholder(image: ByteImage, request: Placeh
       ? undefined
       : await appearanceFor(document, page, request.appearance);
   placeSignature(document, page, request, placed);
-  return document.save({ useObjectStreams: false });
+  return appendRevision(document, { useObjectStreams: false });
 }
 
 /**
