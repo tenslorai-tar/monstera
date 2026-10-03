@@ -1,7 +1,7 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
-import { openApp, openDocument, openSection, runCommand, samplePdf } from './helpScreensHarness.js';
+import { type SceneShim, openApp, openDocument, openSection, runCommand, samplePdf } from './helpScreensHarness.js';
 import { settled } from './settled.js';
 
 /**
@@ -200,8 +200,10 @@ test('a DIALOG’S OPTION GROUP has no bare frame, and each option is a line of 
 
 // EVERY DIALOG WITH A COLUMN OF CHOICES (the owner's review of 0.1.9.0, Export to Word): the question sits on its first
 // option, no taller than its own words. The heading's flex basis, a width in a row, had become a 22ch height in the
-// column. Each dialog that draws `.m-dialog-choices` is opened here: Export to Word, Split and Signature › Type.
-for (const scene of [
+// column. Every dialog that draws `.m-dialog-choices` (`DialogChoices`) is opened here: Export to Word, Split, Print and
+// Edit page object, the last with two objects the shim answers for the page. Signature › Type drew a column until its
+// styles became a menu (ADR-0150).
+const scenes: readonly { readonly name: string; readonly shim?: SceneShim; readonly open: (page: Page) => Promise<void> }[] = [
   {
     name: 'Export to Word',
     open: async (page: Page): Promise<void> => {
@@ -216,17 +218,27 @@ for (const scene of [
     },
   },
   {
-    name: 'Signature',
+    name: 'Print',
     open: async (page: Page): Promise<void> => {
-      // THE PALETTE, as Split above: this case is about the dialog's columns, and where Home draws Signature at this
-      // width is the ribbon's fold, which `signature.pw.ts` exercises.
-      await runCommand(page, 'Signature');
-      await page.getByRole('dialog', { name: 'Signature' }).getByRole('button', { name: 'Type' }).click();
+      await runCommand(page, 'Print…');
     },
   },
-]) {
+  {
+    name: 'Edit an object on this page',
+    shim: {
+      pageObjects: [
+        { index: 0, kind: 'text', left: 72, bottom: 700, right: 300, top: 720, fill: { red: 0, green: 0, blue: 0, alpha: 1 } },
+        { index: 1, kind: 'image', left: 72, bottom: 400, right: 540, top: 680, fill: null },
+      ],
+    },
+    open: async (page: Page): Promise<void> => {
+      await runCommand(page, 'Edit an object on page');
+    },
+  },
+];
+for (const scene of scenes) {
   test(`${scene.name}: a column of choices has no gap between its question and its first option`, async ({ page }) => {
-    await openApp(page);
+    await openApp(page, scene.shim ?? {});
     await openDocument(page);
     await scene.open(page);
     const dialog = page.getByRole('dialog', { name: scene.name });
