@@ -29,7 +29,7 @@ function footerButtons(): readonly string[] {
 
 const EMPTY: readonly { readonly dialog: string; readonly body: ReactElement }[] = [
   {
-    dialog: 'Duplicate pages',
+    dialog: 'Delete duplicate pages',
     body: <DuplicatePagesBody groups={[]} resolve={vi.fn()} truncated={false} update={vi.fn()} />,
   },
   {
@@ -58,7 +58,7 @@ describe('the duplicate-pages action counts in words, not in "(s)"', () => {
         <DuplicatePagesBody groups={[{ pages: [0, 3] }]} resolve={vi.fn()} truncated={false} update={vi.fn()} />
       </InDialog>,
     );
-    expect(screen.getByRole('button', { name: 'Remove 1 duplicate page' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Delete 1 duplicate page' })).toBeDefined();
   });
 
   it('and several in the plural', () => {
@@ -67,6 +67,6 @@ describe('the duplicate-pages action counts in words, not in "(s)"', () => {
         <DuplicatePagesBody groups={[{ pages: [0, 3, 5] }]} resolve={vi.fn()} truncated={false} update={vi.fn()} />
       </InDialog>,
     );
-    expect(screen.getByRole('button', { name: 'Remove 2 duplicate pages' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Delete 2 duplicate pages' })).toBeDefined();
   });
 });

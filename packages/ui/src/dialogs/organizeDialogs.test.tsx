@@ -58,11 +58,11 @@ const BODIES: readonly {
     answer: { groups: [[0], [1]] },
   },
   {
-    name: 'Duplicate pages',
+    name: 'Delete duplicate pages',
     body: (resolve) => (
       <DuplicatePagesBody groups={[{ pages: [0, 3] }]} truncated={false} resolve={resolve} update={() => undefined} />
     ),
-    action: 'Remove 1 duplicate page',
+    action: 'Delete 1 duplicate page',
     answer: { pages: [3] },
   },
   {

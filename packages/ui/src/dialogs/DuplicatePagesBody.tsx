@@ -66,7 +66,7 @@ export default function DuplicatePagesBody({
           ))}
         </ul>
       )}
-      {/* NOTHING FOUND, NOTHING OFFERED: the footer is the report's Close. It offered *Remove 0 duplicate pages*,
+      {/* NOTHING FOUND, NOTHING OFFERED: the footer is the report's Close. It offered *Remove 0 duplicate pages* (since *Delete*),
           disabled, which is an action that does nothing drawn as though it were one (the gallery, 2026-10-03). */}
       {extras.length === 0 ? (
         <DialogFooter dismissal="close" />

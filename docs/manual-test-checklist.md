@@ -68,7 +68,7 @@ is not available.
 - [ ] **Move page up** — Pages · `document.move-page-earlier` · Shows: on screen · Help: *Change the order of pages*
 - [ ] **Move page down** — Pages · `document.move-page-later` · Shows: on screen · Help: *Change the order of pages*
 - [ ] **Import page as layer…** — Pages · `document.import-page-as-layer` · Shows: on screen · Help: *Import a page as a layer*
-- [ ] **Find duplicate pages…** — Pages · `document.find-duplicate-pages` · Shows: a result dialog · Help: *Find and remove duplicate pages*
+- [ ] **Delete duplicate pages…** — Pages · `document.find-duplicate-pages` · Shows: a result dialog · Help: *Delete duplicate pages*
 - [ ] **Edit page in another app…** — Pages · `document.edit-page-externally` · Shows: on screen · Help: *Edit a page in another app*
 
 ## Ribbon › Edit

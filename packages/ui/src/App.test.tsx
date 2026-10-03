@@ -1480,7 +1480,7 @@ describe('App', () => {
       await withDocumentOpen();
 
       // A SECONDARY in Pages' More (ADR-0098), so its menu item's full title.
-      await pressCommand('Find duplicate pages…', 'Organize');
+      await pressCommand('Delete duplicate pages…', 'Organize');
 
       // ONE-BASED IN THE LABEL. The model's `[0, 3]` reads as pages 1 and 4,
       // and a body that showed the indices would name two pages the reader
@@ -1488,7 +1488,7 @@ describe('App', () => {
       await screen.findByText('Pages 1, 4');
 
       await act(async () => {
-        screen.getByRole('button', { name: 'Remove 1 duplicate page' }).click();
+        screen.getByRole('button', { name: 'Delete 1 duplicate page' }).click();
         await Promise.resolve();
       });
 

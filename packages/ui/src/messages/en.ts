@@ -4980,7 +4980,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_MERGE]: 'Merge',
   [RIBBON_IMPORT_LAYER]: 'As layer',
   [RIBBON_EDIT_EXTERNALLY]: 'External edit',
-  [RIBBON_FIND_DUPLICATES]: 'Duplicates',
+  [RIBBON_FIND_DUPLICATES]: 'Delete duplicates',
   [RIBBON_FORM_EXPORT_JSON]: 'Export JSON',
   [RIBBON_FORM_EXPORT_XFDF]: 'Export XFDF',
   [RIBBON_FORM_EXPORT_FDF]: 'Export FDF',
@@ -5121,7 +5121,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [BATES_NUMBER_NOT_A_NUMBER]:
     'Start is a whole number and digits is between 1 and 12.',
   [BATES_NUMBER_COMMAND_TITLE]: 'Bates numbering…',
-  [DUPLICATE_PAGES_TITLE]: 'Duplicate pages',
+  // NAMED FOR WHAT IT DOES, the owner's item 13g: the window deletes the extra copies, so it is not a search.
+  [DUPLICATE_PAGES_TITLE]: 'Delete duplicate pages',
   // WHAT WAS COMPARED, in the user's terms rather than the format's. "Content
   // and resources" would be true and would leave a person unable to tell
   // whether their annotated copy counts as the same page — which is exactly the
@@ -5134,10 +5135,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // THE COUNT IS IN THE LABEL. "Remove duplicates" leaves a person pressing a
   // button without knowing how many pages go, which is the one thing they want
   // to know before a delete.
-  [DUPLICATE_PAGES_REMOVE]: '{count, plural, one {Remove # duplicate page} other {Remove # duplicate pages}}',
+  [DUPLICATE_PAGES_REMOVE]: '{count, plural, one {Delete # duplicate page} other {Delete # duplicate pages}}',
   [DUPLICATE_PAGES_TRUNCATED]:
     'This list was cut short, so there may be more duplicates than are shown.',
-  [FIND_DUPLICATES_COMMAND_TITLE]: 'Find duplicate pages…',
+  [FIND_DUPLICATES_COMMAND_TITLE]: 'Delete duplicate pages…',
   // Each reason says what the user can DO. "Contested" and "unverifiable" are
   // the kernel's words for a verdict; a person needs the next action.
   [SAVE_REFUSED_CONTESTED]: 'Another open document is writing to this file. Close it and try again.',
