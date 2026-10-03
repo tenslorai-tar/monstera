@@ -40,6 +40,7 @@ import {
   type WordMode,
 } from '@monstera/contract';
 import {
+  type AtomicWriteSurface,
   AzureRecognitionRefused,
   ClaudeRecognitionRefused,
   CapabilityRegistry,
@@ -2777,7 +2778,12 @@ describe('a document past 4,096 pages is extracted and split whole', () => {
   }, 120_000);
 
   /** The production composition over the long document, picking `file` for a copy and `folder` for a split. */
-  function writingTo(file: string, folder: string, extract: DocumentExtractReader = localExtract): DocumentCommands {
+  function writingTo(
+    file: string,
+    folder: string,
+    extract: DocumentExtractReader = localExtract,
+    surface: AtomicWriteSurface = nodeFileSurface,
+  ): DocumentCommands {
     const engine = new EngineSessions();
     engine.hold(longDoc, { mupdf: longSession });
     return new DocumentCommands({
@@ -2790,7 +2796,7 @@ describe('a document past 4,096 pages is extracted and split whole', () => {
         provenance: ledger(),
         deps: {
           checkWriteTarget: (id) => longService.checkWriteTarget(id),
-          surface: nodeFileSurface,
+          surface,
           names: (target) => siblingNames(target, 1),
           wait: () => Promise.resolve(),
         },
@@ -2822,12 +2828,48 @@ describe('a document past 4,096 pages is extracted and split whole', () => {
       return Promise.resolve(onePage);
     };
 
+    // AND THE WRITES ARE RECORDED, for the same reason. Each part is written durably, a `FileHandle.sync()` per file,
+    // whose cost is the runner's disk: on the Windows CI image this case took 39.8 s on one run (job 111087637711,
+    // 2026-10-03) and passed 120 s on another (job 111076780068, 2026-10-02), the same code. The durable write is
+    // `atomicWrite`'s, proven in its own cases and by this file's real-disk splits; here it is the lane's file count.
+    const files = new Map<string, Uint8Array>();
+    const take = (path: string): Uint8Array => {
+      const bytes = files.get(path);
+      if (bytes === undefined) throw new Error(`nothing written at ${path}`);
+      return bytes;
+    };
+    const memory: AtomicWriteSurface = {
+      write: (path, bytes) => {
+        files.set(path, bytes);
+        return Promise.resolve();
+      },
+      writeStream: () => Promise.reject(new Error('a split does not stream')),
+      sync: (path) => (files.has(path) ? Promise.resolve() : Promise.reject(new Error(`nothing to sync at ${path}`))),
+      rename: (from, to) => {
+        files.set(to, take(from));
+        files.delete(from);
+        return Promise.resolve();
+      },
+      copy: (from, to) => {
+        files.set(to, take(from));
+        return Promise.resolve();
+      },
+      remove: (path) => {
+        files.delete(path);
+        return Promise.resolve();
+      },
+      exists: (path) => Promise.resolve(files.has(path)),
+    };
+
     const folder = mkdtempSync(join(directory, 'long-split-'));
-    const outcome = await writingTo(join(directory, 'unused.pdf'), folder, recording).split(longDoc, {
+    const outcome = await writingTo(join(directory, 'unused.pdf'), folder, recording, memory).split(longDoc, {
       each: [[0, PAGES - 1]],
     });
     expect(outcome).toEqual({ kind: 'split', files: PAGES, destination: folder });
-    expect(readdirSync(folder).filter((name) => name.endsWith('.pdf'))).toHaveLength(PAGES);
+    // EVERY PART AT ITS OWN NAME IN THE FOLDER, and no temp left: a lane that wrote one name twice leaves fewer.
+    const written = [...files.keys()];
+    expect(written.filter((path) => path.startsWith(folder) && path.endsWith('.pdf'))).toHaveLength(PAGES);
+    expect(written.filter((path) => path.endsWith('.monstera-tmp'))).toStrictEqual([]);
     // ONE PAGE PER PART, IN ORDER, every page once: a lane that cut the set short or ran past it writes the same
     // number of files from a different list.
     expect(asked).toStrictEqual(Array.from({ length: PAGES }, (_, index) => [index]));
