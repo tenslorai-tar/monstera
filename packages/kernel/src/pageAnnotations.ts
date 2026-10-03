@@ -39,6 +39,7 @@ import { decodedImage, withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
 import { snapRotation } from './rotatePages.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
+import { glyphLinesOf, heldToTheirLines } from './redactionQuads.js';
 import { type SignatureBox, type SignatureDrawing, drawSignature, signatureBox } from './signatureDrawing.js';
 
 /**
@@ -787,7 +788,10 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
         // rect with no quads takes all three. So the quads are what `applyRedactions` acts on.
         const [from, to] = placedPoints([draft.from, draft.to], transform);
         if (from === undefined || to === undefined) throw new Error('a selection has two ends');
-        const quads = on.page.toStructuredText().highlight(from, to, MAX_MARKUP_QUADS);
+        // HELD TO THEIR LINES (2a): MuPDF's quads are each line's full font box, which on closely set text reaches
+        // the boxes of the lines beside it, and the burn-in removes any glyph whose box a quad touches.
+        const text = on.page.toStructuredText();
+        const quads = heldToTheirLines(text.highlight(from, to, MAX_MARKUP_QUADS), glyphLinesOf(text));
         if (quads.length === 0) {
           throw new RangeError(
             'that selection caught no text, so there is nothing to redact. A text redaction names ' +

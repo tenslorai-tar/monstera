@@ -159,9 +159,9 @@ describe('applyRedactions', () => {
       expect(first).toContain(KEPT);
       //
       // WHAT THIS CASE CANNOT SAY: that the stored QUADS rather than the rect decided it. Measured
-      // 2026-09-20 by deleting the `addQuadPoint` loop — this case still passed, because
-      // `applyAddAnnotation` has already set a rect from the draft's bounds and MuPDF burns that
-      // in. The quads are separated in `pageAnnotations.test.ts`, where one line stores eight
+      // 2026-09-20 by deleting the `addQuadPoint` loop — this case still passed, because a mark
+      // with no quads is burned in by its rect, which `applyAddAnnotation` sets to the quads' own
+      // box, and on one line that is the same area. The quads are separated in `pageAnnotations.test.ts`, where one line stores eight
       // numbers, two lines sixteen, and the region gesture none; that file's case is red under the
       // same mutation.
     } finally {

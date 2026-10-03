@@ -7,6 +7,7 @@ import { pruneEmptyFields } from './formFields.js';
 import { withDocument, withDocumentRemoving } from './mupdfWriter.js';
 import { redraw } from './pageAnnotations.js';
 import { type PageScope, pagesOf } from './pageScope.js';
+import { glyphLinesOf, heldToTheirLines } from './redactionQuads.js';
 
 /**
  * Burning redact marks into the document — the other half of D3 row 131's mark.
@@ -119,9 +120,14 @@ function overlaps(a: mupdf.Rect, b: mupdf.Rect): boolean {
  */
 function removeCoveredObjects(document: mupdf.PDFDocument, page: mupdf.PDFPage): void {
   const annotations = page.getAnnotations();
+  // A TEXT MARK IS ITS QUADS, as the burn-in reads it: its /Rect is their union, which on a mark over several lines
+  // spans the unselected starts and ends of its first and last lines, and an annotation there is not under the mark.
   const marks = annotations
     .filter((annotation) => annotation.getType() === 'Redact')
-    .map((annotation) => boxOf(annotation));
+    .flatMap((annotation) => {
+      const quads = annotation.getQuadPoints();
+      return quads.length === 0 ? [boxOf(annotation)] : quads.map(rectOfQuad);
+    });
   const covered = (box: mupdf.Rect): boolean => marks.some((mark) => overlaps(mark, box));
 
   for (const annotation of annotations) {
@@ -144,6 +150,13 @@ function removeCoveredObjects(document: mupdf.PDFDocument, page: mupdf.PDFPage):
  */
 function boxOf(annotation: mupdf.PDFAnnotation | mupdf.PDFWidget): mupdf.Rect {
   return annotation.hasRect() ? annotation.getRect() : annotation.getBounds();
+}
+
+/** The box that contains a quad: MuPDF's `fz_rect_from_quad`, which is how the burn-in reads each one. */
+function rectOfQuad(quad: mupdf.Quad): mupdf.Rect {
+  const xs = [quad[0], quad[2], quad[4], quad[6]];
+  const ys = [quad[1], quad[3], quad[5], quad[7]];
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
 }
 
 /**
@@ -293,22 +306,18 @@ export const applyMarkMatchesForRedaction: Apply<'mupdf', 'markMatchesForRedacti
       }
     }
     for (const { page, hits } of searched) {
+      // HELD TO THEIR LINES (2a), for the text mark's reason: a search quad is its line's full font box, which on
+      // closely set text reaches the boxes of the lines beside it. Read only for a page with a match.
+      const lines = hits.length === 0 ? [] : glyphLinesOf(page.toStructuredText());
       for (const hit of hits) {
-        for (const quad of hit) {
+        for (const quad of heldToTheirLines(hit, lines)) {
           const annotation = page.createAnnotation('Redact');
           // THE QUAD'S OWN BOUNDS. MuPDF answers eight numbers — four corners,
           // upper-left first — and a `/Redact` takes a rectangle, so the mark
           // is the box that contains the quad. On an unrotated page they are
           // the same four numbers; on a rotated one the containing box is what
           // a rectangle can say.
-          const xs = [quad[0], quad[2], quad[4], quad[6]];
-          const ys = [quad[1], quad[3], quad[5], quad[7]];
-          annotation.setRect([
-            Math.min(...xs),
-            Math.min(...ys),
-            Math.max(...xs),
-            Math.max(...ys),
-          ]);
+          annotation.setRect(rectOfQuad(quad));
           redraw(annotation, document);
         }
       }
