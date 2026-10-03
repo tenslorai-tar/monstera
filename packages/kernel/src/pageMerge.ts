@@ -3,6 +3,7 @@ import type { PDFDocument, PDFGraftMap } from './mupdfRaw.js';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
+import { removeFieldsOnPages } from './formFields.js';
 import { withDocuments } from './mupdfWriter.js';
 import { graftingWithoutPageTree } from './pageGraft.js';
 
@@ -230,7 +231,9 @@ export const applyReplacePage: Apply<'mupdf', 'replacePage', 'one'> = (
 
     const pages = graftPagesWithAnnotations(target.newGraftMap(), target, from, command.at);
     // SHIFTED BY WHAT WAS JUST INSERTED. See the module note: the replaced page
-    // is no longer at `command.at`.
+    // is no longer at `command.at`. Its fields leave with it, as every page
+    // that leaves takes them (ADR-0151).
+    removeFieldsOnPages(target, [command.at + pages]);
     target.deletePage(command.at + pages);
   });
 

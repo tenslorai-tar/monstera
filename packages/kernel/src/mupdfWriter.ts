@@ -183,6 +183,12 @@ export function withDocument<T>(
 /**
  * Sessions a removal-purpose command has been applied to.
  *
+ * **What it decides since 2026-10-03 is the append, not the collection**
+ * ([ADR-0151](../../../docs/DECISIONS/0151-every-full-save-collects-and-a-deleted-page-takes-its-fields.md)):
+ * every full save collects, and a session in this set is never saved by
+ * appending, because an appended save keeps the prior revision whole. The
+ * reasoning below for holding it as state is unchanged.
+ *
  * ## Why the state is here and not a parameter on `serialise`
  *
  * [ADR-0045](../../../docs/DECISIONS/0045-a-removals-garbage-collection-belongs-to-the-command.md).
@@ -367,7 +373,13 @@ function saveTermsOf(session: MupdfSession): {
   // EXHAUSTIVE OVER THE UNION rather than an `if`, so a third purpose is a
   // compile error here instead of an option string silently defaulting to the
   // one that keeps what a command removed.
-  const options: Record<SavePurpose, string> = { ordinary: '', removal: 'garbage' };
+  //
+  // BOTH COLLECT (ADR-0151). A plain save wrote every object in the
+  // cross-reference table, so a deleted page, a deleted field and its answer
+  // went into the file whatever the purpose; measured 2026-10-03, and a
+  // collecting save re-encodes a foreign annotation exactly as the plain one
+  // did. What the purpose still decides is below: a removal never appends.
+  const options: Record<SavePurpose, string> = { ordinary: 'garbage', removal: 'garbage' };
   const purpose: SavePurpose = removals.has(session) ? 'removal' : 'ordinary';
   // COMPOSED, and the protection goes LAST so a reader of the string meets
   // the purpose first. The two are independent terms of one option list —
@@ -521,8 +533,13 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
    * so this asks for exactly what invariant 19 requires and nothing that would
    * make a save's output depend on a size decision nobody took.
    *
-   * An empty option string remains a plain save: no incremental update, no
-   * garbage collection, no re-encryption.
+   * ## And every full save collects since 2026-10-03
+   *
+   * ([ADR-0151](../../../docs/DECISIONS/0151-every-full-save-collects-and-a-deleted-page-takes-its-fields.md).)
+   * The class was never a removal's: a deleted page, a deleted field and its
+   * answer were all written out by the plain save. So no empty option string is
+   * left; an appended save, a signed document's, is the one write that does not
+   * collect, because collecting would rewrite what a signature covers.
    */
   serialise(session: MupdfSession): Promise<ByteImage> {
     // INSIDE `promised`, as the lookup always was: a session from elsewhere is refused as a REJECTION, never a

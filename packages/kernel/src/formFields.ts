@@ -753,6 +753,25 @@ export function pruneEmptyFields(document: PDFDocument): void {
 }
 
 /**
+ * Takes the form fields off pages that are about to leave the document: each widget on them is deleted and the
+ * field tree pruned, by the calls {@link applyDeleteFormFields} makes.
+ *
+ * **Called by every command that removes pages, BEFORE the page tree is rewritten**, while the indices still name the
+ * pages ([ADR-0151](../../../docs/DECISIONS/0151-every-full-save-collects-and-a-deleted-page-takes-its-fields.md)).
+ * Rewriting `/Kids` alone leaves `/AcroForm` naming the widgets, and each widget's `/P` keeps the page itself
+ * reachable, so the field stays in the form and no collecting save can drop the page — measured 2026-10-03, the
+ * owner's item 12a. A field with widgets on pages that stay keeps them and its value: only an emptied `/Kids` is
+ * pruned.
+ */
+export function removeFieldsOnPages(document: PDFDocument, pages: Iterable<number>): void {
+  for (const page of pages) {
+    const loaded = document.loadPage(page);
+    for (const widget of loaded.getWidgets()) loaded.deleteAnnotation(widget);
+  }
+  pruneEmptyFields(document);
+}
+
+/**
  * Deletes the fields a handle names, and tidies the tree they leave behind.
  *
  * ## Descending order, for `applyRemoveAnnotation`'s reason

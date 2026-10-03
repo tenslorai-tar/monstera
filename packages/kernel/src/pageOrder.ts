@@ -16,6 +16,7 @@ import { type PageScope, pagesOf } from './pageScope.js';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
+import { removeFieldsOnPages } from './formFields.js';
 import { withDocument } from './mupdfWriter.js';
 
 /**
@@ -374,6 +375,8 @@ export const invertDuplicatePage: Invert<'mupdf', 'duplicatePage'> = (
 ): Promise<void> =>
   withDocument(session, (document) => {
     const count = document.countPages();
+    // A DUPLICATE CARRIES ITS WIDGETS, so taking it away takes them too, as a delete does (ADR-0151).
+    removeFieldsOnPages(document, inverse.at);
     rewriteKids(document, keptPermutation(count, inverse.at));
   });
 
@@ -485,6 +488,8 @@ export const invertInsertBlankPage: Invert<'mupdf', 'insertBlankPage'> = (
   inverse: PriorPageInsert,
 ): Promise<void> =>
   withDocument(session, (document) => {
+    // THE SAME RULE AS EVERY OTHER PAGE THAT LEAVES (ADR-0151): a field drawn on the inserted page since goes with it.
+    removeFieldsOnPages(document, [inverse.at]);
     rewriteKids(document, keptPermutation(document.countPages(), [inverse.at]));
   });
 
@@ -582,6 +587,9 @@ export const applyDeletePages: Apply<'mupdf', 'deletePages'> = (
 ): Promise<void> =>
   withDocument(session, (document) => {
     const gone = removableOrThrow(document, command.pages);
+    // THE FIELDS GO WITH THEIR PAGES, before the tree is rewritten (ADR-0151): otherwise `/AcroForm` keeps the
+    // widgets, their `/P` keeps the page, and the saved file still holds every answer.
+    removeFieldsOnPages(document, gone);
     rewriteKids(document, keptPermutation(document.countPages(), gone));
   });
 
