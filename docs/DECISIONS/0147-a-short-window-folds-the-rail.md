@@ -39,3 +39,13 @@ stays one step away. *More* is itself a rail button and is counted in the room.
   keeps the drawn part in that order, and a ranking would be a second order nobody chose.
 - **Let the active section fold.** A rail whose highlighted entry has gone into a menu no longer says where the person
   is.
+
+## Extended, 2026-10-03 — the floating toolbar folds by the same rule
+
+Measured the same day on Chromium 151: the floating toolbar, §10.3's *"vertical pill on the canvas edge"*, is 286 px
+tall, and at 960 × 516 its page area is 276. So it ran past the area at both ends, and the area itself scrolled by 6
+px. It is the rail's case in a second column, and it takes the rail's rule, `railFolded`, rather than a copy of it.
+When the area cannot hold its tools, the last ones fold into a *More* at the strip's end, which opens a menu beside the
+strip. The room is the page area's height, less a margin at each end. Each tool costs one button and the gap after it,
+measured on a drawn button. The grip, which moves the strip, never folds. A tool that is on, such as the Hand, says so
+in the menu as it does on the strip.

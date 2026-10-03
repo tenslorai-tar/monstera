@@ -2704,7 +2704,9 @@ them.
   separators, compact 52 px buttons — collapsible.
 - **Floating quick toolbar:** a vertical pill on the canvas edge with the
   always-needed tools (select, hand, text selection, zoom in/out, crop,
-  snapshot, bookmark, comment); repositionable and hideable. Hiding and
+  snapshot, bookmark, comment); repositionable and hideable; in a page area
+  too short for it, its last tools fold into a *More* at its end, by the
+  rail's rule (amended 2026-10-03, ADR-0147's extension). Hiding and
   restoring it is the registry command `view.toggle-quick-toolbar` — in the
   palette, on a shortcut, and as a status-bar toggle — so it can never be lost.
 - **Canvas** (the star, quiet chrome) → right contextual panel → **status bar**.
