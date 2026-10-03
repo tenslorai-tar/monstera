@@ -30,7 +30,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { HOST_HARDENING, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
@@ -97,7 +97,9 @@ if (process.argv[2] === 'hold-pipe') {
   );
   const { createHostPipe } = await import('../../apps/desktop/dist/enginePipeFactory.js');
   const { hostPipeDacl } = await import('../../apps/desktop/dist/hostDacl.js');
-  const { createWin32HostSurface } = await import('../../apps/desktop/dist/win32HostSurface.js');
+  // A COMPUTED SPECIFIER, as every plain-Node driver of the surface imports it (`electronBinaryCallers.mjs`): the
+  // executable is then named by the resolver itself, which is what that scan checks.
+  const { createWin32HostSurface } = await import(pathToFileURL(BUILT.hostSurface).href);
   const { JOB_UI_RESTRICTIONS_ALL } = await import('../../packages/kernel/dist/host/containment.js');
 
   /** @type {string[]} */
@@ -171,11 +173,8 @@ if (process.argv[2] === 'hold-pipe') {
   const hostSurface = createWin32HostSurface({
     program: {
       runs: 'electron-node',
-      // THE PROVISIONED RUNTIME, by the provisioning resolver: `electronBinaryOfThisProcess` mints the same path
-      // and throws outside Electron, and the two were measured to agree (`win32HostSurface.ts`).
-      executablePath: /** @type {import('../../apps/desktop/dist/win32HostSurface.js').ElectronBinaryPath} */ (
-        electronBinaryPath(ROOT)
-      ),
+      // THE PROVISIONED RUNTIME, by the one resolver `check:electronbinary` admits for a plain-Node caller.
+      executablePath: electronBinaryPath(ROOT),
       commandArguments: [],
     },
     workingDirectory: ROOT,
