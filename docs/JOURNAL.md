@@ -946,6 +946,65 @@ announced count (none exists). 6: ADR-0146 and ADR-0147 came before their featur
 one primitive; CR-DOC-05 conforms to invariant 19, which already named an encryption change a removal. 7: ADR-0139
 carries two additions; the sticky footer was described only in the code it lived in.
 
+**Correction, 2026-10-03 — the checklist under its headings.** The paragraph above answered the items in one place and
+left 2a, 4a, 4b and 4c unanswered; Guards' document check refused it on `ceb977d1` (run 37127717707). The paragraph
+stands as written; the answers, each under its item:
+
+### 1. Root cause or workaround?
+
+Each fix states its mechanism in its commit. The one workaround-shaped change was `39118641`'s sticky footer, which
+LLLLLLL-1 replaced with the footer drawn outside the scroll.
+
+### 2. Verified against the easy shape only?
+
+No, for the items named above: Azure's sovereign and regional hosts and a look-alike suffix (CR-SEC-02), nine password
+shapes (CR-DOC-06), a file that grows after it is sized and a directory under an output's name (CR-SEC-08).
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Twice, both stronger: the rendered files moved into the proof columns (LLLLLLL-2), and the footer's case now reads the
+foot's own box against the body's rather than a position inside the scroll (LLLLLLL-1). One check loosened, recorded
+as LLLLLLL-5.
+
+### 3. Would CI have caught it?
+
+Every case added runs in CI; the gallery capture does not, by design. `menus.pw.ts` was not run locally after the menu
+row's fold and CI caught it on both legs (run 37114204045), which is LLLLLLL-3.
+
+### 4. Are the proofs non-vacuous?
+
+Each item's control was run against the old code, and each named in its commit went red.
+
+### 4a. Has every instrument passed a resolution test?
+
+One failed it, and that is LLLLLLL-1: the gallery's footer-in-view reading measured position and could not tell a
+footer over glass from one over a white band. The keyboard-shortcuts case's controls separate by 48.4 px and 2.05
+lines.
+
+### 4b. Is the instrument a search, with a positive control?
+
+The sibling searches in CR-SEC-02 and CR-SEC-08 were greps, each naming the known sites it found as its control. No
+search instrument was added to the repository.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+No check added in this range does: `auditScope.proof.mjs` names its rendered and visual fixtures by hand, an
+independent anchor.
+
+### 5. Executed, or asserted?
+
+Asserted and not executed: Azure's 21Vianet hosts (no primary source was reachable, so they are not accepted), the
+packaged Electron 43.7.7 (the local agent's), and a bound on a host's announced count (none exists).
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before: ADR-0146 and ADR-0147 came before their features; the footer's move is inside the one primitive; CR-DOC-05
+conforms to invariant 19.
+
+### 7. Do the documents still match the code?
+
+ADR-0139 carries two additions; the sticky footer was described only in the code it lived in, and left with it.
+
 ---
 
 ## 2026-10-03 — Stage audit of `fcb1adac..54ea19e7` — findings JJJJJJJ-1 to JJJJJJJ-6
