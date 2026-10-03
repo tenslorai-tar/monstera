@@ -115,3 +115,25 @@ also matched the ruler: ADR-0113's rendered case took `.m-menu-bar__trigger` las
 right only because the ruler comes later in the document. The names now carry `m-menu-bar__name`, and the triggers'
 one rule lists both classes. So the box the room is read from is still a trigger's box exactly, and a trigger's
 selector matches only triggers.
+
+## Correction, 2026-10-03 — the floor is 416, anchored to the minimum window, and the right panel's minimum is 264
+
+**Decision 1's 440 was chosen on the page's merit and against nothing else, and building the sheet showed that the
+right panel's minimum was wrong.** The sheet opened at `CONTEXT_PANEL_MIN_WIDTH`, 216, and its header was scrolled
+42 px sideways. Measured in Chromium 151 at 1024 × 720, the header's content is 256 px. The panel at 216 gives it 214,
+and the panel the row drew at 1024 gave it 238, so the collapse chevron was clipped at the application's own minimum
+window. That defect predates this ADR. 216 was derived from the Properties controls before v5 gave the tabs a glyph,
+and no case looked at the header. The minimum is now 264, read from the header (`layout.ts` carries the arithmetic).
+The header's own rule holds a longer language: the chevron never shrinks, and a tab's label gives way first. A width
+stored under the old floor reads as 264 rather than as the fallback.
+
+With 264, the floor of 440 would make the right panel give way at 1024 × 720. That window is `MINIMUM_WINDOW`, *"the
+floor the chrome fits in"*, so its whole chrome must draw there. **So the floor is derived from that window instead.**
+Its document row is 936 px, measured at 1024 × 720; less 256 and 264, that leaves 416, a Letter page at about 47%. Only
+a window smaller than the minimum, on a display whose work area is under 1024 wide, makes a side give way. The floor
+and the handle's width moved to `@monstera/shared` beside `MINIMUM_WINDOW`, because the rendered case reads them. That
+case asserts that nothing gives way at 1024 × 720, that the right side gives way at 960 and both at 760, that each
+handle is the width the rule counts, and that neither open setting is written.
+
+The rejected alternative *"the side last asked for wins"* is unaffected. At 760 the row is about 672 px, and one side
+in it needs 697: 256 for the side, 416 for the floor, and 25 for the other side's handle.
