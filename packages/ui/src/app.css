@@ -4747,6 +4747,14 @@ optgroup {
   line-height: 1;
   /* Selection is what this exists for, and a stray caret is not. */
   user-select: text;
+  /* WINDOWS HIGH CONTRAST (forced colours) LEAVES THIS LAYER ALONE. It forces every colour to the system's, so the
+     lines' `transparent` became the system's text colour and Chromium painted its readability backplate behind each:
+     the page showed this layer's substitute-font text on bars of the system's background, over a canvas drawn
+     correctly underneath (the live review's HC1, read 2026-10-03 under Chromium's forced-colours emulation — the
+     canvas kept its 4,105 dark samples, and a line computed rgb(0, 0, 0)). The canvas IS the page's own colours, which
+     forced colours never touch; this layer is only where the text can be selected, and stays invisible. Inherited, so
+     it covers the lines and the selection beneath. */
+  forced-color-adjust: none;
 }
 
 /*
@@ -4786,6 +4794,15 @@ optgroup {
      this is the only thing a person sees change when they drag. */
   background: color-mix(in srgb, var(--accent) 35%, transparent);
   color: transparent;
+}
+
+/* THE SELECTION, in high contrast: the system's highlight colour, as every other selection on the screen is. The layer
+   opts out of forced colours (above), so this is chosen here rather than left to them; translucent, because the page's
+   own text under a transparent line is what shows through it. After the rule above, which it must override. */
+@media (forced-colors: active) {
+  .m-text-line::selection {
+    background: color-mix(in srgb, Highlight 45%, transparent);
+  }
 }
 
 /*
