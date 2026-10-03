@@ -115,6 +115,7 @@ export function controlName(key) {
  *   ink: number,
  *   bitmapInk: number,
  *   workerBitmapInk: number,
+ *   workerBitmapAsPdfjsInk: number,
  *   environment: {
  *     visibility: string,
  *     processesGone: Array<{ type: string, reason: string, exitCode: number }>,

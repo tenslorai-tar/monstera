@@ -180,6 +180,7 @@ const RUNTIME_CASES = [
   'CONTROL: a canvas this renderer FILLS and copies, as renderPage presents, is counted WHOLE',
   'CONTROL: a BITMAP made as PDF.js makes an image’s, drawn scaled across the page, is counted WHOLE',
   'CONTROL: the same bitmap made in a WORKER and posted to the page, as PDF.js’s worker posts one, is counted WHOLE',
+  'CONTROL: that worker’s bitmap drawn AS PDF.JS DRAWS AN IMAGE — flipped, smoothing off — is counted WHOLE',
   'the shipped zoom-in control was found and clicked, so the zoom reading means something',
   'the canvas is EXACTLY the page at the zoom, which is the rasteriser honouring the scale',
   'the zoomed canvas CARRIES A DRAWN PAGE, so the bigger bitmap is not a stretched empty one',
@@ -226,7 +227,7 @@ function withinSpan(hex, span) {
  *
  * @param {{ transparent: number, white: number, painted: number } | null} tally
  * @param {ReturnType<typeof readback>['environment']} environment
- * @param {Pick<ReturnType<typeof readback>, 'ink' | 'bitmapInk' | 'workerBitmapInk' | 'pixels'>} controls
+ * @param {Pick<ReturnType<typeof readback>, 'ink' | 'bitmapInk' | 'workerBitmapInk' | 'workerBitmapAsPdfjsInk' | 'pixels'>} controls
  */
 function describeRun(tally, environment, controls) {
   const counted =
@@ -236,7 +237,8 @@ function describeRun(tally, environment, controls) {
   return (
     `tally: ${counted}.\n      ` +
     `controls of ${String(controls.pixels)}: copied ink ${String(controls.ink)}, bitmap ink ` +
-    `${String(controls.bitmapInk)}, worker bitmap ink ${String(controls.workerBitmapInk)}.\n      ` +
+    `${String(controls.bitmapInk)}, worker bitmap ink ${String(controls.workerBitmapInk)}, drawn as PDF.js draws ` +
+    `${String(controls.workerBitmapAsPdfjsInk)}.\n      ` +
     `renderer: visibility ${environment.visibility}; 2d_canvas ${environment.gpu.canvas2d}, gpu_compositing ` +
     `${environment.gpu.gpuCompositing}, rasterization ${environment.gpu.rasterization}; processes gone ` +
     `${JSON.stringify(environment.processesGone)}; render process gone ${JSON.stringify(environment.renderProcessGone)}.` +
@@ -432,6 +434,19 @@ try {
         `worker: a bitmap made off the page's thread arrives carrying nothing. Green here with the page red leaves ` +
         `PDF.js itself. -3 means the worker would not start or answered nothing, so this reading says nothing about ` +
         `the bitmap; -1 is a broken probe.\n      ` +
+        describeRun(seen.tally, seen.environment, seen),
+    );
+
+    check(
+      'CONTROL: that worker’s bitmap drawn AS PDF.JS DRAWS AN IMAGE — flipped, smoothing off — is counted WHOLE',
+      seen.workerBitmapAsPdfjsInk === seen.pixels,
+      `the counter reported ${String(seen.workerBitmapAsPdfjsInk)} inked pixel(s) of ${String(seen.pixels)} for ` +
+        `the worker's bitmap drawn with drawImageAtIntegerCoords' own steps: a y flip with its origin at the bottom ` +
+        `edge, and imageSmoothingEnabled false, as getImageSmoothingEnabled answers for an image drawn larger than it ` +
+        `is with no /Interpolate (pdf.mjs, 6.2.108).\n      ` +
+        `Measured on ubuntu at e1c0ef16 (2026-10-03): the worker's bitmap drawn upright counted 500990 of 500990 ` +
+        `while the page read all white. Red here with the control above green names PDF.js's draw; green here too ` +
+        `leaves what PDF.js does around the draw.\n      ` +
         describeRun(seen.tally, seen.environment, seen),
     );
 

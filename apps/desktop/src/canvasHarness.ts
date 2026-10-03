@@ -168,6 +168,11 @@ export interface CanvasReadback {
    * nothing, so the reading says nothing about the bitmap.
    */
   readonly workerBitmapInk: number;
+  /**
+   * That bitmap drawn as PDF.js draws an image — flipped, smoothing off — on a canvas of the page's size. It must equal
+   * `pixels`; red here with {@link workerBitmapInk} green names the draw.
+   */
+  readonly workerBitmapAsPdfjsInk: number;
   /** What the run's environment did around the draw, so a failure here can be attributed. */
   readonly environment: EnvironmentReadback;
   /**
@@ -354,9 +359,15 @@ const COUNT_PAINTED = `(canvas) => {
  * `about:blank`. The sandbox is a property of the renderer process those preferences launch, which is the property in
  * question; the page and its policy are not.
  *
- * @returns the inked count; `-3` when the worker would not start or answered nothing, `-1` for a broken probe
+ * ## Counted twice: upright, and as PDF.js draws an image
+ *
+ * PDF.js draws an image's bitmap flipped, through `drawImageAtIntegerCoords`, with smoothing off when it is drawn
+ * larger than it is (`pdf.mjs`, 6.2.108). The upright count is the bitmap; the second is that draw, so on a run where
+ * the first holds ink and the page does not, the second says whether the draw is what loses it.
+ *
+ * @returns each inked count; `-3` when the worker would not start or answered nothing, `-1` for a broken probe
  */
-async function readWorkerBitmapInk(width: number, height: number): Promise<number> {
+async function readWorkerBitmapInk(width: number, height: number): Promise<{ upright: number; asPdfjsDraws: number }> {
   const probe = new BrowserWindow({
     show: false,
     webPreferences: { ...RENDERER_WEB_PREFERENCES, session: session.fromPartition('canvas-worker-probe') },
@@ -393,16 +404,30 @@ async function readWorkerBitmapInk(width: number, height: number): Promise<numbe
            worker.postMessage(0);
          });
          worker.terminate();
-         if (bitmap === null) return -3;
-         const control = document.createElement('canvas');
-         control.width = ${String(width)};
-         control.height = ${String(height)};
-         const context = control.getContext('2d');
-         if (context === null) return -1;
-         context.drawImage(bitmap, 0, 0, control.width, control.height);
-         return (${COUNT_PAINTED})(control);
+         if (bitmap === null) return { upright: -3, asPdfjsDraws: -3 };
+         const canvasOfThePage = () => {
+           const control = document.createElement('canvas');
+           control.width = ${String(width)};
+           control.height = ${String(height)};
+           return control;
+         };
+         const upright = canvasOfThePage();
+         const plain = upright.getContext('2d');
+         if (plain === null) return { upright: -1, asPdfjsDraws: -1 };
+         plain.drawImage(bitmap, 0, 0, upright.width, upright.height);
+         // AS PDF.JS DRAWS AN IMAGE: drawImageAtIntegerCoords under the image's 1/w, -1/h scale, which on an upright
+         // page is a y flip with its origin at the bottom edge, and smoothing off, since an image drawn larger than it
+         // is with no /Interpolate is not smoothed (getImageSmoothingEnabled).
+         const flipped = canvasOfThePage();
+         const drawn = flipped.getContext('2d');
+         if (drawn === null) return { upright: -1, asPdfjsDraws: -1 };
+         drawn.imageSmoothingEnabled = false;
+         drawn.setTransform(1, 0, 0, -1, 0, flipped.height);
+         drawn.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height, 0, 0, flipped.width, flipped.height);
+         return { upright: (${COUNT_PAINTED})(upright), asPdfjsDraws: (${COUNT_PAINTED})(flipped) };
        })()`,
-      (value): value is number => typeof value === 'number',
+      (value): value is { upright: number; asPdfjsDraws: number } =>
+        typeof value === 'object' && value !== null && 'upright' in value && 'asPdfjsDraws' in value,
       'worker bitmap control',
     );
   } finally {
@@ -1006,7 +1031,7 @@ export async function reportCanvasPixels(
     'bitmap control',
   );
 
-  const workerBitmapInk = await readWorkerBitmapInk(settled.width, settled.height);
+  const worker = await readWorkerBitmapInk(settled.width, settled.height);
 
   const zoomed = await readZoomed(contents, zoomControlName, settled.width);
   const pixelsTo = pixelPath === undefined ? null : await writePixels(contents, pixelPath);
@@ -1052,7 +1077,8 @@ export async function reportCanvasPixels(
     tally: settled.tally,
     ink,
     bitmapInk,
-    workerBitmapInk,
+    workerBitmapInk: worker.upright,
+    workerBitmapAsPdfjsInk: worker.asPdfjsDraws,
     environment: {
       visibility,
       processesGone,
