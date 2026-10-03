@@ -3894,11 +3894,12 @@ optgroup {
  * user-agent value this repository did not choose and it differs between them.
  */
 /* About: the build's facts as label and value, then two lines of prose, then the two pages. */
+/* NO WIDTH OF ITS OWN: the dialog pattern gives every body with a footer one width (`.m-dialog:has(.m-dialog-footer)`),
+   and a narrower cap here left the footer and its line short of the dialog's edge, an empty strip on the right. */
 .m-about {
   display: flex;
   flex-direction: column;
   gap: var(--space-16);
-  max-inline-size: 32rem;
 }
 
 /* ADR-0002: the brand's height and the width its own ratio gives it — never stretched. */
@@ -4123,12 +4124,12 @@ optgroup {
 /* *Support Monstera*: two short paragraphs and two answers. The measure is held because the text is
    prose and a dialog as wide as the window is a dialog nobody reads to the end of. The security notice
    (ADR-0110) is the same shape — a sentence and two answers — so it takes the same rules. */
+/* No width of its own, for `.m-about`'s reason. */
 .m-donate,
 .m-security-update {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
-  max-inline-size: 34rem;
 }
 
 .m-donate__actions,
