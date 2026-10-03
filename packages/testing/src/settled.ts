@@ -1,6 +1,19 @@
 import { type Locator, type Page, expect } from '@playwright/test';
 
 /**
+ * Waits until the application is drawn and hears its keys: the start screen's footer, which names F1.
+ *
+ * The keys are heard by a listener the application attaches in an effect of its first commit (`useShortcuts`), and a
+ * press sent straight after `goto` can reach the page before the bundle has mounted at all — then the key is lost and
+ * the dialog it opens is "not found", which reads as a broken dialog rather than an early key. Measured on CI's Windows
+ * leg on 2026-10-03 (run 37110797082): F1 straight after `goto`, and no Help centre within five seconds, where the
+ * same press after this wait passed in the same run.
+ */
+export async function startScreenListening(page: Page): Promise<void> {
+  await expect(page.locator('.m-start-footer')).toContainText('Press F1 for help');
+}
+
+/**
  * Waits until the page pane has shown its first frame.
  *
  * Until then its children are `visibility: hidden` (`app.css`, `.m-page-pane[data-first-frame='pending']`) while the

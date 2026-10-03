@@ -4,7 +4,7 @@ import { type Locator, type Page, expect, test } from '@playwright/test';
 
 import { samplePdf } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
-import { settled } from './settled.js';
+import { settled, startScreenListening } from './settled.js';
 
 /**
  * The five tool windows the owner had redrawn in the dialog pattern on 2 October — Cloud storage, Help, Keyboard
@@ -141,6 +141,7 @@ test('Help: Enter opens an article on its heading, and Back returns focus to the
   await page.setViewportSize({ width: 1280, height: 800 });
   await bridgeUnder(page, LOOKS[0]);
   await page.goto('/');
+  await startScreenListening(page);
   await page.keyboard.press('F1');
   const dialog = page.getByRole('dialog', { name: 'Help centre' });
   await expect(dialog).toBeFocused();
@@ -158,6 +159,7 @@ test('a long list scrolls inside the window while its footer and title stay in v
   await page.setViewportSize({ width: 1280, height: 800 });
   await bridgeUnder(page, LOOKS[0]);
   await page.goto('/');
+  await startScreenListening(page);
   await page.keyboard.press('Control+Slash');
   const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
   await expect(dialog).toBeVisible();

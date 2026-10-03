@@ -23,7 +23,7 @@ import { type Page, expect, test } from '@playwright/test';
 // two lists would drift the day one gains a fourth (audit finding IIIIII-2).
 import { LOOKS, type Look, bridge, bridgeUnder } from './pageBridge.js';
 import { readsAtTextFloor } from './inkOnScreen.js';
-import { pageShown, popupPlaced, settled } from './settled.js';
+import { pageShown, popupPlaced, settled, startScreenListening } from './settled.js';
 
 /**
  * §10.4's mandated gate: axe-core on a Playwright-rendered screen.
@@ -1597,6 +1597,7 @@ test('a DIALOG taller than the window stays inside it, and its body scrolls to t
   await page.setViewportSize({ width: 1280, height: 420 });
   await bridge(page, {});
   await page.goto('/');
+  await startScreenListening(page);
   await page.keyboard.press('Control+Slash');
 
   const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
@@ -2912,7 +2913,7 @@ test('F1 opens the HELP CENTRE, Ctrl+/ the keyboard shortcuts, and the start scr
   await bridge(page);
   await page.goto('/');
 
-  await expect(page.locator('.m-start-footer')).toContainText('Press F1 for help');
+  await startScreenListening(page);
 
   await page.keyboard.press('F1');
   const help = page.getByRole('dialog', { name: 'Help centre' });
