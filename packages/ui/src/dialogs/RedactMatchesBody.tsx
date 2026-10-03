@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import { MAX_FIND_TEXT } from '@monstera/contract';
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import {
   REDACT_MATCHES_APPLY,
@@ -14,6 +14,7 @@ import {
   REDACT_MATCHES_TOO_LONG,
 } from '../messages/en.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
+import { attemptProblem, useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
@@ -51,11 +52,15 @@ export default function RedactMatchesBody({
   // and nothing usefully.
   const over = query.length > MAX_FIND_TEXT;
   const usable = query.length > 0 && !over;
+  const attempt = useAttempt();
+  const form = useRef<HTMLDivElement>(null);
+  // TOO LONG as typed; NOTHING TYPED only once the action is pressed (`attempt.ts`).
+  const problem = attemptProblem(attempt, over ? REDACT_MATCHES_TOO_LONG : undefined, query.length === 0, REDACT_MATCHES_EMPTY);
 
   return (
-    <div className="m-redact-matches">
-      <DialogRow label={REDACT_MATCHES_LABEL}>
-        <Input label={REDACT_MATCHES_LABEL} labelShownBeside onValueChange={setQuery} value={query} />
+    <div className="m-redact-matches" ref={form}>
+      <DialogRow label={REDACT_MATCHES_LABEL} problem={problem === undefined ? undefined : _(problem)}>
+        <Input invalid={problem !== undefined} label={REDACT_MATCHES_LABEL} labelShownBeside onValueChange={setQuery} value={query} />
       </DialogRow>
 
       <DialogRow label={REDACT_MATCHES_SCOPE}>
@@ -75,18 +80,18 @@ export default function RedactMatchesBody({
       </DialogRow>
 
       <p className="m-redact-matches__note">{_(REDACT_MATCHES_EXPLAINS)}</p>
-      <p className="m-redact-matches__problem" role="status">
-        {over ? _(REDACT_MATCHES_TOO_LONG) : query.length === 0 ? _(REDACT_MATCHES_EMPTY) : ''}
-      </p>
       <DialogFooter>
         <Button
-          disabled={!usable}
+          disabled={over}
           label={REDACT_MATCHES_APPLY}
           onClick={() => {
-            // GUARDED AGAIN rather than trusting the disabled attribute: the
-            // result schema refuses an empty query, so a mismatch would throw
-            // `DialogResultRejected` over the user's document.
-            if (!usable) return;
+            attempt.attempt();
+            // GUARDED: the result schema refuses an empty query, so a mismatch would throw `DialogResultRejected` over
+            // the user's document. A refused press puts the person back in the field.
+            if (!usable) {
+              form.current?.querySelector<HTMLElement>('input')?.focus();
+              return;
+            }
             resolve({ query, pages: scope === 'all' ? 'all' : [page] });
           }}
           variant="primary"

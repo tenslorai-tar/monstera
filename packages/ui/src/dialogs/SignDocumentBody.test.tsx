@@ -129,7 +129,10 @@ describe('SignDocumentBody', () => {
 
   it('PLACED and typed: Sign waits for text, then answers it trimmed in the chosen face', () => {
     const { answers } = opened(true);
-    expect(SIGN()).toHaveProperty('disabled', true);
+    // QUIET ON OPEN, and the press with nothing typed signs nothing and says why (`attempt.ts`).
+    expect(screen.getByRole('status').textContent).toBe('');
+    fireEvent.click(SIGN());
+    expect(answers).toStrictEqual([]);
     expect(screen.getByRole('status').textContent).toBe('Type or draw the signature first.');
 
     fireEvent.change(screen.getByLabelText('Signature'), { target: { value: '  Grace Hopper ' } });
@@ -144,7 +147,8 @@ describe('SignDocumentBody', () => {
   it('PLACED and drawn: strokes arrive in the PAD’S unit, divided by its width', () => {
     const { answers } = opened(true);
     choose('[data-sign-look]', 'drawn');
-    expect(SIGN()).toHaveProperty('disabled', true);
+    fireEvent.click(SIGN());
+    expect(answers).toStrictEqual([]);
 
     const surface = pad();
     // (40, 50) on a pad whose box starts at (10, 20) and is 300 wide is
@@ -171,17 +175,18 @@ describe('SignDocumentBody', () => {
     ]);
   });
 
-  it('a TAP is a dot, recorded as the same point twice; Clear takes Sign away again', () => {
+  it('a TAP is a dot, recorded as the same point twice; after Clear, Sign signs nothing again', () => {
     const { answers } = opened(true);
     choose('[data-sign-look]', 'drawn');
 
     const surface = pad();
     fireEvent.pointerDown(surface, { clientX: 160, clientY: 50 });
     fireEvent.pointerUp(surface, { clientX: 160, clientY: 50 });
-    expect(SIGN()).toHaveProperty('disabled', false);
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
-    expect(SIGN()).toHaveProperty('disabled', true);
+    fireEvent.click(SIGN());
+    expect(answers).toStrictEqual([]);
+    expect(screen.getByRole('status').textContent).toBe('Type or draw the signature first.');
 
     fireEvent.pointerDown(surface, { clientX: 160, clientY: 50 });
     fireEvent.pointerUp(surface, { clientX: 160, clientY: 50 });

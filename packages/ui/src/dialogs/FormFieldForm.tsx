@@ -15,6 +15,7 @@ import {
   FORM_FIELD_OPTION_LABEL,
   FORM_FIELD_REMOVE_OPTION,
 } from '../messages/en.js';
+import { attemptProblem, useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { IconButton } from '../primitives/IconButton.js';
@@ -105,16 +106,14 @@ export function FormFieldForm({
   const needsOption = collects === 'option' && option.trim().length === 0;
   const needsOptions = collects === 'options' && filled.length === 0;
 
-  const problem: MessageKey | '' = overLong
-    ? FORM_FIELD_NAME_TOO_LONG
-    : trimmedName.length === 0
-      ? FORM_FIELD_NAME_EMPTY
-      : badSegment
-        ? FORM_FIELD_NAME_SEGMENT
-        : needsOption || needsOptions
-          ? FORM_FIELD_OPTIONS_EMPTY
-          : '';
-  const usable = problem === '';
+  // A NAME THAT IS WRONG is said as typed and disables the action; A NAME OR OPTION NOT YET TYPED only once the action
+  // is pressed (`attempt.ts`).
+  const invalid: MessageKey | undefined = overLong ? FORM_FIELD_NAME_TOO_LONG : badSegment ? FORM_FIELD_NAME_SEGMENT : undefined;
+  const missing: MessageKey | undefined =
+    trimmedName.length === 0 ? FORM_FIELD_NAME_EMPTY : needsOption || needsOptions ? FORM_FIELD_OPTIONS_EMPTY : undefined;
+  const attempt = useAttempt();
+  const problem = attemptProblem(attempt, invalid, missing !== undefined, missing);
+  const usable = invalid === undefined && missing === undefined;
 
   return (
     <div className="m-form-field">
@@ -177,17 +176,17 @@ export function FormFieldForm({
       ) : null}
 
       <p className="m-form-field__problem" role="status">
-        {problem === '' ? '' : _(problem)}
+        {problem === undefined ? '' : _(problem)}
       </p>
       <DialogFooter>
         <Button
-          disabled={!usable}
+          disabled={invalid !== undefined}
           label={apply}
           onClick={() => {
-            // GUARDED AGAIN rather than trusting the disabled attribute, for
-            // `AnnotationTextForm`'s reason: the schema behind `resolve` refuses
-            // an empty name, so a mismatch would throw over the user's document
-            // rather than doing nothing.
+            attempt.attempt();
+            // GUARDED, for `AnnotationTextForm`'s reason: the schema behind
+            // `resolve` refuses an empty name, so a mismatch would throw over
+            // the user's document rather than doing nothing.
             if (!usable) return;
             resolve({
               name,

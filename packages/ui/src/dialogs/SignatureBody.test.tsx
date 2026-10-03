@@ -68,10 +68,12 @@ describe('SignatureBody', () => {
     expect(resolve).toHaveBeenCalledWith({ mark: { kind: 'typed', text: 'Ada', font: 'times-italic' }, keep: false });
   });
 
-  it('UPLOAD asks for a picture first: Use Signature waits and says so, and Choose picture… answers the pick with keep', () => {
+  it('UPLOAD asks for a picture first: Use Signature answers nothing and says so once pressed, and Choose picture… answers the pick with keep', () => {
     const { resolve } = opened();
     fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
-    expect(USE().hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('status').textContent).toBe('');
+    fireEvent.click(USE());
+    expect(resolve).not.toHaveBeenCalled();
     expect(screen.getByRole('status').textContent).toBe('Choose a picture first.');
     fireEvent.click(screen.getByRole('checkbox', { name: 'Save for reuse' }));
     fireEvent.click(screen.getByRole('button', { name: 'Choose picture…' }));
@@ -91,13 +93,17 @@ describe('SignatureBody', () => {
     expect(resolve).toHaveBeenCalledWith({ mark: { kind: 'image', picked: 'held-1' }, keep: false });
   });
 
-  it('DRAW waits for a stroke: Use Signature is disabled on an empty pad and says why', () => {
+  it('DRAW waits for a stroke: an empty pad OPENS QUIET, and pressing Use Signature answers nothing and says why', () => {
     const { resolve } = opened();
-    expect(USE().hasAttribute('disabled')).toBe(true);
-    expect(screen.getByRole('status').textContent).toBe('Type or draw the signature first.');
+    // QUIET ON OPEN: the person has not had a chance to draw yet (`attempt.ts`).
+    expect(screen.getByRole('status').textContent).toBe('');
     expect(screen.getByText('Draw your signature above')).toBeDefined();
     fireEvent.click(USE());
     expect(resolve).not.toHaveBeenCalled();
+    expect(screen.getByRole('status').textContent).toBe('Type or draw the signature first.');
+    // ANOTHER WAY FORGETS THE PRESS: Type's empty field is one the person has not had a chance to fill.
+    fireEvent.click(screen.getByRole('button', { name: 'Type' }));
+    expect(screen.getByRole('status').textContent).toBe('');
   });
 
   it('a KEPT signature is used by ONE click, as itself, and is not kept again', () => {

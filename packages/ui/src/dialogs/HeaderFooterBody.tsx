@@ -1,5 +1,4 @@
 import { useLingui } from '@lingui/react';
-import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
 import { useState } from 'react';
 
@@ -16,6 +15,7 @@ import {
   HEADER_FOOTER_SIZE,
   HEADER_FOOTER_TOKENS,
 } from '../messages/en.js';
+import { attemptProblem, useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
@@ -77,8 +77,8 @@ const DEFAULT_MARGIN = '36';
  *
  * A command that draws nothing still writes a new document, bumps the version,
  * and marks the file dirty — so *apply* with six empty fields would cost the
- * user a change they cannot see and an undo they did not ask for. The control
- * is disabled and says why.
+ * user a change they cannot see and an undo they did not ask for. Pressing the
+ * control with nothing typed says so and applies nothing (`attempt.ts`).
  *
  * A default export because `declareDialog` takes a `lazy()` component.
  */
@@ -101,6 +101,9 @@ export default function HeaderFooterBody({
   );
   const numbersOk = size !== null && size > 0 && size <= 1000 && inset !== null && inset <= 500;
   const ready = anySlot && numbersOk;
+  const attempt = useAttempt();
+  // A NUMBER THAT IS WRONG is said as typed; NOTHING TO DRAW only once the action is pressed (`attempt.ts`).
+  const problem = attemptProblem(attempt, numbersOk ? undefined : HEADER_FOOTER_NOT_A_NUMBER, !anySlot, HEADER_FOOTER_EMPTY);
 
   return (
     <div className="m-header-footer">
@@ -144,19 +147,20 @@ export default function HeaderFooterBody({
         />
       </DialogRow>
       <PageScopeChoice className="m-header-footer__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
-      <p className="m-header-footer__problem" role="status">
-        {ready ? '' : _(problemOf(anySlot))}
-      </p>
+      {problem === undefined ? null : (
+        <p className="m-header-footer__problem" role="alert">
+          {_(problem)}
+        </p>
+      )}
       <DialogFooter>
         <Button
           label={HEADER_FOOTER_APPLY}
           variant="primary"
-          disabled={!ready}
+          disabled={!numbersOk}
           onClick={() => {
-            // GUARDED AGAIN rather than trusting the disabled attribute, for
-            // `CropPagesBody`'s reason: the schema behind `resolve` refuses a
-            // margin over 500, and a mismatch would be a thrown
-            // `DialogResultRejected` over the user's document.
+            attempt.attempt();
+            // GUARDED, for `CropPagesBody`'s reason: the schema behind `resolve` refuses a margin over 500, and a
+            // mismatch would be a thrown `DialogResultRejected` over the user's document.
             if (size === null || inset === null || !ready) return;
             resolve({
               pages: everyPage ? 'all' : [...pages],
@@ -191,9 +195,4 @@ function readNumber(text: string, fallback: string): number | null {
   const value = text.trim().length === 0 ? fallback : text.trim();
   if (!/^\d+(?:\.\d+)?$/u.test(value)) return null;
   return Number(value);
-}
-
-/** Which sentence a refusal deserves — the empty form, or a bad number. */
-function problemOf(anySlot: boolean): MessageKey {
-  return anySlot ? HEADER_FOOTER_NOT_A_NUMBER : HEADER_FOOTER_EMPTY;
 }

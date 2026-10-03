@@ -2,8 +2,9 @@ import { useLingui } from '@lingui/react';
 import { MAX_ANNOTATION_TEXT } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
+import { attemptProblem, useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
@@ -34,13 +35,16 @@ import type { AnnotationTextAnswer } from './annotationTextResult.js';
  * intact: every string a person reads is still a key resolved by `useLingui`,
  * declared statically in the module that owns the dialog.
  *
- * ## The refusals are shown before the button is pressed
+ * ## When a refusal is shown (`attempt.ts`)
  *
- * `DeletePagesBody`'s shape and its argument: the apply control is disabled
- * while the value is unusable and the reason is on screen, so a person meets a
- * sentence rather than a dialog that closes and does nothing.
+ * What is typed being WRONG — too long, or failing the dialog's own rule — is
+ * said as it is typed, and the action is disabled while it is. NOTHING TYPED is
+ * said only once the person presses the action, which stays enabled so that it
+ * can be pressed: a dialog that opened by telling the person what they had not
+ * typed yet read as already wrong (the owner, 2026-10-03). Until this read
+ * *"the refusals are shown before the button is pressed"*, emptiness included.
  *
- * Two of them, and the first is the one that is easy to miss. **Whitespace is
+ * Emptiness has one subtlety, and it is the one that is easy to miss. **Whitespace is
  * empty**, because a `/FreeText` carrying three spaces renders as a rectangle
  * with an invisible border, and a `/Text` carrying three spaces is an icon a
  * reader clicks to be shown nothing. So the trim is what emptiness is judged
@@ -114,37 +118,37 @@ export function AnnotationTextForm({
 }: AnnotationTextFormProps): ReactElement {
   const { _ } = useLingui();
   const [text, setText] = useState(initial);
+  const attempt = useAttempt();
+  const form = useRef<HTMLDivElement>(null);
 
   const trimmed = text.trim();
   const over = trimmed.length > limit;
   const failed = trimmed.length > 0 && !over ? validate?.(trimmed) : undefined;
   const usable = trimmed.length > 0 && !over && failed === undefined;
+  // WHAT IS TYPED BEING WRONG is said at once; NOTHING TYPED only once the person has pressed the action (`attempt.ts`).
+  const invalid = over ? tooLong : failed;
+  const problem = attemptProblem(attempt, invalid, trimmed.length === 0, empty);
 
   return (
-    <div className="m-annotation-text">
-      <DialogRow label={label}>
-        <Input label={label} labelShownBeside onValueChange={setText} value={text} />
+    <div className="m-annotation-text" ref={form}>
+      <DialogRow label={label} problem={problem === undefined ? undefined : _(problem)}>
+        <Input invalid={problem !== undefined} label={label} labelShownBeside onValueChange={setText} value={text} />
       </DialogRow>
-      <p className="m-annotation-text__problem" role="status">
-        {over
-          ? _(tooLong)
-          : trimmed.length === 0
-            ? _(empty)
-            : failed === undefined
-              ? ''
-              : _(failed)}
-      </p>
       <DialogFooter>
         <Button
-          disabled={!usable}
+          // ENABLED WHILE EMPTY, so pressing it can say what is missing; disabled only while what is typed is wrong,
+          // which the row already says.
+          disabled={invalid !== undefined}
           label={apply}
           onClick={() => {
-            // GUARDED AGAIN rather than trusting the disabled attribute, for
-            // `DeletePagesBody`'s reason: a disabled control is a rendering
-            // decision, and the schema behind `resolve` refuses an empty string —
-            // so a mismatch would throw `DialogResultRejected` over the user's
-            // document rather than doing nothing.
-            if (!usable) return;
+            attempt.attempt();
+            // GUARDED rather than trusting the disabled attribute, for `DeletePagesBody`'s reason: the schema behind
+            // `resolve` refuses an empty string, so a mismatch would throw `DialogResultRejected` over the user's
+            // document rather than doing nothing. A refused press puts the person back in the field.
+            if (!usable) {
+              form.current?.querySelector<HTMLElement>('input')?.focus();
+              return;
+            }
             resolve({ text });
           }}
           variant="primary"

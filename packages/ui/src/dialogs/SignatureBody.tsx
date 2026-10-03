@@ -33,6 +33,7 @@ import {
   SIGNATURE_UPLOAD_NOTE,
   SIGNATURE_USE,
 } from '../messages/en.js';
+import { useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
@@ -73,8 +74,9 @@ const FACES: Readonly<Record<(typeof SIGNATURE_FONTS)[number], MessageKey>> = {
  *
  * ## *Use Signature* waits for something to draw
  *
- * A drawn look needs a stroke, a typed one a name and an upload its picture. The status line says what is missing
- * rather than leaving a disabled button to explain itself.
+ * A drawn look needs a stroke, a typed one a name and an upload its picture. The button stays pressable, and once it
+ * has been pressed the status line says what is missing (`attempt.ts`); switching to another way forgets the press,
+ * since that way's empty field is one the person has not yet had a chance to fill.
  */
 export default function SignatureBody({
   kept,
@@ -98,6 +100,7 @@ export default function SignatureBody({
   const [keep, setKeep] = useState(keptChoice ?? true);
 
   const tooLong = name.trim().length > MAX_SIGNATURE_FIELD;
+  const attempt = useAttempt();
   /** The look to place, or `undefined` while the chosen way has nothing to draw. */
   const mark = ((): RequestedSignatureMark | undefined => {
     if (way === 'upload') return picked === undefined ? undefined : { kind: 'image', picked: picked.handle };
@@ -146,7 +149,10 @@ export default function SignatureBody({
       <DialogRow label={SIGNATURE_MAKE}>
         <SegmentedControl<Way>
           label={SIGNATURE_MAKE}
-          onChange={setWay}
+          onChange={(next) => {
+            setWay(next);
+            attempt.forget();
+          }}
           options={[
             { value: 'draw', label: SIGNATURE_DRAW },
             { value: 'type', label: SIGNATURE_TYPE },
@@ -240,15 +246,16 @@ export default function SignatureBody({
       <p className="m-signature__problem" role="status">
         {tooLong
           ? _(SIGNATURE_TOO_LONG, { limit: MAX_SIGNATURE_FIELD })
-          : mark === undefined
+          : mark === undefined && attempt.tried
             ? _(way === 'upload' ? SIGNATURE_PICTURE_MISSING : SIGN_DOCUMENT_MARK_MISSING)
             : ''}
       </p>
       <DialogFooter>
         <Button
-          disabled={mark === undefined}
+          disabled={tooLong}
           label={SIGNATURE_USE}
           onClick={() => {
+            attempt.attempt();
             if (mark === undefined) return;
             resolve({ mark, keep });
           }}

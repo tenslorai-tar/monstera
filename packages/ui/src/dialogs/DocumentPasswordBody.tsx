@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import { DOCUMENT_PASSWORD_MAX_CHARS } from '@monstera/contract';
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import {
   DOCUMENT_PASSWORD_APPLY,
@@ -11,6 +11,7 @@ import {
   DOCUMENT_PASSWORD_TOO_LONG,
   DOCUMENT_PASSWORD_WRONG,
 } from '../messages/en.js';
+import { attemptProblem, useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
@@ -28,8 +29,8 @@ import type { DocumentPasswordAnswer } from './documentPassword.js';
  * of three spaces is a password — PDF hands the bytes to a hash — so a shared
  * form would refuse a document whose owner chose one, with no sentence anywhere
  * that could explain why. The rest of the shape is deliberately that form's:
- * the refusal is on screen before the control is pressed, and the control is
- * disabled while the value is unusable.
+ * too long is said as it is typed, and an empty field only once the action is
+ * pressed (`attempt.ts`).
  *
  * ## What it does with the value, and what it must never do
  *
@@ -51,19 +52,30 @@ export default function DocumentPasswordBody({
 } & DialogAnswering<DocumentPasswordAnswer>): ReactElement {
   const { _ } = useLingui();
   const [password, setPassword] = useState('');
+  const attempt = useAttempt();
+  const form = useRef<HTMLDivElement>(null);
 
   const over = password.length > DOCUMENT_PASSWORD_MAX_CHARS;
   const usable = password.length > 0 && !over;
+  // TOO LONG is said as typed; AN EMPTY FIELD only once the action is pressed (`attempt.ts`). The retry sentence is
+  // neither: it reports what the person just did, so it is said on opening, while the field is empty again.
+  const problem = attemptProblem(
+    attempt,
+    over ? DOCUMENT_PASSWORD_TOO_LONG : retry && password.length === 0 ? DOCUMENT_PASSWORD_WRONG : undefined,
+    password.length === 0,
+    DOCUMENT_PASSWORD_EMPTY,
+  );
 
   return (
-    <div className="m-annotation-text">
+    <div className="m-annotation-text" ref={form}>
       {/* THE FILE'S NAME, because a password prompt that names no document is
           one a person answers without knowing what they are unlocking — and
           with tabs there may be several. It is the name and never the path,
           which is the only thing the renderer has (invariant L2). */}
       <p className="m-annotation-text__problem">{_(DOCUMENT_PASSWORD_ASKS, { name })}</p>
-      <DialogRow label={DOCUMENT_PASSWORD_LABEL}>
+      <DialogRow label={DOCUMENT_PASSWORD_LABEL} problem={problem === undefined ? undefined : _(problem)}>
         <Input
+          invalid={over}
           label={DOCUMENT_PASSWORD_LABEL}
           labelShownBeside
           onValueChange={setPassword}
@@ -71,26 +83,18 @@ export default function DocumentPasswordBody({
           value={password}
         />
       </DialogRow>
-      <p className="m-annotation-text__problem" role="status">
-        {over
-          ? _(DOCUMENT_PASSWORD_TOO_LONG)
-          : password.length === 0
-            ? // THE RETRY SENTENCE WINS WHILE THE FIELD IS EMPTY, which is the
-              // moment it is most useful: a person who has just been refused
-              // has an empty field again, and telling them it is empty is the
-              // one thing they already know.
-              _(retry ? DOCUMENT_PASSWORD_WRONG : DOCUMENT_PASSWORD_EMPTY)
-            : ''}
-      </p>
       <DialogFooter>
         <Button
-          disabled={!usable}
+          disabled={over}
           label={DOCUMENT_PASSWORD_APPLY}
           onClick={() => {
-            // GUARDED AGAIN rather than trusting the disabled attribute: the
-            // result schema refuses an empty string, so a mismatch would throw
-            // `DialogResultRejected` over a document nobody has opened yet.
-            if (!usable) return;
+            attempt.attempt();
+            // GUARDED: the result schema refuses an empty string, so a mismatch would throw `DialogResultRejected`
+            // over a document nobody has opened yet. A refused press puts the person back in the field.
+            if (!usable) {
+              form.current?.querySelector<HTMLElement>('input')?.focus();
+              return;
+            }
             resolve({ password });
           }}
           variant="primary"

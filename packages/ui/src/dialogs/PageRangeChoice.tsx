@@ -12,6 +12,7 @@ import {
   PAGE_RANGE_SELECT,
 } from '../messages/en.js';
 import { parsePageRanges } from '../pageRanges.js';
+import { useAttempt } from '../primitives/attempt.js';
 import { DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import { SegmentedControl } from '../primitives/SegmentedControl.js';
@@ -49,7 +50,7 @@ export interface PageRange {
 export function usePageRange(pageCount: number): PageRange {
   const [every, setEvery] = useState(true);
   const [text, setText] = useState('');
-  const [tried, setTried] = useState(false);
+  const attempt = useAttempt();
   const parsed = parsePageRanges(text, pageCount);
   const named = every ? Array.from({ length: pageCount }, (_unused, page) => page) : parsed.ok ? parsed.value : [];
   // NONE IS NOT AN ANSWER: every export's request names at least one page, and a document with none has nothing to
@@ -59,12 +60,12 @@ export function usePageRange(pageCount: number): PageRange {
     pageCount,
     every,
     text,
-    tried,
+    tried: attempt.tried,
     chosen,
     choose: setEvery,
     type: setText,
     proceed: () => {
-      setTried(true);
+      attempt.attempt();
       return chosen;
     },
   };

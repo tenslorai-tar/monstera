@@ -49,6 +49,7 @@ import {
   SIGN_DOCUMENT_TEXT,
   SIGN_DOCUMENT_TOO_LONG,
 } from '../messages/en.js';
+import { useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
@@ -141,13 +142,14 @@ const FONT_TITLES: Readonly<Record<(typeof SIGNATURE_FONTS)[number], MessageKey>
  * A picture of a signature is the same — main picks it — and gets its own
  * sentence for the same reason.
  *
- * ## `Sign` is disabled for exactly one reason besides length
+ * ## `Sign` refuses for exactly one reason besides length
  *
  * An invisible signature has no required field — the passphrase may be empty,
  * because many certificates have none. A VISIBLE one needs something to draw:
  * a placement answered with no text and no strokes would put a blank box on the
- * page, so *Sign* waits until the chosen look has content, and the status line
- * says so rather than leaving a disabled control to explain itself.
+ * page, so *Sign* signs nothing until the chosen look has content. It stays
+ * pressable, and the status line says what is missing once it has been pressed
+ * (`attempt.ts`); a field typed past its bound is said at once and disables it.
  *
  * A default export because `declareDialog` takes a `lazy()` component.
  */
@@ -205,6 +207,7 @@ export default function SignDocumentBody({
     return text.trim().length > 0 ? { kind: 'typed', text: text.trim(), font } : undefined;
   })();
   const missing = placed && mark === undefined;
+  const attempt = useAttempt();
 
   /** A trimmed field, or `undefined` when it holds nothing a reader would show. */
   const stated = (value: string): { readonly value: string } | undefined =>
@@ -222,6 +225,7 @@ export default function SignDocumentBody({
               data-sign-look=""
               onChange={(event) => {
                 setLook(event.target.value as Look);
+                attempt.forget();
               }}
               value={look}
             >
@@ -411,15 +415,16 @@ export default function SignDocumentBody({
       <p className="m-sign-document__problem" role="status">
         {tooLong !== undefined
           ? _(SIGN_DOCUMENT_TOO_LONG, { field: _(tooLong) })
-          : missing
+          : missing && attempt.tried
             ? _(SIGN_DOCUMENT_MARK_MISSING)
             : ''}
       </p>
       <DialogFooter>
         <Button
-          disabled={over || missing}
+          disabled={over}
           label={SIGN_DOCUMENT_APPLY}
           onClick={() => {
+            attempt.attempt();
             if (over || missing) return;
             const named = stated(name);
             const why = stated(reason);

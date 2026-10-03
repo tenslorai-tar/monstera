@@ -11,6 +11,7 @@ import type { ReactElement } from 'react';
 import { useState } from 'react';
 
 import {
+  DOCUMENT_PASSWORD_TOO_LONG,
   PERMISSION_ANNOTATE,
   PERMISSION_ASSEMBLE,
   PERMISSION_COPY,
@@ -33,6 +34,7 @@ import {
   PROTECT_DOCUMENT_SCHEME_RC440,
   PROTECT_DOCUMENT_USER,
 } from '../messages/en.js';
+import { attemptProblem, useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
@@ -106,6 +108,17 @@ export default function ProtectDocumentBody({
   // A PASSWORD IS NOT TRIMMED — `documentPassword.ts` carries the reason: PDF
   // hands the bytes to a hash, so a password ending in a space is a password.
   const usable = removing || (!tooLong && (userPassword.length > 0 || ownerPassword.length > 0));
+  const attempt = useAttempt();
+  // TOO LONG as typed, and said as itself — it read *"Set at least one password"* over a password that was there; NO
+  // PASSWORD only once the action is pressed (`attempt.ts`).
+  const problem = removing
+    ? undefined
+    : attemptProblem(
+        attempt,
+        tooLong ? DOCUMENT_PASSWORD_TOO_LONG : undefined,
+        userPassword.length === 0 && ownerPassword.length === 0,
+        PROTECT_DOCUMENT_NEEDS_A_PASSWORD,
+      );
 
   return (
     <div className="m-protect-document">
@@ -176,17 +189,19 @@ export default function ProtectDocumentBody({
         </>
       )}
 
-      <p className="m-protect-document__problem" role="status">
-        {usable ? '' : _(PROTECT_DOCUMENT_NEEDS_A_PASSWORD)}
-      </p>
+      {problem === undefined ? null : (
+        <p className="m-protect-document__problem" role="alert">
+          {_(problem)}
+        </p>
+      )}
       <DialogFooter>
         <Button
-          disabled={!usable}
+          disabled={!removing && tooLong}
           label={removing ? PROTECT_DOCUMENT_REMOVE : PROTECT_DOCUMENT_APPLY}
           onClick={() => {
-            // GUARDED AGAIN rather than trusting the disabled attribute: the
-            // result schema refuses both incoherent shapes, and a mismatch would
-            // throw `DialogResultRejected` over the user's document.
+            attempt.attempt();
+            // GUARDED: the result schema refuses both incoherent shapes, and a mismatch would throw
+            // `DialogResultRejected` over the user's document.
             if (!usable) return;
             resolve(
               removing
