@@ -1421,7 +1421,7 @@ type Placement =
   | { surface: 'rail';          order: number }
   | { surface: 'properties';    order: number }
   | { surface: 'menu-bar';      menu: 'file' | 'edit' | 'view' | 'window' | 'help'; group: number; order: number;
-      caption?: MessageKey }
+      caption?: MessageKey; submenu?: 'recent' }
 ```
 
 **The menu bar is a projection** (amended 2026-09-26,
@@ -1434,6 +1434,14 @@ ribbon placements are in Home must carry a `menu-bar` placement, since every oth
 time it is built). A menu lists every command and disables one whose `when` is false, where the ribbon hides it. A
 command may say it is ON with `checked(ctx)`, pure and synchronous like `when`, and the menu draws it with its mark —
 the current theme, layout, or a panel that is showing.
+
+**A `menu-bar` placement may name a submenu** (amended 2026-10-03,
+[ADR-0143](DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md)). File › Recent is
+the menu row's own value control, as the status bar's page field is the bar's: its entries are the recent list, data
+from main, read when the File menu opens and opened through the one recent-open route. Commands whose placement names
+`submenu: 'recent'` are drawn inside it after the entries and a separator — *Clear list* is one — and the submenu sits
+where its first member's `order` falls. Every placement naming a submenu names one menu and group, and the registry
+refuses one that does not. A submenu's commands act on its values, so they are disabled while it holds none.
 
 A command may carry several placements — Highlight legitimately lives in
 Home › Quick tools, Comment › Markup, and the annotation context menu.
@@ -2662,7 +2670,9 @@ them.
   [ADR-0113](DECISIONS/0113-the-applications-own-commands-sit-at-the-centre-of-the-menu-row.md)): Donate in gold and
   Rate Us in violet, projected from the registry — centred while they fit, otherwise just after the last menu, never
   over the menus or the window controls, with a drag track always left; drawn as their icons alone when even that
-  cannot hold their labels.
+  cannot hold their labels. **File › Recent** (amended 2026-10-03,
+  [ADR-0143](DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md)) lists every recent
+  file main keeps — ten — an unavailable one disabled and saying so, then *Clear list*.
 - **Title bar:** below the menu bar — integrated document tabs, the Ctrl+K command search, a light and dark switch,
   and the layout switcher. It gives its whole width to the tabs; the application's own commands left it for the menu
   row on 2026-09-27 (ADR-0113), having been placed here by
@@ -2730,7 +2740,8 @@ them.
   You Work" — then one primary green **Open PDF… (Ctrl+O)** button, then a grid
   of six feature shortcuts (Annotate & mark up · Fill & create forms · OCR
   scanned pages · Split & merge · Encrypt & sign · Export anywhere), **each a
-  real entry point**. Recent files appear below the grid when they exist.
+  real entry point**. Recent files appear below the grid when they exist: the first four of the list main keeps
+  (amended 2026-10-03, ADR-0143), a file that is not there drawn disabled with its state rather than hidden.
   Footer: *Settings*, *About* and *Help centre*, "Press F1 for help" and version + © Tenslor Inc.
   (amended 2026-09-27,
   [ADR-0112](DECISIONS/0112-the-help-centre-is-bundled-articles-and-f1-opens-the-one-for-where-you-are.md): F1 opens
@@ -2851,6 +2862,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-03 | **File › Recent is the menu row's own value control; main keeps ten and says which are there** (§7's `Placement`, §10.3's menu-bar and start-screen clauses). The owner's item N3: main keeps 10, the start screen shows 4, the submenu has *Clear list* and shows a missing file as unavailable, never hidden. Each `document.recent` entry carries `available`, read by `readFileIdentity` — the open's own rule for *absent* — and an absent file is no longer forgotten. A `menu-bar` placement may name `submenu: 'recent'`; the entries are the row's own control and *Clear list* is the registered `document.clear-recent`. Rejected: a command per file, a hand-drawn submenu, a command kind with entries, a renderer copy of the list | `MAX_RECENT_ENTRIES`' four (the owner, 2026-10-01) and the recent list's forget-on-absent (2026-09-03) | [ADR-0143](DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md) |
 | 2026-10-02 | **A text edit carries one list of objects and one text** (§5's host pipe, PDFium's writer). [ADR-0142](DECISIONS/0142-a-text-edit-carries-one-list-of-objects-and-one-text.md) takes ADR-0138's proposed remedy: `replaceTextObject` and `editTextBlock` each carry one list of object indices and one text with where each entry starts, so the worst is a sum (5,767,280 B and 6,553,755 B against the 8 MiB file a PDFium command crosses in) and their channels leave the pinned exceptions. The bounds are a page's runs and text; one fit per edit; `ai.translatePage` answers in the same shape, so a translated paragraph past 4,096 characters is written. |
 | 2026-10-02 | **Every command declares how a person learns it worked** (§7, the Commands registry). The owner's review of 0.1.9.0, item E: `UiCommand.feedback` is required — `visible` (drawn where the person is looking), `toast` (through `confirmWritten`, `confirmDone` or `confirmCopied`), `dialog` (a result dialog's content) or `none` with a written reason — so a command declaring nothing is a compile error, and the registry refuses an empty reason. It names the route a person waits on, and success only. The manual checklist names each command's. Rejected: a scan for confirmations near writes, an optional field under a lint rule, inferring it from placements, a fifth kind for a dialog that opens | §7's Commands entry, which asked nothing about feedback | [0141](DECISIONS/0141-every-command-declares-how-a-person-learns-it-worked.md) |
 | 2026-10-02 | **The ground has no lights; the grain stays** (§10.2). The owner's review of 0.1.9.0: no glow anywhere, in every theme, and the window's grain kept. The four radial glows over the ground, the page area's two lights, the start screen's wash and dark's halo round a page go, with their tokens. The surfaces' linear tints stay and keep following the accent. The *Background glow* setting goes, because the only thing left for it to switch off was the grain. | §10.2's *"Every glow and tint … *Background glow*, on by default, turns the glows and grain off"*, and ADR-0114's setting | [ADR-0140](DECISIONS/0140-the-ground-has-no-lights.md) |
