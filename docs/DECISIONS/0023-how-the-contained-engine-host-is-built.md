@@ -3806,3 +3806,22 @@ Most of a session's creation is main writing the snapshot, which is not a host c
   possibly compromised. Main's own record of what it sent needs neither.
 - *The host running one call at a time instead of main sending one.* It costs the same, and the attribution would
   rest on the host keeping to it.
+
+### Addendum, 2026-10-03 — a memory kill between calls counts against the last call's document
+
+Found while moving the live proofs onto the rule above, before any of it was committed. The rule says *an ending with
+no call running counts against nobody*, and that is wrong for one of the three paths. The sampler kills on a level, and
+a session holds its memory between calls: the commit can cross during a call that has ended by the sampler's next
+reading, 100 ms later at most (and 533 ms measured under load). Counted against nobody, a document whose session alone
+holds the host over the threshold would be killed, reopened and killed again for ever, which is the loop 9a exists to
+bound.
+
+- **A memory kill counts against the document whose call the host was running, or, with none running, the document
+  whose call it ran last.** That call is the one that grew the host or, at the latest, the one running when the sampler
+  last read it below the threshold.
+- **Every other ending between calls still counts against nobody.** A crash and a deadline happen during a call, so an
+  ending between calls is the host ended from outside it.
+- **Stated limit:** if another document's call ran in the interval between the growth and the sampler's reading, that
+  document is counted instead.
+- **Stated limit:** a host that keeps ending between calls, killed from outside, is rebuilt each time, and nothing bounds
+  that, because no document caused it.
