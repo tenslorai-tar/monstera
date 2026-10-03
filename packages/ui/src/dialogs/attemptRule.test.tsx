@@ -17,6 +17,8 @@ import {
   PROTECT_DOCUMENT_NEEDS_A_PASSWORD,
   REDACT_MATCHES_APPLY,
   REDACT_MATCHES_EMPTY,
+  WATERMARK_PAGES_APPLY,
+  WATERMARK_PAGES_NO_TEXT,
 } from '../messages/en.js';
 import DocumentPasswordBody from './DocumentPasswordBody.js';
 import FormFieldDropdownBody from './FormFieldDropdownBody.js';
@@ -25,6 +27,7 @@ import HelpBody from './HelpBody.js';
 import { InDialog } from './inDialog.js';
 import ProtectDocumentBody from './ProtectDocumentBody.js';
 import RedactMatchesBody from './RedactMatchesBody.js';
+import WatermarkPagesBody from './WatermarkPagesBody.js';
 
 /**
  * Every input dialog outside the shared text form, under `primitives/attempt.ts`' rule: it OPENS saying nothing about
@@ -75,6 +78,13 @@ const CASES: readonly Case[] = [
     body: (resolve) => <DocumentPasswordBody name="report.pdf" retry={false} resolve={resolve} update={vi.fn()} />,
     apply: DOCUMENT_PASSWORD_APPLY,
     missing: DOCUMENT_PASSWORD_EMPTY,
+  },
+  {
+    // A STATUS LINE rather than an alert, which is why the gallery's first reading did not flag it.
+    dialog: 'Watermark',
+    body: (resolve) => <WatermarkPagesBody pages={[0]} resolve={resolve} update={vi.fn()} />,
+    apply: WATERMARK_PAGES_APPLY,
+    missing: WATERMARK_PAGES_NO_TEXT,
   },
   {
     dialog: 'Form field (dropdown)',
