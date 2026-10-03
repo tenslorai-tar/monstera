@@ -17,7 +17,7 @@ import {
 import type { ShowToast } from '../toasts.js';
 import { type CommandContext, TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
 import { confirmDone } from './confirmWritten.js';
-import { type WritesItsOwnFile, hasDocument, reportProblem } from './documentCommands.js';
+import { type SettlesMarksFirst, type WritesItsOwnFile, hasDocument, reportProblem } from './documentCommands.js';
 import type { OpenedDocument } from './importMarkdown.js';
 
 /**
@@ -195,7 +195,8 @@ export function saveBackCommand(
   deps: {
     readonly client: ContractClient;
     readonly ask: (id: string, props: unknown) => Promise<unknown>;
-  } & WritesItsOwnFile,
+  } & WritesItsOwnFile &
+    SettlesMarksFirst,
 ): UiCommand {
   return {
     id: 'cloud.save-back',
@@ -207,6 +208,8 @@ export function saveBackCommand(
     run: async (context: CommandContext): Promise<void> => {
       const { docId } = context;
       if (docId === undefined) return;
+      // A SAVE, and the file it writes is shared by definition: the marks question is Save's.
+      if (!(await deps.settleMarks(docId, 'save'))) return;
       const answer = await deps.client['cloud.saveBack']({ docId });
       if (!answer.ok) {
         reportProblem(deps, answer.error);

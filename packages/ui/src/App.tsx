@@ -102,6 +102,7 @@ import {
   closeTabCommand,
   closeOthersCommand,
   openSideBySideCommand,
+  saveAttended,
   saveCommand,
   saveDocument,
   undoCommand,
@@ -109,6 +110,8 @@ import {
   zoomCommand,
   actualSizeCommand,
 } from './commands/documentCommands.js';
+import { proceeds, settlePendingRedactions } from './commands/pendingRedactions.js';
+import { PENDING_REDACTIONS_DIALOG, type PendingRedactionOccasion } from './dialogs/pendingRedactions.js';
 import { confirmCopied } from './commands/confirmWritten.js';
 import { editCommands } from './commands/editCommands.js';
 import { exitCommand, startScreenCommand } from './commands/windowCommands.js';
@@ -829,6 +832,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         ANNOTATION_TEXT_DIALOG,
         STAMP_DIALOG,
         SIGNATURE_BREAK_DIALOG,
+        PENDING_REDACTIONS_DIALOG,
         KEPT_BACKUPS_DIALOG,
         ANNOTATION_NOTE_DIALOG,
         ANNOTATION_EDIT_DIALOG,
@@ -964,17 +968,27 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   // command can only run with a focused document. It is the type saying that a
   // result arriving after a close belongs to nothing, which is the same
   // late-answer hazard `DocumentRangeTransport` drops bytes for.
-  const applied = useCallback(
-    (next: { readonly version: DocVersion; readonly byteLength: number }) => {
+  //
+  // NAMED BY DOCUMENT underneath, because one caller is not about the document in front: the close path asks about
+  // each document in turn, and *Apply* on its redaction question moves THAT document — `activate` has been called,
+  // but the `activeId` this closure holds is the one from before the close began.
+  const appliedTo = useCallback(
+    (docId: DocId | undefined, next: { readonly version: DocVersion; readonly byteLength: number }) => {
       setTabs((current) =>
-        current.map((tab) => (tab.docId === activeId ? { ...tab, ...next } : tab)),
+        current.map((tab) => (tab.docId === docId ? { ...tab, ...next } : tab)),
       );
       // THE DOCUMENT'S STORE HEARS OF IT TOO — `observed`'s first production caller. It had none, so the store's
       // version never left the opening one; nothing read it, and the Organize grid's selection (ADR-0104), which
       // must go when the version moves, is the first thing that needs it to move.
-      if (activeId !== undefined) stores.get(activeId)?.getState().observed(next.version);
+      if (docId !== undefined) stores.get(docId)?.getState().observed(next.version);
     },
-    [activeId, stores],
+    [stores],
+  );
+  const applied = useCallback(
+    (next: { readonly version: DocVersion; readonly byteLength: number }) => {
+      appliedTo(activeId, next);
+    },
+    [activeId, appliedTo],
   );
 
   /**
@@ -991,6 +1005,33 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const stamp = useCallback(
     (): AnnotationStamp => ({ author: authorFor(typedAuthor, userName), created: new Date().toISOString() }),
     [typedAuthor, userName],
+  );
+
+  /**
+   * The unapplied-redactions question (`pendingRedactions.ts`, the owner's item N1), composed once: the save, the
+   * close path and every export, print and send take this. `onApplied` names the document asked about, never the one
+   * in front — see `appliedTo`.
+   */
+  const settleMarksOf = useCallback(
+    (docId: DocId, occasion: PendingRedactionOccasion, beforeAsking?: () => void) =>
+      settlePendingRedactions(
+        {
+          client,
+          ask,
+          stamp,
+          onApplied: (next) => {
+            appliedTo(docId, next);
+          },
+        },
+        docId,
+        occasion,
+        beforeAsking,
+      ),
+    [appliedTo, ask, client, stamp],
+  );
+  const settleMarks = useCallback(
+    async (docId: DocId, occasion: PendingRedactionOccasion) => proceeds(await settleMarksOf(docId, occasion)),
+    [settleMarksOf],
   );
 
   /**
@@ -1505,9 +1546,21 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           const tab = tabs.find((candidate) => candidate.docId === docId);
           if (tab === undefined) continue;
           const answer = await client['document.unsaved']({ docId });
-          const unsaved = answer.ok
+          let unsaved = answer.ok
             ? answer.value.unsaved
             : answer.error.code !== 'document-not-open';
+          // A SAVED DOCUMENT STILL CARRYING MARKS asks about them here (the owner's item N1): the file on disk is the
+          // session, so the count is the file's, and closing is the last moment anyone is asked. *Apply* leaves the
+          // document unsaved, and the question below then asks whether to keep that. A document with unsaved changes
+          // is asked on its *Save* answer instead (`saveAttended`): *Don't save* writes nothing, and the session's count
+          // would not be the file's, so no count is claimed for it.
+          if (!unsaved) {
+            const settled = await settleMarksOf(docId, 'close', () => {
+              activate(docId);
+            });
+            if (!proceeds(settled)) return false;
+            unsaved = settled === 'applied';
+          }
           if (!unsaved) continue;
 
           activate(docId);
@@ -1521,7 +1574,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           // save that landed is still worth confirming — and the toast outlives the tab.
           if (
             choice.data === 'save' &&
-            !(await saveDocument({ client, ask, toast, onSaved, warnSignatureBreak }, docId, 'attended'))
+            !(await saveAttended({ client, ask, toast, onSaved, warnSignatureBreak, settleMarks }, docId))
           ) {
             return false;
           }
@@ -1532,7 +1585,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         setClosing(false);
       }
     },
-    [activate, ask, client, closing, onSaved, releaseTabs, tabs, toast, warnSignatureBreak],
+    [activate, ask, client, closing, onSaved, releaseTabs, settleMarks, settleMarksOf, tabs, toast, warnSignatureBreak],
   );
 
   // THE WINDOW'S CLOSE, held by main until this answers (`windowClose.ts`): every open
@@ -2572,6 +2625,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       stamp,
       // EVERY WRITE CONFIRMS through `confirmWritten`, which needs where the toast goes.
       toast,
+      // THE UNAPPLIED-MARKS QUESTION, asked before any export writes (the owner's item N1).
+      settleMarks,
       recogniseFirst: (docId: DocId, pageCount: number) =>
         recogniseBeforeExport(
           {
@@ -2702,6 +2757,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onApplied: applied,
           ask,
           stamp,
+          settleMarks,
           docusignReady: () => docusignKeyStored,
         }),
         docusignRetrieveCommand({
@@ -2753,6 +2809,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           ask,
           stamp,
           toast,
+          settleMarks,
           track,
           servicesReady: () => azureReady || claudeKeyStored,
           ocrLanguages: storedOcrLanguages,
@@ -2780,7 +2837,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         openFromUrlCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         // CLOUD STORAGE (ADR-0091): the same two callbacks, so a cloud file arrives as a tab.
         cloudStorageCommand({ client, ask, toast, onOpened: opened, onAlreadyOpen: activate, busy }),
-        saveBackCommand({ client, ask, toast, onSaved }),
+        saveBackCommand({ client, ask, toast, onSaved, settleMarks }),
         // D9's WEBCAM ROW, the same callbacks: the pictures arrive as a tab.
         newFromCaptureCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         appendMarkdownCommand({
@@ -2805,19 +2862,20 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onOpened: opened,
           onActivate: activate,
         }),
-        extractPagesCommand({ client, onApplied: applied, ask, stamp, toast }),
-        splitDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
-        exportPageImagesCommand({ client, onApplied: applied, ask, stamp, toast }),
+        extractPagesCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
+        splitDocumentCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
+        exportPageImagesCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
         exportTextCommand(exportDeps),
         exportLayoutTextCommand(exportDeps),
         exportWordCommand(exportDeps),
-        exportPowerPointCommand({ client, onApplied: applied, ask, stamp, toast }),
+        exportPowerPointCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
         exportExcelCommand({
           client,
           onApplied: applied,
           ask,
           stamp,
           toast,
+          settleMarks,
           // THE SAME TWO FACTS the OCR tool's engines are offered on (`cloudReady`, `claudeReady`
           // below): a service is offered where its key is stored, and nowhere else (ADR-0086).
           tableEngines: () => [
@@ -2826,21 +2884,21 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             ...(claudeKeyStored ? (['claude'] as const) : []),
           ],
         }),
-        printCommand({ client, onApplied: applied, ask, stamp, settings, toast }),
-        emailCommand({ client, onApplied: applied, ask, stamp }),
+        printCommand({ client, onApplied: applied, ask, stamp, settings, toast, settleMarks }),
+        emailCommand({ client, onApplied: applied, ask, stamp, settleMarks }),
         exportPdfaCommand(exportDeps),
-        optimizeCommand({ client, onApplied: applied, ask, stamp, track, toast }),
+        optimizeCommand({ client, onApplied: applied, ask, stamp, track, toast, settleMarks }),
         generateTocCommand({ client, onApplied: applied, ask, stamp }),
         findDuplicatePagesCommand({ client, onApplied: applied, ask, stamp }),
         undoCommand({ client, onApplied: applied, ask, stamp }),
         redoCommand({ client, onApplied: applied, ask, stamp }),
-        saveCommand({ client, ask, toast, onSaved, warnSignatureBreak }),
+        saveCommand({ client, ask, toast, onSaved, warnSignatureBreak, settleMarks }),
         closeTabCommand({ close: (docId) => requestClose([docId]) }),
         closeOthersCommand({ close: requestClose }),
         // THE SHELL'S OWN `activeId` AND `showSideBySide`, which is what keeps this a second ROUTE
         // to Side by Side rather than a second owner of it: Review › Compare writes the same value.
         openSideBySideCommand({ focused: readActiveId, show: showSideBySide }),
-        saveCopyCommand({ client, onApplied: applied, ask, stamp, toast }),
+        saveCopyCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
         exportFormDataJsonCommand({ client, onApplied: applied, ask, stamp, toast }),
         exportFormDataXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
         exportFormDataFdfCommand({ client, onApplied: applied, ask, stamp, toast }),
@@ -3002,6 +3060,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       autoscrollOn,
       // SAVE'S SIGNATURE WARNING, a reader of the store — stable while the store is.
       warnSignatureBreak,
+      // THE UNAPPLIED-MARKS QUESTION the save, the exports, print and send take — changes with `stamp`.
+      settleMarks,
       // THE OCR COMMANDS' STORED LANGUAGES, the same kind of reader.
       storedOcrLanguages,
       toggleAutoscroll,

@@ -2021,6 +2021,16 @@ export const APPLY_REDACTIONS_KEEP_TITLE_WARNS = messageKey('dialog.apply-redact
 export const APPLY_REDACTIONS_IMAGES_PIXELS = messageKey('dialog.apply-redactions.images-pixels');
 export const APPLY_REDACTIONS_IMAGES_REMOVE = messageKey('dialog.apply-redactions.images-remove');
 export const APPLY_REDACTIONS_APPLY = messageKey('dialog.apply-redactions.apply');
+export const PENDING_REDACTIONS_TITLE = messageKey('dialog.pending-redactions.title');
+export const PENDING_REDACTIONS_QUESTION = messageKey('dialog.pending-redactions.question');
+export const PENDING_REDACTIONS_EXPLAINS = messageKey('dialog.pending-redactions.explains');
+export const PENDING_REDACTIONS_APPLY = messageKey('dialog.pending-redactions.apply');
+export const PENDING_REDACTIONS_WITHOUT_SAVE = messageKey('dialog.pending-redactions.without-save');
+export const PENDING_REDACTIONS_WITHOUT_CLOSE = messageKey('dialog.pending-redactions.without-close');
+export const PENDING_REDACTIONS_WITHOUT_EXPORT = messageKey('dialog.pending-redactions.without-export');
+export const PENDING_REDACTIONS_WITHOUT_PRINT = messageKey('dialog.pending-redactions.without-print');
+export const PENDING_REDACTIONS_WITHOUT_SEND = messageKey('dialog.pending-redactions.without-send');
+export const REDACT_MARK_LABEL = messageKey('surface.redact-mark.label');
 
 export const REDACT_MATCHES_COMMAND_TITLE = messageKey('command.redact-matches.title');
 export const REDACT_MATCHES_TITLE = messageKey('dialog.redact-matches.title');
@@ -4522,6 +4532,22 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [APPLY_REDACTIONS_KEEP_TITLE_WARNS]:
     'A title can itself contain what you are redacting — or say it in other words. Everything else about the document is removed either way.',
   [APPLY_REDACTIONS_APPLY]: 'Apply redactions',
+  // THE OWNER'S SENTENCE (2 October, item N1), with the count.
+  [PENDING_REDACTIONS_TITLE]: 'Redactions not applied',
+  [PENDING_REDACTIONS_QUESTION]:
+    '{count, plural, one {# redaction is marked but not applied.} other {# redactions are marked but not applied.}} Apply {count, plural, one {it} other {them}} now?',
+  // WHY IT MATTERS, in the reader's terms: a mark is not yet a redaction. The second sentence is what Apply does — the
+  // whole document, a solid cover, the properties removed — because Apply here asks nothing more.
+  [PENDING_REDACTIONS_EXPLAINS]:
+    'Until a mark is applied, the content under it is still in the document, and anyone can read or copy it. Applying removes it from every page, along with the document’s author, subject and other properties. The only way back is Undo, in this session.',
+  [PENDING_REDACTIONS_APPLY]: 'Apply',
+  // THE MIDDLE ANSWER NAMES THE ACTION IT LETS GO AHEAD, so no answer depends on reading the question.
+  [PENDING_REDACTIONS_WITHOUT_SAVE]: 'Save without applying',
+  [PENDING_REDACTIONS_WITHOUT_CLOSE]: 'Close without applying',
+  [PENDING_REDACTIONS_WITHOUT_EXPORT]: 'Export without applying',
+  [PENDING_REDACTIONS_WITHOUT_PRINT]: 'Print without applying',
+  [PENDING_REDACTIONS_WITHOUT_SEND]: 'Send without applying',
+  [REDACT_MARK_LABEL]: 'Marked for redaction',
 
   [REDACT_MATCHES_COMMAND_TITLE]: 'Mark matches for redaction',
   [REDACT_MATCHES_TITLE]: 'Mark matches for redaction',

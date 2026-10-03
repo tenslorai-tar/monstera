@@ -2738,12 +2738,13 @@ test('a DIALOG opened from the keyboard closes on the FIRST Escape', async ({ pa
   await expect(dialog).toHaveCount(0);
 });
 
-test('an existing REDACT mark is drawn as a SOLID preview over the region it covers, and a square beside it is not', async ({
+test('an existing REDACT mark is drawn as PENDING over the region it covers, labelled, and a square beside it is not', async ({
   page,
 }) => {
   // FEATURES row 131's owed half. Measured 2026-09-15 in this build: PDF.js paints MuPDF's Redact appearance as a thin
-  // outline and nothing else, so the content a burn-in will remove stayed fully visible. The preview is chrome the
-  // renderer draws — §10.2's overlay-on-page context — in `--redact-mark`.
+  // outline and nothing else, so the content a burn-in will remove stayed fully visible. The mark is chrome the
+  // renderer draws — §10.2's overlay-on-page context — in `--redact-mark`, and since the owner's item N1 it must not
+  // look like the black box an APPLIED redaction is: hatched, not filled, and labelled *Marked for redaction*.
   await page.setViewportSize({ width: 1280, height: 800 });
   const bytes = await onePagePdf();
   const docId = asDocId('00000000-0000-4000-8000-0000000000d3');
@@ -2762,14 +2763,37 @@ test('an existing REDACT mark is drawn as a SOLID preview over the region it cov
   const canvas = page.locator('canvas[data-page-canvas="0"]');
   await expect(canvas).toBeVisible();
 
-  const preview = page.locator('[data-annotation-layer="0"] .m-redact-preview');
+  const preview = page.locator('[data-annotation-layer="0"] [data-annotation-kind="redact"]');
   await expect(preview).toHaveCount(1);
   // THE CONTROL: a square is drawn by the page raster from its own appearance, so the layer draws nothing for it. A
-  // layer that drew every kind would pass everything above and paint a black box over every square a person drew.
+  // layer that drew every kind would pass everything above and paint a mark over every square a person drew.
   await expect(page.locator('[data-annotation-kind="square"]')).toHaveCount(0);
 
-  // THE TOKEN, resolved in the production build: black, which is what the burn-in paints.
-  expect(await preview.evaluate((node) => getComputedStyle(node).fill)).toBe('rgb(0, 0, 0)');
+  // NOT THE BURN-IN'S LOOK, resolved in the production build: the edge is the token's black, the inside is NOT filled
+  // (an applied redaction is a black box), and the hatching drawn instead is the token's black at 45%, so the words
+  // under it can still be checked.
+  const mark = preview.locator('.m-redact-mark');
+  const look = await mark.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return { fill: style.backgroundColor, hatch: style.backgroundImage, edge: style.borderTopColor };
+  });
+  expect(look.fill).toBe('rgba(0, 0, 0, 0)');
+  expect(look.hatch).toContain('repeating-linear-gradient');
+  expect(look.hatch).toContain('color(srgb 0 0 0 / 0.45)');
+  expect(look.edge).toBe('rgb(0, 0, 0)');
+
+  // THE LABEL, on the mark (it fits: 200 × 100 points), in an ink solved against its chip at the text floor.
+  const label = preview.locator('[data-annotation-label]');
+  await expect(label).toHaveText('Marked for redaction');
+  await expect(label).toHaveAttribute('data-place', 'inside');
+  const ink = await label.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return { colour: style.color, chip: style.backgroundColor };
+  });
+  expect(ink.chip).toBe('rgb(0, 0, 0)');
+  const [colour, chip] = [channels(ink.colour), channels(ink.chip)];
+  expect(colour, `the label's ink ${ink.colour} did not parse — was it solved at all?`).not.toBeNull();
+  expect(contrast(colour ?? [0, 0, 0], chip ?? [0, 0, 0])).toBeGreaterThanOrEqual(textContrastFloor('light'));
 
   // WHERE, against the canvas the page is drawn in: 612 pt across the canvas's width is the scale, and the top of the
   // box is 792 − y1 down from the top of the page.
@@ -3672,6 +3696,95 @@ for (const look of LOOKS) {
 
     await dialog.getByRole('button', { name: 'Save anyway' }).click();
     await expect.poll(() => saves).toStrictEqual([false, true]);
+  });
+}
+
+// REDACTION MARKS NOBODY APPLIED, in every look (the owner's item N1): the pending mark draws with its label, Ctrl+S
+// asks *2 redactions are marked but not applied* — axe clean — and each answer sends what it says. CONTROL in the same
+// case: until the person answers, nothing was saved and nothing burnt in.
+for (const look of LOOKS) {
+  test(`${look.name}: a save with marks pending ASKS first, passes axe, and each answer does its job`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const bytes = await onePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000ce');
+    const sent: { channel: string; params: unknown }[] = [];
+    await bridgeUnder(
+      page,
+      look,
+      {
+        opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'marked.pdf' }],
+        documentBytes: new Map([[docId, bytes]]),
+        annotations: [
+          { page: 0, index: 0, kind: 'redact', rect: { x0: 100, y0: 600, x1: 300, y1: 700 } },
+          { page: 0, index: 1, kind: 'redact', rect: { x0: 100, y0: 300, x1: 160, y1: 312 } },
+          { page: 0, index: 2, kind: 'square', rect: { x0: 350, y0: 100, x1: 450, y1: 200 } },
+        ],
+      },
+      (channel, params) => {
+        sent.push({ channel, params });
+      },
+    );
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+
+    // THE MARKS, in this look: the large one labelled ON it, inside its box; the small one too small for the label,
+    // which is then not drawn at all — outside the mark it covered words nobody marked (3 October).
+    const labels = page.locator('[data-annotation-layer="0"] [data-annotation-label]');
+    await expect(labels).toHaveCount(2);
+    await expect(labels.nth(0)).toHaveAttribute('data-place', 'inside');
+    await expect(labels.nth(0)).toBeVisible();
+    const [labelBox, markBox] = await Promise.all([
+      labels.nth(0).boundingBox(),
+      page.locator('[data-annotation-layer="0"] [data-annotation-kind="redact"]').nth(0).boundingBox(),
+    ]);
+    if (labelBox === null || markBox === null) throw new Error('the label or its mark has no box');
+    expect(labelBox.x >= markBox.x - 0.5 && labelBox.y >= markBox.y - 0.5).toBe(true);
+    expect(labelBox.x + labelBox.width <= markBox.x + markBox.width + 0.5).toBe(true);
+    expect(labelBox.y + labelBox.height <= markBox.y + markBox.height + 0.5).toBe(true);
+    await expect(labels.nth(1)).toHaveAttribute('data-place', 'none');
+    await expect(labels.nth(1)).toBeHidden();
+
+    const writes = (): string[] =>
+      sent
+        .map((call) => call.channel)
+        .filter((channel) => channel === 'document.save' || channel === 'document.execute');
+
+    // CANCEL: nothing written, nothing burnt in.
+    await page.keyboard.press('Control+S');
+    const dialog = page.getByRole('dialog', { name: 'Redactions not applied' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('2 redactions are marked but not applied. Apply them now?');
+    expect(writes()).toStrictEqual([]);
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(writes()).toStrictEqual([]);
+
+    // SAVE WITHOUT APPLYING: the save, and no burn-in.
+    await page.keyboard.press('Control+S');
+    await dialog.getByRole('button', { name: 'Save without applying' }).click();
+    await expect.poll(writes).toStrictEqual(['document.save']);
+
+    // APPLY: the burn-in over every page, THEN the save.
+    await page.keyboard.press('Control+S');
+    await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+    await expect.poll(writes).toStrictEqual(['document.save', 'document.execute', 'document.save']);
+    const burnt = sent.find((call) => call.channel === 'document.execute')?.params as
+      | { readonly command?: unknown }
+      | undefined;
+    expect(burnt?.command).toStrictEqual({
+      kind: 'applyRedactions',
+      pages: 'all',
+      cover: 'solid',
+      images: 'pixels',
+      keepTitle: false,
+    });
   });
 }
 

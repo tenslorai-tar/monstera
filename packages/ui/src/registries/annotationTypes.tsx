@@ -1,5 +1,8 @@
+import { useLingui } from '@lingui/react';
 import type { AnnotationKindName } from '@monstera/contract';
 import type { ReactElement } from 'react';
+
+import { REDACT_MARK_LABEL } from '../messages/en.js';
 
 /**
  * The annotation-types registry's RENDERER half — §7's *"Annotation types | geometry adapter,
@@ -18,9 +21,17 @@ import type { ReactElement } from 'react';
  * stroke or a highlight is already on screen and a renderer here would draw it twice. The one
  * kind whose appearance does not show what it means is `redact`: measured 2026-09-15 in the
  * production build, MuPDF's Redact appearance is painted as a thin red outline and the content it
- * will remove stays fully visible. Its renderer draws the solid box the burn-in produces
- * (`pageRedact.ts` passes `cover === 'solid'` as MuPDF's black boxes), in `--redact-mark`, a
- * `graphic` token checked at 3:1 against `--page` (ADR-0003, corrected 2026-09-15).
+ * will remove stays fully visible.
+ *
+ * ## A mark must not look like a REDACTION, which is what it is not yet (the owner's item N1)
+ *
+ * A mark filled solid in `--redact-mark` is black, the box a burn-in leaves — so a page whose marks
+ * nobody had applied would look exactly like a redacted one, while every word under the boxes is
+ * still in the file and can be selected, saved and exported. So a pending mark has a look only it
+ * has: diagonal hatching and a dashed edge in `--redact-mark`, with the content still visible
+ * between the lines, and a *Marked for redaction* label on it. An APPLIED redaction is not drawn here at all — it is the engine's black box in
+ * the page's own content, painted by the raster — so the two cannot be confused by construction:
+ * this layer draws only what is still an annotation.
  *
  * ## What this is NOT yet
  *
@@ -30,26 +41,35 @@ import type { ReactElement } from 'react';
  * declaration nothing can contradict, so this file carries the half that has one.
  */
 
-/** A box in the page layer's own pixels. */
-export interface LayerBox {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-}
-
-/** How an existing annotation of one kind is drawn over its page, or `null` where the page raster draws it. */
-export type AnnotationRenderer = ((box: LayerBox) => ReactElement) | null;
+/**
+ * How an existing annotation of one kind is drawn over its page, or `null` where the page raster draws it.
+ *
+ * The layer positions an element on the annotation's box and the renderer fills it, so a renderer names no
+ * coordinates. A renderer that labels its mark draws the label as an element carrying `data-annotation-label`; the
+ * layer measures every label on the page in one pass and says where it sits (`AnnotationLayer`'s `labelPlace`).
+ */
+export type AnnotationRenderer = (() => ReactElement) | null;
 
 /**
- * The solid preview of a Redact mark: the region the burn-in removes, filled.
+ * A Redact mark that has not been applied: hatched, dashed, and labelled.
  *
- * Opaque on purpose. What the preview says is *this is gone once applied*, and a translucent box
- * would say *this is highlighted*. The person reviewing marks before applying reads the text
- * under a mark from the annotations panel's row, not through the preview.
+ * **The hatching is not a fill.** What a pending mark says is *this is to be removed*, and a person reviewing marks
+ * before applying them reads the words between the lines. A solid box would say *this is gone*, which is the
+ * burn-in's look and is exactly the confusion the owner's item N1 removes.
  */
-function redactPreview(box: LayerBox): ReactElement {
-  return <rect className="m-redact-preview" height={box.height} width={box.width} x={box.x} y={box.y} />;
+function RedactMark(): ReactElement {
+  const { _ } = useLingui();
+  return (
+    <span className="m-redact-mark">
+      <span className="m-redact-mark__label" data-annotation-label="">
+        {_(REDACT_MARK_LABEL)}
+      </span>
+    </span>
+  );
+}
+
+function redactMark(): ReactElement {
+  return <RedactMark />;
 }
 
 export const ANNOTATION_RENDERERS: Readonly<Record<AnnotationKindName, AnnotationRenderer>> = {
@@ -57,7 +77,7 @@ export const ANNOTATION_RENDERERS: Readonly<Record<AnnotationKindName, Annotatio
   circle: null,
   line: null,
   ink: null,
-  redact: redactPreview,
+  redact: redactMark,
   'text-box': null,
   'sticky-note': null,
   caret: null,

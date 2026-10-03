@@ -90,6 +90,7 @@ import type { ResizePagesAnswer } from '../dialogs/resizePagesResult.js';
 import { KEPT_BACKUPS_DIALOG_ID } from '../dialogs/keptBackups.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { SIGNATURE_BREAK_DIALOG_ID, SIGNATURE_BREAK_RESULT } from '../dialogs/signatureBreak.js';
+import type { PendingRedactionOccasion } from '../dialogs/pendingRedactions.js';
 import { WATERMARK_PAGES_DIALOG_ID } from '../dialogs/watermarkPages.js';
 import type { WatermarkPagesAnswer } from '../dialogs/watermarkPagesResult.js';
 import {
@@ -372,6 +373,18 @@ export interface DocumentCommandDeps {
  */
 export interface RecognisesFirst {
   readonly recogniseFirst: (docId: DocId, pageCount: number) => Promise<RecognisedWalk | undefined>;
+}
+
+/**
+ * What a command that carries the document OUT needs: the question about redaction marks nobody has applied, asked
+ * first (the owner's item N1). Saving, exporting, printing and sending take it; `pendingRedactions.ts` owns the
+ * question and `App.tsx` composes it, for {@link RecognisesFirst}'s reason — that module imports this one.
+ *
+ * Answers whether the command may go ahead: `false` after Cancel, or after an *Apply* main refused, and the command
+ * then writes nothing. Asked BEFORE the command's own dialog, so a person who stops here has chosen nothing they lose.
+ */
+export interface SettlesMarksFirst {
+  readonly settleMarks: (docId: DocId, occasion: PendingRedactionOccasion) => Promise<boolean>;
 }
 
 /**
@@ -2219,7 +2232,8 @@ export function saveCommand(deps: {
    * it knows the id — which is the same place `openWith` validates the props.
    */
   readonly ask: (id: string, props: unknown) => Promise<unknown>;
-} & WritesItsOwnFile): UiCommand {
+} & WritesItsOwnFile &
+  SettlesMarksFirst): UiCommand {
   return {
     id: 'document.save',
     feedback: TOASTS,
@@ -2233,9 +2247,26 @@ export function saveCommand(deps: {
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
-      await saveDocument(deps, context.docId, 'attended');
+      await saveAttended(deps, context.docId);
     },
   };
+}
+
+/**
+ * A save a PERSON asked for: the unapplied-marks question first, then the one save.
+ *
+ * The Save command and the close path's *Save* answer, and only those — autosave is unattended and saves marks as the
+ * marks they are, since a timer has nobody to ask and a mark is preserved, never dropped. Outside `saveDocument`
+ * because that is autosave's save too, and its parameter list would otherwise carry a question it can never ask.
+ *
+ * @returns `true` only when the file now holds the document; `false` after Cancel, as after any save that did not land.
+ */
+export async function saveAttended(
+  deps: Parameters<typeof saveDocument>[0] & SettlesMarksFirst,
+  docId: DocId,
+): Promise<boolean> {
+  if (!(await deps.settleMarks(docId, 'save'))) return false;
+  return saveDocument(deps, docId, 'attended');
 }
 
 /**
@@ -2462,7 +2493,7 @@ export async function saveDocument(
  * yet, and asking for the file first would mean a dismissal of the second
  * dialog discarded a choice the user had already made.
  */
-export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
+export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst): UiCommand {
   return {
     id: 'document.extract-pages',
     feedback: TOASTS,
@@ -2477,6 +2508,7 @@ export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile): Ui
       // The field starts with `targetPages`, the delete dialog's rule (ADR-0104).
       const pages = targetPages(context);
       if (context.docId === undefined || context.pageCount === undefined || pages.length === 0) return;
+      if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
       const chosen = (await deps.ask(EXTRACT_PAGES_DIALOG_ID, {
         pageCount: context.pageCount,
@@ -2529,7 +2561,7 @@ export function splitRequestOf(
   return { groups: groups.map((group) => pageSetOf(group)) };
 }
 
-export function splitDocumentCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
+export function splitDocumentCommand(deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst): UiCommand {
   return {
     id: 'document.split',
     feedback: TOASTS,
@@ -2541,6 +2573,7 @@ export function splitDocumentCommand(deps: DocumentCommandDeps & WritesAFile): U
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.pageCount === undefined) return;
+      if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
       const chosen = (await deps.ask(SPLIT_DOCUMENT_DIALOG_ID, {
         pageCount: context.pageCount,
@@ -2575,7 +2608,9 @@ export function splitDocumentCommand(deps: DocumentCommandDeps & WritesAFile): U
  * single-file destination path — `copied` confirms, `cancelled` says nothing,
  * and the two failures reach the save problem dialog.
  */
-export function exportTextCommand(deps: DocumentCommandDeps & RecognisesFirst & WritesAFile): UiCommand {
+export function exportTextCommand(
+  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst,
+): UiCommand {
   return {
     id: 'document.export-text',
     feedback: TOASTS,
@@ -2598,7 +2633,9 @@ export function exportTextCommand(deps: DocumentCommandDeps & RecognisesFirst & 
  * the two exports differ in which engine reads the page and in nothing a person
  * does, so one outcome handler serves both.
  */
-export function exportLayoutTextCommand(deps: DocumentCommandDeps & RecognisesFirst & WritesAFile): UiCommand {
+export function exportLayoutTextCommand(
+  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst,
+): UiCommand {
   return {
     id: 'document.export-layout-text',
     feedback: TOASTS,
@@ -2618,7 +2655,9 @@ export function exportLayoutTextCommand(deps: DocumentCommandDeps & RecognisesFi
  * A dismissed mode dialog dispatches nothing. The outcomes are a copy's, reported
  * the way {@link exportTextCommand}'s are.
  */
-export function exportWordCommand(deps: DocumentCommandDeps & RecognisesFirst & WritesAFile): UiCommand {
+export function exportWordCommand(
+  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst,
+): UiCommand {
   return {
     id: 'document.export-word',
     feedback: TOASTS,
@@ -2632,6 +2671,7 @@ export function exportWordCommand(deps: DocumentCommandDeps & RecognisesFirst & 
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
+      if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
       const chosen = (await deps.ask(EXPORT_WORD_DIALOG_ID, {})) as ExportWordAnswer | undefined;
       if (chosen === undefined) return;
@@ -2663,7 +2703,7 @@ export function exportWordCommand(deps: DocumentCommandDeps & RecognisesFirst & 
  * **No dialog of its own**, `exportTextCommand`'s reason: there is nothing to
  * choose before the save dialog, which main runs.
  */
-export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
+export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst): UiCommand {
   return {
     id: 'document.export-powerpoint',
     feedback: TOASTS,
@@ -2680,6 +2720,7 @@ export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile)
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
+      if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
       const answer = await deps.client['document.exportPowerPoint']({ docId: context.docId });
       if (!answer.ok) {
@@ -2716,7 +2757,7 @@ export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile)
  * no text.
  */
 export function exportExcelCommand(
-  deps: DocumentCommandDeps & WritesAFile & {
+  deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst & {
     /**
      * The engines this machine can read tables with (ADR-0086): `automatic` always, a service
      * where its key is stored. A function, read when the command runs, so a key stored after
@@ -2739,6 +2780,9 @@ export function exportExcelCommand(
     run: async (context): Promise<void> => {
       const { docId } = context;
       if (docId === undefined) return;
+      // BEFORE THE TABLE REVIEW, which reads the document at one version and refuses a moved one: an *Apply* after it
+      // would turn a person's reviewed tables into *the document changed*.
+      if (!(await deps.settleMarks(docId, 'export'))) return;
 
       const edits = new Map<number, ExportExcelAnswer['edits']>();
       let index = context.page ?? 0;
@@ -2830,7 +2874,9 @@ export function exportExcelCommand(
  *
  * **No dialog of its own before the save dialog**, `exportPowerPointCommand`'s reason.
  */
-export function exportPdfaCommand(deps: DocumentCommandDeps & RecognisesFirst & WritesAFile): UiCommand {
+export function exportPdfaCommand(
+  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst,
+): UiCommand {
   return {
     id: 'document.export-pdfa',
     feedback: TOASTS,
@@ -2841,6 +2887,7 @@ export function exportPdfaCommand(deps: DocumentCommandDeps & RecognisesFirst & 
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
+      if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
       const walked = await recognisedBeforeExport(deps, context);
       if (walked === false) return;
@@ -2890,7 +2937,8 @@ export function exportPdfaCommand(deps: DocumentCommandDeps & RecognisesFirst & 
  */
 export function optimizeCommand(
   deps: DocumentCommandDeps &
-    WritesAFile & {
+    WritesAFile &
+    SettlesMarksFirst & {
     /**
      * The status bar's running task, while a size is checked. MEASURED 2026-09-19 in the running
      * application: the first check starts the compose host and took over six seconds, during
@@ -2913,6 +2961,8 @@ export function optimizeCommand(
     run: async (context): Promise<void> => {
       const { docId } = context;
       if (docId === undefined) return;
+      // BEFORE THE MEASUREMENT, which names the version it measured: an *Apply* after it would make the copy *changed*.
+      if (!(await deps.settleMarks(docId, 'export'))) return;
 
       let setting: OptimizeSetting = 'high';
       let measured: { before: number; after: number; version: DocVersion } | null = null;
@@ -2989,7 +3039,9 @@ export function optimizeCommand(
  * The dialog starts on Settings › Rendering › *Print quality*, read when the command runs, so a change there applies
  * to the next print without a restart.
  */
-export function printCommand(deps: DocumentCommandDeps & WritesAFile & { readonly settings: SettingsStore }): UiCommand {
+export function printCommand(
+  deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst & { readonly settings: SettingsStore },
+): UiCommand {
   return {
     id: 'document.print',
     feedback: TOASTS,
@@ -3003,6 +3055,7 @@ export function printCommand(deps: DocumentCommandDeps & WritesAFile & { readonl
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
+      if (!(await deps.settleMarks(context.docId, 'print'))) return;
 
       const quality = PRINT_QUALITY_SETTING.schema.parse(deps.settings.get(PRINT_QUALITY_SETTING.id));
       const chosen = (await deps.ask(PRINT_DIALOG_ID, { dpi: PRINT_QUALITY_DPI[quality] })) as PrintAnswer | undefined;
@@ -3034,7 +3087,7 @@ export function printCommand(deps: DocumentCommandDeps & WritesAFile & { readonl
  * nothing more; a platform with no sheet and a step that refused each say so through
  * the save problem dialog.
  */
-export function emailCommand(deps: DocumentCommandDeps): UiCommand {
+export function emailCommand(deps: DocumentCommandDeps & SettlesMarksFirst): UiCommand {
   return {
     id: 'document.email',
     feedback: TOASTS,
@@ -3049,6 +3102,7 @@ export function emailCommand(deps: DocumentCommandDeps): UiCommand {
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
+      if (!(await deps.settleMarks(context.docId, 'send'))) return;
 
       const answer = await deps.client['document.email']({ docId: context.docId });
       if (!answer.ok) {
@@ -3064,11 +3118,12 @@ export function emailCommand(deps: DocumentCommandDeps): UiCommand {
 }
 
 async function runTextExport(
-  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile,
+  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst,
   context: CommandContext,
   mode: 'plain' | 'layout',
 ): Promise<void> {
   if (context.docId === undefined) return;
+  if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
   const walked = await recognisedBeforeExport(deps, context);
   if (walked === false) return;
@@ -3107,7 +3162,7 @@ async function runTextExport(
  * folder to show, `cancelled` says nothing, and the two failures reach the save
  * problem dialog.
  */
-export function exportPageImagesCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
+export function exportPageImagesCommand(deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst): UiCommand {
   return {
     id: 'document.export-page-images',
     feedback: TOASTS,
@@ -3122,6 +3177,7 @@ export function exportPageImagesCommand(deps: DocumentCommandDeps & WritesAFile)
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.pageCount === undefined) return;
+      if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
       const chosen = (await deps.ask(EXPORT_PAGE_IMAGES_DIALOG_ID, {
         pageCount: context.pageCount,
@@ -3454,7 +3510,7 @@ export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
   };
 }
 
-export function saveCopyCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
+export function saveCopyCommand(deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst): UiCommand {
   return {
     id: 'document.save-copy',
     feedback: TOASTS,
@@ -3467,6 +3523,7 @@ export function saveCopyCommand(deps: DocumentCommandDeps & WritesAFile): UiComm
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
+      if (!(await deps.settleMarks(context.docId, 'export'))) return;
       const answer = await deps.client['document.saveCopy']({ docId: context.docId });
       if (!answer.ok) {
         reportProblem(deps, answer.error);
@@ -3955,7 +4012,7 @@ export interface DocusignReadiness {
  * happened, so `sent` opens the notice as every refusal does. A dismissed dialog
  * sends nothing and says nothing, because the person did that on purpose.
  */
-export function docusignSendCommand(deps: DocumentCommandDeps & DocusignReadiness): UiCommand {
+export function docusignSendCommand(deps: DocumentCommandDeps & DocusignReadiness & SettlesMarksFirst): UiCommand {
   return {
     id: 'document.docusign-send',
     feedback: RESULT_DIALOG,
@@ -3965,6 +4022,7 @@ export function docusignSendCommand(deps: DocumentCommandDeps & DocusignReadines
     when: (context) => hasDocument(context) && deps.docusignReady(),
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
+      if (!(await deps.settleMarks(context.docId, 'send'))) return;
       const answer = (await deps.ask(DOCUSIGN_SEND_DIALOG_ID, {})) as DocusignSendAnswer | undefined;
       if (answer === undefined) return;
       const sent = await deps.client['docusign.send']({

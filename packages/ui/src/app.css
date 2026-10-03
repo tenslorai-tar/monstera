@@ -4103,6 +4103,17 @@ optgroup {
   gap: var(--space-4);
 }
 
+/* Redaction marks nobody applied, before a save, a close or an export: the question, why it matters, three answers —
+   the close question's shape, so the two read as one family when a close asks both. */
+.m-pending-redactions {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.m-pending-redactions p {
+  margin: 0;
+}
+
 /* *Support Monstera*: two short paragraphs and two answers. The measure is held because the text is
    prose and a dialog as wide as the window is a dialog nobody reads to the end of. The security notice
    (ADR-0110) is the same shape — a sentence and two answers — so it takes the same rules. */
@@ -5008,13 +5019,56 @@ optgroup {
   pointer-events: none;
 }
 
+/* One existing annotation's box, placed by the layer in the page's own pixels. */
+.m-annotation-layer__item {
+  position: absolute;
+}
+
 /*
- * The solid preview of a Redact mark: the region a burn-in removes, filled with
- * `--redact-mark`, a `graphic` token checked at 3:1 against `--page`. OPAQUE, and
- * no stroke — the page's own outline from the mark's appearance sits under it.
+ * A Redact mark NOBODY HAS APPLIED (`registries/annotationTypes.tsx`): the region a burn-in will remove, hatched and
+ * edged in `--redact-mark`, a `graphic` token checked at 3:1 against `--page`. NOT FILLED — a solid box in that
+ * colour is what an applied redaction looks like, and a mark is not one yet. The hatching leaves the content readable
+ * between its lines, which is what a person checks before applying. The edge is solid so the engine's own thin red
+ * outline under it does not show through the gaps of a dash.
  */
-.m-redact-preview {
-  fill: var(--redact-mark);
+.m-redact-mark {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border: var(--space-2) solid var(--redact-mark);
+  /* ONE PIXEL IN SEVEN, AT LESS THAN HALF THE INK: the solid edge is what carries the mark's 3:1, so the hatching
+     only has to say *this area*, and drawn in full black it made the words under a one-line mark hard to check
+     (looked at in the production build, 3 October). */
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--redact-mark) 45%, transparent) 0 1px,
+    transparent 1px 7px
+  );
+}
+
+/*
+ * *Marked for redaction*, on the mark. Its ink is `--m-redact-label-ink`, solved at the point of use against
+ * `--redact-mark` by `AnnotationLayer` (ADR-0003: never stored). Drawn only where it fits on the mark
+ * (`labelPlace`): outside it, it covered words nobody marked.
+ */
+.m-redact-mark__label {
+  position: absolute;
+  inset-inline-start: calc(-1 * var(--space-2));
+  inset-block-start: calc(-1 * var(--space-2));
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-4);
+  background: var(--redact-mark);
+  color: var(--m-redact-label-ink);
+  font-family: var(--font-ui);
+  font-size: var(--font-chrome-10);
+  font-weight: 600;
+  /* COMPACT, so it fits on a one-line mark at the sizes text is usually read at. */
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.m-redact-mark__label[data-place='none'] {
+  display: none;
 }
 
 .m-annotation-overlay {

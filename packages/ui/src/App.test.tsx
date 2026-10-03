@@ -334,6 +334,8 @@ const OPEN_DOCUMENT_ANSWERS = {
   // and a flat document produce alike, so a fixture of zeros would make "the
   // renderer used the model" and "the renderer ignored it" the same observation.
   'document.viewModel': { version: asDocVersion(1), pageCount: 2, rotations: [90] },
+  // NO REDACTION MARKS: a save, a close or an export reads the list first and asks only where it names one (item N1).
+  'document.annotations': { version: asDocVersion(1), annotations: [], next: null, truncated: false },
   // THE SCROLLER ASKS FOR EVERY VISIBLE PAGE'S SELECTABLE TEXT, so a fixture
   // without an answer here rejects on every case that opens a document. Empty
   // rather than seeded: what these cases are about is the shell's dispatch, and

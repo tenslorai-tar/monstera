@@ -27,6 +27,7 @@ import type { TrackTask } from '../runningTask.js';
 import { confirmWritten } from './confirmWritten.js';
 import {
   type DocumentCommandDeps,
+  type SettlesMarksFirst,
   type WritesAFile,
   applyDocumentCommand,
   hasDocument,
@@ -412,7 +413,7 @@ export async function recogniseBeforeExport(
  * has undo.
  */
 export function exportSearchableCommand(
-  deps: DocumentCommandDeps & WritesAFile & {
+  deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst & {
     readonly track: TrackTask;
     readonly servicesReady: () => boolean;
     readonly ocrLanguages: () => OcrLanguages;
@@ -431,6 +432,7 @@ export function exportSearchableCommand(
       // The dialog's scope is ignored here (below), so its first choice only needs to be a page that exists.
       const pages = targetPages(context);
       if (docId === undefined || pages.length === 0 || pageCount === undefined) return;
+      if (!(await deps.settleMarks(docId, 'export'))) return;
 
       const models = await deps.client['app.ocrLanguages']({});
       if (!models.ok) return;

@@ -27,6 +27,8 @@ const STAMP = () => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' 
  * with `deu`), so a command dispatching the stored value where it should dispatch the answer could not pass.
  */
 const STORED: OcrLanguages = ['fra'];
+/** The unapplied-marks question answering *go ahead*: a document carrying no marks (item N1). */
+const NOTHING_MARKED = (): Promise<boolean> => Promise.resolve(true);
 
 /**
  * The UI half of the wired pair for D6 rows 2 and 3.
@@ -409,6 +411,7 @@ describe('the recognise-text command', () => {
 
     await exportSearchableCommand({
       client,
+      settleMarks: NOTHING_MARKED,
       toast: (kind, message, action) => {
         said.push({ kind, message, action });
       },
@@ -449,7 +452,7 @@ describe('the recognise-text command', () => {
       end: () => undefined,
     });
 
-    await exportSearchableCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, toast: () => undefined, track, servicesReady: () => false, ocrLanguages: () => STORED }).run(
+    await exportSearchableCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, toast: () => undefined, settleMarks: NOTHING_MARKED, track, servicesReady: () => false, ocrLanguages: () => STORED }).run(
       contextWith(2),
     );
 

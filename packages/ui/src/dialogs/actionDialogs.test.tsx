@@ -19,6 +19,8 @@ import OpenFromUrlBody from './OpenFromUrlBody.js';
 import ReimportExternalEditBody from './ReimportExternalEditBody.js';
 import SecurityUpdateBody from './SecurityUpdateBody.js';
 import SignatureBreakBody from './SignatureBreakBody.js';
+import PendingRedactionsBody from './PendingRedactionsBody.js';
+import { PENDING_REDACTION_OCCASIONS } from './pendingRedactions.js';
 import ApplyRedactionsBody from './ApplyRedactionsBody.js';
 import BatesNumberBody from './BatesNumberBody.js';
 import DocumentPasswordBody from './DocumentPasswordBody.js';
@@ -86,6 +88,11 @@ const GROUP_3: readonly { readonly name: string; readonly body: ReactNode; reado
   { name: 'Re-import an edit', body: <ReimportExternalEditBody page={0} resolve={ignore} update={ignore} />, firstRow: null },
   { name: 'Signature will break', body: <SignatureBreakBody signatures={1} resolve={ignore} update={ignore} />, firstRow: null },
   {
+    name: 'Redactions not applied',
+    body: <PendingRedactionsBody count={2} occasion="save" resolve={ignore} update={ignore} />,
+    firstRow: null,
+  },
+  {
     name: 'View only',
     body: <CloudViewOnlyBody provider="onedrive" moment="opened" resolve={ignore} update={ignore} />,
     firstRow: null,
@@ -113,6 +120,42 @@ describe('the text forms and button dialogs in the dialog pattern', () => {
     render(<InDialog><CloseUnsavedBody name="a.pdf" resolve={ignore} update={ignore} /></InDialog>);
     const buttons = [...(document.querySelector('.m-dialog-footer')?.querySelectorAll('button') ?? [])];
     expect(buttons.map((button) => button.textContent)).toStrictEqual(['Cancel', 'Don’t save', 'Save']);
+  });
+
+  it('Redactions not applied: the owner’s sentence with the count, and Cancel, the action without applying, Apply', () => {
+    // ONE ROW PER OCCASION, so a middle label copied from Save onto Close — the label that needs the question read to
+    // be safe — fails by name.
+    const middle: Record<string, string> = {
+      save: 'Save without applying',
+      close: 'Close without applying',
+      export: 'Export without applying',
+      print: 'Print without applying',
+      send: 'Send without applying',
+    };
+    for (const occasion of PENDING_REDACTION_OCCASIONS) {
+      cleanup();
+      const answers: unknown[] = [];
+      render(
+        <InDialog>
+          <PendingRedactionsBody
+            count={3}
+            occasion={occasion}
+            resolve={(answer) => answers.push(answer)}
+            update={ignore}
+          />
+        </InDialog>,
+      );
+      expect(document.body.textContent).toContain('3 redactions are marked but not applied. Apply them now?');
+      const buttons = [...(document.querySelector('.m-dialog-footer')?.querySelectorAll('button') ?? [])];
+      expect(buttons.map((button) => button.textContent)).toStrictEqual(['Cancel', middle[occasion], 'Apply']);
+      // EACH BUTTON ANSWERS WHAT IT SAYS — the two that go ahead are not interchangeable.
+      buttons[1]?.click();
+      buttons[2]?.click();
+      expect(answers).toStrictEqual(['without', 'apply']);
+    }
+    cleanup();
+    render(<InDialog><PendingRedactionsBody count={1} occasion="save" resolve={ignore} update={ignore} /></InDialog>);
+    expect(document.body.textContent).toContain('1 redaction is marked but not applied. Apply it now?');
   });
 
   it('a notice whose own button IS its dismissal draws no Cancel beside it — and CONTROL: one without does', () => {

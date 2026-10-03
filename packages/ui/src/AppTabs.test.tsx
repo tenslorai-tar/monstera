@@ -88,6 +88,10 @@ function client(): { readonly client: ContractClient; readonly sent: Sent[] } {
     if (id === 'document.close') return Promise.resolve(ok({ closed: true }));
     // CLEAN: these cases are about tabs, and closing one here must not stop to ask.
     if (id === 'document.unsaved') return Promise.resolve(ok({ unsaved: false }));
+    // NO REDACTION MARKS, so a close does not stop to ask about them either (item N1).
+    if (id === 'document.annotations') {
+      return Promise.resolve(ok({ version: asDocVersion(1), annotations: [], next: null, truncated: false }));
+    }
     if (id === 'document.recent') {
       return Promise.resolve(ok({ entries: [], lastExitClean: true }));
     }
