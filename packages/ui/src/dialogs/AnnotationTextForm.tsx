@@ -7,11 +7,13 @@ import { useRef, useState } from 'react';
 import { attemptProblem, useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
-import { Input } from '../primitives/Input.js';
+import { Input, TextArea } from '../primitives/Input.js';
 import type { AnnotationTextAnswer } from './annotationTextResult.js';
 
 /**
- * One line of text for an annotation — the form two dialogs render.
+ * The words for an annotation or a link — the form every dialog that asks for one piece of text renders: a note, a
+ * text box, a callout, a typewriter, a reply, an edited comment, a link's address, a link's page and an address to open.
+ * The first six take several lines (`multiline`), the last three one.
  *
  * ## Why this is a component and not a second dialog body
  *
@@ -102,6 +104,11 @@ export interface AnnotationTextFormProps {
    * a person's typing is never overwritten by a re-render.
    */
   readonly initial?: string;
+  /**
+   * Whether the words run to sentences — a note, a text box, a reply, a comment — and so take the multi-line box that
+   * grows with them. An address or a page number stays one line.
+   */
+  readonly multiline?: boolean;
   /** The dialog's own `resolve`. */
   readonly resolve: (answer: AnnotationTextAnswer) => void;
 }
@@ -114,6 +121,7 @@ export function AnnotationTextForm({
   limit = MAX_ANNOTATION_TEXT,
   validate,
   initial = '',
+  multiline = false,
   resolve,
 }: AnnotationTextFormProps): ReactElement {
   const { _ } = useLingui();
@@ -132,7 +140,11 @@ export function AnnotationTextForm({
   return (
     <div className="m-annotation-text" ref={form}>
       <DialogRow label={label} problem={problem === undefined ? undefined : _(problem)}>
-        <Input invalid={problem !== undefined} label={label} labelShownBeside onValueChange={setText} value={text} />
+        {multiline ? (
+          <TextArea invalid={problem !== undefined} label={label} labelShownBeside onValueChange={setText} value={text} />
+        ) : (
+          <Input invalid={problem !== undefined} label={label} labelShownBeside onValueChange={setText} value={text} />
+        )}
       </DialogRow>
       <DialogFooter>
         <Button
@@ -146,7 +158,7 @@ export function AnnotationTextForm({
             // `resolve` refuses an empty string, so a mismatch would throw `DialogResultRejected` over the user's
             // document rather than doing nothing. A refused press puts the person back in the field.
             if (!usable) {
-              form.current?.querySelector<HTMLElement>('input')?.focus();
+              form.current?.querySelector<HTMLElement>('input, textarea')?.focus();
               return;
             }
             resolve({ text });

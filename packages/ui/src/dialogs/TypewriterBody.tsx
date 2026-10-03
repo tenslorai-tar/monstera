@@ -21,6 +21,7 @@ export default function TypewriterBody({
 }: DialogAnswering<AnnotationTextAnswer>): ReactElement {
   return (
     <AnnotationTextForm
+      multiline
       apply={TYPEWRITER_APPLY}
       empty={TYPEWRITER_EMPTY}
       label={TYPEWRITER_LABEL}

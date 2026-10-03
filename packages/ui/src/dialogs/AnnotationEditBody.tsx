@@ -27,6 +27,7 @@ export default function AnnotationEditBody({
 }: { readonly text: string } & DialogAnswering<AnnotationTextAnswer>): ReactElement {
   return (
     <AnnotationTextForm
+      multiline
       apply={ANNOTATION_EDIT_APPLY}
       empty={ANNOTATION_EDIT_EMPTY}
       initial={text}

@@ -25,6 +25,7 @@ export default function AnnotationReplyBody({
 }: DialogAnswering<AnnotationTextAnswer>): ReactElement {
   return (
     <AnnotationTextForm
+      multiline
       apply={ANNOTATION_REPLY_APPLY}
       empty={ANNOTATION_REPLY_EMPTY}
       label={ANNOTATION_REPLY_LABEL}

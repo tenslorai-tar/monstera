@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import AnnotationNoteBody from './AnnotationNoteBody.js';
 import { InDialog } from './inDialog.js';
+import LinkAddressBody from './LinkAddressBody.js';
 
 /**
  * The shared text form, under the rule `primitives/attempt.ts` names: what is typed being wrong is said at once, and
@@ -65,5 +66,28 @@ describe('the annotation text form', () => {
     });
     expect(screen.getByRole('alert').textContent).toBe(TOO_LONG);
     expect(screen.getByRole('button', { name: 'Add note' }).hasAttribute('disabled')).toBe(true);
+  });
+
+  it('gives a note a MULTI-LINE box, and an address one line', () => {
+    note();
+    expect(screen.getByRole('textbox', { name: 'Comment' }).tagName).toBe('TEXTAREA');
+    cleanup();
+    render(
+      <InDialog>
+        <LinkAddressBody resolve={vi.fn()} update={vi.fn()} />
+      </InDialog>,
+    );
+    expect(screen.getByRole('textbox').tagName).toBe('INPUT');
+  });
+
+  it('answers a note of SEVERAL LINES with its line breaks kept', () => {
+    const { resolve } = note();
+    act(() => {
+      fireEvent.change(screen.getByRole('textbox', { name: 'Comment' }), { target: { value: 'Check the totals.\nThen sign.' } });
+    });
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    });
+    expect(resolve).toHaveBeenCalledWith({ text: 'Check the totals.\nThen sign.' });
   });
 });

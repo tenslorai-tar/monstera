@@ -58,9 +58,9 @@ import type { FormFieldAnswer } from './formFieldResult.js';
  *
  * The alternatives were both silently lossy. **Comma-separated** makes an option
  * containing a comma unenterable, and nothing tells the person that. **One per
- * line** needs a textarea primitive §10.4 does not have, and carries the same
- * problem for a newline. A list of single-line fields is what the data is: each
- * option is its own value, and the control says so.
+ * line** in a `TextArea` carries the same problem for a newline. A list of
+ * single-line fields is what the data is: each option is its own value, and the
+ * control says so.
  *
  * An empty trailing row is normal — it is the one a person is about to type
  * into — so blanks are dropped on the way out rather than refused.

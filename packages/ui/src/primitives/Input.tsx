@@ -113,3 +113,39 @@ export function Input({
     </Field.Root>
   );
 }
+
+/**
+ * A field for text that runs to sentences — a note, a text box's words, a reply.
+ *
+ * **It grows with what is typed and then scrolls inside**: three lines to start, so it reads as a place to write
+ * rather than a one-line box (the owner's review: a note in a one-line field), and at most ten, past which it scrolls
+ * so the dialog's footer stays in the window. `field-sizing: content` is the platform's own growing box
+ * (`primitives.css`), so no script measures it.
+ *
+ * The same Base UI field as {@link Input}, so its label, its invalid state and its direction are one rule for both.
+ * Enter starts a new line, as it does in any multi-line box; the dialog's action is its button.
+ */
+export function TextArea({
+  label,
+  value,
+  onValueChange,
+  disabled = false,
+  invalid,
+  labelShownBeside = false,
+}: Pick<InputProps, 'label' | 'value' | 'onValueChange' | 'disabled' | 'invalid' | 'labelShownBeside'>): ReactElement {
+  const { _ } = useLingui();
+  return (
+    <Field.Root className="m-field m-field--text" disabled={disabled} invalid={invalid}>
+      <Field.Label className={labelShownBeside ? 'm-visually-hidden' : 'm-field__label'}>{_(label)}</Field.Label>
+      <BaseInput
+        className="m-input m-textarea"
+        dir="auto"
+        onValueChange={(next): void => {
+          onValueChange(next);
+        }}
+        render={<textarea rows={3} />}
+        value={value}
+      />
+    </Field.Root>
+  );
+}

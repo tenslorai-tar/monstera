@@ -3912,3 +3912,52 @@ describe('an annotation carries its author, its creation time and its blend', ()
     expect(appearanceBlends(stored)).toContain('/Multiply');
   });
 });
+
+/**
+ * A line break typed in a text mark's words is drawn as a line break.
+ *
+ * The dialogs that ask for a text box's, a typewriter's or a callout's words take several lines (`TextArea`), so a
+ * newline reaches `/Contents`. What this pins is the page: MuPDF's appearance for a `/FreeText` must start a new line
+ * there, rather than drawing a missing-glyph box or running the words together.
+ *
+ * READ FROM THE APPEARANCE STREAM, with pdf-lib, for this file's reason. Not the page's structured text: measured
+ * 2026-10-03, MuPDF's `toStructuredText` on the page answers no blocks for a page whose only text is an annotation's,
+ * so it would report every case here as empty.
+ */
+describe('a line break in a text mark', () => {
+  /** Each string the first annotation's appearance shows, one per `Tj` — MuPDF sets each drawn line with its own. */
+  async function drawnLines(bytes: Uint8Array): Promise<readonly string[]> {
+    const loaded = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = loaded.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    const [first] = annots instanceof PDFArray ? annots.asArray() : [];
+    const dict = first instanceof PDFRef ? loaded.context.lookup(first, PDFDict) : undefined;
+    const normal = dict?.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N'));
+    if (!(normal instanceof PDFRawStream)) throw new Error('the annotation has no normal appearance');
+    const shown = new TextDecoder().decode(decodePDFRawStream(normal).decode());
+    return [...shown.matchAll(/\(([^)]*)\)\s*Tj/gu)].map((match) => match[1] ?? '');
+  }
+
+  const draft = (type: 'text-box' | 'typewriter', text: string): AnnotationDraft => ({
+    type,
+    rect: { x0: 20, y0: 100, x1: 200, y1: 180 },
+    text,
+    colour: [0.1, 0.1, 0.1],
+    opacity: 1,
+    fontSize: 12,
+    font: 'sans',
+    direction: 'left-to-right',
+  });
+
+  for (const type of ['text-box', 'typewriter'] as const) {
+    it(`${type}: two typed lines are drawn as two lines`, async () => {
+      const lines = await drawnLines(await drawnOn(await fixture(), command({ annotation: draft(type, 'first\nsecond') })));
+      expect(lines).toStrictEqual(['first', 'second']);
+    });
+
+    it(`CONTROL ${type}: the same words with a space are drawn as one line`, async () => {
+      // Without this, a reader that split every word into its own string would pass the case above.
+      const lines = await drawnLines(await drawnOn(await fixture(), command({ annotation: draft(type, 'first second') })));
+      expect(lines).toStrictEqual(['first second']);
+    });
+  }
+});

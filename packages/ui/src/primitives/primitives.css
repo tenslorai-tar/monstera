@@ -514,6 +514,31 @@
   color: var(--faint);
 }
 
+/* A MULTI-LINE FIELD (`TextArea`): it grows with what is typed, from three lines to ten, and scrolls inside past that,
+   so a long note never pushes the dialog's footer out of the window. `field-sizing: content` is the platform's own
+   growing box; the bounds are in lines of the field's own text. */
+.m-textarea {
+  field-sizing: content;
+  inline-size: 100%;
+  min-block-size: calc(3lh + 2 * var(--space-6) + 2px);
+  max-block-size: calc(10lh + 2 * var(--space-6) + 2px);
+  overflow-y: auto;
+  resize: none;
+  font: inherit;
+  font-size: var(--font-chrome-13);
+  line-height: 1.45;
+}
+
+/* IN A DIALOG ROW, a multi-line field takes the row's whole width, under the row's name: a box to write sentences in
+   beside a 22-character label is a narrow column of three words a line. */
+.m-dialog-row__control:has(> .m-field--text) {
+  flex-basis: 100%;
+}
+
+.m-field--text {
+  flex: 1 1 auto;
+}
+
 .m-input:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;

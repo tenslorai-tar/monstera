@@ -16,6 +16,7 @@ export default function CalloutBody({
 }: DialogAnswering<AnnotationTextAnswer>): ReactElement {
   return (
     <AnnotationTextForm
+      multiline
       apply={CALLOUT_APPLY}
       empty={CALLOUT_EMPTY}
       label={CALLOUT_LABEL}
