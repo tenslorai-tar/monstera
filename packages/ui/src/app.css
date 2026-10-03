@@ -5194,8 +5194,22 @@ optgroup {
 
 .m-sign-document__kept-drawn,
 .m-sign-document__kept-picture,
+/* THE PICTURE YIELDS, THE BUTTON DOES NOT: in a half-width cell a wide picture at its own width pushed *Remove* into two
+   lines and against its edge (the gallery's reading, 2026-10-03). The choice may shrink, the picture inside it is drawn
+   at its own ratio in what is left, and the button keeps its one line. */
+.m-stamp-chooser__mine > .m-stamp-chooser__choice {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.m-stamp-chooser__mine > .m-button {
+  flex: none;
+}
+
 .m-stamp-chooser__picture {
   block-size: calc(var(--space-32) * 1.5);
+  min-inline-size: 0;
+  object-fit: contain;
   max-inline-size: 100%;
   border: 1px solid var(--border-control);
   border-radius: var(--radius-4);
