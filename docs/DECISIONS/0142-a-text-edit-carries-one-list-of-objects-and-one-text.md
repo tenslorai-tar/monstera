@@ -64,3 +64,10 @@ offers up to 45,800 on a page.
   and a person who undoes once gets half a page in each language.
 - **Keeping the nested shape and refusing above the ceiling** (ADR-0138's interim). A real page's edit fits; a
   translated paragraph past 4,096 characters did not, and that refusal blamed the provider.
+
+## Correction, 2026-10-03 — the host's bound on a page's runs is 43,400, not 45,800
+
+The 45,800 above was `ENGINE_TEXT_OBJECTS_MAX` on the day this was written. A run's style now carries its font's name,
+for the block grouping's *a change of font starts a new block* (N4), so the smallest serialised run is 192 bytes rather
+than 182 and the derived bound is 43,400. The decision is unchanged: `MAX_EDIT_RUNS` is still above it, so any page the
+read answered can still be written whole.

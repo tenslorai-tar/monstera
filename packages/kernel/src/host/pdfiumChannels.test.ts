@@ -18,7 +18,16 @@ describe('engine/text-runs’ bound', () => {
     top: 0,
     left: 0,
     right: 0,
-    style: { size: 0, colour: { r: 0, g: 0, b: 0 }, serif: true, mono: true, italic: true, bold: true, upright: true },
+    style: {
+      size: 0,
+      colour: { r: 0, g: 0, b: 0 },
+      font: '',
+      serif: true,
+      mono: true,
+      italic: true,
+      bold: true,
+      upright: true,
+    },
   };
 
   it('SMALLEST_RUN_BYTES is the smallest run the schema accepts, serialised', () => {

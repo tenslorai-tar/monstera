@@ -309,6 +309,7 @@ export {
   groupIntoBlocks,
   paragraphText,
   groupIntoLines,
+  settingOf,
 } from './textLines.js';
 // THE REFUSAL, from a module that imports nothing, so main can name it without
 // loading the engine that throws it (`signingRefusals.ts`' shape).

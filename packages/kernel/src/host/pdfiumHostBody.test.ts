@@ -121,7 +121,16 @@ const RUNS = [
     top: 238.0,
     left: 72.5,
     right: 110.25,
-    style: { size: 11, colour: { r: 12, g: 34, b: 56 }, serif: true, mono: false, italic: true, bold: false, upright: true },
+    style: {
+      size: 11,
+      colour: { r: 12, g: 34, b: 56 },
+      font: 'Georgia-Italic',
+      serif: true,
+      mono: false,
+      italic: true,
+      bold: false,
+      upright: true,
+    },
   },
   {
     index: 3,
@@ -131,7 +140,16 @@ const RUNS = [
     top: 198.0,
     left: 72.5,
     right: 104.75,
-    style: { size: 9.5, colour: { r: 200, g: 0, b: 7 }, serif: false, mono: true, italic: false, bold: true, upright: false },
+    style: {
+      size: 9.5,
+      colour: { r: 200, g: 0, b: 7 },
+      font: 'Courier-Bold',
+      serif: false,
+      mono: true,
+      italic: false,
+      bold: true,
+      upright: false,
+    },
   },
 ];
 

@@ -4192,7 +4192,7 @@ export const createFormFieldSchema = z.object({
  * How many text objects one edit may name — a PAGE's runs, written once for both text edits
  * ([ADR-0142](../../../docs/DECISIONS/0142-a-text-edit-carries-one-list-of-objects-and-one-text.md)).
  *
- * Above the PDFium host's bound on a page's runs (45,800, `ENGINE_TEXT_OBJECTS_MAX`), so a surface that offers a
+ * Above the PDFium host's bound on a page's runs (43,400, `ENGINE_TEXT_OBJECTS_MAX`), so a surface that offers a
  * person everything a page read answered can send all of it as one command — `MAX_CREATED_FIELDS`' relationship to
  * `MAX_FLAT_FIELD_CANDIDATES`. It was 512 per line, which a dense page's read could pass.
  *

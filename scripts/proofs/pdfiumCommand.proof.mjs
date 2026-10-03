@@ -61,11 +61,27 @@
  *
  * Usage: node scripts/proofs/pdfiumCommand.proof.mjs [--require-pdfium]
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { PDFDict, PDFDocument, PDFName, StandardFonts, rgb } from '@cantoo/pdf-lib';
+import {
+  PDFDict,
+  PDFDocument,
+  PDFName,
+  StandardFonts,
+  beginText,
+  concatTransformationMatrix,
+  endText,
+  popGraphicsState,
+  pushGraphicsState,
+  rgb,
+  setFillingRgbColor,
+  setFontAndSize,
+  setTextMatrix,
+  showText,
+} from '@cantoo/pdf-lib';
 
 import { PDFIUM_COMMAND, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
@@ -91,10 +107,9 @@ refuseStaleBuild(root, PDFIUM_COMMAND, 6);
 
 // EVERY EDIT BUILT THROUGH THE CONTRACT'S ONE ENCODER, as the application builds it (ADR-0142).
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
-const { openPdfium, pdfiumWriter, pageText, replaceTextObjects, textObjectIndices, textRuns } = await import(
-  '../../packages/kernel/dist/pdfiumFfi.js'
-);
-const { groupIntoBlocks } = await import('../../packages/kernel/dist/textLines.js');
+const { openPdfium, pdfiumWriter, pageText, renderPageBitmap, replaceTextObjects, textObjectIndices, textRuns } =
+  await import('../../packages/kernel/dist/pdfiumFfi.js');
+const { groupIntoBlocks, settingOf } = await import('../../packages/kernel/dist/textLines.js');
 const { localPdfiumExecution } = await import('../../packages/kernel/dist/pdfiumSpecs.js');
 const { declaredCommands } = await import('../../packages/kernel/dist/commandDeclarations.js');
 
@@ -130,7 +145,7 @@ async function threeRunsAndARectangle() {
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 61 });
+const roster = createRoster(failures, { cases: 69 });
 
 /**
  * @param {string} name
@@ -405,8 +420,10 @@ async function main() {
 
   await replaceAllCases();
   await promotionCases();
+  await nestedPromotionCases();
   await blockEditCases();
   await glyphLineCases();
+  await settingCases();
 
   process.stdout.write(
     failures.length > 0
@@ -784,8 +801,9 @@ async function aParagraphInStandardEncoding(baseFont) {
 async function blocksOf(bytes) {
   const session = await pdfiumWriter.open(bytes);
   try {
-    const { runs } = await textRuns(session, 0);
-    return { runs, blocks: groupIntoBlocks(runs) };
+    const { runs, unaddressable } = await textRuns(session, 0);
+    // EACH RUN'S SETTING by the one `settingOf`, as `composition.ts` keys it for the grouping.
+    return { runs, unaddressable, blocks: groupIntoBlocks(runs.map((run) => ({ ...run, setting: settingOf(run.style) }))) };
   } finally {
     await pdfiumWriter.close(session);
   }
@@ -853,6 +871,272 @@ async function glyphLineCases() {
     'and an edit naming that run rewrites the whole line — no glyph of the old text is left behind',
     after.includes('Drawn as one line and edited whole') && !after.includes('glyph at a time'),
     after.slice(0, 120),
+  );
+}
+
+/** The words two forms deep, the words one form deep, and the words on the page, in reading order. */
+const DEEPEST = 'DEEPEST LINE IN THE INNER FORM';
+const MIDDLE = 'MIDDLE LINE IN THE OUTER FORM';
+const AFTER_INNER = 'LAST LINE OF THE OUTER FORM';
+
+/**
+ * A page whose text is in a form INSIDE a form, placed and scaled at each level — the owner's page 1 (2026-10-02) had
+ * its text nested so, and one promotion left 597 of 2,511 characters in a form. Each level's matrix is non-identity,
+ * for {@link textInsideAForm}'s reason.
+ */
+async function textTwoFormsDeep() {
+  const inner = await PDFDocument.create();
+  const innerPage = inner.addPage([300, 60]);
+  innerPage.drawText(DEEPEST, { x: 10, y: 20, size: 12, font: await inner.embedFont(StandardFonts.Helvetica) });
+
+  const middle = await PDFDocument.create();
+  const middlePage = middle.addPage([360, 160]);
+  const middleFont = await middle.embedFont(StandardFonts.Helvetica);
+  middlePage.drawText(MIDDLE, { x: 10, y: 130, size: 12, font: middleFont });
+  const [innerForm] = await middle.embedPdf(await inner.save());
+  if (innerForm === undefined) throw new Error('embedPdf produced no page');
+  middlePage.drawPage(innerForm, { x: 20, y: 60, xScale: 1.1, yScale: 1.1 });
+  // A LINE AFTER THE INNER FORM, in the content and on the page, so the order case separates *flattened in its
+  // place* from *flattened after its siblings*: the second reads this line before the deepest one.
+  middlePage.drawText(AFTER_INNER, { x: 10, y: 20, size: 12, font: middleFont });
+
+  const outer = await PDFDocument.create();
+  const page = outer.addPage([500, 400]);
+  page.drawText(ON_THE_PAGE, { x: 30, y: 360, size: 14, font: await outer.embedFont(StandardFonts.Helvetica) });
+  const [middleForm] = await outer.embedPdf(await middle.save());
+  if (middleForm === undefined) throw new Error('embedPdf produced no page');
+  page.drawPage(middleForm, { x: 40, y: 60, xScale: 0.9, yScale: 0.9 });
+  return outer.save();
+}
+
+/** One promotion empties every form at every depth, and the page reads as it did. */
+async function nestedPromotionCases() {
+  const original = await textTwoFormsDeep();
+  const before = await blocksOf(original);
+  const textBefore = await textOf(original);
+  record(
+    'PREMISE: the nested page’s words are on it, in content order, and only the page’s own run is addressable',
+    textBefore.indexOf(MIDDLE) < textBefore.indexOf(DEEPEST) &&
+      textBefore.indexOf(DEEPEST) < textBefore.indexOf(AFTER_INNER) &&
+      textBefore.indexOf(MIDDLE) >= 0 &&
+      before.runs.length === 1 &&
+      before.unaddressable > 0,
+    `${String(before.runs.length)} addressable run(s), ${String(before.unaddressable)} character(s) no command can name`,
+  );
+
+  const promoted = await localPdfiumExecution.apply({
+    session: original,
+    command: /** @type {never} */ ({ kind: 'promoteFormObjects', page: 0 }),
+    source: undefined,
+    reads: undefined,
+  });
+  const after = await blocksOf(promoted);
+  record(
+    'ONE promotion leaves no character in a form, at any depth — every run addressable',
+    after.unaddressable === 0 && after.runs.length === 4,
+    `${String(after.runs.length)} run(s), ${String(after.unaddressable)} character(s) still unaddressable after one press`,
+  );
+  // THE WORDS, IN ORDER, with runs of whitespace as one: nested, PDFium's text page joins the inner form's last line to
+  // the outer form's next one with a space, and flattened it reports the line break they always had (measured
+  // 2026-10-03). What a flatten after the siblings would change is the ORDER, and that is what this compares.
+  const words = (/** @type {string} */ text) => text.replace(/\s+/gu, ' ').trim();
+  const textAfter = await textOf(promoted);
+  record(
+    'and the page reads as it did, in the same order — the inner form’s line between the lines around it',
+    words(textAfter) === words(textBefore),
+    `before ${JSON.stringify(textBefore)}; after ${JSON.stringify(textAfter)}`,
+  );
+}
+
+/**
+ * The owner's Part A page (2026-10-02), from its measured numbers — the document is not copied. A heading in
+ * Helvetica-Bold, filled 66, 83, 149, set with a text matrix scaled 1.5 and FLIPPED inside a flipped 0.75 CTM, so it
+ * is drawn at 11.58 × 1.5 × 0.75 = 13.03 pt; under it, set the same way at Tf 12.26 and Tm scale 1, list lines drawn at
+ * 9.195 pt in 64, 64, 64, each a Helvetica-Bold lead word and a Helvetica rest — tight enough that the gap is less
+ * than a line's height.
+ */
+const HEADING_TEXT = 'Typography spacing guide';
+const LIST_LEAD = 'Lead';
+const LIST_REST = 'words that follow the lead word';
+const HEADING_SIZE = 11.58 * 1.5 * 0.75;
+const LIST_SIZE = 12.26 * 0.75;
+
+async function headingOverList() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 400]);
+  const bold = await document.embedFont(StandardFonts.HelveticaBold);
+  const regular = await document.embedFont(StandardFonts.Helvetica);
+  const boldKey = page.node.newFontDictionary(bold.name, bold.ref);
+  const regularKey = page.node.newFontDictionary(regular.name, regular.ref);
+  /** One line, in the owner's matrices: CTM [0.75 0 0 -0.75 x y] and Tm [s 0 0 -s tx 0]. */
+  const line = (/** @type {{ font: typeof bold, key: import('@cantoo/pdf-lib').PDFName, size: number, scale: number, colour: [number, number, number], text: string, x: number, y: number, tx?: number }} */ run) => [
+    pushGraphicsState(),
+    concatTransformationMatrix(0.75, 0, 0, -0.75, run.x, run.y),
+    setFillingRgbColor(run.colour[0] / 255, run.colour[1] / 255, run.colour[2] / 255),
+    beginText(),
+    setFontAndSize(run.key, run.size),
+    setTextMatrix(run.scale, 0, 0, -run.scale, run.tx ?? 0, 0),
+    showText(run.font.encodeText(run.text)),
+    endText(),
+    popGraphicsState(),
+  ];
+  page.pushOperators(
+    ...line({ font: bold, key: boldKey, size: 11.58, scale: 1.5, colour: [66, 83, 149], text: HEADING_TEXT, x: 2, y: 360 }),
+  );
+  // 12.6 pt below each baseline: the heading's descenders to a list line's ascenders leave about 3 pt, under the
+  // 8–9 pt a list line is tall.
+  let y = 360 - 12.6;
+  for (let at = 0; at < 3; at += 1) {
+    const leadWidth = bold.widthOfTextAtSize(`${LIST_LEAD} `, 12.26);
+    page.pushOperators(
+      ...line({ font: bold, key: boldKey, size: 12.26, scale: 1, colour: [64, 64, 64], text: LIST_LEAD, x: 15.773, y }),
+      ...line({ font: regular, key: regularKey, size: 12.26, scale: 1, colour: [64, 64, 64], text: LIST_REST, x: 15.773, y, tx: leadWidth }),
+    );
+    y -= 12.3;
+  }
+  return document.save();
+}
+
+/**
+ * Two runs whose EMBEDDED programs and descriptors disagree: Liberation Sans Bold Italic under a descriptor saying
+ * weight 400, upright, named `Probe-Regular`; and Liberation Sans Regular under one saying weight 700, italic, named
+ * `Probe-BoldItalic`. The programs are `pdfjs-dist`'s, which every installed checkout carries.
+ */
+async function programsAgainstDescriptors() {
+  const fonts = resolve(dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json')), 'standard_fonts');
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 120]);
+  const context = document.context;
+  /** @param {string} file @param {string} name @param {number} weight @param {number} flags */
+  const embedded = (file, name, weight, flags) => {
+    const program = readFileSync(resolve(fonts, file));
+    const descriptor = context.register(
+      context.obj({
+        Type: 'FontDescriptor',
+        FontName: name,
+        Flags: flags,
+        FontBBox: [-200, -300, 1200, 1000],
+        ItalicAngle: 0,
+        Ascent: 900,
+        Descent: -210,
+        CapHeight: 700,
+        StemV: 80,
+        FontWeight: weight,
+        FontFile2: context.register(context.stream(program, { Length1: program.length })),
+      }),
+    );
+    return context.register(
+      context.obj({
+        Type: 'Font',
+        Subtype: 'TrueType',
+        BaseFont: name,
+        FirstChar: 32,
+        LastChar: 126,
+        Widths: Array.from({ length: 95 }, () => 556),
+        Encoding: 'WinAnsiEncoding',
+        FontDescriptor: descriptor,
+      }),
+    );
+  };
+  page.node.set(
+    PDFName.of('Resources'),
+    context.obj({
+      Font: context.obj({
+        F0: embedded('LiberationSans-BoldItalic.ttf', 'Probe-Regular', 400, 32),
+        F1: embedded('LiberationSans-Regular.ttf', 'Probe-BoldItalic', 700, 32 + 64),
+      }),
+    }),
+  );
+  page.node.set(
+    PDFName.of('Contents'),
+    context.register(context.flateStream('BT /F0 12 Tf 20 80 Td (Program says bold italic) Tj ET BT /F1 12 Tf 20 40 Td (Program says regular) Tj ET')),
+  );
+  return document.save();
+}
+
+/** Blocks break on a change of setting, and the editor's box is where the run is drawn. */
+async function settingCases() {
+  {
+    const { runs } = await blocksOf(await programsAgainstDescriptors());
+    const loud = runs.find((run) => run.text.includes('bold italic'));
+    const quiet = runs.find((run) => run.text.includes('says regular'));
+    record(
+      'an EMBEDDED program’s own face decides over its descriptor and its name, both ways',
+      loud?.style.bold === true && loud.style.italic && quiet?.style.bold === false && !quiet.style.italic,
+      `bold-italic program under a regular descriptor ${JSON.stringify(loud?.style)}; regular program under a bold-italic one ${JSON.stringify(quiet?.style)}`,
+    );
+  }
+
+  const bytes = await headingOverList();
+  const { runs, blocks } = await blocksOf(bytes);
+  const heading = runs.find((run) => run.text.includes('Typography'));
+  const rest = runs.find((run) => run.text.includes('follow'));
+  record(
+    'the runs are read at the size they are DRAWN — Tf times the text matrix times the CTM — in their own fill',
+    heading !== undefined &&
+      rest !== undefined &&
+      Math.abs(heading.style.size - HEADING_SIZE) < 0.01 &&
+      Math.abs(rest.style.size - LIST_SIZE) < 0.01 &&
+      heading.style.colour.r === 66 && heading.style.colour.g === 83 && heading.style.colour.b === 149 &&
+      rest.style.colour.r === 64 && rest.style.colour.g === 64 && rest.style.colour.b === 64,
+    `heading ${String(heading?.style.size)} ${JSON.stringify(heading?.style.colour)}; list ${String(rest?.style.size)} ${JSON.stringify(rest?.style.colour)}`,
+  );
+
+  // THE CONTROL FIRST: grouped by the gap alone — every run set alike — the heading and the list are one block,
+  // so the page really does hold the shape that fooled the old rule.
+  const alike = groupIntoBlocks(runs.map((run) => ({ ...run, setting: 'one' })));
+  const headingBlock = blocks.find((block) => block.lines.some((line) => line.runs.some((run) => run.text.includes('Typography'))));
+  const listBlock = blocks.find((block) => block.lines.some((line) => line.runs.some((run) => run.text.includes('follow'))));
+  record(
+    'CONTROL: by the gap alone the heading and the list lines are ONE block, set as the heading',
+    alike.length === 1 && Math.abs((alike[0]?.style.size ?? 0) - HEADING_SIZE) < 0.01,
+    `${String(alike.length)} block(s) of ${JSON.stringify(alike.map((block) => block.lines.length))} line(s)`,
+  );
+  record(
+    'by setting they are TWO blocks, each opening in its own size and colour — the list in its rest, not its lead word',
+    blocks.length === 2 &&
+      headingBlock !== listBlock &&
+      headingBlock?.lines.length === 1 &&
+      listBlock?.lines.length === 3 &&
+      Math.abs((headingBlock?.style.size ?? 0) - HEADING_SIZE) < 0.01 &&
+      headingBlock?.style.colour.b === 149 &&
+      Math.abs((listBlock?.style.size ?? 0) - LIST_SIZE) < 0.01 &&
+      listBlock?.style.colour.r === 64 &&
+      listBlock?.style.bold === false,
+    `${String(blocks.length)} block(s): ${JSON.stringify(blocks.map((block) => [block.lines.length, Math.round(block.style.size * 100) / 100, block.style.bold]))}`,
+  );
+
+  // THE EDITOR'S BOX IS THE RUN'S INK: the heading block's box, read from the engine's character boxes, against
+  // where the heading's own colour is painted on a raster of the page — 4 px per point.
+  const session = await pdfiumWriter.open(bytes);
+  let ink = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+  try {
+    const scale = 4;
+    const bitmap = await renderPageBitmap(session, 0, 400 * scale, 400 * scale);
+    for (let row = 0; row < bitmap.height; row += 1) {
+      for (let column = 0; column < bitmap.width; column += 1) {
+        const at = (row * bitmap.width + column) * 4;
+        // BGRA. The heading's blue, within antialiasing's reach: blue well above red, and red well below white.
+        const b = bitmap.bgra[at] ?? 255;
+        const r = bitmap.bgra[at + 2] ?? 255;
+        if (b - r > 40 && r < 160) {
+          const x = column / scale;
+          const y = 400 - row / scale;
+          ink = { x0: Math.min(ink.x0, x), y0: Math.min(ink.y0, y), x1: Math.max(ink.x1, x), y1: Math.max(ink.y1, y) };
+        }
+      }
+    }
+  } finally {
+    await pdfiumWriter.close(session);
+  }
+  const box = headingBlock?.box;
+  record(
+    'the heading block’s box is where its ink is: every blue pixel inside it, and the ink filling most of its height',
+    box !== undefined &&
+      Number.isFinite(ink.x0) &&
+      ink.x0 >= box.x0 - 0.5 && ink.x1 <= box.x1 + 0.5 && ink.y0 >= box.y0 - 0.5 && ink.y1 <= box.y1 + 0.5 &&
+      ink.y1 - ink.y0 >= 0.8 * (box.y1 - box.y0),
+    `box ${JSON.stringify(box)}; ink ${JSON.stringify(ink)}`,
   );
 }
 

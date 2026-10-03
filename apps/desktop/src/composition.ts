@@ -96,6 +96,7 @@ import {
   createRemoteSessions,
   engineChannels,
   groupIntoBlocks,
+  settingOf,
   hostedPdfLibExecution,
   nodeFileSurface,
   readFileIdentity,
@@ -1284,6 +1285,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         blocks: groupIntoBlocks(
           upright.map((run) => ({
             ...run,
+            // THE FONT CROSSES NO FURTHER: it is read for the grouping's change of setting and left here.
+            setting: settingOf(run.style),
             style: {
               size: run.style.size,
               colour: run.style.colour,
