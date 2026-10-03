@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
 import { messageKey } from '@monstera/shared';
-import { render as renderBare, screen, waitFor } from '@testing-library/react';
+import { act, render as renderBare, screen, waitFor } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -102,6 +102,43 @@ describe('Dialog', () => {
     }
     await waitFor(() => {
       expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+  });
+
+  it('opens ON ITS FIRST TEXT FIELD when its body has one, in the commit that opens it', () => {
+    // A text box, a typewriter and a note opened with focus on the popup, so typing went nowhere (the owner's review).
+    render(
+      <Dialog closeLabel={CLOSE} onOpenChange={vi.fn()} open title={TITLE}>
+        <input aria-label="first" type="checkbox" />
+        <input aria-label="words" type="text" />
+      </Dialog>,
+    );
+    // NOT AFTER A FRAME: read synchronously after the render, where Base UI's own initial focus would come later.
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('words');
+  });
+
+  it('LEAVES FOCUS WHERE THE PERSON PUT IT when the dialog renders again', () => {
+    // The opening focus is a ref callback, and one whose identity changed would run on every render, pulling focus back
+    // to the first field from the second while the person typed there.
+    const dialog = (key: string): ReactElement => (
+      <Dialog closeLabel={CLOSE} onOpenChange={() => undefined} open title={TITLE}>
+        <input aria-label="first" data-render={key} type="text" />
+        <input aria-label="second" type="text" />
+      </Dialog>
+    );
+    const { rerender } = render(dialog('one'));
+    act(() => {
+      screen.getByRole('textbox', { name: 'second' }).focus();
+    });
+    rerender(dialog('two'));
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('second');
+  });
+
+  it('CONTROL: a dialog with no text field opens on the popup, not on its Close button', async () => {
+    render(<Harness />);
+    const dialog = screen.getByRole('dialog', { name: 'Rename document' });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(dialog);
     });
   });
 

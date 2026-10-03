@@ -2,7 +2,15 @@ import { useLingui } from '@lingui/react';
 import { Dialog as BaseDialog } from '@base-ui/react/dialog';
 import type { MessageKey } from '@monstera/shared';
 import { X } from 'lucide-react';
-import { type ReactElement, type ReactNode, type RefObject, useId, useLayoutEffect, useRef } from 'react';
+import {
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useId,
+  useLayoutEffect,
+  useRef,
+} from 'react';
 
 import { CLOSE_LABEL, DIALOG_CANCEL, DIALOG_OK } from '../messages/en.js';
 import { Button } from './Button.js';
@@ -26,7 +34,10 @@ import { IconButton } from './IconButton.js';
  * clickable behind one invites an edit the dialog is mid-way through deciding
  * about.
  *
- * ## Focus opens ON THE DIALOG, not on its first control
+ * ## Focus opens ON THE DIALOG, not on its first control — unless the dialog asks for words
+ *
+ * A dialog whose body holds a text field opens on that field (`firstFieldIn`), because it was opened to be typed
+ * into. Every other dialog opens on the popup itself, for the reason that follows.
  *
  * Base UI's default initial focus is the popup's first tabbable element
  * (`dialog/popup/DialogPopup.js`, 1.7.0), which here is the header's Close icon
@@ -78,15 +89,31 @@ export interface DialogProps {
   /** The accessible name of the close control — an action, e.g. "Close". */
   closeLabel: MessageKey;
   /**
-   * Where focus lands when the dialog opens; the popup itself when omitted.
+   * Where focus lands when the dialog opens. When omitted, the body's first text field, or the popup itself where the
+   * body has none (`firstFieldIn`, and the tooltip reason above).
    *
-   * A dialog whose whole purpose is a field — the command palette — takes the field, because the chord that opened it
-   * says the person is about to type. Every other dialog keeps the popup, for the tooltip reason above.
+   * Given by a dialog that is not a body of the pattern — the command palette names its query field.
    */
   initialFocus?: RefObject<HTMLElement | null>;
   /** A second class on the popup, for a dialog placed differently from the centred default. */
   popupClassName?: string;
   children: ReactNode;
+}
+
+/**
+ * The first field a person types into in a dialog's body, or `null` when it has none.
+ *
+ * A dialog that asks for words is opened to be typed into — a text box drawn, a note placed, a password asked for —
+ * so focus opens there (the owner's review: a text box, a typewriter and a note opened with typing going nowhere). A
+ * dialog with no such field keeps the popup, for the tooltip reason above: the header's Close is a tooltip trigger,
+ * and a field is not. Choices, ticks and lists are not fields here, because a key pressed on one changes it.
+ */
+function firstFieldIn(popup: HTMLElement | null): HTMLElement | null {
+  return (
+    popup?.querySelector<HTMLElement>(
+      '.m-dialog__body :is(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="button"]):not([type="file"]):not(:disabled), textarea:not(:disabled), [contenteditable="true"], [contenteditable="plaintext-only"])',
+    ) ?? null
+  );
 }
 
 export function Dialog({
@@ -104,6 +131,18 @@ export function Dialog({
   // `IconButton` to accept one, which is the prop type this commit removes.
   const { _ } = useLingui();
   const popup = useRef<HTMLDivElement>(null);
+  // FOCUSED AS THE POPUP ATTACHES, in the commit that opens it: Base UI's `initialFocus` moves focus a frame later, and
+  // keys typed in that frame went to the page (the palette's measurement, 12 of 20 openings). A ref callback runs after
+  // the popup's descendants are attached, so the body's field is there to take it. STABLE, because React calls a ref
+  // callback whose identity changed again on every render, and each call would pull focus back to the first field
+  // from wherever the person had moved it.
+  const attachPopup = useCallback(
+    (element: HTMLDivElement | null): void => {
+      popup.current = element;
+      if (element !== null && initialFocus === undefined) firstFieldIn(element)?.focus();
+    },
+    [initialFocus],
+  );
   // WHETHER A PRESS HAS BEGUN SINCE THE DIALOG OPENED, from a capturing listener attached in the commit that opens
   // it — before any later input event can be dispatched. `onOpenChange` below reads it.
   const pressedWhileOpen = useRef(false);
@@ -137,8 +176,8 @@ export function Dialog({
         <BaseDialog.Backdrop className="m-dialog__backdrop" />
         <BaseDialog.Popup
           className={popupClassName === undefined ? 'm-dialog' : `m-dialog ${popupClassName}`}
-          initialFocus={initialFocus ?? popup}
-          ref={popup}
+          initialFocus={initialFocus ?? (() => firstFieldIn(popup.current) ?? popup.current)}
+          ref={attachPopup}
         >
           <div className="m-dialog__header">
             <BaseDialog.Title className="m-dialog__title">{_(title)}</BaseDialog.Title>
