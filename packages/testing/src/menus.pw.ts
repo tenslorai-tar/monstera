@@ -234,6 +234,70 @@ test('a press on the OPEN menu’s title closes it; Esc closes it; and hover swi
   await expect(popup).toBeHidden();
 });
 
+// THE MENU ROW NEVER CLOSES A MENU BY ITSELF (the owner's recording of 0.1.10.0: the open menu vanished as the pointer
+// moved along the titles, and a click on a title opened its menu and shut it again). Both are driven the way a hand
+// moves — `menuRowClose.ts` has the two mechanisms — and both reproduce in Chromium, so they are cases here. The pointer
+// goes from one title's centre to the next in one move, which is what a hand crossing a 2 px gap looks like to the page.
+
+/** Each title's centre, in the row's order. */
+async function titleCentres(page: Page): Promise<{ id: string; x: number; y: number }[]> {
+  return page.locator('.m-menu-bar__trigger').evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const box = node.getBoundingClientRect();
+      return { id: node.getAttribute('data-menu') ?? '', x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    }),
+  );
+}
+
+/** Which menu is open now, by its title: the one whose title carries Base UI's open mark. */
+function openMenu(page: Page): Promise<string | null> {
+  return page.evaluate(() => document.querySelector('.m-menu-bar__trigger[data-popup-open]')?.getAttribute('data-menu') ?? null);
+}
+
+/** Clicks File and moves the pointer across every title after it, noting which menu is open at each, settled. */
+async function sweepRow(page: Page): Promise<string[]> {
+  const titles = await titleCentres(page);
+  if (titles.length < 4) throw new Error(`the row draws ${String(titles.length)} titles: a broken read, not a short row`);
+  const [first, ...rest] = titles;
+  if (first === undefined) throw new Error('the row has a first title');
+  await page.mouse.click(first.x, first.y);
+  await expect.poll(() => openMenu(page)).toBe(first.id);
+  const seen: string[] = [];
+  for (const title of rest) {
+    await page.mouse.move(title.x, title.y);
+    await page.waitForTimeout(250);
+    seen.push(`${title.id}:${String(await openMenu(page))}`);
+  }
+  return seen;
+}
+
+test('moving along the row with a menu open opens EACH title’s menu in turn, and none closes on the way', async ({ page }) => {
+  await openDocument(page);
+  const titles = await titleCentres(page);
+  // EXPECTED: at every title, that title's menu is the one open. Before the fix the menu one or two titles along closed
+  // on `focus-out`, as the menu it replaced pulled the focus back to its own title, and every later entry read `null`.
+  const seen = await sweepRow(page);
+  expect(seen).toStrictEqual(titles.slice(1).map((title) => `${title.id}:${title.id}`));
+});
+
+test('after a sweep along the row, a CLICK on a title opens its menu and it STAYS open on the release', async ({ page }) => {
+  await openDocument(page);
+  // THE SWEEP LEAVES Base UI's once-only `mouseup` listener behind on every title whose menu opened on hover, which is
+  // the state the flicker needs; the case asserts the sweep did open those menus, or it would hold none.
+  const swept = await sweepRow(page);
+  expect(swept.filter((entry) => entry.split(':')[0] === entry.split(':')[1]).length).toBeGreaterThan(1);
+  await page.keyboard.press('Escape');
+  await expect.poll(() => openMenu(page)).toBeNull();
+  const [file] = await titleCentres(page);
+  if (file === undefined) throw new Error('the row has a first title');
+  await page.mouse.move(file.x, file.y);
+  await page.mouse.down();
+  await expect.poll(() => openMenu(page)).toBe(file.id);
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  expect(await openMenu(page)).toBe(file.id);
+});
+
 // EVERY MENU, EVERY ITEM (the owner's review of 0.1.8.0: the menus listed text only): each item draws a glyph in the
 // one icon column, so every title starts at the same edge, and the menu fits the window — the View menu ran 74 px past
 // a 1280 × 800 window while each item drew 38 px for v5's 30, and its last items could not be reached.

@@ -29,6 +29,7 @@ import { Icon } from '../primitives/Icon.js';
 import type { IconName } from '../primitives/icons.js';
 import type { CommandContext, CommandRegistry, UiCommand } from '../registries/commands.js';
 import type { MenuBarSubmenu } from '../registries/placement.js';
+import { GIVES_FOCUS_BACK, cancelsAnotherMenu } from './menuRowClose.js';
 import { LABELLED, type RowFit, nextRowFit } from './menuRowFit.js';
 import {
   type MenuBarCommandEntry,
@@ -115,7 +116,8 @@ const MENU_TITLES: Readonly<Record<MenuBarMenuModel['id'], MessageKey>> = {
  *
  * The Windows convention: F10, or Alt pressed and released with no other key between, moves the focus to the first
  * menu; the menubar pattern takes over from there (arrow keys, Enter, Escape). Escape from the bar returns the focus
- * to where it was, which `focusBefore` also gives a closing menu, so *Cut* in a text field cuts in that field.
+ * to where it was, which `focusBefore` also gives a menu whose close ends the bar's use, so *Cut* in a text field cuts
+ * in that field. A menu closed because the person went elsewhere leaves the focus there (`menuRowClose.ts`).
  */
 export function MenuBar({
   registry,
@@ -145,6 +147,8 @@ export function MenuBar({
   const reserve = useRef<HTMLDivElement | null>(null);
   const [fit, setFit] = useState<RowFit>(LABELLED);
   const hasButtons = buttons.length > 0;
+  // WHY EACH ROW MENU LAST CLOSED, as Base UI reported it, keyed by the menu's id.
+  const closedFor = useRef(new Map<string, Menu.Root.ChangeEventReason>());
 
   // THE ROW'S SLACK, measured whenever any of its parts changes width — a window resize, a language, a button
   // appearing. Its width less its padding, the three parts as drawn, and the two gaps between them.
@@ -370,6 +374,25 @@ export function MenuBar({
     );
   };
 
+  /**
+   * A row menu closing (`menuRowClose.ts`): refused when the close was raised for another menu of the row, else its
+   * reason kept for its popup's `finalFocus`, which reads it as the popup lets the focus go — after the close is
+   * reported.
+   */
+  const closing = (id: string, details: Menu.Root.ChangeEventDetails): void => {
+    if (cancelsAnotherMenu(details)) {
+      details.cancel();
+      return;
+    }
+    closedFor.current.set(id, details.reason);
+  };
+
+  /** Where a row menu leaves the focus as it closes: given back only when the close ends the bar's use. */
+  const focusOnClose =
+    (id: string) =>
+    (): HTMLElement | boolean =>
+      GIVES_FOCUS_BACK[closedFor.current.get(id) ?? 'none'] ? (focusBefore() ?? true) : false;
+
   /** The submenus a menu holds, whose values are read as it opens. */
   const submenusIn = (menu: MenuBarMenuModel): readonly MenuBarSubmenu[] =>
     menu.groups.flatMap((group) => group.items.flatMap((each) => (each.kind === 'submenu' ? [each.id] : [])));
@@ -383,8 +406,11 @@ export function MenuBar({
           {menus.map((menu) => (
             <Menu.Root
               key={menu.id}
-              onOpenChange={(open) => {
-                if (!open) return;
+              onOpenChange={(open, details) => {
+                if (!open) {
+                  closing(menu.id, details);
+                  return;
+                }
                 setOpened((count) => count + 1);
                 // ASKED AS THE MENU OPENS, so the answer is in by the time the pointer or the arrow key reaches the
                 // submenu. A failed read leaves the last answer, and before any, no values at all — never a list
@@ -397,7 +423,7 @@ export function MenuBar({
               </Menu.Trigger>
               <Menu.Portal>
                 <Menu.Positioner side="bottom" align="start" sideOffset={2}>
-                  <Menu.Popup className="m-context-menu m-menu-bar__popup" finalFocus={() => focusBefore() ?? true}>
+                  <Menu.Popup className="m-context-menu m-menu-bar__popup" finalFocus={focusOnClose(menu.id)}>
                     {menu.groups.map((group, index) => (
                       <Fragment key={`${String(index)}:${group.caption ?? ''}`}>
                         {index === 0 ? null : <Menu.Separator className="m-context-menu-separator" />}
