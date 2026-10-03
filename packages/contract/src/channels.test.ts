@@ -99,18 +99,19 @@ const handlers: ContractHandlers = {
             // BOTH HALVES SET, for this fixture's reason: `null` in either is what a boundary that dropped it produces.
             location: displayLocationSchema.parse({ within: 'documents', folder: 'Leases' }),
             openedAt: '2026-09-25T08:00:00.000Z',
-            // `false`, the unusual state (ADR-0143): an entry listed and not there.
-            available: false,
+            // `unavailable`, an unusual state (ADR-0143): an entry listed and not there.
+            availability: 'unavailable',
           },
         ],
         lastExitClean: false,
         // TWO ENTRIES, and neither is the newest recent one. That is the whole
         // point of recording a session rather than inferring it: a fixture
         // where the session is the head of the recent list cannot tell a
-        // boundary that carries this field from one that rebuilt it.
+        // boundary that carries this field from one that rebuilt it. Each in a
+        // state the other is not, so a boundary that dropped or swapped them fails.
         lastSession: [
-          { handle: asFileHandle('handle-7'), name: 'draft.pdf' },
-          { handle: asFileHandle('handle-8'), name: 'notes.pdf' },
+          { handle: asFileHandle('handle-7'), name: 'draft.pdf', availability: 'checking' },
+          { handle: asFileHandle('handle-8'), name: 'notes.pdf', availability: 'available' },
         ],
       }),
     ),

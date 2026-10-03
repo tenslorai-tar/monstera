@@ -4,10 +4,11 @@ import type { FileHandle } from '@monstera/shared';
 import { type ReactElement, useEffect, useId, useState } from 'react';
 
 import type { RecentOpenOutcome } from './commands/openDocument.js';
-import { type Translate, recentLine, recentWhere } from './recentLine.js';
+import { RECENT_RECHECK_MS, type Translate, recentLine, recentWhere } from './recentLine.js';
 import { Button } from './primitives/Button.js';
 import {
-  RECENT_CLEAR,
+  CLEAR_RECENT_TITLE,
+  RECENT_CHECKING,
   RECENT_EMPTY,
   RECENT_HEADING,
   RECENT_LABEL,
@@ -15,6 +16,8 @@ import {
   RECENT_PLACEHOLDER,
   RECENT_UNAVAILABLE,
   RECENT_UNAVAILABLE_AT,
+  RECOVER_ALL_MISSING,
+  RECOVER_CHECKING,
   RECOVER_LABEL,
   RECOVER_OFFER,
 } from './messages/en.js';
@@ -82,9 +85,20 @@ export function RecentFiles({
 
   useEffect(() => {
     let cancelled = false;
+    let again: ReturnType<typeof setTimeout> | undefined;
     void client['document.recent']({}).then(
       (answer) => {
         if (cancelled || !answer.ok) return;
+        // A FILE STILL BEING LOOKED FOR is asked about again, until main has an answer for every one (cloud-4 7d). Main
+        // keeps an answer that lands between two asks for the next ask, so one slower than every wait still arrives.
+        const checking = [...answer.value.entries, ...answer.value.lastSession].some(
+          (entry) => entry.availability === 'checking',
+        );
+        if (checking) {
+          again = setTimeout(() => {
+            setReads((count) => count + 1);
+          }, RECENT_RECHECK_MS);
+        }
         setState((current) => ({
           kind: 'listed',
           entries: answer.value.entries,
@@ -102,6 +116,7 @@ export function RecentFiles({
     );
     return (): void => {
       cancelled = true;
+      clearTimeout(again);
     };
   }, [client, reads]);
 
@@ -131,26 +146,40 @@ export function RecentFiles({
           newest recent entry WAS what was on screen; multi-document tabs ended
           that correspondence, and a reader with three documents open would
           have been offered the last one they touched and told nothing about
-          the other two. `lastSession` is what main recorded, and it is empty
-          after a clean exit — so this condition is *the run died* AND *there
-          was something on screen when it did*. */}
+          the other two. `lastSession` is what main recorded, and main keeps it
+          after a clean exit too, for restoring the session — so this condition
+          is *the run died* AND *there was something on screen when it did*.
+
+          A FILE THAT HAS GONE IS NOT OFFERED (cloud-4 7c): the offer names
+          what can be reopened, a file still being looked for is shown as such
+          until main answers, and when every one has gone the offer says so
+          rather than listing buttons that cannot work. */}
       {!state.lastExitClean && state.session.length > 0 ? (
         <div className="m-recent-recover">
-          <p>{_(RECOVER_OFFER)}</p>
-          <ul className="m-recover-list">
-            {state.session.map((entry) => (
-              <li key={entry.handle}>
-                <Button
-                  label={RECOVER_LABEL}
-                  values={{ name: entry.name }}
-                  variant="primary"
-                  onClick={() => {
-                    void open(entry.handle);
-                  }}
-                />
-              </li>
-            ))}
-          </ul>
+          {state.session.every((entry) => entry.availability === 'unavailable') ? (
+            <p>{_(RECOVER_ALL_MISSING)}</p>
+          ) : (
+            <>
+              <p>{_(RECOVER_OFFER)}</p>
+              <ul className="m-recover-list">
+                {state.session
+                  .filter((entry) => entry.availability !== 'unavailable')
+                  .map((entry) => (
+                    <li key={entry.handle}>
+                      <Button
+                        label={entry.availability === 'checking' ? RECOVER_CHECKING : RECOVER_LABEL}
+                        values={{ name: entry.name }}
+                        variant="primary"
+                        disabled={entry.availability === 'checking'}
+                        onClick={() => {
+                          void open(entry.handle);
+                        }}
+                      />
+                    </li>
+                  ))}
+              </ul>
+            </>
+          )}
         </div>
       ) : null}
       {state.missing ? <p className="m-recent-problem">{_(RECENT_MISSING)}</p> : null}
@@ -173,7 +202,7 @@ export function RecentFiles({
               );
             }}
           >
-            {_(RECENT_CLEAR)}
+            {_(CLEAR_RECENT_TITLE)}
           </button>
         </div>
       )}
@@ -205,10 +234,7 @@ export function RecentFiles({
 }
 
 /** One row, as the contract carries it. */
-interface RecentRow {
-  readonly handle: FileHandle;
-  readonly name: string;
-}
+type RecentRow = ChannelResult<'document.recent'>['lastSession'][number];
 
 /** An entry of the list, as `document.recent` answers it. */
 type ListedRow = ChannelResult<'document.recent'>['entries'][number];
@@ -234,13 +260,17 @@ function RecentCard({
   const lineId = useId();
   const translate: Translate = (key, values) => _(key, values);
   // A FILE THAT IS NOT THERE NOW says so in place of when it was opened, beside where it was (ADR-0143) — listed, and
-  // never offered as one that opens.
-  const where = entry.available ? null : recentWhere(entry.location, translate);
-  const line = entry.available
-    ? recentLine(entry, new Date(), i18n.locale, translate)
-    : where === null
-      ? _(RECENT_UNAVAILABLE)
-      : _(RECENT_UNAVAILABLE_AT, { where });
+  // never offered as one that opens. One STILL BEING LOOKED FOR says that, and is not offered either until main answers.
+  const opens = entry.availability === 'available';
+  const where = entry.availability === 'unavailable' ? recentWhere(entry.location, translate) : null;
+  const line =
+    entry.availability === 'available'
+      ? recentLine(entry, new Date(), i18n.locale, translate)
+      : entry.availability === 'checking'
+        ? _(RECENT_CHECKING)
+        : where === null
+          ? _(RECENT_UNAVAILABLE)
+          : _(RECENT_UNAVAILABLE_AT, { where });
   const picture = usePicture(client, entry.handle);
   return (
     <button
@@ -250,9 +280,10 @@ function RecentCard({
       aria-describedby={line === null ? undefined : lineId}
       // DISABLED AND STILL FOCUSABLE: `aria-disabled` rather than `disabled`, so a keyboard reaches the card and hears
       // its state rather than skipping a file it was never told about.
-      aria-disabled={entry.available ? undefined : true}
-      data-unavailable={entry.available ? undefined : 'true'}
-      onClick={entry.available ? onOpen : undefined}
+      aria-disabled={opens ? undefined : true}
+      data-unavailable={entry.availability === 'unavailable' ? 'true' : undefined}
+      data-checking={entry.availability === 'checking' ? 'true' : undefined}
+      onClick={opens ? onOpen : undefined}
     >
       {/* THE PICTURE IS DECORATIVE: the card is named by the file, and a picture of a page says nothing a
           screen reader should read out. With none, the page's shape and its type, as a file icon shows. */}

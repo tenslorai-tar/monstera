@@ -1150,19 +1150,20 @@ optgroup {
 /* A FILE THAT IS NOT THERE NOW (ADR-0143): listed, focusable and saying so in its line, and drawn as a disabled
    control — no pointer, no hover fill, the name in the muted text a disabled menu item takes, the kept picture
    faded. Focus still fills it, so a keyboard sees where it is. */
-.m-recent-item[data-unavailable='true'] {
+/* One STILL BEING LOOKED FOR is drawn the same way until main answers: it is not offered as one that opens either. */
+.m-recent-item:is([data-unavailable='true'], [data-checking='true']) {
   cursor: default;
 }
 
-.m-recent-item[data-unavailable='true']:hover:not(:focus-visible) {
+.m-recent-item:is([data-unavailable='true'], [data-checking='true']):hover:not(:focus-visible) {
   background: var(--bg);
 }
 
-.m-recent-item[data-unavailable='true'] .m-recent-item__name {
+.m-recent-item:is([data-unavailable='true'], [data-checking='true']) .m-recent-item__name {
   color: var(--muted);
 }
 
-.m-recent-item[data-unavailable='true'] .m-recent-item__picture {
+.m-recent-item:is([data-unavailable='true'], [data-checking='true']) .m-recent-item__picture {
   opacity: 0.45;
 }
 

@@ -40,6 +40,9 @@ export {
   // this file's comment and nothing else, which is what the audit of
   // `87540a5..HEAD` found it to be.
   MAX_RECENT_ENTRIES,
+  RECENT_AVAILABILITY,
+  type RecentAvailability,
+  RECENT_CHECK_CAP_MS,
   // PART F's BACKUP COPIES, one table for the setting and `main`'s save.
   BACKUP_COPIES,
   type BackupCopies,

@@ -893,6 +893,24 @@ export type DisplayLocation = z.infer<typeof displayLocationSchema>;
 export const MAX_RECENT_ENTRIES = 10;
 
 /**
+ * Whether a recent file is there now: found, not found, or still being looked for when the list was due. ONE ENUM, not
+ * two booleans, so a file both found and still being looked for cannot be said (B5).
+ */
+export const RECENT_AVAILABILITY = ['available', 'unavailable', 'checking'] as const;
+
+/** One of {@link RECENT_AVAILABILITY}. */
+export type RecentAvailability = (typeof RECENT_AVAILABILITY)[number];
+
+const recentAvailabilitySchema = z.enum(RECENT_AVAILABILITY);
+
+/**
+ * How long main waits for the recent files' checks before it answers the list, in milliseconds: the owner's *"the list
+ * shows at once"*. Each check is a `stat` and a `realpath`, which answer in well under a millisecond on a local disk
+ * and can wait the operating system's own timeout on a network drive that has gone; one past this answers `checking`.
+ */
+export const RECENT_CHECK_CAP_MS = 200;
+
+/**
  * How many documents a recorded SESSION carries — what was open when a run ended, for the crash offer and
  * `viewing.restore-session`.
  *
@@ -1803,10 +1821,12 @@ export const channels = {
             openedAt: annotationInstantSchema.nullable(),
             /**
              * Whether the file is there NOW, read by main as the list is asked for — by `readFileIdentity`, the rule
-             * an open answers `absent` by, so the list and the open agree (ADR-0143). `false` is listed and drawn
-             * disabled, never dropped: a file on a drive that is not connected is back when the drive is.
+             * an open answers `absent` by, so the list and the open agree (ADR-0143). `unavailable` is listed and
+             * drawn disabled, never dropped: a file on a drive that is not connected is back when the drive is.
+             * `checking` is a file whose check had not answered when the list was due (`RECENT_CHECK_CAP_MS`), so the
+             * list shows at once and a view asks again until it resolves.
              */
-            available: z.boolean(),
+            availability: recentAvailabilitySchema,
           }),
         )
         .max(MAX_RECENT_ENTRIES)
@@ -1842,6 +1862,8 @@ export const channels = {
           z.object({
             handle: fileHandleSchema,
             name: z.string().max(MAX_DOCUMENT_NAME_LENGTH),
+            /** The list's own reading, so the offer after a crash names no file that has gone. */
+            availability: recentAvailabilitySchema,
           }),
         )
         .max(MAX_SESSION_ENTRIES)

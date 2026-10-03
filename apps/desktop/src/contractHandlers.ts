@@ -27,6 +27,8 @@ import {
   MAX_EDIT_TEXT,
   blockEditOf,
   MAX_SETTINGS_FILE_BYTES,
+  RECENT_CHECK_CAP_MS,
+  type RecentAvailability,
   SECRET_SETTING_IDS,
   TRANSLATION_LANGUAGES,
   type ChannelResult,
@@ -3119,33 +3121,78 @@ function recentHandler(deps: {
       return false;
     }
   };
+
+  /**
+   * THE CHECKS STILL OWED AN ASK, one per path. A check still running is shared by every read that arrives while it
+   * runs, so a network drive that has gone costs one `stat` and not one per read. A check that answers is the answer to
+   * the reads that were waiting on it and to the FIRST read after it lands, and is then dropped — so nothing is stored
+   * past the question it answers, the next read asks the disk again (ADR-0143: *read at each ask*), and a check slower
+   * than every read's wait still reaches the view that keeps asking.
+   */
+  interface Check {
+    done: Promise<boolean>;
+    answer: boolean | null;
+  }
+  const checks = new Map<string, Check>();
+  const checkOf = (path: string): Check => {
+    const held = checks.get(path);
+    if (held !== undefined) return held;
+    // THE ANSWER IS RECORDED INSIDE THE PROMISE every read awaits, so a read that saw it settle reads it recorded.
+    const fresh: Check = { done: Promise.resolve(false), answer: null };
+    fresh.done = available(path).then((value) => {
+      fresh.answer = value;
+      return value;
+    });
+    checks.set(path, fresh);
+    return fresh;
+  };
+  /** What a check says to this read; an answered one is dropped here, having answered. */
+  const readOf = (path: string, check: Check): RecentAvailability => {
+    if (check.answer === null) return 'checking';
+    if (checks.get(path) === check) checks.delete(path);
+    return check.answer ? 'available' : 'unavailable';
+  };
   return async () => {
     const listed = deps.recent.list();
+    const session = deps.recent.lastSession();
     // ALL AT ONCE, off the event loop: each is a `stat` and a `realpath` on the thread pool, so ten entries cost the
-    // slowest one rather than the sum. Read NOW, as the list is asked for, and never stored — a file comes and goes.
-    const present = await Promise.all(listed.map((entry) => available(entry.path)));
+    // slowest one rather than the sum — and that slowest one is waited for at most RECENT_CHECK_CAP_MS, so the list
+    // shows at once and a file still being looked for says `checking` (the owner's answer, cloud-4 7d).
+    // EACH ENTRY PAIRED WITH ITS CHECK, so the answer read back is the one asked for that entry. A file in both lists
+    // shares one check, and each list reads it from the object it holds.
+    const entries = listed.map((entry) => ({ entry, check: checkOf(entry.path) }));
+    const sessions = session.map((entry) => ({ entry, check: checkOf(entry.path) }));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      Promise.all([...entries, ...sessions].map(({ check }) => check.done)),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, RECENT_CHECK_CAP_MS);
+      }),
+    ]);
+    clearTimeout(timer);
     return ok({
       // MINTED HERE, not stored. `mint` is idempotent per path, so the handle
       // an entry carries is the same one that document would have if opened —
       // and minting at the boundary rather than persisting the token means a
       // list written by a previous run cannot carry a capability into this
       // one.
-      entries: listed.map((entry, at) => ({
+      entries: entries.map(({ entry, check }) => ({
         handle: deps.capabilities.mint(entry.path),
         name: entry.name,
         // DERIVED HERE, from the path that never crosses: a known folder and one folder's name (ADR-0100).
         location: displayLocationOf(entry.path, deps.recentRoots),
         openedAt: entry.openedAt,
-        available: present[at] === true,
+        availability: readOf(entry.path, check),
       })),
       lastExitClean: deps.recent.lastExitClean(),
       // THE SAME MINTING, for the same reason. These entries are paths the
       // previous run recorded as open; a handle minted here is one this run
       // can resolve, and a token persisted across runs would be a capability
       // surviving the process that granted it.
-      lastSession: deps.recent.lastSession().map((entry) => ({
+      lastSession: sessions.map(({ entry, check }) => ({
         handle: deps.capabilities.mint(entry.path),
         name: entry.name,
+        availability: readOf(entry.path, check),
       })),
     });
   };

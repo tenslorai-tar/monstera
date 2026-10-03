@@ -8,6 +8,7 @@ import {
   MAX_OFFICE_MISSING_BLOCKS,
   MAX_PAGE_BARCODES,
   MAX_SETTINGS_FILE_BYTES,
+  RECENT_CHECK_CAP_MS,
   RECENT_PREVIEWS_SETTING_ID,
   blockEditOf,
   channels,
@@ -49,7 +50,7 @@ import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.j
 import type { DocumentCommands, ImageRead } from './documentCommands.js';
 import type { ScannedSignaturePicture } from './signaturePicture.js';
 import { type LaunchDocuments, createLaunchDocuments } from './launchDocuments.js';
-import { createRecentFiles } from './recentFiles.js';
+import { type RecentFiles, createRecentFiles } from './recentFiles.js';
 import { createEphemeralSecrets } from './secretStore.js';
 import { createAssistant } from './assistant.js';
 import { type ChatHistory, noChatHistory } from './chatHistory.js';
@@ -129,6 +130,8 @@ function harness(
     readonly attachments?: { readonly pick: () => Promise<readonly string[]>; readonly readers: AttachmentReaders };
     /** Whether a path names a file (ADR-0143); the kernel's own `readFileIdentity` over the real disk otherwise. */
     readonly fileIdentity?: IdentityReader;
+    /** The recent store, for a case about what a previous run left; a fresh one with a fixed clock otherwise. */
+    readonly recent?: RecentFiles;
   } = {},
 ) {
   const capabilities = new CapabilityRegistry();
@@ -149,7 +152,7 @@ function harness(
   // RETURNED, like `settings`, so a case can read what the handlers recorded
   // rather than assert that a call was made.
   // A FIXED CLOCK, so a case asserts the instant an opening was stamped with rather than that one was.
-  const recent = createRecentFiles(createEphemeralSettings(), () => OPENED_AT);
+  const recent = overrides.recent ?? createRecentFiles(createEphemeralSettings(), () => OPENED_AT);
   // THE REAL PICTURE STORE over a folder held in memory, wired as the composition root wires it, so a case
   // reads what a capture kept and what a removal deleted rather than that a call was made.
   const pictureFolder = new Map<string, Uint8Array<ArrayBuffer>>();
@@ -1247,8 +1250,8 @@ describe('the recent list', () => {
     expect(opened).toStrictEqual({ ok: true, value: { kind: 'absent' } });
     expect(recent.list().map((entry) => entry.name)).toStrictEqual(['gone.pdf']);
     const listed = await handlers['document.recent']({});
-    expect(listed.ok ? listed.value.entries.map((entry) => [entry.name, entry.available]) : listed).toStrictEqual([
-      ['gone.pdf', false],
+    expect(listed.ok ? listed.value.entries.map((entry) => [entry.name, entry.availability]) : listed).toStrictEqual([
+      ['gone.pdf', 'unavailable'],
     ]);
   });
 
@@ -1262,7 +1265,7 @@ describe('the recent list', () => {
     }
     const availability = async (handlers: ReturnType<typeof harness>['handlers']): Promise<unknown> => {
       const listed = await handlers['document.recent']({});
-      return listed.ok ? listed.value.entries.map((entry) => [entry.name, entry.available]) : listed;
+      return listed.ok ? listed.value.entries.map((entry) => [entry.name, entry.availability]) : listed;
     };
 
     it('reads each by the OPEN’S OWN RULE: a file on disk is available, a missing one is listed and not', async () => {
@@ -1274,8 +1277,8 @@ describe('the recent list', () => {
       recent.record({ path: here, name: 'here.pdf' });
 
       expect(await availability(handlers)).toStrictEqual([
-        ['here.pdf', true],
-        ['gone.pdf', false],
+        ['here.pdf', 'available'],
+        ['gone.pdf', 'unavailable'],
       ]);
     });
 
@@ -1283,11 +1286,11 @@ describe('the recent list', () => {
       const { here } = aFolder();
       const { handlers, recent } = harness({ kind: 'absent' }, () => Promise.resolve(null));
       recent.record({ path: here, name: 'here.pdf' });
-      expect(await availability(handlers)).toStrictEqual([['here.pdf', true]]);
+      expect(await availability(handlers)).toStrictEqual([['here.pdf', 'available']]);
 
       rmSync(here);
 
-      expect(await availability(handlers)).toStrictEqual([['here.pdf', false]]);
+      expect(await availability(handlers)).toStrictEqual([['here.pdf', 'unavailable']]);
     });
 
     it('a check that THROWS is unavailable, and the rest of the list is still answered', async () => {
@@ -1304,8 +1307,91 @@ describe('the recent list', () => {
       recent.record({ path: here, name: 'here.pdf' });
 
       expect(await availability(handlers)).toStrictEqual([
-        ['here.pdf', true],
-        ['locked.pdf', false],
+        ['here.pdf', 'available'],
+        ['locked.pdf', 'unavailable'],
+      ]);
+    });
+
+    /** A check for `slow` that answers only when the case says, and counts how many times it was asked. */
+    function slowCheck(slow: string): {
+      readonly fileIdentity: IdentityReader;
+      readonly asked: () => number;
+      readonly answer: (there: boolean) => void;
+    } {
+      let asked = 0;
+      let settle: ((there: boolean) => void) | undefined;
+      return {
+        fileIdentity: (path) => {
+          if (path !== slow) return readFileIdentity(path);
+          asked += 1;
+          return new Promise((resolve, reject) => {
+            settle = (there) => {
+              if (there) void readFileIdentity(path).then(resolve, reject);
+              else resolve(null);
+            };
+          });
+        },
+        asked: () => asked,
+        answer: (there) => {
+          settle?.(there);
+        },
+      };
+    }
+
+    it('answers within the CAP, the slow file CHECKING and the others read, and the next ask after it lands has it (7d)', async () => {
+      const { here } = aFolder();
+      const slow = join(dirname(here), 'network.pdf');
+      writeFileSync(slow, '%PDF-1.7\n');
+      const check = slowCheck(slow);
+      const { handlers, recent } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
+        fileIdentity: check.fileIdentity,
+      });
+      recent.record({ path: slow, name: 'network.pdf' });
+      recent.record({ path: here, name: 'here.pdf' });
+
+      const started = Date.now();
+      expect(await availability(handlers)).toStrictEqual([
+        ['here.pdf', 'available'],
+        ['network.pdf', 'checking'],
+      ]);
+      // THE LIST DID NOT WAIT FOR THE SLOW FILE: it answered at the cap, not when the check did (which is never, yet).
+      expect(Date.now() - started).toBeLessThan(RECENT_CHECK_CAP_MS + 1000);
+
+      // A SECOND ASK WHILE IT RUNS SHARES IT: still checking, and the disk was asked once, not twice.
+      expect(await availability(handlers)).toStrictEqual([
+        ['here.pdf', 'available'],
+        ['network.pdf', 'checking'],
+      ]);
+      expect(check.asked()).toBe(1);
+
+      // IT LANDS BETWEEN TWO ASKS, and the next ask has its answer without asking the disk again.
+      check.answer(true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(await availability(handlers)).toStrictEqual([
+        ['here.pdf', 'available'],
+        ['network.pdf', 'available'],
+      ]);
+      expect(check.asked()).toBe(1);
+      // AND HAVING ANSWERED IT IS DROPPED: the ask after asks the disk again, the rule above (read at each ask).
+      await availability(handlers);
+      expect(check.asked()).toBe(2);
+    });
+
+    it('the CRASH OFFER’S entries carry the same reading, so a file that has gone is not offered (7c)', async () => {
+      const { here, gone } = aFolder();
+      // A RUN THAT DIED with two documents open, read by the next run's store over the same file.
+      const file = createEphemeralSettings();
+      const before = createRecentFiles(file, () => OPENED_AT);
+      before.opened(asDocId('00000000-0000-4000-8000-0000000000a1'), { path: here, name: 'here.pdf' });
+      before.opened(asDocId('00000000-0000-4000-8000-0000000000b2'), { path: gone, name: 'gone.pdf' });
+      const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
+        recent: createRecentFiles(file, () => OPENED_AT),
+      });
+      const listed = await handlers['document.recent']({});
+      expect(listed.ok ? listed.value.lastExitClean : listed).toBe(false);
+      expect(listed.ok ? listed.value.lastSession.map((entry) => [entry.name, entry.availability]) : listed).toStrictEqual([
+        ['here.pdf', 'available'],
+        ['gone.pdf', 'unavailable'],
       ]);
     });
   });

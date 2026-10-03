@@ -269,11 +269,11 @@ test('a message with a PLACEHOLDER renders its value, in the production build', 
         name: 'annual report.pdf',
         location: displayLocationSchema.parse({ within: 'documents', folder: 'Reports' }),
         openedAt: new Date().toISOString(),
-        available: true,
+        availability: 'available',
       },
     ],
     lastExitClean: false,
-    lastSession: [{ handle: asFileHandle('handle-a'), name: 'annual report.pdf' }],
+    lastSession: [{ handle: asFileHandle('handle-a'), name: 'annual report.pdf', availability: 'available' }],
   });
   await page.goto('/');
 
@@ -302,14 +302,14 @@ for (const look of LOOKS) {
           name: 'annual report.pdf',
           location: displayLocationSchema.parse({ within: 'documents', folder: 'Reports' }),
           openedAt: new Date().toISOString(),
-          available: true,
+          availability: 'available',
         },
         {
           handle: asFileHandle('handle-b'),
           name: 'notes.pdf',
           location: displayLocationSchema.parse({ within: 'onedrive', folder: null }),
           openedAt: null,
-          available: true,
+          availability: 'available',
         },
         {
           handle: asFileHandle('handle-c'),
@@ -318,13 +318,13 @@ for (const look of LOOKS) {
           openedAt: new Date().toISOString(),
           // UNAVAILABLE (ADR-0143). Axe does NOT measure this card's text: its colour-contrast rule skips any node under
           // `aria-disabled="true"` (axe-core 4.13.0, `isDisabled`), so its contrast is measured below, by this case.
-          available: false,
+          availability: 'unavailable',
         },
       ],
       lastExitClean: false,
       lastSession: [
-        { handle: asFileHandle('handle-a'), name: 'annual report.pdf' },
-        { handle: asFileHandle('handle-b'), name: 'notes.pdf' },
+        { handle: asFileHandle('handle-a'), name: 'annual report.pdf', availability: 'available' },
+        { handle: asFileHandle('handle-b'), name: 'notes.pdf', availability: 'available' },
       ],
     });
 
@@ -3036,7 +3036,7 @@ test('the START SCREEN keeps its footer at the window’s foot at 1280 × 800, w
       name,
       location: displayLocationSchema.parse({ within: 'documents', folder: 'Reports' }),
       openedAt: new Date(Date.now() - at * 3_600_000).toISOString(),
-      available: true,
+      availability: 'available' as const,
     })),
   });
   await page.goto('/');

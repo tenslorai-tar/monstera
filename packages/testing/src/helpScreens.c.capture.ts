@@ -41,12 +41,12 @@ test('explore-start', async ({ page }) => {
     name,
     location: displayLocationSchema.parse({ within: 'documents', folder: 'Reports' }),
     openedAt: new Date(Date.now() - at * 3_600_000).toISOString(),
-    available: true,
+    availability: 'available' as const,
   }));
   await openApp(page, {
     recent: entries,
     lastExitClean: false,
-    lastSession: entries.slice(0, 2).map(({ handle, name }) => ({ handle, name })),
+    lastSession: entries.slice(0, 2).map(({ handle, name, availability }) => ({ handle, name, availability })),
     reviewDue: true,
   });
   await page.waitForTimeout(1500);
@@ -301,7 +301,7 @@ function recentFiles(): ChannelEntries {
     name,
     location: displayLocationSchema.parse({ within: 'documents', folder: 'Reports' }),
     openedAt: new Date(Date.now() - at * 3_600_000).toISOString(),
-    available: true,
+    availability: 'available' as const,
   }));
 }
 
@@ -327,7 +327,7 @@ test('recent-files-1', async ({ page }) => {
   await openApp(page, { recent: recentFiles() });
   const recent = page.locator('.m-recent');
   await recent.scrollIntoViewIfNeeded();
-  await expect(recent.getByRole('button', { name: 'Clear list' })).toBeVisible();
+  await expect(recent.getByRole('button', { name: 'Clear recent files' })).toBeVisible();
   await shoot(page, 'recent-files-1', recent);
 });
 
@@ -338,7 +338,7 @@ test('recent-files-2', async ({ page }) => {
     name: 'Site survey.pdf',
     location: displayLocationSchema.parse({ within: null, folder: 'Surveys' }),
     openedAt: new Date(Date.now() - 86_400_000).toISOString(),
-    available: false,
+    availability: 'unavailable' as const,
   };
   await openApp(page, { recent: [...recentFiles(), missing] });
   // BY THE KEYBOARD, so the pointer `shoot` parks in the corner cannot close what a hover opened.
@@ -356,7 +356,7 @@ test('reopen-after-a-crash-1', async ({ page }) => {
   await openApp(page, {
     recent,
     lastExitClean: false,
-    lastSession: recent.slice(0, 2).map(({ handle, name }) => ({ handle, name })),
+    lastSession: recent.slice(0, 2).map(({ handle, name, availability }) => ({ handle, name, availability })),
   });
   const offer = page.locator('.m-recent-recover');
   await offer.scrollIntoViewIfNeeded();

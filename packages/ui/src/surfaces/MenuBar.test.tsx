@@ -10,6 +10,7 @@ import { activateCatalogue, i18n } from '../i18n.js';
 import { EN } from '../messages/en.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from '../registries/commands.js';
 import type { Placement } from '../registries/placement.js';
+import { RECENT_RECHECK_MS } from '../recentLine.js';
 import { MenuBar, type RecentMenu, type RecentMenuEntry } from './MenuBar.js';
 
 const CONTEXT: CommandContext = {
@@ -220,7 +221,7 @@ describe('MenuBar (ADR-0107)', () => {
       name,
       location: displayLocationSchema.parse({ within: null, folder: null }),
       openedAt: null,
-      available,
+      availability: available ? 'available' : 'unavailable',
     });
     const clear = (run: () => void = () => undefined): UiCommand =>
       command('a.clear', 'test.menu.clear', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 15, submenu: 'recent' }], {
@@ -276,6 +277,38 @@ describe('MenuBar (ADR-0107)', () => {
       });
       // BY THE HANDLE main minted for that row — the second row's, so a surface sending the first one's fails.
       expect(opened.mock.calls).toStrictEqual([[asFileHandle('h-0')]]);
+    });
+
+    it('a file STILL BEING LOOKED FOR is disabled and says Checking…, and the list is read again until it resolves (7d)', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        const opened = vi.fn<(handle: FileHandle) => void>();
+        let reads = 0;
+        const read = (): Promise<readonly RecentMenuEntry[]> => {
+          reads += 1;
+          const checking: RecentMenuEntry = { ...entry('h-n', 'network.pdf', true), availability: 'checking' };
+          return Promise.resolve([reads === 1 ? checking : entry('h-n', 'network.pdf', true)]);
+        };
+        render(drawn([openCommand, clear()], undefined, { read, open: opened }));
+        const popup = await openRecent();
+
+        const slow = within(popup).getByRole('menuitem', { name: 'network.pdf, checking' });
+        expect(slow.getAttribute('aria-disabled')).toBe('true');
+        expect(slow.textContent).toContain('Checking…');
+        await act(async () => {
+          fireEvent.click(slow);
+          await Promise.resolve();
+        });
+        expect(opened).not.toHaveBeenCalled();
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(RECENT_RECHECK_MS);
+        });
+        expect(reads).toBe(2);
+        expect(within(popup).getByRole('menuitem', { name: 'network.pdf' }).getAttribute('aria-disabled')).not.toBe('true');
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('a click on an UNAVAILABLE file opens nothing', async () => {

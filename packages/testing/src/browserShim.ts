@@ -749,7 +749,7 @@ export interface BrowserShimOptions {
    * than the recording that replaced it. A case about recovery has to be able
    * to name two documents that are not the two most recently opened.
    */
-  readonly lastSession?: readonly { readonly handle: FileHandle; readonly name: string }[];
+  readonly lastSession?: ChannelResult<'document.recent'>['lastSession'];
 }
 
 /**

@@ -225,7 +225,7 @@ is not available.
 - [ ] **Pages panel** · `view.show-pages` · Shows: on screen
 - [ ] **Ribbon layout** · `view.layout-ribbon` · Shows: on screen · Help: *Choose a layout: Ribbon, Studio or Focus*
 - [ ] **Show or hide the document panel** · `view.toggle-panel` · Shows: on screen · Help: *Use the document panel*
-- [ ] **Clear list** · `document.clear-recent` · Shows: on screen · Help: *Reopen a recent file*
+- [ ] **Clear recent files** · `document.clear-recent` · Shows: on screen · Help: *Reopen a recent file*
 - [ ] **Bookmarks panel** · `view.show-bookmarks` · Shows: on screen
 - [ ] **Command palette** · `view.command-palette` · Shows: on screen · Help: *Find any tool by name*
 - [ ] **Light theme** · `view.theme-light` · Shows: on screen

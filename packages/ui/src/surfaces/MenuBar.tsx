@@ -15,6 +15,8 @@ import {
   MENU_RECENT_EMPTY,
   MENU_VIEW,
   MENU_WINDOW,
+  RECENT_CHECKING,
+  RECENT_CHECKING_NAMED,
   RECENT_UNAVAILABLE,
   RECENT_UNAVAILABLE_NAMED,
   SECTION_COMMENT,
@@ -30,6 +32,7 @@ import { Icon } from '../primitives/Icon.js';
 import type { IconName } from '../primitives/icons.js';
 import type { CommandContext, CommandRegistry, UiCommand } from '../registries/commands.js';
 import type { MenuBarSubmenu } from '../registries/placement.js';
+import { RECENT_RECHECK_MS } from '../recentLine.js';
 import { LABELLED, type RowFit, menusThatFit, nextRowFit } from './menuRowFit.js';
 import {
   type MenuBarCommandEntry,
@@ -147,6 +150,20 @@ export function MenuBar({
   // THE RECENT LIST AS MAIN LAST ANSWERED IT, read again each time a menu holding File › Recent opens — so the submenu
   // shows the list, and which files are there, as they are when the person looks. `undefined` until an answer comes.
   const [recentEntries, setRecentEntries] = useState<readonly RecentMenuEntry[] | undefined>(undefined);
+  // A FILE STILL BEING LOOKED FOR is asked about again until main answers (cloud-4 7d), the start screen's rule.
+  useEffect(() => {
+    if (recentEntries?.some((entry) => entry.availability === 'checking') !== true) return undefined;
+    let current = true;
+    const again = setTimeout(() => {
+      void recent.read().then((entries) => {
+        if (current && entries !== undefined) setRecentEntries(entries);
+      });
+    }, RECENT_RECHECK_MS);
+    return (): void => {
+      current = false;
+      clearTimeout(again);
+    };
+  }, [recent, recentEntries]);
   const menus = menuBarModel(registry, context);
   const buttons = menuBarCommandsModel(registry, context);
   const chords = new Map([...shortcutMapOf(registry)].map(([, command]) => [command.id, command.shortcut]));
@@ -324,11 +341,16 @@ export function MenuBar({
         key={entry.handle}
         className="m-context-menu-item m-menu-bar__item"
         data-recent-file={entry.name}
-        // LISTED AND DISABLED, NEVER HIDDEN: a file on a drive that is not connected is back when the drive is. Its
-        // name carries the state, so a screen reader hears it with the file rather than only seeing muted text.
-        disabled={!entry.available}
+        // LISTED AND DISABLED, NEVER HIDDEN: a file on a drive that is not connected is back when the drive is, and one
+        // still being looked for is disabled until main answers. Its name carries the state, so a screen reader hears
+        // it with the file rather than only seeing muted text.
+        disabled={entry.availability !== 'available'}
         label={entry.name}
-        aria-label={entry.available ? undefined : _(RECENT_UNAVAILABLE_NAMED, { name: entry.name })}
+        aria-label={
+          entry.availability === 'available'
+            ? undefined
+            : _(entry.availability === 'checking' ? RECENT_CHECKING_NAMED : RECENT_UNAVAILABLE_NAMED, { name: entry.name })
+        }
         onClick={() => {
           recent.open(entry.handle);
         }}
@@ -338,9 +360,9 @@ export function MenuBar({
           <Icon name="FileText" size="dense" />
         </span>
         <span className="m-menu-bar__title m-menu-bar__file">{entry.name}</span>
-        {entry.available ? null : (
+        {entry.availability === 'available' ? null : (
           <span className="m-context-menu-chord" aria-hidden="true">
-            {_(RECENT_UNAVAILABLE)}
+            {_(entry.availability === 'checking' ? RECENT_CHECKING : RECENT_UNAVAILABLE)}
           </span>
         )}
       </Menu.Item>

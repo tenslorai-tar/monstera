@@ -27,7 +27,7 @@ const ENTRIES = ['Annual report.pdf', 'Site survey.pdf', 'Board minutes.pdf', 'L
     name,
     location: displayLocationSchema.parse({ within: 'documents', folder: 'Reports' }),
     openedAt: new Date(Date.now() - at * 3_600_000).toISOString(),
-    available: name !== 'Site survey.pdf',
+    availability: name === 'Site survey.pdf' ? ('unavailable' as const) : ('available' as const),
   }),
 );
 
@@ -84,8 +84,8 @@ test('FILE › RECENT lists every file main keeps, a missing one disabled and na
   // CONTROL: a file that is there is not.
   await expect(popup.getByRole('menuitem', { name: 'Lease.pdf' })).not.toHaveAttribute('aria-disabled', 'true');
 
-  // *Clear list* at the foot, after a separator.
-  const clear = popup.getByRole('menuitem', { name: 'Clear list' });
+  // *Clear recent files* at the foot, after a separator.
+  const clear = popup.getByRole('menuitem', { name: 'Clear recent files' });
   await expect(clear).toBeEnabled();
   expect(
     await popup.evaluate((element) => {
@@ -103,7 +103,7 @@ test('FILE › RECENT lists every file main keeps, a missing one disabled and na
 test('CLEAR LIST empties the one list both views show, and the submenu then says so', async ({ page }) => {
   await started(page);
   let popup = await openRecentByKeyboard(page);
-  await popup.getByRole('menuitem', { name: 'Clear list' }).click();
+  await popup.getByRole('menuitem', { name: 'Clear recent files' }).click();
 
   // THE START SCREEN, behind the menu, read the list again: main's answer is empty now.
   await expect(page.getByText('Nothing opened yet.')).toBeVisible();
@@ -113,7 +113,7 @@ test('CLEAR LIST empties the one list both views show, and the submenu then says
   await expect(popup.locator('[data-recent-file]')).toHaveCount(0);
   await expect(popup.getByRole('menuitem', { name: 'No recent files' })).toHaveAttribute('aria-disabled', 'true');
   // NOTHING LEFT TO CLEAR: the submenu's command acts on its values, and there are none.
-  await expect(popup.getByRole('menuitem', { name: 'Clear list' })).toHaveAttribute('aria-disabled', 'true');
+  await expect(popup.getByRole('menuitem', { name: 'Clear recent files' })).toHaveAttribute('aria-disabled', 'true');
 });
 
 // IN EVERY THEME, the open submenu with a missing file passes the gate, and so does the start screen beside it: the

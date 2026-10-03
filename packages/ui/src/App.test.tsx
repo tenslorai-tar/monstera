@@ -21,6 +21,7 @@ import type { CommandRegistry } from './registries/commands.js';
 import type { DialogRegistry } from './registries/dialogs.js';
 import { SECTION_IDS } from './registries/placement.js';
 import { START_SCREEN_RECENT } from './RecentFiles.js';
+import { RECENT_RECHECK_MS } from './recentLine.js';
 import { CONTEXT_PANEL_TAB_SETTING, DOCUMENT_PANEL_SETTING, FLOAT_BAR_POSITION_SETTING } from './settings/layout.js';
 import { SECTION_TITLES } from './surfaces/Ribbon.js';
 import type { Article, Inline } from './help/article.js';
@@ -3155,9 +3156,9 @@ describe('App', () => {
     function row(
       handle: string,
       name: string,
-      available = true,
-    ): { handle: string; name: string; location: unknown; openedAt: null; available: boolean } {
-      return { handle, name, location: { within: null, folder: null }, openedAt: null, available };
+      availability: 'available' | 'unavailable' | 'checking' = 'available',
+    ): { handle: string; name: string; location: unknown; openedAt: null; availability: string } {
+      return { handle, name, location: { within: null, folder: null }, openedAt: null, availability };
     }
 
     it('a card shows the picture main kept, asked for by the list’s handle, and the placeholder otherwise', async () => {
@@ -3203,7 +3204,7 @@ describe('App', () => {
       createObjectURL.mockRestore();
     });
 
-    it('*Clear list* asks main to empty it, and the cards go only when main has', async () => {
+    it('*Clear recent files* asks main to empty it, and the cards go only when main has', async () => {
       const { client, sent } = withRecent({
         entries: [row('handle-a', 'annual.pdf')],
         lastExitClean: true,
@@ -3215,7 +3216,7 @@ describe('App', () => {
       });
 
       await act(async () => {
-        screen.getByRole('button', { name: 'Clear list' }).click();
+        screen.getByRole('button', { name: 'Clear recent files' }).click();
         await Promise.resolve();
       });
 
@@ -3223,7 +3224,7 @@ describe('App', () => {
       expect(screen.queryByRole('button', { name: 'annual.pdf' })).toBeNull();
     });
 
-    it('*Clear list* that main REFUSED, or that never arrived, leaves every card where it was', async () => {
+    it('*Clear recent files* that main REFUSED, or that never arrived, leaves every card where it was', async () => {
       // The other half of *only when main has*: the case above cannot tell a list cleared on main's answer from
       // one cleared on the press, since main answers yes there. Each failure shape is its own mount.
       for (const failing of [
@@ -3242,7 +3243,7 @@ describe('App', () => {
         });
 
         await act(async () => {
-          screen.getByRole('button', { name: 'Clear list' }).click();
+          screen.getByRole('button', { name: 'Clear recent files' }).click();
           // A WHOLE TASK, not one microtask: the answer's handler runs a few promise hops after the press, and
           // a card still on screen one hop in is what every version shows, including one that clears on refusal.
           await new Promise((settle) => setTimeout(settle, 0));
@@ -3286,7 +3287,7 @@ describe('App', () => {
             name: 'annual.pdf',
             location: { within: 'documents', folder: 'Leases' },
             openedAt: new Date().toISOString(),
-            available: true,
+            availability: 'available',
           },
         ],
         lastExitClean: true,
@@ -3355,8 +3356,8 @@ describe('App', () => {
         entries: [row('handle-a', 'annual.pdf')],
         lastExitClean: false,
         lastSession: [
-          { handle: 'handle-b', name: 'draft.pdf' },
-          { handle: 'handle-c', name: 'notes.pdf' },
+          { handle: 'handle-b', name: 'draft.pdf', availability: 'available' },
+          { handle: 'handle-c', name: 'notes.pdf', availability: 'available' },
         ],
       });
       render(<App client={client} settings={freshSettings()} />);
@@ -3380,6 +3381,103 @@ describe('App', () => {
       expect(sent.filter((call) => call.id === 'document.openRecent')).toStrictEqual([
         { id: 'document.openRecent', params: { handle: 'handle-c' } },
       ]);
+    });
+
+    it('the offer SKIPS a document that has gone, and shows one still being looked for as such (7c)', async () => {
+      const { client } = withRecent({
+        entries: [row('handle-a', 'annual.pdf')],
+        lastExitClean: false,
+        lastSession: [
+          { handle: 'handle-b', name: 'draft.pdf', availability: 'unavailable' },
+          { handle: 'handle-c', name: 'notes.pdf', availability: 'available' },
+          { handle: 'handle-d', name: 'survey.pdf', availability: 'checking' },
+        ],
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText('Monstera closed unexpectedly. These documents were open:')).toBeDefined();
+      expect(screen.queryByRole('button', { name: 'Reopen draft.pdf' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Reopen notes.pdf' })).toBeDefined();
+      // NOT YET OFFERED, and saying why: a file on a slow drive is neither offered nor dropped until main answers.
+      expect(screen.getByRole('button', { name: 'Looking for survey.pdf…' }).hasAttribute('disabled')).toBe(true);
+    });
+
+    it('when EVERY document that was open has gone, the offer says so and offers no button that cannot work (7c)', async () => {
+      const { client } = withRecent({
+        entries: [row('handle-a', 'annual.pdf')],
+        lastExitClean: false,
+        lastSession: [
+          { handle: 'handle-b', name: 'draft.pdf', availability: 'unavailable' },
+          { handle: 'handle-c', name: 'notes.pdf', availability: 'unavailable' },
+        ],
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(
+        screen.getByText(
+          'Monstera closed unexpectedly. The documents that were open are no longer where they were, so there is nothing to reopen.',
+        ),
+      ).toBeDefined();
+      expect(screen.queryByText('Monstera closed unexpectedly. These documents were open:')).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Reopen / })).toBeNull();
+    });
+
+    it('a card STILL BEING LOOKED FOR says so, opens nothing, and the list is asked again until it resolves (7d)', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        let answers = 0;
+        // THE FILE'S DEFAULTS for every other channel, and the list answered by the case: checking, then there.
+        const { client, sent } = withRecent(
+          { entries: [], lastExitClean: true, lastSession: [] },
+          {
+            'document.recent': () => {
+              answers += 1;
+              return Promise.resolve(
+                ok({
+                  entries: [row('handle-n', 'network.pdf', answers === 1 ? 'checking' : 'available')],
+                  lastExitClean: true,
+                  lastSession: [],
+                }),
+              );
+            },
+          },
+        );
+        render(<App client={client} settings={freshSettings()} />);
+        await act(async () => {
+          await Promise.resolve();
+        });
+
+        const card = screen.getByRole('button', { name: 'network.pdf' });
+        expect(card.getAttribute('aria-disabled')).toBe('true');
+        expect(screen.getByText('Checking…')).toBeDefined();
+        await act(async () => {
+          card.click();
+          await Promise.resolve();
+        });
+        expect(sent.filter((call) => call.id === 'document.openRecent')).toStrictEqual([]);
+
+        // ASKED AGAIN after the recheck interval, and now it opens.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(RECENT_RECHECK_MS);
+        });
+        expect(answers).toBe(2);
+        expect(screen.getByRole('button', { name: 'network.pdf' }).getAttribute('aria-disabled')).toBeNull();
+        expect(screen.queryByText('Checking…')).toBeNull();
+
+        // AND THEN IT STOPS ASKING: nothing is checking any more.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(RECENT_RECHECK_MS * 3);
+        });
+        expect(answers).toBe(2);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('CONTROL: an unclean run with NOTHING RECORDED offers nothing', async () => {
@@ -3415,7 +3513,7 @@ describe('App', () => {
       const { client } = withRecent({
         entries: [row('handle-a', 'annual.pdf')],
         lastExitClean: true,
-        lastSession: [{ handle: 'handle-b', name: 'draft.pdf' }],
+        lastSession: [{ handle: 'handle-b', name: 'draft.pdf', availability: 'available' }],
       });
       render(<App client={client} settings={freshSettings()} />);
       await act(async () => {
@@ -3432,8 +3530,8 @@ describe('App', () => {
       const SESSION = {
         entries: [row('handle-a', 'annual.pdf')],
         lastSession: [
-          { handle: 'handle-b', name: 'draft.pdf' },
-          { handle: 'handle-c', name: 'notes.pdf' },
+          { handle: 'handle-b', name: 'draft.pdf', availability: 'available' },
+          { handle: 'handle-c', name: 'notes.pdf', availability: 'available' },
         ],
       };
       /** The handles a start reopened, in the order it asked for them. */
@@ -3486,7 +3584,7 @@ describe('App', () => {
           return Promise.resolve(
             ok({
               entries: [
-                { handle: 'stale', name: 'annual.pdf', location: { within: null, folder: null }, openedAt: null, available: true },
+                { handle: 'stale', name: 'annual.pdf', location: { within: null, folder: null }, openedAt: null, availability: 'available' },
               ],
               lastExitClean: true,
               lastSession: [],
@@ -3521,7 +3619,7 @@ describe('App', () => {
 
     it('an UNAVAILABLE file is a card that says so, is disabled and opens nothing — listed, never hidden (ADR-0143)', async () => {
       const { client, sent } = withRecent({
-        entries: [row('handle-gone', 'gone.pdf', false), row('handle-here', 'here.pdf')],
+        entries: [row('handle-gone', 'gone.pdf', 'unavailable'), row('handle-here', 'here.pdf')],
         lastExitClean: true,
         lastSession: [],
       });

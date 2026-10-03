@@ -20,6 +20,13 @@ const KNOWN_FOLDER_NAMES: Readonly<Record<KnownFolder, MessageKey>> = {
   ...CLOUD_PROVIDER_NAMES,
 };
 
+/**
+ * How long a view of the recent list waits before asking main again while a file is still being looked for
+ * (`checking`), in milliseconds. Both views take it — the start screen and File › Recent — and main shares one check
+ * per file across every ask, so asking again costs a read of the list and never another `stat`.
+ */
+export const RECENT_RECHECK_MS = 1000;
+
 /** Translates one key with its values — `i18n._`'s shape, passed in so this module holds no catalogue. */
 export type Translate = (key: MessageKey, values?: Readonly<Record<string, string>>) => string;
 

@@ -983,7 +983,6 @@ export const CRASH_REPORT_FRAGMENTS = messageKey('surface.crash-report.fragments
 export const CRASH_REPORT_SHARE_FAILED = messageKey('surface.crash-report.share-failed');
 export const PRIVACY_RECENT_PREVIEWS_DESCRIPTION = messageKey('setting.privacy.recent-previews.description');
 export const RECENT_HEADING = messageKey('surface.recent.heading');
-export const RECENT_CLEAR = messageKey('surface.recent.clear');
 export const RECENT_PLACEHOLDER = messageKey('surface.recent.placeholder');
 export const RECENT_TODAY = messageKey('surface.recent.today');
 export const RECENT_YESTERDAY = messageKey('surface.recent.yesterday');
@@ -999,7 +998,14 @@ export const RECENT_MISSING = messageKey('surface.recent.missing');
 export const RECENT_UNAVAILABLE = messageKey('surface.recent.unavailable');
 export const RECENT_UNAVAILABLE_NAMED = messageKey('surface.recent.unavailable-named');
 export const RECENT_UNAVAILABLE_AT = messageKey('surface.recent.unavailable-at');
+/** A recent file whose check had not answered when the list was due: the list shows at once and this resolves. */
+export const RECENT_CHECKING = messageKey('surface.recent.checking');
+export const RECENT_CHECKING_NAMED = messageKey('surface.recent.checking-named');
 export const RECOVER_OFFER = messageKey('surface.recent.recover-offer');
+/** A document in the crash offer that is still being looked for, on its disabled button. */
+export const RECOVER_CHECKING = messageKey('surface.recent.recover-checking');
+/** The crash offer when every document that was open has gone from where it was. */
+export const RECOVER_ALL_MISSING = messageKey('surface.recent.recover-all-missing');
 export const RECOVER_LABEL = messageKey('surface.recent.recover-label');
 export const LAYERS_LABEL = messageKey('surface.layers.label');
 export const LAYERS_EMPTY = messageKey('surface.layers.empty');
@@ -3057,7 +3063,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Keeps a small picture of each recent file’s first page, made when you opened it. Turning this off deletes them.',
   // v5-01's header over the cards, and its one action.
   [RECENT_HEADING]: 'Recent',
-  [RECENT_CLEAR]: 'Clear list',
   // A CARD WITH NO PICTURE shows the page's shape and its type, the way a file icon does.
   [RECENT_PLACEHOLDER]: 'PDF',
   [RECENT_TODAY]: 'Today',
@@ -3078,11 +3083,17 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // THE ITEM'S NAME for a screen reader, so the state is heard with the file and not only seen as muted text.
   [RECENT_UNAVAILABLE_NAMED]: '{name}, unavailable',
   [RECENT_UNAVAILABLE_AT]: 'Unavailable · {where}',
+  // STILL BEING LOOKED FOR, on a slow or disconnected drive: said rather than guessed either way.
+  [RECENT_CHECKING]: 'Checking…',
+  [RECENT_CHECKING_NAMED]: '{name}, checking',
   // NAMES NOTHING, because the list beneath it does. This read "Reopen
   // {name}?" while one document could be open and the newest recent entry was
   // that document; with tabs the offer is a recorded set, and a sentence
   // naming one of several would be the inference tabs ended, in a string.
   [RECOVER_OFFER]: 'Monstera closed unexpectedly. These documents were open:',
+  [RECOVER_CHECKING]: 'Looking for {name}…',
+  [RECOVER_ALL_MISSING]:
+    'Monstera closed unexpectedly. The documents that were open are no longer where they were, so there is nothing to reopen.',
   // ONE CONTROL PER DOCUMENT, each named with the file it reopens — a column
   // of buttons all called "Reopen" is a column a screen-reader user cannot
   // tell apart, which is the tab strip's close control one surface over.
@@ -4536,7 +4547,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // THE RIBBON'S WORD for what it folds, so one row of chrome and the next say the same thing.
   [MENU_MORE]: 'More',
   // THE OWNER'S WORDS for the item (N3), the same as the start screen's own button over the cards.
-  [CLEAR_RECENT_TITLE]: 'Clear list',
+  [CLEAR_RECENT_TITLE]: 'Clear recent files',
   [EDIT_CUT_TITLE]: 'Cut',
   [EDIT_COPY_TITLE]: 'Copy',
   [EDIT_PASTE_TITLE]: 'Paste',
