@@ -178,3 +178,11 @@ So what the ADR pins is the **tokens**: a number, then three name objects of ten
 asterisks, in that order. Four numbers is still refused. The distinction matters
 because a caller asserting the literal string would fail against a correct
 placeholder, which is how a pinned shape becomes a pinned *formatter*.
+
+## Addition, 2026-10-03 — the placeholder is appended, not saved whole
+
+Decision 3's placeholder was written by a whole save, and measured on 2026-10-03 that is what broke an earlier
+signature: a second signature rewrote the file and the first no longer verified. The placeholder is now written as an
+incremental update ([ADR-0149](0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)), and
+Decision 3's other constraint stands unchanged — `useObjectStreams: false`, so the signer finds the hole in the raw
+bytes. The token shape above is untouched.
