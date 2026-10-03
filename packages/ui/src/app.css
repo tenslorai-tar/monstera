@@ -1787,12 +1787,6 @@ optgroup {
  * document's own caption hard against the derived name, so a reader cannot tell
  * where one ends.
  */
-.m-flat-fields__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
 .m-flat-fields__label {
   display: flex;
   align-items: center;
@@ -1850,32 +1844,16 @@ optgroup {
  * The PDF/A removals notice: a list, so the list exception's two rules — no bullets or
  * indent the primitive did not ask for. Each line is the converter's own, quoted.
  */
-.m-pdfa-removals__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
+/* The converter's own words, quieter than the sentence that introduces them; the list itself is the pattern's. */
 .m-pdfa-removals__list li {
-  padding-block: var(--space-2);
   color: var(--muted);
 }
 
-/* The rows a workbook's PDF lacks. The sentence and the count sit outside the scroll, so their margins are the body's
-   gap alone; the row numbers line up by tabular figures. */
+/* The rows a workbook's PDF lacks, in the pattern's list. The sentence and the count sit outside the scroll, so their
+   margins are the body's gap alone. */
 .m-workbook-incomplete__said,
 .m-workbook-incomplete__more {
   margin: 0;
-}
-
-.m-workbook-incomplete__list {
-  margin: 0;
-  padding-inline-start: var(--space-16);
-  font-variant-numeric: tabular-nums;
-}
-
-.m-workbook-incomplete__list li {
-  padding-block: var(--space-2);
 }
 
 /*
@@ -1895,8 +1873,18 @@ optgroup {
   padding-block: var(--space-8);
 }
 
+/* THE PAGE'S TABLE AT THE DIALOG'S WIDTH, one grid of lines (the gallery's reading, 2026-10-03): each cell's field drew
+   its own box inside the cell's border, so the table read as a stack of separate boxes, narrower than the dialog, under
+   a caption centred over a table that was not. The cell's border is now the only line, and the field fills its cell. */
 .m-export-excel__table table {
+  inline-size: 100%;
   border-collapse: collapse;
+}
+
+.m-export-excel__table caption {
+  padding-block-end: var(--space-4);
+  color: var(--muted);
+  text-align: start;
 }
 
 .m-export-excel__table td {
@@ -1905,8 +1893,24 @@ optgroup {
 }
 
 .m-export-excel__table input {
-  width: 100%;
-  min-width: 8ch;
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-inline-size: 8ch;
+  padding: var(--space-4) var(--space-6);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.m-export-excel__table input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+/* A cell cut short is read-only, and says so in its tooltip; quieter, so it reads as not for editing. */
+.m-export-excel__table input[readonly] {
+  color: var(--muted);
 }
 
 /*
@@ -1934,18 +1938,11 @@ optgroup {
  * The accessibility check's two lists: the list exception's rules, and each rule's verdict, words
  * and pages on one wrapping line so a long rule name does not push its verdict off the row.
  */
-.m-accessibility-check__rules,
-.m-accessibility-check__human {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
+/* Each rule's verdict, words and pages on one line that wraps; the list and its rows are the pattern's. */
 .m-accessibility-check__rules li {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-8);
-  padding-block: var(--space-4);
 }
 
 .m-accessibility-check__verdict {
@@ -1956,6 +1953,13 @@ optgroup {
 .m-accessibility-check__pages,
 .m-accessibility-check__human li {
   color: var(--muted);
+}
+
+/* DOCUSIGN'S FIELDS hold a subject, names and email addresses, which run past the default field's twenty characters:
+   about thirty-two show whole, and the field never outgrows its row. */
+.m-docusign-send .m-input {
+  inline-size: 32ch;
+  max-inline-size: 100%;
 }
 
 /* The barcode form: the field fills the dialog's width, so a pasted link is readable whole. */
@@ -2112,59 +2116,12 @@ optgroup {
 }
 
 /*
- * The object chooser in the edit-object dialog.
- *
- * A column for the line chooser's reason — each row is a phrase and a pair of
- * coordinates, not a digit — and the fieldset reset is the same one, because
- * this is the second body in the application that groups radios.
+ * The edit-object dialog's choice of object, in the pattern's choice rows: each object's box is its note, in TABULAR
+ * FIGURES — four numbers per row down a column, and proportional digits make 11 narrower than 88, so nothing lines up
+ * and no two rows can be compared at a glance.
  */
-.m-edit-page-object__choice {
-  border: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.m-edit-page-object__legend {
-  flex: 1 0 100%;
-  padding: 0;
-}
-
-.m-edit-page-object__option {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-/*
- * The box. TABULAR FIGURES, which is the one rule this row needs: four numbers
- * per row down a column, and proportional digits make 11 narrower than 88 so
- * nothing lines up and no two rows can be compared at a glance.
- */
-.m-edit-page-object__box {
+.m-edit-page-object .m-dialog-choice .m-dialog-row__note {
   font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-
-/*
- * The four placement fields, in a row that wraps.
- *
- * Move and scale are two pairs, and a pair that wrapped between its own members
- * would read as four unrelated fields. The minimum width is what keeps x beside
- * y until the dialog is too narrow for either pair.
- */
-.m-edit-page-object__numbers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
-}
-
-.m-edit-page-object__colour {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
 }
 
 /*

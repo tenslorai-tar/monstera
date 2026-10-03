@@ -1754,6 +1754,8 @@ export const DOCUSIGN_RETRIEVE_COMMAND_TITLE = messageKey('command.docusign-retr
 export const DOCUSIGN_SEND_TITLE = messageKey('dialog.docusign-send.title');
 export const DOCUSIGN_SEND_SUBJECT = messageKey('dialog.docusign-send.subject');
 export const DOCUSIGN_SEND_SIGNER_NAME = messageKey('dialog.docusign-send.signer-name');
+/** Each signer's section heading, numbered in the order DocuSign asks them to sign. */
+export const DOCUSIGN_SEND_SIGNER_TITLE = messageKey('dialog.docusign-send.signer-title');
 export const DOCUSIGN_SEND_SIGNER_EMAIL = messageKey('dialog.docusign-send.signer-email');
 export const DOCUSIGN_SEND_ADD_SIGNER = messageKey('dialog.docusign-send.add-signer');
 export const DOCUSIGN_SEND_REMOVE_SIGNER = messageKey('dialog.docusign-send.remove-signer');
@@ -3924,6 +3926,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [DOCUSIGN_SEND_TITLE]: 'Send to DocuSign',
   [DOCUSIGN_SEND_SUBJECT]: 'Email subject',
   [DOCUSIGN_SEND_SIGNER_NAME]: 'Signer name',
+  [DOCUSIGN_SEND_SIGNER_TITLE]: 'Signer {number}',
   [DOCUSIGN_SEND_SIGNER_EMAIL]: 'Signer email',
   [DOCUSIGN_SEND_ADD_SIGNER]: 'Add signer',
   [DOCUSIGN_SEND_REMOVE_SIGNER]: 'Remove signer',

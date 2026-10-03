@@ -9,10 +9,11 @@ import {
   DOCUSIGN_SEND_REMOVE_SIGNER,
   DOCUSIGN_SEND_SIGNER_EMAIL,
   DOCUSIGN_SEND_SIGNER_NAME,
+  DOCUSIGN_SEND_SIGNER_TITLE,
   DOCUSIGN_SEND_SUBJECT,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
-import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
+import { DialogFooter, DialogRow, DialogSection } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { DOCUSIGN_SEND_RESULT, type DocusignSendAnswer } from './docusignSend.js';
@@ -58,9 +59,27 @@ export default function DocusignSendBody({
         <Input label={DOCUSIGN_SEND_SUBJECT} labelShownBeside onValueChange={setEmailSubject} value={emailSubject} />
       </DialogRow>
 
-      <ol className="m-docusign-send__signers">
-        {signers.map((row, index) => (
-          <li className="m-docusign-send__signer" data-docusign-signer={index} key={index}>
+      {/* ONE SECTION PER SIGNER, the pattern's: its number as the heading and its removal at the heading's end, so the
+          button sits with the signer it removes rather than loose under the fields (the gallery's reading, 2026-10-03). */}
+      {signers.map((row, index) => (
+        <DialogSection
+          data={{ 'data-docusign-signer': String(index) }}
+          key={index}
+          title={DOCUSIGN_SEND_SIGNER_TITLE}
+          values={{ number: index + 1 }}
+          state={
+            // ONE SIGNER STAYS: an envelope with nobody to sign it is not one DocuSign sends, so the last signer has no
+            // remove control to press.
+            signers.length > 1 ? (
+              <Button
+                label={DOCUSIGN_SEND_REMOVE_SIGNER}
+                onClick={() => {
+                  setSigners((current) => current.filter((_row, at) => at !== index));
+                }}
+              />
+            ) : undefined
+          }
+        >
             <DialogRow label={DOCUSIGN_SEND_SIGNER_NAME}>
               <Input
                 label={DOCUSIGN_SEND_SIGNER_NAME}
@@ -82,19 +101,8 @@ export default function DocusignSendBody({
                 value={row.email}
               />
             </DialogRow>
-            {/* ONE SIGNER STAYS: an envelope with nobody to sign it is not one
-                DocuSign sends, so the last row has no remove control to press. */}
-            {signers.length > 1 ? (
-              <Button
-                label={DOCUSIGN_SEND_REMOVE_SIGNER}
-                onClick={() => {
-                  setSigners((current) => current.filter((_row, at) => at !== index));
-                }}
-              />
-            ) : null}
-          </li>
-        ))}
-      </ol>
+        </DialogSection>
+      ))}
       <Button
         label={DOCUSIGN_SEND_ADD_SIGNER}
         onClick={() => {

@@ -15,7 +15,7 @@ export default function KeptBackupsBody({ kept }: { readonly kept: readonly stri
   return (
     <div className="m-kept-backups">
       <p>{_(KEPT_BACKUPS_EXPLAINS, { count: kept.length })}</p>
-      <ul data-kept-backups={kept.length}>
+      <ul className="m-dialog-list" data-kept-backups={kept.length}>
         {kept.map((name) => (
           <li key={name}>{name}</li>
         ))}

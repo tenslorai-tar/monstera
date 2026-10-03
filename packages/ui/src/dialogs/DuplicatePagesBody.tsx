@@ -51,15 +51,12 @@ export default function DuplicatePagesBody({
           headed *duplicates* with no such sentence is one a person acts on
           without asking what it means. */}
       <p className="m-duplicate-pages__compared">{_(DUPLICATE_PAGES_COMPARED)}</p>
-      {truncated ? (
-        <p className="m-duplicate-pages__truncated" role="status">
-          {_(DUPLICATE_PAGES_TRUNCATED)}
-        </p>
-      ) : null}
+      {/* A FACT ABOUT THE ANSWER, there from the moment the window opens, `FlatFieldsBody`'s reason: no live region. */}
+      {truncated ? <p className="m-duplicate-pages__truncated">{_(DUPLICATE_PAGES_TRUNCATED)}</p> : null}
       {groups.length === 0 ? (
         <p className="m-duplicate-pages__none">{_(DUPLICATE_PAGES_NONE)}</p>
       ) : (
-        <ul className="m-duplicate-pages__groups">
+        <ul className="m-dialog-list m-duplicate-pages__groups">
           {groups.map((group) => (
             <li key={group.pages.join(',')}>
               {_(DUPLICATE_PAGES_GROUP, {

@@ -24,7 +24,7 @@ import {
   OBJECT_KIND_UNKNOWN,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
-import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
+import { DialogChoices, DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { EditPageObjectAnswer } from './editPageObjectResult.js';
@@ -176,11 +176,8 @@ export default function EditPageObjectBody({
   return (
     <div className="m-edit-page-object">
       <p className="m-edit-page-object__explains">{_(EDIT_PAGE_OBJECT_EXPLAINS)}</p>
-      {truncated ? (
-        <p className="m-edit-page-object__truncated" role="status">
-          {_(EDIT_PAGE_OBJECT_TRUNCATED)}
-        </p>
-      ) : null}
+      {/* A FACT ABOUT THE ANSWER, there from the moment the window opens, `FlatFieldsBody`'s reason: no live region. */}
+      {truncated ? <p className="m-edit-page-object__truncated">{_(EDIT_PAGE_OBJECT_TRUNCATED)}</p> : null}
       {objects.length === 0 ? (
         <>
           <p className="m-edit-page-object__none">{_(EDIT_PAGE_OBJECT_NONE)}</p>
@@ -189,50 +186,44 @@ export default function EditPageObjectBody({
         </>
       ) : (
         <>
-          <fieldset className="m-edit-page-object__choice">
-            <legend className="m-edit-page-object__legend">{_(EDIT_PAGE_OBJECT_WHICH)}</legend>
-            {objects.map((offered) => (
-              <label className="m-edit-page-object__option" key={offered.index}>
-                <input
-                  checked={chosen === offered.index}
-                  name="m-edit-page-object"
-                  onChange={() => {
-                    setChosen(offered.index);
-                    // THE PICKER STARTS AT THE OBJECT'S OWN COLOUR, so the
-                    // default action is *leave it as it is*. An input that stayed
-                    // black would make opening the picker and closing it a
-                    // recolour to black on anything that was not.
-                    setColour(offered.fill === null ? NO_COLOUR : toHex(offered.fill));
-                  }}
-                  type="radio"
-                />
-                <span className="m-edit-page-object__kind">{_(KIND_LABELS[offered.kind])}</span>
-                {/* THE BOX, ROUNDED TO WHOLE POINTS. A person matches this
-                    against what they can see on the page, and a tenth of a
-                    point is below what anybody can compare by eye — the extra
-                    digits would make two rows look different when they are not. */}
-                <span className="m-edit-page-object__box">
-                  {Math.round(offered.left)}, {Math.round(offered.bottom)} –{' '}
-                  {Math.round(offered.right)}, {Math.round(offered.top)}
-                </span>
-              </label>
-            ))}
-          </fieldset>
+          {/* THE PATTERN'S CHOICE ROWS, the object's kind as the name and its box as the note under it. */}
+          <DialogChoices
+            label={EDIT_PAGE_OBJECT_WHICH}
+            options={objects.map((offered) => ({
+              value: String(offered.index),
+              label: KIND_LABELS[offered.kind],
+              // THE BOX, ROUNDED TO WHOLE POINTS. A person matches this against what they can see on the page, and a
+              // tenth of a point is below what anybody can compare by eye — the extra digits would make two rows look
+              // different when they are not.
+              note: {
+                shown: `${String(Math.round(offered.left))}, ${String(Math.round(offered.bottom))} – ${String(Math.round(offered.right))}, ${String(Math.round(offered.top))}`,
+              },
+            }))}
+            value={chosen === null ? '' : String(chosen)}
+            onChange={(value) => {
+              const offered = objects.find((each) => String(each.index) === value);
+              if (offered === undefined) return;
+              setChosen(offered.index);
+              // THE PICKER STARTS AT THE OBJECT'S OWN COLOUR, so the default action is *leave it as it is*. An input
+              // that stayed black would make opening the picker and closing it a recolour to black on anything that
+              // was not.
+              setColour(offered.fill === null ? NO_COLOUR : toHex(offered.fill));
+            }}
+          />
 
-          <div className="m-edit-page-object__numbers">
-            <DialogRow label={EDIT_PAGE_OBJECT_MOVE_X}>
-              <Input label={EDIT_PAGE_OBJECT_MOVE_X} labelShownBeside onValueChange={setMoveX} value={moveX} />
-            </DialogRow>
-            <DialogRow label={EDIT_PAGE_OBJECT_MOVE_Y}>
-              <Input label={EDIT_PAGE_OBJECT_MOVE_Y} labelShownBeside onValueChange={setMoveY} value={moveY} />
-            </DialogRow>
-            <DialogRow label={EDIT_PAGE_OBJECT_SCALE_X}>
-              <Input label={EDIT_PAGE_OBJECT_SCALE_X} labelShownBeside onValueChange={setScaleX} value={scaleX} />
-            </DialogRow>
-            <DialogRow label={EDIT_PAGE_OBJECT_SCALE_Y}>
-              <Input label={EDIT_PAGE_OBJECT_SCALE_Y} labelShownBeside onValueChange={setScaleY} value={scaleY} />
-            </DialogRow>
-          </div>
+          {/* ONE ROW EACH, the pattern's: the name at the start, the field at the end. */}
+          <DialogRow label={EDIT_PAGE_OBJECT_MOVE_X}>
+            <Input label={EDIT_PAGE_OBJECT_MOVE_X} labelShownBeside onValueChange={setMoveX} value={moveX} />
+          </DialogRow>
+          <DialogRow label={EDIT_PAGE_OBJECT_MOVE_Y}>
+            <Input label={EDIT_PAGE_OBJECT_MOVE_Y} labelShownBeside onValueChange={setMoveY} value={moveY} />
+          </DialogRow>
+          <DialogRow label={EDIT_PAGE_OBJECT_SCALE_X}>
+            <Input label={EDIT_PAGE_OBJECT_SCALE_X} labelShownBeside onValueChange={setScaleX} value={scaleX} />
+          </DialogRow>
+          <DialogRow label={EDIT_PAGE_OBJECT_SCALE_Y}>
+            <Input label={EDIT_PAGE_OBJECT_SCALE_Y} labelShownBeside onValueChange={setScaleY} value={scaleY} />
+          </DialogRow>
           <DialogRow label={EDIT_PAGE_OBJECT_COLOUR}>
             <input
               aria-label={_(EDIT_PAGE_OBJECT_COLOUR)}

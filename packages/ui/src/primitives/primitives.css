@@ -744,6 +744,28 @@
   overflow-wrap: anywhere;
 }
 
+/* THE PATTERN'S LIST (the gallery's reading, 2026-10-03): what a command found, kept or removed — the backups it could
+   not delete, the duplicate pages, the fields flattened, what PDF/A removed, the rows a workbook lacks — as rows in one
+   box with a hairline between them, never the browser's bullets. One rule, where five bodies kept four of their own and
+   one kept none. Tabular figures, because these rows are page numbers and counts read down a column. */
+.m-dialog-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border); /* decorative: the list's edge; a control in a row draws its own focus ring */
+  border-radius: var(--radius-8);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.m-dialog-list > li {
+  padding: var(--space-6) var(--space-10);
+}
+
+.m-dialog-list > li + li {
+  border-block-start: 1px solid var(--border-soft); /* decorative: the seam between two rows */
+}
+
 /* THE ROW'S WHOLE WIDTH, under its name: three fields sized to their content stopped short of the row's end, so a
    header's Right field did not line up with the controls below it (the gallery's reading, 2026-10-03). */
 .m-dialog-row__control:has(> .m-dialog-row__fields) {

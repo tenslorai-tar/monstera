@@ -242,11 +242,18 @@ export function DialogRow({
   );
 }
 
+/**
+ * A choice's words: a catalogue key, or text that is the document's own and is shown as it is — an object's kind and
+ * where it sits, which no catalogue holds. One shape for both, so a choice of things in a document is drawn by the
+ * same rows as a choice of options rather than by a copy of them.
+ */
+export type ChoiceText = MessageKey | { readonly shown: string };
+
 /** One option of `DialogChoices`: a short name, and the sentence that says what a person gets. */
 export interface DialogChoice<Value extends string> {
   readonly value: Value;
-  readonly label: MessageKey;
-  readonly note: MessageKey;
+  readonly label: ChoiceText;
+  readonly note: ChoiceText;
 }
 
 /**
@@ -272,6 +279,7 @@ export function DialogChoices<Value extends string>({
   const { _ } = useLingui();
   const heading = useId();
   const name = useId();
+  const say = (text: ChoiceText): string => (typeof text === 'string' ? _(text) : text.shown);
   return (
     <div aria-labelledby={heading} className="m-dialog-choices" role="radiogroup">
       <div className="m-dialog-row__text" id={heading}>
@@ -289,8 +297,8 @@ export function DialogChoices<Value extends string>({
             type="radio"
           />
           <span className="m-dialog-row__text">
-            <span className="m-dialog-row__label">{_(option.label)}</span>
-            <span className="m-dialog-row__note">{_(option.note)}</span>
+            <span className="m-dialog-row__label">{say(option.label)}</span>
+            <span className="m-dialog-row__note">{say(option.note)}</span>
           </span>
         </label>
       ))}
