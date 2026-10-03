@@ -68,6 +68,8 @@ import type { FormFieldAnswer } from './formFieldResult.js';
 export interface FormFieldFormProps {
   /** The name field's label. */
   readonly label: MessageKey;
+  /** A sentence under the name's label, for what the name means here — a radio group's is the group's, not this option's. */
+  readonly note?: MessageKey | undefined;
   /** The confirming control, which says exactly what it will create. */
   readonly apply: MessageKey;
   /**
@@ -84,6 +86,7 @@ export interface FormFieldFormProps {
 
 export function FormFieldForm({
   label,
+  note,
   apply,
   collects,
   resolve,
@@ -117,7 +120,7 @@ export function FormFieldForm({
 
   return (
     <div className="m-form-field">
-      <DialogRow label={label}>
+      <DialogRow label={label} note={note}>
         <Input label={label} labelShownBeside onValueChange={setName} opensFocused value={name} />
       </DialogRow>
 

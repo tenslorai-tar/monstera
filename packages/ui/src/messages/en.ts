@@ -1082,6 +1082,7 @@ export const FORM_FIELD_DROPDOWN_APPLY = messageKey('dialog.form-field-dropdown.
 export const FORM_FIELD_LISTBOX_APPLY = messageKey('dialog.form-field-listbox.apply');
 export const FORM_FIELD_NAME_LABEL = messageKey('dialog.form-field.name');
 export const FORM_FIELD_GROUP_LABEL = messageKey('dialog.form-field.group');
+export const FORM_FIELD_GROUP_NOTE = messageKey('dialog.form-field.group-note');
 export const FORM_FIELD_OPTION_LABEL = messageKey('dialog.form-field.option');
 export const FORM_FIELD_OPTIONS_LABEL = messageKey('dialog.form-field.options');
 export const FORM_FIELD_ADD_OPTION = messageKey('dialog.form-field.add-option');
@@ -3186,7 +3187,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // group is one field with several widgets — so drawing a second option means
   // typing the SAME name again, which is the one thing about radio groups
   // people get wrong.
-  [FORM_FIELD_GROUP_LABEL]: 'Group name — type the same name for every option in this group',
+  [FORM_FIELD_GROUP_LABEL]: 'Group name',
+  [FORM_FIELD_GROUP_NOTE]: 'Type the same name for every option in this group.',
   [FORM_FIELD_OPTION_LABEL]: 'This option’s value',
   [FORM_FIELD_OPTIONS_LABEL]: 'Choice',
   [FORM_FIELD_ADD_OPTION]: 'Add a choice',

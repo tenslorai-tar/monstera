@@ -964,7 +964,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       state: 'filled',
       props: {},
       steps: [
-        type('Group name — type the same name for every option in this group', 'delivery'),
+        type('Group name', 'delivery'),
         type('This option’s value', 'Standard'),
       ],
     },
