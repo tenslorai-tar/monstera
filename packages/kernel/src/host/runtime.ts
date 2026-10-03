@@ -133,6 +133,12 @@ export interface HostTermination {
     | 'unknown-correlation'
     /** Either end: more calls outstanding than the limit anybody chose. */
     | 'too-many-in-flight'
+    /**
+     * The CLIENT: a call went unanswered past its deadline, so the host is treated as wedged and its connection ended
+     * — which kills it and sends every document on it to recovery (ADR-0023 §3, corrected 2026-10-03). A death, not
+     * a violation: nothing the host sent was wrong, it sent nothing.
+     */
+    | 'deadline'
     /** The LOOP: a declared result cannot be sent within the frame maximum. */
     | 'unsendable-response'
     /**

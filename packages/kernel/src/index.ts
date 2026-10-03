@@ -443,6 +443,7 @@ export {
 } from './host/runtime.js';
 export {
   type ClientFileAnswers,
+  type HostCallDeadline,
   type HostClient,
   type HostClientOptions,
   HostConnectionLost,

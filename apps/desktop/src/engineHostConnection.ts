@@ -1,4 +1,10 @@
-import { type ClientFileAnswers, type HostClient, type HostTermination, createHostClient } from '@monstera/kernel';
+import {
+  type ClientFileAnswers,
+  type HostCallDeadline,
+  type HostClient,
+  type HostTermination,
+  createHostClient,
+} from '@monstera/kernel';
 import { type Result, err, ok } from '@monstera/shared';
 
 import {
@@ -122,6 +128,8 @@ export interface EngineHostConnectionOptions {
    * frame, which is the compose host's.
    */
   readonly fileAnswers?: ClientFileAnswers;
+  /** Each call's deadline, past which the connection is ended and the host killed. Required, as the client's is. */
+  readonly deadline: HostCallDeadline;
   /**
    * The connection ended. Called **once**, and only for a connection that
    * started.
@@ -391,6 +399,7 @@ export async function createEngineHostConnection(
     transport,
     maxInFlight: options.maxInFlight,
     correlate: options.correlate,
+    deadline: options.deadline,
     ...(options.fileAnswers === undefined ? {} : { fileAnswers: options.fileAnswers }),
   });
   state.client = client;

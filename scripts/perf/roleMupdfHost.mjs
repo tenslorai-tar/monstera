@@ -480,6 +480,21 @@ async function measureHost() {
       maxInFlight: contract.ENGINE_HOST_MAX_IN_FLIGHT,
       processMemoryLimitBytes: budget.ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
       correlate: () => `role-${String(calls++)}`,
+      // THE SHELL'S DEADLINE POLICY with this one document open (ADR-0023 §3, corrected 2026-10-03), so a measured
+      // call that ran past it is one the shipped host would not be allowed to finish either.
+      deadline: {
+        ms: () =>
+          Math.round(
+            budget.HOST_CALL_DEADLINE.floorMs +
+              (budget.HOST_CALL_DEADLINE.msPerMiB * (NO_DOCUMENT ? 0 : statSync(requireDocument()).size)) / 2 ** 20,
+          ),
+        /** @param {() => void} expire @param {number} ms */
+        schedule: (expire, ms) => {
+          const timer = setTimeout(expire, ms);
+          timer.unref();
+          return () => clearTimeout(timer);
+        },
+      },
       onEnded: (/** @type {{ code: string, detail: string }} */ reason) => {
         ending.reason = reason;
       },

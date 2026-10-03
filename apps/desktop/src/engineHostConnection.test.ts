@@ -62,6 +62,8 @@ function connect(h: Harness) {
     maxInFlight: 8,
     processMemoryLimitBytes: 3_221_225_472,
     correlate: () => 'id-1',
+    // A DEADLINE THAT NEVER FIRES: no case here is about time, and the client's own cases own the deadline.
+    deadline: { ms: () => 30_000, schedule: () => () => undefined },
     onEnded: (reason) => {
       h.calls.push(`onEnded:${reason.code}`);
       h.endings.push(reason);

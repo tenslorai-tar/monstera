@@ -55,3 +55,24 @@ export const MAIN_DOCUMENT_BYTES_CEILING = 1_610_612_736 - 83_886_080;
  * constants from it, in the same direction and for the same reason.
  */
 export const ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES = 3_221_225_472;
+
+/** How a host call's deadline is worked out: a floor, plus an allowance per MiB of the documents open. */
+export interface HostCallDeadlinePolicy {
+  readonly floorMs: number;
+  readonly msPerMiB: number;
+}
+
+/**
+ * How long one engine-host call may go unanswered before its host is treated as wedged, killed and rebuilt
+ * (ADR-0023 §3, corrected 2026-10-03). Scaled by the documents open when the call is sent, because those bound the
+ * input any one call is given: a fixed figure long enough for the largest document would leave a wedged host holding
+ * every small one for as long.
+ *
+ * Measured 2026-10-03 on Windows 11 (4 logical processors), on a real contained host and through the kernel calls
+ * the hosts make. The slowest legitimate call was a Word export of the 200 MiB scan fixture: 167 s and 275 s in two
+ * runs, 1.38 s per MiB at the slower. Then a Word export of the 200 MiB picture fixture, 26 to 57 s; saving 10,000
+ * pages, 5.1 to 6.9 s; recognising one page of the scan, 2.0 s. So 5 s per MiB is 3.6 times the slowest rate, and
+ * the floor is 60 times the slowest call on a small document. A 10 MB document's deadline is about 3 minutes; at the
+ * open-document ceiling (1.42 GiB) it is about 2 hours, where a legitimate Word export may take about 35 minutes.
+ */
+export const HOST_CALL_DEADLINE: HostCallDeadlinePolicy = { floorMs: 120_000, msPerMiB: 5_000 };

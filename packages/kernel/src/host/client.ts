@@ -33,12 +33,14 @@ import type { HostRuntimeTransport, HostTermination } from './runtime.js';
  * Decision 8 kills the host rather than resuming it, and this is that rule
  * arriving at the correlation layer.
  *
- * **There is no timeout, deliberately.** A host that is slow and a host that is
- * gone are different facts, and only the transport can tell them apart — it
- * reports the connection ending, and {@link HostClient.fail} turns that into a
- * rejection for every call still waiting. A timeout here would invent the
- * distinction from a duration, which is the same guess `runtime.ts` refuses when
- * it declines to time out a handler.
+ * **A call has a DEADLINE, and it is not a guess at whether the host is gone.** A host that is slow and a host that
+ * is gone are different facts, and only the transport can tell them apart — it reports the connection ending, and
+ * {@link HostClient.fail} turns that into a rejection for every call still waiting. This used to be the whole
+ * story, and it left a third fact out: a host that is ALIVE AND NEVER ANSWERS — a document that makes the engine
+ * loop — holds the host's one thread, and every call for every document on it waits until the application quits.
+ * Only a duration can end that, so {@link HostClientOptions.deadline} gives each call one, set far past any
+ * legitimate call's duration (ADR-0023 §3, corrected 2026-10-03), and a call past it ends the connection with
+ * `deadline`: the host is killed and rebuilt, and two deaths poison the document that caused them.
  *
  * ## A dead host rejects; it does not leave promises pending
  *
@@ -101,6 +103,21 @@ export interface HostClientOptions {
    * the contract this build compiled.
    */
   readonly fileAnswers?: ClientFileAnswers;
+  /**
+   * How long each call may go unanswered, and how a timer is started.
+   *
+   * Required and undefaulted, for `maxInFlight`'s reason: a default here is a duration nobody chose. The figure is
+   * asked at the moment each call is sent, because what bounds a legitimate call is the documents open then.
+   */
+  readonly deadline: HostCallDeadline;
+}
+
+/** See {@link HostClientOptions.deadline}. */
+export interface HostCallDeadline {
+  /** Milliseconds the call being sent may wait for its answer. */
+  readonly ms: () => number;
+  /** Runs `expire` after `ms` unless the returned cancel is called first. Injected so cases drive the clock. */
+  readonly schedule: (expire: () => void, ms: number) => () => void;
 }
 
 /** See {@link HostClientOptions.fileAnswers}. */
@@ -146,6 +163,7 @@ export function createHostClient({
   maxFrameBytes = ENGINE_HOST_FRAME_MAX_BYTES,
   correlate,
   fileAnswers,
+  deadline,
 }: HostClientOptions): HostClient {
   const decoder = new FrameDecoder(maxFrameBytes);
   const pending = new Map<
@@ -255,10 +273,35 @@ export function createHostClient({
       }
 
       return await new Promise<unknown>((resolve, reject) => {
+        // THE DEADLINE, cancelled by however the call settles — an answer, a refusal, or the connection ending — so a
+        // timer never outlives its call and never ends a connection over a call that has already been answered.
+        const ms = deadline.ms();
+        const cancel = deadline.schedule(() => {
+          if (pending.has(id)) {
+            stop(
+              {
+                code: 'deadline',
+                detail: `"${channel}" had no answer within ${String(ms)} ms, so the host is treated as wedged`,
+              },
+              true,
+            );
+          }
+        }, ms);
         // REGISTERED BEFORE THE WRITE. A transport that answered synchronously
         // would otherwise arrive at an empty map and be reported as an unknown
         // correlation — a violation manufactured by the order of two lines.
-        pending.set(id, { resolve, reject, params, into });
+        pending.set(id, {
+          resolve: (body) => {
+            cancel();
+            resolve(body);
+          },
+          reject: (why) => {
+            cancel();
+            reject(why);
+          },
+          params,
+          into,
+        });
         transport.write(frame);
       });
   };
@@ -353,7 +396,14 @@ export function createHostClient({
         const { bytes } = answered.answerFile;
         fileAnswers.take(call.params, into, bytes).then(
           (raw) => {
-            if (isStopped()) return;
+            // SETTLED WITH THE ENDING, not dropped: this call left `pending` when its frame arrived, so the `stop` that
+            // ended the connection while its file was being read rejected every other call and not this one, and
+            // returning here left its caller waiting for ever.
+            const ended = state.stopped;
+            if (ended !== null) {
+              call.reject(new HostConnectionLost(ended));
+              return;
+            }
             let body: unknown;
             try {
               if (raw.byteLength !== bytes) throw new Error(`the file holds ${String(raw.byteLength)} bytes`);

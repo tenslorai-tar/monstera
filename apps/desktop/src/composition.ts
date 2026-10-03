@@ -77,6 +77,7 @@ import {
   type HostPageLinksReader,
   type HostPageTextReader,
   type HostWordBoxesReader,
+  type HostCallDeadline,
   type HostTermination,
   type PageGeometryReader,
   type PdfiumArea,
@@ -142,6 +143,7 @@ import type { DocId } from '@monstera/shared';
 
 import {
   ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
+  type HostCallDeadlinePolicy,
   MAIN_DOCUMENT_BYTES_CEILING,
 } from './budget.js';
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
@@ -663,6 +665,12 @@ export interface ShellComposition {
    */
   readonly enginePlatform?: EngineHostPlatform | null;
   /**
+   * How long an engine-host call may go unanswered before its host is killed and rebuilt (ADR-0023 §3, corrected
+   * 2026-10-03). Required and undefaulted: the shell passes `HOST_CALL_DEADLINE`, and a harness that freezes a host
+   * on purpose passes a short one, so the figure in force is always one somebody named.
+   */
+  readonly hostCallDeadline: HostCallDeadlinePolicy;
+  /**
    * The same surfaces under the SECOND AppContainer profile, or `null`.
    *
    * A separate field rather than a flag on the one above, because the two
@@ -801,6 +809,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     updateRecordFile,
     fetchUpdateManifest,
     enginePlatform = null,
+    hostCallDeadline,
     pdfiumPlatform = null,
     composePlatform = null,
     layoutTextPlatform = null,
@@ -861,6 +870,21 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     },
   });
 
+  // EVERY ENGINE HOST'S CALL DEADLINE, one policy for all three hosts, worked out as each call is sent from the
+  // documents open then — the bound on what any one call is handed (ADR-0023 §3, corrected 2026-10-03). The timer is
+  // unref'd: a deadline is never a reason for the process to stay alive.
+  const callDeadline: HostCallDeadline = {
+    ms: () =>
+      Math.round(hostCallDeadline.floorMs + (hostCallDeadline.msPerMiB * documents.openDocumentBytes()) / 2 ** 20),
+    schedule: (expire, ms) => {
+      const timer = setTimeout(expire, ms);
+      timer.unref();
+      return () => {
+        clearTimeout(timer);
+      };
+    },
+  };
+
   // BUILT BEFORE THE BUS, because the bus routes `mupdf` to a writer this
   // returns. The order is the dependency: a writer that talks to the engine
   // host cannot exist before something can build one.
@@ -873,7 +897,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // THE REPLAY IS `commands`', which is built below from this opener's writers: the closure is only called after an
   // engine host dies, by which time `commands` exists. Passed, never looked up, so the host-death path cannot reach a
   // replay nothing registered (ADR-0115).
-  const engineHost = engineSessionOpener(enginePlatform, documents, engine, failures, (docId, context) =>
+  const engineHost = engineSessionOpener(enginePlatform, documents, engine, failures, callDeadline, (docId, context) =>
     commands.replayAfterRebuild(docId, context),
   );
 
@@ -890,7 +914,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // prepares the binding. `null` without a platform, and a Markdown import is
   // then refused by name rather than composed in `main` (ADR-0060).
   const composeHost =
-    composePlatform === null ? null : composeHostBinding(composePlatform, failures);
+    composePlatform === null ? null : composeHostBinding(composePlatform, failures, callDeadline);
   // BUILT AFTER THE COMPOSE HOST, which it asks to keep a page's inline images before every regenerating command
   // (ADR-0126). Without one there is nothing to ask, and each edit says so in the log rather than in silence.
   const pdfiumHost =
@@ -899,6 +923,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       : pdfiumHostBinding(
           pdfiumPlatform,
           failures,
+          callDeadline,
           composeHost?.keepInlineImages ??
             ((_image, scope) => {
               failures({
@@ -1812,6 +1837,8 @@ function engineSessionOpener(
   documents: DocumentService,
   sessions: EngineSessions,
   failures: ShellFailureSink,
+  /** Each host call's deadline (ADR-0023 §3, corrected 2026-10-03). */
+  deadline: HostCallDeadline,
   /** The rebuild's second half after a host death (ADR-0115): `DocumentCommands.replayAfterRebuild`. */
   replay: HostDeathSurfaces['replay'],
 ): {
@@ -2366,6 +2393,7 @@ function engineSessionOpener(
       maxInFlight: ENGINE_HOST_MAX_IN_FLIGHT,
       processMemoryLimitBytes: ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
       correlate: () => randomBytes(8).toString('hex'),
+      deadline,
       onEnded: (termination: HostTermination) => {
         // CLEARED FIRST, so that the reopen entries this schedules find no host
         // and build a new one. Left in place, every one of them would await a
@@ -2817,6 +2845,8 @@ type PdfiumRenderPage = ReturnType<typeof remotePdfiumRenderPage>;
 function pdfiumHostBinding(
   platform: EngineHostPlatform,
   failures: ShellFailureSink,
+  /** Each host call's deadline (ADR-0023 §3, corrected 2026-10-03). */
+  deadline: HostCallDeadline,
   /** Puts each regenerating command's input in place with its inline images kept (ADR-0126). */
   keep: PdfiumInputKeeper,
 ): {
@@ -2872,6 +2902,7 @@ function pdfiumHostBinding(
       maxInFlight: ENGINE_HOST_MAX_IN_FLIGHT,
       processMemoryLimitBytes: ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
       correlate: () => randomBytes(8).toString('hex'),
+      deadline,
       onEnded: (termination: HostTermination) => {
         // CLEARED, AND THAT IS ALL. `onEngineHostEnded` is not called and must
         // not be: it walks the open documents and schedules a reopen for each,
@@ -3055,6 +3086,8 @@ function pdfiumHostBinding(
 function composeHostBinding(
   platform: EngineHostPlatform,
   failures: ShellFailureSink,
+  /** Each host call's deadline (ADR-0023 §3, corrected 2026-10-03). */
+  deadline: HostCallDeadline,
 ): {
   readonly compose: (
     format: ImportFormat,
@@ -3098,6 +3131,7 @@ function composeHostBinding(
       maxInFlight: ENGINE_HOST_MAX_IN_FLIGHT,
       processMemoryLimitBytes: ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
       correlate: () => randomBytes(8).toString('hex'),
+      deadline,
       onEnded: (termination: HostTermination) => {
         // CLEARED, AND THAT IS ALL, for PDFium's reason: `onEngineHostEnded` walks
         // the open documents and schedules a reopen for each, which is wrong for a

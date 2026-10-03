@@ -1336,6 +1336,17 @@ export class DocumentService {
     return total;
   }
 
+  /**
+   * Every open document's current byte length, wherever its image is held — memory or file. What an engine-host call
+   * can be handed is bounded by this, which is why a call's deadline is worked out from it (ADR-0023 §3, corrected
+   * 2026-10-03). Not `residentDocumentBytes`, which counts only what `main` holds in memory.
+   */
+  openDocumentBytes(): number {
+    let total = 0;
+    for (const record of this.#records.values()) total += lengthOf(record.image);
+    return total;
+  }
+
   /** Every open document's checkpoint bytes, on disk — the retention rule's second term. */
   #checkpointBytes(): number {
     let total = 0;

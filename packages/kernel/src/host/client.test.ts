@@ -1,8 +1,34 @@
 import { ENGINE_ANSWER_FILE_MAX_BYTES, ENGINE_HOST_FRAME_MAX_BYTES, encodeFrame } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
-import { type HostClient, HostConnectionLost, RequestTooLarge, createHostClient } from './client.js';
+import { type HostCallDeadline, type HostClient, HostConnectionLost, RequestTooLarge, createHostClient } from './client.js';
 import type { HostTermination } from './runtime.js';
+
+/**
+ * A deadline on a MANUAL clock: every timer the client starts is recorded with its duration, and fires only when a
+ * case calls `expire`. A case that never expires one is a case in which no call ever runs out of time.
+ */
+function manualDeadline(ms = 30_000) {
+  const timers: { ms: number; expire: () => void; cancelled: boolean }[] = [];
+  const deadline: HostCallDeadline = {
+    ms: () => ms,
+    schedule: (expire, after) => {
+      const timer = { ms: after, expire, cancelled: false };
+      timers.push(timer);
+      return () => {
+        timer.cancelled = true;
+      };
+    },
+  };
+  return {
+    deadline,
+    timers,
+    /** Fires every timer still running, as the clock reaching each one would. */
+    expire: () => {
+      for (const timer of timers) if (!timer.cancelled) timer.expire();
+    },
+  };
+}
 
 /**
  * A recording transport, and a way to answer as the host would.
@@ -17,6 +43,7 @@ function harness(options: { maxInFlight?: number; ids?: string[] } = {}) {
   const terminations: HostTermination[] = [];
   const ids = options.ids ?? [];
   let next = 0;
+  const clock = manualDeadline();
 
   const client = createHostClient({
     transport: {
@@ -25,12 +52,14 @@ function harness(options: { maxInFlight?: number; ids?: string[] } = {}) {
     },
     maxInFlight: options.maxInFlight ?? 4,
     correlate: () => ids[next++] ?? `id-${String(next)}`,
+    deadline: clock.deadline,
   });
 
   return {
     client,
     writes,
     terminations,
+    clock,
     /** What the client asked, decoded. */
     sent: () =>
       writes.map((frame) => JSON.parse(new TextDecoder().decode(frame.subarray(4))) as unknown),
@@ -296,10 +325,41 @@ describe('createHostClient', () => {
       },
       maxInFlight: 2,
       correlate: () => 'only',
+      deadline: manualDeadline().deadline,
     });
 
     await expect(held.client.invoke('one', {})).resolves.toEqual({ echoed: true });
     expect(terminations).toEqual([]);
+  });
+
+  it('a call past its deadline ends the connection as `deadline`, and every call on it rejects', async () => {
+    const h = harness({ ids: ['slow', 'other'] });
+    const slow = h.client.invoke('engine:loop', {});
+    const other = h.client.invoke('engine:read', {});
+    expect(h.clock.timers.map((timer) => timer.ms)).toStrictEqual([30_000, 30_000]);
+
+    h.clock.expire();
+
+    await expect(slow).rejects.toBeInstanceOf(HostConnectionLost);
+    await expect(other).rejects.toBeInstanceOf(HostConnectionLost);
+    expect(h.terminations).toHaveLength(1);
+    expect(h.terminations[0]?.code).toBe('deadline');
+    expect(h.terminations[0]?.detail).toContain('"engine:loop" had no answer within 30000 ms');
+    expect(h.client.termination()?.code).toBe('deadline');
+  });
+
+  it('CONTROL: an answered call cancels its deadline, so its expiry ends nothing', async () => {
+    // THE MUTATION THIS SEPARATES: a timer left running after its answer would end a healthy connection one deadline
+    // after every call — the case above cannot tell that client from this one.
+    const h = harness({ ids: ['a'] });
+    const call = h.client.invoke('one', {});
+    h.answer({ fine: true }, 'a');
+    await expect(call).resolves.toEqual({ fine: true });
+
+    expect(h.clock.timers.map((timer) => timer.cancelled)).toStrictEqual([true]);
+    for (const timer of h.clock.timers) timer.expire();
+    expect(h.terminations).toStrictEqual([]);
+    expect(h.client.termination()).toBeNull();
   });
 
   it('CONTROL: a running client reports no termination and answers normally', async () => {
@@ -320,9 +380,9 @@ describe('createHostClient', () => {
  * A client whose file-routed channel is `doc:big`, and whose `take` the case decides — what the directory holds under
  * the name, or a refusal to read it (ADR-0125).
  *
- * @param take the file's bytes as main would read them, or an Error to throw
+ * @param take the file's bytes as main would read them, an Error to throw, or a promise the case settles itself
  */
-function fileHarness(take: Uint8Array | Error | null = null) {
+function fileHarness(take: Uint8Array | Error | Promise<Uint8Array> | null = null) {
   const writes: Uint8Array[] = [];
   const terminations: HostTermination[] = [];
   const taken: { params: unknown; name: string; bytes: number }[] = [];
@@ -338,12 +398,14 @@ function fileHarness(take: Uint8Array | Error | null = null) {
     },
     maxInFlight: 4,
     correlate: () => 'c1',
+    deadline: manualDeadline().deadline,
     fileAnswers: {
       routed: (channel) => channel === 'doc:big',
       mint: () => 'n1',
       take: (params, name, bytes) => {
         taken.push({ params, name, bytes });
         if (take instanceof Error) return Promise.reject(take);
+        if (take instanceof Promise) return take;
         return Promise.resolve(take ?? new Uint8Array());
       },
       requested: (channel) => channel === 'doc:undo',
@@ -387,6 +449,20 @@ describe('a file-routed answer on the client (ADR-0125)', () => {
     await expect(call).resolves.toStrictEqual(envelope);
     expect(h.taken).toStrictEqual([{ params: { session: 's1' }, name: 'n1', bytes: bytes.byteLength }]);
     expect(h.terminations).toStrictEqual([]);
+  });
+
+  it('a call whose file is still being read when the connection ends is REJECTED with the ending, never left waiting', async () => {
+    // The call leaves `pending` when its frame arrives, so the ending's sweep of `pending` does not reach it; the take
+    // finishing afterwards must still settle it.
+    let finishTake: (bytes: Uint8Array) => void = () => undefined;
+    const h = fileHarness(new Promise<Uint8Array>((done) => (finishTake = done)));
+    const call = h.client.invoke('doc:big', { session: 's1' });
+    h.frame({ id: 'c1', answerFile: { bytes: bytes.byteLength } });
+    h.client.fail({ code: 'connection-lost', detail: 'the reader stopped' });
+    finishTake(bytes);
+
+    await expect(call).rejects.toBeInstanceOf(HostConnectionLost);
+    await expect(call).rejects.toMatchObject({ termination: { code: 'connection-lost' } });
   });
 
   it('names no file for a channel that answers in the frame', () => {
