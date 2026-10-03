@@ -6074,12 +6074,13 @@ body {
 
 /* EVERY FLOATING SURFACE (v5): menus, the context menu, a group's More, the command palette — the float surface, its
    glass and its shadow, rounded 12; items 30 tall, rounded 6. */
-/* NEVER TALLER THAN THE ROOM ITS SIDE OF THE TRIGGER HAS: `--available-height` is set by Base UI's positioner on the
-   element around the popup, and a menu longer than it scrolls inside rather than running past the window, where its
-   last items could not be reached at all. */
+/* NEVER TALLER THAN HALF THE WINDOW, NOR THAN THE ROOM ITS SIDE OF THE TRIGGER HAS: `--available-height` is set by Base
+   UI's positioner on the element around the popup, and the smaller of the two wins. A menu longer than that scrolls
+   inside — `auto` draws the scrollbar exactly when it does — rather than covering the page or running past the window,
+   where its last items could not be reached at all. A highlighted item is focused, and focus scrolls it into view. */
 .m-context-menu {
   box-sizing: border-box;
-  max-block-size: var(--available-height, none);
+  max-block-size: min(var(--available-height, var(--menu-max-block)), var(--menu-max-block));
   overflow-y: auto;
   min-inline-size: var(--context-menu-min);
   padding: var(--space-4) var(--space-6);

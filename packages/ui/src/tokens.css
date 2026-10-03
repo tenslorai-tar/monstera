@@ -476,6 +476,8 @@
   --menu-min: 280px;
   --menu-item: 30px;
   --context-menu-min: 232px;
+  /* Every menu's tallest: half the window, so an open menu never covers more of the page than it leaves. */
+  --menu-max-block: 50dvh;
   --dialog-settings-width: 880px;
   --dialog-settings-height: 600px;
   --dialog-head-height: 48px;

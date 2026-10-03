@@ -266,3 +266,87 @@ test('every MENU draws a glyph for every item in one column, titles aligned, and
     await expect(popup).toBeHidden();
   }
 });
+
+/**
+ * A rounding pixel. The cap is half the window exactly; this is the sub-pixel a box's edge may land on, never a share
+ * of the window, so a menu at 52% fails.
+ */
+const ROUNDING = 1;
+
+// NO MENU IS TALLER THAN HALF THE WINDOW (the owner's correction N6): a menu as tall as the room below its trigger
+// covered the page the reader was working on, and on a short window its items ran to the bottom edge. Every menu on the
+// row is read at the default window and the narrowest; one that holds more than half a window of items scrolls inside,
+// and the keyboard keeps the item it reaches on screen.
+for (const size of [
+  { width: 1280, height: 800 },
+  { width: 760, height: 560 },
+] as const) {
+  test(`at ${String(size.width)} × ${String(size.height)} every MENU is at most half the window, ends inside it, and a long one scrolls with ArrowDown’s item in view`, async ({
+    page,
+  }) => {
+    await openDocument(page);
+    await page.setViewportSize(size);
+    const triggers = page.locator('.m-menu-bar__trigger');
+    const names = await triggers.allTextContents();
+    expect(names.length).toBeGreaterThan(8);
+    const popup = page.locator('.m-menu-bar__popup');
+    const report: Record<string, unknown> = {};
+    const long: string[] = [];
+    for (const name of names) {
+      await page.getByRole('menubar').getByRole('menuitem', { name, exact: true }).click();
+      await expect(popup).toBeVisible();
+      const read = await popup.evaluate((menu) => {
+        const box = menu.getBoundingClientRect();
+        return {
+          height: box.height,
+          top: box.top,
+          bottom: box.bottom,
+          window: window.innerHeight,
+          scrolls: menu.scrollHeight > menu.clientHeight + 1,
+          overflow: getComputedStyle(menu).overflowY,
+        };
+      });
+      if (read.height > read.window / 2 + ROUNDING || read.bottom > read.window || read.top < 0) report[name] = read;
+      if (read.scrolls) {
+        long.push(name);
+        // IT SCROLLS WITH A SCROLLBAR the platform draws, not a clipped box: `auto` draws one exactly when it overflows.
+        if (read.overflow !== 'auto') report[`${name} overflow`] = read.overflow;
+      }
+      await page.keyboard.press('Escape');
+      await expect(popup).toBeHidden();
+    }
+    expect(report).toStrictEqual({});
+
+    // NOT VACUOUS: at least one menu holds more than half a window of items at this size, so the scrolling half below
+    // has a menu to read. The cap's own control is the report above, which names every menu taller than half without it.
+    expect(long.length, 'a menu longer than half the window').toBeGreaterThan(0);
+
+    for (const name of long) {
+      await page.getByRole('menubar').getByRole('menuitem', { name, exact: true }).click();
+      await expect(popup).toBeVisible();
+      // ARROWDOWN TO THE LAST ITEM the keyboard can reach — a disabled item is passed over — and no further.
+      const last = popup.locator('[role="menuitem"]:not([data-disabled]), [role="menuitemcheckbox"]:not([data-disabled])').last();
+      const count = await popup.locator('[role="menuitem"], [role="menuitemcheckbox"]').count();
+      for (let press = 0; press <= count && (await last.getAttribute('data-highlighted')) === null; press += 1) {
+        await page.keyboard.press('ArrowDown');
+      }
+      await expect(last, name).toHaveAttribute('data-highlighted', '');
+      const seen = await popup.evaluate((menu) => {
+        const items = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]')].filter(
+          (item) => !item.hasAttribute('data-disabled'),
+        );
+        const item = items[items.length - 1];
+        const view = menu.getBoundingClientRect();
+        const style = getComputedStyle(menu);
+        const top = view.top + parseFloat(style.borderTopWidth);
+        const bottom = top + menu.clientHeight;
+        const box = item?.getBoundingClientRect();
+        return { scrolled: menu.scrollTop, inside: box !== undefined && box.top >= top - 0.5 && box.bottom <= bottom + 0.5 };
+      });
+      expect(seen.scrolled, `${name} scrolled`).toBeGreaterThan(0);
+      expect(seen.inside, `${name}: the last item is inside the menu's visible box`).toBe(true);
+      await page.keyboard.press('Escape');
+      await expect(popup).toBeHidden();
+    }
+  });
+}
