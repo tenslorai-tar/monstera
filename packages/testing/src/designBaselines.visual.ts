@@ -89,12 +89,13 @@ async function runCommand(page: Page, title: string): Promise<void> {
  * The dialogs the owner approved on 2026-10-02 — one per group of the dialog pattern — and the footers of that day's
  * round: a report's Close, About's and Components' Close-first rows, Set up AI's single Skip. Each is captured on its
  * own, so a change inside one is not diluted by the window's pixel count. `ready` names what arrives last: a
- * registered dialog is `lazy`, so its title alone is a dialog with an empty body.
+ * registered dialog is `lazy`, so its title alone is a dialog with an empty body. It is a button OF THE BODY, waited
+ * for as the last of its name: the title bar's × is named *Close* too and exists before the body (KKKKKKK-1).
  */
 const DIALOGS: readonly { command: string; title: string; file: string; ready: string }[] = [
   { command: 'Delete pages…', title: 'Delete pages', file: 'delete-pages', ready: 'Delete pages' },
   { command: 'Watermark…', title: 'Watermark', file: 'watermark', ready: 'Add watermark' },
-  { command: 'Donate', title: 'Support Monstera', file: 'donate', ready: 'Close' },
+  { command: 'Donate', title: 'Support Monstera', file: 'donate', ready: 'Open the donation page' },
   { command: 'Word count', title: 'Word count', file: 'word-count', ready: 'Close' },
   { command: 'About', title: 'About Monstera', file: 'about', ready: 'Close' },
   { command: 'Components', title: 'Components', file: 'components', ready: 'Close' },
@@ -318,7 +319,13 @@ for (const look of LOOKS) {
       await runCommand(page, command);
       const dialog = page.getByRole('dialog', { name: title });
       await expect(dialog).toBeVisible();
-      await expect(dialog.getByRole('button', { name: ready, exact: true }).first()).toBeVisible();
+      // THE BODY'S BUTTON, the last of its name: the title bar's × comes first in the dialog and is named *Close* too,
+      // and it is there before a lazily loaded body, so `.first()` was satisfied by a dialog with no body — CI at
+      // 024602b2 photographed About as a 200 x 92 px frame (KKKKKKK-1).
+      await expect(dialog.getByRole('button', { name: ready, exact: true }).last()).toBeVisible();
+      // THE HARNESS'S CONTROL: a *Close*-ready dialog holds that name twice, the × and its own, so the wait above is
+      // for the body's; and no other ready name is the ×'s.
+      await expect(dialog.getByRole('button', { name: ready, exact: true })).toHaveCount(ready === 'Close' ? 2 : 1);
       await parkPointer(page);
       await expect(dialog).toHaveScreenshot(`${look.name}-dialog-${file}.png`);
       await page.keyboard.press('Escape');

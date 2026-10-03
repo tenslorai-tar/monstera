@@ -919,6 +919,9 @@ button with `.first()`, and for the dialogs ready at *Close* the first is the ti
 name and exists before the lazily loaded body. CI at `024602b` photographed About at 200 x 92 px against its
 626 x 394 baseline, a dialog with no body; the same case passed on `d7d78c1` and `ccd2b22`, on the branch and on main.
 The footer's button is rendered inside the body's Suspense (`DialogHost.tsx`), so it is the one that means *loaded*.
+*Correction, 2026-10-03, with the fix:* Donate's body has no *Close* at all (its buttons are *Not now* and *Open the
+donation page*), so its wait matched only the × and never waited for its body; it waits for *Open the donation page*
+now, and each dialog's ready name is asserted to be the ×'s twice over or not at all.
 
 **KKKKKKK-2** (low, closed by this entry): the merge procedure is *merge, typecheck and build, MSIX, then baselines,
 audit, push*, and the audit step was skipped at `c89e726` because the range was then under one batch. The gate is
