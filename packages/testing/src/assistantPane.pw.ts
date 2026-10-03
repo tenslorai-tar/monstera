@@ -113,11 +113,11 @@ test('an OPEN choice menu is headed by its name, then its values with the chosen
 
 // AT EVERY WIDTH THE PANE ALLOWS (the owner's review of 0.1.9.0, where Send was pushed out of the box and the box
 // scrolled sideways): nothing in the pane extends past it or scrolls sideways, the paperclip, the text and Send are
-// inside the box, and the provider and model are a row UNDER it. 216 is the pane's floor, 340 its default and 1600 its
+// inside the box, and the provider and model are a row UNDER it. 264 is the pane's floor, 340 its default and 1600 its
 // ceiling, which a 1600 px window holds to what the page area leaves. The old foot pushed Send out at 340, so the
 // default is a case that separates, and a long unbroken line typed into the box is in every case, because a text box
 // that sizes to its content can widen itself.
-for (const width of [216, 340, 1600]) {
+for (const width of [264, 340, 1600]) {
   test(`at a ${String(width)} px pane the message box holds the paperclip, the text and Send, and nothing overflows`, async ({
     page,
   }) => {
@@ -142,7 +142,7 @@ for (const width of [216, 340, 1600]) {
         })
         .map((element) => element.className);
       return {
-        paneWidth: Math.round(p.width),
+        paneWidth: p.width,
         past,
         paperclip: within('button[aria-label="Attach files"]'),
         text: within('textarea'),
@@ -153,7 +153,10 @@ for (const width of [216, 340, 1600]) {
     });
     expect(shape).not.toBeNull();
     // THE PANE IS AT THE WIDTH ASKED, less its 1 px border each side — or, at the ceiling, as wide as the window lets it.
-    if (width < 1600) expect(shape?.paneWidth).toBe(width - 2);
+    // WITHIN A PIXEL, which is all the splitter promises: the library rounds a pane's share to three significant figures
+    // (`Splitter.tsx`, "pixels in, pixels out"). Rounded and compared exactly, this held at 216 by where the rounding
+    // happened to land, and read 263 for 262 at 264.
+    if (width < 1600) expect(Math.abs((shape?.paneWidth ?? 0) - (width - 2))).toBeLessThan(1);
     else expect(shape?.paneWidth).toBeGreaterThan(500);
     expect(shape?.past, JSON.stringify(shape?.past)).toStrictEqual([]);
     expect(shape?.paperclip).toBe(true);

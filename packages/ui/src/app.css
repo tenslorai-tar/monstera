@@ -3088,6 +3088,41 @@ optgroup {
   border-inline-start: 1px solid var(--border-soft); /* decorative: the handle's seam against the page area */
 }
 
+/* A SIDE THAT GAVE WAY, OPENED (ADR-0146): a sheet over the page's edge, drawn from inside its handle so it starts at
+   the handle's inner edge and spans the row's height. Over the page area and its floating toolbar; menus and dialogs
+   portal above everything and stay above it. Its width is the panel's minimum, set where it is drawn. */
+.m-document-panel-handle,
+.m-context-panel-handle {
+  position: relative;
+}
+
+.m-panel-sheet {
+  position: absolute;
+  inset-block: 0;
+  z-index: 2;
+  display: flex;
+  border-radius: var(--radius-14);
+  /* THE WINDOW'S GROUND UNDER IT, laid against the viewport as `.m-document-surface` lays it: a panel is glass, and in
+     the row what shows through is the ground. Over the page it was the page's text, so the sheet carries the ground. */
+  background-color: var(--app-bg);
+  background-image: var(--ambient);
+  background-attachment: fixed;
+  box-shadow: var(--float-shadow);
+}
+
+.m-panel-sheet--start {
+  inset-inline-start: 100%;
+}
+
+.m-panel-sheet--end {
+  inset-inline-end: 100%;
+}
+
+/* The sheet itself takes the focus only when it holds nothing that can; the panel's own controls draw their rings. */
+.m-panel-sheet:focus {
+  outline: none;
+}
+
 .m-thumbnails {
   flex: 0 0 auto;
   display: flex;
@@ -6186,17 +6221,33 @@ body {
 
 .m-context-panel__tabs {
   align-self: stretch;
+  min-inline-size: 0; /* the header's rule below: the tabs give way before the chevron does */
 }
 
 .m-context-panel__tab {
   display: inline-flex;
   align-items: center;
   gap: var(--space-6);
+  min-inline-size: 0;
   padding-inline: var(--space-10);
   border-radius: 0;
   font-size: var(--font-chrome-12);
   font-weight: 600;
   color: var(--muted);
+}
+
+/* THE HEADER NEVER CLIPS ITS CHEVRON (2026-10-03): at 1024 x 720 the header's content was 256 px in a 238 px box and
+   the collapse control was the part cut off. `CONTEXT_PANEL_MIN_WIDTH` holds the English labels whole; a longer
+   language shortens a label here instead, its glyph and the chevron keeping their size. */
+.m-context-panel__header > :not(.m-context-panel__tabs),
+.m-context-panel__tab > svg {
+  flex: none;
+}
+
+.m-context-panel__tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* THE SELECTED TAB is Base UI's `data-active` (1.7's `TabsTabDataAttributes`) — `data-selected`, which this file

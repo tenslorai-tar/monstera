@@ -40,6 +40,32 @@
 export const MINIMUM_WINDOW = { width: 1024, height: 720 } as const;
 
 /**
+ * The narrowest the page area may be drawn, in CSS pixels
+ * ([ADR-0146](../../../docs/DECISIONS/0146-a-narrow-window-keeps-the-page-and-folds-the-chrome.md) Decision 1): the
+ * document row's flexible pane, which is the canvas area and the gap on each side where a resize handle lies.
+ *
+ * **What {@link MINIMUM_WINDOW} leaves the page with both side panels at their minimums**, so the window this module
+ * promises draws all of its chrome and only a smaller one — a display whose work area is under 1024 wide — makes a side
+ * give way. Measured in Chromium 151 at 1024 × 720 on 2026-10-03, the document row is 936 px: less the document panel's
+ * 256 and the contextual panel's 264 (`packages/ui/src/settings/layout.ts`), that is 416 — a US Letter page at about
+ * 47%, with the 32 px gutter `zoom.ts` keeps around a fit.
+ *
+ * Here beside the window it is derived from, because the rendered case for ADR-0146 reads it too: it asserts that
+ * nothing gives way at 1024 × 720, so chrome that widens the row's neighbours fails there rather than quietly hiding a
+ * panel at the minimum window.
+ */
+export const PAGE_AREA_MIN_WIDTH = 416;
+
+/**
+ * A side panel's reopen handle, in CSS pixels: what a side costs the document row when it is shut or has given way.
+ *
+ * Read from the stylesheets: a dense icon button, a 14 px glyph with `--space-4` padding and a 1 px border on each side
+ * (24), and the handle's own 1 px seam (25). The rendered case for ADR-0146 asserts that both handles measure this, so a
+ * restyled handle fails there rather than moving the point where a panel gives way.
+ */
+export const EDGE_HANDLE_WIDTH = 25;
+
+/**
  * The floor a window on a display with this work area may be resized to: {@link MINIMUM_WINDOW}, and never more than
  * the work area itself.
  *

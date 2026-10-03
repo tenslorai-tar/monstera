@@ -6,7 +6,9 @@ import { AxeBuilder } from '@axe-core/playwright';
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { AI_SETUP_AT_START_SETTING_ID, blockEditOf, displayLocationSchema } from '@monstera/contract';
 import {
+  EDGE_HANDLE_WIDTH,
   MINIMUM_WINDOW,
+  PAGE_AREA_MIN_WIDTH,
   asDocId,
   asDocVersion,
   asFileHandle,
@@ -570,12 +572,12 @@ async function storedSettings(page: Page): Promise<Readonly<Record<string, unkno
   return parsed.value.stored;
 }
 
-test('at its MINIMUM width the right contextual panel still holds every Properties control', async ({ page }) => {
-  // `CONTEXT_PANEL_MIN_WIDTH` is 216, MEASURED against the tab's min-content width, which this case
-  // prints. This is the rendered panel at that width, asserting no control runs past the pane — what
-  // a person would see clipped.
+test('at its MINIMUM width the right contextual panel still holds every Properties control, and its whole header', async ({ page }) => {
+  // `CONTEXT_PANEL_MIN_WIDTH` is 264, from the HEADER (2026-10-03): at 216 its collapse chevron was cut off, and no case
+  // looked at the header. This is the rendered panel at that width, asserting no control runs past the pane — what a
+  // person would see clipped — the header's chevron among them, and the tab's min-content width printed.
   await page.setViewportSize({ width: 1280, height: 800 });
-  await bridgeWithDocument(page, { 'appearance.context-panel-width': 216 }, 1);
+  await bridgeWithDocument(page, { 'appearance.context-panel-width': 264 }, 1);
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
 
@@ -595,13 +597,21 @@ test('at its MINIMUM width the right contextual panel still holds every Properti
     tab.style.inlineSize = 'min-content';
     const minContent = tab.getBoundingClientRect().width;
     tab.style.inlineSize = '';
-    return { overflow, minContent };
+    // THE HEADER: its chevron inside the pane, and nothing of it hidden by its own overflow.
+    const header = pane.querySelector<HTMLElement>('.m-context-panel__header');
+    const chevron = header?.querySelector('button[aria-label="Collapse the properties panel"]');
+    const headerFits = header !== null && header.scrollWidth <= header.clientWidth;
+    const chevronPast = chevron === null || chevron === undefined ? null : chevron.getBoundingClientRect().right - paneRight;
+    return { overflow, minContent, headerFits, chevronPast };
   });
   expect(measured).not.toBeNull();
   console.log(`Properties tab min-content width: ${String(measured?.minContent)} px`);
   // THE CONTROLS WERE FOUND, or the loop below checks nothing.
   expect((measured?.overflow ?? []).length).toBeGreaterThan(10);
   for (const past of measured?.overflow ?? []) expect(past).toBeLessThanOrEqual(0.5);
+  expect(measured?.headerFits).toBe(true);
+  expect(measured?.chevronPast).not.toBeNull();
+  expect(measured?.chevronPast ?? Infinity).toBeLessThanOrEqual(0.5);
 });
 
 test('the ASSISTANT fits its panel: the message box is inside it and nothing scrolls', async ({ page }) => {
@@ -2068,6 +2078,68 @@ test('a NARROW MENU ROW stays one line: the words go, then the last menus fold i
   await expect(about).toBeVisible();
   await about.click();
   await expect(page.getByRole('dialog')).toBeVisible();
+});
+
+test('a NARROW WINDOW keeps the page: both panels at the minimum window, then the right and the left give way to handles that open sheets (ADR-0146)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 720 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+  const leftResize = page.getByRole('separator', { name: 'Resize the document panel' });
+  const rightResize = page.getByRole('separator', { name: 'Resize the properties panel' });
+  const leftHandle = page.getByRole('button', { name: 'Show the document panel' });
+  const rightHandle = page.getByRole('button', { name: 'Show the properties panel' });
+  // THE SPLITTER'S FLEXIBLE PANE, which is what holds the floor: the canvas area inside it, plus the gaps where the
+  // resize handles lie over its edges.
+  const pageArea = page.locator('.m-splitter__pane:has(> .m-splitter__middle)');
+  const width = async (locator: typeof pageArea): Promise<number> => (await locator.boundingBox())?.width ?? 0;
+
+  // THE MINIMUM WINDOW DRAWS ALL ITS CHROME: both panels in the row, and the page area at its floor or wider.
+  await expect(leftResize).toBeVisible();
+  await expect(rightResize).toBeVisible();
+  await expect(rightHandle).toHaveCount(0);
+  expect(await width(pageArea)).toBeGreaterThanOrEqual(PAGE_AREA_MIN_WIDTH - 0.5);
+
+  // NARROWER: the right side gives way to its handle, the left stays, and the page keeps its floor.
+  await page.setViewportSize({ width: 960, height: 720 });
+  await expect(rightResize).toHaveCount(0);
+  await expect(rightHandle).toBeVisible();
+  await expect(leftResize).toBeVisible();
+  expect(await width(pageArea)).toBeGreaterThanOrEqual(PAGE_AREA_MIN_WIDTH - 0.5);
+
+  // NARROWER STILL: both give way, each handle the width the rule counts it at.
+  await page.setViewportSize({ width: 760, height: 560 });
+  await expect(leftHandle).toBeVisible();
+  for (const handle of ['.m-document-panel-handle', '.m-context-panel-handle']) {
+    expect(Math.round(await width(page.locator(handle))), `${handle}'s width`).toBe(EDGE_HANDLE_WIDTH);
+  }
+
+  // ASKED FOR, the right side opens as a sheet over the page's edge, holding the panel, and Escape gives it back.
+  await rightHandle.click();
+  const sheet = page.locator('[data-panel-sheet="end"]');
+  await expect(sheet.getByRole('complementary', { name: 'Properties' })).toBeVisible();
+  const sheetBox = await sheet.boundingBox();
+  const handleBox = await page.locator('.m-context-panel-handle').boundingBox();
+  if (sheetBox === null || handleBox === null) throw new Error('the sheet and its handle are laid out');
+  // IT MEETS ITS HANDLE: placed against the handle's padding box, so its edge lies on the handle's 1 px seam.
+  const sheetEnd = sheetBox.x + sheetBox.width;
+  expect(sheetEnd).toBeGreaterThanOrEqual(handleBox.x - 0.5);
+  expect(sheetEnd).toBeLessThanOrEqual(handleBox.x + 1.5);
+  // ITS HEADER WHOLE in the sheet too — the chevron the 216 floor cut off.
+  expect(await sheet.locator('.m-context-panel__header').evaluate((header) => header.scrollWidth <= header.clientWidth)).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Show the properties panel' })).toBeFocused();
+  // NEITHER OPEN SETTING WAS WRITTEN: the person's choice is what a wider window draws again.
+  const stored = await storedSettings(page);
+  expect(stored['appearance.context-panel-open']).not.toBe(false);
+  expect(stored['appearance.document-panel-open']).not.toBe(false);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(rightResize).toBeVisible();
+  await expect(leftResize).toBeVisible();
 });
 
 // BOTH BRAND TONES ARE FILLS, in every look (the owner's decision, 2026-10-01): Rate Us was an outline on a translucent

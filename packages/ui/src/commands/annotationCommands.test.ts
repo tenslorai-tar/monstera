@@ -30,6 +30,7 @@ const CARRIED = { style: PLAIN_ITEM, kind: 'square', contents: '', author: '', c
 import { ELLIPSE_TOOL_ID, RECTANGLE_TOOL_ID } from '../annotations/shapeTools.js';
 import type { CommandContext } from '../registries/commands.js';
 import { ALL_SETTINGS } from '../settings/all.js';
+import { PanelPresence } from '../panelPresence.js';
 import { CONTEXT_PANEL_OPEN_SETTING, CONTEXT_PANEL_TAB_SETTING } from '../settings/layout.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { SettingsStore } from '../settingsStore.js';
@@ -588,12 +589,15 @@ describe('selectionPropertiesCommand', () => {
 
   function deps(selection: typeof SELECTION | undefined): {
     readonly settings: SettingsStore;
+    readonly presence: PanelPresence;
     readonly selection: () => typeof SELECTION | undefined;
     readonly onDelete: () => undefined;
     readonly onPlace: () => undefined;
   } {
+    const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
     return {
-      settings: new SettingsStore(new SettingsRegistry(ALL_SETTINGS)),
+      settings,
+      presence: new PanelPresence(settings),
       selection: () => selection,
       onDelete: () => undefined,
       onPlace: () => undefined,
@@ -615,6 +619,18 @@ describe('selectionPropertiesCommand', () => {
     // AND RUNNING IT AGAIN LEAVES IT OPEN — the control a toggle would fail.
     void selectionPropertiesCommand(built).run(WITH_DOCUMENT);
     expect(built.settings.get(CONTEXT_PANEL_OPEN_SETTING.id)).toBe(true);
+  });
+
+  it('in a NARROW ROW shows the panel as its sheet, where a write of the setting alone would draw nothing (ADR-0146)', () => {
+    const built = deps(SELECTION);
+    built.presence.measure(600);
+    // CONTROL: the setting is on and the panel is still not on screen — what the old run left a person looking at.
+    expect(built.settings.get(CONTEXT_PANEL_OPEN_SETTING.id)).toBe(true);
+    expect(built.presence.form('end')).toBe('handle');
+
+    void selectionPropertiesCommand(built).run(WITH_DOCUMENT);
+    expect(built.presence.form('end')).toBe('sheet');
+    expect(built.settings.get(CONTEXT_PANEL_TAB_SETTING.id)).toBe('properties');
   });
 
   it('is HIDDEN with nothing selected, and writes nothing when run anyway', () => {

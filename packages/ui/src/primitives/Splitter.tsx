@@ -118,6 +118,12 @@ export interface SplitterProps {
   readonly start?: FixedPane | undefined;
   /** The flexible pane, which takes whatever the fixed panes leave. */
   readonly middle: ReactNode;
+  /**
+   * The narrowest the flexible pane may be, in CSS pixels: handed to the machine as its minimum, so a window that
+   * narrows or a handle that is dragged takes the fixed panes towards their own minimums first. Whether the row can
+   * hold it beside them at all is the caller's question, answered before it opens a side (ADR-0146).
+   */
+  readonly middleMinWidth?: number | undefined;
   readonly end?: FixedPane | undefined;
 }
 
@@ -135,7 +141,7 @@ function middleClass(startOpen: boolean, endOpen: boolean): string {
   ].join(' ');
 }
 
-export function Splitter({ start, middle, end }: SplitterProps): ReactElement {
+export function Splitter({ start, middle, middleMinWidth, end }: SplitterProps): ReactElement {
   const { i18n } = useLingui();
   // THE MACHINE'S ID IS REQUIRED (`@zag-js/types` `CommonProperties`) and names the elements it
   // looks up; a literal would collide the day two splitters are on screen.
@@ -164,7 +170,7 @@ export function Splitter({ start, middle, end }: SplitterProps): ReactElement {
     orientation: 'horizontal',
     panels: panes.map((pane) =>
       pane.fixed === undefined
-        ? { id: pane.id }
+        ? { id: pane.id, ...(middleMinWidth === undefined ? {} : { minSize: `${String(middleMinWidth)}px` }) }
         : {
             id: pane.id,
             minSize: pane.fixed.open ? `${String(pane.fixed.minWidth)}px` : SHUT,

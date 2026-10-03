@@ -253,7 +253,8 @@ import {
 import type { IconName } from '../primitives/icons.js';
 import { type CommandContext, RESULT_DIALOG, targetPages, TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
 import type { Placement } from '../registries/placement.js';
-import { DOCUMENT_PANEL_OPEN_SETTING, DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
+import type { PanelPresence } from '../panelPresence.js';
+import { DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import type { ShowToast } from '../toasts.js';
 import { readWholeList } from '../readWholeList.js';
@@ -912,11 +913,12 @@ export function actualSizeCommand(deps: ZoomDeps): UiCommand {
 /**
  * Shows §10.3's Search panel — the one route to it, taken by *Find* and by the selected-text menu's
  * *Search*. The panel settings are the one owner of which panel shows, so a second spelling of
- * these two lines would be a second opinion about how the Search panel is opened.
+ * these two lines would be a second opinion about how the Search panel is opened. The panel is
+ * SHOWN rather than its setting written, so a narrow row draws it as a sheet (ADR-0146).
  */
-export function showSearchPanel(settings: SettingsStore): void {
-  settings.set(DOCUMENT_PANEL_OPEN_SETTING.id, true);
+export function showSearchPanel(settings: SettingsStore, presence: PanelPresence): void {
   settings.set(DOCUMENT_PANEL_SETTING.id, 'search');
+  presence.show('start');
 }
 
 /**
@@ -929,7 +931,10 @@ export function showSearchPanel(settings: SettingsStore): void {
  * only from the panel's own tabs: a person on the Comment or Forms ribbon had no control there
  * that led to them. The setting is the one owner of which panel shows, as `showSearchPanel`'s is.
  */
-export function showPanelCommand(deps: { readonly settings: SettingsStore }, panel: DocumentPanelTab): UiCommand {
+export function showPanelCommand(
+  deps: { readonly settings: SettingsStore; readonly presence: PanelPresence },
+  panel: DocumentPanelTab,
+): UiCommand {
   const shown = SHOWN_PANELS[panel];
   return {
     id: shown.id,
@@ -942,12 +947,11 @@ export function showPanelCommand(deps: { readonly settings: SettingsStore }, pan
       { surface: 'menu-bar', menu: 'window', group: 0, order: shown.order, caption: MENU_GROUP_PANELS },
     ],
     when: hasDocument,
-    // ON while the panel is open ON this tab — the two settings together are what is on screen.
-    checked: () =>
-      deps.settings.get(DOCUMENT_PANEL_OPEN_SETTING.id) === true && deps.settings.get(DOCUMENT_PANEL_SETTING.id) === panel,
+    // ON while the panel is ON SCREEN on this tab — in the row or as its sheet (ADR-0146), with this tab chosen.
+    checked: () => deps.presence.shown('start') && deps.settings.get(DOCUMENT_PANEL_SETTING.id) === panel,
     run: (): void => {
-      deps.settings.set(DOCUMENT_PANEL_OPEN_SETTING.id, true);
       deps.settings.set(DOCUMENT_PANEL_SETTING.id, panel);
+      deps.presence.show('start');
     },
   };
 }
@@ -1030,7 +1034,7 @@ export function movePageCommand(deps: DocumentCommandDeps, direction: 'earlier' 
   };
 }
 
-export function findCommand(deps: { readonly settings: SettingsStore }): UiCommand {
+export function findCommand(deps: { readonly settings: SettingsStore; readonly presence: PanelPresence }): UiCommand {
   return {
     id: 'document.find',
     feedback: VISIBLE,
@@ -1049,7 +1053,7 @@ export function findCommand(deps: { readonly settings: SettingsStore }): UiComma
       // THE SEARCH PANEL FIRST. Since design pass C the find field lives in §10.3's
       // Search panel, one panel at a time, so with another panel showing there is no
       // field to focus. The setting is the one owner of which panel shows.
-      showSearchPanel(deps.settings);
+      showSearchPanel(deps.settings, deps.presence);
       // AFTER THE RENDER the setting causes: `set` notifies synchronously and React
       // renders the panel on its next commit, so the field exists one frame later.
       requestAnimationFrame(() => {

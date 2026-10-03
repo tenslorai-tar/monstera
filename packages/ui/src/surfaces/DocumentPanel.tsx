@@ -1,15 +1,17 @@
 import { useLingui } from '@lingui/react';
 import { Tabs } from '@base-ui/react/tabs';
-import type { ReactElement, ReactNode } from 'react';
+import { useCallback, type ReactElement, type ReactNode } from 'react';
 
 import { PANEL_COLLAPSE, PANEL_REOPEN, PANEL_STRIP_LABEL } from '../messages/en.js';
+import { type PanelPresence, usePanelForm } from '../panelPresence.js';
 import { Icon } from '../primitives/Icon.js';
 import { ICONS } from '../primitives/icons.js';
 import { IconButton } from '../primitives/IconButton.js';
 import { Tooltip } from '../primitives/Tooltip.js';
-import { DOCUMENT_PANEL_OPEN_SETTING, DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
+import { DOCUMENT_PANEL_MIN_WIDTH, DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import { useSetting } from '../useSetting.js';
+import { PanelSheet } from './PanelSheet.js';
 import { PANEL_IDS, PANELS, type PanelId } from './panels.js';
 
 /**
@@ -27,7 +29,9 @@ import { PANEL_IDS, PANELS, type PanelId } from './panels.js';
  * ## THE SETTINGS ARE THE ONE OWNER of which panel shows and whether it is open
  *
  * §10.3: *"State is persisted per panel."* `document.find` opens the Search panel through
- * the same setting, so there is no second place that decides.
+ * the same setting, so there is no second place that decides. Whether it is open is written
+ * only through `panelPresence.ts`, which also decides whether a narrow row draws it in the
+ * row, as a sheet over the page's edge, or as its handle (ADR-0146).
  *
  * ## One panel is mounted, not six hidden
  *
@@ -37,35 +41,23 @@ import { PANEL_IDS, PANELS, type PanelId } from './panels.js';
  */
 export interface DocumentPanelProps {
   readonly settings: SettingsStore;
+  /** Whether the panel is in the row, a sheet or its handle, and the one writer of its open setting. */
+  readonly presence: PanelPresence;
   /** The Pages panel: the thumbnail strip, built where the document view is. */
   readonly pages: ReactNode;
   /** The other five panels, built by `App` where their state lives. */
   readonly panels: Readonly<Record<Exclude<PanelId, 'pages'>, ReactNode>>;
 }
 
-export function DocumentPanel({ settings, pages, panels }: DocumentPanelProps): ReactElement {
+export function DocumentPanel({ settings, presence, pages, panels }: DocumentPanelProps): ReactElement {
   const { i18n } = useLingui();
   const chosen = useSetting(settings, DOCUMENT_PANEL_SETTING);
-  const open = useSetting(settings, DOCUMENT_PANEL_OPEN_SETTING);
+  const form = usePanelForm(presence, 'start');
+  const dismiss = useCallback(() => {
+    presence.hide('start');
+  }, [presence]);
 
-  if (!open) {
-    // THE SLIM EDGE HANDLE §10.3 reopens a collapsed panel with. Absent rather than
-    // disabled when the panel is open: one control at a time says where the panel went.
-    return (
-      <div className="m-document-panel-handle">
-        <IconButton
-          icon={ICONS.ChevronsRight}
-          label={PANEL_REOPEN}
-          size="dense"
-          onClick={() => {
-            settings.set(DOCUMENT_PANEL_OPEN_SETTING.id, true);
-          }}
-        />
-      </div>
-    );
-  }
-
-  return (
+  const panel = (
     <Tabs.Root
       data-pane="document-panel"
       className="m-document-panel"
@@ -99,7 +91,7 @@ export function DocumentPanel({ settings, pages, panels }: DocumentPanelProps): 
           label={PANEL_COLLAPSE}
           size="dense"
           onClick={() => {
-            settings.set(DOCUMENT_PANEL_OPEN_SETTING.id, false);
+            presence.hide('start');
           }}
         />
       </div>
@@ -107,5 +99,27 @@ export function DocumentPanel({ settings, pages, panels }: DocumentPanelProps): 
         {chosen === 'pages' ? pages : panels[chosen]}
       </Tabs.Panel>
     </Tabs.Root>
+  );
+
+  if (form === 'row') return panel;
+  // THE SLIM EDGE HANDLE §10.3 reopens a collapsed panel with, and a panel that has given way to a narrow row draws the
+  // same one (ADR-0146). Absent while the panel is in the row: one control at a time says where the panel went. While
+  // the panel is a sheet it closes it, so its name says which it does now.
+  return (
+    <div className="m-document-panel-handle" data-panel-handle="start">
+      <IconButton
+        icon={form === 'sheet' ? ICONS.ChevronsLeft : ICONS.ChevronsRight}
+        label={form === 'sheet' ? PANEL_COLLAPSE : PANEL_REOPEN}
+        size="dense"
+        onClick={() => {
+          presence.toggle('start');
+        }}
+      />
+      {form === 'sheet' ? (
+        <PanelSheet side="start" width={DOCUMENT_PANEL_MIN_WIDTH} onDismiss={dismiss}>
+          {panel}
+        </PanelSheet>
+      ) : null}
+    </div>
   );
 }

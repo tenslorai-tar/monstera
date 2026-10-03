@@ -140,7 +140,6 @@ import {
 } from './commands/chromeCommands.js';
 import { paneCommands } from './commands/paneCommands.js';
 import {
-  CONTEXT_PANEL_OPEN_SETTING,
   CONTEXT_PANEL_TAB_SETTING,
   LAYOUT_MODE_SETTING,
   RIBBON_SECTION_SETTING,
@@ -349,6 +348,7 @@ import {
 import { Ribbon } from './surfaces/Ribbon.js';
 import { ContextPanel } from './surfaces/ContextPanel.js';
 import { DocumentBody } from './surfaces/DocumentBody.js';
+import { PanelPresence } from './panelPresence.js';
 import { DocumentPanel, type DocumentPanelProps } from './surfaces/DocumentPanel.js';
 import { controlOwnsChord, dispatchChord, fieldOwnsChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
@@ -723,6 +723,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   // way it captures the client — composition, not a global.
   const dialogs = useMemo(() => new DialogRegistry(APPLICATION_DIALOGS), []);
   const { open: openDialog, ask, close, resolve: resolveDialog, report: reportDialog } = useDialogHost(dialogs);
+  // ONE PER WINDOW, as the side panels are the window's (ADR-0146): whether each is on screen, and the one writer of
+  // both open settings. Every control that shows or shuts a panel takes it.
+  const presence = useMemo(() => new PanelPresence(settings), [settings]);
   // WHETHER A SAVE THAT BREAKS SIGNATURES ASKS FIRST, read through the store at each save rather than captured, so a
   // change on the Saving page applies to the next save.
   const warnSignatureBreak = useCallback(() => settings.get(WARN_SIGNATURE_BREAK_SETTING.id) !== false, [settings]);
@@ -1544,8 +1547,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const [assistantHandled, setAssistantHandled] = useState<number | undefined>(undefined);
   const askAssistant = useCallback<AskAssistant>(
     (about, next, replyTo) => {
-      settings.set(CONTEXT_PANEL_OPEN_SETTING.id, true);
       settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
+      presence.show('end');
       setAssistantRequest((last) => ({
         serial: (last?.serial ?? 0) + 1,
         about,
@@ -1553,7 +1556,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         ...(replyTo === undefined ? {} : { replyTo }),
       }));
     },
-    [settings],
+    [presence, settings],
   );
 
   /**
@@ -1561,12 +1564,12 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * so focus is taken on the next frame rather than now.
    */
   const openAssistant = useCallback(() => {
-    settings.set(CONTEXT_PANEL_OPEN_SETTING.id, true);
     settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
+    presence.show('end');
     requestAnimationFrame(() => {
       document.querySelector<HTMLTextAreaElement>('[data-assistant-draft]')?.focus();
     });
-  }, [settings]);
+  }, [presence, settings]);
 
   // Stable, so the scroller's consume-the-request effect does not re-run on
   // every parent render and scroll again to a page it has already reached.
@@ -2429,7 +2432,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         windowEdit('copy');
       },
       search: (text) => {
-        showSearchPanel(settings);
+        showSearchPanel(settings, presence);
         setFindSeed((previous) => ({ text, nonce: (previous?.nonce ?? 0) + 1 }));
       },
     };
@@ -2488,12 +2491,12 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         exitCommand({ closeWindow }),
         checkForUpdatesCommand({ client }),
         ...themeCommands({ settings }),
-        showPropertiesCommand({ settings }),
+        showPropertiesCommand({ settings, presence }),
         actualSizeCommand({ onZoom: changeZoom }),
-        showPanelCommand({ settings }, 'pages'),
-        showPanelCommand({ settings }, 'bookmarks'),
-        showPanelCommand({ settings }, 'layers'),
-        showPanelCommand({ settings }, 'search'),
+        showPanelCommand({ settings, presence },'pages'),
+        showPanelCommand({ settings, presence },'bookmarks'),
+        showPanelCommand({ settings, presence },'layers'),
+        showPanelCommand({ settings, presence },'search'),
         keyboardShortcutsCommand({
           ask,
           rows: () =>
@@ -2758,10 +2761,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // NO DEPS: it takes the caret to the find bar and searches nothing, so
         // there is no client for it to hold. A command needing none is what a
         // command that acts on a surface looks like.
-        findCommand({ settings }),
+        findCommand({ settings, presence }),
         // THE TWO LISTS, from their own ribbon sections (the placement audit, 2026-09-23).
-        showPanelCommand({ settings }, 'comments'),
-        showPanelCommand({ settings }, 'forms'),
+        showPanelCommand({ settings, presence },'comments'),
+        showPanelCommand({ settings, presence },'forms'),
         movePageCommand({ client, onApplied: applied, ask, stamp }, 'earlier'),
         movePageCommand({ client, onApplied: applied, ask, stamp }, 'later'),
         // §7's SELECTED-TEXT MENU. The markups dispatch through the one dispatcher, drawn in the
@@ -2811,7 +2814,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         summariseCommentsCommand({ ask: askAssistant }),
         openAssistantCommand({ open: openAssistant }),
         marksCopy,
-        selectionPropertiesCommand({ ...selectionDeps, settings }),
+        selectionPropertiesCommand({ ...selectionDeps, settings, presence }),
         ...nudgeSelectionCommands(selectionDeps),
         toggleRulersCommand({ settings }),
         toggleGridCommand({ settings }),
@@ -2826,8 +2829,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         resetFloatBarCommand({ settings }),
         // F6 AND SHIFT+F6 between the panes (WCAG 2.1.1, Windows' convention).
         ...paneCommands(),
-        togglePanelCommand({ settings }),
-        toggleContextPanelCommand({ settings }),
+        togglePanelCommand({ presence }),
+        toggleContextPanelCommand({ presence }),
         // §7'S LAYOUT-MODE SWITCH and §10.3's "Esc returns": one command per mode, and Leave Focus.
         ...layoutModeCommands({ settings }),
         pageMoveCommand('next', { navigator }),
@@ -2874,6 +2877,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       docusignKeyStored,
       // *TRANSLATE THIS PAGE* offers the providers with a key, read from this list when it runs.
       storedSecrets,
+      // THE PANELS' ONE WRITER (ADR-0146), one per settings store: the commands that show a panel are built over it.
+      presence,
       changeZoom,
       client,
       navigator,
@@ -3121,6 +3126,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     () => ({
       client,
       settings,
+      presence,
+      // A LAYER BEHIND READS THE ROW'S ANSWER AND NEVER WRITES IT: it is laid out in the same box (ADR-0146).
+      measuresRow: false,
       requestPassword,
       onVersionMoved: movedBehind,
       menuAt: NO_MENU,
@@ -3136,7 +3144,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       layout,
       onFirstFrame: markFramed,
     }),
-    [client, layout, markFramed, movedBehind, pageBadges, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, tileAbove, unit],
+    [client, layout, markFramed, movedBehind, pageBadges, presence, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, tileAbove, unit],
   );
 
   return (
@@ -3309,6 +3317,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onAutoscrollEnd={stopAutoscroll}
           requestPassword={requestPassword}
           settings={settings}
+          presence={presence}
+          measuresRow
           // §10.3's RIGHT CONTEXTUAL PANEL, built here where its state lives, and hosted by
           // `PageCanvas`' row beside the page area (design pass D).
           // §10.3's FLOATING QUICK TOOLBAR, placed inside the page area it floats over (pass F).
@@ -3350,6 +3360,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                 )
               }
               settings={settings}
+              presence={presence}
             >
               {/* THE SELECTED MARKS' STYLE, changed as each control is used, or with nothing
                   selected the authoring settings (ADR-0102). */}
@@ -3644,6 +3655,8 @@ type BackgroundLayer = Pick<
   PageCanvasProps,
   | 'client'
   | 'settings'
+  | 'presence'
+  | 'measuresRow'
   | 'requestPassword'
   | 'onVersionMoved'
   | 'menuAt'
@@ -3755,7 +3768,7 @@ const DocumentLayer = memo(function DocumentLayer({
             onAutoscrollEnd={IGNORE}
             panels={NO_PANELS}
             contextPanel={
-              <ContextPanel settings={background.settings} assistant={null}>
+              <ContextPanel settings={background.settings} presence={background.presence} assistant={null}>
                 {null}
               </ContextPanel>
             }
@@ -3824,6 +3837,8 @@ function PageCanvas({
   autoscroll,
   onAutoscrollEnd,
   settings,
+  presence,
+  measuresRow,
   panels,
   contextPanel,
   quickToolbar,
@@ -3900,6 +3915,10 @@ function PageCanvas({
   readonly onAutoscrollEnd: () => void;
   /** The settings store, for the document panel's which-panel and open state. */
   readonly settings: SettingsStore;
+  /** Whether each side panel is on screen, shared by every layer so each lays out the same (ADR-0146). */
+  readonly presence: PanelPresence;
+  /** Whether this layer's row reports its width: only the document on show does (`DocumentBody`). */
+  readonly measuresRow: boolean;
   /** The document panels other than Pages, built by `App` where their state lives. */
   readonly panels: DocumentPanelProps['panels'];
   /** §10.3's right contextual panel, built by `App` where its state lives. */
@@ -4123,7 +4142,9 @@ function PageCanvas({
     return (
       <DocumentBody
         settings={settings}
-        panel={<DocumentPanel settings={settings} panels={panels} pages={null} />}
+        presence={presence}
+        measuresRow={measuresRow}
+        panel={<DocumentPanel settings={settings} presence={presence} panels={panels} pages={null} />}
         page={<canvas className="m-page" data-failed="true" />}
         contextPanel={contextPanel} quickToolbar={quickToolbar}
       />
@@ -4139,7 +4160,9 @@ function PageCanvas({
     return (
       <DocumentBody
         settings={settings}
-        panel={<DocumentPanel settings={settings} panels={panels} pages={null} />}
+        presence={presence}
+        measuresRow={measuresRow}
+        panel={<DocumentPanel settings={settings} presence={presence} panels={panels} pages={null} />}
         page={
           <div className="m-page-pane" data-first-frame="pending">
             <OpeningState />
@@ -4261,10 +4284,13 @@ function PageCanvas({
     // the row before.
     <DocumentBody
       settings={settings}
+      presence={presence}
+      measuresRow={measuresRow}
       contextPanel={contextPanel} quickToolbar={quickToolbar}
       panel={
       <DocumentPanel
         settings={settings}
+        presence={presence}
         panels={panels}
         pages={
           <Thumbnails

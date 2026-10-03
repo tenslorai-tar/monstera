@@ -30,7 +30,8 @@ import { ANNOTATION_EDIT_DIALOG_ID } from '../dialogs/annotationEdit.js';
 import { ANNOTATION_REPLY_DIALOG_ID } from '../dialogs/annotationReply.js';
 import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
 import { COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
-import { CONTEXT_PANEL_OPEN_SETTING, CONTEXT_PANEL_TAB_SETTING } from '../settings/layout.js';
+import type { PanelPresence } from '../panelPresence.js';
+import { CONTEXT_PANEL_TAB_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import {
   PLACE_BARCODE_TOOL_ID,
@@ -862,7 +863,7 @@ export function selectAllMarksCommand(deps: {
  * panel would be the second wiring place the registry exists to forbid.
  */
 export function selectionPropertiesCommand(
-  deps: SelectionCommandDeps & { readonly settings: SettingsStore },
+  deps: SelectionCommandDeps & { readonly settings: SettingsStore; readonly presence: PanelPresence },
 ): UiCommand {
   return {
     id: 'annotate.properties',
@@ -872,8 +873,9 @@ export function selectionPropertiesCommand(
     when: () => deps.selection() !== undefined,
     run: (): void => {
       if (deps.selection() === undefined) return;
-      deps.settings.set(CONTEXT_PANEL_OPEN_SETTING.id, true);
       deps.settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'properties');
+      // SHOWN, not only opened: in a narrow row the panel is a sheet, and a write of a setting already on draws nothing.
+      deps.presence.show('end');
     },
   };
 }

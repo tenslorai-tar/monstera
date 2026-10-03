@@ -54,7 +54,7 @@ export {
 // the kernel would be re-stated in the shim and the two would agree until one
 // of them changed — which is exactly what happened to the matching rule above.
 export { type TextToken, type WordCount, countWords, tokensOf, wordsOf } from './wordCount.js';
-export { MINIMUM_WINDOW, minimumWindowFor } from './windowSize.js';
+export { EDGE_HANDLE_WIDTH, MINIMUM_WINDOW, PAGE_AREA_MIN_WIDTH, minimumWindowFor } from './windowSize.js';
 export { type AlignmentStep, type LineChange, alignSequences, comparableLine, diffLines } from './lineDiff.js';
 export {
   type CompareAnnotation,

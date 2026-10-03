@@ -21,10 +21,9 @@ import {
 import type { IconName } from '../primitives/icons.js';
 import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import { THEME_SETTING, type Theme } from '../settings/appearance.js';
+import type { PanelPresence } from '../panelPresence.js';
 import {
-  CONTEXT_PANEL_OPEN_SETTING,
   CONTEXT_PANEL_TAB_SETTING,
-  DOCUMENT_PANEL_OPEN_SETTING,
   FLOAT_BAR_POSITION_SETTING,
   LAYOUT_MODE_SETTING,
   type LayoutMode,
@@ -112,7 +111,7 @@ export function resetFloatBarCommand(deps: { readonly settings: SettingsStore })
 }
 
 /** The document panel's visibility. See the module header for the id. */
-export function togglePanelCommand(deps: { readonly settings: SettingsStore }): UiCommand {
+export function togglePanelCommand(deps: { readonly presence: PanelPresence }): UiCommand {
   return {
     id: 'view.toggle-panel',
     feedback: VISIBLE,
@@ -122,9 +121,10 @@ export function togglePanelCommand(deps: { readonly settings: SettingsStore }): 
     // The panel's own chevron and edge handle are its on-screen controls; Window is where a hidden one is found again.
     placements: [{ surface: 'menu-bar', menu: 'window', group: 1, order: 10 }],
     when: hasDocument,
-    checked: () => deps.settings.get(DOCUMENT_PANEL_OPEN_SETTING.id) === true,
+    // ON SCREEN, not the setting: a panel a narrow row drew as its handle is not ticked (ADR-0146).
+    checked: () => deps.presence.shown('start'),
     run: (): void => {
-      deps.settings.set(DOCUMENT_PANEL_OPEN_SETTING.id, deps.settings.get(DOCUMENT_PANEL_OPEN_SETTING.id) !== true);
+      deps.presence.toggle('start');
     },
   };
 }
@@ -200,7 +200,7 @@ export function layoutModeCommands(deps: { readonly settings: SettingsStore }): 
 }
 
 /** The right contextual panel's visibility, its own command for the module header's reason. */
-export function toggleContextPanelCommand(deps: { readonly settings: SettingsStore }): UiCommand {
+export function toggleContextPanelCommand(deps: { readonly presence: PanelPresence }): UiCommand {
   return {
     id: 'view.toggle-context-panel',
     feedback: VISIBLE,
@@ -209,9 +209,9 @@ export function toggleContextPanelCommand(deps: { readonly settings: SettingsSto
     shortcut: 'Ctrl+Shift+J',
     placements: [{ surface: 'menu-bar', menu: 'window', group: 1, order: 20 }],
     when: hasDocument,
-    checked: () => deps.settings.get(CONTEXT_PANEL_OPEN_SETTING.id) === true,
+    checked: () => deps.presence.shown('end'),
     run: (): void => {
-      deps.settings.set(CONTEXT_PANEL_OPEN_SETTING.id, deps.settings.get(CONTEXT_PANEL_OPEN_SETTING.id) !== true);
+      deps.presence.toggle('end');
     },
   };
 }
@@ -220,7 +220,10 @@ export function toggleContextPanelCommand(deps: { readonly settings: SettingsSto
  * *Window › Properties panel* (ADR-0107): the right panel, open, on its Properties tab — `annotate.properties`' two
  * writes without its selection, because the tab also says how the NEXT mark is drawn when nothing is selected.
  */
-export function showPropertiesCommand(deps: { readonly settings: SettingsStore }): UiCommand {
+export function showPropertiesCommand(deps: {
+  readonly settings: SettingsStore;
+  readonly presence: PanelPresence;
+}): UiCommand {
   return {
     id: 'view.show-properties',
     feedback: VISIBLE,
@@ -228,12 +231,10 @@ export function showPropertiesCommand(deps: { readonly settings: SettingsStore }
     title: SHOW_PROPERTIES_TITLE,
     placements: [{ surface: 'menu-bar', menu: 'window', group: 0, order: 70, caption: MENU_GROUP_PANELS }],
     when: hasDocument,
-    checked: () =>
-      deps.settings.get(CONTEXT_PANEL_OPEN_SETTING.id) === true &&
-      deps.settings.get(CONTEXT_PANEL_TAB_SETTING.id) === 'properties',
+    checked: () => deps.presence.shown('end') && deps.settings.get(CONTEXT_PANEL_TAB_SETTING.id) === 'properties',
     run: (): void => {
-      deps.settings.set(CONTEXT_PANEL_OPEN_SETTING.id, true);
       deps.settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'properties');
+      deps.presence.show('end');
     },
   };
 }

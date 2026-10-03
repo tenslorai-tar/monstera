@@ -10,6 +10,7 @@ import { EN } from '../messages/en.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from '../registries/commands.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
+import { PanelPresence } from '../panelPresence.js';
 import { CONTEXT_PANEL_OPEN_SETTING } from '../settings/layout.js';
 import { SettingsStore } from '../settingsStore.js';
 import { selectionPropertiesCommand } from '../commands/annotationCommands.js';
@@ -145,6 +146,7 @@ describe('ContextMenuArea', () => {
     const registry = new CommandRegistry([
       selectionPropertiesCommand({
         settings,
+        presence: new PanelPresence(settings),
         selection: () => selection,
         onDelete: () => undefined,
         onPlace: () => undefined,
