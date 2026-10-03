@@ -151,14 +151,21 @@ export function Dialog({
  * One question: its name and an optional note on the left, the control on the right. The control names itself (every
  * primitive takes a `label`), so the row's name is what is seen and the control's is what is announced; a control
  * shown beside its row passes `labelShownBeside` so the name is not printed twice.
+ *
+ * A `problem` is the sentence that says why what is in the control is refused, on a line of its own across the row,
+ * so it sits with the field it is about rather than with the next question. It is an `alert`, mounted only while there
+ * is one: an alert is announced when it appears, where a live region that was not there before is not.
  */
 export function DialogRow({
   label,
   note,
+  problem,
   children,
 }: {
   readonly label: MessageKey;
   readonly note?: MessageKey | undefined;
+  /** Already translated, since a refusal names the part that was wrong; empty or absent while nothing is refused. */
+  readonly problem?: string | undefined;
   readonly children: ReactNode;
 }): ReactElement {
   const { _ } = useLingui();
@@ -169,6 +176,11 @@ export function DialogRow({
         {note === undefined ? null : <span className="m-dialog-row__note">{_(note)}</span>}
       </div>
       <div className="m-dialog-row__control">{children}</div>
+      {problem === undefined || problem === '' ? null : (
+        <p className="m-dialog-row__problem" role="alert">
+          {problem}
+        </p>
+      )}
     </div>
   );
 }

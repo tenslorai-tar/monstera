@@ -47,7 +47,24 @@ export function renderRangeProblem(
   translate: ReturnType<typeof useLingui>['_'],
   empty: MessageKey,
 ): string {
-  if (parsed.ok || text.trim().length === 0) return '';
+  if (text.trim().length === 0) return '';
+  return rangeProblemSentence(parsed, translate, empty);
+}
+
+/**
+ * The same sentence WITHOUT the quiet-while-untouched rule — nothing for a parse that succeeded, the operation's own
+ * sentence for an empty field.
+ *
+ * For a field whose silence ends at a different moment: `PageRangeChoice` says nothing until the person tries to
+ * proceed, and from then an empty field is a refusal like any other, so it needs the sentence this function's caller
+ * above withholds.
+ */
+export function rangeProblemSentence(
+  parsed: ReturnType<typeof parsePageRanges>,
+  translate: ReturnType<typeof useLingui>['_'],
+  empty: MessageKey,
+): string {
+  if (parsed.ok) return '';
   const problem = parsed.error;
   switch (problem.kind) {
     case 'empty':

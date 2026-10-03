@@ -659,6 +659,16 @@
   min-inline-size: 0;
 }
 
+/* A ROW'S REFUSAL (`DialogRow`'s `problem`): a line of its own across the row, under its name and its control, so it
+   reads as about this field and not the next. In the text colour, for `.m-status-problem`'s reason: the token set
+   declares no error role, and what carries a refusal is the sentence and `aria-invalid` on the field. */
+.m-dialog-row__problem {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-chrome-12);
+}
+
 /* A GROUP OF OPTIONS AS ONE ROW'S CONTROL (Print's quality, Optimize's level): one to a line, as the base fieldset
    rule stacks a fieldset's. Zero specificity, so a group with its own class rule (Barcode's symbologies) keeps it. */
 :where(.m-dialog-row__control > [role='radiogroup']) {

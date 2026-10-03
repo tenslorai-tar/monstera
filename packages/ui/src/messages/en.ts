@@ -451,11 +451,7 @@ export const EXPORT_EXCEL_TABLE = messageKey('dialog.export-excel.table');
 export const EXPORT_EXCEL_CELL = messageKey('dialog.export-excel.cell');
 export const EXPORT_EXCEL_CLIPPED = messageKey('dialog.export-excel.clipped');
 export const EXPORT_EXCEL_TRUNCATED = messageKey('dialog.export-excel.truncated');
-export const EXPORT_PAGE_IMAGES_PAGES = messageKey('dialog.export-page-images.pages');
 export const EXPORT_PAGE_IMAGES_PAGES_NOTE = messageKey('dialog.export-page-images.pages-note');
-export const EXPORT_PAGE_IMAGES_ALL = messageKey('dialog.export-page-images.all');
-export const EXPORT_PAGE_IMAGES_RANGES = messageKey('dialog.export-page-images.ranges');
-export const EXPORT_PAGE_IMAGES_LABEL = messageKey('dialog.export-page-images.label');
 export const EXPORT_PAGE_IMAGES_EMPTY = messageKey('dialog.export-page-images.empty');
 export const EXPORT_PAGE_IMAGES_FORMAT = messageKey('dialog.export-page-images.format');
 export const EXPORT_PAGE_IMAGES_FORMAT_NOTE = messageKey('dialog.export-page-images.format-note');
@@ -468,6 +464,7 @@ export const EXPORT_PAGE_IMAGES_QUALITY = messageKey('dialog.export-page-images.
 export const EXPORT_PAGE_IMAGES_QUALITY_NOTE = messageKey('dialog.export-page-images.quality-note');
 export const EXPORT_PAGE_IMAGES_OUT_OF_BOUNDS = messageKey('dialog.export-page-images.out-of-bounds');
 export const EXPORT_PAGE_IMAGES_FILES = messageKey('dialog.export-page-images.files');
+export const EXPORT_PAGE_IMAGES_UNCHANGED = messageKey('dialog.export-page-images.unchanged');
 export const EXPORT_TEXT_COMMAND_TITLE = messageKey('command.export-text.title');
 export const EXPORT_LAYOUT_TEXT_COMMAND_TITLE = messageKey('command.export-layout-text.title');
 export const INSERT_IMAGE_COMMAND_TITLE = messageKey('command.insert-image.title');
@@ -720,6 +717,12 @@ export const OCR_LANGUAGE = messageKey('dialog.ocr.language');
 export const PAGE_SCOPE_LABEL = messageKey('dialog.page-scope.label');
 export const PAGE_SCOPE_TARGET = messageKey('dialog.page-scope.target');
 export const PAGE_SCOPE_ALL = messageKey('dialog.page-scope.all');
+/** The page range an export asks for (`PageRangeChoice`): every page, or the pages a person types. */
+export const PAGE_RANGE_LABEL = messageKey('dialog.page-range.label');
+export const PAGE_RANGE_EVERY = messageKey('dialog.page-range.every');
+export const PAGE_RANGE_SELECT = messageKey('dialog.page-range.select');
+export const PAGE_RANGE_NUMBERS = messageKey('dialog.page-range.numbers');
+export const PAGE_RANGE_NUMBERS_NOTE = messageKey('dialog.page-range.numbers-note');
 export const OCR_START = messageKey('dialog.ocr.start');
 export const OCR_HANDWRITING = messageKey('dialog.ocr.handwriting');
 export const OCR_KEYS_HELP = messageKey('dialog.ocr.keys-help');
@@ -2710,6 +2713,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PAGE_SCOPE_LABEL]: 'Pages',
   [PAGE_SCOPE_TARGET]: '{count, plural, one {This page} other {These # pages}}',
   [PAGE_SCOPE_ALL]: 'All pages',
+  [PAGE_RANGE_LABEL]: 'Pages',
+  [PAGE_RANGE_EVERY]: 'Every page',
+  [PAGE_RANGE_SELECT]: 'Select pages',
+  [PAGE_RANGE_NUMBERS]: 'Page numbers',
+  [PAGE_RANGE_NUMBERS_NOTE]: 'Pages and ranges, separated by commas.',
   [OCR_START]: 'Recognise',
   // THE ONE LINE THE OWNER SPECIFIED (2026-09-18): handwriting is read by a
   // service since ADR-0085, and a key is what makes its tool appear.
@@ -4234,11 +4242,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_EXCEL_CELL]: 'Table {table}, row {row}, column {column}',
   [EXPORT_EXCEL_CLIPPED]: 'This cell is too long to show whole, so it cannot be changed here.',
   [EXPORT_EXCEL_TRUNCATED]: 'This page has more cells than can be shown. The ones not shown are exported as found.',
-  [EXPORT_PAGE_IMAGES_PAGES]: 'Pages',
   [EXPORT_PAGE_IMAGES_PAGES_NOTE]: 'Each page becomes one picture file.',
-  [EXPORT_PAGE_IMAGES_ALL]: 'Every page',
-  [EXPORT_PAGE_IMAGES_RANGES]: 'These pages',
-  [EXPORT_PAGE_IMAGES_LABEL]: 'Page numbers',
   [EXPORT_PAGE_IMAGES_EMPTY]: 'Type the pages to export, for example 1-3, 5.',
   [EXPORT_PAGE_IMAGES_FORMAT]: 'Format',
   [EXPORT_PAGE_IMAGES_FORMAT_NOTE]: 'PNG keeps every detail. JPEG and WebP make smaller files and lose a little.',
@@ -4255,6 +4259,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Resolution must be a whole number from {minDpi} to {maxDpi}, and quality from {minQuality} to {maxQuality}.',
   [EXPORT_PAGE_IMAGES_FILES]:
     'This document is not changed. One image for each page: {files} files will be written.',
+  // WHILE THE TYPED PAGES NAME NONE, there is no count to give, and the half of the line above that is still true keeps
+  // the line from reading as a message that failed to arrive.
+  [EXPORT_PAGE_IMAGES_UNCHANGED]: 'This document is not changed.',
   [EXPORT_TEXT_COMMAND_TITLE]: 'Export text…',
   [EXPORT_LAYOUT_TEXT_COMMAND_TITLE]: 'Export text with layout…',
   [INSERT_IMAGE_COMMAND_TITLE]: 'Insert image…',
