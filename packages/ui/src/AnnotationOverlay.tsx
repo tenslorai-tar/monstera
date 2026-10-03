@@ -216,7 +216,9 @@ export function AnnotationOverlay({
       // pointer-up.
       void Promise.resolve(tool.controller.commit(finished, page, transform)).then(async (command) => {
         // `undefined` IS AN OUTCOME, and now it is two of them: a click that
-        // did not drag produces no annotation, and so does a dismissed dialog.
+        // did not drag produces no annotation from a tool that draws a shape
+        // (the typewriter's click asks for words instead), and so does a
+        // dismissed dialog.
         // Both mean *there is nothing to send*, which is why the gate is the
         // absence of a value rather than a flag somebody checks.
         if (command === undefined) return;
