@@ -12,7 +12,7 @@ Print sends the document, with its comments and marks, to a printer.
 ## Steps
 
 1. Press **Ctrl+P**, or in the rail choose **Home**, then **Print…** in the **File** group.
-2. In **Print quality**, choose **Draft — 150 dots per inch**, **Standard — 300 dots per inch** or **High — up to 600 dots per inch, lower on a large page**.
+2. In **Print quality**, choose **Draft** (150 dots per inch), **Standard** (300) or **High** (up to 600; a very large page is printed at less).
 3. Choose **Choose a printer…**. The Windows print window opens: pick the printer, the pages and the number of copies there.
 
 ![The Print window with the Print quality choices](screenshot:print-1)

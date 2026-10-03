@@ -353,6 +353,9 @@ export const PRINT_DPI = messageKey('dialog.print.dpi');
 export const PRINT_DPI_150 = messageKey('dialog.print.dpi-150');
 export const PRINT_DPI_300 = messageKey('dialog.print.dpi-300');
 export const PRINT_DPI_600 = messageKey('dialog.print.dpi-600');
+export const PRINT_DPI_150_NOTE = messageKey('dialog.print.dpi-150-note');
+export const PRINT_DPI_300_NOTE = messageKey('dialog.print.dpi-300-note');
+export const PRINT_DPI_600_NOTE = messageKey('dialog.print.dpi-600-note');
 export const PRINT_QUALITY_DESCRIPTION = messageKey('setting.rendering-print-quality.description');
 export const RENDER_QUALITY_TITLE = messageKey('setting.rendering-quality.title');
 export const RENDER_QUALITY_DESCRIPTION = messageKey('setting.rendering-quality.description');
@@ -4163,10 +4166,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EMAIL_COMMAND_TITLE]: 'Email…',
   [PRINT_TITLE]: 'Print',
   [PRINT_DPI]: 'Print quality',
-  [PRINT_DPI_150]: 'Draft — 150 dots per inch',
-  [PRINT_DPI_300]: 'Standard — 300 dots per inch',
-  [PRINT_DPI_600]: 'High — up to 600 dots per inch, lower on a large page',
-  [PRINT_QUALITY_DESCRIPTION]: 'The quality the Print dialog starts on. You can still choose another each time you print.',
+  [PRINT_DPI_150]: 'Draft',
+  [PRINT_DPI_300]: 'Standard',
+  [PRINT_DPI_600]: 'High',
+  [PRINT_DPI_150_NOTE]: '150 dots per inch. Quick, and enough to check a layout.',
+  [PRINT_DPI_300_NOTE]: '300 dots per inch. Sharp text, for most printing.',
+  [PRINT_DPI_600_NOTE]: 'Up to 600 dots per inch. A very large page is printed at less.',
+  [PRINT_QUALITY_DESCRIPTION]:
+    'The quality the Print dialog starts on: Draft is 150 dots per inch, Standard 300 and High up to 600. You can still choose another each time you print.',
   [RENDER_QUALITY_TITLE]: 'Page sharpness',
   [RENDER_QUALITY_DESCRIPTION]:
     'Exact matches your screen’s pixels and keeps text crisp. 1.5× and 2× draw more pixels and shrink them to fit, which smooths fine line drawings and uses more memory.',

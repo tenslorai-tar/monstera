@@ -25,9 +25,10 @@ afterEach(() => {
 
 describe('PrintBody', () => {
   it('answers the resolution the person chose, for the two not selected first', () => {
+    // EACH CHOICE IS ITS NAME AND THE NOTE UNDER IT, which together are the radio's accessible name.
     for (const [dpi, label] of [
-      [150, 'Draft — 150 dots per inch'],
-      [600, 'High — up to 600 dots per inch, lower on a large page'],
+      [150, /^Draft\s*150 dots per inch\./u],
+      [600, /^High\s*Up to 600 dots per inch\./u],
     ] as const) {
       const resolve = vi.fn();
       render(
