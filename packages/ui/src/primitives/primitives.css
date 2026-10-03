@@ -852,6 +852,21 @@
   border-block-end: 0;
 }
 
+/* A STATUS LINE WITH NOTHING TO SAY TAKES NO ROOM. Twenty-two bodies end in a `role="status"` line that says what is
+   missing once the person tries to go on, and each reserved a line of its own for it, so with nothing said the last
+   row drew its line, then an empty band, then the footer drew its own (the Signature dialog, 2026-10-03: 40 px).
+   Empty, it is no taller than nothing and gives back the column's gap above it, and stays a live region, so a message
+   that arrives is announced; the row before it is then the last row. With a message, both let go: the row keeps its
+   line and the message sits between it and the footer. */
+:is(.m-dialog__body, .m-dialog__body > :only-child) > [role='status']:empty:last-child {
+  min-block-size: 0;
+  margin-block-start: calc(-1 * var(--space-8));
+}
+
+:is(.m-dialog__body, .m-dialog__body > :last-child) > :is(.m-dialog-row, .m-dialog-choices):has(+ [role='status']:empty:last-child) {
+  border-block-end: 0;
+}
+
 /* AN ACTION APART AT THE FOOTER'S START (*Reset all shortcuts*): the buttons at the end stay where every footer has
    them. */
 .m-dialog-footer__aside {
