@@ -47,7 +47,8 @@ script face to name.
    characters each can draw, the outline of a name, and the `FontFace` that shows the name in the dialog — so the
    preview and the page are set by the same glyphs (B3a). §9.27's policy is not changed.
 
-3. **The outline crosses as a mark of its own, `outlined`, and the library keeps the name.** A typed signature reaches
+3. **The outline crosses as a mark of its own, `outlined`, and the library keeps the name** (the operators' form is
+   corrected below). A typed signature reaches
    `main` and the hosts as `{ kind: 'outlined', text, font, outline }`, where `outline` is a path: `ops`, a string of
    `M`, `L`, `Q`, `C` and `Z`, and `points`, a flat list of whole numbers on a grid of 32,767, y down, with the `frame`
    the face's line box (advance by ascender to descender) on the same grid. The library keeps `{ kind: 'typed', text,
@@ -74,7 +75,7 @@ script face to name.
    3, EB Garamond, EB Garamond Italic and Courier Prime, so no kept signature is dropped. Writing takes only the
    fifteen.
 
-7. **The bound is in the shape**: at most 12,288 points. A coordinate is at most five digits and a comma, so the
+7. **The bound is in the shape** (its figure is corrected below): at most 12,288 points. A coordinate is at most five digits and a comma, so the
    points are at most 147,456 bytes and the operators 12,288, well under three quarters of the engine host's frame,
    where `hostRoutes.test.ts` holds every command it can measure. At the measured cost that is about seventy
    characters in the most complex face. A longer name is refused in the dialog with that reason, never thinned: a
@@ -106,3 +107,16 @@ script face to name.
   opens or a kept typed signature is shown. The application's start does not load them.
 - A typed signature in a document is a filled path. It is not searchable text, as a drawn one is not. That matches
   what it is: a mark, not a field value.
+
+## Correction, 2026-10-03, before anything was built on it
+
+Decision 3 said the operators cross as **a string** of `M`, `L`, `Q`, `C` and `Z`, and Decision 7 put the bound at
+**12,288 points**. Both were wrong in the same way, and `hostRoutes.test.ts` said so the first time it read the
+schema: it prices a string at a `\u` escape a character, six bytes, because that is what a string *can* cost, and read
+the placing command at **297,806 bytes against 196,608**. The arithmetic in Decision 7 had priced the operators at one
+byte each, which is what an honest encoder writes and not what the bound has to hold at.
+
+So the operators cross as **small whole numbers**, `OUTLINE_OPS`' codes 0 to 4, two bytes each with the comma; a path
+rule, `outlineOpsArePath`, says every subpath is a move followed by at least one line or curve, which caps the
+operators at one and a half a point; and the bound is **10,240 points**. Points 122,880 bytes and operators 30,720,
+under three quarters of the frame; about sixty letters at the measured 160 a letter. Nothing else in the decision moves.
