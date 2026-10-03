@@ -84,6 +84,8 @@ import {
   COMPOSE_REFUSALS,
   OPTIMIZE_SETTING_NAMES,
   URL_FETCH_REFUSALS,
+  FILE_ACCESS,
+  SAVE_WRITE_CAUSES,
   PAGE_IMAGE_FORMATS,
   MIN_PAGE_IMAGE_DPI,
   MAX_PAGE_IMAGE_DPI,
@@ -2302,9 +2304,24 @@ export const channels = {
         kind: z.literal('refused'),
         reason: z.enum(['contested', 'replaced', 'target-absent', 'unverifiable']),
       }),
-      z.object({ kind: z.literal('write-failed') }),
+      /** The filesystem refused, and why, so the person is told the remedy that fits (cloud-4 7b). */
+      z.object({ kind: z.literal('write-failed'), cause: z.enum(SAVE_WRITE_CAUSES) }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Whether an open document's own file could be written over NOW (cloud-4 7b): asked when a person has opened it, so
+   * a file that is read-only, or held by another program, is said before any edit rather than at the first Save.
+   *
+   * Asked of the file at each call and never kept, because the answer changes under the document. It is something to
+   * tell a person and never a reason to refuse a save, which tries the file itself. No path crosses.
+   */
+  'document.fileAccess': channel(
+    'Answers whether an open document’s own file could be written over now.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.object({ access: z.enum(FILE_ACCESS) }),
+    ['document-not-open'],
   ),
 
   /**
@@ -2993,6 +3010,28 @@ export const channels = {
       openReadRefusedSchema,
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned', 'stale-target'],
+  ),
+
+  /**
+   * Writes a copy of an open document where the person picks, and opens the copy to work on (cloud-4 7b): what a file
+   * that cannot be written over is offered, so the changes made from here on have a file they can be saved to.
+   *
+   * `document.editCopy`'s picker, write and open route, with no edit. The original stays open as it was; closing it
+   * is the person's.
+   */
+  'document.workOnCopy': channel(
+    'Writes a copy of an open document where the user picks, and opens the copy.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.discriminatedUnion('kind', [
+      openedSchema,
+      z.object({ kind: z.literal('cancelled') }),
+      importContestedSchema,
+      importWriteFailedSchema,
+      openAbsentSchema,
+      openAtCapacitySchema,
+      openReadRefusedSchema,
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
 
   /**

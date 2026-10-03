@@ -10,6 +10,7 @@ import {
   type FormDataImportFormat,
   type OptimizeSetting,
   type PageSet,
+  type SaveWriteCause,
   type RenderableCommand,
   type RequestedSignatureMark,
   type SignaturePlacement,
@@ -2550,10 +2551,22 @@ export async function saveDocument(
   // takes one enum, so its body switches once and a sixth outcome is a
   // compile error rather than a branch that renders nothing.
   void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
-    outcome: answer.value.kind === 'write-failed' ? 'write-failed' : answer.value.reason,
+    outcome: answer.value.kind === 'write-failed' ? SAVE_WRITE_OUTCOME[answer.value.cause] : answer.value.reason,
   });
   return false;
 }
+
+/**
+ * The save-problem outcome for each cause a save to the document's own file was not written (cloud-4 7b). A `Record`,
+ * so a cause the contract gains is a compile error here until it has a sentence.
+ */
+const SAVE_WRITE_OUTCOME = {
+  'read-only': 'write-read-only',
+  held: 'write-held',
+  'folder-read-only': 'write-folder-read-only',
+  'disk-full': 'write-disk-full',
+  unknown: 'write-failed',
+} as const satisfies Readonly<Record<SaveWriteCause, string>>;
 
 /**
  * Names the older copies a save could not delete and offers to try again (CR-DOC-10): `main` deletes, on

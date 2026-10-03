@@ -7,7 +7,7 @@ import {
   channels,
   createClient,
 } from '@monstera/contract';
-import { asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
+import { type DocId, asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
 import { act, cleanup, fireEvent, render as renderBare, screen, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -198,6 +198,8 @@ const OTHER_ANSWERS: Partial<Record<string, unknown>> = {
   // here reaches it; without an answer of the channel's own shape the envelope fails validation
   // and each case carries an unhandled rejection.
   'window.closeListening': { acknowledged: true },
+  // EVERY OPEN ASKS whether the file can be saved over (cloud-4 7b); a file a person just opened usually can.
+  'document.fileAccess': { access: 'writable' },
   // E3's rating prompt asks once per mount. Not due is every case's position: a banner here would put four
   // buttons in front of cases that are about something else.
   'app.reviewPrompt': { due: false },
@@ -312,6 +314,7 @@ const OPEN_DOCUMENT_ANSWERS = {
   // `OTHER_ANSWERS`' reason: the shell announces its close subscription on every mount, and these
   // fixtures throw on a channel they have no answer for.
   'window.closeListening': { acknowledged: true },
+  'document.fileAccess': { access: 'writable' as const },
   'document.openWaiting': { opened: [] },
   'document.open': {
     kind: 'opened' as const,
@@ -3876,6 +3879,48 @@ describe('the menu bar, in the shell (ADR-0107)', () => {
       'Tools',
       'Window',
       'Help',
+    ]);
+  });
+
+  it('a READ-ONLY file is said as it opens, and Save a copy opens the copy in a tab BESIDE it (cloud-4 7b)', async () => {
+    const COPY = asDocId('doc-annual-copy');
+    const sent: Sent[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      if (id === 'document.fileAccess') {
+        return Promise.resolve(ok({ access: (params as { docId: DocId }).docId === DOC ? 'read-only' : 'writable' }));
+      }
+      if (id === 'document.workOnCopy') {
+        return Promise.resolve(
+          ok({ kind: 'opened', docId: COPY, version: asDocVersion(1), byteLength: 1024, name: 'annual (copy).pdf' }),
+        );
+      }
+      const answer = (OPEN_DOCUMENT_ANSWERS as Readonly<Record<string, unknown>>)[id];
+      if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+      return Promise.resolve(ok(answer));
+    });
+    const { container } = render(<App client={client} settings={freshSettings()} />);
+    await withDocumentOpen();
+
+    const dialog = await screen.findByRole('dialog', { name: 'Changes cannot be saved to this file' });
+    expect(within(dialog).getByText(/This file is read-only/u)).toBeDefined();
+    await act(async () => {
+      within(dialog).getByRole('button', { name: 'Save a copy…' }).click();
+      await Promise.resolve();
+    });
+
+    await vi.waitFor(() => {
+      expect(container.querySelector(`[data-tab="${COPY}"]`)).not.toBeNull();
+    });
+    // THE ORIGINAL STAYS OPEN: closing what the person opened is theirs.
+    expect(container.querySelector(`[data-tab="${DOC}"]`)).not.toBeNull();
+    expect(sent.filter((one) => one.id === 'document.workOnCopy')).toStrictEqual([
+      { id: 'document.workOnCopy', params: { docId: DOC } },
+    ]);
+    // AND THE COPY WAS ASKED ABOUT TOO, as any document a person opens is.
+    expect(sent.filter((one) => one.id === 'document.fileAccess').map((one) => one.params)).toStrictEqual([
+      { docId: DOC },
+      { docId: COPY },
     ]);
   });
 

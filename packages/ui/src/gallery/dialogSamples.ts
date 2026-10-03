@@ -503,7 +503,11 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
   ],
   'dialog.enhance-outcome': [{ state: 'opened', props: { pages: 5 } }],
   'dialog.scan-outcome': [{ state: 'opened', props: { pages: 5 } }],
-  'dialog.save-problem': [{ state: 'opened', props: { outcome: 'write-failed' } }],
+  'dialog.save-problem': [
+    { state: 'opened', props: { outcome: 'write-failed' } },
+    // THE LONGEST of the causes a save to the document's own file can be told (cloud-4 7b).
+    { state: 'write-held', props: { outcome: 'write-held' } },
+  ],
   'dialog.close-unsaved': [
     { state: 'opened', props: { name: NAME } },
     { state: 'long', props: { name: LONG_NAME } },
@@ -810,6 +814,10 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
   ],
   'dialog.url-open-problem': [{ state: 'opened', props: { reason: 'not-a-pdf' } }],
   'dialog.open-problem': [{ state: 'opened', props: { reason: 'busy' } }],
+  'dialog.read-only-file': [
+    { state: 'opened', props: { access: 'read-only' } },
+    { state: 'held', props: { access: 'held' } },
+  ],
   'dialog.camera-capture': [{ state: 'opened', props: {} }],
   'dialog.generate-toc-problem': [{ state: 'opened', props: { reason: 'no-outline' } }],
   'dialog.merge-document': [

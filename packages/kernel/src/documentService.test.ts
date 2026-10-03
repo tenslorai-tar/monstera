@@ -33,8 +33,11 @@ import {
   type CommandWriter,
   type RangeReader,
   type SaveWriter,
+  accessOfRefusedOpen,
+  saveWriteCause,
   sweepCheckpointDirectories,
 } from './documentService.js';
+import type { AtomicWriteFailure } from './atomicWrite.js';
 
 /**
  * A service with a ceiling large enough not to be the thing under test.
@@ -1262,6 +1265,87 @@ describe('the canonical image', () => {
       readBytes: () => Promise.reject(Object.assign(new Error('EIO: i/o error'), { code: 'EIO' })),
     });
     await expect(service.open(registry.mint(original()))).rejects.toThrow(/EIO/u);
+  });
+
+  it('ASKS THE FILE whether it can be saved over, at its own path and at every call, keeping nothing (7b)', async () => {
+    const registry = new CapabilityRegistry();
+    const asked: string[] = [];
+    const answers = ['read-only', 'writable'] as const;
+    const service = newService(registry, {
+      probeAccess: (path) => {
+        asked.push(path);
+        return Promise.resolve(answers[asked.length - 1] ?? 'absent');
+      },
+    });
+    const opened = await service.open(registry.mint(original()));
+    if (opened.kind !== 'opened') throw new Error(`expected opened, got ${opened.kind}`);
+
+    // TWO ANSWERS, because the answer changes under a document — a person clears the read-only box — and one kept from
+    // the first ask would say the old thing for ever.
+    expect(await service.fileAccess(opened.docId)).toBe('read-only');
+    expect(await service.fileAccess(opened.docId)).toBe('writable');
+    expect(asked).toStrictEqual([original(), original()]);
+  });
+
+  it('a document that is not open has no file to ask about', async () => {
+    const service = newService(new CapabilityRegistry());
+    await expect(service.fileAccess(asDocId('doc-never-opened'))).rejects.toBeInstanceOf(DocumentNotOpenError);
+  });
+
+  it('THE DEFAULT PROBE opens the file for writing and writes nothing: writable, absent, and a fault for anything else', async () => {
+    // ITS OWN FILE, because the case deletes it and puts a folder where it was.
+    const probed = join(root, 'probed.pdf');
+    writeFileSync(probed, 'document bytes\n');
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const opened = await service.open(registry.mint(probed));
+    if (opened.kind !== 'opened') throw new Error(`expected opened, got ${opened.kind}`);
+    const before = statSync(probed);
+
+    expect(await service.fileAccess(opened.docId)).toBe('writable');
+    // NOTHING WRITTEN: the open for writing leaves the bytes and the last-write time as they were.
+    expect(readFileSync(probed, 'utf8')).toBe('document bytes\n');
+    expect(statSync(probed).mtimeMs).toBe(before.mtimeMs);
+
+    unlinkSync(probed);
+    expect(await service.fileAccess(opened.docId)).toBe('absent');
+  });
+
+  it('a refused open for writing reads as the file’s state by libuv’s codes, and any other failure is a FAULT', () => {
+    const refused = (code: string): unknown => accessOfRefusedOpen(Object.assign(new Error(code), { code }));
+    // `EPERM` IS WINDOWS' read-only attribute and access denied alike, as libuv maps them; `EBUSY` its sharing
+    // violation, a program holding the file against writers.
+    expect(['EPERM', 'EACCES', 'EROFS', 'EBUSY', 'ENOENT'].map(refused)).toStrictEqual([
+      'read-only',
+      'read-only',
+      'read-only',
+      'held',
+      'absent',
+    ]);
+    // CONTROL: a failure that is none of its answers is rethrown, never dressed up as the file's state.
+    expect(() => refused('EIO')).toThrow(/EIO/u);
+  });
+
+  it('A SAVE NOT WRITTEN names its cause from the failure and the file — every cause from its own row (7b)', () => {
+    const failed = (stage: AtomicWriteFailure['stage'], detail: string): AtomicWriteFailure => ({ stage, detail });
+    const rows = [
+      // THE FILE'S ACCESS DECIDES FIRST: on Windows a rename over a read-only file and over a held one are both
+      // `EPERM`, so the failure alone would call the read-only file held.
+      [failed('rename', 'EPERM'), 'read-only', 'read-only'],
+      [failed('rename', 'EPERM'), 'held', 'held'],
+      [failed('temp-write', 'ENOSPC'), 'writable', 'disk-full'],
+      // REFUSED BEFORE THE RENAME is the folder's: the new contents go to a file beside the target first.
+      [failed('temp-write', 'EACCES'), 'writable', 'folder-read-only'],
+      [failed('backup', 'EPERM'), 'writable', 'folder-read-only'],
+      // A RENAME REFUSED over a file that can be written is a program holding it against being replaced.
+      [failed('rename', 'EPERM'), 'writable', 'held'],
+      [failed('rename', 'EBUSY'), 'writable', 'held'],
+      [failed('rename', 'EXDEV'), 'writable', 'unknown'],
+      [failed('rename', 'ENOENT'), 'absent', 'unknown'],
+    ] as const;
+    for (const [failure, access, cause] of rows) expect([failure, access, saveWriteCause(failure, access)]).toStrictEqual([failure, access, cause]);
+    // CONTROL: the rows separate every cause, so a resolver answering one constant fails four ways at least.
+    expect(new Set(rows.map(([, , cause]) => cause)).size).toBe(5);
   });
 
   it('admits a document that exactly fills the ceiling', async () => {

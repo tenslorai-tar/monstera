@@ -7,7 +7,9 @@ import {
   type ChannelResult,
   type ContractClient,
   type ContractHandlers,
+  type FileAccess,
   type FormFieldKind,
+  type SaveWriteCause,
   type Incident,
   type OcrLanguage,
   type UpdateStatus,
@@ -265,8 +267,16 @@ export interface BrowserShimOptions {
    */
   readonly saveRefusals?: ReadonlyMap<
     string,
-    'contested' | 'replaced' | 'target-absent' | 'unverifiable' | 'write-failed'
+    // `'write-failed'` is a write refused for a cause nothing could tell; the object names the cause (cloud-4 7b).
+    'contested' | 'replaced' | 'target-absent' | 'unverifiable' | 'write-failed' | { readonly writeFailed: SaveWriteCause }
   >;
+  /**
+   * What `document.fileAccess` answers for a document, by its id: `writable` for any not named, which is what a file
+   * a person just opened usually is.
+   */
+  readonly fileAccess?: ReadonlyMap<string, FileAccess>;
+  /** What `document.workOnCopy` answers, in turn; `cancelled` once these run out, the dismissed picker. */
+  readonly workOnCopies?: readonly ChannelResult<'document.workOnCopy'>[];
   /**
    * What `document.saveCopy` answers, for {@link saveRefusals}' reason.
    *
@@ -833,6 +843,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   const queuedOpens: OpenAnswer[] = [...(options.opens ?? [])];
   const queuedMarkdownNews = [...(options.markdownNews ?? [])];
   const queuedEditCopies = [...(options.editCopies ?? [])];
+  const queuedWorkOnCopies = [...(options.workOnCopies ?? [])];
   const queuedCsvNews = [...(options.csvNews ?? [])];
   const queuedOfficeNews = [...(options.officeNews ?? [])];
   const queuedImageNews = [...(options.imageNews ?? [])];
@@ -1296,8 +1307,10 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (refusal !== undefined) {
         return Promise.resolve(
           refusal === 'write-failed'
-            ? ok({ kind: 'write-failed' as const })
-            : ok({ kind: 'refused' as const, reason: refusal }),
+            ? ok({ kind: 'write-failed' as const, cause: 'unknown' as const })
+            : typeof refusal === 'object'
+              ? ok({ kind: 'write-failed' as const, cause: refusal.writeFailed })
+              : ok({ kind: 'refused' as const, reason: refusal }),
         );
       }
 
@@ -1807,6 +1820,20 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (answer.kind === 'edited' || answer.kind === 'edit-refused') versions.set(answer.docId, answer.version);
       return Promise.resolve(ok(answer));
     },
+    // `document.open`'s seeding, for its reason.
+    'document.workOnCopy': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+      const answer = queuedWorkOnCopies.shift() ?? { kind: 'cancelled' as const };
+      if (answer.kind === 'opened') versions.set(answer.docId, answer.version);
+      return Promise.resolve(ok(answer));
+    },
+    'document.fileAccess': ({ docId }) =>
+      Promise.resolve(
+        versions.has(docId)
+          ? ok({ access: options.fileAccess?.get(docId) ?? ('writable' as const) })
+          : err({ code: 'document-not-open' as const }),
+      ),
 
     // THE STALE RULE IS MODELLED, and it is the one behaviour here that is not
     // bookkeeping. A transport bound to a version that has moved must be told

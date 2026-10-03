@@ -1069,6 +1069,74 @@ describe('document.editCopy — an edit of a signed document made on a copy (ADR
   });
 });
 
+describe('document.workOnCopy and document.fileAccess — a file that cannot be saved over (cloud-4 7b)', () => {
+  const COPY_PATH = resolve('copies', 'annual (copy).pdf');
+  const COPY: DocId = asDocId('doc-work-copy');
+  const OPENED: OpenOutcome = { kind: 'opened', docId: COPY, version: asDocVersion(1), byteLength: 1024, name: 'annual (copy).pdf' };
+  const NO_PICKER: PickDocument = () => Promise.reject(new Error('a copy to work on never runs the open picker'));
+
+  function commandsCopying(copied: unknown, access: unknown = 'writable'): { commands: DocumentCommands; asked: unknown[] } {
+    const asked: unknown[] = [];
+    const commands = {
+      copyToWorkOn: (docId: DocId) => {
+        asked.push(['copy', docId]);
+        return Promise.resolve(copied);
+      },
+      fileAccess: (docId: DocId) => {
+        asked.push(['access', docId]);
+        return access instanceof Error ? Promise.reject(access) : Promise.resolve(access);
+      },
+    } as unknown as DocumentCommands;
+    return { commands, asked };
+  }
+
+  it('writes the copy and opens it by the ONE route, so it is a document with a session and a recent entry', async () => {
+    const { commands, asked } = commandsCopying({ outcome: { kind: 'copied', bytes: 1024 }, destination: COPY_PATH });
+    const { capabilities, handlers, opened, sessioned } = harness(OPENED, NO_PICKER, undefined, { commands });
+
+    const result = await handlers['document.workOnCopy']({ docId: A_DOC });
+
+    expect(result).toStrictEqual({ ok: true, value: OPENED });
+    expect(asked).toStrictEqual([['copy', A_DOC]]);
+    expect(capabilities.resolve(handleOpened(opened))).toBe(COPY_PATH);
+    expect(sessioned).toStrictEqual([COPY]);
+    if (!result.ok) throw new Error('the case answered a failure');
+    expect(channels['document.workOnCopy'].result.safeParse(result.value).success).toBe(true);
+  });
+
+  it('a dismissed picker, a refused destination and a failed write OPEN NOTHING and say which', async () => {
+    const cases = [
+      [undefined, { kind: 'cancelled' }],
+      [{ outcome: { kind: 'refused', others: [A_DOC, COPY] }, destination: COPY_PATH }, { kind: 'destination-contested', openElsewhere: 2 }],
+      [{ outcome: { kind: 'write-failed', failure: { stage: 'temp-write', detail: 'ENOSPC' } }, destination: COPY_PATH }, { kind: 'write-failed' }],
+    ] as const;
+    for (const [copied, answer] of cases) {
+      const { commands } = commandsCopying(copied);
+      const { handlers, opened } = harness(OPENED, NO_PICKER, undefined, { commands });
+      expect(await handlers['document.workOnCopy']({ docId: A_DOC })).toStrictEqual({ ok: true, value: answer });
+      expect(opened).toStrictEqual([]);
+    }
+  });
+
+  it('a copy whose read was refused says so, as any open does', async () => {
+    const { commands } = commandsCopying({ outcome: { kind: 'copied', bytes: 1024 }, destination: COPY_PATH });
+    const { handlers } = harness({ kind: 'busy' }, NO_PICKER, undefined, { commands });
+    expect(await handlers['document.workOnCopy']({ docId: A_DOC })).toStrictEqual({ ok: true, value: { kind: 'busy' } });
+  });
+
+  it('fileAccess answers the file’s own state, and a document that is not open as the declared failure', async () => {
+    for (const access of ['read-only', 'held', 'writable'] as const) {
+      const { commands, asked } = commandsCopying(undefined, access);
+      const { handlers } = harness(OPENED, NO_PICKER, undefined, { commands });
+      expect(await handlers['document.fileAccess']({ docId: A_DOC })).toStrictEqual({ ok: true, value: { access } });
+      expect(asked).toStrictEqual([['access', A_DOC]]);
+    }
+    const { commands } = commandsCopying(undefined, new DocumentNotOpenError(A_DOC, 'read its file access'));
+    const { handlers } = harness(OPENED, NO_PICKER, undefined, { commands });
+    expect(await handlers['document.fileAccess']({ docId: A_DOC })).toStrictEqual({ ok: false, error: { code: 'document-not-open' } });
+  });
+});
+
 describe('document.openWaiting — the command line’s documents', () => {
   const LAUNCHED = resolve('launched', 'a.pdf');
   const OPENED: OpenOutcome = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' };

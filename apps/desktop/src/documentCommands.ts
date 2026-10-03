@@ -45,6 +45,8 @@ import {
   type TimestampAuthority,
   type TextBlockStyle,
   type WordMode,
+  type SaveWriteCause,
+  type FileAccess,
   keptLookOf,
   placedMarkOf,
   sourceIdsOf,
@@ -145,6 +147,7 @@ import {
   pagesOf,
   breaksSignatures,
   StaleTargetError,
+  saveWriteCause,
 } from '@monstera/kernel';
 import type { BarcodeWriteFormat } from '@monstera/kernel/barcode';
 import {
@@ -692,7 +695,9 @@ export type SaveRequestOutcome =
       readonly cleared: ClearedCopies | null;
       readonly held: readonly string[];
     })
-  | Exclude<SaveOutcome, { kind: 'saved' }>
+  | Exclude<SaveOutcome, { kind: 'saved' | 'write-failed' }>
+  /** Not written, and why, from the failure and the file's access read just after it (`saveWriteCause`). */
+  | (Extract<SaveOutcome, { kind: 'write-failed' }> & { readonly cause: SaveWriteCause })
   | { readonly kind: 'breaks-signatures'; readonly signatures: number };
 
 /**
@@ -3669,6 +3674,19 @@ export class DocumentCommands {
    * against the version the copy is written at: the copy holds the document as it is now, so an edit named against an
    * older one would land on content it was not composed for, as it would on the original.
    */
+  /**
+   * A copy of the document to WORK ON, written where the person chooses (cloud-4 7b): {@link saveCopy}'s picker and
+   * write exactly, and the path the copy went to, which the handler opens.
+   */
+  async copyToWorkOn(docId: DocId): Promise<{ readonly outcome: CopyOutcome; readonly destination: string } | undefined> {
+    return this.#writeCopy(docId, () => undefined);
+  }
+
+  /** Whether the document's own file could be written over now — the service's answer, asked at each call. */
+  fileAccess(docId: DocId): Promise<FileAccess> {
+    return this.#documents.fileAccess(docId);
+  }
+
   async copyForEditing(
     docId: DocId,
     command: Command,
@@ -5829,6 +5847,10 @@ export class DocumentCommands {
         () => this.#save.stage(docId, sessions),
         removal ? 'none' : 'keep',
       );
+      // WHY IT WAS NOT WRITTEN, asked of the file now, inside the lane, so the person is told the remedy that fits.
+      if (saved.kind === 'write-failed') {
+        return { ...saved, cause: saveWriteCause(saved.failure, await this.#documents.fileAccess(docId)) };
+      }
       if (saved.kind !== 'saved') return saved;
       // THE BACKUP THIS SAVE MADE is the newest name, `atomicWrite`'s own reading of the same list.
       const [newest] = names.backups;

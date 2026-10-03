@@ -473,6 +473,37 @@ export const COMPOSE_REFUSALS = [
 ] as const;
 
 /**
+ * Whether an open document's own file could be written over now (cloud-4 7b) — the kernel's probe answers exactly these.
+ */
+export const FILE_ACCESS = [
+  /** This account may write it, and nothing holds it against writers. */
+  'writable',
+  /** This account may not write it: its read-only attribute, its permissions, or a read-only volume. */
+  'read-only',
+  /** Another program has it open and lets nobody else write it. */
+  'held',
+  /** Nothing is at its path any more. */
+  'absent',
+] as const;
+
+/**
+ * Why a save of a document to its own file could not be written (cloud-4 7b), each with its own remedy — the kernel's
+ * one resolver (`saveWriteCause`) answers exactly these.
+ */
+export const SAVE_WRITE_CAUSES = [
+  /** The file is read-only to this account. */
+  'read-only',
+  /** Another program holds the file. */
+  'held',
+  /** The file's folder cannot be written by this account, so the new contents had nowhere to go first. */
+  'folder-read-only',
+  /** The disk is full. */
+  'disk-full',
+  /** None of these could be told. */
+  'unknown',
+] as const;
+
+/**
  * Why a document was not fetched from a URL a person gave
  * ([ADR-0061](../../../docs/DECISIONS/0061-a-url-a-person-chose-is-fetched-through-one-guard-that-pins-every-resolution.md)).
  *
@@ -501,6 +532,12 @@ export const URL_FETCH_REFUSALS = [
 ] as const;
 
 export type UrlFetchRefusal = (typeof URL_FETCH_REFUSALS)[number];
+
+/** One of {@link FILE_ACCESS}. */
+export type FileAccess = (typeof FILE_ACCESS)[number];
+
+/** One of {@link SAVE_WRITE_CAUSES}. */
+export type SaveWriteCause = (typeof SAVE_WRITE_CAUSES)[number];
 
 /** One of {@link COMPOSE_REFUSALS}. */
 export type ComposeRefusal = (typeof COMPOSE_REFUSALS)[number];

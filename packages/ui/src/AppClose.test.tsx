@@ -115,7 +115,7 @@ function client(options: {
         return Promise.resolve(
           ok(
             options.save === 'write-failed'
-              ? { kind: 'write-failed' as const }
+              ? { kind: 'write-failed' as const, cause: 'unknown' as const }
               : { kind: 'saved' as const, version: asDocVersion(2), cleared: null, held: [] },
           ),
         );
@@ -125,6 +125,9 @@ function client(options: {
         return Promise.resolve(ok({ closing: true }));
       case 'window.closeListening':
         return Promise.resolve(ok({ acknowledged: true }));
+      // EVERY OPEN ASKS whether the file can be saved over (cloud-4 7b).
+      case 'document.fileAccess':
+        return Promise.resolve(ok({ access: 'writable' as const }));
       case 'document.recent':
         return Promise.resolve(ok({ entries: [], lastExitClean: true }));
       case 'document.readRange':

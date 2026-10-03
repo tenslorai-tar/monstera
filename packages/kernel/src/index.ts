@@ -381,6 +381,8 @@ export {
   type Versioned,
   type WriteTargetVerdict,
   type CopyTargetVerdict,
+  type FileAccessProbe,
+  saveWriteCause,
   sweepCheckpointDirectories,
 } from './documentService.js';
 export { readDocumentRange } from './documentRanges.js';

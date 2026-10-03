@@ -53,6 +53,7 @@ import {
   DocumentService,
   EngineCallFailed,
   EngineSessionGone,
+  type FileAccessProbe,
   type MupdfSession,
   nodeFileSurface,
   parsePageStructure,
@@ -1424,6 +1425,8 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       provenance: BackupProvenance = ledger(),
       /** Where *Save a copy*'s picker answers, for the cases that write one; a dismissed picker otherwise. */
       copyTo: string | null = null,
+      /** The file's access and the save's filesystem, for the cases about a save that is not written (7b). */
+      file: { readonly probeAccess?: FileAccessProbe; readonly surface?: AtomicWriteSurface } = {},
     ): Promise<{
       commands: DocumentCommands;
       saved: DocId;
@@ -1442,7 +1445,11 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       writeFileSync(path, before);
 
       const registry = new CapabilityRegistry();
-      const own = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
+      const own = new DocumentService(registry, {
+        documentBytesCeiling: AMPLE_CEILING,
+        checkpointDirectory: CHECKPOINTS,
+        ...(file.probeAccess === undefined ? {} : { probeAccess: file.probeAccess }),
+      });
       const outcome = await own.open(registry.mint(path));
       if (outcome.kind !== 'opened') throw new Error(`fixture did not open: ${outcome.kind}`);
 
@@ -1480,7 +1487,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
             // Windows.
             deps: {
               checkWriteTarget: (id) => own.checkWriteTarget(id),
-              surface: nodeFileSurface,
+              surface: file.surface ?? nodeFileSurface,
               names: (target) => siblingNames(target, 1),
               wait: () => Promise.resolve(),
             },
@@ -1498,6 +1505,36 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         }),
       };
     }
+
+    it('A SAVE NOT WRITTEN says why, from the file asked AFTER the failure: the same refused rename is read-only or held (7b)', async () => {
+      // A RENAME WINDOWS REFUSES WITH `EPERM`, which is what a read-only target and a held one both answer there.
+      const refusingRename: AtomicWriteSurface = {
+        ...nodeFileSurface,
+        rename: () => Promise.reject(Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' })),
+      };
+      const answers: string[] = [];
+      for (const access of ['read-only', 'writable'] as const) {
+        const probed: string[] = [];
+        const t = await aSavableDocument(undefined, ledger(), null, {
+          surface: refusingRename,
+          probeAccess: (path) => {
+            probed.push(path);
+            return Promise.resolve(access);
+          },
+        });
+        await t.commands.execute(t.saved, rotateOnce);
+
+        const outcome = await t.commands.save(t.saved, { breakSignatures: false });
+
+        expect(outcome).toMatchObject({ kind: 'write-failed', failure: { stage: 'rename', detail: 'EPERM' } });
+        if (outcome.kind === 'write-failed') answers.push(outcome.cause);
+        // THE DOCUMENT'S OWN FILE was asked, and it is as it was: invariant 18.
+        expect(probed).toStrictEqual([t.path]);
+        expect(Buffer.from(readFileSync(t.path)).equals(Buffer.from(t.before))).toBe(true);
+      }
+      // CONTROL, the pair: one failure, two files, two causes — so the cause is the file's answer and not the code's.
+      expect(answers).toStrictEqual(['read-only', 'held']);
+    });
 
     it('HOLDS BACK a save that would break signatures — the file untouched — and writes it once the person agreed', async () => {
       const asked: unknown[] = [];

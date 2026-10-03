@@ -23,7 +23,11 @@ import {
   SAVE_PRINT_FAILED,
   SAVE_PRINT_UNAVAILABLE,
   SAVE_REVIEW_CHANGED,
+  SAVE_WRITE_DISK_FULL,
   SAVE_WRITE_FAILED,
+  SAVE_WRITE_FOLDER_READ_ONLY,
+  SAVE_WRITE_HELD,
+  SAVE_WRITE_READ_ONLY,
 } from '../messages/en.js';
 
 /** Every outcome this dialog is opened for. */
@@ -34,6 +38,10 @@ type SaveProblem =
   | 'unrepresentable'
   | 'unverifiable'
   | 'write-failed'
+  | 'write-read-only'
+  | 'write-held'
+  | 'write-folder-read-only'
+  | 'write-disk-full'
   | 'layout-unavailable'
   | 'layout-failed'
   | 'no-tables'
@@ -75,6 +83,11 @@ const MESSAGE: Readonly<Record<SaveProblem, MessageKey>> = {
   unrepresentable: SAVE_REFUSED_UNREPRESENTABLE,
   unverifiable: SAVE_REFUSED_UNVERIFIABLE,
   'write-failed': SAVE_WRITE_FAILED,
+  // A SAVE TO THE DOCUMENT'S OWN FILE whose cause could be told, each with its own remedy (cloud-4 7b).
+  'write-read-only': SAVE_WRITE_READ_ONLY,
+  'write-held': SAVE_WRITE_HELD,
+  'write-folder-read-only': SAVE_WRITE_FOLDER_READ_ONLY,
+  'write-disk-full': SAVE_WRITE_DISK_FULL,
   // A LAYOUT EXPORT's two: no converter on this machine, and one that ran and wrote
   // nothing usable. The document is untouched in both, which the dialog's first line
   // already says, and the plain export is the action.

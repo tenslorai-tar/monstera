@@ -777,20 +777,27 @@ describe('save', () => {
     ]);
   });
 
-  it('a write failure reaches the same dialog, flattened into one enum', async () => {
+  it('a write failure reaches the same dialog, flattened into one enum, and EACH CAUSE to its own sentence (7b)', async () => {
     // The channel answers two shapes describing one thing — `{kind: 'refused',
-    // reason}` and `{kind: 'write-failed'}` — and the dialog takes one enum, so
-    // its body switches once. Without this case the flattening is exercised on
+    // reason}` and `{kind: 'write-failed', cause}` — and the dialog takes one enum,
+    // so its body switches once. Without this case the flattening is exercised on
     // one side only, and the side with no `reason` field is the one that would
     // send `undefined`.
-    const client = clientAnswering('document.save', { kind: 'write-failed' });
-    const shown: { id: string; props: unknown }[] = [];
+    const rows = [
+      ['read-only', 'write-read-only'],
+      ['held', 'write-held'],
+      ['folder-read-only', 'write-folder-read-only'],
+      ['disk-full', 'write-disk-full'],
+      ['unknown', 'write-failed'],
+    ] as const;
+    for (const [cause, outcome] of rows) {
+      const client = clientAnswering('document.save', { kind: 'write-failed', cause });
+      const shown: { id: string; props: unknown }[] = [];
 
-    await saveCommand({ client, ask: askRecording(shown), ...saving(), settleMarks: NOTHING_MARKED }).run(CONTEXT);
+      await saveCommand({ client, ask: askRecording(shown), ...saving(), settleMarks: NOTHING_MARKED }).run(CONTEXT);
 
-    expect(shown).toStrictEqual([
-      { id: 'dialog.save-problem', props: { outcome: 'write-failed' } },
-    ]);
+      expect([cause, shown]).toStrictEqual([cause, [{ id: 'dialog.save-problem', props: { outcome } }]]);
+    }
   });
 
   it('a DECLARED FAILURE goes to the OTHER dialog, because it is a different kind of refusal', async () => {

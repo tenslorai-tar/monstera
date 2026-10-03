@@ -978,6 +978,10 @@ export const START_DENIED = messageKey('surface.start.denied');
 export const START_FAILED = messageKey('surface.start.failed');
 /** The dialog that says why an open did not happen while a document is already on screen. */
 export const OPEN_PROBLEM_TITLE = messageKey('dialog.open-problem.title');
+/** The dialog that says, as a document opens, that its file cannot be saved over (cloud-4 7b). */
+export const READ_ONLY_FILE_TITLE = messageKey('dialog.read-only-file.title');
+export const READ_ONLY_FILE_READ_ONLY = messageKey('dialog.read-only-file.read-only');
+export const READ_ONLY_FILE_HELD = messageKey('dialog.read-only-file.held');
 export const START_DROP_HINT = messageKey('surface.start.drop-hint');
 export const DROP_OVERLAY = messageKey('surface.drop.overlay');
 export const PRIVACY_RECENT_PREVIEWS_TITLE = messageKey('setting.privacy.recent-previews.title');
@@ -2351,6 +2355,11 @@ export const SAVE_REFUSED_TARGET_ABSENT = messageKey('dialog.save-problem.target
 export const SAVE_REFUSED_UNREPRESENTABLE = messageKey('dialog.save-problem.unrepresentable');
 export const SAVE_REFUSED_UNVERIFIABLE = messageKey('dialog.save-problem.unverifiable');
 export const SAVE_WRITE_FAILED = messageKey('dialog.save-problem.write-failed');
+/** Why a save to the document's own file was not written, when it can be told (cloud-4 7b). */
+export const SAVE_WRITE_READ_ONLY = messageKey('dialog.save-problem.write-read-only');
+export const SAVE_WRITE_HELD = messageKey('dialog.save-problem.write-held');
+export const SAVE_WRITE_FOLDER_READ_ONLY = messageKey('dialog.save-problem.write-folder-read-only');
+export const SAVE_WRITE_DISK_FULL = messageKey('dialog.save-problem.write-disk-full');
 export const SAVE_LAYOUT_UNAVAILABLE = messageKey('dialog.save-problem.layout-unavailable');
 export const SAVE_LAYOUT_FAILED = messageKey('dialog.save-problem.layout-failed');
 export const SAVE_NO_TABLES = messageKey('dialog.save-problem.no-tables');
@@ -3060,6 +3069,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'You do not have permission to read that file. Ask its owner for access, or open a copy you can read.',
   [START_FAILED]: 'That file could not be opened. Try again, and if it happens again, restart Monstera.',
   [OPEN_PROBLEM_TITLE]: 'The document could not be opened',
+  [READ_ONLY_FILE_TITLE]: 'Changes cannot be saved to this file',
+  [READ_ONLY_FILE_READ_ONLY]:
+    'This file is read-only, so changes cannot be saved to it. You can still read and edit it here. To keep your changes, save a copy where you choose, and it opens beside this one.',
+  [READ_ONLY_FILE_HELD]:
+    'Another program has this file open and does not let others change it, so changes cannot be saved to it while that program has it. To keep your changes, save a copy where you choose, and it opens beside this one.',
   // v5-01's line under Open PDF, word for word.
   [START_DROP_HINT]: 'or drop a PDF anywhere in this window',
   [DROP_OVERLAY]: 'Drop to open',
@@ -5112,7 +5126,17 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // guessing which. XFDF is XML and XML has no way to write a control
   // character at all — not even escaped.
   [SAVE_REFUSED_UNREPRESENTABLE]: 'A field in this form holds a character XFDF cannot store. Export as FDF or JSON instead, which both keep it.',
-  [SAVE_WRITE_FAILED]: 'The file could not be written. Check that it is not open in another application, and that there is room on the disk.',
+  // NAMES NO CAUSE, because this is the sentence for a write whose cause could not be told: it read *open in another
+  // application, or no room on the disk* until 2026-10-03, which sent a person with a read-only file to look for both.
+  [SAVE_WRITE_FAILED]: 'The file could not be written there. Try again, or choose another place to save it.',
+  [SAVE_WRITE_READ_ONLY]:
+    'This file is read-only, so it could not be saved over. Save a copy… keeps your changes in a file you can save.',
+  [SAVE_WRITE_HELD]:
+    'Another program has this file open and does not let others change it, so it could not be saved over. Close it in that program and save again. Save a copy… keeps your changes in another file meanwhile.',
+  [SAVE_WRITE_FOLDER_READ_ONLY]:
+    'You do not have permission to save in the folder this file is in. Save a copy… keeps your changes in a folder you can save in.',
+  [SAVE_WRITE_DISK_FULL]:
+    'There is not enough room on the disk to save this file. Free some space and save again. Save a copy… can keep your changes on another disk.',
   [SAVE_LAYOUT_UNAVAILABLE]: 'Text with layout needs a component that is not installed with this copy of Monstera. Export text… still works.',
   [SAVE_LAYOUT_FAILED]: 'The text could not be read with its layout from this document, so no file was written. Export text… may still work.',
   [SAVE_NO_TABLES]: 'No tables with ruled lines were found in this document, so no file was written.',

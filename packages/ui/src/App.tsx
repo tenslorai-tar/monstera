@@ -205,6 +205,7 @@ import { compareDocumentsCommand } from './commands/compareDocuments.js';
 import { translatePageCommand } from './commands/translatePage.js';
 import { COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
 import { OPEN_PROBLEM_DIALOG_ID } from './dialogs/openProblem.js';
+import { sayWhenUnwritable } from './commands/readOnlyFile.js';
 import {
   exportAnnotationsFdfCommand,
   exportAnnotationsJsonCommand,
@@ -2311,15 +2312,19 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * document is opened.
    */
   // ONE SET OF OPEN DEPENDENCIES, for the Open command and the start screen's feature shortcuts, which run the same open.
-  const openDeps = useMemo(
-    () => ({
-      client,
+  const openDeps = useMemo(() => {
+    const shown = (document: OpenedDocument): void => {
       // A DOCUMENT SHOWN ANSWERS THE LAST PROBLEM, so returning to the start screen later never shows a sentence
       // about an open the person has since made.
-      onOpened: (document: OpenedDocument): void => {
-        setOpenProblem(undefined);
-        opened(document);
-      },
+      setOpenProblem(undefined);
+      opened(document);
+      // AND ITS FILE IS ASKED ABOUT as it appears (cloud-4 7b): one that cannot be saved over is said before any edit,
+      // with a copy to work on — which opens through here, so the copy is asked about too.
+      void sayWhenUnwritable({ client, ask, onOpened: shown }, document.docId);
+    };
+    return {
+      client,
+      onOpened: shown,
       // SAID WHERE THE PERSON IS LOOKING, which `placedProblem` decides.
       onProblem: (reason: OpenProblem): void => {
         setOpenProblem({ reason });
@@ -2328,9 +2333,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         setOpenProblem(undefined);
         activate(docId);
       },
-    }),
-    [activate, client, opened],
-  );
+    };
+  }, [activate, ask, client, opened]);
   // THE DIALOG, once per problem placed over a document.
   useEffect(() => {
     if (placedProblem === undefined || placedProblem.onStart) return;

@@ -1,9 +1,10 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { closeSync, openSync, readSync, readdirSync, rmSync } from 'node:fs';
-import { copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
+import type { FileAccess, SaveWriteCause } from '@monstera/contract';
 import {
   type Brand,
   type DocId,
@@ -13,6 +14,7 @@ import {
   asDocVersion,
 } from '@monstera/shared';
 
+import type { AtomicWriteFailure } from './atomicWrite.js';
 import type { CapabilityRegistry } from './capabilityRegistry.js';
 import {
   type Checkpoint,
@@ -1151,6 +1153,58 @@ function requireSoleOwnership(bytes: Uint8Array, path: string): void {
 const readFileBytes: BytesReader = (path) => readFile(path);
 
 /**
+ * Answers the contract's {@link FileAccess} for a path, throwing for any failure that is not one of its answers.
+ *
+ * A seam for {@link DocumentServiceOptions}' reason: `held` needs another process holding the file with a share mode
+ * nothing in a test can arrange.
+ */
+export type FileAccessProbe = (path: string) => Promise<FileAccess>;
+
+/**
+ * The default: the file OPENED FOR WRITING and closed at once, nothing written. The open is what Windows itself
+ * decides a write on — the read-only attribute and the file's permissions answer `EPERM`, a program holding it with a
+ * share mode that refuses writers answers `EBUSY` — which `fs.access` does not ask: on Windows it reads the read-only
+ * attribute alone.
+ */
+const probeFileAccess: FileAccessProbe = async (path) => {
+  try {
+    await (await open(path, 'r+')).close();
+    return 'writable';
+  } catch (error) {
+    return accessOfRefusedOpen(error);
+  }
+};
+
+/**
+ * What an open for writing that failed says about the file: `absent`, or `read-only` and `held` from
+ * {@link readRefusalOf}'s one mapping. Any other failure is a fault and is rethrown, never read as the file's state.
+ */
+export function accessOfRefusedOpen(error: unknown): Exclude<FileAccess, 'writable'> {
+  if ((error as { readonly code?: unknown } | null)?.code === 'ENOENT') return 'absent';
+  const refused = readRefusalOf(error);
+  if (refused === null) throw error;
+  return refused === 'busy' ? 'held' : 'read-only';
+}
+
+/**
+ * Why a save to a document's own file could not be written — THE ONE RESOLVER (B3a), from the failure and the file's
+ * access read just after it.
+ *
+ * The access decides first, because on Windows the failure alone cannot: a rename over a read-only file and over one
+ * another program holds both answer `EPERM`, which the rename ladder retries as a holder either way. Then the disk,
+ * then a refusal before the rename — the new contents go to a file beside the target first, so a refusal there is the
+ * folder's. A rename still refused over a file that can be written is a program holding it against being replaced.
+ */
+export function saveWriteCause(failure: AtomicWriteFailure, access: FileAccess): SaveWriteCause {
+  if (access === 'read-only' || access === 'held') return access;
+  if (failure.detail === 'ENOSPC') return 'disk-full';
+  const refused = readRefusalOf({ code: failure.detail });
+  if (refused !== null && failure.stage !== 'rename') return 'folder-read-only';
+  if (refused !== null) return 'held';
+  return 'unknown';
+}
+
+/**
  * Which refusal a failed read of a person's file is, or `null` for a failure that is not one.
  *
  * libuv's own mapping decides, because it is what Node reports: Windows' `ERROR_SHARING_VIOLATION` and
@@ -1160,7 +1214,8 @@ const readFileBytes: BytesReader = (path) => readFile(path);
 export function readRefusalOf(error: unknown): 'busy' | 'denied' | null {
   const code = (error as { readonly code?: unknown } | null)?.code;
   if (code === 'EBUSY') return 'busy';
-  if (code === 'EPERM' || code === 'EACCES') return 'denied';
+  // `EROFS` too, which only a write meets: a read-only volume is this account not being let write the file.
+  if (code === 'EPERM' || code === 'EACCES' || code === 'EROFS') return 'denied';
   return null;
 }
 
@@ -1269,6 +1324,8 @@ export interface DocumentServiceOptions {
   readonly readIdentity?: IdentityReader;
   readonly readBytes?: BytesReader;
   readonly writeBytes?: BytesWriter;
+  /** How {@link DocumentService.fileAccess} asks the filesystem; {@link FileAccessProbe}'s default otherwise. */
+  readonly probeAccess?: FileAccessProbe;
 }
 
 export class DocumentService {
@@ -1280,6 +1337,7 @@ export class DocumentService {
   readonly #readIdentity: IdentityReader;
   readonly #readBytes: BytesReader;
   readonly #writeBytes: BytesWriter;
+  readonly #probeAccess: FileAccessProbe;
   readonly #documentBytesCeiling: number;
   readonly #checkpointRoot: string;
 
@@ -1343,6 +1401,7 @@ export class DocumentService {
     this.#readIdentity = options.readIdentity ?? readFileIdentity;
     this.#readBytes = options.readBytes ?? readFileBytes;
     this.#writeBytes = options.writeBytes ?? writeFileBytes;
+    this.#probeAccess = options.probeAccess ?? probeFileAccess;
   }
 
   /**
@@ -2155,6 +2214,19 @@ export class DocumentService {
    */
   checkWriteTarget(docId: DocId): Promise<WriteTargetVerdict> {
     return this.#throughIndexLane(() => this.#checkWriteTargetNow(docId));
+  }
+
+  /**
+   * Whether this document's own file could be written over NOW (cloud-4 7b) — asked of the file at each call and never
+   * kept, because the answer changes under the document: the person clears the read-only box, closes the program that
+   * held it. So it is something to TELL a person, never a reason to refuse a save, which tries the file itself.
+   *
+   * @throws {DocumentNotOpenError} if `docId` is not open.
+   */
+  fileAccess(docId: DocId): Promise<FileAccess> {
+    const record = this.#records.get(docId);
+    if (record === undefined) return Promise.reject(new DocumentNotOpenError(docId, 'read its file access'));
+    return this.#probeAccess(record.path);
   }
 
   async #checkWriteTargetNow(docId: DocId): Promise<WriteTargetVerdict> {

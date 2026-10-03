@@ -475,6 +475,16 @@ export function createContractHandlers(deps: {
     'document.optimize': optimizeHandler(deps.commands, mintWritten),
     'document.saveCopy': saveCopyHandler(deps.commands, mintWritten),
     'document.editCopy': editCopyHandler(deps),
+    'document.workOnCopy': workOnCopyHandler(deps),
+    // ASKED OF THE FILE AT EACH CALL (cloud-4 7b): the answer is something to tell a person, never kept.
+    'document.fileAccess': async ({ docId }) => {
+      try {
+        return ok({ access: await deps.commands.fileAccess(docId) });
+      } catch (thrown) {
+        if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+        throw thrown;
+      }
+    },
     'document.insertImage': insertImageHandler(deps.commands),
     'document.newFromMarkdown': newFromImportHandler(deps, 'markdown'),
     'document.newFromCsv': newFromImportHandler(deps, 'csv'),
@@ -923,7 +933,7 @@ function saveHandler(commands: DocumentCommands): ContractHandlers['document.sav
       if (outcome.kind === 'breaks-signatures') {
         return ok({ kind: 'breaks-signatures', signatures: outcome.signatures } as const);
       }
-      if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+      if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed', cause: outcome.cause } as const);
       return ok({ kind: 'refused', reason: refusalReason(outcome.verdict) } as const);
     } catch (thrown) {
       // MATCHED ON THE CLASS, exactly as undo and execute do. Everything else
@@ -2131,6 +2141,40 @@ function saveCopyHandler(commands: DocumentCommands, mint: MintWritten): Contrac
  * `edit-refused` carries no document, and a document open in `main` that no tab shows is one nobody can close. The
  * copy's file stays where the person put it.
  */
+/**
+ * A copy to work on, for a document whose own file cannot be written over (cloud-4 7b): {@link editCopyHandler}'s
+ * picker, write and the one open route, with no edit. The copy opens as its own document; the original is left as it
+ * was.
+ */
+function workOnCopyHandler(
+  deps: OpenPathParts & { readonly commands: DocumentCommands },
+): ContractHandlers['document.workOnCopy'] {
+  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.workOnCopy']>>> => {
+    let copied;
+    try {
+      copied = await deps.commands.copyToWorkOn(docId);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+    if (copied === undefined) return ok({ kind: 'cancelled' } as const);
+    if (copied.outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+    if (copied.outcome.kind === 'refused') {
+      return ok({ kind: 'destination-contested', openElsewhere: copied.outcome.others.length } as const);
+    }
+
+    const { outcome } = await openPath(deps, copied.destination);
+    // UNREACHABLE BY `saveCopy`'s OWN RULE, for `editCopyHandler`'s reason: a destination another open document reaches
+    // is refused before anything is written, so the file just written cannot already be open.
+    if (outcome.kind === 'already-open') {
+      throw new Error('a copy written to work on opened as "already-open", which its write refuses');
+    }
+    return ok(outcome);
+  };
+}
+
 function editCopyHandler(
   deps: OpenPathParts & { readonly commands: DocumentCommands },
 ): ContractHandlers['document.editCopy'] {
