@@ -337,6 +337,10 @@ for (const look of LOOKS) {
 async function onePagePdf(): Promise<Uint8Array> {
   const document = await PDFDocument.create();
   document.addPage([612, 792]);
+/** A text block's body run and a run set apart inside its line — larger, bold, blue — as `document.textBlocks` answers. */
+const BODY_RUN = { size: 12, colour: { r: 30, g: 30, b: 30 }, serif: false, mono: false, italic: false, bold: false };
+const SET_APART_RUN = { size: 16, colour: { r: 66, g: 83, b: 149 }, serif: false, mono: false, italic: false, bold: true };
+
   return document.save();
 }
 
@@ -3686,10 +3690,16 @@ for (const look of LOOKS) {
         {
           box,
           lines: [
-            { runs: [{ index: 3, text: 'A paragraph of words ' }, { index: 5, text: 'set on the page' }], box: { x0: 100, y0: 686, x1: 400, y1: 700 } },
-            { runs: [{ index: 8, text: 'and a second line.' }], box: { x0: 100, y0: 600, x1: 260, y1: 614 } },
+            {
+              runs: [
+                { index: 3, text: 'A paragraph of words ', style: BODY_RUN },
+                { index: 5, text: 'set on the page', style: SET_APART_RUN },
+              ],
+              box: { x0: 100, y0: 686, x1: 400, y1: 700 },
+            },
+            { runs: [{ index: 8, text: 'and a second line.', style: BODY_RUN }], box: { x0: 100, y0: 600, x1: 260, y1: 614 } },
           ],
-          style: { size: 12, colour: { r: 30, g: 30, b: 30 }, serif: false, mono: false, italic: false, bold: false },
+          style: BODY_RUN,
         },
       ],
     });
@@ -3732,7 +3742,33 @@ for (const look of LOOKS) {
     await outline.click();
     const editor = page.locator('[data-text-editor]');
     await expect(editor).toBeFocused();
-    await expect(editor).toHaveValue('A paragraph of words set on the page\nand a second line.');
+    expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(
+      'A paragraph of words set on the page\nand a second line.',
+    );
+    // EACH RUN AS THE PAGE SETS IT (ADR-0145): its size at the scale the page is drawn at, its fill, its weight —
+    // computed, so it is what the browser draws and not what was asked of it.
+    const runs = await editor.locator('.m-text-editor__run').evaluateAll((spans) =>
+      spans.map((span) => {
+        const style = getComputedStyle(span);
+        return { size: Number.parseFloat(style.fontSize), colour: style.color, weight: style.fontWeight };
+      }),
+    );
+    expect(runs.map((run) => run.colour)).toStrictEqual(['rgb(30, 30, 30)', 'rgb(66, 83, 149)', 'rgb(30, 30, 30)']);
+    expect(runs.map((run) => run.weight)).toStrictEqual(['400', '700', '400']);
+    const sizes = [BODY_RUN.size, SET_APART_RUN.size, BODY_RUN.size];
+    expect(runs.map((run, at) => Math.abs(run.size - (sizes[at] ?? 0) * scale) < 0.05)).toStrictEqual([true, true, true]);
+    // TYPED AT THE END, the words go into the last run and take its style, and are read back as typed.
+    await page.keyboard.type(' More');
+    expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(
+      'A paragraph of words set on the page\nand a second line. More',
+    );
+    expect(
+      await editor.evaluate(() => {
+        const focus = document.getSelection()?.focusNode;
+        const element = focus instanceof Element ? focus : (focus?.parentElement ?? null);
+        return element === null ? '' : getComputedStyle(element).color;
+      }),
+    ).toBe('rgb(30, 30, 30)');
 
     const results = await new AxeBuilder({ page }).analyze();
     const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));

@@ -27,11 +27,28 @@ function find(root: ParentNode, selector: string): HTMLElement {
   return found;
 }
 
-/** The open editor, checked to be the text area it is. */
-function editorIn(root: ParentNode): HTMLTextAreaElement {
+/** The open editor, checked to be the plain-text editable element it is (ADR-0145). */
+function editorIn(root: ParentNode): HTMLElement {
   const found = root.querySelector('[data-text-editor]');
-  if (!(found instanceof HTMLTextAreaElement)) throw new Error('no editor is open');
+  if (!(found instanceof HTMLElement) || found.getAttribute('contenteditable') !== 'plaintext-only') {
+    throw new Error('no plain-text editor is open');
+  }
   return found;
+}
+
+/**
+ * What a person typing leaves: the editor's lines replaced by `text`'s, a line per `div` as the browser keeps them,
+ * and the `input` event the browser fires.
+ */
+function typeInto(editor: HTMLElement, text: string): void {
+  editor.replaceChildren(
+    ...text.split('\n').map((line) => {
+      const row = editor.ownerDocument.createElement('div');
+      row.textContent = line;
+      return row;
+    }),
+  );
+  fireEvent.input(editor);
 }
 
 function Wrapped({ children }: { children: ReactNode }): ReactElement {
@@ -42,6 +59,8 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
 const GEOMETRY = { crop: [0, 0, 612, 792] as const, rotation: 0, zoom: 1 };
 
 const STYLE = { size: 11, colour: { r: 20, g: 40, b: 60 }, serif: true, mono: false, italic: false, bold: true };
+/** A run set apart inside its line: smaller, grey, upright, sans. */
+const OTHER = { size: 9, colour: { r: 64, g: 64, b: 64 }, serif: false, mono: false, italic: true, bold: false };
 
 /** Two blocks: a paragraph of two lines, and a heading far above it. */
 const BLOCKS: PageBlocks = {
@@ -49,14 +68,20 @@ const BLOCKS: PageBlocks = {
   blocks: [
     {
       box: { x0: 72, y0: 700, x1: 300, y1: 740 },
-      lines: [{ runs: [{ index: 5, text: 'WORK EXPERIENCE' }], box: { x0: 72, y0: 700, x1: 300, y1: 740 } }],
+      lines: [{ runs: [{ index: 5, text: 'WORK EXPERIENCE', style: STYLE }], box: { x0: 72, y0: 700, x1: 300, y1: 740 } }],
       style: STYLE,
     },
     {
       box: { x0: 72, y0: 600, x1: 400, y1: 650 },
       lines: [
-        { runs: [{ index: 8, text: 'Helps with care ' }, { index: 9, text: 'and support' }], box: { x0: 72, y0: 636, x1: 400, y1: 650 } },
-        { runs: [{ index: 11, text: 'at every stage.' }], box: { x0: 72, y0: 622, x1: 260, y1: 636 } },
+        {
+          runs: [
+            { index: 8, text: 'Helps with care ', style: STYLE },
+            { index: 9, text: 'and support', style: OTHER },
+          ],
+          box: { x0: 72, y0: 636, x1: 400, y1: 650 },
+        },
+        { runs: [{ index: 11, text: 'at every stage.', style: STYLE }], box: { x0: 72, y0: 622, x1: 260, y1: 636 } },
       ],
       style: STYLE,
     },
@@ -118,7 +143,7 @@ describe('Edit text on the page (ADR-0096)', () => {
     const { view } = mount();
     fireEvent.click(find(view.container, '[data-text-block="1"]'));
     const editor = editorIn(view.container);
-    expect(editor.value).toBe('Helps with care and support\nat every stage.');
+    expect(editor.innerText).toBe('Helps with care and support\nat every stage.');
     expect(editor.style.color).toBe('rgb(20, 40, 60)');
     expect(editor.style.backgroundColor).toBe('rgb(250, 250, 250)');
     expect(editor.style.fontWeight).toBe('700');
@@ -129,11 +154,31 @@ describe('Edit text on the page (ADR-0096)', () => {
     expect(view.container.querySelectorAll('[data-text-block]')).toHaveLength(1);
   });
 
+  it('EACH RUN is drawn in its own style, at the zoom — not the block’s one (ADR-0145)', () => {
+    const { view } = mount({ geometry: { ...GEOMETRY, zoom: 2 } });
+    fireEvent.click(find(view.container, '[data-text-block="1"]'));
+    const runs = [...editorIn(view.container).querySelectorAll<HTMLElement>('.m-text-editor__run')];
+    expect(
+      runs.map((run) => [
+        run.textContent,
+        run.style.fontSize,
+        run.style.fontWeight,
+        run.style.fontStyle,
+        run.style.color,
+        run.classList.contains('m-text-editor--serif'),
+      ]),
+    ).toStrictEqual([
+      ['Helps with care ', '22px', '700', 'normal', 'rgb(20, 40, 60)', true],
+      ['and support', '18px', '400', 'italic', 'rgb(64, 64, 64)', false],
+      ['at every stage.', '22px', '700', 'normal', 'rgb(20, 40, 60)', true],
+    ]);
+  });
+
   it('ESCAPE WRITES what was typed, for the block that was open, at the version it was read at', async () => {
     const { view, commits } = mount();
     fireEvent.click(find(view.container, '[data-text-block="1"]'));
     const editor = editorIn(view.container);
-    fireEvent.change(editor, { target: { value: 'Helps with care and support\nat every single stage.' } });
+    typeInto(editor, 'Helps with care and support\nat every single stage.');
     await act(async () => {
       fireEvent.keyDown(editor, { key: 'Escape' });
       await Promise.resolve();
@@ -150,7 +195,7 @@ describe('Edit text on the page (ADR-0096)', () => {
     const { view, commits } = mount();
     fireEvent.click(find(view.container, '[data-text-block="0"]'));
     const editor = editorIn(view.container);
-    fireEvent.change(editor, { target: { value: 'WORK HISTORY' } });
+    typeInto(editor, 'WORK HISTORY');
     await act(async () => {
       fireEvent.blur(editor);
       await Promise.resolve();
@@ -163,7 +208,7 @@ describe('Edit text on the page (ADR-0096)', () => {
     answerWith('not-writable');
     fireEvent.click(find(view.container, '[data-text-block="0"]'));
     const editor = editorIn(view.container);
-    fireEvent.change(editor, { target: { value: 'WORK 中' } });
+    typeInto(editor, 'WORK 中');
     await act(async () => {
       fireEvent.keyDown(editor, { key: 'Escape' });
       await Promise.resolve();

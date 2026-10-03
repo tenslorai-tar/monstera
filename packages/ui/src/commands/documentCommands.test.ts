@@ -1336,14 +1336,14 @@ describe('delete pages — the mutation-dialog gate', () => {
     lines: [
       {
         runs: [
-          { index: 4, text: 'The quick ' },
-          { index: 9, text: 'brown fox' },
+          { index: 4, text: 'The quick ', style: PLAIN },
+          { index: 9, text: 'brown fox', style: PLAIN },
         ],
         box: { x0: 72, y0: 700, x1: 300, y1: 711 },
       },
-      { runs: [{ index: 2, text: 'jumps over' }], box: { x0: 72, y0: 686, x1: 190, y1: 697 } },
+      { runs: [{ index: 2, text: 'jumps over', style: PLAIN }], box: { x0: 72, y0: 686, x1: 190, y1: 697 } },
     ],
-    style: { size: 11, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false },
+    style: PLAIN,
   };
 
   it('A BLOCK EDIT SENDS the block’s own indices, the words typed, and the version the BLOCKS were read at', async () => {
@@ -1353,6 +1353,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // read's (7) and not the tab's, because `#refuseIfStale` asks whether the
     // page is the one the outlines described.
     const sent: { id: string; params: unknown }[] = [];
+  const PLAIN = { size: 11, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0 }));

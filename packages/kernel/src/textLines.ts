@@ -185,7 +185,11 @@ export function settingOf(style: {
  */
 export interface EditableBlock<S> {
   readonly box: BlockBox;
-  readonly lines: readonly (EditableLine & { readonly box: BlockBox })[];
+  /** Each line's runs with how EACH is set, which the editor draws them in (ADR-0145), and the line's box. */
+  readonly lines: readonly {
+    readonly runs: readonly { readonly index: number; readonly text: string; readonly style: S }[];
+    readonly box: BlockBox;
+  }[];
   /** How the block's first line's longest run is set — what the editor over it is set in. */
   readonly style: S;
 }
@@ -329,7 +333,7 @@ export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly E
           y1: Math.max(...block.map((piece) => piece.top)),
         },
         lines: block.map((piece) => ({
-          runs: piece.runs.map((run) => ({ index: run.index, text: run.text })),
+          runs: piece.runs.map((run) => ({ index: run.index, text: run.text, style: run.style })),
           box: { x0: piece.left, y0: piece.bottom, x1: piece.right, y1: piece.top },
         })),
         style: setBy.style,

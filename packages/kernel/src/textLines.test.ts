@@ -305,6 +305,15 @@ describe('a block does not continue across a change of SETTING (N4, the owner’
     expect(blocks[1]?.style).toStrictEqual({ size: 9.198, colour: { r: 64, g: 64, b: 64 }, bold: false });
   });
 
+  it('and EACH RUN keeps its own style inside its block — the lead word bold, the rest regular (ADR-0145)', () => {
+    const [, list] = groupIntoBlocks(headingOverList(settingOf));
+
+    expect(list?.lines[0]?.runs.map((run) => [run.text, run.style.bold, run.style.size])).toStrictEqual([
+      ['Lead', true, 9.198],
+      ['words that follow the lead word', false, 9.198],
+    ]);
+  });
+
   it('CONTROL: grouped by the gap alone, the same page is ONE block in the heading’s style — 1.42 times too large', () => {
     // EVERY RUN SET ALIKE is the rule before this one, which read no setting at all: the block the owner measured.
     const blocks = groupIntoBlocks(headingOverList(() => 'one'));

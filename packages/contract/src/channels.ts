@@ -4611,16 +4611,19 @@ export const channels = {
    * ## Boxes, to PLACE the editor and for nothing else
    *
    * A block's box and each line's box cross in PDF user space and the renderer
-   * converts them through `PageTransform`, as every overlay does. The style is
-   * what the editor is set in: the page's font cannot be loaded by a renderer,
-   * so a family of the same kind at the size the page draws at.
+   * converts them through `PageTransform`, as every overlay does. A style is
+   * what the editor draws in: the page's font cannot be loaded by a renderer,
+   * so a family of the same kind at the size the page draws at, in the fill.
    *
-   * ## Each line carries its RUNS, not one string
+   * ## Each line carries its RUNS, not one string — and each run its STYLE
    *
    * A run is a text object with its own font, and an edit names objects. The
    * runs travel and the surface joins them with `lineText` for display — the
    * same function the kernel diffs with, so the words shown and the words
-   * diffed are one opinion.
+   * diffed are one opinion. Each run carries how it is set and the editor
+   * draws it so ([ADR-0145](../../../docs/DECISIONS/0145-the-text-editor-shows-each-run-in-its-own-style.md));
+   * the block's own style is one of its runs', the base for text that belongs
+   * to no run.
    *
    * ## `engine-unavailable` is declared here for `document.execute`'s reason
    *
@@ -4664,6 +4667,11 @@ export const channels = {
                         .readonly(),
                       box: pdfBoxSchema,
                     })
+                              /**
+                               * How THIS run is set, which the editor draws it in (ADR-0145): a line of a bold lead
+                               * word and a regular rest is two runs in two styles, and the block's own style is one.
+                               */
+                              style: textBlockStyleSchema,
                     .strict(),
                 )
                 .min(1)
@@ -4677,6 +4685,7 @@ export const channels = {
         .readonly(),
       /** Whether the engine's walk stopped at its bound, on the last part only. `document.annotations`' flag. */
       truncated: z.boolean(),
+              /** The block's base: its first line's longest run's style, for a paste and a line typed below. */
       /**
        * Characters on this page set at an angle, which are not offered for editing
        * in place — an editor cannot be placed along an axis the page is not set on.

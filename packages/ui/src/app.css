@@ -4811,10 +4811,11 @@ optgroup {
 }
 
 /*
- * THE EDITOR IS SET LIKE THE PAGE, not like the application: its size, weight,
- * colour and paper come from the block as inline values, because they are the
- * document's. What is the application's is the face KIND — the page's own font
- * cannot be loaded by the renderer — and it is chosen by class.
+ * THE EDITOR IS SET LIKE THE PAGE, not like the application: each run's size,
+ * weight, slant and colour, and the block's paper, are inline values, because
+ * they are the document's (ADR-0145). What is the application's is the face
+ * KIND — the page's own font cannot be loaded by the renderer — and it is
+ * chosen by class, on each run and on the editor for text that is in no run.
  */
 .m-text-editor {
   display: block;
@@ -4828,7 +4829,6 @@ optgroup {
   margin: 0;
   padding: 0;
   border: 0;
-  resize: none;
   overflow: hidden;
   white-space: pre-wrap;
   overflow-wrap: break-word;
