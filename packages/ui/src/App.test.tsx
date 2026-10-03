@@ -1484,7 +1484,7 @@ describe('App', () => {
       await screen.findByText('Pages 1, 4');
 
       await act(async () => {
-        screen.getByRole('button', { name: 'Remove 1 duplicate page(s)' }).click();
+        screen.getByRole('button', { name: 'Remove 1 duplicate page' }).click();
         await Promise.resolve();
       });
 

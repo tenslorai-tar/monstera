@@ -3085,7 +3085,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FLAT_FIELDS_TRUNCATED]: 'There were more than Monstera lists here, so this page may have others.',
   [FLAT_FIELDS_ALL_TEXT]:
     'These are all created as text fields. Use the Forms tools to draw a tick box, a dropdown or a list.',
-  [FLAT_FIELDS_ACCEPT]: 'Create {count} field(s)',
+  [FLAT_FIELDS_ACCEPT]: '{count, plural, one {Create # field} other {Create # fields}}',
   [EDIT_TEXT_COMMAND_TITLE]: 'Edit text on the page',
   [TEXT_EDIT_LAYER_LABEL]: 'Editable text on page {page}',
   // THE BLOCK'S OWN FIRST WORDS name it, so a person moving through the page
@@ -4858,8 +4858,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // The count is interpolated rather than described: whether to save now turns
   // on how much went, and "some older steps" cannot say.
   [HISTORY_TRIMMED_LOST]:
-    'To stay within the memory this application is allowed, {dropped} older step(s) can no ' +
-    'longer be undone. Everything more recent still can.',
+    'To stay within the memory this application is allowed, {dropped, plural, one {# older step} other {# older steps}} ' +
+    'can no longer be undone. Everything more recent still can.',
   [DELETE_PAGES_TITLE]: 'Delete pages',
   [DELETE_PAGES_LABEL]: 'Pages to delete',
   // AN EXAMPLE, not a description of the grammar. "Comma-separated ranges"
@@ -4950,7 +4950,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // THE COUNT IS IN THE LABEL. "Remove duplicates" leaves a person pressing a
   // button without knowing how many pages go, which is the one thing they want
   // to know before a delete.
-  [DUPLICATE_PAGES_REMOVE]: 'Remove {count} duplicate page(s)',
+  [DUPLICATE_PAGES_REMOVE]: '{count, plural, one {Remove # duplicate page} other {Remove # duplicate pages}}',
   [DUPLICATE_PAGES_TRUNCATED]:
     'This list was cut short, so there may be more duplicates than are shown.',
   [FIND_DUPLICATES_COMMAND_TITLE]: 'Find duplicate pages…',
