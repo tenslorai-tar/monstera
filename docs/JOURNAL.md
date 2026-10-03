@@ -974,6 +974,32 @@ ADR-0143 (`1cac2761`) and ADR-0145 (`c118781d`) precede their features, in their
 
 The comments JJJJJJJ-1 and -3 name were false and are corrected. JJJJJJJ-6 is the owner's 1f.
 
+**Correction, 2026-10-03, appended after Guards refused `e6c25dbe`.** This entry answered 4a, 4b and 4c under one
+heading and left 2a out, so the checklist read as answered while four items had no answer of their own. The four,
+read from `git diff fcb1adac 54ea19e7`:
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Once, and it widened. The start screen's artwork check asserted *"natural width at least twice the drawn height"* on a
+1x page, which is a 2x display's need tested where no 2x file is chosen. It now asserts the drawn height at 1x, and a new
+case opens a 2x context and reads which file was **decoded**, since a `srcset` choice is the browser's. Nothing that was
+checked before is unchecked now.
+
+### 4a. Resolution test before measuring?
+
+`BoundedList`'s cases (`35b020dd`) set the stop one under each walk's count, with the count itself as the control, so
+the smallest difference that changes the answer is the one tested.
+
+### 4b. A search with a positive control?
+
+No search arrived in the range. The one written for it, `inkOnScreen.ts` in `8c488cba`, is after the range; it refuses
+an empty set of text nodes and a box outside its photograph.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+One roster changed, `pdfiumCommand.proof.mjs`, and it declares `cases: 69` as a literal, which is an anchor the shrinker
+has to touch separately. No count in the range is computed from the collection it counts.
+
 ## 2026-10-02 — Stage audit of `cc6305d3..fcb1adac` — findings IIIIIII-1 to IIIIIII-8
 
 27 commits, 200 files (`npm run audit:scope`), all work/cloud-3: C.d and D (ADR-0139, ADR-0140), E (ADR-0141), and the
