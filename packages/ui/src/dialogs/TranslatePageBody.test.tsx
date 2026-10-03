@@ -85,5 +85,8 @@ describe('the translation dialog', () => {
     );
     expect(screen.getByText(english(TRANSLATE_PAGE_NO_PROVIDER))).toBeDefined();
     expect(screen.queryByRole('button', { name: english(TRANSLATE_PAGE_START) })).toBeNull();
+    // AND IT ENDS IN THE PATTERN'S FOOTER, whose one answer is Close: it had none (the gallery, 2026-10-03).
+    const footer = document.querySelector('.m-dialog-footer');
+    expect([...(footer?.querySelectorAll('button') ?? [])].map((button) => button.textContent)).toStrictEqual(['Close']);
   });
 });
