@@ -99,8 +99,10 @@ import {
   settingOf,
   hostedPdfLibExecution,
   nodeFileSurface,
+  readAnnounced,
   readFileIdentity,
   signpdfWriterWith,
+  takeAnnounced,
   parsePageStructure,
   parsePageTables,
   withCellFills,
@@ -3162,21 +3164,16 @@ function composeHostBinding(
 
   /**
    * The composed PDF, taken from the output directory and held to the count the host
-   * reported — one check for every compose channel, so no channel can skip it.
+   * reported — one check for every compose channel, so no channel can skip it, and the one
+   * every engine host's output takes (`takeAnnounced`): a file of another size is refused
+   * before it is read.
    */
   const takeComposed = async (
     area: Parameters<typeof areas.takeOutput>[0],
     into: string,
     reported: number,
   ): Promise<Uint8Array> => {
-    const pdf = await areas.takeOutput(area, into);
-    if (pdf.length !== reported) {
-      throw new Error(
-        `the compose host reported ${String(reported)} bytes and ${String(pdf.length)} ` +
-          'were read back, so the composed document is not the one it wrote.',
-      );
-    }
-    return pdf;
+    return takeAnnounced(areas, area, into, reported);
   };
 
   const ensure = (): Promise<Live> =>
@@ -3496,14 +3493,10 @@ function sessionAreas(platform: EngineHostPlatform): SessionAreaSurface {
     // host that could would have main open an arbitrary path and take the bytes
     // as the user's document.
     mintName: () => randomBytes(16).toString('hex'),
-    takeOutput: async (area, name) => {
-      const path = join(area.outputDirectory, name);
-      const bytes = await readFile(path);
-      await rm(path, { force: true });
-      // A VIEW OF THE READ'S OWN BUFFER, never a copy: `readFile` answers an exactly-sized allocation it owns, and
-      // `new Uint8Array(bytes)` made a second whole image for as long as both lived (ADR-0121's addendum).
-      return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    },
+    // HELD TO THE HOST'S COUNT BEFORE ANYTHING IS READ (`readAnnounced`, CR-SEC-08): reading the file whole and
+    // comparing afterwards let a hostile host choose what main allocates. Its answer is an exactly-sized allocation of
+    // its own, so no second image is made (ADR-0121's addendum).
+    takeOutput: (area, name, announced) => readAnnounced(join(area.outputDirectory, name), announced),
     // A MOVE, so the bytes never pass through `main` (ADR-0121). A checkpoint or a refreshed image lands beside the
     // session root under `sessionData`, one volume, so it is a rename. A SAVE's temporary file sits beside the
     // person's document, which may be on any drive: there `rename` answers `EXDEV`, and a move across volumes is a

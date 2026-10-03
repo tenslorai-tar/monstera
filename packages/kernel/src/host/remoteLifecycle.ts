@@ -195,6 +195,23 @@ export class EngineSerialiseMismatch extends Error {
 }
 
 /**
+ * What the host wrote under `name`, as many bytes as it announced and no other number — the ONE way a host's output is
+ * taken back. The surface refuses a file of another size before reading it; the length is checked again here, so a
+ * surface that did not would still be refused, and no caller spells the comparison of its own. A host that wrote
+ * nothing and a read that found nothing are otherwise the same empty buffer, and only one is this side's problem.
+ */
+export async function takeAnnounced(
+  areas: Pick<SessionAreaSurface, 'takeOutput'>,
+  area: SessionArea,
+  name: string,
+  announced: number,
+): Promise<ByteImage> {
+  const bytes = await areas.takeOutput(area, name, announced);
+  if (bytes.length !== announced) throw new EngineSerialiseMismatch(announced, bytes.length);
+  return bytes;
+}
+
+/**
  * The per-session directories, from whoever creates and grants them.
  *
  * `SessionArea` moved to `remoteEngine.ts` on 2026-08-28: the registry that
@@ -216,8 +233,13 @@ export class EngineSerialiseMismatch extends Error {
  * What is left is what a *reader* of an existing session needs.
  */
 export interface SessionAreaSurface {
-  /** Reads back what the host wrote, then deletes it. */
-  readonly takeOutput: (area: SessionArea, name: string) => Promise<ByteImage>;
+  /**
+   * Reads back what the host wrote, then deletes it — held to `announced`, the count the host's answer carries, BEFORE
+   * anything is read (`readAnnounced`, which the application's surface is). A file of another size is refused unread,
+   * because the host is hostile by invariant 25's premise and reading first let it choose what `main` allocates.
+   * Callers take it through {@link takeAnnounced}.
+   */
+  readonly takeOutput: (area: SessionArea, name: string, announced: number) => Promise<ByteImage>;
   /**
    * Moves what the host wrote to `destination`, which `main` chose, and answers its size — never reading it
    * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)): a checkpoint is the host's serialise,
@@ -363,12 +385,7 @@ export function remoteMupdfLifecycle(
         into,
       });
       if (!answer.ok) throw new EngineSerialiseFailed(answer.error.code);
-
-      const bytes = await areas.takeOutput(area, into);
-      if (bytes.length !== answer.value.bytes) {
-        throw new EngineSerialiseMismatch(answer.value.bytes, bytes.length);
-      }
-      return bytes;
+      return takeAnnounced(areas, area, into, answer.value.bytes);
     },
 
     // `serialise`'s dance with a MOVE where it reads, and the same count check against what moved.
@@ -402,15 +419,7 @@ export function remoteMupdfLifecycle(
         into,
       });
       if (!answer.ok) throw new EngineExtractFailed(answer.error.code);
-
-      const bytes = await areas.takeOutput(area, into);
-      // THE SAME MISMATCH CHECK `serialise` MAKES, and it is not ceremony: the
-      // host answers a count and main reads a file, so "the host wrote nothing"
-      // and "the read found nothing" are otherwise the same empty buffer.
-      if (bytes.length !== answer.value.bytes) {
-        throw new EngineSerialiseMismatch(answer.value.bytes, bytes.length);
-      }
-      return bytes;
+      return takeAnnounced(areas, area, into, answer.value.bytes);
     },
 
     snapshot: async (session, request) => {
@@ -424,16 +433,10 @@ export function remoteMupdfLifecycle(
         into,
       });
       if (!answer.ok) throw new EngineSnapshotFailed(answer.error.code);
-
-      const bytes = await areas.takeOutput(area, into);
-      // THE SAME MISMATCH CHECK the two above make, and it is worth more here:
-      // a PNG main never looks inside is one whose truncation nothing else
-      // would notice until somebody opened the file.
-      if (bytes.length !== answer.value.bytes) {
-        throw new EngineSerialiseMismatch(answer.value.bytes, bytes.length);
-      }
+      // HELD TO THE COUNT like every output, and worth more here: a PNG main never looks inside is one whose truncation
+      // nothing else would notice until somebody opened the file.
       return {
-        png: bytes,
+        png: await takeAnnounced(areas, area, into, answer.value.bytes),
         crop: answer.value.crop,
         rotation: answer.value.rotation,
         origin: answer.value.origin,
@@ -449,15 +452,7 @@ export function remoteMupdfLifecycle(
         into,
       });
       if (!answer.ok) throw new EngineFormDataExportFailed(answer.error.code);
-
-      const bytes = await areas.takeOutput(area, into);
-      // THE SAME MISMATCH CHECK the three above make, and here for the
-      // snapshot's reason: a file main never looks inside is one whose
-      // truncation nothing would notice until somebody opened it.
-      if (bytes.length !== answer.value.bytes) {
-        throw new EngineSerialiseMismatch(answer.value.bytes, bytes.length);
-      }
-      return bytes;
+      return takeAnnounced(areas, area, into, answer.value.bytes);
     },
 
     exportAnnotationData: async (session, format) => {
@@ -469,13 +464,7 @@ export function remoteMupdfLifecycle(
         into,
       });
       if (!answer.ok) throw new EngineAnnotationDataExportFailed(answer.error.code);
-
-      const bytes = await areas.takeOutput(area, into);
-      // THE SAME MISMATCH CHECK, for the form data's reason.
-      if (bytes.length !== answer.value.bytes) {
-        throw new EngineSerialiseMismatch(answer.value.bytes, bytes.length);
-      }
-      return bytes;
+      return takeAnnounced(areas, area, into, answer.value.bytes);
     },
 
     pageImage: async (session, request) => {
@@ -490,14 +479,7 @@ export function remoteMupdfLifecycle(
         into,
       });
       if (!answer.ok) throw new EnginePageImageFailed(answer.error.code);
-
-      const bytes = await areas.takeOutput(area, into);
-      // THE SAME MISMATCH CHECK, for the snapshot's reason: an image main never
-      // looks inside is one whose truncation nothing would notice.
-      if (bytes.length !== answer.value.bytes) {
-        throw new EngineSerialiseMismatch(answer.value.bytes, bytes.length);
-      }
-      return bytes;
+      return takeAnnounced(areas, area, into, answer.value.bytes);
     },
 
     close: async (session) => {

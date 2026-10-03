@@ -12,7 +12,7 @@ import type { ByteImage } from '../engineSeam.js';
 import type { TextRun } from '../pdfiumFfi.js';
 import { TextNotWritableError } from '../textEditRefusals.js';
 import { EngineCallFailed, EngineSessionGone, type SessionArea, priorTooLargeToRecord } from './remoteEngine.js';
-import { EngineSerialiseMismatch, type SessionAreaSurface } from './remoteLifecycle.js';
+import { EngineSerialiseMismatch, type SessionAreaSurface, takeAnnounced } from './remoteLifecycle.js';
 import { type PdfiumChannels, pdfiumTaggedPrior } from './pdfiumChannels.js';
 
 /**
@@ -194,11 +194,7 @@ export function remotePdfiumExecution(
       async (from, area, session) => {
         const into = transfer.mintName();
         const answer = await send(from, into, session);
-        const bytes = await transfer.takeOutput(area, into);
-        if (bytes.length !== answer.bytes) {
-          throw new EngineSerialiseMismatch(answer.bytes, bytes.length);
-        }
-        return bytes;
+        return takeAnnounced(transfer, area, into, answer.bytes);
       },
       regenerates,
     );
@@ -407,10 +403,11 @@ export function remotePdfiumRenderPage(
         'engine/render-page',
         await client['engine/render-page']({ session, from, into, page, width, height }),
       );
-      const bgra = await transfer.takeOutput(area, into);
-      if (bgra.length !== answer.bytes || bgra.length !== width * height * 4) {
-        throw new EngineSerialiseMismatch(width * height * 4, bgra.length);
-      }
+      // THE SIZE IS KNOWN BEFORE THE HOST ANSWERS, so a count that is not the raster's is refused before anything is
+      // read, and the read is held to the raster's own size.
+      const expected = width * height * 4;
+      if (answer.bytes !== expected) throw new EngineSerialiseMismatch(expected, answer.bytes);
+      const bgra = await takeAnnounced(transfer, area, into, expected);
       return { width, height, bgra };
     } finally {
       await transfer.removeSnapshot(area, from);

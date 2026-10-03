@@ -23,6 +23,7 @@ import { accessFor, mupdfWriter } from '../mupdfWriter.js';
 import { placeStaged } from '../savePipeline.js';
 import { readSignatures } from '../signatureRead.js';
 import { composeWordDocument } from '../wordPictures.js';
+import { readAnnounced } from './announcedOutput.js';
 import { type EngineChannels, engineChannels } from './engineChannels.js';
 import { type HostSession, createEngineHandlers } from './engineHandlers.js';
 import { hostFilesystem } from './hostNodeSurfaces.js';
@@ -143,15 +144,10 @@ function realAreas(): FakeAreas {
     writeSnapshot: async (area, name, image) => {
       await writeFile(join(area.snapshotDirectory, name), image);
     },
-    takeOutput: async (area, name) => {
-      const path = join(area.outputDirectory, name);
-      const bytes = await readFile(path);
-      // DELETED ON THE WAY OUT. Every serialise is another whole copy of the
-      // user's document, and a save-heavy session would otherwise leave one per
-      // save in a directory the contained host may read.
-      await rm(path);
-      return new Uint8Array(bytes);
-    },
+    // THE APPLICATION'S OWN READ, so these cases cross the read main makes: held to the host's count before anything
+    // is read, and DELETED ON THE WAY OUT — every serialise is another whole copy of the user's document, and a
+    // save-heavy session would otherwise leave one per save in a directory the contained host may read.
+    takeOutput: (area, name, announced) => readAnnounced(join(area.outputDirectory, name), announced),
     moveOutput: async (area, name, destination) => {
       await rename(join(area.outputDirectory, name), destination);
       return (await stat(destination)).size;
@@ -813,7 +809,9 @@ describe('remoteMupdfLifecycle', () => {
 
     const shortened: FakeAreas = {
       ...areas,
-      takeOutput: async (area, name) => (await areas.takeOutput(area, name)).slice(0, 10),
+      // A SURFACE THAT IGNORES THE COUNT, answering fewer bytes than announced: `takeAnnounced`'s own check is what
+      // refuses it, so a surface that does not hold the bound is still not trusted.
+      takeOutput: async (area, name, announced) => (await areas.takeOutput(area, name, announced)).slice(0, 10),
     };
     const { lifecycle: lying, open: openLying } = joined(shortened);
     const other = await openLying(flat);

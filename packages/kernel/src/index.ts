@@ -151,7 +151,11 @@ export {
   type RemoteMupdfLifecycle,
   type SessionAreaSurface,
   remoteMupdfLifecycle,
+  takeAnnounced,
 } from './host/remoteLifecycle.js';
+// THE ONE READ OF A HOST'S OUTPUT, held to its announced count before anything is read (CR-SEC-08): main's session
+// areas are this, and the kernel's adapters take it through `takeAnnounced`.
+export { readAnnounced } from './host/announcedOutput.js';
 // A TYPE ONLY, for `FlatFieldCandidate`'s reason below: `pageImages.ts` binds the
 // native library, and main names the request without ever rasterising.
 export type { PageImageRequest } from './pageImages.js';
