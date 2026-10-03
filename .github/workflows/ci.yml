@@ -1282,9 +1282,9 @@ jobs:
         run: node scripts/ci/annotate.mjs scripts/research/hostDeadline.mjs --require-containment
 
       # AND A HOST WHOSE COMMIT PASSES ITS THRESHOLD IS ENDED BY THE MEMORY SAMPLER (CR-SEC-09; ADR-0023 §3,
-      # corrected 2026-10-03): with the threshold at 320 MiB, a save that raises a real host's commit to
-      # ~388 MiB is killed, logged as memory-budget, and the document comes back; the control, the shell's
-      # own threshold, completes the same save.
+      # corrected 2026-10-03): the control, the shell's own threshold, completes a save and measures the
+      # host's commit with the document open and at the save's peak; with the threshold halfway between,
+      # the same save is killed, logged as memory-budget, and the document comes back.
       - name: A host past its memory threshold is ended by the sampler, and the document comes back
         run: node scripts/ci/annotate.mjs scripts/research/hostMemory.mjs --require-containment
 

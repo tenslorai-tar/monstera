@@ -6,13 +6,17 @@
  * `engineHostConnection.test.ts` proves the connection starts the sampler at the limit less its headroom, stops it
  * before a terminate, and names a sampler's kill `memory-budget`, against fakes. What it cannot show is that the worker
  * thread reads a real host's commit, kills it at the threshold, and that the shell then rebuilds and reopens. This runs
- * the shell with a real contained host and saves a document whose save raises the host's commit past a threshold its
- * open stays under (`hostMemoryHost.mjs`, which carries the measurement), in two cells one value apart:
+ * the shell with a real contained host and saves a document whose save raises the host's commit well above what the
+ * open leaves it at (`hostMemoryHost.mjs`), in two cells one value apart:
  *
- * - **kill**, the threshold at 320 MiB: the save fails, the log names `memory-budget`, the file on disk is untouched, a
- *   new host serves the document, and the rotation made before the save is still there.
- * - **CONTROL**, the shell's own threshold and the same save: it completes and the host lives — so the first cell's
- *   ending is the sampler's.
+ * - **CONTROL**, the shell's own threshold: the save completes and the host lives — so the kill cell's ending is the
+ *   sampler's. It also MEASURES the host's commit with the document open and its peak during the save, on this machine.
+ * - **kill**, the threshold halfway between those two: the save fails, the log names `memory-budget`, the file on disk
+ *   is untouched, a new host serves the document, and the rotation made before the save is still there.
+ *
+ * The threshold is measured in the run because a constant was not a margin: 320 MiB sat between ~255 and ~388 MiB on a
+ * development machine and the save completed under it on CI's runner (run 37131970878). A first case requires at
+ * least 64 MiB between the two readings, so a machine where no threshold fits says so instead of failing elsewhere.
  *
  * Needs Windows, the pinned Electron runtime, the build, the MuPDF shim and the container grants, as
  * `hostDeadline.mjs` does; without them it reports UNVERIFIABLE, and `--require-containment` makes that a failure.
@@ -47,6 +51,7 @@ const REQUIRE_CONTAINMENT = process.argv.includes('--require-containment');
 
 /** The cases, named, so the count is a claim of its own and the unverifiable branch can list them (audit item 4c). */
 const CASES = [
+  'MEASURED here: the save raises the host’s commit at least 64 MiB above the open document’s, so a threshold fits between',
   'the document opened and took a rotation under the low threshold, so the open stayed below it',
   'the save past the threshold FAILED',
   'the shell logged the host’s ending as memory-budget',
@@ -97,12 +102,13 @@ if (!runnable) {
    * a host holding an inherited pipe would make `spawnSync` wait on a grandchild.
    *
    * @param {'kill' | 'control'} cell
+   * @param {string[]} [extra] the kill cell's threshold
    */
-  const runCell = (cell) => {
+  const runCell = (cell, extra = []) => {
     const scratch = mkdtempSync(join(tmpdir(), `monstera-host-memory-${cell}-`));
     const reportPath = join(scratch, 'report.json');
     try {
-      const result = spawnSync(ELECTRON_BINARY, [CHILD, cell, reportPath], {
+      const result = spawnSync(ELECTRON_BINARY, [CHILD, cell, reportPath, ...extra], {
         cwd: ROOT,
         stdio: 'inherit',
         timeout: 180_000,
@@ -118,25 +124,44 @@ if (!runnable) {
     }
   };
 
-  const low = runCell('kill');
+  // THE CONTROL FIRST, because it measures: the kill cell's threshold is put halfway between the commit with the
+  // document open and the save's peak, as measured on THIS machine (the child's header has why).
   const product = runCell('control');
+  /** @type {{ first: number, peak: number, samples: number } | null} */
+  const measured = product.report.measured ?? null;
+  const MiB = 1024 * 1024;
+  const window = measured === null ? 0 : measured.peak - measured.first;
+  const killAt = measured === null ? 0 : Math.round(measured.first + window / 2);
+  check(
+    CASES[0] ?? '',
+    measured !== null && measured.samples > 1 && measured.first > 0 && window >= 64 * MiB,
+    `the control measured ${JSON.stringify(measured)}: ${(window / MiB).toFixed(0)} MiB between the open document and the ` +
+      `save's peak, where at least 64 MiB is needed to place a threshold with room either side`,
+  );
+  process.stdout.write(
+    measured === null
+      ? 'host-memory: the control measured nothing\n'
+      : `host-memory: open ${(measured.first / MiB).toFixed(0)} MiB, save peak ${(measured.peak / MiB).toFixed(0)} MiB ` +
+          `(${String(measured.samples)} samples); kill threshold ${(killAt / MiB).toFixed(0)} MiB\n`,
+  );
+  const low = runCell('kill', [String(killAt > 0 ? killAt : 1)]);
   const seen = low.report;
   /** @param {string[]} lines */
   const endings = (lines) => lines.filter((line) => line.startsWith('engine-host-gone: code='));
 
-  check(CASES[0] ?? '', seen.rotated === true, `the rotation before the save answered ${JSON.stringify(seen.rotated)}`);
-  check(CASES[1] ?? '', seen.saved?.ok === false, `the save answered ${JSON.stringify(seen.saved)} with a ${String(seen.killAtBytes)}-byte threshold`);
+  check(CASES[1] ?? '', seen.rotated === true, `the rotation before the save answered ${JSON.stringify(seen.rotated)}`);
+  check(CASES[2] ?? '', seen.saved?.ok === false, `the save answered ${JSON.stringify(seen.saved)} with a ${String(seen.killAtBytes)}-byte threshold`);
   check(
-    CASES[2] ?? '',
+    CASES[3] ?? '',
     endings(seen.logged).length === 1 && endings(seen.logged)[0]?.startsWith('engine-host-gone: code=memory-budget ') === true,
     `the log held ${JSON.stringify(seen.logged)}`,
   );
-  check(CASES[3] ?? '', seen.fileUntouched === true, 'the file on disk changed although its save failed');
-  check(CASES[4] ?? '', seen.firstHostGone === true && seen.newHost > 0, `first host gone ${String(seen.firstHostGone)}, new host ${String(seen.newHost)}`);
+  check(CASES[4] ?? '', seen.fileUntouched === true, 'the file on disk changed although its save failed');
+  check(CASES[5] ?? '', seen.firstHostGone === true && seen.newHost > 0, `first host gone ${String(seen.firstHostGone)}, new host ${String(seen.newHost)}`);
   // 90: the rotation made before the save, replayed into the rebuilt session.
-  check(CASES[5] ?? '', seen.rotationAfter === 90, `page 1 reads ${JSON.stringify(seen.rotationAfter)} after recovery, where 90 was expected`);
+  check(CASES[6] ?? '', seen.rotationAfter === 90, `page 1 reads ${JSON.stringify(seen.rotationAfter)} after recovery, where 90 was expected`);
   check(
-    CASES[6] ?? '',
+    CASES[7] ?? '',
     product.report.saved?.ok === true && product.report.firstHostGone === false && endings(product.report.logged).length === 0,
     `under the shell's own ${String(product.report.killAtBytes)}-byte threshold the save answered ` +
       `${JSON.stringify(product.report.saved)}, the host gone ${String(product.report.firstHostGone)}, the log ` +

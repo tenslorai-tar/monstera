@@ -1,20 +1,23 @@
 // @ts-check
 /**
  * The child of `hostMemory.mjs`: a real shell and a real contained host, saving a document whose save raises the host's
- * private commit past a threshold the open stays under.
- *
- * Measured 2026-10-03 on the 64 MiB picture fixture, two runs, the host's PrivateUsage read from a worker thread: about
- * 255 MiB once the document is open, and a peak of 387–388 MiB while it is saved. So a sampler that kills at
- * {@link KILL_AT_BYTES} lets the open through and must end the save — about 65 MiB of margin on either side.
+ * private commit well above what the open leaves it at.
  *
  * Two cells, chosen by the first argument, differing in ONE value — the shell's `hostMemorySampling`:
  *
- * - `kill`: the threshold at 320 MiB. The save must fail, the shell's log must name `memory-budget`, the file on disk
- *   must be untouched, a new host must appear, and the document must answer with the rotation it held.
- * - `control`: the shell's own `HOST_MEMORY_SAMPLING`. The same save completes and no host ends — so the first cell's
- *   ending is the sampler's, not something else that a 388 MiB save would meet anyway.
+ * - `control`: the shell's own `HOST_MEMORY_SAMPLING`. The save completes and no host ends. It also MEASURES, with an
+ *   independent sampler (`hostMemoryPeakWorker.mjs`): the host's commit with the document open, and its peak during
+ *   the save. The driver puts the kill cell's threshold between the two.
+ * - `kill`: the threshold the driver passes. The save must fail, the shell's log must name `memory-budget`, the file on
+ *   disk must be untouched, a new host must appear, and the document must answer with the rotation it held.
  *
- * Usage (under the Electron binary in Node mode, from the driver): hostMemoryHost.mjs <kill|control> <report>
+ * WHY THE THRESHOLD IS MEASURED IN THE RUN: it was a constant, 320 MiB, between the open's ~255 MiB and the save's
+ * ~388 MiB as measured on one development machine (2026-10-03, two runs). On CI's Windows runner the same save
+ * completed under it (run 37131970878), and nothing in the report could say whether the sampler had not sampled or the
+ * host had committed less there. A margin measured on one machine is not a margin on another.
+ *
+ * Usage (under the Electron binary in Node mode, from the driver): hostMemoryHost.mjs control <report>
+ *                                                                  hostMemoryHost.mjs kill <report> <kill-at-bytes>
  */
 
 import { spawnSync } from 'node:child_process';
@@ -23,6 +26,7 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { Worker } from 'node:worker_threads';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
@@ -30,8 +34,8 @@ import { formatError } from '../lib/reportError.mjs';
 const ROOT = repoRoot();
 const CELL = process.argv[2] ?? '';
 const REPORT_PATH = process.argv[3] ?? '';
-/** Between the open's ~255 MiB and the save's ~388 MiB (measured; the header has the figures). */
-const KILL_AT_BYTES = 320 * 1024 * 1024;
+/** The kill cell's threshold, from the driver's measurement of the control cell. */
+const KILL_AT_BYTES = Number(process.argv[4] ?? 'NaN');
 /** How long a new host has to appear, and an old one to go — `hostRecoveryHost.mjs`' budgets. */
 const REBUILD_BUDGET_MS = 11_000;
 const DEATH_BUDGET_MS = 5_000;
@@ -110,6 +114,7 @@ async function firstPageRotation(handlers, docId) {
 async function main() {
   if (CELL !== 'kill' && CELL !== 'control') throw new Error(`the cell must be kill or control, not "${CELL}"`);
   if (REPORT_PATH === '') throw new Error('hostMemoryHost.mjs takes the path to write its report to');
+  if (CELL === 'kill' && !(KILL_AT_BYTES > 0)) throw new Error('the kill cell takes its threshold in bytes as the third argument');
   if (!('electron' in process.versions)) {
     throw new Error('hostMemoryHost.mjs must run under the Electron binary in Node mode, as the shell does');
   }
@@ -175,6 +180,32 @@ async function main() {
     if (hostsBefore.length !== 1) throw new Error(`expected exactly one child, the engine host, and found ${String(hostsBefore.length)}`);
     const firstHost = hostsBefore[0] ?? 0;
 
+    // THE CONTROL MEASURES the host's commit through the save, on its own thread; its first reading is taken before the
+    // save starts, so it is the commit with the document open.
+    /** @type {{ first: number, peak: number, samples: number } | null} */
+    let measured = null;
+    /** @type {(() => Promise<void>) | null} */
+    let stopMeasuring = null;
+    if (CELL === 'control') {
+      const stop = new SharedArrayBuffer(4);
+      const worker = new Worker(join(ROOT, 'scripts', 'research', 'hostMemoryPeakWorker.mjs'), { workerData: { root: ROOT, pid: firstHost, stop } });
+      /** @type {Promise<{ first: number, peak: number, samples: number }>} */
+      const done = new Promise((resolve, reject) => {
+        worker.on('message', (/** @type {any} */ message) => {
+          if (message.kind === 'done') resolve(message);
+        });
+        worker.once('error', reject);
+      });
+      await new Promise((resolve, reject) => {
+        worker.on('message', (/** @type {any} */ message) => resolve(message));
+        worker.once('error', reject);
+      });
+      stopMeasuring = async () => {
+        Atomics.store(new Int32Array(stop), 0, 1);
+        Atomics.notify(new Int32Array(stop), 0);
+        measured = await done;
+      };
+    }
     /** @type {{ ok: boolean, code: string | null }} */
     let saved;
     try {
@@ -183,6 +214,7 @@ async function main() {
     } catch (error) {
       saved = { ok: false, code: `threw:${String(error?.constructor?.name ?? 'Error')}` };
     }
+    await stopMeasuring?.();
 
     const firstGone = await waitForChildren((ids) => !ids.includes(firstHost), CELL === 'kill' ? DEATH_BUDGET_MS : 0);
     /** @type {{ ids: number[], settled: boolean }} */
@@ -195,6 +227,7 @@ async function main() {
       `${JSON.stringify({
         cell: CELL,
         killAtBytes: CELL === 'kill' ? KILL_AT_BYTES : budget.ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES - budget.HOST_MEMORY_SAMPLING.headroomBytes,
+        measured,
         rotated: rotated?.ok === true,
         saved,
         logged,
