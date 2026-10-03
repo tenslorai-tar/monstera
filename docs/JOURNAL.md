@@ -892,6 +892,88 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-03 — Stage audit of `fcb1adac..54ea19e7` — findings JJJJJJJ-1 to JJJJJJJ-6
+
+27 commits, 127 files, all work/cloud-3: the IIIIIII follow-ups, J, K, N1 to N7 and F row 14 (ADR-0143, ADR-0145).
+Written on work/cloud-4 before new work piled on the range (the owner's 0c). Labels J, the next free after IIIIIII on
+main and every work branch (read from each branch's JOURNAL). The range was read commit by commit, and its 43 modified
+and 6 added test files diff by diff; every finding below was checked against the code or the axe-core source before it
+was recorded, and one candidate was withdrawn (below).
+
+**JJJJJJJ-1** (medium, closed in `8c488cb`): `d8f1d02d` made the recovery-offer case's second card unavailable and
+said its contrast was *"measured with the rest"*. Axe-core 4.13.0's colour-contrast rule skips any node under
+`aria-disabled="true"` (`isDisabled` walks the ancestors), so nothing measured it, and the card the fixture existed for
+(a cloud with no date) stopped rendering. `recentMenu.pw.ts` claimed the same of the disabled card and menu item. Both
+now measure that text themselves against the pixels behind it (`inkOnScreen.ts`; the card is translucent), with the
+cloud card restored. Mutation: the name painted a pale grey turns it red.
+
+**JJJJJJJ-2** (low, closed in `8c488cb`): `98712352`'s *typed words land in the last run* was asserted by the caret's
+colour, which the last run shares with the block's base on the editor and each line. It asserts the caret's run span.
+
+**JJJJJJJ-3** (low, closed in `8c488cb`): after `bd23ed13` recorded the 4,100-page split's writes, no split reached a
+disk anywhere, while its comment cited *"this file's real-disk splits"*. A three-page split through the production
+surface is read back from its folder.
+
+**JJJJJJJ-4** (low, closed in `8c488cb`): four controls weaker than their names: a fraction claimed refused and never
+sent (`engineChannels.test.ts`), a re-read counted with no count before the click (`App.test.tsx`), a disabled Clear
+list asserted by its look and not by its effect (`MenuBar.test.tsx`), and a throwing availability check on a path that
+did not exist, so a handler ignoring the check passed too (`contractHandlers.test.ts`).
+
+**JJJJJJJ-5** (medium, open, proposed): `823ab2be` records that `98712352` committed an index that never compiled,
+because the pre-commit hook typechecks and builds the WORKING TREE, and its remedy is a discipline (*"staging out of a
+shared tree uses patches with context"*). A discipline is not a mechanism, and the range's own first CI reds were
+shapes no local subset runs. Proposed: when the tree has unstaged changes to files the compiler reads, the hook
+typechecks a checkout of the index in a scratch directory, and refuses the commit on a failure there.
+
+**JJJJJJJ-6** (low, open, the owner's 1f, Group 1): `ccc11c76`'s start-screen case proves the last tile ends inside
+the start area at 1280 x 800, and no case asks about the footer, which follows the content and falls below the
+window's edge there (seen in this branch's capture of the recent list).
+
+**Withdrawn, with the reason.** `4c399ac2`'s held-drag case can end its hold at once when the drag's own moves have
+already scrolled a page. Not a defect: what the case is about, the view moving a page under a selection the button
+still holds, is measured from the press and sampled at every step either way, and its control fails 5 of 6 runs.
+
+**Would CI see it (item 3), from the runs.** `35b020d`: Windows unit tests red, the 4,100-page split past 120 s,
+closed by `bd23ed13`. `62d0238`: Windows axe gate red, the held drag, closed by `4c399ac2`. `6c0ad1e`: both legs red on
+*Every var() names a custom property something declares*, closed by `54ea19e7`. Visual baselines red throughout, as
+on every branch that changes a screen. Guards green from `b9be9f5`. JJJJJJJ-1 to -4 were invisible to every run,
+because each check was green for the wrong reason; that is item 4's shape, found only by reading.
+
+### 1. Root cause or workaround?
+
+Each fix in the range names a mechanism: the split's per-file `FileHandle.sync()` cost (recorded writes, not a
+timeout), the held drag measured from the press (not a longer wait), the label ink read from the solved layer, the
+staging defect named. None was a retry or a raised limit.
+
+### 2. Verified against the easy shape only?
+
+JJJJJJJ-1 is the easy shape: a disabled card checked by a tool that does not look at disabled cards.
+
+### 3. Would CI have caught it?
+
+Answered above from the runs.
+
+### 4. Are the proofs non-vacuous?
+
+JJJJJJJ-1 to -4 are this item's findings. Each new check was mutated and went red.
+
+### 4a, 4b, 4c
+
+`BoundedList`'s cases (`35b020dd`) assert a stop one under each walk's count, with the count as the control.
+`inkOnScreen.ts` is a search over text nodes and refuses an empty one, and refuses a box outside the photograph.
+
+### 5. Executed, or asserted?
+
+Executed: every case named, on Chromium 151 for the rendered ones, and the CI runs read. Asserted: nothing new.
+
+### 6. Architecture before the feature, or underneath it?
+
+ADR-0143 (`1cac2761`) and ADR-0145 (`c118781d`) precede their features, in their own commits.
+
+### 7. Do the documents still match the code?
+
+The comments JJJJJJJ-1 and -3 name were false and are corrected. JJJJJJJ-6 is the owner's 1f.
+
 ## 2026-10-02 — Stage audit of `cc6305d3..fcb1adac` — findings IIIIIII-1 to IIIIIII-8
 
 27 commits, 200 files (`npm run audit:scope`), all work/cloud-3: C.d and D (ADR-0139, ADR-0140), E (ADR-0141), and the
