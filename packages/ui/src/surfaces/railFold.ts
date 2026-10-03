@@ -2,6 +2,9 @@
  * Which rail entries fold into the rail's *More* in a column this tall
  * ([ADR-0147](../../../../docs/DECISIONS/0147-a-short-window-folds-the-rail.md)).
  *
+ * **The one rule for a column of buttons that folds**: the floating toolbar takes it as well (the ADR's extension), with
+ * no active entry, so a second column cannot grow a second opinion about how folding works.
+ *
  * The rail is one column: the sections, then the foot's commands. Its buttons shrink to their content first, so the
  * room is counted in buttons at that height, read from a ruler, never from what is drawn — the same height gives the
  * same answer whatever was folded before. *More* is itself a button and takes one of the places.

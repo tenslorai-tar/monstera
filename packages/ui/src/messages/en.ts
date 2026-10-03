@@ -1598,6 +1598,8 @@ export const FLOAT_BAR_POSITION_TITLE = messageKey('setting.appearance-float-bar
 export const FLOAT_BAR_RESET_TITLE = messageKey('command.reset-float-bar.title');
 /** The grip at the Float bar's top: its name, and the words that say how to move it without a mouse. */
 export const FLOAT_BAR_GRIP_LABEL = messageKey('surface.float-bar.grip');
+/** The Float bar's own *More*, holding the tools a short page area folds (ADR-0147, extended). */
+export const FLOAT_BAR_MORE = messageKey('surface.float-bar.more');
 export const FLOAT_BAR_GRIP_HELP = messageKey('surface.float-bar.grip-help');
 export const QUICK_TOOLBAR_TOGGLE_TITLE = messageKey('command.toggle-quick-toolbar.title');
 /** The same toggle's label at the rail's foot, where a sentence does not fit under an icon. */
@@ -3761,6 +3763,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FLOAT_BAR_POSITION_TITLE]: 'Float bar position',
   [FLOAT_BAR_RESET_TITLE]: 'Reset Float bar position',
   [FLOAT_BAR_GRIP_LABEL]: 'Move the Float bar',
+  [FLOAT_BAR_MORE]: 'More tools',
   [FLOAT_BAR_GRIP_HELP]:
     'Drag to move it. Or click here, then click where it should go. With the keyboard, use the arrow keys; Shift moves further, and Home puts it back.',
   [QUICK_TOOLBAR_TOGGLE_TITLE]: 'Show or hide the Float bar',

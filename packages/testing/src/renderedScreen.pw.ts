@@ -2182,6 +2182,50 @@ test('a SHORT WINDOW folds the rail’s last entries into More, never the active
   await expect.poll(spills).toBe(false);
 });
 
+test('a SHORT PAGE AREA folds the Float bar’s last tools into More, inside the area, each still reachable (ADR-0147, extended)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+  const strip = page.locator('.m-quick-toolbar');
+  const more = page.locator('.m-quick-toolbar__more');
+  /** The strip against its page area: inside it at both ends, and the area scrolling nothing. */
+  const fits = (): Promise<boolean> =>
+    strip.evaluate((element) => {
+      const area = element.parentElement;
+      if (area === null) return false;
+      const own = element.getBoundingClientRect();
+      const room = area.getBoundingClientRect();
+      return own.top >= room.top - 0.5 && own.bottom <= room.bottom + 0.5 && area.scrollHeight <= area.clientHeight + 0.5;
+    });
+  const tools = (): Promise<string[]> =>
+    strip.locator(':scope > .m-icon-button:not(.m-quick-toolbar__more)').evaluateAll((buttons) =>
+      buttons.map((button) => button.getAttribute('aria-label') ?? ''),
+    );
+
+  // CONTROL, TALL: every tool on the strip and no More.
+  await expect(strip).toBeVisible();
+  await expect(more).toHaveCount(0);
+  const all = await tools();
+  expect(await fits()).toBe(true);
+
+  // SHORT: inside the area, More at the end, and the drawn tools the leading part of the strip's order.
+  await page.setViewportSize({ width: 960, height: 516 });
+  await expect(more).toBeVisible();
+  await expect.poll(fits).toBe(true);
+  const drawn = await tools();
+  expect(drawn).toStrictEqual(all.slice(0, drawn.length));
+
+  // MORE HOLDS THE REST, by name and in the strip's order: drawn and folded together are every tool, once.
+  await more.click();
+  const items = page.locator('[role="menu"] [data-command] .m-menu-bar__title');
+  await expect(items.first()).toBeVisible();
+  expect([...drawn, ...(await items.allTextContents())]).toStrictEqual(all);
+});
+
 test('the STATUS BAR’s document line shows whole facts only, giving up the size and the length first, at every width', async ({
   page,
 }) => {

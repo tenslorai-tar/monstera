@@ -1,3 +1,4 @@
+import { Menu } from '@base-ui/react/menu';
 import { useLingui } from '@lingui/react';
 import {
   type CSSProperties,
@@ -6,11 +7,12 @@ import {
   type ReactElement,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
 
-import { DOCUMENT_TOOLS_LABEL, FLOAT_BAR_GRIP_HELP, FLOAT_BAR_GRIP_LABEL } from '../messages/en.js';
+import { DOCUMENT_TOOLS_LABEL, FLOAT_BAR_GRIP_HELP, FLOAT_BAR_GRIP_LABEL, FLOAT_BAR_MORE } from '../messages/en.js';
 import { Icon } from '../primitives/Icon.js';
 import { ICONS } from '../primitives/icons.js';
 import { IconButton } from '../primitives/IconButton.js';
@@ -20,6 +22,7 @@ import type { SettingsStore } from '../settingsStore.js';
 import { useSetting } from '../useSetting.js';
 import { type FloatBarPoint, type FloatBarRoom, type FloatBarShare, nudged, positionAt } from './floatBarPlace.js';
 import { quickToolbarModel } from './projections.js';
+import { railFolded } from './railFold.js';
 
 /** The reset command, run by the grip's Home key so the key and the Window menu are one action. */
 const RESET_COMMAND = 'view.reset-float-bar';
@@ -141,6 +144,38 @@ export function QuickToolbar({ registry, context, settings }: QuickToolbarProps)
     };
   }, [placing, settings]);
 
+  // THE FOLD (ADR-0147, extended): when the page area is too short for the strip, its last tools go into a *More* at
+  // its end, by the rail's own rule. Each tool costs one button and the gap after it, read from a drawn one; the rest of
+  // the strip — the grip and the padding — is what is left of its height once those are taken away, which does not
+  // depend on how many are folded. The room is the area's height less the token margin at each end.
+  const tools = entries.filter((entry) => entry.command.icon !== undefined);
+  const [folded, setFolded] = useState<ReadonlySet<number>>(() => new Set());
+  const toolCount = tools.length;
+  useLayoutEffect(() => {
+    const element = bar.current;
+    const area = element?.parentElement;
+    if (!shown || element === null || area === null || area === undefined || typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+    const measure = (): void => {
+      const buttons = element.querySelectorAll<HTMLElement>(':scope > .m-icon-button');
+      const first = buttons[0];
+      if (first === undefined) return;
+      const step = first.offsetHeight + parseFloat(getComputedStyle(element).rowGap || '0');
+      const rest = element.offsetHeight - buttons.length * step;
+      const margin = parseFloat(getComputedStyle(element).getPropertyValue('--space-8')) || 0;
+      const capacity = Math.max(0, Math.floor((area.clientHeight - 2 * margin - rest) / step));
+      const next = railFolded(toolCount, undefined, capacity);
+      setFolded((was) => (was.size === next.size && [...next].every((place) => was.has(place)) ? was : next));
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(area);
+    observer.observe(element);
+    return (): void => {
+      observer.disconnect();
+    };
+  }, [shown, toolCount]);
+
   if (!shown) return null;
 
   /** Where the bar is drawn now, read from its own box, so a move starts from what the person sees. */
@@ -253,9 +288,9 @@ export function QuickToolbar({ registry, context, settings }: QuickToolbarProps)
       <span id={helpId} className="m-visually-hidden">
         {i18n._(FLOAT_BAR_GRIP_HELP)}
       </span>
-      {entries.flatMap((entry) => {
+      {tools.flatMap((entry, place) => {
         const icon = entry.command.icon;
-        if (icon === undefined) return [];
+        if (icon === undefined || folded.has(place)) return [];
         return [
           <IconButton
             key={entry.command.id}
@@ -272,6 +307,70 @@ export function QuickToolbar({ registry, context, settings }: QuickToolbarProps)
           />,
         ];
       })}
+      {folded.size === 0 ? null : (
+        // THE FOLDED TOOLS, in the strip's order, in a menu opened beside the strip on its page side. A tool that is on
+        // is a checkable item, so the menu says so as the strip's pressed button did.
+        <Menu.Root>
+          <Menu.Trigger
+            className="m-icon-button m-icon-button--control m-quick-toolbar__more"
+            aria-label={i18n._(FLOAT_BAR_MORE)}
+            data-holds={tools
+              .filter((_, place) => folded.has(place))
+              .map((entry) => entry.command.id)
+              .join(' ')}
+            nativeButton
+          >
+            <Icon name="Ellipsis" size="control" />
+          </Menu.Trigger>
+          <Menu.Portal>
+            <Menu.Positioner side={docked === 'end' && free === null ? 'left' : 'right'} align="end" sideOffset={8}>
+              <Menu.Popup className="m-context-menu m-menu-bar__popup">
+                {tools.map((entry, place) => {
+                  if (!folded.has(place)) return null;
+                  const checked = entry.command.checked?.(context);
+                  const face = (
+                    <>
+                      <span className="m-menu-bar__mark" aria-hidden="true">
+                        {checked === true ? <Icon name="Check" size="dense" /> : null}
+                      </span>
+                      <span className="m-menu-bar__icon" aria-hidden="true">
+                        {entry.command.icon === undefined ? null : <Icon name={entry.command.icon} size="dense" />}
+                      </span>
+                      <span className="m-menu-bar__title">{i18n._(entry.command.title)}</span>
+                    </>
+                  );
+                  const run = (): void => {
+                    void entry.command.run(context);
+                  };
+                  return checked === undefined ? (
+                    <Menu.Item
+                      key={entry.command.id}
+                      className="m-context-menu-item m-menu-bar__item"
+                      data-command={entry.command.id}
+                      label={i18n._(entry.command.title)}
+                      onClick={run}
+                    >
+                      {face}
+                    </Menu.Item>
+                  ) : (
+                    <Menu.CheckboxItem
+                      key={entry.command.id}
+                      className="m-context-menu-item m-menu-bar__item"
+                      data-command={entry.command.id}
+                      label={i18n._(entry.command.title)}
+                      checked={checked}
+                      closeOnClick
+                      onCheckedChange={run}
+                    >
+                      {face}
+                    </Menu.CheckboxItem>
+                  );
+                })}
+              </Menu.Popup>
+            </Menu.Positioner>
+          </Menu.Portal>
+        </Menu.Root>
+      )}
     </div>
   );
 }
