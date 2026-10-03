@@ -1075,16 +1075,28 @@ describe('the assistant about a document (ADR-0088)', () => {
       return sent.filter((entry) => entry.id === 'ai.ask').at(-1)?.params ?? {};
     }
 
-    function pick(name: 'Left' | 'Right' | 'Both'): void {
+    function pick(name: 'Left document' | 'Right document' | 'Both'): void {
       fireEvent.click(screen.getByRole('radio', { name }));
     }
+
+    it('asks in the owner’s words: Ask about, Left document · Right document · Both (item J)', async () => {
+      await drawn({ focused: focusedOn(), beside: BESIDE });
+      const group = screen.getByRole('group', { name: 'Ask about' });
+      expect(within(group).getAllByRole('radio').map((radio) => radio.parentElement?.textContent)).toStrictEqual([
+        'Left document',
+        'Right document',
+        'Both',
+      ]);
+    });
 
     it('asks BEFORE sending: nothing chosen, Send waits, and pressing Send sends nothing', async () => {
       const { sent } = await drawn({ focused: focusedOn(), beside: BESIDE });
 
       const radios = screen.getAllByRole('radio');
       expect(radios.map((radio) => (radio as HTMLInputElement).checked)).toStrictEqual([false, false, false]);
-      expect(screen.getByText('Two documents are side by side. Choose Left, Right or Both, then send.')).toBeTruthy();
+      expect(
+        screen.getByText('Two documents are side by side. Choose Left document, Right document or Both, then send.'),
+      ).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(true);
 
       type('Which is later?');
@@ -1108,7 +1120,7 @@ describe('the assistant about a document (ADR-0088)', () => {
     it('RIGHT sends the right document alone, and the Context menu names the right pane’s page', async () => {
       const { sent } = await drawn({ focused: focusedOn(), beside: BESIDE });
 
-      pick('Right');
+      pick('Right document');
       expect(chosenIn('Context')).toBe('Page 3');
       type('What is on the right page?');
       await send();
@@ -1119,9 +1131,9 @@ describe('the assistant about a document (ADR-0088)', () => {
     it('REMEMBERS the choice for the conversation: a remount of the panel still holds it', async () => {
       const focused = focusedOn();
       const { redraw } = await drawn({ focused, beside: BESIDE });
-      pick('Right');
+      pick('Right document');
       await redraw({ mount: 1 });
-      const right = screen.getByRole('radio', { name: 'Right' });
+      const right = screen.getByRole('radio', { name: 'Right document' });
       expect(right instanceof HTMLInputElement && right.checked).toBe(true);
       expect(focused.store.getState().sides).toBe('right');
     });
@@ -1179,7 +1191,7 @@ describe('the assistant about a document (ADR-0088)', () => {
         beside: BESIDE,
         onGoToBeside: () => undefined,
       });
-      pick('Right');
+      pick('Right document');
       type('Where?');
       await send();
       const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;

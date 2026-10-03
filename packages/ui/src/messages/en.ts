@@ -3844,12 +3844,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_FILE_UNREADABLE]: 'it could not be read',
   [ASSISTANT_FILE_CANNOT_SEE]: 'this model cannot read pictures',
   [ASSISTANT_FILE_CANNOT_READ_HERE]: 'this kind of file cannot be read on this computer',
-  // THE OWNER'S THREE WORDS, for two documents side by side (ADR-0089).
-  [ASSISTANT_SIDES_LABEL]: 'Which document',
-  [ASSISTANT_SIDE_LEFT]: 'Left',
-  [ASSISTANT_SIDE_RIGHT]: 'Right',
+  // THE OWNER'S WORDING, for two documents side by side (ADR-0089; item J, answered 2026-10-01):
+  // *Ask about: Left document · Right document · Both*.
+  [ASSISTANT_SIDES_LABEL]: 'Ask about',
+  [ASSISTANT_SIDE_LEFT]: 'Left document',
+  [ASSISTANT_SIDE_RIGHT]: 'Right document',
   [ASSISTANT_SIDE_BOTH]: 'Both',
-  [ASSISTANT_SIDES_NEEDED]: 'Two documents are side by side. Choose Left, Right or Both, then send.',
+  [ASSISTANT_SIDES_NEEDED]: 'Two documents are side by side. Choose Left document, Right document or Both, then send.',
   [ASSISTANT_SENT_LEFT]: 'Left: {sent}',
   [ASSISTANT_SENT_RIGHT]: 'Right: {sent}',
   [ASSISTANT_PLACEHOLDER]: 'Ask about this page…',
