@@ -52,12 +52,17 @@ const SUITES = ['packages/kernel', 'packages/nodemode'];
 /** The anchor case, by its full name as vitest reports it. */
 const ANCHOR = 'the runtime this suite runs in is Electron in Node mode when the host-runtime proof asked for it';
 
-/** The test files of the four commands that killed the host, which must run and pass. */
+/**
+ * The test files of the four commands that killed the host, which must run and pass, and Export to WebP's: the fifth
+ * caller of the same view (`rgbaOf` in `pageImages.ts`). With the view put back, its WebP cases end the worker under
+ * this runtime and pass in plain Node (measured 2026-10-03, Electron 43.7.7).
+ */
 const CRASHED = [
   'packages/kernel/src/pageDeskew.test.ts',
   'packages/kernel/src/pageEnhance.test.ts',
   'packages/kernel/src/pageScan.test.ts',
   'packages/kernel/src/barcode.test.ts',
+  'packages/kernel/src/pageImages.test.ts',
 ];
 
 /** A view over sixteen bytes of native memory: what `getPixels` made, in one line. */
