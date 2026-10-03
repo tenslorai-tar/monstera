@@ -1,4 +1,4 @@
-import { asDocId, asDocVersion, messageKey } from '@monstera/shared';
+import { asDocId, asDocVersion, messageKey, viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
@@ -15,7 +15,7 @@ import {
   declareDialog,
 } from './dialogs.js';
 import { SettingsRegistry, type SettingDefinition, colourKindOf, colourSchema } from './settings.js';
-import { ToolRegistry, type UiTool, pointerPath } from './tools.js';
+import { ToolRegistry, type UiTool, endOf, pointerPath, startOf } from './tools.js';
 
 const context: CommandContext = {
   selectedPages: [],
@@ -505,6 +505,23 @@ describe('SettingsRegistry', () => {
     // exists, and the symptom would be a setting that never changes.
     const registry = new SettingsRegistry([setting()]);
     expect(() => registry.read('general.absent', 'dark')).toThrow(/"general\.absent"/u);
+  });
+});
+
+describe('pointerPath — the gesture every pointer-driven tool spreads', () => {
+  it('KEEPS THE PRESS where a first move is under two pixels, and still follows the pointer with the last point', () => {
+    // The press was the gesture's only point, and so also its last, which a near move replaces: every drag began up
+    // to two pixels from where it was pressed, and a typewriter's click landed half a point off at zoom 2.
+    const pressed = pointerPath.begin(viewportPoint(40, 40));
+    const jittered = pointerPath.update(pressed, viewportPoint(41, 41));
+    expect(startOf(jittered)).toStrictEqual(viewportPoint(40, 40));
+    expect(endOf(jittered)).toStrictEqual(viewportPoint(41, 41));
+  });
+
+  it('CONTROL: a later near move still replaces the last point, so the interior stays decimated', () => {
+    const pressed = pointerPath.begin(viewportPoint(40, 40));
+    const moved = pointerPath.update(pointerPath.update(pressed, viewportPoint(41, 41)), viewportPoint(41.5, 41.5));
+    expect(moved.points).toStrictEqual([viewportPoint(40, 40), viewportPoint(41.5, 41.5)]);
   });
 });
 

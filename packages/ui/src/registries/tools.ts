@@ -175,6 +175,12 @@ const MAX_GESTURE_POINTS = 4096;
  * decimated. Without that a rectangle's corner would snap to the nearest two
  * pixels, and a tool that reads only two points would be paying for a
  * simplification it does not use.
+ *
+ * **Except the FIRST point, which is never replaced**: it is where the press
+ * was, and {@link startOf} reads it. While a gesture held one point, that point
+ * was also the last, so the first move under two pixels overwrote the press —
+ * every drag began up to two pixels from where it was pressed, and a
+ * typewriter's click landed half a point off at zoom 2 (measured 2026-10-03).
  */
 export const pointerPath: Pick<ToolController, 'begin' | 'update' | 'complete'> = {
   begin: (at: ViewportPoint): Gesture => ({ points: [at], presses: [at], done: false }),
@@ -182,9 +188,10 @@ export const pointerPath: Pick<ToolController, 'begin' | 'update' | 'complete'> 
     const last = endOf(gesture);
     const far = Math.hypot(at.x - last.x, at.y - last.y) >= KEEP_APART;
     if (far && gesture.points.length >= MAX_GESTURE_POINTS) return gesture;
+    const keepsLast = far || gesture.points.length === 1;
     return {
       ...gesture,
-      points: far ? [...gesture.points, at] : [...gesture.points.slice(0, -1), at],
+      points: keepsLast ? [...gesture.points, at] : [...gesture.points.slice(0, -1), at],
     };
   },
   // A RELEASE ENDS THE GESTURE, which is what every gesture has done until now
