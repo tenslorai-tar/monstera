@@ -479,7 +479,10 @@ export function MenuBar({
                         </Menu.SubmenuTrigger>
                         <Menu.Portal>
                           <Menu.Positioner side="right" align="start" sideOffset={4} alignOffset={-5}>
-                            <Menu.Popup className="m-context-menu m-menu-bar__popup m-menu-bar__submenu">
+                            <Menu.Popup
+                              className="m-context-menu m-menu-bar__popup m-menu-bar__submenu"
+                              data-folded-popup={menu.id}
+                            >
                               {groupsOf(menu)}
                             </Menu.Popup>
                           </Menu.Positioner>

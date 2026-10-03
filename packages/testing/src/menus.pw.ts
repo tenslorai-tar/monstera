@@ -290,14 +290,39 @@ for (const size of [
   }) => {
     await openDocument(page);
     await page.setViewportSize(size);
-    const triggers = page.locator('.m-menu-bar__trigger');
-    const names = await triggers.allTextContents();
-    expect(names.length).toBeGreaterThan(8);
-    const popup = page.locator('.m-menu-bar__popup');
+    // EVERY MENU, FROM THE RULER, which holds each menu's name whatever the row has folded (ADR-0146): read off the row
+    // at 760 the list was the frame before the fold, and its Tools was not on the row by the time it was clicked.
+    const menuNames = await page.locator('[data-ruler-menu]').allTextContents();
+    expect(menuNames.length).toBeGreaterThan(8);
+    /** The menus on the row once its fold has settled, *More* among them when it folded any. */
+    const onRow = (): Promise<string[]> =>
+      settled(page, () => page.locator('.m-menu-bar__menus .m-menu-bar__trigger').allTextContents(), () => true, 'the menu row');
+    const rowNow = await onRow();
+    const names = [...menuNames, ...(rowNow.includes('More') ? ['More'] : [])];
+    // A FOLDED MENU IS STILL A MENU: at 760 Tools, Window and Help are submenus of More, and each is held to the same cap.
+    if (size.width === 760) expect(rowNow).toContain('More');
+    const anyPopup = page.locator('.m-menu-bar__popup:visible');
+    /** Opens a menu the way a person reaches it — on the row, or through More — and answers the popup it opened. */
+    const open = async (name: string): Promise<Locator> => {
+      if ((await onRow()).includes(name)) {
+        await page.getByRole('menubar').getByRole('menuitem', { name, exact: true }).click();
+        return page.locator('.m-menu-bar__popup:not(.m-menu-bar__submenu)');
+      }
+      await page.getByRole('menubar').getByRole('menuitem', { name: 'More', exact: true }).click();
+      const entry = page.locator('[data-folded-menu]').filter({ hasText: new RegExp(`^${name}$`, 'u') });
+      await entry.focus();
+      await page.keyboard.press('ArrowRight');
+      return page.locator('[data-folded-popup]');
+    };
+    /** Closes every menu it opened, a folded one's submenu and More both. */
+    const close = async (): Promise<void> => {
+      for (let press = 0; press < 2 && (await anyPopup.count()) > 0; press += 1) await page.keyboard.press('Escape');
+      await expect(anyPopup).toHaveCount(0);
+    };
     const report: Record<string, unknown> = {};
     const long: string[] = [];
     for (const name of names) {
-      await page.getByRole('menubar').getByRole('menuitem', { name, exact: true }).click();
+      const popup = await open(name);
       await expect(popup).toBeVisible();
       await popupPlaced(page, popup, `the ${name} menu`);
       const read = await popup.evaluate((menu) => {
@@ -317,8 +342,7 @@ for (const size of [
         // IT SCROLLS WITH A SCROLLBAR the platform draws, not a clipped box: `auto` draws one exactly when it overflows.
         if (read.overflow !== 'auto') report[`${name} overflow`] = read.overflow;
       }
-      await page.keyboard.press('Escape');
-      await expect(popup).toBeHidden();
+      await close();
     }
     expect(report).toStrictEqual({});
 
@@ -327,7 +351,7 @@ for (const size of [
     expect(long.length, 'a menu longer than half the window').toBeGreaterThan(0);
 
     for (const name of long) {
-      await page.getByRole('menubar').getByRole('menuitem', { name, exact: true }).click();
+      const popup = await open(name);
       await expect(popup).toBeVisible();
       // ARROWDOWN TO THE LAST ITEM the keyboard can reach — a disabled item is passed over — and no further.
       const last = popup.locator('[role="menuitem"]:not([data-disabled]), [role="menuitemcheckbox"]:not([data-disabled])').last();
@@ -351,8 +375,7 @@ for (const size of [
       }), () => true, `the ${name} menu after ArrowDown`);
       expect(seen.scrolled, `${name} scrolled`).toBeGreaterThan(0);
       expect(seen.inside, `${name}: the last item is inside the menu's visible box`).toBe(true);
-      await page.keyboard.press('Escape');
-      await expect(popup).toBeHidden();
+      await close();
     }
   });
 }
