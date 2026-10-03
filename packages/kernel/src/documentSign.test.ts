@@ -7,11 +7,14 @@ import {
   PDFNumber,
   StandardFonts,
 } from '@cantoo/pdf-lib';
+import { MAX_SIGNATURE_FIELD } from '@monstera/contract';
 import * as mupdf from './mupdfRaw.js';
 import forge from 'node-forge';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { applySignDocument, withSignaturePlaceholder } from './documentSign.js';
+import { engineChannels } from './host/engineChannels.js';
+import { signatureValues } from './signatureFields.js';
 import type { ByteImage } from './engineSeam.js';
 import { PngPixelsRefused } from './imageDimensions.js';
 import { mupdfWriter, signaturesKeptBySave, withDocument, withDocumentRemoving } from './mupdfWriter.js';
@@ -311,6 +314,32 @@ describe('readSignatures', () => {
     }
   }, 60_000);
 
+  it('shows a /Reason past the wire’s bound SHORTENED, so the signatures are still read (table A row 14)', async () => {
+    // ANOTHER PROGRAM'S SIGNATURE: this build's own sign command cannot write a reason past the bound, so the long one
+    // is put into the signed document's dictionary directly, as a foreign signer's would be.
+    const long = `Approved under clause 4.2 ${'and every schedule attached to it '.repeat(30)}`;
+    expect(long.length).toBeGreaterThan(MAX_SIGNATURE_FIELD);
+    const signed = await applySignDocument(unsigned, { ...command, bytes: certificate });
+    const session = await mupdfWriter.open(signed);
+    try {
+      await withDocument(session, (document) => {
+        for (const signature of signatureValues(document)) signature.put('Reason', document.newString(long));
+      });
+      const bytes = await mupdfWriter.serialise(session);
+      const read = await readSignatures(session, bytes);
+      const reason = read[0]?.reason ?? '';
+      expect(reason.length).toBeLessThanOrEqual(MAX_SIGNATURE_FIELD);
+      expect(reason.endsWith('…')).toBe(true);
+      expect(long.startsWith(reason.slice(0, -1))).toBe(true);
+      // THE ANSWER CROSSES, and CONTROL: the same answer with the reason whole is the one the channel refused.
+      const signatures = engineChannels['engine/signatures'].result;
+      expect(signatures.safeParse({ signatures: read }).success).toBe(true);
+      expect(signatures.safeParse({ signatures: read.map((each) => ({ ...each, reason: long })) }).success).toBe(false);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }, 60_000);
+
   it('THE CLAIM: a freshly signed document reports coversDocument', async () => {
     const signed = await applySignDocument(unsigned, { ...command, bytes: certificate });
     const session = await mupdfWriter.open(signed);
@@ -386,10 +415,11 @@ describe('readSignatures', () => {
         await mupdfWriter.close(session);
       }
     };
-    expect(await asked(unsigned, false)).toStrictEqual({ signatures: 0, kept: true, removal: false, appended: false });
-    expect(await asked(signed, false)).toStrictEqual({ signatures: 1, kept: true, removal: false, appended: true });
-    // THE SAVE THE WARNING IS FOR: a signed document whose next save rewrites it — and, since item 6, keeps no backup.
-    expect(await asked(signed, true)).toStrictEqual({ signatures: 1, kept: false, removal: true, appended: false });
+    expect(await asked(unsigned, false)).toStrictEqual({ signatures: 0, kept: true, appended: false });
+    expect(await asked(signed, false)).toStrictEqual({ signatures: 1, kept: true, appended: true });
+    // THE SAVE THE WARNING IS FOR: a signed document whose next save rewrites it. Whether it keeps a backup is the
+    // document's question in main since ADR-0139, so the engine no longer answers it.
+    expect(await asked(signed, true)).toStrictEqual({ signatures: 1, kept: false, appended: false });
   }, 60_000);
 
   it('CONTROL: an UNSIGNED document is still written anew — the rule is keyed on a signature, not on every save', async () => {

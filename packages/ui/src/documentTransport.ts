@@ -1,4 +1,4 @@
-import type { ContractClient } from '@monstera/contract';
+import { type ContractClient, MAX_RANGE_BYTES } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 import { PDFDataRangeTransport } from 'pdfjs-dist';
 
@@ -7,9 +7,10 @@ import { PDFDataRangeTransport } from 'pdfjs-dist';
  * ([ADR-0031](../../../docs/DECISIONS/0031-the-renderer-reads-the-document-by-demand-paged-ranges.md)).
  *
  * PDF.js drives this: it asks for the byte ranges it needs and this turns each
- * ask into one `document.readRange` query. Nothing here decides what to fetch,
- * and that is the design — the parser knows which objects a page needs and the
- * renderer does not.
+ * ask into `document.readRange` queries — one, or for a range past
+ * `MAX_RANGE_BYTES` one per bounded piece, answered to PDF.js in one call. Nothing
+ * here decides what to fetch, and that is the design — the parser knows which
+ * objects a page needs and the renderer does not.
  */
 
 /**
@@ -84,42 +85,55 @@ export class DocumentRangeTransport extends PDFDataRangeTransport {
   }
 
   async #serve(begin: number, end: number): Promise<void> {
-    const answer = await this.#client['document.readRange']({
-      docId: this.#docId,
-      version: this.#version,
-      begin,
-      end,
-    });
-
-    // A LATE ANSWER TO AN ABORTED TRANSPORT IS DROPPED. `abort` can land while a
-    // query is in flight, and `onDataRange` on a torn-down reader throws inside
-    // PDF.js — which surfaces as a parse failure on the *next* document rather
-    // than as anything naming this one.
-    if (this.#aborted) return;
-
-    if (!answer.ok) {
-      // The document closed underneath the view. Nothing to answer with, and
-      // nothing to report as a version move either — this is not staleness, it
-      // is absence, and conflating them would have the owner rebuild a transport
-      // for a document that is gone.
-      this.#aborted = true;
-      return;
-    }
-
-    if (answer.value.kind === 'stale') {
-      this.#aborted = true;
-      this.#onVersionMoved({
-        version: answer.value.version,
-        byteLength: answer.value.byteLength,
+    // A RANGE PAST ONE READ IS READ IN PIECES AND HANDED OVER WHOLE (finding table A of *No document-size refusals*):
+    // PDF.js asks for an image object whole, and a scan's page can be one object larger than `MAX_RANGE_BYTES`, which
+    // the boundary refuses per read — so such a page never drew, and nothing said why. Each piece is one bounded read,
+    // which is invariant L11's term (*per operation*); the bytes held here are bounded by the object PDF.js asked for,
+    // which is CLAUDE.md's statement of the transient copy.
+    const bytes = end - begin <= MAX_RANGE_BYTES ? undefined : new Uint8Array(end - begin);
+    let whole: Uint8Array | undefined;
+    for (let at = begin; at < end; at += MAX_RANGE_BYTES) {
+      const answer = await this.#client['document.readRange']({
+        docId: this.#docId,
+        version: this.#version,
+        begin: at,
+        end: Math.min(at + MAX_RANGE_BYTES, end),
       });
-      return;
+
+      // A LATE ANSWER TO AN ABORTED TRANSPORT IS DROPPED. `abort` can land while a
+      // query is in flight, and `onDataRange` on a torn-down reader throws inside
+      // PDF.js — which surfaces as a parse failure on the *next* document rather
+      // than as anything naming this one.
+      if (this.#aborted) return;
+
+      if (!answer.ok) {
+        // The document closed underneath the view. Nothing to answer with, and
+        // nothing to report as a version move either — this is not staleness, it
+        // is absence, and conflating them would have the owner rebuild a transport
+        // for a document that is gone.
+        this.#aborted = true;
+        return;
+      }
+
+      // STALE ON ANY PIECE is stale for the range: pieces from two versions would be a range out of two documents.
+      if (answer.value.kind === 'stale') {
+        this.#aborted = true;
+        this.#onVersionMoved({
+          version: answer.value.version,
+          byteLength: answer.value.byteLength,
+        });
+        return;
+      }
+
+      if (bytes === undefined) whole = answer.value.bytes;
+      else bytes.set(answer.value.bytes, at - begin);
     }
 
     // EXACTLY ONE CALL PER RANGE. Measured: splitting a range across several
     // `onDataRange` calls throws `no PDFDataTransportStreamRangeReader instance
-    // found`, because the reader completes and is deleted after the first. The
-    // bound on what one call may carry is `MAX_RANGE_BYTES`, enforced at the
-    // boundary, and it is why this cannot be softened by chunking here.
-    this.onDataRange(begin, answer.value.bytes);
+    // found`, because the reader completes and is deleted after the first. So the
+    // pieces above are joined here, and PDF.js is answered once.
+    const answered = bytes ?? whole;
+    if (answered !== undefined) this.onDataRange(begin, answered);
   }
 }

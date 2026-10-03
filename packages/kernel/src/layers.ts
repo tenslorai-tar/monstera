@@ -1,10 +1,13 @@
 import type { CommandOfKind } from '@monstera/contract';
 import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 
+import { BoundedList } from './boundedList.js';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
+import { ENGINE_LAYER_NAME_MAX, ENGINE_LAYERS_MAX } from './host/engineChannels.js';
 import { bufferBytes, withDocument, withDocuments } from './mupdfWriter.js';
 import { pushInheritablesDown } from './pageExtract.js';
+import { shownName } from './shownName.js';
 
 /**
  * Optional-content groups — layers — and the command that shows or hides one.
@@ -79,30 +82,21 @@ export interface PriorLayerVisibility {
 }
 
 /**
- * There is deliberately NO bound applied here; `MAX_LAYERS` is the contract's.
+ * The walk stops at the host answer's own bound and SAYS so, as the outline's does.
  *
- * This module clamped the count with `Math.min(groups.length, MAX_LAYERS)`,
- * which made two things true and neither was decided. A document with more
- * groups than the bound showed a **subset with nothing saying so** — the reader
- * toggles what they can see and the rest are invisible and unaddressable — and
- * `document.layers`' own `.max(MAX_LAYERS)` became a check that **cannot fail**,
- * since the array reaching it had already been cut to fit.
- *
- * Its two siblings, written in the same range, do the opposite: neither
- * `pageLinks` nor `destinations` clamps, and both bounds' comments say *"the
- * first document refused by this is the evidence the bound is wrong"*. So this
- * one held a second opinion about how a bound is communicated (B3a), and the
- * silent half was the one nobody could observe.
- *
- * A refusal is loud and a truncation is not, and the panel already renders a
- * refusal as its `unavailable` state. `search` reports a `truncated` flag
- * instead — correctly, because there the CALLER states a limit and *exhausted*
- * and *capped* must stay distinguishable. Nothing states a limit here.
- *
- * Found by the stage audit of `87540a5..HEAD`; `payloadBounds.test.ts` proves
- * every result declares a bound and is structurally unable to see one applied
- * before the schema reads it.
+ * It once clamped to the renderer's 1,024 in silence — a subset with nothing saying so, and a contract check that
+ * could not fail — and was then made to refuse instead, which turned *more layers than 1,024* into *"The layers could
+ * not be read"* for a CAD export with thousands (JOURNAL, *No document-size refusals*, table A row 6). The bound is now
+ * {@link ENGINE_LAYERS_MAX}, derived from the answer ceiling and past any real document (ADR-0130 Decision 3); the
+ * renderer reads the list in parts, and `truncated` is what a hostile document past the bound produces.
  */
+const MAX_LAYERS = ENGINE_LAYERS_MAX;
+
+/** The layers, and whether the walk stopped at {@link MAX_LAYERS}. */
+export interface ListedLayers {
+  readonly layers: readonly Layer[];
+  readonly truncated: boolean;
+}
 
 /**
  * Follows an indirect reference, and tolerates a missing key.
@@ -194,28 +188,32 @@ function visibilityOf(config: PDFObject | null, group: PDFObject): boolean {
  *
  * A QUERY, so it does not go through the bus — nothing is mutated and there is
  * nothing to capture. It reads `/OCGs` in the document's own order, which is
- * the order the indices address.
+ * the order the indices address. Bounded through `BoundedList`.
+ *
+ * @param bound every caller passes none; a case passes a small one to reach the stop on a small document
  */
-export function readLayers(session: MupdfSession): Promise<readonly Layer[]> {
+export function readLayers(session: MupdfSession, bound = MAX_LAYERS): Promise<ListedLayers> {
   return withDocument(session, (document) => {
     const groups = groupsOf(document);
-    if (groups === null) return [];
+    if (groups === null) return { layers: [], truncated: false };
     const config = defaultConfig(document);
 
-    const layers: Layer[] = [];
+    const layers = new BoundedList<Layer>(bound);
     for (let index = 0; index < groups.length; index += 1) {
+      if (!layers.room()) break;
       const group = groups.get(index);
       const name = deref(deref(group).get('Name'));
-      layers.push({
+      layers.add({
         index,
         // A group with no `/Name` is malformed and still has to render as a
         // row: dropping it would renumber every layer after it, and the
         // indices are what the command addresses.
-        name: name.isString() ? name.asString() : '',
+        name: name.isString() ? shownName(name.asString(), ENGINE_LAYER_NAME_MAX) : '',
         visible: visibilityOf(config, group),
       });
     }
-    return layers;
+    const { items, truncated } = layers.answer();
+    return { layers: items, truncated };
   });
 }
 

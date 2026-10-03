@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { PRELOAD_CHANNEL_IDS, channelIds, channels, unboundedMembers } from '@monstera/contract';
-import { CapabilityRegistry, DocumentService } from '@monstera/kernel';
+import { CapabilityRegistry, DocumentService, readFileIdentity } from '@monstera/kernel';
 import { type DocId, asDocVersion } from '@monstera/shared';
 
 import { createAssistant } from './assistant.js';
@@ -161,7 +161,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     pickDocument: () => Promise.resolve(null),
     recent: createRecentFiles(createEphemeralSettings()),
     recentRoots: [],
-    recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
+    recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
     reviewPrompt: NO_REVIEW_PROMPT,
     settings: createEphemeralSettings(),
     secrets: createEphemeralSecrets(),
@@ -272,9 +272,6 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'settings.import': 'answers a settings file the person picked, refused by its size over MAX_SETTINGS_FILE_BYTES before it is read',
   'window.closeListening': 'carries nothing and answers a boolean',
   'document.unsaved': 'one DocId in, one boolean out',
-  // THE OLDER COPIES A REMOVAL'S SAVE LEFT (item 6): names in, counts out, and neither is the document's — the names
-  // are this file's backups, at most MAX_BACKUP_COPIES of them, and the counts are bounded in the schema.
-  'document.deleteStaleCopies': 'takes at most MAX_BACKUP_COPIES backup names and answers two bounded counts',
   // A DICTIONARY IS LARGE ON PURPOSE and no document contributes to it. Its
   // size is the language's, fixed at build time, bounded by MAX_AFFIX_BYTES and
   // MAX_DICTIONARY_BYTES at both the read and the schema — which is L11's
@@ -349,13 +346,11 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // outcomes, so there is no payload here that could scale with anything.
   'document.saveCopy': 'needs an engine session and a save dialog',
   // `saveCopy`'s answer exactly — a byte count and three outcomes — and a
-  // REQUEST that is the one thing here worth a second look: it carries a page
-  // list, which is the only channel input that grows with the document. It is
-  // bounded by `MAX_EXTRACT_PAGES` and it is an index per page rather than a
-  // page per page, so a 4,000-page extract asks in kilobytes and answers with a
-  // number. L11 is about payloads that scale with document SIZE, and this one
-  // scales with page COUNT — which is the distinction `deletePages` already
-  // makes as intent rather than payload.
+  // REQUEST that is the one thing here worth a second look: it names pages. It
+  // is a page set, where *every page* is one run, so an extract of any length
+  // asks in bytes and answers with a number; only a selection a person picked
+  // page by page grows, and with page COUNT rather than document SIZE — the
+  // distinction `deletePages` already makes as intent rather than payload.
   'document.extract': 'needs an engine session and a save dialog',
   // The extract's answer with a file count instead of a byte count, and a
   // request bounded on both axes — parts and pages-per-part — so the largest
@@ -441,9 +436,9 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // sentence to read before the page list. The renderer sends a page list and a
   // rectangle; main runs the picker, reads the file and mints `placeImage`, and
   // the bytes are in exactly one process — `insertImage`'s argument, unchanged.
-  // The page list is `document.extract`'s second look and gets the same answer:
-  // an index per page, bounded by `MAX_IMAGE_PAGES`, so stamping a
-  // 4,000-page document asks in kilobytes. Answers with three numbers.
+  // The pages are `document.extract`'s second look and get the same answer:
+  // a page set, where *every page* is one run, so stamping a document of any
+  // length asks in bytes. Answers with three numbers.
   //
   // What is NEW here and is not this gate's business is the hop after it: those
   // bytes then reach the engine host, whose wire is JSON and cannot carry them

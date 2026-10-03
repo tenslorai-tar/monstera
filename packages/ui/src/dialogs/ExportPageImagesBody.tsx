@@ -10,8 +10,6 @@ import type { ReactElement } from 'react';
 import { useState } from 'react';
 
 import {
-  DELETE_PAGES_HINT,
-  EXPORT_PAGE_IMAGES_ALL,
   EXPORT_PAGE_IMAGES_DPI,
   EXPORT_PAGE_IMAGES_DPI_NOTE,
   EXPORT_PAGE_IMAGES_EMPTY,
@@ -19,20 +17,17 @@ import {
   EXPORT_PAGE_IMAGES_FORMAT,
   EXPORT_PAGE_IMAGES_FORMAT_NOTE,
   EXPORT_PAGE_IMAGES_JPEG,
-  EXPORT_PAGE_IMAGES_LABEL,
   EXPORT_PAGE_IMAGES_OUT_OF_BOUNDS,
-  EXPORT_PAGE_IMAGES_PAGES,
   EXPORT_PAGE_IMAGES_PAGES_NOTE,
   EXPORT_PAGE_IMAGES_PNG,
   EXPORT_PAGE_IMAGES_QUALITY,
   EXPORT_PAGE_IMAGES_QUALITY_NOTE,
-  EXPORT_PAGE_IMAGES_RANGES,
+  EXPORT_PAGE_IMAGES_UNCHANGED,
   EXPORT_PAGE_IMAGES_WEBP,
   SPLIT_DOCUMENT_APPLY,
 } from '../messages/en.js';
-import { parsePageRanges } from '../pageRanges.js';
 import type { ExportPageImagesAnswer } from './exportPageImagesResult.js';
-import { renderRangeProblem } from './pageRangeProblem.js';
+import { PageRangeChoice, usePageRange } from './PageRangeChoice.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
@@ -60,11 +55,11 @@ function wholeWithin(text: string, min: number, max: number): number | null {
 /**
  * The page-image export dialog's body: which pages, which format, and how.
  *
- * ## `SplitDocumentBody`'s page choice, with an encoding beside it
+ * ## The exports' one page row, with an encoding beside it
  *
- * *Every page* and *these pages* both build a list, so the mode does not leave
- * this component. The count is shown before the button, computed from the list
- * that will actually be sent.
+ * `PageRangeChoice` asks which pages; *Every page* and *Select pages* both
+ * build a list, so the mode does not leave this component. The count is shown
+ * before the button, computed from the list that will actually be sent.
  *
  * ## Quality is asked for the lossy formats only
  *
@@ -83,18 +78,11 @@ export default function ExportPageImagesBody({
   readonly pageCount: number;
 } & DialogAnswering<ExportPageImagesAnswer>): ReactElement {
   const { _ } = useLingui();
-  const [everyPage, setEveryPage] = useState(true);
-  const [text, setText] = useState('');
+  const range = usePageRange(pageCount);
   const [format, setFormat] = useState<PageImageFormat>('png');
   const [dpiText, setDpiText] = useState(DEFAULT_DPI);
   const [qualityText, setQualityText] = useState(DEFAULT_QUALITY);
 
-  const parsed = parsePageRanges(text, pageCount);
-  const pages = everyPage
-    ? Array.from({ length: pageCount }, (_unused, page) => page)
-    : parsed.ok
-      ? parsed.value
-      : [];
   const dpi = wholeWithin(dpiText, MIN_PAGE_IMAGE_DPI, MAX_PAGE_IMAGE_DPI);
   // A PNG never reads quality, so its field's text cannot make the export unusable.
   const quality =
@@ -102,34 +90,10 @@ export default function ExportPageImagesBody({
       ? Number(DEFAULT_QUALITY)
       : wholeWithin(qualityText, MIN_IMAGE_QUALITY, MAX_IMAGE_QUALITY);
   const inBounds = dpi !== null && quality !== null;
-  const usable = pages.length > 0 && inBounds;
 
   return (
     <div className="m-export-page-images">
-      <DialogRow label={EXPORT_PAGE_IMAGES_PAGES} note={EXPORT_PAGE_IMAGES_PAGES_NOTE}>
-        <SegmentedControl<'all' | 'ranges'>
-          label={EXPORT_PAGE_IMAGES_PAGES}
-          options={[
-            { value: 'all', label: EXPORT_PAGE_IMAGES_ALL },
-            { value: 'ranges', label: EXPORT_PAGE_IMAGES_RANGES },
-          ]}
-          value={everyPage ? 'all' : 'ranges'}
-          onChange={(chosen) => {
-            setEveryPage(chosen === 'all');
-          }}
-        />
-      </DialogRow>
-      {everyPage ? null : (
-        <DialogRow label={EXPORT_PAGE_IMAGES_LABEL}>
-          <Input
-            label={EXPORT_PAGE_IMAGES_LABEL}
-            labelShownBeside
-            placeholder={DELETE_PAGES_HINT}
-            value={text}
-            onValueChange={setText}
-          />
-        </DialogRow>
-      )}
+      <PageRangeChoice empty={EXPORT_PAGE_IMAGES_EMPTY} note={EXPORT_PAGE_IMAGES_PAGES_NOTE} range={range} />
       <DialogRow label={EXPORT_PAGE_IMAGES_FORMAT} note={EXPORT_PAGE_IMAGES_FORMAT_NOTE}>
         <SegmentedControl<PageImageFormat>
           label={EXPORT_PAGE_IMAGES_FORMAT}
@@ -158,19 +122,23 @@ export default function ExportPageImagesBody({
               minQuality: MIN_IMAGE_QUALITY,
               maxQuality: MAX_IMAGE_QUALITY,
             })
-          : everyPage || parsed.ok
-            ? _(EXPORT_PAGE_IMAGES_FILES, { files: pages.length })
-            : renderRangeProblem(parsed, text, _, EXPORT_PAGE_IMAGES_EMPTY)}
+          : range.chosen === undefined
+            ? _(EXPORT_PAGE_IMAGES_UNCHANGED)
+            : _(EXPORT_PAGE_IMAGES_FILES, { files: range.chosen.length })}
       </p>
       <DialogFooter>
         <Button
           label={SPLIT_DOCUMENT_APPLY}
           variant="primary"
-          disabled={!usable}
+          // ENABLED WHATEVER IS TYPED IN THE PAGE ROW, because pressing it is what makes that row say what is wrong
+          // (`PageRangeChoice`). Bounds are said as they are typed, so they still disable it.
+          disabled={!inBounds}
           onClick={() => {
             // GUARDED AGAIN rather than trusting the disabled attribute, for
             // `SplitDocumentBody`'s reason.
-            if (!usable) return;
+            if (!inBounds) return;
+            const pages = range.proceed();
+            if (pages === undefined) return;
             resolve({ pages: [...pages], format, dpi, quality });
           }}
         />

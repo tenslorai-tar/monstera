@@ -19,7 +19,14 @@ const CONTEXT: CommandContext = {
 
 /** A page-half command that records its runs and exists while `on()` says so. */
 function page(id: string, calls: string[], on: () => boolean): UiCommand {
-  return { id, title: messageKey(`command.${id}.title`), placements: [], when: on, run: () => void calls.push(id) };
+  return {
+    id,
+    title: messageKey(`command.${id}.title`),
+    placements: [],
+    when: on,
+    run: () => void calls.push(id),
+    feedback: { kind: 'visible' },
+  };
 }
 
 /** The four verbs over recording page halves, a recording native route, and whatever field the case supplies. */

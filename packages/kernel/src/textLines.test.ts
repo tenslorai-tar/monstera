@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { type BlockableRun, type GroupableRun, groupIntoBlocks, groupIntoLines, paragraphText } from './textLines.js';
+import {
+  type BlockableRun,
+  type GroupableRun,
+  groupIntoBlocks,
+  groupIntoLines,
+  paragraphText,
+  settingOf,
+} from './textLines.js';
 
 describe('paragraphText (ADR-0097 4c)', () => {
   /** A line of `text` from 0 to `x1`: ten characters take 50, so a character is 5 wide. */
@@ -154,7 +161,8 @@ describe('grouping runs into visual lines', () => {
 
 /**
  * A run with a horizontal extent, for the block grouping. The style is the
- * run's own index, so a case can say which run a block took its style from.
+ * run's own index, so a case can say which run a block took its style from;
+ * every run is set alike unless a case says otherwise.
  */
 const placed = (
   index: number,
@@ -163,7 +171,8 @@ const placed = (
   right: number,
   bottom: number,
   top: number,
-): BlockableRun<number> => ({ index, text, left, right, bottom, top, style: index });
+  setting = 'Body|11.00|0,0,0',
+): BlockableRun<number> => ({ index, text, left, right, bottom, top, style: index, setting });
 
 describe('grouping lines into the blocks a person edits in place (ADR-0096)', () => {
   it('joins a paragraph’s lines into ONE block, however many lines it has', () => {
@@ -218,7 +227,7 @@ describe('grouping lines into the blocks a person edits in place (ADR-0096)', ()
     expect(blocks.map((block) => block.lines.map(covers))).toStrictEqual([[[1, 2]]]);
   });
 
-  it('keeps the ENGINE’S indices, and takes the style of the block’s FIRST run', () => {
+  it('keeps the ENGINE’S indices, and takes the style of the block’s first line', () => {
     // Indices non-contiguous and not from zero, for ADR-0049's first decision;
     // the style identifies which run it came from.
     const blocks = groupIntoBlocks([
@@ -247,5 +256,92 @@ describe('grouping lines into the blocks a person edits in place (ADR-0096)', ()
 
   it('answers nothing for a page with no runs', () => {
     expect(groupIntoBlocks([])).toStrictEqual([]);
+  });
+});
+
+/**
+ * The owner's page of 2026-10-02, from the numbers measured there (the document is not copied): a Roboto-Bold heading
+ * drawn at 13.03 pt in 66, 83, 149, and under it thirteen list lines drawn at 9.198 pt in 64, 64, 64 — each a
+ * Nunito-Bold lead word and a Nunito-Regular rest — with the heading 7.99 pt above a list line 8.47 pt tall.
+ */
+interface Set {
+  readonly size: number;
+  readonly colour: { readonly r: number; readonly g: number; readonly b: number };
+  readonly bold: boolean;
+}
+const HEADING: Set & { font: string } = { font: 'Roboto-Bold', size: 13.032, colour: { r: 66, g: 83, b: 149 }, bold: true };
+const LEAD: Set & { font: string } = { font: 'Nunito-Bold', size: 9.198, colour: { r: 64, g: 64, b: 64 }, bold: true };
+const REST: Set & { font: string } = { font: 'Nunito-Regular', size: 9.198, colour: { r: 64, g: 64, b: 64 }, bold: false };
+
+function headingOverList(setting: (style: Set & { font: string }) => string): BlockableRun<Set>[] {
+  const run = (index: number, text: string, left: number, right: number, bottom: number, top: number, style: Set & { font: string }) => ({
+    index,
+    text,
+    left,
+    right,
+    bottom,
+    top,
+    style: { size: style.size, colour: style.colour, bold: style.bold },
+    setting: setting(style),
+  });
+  const runs = [run(0, 'What we offer', 2, 160, 685, 700, HEADING)];
+  // THE GAP THE OWNER MEASURED: 7.99 pt from the heading to a line 8.47 pt tall — under the line's height.
+  let top = 685 - 7.99;
+  for (let line = 0; line < 13; line += 1) {
+    runs.push(run(1 + line * 2, 'Lead', 16, 40, top - 8.47, top, LEAD));
+    runs.push(run(2 + line * 2, 'words that follow the lead word', 42, 240, top - 8.47, top, REST));
+    top -= 12.3;
+  }
+  return runs;
+}
+
+describe('a block does not continue across a change of SETTING (N4, the owner’s Part A)', () => {
+  it('a heading set tight over list lines is its OWN block, and each block opens in its own size and colour', () => {
+    const blocks = groupIntoBlocks(headingOverList(settingOf));
+
+    expect(blocks.map((block) => block.lines.length)).toStrictEqual([1, 13]);
+    expect(blocks[0]?.style).toStrictEqual({ size: 13.032, colour: { r: 66, g: 83, b: 149 }, bold: true });
+    // THE LIST IS SET IN ITS RUNS' OWN FACE: the rest of each line, not the bold lead word that begins it.
+    expect(blocks[1]?.style).toStrictEqual({ size: 9.198, colour: { r: 64, g: 64, b: 64 }, bold: false });
+  });
+
+  it('and EACH RUN keeps its own style inside its block — the lead word bold, the rest regular (ADR-0145)', () => {
+    const [, list] = groupIntoBlocks(headingOverList(settingOf));
+
+    expect(list?.lines[0]?.runs.map((run) => [run.text, run.style.bold, run.style.size])).toStrictEqual([
+      ['Lead', true, 9.198],
+      ['words that follow the lead word', false, 9.198],
+    ]);
+  });
+
+  it('CONTROL: grouped by the gap alone, the same page is ONE block in the heading’s style — 1.42 times too large', () => {
+    // EVERY RUN SET ALIKE is the rule before this one, which read no setting at all: the block the owner measured.
+    const blocks = groupIntoBlocks(headingOverList(() => 'one'));
+
+    expect(blocks.map((block) => block.lines.length)).toStrictEqual([14]);
+    expect(blocks[0]?.style.bold).toBe(true);
+    expect(blocks[0]?.style.colour).toStrictEqual({ r: 66, g: 83, b: 149 });
+    expect((blocks[0]?.style.size ?? 0) / REST.size).toBeCloseTo(1.42, 2);
+  });
+
+  it('a WORD set apart inside a paragraph’s line does not break the paragraph — its longest run decides', () => {
+    // An ordinary document: a bold word in the middle of a line, and a line that BEGINS with an italic word.
+    const body = 'Body|11.00|0,0,0';
+    const blocks = groupIntoBlocks([
+      placed(1, 'The first line of a paragraph with a ', 72, 260, 700, 711, body),
+      placed(2, 'bold', 262, 285, 700, 711, 'Body-Bold|11.00|0,0,0'),
+      placed(3, ' word in it,', 287, 340, 700, 711, body),
+      placed(4, 'Italics', 72, 110, 686, 697, 'Body-Italic|11.00|0,0,0'),
+      placed(5, ' begin the second line of the same paragraph', 112, 380, 686, 697, body),
+    ]);
+
+    expect(blocks.map((block) => block.lines.map(covers))).toStrictEqual([[[1, 2, 3], [4, 5]]]);
+  });
+
+  it('settingOf keys the font, the size to a hundredth and the fill — and nothing else', () => {
+    expect(settingOf(HEADING)).toBe('Roboto-Bold|13.03|66,83,149');
+    expect(settingOf({ ...REST, size: 9.1984 })).toBe(settingOf(REST));
+    expect(settingOf({ ...REST, colour: { r: 64, g: 64, b: 65 } })).not.toBe(settingOf(REST));
+    expect(settingOf({ ...REST, font: 'Nunito-Bold' })).not.toBe(settingOf(REST));
   });
 });

@@ -1,18 +1,16 @@
 import { useLingui } from '@lingui/react';
 import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
-import { Fragment, type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import type { DocumentView } from './documentView.js';
 import { THUMBNAILS_LABEL, THUMBNAIL_PAGE } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { RenderCancelledError, renderPage } from './renderPage.js';
 import { THUMBNAIL_SIZES, type ThumbnailSize } from './settings/appearance.js';
+import { type MenuAt, inPageMenu } from './surfaces/ContextMenu.js';
 import { usePageRotations } from './usePageRotations.js';
 import { useVisiblePages } from './useVisiblePages.js';
-
-/** A US Letter portrait page's width per unit of height, 612 / 792 — the placeholder shape `app.css` gives an undrawn card. */
-const PORTRAIT_WIDTH_PER_HEIGHT = 612 / 792;
 
 /**
  * The page thumbnails, down the side.
@@ -66,19 +64,26 @@ export function Thumbnails({
   onJump,
   onMove,
   onSwap,
-  pageMenu,
+  menuAt,
   size = 'medium',
   grid,
+  waitForFirstFrame = false,
 }: {
   /** How large the pictures are drawn (the Appearance setting). Medium for a strip with no setting behind it. */
   readonly size?: ThumbnailSize;
   /**
-   * Wraps one thumbnail in the page context menu for THAT page (§7) — the shell's
-   * `ContextMenuArea`, handed down so this strip never names the registry. Optional for
-   * `onMove`'s reason: a strip with no document commands behind it, the compare pane's,
-   * renders no menu rather than one whose items act on the other document.
+   * Whether the strip waits to read or draw anything: `true` while the page area's first frame is not shown yet. Every
+   * read of a document waits in main's one lane, and asked at open the strip's eight pages queued ahead of the first
+   * page the reader is waiting for; waiting, each card is a placeholder of a page's shape (`app.css`).
    */
-  readonly pageMenu?: ((page: number, thumbnail: ReactElement) => ReactNode) | undefined;
+  readonly waitForFirstFrame?: boolean;
+  /**
+   * The page context menu (§7) for the thumbnail a right-click lands on: ONE menu around the strip (`PageMenuArea`),
+   * asking the shell for that page's menu, so this strip never names the registry. Optional for `onMove`'s reason: a
+   * strip with no document commands behind it, the compare pane's, renders no menu rather than one whose items act on
+   * the other document.
+   */
+  readonly menuAt?: MenuAt<number> | undefined;
   /**
    * Where the strip reads each page's rotation — the same read the spine takes
    * ({@link usePageRotations}), so a page turned in the document is turned here.
@@ -130,11 +135,10 @@ export function Thumbnails({
   readonly grid?:
     | {
         /**
-         * What a card fits: a WIDTH, every page as wide as the next (*Thumbnail*), or a HEIGHT, every page whole at
-         * the height the grid has (*Full page*). One or the other, never both, so a card cannot be asked to fit two
-         * boxes it disagrees with.
+         * The width every card's picture fits: a thumbnail's (*Thumbnail*), or the grid's whole width, one page to a
+         * row read top to bottom (*Full page*, the owner's review of 0.1.9.0). Every page as wide as the next.
          */
-        readonly fit: { readonly width: number } | { readonly height: number };
+        readonly width: number;
         readonly selected: readonly number[];
         readonly onSelect: (pages: readonly number[]) => void;
         readonly onOpen: (page: number) => void;
@@ -144,7 +148,7 @@ export function Thumbnails({
 }): ReactElement {
   const { i18n } = useLingui();
   const { visible, slotRef } = useVisiblePages('50%');
-  const rotations = usePageRotations(client, docId, version, visible);
+  const rotations = usePageRotations(client, docId, version, waitForFirstFrame ? NOTHING_VISIBLE : visible);
   // A REF, not state: the source index is read once by the drop that follows,
   // and re-rendering the whole strip mid-drag would replace the element the
   // browser is dragging.
@@ -153,10 +157,7 @@ export function Thumbnails({
   const anchor = useRef<number | null>(null);
 
   const strip = THUMBNAIL_SIZES[size];
-  const fit = grid?.fit ?? { width: strip.width };
-  // A HEIGHT'S CARD is laid out as a portrait page that tall until it draws, the stylesheet's own placeholder shape.
-  const width = 'width' in fit ? fit.width : Math.round(fit.height * PORTRAIT_WIDTH_PER_HEIGHT);
-  const byHeight = 'height' in fit ? fit.height : undefined;
+  const width = grid?.width ?? strip.width;
   const { columns } = strip;
 
   return (
@@ -167,9 +168,9 @@ export function Thumbnails({
       // together and `app.css` lays both out — the token rule's own line: values that are genuinely dynamic.
       style={{ '--m-thumb-columns': String(columns), '--m-thumb-width': `${String(width)}px` } as React.CSSProperties}
     >
-      {Array.from({ length: pageCount }, (_, page) => {
+      {inPageMenu(menuAt, Array.from({ length: pageCount }, (_, page) => {
         const ticked = grid?.selected.includes(page) === true;
-        const thumbnail = (
+        return (
         <button
           key={page}
           type="button"
@@ -268,7 +269,6 @@ export function Thumbnails({
             view={view}
             page={page}
             width={width}
-            byHeight={byHeight}
             draw={visible.has(page) && rotations.has(page)}
             rotation={rotations.get(page)}
           />
@@ -279,10 +279,7 @@ export function Thumbnails({
           </span>
         </button>
         );
-        // THE KEY ON THE OUTERMOST ELEMENT, so wrapping a thumbnail in its menu does not make React
-        // treat every page as new on each render.
-        return pageMenu === undefined ? thumbnail : <Fragment key={page}>{pageMenu(page, thumbnail)}</Fragment>;
-      })}
+      }))}
     </nav>
   );
 }
@@ -295,19 +292,19 @@ export function Thumbnails({
  * the page's own aspect ratio, which is what `renderPage` reports back. A new size REDRAWS, since a picture
  * drawn at 60 px and stretched to 160 is a blurred one.
  */
+/** The empty visible set, one identity, for a strip that must not ask yet. */
+const NOTHING_VISIBLE: ReadonlySet<number> = new Set();
+
 function ThumbCanvas({
   view,
   page,
   width,
-  byHeight,
   draw,
   rotation,
 }: {
   readonly view: DocumentView | undefined;
   readonly page: number;
   readonly width: number;
-  /** Organize's *Full page*: the page drawn whole at this height, its width its own. Otherwise it fits `width`. */
-  readonly byHeight: number | undefined;
   readonly draw: boolean;
   /** The view model's rotation, or `undefined` where it did not answer for this version. */
   readonly rotation: number | undefined;
@@ -325,14 +322,7 @@ function ThumbCanvas({
       // ONE DRAW, FITTED TO THE COLUMN by `renderPage` from the page's own viewport. This drew the
       // page at full size first to learn its width, and that first pass is what a superseded
       // draw left behind: a canvas 612 points wide in a 96-pixel column (measured 2026-09-18).
-      const drawn = await renderPage(
-        view.document,
-        pdfjsPageOf(page),
-        element,
-        byHeight === undefined ? { fitWidth: width } : { fitHeight: byHeight },
-        rotation,
-        superseded.signal,
-      );
+      const drawn = await renderPage(view.document, pdfjsPageOf(page), element, { fitWidth: width }, rotation, superseded.signal);
       setSize({ width: drawn.width, height: drawn.height });
     };
 
@@ -348,7 +338,7 @@ function ThumbCanvas({
     return (): void => {
       superseded.abort();
     };
-  }, [byHeight, draw, page, rotation, view, width]);
+  }, [draw, page, rotation, view, width]);
 
   return (
     <canvas
@@ -360,8 +350,8 @@ function ThumbCanvas({
       style={
         size === undefined
           ? undefined
-          : // A WIDTH'S CARD keeps the column's width exactly; a height's is as wide as its page drew.
-            { width: `${String(byHeight === undefined ? width : size.width)}px`, height: `${String(size.height)}px` }
+          : // THE COLUMN'S WIDTH EXACTLY, and the height the page's shape gives it.
+            { width: `${String(width)}px`, height: `${String(size.height)}px` }
       }
     />
   );

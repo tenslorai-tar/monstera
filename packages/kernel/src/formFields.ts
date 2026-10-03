@@ -1,6 +1,7 @@
 import type { AnnotationRect, CommandOfKind, FieldFill, FormFieldKind } from '@monstera/contract';
 import type { PDFDocument, PDFObject, PDFPage, PDFWidget } from './mupdfRaw.js';
 
+import { BoundedList } from './boundedList.js';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { ENGINE_FORM_FIELDS_MAX } from './host/engineChannels.js';
@@ -297,20 +298,27 @@ export function onStateKey(widget: PDFWidget): string | undefined {
  * counted from the walk rather than from the accumulator, so a future skip
  * cannot silently shift every handle after it; the transform is resolved once
  * per page because it is the page's; and a page that displays no region gives
- * `null` rectangles rather than dropping its fields.
+ * `null` rectangles rather than dropping its fields. Bounded through `BoundedList`.
+ *
+ * @param bound every caller passes none; a case passes a small one to reach the stop on a small document
  */
 export function readFormFields(
   session: MupdfSession,
+  bound = MAX_LISTED_FIELDS,
 ): Promise<{ readonly fields: readonly ListedField[]; readonly truncated: boolean }> {
   return withDocument(session, (document) => {
-    const found: ListedField[] = [];
+    const found = new BoundedList<ListedField>(bound);
+    const fieldsOf = (): { readonly fields: readonly ListedField[]; readonly truncated: boolean } => {
+      const { items, truncated } = found.answer();
+      return { fields: items, truncated };
+    };
     const pages = document.countPages();
     for (let page = 0; page < pages; page += 1) {
       let index = 0;
       const loaded = document.loadPage(page);
       const transform = frameOf(loaded);
       for (const widget of loaded.getWidgets()) {
-        if (found.length >= MAX_LISTED_FIELDS) return { fields: found, truncated: true };
+        if (!found.room()) return fieldsOf();
         const kind = kindOf(widget);
         // A PUSH BUTTON IS A BUTTON WITH NO STATE, and the two questions came
         // apart on 2026-09-07: it was reported `on: false`, which reads as *a
@@ -319,7 +327,7 @@ export function readFormFields(
         // records — a stream whose first key is `BBox`. Both halves are fixed:
         // the caller no longer asks, and the reader no longer answers.
         const stateful = kind === 'checkbox' || kind === 'radio';
-        found.push({
+        found.add({
           page,
           index: index++,
           kind,
@@ -335,7 +343,7 @@ export function readFormFields(
         });
       }
     }
-    return { fields: found, truncated: false };
+    return fieldsOf();
   });
 }
 

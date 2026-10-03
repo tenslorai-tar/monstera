@@ -20,6 +20,7 @@ import { HELP_ARTICLES } from './help/articles.js';
 import type { CommandRegistry } from './registries/commands.js';
 import type { DialogRegistry } from './registries/dialogs.js';
 import { SECTION_IDS } from './registries/placement.js';
+import { START_SCREEN_RECENT } from './RecentFiles.js';
 import { CONTEXT_PANEL_TAB_SETTING, DOCUMENT_PANEL_SETTING, FLOAT_BAR_POSITION_SETTING } from './settings/layout.js';
 import { SECTION_TITLES } from './surfaces/Ribbon.js';
 import type { Article, Inline } from './help/article.js';
@@ -51,7 +52,7 @@ import { EN } from './messages/en.js';
 import { PSEUDO_LOCALE, pseudoCatalogue, pseudoMessage } from './messages/pseudo.js';
 import { SettingsRegistry } from './registries/settings.js';
 import { ALL_SETTINGS } from './settings/all.js';
-import { BACKGROUND_GLOW_SETTING, REDUCE_MOTION_SETTING, THEME_SETTING } from './settings/appearance.js';
+import { REDUCE_MOTION_SETTING, THEME_SETTING } from './settings/appearance.js';
 import { FIRST_PAGE } from './pageNumbering.js';
 import { SettingsStore } from './settingsStore.js';
 import { resetSharedPainter } from './searchHighlight.js';
@@ -333,6 +334,8 @@ const OPEN_DOCUMENT_ANSWERS = {
   // and a flat document produce alike, so a fixture of zeros would make "the
   // renderer used the model" and "the renderer ignored it" the same observation.
   'document.viewModel': { version: asDocVersion(1), pageCount: 2, rotations: [90] },
+  // NO REDACTION MARKS: a save, a close or an export reads the list first and asks only where it names one (item N1).
+  'document.annotations': { version: asDocVersion(1), annotations: [], next: null, truncated: false },
   // THE SCROLLER ASKS FOR EVERY VISIBLE PAGE'S SELECTABLE TEXT, so a fixture
   // without an answer here rejects on every case that opens a document. Empty
   // rather than seeded: what these cases are about is the shell's dispatch, and
@@ -2225,7 +2228,7 @@ describe('App', () => {
           version += 1;
           return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0 }));
         }
-        if (id === 'document.save') return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(version), staleCopies: null }));
+        if (id === 'document.save') return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(version), cleared: null }));
         if (id === 'cloud.saveBack') {
           return Promise.resolve(ok({ kind: 'saved-back' as const, version: asDocVersion(version) }));
         }
@@ -2283,7 +2286,7 @@ describe('App', () => {
             version += 1;
             return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0 }));
           }
-          if (id === 'document.save') return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(version), staleCopies: null }));
+          if (id === 'document.save') return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(version), cleared: null }));
           const answer = (OPEN_DOCUMENT_ANSWERS as Readonly<Record<string, unknown>>)[id] ?? OTHER_ANSWERS[id];
           if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
           return Promise.resolve(ok(answer));
@@ -2321,7 +2324,7 @@ describe('App', () => {
       // document that has not changed.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.save': { kind: 'saved' as const, version: asDocVersion(2), staleCopies: null },
+        'document.save': { kind: 'saved' as const, version: asDocVersion(2), cleared: null },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -2572,23 +2575,27 @@ describe('App', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'Help centre' }, { timeout: 2000 });
     const here = within(dialog).getByRole('heading', { name: 'For what you are doing' });
-    const listed = [...(here.parentElement?.querySelectorAll('[data-article]') ?? [])].map((item) => item.getAttribute('data-article'));
+    const listed = [...(here.closest('section')?.querySelectorAll('[data-article]') ?? [])].map((item) =>
+      item.getAttribute('data-article'),
+    );
     const expected = HELP_ARTICLES.filter((article) => article.contexts.includes('start-screen')).map((article) => article.id);
     expect(expected.length).toBeGreaterThan(0);
     expect(listed).toStrictEqual(expected);
   });
 
-  it('BACKGROUND GLOW reaches the root as the one attribute the stylesheet reads, and follows the setting (ADR-0114)', async () => {
+  it('NO BACKGROUND GLOW (ADR-0140): the shell writes no glow attribute and no row for it, while the theme still applies', async () => {
+    delete document.documentElement.dataset['glow'];
     const settings = freshSettings();
     const { client } = recordingClient({ kind: 'cancelled' });
     render(<App client={client} settings={settings} />);
-    expect(document.documentElement.dataset['glow']).toBe('on');
     await act(async () => {
-      settings.set(BACKGROUND_GLOW_SETTING.id, false);
+      settings.set(THEME_SETTING.id, 'light');
       await Promise.resolve();
     });
-    // CONTROL IN ONE CASE: the same root, the other value — the attribute follows the setting, not a default.
-    expect(document.documentElement.dataset['glow']).toBe('off');
+    // CONTROL: the effect that wrote the glow attribute ran — it wrote the theme the setting asked for.
+    expect(document.documentElement.dataset['theme']).toBe('light');
+    expect(document.documentElement.dataset['glow']).toBeUndefined();
+    expect(ALL_SETTINGS.map((setting) => setting.id)).not.toContain('appearance.background-glow');
   });
 
   it('F6 moves between the PANES in the real shell, and Shift+F6 back (item 12)', async () => {
@@ -2731,7 +2738,12 @@ describe('App', () => {
     // re-read — the control looked dead — and every range read after it named a version main had left.
     const { client, sent } = answeringClient({
       ...OPEN_DOCUMENT_ANSWERS,
-      'document.layers': { version: asDocVersion(1), layers: [{ index: 7, name: 'Draft stamp', visible: false }] },
+      'document.layers': {
+        version: asDocVersion(1),
+        layers: [{ index: 7, name: 'Draft stamp', visible: false }],
+        next: null,
+        truncated: false,
+      },
       'document.execute': { version: asDocVersion(2), byteLength: 1024, historyDropped: 0 },
     });
     render(<App client={client} settings={freshSettings()} />);
@@ -3108,11 +3120,19 @@ describe('App', () => {
       answeredBy: Readonly<Record<string, () => Promise<unknown>>> = {},
     ): { readonly client: ContractClient; readonly sent: Sent[] } {
       const sent: Sent[] = [];
+      // MAIN'S LIST, which a clear empties as main's store does — so a view that reads it again after a clear sees what
+      // main would answer, and a view that did not read again still shows the old cards.
+      let held = recent;
       const client = createClient(channels, (id, params) => {
         sent.push({ id, params });
         const own = answeredBy[id];
         if (own !== undefined) return own();
-        if (id === 'document.recent') return Promise.resolve(ok(recent));
+        if (id === 'document.recent') return Promise.resolve(ok(held));
+        if (id === 'document.clearRecent') {
+          const before = held as { readonly entries: readonly unknown[] };
+          held = { ...before, entries: [] };
+          return Promise.resolve(ok({ cleared: before.entries.length }));
+        }
         if (id === 'document.openRecent') {
           return Promise.resolve(
             ok({
@@ -3132,8 +3152,12 @@ describe('App', () => {
     }
 
     /** A listed entry as `document.recent` answers one, with no place or time — what these cases are not about. */
-    function row(handle: string, name: string): { handle: string; name: string; location: unknown; openedAt: null } {
-      return { handle, name, location: { within: null, folder: null }, openedAt: null };
+    function row(
+      handle: string,
+      name: string,
+      available = true,
+    ): { handle: string; name: string; location: unknown; openedAt: null; available: boolean } {
+      return { handle, name, location: { within: null, folder: null }, openedAt: null, available };
     }
 
     it('a card shows the picture main kept, asked for by the list’s handle, and the placeholder otherwise', async () => {
@@ -3230,10 +3254,12 @@ describe('App', () => {
       }
     });
 
-    it('the start screen shows the four recent files main keeps, all of them, with nothing to show more of (the owner, 2026-10-01)', async () => {
-      // FOUR IS MAIN'S NUMBER (`recentFiles.test.ts` holds the store to it); the screen shows what it is sent.
+    it('the start screen shows the FIRST FOUR of the list main keeps, and File › Recent holds the rest (the owner, 2026-10-02)', async () => {
+      // SIX SENT, more than four: a screen showing what it is sent draws six. Main keeps ten (`recentFiles.test.ts`);
+      // four is this view's own number, `START_SCREEN_RECENT`.
+      const names = ['a.pdf', 'b.pdf', 'c.pdf', 'd.pdf', 'e.pdf', 'f.pdf'];
       const { client } = withRecent({
-        entries: ['a.pdf', 'b.pdf', 'c.pdf', 'd.pdf'].map((name, at) => row(`handle-${String(at)}`, name)),
+        entries: names.map((name, at) => row(`handle-${String(at)}`, name)),
         lastExitClean: true,
         lastSession: [],
       });
@@ -3241,15 +3267,27 @@ describe('App', () => {
       await act(async () => {
         await Promise.resolve();
       });
-      expect(document.querySelectorAll('.m-recent-list > li')).toHaveLength(4);
-      expect(screen.getByRole('button', { name: 'd.pdf' })).toBeTruthy();
+      expect(START_SCREEN_RECENT).toBe(4);
+      expect([...document.querySelectorAll('.m-recent-list > li')].map((card) => card.textContent)).toStrictEqual([
+        'PDFa.pdf',
+        'PDFb.pdf',
+        'PDFc.pdf',
+        'PDFd.pdf',
+      ]);
+      expect(screen.queryByRole('button', { name: 'e.pdf' })).toBeNull();
       expect(screen.queryByRole('button', { name: /^Show (all|fewer)/u })).toBeNull();
     });
 
     it('a card is NAMED by the file and DESCRIBED by when and where it was opened (ADR-0100)', async () => {
       const { client } = withRecent({
         entries: [
-          { handle: 'handle-a', name: 'annual.pdf', location: { within: 'documents', folder: 'Leases' }, openedAt: new Date().toISOString() },
+          {
+            handle: 'handle-a',
+            name: 'annual.pdf',
+            location: { within: 'documents', folder: 'Leases' },
+            openedAt: new Date().toISOString(),
+            available: true,
+          },
         ],
         lastExitClean: true,
         lastSession: [],
@@ -3438,16 +3476,18 @@ describe('App', () => {
       expect(screen.queryByRole('button', { name: 'Reopen' })).toBeNull();
     });
 
-    it('says so when a row cannot be opened, and drops it', async () => {
-      // A handle from a list held across a reload resolves to nothing this run
-      // minted. The reader gets a sentence and the dead row goes.
+    it('says so when a row’s handle is refused, and asks main for the list again rather than dropping the row', async () => {
+      // A handle from a list held across a reload resolves to nothing this run minted. The reader gets a sentence, and
+      // the list is read again — main still keeps the file, and the fresh read carries a handle this run knows.
       const sent: Sent[] = [];
       const client = createClient(channels, (id, params) => {
         sent.push({ id, params });
         if (id === 'document.recent') {
           return Promise.resolve(
             ok({
-              entries: [{ handle: 'stale', name: 'annual.pdf', location: { within: null, folder: null }, openedAt: null }],
+              entries: [
+                { handle: 'stale', name: 'annual.pdf', location: { within: null, folder: null }, openedAt: null, available: true },
+              ],
               lastExitClean: true,
               lastSession: [],
             }),
@@ -3465,12 +3505,45 @@ describe('App', () => {
 
       await act(async () => {
         screen.getByRole('button', { name: 'annual.pdf' }).click();
-        await Promise.resolve();
+        await new Promise((settle) => setTimeout(settle, 0));
       });
 
       expect(
         screen.getByText('That document could not be opened. It may have been moved or renamed.'),
       ).toBeDefined();
+      // READ AGAIN, and the row is still there: main keeps it (ADR-0143).
+      expect(sent.filter((call) => call.id === 'document.recent').length).toBeGreaterThanOrEqual(2);
+      expect(screen.getByRole('button', { name: 'annual.pdf' })).toBeDefined();
+    });
+
+    it('an UNAVAILABLE file is a card that says so, is disabled and opens nothing — listed, never hidden (ADR-0143)', async () => {
+      const { client, sent } = withRecent({
+        entries: [row('handle-gone', 'gone.pdf', false), row('handle-here', 'here.pdf')],
+        lastExitClean: true,
+        lastSession: [],
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      const gone = screen.getByRole('button', { name: 'gone.pdf' });
+      expect(gone.getAttribute('aria-disabled')).toBe('true');
+      expect(document.getElementById(gone.getAttribute('aria-describedby') ?? '')?.textContent).toBe('Unavailable');
+      // CONTROL: the file that is there is a card like any other.
+      const here = screen.getByRole('button', { name: 'here.pdf' });
+      expect(here.getAttribute('aria-disabled')).toBeNull();
+
+      await act(async () => {
+        gone.click();
+        here.click();
+        await Promise.resolve();
+      });
+      // THE AVAILABLE ONE ALONE was asked for — so a card that ignored its state, and a surface that sent nothing at
+      // all, both fail.
+      expect(sent.filter((call) => call.id === 'document.openRecent')).toStrictEqual([
+        { id: 'document.openRecent', params: { handle: 'handle-here' } },
+      ]);
     });
   });
 

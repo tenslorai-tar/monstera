@@ -34,7 +34,7 @@ const CONTEXT: CommandContext = {
 };
 
 function commandOf(id: string, title: string, placements: readonly Placement[], run = vi.fn()): UiCommand {
-  return { id, title: messageKey(title), icon: 'File', placements, run };
+  return { id, title: messageKey(title), icon: 'File', placements, run, feedback: { kind: 'visible' } };
 }
 
 beforeAll(() => {

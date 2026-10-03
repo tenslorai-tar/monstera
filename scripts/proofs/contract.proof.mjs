@@ -1325,8 +1325,7 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0 })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.redo': () => Promise.resolve(ok({ kind: 'nothing-to-redo' as const })),
-  'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1), staleCopies: null })),
-  'document.deleteStaleCopies': () => Promise.resolve(ok({ backups: 0, undoCopies: 0 })),
+  'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1), cleared: null })),
   'document.extract': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'docusign.send': () => Promise.resolve(ok({ kind: 'no-integration-key' as const })),
   'docusign.retrieve': () => Promise.resolve(ok({ kind: 'nothing-sent' as const })),
@@ -1336,9 +1335,9 @@ export const handlers: ContractHandlers = {
   'document.flatFieldCandidates': () =>
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
   'document.textBlocks': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], truncated: false, rotated: 0, unaddressable: 0 })),
+    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, unaddressable: 0 })),
   'document.pageObjects': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), objects: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
   'document.renderPage': ({ width, height }) =>
     Promise.resolve(
       ok({ version: asDocVersion(1), width, height, png: new Uint8Array([0x89, 0x50]) }),
@@ -1402,10 +1401,10 @@ export const handlers: ContractHandlers = {
     ),
   'document.pageTables': () =>
     Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, tables: [], truncated: false })),
-  'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [] })),
+  'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [], next: null, truncated: false })),
   'document.destinations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [], next: null, truncated: false })),
-  'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [] })),
+  'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [], next: null, truncated: false })),
   'document.annotations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), annotations: [], next: null, truncated: false })),
   'document.formFields': () =>
@@ -1515,7 +1514,6 @@ export const handlers: ContractHandlers = {
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.redo': () => Promise.resolve(ok({ kind: 'nothing-to-redo' as const })),
   'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const })),
-  'document.deleteStaleCopies': () => Promise.resolve(ok({ backups: 0, undoCopies: 0 })),
   'document.extract': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'docusign.send': () => Promise.resolve(ok({ kind: 'no-integration-key' as const })),
   'docusign.retrieve': () => Promise.resolve(ok({ kind: 'nothing-sent' as const })),
@@ -1525,9 +1523,9 @@ export const handlers: ContractHandlers = {
   'document.flatFieldCandidates': () =>
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
   'document.textBlocks': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], truncated: false, rotated: 0, unaddressable: 0 })),
+    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, unaddressable: 0 })),
   'document.pageObjects': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), objects: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
   'document.renderPage': ({ width, height }) =>
     Promise.resolve(
       ok({ version: asDocVersion(1), width, height, png: new Uint8Array([0x89, 0x50]) }),
@@ -1591,10 +1589,10 @@ export const handlers: ContractHandlers = {
     ),
   'document.pageTables': () =>
     Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, tables: [], truncated: false })),
-  'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [] })),
+  'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [], next: null, truncated: false })),
   'document.destinations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [], next: null, truncated: false })),
-  'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [] })),
+  'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [], next: null, truncated: false })),
   'document.annotations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), annotations: [], next: null, truncated: false })),
   'document.formFields': () =>
@@ -1779,7 +1777,6 @@ export const shim: ContractClient = {
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.redo': () => Promise.resolve(ok({ kind: 'nothing-to-redo' as const })),
   'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const })),
-  'document.deleteStaleCopies': () => Promise.resolve(ok({ backups: 0, undoCopies: 0 })),
   'document.extract': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'docusign.send': () => Promise.resolve(ok({ kind: 'no-integration-key' as const })),
   'docusign.retrieve': () => Promise.resolve(ok({ kind: 'nothing-sent' as const })),
@@ -1789,9 +1786,9 @@ export const shim: ContractClient = {
   'document.flatFieldCandidates': () =>
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
   'document.textBlocks': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], truncated: false, rotated: 0, unaddressable: 0 })),
+    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, unaddressable: 0 })),
   'document.pageObjects': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), objects: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
   'document.renderPage': ({ width, height }) =>
     Promise.resolve(
       ok({ version: asDocVersion(1), width, height, png: new Uint8Array([0x89, 0x50]) }),
@@ -1855,10 +1852,10 @@ export const shim: ContractClient = {
     ),
   'document.pageTables': () =>
     Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, tables: [], truncated: false })),
-  'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [] })),
+  'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [], next: null, truncated: false })),
   'document.destinations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [], next: null, truncated: false })),
-  'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [] })),
+  'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [], next: null, truncated: false })),
   'document.annotations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), annotations: [], next: null, truncated: false })),
   'document.formFields': () =>

@@ -182,6 +182,10 @@ async function drawn(options: {
   );
   // EVERY TOAST THE PANEL RAISES, in order: a copy's confirmation goes through the window's toast.
   const toasts: unknown[][] = [];
+  // A DOCUMENT AND ITS STORE WHERE A CASE NAMES NONE: the panel is drawn only for an open document, which holds the
+  // conversation, and one store for the whole case so a remount reads the same conversation.
+  const focusedDocId = asDocId('00000000-0000-4000-8000-0000000000f0');
+  const focused = options.focused ?? { docId: focusedDocId, store: createDocumentStore(focusedDocId, asDocVersion(1)), page: 0 };
   const panel = (props: Partial<AssistantPanelProps> & { readonly mount?: number }): ReactElement => (
     <Wrapped>
       <Host
@@ -189,7 +193,7 @@ async function drawn(options: {
         toast={(...raised) => {
           toasts.push(raised);
         }}
-        focused={options.focused}
+        focused={focused}
         beside={options.beside}
         onGoToBeside={options.onGoToBeside}
         onGoTo={options.onGoTo}
@@ -234,9 +238,14 @@ function choiceButton(menu: 'Context' | 'Sources'): HTMLElement {
   return screen.getByRole('button', { name: new RegExp(`^${menu}: `, 'u') });
 }
 
-/** What a choice menu says is chosen: the words on its face, which are the value alone. */
+/**
+ * What a choice menu says is chosen: its accessible name after the menu's own name. The face reads the menu's name
+ * alone (the owner's review of 0.1.9.0), so the value reaches a person through the name and the open menu.
+ */
 function chosenIn(menu: 'Context' | 'Sources'): string {
-  return choiceButton(menu).textContent;
+  const button = choiceButton(menu);
+  expect(button.textContent).toBe(menu);
+  return (button.getAttribute('aria-label') ?? '').slice(`${menu}: `.length);
 }
 
 /** Opens a choice menu and answers its values as offered, each a radio item. */
@@ -483,11 +492,11 @@ describe('the assistant about a document (ADR-0088)', () => {
     });
   }
 
-  it('names the page as a person reads it and the provider by name beside Send, and asks about THAT page', async () => {
+  it('names the page as a person reads it and the provider by name under the box, and asks about THAT page', async () => {
     const { sent } = await drawn({ focused: focusedOn() });
 
     expect(chosenIn('Context')).toBe('Page 7');
-    // THE PROVIDER IS NAMED BY THE PICKER BESIDE SEND, and no separate line restates it (ARCHITECTURE §8, the owner's
+    // THE PROVIDER IS NAMED BY THE PICKER UNDER THE BOX, and no separate line restates it (ARCHITECTURE §8, the owner's
     // decision of 2026-10-01). The picker's shown value is the positive half, so the absence below is not a blank pane.
     const picker = screen.getByRole('combobox', { name: 'Provider' });
     expect(within(picker).getByRole('option', { name: 'Anthropic', selected: true })).toBeTruthy();

@@ -881,7 +881,7 @@ export const replacePageSchema = z.object({
  * and the person who just imported a layer would find the Layers panel unavailable.
  *
  * It moved here from `channels.ts` on 2026-09-14 because `channels.ts` imports this file
- * and the command schema now needs it too; `MAX_LAYERS` stays there, having one reader.
+ * and the command schema now needs it too; `LAYERS_PART` stays there, having one reader.
  * A tab's name is bounded at 255 by `MAX_DOCUMENT_NAME_LENGTH`, so the source tab's name
  * the renderer sends always fits.
  *
@@ -2437,21 +2437,6 @@ export const placeAnnotationSchema = z.object({
 }).strict();
 
 /**
- * How many pages one image may be stamped onto in a single command.
- *
- * `MAX_EXTRACT_PAGES`' argument, which is about what a page selection COSTS
- * rather than about how many pages a document has: the payload grows by an
- * index per page, not by a page per page, and the image is carried once
- * however many pages name it. 4096 is far past any document a person stamps by
- * hand and short of a number that could matter beside the frame's own bound.
- *
- * **Not `MAX_PLACED_ANNOTATIONS`' 1024**, and the difference is which way the
- * number is spent: that one bounds annotations a person selected, and this one
- * bounds pages a person did not — *every page* is one click.
- */
-export const MAX_IMAGE_PAGES = 4096;
-
-/**
  * Places an image on one or more pages, as an annotation that can be moved.
  *
  * ## THIS IS BOTH ROWS — place image AND stamps
@@ -2490,12 +2475,12 @@ export const MAX_IMAGE_PAGES = 4096;
  */
 export const placeImageSchema = z.object({
   kind: z.literal('placeImage'),
-  /** Zero-based indices of the pages it goes on. Order carries no meaning. */
-  pages: z
-    .array(z.number().int().nonnegative())
-    .min(1)
-    .max(MAX_IMAGE_PAGES)
-    .readonly(),
+  /**
+   * The pages it goes on, as a page set (`pageSet.ts`): *every page* is one run at any length. As a list bounded at
+   * 4,096 indices it failed for a document past 4,096 pages (JOURNAL, *No document-size refusals*). A page
+   * named twice is refused by the engine, as before.
+   */
+  pages: pageSetSchema,
   /** The box it occupies on every one of them, in PDF user space. */
   rect: annotationRectSchema,
   /**
@@ -3841,9 +3826,9 @@ export const MAX_WORKBOOK_ROW = 1_048_576;
 /** A sheet name as a file may spell it: Excel's own limit is 31, and a file past it is still read, to this bound. */
 export const MAX_WORKBOOK_SHEET_NAME = 255;
 /**
- * Parts one workbook import converts and joins (decision C). A part is at most x2t's 1,500 pages and is only halved when
- * it reaches that, so this bounds an import at over a million pages — past any workbook, and a stop for a crafted one
- * that halves forever.
+ * Part PDFs ONE JOIN takes (decision C): the compose host's `engine/join-pdfs` list. It bounded a whole workbook import
+ * until 2026-10-02, and a workbook of 1,025 visible sheets was refused at it (JOURNAL, *No document-size refusals*, table
+ * A row 12); main now joins more parts in stages of this many, so it bounds a request, never a workbook.
  */
 export const MAX_WORKBOOK_PARTS = 1024;
 
@@ -4204,40 +4189,73 @@ export const createFormFieldSchema = z.object({
 }).strict();
 
 /**
- * How many characters one replaced text run may carry.
+ * How many text objects one edit may name — a PAGE's runs, written once for both text edits
+ * ([ADR-0142](../../../docs/DECISIONS/0142-a-text-edit-carries-one-list-of-objects-and-one-text.md)).
  *
- * {@link MAX_FIELD_VALUE}'s number and, deliberately, not its argument — two
- * bounds that happen to agree are not one bound.
- * This one bounds **a page object's string**, and the reasoning is the
- * document's rather than a person's typing: a PDF text object is one show
- * operation's worth of glyphs, and a page's whole text is what `MAX_PAGE_TEXT`
- * bounds on the read side. Generous past any run a producer emits, and far
- * short of a payload that could carry a page.
+ * Above the PDFium host's bound on a page's runs (43,400, `ENGINE_TEXT_OBJECTS_MAX`), so a surface that offers a
+ * person everything a page read answered can send all of it as one command — `MAX_CREATED_FIELDS`' relationship to
+ * `MAX_FLAT_FIELD_CANDIDATES`. It was 512 per line, which a dense page's read could pass.
+ *
+ * Document-wide replace-all is not this command with a longer list: a payload carrying every occurrence in a document
+ * scales with the document, which the *mutations are commands* rule refuses whatever number sits here.
  */
-export const MAX_REPLACED_TEXT = 4096;
+export const MAX_EDIT_RUNS = 65_536;
 
 /**
- * How many of one page's text objects a single replacement command may name.
+ * How many characters one edit's text may carry — every run's, or every block's, words together (ADR-0142).
  *
- * ## The number is a PAGE's worth, and the page read is what fixes it
- *
- * `MAX_CREATED_FIELDS`' relationship to `MAX_FLAT_FIELD_CANDIDATES`, one row
- * along: a surface that offers a person everything a page read answered, and
- * then sends what they accepted as one command, must be able to send all of it
- * — so a read bound larger than this one would offer an accept that cannot be
- * dispatched. `MAX_TEXT_OBJECTS` is therefore **derived from this**, in
- * `channels.ts`, rather than written as the same digit twice.
- *
- * ## What it is NOT a bound on, stated because the row above needs one
- *
- * Document-wide replace-all is not this command with a longer list. A payload
- * carrying every occurrence in a document scales with the document, which the
- * *mutations are commands* rule refuses whatever number sits here — that row
- * carries the find and replace strings and lets the engine find the
- * occurrences. This bound is a page's, and raising it would not make the other
- * shape legal.
+ * A page's text with room: the densest page measured, a 12 × 70 table at 6pt, is a few thousand characters. A block
+ * or a run is bounded only by this, so a translated paragraph past the 4,096 a single text once had is written rather
+ * than refused (JOURNAL, *No document-size refusals*, table A row 10). With {@link MAX_EDIT_RUNS} it keeps both edits
+ * under the 8 MiB file a PDFium command crosses in, at their worst (`hostRoutes.test.ts`).
  */
-export const MAX_TEXT_REPLACEMENTS = 512;
+export const MAX_EDIT_TEXT = 786_432;
+
+/** The highest object index an edit may name, in the page-object walk's numbering: a page of 16 million objects. */
+export const MAX_OBJECT_INDEX = 16_777_215;
+
+const objectIndexSchema = z.number().int().min(0).max(MAX_OBJECT_INDEX);
+
+/** Where an entry begins in a list or a text: the first at 0, each at or after the one before. */
+function startsAscendFrom0(starts: readonly number[]): boolean {
+  return starts[0] === 0 && starts.every((start, at) => at === 0 || start >= (starts[at - 1] ?? 0));
+}
+
+/** One object and what it should say: what an edit names before it is put in its wire form. */
+export interface TextReplacement {
+  readonly index: number;
+  readonly text: string;
+}
+
+/**
+ * Replacements in `replaceTextObject`'s wire form — the ONE place they are flattened (B3a), and {@link replacementsOf}
+ * is its inverse.
+ */
+export function replacementFieldsOf(replacements: readonly TextReplacement[]): {
+  readonly objects: number[];
+  readonly text: string;
+  readonly starts: number[];
+} {
+  const starts: number[] = [];
+  let text = '';
+  for (const replacement of replacements) {
+    starts.push(text.length);
+    text += replacement.text;
+  }
+  return { objects: replacements.map((replacement) => replacement.index), text, starts };
+}
+
+/** A `replaceTextObject`'s replacements again, for the writer — {@link replacementFieldsOf}'s inverse. */
+export function replacementsOf(command: {
+  readonly objects: readonly number[];
+  readonly text: string;
+  readonly starts: readonly number[];
+}): TextReplacement[] {
+  return command.objects.map((index, at) => ({
+    index,
+    text: command.text.slice(command.starts[at] ?? 0, command.starts[at + 1] ?? command.text.length),
+  }));
+}
 
 /**
  * Replaces the text of one or more text objects on one page — **in-place text
@@ -4291,64 +4309,46 @@ export const MAX_TEXT_REPLACEMENTS = 512;
 export const replaceTextObjectSchema = z
   .object({
     kind: z.literal('replaceTextObject'),
-    /** Zero-based index of the page the objects sit on. */
+    /**
+     * Zero-based index of the page the objects sit on. Shared, `createFormField`'s reason: *these objects, on this
+     * page* is what the request means, and a per-entry page would make the regeneration cost per page again.
+     */
     page: z.number().int().nonnegative(),
     /**
-     * What each named object should say, in the page-object walk's numbering.
-     *
-     * The page is shared, `createFormField`'s reason: *these objects, on this
-     * page* is what the request means, and a per-entry page would be a
-     * different feature — one whose regeneration cost is per page again, which
-     * is the whole thing this shape exists to pay once.
+     * The objects, in the page-object walk's numbering — ONE list, and ONE text with where each object's words begin
+     * in it (ADR-0142), so the bound is in the shape: built by {@link replacementFieldsOf}, read by
+     * {@link replacementsOf}. An object's words may be empty, which clears its text.
      */
-    replacements: z
-      .array(
-        z
-          .object({
-            /** Its position in the page-object walk that produced the answer this names. */
-            index: z.number().int().nonnegative(),
-            /** What it should say. Empty is legal: it clears the run's text. */
-            text: z.string().max(MAX_REPLACED_TEXT),
-          })
-          // `.strict()`, as every nested object in this file is. It is the shape
-          // that refuses a per-entry `page` rather than dropping it silently —
-          // and a caller who sent one believing it honoured would have written a
-          // command whose cost model is not the one this shape promises.
-          .strict(),
-      )
-      .min(1)
-      .max(MAX_TEXT_REPLACEMENTS),
+    objects: z.array(objectIndexSchema).min(1).max(MAX_EDIT_RUNS),
+    text: z.string().max(MAX_EDIT_TEXT),
+    starts: z.array(z.number().int().min(0).max(MAX_EDIT_TEXT)).min(1).max(MAX_EDIT_RUNS),
     /** The version that answer carried. Refused if the document has moved. */
     version: docVersionSchema,
   })
   .strict()
+  .refine((command) => new Set(command.objects).size === command.objects.length, {
+    message: 'names one text object more than once',
+    path: ['objects'],
+  })
   .refine(
     (command) =>
-      new Set(command.replacements.map((replacement) => replacement.index)).size ===
-      command.replacements.length,
-    { message: 'names one text object more than once', path: ['replacements'] },
+      command.starts.length === command.objects.length &&
+      startsAscendFrom0(command.starts) &&
+      (command.starts.at(-1) ?? 0) <= command.text.length,
+    { message: 'each object’s words begin at or after the one before, from 0, inside the text', path: ['starts'] },
   );
 
 /**
  * How many of one page's objects a recolour or a removal may name.
  *
- * **DERIVED, and this one survived finding W-1 where its two neighbours did
- * not.** The audit of `63f10be..258a9ce` unpicked `MAX_TEXT_OBJECTS` and
- * `MAX_QUERY_LENGTH` from their sources, on the rule `MAX_REPLACED_TEXT` states
- * a few lines up: two bounds that happen to agree are not one bound.
+ * **DERIVED**, where two bounds that merely agree are not one bound: {@link MAX_EDIT_RUNS} answers *how many of a
+ * page's objects may one command name*, and so does this — the commands differ in what they do to the objects, not in
+ * how many of a page they may name. A literal here would be a second answer to one question.
  *
- * This is the case that rule does not reach, and the difference is the
- * QUESTION rather than the number. `MAX_TEXT_REPLACEMENTS` answers *how many of
- * a page's objects may one command name*, and so does this — the two commands
- * differ in what they do to the objects, not in how many of a page they may
- * name. A literal here would be a second answer to one question, which is the
- * copy CLAUDE.md's rule is actually about.
- *
- * The test that separates them: could the two numbers ever correctly differ? For
- * a payload bound and a chooser's usability bound, yes. For two payload bounds
- * over the same page, no.
+ * The test that separates them: could the two numbers ever correctly differ? For a payload bound and a chooser's
+ * usability bound, yes. For two payload bounds over the same page, no.
  */
-export const MAX_EDITED_OBJECTS = MAX_TEXT_REPLACEMENTS;
+export const MAX_EDITED_OBJECTS = MAX_EDIT_RUNS;
 
 /**
  * The largest and smallest a scale factor may be.
@@ -4444,7 +4444,7 @@ export const recolorPageObjectsSchema = z.object({
   kind: z.literal('recolorPageObjects'),
   page: z.number().int().nonnegative(),
   /** The objects to recolour, in the engine's own numbering. */
-  indices: z.array(z.number().int().nonnegative()).min(1).max(MAX_EDITED_OBJECTS),
+  indices: z.array(objectIndexSchema).min(1).max(MAX_EDITED_OBJECTS),
   /** The colour they should all take. Channels are 0–255, as PDFium stores them. */
   colour: z
     .object({
@@ -4480,7 +4480,7 @@ export const deletePageObjectsSchema = z.object({
   kind: z.literal('deletePageObjects'),
   page: z.number().int().nonnegative(),
   /** The objects to remove, in the engine's own numbering. */
-  indices: z.array(z.number().int().nonnegative()).min(1).max(MAX_EDITED_OBJECTS),
+  indices: z.array(objectIndexSchema).min(1).max(MAX_EDITED_OBJECTS),
   version: docVersionSchema,
 }).strict();
 
@@ -4609,28 +4609,91 @@ export const replaceAllTextSchema = z.object({
   regex: z.boolean().optional(),
 }).strict();
 
-/**
- * How many lines a block edit may name, and how many a person may type into one.
- *
- * `MAX_TEXT_OBJECTS`' figure: a block is a piece of a page, and the densest page
- * this build has measured — a 12×70 table at 6pt — has 840 lines as
- * `document.pageTextLayer` counts them, most of them single cells that the
- * block grouping keeps apart. A block of 512 lines is a page of prose set at
- * under two points.
- */
-export const MAX_BLOCK_LINES = 512;
-
-/**
- * How many blocks one edit may carry — a whole page's, for a translation (ADR-0097).
- *
- * The same densest page: 840 lines, most of them single cells the grouping keeps apart as blocks
- * of their own. 1,024 covers it, and each block's text is still bounded by `MAX_REPLACED_TEXT`, so
- * the payload is a page's words, never a document's.
- */
-export const MAX_EDIT_BLOCKS = 1024;
-
 /** How a block edit takes words that no longer fit its box (ADR-0097 4b). */
 export const TEXT_FIT_MODES = ['reflow', 'shrink'] as const;
+
+/** One block as an edit names it before it is put in its wire form: its lines' runs, and its words after the edit. */
+export interface EditedBlock {
+  readonly lines: readonly (readonly number[])[];
+  readonly text: string;
+}
+
+/**
+ * Blocks in their wire form — every run in ONE list, every block's words in ONE text, and where each line, block and
+ * block's words begin (ADR-0142). Shared by `editTextBlock` and `ai.translatePage`'s answer, so the shape that crosses
+ * from the translation is the one the command carries.
+ *
+ * Every number is bounded by {@link MAX_EDIT_RUNS} or {@link MAX_EDIT_TEXT}, so the walk reads a sum: a line holds a
+ * run, a block a line, so none of the three lists is longer than `runs`.
+ */
+export const blockEditSchema = z
+  .object({
+    /** Every run every block names: blocks in order, lines in order, runs in reading order. */
+    runs: z.array(objectIndexSchema).min(1).max(MAX_EDIT_RUNS),
+    /** Where each line begins in `runs`. */
+    lineStarts: z.array(z.number().int().min(0).max(MAX_EDIT_RUNS)).min(1).max(MAX_EDIT_RUNS),
+    /** Where each block begins in `lineStarts`. */
+    blockStarts: z.array(z.number().int().min(0).max(MAX_EDIT_RUNS)).min(1).max(MAX_EDIT_RUNS),
+    /** Every block's words after the edit, each block's lines separated by line breaks, blocks joined. */
+    text: z.string().max(MAX_EDIT_TEXT),
+    /** Where each block's words begin in `text`. */
+    textStarts: z.array(z.number().int().min(0).max(MAX_EDIT_TEXT)).min(1).max(MAX_EDIT_RUNS),
+  })
+  .strict();
+
+/** See {@link blockEditSchema}. */
+export type BlockEdit = z.infer<typeof blockEditSchema>;
+
+/**
+ * Whether a block edit's starts describe its lists: each ascending from 0, every line holding a run and every block a
+ * line, one text start per block inside the text, and every run named once — a run in two lines or two blocks would be
+ * written twice. Order and agreement only; no size depends on them.
+ */
+export function blockEditAgrees(edit: BlockEdit): boolean {
+  const { runs, lineStarts, blockStarts, text, textStarts } = edit;
+  const strictlyInside = (starts: readonly number[], length: number): boolean =>
+    startsAscendFrom0(starts) && starts.every((start, at) => start < (starts[at + 1] ?? length));
+  return (
+    strictlyInside(lineStarts, runs.length) &&
+    strictlyInside(blockStarts, lineStarts.length) &&
+    textStarts.length === blockStarts.length &&
+    startsAscendFrom0(textStarts) &&
+    (textStarts.at(-1) ?? 0) <= text.length &&
+    new Set(runs).size === runs.length
+  );
+}
+
+/** Blocks in their wire form — the ONE place they are flattened (B3a); {@link blocksOfEdit} is its inverse. */
+export function blockEditOf(blocks: readonly EditedBlock[]): BlockEdit {
+  const runs: number[] = [];
+  const lineStarts: number[] = [];
+  const blockStarts: number[] = [];
+  const textStarts: number[] = [];
+  let text = '';
+  for (const block of blocks) {
+    blockStarts.push(lineStarts.length);
+    textStarts.push(text.length);
+    text += block.text;
+    for (const line of block.lines) {
+      lineStarts.push(runs.length);
+      runs.push(...line);
+    }
+  }
+  return { runs, lineStarts, blockStarts, text, textStarts };
+}
+
+/** The blocks again, for the writer that lays them out — {@link blockEditOf}'s inverse. */
+export function blocksOfEdit(edit: BlockEdit): EditedBlock[] {
+  const lineOf = (line: number): number[] =>
+    edit.runs.slice(edit.lineStarts[line] ?? 0, edit.lineStarts[line + 1] ?? edit.runs.length);
+  return edit.blockStarts.map((first, block) => {
+    const end = edit.blockStarts[block + 1] ?? edit.lineStarts.length;
+    return {
+      lines: Array.from({ length: end - first }, (_, at) => lineOf(first + at)),
+      text: edit.text.slice(edit.textStarts[block] ?? 0, edit.textStarts[block + 1] ?? edit.text.length),
+    };
+  });
+}
 
 /**
  * Edit blocks of a page's text in place, reflowing what no longer fits
@@ -4671,44 +4734,26 @@ export const editTextBlockSchema = z
     /** Zero-based index of the page the blocks are on. */
     page: z.number().int().nonnegative(),
     /**
-     * The blocks this edit writes — one for a person typing, every block of the page for a
-     * translation (ADR-0097). One command, so one checkpoint and one undo either way.
+     * The blocks this edit writes — one for a person typing, every block of the page for a translation (ADR-0097).
+     * One command, so one checkpoint and one undo either way. In {@link blockEditSchema}'s wire form (ADR-0142): built
+     * by {@link blockEditOf}, read by {@link blocksOfEdit}.
      */
-    blocks: z
-      .array(
-        z
-          .object({
-            /** The block's lines, top to bottom, each its runs' indices in reading order. */
-            lines: z
-              .array(z.array(z.number().int().nonnegative()).min(1).max(MAX_TEXT_REPLACEMENTS))
-              .min(1)
-              .max(MAX_BLOCK_LINES),
-            /** The block's words after the edit, lines separated by line breaks. */
-            text: z.string().max(MAX_REPLACED_TEXT),
-            /**
-             * How the block takes words that no longer fit (ADR-0097 4b): `reflow` grows downward,
-             * which is what a person typing sees; `shrink` scales the block to the box it had,
-             * which is what a translation keeps. REQUIRED, so a caller cannot write a translation
-             * without deciding what happens to the page's layout.
-             */
-            fit: z.enum(TEXT_FIT_MODES),
-          })
-          .strict(),
-      )
-      .min(1)
-      .max(MAX_EDIT_BLOCKS)
-      // ACROSS BLOCKS, not only within one: a run in two blocks would be written twice.
-      .refine(
-        (blocks) => {
-          const named = blocks.flatMap((block) => block.lines.flat());
-          return new Set(named).size === named.length;
-        },
-        { message: 'an object may be named once in a block edit' },
-      ),
+    ...blockEditSchema.shape,
+    /**
+     * How the blocks take words that no longer fit (ADR-0097 4b): `reflow` grows downward, which is what a person
+     * typing sees; `shrink` scales each block to the box it had, which is what a translation keeps. ONE for the
+     * command, because no caller mixes them (ADR-0142), and REQUIRED, so a caller cannot write a translation without
+     * deciding what happens to the page's layout.
+     */
+    fit: z.enum(TEXT_FIT_MODES),
     /** The version the blocks were read at. Refused if the document has moved. */
     version: docVersionSchema,
   })
-  .strict();
+  .strict()
+  // ACROSS BLOCKS, not only within one: a run in two blocks would be written twice.
+  .refine((command) => blockEditAgrees(command), {
+    message: 'the starts must describe the lists, and an object may be named once in a block edit',
+  });
 
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,

@@ -6,6 +6,7 @@ import {
   SECTION_IDS,
   type MenuBarMenu,
   type MenuBarPlacement,
+  type MenuBarSubmenu,
   type MenuId,
   type MenuContext,
   type Placement,
@@ -544,16 +545,30 @@ function menuBarCommandsSlot(placement: Placement): MenuBarCommandsPlacement | u
 
 /** One menu item: its command, whether it can run in the context the bar was drawn in, and whether it is on. */
 export interface MenuBarItem {
+  readonly kind: 'command';
   readonly command: UiCommand;
   readonly enabled: boolean;
   /** `undefined` for a command that sets no state; otherwise its `checked` in this context. */
   readonly checked: boolean | undefined;
 }
 
+/**
+ * A submenu in an application menu ([ADR-0143](../../../../docs/DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md)):
+ * the row draws its own values first — File › Recent's files — then these commands, in `order`, after a separator.
+ */
+export interface MenuBarSubmenuEntry {
+  readonly kind: 'submenu';
+  readonly id: MenuBarSubmenu;
+  readonly items: readonly MenuBarItem[];
+}
+
+/** What a menu group holds: a command, or a submenu sitting where its first member falls. */
+export type MenuBarEntry = MenuBarItem | MenuBarSubmenuEntry;
+
 /** A run of items between separators, under its caption where it has one. */
 export interface MenuBarGroup {
   readonly caption: MessageKey | undefined;
-  readonly items: readonly MenuBarItem[];
+  readonly items: readonly MenuBarEntry[];
 }
 
 /** One menu on the bar: an application menu, or a ribbon section's. */
@@ -580,29 +595,52 @@ export { MENU_BAR_SECTIONS };
 export function menuBarModel(registry: CommandRegistry, context: CommandContext): readonly MenuBarMenuModel[] {
   const enabled = new Set(registry.available(context).map((command) => command.id));
   const item = (command: UiCommand): MenuBarItem => ({
+    kind: 'command',
     command,
     enabled: enabled.has(command.id),
     checked: command.checked?.(context),
   });
 
-  type Collected = Map<number, { caption: MessageKey | undefined; entries: OrderedEntry[] }>;
+  type Placed = OrderedEntry & { readonly submenu: MenuBarSubmenu | undefined };
+  type Collected = Map<number, { caption: MessageKey | undefined; entries: Placed[] }>;
   const application = new Map<MenuBarMenu, Collected>();
   for (const command of registry.all()) {
     for (const placement of command.placements) {
       const slot = menuBarSlot(placement);
       if (slot === undefined) continue;
-      const menu: Collected = application.get(slot.menu) ?? new Map<number, { caption: MessageKey | undefined; entries: OrderedEntry[] }>();
+      const menu: Collected = application.get(slot.menu) ?? new Map<number, { caption: MessageKey | undefined; entries: Placed[] }>();
       const group = menu.get(slot.group) ?? { caption: undefined, entries: [] };
       group.caption ??= slot.caption;
-      group.entries.push({ command, order: slot.order });
+      group.entries.push({ command, order: slot.order, submenu: slot.submenu });
       menu.set(slot.group, group);
       application.set(slot.menu, menu);
     }
   }
+  // IN ORDER, A SUBMENU WHERE ITS FIRST MEMBER FALLS (ADR-0143, ADR-0101's rule for a ribbon menu): the first member
+  // reached opens the submenu at that place, and every later one joins it there.
+  const placedInOrder = (entries: readonly Placed[]): MenuBarEntry[] => {
+    const drawn: MenuBarEntry[] = [];
+    const opened = new Map<MenuBarSubmenu, MenuBarItem[]>();
+    for (const entry of ordered(entries)) {
+      if (entry.submenu === undefined) {
+        drawn.push(item(entry.command));
+        continue;
+      }
+      const members = opened.get(entry.submenu);
+      if (members !== undefined) {
+        members.push(item(entry.command));
+        continue;
+      }
+      const first = [item(entry.command)];
+      opened.set(entry.submenu, first);
+      drawn.push({ kind: 'submenu', id: entry.submenu, items: first });
+    }
+    return drawn;
+  };
   const applicationGroups = (menu: MenuBarMenu): MenuBarGroup[] =>
     [...(application.get(menu) ?? [])]
       .sort(([left], [right]) => left - right)
-      .map(([, group]) => ({ caption: group.caption, items: ordered(group.entries).map((entry) => item(entry.command)) }));
+      .map(([, group]) => ({ caption: group.caption, items: placedInOrder(group.entries) }));
 
   const sections = new Map(sectionsOf(registry.all()).map((section) => [section.section, section.groups]));
   const sectionGroups = (section: SectionId): MenuBarGroup[] =>
@@ -620,6 +658,8 @@ export function menuBarModel(registry: CommandRegistry, context: CommandContext)
       .map((group) => ({
         caption: group.caption,
         items: group.items.filter((each) => {
+          // A SUBMENU IS ITS OWN PLACE, not a second listing of a command: it is kept whole.
+          if (each.kind === 'submenu') return true;
           if (seen.has(each.command.id)) return false;
           seen.add(each.command.id);
           return true;

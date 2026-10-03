@@ -29,7 +29,7 @@ import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { localMupdfWriter } from './localEngine.js';
 import type { RecognisedPage, RecognitionRequest } from './ocrRecognise.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
-import { applyAddAnnotation } from './pageAnnotations.js';
+import { applyAddAnnotation, readAnnotations } from './pageAnnotations.js';
 import { localPdfLibWriter } from './localEngine.js';
 import { shownOn } from './shownText.js';
 
@@ -85,9 +85,12 @@ function contextStub(acceptsImages = false): DocumentContext & {
   readonly mutableLog: CommandLog;
   /** Every checkpoint write the bus asked for, in order. */
   readonly written: () => readonly { readonly destination: string; readonly bytes: Checkpoint }[];
+  /** How many times the bus recorded a removal on the document. */
+  readonly removals: () => number;
 } {
   let version = asDocVersion(1);
   let bumps = 0;
+  let removals = 0;
   let trims = 0;
   let ceiling = Number.MAX_SAFE_INTEGER;
   const log = new CommandLog();
@@ -110,6 +113,13 @@ function contextStub(acceptsImages = false): DocumentContext & {
       version = asDocVersion(version + 1);
       return version;
     },
+    recordRemoval(_writer: CommandWriter): void {
+      removals += 1;
+    },
+    get removedSinceSave(): boolean {
+      return removals > 0;
+    },
+    removals: () => removals,
     commandLog(_writer: CommandWriter): CommandLog {
       return log;
     },
@@ -471,6 +481,50 @@ describe('CommandLog — a cursor, not a stack', () => {
     // "Nothing to undo" is what the UI asks constantly. Throwing would make
     // every caller wrap it.
     expect(log.entries).toStrictEqual([]);
+  });
+});
+
+/**
+ * ADR-0139: whether the next save keeps a backup is the DOCUMENT's fact, recorded by the bus from the declaration's
+ * `purpose` — never the engine session's mark, which a restore, an adopt or a host restart drops (the owner's review
+ * of 0.1.9.0: a redaction's save backed up the unredacted file).
+ */
+describe('CommandBus — a removal is recorded on the DOCUMENT', () => {
+  const sanitize: CommandOfKind<'sanitizeDocument'> = { kind: 'sanitizeDocument', parts: ['javascript'] };
+
+  it('a REMOVAL-purpose command records it on the document; CONTROL: an ordinary command records nothing', async () => {
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const removing = await mupdfWriter.open(flat);
+    const ordinary = await mupdfWriter.open(flat);
+    const removed = contextStub(true);
+    const rotated = contextStub(true);
+    try {
+      await bus.execute({ mupdf: removing }, removed, sanitize, showingInputs(removing));
+      await bus.execute({ mupdf: ordinary }, rotated, rotateFirst, noByteImageExpected);
+      expect([removed.removals(), removed.removedSinceSave]).toStrictEqual([1, true]);
+      expect([rotated.removals(), rotated.removedSinceSave]).toStrictEqual([0, false]);
+    } finally {
+      await mupdfWriter.close(removing);
+      await mupdfWriter.close(ordinary);
+    }
+  });
+
+  it('UNDO records nothing and REDO records it again: an undone removal still left the file holding what it removed', async () => {
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub(true);
+    const restoring = restoreStub();
+    try {
+      await bus.execute({ mupdf: session }, context, sanitize, showingInputs(session));
+      await bus.undo({ mupdf: session }, context, restoring.restore, showingInputs(session));
+      // THE UNDO RAN, as a checkpoint restore — the rebuild that dropped the session's mark — and recorded nothing.
+      expect(restoring.calls()).toHaveLength(1);
+      expect(context.removals()).toBe(1);
+      await bus.redo({ mupdf: session }, context, showingInputs(session));
+      expect(context.removals()).toBe(2);
+    } finally {
+      await mupdfWriter.close(session);
+    }
   });
 });
 
@@ -868,6 +922,54 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       // live session and present in the checkpoint.
       expect(await ownRotationIn(await readFile(entry.checkpoint.path))).toBe('/Landscape');
       expect(entry.checkpoint.byteLength).toBeGreaterThan(500);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  /**
+   * A plain signature (ADR-0133) is declared `undo: 'checkpoint'`, and `capturePlaceSignature`'s case asserts only that
+   * it answers *not captured*. This runs the undo: the bus restores the checkpoint it took, the host rebuilds from it,
+   * and the image main shows afterwards is read back for the mark. The image installed after the placement is the
+   * control — it carries the mark, so an undo that restored nothing, or the wrong bytes, leaves one there.
+   */
+  it('a PLAIN SIGNATURE is undone by an actual undo: the restored checkpoint, shown as main’s image, has no mark', async () => {
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub(true);
+    const marksIn = async (image: ByteImage | undefined): Promise<readonly number[]> => {
+      if (image === undefined) throw new Error('no image was installed');
+      const reading = await mupdfWriter.open(image);
+      try {
+        return (await readAnnotations(reading)).annotations.map((listed) => listed.page);
+      } finally {
+        await mupdfWriter.close(reading);
+      }
+    };
+    try {
+      const { entry } = await bus.execute(
+        { mupdf: session },
+        context,
+        {
+          kind: 'placeSignatureMark',
+          page: 1,
+          rect: { x0: 100, y0: 100, x1: 300, y1: 180 },
+          mark: { kind: 'typed', text: 'Grace Hopper', font: 'times-italic' },
+          stamp: { author: 'Priya Raman', created: '2026-10-02T09:00:00.000Z' },
+        },
+        showingInputs(session),
+      );
+      expect(entry.kind).toBe('terminal');
+      expect(await marksIn(context.images().at(-1))).toStrictEqual([1]);
+
+      // THE HOST HOLDS THE SIGNED DOCUMENT until the restore rebuilds it, so an undo that restored nothing shows the mark.
+      const host = hostModel(await mupdfWriter.serialise(session));
+      await bus.undo({ mupdf: session }, context, host.restore, { ...noByteImageExpected, current: host.current, currentInto: host.currentInto });
+
+      expect(context.images()).toHaveLength(2);
+      expect(await marksIn(context.images().at(-1))).toStrictEqual([]);
+      expect(await pagesIn(context.images().at(-1))).toBe(3);
+      expect(context.log.entries).toHaveLength(0);
     } finally {
       await mupdfWriter.close(session);
     }

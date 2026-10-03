@@ -9,7 +9,10 @@ import {
   type FormDataFormat,
   type FormDataImportFormat,
   type OptimizeSetting,
+  type PageSet,
   type SignaturePlacement,
+  blockEditOf,
+  pageSetOf,
   withPageRuns,
   withStamp,
 } from '@monstera/contract';
@@ -84,9 +87,10 @@ import { PAGE_TRANSITION_DIALOG_ID } from '../dialogs/pageTransition.js';
 import type { PageTransitionAnswer } from '../dialogs/pageTransitionResult.js';
 import { RESIZE_PAGES_DIALOG_ID } from '../dialogs/resizePages.js';
 import type { ResizePagesAnswer } from '../dialogs/resizePagesResult.js';
+import { KEPT_BACKUPS_DIALOG_ID } from '../dialogs/keptBackups.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { SIGNATURE_BREAK_DIALOG_ID, SIGNATURE_BREAK_RESULT } from '../dialogs/signatureBreak.js';
-import { STALE_COPIES_DIALOG_ID, STALE_COPIES_RESULT } from '../dialogs/staleCopies.js';
+import type { PendingRedactionOccasion } from '../dialogs/pendingRedactions.js';
 import { WATERMARK_PAGES_DIALOG_ID } from '../dialogs/watermarkPages.js';
 import type { WatermarkPagesAnswer } from '../dialogs/watermarkPagesResult.js';
 import {
@@ -232,10 +236,13 @@ import {
   TOAST_DOCUMENT_SIGNED,
   TOAST_SENT_TO_PRINTER,
   TOAST_TRANSITION_SET,
+  TOAST_FORM_DATA_IMPORTED,
+  TOAST_PROTECTION_SET,
   TOAST_TEXT_SAVED,
   TOAST_WORD_SAVED,
   TOAST_SAVED,
-  TOAST_STALE_COPIES_DELETED,
+  TOAST_SAVED_CLEARED,
+  TOAST_SAVED_CLEARED_BACKUPS,
   TOAST_SMALLER_COPY_SAVED,
   UNDO_TITLE,
   REDO_TITLE,
@@ -244,11 +251,12 @@ import {
   ZOOM_OUT_TITLE,
 } from '../messages/en.js';
 import type { IconName } from '../primitives/icons.js';
-import { type CommandContext, targetPages, type UiCommand } from '../registries/commands.js';
+import { type CommandContext, RESULT_DIALOG, targetPages, TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
 import type { Placement } from '../registries/placement.js';
 import { DOCUMENT_PANEL_OPEN_SETTING, DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import type { ShowToast } from '../toasts.js';
+import { readWholeList } from '../readWholeList.js';
 import { confirmDone, confirmWritten } from './confirmWritten.js';
 import type { ZoomDirection, ZoomMode } from '../zoom.js';
 
@@ -365,6 +373,18 @@ export interface DocumentCommandDeps {
  */
 export interface RecognisesFirst {
   readonly recogniseFirst: (docId: DocId, pageCount: number) => Promise<RecognisedWalk | undefined>;
+}
+
+/**
+ * What a command that carries the document OUT needs: the question about redaction marks nobody has applied, asked
+ * first (the owner's item N1). Saving, exporting, printing and sending take it; `pendingRedactions.ts` owns the
+ * question and `App.tsx` composes it, for {@link RecognisesFirst}'s reason — that module imports this one.
+ *
+ * Answers whether the command may go ahead: `false` after Cancel, or after an *Apply* main refused, and the command
+ * then writes nothing. Asked BEFORE the command's own dialog, so a person who stops here has chosen nothing they lose.
+ */
+export interface SettlesMarksFirst {
+  readonly settleMarks: (docId: DocId, occasion: PendingRedactionOccasion) => Promise<boolean>;
 }
 
 /**
@@ -647,19 +667,17 @@ export async function snapshotRegion(
  * happened and something must be placed; `'all'` with no count is not *no
  * pages*, and it is certainly not a guess at how many there are.
  */
-export function imagePagesFor(
-  choice: 'this' | 'all',
-  page: number,
-  pageCount: number | undefined,
-): readonly number[] {
+export function imagePagesFor(choice: 'this' | 'all', page: number, pageCount: number | undefined): PageSet {
   if (choice === 'this' || pageCount === undefined) return [page];
-  return Array.from({ length: pageCount }, (_unused, index) => index);
+  // EVERY PAGE AS ONE RUN, never a list of every index: a list met the 4,096 cap (JOURNAL, *No document-size
+  // refusals*), and a run is one entry at any length.
+  return pageCount === 1 ? [0] : [[0, pageCount - 1]];
 }
 
 export async function placeImage(
   deps: Pick<DocumentCommandDeps, 'ask' | 'client' | 'onApplied' | 'stamp'>,
   docId: DocId,
-  pages: readonly number[],
+  pages: PageSet,
   rect: AnnotationRect,
   /**
    * A kept stamp picture's library id, or `undefined` for the file picker. REQUIRED and `| undefined`, so a caller
@@ -795,6 +813,7 @@ export async function placeImage(
 export function zoomCommand(direction: 'in' | 'out', deps: StepDeps): UiCommand {
   return {
     id: direction === 'in' ? 'view.zoom-in' : 'view.zoom-out',
+    feedback: VISIBLE,
     icon: direction === 'in' ? 'ZoomIn' : 'ZoomOut',
     title: direction === 'in' ? ZOOM_IN_TITLE : ZOOM_OUT_TITLE,
     shortcut: direction === 'in' ? 'Ctrl+=' : 'Ctrl+-',
@@ -844,6 +863,7 @@ export function fitCommand(fit: 'width' | 'page', deps: ZoomDeps): UiCommand {
   const mode: ZoomMode = fit === 'width' ? { kind: 'fit-width' } : { kind: 'fit-page' };
   return {
     id: fit === 'width' ? 'view.fit-width' : 'view.fit-page',
+    feedback: VISIBLE,
     icon: fit === 'width' ? 'MoveHorizontal' : 'Maximize',
     title: fit === 'width' ? FIT_WIDTH_TITLE : FIT_PAGE_TITLE,
     shortcut: fit === 'width' ? 'Ctrl+1' : 'Ctrl+0',
@@ -878,7 +898,9 @@ export function actualSizeCommand(deps: ZoomDeps): UiCommand {
   const mode: ZoomMode = { kind: 'scale', scale: 1 };
   return {
     id: 'view.actual-size',
+    feedback: VISIBLE,
     title: ACTUAL_SIZE_TITLE,
+    icon: 'Scan',
     placements: [{ surface: 'menu-bar', menu: 'view', group: 2, order: 30, caption: MENU_GROUP_ZOOM }],
     when: hasDocument,
     run: (): void => {
@@ -911,6 +933,7 @@ export function showPanelCommand(deps: { readonly settings: SettingsStore }, pan
   const shown = SHOWN_PANELS[panel];
   return {
     id: shown.id,
+    feedback: VISIBLE,
     icon: shown.icon,
     title: shown.title,
     placements: [
@@ -986,6 +1009,7 @@ export function movePageCommand(deps: DocumentCommandDeps, direction: 'earlier' 
   const earlier = direction === 'earlier';
   return {
     id: earlier ? 'document.move-page-earlier' : 'document.move-page-later',
+    feedback: VISIBLE,
     icon: earlier ? 'MoveUp' : 'MoveDown',
     title: earlier ? MOVE_PAGE_EARLIER_TITLE : MOVE_PAGE_LATER_TITLE,
     // LAST IN THE GROUP, because these two come and go as the page on show reaches an end: at the
@@ -1009,6 +1033,7 @@ export function movePageCommand(deps: DocumentCommandDeps, direction: 'earlier' 
 export function findCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'document.find',
+    feedback: VISIBLE,
     icon: 'Search',
     title: FIND_TITLE,
     shortcut: 'Ctrl+F',
@@ -1086,6 +1111,7 @@ export function rotatePageCommand(
   const { id, title, icon, order } = spec;
   return {
     id,
+    feedback: VISIBLE,
     title,
     // ONE OF THE THREE HAS NO SHORT FORM, so this reads it off the table rather
     // than spelling it — `in` narrows where a property access on the union does
@@ -1150,6 +1176,7 @@ export function rotatePageCommand(
 export function insertBlankPageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.insert-blank-page',
+    feedback: VISIBLE,
     icon: 'FilePlus',
     title: INSERT_BLANK_PAGE_TITLE,
     ribbonTitle: RIBBON_INSERT_BLANK,
@@ -1183,6 +1210,7 @@ export function insertBlankPageCommand(deps: DocumentCommandDeps): UiCommand {
 export function duplicatePageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.duplicate-page',
+    feedback: VISIBLE,
     icon: 'CopyPlus',
     title: DUPLICATE_PAGE_TITLE,
     placements: [
@@ -1231,6 +1259,7 @@ export function duplicatePageCommand(deps: DocumentCommandDeps): UiCommand {
 export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.delete-page',
+    feedback: VISIBLE,
     icon: 'FileMinus',
     title: DELETE_PAGE_TITLE,
     placements: [
@@ -1280,6 +1309,7 @@ export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
 export function deletePagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.delete-pages',
+    feedback: VISIBLE,
     icon: 'Trash2',
     title: DELETE_PAGES_COMMAND_TITLE,
     placements: [
@@ -1324,6 +1354,7 @@ export function deletePagesCommand(deps: DocumentCommandDeps): UiCommand {
 export function cropPagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.crop-pages',
+    feedback: VISIBLE,
     icon: 'Crop',
     title: CROP_PAGES_COMMAND_TITLE,
     placements: [
@@ -1381,6 +1412,7 @@ export function cropPagesCommand(deps: DocumentCommandDeps): UiCommand {
 export function headerFooterCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.header-footer',
+    feedback: VISIBLE,
     icon: 'PanelTop',
     title: HEADER_FOOTER_COMMAND_TITLE,
     ribbonTitle: RIBBON_HEADER_FOOTER,
@@ -1419,6 +1451,7 @@ export function headerFooterCommand(deps: DocumentCommandDeps): UiCommand {
 export function batesNumberCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.bates-number',
+    feedback: VISIBLE,
     icon: 'Hash',
     title: BATES_NUMBER_COMMAND_TITLE,
     placements: [
@@ -1460,6 +1493,8 @@ export function batesNumberCommand(deps: DocumentCommandDeps): UiCommand {
 export function pageTransitionCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.page-transition',
+    // A TRANSITION PLAYS ONLY WHEN THE DOCUMENT IS PRESENTED, so nothing on the page shows it was set.
+    feedback: TOASTS,
     icon: 'Presentation',
     title: PAGE_TRANSITION_COMMAND_TITLE,
     ribbonTitle: RIBBON_PAGE_TRANSITION,
@@ -1497,6 +1532,7 @@ export function pageTransitionCommand(deps: DocumentCommandDeps & WritesAFile): 
 export function resizePagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.resize-pages',
+    feedback: VISIBLE,
     icon: 'Scaling',
     title: RESIZE_PAGES_COMMAND_TITLE,
     placements: [
@@ -1544,6 +1580,7 @@ export function resizePagesCommand(deps: DocumentCommandDeps): UiCommand {
 export function deskewPagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.deskew-pages',
+    feedback: VISIBLE,
     icon: 'RotateCwSquare',
     title: DESKEW_PAGES_COMMAND_TITLE,
     ribbonTitle: RIBBON_DESKEW,
@@ -1582,6 +1619,7 @@ export function deskewPagesCommand(deps: DocumentCommandDeps): UiCommand {
 export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.insert-image',
+    feedback: VISIBLE,
     icon: 'ImagePlus',
     title: INSERT_IMAGE_COMMAND_TITLE,
     placements: [
@@ -1666,6 +1704,7 @@ export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
 export function generateTocCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.generate-toc',
+    feedback: VISIBLE,
     icon: 'ListOrdered',
     title: GENERATE_TOC_COMMAND_TITLE,
     ribbonTitle: RIBBON_GENERATE_TOC,
@@ -1722,6 +1761,7 @@ export function generateTocCommand(deps: DocumentCommandDeps): UiCommand {
 export function mergeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.merge',
+    feedback: VISIBLE,
     icon: 'Merge',
     title: MERGE_DOCUMENT_COMMAND_TITLE,
     ribbonTitle: RIBBON_MERGE,
@@ -1785,6 +1825,7 @@ export function mergeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
 export function insertFromPdfCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.insert-from-pdf',
+    feedback: VISIBLE,
     icon: 'FileInput',
     title: INSERT_FROM_PDF_COMMAND_TITLE,
     ribbonTitle: RIBBON_INSERT_FROM_PDF,
@@ -1843,6 +1884,7 @@ export function insertFromPdfCommand(deps: DocumentCommandDeps): UiCommand {
 export function replacePageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.replace-page',
+    feedback: VISIBLE,
     icon: 'Replace',
     title: REPLACE_PAGE_COMMAND_TITLE,
     placements: [
@@ -1899,6 +1941,7 @@ export function replacePageCommand(deps: DocumentCommandDeps): UiCommand {
 export function importPageAsLayerCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.import-page-as-layer',
+    feedback: VISIBLE,
     icon: 'Layers',
     title: IMPORT_PAGE_AS_LAYER_COMMAND_TITLE,
     ribbonTitle: RIBBON_IMPORT_LAYER,
@@ -1949,6 +1992,7 @@ export function importPageAsLayerCommand(deps: DocumentCommandDeps): UiCommand {
 export function pageBackgroundCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.page-background',
+    feedback: VISIBLE,
     icon: 'PaintBucket',
     title: PAGE_BACKGROUND_COMMAND_TITLE,
     ribbonTitle: RIBBON_PAGE_BACKGROUND,
@@ -1982,6 +2026,7 @@ const DEFAULT_PAGE_BACKGROUND = { red: 0.98, green: 0.97, blue: 0.94 } as const;
 export function watermarkPagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.watermark-pages',
+    feedback: VISIBLE,
     icon: 'Droplet',
     title: WATERMARK_PAGES_COMMAND_TITLE,
     placements: [
@@ -2032,6 +2077,7 @@ export function watermarkPagesCommand(deps: DocumentCommandDeps): UiCommand {
 export function findDuplicatePagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.find-duplicate-pages',
+    feedback: RESULT_DIALOG,
     icon: 'CopyCheck',
     title: FIND_DUPLICATES_COMMAND_TITLE,
     ribbonTitle: RIBBON_FIND_DUPLICATES,
@@ -2076,6 +2122,7 @@ export function findDuplicatePagesCommand(deps: DocumentCommandDeps): UiCommand 
 export function undoCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.undo',
+    feedback: VISIBLE,
     icon: 'Undo2',
     title: UNDO_TITLE,
     shortcut: 'Ctrl+Z',
@@ -2112,6 +2159,7 @@ export function undoCommand(deps: DocumentCommandDeps): UiCommand {
 export function redoCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.redo',
+    feedback: VISIBLE,
     icon: 'Redo2',
     title: REDO_TITLE,
     shortcut: 'Ctrl+Y',
@@ -2184,9 +2232,11 @@ export function saveCommand(deps: {
    * it knows the id — which is the same place `openWith` validates the props.
    */
   readonly ask: (id: string, props: unknown) => Promise<unknown>;
-} & WritesItsOwnFile): UiCommand {
+} & WritesItsOwnFile &
+  SettlesMarksFirst): UiCommand {
   return {
     id: 'document.save',
+    feedback: TOASTS,
     icon: 'Save',
     title: SAVE_TITLE,
     shortcut: 'Ctrl+S',
@@ -2197,9 +2247,26 @@ export function saveCommand(deps: {
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
-      await saveDocument(deps, context.docId, 'attended');
+      await saveAttended(deps, context.docId);
     },
   };
+}
+
+/**
+ * A save a PERSON asked for: the unapplied-marks question first, then the one save.
+ *
+ * The Save command and the close path's *Save* answer, and only those — autosave is unattended and saves marks as the
+ * marks they are, since a timer has nobody to ask and a mark is preserved, never dropped. Outside `saveDocument`
+ * because that is autosave's save too, and its parameter list would otherwise carry a question it can never ask.
+ *
+ * @returns `true` only when the file now holds the document; `false` after Cancel, as after any save that did not land.
+ */
+export async function saveAttended(
+  deps: Parameters<typeof saveDocument>[0] & SettlesMarksFirst,
+  docId: DocId,
+): Promise<boolean> {
+  if (!(await deps.settleMarks(docId, 'save'))) return false;
+  return saveDocument(deps, docId, 'attended');
 }
 
 /**
@@ -2217,6 +2284,7 @@ export function closeTabCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.close-tab',
+    feedback: VISIBLE,
     icon: 'X',
     title: CLOSE_TAB_TITLE,
     shortcut: 'Ctrl+W',
@@ -2259,6 +2327,7 @@ export function openSideBySideCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.open-side-by-side',
+    feedback: VISIBLE,
     title: OPEN_SIDE_BY_SIDE_TITLE,
     placements: [{ surface: 'context-menu', context: 'tab', order: 30 }],
     when: (context) => context.docId !== undefined && context.docId !== deps.focused(),
@@ -2285,6 +2354,7 @@ export function closeOthersCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.close-others',
+    feedback: VISIBLE,
     icon: 'X',
     title: CLOSE_OTHERS_TITLE,
     placements: [
@@ -2348,12 +2418,20 @@ export async function saveDocument(
     // durable report; the toast is the one that leaves. If only one of them could land, the
     // person must be left with the one still on screen a minute later.
     deps.onSaved(docId, answer.value.version);
-    deps.toast('done', TOAST_SAVED);
-    // A REMOVAL'S SAVE kept no backup, and says what older copies may still hold what was removed: every one is listed
-    // and a person decides. Never asked of a timer, whose save simply leaves them for the next one a person makes.
-    const stale = answer.value.staleCopies;
-    if (attendance === 'attended' && stale !== null && (stale.backups.length > 0 || stale.undoCopies > 0)) {
-      await deleteStaleCopies(deps, docId, stale);
+    // A REMOVAL'S SAVE deleted, unasked, the older copies Monstera made that held what was removed (ADR-0139), and the
+    // confirmation says so. A file named like a backup that Monstera did not make was kept: named to a person, never
+    // from a timer, whose save has nobody to tell.
+    const cleared = answer.value.cleared;
+    deps.toast(
+      'done',
+      cleared === null || cleared.backups + cleared.undoCopies === 0
+        ? TOAST_SAVED
+        : cleared.undoCopies > 0
+          ? TOAST_SAVED_CLEARED
+          : TOAST_SAVED_CLEARED_BACKUPS,
+    );
+    if (attendance === 'attended' && cleared !== null && cleared.kept.length > 0) {
+      await deps.ask(KEPT_BACKUPS_DIALOG_ID, { kept: cleared.kept });
     }
     return true;
   }
@@ -2368,25 +2446,6 @@ export async function saveDocument(
     outcome: answer.value.kind === 'write-failed' ? 'write-failed' : answer.value.reason,
   });
   return false;
-}
-
-/**
- * Asks whether to delete the older copies a removal's save left — listing each — and deletes exactly those, telling
- * the person how many went. The names sent are the ones shown; main deletes only this file's own backups among them.
- */
-async function deleteStaleCopies(
-  deps: { readonly client: ContractClient; readonly ask: (id: string, props: unknown) => Promise<unknown> } & WritesItsOwnFile,
-  docId: DocId,
-  stale: { readonly backups: readonly string[]; readonly undoCopies: number },
-): Promise<void> {
-  const confirmed = STALE_COPIES_RESULT.safeParse(await deps.ask(STALE_COPIES_DIALOG_ID, stale));
-  if (!confirmed.success) return;
-  const deleted = await deps.client['document.deleteStaleCopies']({ docId, backups: [...stale.backups] });
-  if (!deleted.ok) {
-    reportProblem(deps, deleted.error);
-    return;
-  }
-  deps.toast('done', TOAST_STALE_COPIES_DELETED);
 }
 
 /**
@@ -2434,9 +2493,10 @@ async function deleteStaleCopies(
  * yet, and asking for the file first would mean a dismissal of the second
  * dialog discarded a choice the user had already made.
  */
-export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
+export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst): UiCommand {
   return {
     id: 'document.extract-pages',
+    feedback: TOASTS,
     icon: 'FileOutput',
     title: EXTRACT_PAGES_COMMAND_TITLE,
     placements: [
@@ -2448,6 +2508,7 @@ export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile): Ui
       // The field starts with `targetPages`, the delete dialog's rule (ADR-0104).
       const pages = targetPages(context);
       if (context.docId === undefined || context.pageCount === undefined || pages.length === 0) return;
+      if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
       const chosen = (await deps.ask(EXTRACT_PAGES_DIALOG_ID, {
         pageCount: context.pageCount,
@@ -2457,7 +2518,8 @@ export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile): Ui
 
       const answer = await deps.client['document.extract']({
         docId: context.docId,
-        pages: chosen.pages,
+        // AS RUNS: a range of any length is one entry (JOURNAL, *No document-size refusals*).
+        pages: pageSetOf(chosen.pages),
       });
       if (!answer.ok) {
         reportProblem(deps, answer.error);
@@ -2486,9 +2548,23 @@ export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile): Ui
  * to show, `cancelled` says nothing and the two failures open the save problem
  * dialog — the same treatment a copy gets, because it is the same write.
  */
-export function splitDocumentCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
+/**
+ * The split's request from the dialog's groups: ONE FILE PER PAGE as `each`, a page set whose run covers any length,
+ * and anything else as `groups`, each written as runs. One page per group is exactly what `each` means, so nothing is
+ * lost; as one group per page it met the contract's 4,096 files at 4,096 pages (JOURNAL, *No document-size refusals*).
+ */
+export function splitRequestOf(
+  groups: readonly (readonly number[])[],
+): { readonly groups: PageSet[] } | { readonly each: PageSet } {
+  const singles = groups.map((group) => (group.length === 1 ? group[0] : undefined));
+  if (singles.every((page): page is number => page !== undefined)) return { each: pageSetOf(singles) };
+  return { groups: groups.map((group) => pageSetOf(group)) };
+}
+
+export function splitDocumentCommand(deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst): UiCommand {
   return {
     id: 'document.split',
+    feedback: TOASTS,
     icon: 'Scissors',
     title: SPLIT_DOCUMENT_COMMAND_TITLE,
     placements: [
@@ -2497,6 +2573,7 @@ export function splitDocumentCommand(deps: DocumentCommandDeps & WritesAFile): U
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.pageCount === undefined) return;
+      if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
       const chosen = (await deps.ask(SPLIT_DOCUMENT_DIALOG_ID, {
         pageCount: context.pageCount,
@@ -2505,7 +2582,7 @@ export function splitDocumentCommand(deps: DocumentCommandDeps & WritesAFile): U
 
       const answer = await deps.client['document.split']({
         docId: context.docId,
-        groups: chosen.groups,
+        split: splitRequestOf(chosen.groups),
       });
       if (!answer.ok) {
         reportProblem(deps, answer.error);
@@ -2531,9 +2608,12 @@ export function splitDocumentCommand(deps: DocumentCommandDeps & WritesAFile): U
  * single-file destination path — `copied` confirms, `cancelled` says nothing,
  * and the two failures reach the save problem dialog.
  */
-export function exportTextCommand(deps: DocumentCommandDeps & RecognisesFirst & WritesAFile): UiCommand {
+export function exportTextCommand(
+  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst,
+): UiCommand {
   return {
     id: 'document.export-text',
+    feedback: TOASTS,
     icon: 'FileText',
     title: EXPORT_TEXT_COMMAND_TITLE,
     // HOME › FILE, beside Save a copy: `docs/FEATURES.md` places D10 under Home ›
@@ -2553,9 +2633,12 @@ export function exportTextCommand(deps: DocumentCommandDeps & RecognisesFirst & 
  * the two exports differ in which engine reads the page and in nothing a person
  * does, so one outcome handler serves both.
  */
-export function exportLayoutTextCommand(deps: DocumentCommandDeps & RecognisesFirst & WritesAFile): UiCommand {
+export function exportLayoutTextCommand(
+  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst,
+): UiCommand {
   return {
     id: 'document.export-layout-text',
+    feedback: TOASTS,
     icon: 'FileText',
     title: EXPORT_LAYOUT_TEXT_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_LAYOUT_TEXT,
@@ -2572,9 +2655,12 @@ export function exportLayoutTextCommand(deps: DocumentCommandDeps & RecognisesFi
  * A dismissed mode dialog dispatches nothing. The outcomes are a copy's, reported
  * the way {@link exportTextCommand}'s are.
  */
-export function exportWordCommand(deps: DocumentCommandDeps & RecognisesFirst & WritesAFile): UiCommand {
+export function exportWordCommand(
+  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst,
+): UiCommand {
   return {
     id: 'document.export-word',
+    feedback: TOASTS,
     icon: 'FileText',
     title: EXPORT_WORD_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_WORD,
@@ -2585,6 +2671,7 @@ export function exportWordCommand(deps: DocumentCommandDeps & RecognisesFirst & 
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
+      if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
       const chosen = (await deps.ask(EXPORT_WORD_DIALOG_ID, {})) as ExportWordAnswer | undefined;
       if (chosen === undefined) return;
@@ -2616,16 +2703,24 @@ export function exportWordCommand(deps: DocumentCommandDeps & RecognisesFirst & 
  * **No dialog of its own**, `exportTextCommand`'s reason: there is nothing to
  * choose before the save dialog, which main runs.
  */
-export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
+export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst): UiCommand {
   return {
     id: 'document.export-powerpoint',
-    icon: 'FileImage',
+    feedback: TOASTS,
+    // A SLIDE, not the page-picture glyph *Export page images* already draws: two exports sharing one icon read as one.
+    icon: 'Presentation',
     title: EXPORT_POWERPOINT_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_POWERPOINT,
-    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 160, prominence: 'secondary' }],
+    // BESIDE WORD AND EXCEL, as the owner's review of 0.1.9.0 asked: Home › Export straight after Excel, and Tools ›
+    // Convert straight after Excel at the same prominence, which is also its place in the Tools menu.
+    placements: [
+      { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 305 },
+      { surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 125 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
+      if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
       const answer = await deps.client['document.exportPowerPoint']({ docId: context.docId });
       if (!answer.ok) {
@@ -2662,7 +2757,7 @@ export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile)
  * no text.
  */
 export function exportExcelCommand(
-  deps: DocumentCommandDeps & WritesAFile & {
+  deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst & {
     /**
      * The engines this machine can read tables with (ADR-0086): `automatic` always, a service
      * where its key is stored. A function, read when the command runs, so a key stored after
@@ -2673,6 +2768,7 @@ export function exportExcelCommand(
 ): UiCommand {
   return {
     id: 'document.export-excel',
+    feedback: TOASTS,
     icon: 'FileSpreadsheet',
     title: EXPORT_EXCEL_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_EXCEL,
@@ -2684,6 +2780,9 @@ export function exportExcelCommand(
     run: async (context): Promise<void> => {
       const { docId } = context;
       if (docId === undefined) return;
+      // BEFORE THE TABLE REVIEW, which reads the document at one version and refuses a moved one: an *Apply* after it
+      // would turn a person's reviewed tables into *the document changed*.
+      if (!(await deps.settleMarks(docId, 'export'))) return;
 
       const edits = new Map<number, ExportExcelAnswer['edits']>();
       let index = context.page ?? 0;
@@ -2775,9 +2874,12 @@ export function exportExcelCommand(
  *
  * **No dialog of its own before the save dialog**, `exportPowerPointCommand`'s reason.
  */
-export function exportPdfaCommand(deps: DocumentCommandDeps & RecognisesFirst & WritesAFile): UiCommand {
+export function exportPdfaCommand(
+  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst,
+): UiCommand {
   return {
     id: 'document.export-pdfa',
+    feedback: TOASTS,
     icon: 'FileCheck',
     title: EXPORT_PDFA_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_PDFA,
@@ -2785,6 +2887,7 @@ export function exportPdfaCommand(deps: DocumentCommandDeps & RecognisesFirst & 
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
+      if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
       const walked = await recognisedBeforeExport(deps, context);
       if (walked === false) return;
@@ -2834,7 +2937,8 @@ export function exportPdfaCommand(deps: DocumentCommandDeps & RecognisesFirst & 
  */
 export function optimizeCommand(
   deps: DocumentCommandDeps &
-    WritesAFile & {
+    WritesAFile &
+    SettlesMarksFirst & {
     /**
      * The status bar's running task, while a size is checked. MEASURED 2026-09-19 in the running
      * application: the first check starts the compose host and took over six seconds, during
@@ -2847,6 +2951,7 @@ export function optimizeCommand(
 ): UiCommand {
   return {
     id: 'document.optimize',
+    feedback: TOASTS,
     icon: 'Shrink',
     title: OPTIMIZE_COMMAND_TITLE,
     ribbonTitle: RIBBON_OPTIMIZE,
@@ -2856,6 +2961,8 @@ export function optimizeCommand(
     run: async (context): Promise<void> => {
       const { docId } = context;
       if (docId === undefined) return;
+      // BEFORE THE MEASUREMENT, which names the version it measured: an *Apply* after it would make the copy *changed*.
+      if (!(await deps.settleMarks(docId, 'export'))) return;
 
       let setting: OptimizeSetting = 'high';
       let measured: { before: number; after: number; version: DocVersion } | null = null;
@@ -2932,9 +3039,12 @@ export function optimizeCommand(
  * The dialog starts on Settings › Rendering › *Print quality*, read when the command runs, so a change there applies
  * to the next print without a restart.
  */
-export function printCommand(deps: DocumentCommandDeps & WritesAFile & { readonly settings: SettingsStore }): UiCommand {
+export function printCommand(
+  deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst & { readonly settings: SettingsStore },
+): UiCommand {
   return {
     id: 'document.print',
+    feedback: TOASTS,
     icon: 'Printer',
     title: PRINT_COMMAND_TITLE,
     placements: [
@@ -2945,6 +3055,7 @@ export function printCommand(deps: DocumentCommandDeps & WritesAFile & { readonl
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
+      if (!(await deps.settleMarks(context.docId, 'print'))) return;
 
       const quality = PRINT_QUALITY_SETTING.schema.parse(deps.settings.get(PRINT_QUALITY_SETTING.id));
       const chosen = (await deps.ask(PRINT_DIALOG_ID, { dpi: PRINT_QUALITY_DPI[quality] })) as PrintAnswer | undefined;
@@ -2976,9 +3087,10 @@ export function printCommand(deps: DocumentCommandDeps & WritesAFile & { readonl
  * nothing more; a platform with no sheet and a step that refused each say so through
  * the save problem dialog.
  */
-export function emailCommand(deps: DocumentCommandDeps): UiCommand {
+export function emailCommand(deps: DocumentCommandDeps & SettlesMarksFirst): UiCommand {
   return {
     id: 'document.email',
+    feedback: TOASTS,
     icon: 'Mail',
     title: EMAIL_COMMAND_TITLE,
     // v5-02's Home › Export › *Share*, the owner's own mapping: sharing a document is emailing it.
@@ -2990,6 +3102,7 @@ export function emailCommand(deps: DocumentCommandDeps): UiCommand {
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
+      if (!(await deps.settleMarks(context.docId, 'send'))) return;
 
       const answer = await deps.client['document.email']({ docId: context.docId });
       if (!answer.ok) {
@@ -3005,11 +3118,12 @@ export function emailCommand(deps: DocumentCommandDeps): UiCommand {
 }
 
 async function runTextExport(
-  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile,
+  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst,
   context: CommandContext,
   mode: 'plain' | 'layout',
 ): Promise<void> {
   if (context.docId === undefined) return;
+  if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
   const walked = await recognisedBeforeExport(deps, context);
   if (walked === false) return;
@@ -3048,9 +3162,10 @@ async function runTextExport(
  * folder to show, `cancelled` says nothing, and the two failures reach the save
  * problem dialog.
  */
-export function exportPageImagesCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
+export function exportPageImagesCommand(deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst): UiCommand {
   return {
     id: 'document.export-page-images',
+    feedback: TOASTS,
     icon: 'FileImage',
     title: EXPORT_PAGE_IMAGES_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_PAGE_IMAGES,
@@ -3062,6 +3177,7 @@ export function exportPageImagesCommand(deps: DocumentCommandDeps & WritesAFile)
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.pageCount === undefined) return;
+      if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
       const chosen = (await deps.ask(EXPORT_PAGE_IMAGES_DIALOG_ID, {
         pageCount: context.pageCount,
@@ -3070,7 +3186,8 @@ export function exportPageImagesCommand(deps: DocumentCommandDeps & WritesAFile)
 
       const answer = await deps.client['document.exportPageImages']({
         docId: context.docId,
-        pages: chosen.pages,
+        // AS RUNS, `extract`'s reason: *every page* is one entry at any length.
+        pages: pageSetOf(chosen.pages),
         format: chosen.format,
         dpi: chosen.dpi,
         quality: chosen.quality,
@@ -3124,6 +3241,7 @@ function exportFormDataCommand(
 ): (deps: DocumentCommandDeps & WritesAFile) => UiCommand {
   return (deps) => ({
     id,
+    feedback: TOASTS,
     title,
     ribbonTitle,
     icon,
@@ -3209,9 +3327,11 @@ function importFormDataCommand(
   ribbonTitle: MessageKey,
   order: number,
   icon: IconName,
-): (deps: DocumentCommandDeps) => UiCommand {
+): (deps: DocumentCommandDeps & WritesAFile) => UiCommand {
   return (deps) => ({
     id,
+    // THE VALUES LAND IN FIELDS ON ANY PAGE, often not the one on show, so the import says it ran (ADR-0141).
+    feedback: TOASTS,
     title,
     ribbonTitle,
     icon,
@@ -3244,6 +3364,7 @@ function importFormDataCommand(
         return;
       }
       deps.onApplied({ version: answer.value.version, byteLength: answer.value.byteLength });
+      confirmDone(deps, TOAST_FORM_DATA_IMPORTED);
       // INVARIANT 18, after `onApplied` and guarded on a positive count, which
       // is `applyDocumentCommand`'s ordering — this command takes the same
       // route through the bus and can trim the same history.
@@ -3320,6 +3441,7 @@ export async function flattenForm(deps: DocumentCommandDeps, docId: DocId): Prom
 export function flattenFormCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.flatten-form',
+    feedback: VISIBLE,
     icon: 'Layers',
     title: FORMS_FLATTEN,
     ribbonTitle: RIBBON_FLATTEN_FORM,
@@ -3335,6 +3457,7 @@ export function flattenFormCommand(deps: DocumentCommandDeps): UiCommand {
 export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.find-flat-fields',
+    feedback: RESULT_DIALOG,
     icon: 'SquareDashedMousePointer',
     title: FLAT_FIELDS_COMMAND_TITLE,
     // v5-08's Forms › Manage › *Detect*: this proposes fields where a page has only drawn boxes.
@@ -3387,9 +3510,10 @@ export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
   };
 }
 
-export function saveCopyCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
+export function saveCopyCommand(deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst): UiCommand {
   return {
     id: 'document.save-copy',
+    feedback: TOASTS,
     icon: 'SaveAll',
     title: SAVE_COPY_TITLE,
     ribbonTitle: RIBBON_SAVE_COPY,
@@ -3399,6 +3523,7 @@ export function saveCopyCommand(deps: DocumentCommandDeps & WritesAFile): UiComm
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
+      if (!(await deps.settleMarks(context.docId, 'export'))) return;
       const answer = await deps.client['document.saveCopy']({ docId: context.docId });
       if (!answer.ok) {
         reportProblem(deps, answer.error);
@@ -3459,6 +3584,7 @@ export function editTextCommand(deps: {
 }): UiCommand {
   return {
     id: EDIT_TEXT_TOOL_ID,
+    feedback: VISIBLE,
     icon: 'Type',
     title: EDIT_TEXT_COMMAND_TITLE,
     ribbonTitle: RIBBON_EDIT_TEXT,
@@ -3487,6 +3613,7 @@ export function handToolCommand(deps: {
 }): UiCommand {
   return {
     id: HAND_TOOL_ID,
+    feedback: VISIBLE,
     icon: 'Hand',
     title: HAND_TOOL_TITLE,
     ribbonTitle: RIBBON_HAND,
@@ -3517,6 +3644,7 @@ export function selectTextCommand(deps: {
 }): UiCommand {
   return {
     id: 'view.select-text',
+    feedback: VISIBLE,
     icon: 'TextCursor',
     title: SELECT_TEXT_TITLE,
     ribbonTitle: RIBBON_TEXT,
@@ -3593,8 +3721,10 @@ export async function commitTextBlock(
     {
       kind: 'editTextBlock',
       page,
+      // IN THE WIRE FORM, through the contract's one encoder (ADR-0142).
+      ...blockEditOf([{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), text }]),
       // REFLOW: a person typing sees the block grow as they type, and it stays that way.
-      blocks: [{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), text, fit: 'reflow' }],
+      fit: 'reflow',
       version,
     },
     {
@@ -3641,6 +3771,7 @@ export async function commitTextBlock(
 export function editPageObjectCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.edit-page-object',
+    feedback: VISIBLE,
     icon: 'SquarePen',
     title: EDIT_PAGE_OBJECT_COMMAND_TITLE,
     ribbonTitle: RIBBON_EDIT_OBJECT,
@@ -3649,18 +3780,21 @@ export function editPageObjectCommand(deps: DocumentCommandDeps): UiCommand {
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;
 
-      const found = await deps.client['document.pageObjects']({
-        docId: context.docId,
-        page: context.page,
-      });
+      const { docId, page: shown } = context;
+      // EVERY PART, read whole at one version (ADR-0130): a page drawn one glyph per object is thousands of objects,
+      // and the indices the dialog answers must all belong to one walk of the page.
+      const found = await readWholeList(
+        (from) => deps.client['document.pageObjects']({ docId, page: shown, from }),
+        (part) => part.objects,
+      );
       if (!found.ok) {
         reportProblem(deps, found.error);
         return;
       }
 
       const chosen = (await deps.ask(EDIT_PAGE_OBJECT_DIALOG_ID, {
-        objects: found.value.objects.map((object) => ({ ...object })),
-        truncated: found.value.truncated,
+        objects: found.value.items.map((object) => ({ ...object })),
+        truncated: found.value.last.truncated,
       })) as EditPageObjectAnswer | undefined;
       // A DISMISSAL DISPATCHES NOTHING, which is the mutation-dialog gate.
       if (chosen === undefined) return;
@@ -3713,6 +3847,7 @@ export function editPageObjectCommand(deps: DocumentCommandDeps): UiCommand {
 export function signaturesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.check-signatures',
+    feedback: RESULT_DIALOG,
     icon: 'BadgeCheck',
     title: SIGNATURES_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_SIGNATURES, order: 20 }],
@@ -3756,6 +3891,8 @@ export function signaturesCommand(deps: DocumentCommandDeps): UiCommand {
 export function signDocumentCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.sign-document',
+    // UNSEEN FROM HERE: the ribbon's signature has no rectangle, so nothing on the page changes (`signDocument`).
+    feedback: TOASTS,
     icon: 'Signature',
     title: SIGN_DOCUMENT_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_SIGNATURES, order: 10 }],
@@ -3875,15 +4012,17 @@ export interface DocusignReadiness {
  * happened, so `sent` opens the notice as every refusal does. A dismissed dialog
  * sends nothing and says nothing, because the person did that on purpose.
  */
-export function docusignSendCommand(deps: DocumentCommandDeps & DocusignReadiness): UiCommand {
+export function docusignSendCommand(deps: DocumentCommandDeps & DocusignReadiness & SettlesMarksFirst): UiCommand {
   return {
     id: 'document.docusign-send',
+    feedback: RESULT_DIALOG,
     icon: 'Send',
     title: DOCUSIGN_SEND_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_SIGNATURES, order: 30 }],
     when: (context) => hasDocument(context) && deps.docusignReady(),
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
+      if (!(await deps.settleMarks(context.docId, 'send'))) return;
       const answer = (await deps.ask(DOCUSIGN_SEND_DIALOG_ID, {})) as DocusignSendAnswer | undefined;
       if (answer === undefined) return;
       const sent = await deps.client['docusign.send']({
@@ -3908,13 +4047,14 @@ export function docusignSendCommand(deps: DocumentCommandDeps & DocusignReadines
  * `main` picks the destination and writes it, so a failed write and a contested
  * destination reach the save-problem dialog exactly as `snapshotRegion`'s do —
  * two sentences for the same outcome would be a second opinion about it (B3a).
- * A copy that appears where the person asked is its own confirmation.
+ * A written copy confirms through `confirmWritten`, as every file write does.
  */
 export function docusignRetrieveCommand(
   deps: DocumentCommandDeps & DocusignReadiness & WritesAFile,
 ): UiCommand {
   return {
     id: 'document.docusign-retrieve',
+    feedback: TOASTS,
     icon: 'Inbox',
     title: DOCUSIGN_RETRIEVE_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_SIGNATURES, order: 31 }],
@@ -3970,6 +4110,7 @@ export function docusignRetrieveCommand(
 export function sanitizeDocumentCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.sanitize',
+    feedback: TOASTS,
     icon: 'ShieldCheck',
     title: SANITIZE_DOCUMENT_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_ENCRYPTION, order: 20 }],
@@ -4003,6 +4144,7 @@ export function sanitizeDocumentCommand(deps: DocumentCommandDeps & WritesAFile)
 export function redactMatchesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.redact-matches',
+    feedback: VISIBLE,
     icon: 'TextSearch',
     title: REDACT_MATCHES_COMMAND_TITLE,
     ribbonTitle: RIBBON_REDACT_MATCHES,
@@ -4046,6 +4188,7 @@ export function applyRedactionsCommand(
 ): UiCommand {
   return {
     id: 'document.apply-redactions',
+    feedback: VISIBLE,
     icon: 'ShieldAlert',
     title: APPLY_REDACTIONS_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_REDACT, order: 10 }],
@@ -4095,9 +4238,11 @@ export function applyRedactionsCommand(
  * person that — a protection command that appeared to have done something to
  * the file on screen would be claiming an effect that has not happened yet.
  */
-export function protectDocumentCommand(deps: DocumentCommandDeps): UiCommand {
+export function protectDocumentCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.protect',
+    // NOTHING ON THE PAGE SHOWS A PASSWORD, and it takes effect at the next save (ADR-0141).
+    feedback: TOASTS,
     icon: 'Lock',
     title: PROTECT_DOCUMENT_COMMAND_TITLE,
     ribbonTitle: RIBBON_PROTECT_DOCUMENT,
@@ -4111,7 +4256,7 @@ export function protectDocumentCommand(deps: DocumentCommandDeps): UiCommand {
       // A DISMISSAL DISPATCHES NOTHING, which is the mutation-dialog gate.
       if (answer === undefined) return;
 
-      await applyDocumentCommand(deps, context.docId, {
+      const applied = await applyDocumentCommand(deps, context.docId, {
         kind: 'setDocumentProtection',
         encryption: answer.encryption,
         ...(answer.userPassword === undefined ? {} : { userPassword: answer.userPassword }),
@@ -4122,6 +4267,7 @@ export function protectDocumentCommand(deps: DocumentCommandDeps): UiCommand {
         // who unticked nothing chose to withhold nothing.
         permissions: [...answer.permissions],
       });
+      if (applied) confirmDone(deps, TOAST_PROTECTION_SET);
     },
   };
 }

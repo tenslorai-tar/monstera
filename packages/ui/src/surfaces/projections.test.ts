@@ -6,6 +6,8 @@ import { CommandRegistry, type CommandContext, type UiCommand } from '../registr
 import { SECTION_IDS, type Placement } from '../registries/placement.js';
 import {
   MENU_BAR_SECTIONS,
+  type MenuBarGroup,
+  type MenuBarItem,
   ShortcutConflict,
   contextMenuModel,
   menuBarModel,
@@ -36,7 +38,7 @@ const ANY_TITLE = messageKey('command.any.label');
 function command(id: string, placements: readonly Placement[], over: Partial<UiCommand> = {}): UiCommand {
   // AN ICON BY DEFAULT, because the registry refuses a command drawn on a surface
   // without one; these cases are about ordering, not about glyphs.
-  return { id, title: ANY_TITLE, icon: 'File', placements, run: () => undefined, ...over };
+  return { id, title: ANY_TITLE, icon: 'File', placements, run: () => undefined, feedback: { kind: 'visible' }, ...over };
 }
 
 const ids = (entries: readonly { readonly command: UiCommand }[]): string[] =>
@@ -196,7 +198,13 @@ describe('secondary placements and the rail (ADR-0098)', () => {
 
   it('the registry refuses a RAIL command with no icon, since the rail draws a glyph', () => {
     // BUILT WITHOUT THE HELPER, which supplies an icon by default.
-    const bare: UiCommand = { id: 'app.settings', title: ANY_TITLE, placements: [{ surface: 'rail', order: 1 }], run: () => undefined };
+    const bare: UiCommand = {
+      id: 'app.settings',
+      title: ANY_TITLE,
+      placements: [{ surface: 'rail', order: 1 }],
+      run: () => undefined,
+      feedback: { kind: 'visible' },
+    };
     expect(() => new CommandRegistry([bare])).toThrow(/placed on the rail and names no icon/u);
   });
 });
@@ -428,8 +436,16 @@ describe('menuBarModel (ADR-0107)', () => {
   const ZOOM = messageKey('test.menu.zoom');
   const menuOf = (registry: CommandRegistry, id: string, at: CommandContext = context) =>
     menuBarModel(registry, at).find((menu) => menu.id === id);
+  /** A group's entries as ids: a command by its id, a submenu as `submenu:<id>[members]`. */
   const itemIds = (menu: ReturnType<typeof menuOf>): string[][] =>
-    (menu?.groups ?? []).map((group) => group.items.map((item) => item.command.id));
+    (menu?.groups ?? []).map((group) =>
+      group.items.map((item) =>
+        item.kind === 'command' ? item.command.id : `submenu:${item.id}[${item.items.map((each) => each.command.id).join(',')}]`,
+      ),
+    );
+  /** A group's COMMAND items, for the cases about commands. */
+  const commandsIn = (group: MenuBarGroup | undefined): MenuBarItem[] =>
+    (group?.items ?? []).flatMap((item) => (item.kind === 'command' ? [item] : []));
 
   it('draws the menus in v5-14’s order — never Home — and drops a menu with nothing in it', () => {
     // THE LITERAL IS THE ANCHOR: the section menus are the prototype's order, which is not the rail's.
@@ -525,12 +541,12 @@ describe('menuBarModel (ADR-0107)', () => {
       command('f.cannot', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 2 }], { when: () => false }),
       command('t.cannot', [{ surface: 'ribbon', section: 'tools', group: MARKUP, order: 1 }], { when: () => false }),
     ]);
-    expect(menuOf(registry, 'file')?.groups[0]?.items.map((item) => [item.command.id, item.enabled])).toStrictEqual([
+    expect(commandsIn(menuOf(registry, 'file')?.groups[0]).map((item) => [item.command.id, item.enabled])).toStrictEqual([
       ['f.can', true],
       ['f.cannot', false],
     ]);
     // A SECTION MENU OVER A HIDDEN TOOL still lists it, disabled — and the ribbon, the control, does not draw it.
-    expect(menuOf(registry, 'tools')?.groups[0]?.items.map((item) => item.enabled)).toStrictEqual([false]);
+    expect(commandsIn(menuOf(registry, 'tools')?.groups[0]).map((item) => item.enabled)).toStrictEqual([false]);
     expect(ribbonModel(registry, context).find((section) => section.section === 'tools')?.groups).toStrictEqual([]);
   });
 
@@ -540,10 +556,52 @@ describe('menuBarModel (ADR-0107)', () => {
       command('v.toggle', [{ surface: 'menu-bar', menu: 'view', group: 0, order: 1 }], { checked: () => on }),
       command('v.plain', [{ surface: 'menu-bar', menu: 'view', group: 0, order: 2 }]),
     ]);
-    const checks = (): (boolean | undefined)[] => menuOf(registry, 'view')?.groups[0]?.items.map((item) => item.checked) ?? [];
+    const checks = (): (boolean | undefined)[] => commandsIn(menuOf(registry, 'view')?.groups[0]).map((item) => item.checked);
     expect(checks()).toStrictEqual([false, undefined]);
     on = true;
     expect(checks()).toStrictEqual([true, undefined]);
+  });
+
+  it('a placement naming a SUBMENU is drawn inside it, and the submenu sits where its FIRST member falls (ADR-0143)', () => {
+    // THE MEMBERS ARE REGISTERED OUT OF ORDER and straddle another command, so a submenu placed by registration order,
+    // by its last member, or at the group's end each draws a different list from this one.
+    const registry = new CommandRegistry([
+      command('f.later', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 30, submenu: 'recent' }]),
+      command('f.open', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 10 }]),
+      command('f.start', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 20 }]),
+      command('f.first', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 15, submenu: 'recent' }]),
+      command('f.exit', [{ surface: 'menu-bar', menu: 'file', group: 1, order: 10 }]),
+    ]);
+    expect(itemIds(menuOf(registry, 'file'))).toStrictEqual([
+      ['f.open', 'submenu:recent[f.first,f.later]', 'f.start'],
+      ['f.exit'],
+    ]);
+  });
+
+  it('CONTROL: with no placement naming a submenu, no submenu is drawn — a group is its commands', () => {
+    const registry = new CommandRegistry([
+      command('f.open', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 10 }]),
+      command('f.clear', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 15 }]),
+    ]);
+    expect(itemIds(menuOf(registry, 'file'))).toStrictEqual([['f.open', 'f.clear']]);
+  });
+
+  it('the REGISTRY refuses one submenu placed in two groups, naming both commands', () => {
+    expect(
+      () =>
+        new CommandRegistry([
+          command('f.one', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 15, submenu: 'recent' }]),
+          command('f.two', [{ surface: 'menu-bar', menu: 'file', group: 1, order: 15, submenu: 'recent' }]),
+        ]),
+    ).toThrow(/"f\.two" puts the recent submenu in file #1, and "f\.one" puts it in file #0/u);
+    // CONTROL: the same two in ONE group stand.
+    expect(
+      () =>
+        new CommandRegistry([
+          command('f.one', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 15, submenu: 'recent' }]),
+          command('f.two', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 16, submenu: 'recent' }]),
+        ]),
+    ).not.toThrow();
   });
 });
 

@@ -103,9 +103,6 @@ function handlers() {
       record: () => {
         throw new Error('registration cases must not reach the recent list');
       },
-      forget: () => {
-        throw new Error('registration cases must not reach the recent list');
-      },
       lastExitClean: () => {
         throw new Error('registration cases must not reach the recent list');
       },
@@ -131,7 +128,11 @@ function handlers() {
       onDropped: () => undefined,
     },
     recentRoots: [],
-    recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
+    recentPictures: NO_RECENT_PICTURES,
+    fileIdentity: () => {
+      throw new Error('registration cases must not reach the recent list');
+    },
+    library: unusedLibrarySurface(),
     reviewPrompt: NO_REVIEW_PROMPT,
     settings: {
       read: () => {

@@ -3,7 +3,7 @@ import * as mupdf from './mupdfRaw.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { ByteImage, MupdfSession } from './engineSeam.js';
-import { applyAddAnnotation } from './pageAnnotations.js';
+import { applyAddAnnotation, readAnnotations } from './pageAnnotations.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import {
   applyApplyRedactions,
@@ -414,6 +414,104 @@ describe('applyRedactions', () => {
       // THE REASON IS ASSERTED. A refusal for a different reason — an engine
       // that would not answer — reads identically and means something else.
       expect(captured.captured ? '' : captured.reason).toContain('command log');
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+});
+
+/**
+ * A MARK IS NOT A REDACTION UNTIL IT IS APPLIED — the owner's item N1, at the kernel.
+ *
+ * The renderer now draws a pending mark so it cannot be read as a finished redaction, and asks before a save, a close
+ * or an export while marks are pending. Both rest on two facts about the FILE, which is what leaves the person's
+ * hands, and each is asserted through it — serialised, reopened in a fresh session, read back:
+ *
+ * - an APPLIED mark leaves none of its words extractable, and no mark;
+ * - an UNAPPLIED mark leaves every word extractable — the control, and the reason the question exists — and survives
+ *   as a `redact` annotation with its box, which is everything the layer needs to draw it as pending after a reopen.
+ *
+ * The mark is made the way the Redact tool makes one — `applyAddAnnotation` with a region draft — rather than by the
+ * MuPDF calls `markFirstLine` uses, so what is proved is the mark a person draws.
+ */
+describe('a mark is not a redaction until it is applied (item N1)', () => {
+  /** Over the first line, `SECRET`, in PDF user space; the second line, 60 points below, is clear of it. */
+  const OVER_SECRET = { x0: 60, y0: 690, x1: 400, y1: 724 };
+
+  /** Saves the session, opens the bytes as a document would be reopened, and answers what a reader of it finds. */
+  async function reopened(session: MupdfSession): Promise<{
+    readonly text: string;
+    readonly marks: readonly { readonly kind: string; readonly rect: unknown }[];
+  }> {
+    const bytes = await mupdfWriter.serialise(session);
+    const again = await mupdfWriter.open(bytes);
+    try {
+      const listed = await readAnnotations(again);
+      const text = await withDocument(again, (document) => textOn(document, 0));
+      return { text, marks: listed.annotations.filter((annotation) => annotation.page === 0) };
+    } finally {
+      await mupdfWriter.close(again);
+    }
+  }
+
+  async function marked(): Promise<MupdfSession> {
+    const session = await mupdfWriter.open(written);
+    await applyAddAnnotation(session, {
+      kind: 'addAnnotation',
+      page: 0,
+      stamp: { author: 'A. Tester', created: '2026-10-02T09:00:00.000Z' },
+      annotation: { type: 'redact', over: 'region', rect: OVER_SECRET, colour: [0.85, 0.15, 0.15], opacity: 1 },
+    });
+    return session;
+  }
+
+  it('CONTROL: an UNAPPLIED mark, saved and reopened, leaves every marked word extractable', async () => {
+    // THE DEFECT THE QUESTION EXISTS FOR, reproduced: the file a person saves with marks pending still carries the
+    // words, so anything that reads its text — a reader, a search, the Word export — finds them.
+    const session = await marked();
+    try {
+      const { text } = await reopened(session);
+      expect(text).toContain(SECRET);
+      expect(text).toContain(KEPT);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('an UNAPPLIED mark survives the save and the reopen as a `redact`, where it was drawn', async () => {
+    // WHAT MAKES IT RENDER AS PENDING after a reopen: the layer draws exactly the entries `document.annotations` names
+    // `redact`, at their `rect` (`registries/annotationTypes.tsx`). A save that flattened the mark into its appearance,
+    // or wrote it as some other kind, would reopen as a red outline nobody could tell from a drawn square.
+    const session = await marked();
+    try {
+      const { marks } = await reopened(session);
+      expect(marks.map((mark) => mark.kind)).toStrictEqual(['redact']);
+      const rect = marks[0]?.rect as { x0: number; y0: number; x1: number; y1: number } | null;
+      expect(rect).not.toBeNull();
+      for (const key of ['x0', 'y0', 'x1', 'y1'] as const) {
+        expect(Math.abs((rect?.[key] ?? Number.NaN) - OVER_SECRET[key]), key).toBeLessThan(0.5);
+      }
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('an APPLIED mark, saved and reopened, leaves NONE of the marked words extractable, and no mark', async () => {
+    const session = await marked();
+    try {
+      await applyApplyRedactions(session, {
+        kind: 'applyRedactions',
+        pages: 'all',
+        cover: 'solid',
+        images: 'pixels',
+        keepTitle: false,
+      });
+      const { text, marks } = await reopened(session);
+      // EVERY WORD, not the phrase: a burn-in that left "91000" and took "Salary" would pass a phrase check.
+      for (const word of SECRET.split(' ')) expect(text).not.toContain(word);
+      // AND THE LINE BESIDE IT STAYS, so this is not satisfied by a page emptied of all its text.
+      expect(text).toContain(KEPT);
+      expect(marks.map((mark) => mark.kind)).not.toContain('redact');
     } finally {
       await mupdfWriter.close(session);
     }

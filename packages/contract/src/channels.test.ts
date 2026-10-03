@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createClient, wrapHandlers } from './boundary.js';
 import {
-  MAX_LAYERS,
+  LAYERS_PART,
   MAX_RANGE_BYTES,
   channelIds,
   channels,
@@ -11,7 +11,9 @@ import {
   displayLocationSchema,
   preloadChannels,
 } from './channels.js';
+import { placeImageSchema } from './commands.js';
 import type { Incident } from './incident.js';
+import { MAX_PAGE_SET_ENTRIES } from './pageSet.js';
 import { AZURE_KEY_SETTING_ID } from './schemas.js';
 
 /** Discards a diagnostic. The sink is required rather than defaulted. */
@@ -97,6 +99,8 @@ const handlers: ContractHandlers = {
             // BOTH HALVES SET, for this fixture's reason: `null` in either is what a boundary that dropped it produces.
             location: displayLocationSchema.parse({ within: 'documents', folder: 'Leases' }),
             openedAt: '2026-09-25T08:00:00.000Z',
+            // `false`, the unusual state (ADR-0143): an entry listed and not there.
+            available: false,
           },
         ],
         lastExitClean: false,
@@ -115,8 +119,7 @@ const handlers: ContractHandlers = {
   'document.redo': () => Promise.resolve(ok({ kind: 'nothing-to-redo' as const })),
   'document.execute': () =>
     Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0 })),
-  'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1), staleCopies: null })),
-  'document.deleteStaleCopies': () => Promise.resolve(ok({ backups: 0, undoCopies: 0 })),
+  'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1), cleared: null })),
   // CANCELLED rather than copied, for the recent-files fixture's reason one
   // entry up: a byte count is the interesting answer, and a fixture that always
   // returns one cannot show that the dismissal path exists at all.
@@ -130,10 +133,10 @@ const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
   'document.textBlocks': () =>
     Promise.resolve(
-      ok({ version: asDocVersion(1), blocks: [], truncated: false, rotated: 0, unaddressable: 0 }),
+      ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, unaddressable: 0 }),
     ),
   'document.pageObjects': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), objects: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
   'document.renderPage': ({ width, height }) =>
     Promise.resolve(
       ok({ version: asDocVersion(1), width, height, png: new Uint8Array([0x89, 0x50]) }),
@@ -255,6 +258,8 @@ const handlers: ContractHandlers = {
             bounds: { x0: 5, y0: 6, x1: 7, y1: 8 },
           },
         ],
+        next: null,
+        truncated: false,
       }),
     ),
   // A NESTED ENTRY AND A PAGELESS ONE, for the links fixture's reason: a flat
@@ -284,6 +289,8 @@ const handlers: ContractHandlers = {
           { index: 0, name: 'Shown', visible: true },
           { index: 1, name: 'Hidden', visible: false },
         ],
+        next: null,
+        truncated: false,
       }),
     ),
   // TWO GROUPS AND `truncated: false`, for the layers fixture's reason: one
@@ -533,26 +540,21 @@ describe('the shipping contract, exercised through its own map', () => {
     }
   });
 
-  it('a layer list past the bound is REFUSED, so the bound is reachable', async () => {
-    // FOUND BY THE STAGE AUDIT of `87540a5..HEAD`. `readLayers` clamped its
-    // own count with `Math.min(groups.length, MAX_LAYERS)`, so the array
-    // reaching this schema had already been cut to fit and `.max(MAX_LAYERS)`
-    // was a check that could not fail — while the reader was shown a subset of
-    // their document's layers with nothing saying so.
-    //
-    // The kernel no longer clamps, and this is what makes that bound live.
-    const many = Array.from({ length: MAX_LAYERS + 1 }, (_unused, index) => ({
+  it('a layer PART past its size is REFUSED, so a long list crosses only as main cuts it', async () => {
+    // A document's layers cross in parts (ADR-0130); a handler that answered the whole list in one would be the
+    // 1,024-layer refusal arriving from the other side, and the bound is what makes that visible.
+    const many = Array.from({ length: LAYERS_PART + 1 }, (_unused, index) => ({
       index,
       name: 'Layer',
       visible: true,
     }));
     const client = createClient(channels, (id, params) =>
       wrapHandlers(channels, { ...handlers, 'document.layers': () =>
-        Promise.resolve(ok({ version: asDocVersion(1), layers: many })),
+        Promise.resolve(ok({ version: asDocVersion(1), layers: many, next: null, truncated: false })),
       }, ignore)[id](params),
     );
 
-    const result = await client['document.layers']({ docId: asDocId('doc-1') });
+    const result = await client['document.layers']({ docId: asDocId('doc-1'), from: 0 });
 
     expect(result.ok).toBe(false);
   });
@@ -561,21 +563,21 @@ describe('the shipping contract, exercised through its own map', () => {
     // `readRange`'s control, for `readRange`'s reason: the case above passes
     // for a schema that refuses every layer list, which is also what a typo in
     // the bound produces and which would take the whole panel with it.
-    const exactly = Array.from({ length: MAX_LAYERS }, (_unused, index) => ({
+    const exactly = Array.from({ length: LAYERS_PART }, (_unused, index) => ({
       index,
       name: 'Layer',
       visible: true,
     }));
     const client = createClient(channels, (id, params) =>
       wrapHandlers(channels, { ...handlers, 'document.layers': () =>
-        Promise.resolve(ok({ version: asDocVersion(1), layers: exactly })),
+        Promise.resolve(ok({ version: asDocVersion(1), layers: exactly, next: LAYERS_PART, truncated: false })),
       }, ignore)[id](params),
     );
 
-    const result = await client['document.layers']({ docId: asDocId('doc-1') });
+    const result = await client['document.layers']({ docId: asDocId('doc-1'), from: 0 });
 
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.layers).toHaveLength(MAX_LAYERS);
+    if (result.ok) expect(result.value.layers).toHaveLength(LAYERS_PART);
   });
 
   it('L11: the bound is on the SIZE, not on the offset, so a late range is served', async () => {
@@ -723,6 +725,34 @@ describe('window.titleBarOverlay', () => {
     expect(params.safeParse({ ...valid, symbolColor: 'white' }).success).toBe(false);
     for (const height of [23, 65, 33.5, Number.NaN]) {
       expect(params.safeParse({ ...valid, height }).success, String(height)).toBe(false);
+    }
+  });
+});
+
+describe('pages past 4,096 cross as one page set (JOURNAL, No document-size refusals)', () => {
+  // Every field that names pages of a whole document was a list of indices capped at 4,096, so *every page* of a
+  // longer document failed as `internal`. Each takes a page set now, where every page is one run at any length.
+  const EVERY_PAGE_OF_TEN_THOUSAND = [[0, 9999]];
+  const fields = {
+    'document.extract': channels['document.extract'].params.shape.pages,
+    'document.exportPageImages': channels['document.exportPageImages'].params.shape.pages,
+    'document.placeBarcode': channels['document.placeBarcode'].params.shape.pages,
+    'document.split each': channels['document.split'].params.shape.split,
+    placeImage: placeImageSchema.shape.pages,
+  };
+
+  it('takes every page of a 10,000-page document in each of them', () => {
+    for (const [name, field] of Object.entries(fields)) {
+      const value = name === 'document.split each' ? { each: EVERY_PAGE_OF_TEN_THOUSAND } : EVERY_PAGE_OF_TEN_THOUSAND;
+      expect(field.safeParse(value).success, name).toBe(true);
+    }
+  });
+
+  it('CONTROL: each is still a bounded set, not any list — one entry past the frame is refused', () => {
+    const tooMany = Array.from({ length: MAX_PAGE_SET_ENTRIES + 1 }, (_, index) => index * 2);
+    for (const [name, field] of Object.entries(fields)) {
+      const value = name === 'document.split each' ? { each: tooMany } : tooMany;
+      expect(field.safeParse(value).success, name).toBe(false);
     }
   });
 });

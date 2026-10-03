@@ -5,7 +5,8 @@ import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN } from '../messages/en.js';
+import { CAMERA_CAPTURE_TITLE, CLOSE_LABEL, EN } from '../messages/en.js';
+import { Dialog } from '../primitives/Dialog.js';
 import CameraCaptureBody from './CameraCaptureBody.js';
 
 /**
@@ -19,9 +20,16 @@ import CameraCaptureBody from './CameraCaptureBody.js';
  * OFF when the dialog closes, including a stream that arrives after it closed.
  */
 
+/** IN THE DIALOG, as the registry mounts it: the footer's Cancel is the popup's own close and exists only inside one. */
 function Wrapped({ children }: { children: ReactNode }): ReactElement {
   activateCatalogue('en', EN);
-  return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
+  return (
+    <I18nProvider i18n={i18n}>
+      <Dialog closeLabel={CLOSE_LABEL} onOpenChange={() => undefined} open title={CAMERA_CAPTURE_TITLE}>
+        {children}
+      </Dialog>
+    </I18nProvider>
+  );
 }
 
 /**

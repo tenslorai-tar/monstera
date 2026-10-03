@@ -3,7 +3,7 @@ import type { ContractClient } from '@monstera/contract';
 import { ACCESSIBILITY_DIALOG_ID } from '../dialogs/accessibilityCheck.js';
 import { ACCESSIBILITY_COMMAND_TITLE, GROUP_ACCESSIBILITY } from '../messages/en.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
-import type { CommandContext, UiCommand } from '../registries/commands.js';
+import { type CommandContext, RESULT_DIALOG, type UiCommand } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
 
 /**
@@ -20,6 +20,7 @@ export function accessibilityCheckCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.accessibility-check',
+    feedback: RESULT_DIALOG,
     icon: 'ShieldCheck',
     title: ACCESSIBILITY_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'review', group: GROUP_ACCESSIBILITY, order: 20 }],

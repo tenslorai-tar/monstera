@@ -56,14 +56,29 @@ describe('page matching — an inserted page is reported as one, and the pages a
       [1, 2],
       [2, 3],
     ]);
-    // AND THE MATCHED PAIRS HAVE NOTHING TO REPORT, which page-by-number could not say: B against X, C against B.
-    expect(comparePair(page(b), page(b))).toStrictEqual([]);
+    // AND THE PAIRS THE ALIGNMENT MATCHED HAVE NOTHING TO REPORT, each compared by the indices the alignment gave, which
+    // page-by-number could not say: B against X, C against B.
+    const left = [a, b, c];
+    const right = [a, x, b, c];
+    const reported = steps.flatMap((step) =>
+      step.kind === 'matched' ? [comparePair(page(left[step.left] ?? []), page(right[step.right] ?? []))] : [],
+    );
+    expect(reported).toStrictEqual([[], [], []]);
   });
 
-  it('CONTROL: compared by page number, the same documents differ on every page after the insertion', () => {
-    // WHAT THE OLD RULE WOULD HAVE PAIRED: left page i with right page i.
-    expect(comparePair(page(b), page(x)).length).toBeGreaterThan(0);
-    expect(comparePair(page(c), page(b)).length).toBeGreaterThan(0);
+  it('CONTROL: compared by page number, the same documents differ on every page after the insertion, and on none before it', () => {
+    // WHAT THE OLD RULE WOULD HAVE PAIRED: left page i with right page i, so each page after X meets its predecessor
+    // on the right. The words each pair reports name which page met which, which no other pairing produces.
+    const left = [a, b, c];
+    const right = [a, x, b, c];
+    const byNumber = left.map((each, at) =>
+      comparePair(page(each), page(right[at] ?? [])).map((change) => [change.kind, change.removed, change.inserted]),
+    );
+    expect(byNumber).toStrictEqual([
+      [],
+      [['text', 'Section two lists the prices for every service offered', 'An inserted appendix about something else entirely new']],
+      [['text', 'three covers termination and notice periods here', 'two lists the prices for every service offered']],
+    ]);
   });
 
   it('a removed page is reported as removed, and the rest still match', () => {

@@ -18,7 +18,8 @@ import {
   THEME_LIGHT_COMMAND_TITLE,
   THEME_SYSTEM_COMMAND_TITLE,
 } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import type { IconName } from '../primitives/icons.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import { THEME_SETTING, type Theme } from '../settings/appearance.js';
 import {
   CONTEXT_PANEL_OPEN_SETTING,
@@ -65,6 +66,7 @@ import { hasDocument } from './documentCommands.js';
 export function toggleQuickToolbarCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.toggle-quick-toolbar',
+    feedback: VISIBLE,
     icon: 'PanelLeftDashed',
     title: QUICK_TOOLBAR_TOGGLE_TITLE,
     ribbonTitle: QUICK_TOOLBAR_TOGGLE_SHORT,
@@ -98,7 +100,9 @@ export function toggleQuickToolbarCommand(deps: { readonly settings: SettingsSto
 export function resetFloatBarCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.reset-float-bar',
+    feedback: VISIBLE,
     title: FLOAT_BAR_RESET_TITLE,
+    icon: 'RotateCcw',
     placements: [{ surface: 'menu-bar', menu: 'window', group: 1, order: 31 }],
     when: hasDocument,
     run: (): void => {
@@ -111,6 +115,7 @@ export function resetFloatBarCommand(deps: { readonly settings: SettingsStore })
 export function togglePanelCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.toggle-panel',
+    feedback: VISIBLE,
     icon: 'PanelLeft',
     title: DOCUMENT_PANEL_TOGGLE_TITLE,
     shortcut: 'Ctrl+Shift+B',
@@ -132,6 +137,9 @@ const LAYOUT_TITLES = {
 
 /** View › Layout in the switcher's order. */
 const MODE_ORDER: Readonly<Record<LayoutMode, number>> = { ribbon: 10, studio: 20, focus: 30 };
+
+/** Each layout's glyph in the View menu: the ribbon across the top, Studio's panel down the side, Focus's frame. */
+const LAYOUT_ICONS: Readonly<Record<LayoutMode, IconName>> = { ribbon: 'PanelTop', studio: 'PanelLeft', focus: 'Focus' };
 
 /**
  * §7's layout-mode switch and §10.3's *"Esc returns"*, as the four commands that share one memory.
@@ -161,7 +169,9 @@ export function layoutModeCommands(deps: { readonly settings: SettingsStore }): 
 
   const modeCommand = (mode: LayoutMode): UiCommand => ({
     id: `view.layout-${mode}`,
+    feedback: VISIBLE,
     title: LAYOUT_TITLES[mode],
+    icon: LAYOUT_ICONS[mode],
     // No chord for Ribbon and Studio: §10.3 names none, and Escape is Focus's way out. Focus has one because a mode
     // that hides the ribbon is the one a person enters from the keyboard while reading.
     ...(mode === 'focus' ? { shortcut: 'Ctrl+Shift+F' } : {}),
@@ -176,6 +186,7 @@ export function layoutModeCommands(deps: { readonly settings: SettingsStore }): 
 
   const leaveFocus: UiCommand = {
     id: 'view.leave-focus',
+    feedback: VISIBLE,
     title: LEAVE_FOCUS_COMMAND_TITLE,
     shortcut: 'Escape',
     placements: [],
@@ -192,6 +203,7 @@ export function layoutModeCommands(deps: { readonly settings: SettingsStore }): 
 export function toggleContextPanelCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.toggle-context-panel',
+    feedback: VISIBLE,
     icon: 'PanelRight',
     title: CONTEXT_PANEL_TOGGLE_TITLE,
     shortcut: 'Ctrl+Shift+J',
@@ -211,6 +223,7 @@ export function toggleContextPanelCommand(deps: { readonly settings: SettingsSto
 export function showPropertiesCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.show-properties',
+    feedback: VISIBLE,
     icon: 'PanelRight',
     title: SHOW_PROPERTIES_TITLE,
     placements: [{ surface: 'menu-bar', menu: 'window', group: 0, order: 70, caption: MENU_GROUP_PANELS }],
@@ -225,10 +238,10 @@ export function showPropertiesCommand(deps: { readonly settings: SettingsStore }
   };
 }
 
-const THEMES: readonly { readonly theme: Theme; readonly title: MessageKey; readonly order: number }[] = [
-  { theme: 'system', title: THEME_SYSTEM_COMMAND_TITLE, order: 10 },
-  { theme: 'light', title: THEME_LIGHT_COMMAND_TITLE, order: 20 },
-  { theme: 'dark', title: THEME_DARK_COMMAND_TITLE, order: 30 },
+const THEMES: readonly { readonly theme: Theme; readonly title: MessageKey; readonly order: number; readonly icon: IconName }[] = [
+  { theme: 'system', title: THEME_SYSTEM_COMMAND_TITLE, order: 10, icon: 'Monitor' },
+  { theme: 'light', title: THEME_LIGHT_COMMAND_TITLE, order: 20, icon: 'Sun' },
+  { theme: 'dark', title: THEME_DARK_COMMAND_TITLE, order: 30, icon: 'Moon' },
 ];
 
 /**
@@ -238,9 +251,11 @@ const THEMES: readonly { readonly theme: Theme; readonly title: MessageKey; read
  * (`highContrastWanted`) and overrides this setting, so offering it here would make an assistive mode a preference.
  */
 export function themeCommands(deps: { readonly settings: SettingsStore }): readonly UiCommand[] {
-  return THEMES.map(({ theme, title, order }) => ({
+  return THEMES.map(({ theme, title, order, icon }) => ({
     id: `view.theme-${theme}`,
+    feedback: VISIBLE,
     title,
+    icon,
     placements: [{ surface: 'menu-bar', menu: 'view', group: 1, order, caption: MENU_GROUP_THEME }],
     checked: () => deps.settings.get(THEME_SETTING.id) === theme,
     run: (): void => {

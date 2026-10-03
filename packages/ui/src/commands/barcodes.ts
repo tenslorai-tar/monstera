@@ -6,7 +6,7 @@ import { PAGE_BARCODES_DIALOG_ID } from '../dialogs/pageBarcodes.js';
 import { PLACE_BARCODE_DIALOG_ID, type PlaceBarcodeAnswer } from '../dialogs/placeBarcode.js';
 import { GROUP_MARKS, READ_BARCODES_COMMAND_TITLE } from '../messages/en.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
-import type { CommandContext, UiCommand } from '../registries/commands.js';
+import { type CommandContext, RESULT_DIALOG, type UiCommand } from '../registries/commands.js';
 import { type DocumentCommandDeps, hasDocument, reportProblem } from './documentCommands.js';
 
 /**
@@ -22,6 +22,7 @@ export function readBarcodesCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.read-barcodes',
+    feedback: RESULT_DIALOG,
     icon: 'ScanBarcode',
     title: READ_BARCODES_COMMAND_TITLE,
     // 20, after the tool that adds one at 10: the group reads make, then read.

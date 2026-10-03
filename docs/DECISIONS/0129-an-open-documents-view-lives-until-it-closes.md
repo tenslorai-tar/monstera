@@ -67,3 +67,14 @@ would bring back the re-parse §6 forbids.
 - **A cap on kept layers now.** A number with nothing measured behind it; it is the stated follow-up instead.
 - **Keep the scroller but drop its canvases while hidden.** The bitmaps are most of what a switch would otherwise
   redraw, so this keeps the cost of the decision and not its point.
+
+## Correction, 2026-10-02 — the page menu is not shared behind
+
+Decision 2's *`pageMenu` is one callback for that reason* held the rule and cost every switch. The callback wrapped
+each slot in a menu built from the focused document's context, so a layer behind took a prop that changed with
+every switch, and with it the element on show as `children`: every render of `App` rendered every kept layer's
+every slot and rebuilt every slot's menu, 1.5–2.2 s of work after each switch on the installed 0.1.8.0. The rule
+stands — the wrapper is the same component on both sides — and now it is one `MenuArea` per list, which asks for
+the right-clicked page when the right-click happens; a layer behind takes `NO_MENU`, which is Decision 3's *the
+layout and nothing else*. `DocumentLayer` is memoised and takes the element on show only when it is the layer on
+show, so a switch renders the two layers it moves. Proof: `tabSwitchRenders.pw.ts`.

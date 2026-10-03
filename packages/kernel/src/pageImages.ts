@@ -2,7 +2,7 @@ import {
   MAX_IMAGE_QUALITY,
   MAX_SNAPSHOT_SCALE,
   MIN_IMAGE_QUALITY,
-  MIN_SNAPSHOT_SCALE,
+  MIN_PAGE_PICTURE_SCALE,
   type PageImageFormat,
 } from '@monstera/contract/host';
 import { ColorSpace, Matrix, type Pixmap } from './mupdfRaw.js';
@@ -132,10 +132,12 @@ function withPagePixmap<T>(
   return withDocument(session, (document): T => {
     const total = document.countPages();
     pageInDocument(pageIndex, total);
-    if (!Number.isFinite(scale) || scale < MIN_SNAPSHOT_SCALE || scale > MAX_SNAPSHOT_SCALE) {
+    // THE WHOLE PAGE'S FLOOR, not the snapshot's: a vision ask draws a page larger than the image limit below 72 dpi
+    // (`MIN_PAGE_PICTURE_SCALE` says why). The export's 72 dpi is the renderer's schema.
+    if (!Number.isFinite(scale) || scale < MIN_PAGE_PICTURE_SCALE || scale > MAX_SNAPSHOT_SCALE) {
       throw new RangeError(
         `a page image scale of ${String(scale)} is outside ` +
-          `${String(MIN_SNAPSHOT_SCALE)}–${String(MAX_SNAPSHOT_SCALE)} device pixels per point`,
+          `${String(MIN_PAGE_PICTURE_SCALE)}–${String(MAX_SNAPSHOT_SCALE)} device pixels per point`,
       );
     }
     refuse();

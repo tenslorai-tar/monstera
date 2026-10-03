@@ -19,7 +19,8 @@ import {
   TRANSLATE_PAGE_PROGRESS,
   TRANSLATE_PAGE_TITLE,
 } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { TOASTS, type UiCommand } from '../registries/commands.js';
+import { confirmDone } from './confirmWritten.js';
 import type { TrackTask } from '../runningTask.js';
 import type { ShowToast } from '../toasts.js';
 import { type DocumentCommandDeps, applyDocumentCommand, hasDocument, reportProblem } from './documentCommands.js';
@@ -67,6 +68,7 @@ export interface TranslatePageDeps extends DocumentCommandDeps {
 export function translatePageCommand(deps: TranslatePageDeps): UiCommand {
   return {
     id: 'edit.translate-page',
+    feedback: TOASTS,
     icon: 'Languages',
     title: TRANSLATE_PAGE_TITLE,
     ribbonTitle: RIBBON_TRANSLATE_PAGE,
@@ -109,7 +111,7 @@ export function translatePageCommand(deps: TranslatePageDeps): UiCommand {
           return;
         }
         if (result.kind === 'nothing-to-translate') {
-          deps.toast('done', TOAST_NOTHING_TO_TRANSLATE);
+          confirmDone(deps, TOAST_NOTHING_TO_TRANSLATE);
           return;
         }
         const kept = { unwritable: false };
@@ -119,8 +121,10 @@ export function translatePageCommand(deps: TranslatePageDeps): UiCommand {
           {
             kind: 'editTextBlock',
             page,
+            // MAIN'S EDIT AS IT CAME, already in the command's wire form (ADR-0142).
+            ...result.edit,
             // SHRINK: a translation keeps the page's layout — each block fitted to the box it had.
-            blocks: result.blocks.map((block) => ({ ...block, fit: 'shrink' as const })),
+            fit: 'shrink',
             version: result.version,
           },
           {
@@ -130,7 +134,7 @@ export function translatePageCommand(deps: TranslatePageDeps): UiCommand {
             },
           },
         );
-        if (applied) deps.toast('done', TOAST_PAGE_TRANSLATED);
+        if (applied) confirmDone(deps, TOAST_PAGE_TRANSLATED);
         else if (kept.unwritable) deps.toast('problem', TOAST_TRANSLATE_NOT_WRITABLE);
       } finally {
         task.step(1);

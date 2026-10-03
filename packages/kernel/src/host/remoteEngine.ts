@@ -335,7 +335,7 @@ export function remoteMupdfPageLinks(
     answered(
       'engine/page-links',
       await client['engine/page-links']({ session: sessions.handleFor(session), page }),
-    ).links;
+    );
 }
 
 /**
@@ -428,7 +428,7 @@ export function remoteMupdfLayers(
     answered(
       'engine/layers',
       await client['engine/layers']({ session: sessions.handleFor(session) }),
-    ).layers;
+    );
 }
 
 /**
@@ -452,7 +452,7 @@ export function remoteMupdfSignatures(
 }
 
 /**
- * Whether the next save keeps the document's signatures, and whether it is a removal's, over the boundary.
+ * Whether the next save keeps the document's signatures, over the boundary.
  * `signaturesKeptBySave` in the host.
  */
 export function remoteMupdfSignaturesKept(

@@ -24,6 +24,7 @@ import {
   cloudStateSchema,
 } from './cloudProviders.js';
 import type { PreloadChannelId } from './bridge.js';
+import { pageSetSchema } from './pageSet.js';
 import { channel, type Channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import { AI_ANSWER_REFUSALS, MAX_WEB_SOURCES, answerIdSchema, subscriptionIdSchema } from './events.js';
 import { TRANSLATION_LANGUAGE_IDS } from './translationLanguages.js';
@@ -32,17 +33,16 @@ import {
   MAX_ANNOTATION_BORDER,
   MAX_REMOVED_ANNOTATIONS,
   MAX_IMAGE_BYTES,
-  MAX_IMAGE_PAGES,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
   MAX_WORKBOOK_ROW,
   MAX_WORKBOOK_SHEET_NAME,
   MAX_LINK_URI,
   MAX_LAYER_NAME_LENGTH,
-  MAX_BLOCK_LINES,
-  MAX_EDIT_BLOCKS,
-  MAX_REPLACED_TEXT,
-  MAX_TEXT_REPLACEMENTS,
+  MAX_EDIT_RUNS,
+  MAX_OBJECT_INDEX,
+  blockEditAgrees,
+  blockEditSchema,
   annotationKindNameSchema,
   annotationRectSchema,
   annotationAuthorSchema,
@@ -132,18 +132,16 @@ import {
  * over the measured maximum and is about 1% of `main`'s 1.5 GB budget, so a
  * request at the bound is nowhere near a figure the budget notices.
  *
- * ## What this refuses that is not an attack
+ * ## An object larger than this is read in pieces, never refused
  *
- * A document holding one object larger than this cannot be rendered: PDF.js asks
- * for the object whole, and a range cannot be answered in several calls —
- * measured, the reader completes and is deleted after the first chunk. So the
- * failure mode is real and it is the honest one, because the alternative is a
- * channel that will hand over a 300 MB object and call L11 satisfied.
- *
- * **The trigger, so this is a number with an expiry rather than a guess:** the
- * first document that fails to render with a refused range is the evidence that
- * this bound is wrong, and the fix is a measurement of what such documents
- * actually contain — not a larger round number.
+ * PDF.js asks for an object whole and must be answered in ONE call — measured,
+ * its reader completes and is deleted after the first chunk. So a scan stored as
+ * one image past this bound used to be a page that never drew. The renderer's
+ * transport now reads such a range in pieces of at most this size and answers
+ * PDF.js once with the joined bytes (`documentTransport.ts`, 2026-10-02;
+ * `largeObject.pw.ts` draws an 18,750,000-byte image). This bound is what one
+ * read carries, which is L11's *per operation*; the joined copy is bounded by the
+ * object PDF.js asked for.
  */
 export const MAX_RANGE_BYTES = 16 * 1024 * 1024;
 
@@ -547,25 +545,19 @@ export const MAX_AFFIX_BYTES = 256 * 1024;
 export const MAX_DICTIONARY_BYTES = 4 * 1024 * 1024;
 
 /**
- * How many links one page may report to the renderer.
+ * How many links one part of a page's links carries.
  *
- * A COUNT, because each link is a declared shape whose own fields are bounded —
- * so the only unbounded axis is how many there are. Any constant satisfies
- * invariant 11; the real constraint is the lower one, and a page of a
- * link-heavy index carries hundreds rather than thousands.
- *
- * **The trigger:** the first page refused by this is the evidence the bound is
- * wrong, and the fix is a measurement of what that page contains.
+ * A PART, not the page's links: as the whole page's bound it refused every link on a page past it (JOURNAL, *No
+ * document-size refusals*, table A row 7). A longer list crosses in several ({@link listPartFromSchema}, ADR-0130).
  */
-export const MAX_PAGE_LINKS = 4096;
+export const PAGE_LINKS_PART = 4096;
 
 /**
  * How long a link's URI may be.
  *
- * The one string in that shape a DOCUMENT controls, so it is the one that needs
- * a length. 2048 is the ceiling browsers apply to a URL in practice, which
- * makes it a bound a real document cannot legitimately cross rather than a
- * number chosen here.
+ * The one string in that shape a DOCUMENT controls, so it is the one that needs a length. A real document crosses it —
+ * a tracking link runs past 2,048 — so the host shows a longer URI shortened with an ellipsis rather than refusing the
+ * page's links, and nothing follows the shown text (invariant 24).
  */
 export const MAX_LINK_URI_LENGTH = 2048;
 
@@ -596,32 +588,13 @@ export const listPartNextSchema = z.number().int().positive().nullable();
 export const DESTINATIONS_PART = 4096;
 
 /**
- * How many page indices an extract may name.
+ * How many groups a person may write for one split.
  *
- * A **request** bound rather than an answer bound, which is what separates it
- * from every other number here: those cap what a hostile document can make main
- * send to the renderer, and this caps what the renderer can ask main to do.
- * Extracting every page of a long document is an ordinary request, so it is
- * document-shaped rather than a small guard — what it refuses is a list that
- * could not have come from a page count.
- *
- * The kernel bounds it again against the document itself, where the count is
- * known. Two bounds because they answer different questions: *could this have
- * come from a document* and *did it come from THIS one*.
- */
-export const MAX_EXTRACT_PAGES = 4096;
-
-/**
- * How many documents one split may write.
- *
- * {@link MAX_EXTRACT_PAGES}' number, because the case that reaches it is the
- * same one: *one file per page* of a long document produces exactly as many
- * outputs as it has pages. A smaller bound here would refuse the feature's own
- * headline mode on any document past it.
- *
- * The two bounds multiply into a request that is still small — an index per
- * page, however the pages are grouped — so what this refuses is a grouping that
- * could not have come from a page count rather than a large-but-honest one.
+ * A **request** bound, and it bounds only the groups a person TYPED: *one file
+ * per page* travels as `each`, one page set, so a document of any length splits
+ * by page without reaching it (JOURNAL, *No document-size refusals*). Each group
+ * is itself a page set, so the request stays small however many pages a group
+ * spans, and what this refuses is a list of ranges no person wrote.
  */
 export const MAX_SPLIT_PARTS = 4096;
 
@@ -667,14 +640,13 @@ export const outlineEntrySchema = z.object({
 export type OutlineEntry = z.infer<typeof outlineEntrySchema>;
 
 /**
- * How many layers may reach the renderer, and how long a name may be.
+ * How many layers one part carries.
  *
- * Much smaller than the outline's, because the shapes differ: a design carries
- * a handful of optional-content groups where a manual carries hundreds of
- * headings. A bound copied across would be a number nobody had thought about,
- * and the number is meant to be a statement about what the thing is.
+ * A PART, not the document's layers: a CAD export carries thousands, and as the whole list's bound this refused
+ * every one of them (JOURNAL, *No document-size refusals*, table A row 6). A longer list crosses in several
+ * ({@link listPartFromSchema}, ADR-0130), and the host's walk stops only at a derived hostile-host bound and says so.
  */
-export const MAX_LAYERS = 1024;
+export const LAYERS_PART = 1024;
 
 /**
  * How many duplicate pages may be reported in one answer.
@@ -686,10 +658,6 @@ export const MAX_LAYERS = 1024;
  * for `document.searchPage`'s reason: without that flag a caller cannot tell
  * *this document has five hundred duplicates* from *you asked for five
  * hundred*.
- *
- * Bigger than {@link MAX_LAYERS} because the shapes differ again: a person
- * scanning a list of layers is reading a design's structure, where a person
- * looking at duplicates is about to delete them and wants the whole set.
  */
 export const MAX_DUPLICATE_PAGES = 4096;
 
@@ -768,41 +736,28 @@ export const ACCESSIBILITY_HUMAN_CHECKS = [
 ] as const;
 
 /**
- * How many of a page's text objects one answer may name — and, because a page
- * cannot have more lines than runs, how many **lines** one answer may carry.
+ * How long one read run's text may be — the PDFium host's own bound on a run (`PDFIUM_PRIOR_TEXT_MAX`), so any run
+ * the host answers can cross (ADR-0142 Decision 5).
  *
- * A page-scaled read, bounded like every other one that crosses. **Not the
- * engine wire's `ENGINE_TEXT_OBJECTS_MAX`**, which is 8192 and bounds a
- * different hop: that one exists so a hostile host cannot hand main an
- * unbounded array, and this one exists so main cannot hand the renderer a list
- * no person can work through. The smaller number is the honest one here — a
- * chooser of 8192 rows is not a chooser — and the flag beside it says when the
- * page had more, exactly as the flat-field and duplicate reports do.
- *
- * One number for both because they bound the same collection counted two ways:
- * grouping runs into lines can only make the list shorter, so a separate line
- * bound would be a second constant that could never be the binding one.
- *
- * ## `MAX_TEXT_REPLACEMENTS`' NUMBER AND NOT ITS ARGUMENT, which is finding W-1
- *
- * A surface offers what this read answered and sends what the person accepted
- * as one `replaceTextObject`, so a read bound above the command's would offer an
- * accept the command cannot carry. That relationship is real and it is **≤**.
- *
- * This was written `= MAX_TEXT_REPLACEMENTS` on 2026-09-09, citing CLAUDE.md's
- * *copy only where the reader cannot reach the source* — and the audit of
- * `63f10be..258a9ce` found the rule that governs instead, eleven lines from
- * where the derivation was made: `MAX_REPLACED_TEXT` refuses to derive from
- * `MAX_FIELD_VALUE` because **two bounds that happen to agree are not one
- * bound**. The two reasons differ. The command's bound is about a payload; this
- * one is about a list a person works through, and a derivation encoding `=`
- * would let a payload argument raise the chooser's ceiling past *a chooser of
- * 8192 rows is not a chooser* with no mechanism left on that side.
- *
- * So it is a literal with the relationship in prose — `MAX_FLAT_FIELD_CANDIDATES`
- * beside `MAX_CREATED_FIELDS`, which is the precedent this file already had.
+ * A read's lines and runs are bounded by `MAX_EDIT_RUNS`, the edit's: a surface offers what this read answered and
+ * sends what the person accepted as one command, so the read must never offer more than the command can carry. That
+ * relationship is **≤**, and here it is equality because both are a page's runs. It was the command's per-text 4,096
+ * reused for the run, which two bounds that agree are not.
  */
-export const MAX_TEXT_OBJECTS = 512;
+export const MAX_RUN_TEXT = 65_536;
+
+/**
+ * How many text blocks, and how many page objects, one PART of a page's read carries
+ * ([ADR-0130](../../../docs/DECISIONS/0130-a-documents-size-never-refuses-an-action.md) Decision 2).
+ *
+ * A PART, not the page: a dense table page is thousands of blocks, and a page drawn one glyph per object is thousands
+ * of objects (8,400 measured, JOURNAL 2026-10-02, *No document-size refusals*). Both lists were bounded at
+ * 512 and answered whole, while `main` forwarded every block and up to 45,800 objects — so such a
+ * page was refused as `internal` by this contract, finding AAAAAAA-1. They now cross a part at a time, as the outline
+ * does ({@link listPartFromSchema}). The figure is the old bound, so one part costs what the whole list used to.
+ */
+export const TEXT_BLOCKS_PART = 512;
+export const PAGE_OBJECTS_PART = 512;
 
 /**
  * A box in PDF user space — left, bottom, right, top — as `document.textBlocks`
@@ -917,13 +872,15 @@ export type DisplayLocation = z.infer<typeof displayLocationSchema>;
  * a mechanism reads exactly like one, which is why the audit that found this
  * looked for the case rather than for a disagreement.
  *
- * **FOUR, AND NOT A CHOICE (the owner, 2026-10-01): *"Show just exactly 4 and nothing more. Discard the rest. Keep
- * only the latest 4."*** From 2026-09-28 the cap was a person's choice of 5 to 30 (`viewing.recent-length`), and the
- * start screen then showed four of them; a remembered file no surface showed, under a setting that changed nothing a
- * person could see, is the display-only defect. So the store keeps four, the start screen shows what it keeps, and the
- * setting is withdrawn.
+ * **TEN, AND NOT A CHOICE (the owner, 2026-10-02, item N3): *"Main keeps up to 10 recent files; the start screen
+ * still shows 4."*** ([ADR-0143](../../../docs/DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md)).
+ * From 2026-09-28 the cap was a person's choice of 5 to 30 (`viewing.recent-length`) while the start screen showed
+ * four, and on 2026-10-01 the owner cut it to four (*"Keep only the latest 4"*): a remembered file no surface showed is
+ * the display-only defect. That reason still holds and is what makes ten right now — File › Recent shows every entry
+ * this bounds, and the start screen shows the first four of the same answer (`START_SCREEN_RECENT`, the start
+ * screen's own number).
  */
-export const MAX_RECENT_ENTRIES = 4;
+export const MAX_RECENT_ENTRIES = 10;
 
 /**
  * How many documents a recorded SESSION carries — what was open when a run ended, for the crash offer and
@@ -1189,14 +1146,17 @@ export const MAX_LAUNCH_DOCUMENTS = 32;
 const MAX_UNDO_COPIES = 100_000;
 
 /**
- * What a redaction's or Sanitize's save leaves that may still hold what was removed (the list of 29 September, item
- * 6): the file's older backups by NAME — the names a save gives them, `report.pdf.bak` and on — and how many undo copies
- * of the document this application keeps. No path crosses (invariant L2).
+ * What a redaction's, Sanitize's or flatten's save deleted, permanently, because it may still have held what was removed
+ * ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)): the backups beside
+ * the file that Monstera made and the undo copies, by count; and BY NAME — the names a save gives backups,
+ * `report.pdf.bak` and on — the files with such a name that Monstera did not make, which are kept. No path crosses
+ * (invariant L2).
  */
-const staleCopiesSchema = z
+const clearedCopiesSchema = z
   .object({
-    backups: z.array(z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH)).max(MAX_BACKUP_COPIES),
+    backups: z.number().int().nonnegative().max(MAX_BACKUP_COPIES),
     undoCopies: z.number().int().nonnegative().max(MAX_UNDO_COPIES),
+    kept: z.array(z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH)).max(MAX_BACKUP_COPIES),
   })
   .strict();
 
@@ -1295,7 +1255,7 @@ const composedImportOutcomeSchema = z.discriminatedUnion('kind', [
   importWriteFailedSchema,
 ]);
 
-/** How many blocks of a workbook an import may name as not converted. */
+/** How many blocks of a workbook an import NAMES as not converted; past it, `more` counts the rest. */
 export const MAX_OFFICE_MISSING_BLOCKS = 64;
 
 /**
@@ -1328,6 +1288,11 @@ const officeImportOutcomeSchema = z.discriminatedUnion('kind', [
       )
       .min(1)
       .max(MAX_OFFICE_MISSING_BLOCKS),
+    /**
+     * Blocks past the named ones, COUNTED: the document opened, so a workbook with more blocks missing than a dialog
+     * names is told how many rather than refused (table A row 12). Each is in the shell log.
+     */
+    more: z.number().int().min(0),
   }),
   importTooLargeSchema,
   importUnreadableSchema,
@@ -1817,6 +1782,12 @@ export const channels = {
              * older build recorded without one.
              */
             openedAt: annotationInstantSchema.nullable(),
+            /**
+             * Whether the file is there NOW, read by main as the list is asked for — by `readFileIdentity`, the rule
+             * an open answers `absent` by, so the list and the open agree (ADR-0143). `false` is listed and drawn
+             * disabled, never dropped: a file on a drive that is not connected is back when the drive is.
+             */
+            available: z.boolean(),
           }),
         )
         .max(MAX_RECENT_ENTRIES)
@@ -2010,8 +1981,8 @@ export const channels = {
    * `DocumentService.close` removes the record synchronously and then **awaits
    * the lane**, so work in flight delays the teardown rather than refusing it.
    * There is no busy refusal to report. Declaring one would have put a code in
-   * the result union that nothing can ever produce — the shape this range's
-   * audit found in `MAX_LAYERS`, a branch that reads as coverage and cannot
+   * the result union that nothing can ever produce — the shape of a bound a
+   * reader had already clamped to, a branch that reads as coverage and cannot
    * fire — and a renderer would carry a handler for it forever.
    */
   'document.close': channel(
@@ -2232,17 +2203,19 @@ export const channels = {
         kind: z.literal('saved'),
         version: docVersionSchema,
         /**
-         * Where the save was a redaction's or Sanitize's — it wrote no backup — what it leaves that may still hold what
-         * was removed: older backups beside the file, by NAME (never a path, invariant L2), and how many undo copies of
-         * the document this application keeps. `null` for every other save. The person is asked whether to delete them.
+         * Where the save was a removal's — it wrote no backup — what it deleted that may still have held what was
+         * removed, and the files with a backup's name it kept because Monstera did not make them (ADR-0139). `null`
+         * for every other save.
          */
-        staleCopies: staleCopiesSchema.nullable(),
+        cleared: clearedCopiesSchema.nullable(),
       }),
       /**
        * NOTHING WAS WRITTEN: the save would rewrite the file and so break this many signatures — a removal or a change
        * of protection is pending, or the file cannot be appended to. Asked with `breakSignatures: false` only.
        */
-      z.object({ kind: z.literal('breaks-signatures'), signatures: z.number().int().positive().max(MAX_SIGNATURES) }),
+      // A COUNT, for the warning's sentence: bounded at MAX_SIGNATURES, the panel's list, a save of a document with more
+      // signatures than a panel draws failed instead of warning (table A row 14).
+      z.object({ kind: z.literal('breaks-signatures'), signatures: z.number().int().positive() }),
       z.object({
         kind: z.literal('refused'),
         reason: z.enum(['contested', 'replaced', 'target-absent', 'unverifiable']),
@@ -2250,24 +2223,6 @@ export const channels = {
       z.object({ kind: z.literal('write-failed') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
-  ),
-
-  /**
-   * Deletes, PERMANENTLY, the stale copies a redaction's or Sanitize's save reported and the person confirmed: the
-   * named backups, and every undo copy of the document with the history that needs them (the list of 29 September,
-   * item 6). Main recomputes the file's backup names and deletes only those among `backups` — a name that is not one
-   * of this file's backups is never deleted — and answers how many of each went.
-   */
-  'document.deleteStaleCopies': channel(
-    'Deletes the older backups and undo copies a removal’s save left, as the person confirmed.',
-    z.object({ docId: docIdSchema, backups: staleCopiesSchema.shape.backups }).strict(),
-    z
-      .object({
-        backups: z.number().int().nonnegative().max(MAX_BACKUP_COPIES),
-        undoCopies: z.number().int().nonnegative().max(MAX_UNDO_COPIES),
-      })
-      .strict(),
-    ['document-not-open', 'document-busy'],
   ),
 
   /**
@@ -2327,13 +2282,12 @@ export const channels = {
     z.object({
       docId: docIdSchema,
       /**
-       * Zero-based indices, in the order they should appear.
-       *
-       * Bounded by {@link MAX_EXTRACT_PAGES} because this crosses from the
-       * renderer, and by the document itself in the kernel — a page this
-       * document does not have is refused there, where the count is known.
+       * Zero-based pages, in the order they should appear, as a PAGE SET (`pageSet.ts`): *every page* of a document of
+       * any length is one run. It was a list bounded at 4,096 indices, so extracting all of a document past
+       * 4,096 pages failed as `internal` (JOURNAL, *No document-size refusals*). A page this document does not have is
+       * refused where the count is known, before any page is listed.
        */
-      pages: z.array(z.number().int().nonnegative()).min(1).max(MAX_EXTRACT_PAGES),
+      pages: pageSetSchema,
     }),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
@@ -2522,17 +2476,17 @@ export const channels = {
     z.object({
       docId: docIdSchema,
       /**
-       * The outputs, each a non-empty list of zero-based page indices.
+       * The outputs: `groups`, each a page set of its own file — the ranges a person typed, bounded at
+       * {@link MAX_SPLIT_PARTS} files since each is a range they wrote — or `each`, ONE FILE PER PAGE of a page set.
        *
-       * Bounded on both axes: {@link MAX_SPLIT_PARTS} outputs, and
-       * {@link MAX_EXTRACT_PAGES} pages in any one of them. A split of every
-       * page of a long document is the ordinary case, so the first bound is the
-       * document-shaped one.
+       * `each` is the document-shaped form. Splitting every page of a long document is the ordinary case, and as one
+       * group per page it met {@link MAX_SPLIT_PARTS} at 4,096 pages and failed as `internal` (JOURNAL, *No
+       * document-size refusals*); as a page set it is one run at any length, and `main` makes the groups.
        */
-      groups: z
-        .array(z.array(z.number().int().nonnegative()).min(1).max(MAX_EXTRACT_PAGES))
-        .min(1)
-        .max(MAX_SPLIT_PARTS),
+      split: z.union([
+        z.object({ groups: z.array(pageSetSchema).min(1).max(MAX_SPLIT_PARTS) }).strict(),
+        z.object({ each: pageSetSchema }).strict(),
+      ]),
     }),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('split'), files: z.number().int().positive(), ...WRITTEN }),
@@ -2566,8 +2520,11 @@ export const channels = {
     z
       .object({
         docId: docIdSchema,
-        /** Zero-based page indices, one file each. */
-        pages: z.array(z.number().int().nonnegative()).min(1).max(MAX_SPLIT_PARTS),
+        /**
+         * Zero-based pages, one file each, as a page set: *every page* is one run at any length. A list bounded at
+         * {@link MAX_SPLIT_PARTS} failed for a document past 4,096 pages (JOURNAL, *No document-size refusals*).
+         */
+        pages: pageSetSchema,
         format: z.enum(PAGE_IMAGE_FORMATS),
         dpi: z.number().int().min(MIN_PAGE_IMAGE_DPI).max(MAX_PAGE_IMAGE_DPI),
         quality: z.number().int().min(MIN_IMAGE_QUALITY).max(MAX_IMAGE_QUALITY),
@@ -3327,7 +3284,8 @@ export const channels = {
     'Places a barcode of the given text on pages of an open document.',
     z.object({
       docId: docIdSchema,
-      pages: z.array(z.number().int().nonnegative()).min(1).max(MAX_IMAGE_PAGES).readonly(),
+      /** A page set, `placeImage`'s reason: *every page* is one click and one run, at any length. */
+      pages: pageSetSchema,
       rect: annotationRectSchema,
       text: z.string().min(1).max(MAX_BARCODE_TEXT),
       format: z.enum(BARCODE_FORMATS),
@@ -3404,7 +3362,11 @@ export const channels = {
     'Places an image on pages of an open document, from a file the user picks or a picture in their stamp library.',
     z.object({
       docId: docIdSchema,
-      pages: z.array(z.number().int().nonnegative()).min(1).max(MAX_IMAGE_PAGES).readonly(),
+      /**
+       * A page set: stamping *every page* is one click, and as a list bounded at 4,096 indices it failed for a
+       * document past 4,096 pages (JOURNAL, *No document-size refusals*).
+       */
+      pages: pageSetSchema,
       rect: annotationRectSchema,
       /** Who placed it and when — the renderer's to say, main's to write (ADR-0103). */
       stamp: annotationStampSchema,
@@ -4244,11 +4206,11 @@ export const channels = {
    * it would be one whose changes no undo could reach.
    *
    * Whole-document for `document.destinations`' reason: layers are structure,
-   * read once when a document opens.
+   * read once when a document opens. And in PARTS for its reason too (ADR-0130): the renderer reads them whole.
    */
   'document.layers': channel(
-    'The document’s optional-content groups, with each one’s current visibility.',
-    z.object({ docId: docIdSchema }),
+    'One part of the document’s optional-content groups, with each one’s current visibility.',
+    z.object({ docId: docIdSchema, from: listPartFromSchema }),
     z.object({
       version: docVersionSchema,
       layers: z
@@ -4256,12 +4218,17 @@ export const channels = {
           z.object({
             /** The layer's address, as a `setLayerVisibility` command names it. */
             index: z.number().int().nonnegative(),
+            /** Shortened with an ellipsis where the document's name is longer (`shownName.ts`). */
             name: z.string().max(MAX_LAYER_NAME_LENGTH),
             visible: z.boolean(),
           }),
         )
-        .max(MAX_LAYERS)
+        .max(LAYERS_PART)
         .readonly(),
+      /** Where the next part begins, or `null` for the last. {@link listPartNextSchema}. */
+      next: listPartNextSchema,
+      /** Whether the walk stopped at its bound, on the last part only. `document.annotations`' flag. */
+      truncated: z.boolean(),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
@@ -4652,16 +4619,19 @@ export const channels = {
    * ## Boxes, to PLACE the editor and for nothing else
    *
    * A block's box and each line's box cross in PDF user space and the renderer
-   * converts them through `PageTransform`, as every overlay does. The style is
-   * what the editor is set in: the page's font cannot be loaded by a renderer,
-   * so a family of the same kind at the size the page draws at.
+   * converts them through `PageTransform`, as every overlay does. A style is
+   * what the editor draws in: the page's font cannot be loaded by a renderer,
+   * so a family of the same kind at the size the page draws at, in the fill.
    *
-   * ## Each line carries its RUNS, not one string
+   * ## Each line carries its RUNS, not one string — and each run its STYLE
    *
    * A run is a text object with its own font, and an edit names objects. The
    * runs travel and the surface joins them with `lineText` for display — the
    * same function the kernel diffs with, so the words shown and the words
-   * diffed are one opinion.
+   * diffed are one opinion. Each run carries how it is set and the editor
+   * draws it so ([ADR-0145](../../../docs/DECISIONS/0145-the-text-editor-shows-each-run-in-its-own-style.md));
+   * the block's own style is one of its runs', the base for text that belongs
+   * to no run.
    *
    * ## `engine-unavailable` is declared here for `document.execute`'s reason
    *
@@ -4670,10 +4640,12 @@ export const channels = {
    * surface finds out first, before offering anything.
    */
   'document.textBlocks': channel(
-    'A page’s editable text as blocks, in the editing engine’s own object numbering.',
-    z.object({ docId: docIdSchema, page: z.number().int().nonnegative() }),
+    'One part of a page’s editable text as blocks, in the editing engine’s own object numbering.',
+    z.object({ docId: docIdSchema, page: z.number().int().nonnegative(), from: listPartFromSchema }),
     z.object({
       version: docVersionSchema,
+      /** Where the next part begins, or `null` for the last. {@link listPartNextSchema}. */
+      next: listPartNextSchema,
       blocks: z
         .array(
           z
@@ -4692,29 +4664,35 @@ export const channels = {
                           z
                             .object({
                               /** The object's index in the engine's own page-object order. */
-                              index: z.number().int().nonnegative(),
+                              index: z.number().int().min(0).max(MAX_OBJECT_INDEX),
                               /** What that run says, with the spaces PDFium infers between words. */
-                              text: z.string().max(MAX_REPLACED_TEXT),
+                              text: z.string().max(MAX_RUN_TEXT),
+                              /**
+                               * How THIS run is set, which the editor draws it in (ADR-0145): a line of a bold lead
+                               * word and a regular rest is two runs in two styles, and the block's own style is one.
+                               */
+                              style: textBlockStyleSchema,
                             })
                             .strict(),
                         )
                         .min(1)
-                        .max(MAX_TEXT_OBJECTS)
+                        .max(MAX_EDIT_RUNS)
                         .readonly(),
                       box: pdfBoxSchema,
                     })
                     .strict(),
                 )
                 .min(1)
-                .max(MAX_BLOCK_LINES)
+                .max(MAX_EDIT_RUNS)
                 .readonly(),
+              /** The block's base: its first line's longest run's style, for a paste and a line typed below. */
               style: textBlockStyleSchema,
             })
             .strict(),
         )
-        .max(MAX_TEXT_OBJECTS)
+        .max(TEXT_BLOCKS_PART)
         .readonly(),
-      /** Whether the bound stopped the list. `document.flatFieldCandidates`' flag. */
+      /** Whether the engine's walk stopped at its bound, on the last part only. `document.annotations`' flag. */
       truncated: z.boolean(),
       /**
        * Characters on this page set at an angle, which are not offered for editing
@@ -4778,10 +4756,12 @@ export const channels = {
    * nothing about.
    */
   'document.pageObjects': channel(
-    'Every object on a page, with its kind, its box and its fill, in the editing engine’s numbering.',
-    z.object({ docId: docIdSchema, page: z.number().int().nonnegative() }),
+    'One part of the objects on a page, with each one’s kind, box and fill, in the editing engine’s numbering.',
+    z.object({ docId: docIdSchema, page: z.number().int().nonnegative(), from: listPartFromSchema }),
     z.object({
       version: docVersionSchema,
+      /** Where the next part begins, or `null` for the last. {@link listPartNextSchema}. */
+      next: listPartNextSchema,
       objects: z
         .array(
           z.object({
@@ -4802,9 +4782,9 @@ export const channels = {
               .nullable(),
           }),
         )
-        .max(MAX_TEXT_OBJECTS)
+        .max(PAGE_OBJECTS_PART)
         .readonly(),
-      /** Whether the bound stopped the list. `document.flatFieldCandidates`' flag. */
+      /** Whether the engine's walk stopped at its bound, on the last part only. `document.annotations`' flag. */
       truncated: z.boolean(),
     }),
     ['document-not-open', 'document-poisoned', 'engine-unavailable'],
@@ -5007,11 +4987,12 @@ export const channels = {
   ),
 
   'document.pageLinks': channel(
-    'The links on one page, with internal destinations already resolved.',
+    'One part of the links on one page, with internal destinations already resolved.',
     z.object({
       docId: docIdSchema,
       /** Zero-based, as every page index that crosses this contract is. */
       page: z.number().int().nonnegative(),
+      from: listPartFromSchema,
     }),
     z.object({
       version: docVersionSchema,
@@ -5027,7 +5008,7 @@ export const channels = {
             z.object({
               kind: z.literal('external'),
               /**
-               * The URI exactly as the document carries it.
+               * The URI as the document carries it, shortened with an ellipsis past {@link MAX_LINK_URI_LENGTH}.
                *
                * **Nothing on either side follows it.** A renderer shows it and
                * asks; opening it is a separate action a person takes, which is
@@ -5038,8 +5019,12 @@ export const channels = {
             }),
           ]),
         )
-        .max(MAX_PAGE_LINKS)
+        .max(PAGE_LINKS_PART)
         .readonly(),
+      /** Where the next part begins, or `null` for the last. {@link listPartNextSchema}. */
+      next: listPartNextSchema,
+      /** Whether the walk stopped at its bound, on the last part only. `document.annotations`' flag. */
+      truncated: z.boolean(),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
@@ -5422,20 +5407,13 @@ export const channels = {
       z.object({
         kind: z.literal('translated'),
         version: docVersionSchema,
-        blocks: z
-          .array(
-            z
-              .object({
-                lines: z
-                  .array(z.array(z.number().int().nonnegative()).min(1).max(MAX_TEXT_REPLACEMENTS))
-                  .min(1)
-                  .max(MAX_BLOCK_LINES),
-                text: z.string().max(MAX_REPLACED_TEXT),
-              })
-              .strict(),
-          )
-          .min(1)
-          .max(MAX_EDIT_BLOCKS),
+        /**
+         * The blocks to write, in `editTextBlock`'s own wire form (ADR-0142), so the renderer adds the page, the
+         * version and the fit and composes nothing.
+         */
+        edit: blockEditSchema.refine((edit) => blockEditAgrees(edit), {
+          message: 'the starts must describe the lists, and an object may be named once',
+        }),
       }),
       z.object({ kind: z.literal('nothing-to-translate') }),
       z.object({ kind: z.literal('refused'), problem: z.enum(AI_ANSWER_REFUSALS) }),

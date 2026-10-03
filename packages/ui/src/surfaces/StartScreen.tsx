@@ -3,6 +3,7 @@ import type { MessageKey } from '@monstera/shared';
 import { type ReactElement, useId } from 'react';
 
 import heroLogo from '../../../../assets/brand/logo-hero.png';
+import heroLogo2x from '../../../../assets/brand/logo-hero@2x.png';
 import type { OpenProblem } from '../commands/openDocument.js';
 import {
   START_ABSENT,
@@ -89,7 +90,8 @@ export function StartScreen({ registry, context, problem }: StartScreenProps): R
         {/* THE ARTWORK OVER THE WORDMARK, v5-01's order: the supplied mark as a picture (ADR-0002), and the
             product's name set in Marcellus as the heading (ADR-0100) — so the heading's name is the word,
             and the picture above it, which says the same, is not read twice. */}
-        <img className="m-start-logo" src={heroLogo} alt="" />
+        {/* AT 1x AND 2x: each display draws the file made for it, so neither scales the art by more than its own. */}
+        <img className="m-start-logo" src={heroLogo} srcSet={`${heroLogo} 1x, ${heroLogo2x} 2x`} alt="" />
         <h1 className="m-start-title">{_(START_TITLE)}</h1>
         <p className="m-start-product">{_(START_PRODUCT)}</p>
         <p className="m-start-tagline">{_(START_TAGLINE)}</p>

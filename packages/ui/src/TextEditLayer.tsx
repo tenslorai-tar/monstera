@@ -168,10 +168,10 @@ function pitchOf(block: TextBlock): number | undefined {
   return undefined;
 }
 
-/** The face kind a block is set in, as the class that names it. */
-function faceOf(block: TextBlock): string {
-  if (block.style.mono) return 'm-text-editor--mono';
-  if (block.style.serif) return 'm-text-editor--serif';
+/** The face kind a block or a run is set in, as the class that names it. */
+function faceOf(style: TextBlock['style']): string {
+  if (style.mono) return 'm-text-editor--mono';
+  if (style.serif) return 'm-text-editor--serif';
   return 'm-text-editor--sans';
 }
 
@@ -348,43 +348,86 @@ interface BlockEditorProps {
   readonly onClose: () => void;
 }
 
+/** What a run is drawn in: the page's own values — size, fill, weight, slant — and the face kind by class. */
+function drawRun(span: HTMLElement, style: TextBlock['style'], zoom: number): void {
+  const { r, g, b } = style.colour;
+  span.className = `m-text-editor__run ${faceOf(style)}`;
+  span.dataset['size'] = String(style.size);
+  span.style.fontSize = `${String(style.size * zoom)}px`;
+  span.style.fontWeight = style.bold ? '700' : '400';
+  span.style.fontStyle = style.italic ? 'italic' : 'normal';
+  span.style.color = `rgb(${String(r)}, ${String(g)}, ${String(b)})`;
+}
+
 /**
- * The open block: a text area over the words, set like them.
+ * The open block: an editable element over the words, each run set like the page's
+ * ([ADR-0145](../../../docs/DECISIONS/0145-the-text-editor-shows-each-run-in-its-own-style.md)).
  *
- * ## A TEXTAREA, not an editable div
+ * ## PLAIN-TEXT editable, a line per `div` and a run per `span`
  *
- * A block's text is plain words in lines, and a textarea gives exactly that —
- * a caret, selection, the platform's own typing undo, and a line break where a
- * person presses Enter — with no markup for pasted content to smuggle in. The
- * browser wraps a line that grows past the block's width, which is the reflow a
- * person sees while typing; where the words FINALLY break is the kernel's,
- * measured with the page's own fonts.
+ * A textarea draws one style, and a line set as a bold lead word and a regular
+ * rest is two. `contenteditable="plaintext-only"` keeps what the textarea gave —
+ * a caret, selection, the platform's own typing undo, a line break where a
+ * person presses Enter, and no markup that a paste can bring in — and draws each
+ * run as the page does: typing lands in the run at the caret and takes its
+ * style, measured in Chromium 151. What is read back is `innerText`, the same
+ * plain lines the textarea's value was, so the write is unchanged. The browser
+ * wraps a line that grows past the block's width, which is the reflow a person
+ * sees while typing; where the words FINALLY break is the kernel's, measured
+ * with the page's own fonts.
+ *
+ * ## Its content is BUILT ONCE, not rendered
+ *
+ * React renders the element empty and a layout effect fills it: once the person
+ * types, the DOM is theirs, and a render that reconciled the runs over it would
+ * put the page's words back over what they typed.
  */
 function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: BlockEditorProps): ReactElement {
   const { _ } = useLingui();
   const original = wordsOf(block);
   const [text, setText] = useState(original);
   const [problem, setProblem] = useState(false);
-  const area = useRef<HTMLTextAreaElement>(null);
+  const area = useRef<HTMLDivElement>(null);
   /** Set while a write is in flight, so a blur during it does not write twice. */
   const writing = useRef(false);
 
+  // THE RUNS, each in its own style, and the caret at the end. The block is this editor's for its whole life — a new
+  // read or another block is a new editor (`key`) — so this runs once.
   useLayoutEffect(() => {
     const element = area.current;
     if (element === null) return;
+    const owner = element.ownerDocument;
+    element.replaceChildren(
+      ...block.lines.map((line) => {
+        const row = owner.createElement('div');
+        row.className = 'm-text-editor__line';
+        for (const run of line.runs) {
+          const span = owner.createElement('span');
+          span.textContent = run.text;
+          drawRun(span, run.style, 1);
+          row.append(span);
+        }
+        return row;
+      }),
+    );
     element.focus();
-    element.setSelectionRange(element.value.length, element.value.length);
-  }, []);
+    const range = owner.createRange();
+    range.selectNodeContents(element);
+    range.collapse(false);
+    const selection = owner.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  }, [block]);
 
-  // GROWS WITH ITS WORDS, so a line typed past the block's last pushes the
-  // editor down as the kernel will push the lines below — and a textarea that
-  // scrolled instead would hide the line being typed.
+  // AT THE ZOOM ON SCREEN: each run's size times the zoom, again whenever the zoom moves, on the runs as they are now
+  // — what the person typed stays.
   useLayoutEffect(() => {
     const element = area.current;
     if (element === null) return;
-    element.style.height = 'auto';
-    element.style.height = `${String(Math.max(placed.height, element.scrollHeight))}px`;
-  }, [placed.height, text]);
+    for (const span of element.querySelectorAll<HTMLElement>('.m-text-editor__run')) {
+      span.style.fontSize = `${String(Number(span.dataset['size'] ?? '0') * geometry.zoom)}px`;
+    }
+  }, [geometry.zoom]);
 
   const finish = useCallback(async (): Promise<void> => {
     if (writing.current) return;
@@ -401,7 +444,7 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
     onClose();
   }, [onClose, onCommit, text]);
 
-  const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
     if (event.key !== 'Escape') return;
     event.preventDefault();
     event.stopPropagation();
@@ -422,22 +465,25 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
     // THE FRAME GROWS WITH ITS WORDS: at least the block's height, and as tall as
     // the editor inside it, so the handles enclose a line typed past the last.
     <div className="m-text-editor-frame" style={{ ...boxStyle(placed), height: 'auto', minHeight: placed.height }}>
-      <textarea
+      <div
         aria-label={_(TEXT_EDIT_EDITOR_LABEL)}
-        className={`m-text-editor ${faceOf(block)}`}
+        aria-multiline="true"
+        className={`m-text-editor ${faceOf(block.style)}`}
+        contentEditable="plaintext-only"
         data-text-editor=""
         onBlur={() => {
           if (!problem) void finish();
         }}
-        onChange={(event) => {
-          setText(event.target.value);
+        onInput={(event) => {
+          setText(event.currentTarget.innerText);
           setProblem(false);
         }}
         onKeyDown={onKeyDown}
         ref={area}
+        role="textbox"
         spellCheck
-        // THE PAGE'S OWN VALUES, which are dynamic and not design tokens: the
-        // size the text is drawn at, its colour, and the paper behind it.
+        // THE BLOCK'S OWN VALUES, the base for what belongs to no run — a paste, a line typed below the last — and
+        // the spacing and the paper behind them; each run sets its own (`drawRun`). Dynamic, and not design tokens.
         style={{
           fontSize: size,
           lineHeight: pitch === undefined ? 'normal' : `${String(pitch * geometry.zoom)}px`,
@@ -446,7 +492,6 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
           color: `rgb(${String(r)}, ${String(g)}, ${String(b)})`,
           ...(paper === undefined ? {} : { backgroundColor: paper }),
         }}
-        value={text}
       />
       {/* THE HANDLES, a mark and not a control — see the file's header. */}
       {(['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const).map((corner) => (

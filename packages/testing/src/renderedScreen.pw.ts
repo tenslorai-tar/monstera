@@ -4,7 +4,7 @@
 // than the class — "this expression is not constructable", at compile time.
 import { AxeBuilder } from '@axe-core/playwright';
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
-import { AI_SETUP_AT_START_SETTING_ID, displayLocationSchema } from '@monstera/contract';
+import { AI_SETUP_AT_START_SETTING_ID, blockEditOf, displayLocationSchema } from '@monstera/contract';
 import {
   MINIMUM_WINDOW,
   asDocId,
@@ -265,6 +265,7 @@ test('a message with a PLACEHOLDER renders its value, in the production build', 
         name: 'annual report.pdf',
         location: displayLocationSchema.parse({ within: 'documents', folder: 'Reports' }),
         openedAt: new Date().toISOString(),
+        available: true,
       },
     ],
     lastExitClean: false,
@@ -297,12 +298,15 @@ for (const look of LOOKS) {
           name: 'annual report.pdf',
           location: displayLocationSchema.parse({ within: 'documents', folder: 'Reports' }),
           openedAt: new Date().toISOString(),
+          available: true,
         },
         {
           handle: asFileHandle('handle-b'),
           name: 'notes.pdf',
           location: displayLocationSchema.parse({ within: 'onedrive', folder: null }),
           openedAt: null,
+          // UNAVAILABLE (ADR-0143), so a disabled card's contrast, name and focus are measured with the rest.
+          available: false,
         },
       ],
       lastExitClean: false,
@@ -332,6 +336,10 @@ for (const look of LOOKS) {
     expect(await region.evaluate((element) => element.contains(document.activeElement))).toBe(false);
   });
 }
+
+/** A text block's body run and a run set apart inside its line — larger, bold, blue — as `document.textBlocks` answers. */
+const BODY_RUN = { size: 12, colour: { r: 30, g: 30, b: 30 }, serif: false, mono: false, italic: false, bold: false };
+const SET_APART_RUN = { size: 16, colour: { r: 66, g: 83, b: 149 }, serif: false, mono: false, italic: false, bold: true };
 
 /** A one-page document built here, so the case needs no fixture from the corpus (B10). */
 async function onePagePdf(): Promise<Uint8Array> {
@@ -732,6 +740,184 @@ test('THUMBNAIL SIZE: a stored Large lays the Pages strip in ONE column of 160 p
   expect(columns.trim().split(/\s+/u)).toHaveLength(1);
 });
 
+/**
+ * A page's lines WHERE MUPDF PUTS THEM: `readPageText` and `textLayerOf` over a page drawn with pdf-lib — a 22 pt
+ * heading, an indented paragraph at 11 on 14, a short paragraph, three bullets, a 14 pt subheading, two columns at 10 on
+ * 13 and a footer — read 2026-10-03. The boxes overlap by a point, a bullet is a line of its own, and there are
+ * paragraph gaps, a gutter and an empty half page: the geometry a drag crosses, which the shim's even rows have none of.
+ */
+const PLACED_LINES: readonly { text: string; box: { x0: number; y0: number; x1: number; y1: number } }[] = [
+  ['Quarterly report', 72, 28, 239, 58],
+  ['The first paragraph opens the report with a sentence that runs to the margin', 90, 80, 458, 95],
+  ['and continues onto a second line of ordinary body text, set at eleven points', 72, 94, 436, 109],
+  ['with fourteen points of leading.', 72, 108, 221, 123],
+  ['A second paragraph, shorter than the first.', 72, 132, 278, 147],
+  ['It ends here.', 72, 146, 133, 161],
+  ['•', 90, 170, 93, 185],
+  ['First item in the list', 104, 170, 195, 185],
+  ['•', 90, 186, 93, 201],
+  ['Second item, a little longer than the first', 104, 186, 297, 201],
+  ['•', 90, 202, 93, 217],
+  ['Third', 104, 202, 129, 217],
+  ['Two columns', 72, 227, 161, 246],
+  ['Column 1 line 1 with some words', 72, 253, 218, 266],
+  ['Column 1 line 2 with some words', 72, 266, 218, 279],
+  ['Column 1 line 3 with some words', 72, 279, 218, 292],
+  ['Column 1 line 4 with some words', 72, 292, 218, 305],
+  ['Column 2 line 1 with some words', 320, 253, 466, 266],
+  ['Column 2 line 2 with some words', 320, 266, 466, 279],
+  ['Column 2 line 3 with some words', 320, 279, 466, 292],
+  ['Column 2 line 4 with some words', 320, 292, 466, 305],
+  ['Page 1 of 1', 280, 742, 326, 754],
+].map(([text, x0, y0, x1, y1]) => ({ text: String(text), box: { x0: Number(x0), y0: Number(y0), x1: Number(x1), y1: Number(y1) } }));
+
+/**
+ * The selection now: its text, whether its moving end is in a page's text layer, the element that end is in, and
+ * where its fixed end is as `page/line` — or the element it was moved to, when the line it was in has gone.
+ */
+function selectionNow(page: Page): Promise<{ text: string; inLayer: boolean; where: string; anchor: string }> {
+  return page.evaluate(() => {
+    const selection = document.getSelection();
+    const elementOf = (node: Node | null | undefined): Element | null =>
+      node instanceof Element ? node : (node?.parentElement ?? null);
+    const element = elementOf(selection?.focusNode);
+    const start = elementOf(selection?.anchorNode);
+    const line = start?.closest('[data-text-line]') ?? null;
+    return {
+      text: selection?.toString() ?? '',
+      inLayer: element?.closest('[data-text-layer]') !== null,
+      where: element === null ? 'none' : `${element.tagName.toLowerCase()}.${element.className}`,
+      anchor:
+        line === null
+          ? `${start?.tagName.toLowerCase() ?? 'none'}.${start?.className ?? ''}`
+          : `${line.closest('[data-text-layer]')?.getAttribute('data-text-layer') ?? '?'}/${line.getAttribute('data-text-line') ?? '?'}`,
+    };
+  });
+}
+
+/** {@link PLACED_LINES} open at `zoom`, the pointer pressed at the start of the second paragraph; its line's box. */
+async function pressOnSecondParagraph(page: Page, zoom: string): Promise<{ from: Box; layer: Box }> {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const bytes = await threePagePdf();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000f7');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'lines.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    // EVERY PAGE CARRIES TEXT, so a page scrolled into view mounts a layer of its own — the change of set that unmounted
+    // the layers under a selection.
+    pageLinesPlaced: [PLACED_LINES, PLACED_LINES, PLACED_LINES],
+    settings: { 'viewing.starting-zoom': zoom },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const anchor = page.locator('[data-text-layer="0"] [data-text-line="4"]');
+  await expect(anchor).toHaveText('A second paragraph, shorter than the first.');
+  const from = await anchor.boundingBox();
+  const layer = await page.locator('[data-text-layer="0"]').boundingBox();
+  if (from === null || layer === null) throw new Error('the paragraph or its layer has no box');
+  await page.mouse.move(from.x + 2, from.y + from.height / 2);
+  await page.mouse.down();
+  return { from, layer };
+}
+
+interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+for (const zoom of ['100pct', '200pct']) {
+  test(`a drag DOWN TO THE WINDOW’S FOOT, held there while the view scrolls, keeps its selection (${zoom})`, async ({
+    page,
+  }) => {
+    // N7, two mechanisms, both measured 2026-10-03 in Chromium 151.
+    //
+    // LEAVING THE PAGE: at 200% the drag reached the window's grid gap above the status bar, and the selection's end
+    // moved to the page's first line. A point on a selectable element with no text of its own resolves into that
+    // element's content, whose first text is the page's; the chrome is not text now, and a drag over it holds.
+    //
+    // HELD AT THE FOOT, the view scrolls under the drag, and every page's text layer UNMOUNTED on each change of the
+    // pages in view — the page text was answered with nothing until every page had been read again — so the browser
+    // moved the selection's fixed end out of its gone line into the page's slot: from there the selection ran from the
+    // next page's top ("Quarterly report…" at 200%) or collapsed to nothing (100%). A page that stays wanted keeps its
+    // layer now, and a page holding the selection stays wanted when it scrolls away.
+    const { from, layer } = await pressOnSecondParagraph(page, zoom);
+    const scrolled = (): Promise<number> => page.locator('.m-page-list').evaluate((list) => {
+      let area: Element | null = list;
+      while (area !== null && !['auto', 'scroll'].includes(getComputedStyle(area).overflowY)) area = area.parentElement;
+      return area?.scrollTop ?? 0;
+    });
+    const pressedAt = await scrolled();
+    const steps: { y: number; text: string; inLayer: boolean; where: string; anchor: string }[] = [];
+    const x = layer.x + layer.width * 0.3;
+    for (let y = from.y + from.height / 2; y < 790; y += 2) {
+      await page.mouse.move(x, y);
+      steps.push({ y, ...(await selectionNow(page)) });
+    }
+    // HELD UNTIL THE VIEW HAS MOVED ONE PAGE FROM THE PRESS, so the pages in view have changed under the selection —
+    // the thing the hold is for — and sampled at every poll. Measured FROM THE PRESS, because the moves above already
+    // autoscroll once the pointer passes the page area's foot, and how far depends on how long they take: a hold that
+    // asked for 400 px more from the END of the moves met the document's last scroll position (1,900 px at 100%) on
+    // the Windows CI image, which had scrolled 1,612 px before the hold began (job 111087637711, 2026-10-03).
+    await expect
+      .poll(
+        async () => {
+          steps.push({ y: 789, ...(await selectionNow(page)) });
+          return (await scrolled()) - pressedAt;
+        },
+        { intervals: [150] },
+      )
+      .toBeGreaterThan(layer.height);
+    await page.mouse.up();
+    // THE DRAG REACHED THE CHROME, or the case is a drag over text and proves nothing about leaving it.
+    expect(await page.evaluate(() => document.elementFromPoint(400, 789)?.closest('[data-text-layer]') === null)).toBe(true);
+    // IT SELECTED: lines below the anchor were reached on the way, so an empty selection cannot pass below.
+    expect(steps.some((step) => step.text.includes('It ends here'))).toBe(true);
+    // AND AT NO STEP did the selection lose where the press was — its fixed end still in page 1's fifth line, and its
+    // text beginning there: a line above it in the selection is the jump, whichever line — nor its end leave the text.
+    expect(
+      steps.filter((step) => step.anchor !== '0/4' || !step.text.startsWith('A second paragraph') || !step.inLayer),
+    ).toStrictEqual([]);
+  });
+}
+
+test('a drag PAST A SHORT LINE and on into the side panel holds its selection rather than snapping upward', async ({
+  page,
+}) => {
+  // N7's other half, measured the same day at 100%: on the empty layer beside *It ends here.*, Chromium resolved the
+  // point to the end of a LONG line above it — line 2's at 702 px, line 1's at 854 — so the selection's end climbed
+  // towards the page's top as the pointer moved right; and on Properties' labels the selection collapsed. Between the
+  // lines a drag now meets a cover that is not selectable, and off the page the chrome is not text: both hold.
+  await pressOnSecondParagraph(page, '100pct');
+  const end = await page.locator('[data-text-layer="0"] [data-text-line="5"]').boundingBox();
+  const panel = await page.locator('.m-context-panel').boundingBox();
+  if (end === null || panel === null) throw new Error('the paragraph’s end or the panel has no box');
+  // THROUGH THE PARAGRAPH'S LAST LINE first, so there is a selection to keep.
+  await page.mouse.move(end.x + end.width - 2, end.y + end.height / 2, { steps: 6 });
+  const selected = await selectionNow(page);
+  expect(selected.text).toContain('It ends');
+  // THEN ACROSS INTO THE PANEL, and down it.
+  const steps: { text: string; inLayer: boolean; where: string }[] = [];
+  for (let x = end.x + end.width; x < panel.x + panel.width / 2; x += 8) {
+    await page.mouse.move(x, end.y + end.height / 2);
+    steps.push(await selectionNow(page));
+  }
+  for (let y = end.y; y < panel.y + panel.height - 8; y += 8) {
+    await page.mouse.move(panel.x + panel.width / 2, y);
+    steps.push(await selectionNow(page));
+  }
+  await page.mouse.up();
+  // THE PANEL WAS REACHED, or this is a drag across the page alone.
+  expect(await page.evaluate(([x, y]) => document.elementFromPoint(x ?? 0, y ?? 0)?.closest('.m-context-panel') !== null, [
+    panel.x + panel.width / 2,
+    panel.y + panel.height / 2,
+  ])).toBe(true);
+  expect(
+    steps.filter((step) => !step.text.startsWith('A second paragraph') || !step.text.includes('It ends') || !step.inLayer),
+  ).toStrictEqual([]);
+});
+
 test('SELECTED TEXT opens the selected-text menu above the page’s, in the owner’s order (§7)', async ({ page }) => {
   // A real mouse drag over the text layer, in the production build: the selection is the browser's,
   // `readTextSelection` reads it through the layer's own transform, and the menu's groups are
@@ -828,7 +1014,9 @@ test('right-click › ASK AI quotes the selected words in the assistant’s box,
   const caret = await draft.evaluate((element: HTMLTextAreaElement) => [element.selectionStart, element.selectionEnd, element.value.length]);
   expect(caret[0]).toBe(caret[2]);
   expect(caret[1]).toBe(caret[2]);
-  await expect(page.locator('.m-assistant [data-choice-menu]').first()).toHaveText('Selection');
+  // THE CONTEXT IS THE SELECTION, which the menu's name carries: its face reads *Context* since the owner's review of
+  // 0.1.9.0.
+  await expect(page.locator('.m-assistant [data-choice-menu]').first()).toHaveAttribute('aria-label', 'Context: Selection');
 });
 
 test('a triple-click on a page’s LAST LINE still opens the selected-text menu, on that line', async ({
@@ -856,18 +1044,32 @@ test('a triple-click on a page’s LAST LINE still opens the selected-text menu,
   const box = await line.boundingBox();
   if (box === null) throw new Error('the last line has no box');
   await line.click({ clickCount: 3, position: { x: box.width / 2, y: box.height / 2 } });
-  // THE PREMISE, asserted rather than assumed: the far end really is outside the layer, so a pass
-  // below is the clipping working and not a drag that happened to stop on a word.
-  expect(
-    await page.evaluate(() => {
+  // THE TRIPLE-CLICK NOW ENDS IN THE LAYER: the page slot it ended in is not text since N7 (2026-10-03,
+  // `.m-document-surface`), so the next block a selection can end at is the layer's own. Asserted, because the
+  // spill this case was written for is now a fact about what a selection CAN be rather than what a triple-click does.
+  const focusInLayer = (): Promise<boolean> =>
+    page.evaluate(() => {
       const focus = document.getSelection()?.focusNode ?? null;
       const element = focus instanceof Element ? focus : (focus?.parentElement ?? null);
-      return element?.closest('[data-text-layer]') === null;
-    }),
-  ).toBe(true);
-
-  await line.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } });
+      return element?.closest('[data-text-layer]') !== null;
+    });
+  expect(await focusInLayer()).toBe(true);
   const menuItems = page.getByRole('menu').getByRole('menuitem');
+  await line.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } });
+  await expect(menuItems.first()).toHaveText('Copy');
+  await page.keyboard.press('Escape');
+
+  // AND THE SHAPE IT USED TO PRODUCE still opens the menu: the line selected, its far end in the page slot after the
+  // layer. `readTextSelection` clips that end to the layer; the premise is asserted, so a pass is the clipping.
+  await page.evaluate(() => {
+    const words = document.querySelector('[data-text-layer="0"] [data-text-line="1"]')?.firstChild;
+    const layer = document.querySelector('[data-text-layer="0"]');
+    const slot = layer?.parentElement;
+    if (words == null || layer === null || slot == null) throw new Error('no line, layer or slot');
+    document.getSelection()?.setBaseAndExtent(words, 0, slot, [...slot.childNodes].indexOf(layer) + 1);
+  });
+  expect(await focusInLayer()).toBe(false);
+  await line.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } });
   await expect(menuItems.first()).toBeVisible();
   await expect(menuItems.first()).toHaveText('Copy');
   await expect(page.getByRole('menuitem', { name: 'Explain' })).toBeVisible();
@@ -1108,6 +1310,8 @@ test('a page ZOOMED WIDER THAN ITS PANE can still be scrolled to its left edge',
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
+  // OPEN FIRST: until its first frame the page area shows the loading state and holds no page canvas to measure.
+  await expect(page.locator('.m-page-pane[data-first-frame="shown"]')).toHaveCount(1);
 
   const bar = page.getByRole('status', { name: 'Document status' });
   await bar.getByRole('slider', { name: 'Zoom level' }).fill('4');
@@ -1372,13 +1576,16 @@ test('a DIALOG taller than the window stays inside it, and its body scrolls to t
   expect(box?.y ?? -1).toBeGreaterThanOrEqual(0);
   expect((box?.y ?? 0) + (box?.height ?? Number.POSITIVE_INFINITY)).toBeLessThanOrEqual(420);
 
-  // THE BODY SCROLLS — the property that makes the bound usable rather than a clip — and the title stays put.
-  const scrolls = await dialog.locator('.m-dialog__body').evaluate((body) => body.scrollHeight > body.clientHeight);
+  // THE BODY SCROLLS — the property that makes the bound usable rather than a clip — and the title stays put. A browsed
+  // window (the dialog pattern's `DialogScroll`, 2 October) scrolls its list rather than its whole body, so its footer
+  // stays in view too.
+  const scrolls = await dialog.locator('.m-dialog-scroll').evaluate((region) => region.scrollHeight > region.clientHeight);
   expect(scrolls).toBe(true);
   await save.scrollIntoViewIfNeeded();
   const saveBox = await save.boundingBox();
   expect((saveBox?.y ?? -1) >= 0 && (saveBox?.y ?? 0) + (saveBox?.height ?? 0) <= 420).toBe(true);
   await expect(dialog.getByRole('heading', { name: 'Keyboard shortcuts' })).toBeInViewport();
+  await expect(dialog.getByRole('button', { name: 'Reset all shortcuts' })).toBeInViewport();
 });
 
 test('NOTHING DRAWS OVER A DIALOG: every stacked element of the window sits under the modal layer', async ({ page }) => {
@@ -2391,11 +2598,11 @@ test('the START SCREEN draws the supplied logo, the hero lines, one primary Open
   const drawn = await measure(hero);
   // DECODED — a broken source is still a laid-out box, with a natural width of zero.
   expect(drawn.natural).toBeGreaterThan(0);
-  // 118, the owner's 40% over the 84 it was (review of 0.1.6.0); `--logo-hero`.
-  expect(drawn.height).toBeCloseTo(118, 0);
-  // AND THE ARTWORK HAS THE PIXELS FOR IT on a 2x display: a derivative smaller than twice the drawn height is
-  // upscaled, which is blur that no layout assertion sees.
-  expect(drawn.natural).toBeGreaterThanOrEqual(2 * drawn.height);
+  // 142: the owner's 118 (84 × 1.4, review of 0.1.6.0), then about 142 on 2 October; `--logo-hero`.
+  expect(drawn.height).toBeCloseTo(142, 0);
+  // AND THE ARTWORK HAS THE PIXELS FOR IT at this display's scale, 1: a derivative smaller than the drawn height is
+  // upscaled, which is blur that no layout assertion sees. The 2x display's file is the case below.
+  expect(drawn.natural).toBeGreaterThanOrEqual(drawn.height);
   // UNSTRETCHED: drawn at the image's OWN ratio. This asserted the portrait master's 1652 × 2050 until the owner's
   // square masters replaced it on 2026-09-19 and it failed on a correct drawing — a ratio written down is a claim about
   // one artwork, and the image's own ratio is the property ADR-0002 states for any.
@@ -2437,6 +2644,45 @@ test('the START SCREEN draws the supplied logo, the hero lines, one primary Open
   if (links === null || build === null) throw new Error('a footer region has no box');
   expect(links.x).toBeLessThan(viewport.width / 4);
   expect(build.x + build.width).toBeGreaterThan((viewport.width * 3) / 4);
+});
+
+test('the START SCREEN draws its 2x artwork on a 2x display, and its tiles fit a 1280 × 800 window', async ({ browser }) => {
+  // A `srcset`'s choice is the browser's, so the case reads which file was DECODED, not which was named: a 1x file on a
+  // 2x display draws at 142 from 142 pixels, which is the blur this file exists to stop and passes every layout check.
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 });
+  const page = await context.newPage();
+  await bridge(page);
+  await page.goto('/');
+  const hero = page.locator('.m-start-logo');
+  await expect(hero).toBeVisible();
+  await expect.poll(() => hero.evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  // THE FILE'S OWN PIXELS, decoded apart: the element's `naturalWidth` is divided by the candidate's density (HTML's
+  // "density-corrected natural width"), so a 284 px file chosen as 2x reads 142 there, the same as the 1x file.
+  const decoded = await hero.evaluate(async (image) => {
+    const img = image as HTMLImageElement;
+    const file = new Image();
+    file.src = img.currentSrc;
+    await file.decode();
+    return { source: img.currentSrc, natural: file.naturalWidth, height: img.getBoundingClientRect().height };
+  });
+  expect(decoded.source).toContain('logo-hero@2x');
+  expect(decoded.natural).toBeGreaterThanOrEqual(2 * decoded.height);
+
+  // THE LOGO GREW 24 PX and the room it took came from the drop zone and the top padding, so at the size the owner works
+  // at the first screen still holds the hero, Open and every tile, unscrolled. Measured against the area that scrolls,
+  // not the footer: the footer FOLLOWS the content (`margin-block-start: auto`), so "the last tile is above the footer"
+  // holds at any height and separates nothing. The recent list and the footer below the tiles scroll by design.
+  const fit = await page.locator('.m-start-card').last().evaluate((card) => {
+    let area: HTMLElement | null = card.parentElement;
+    while (area !== null && !['auto', 'scroll'].includes(getComputedStyle(area).overflowY)) area = area.parentElement;
+    return area === null
+      ? null
+      : { top: area.scrollTop, tile: card.getBoundingClientRect().bottom, room: area.getBoundingClientRect().bottom };
+  });
+  if (fit === null) throw new Error('the start area has no scrolling ancestor');
+  expect(fit.top).toBe(0);
+  expect(fit.tile).toBeLessThanOrEqual(fit.room);
+  await context.close();
 });
 
 test('F1 opens the HELP CENTRE, Ctrl+/ the keyboard shortcuts, and the start screen footer names F1', async ({ page }) => {
@@ -2500,12 +2746,13 @@ test('a DIALOG opened from the keyboard closes on the FIRST Escape', async ({ pa
   await expect(dialog).toHaveCount(0);
 });
 
-test('an existing REDACT mark is drawn as a SOLID preview over the region it covers, and a square beside it is not', async ({
+test('an existing REDACT mark is drawn as PENDING over the region it covers, labelled, and a square beside it is not', async ({
   page,
 }) => {
   // FEATURES row 131's owed half. Measured 2026-09-15 in this build: PDF.js paints MuPDF's Redact appearance as a thin
-  // outline and nothing else, so the content a burn-in will remove stayed fully visible. The preview is chrome the
-  // renderer draws — §10.2's overlay-on-page context — in `--redact-mark`.
+  // outline and nothing else, so the content a burn-in will remove stayed fully visible. The mark is chrome the
+  // renderer draws — §10.2's overlay-on-page context — in `--redact-mark`, and since the owner's item N1 it must not
+  // look like the black box an APPLIED redaction is: hatched, not filled, and labelled *Marked for redaction*.
   await page.setViewportSize({ width: 1280, height: 800 });
   const bytes = await onePagePdf();
   const docId = asDocId('00000000-0000-4000-8000-0000000000d3');
@@ -2524,14 +2771,46 @@ test('an existing REDACT mark is drawn as a SOLID preview over the region it cov
   const canvas = page.locator('canvas[data-page-canvas="0"]');
   await expect(canvas).toBeVisible();
 
-  const preview = page.locator('[data-annotation-layer="0"] .m-redact-preview');
+  const preview = page.locator('[data-annotation-layer="0"] [data-annotation-kind="redact"]');
   await expect(preview).toHaveCount(1);
   // THE CONTROL: a square is drawn by the page raster from its own appearance, so the layer draws nothing for it. A
-  // layer that drew every kind would pass everything above and paint a black box over every square a person drew.
+  // layer that drew every kind would pass everything above and paint a mark over every square a person drew.
   await expect(page.locator('[data-annotation-kind="square"]')).toHaveCount(0);
 
-  // THE TOKEN, resolved in the production build: black, which is what the burn-in paints.
-  expect(await preview.evaluate((node) => getComputedStyle(node).fill)).toBe('rgb(0, 0, 0)');
+  // NOT THE BURN-IN'S LOOK, resolved in the production build: the edge is the token's black, the inside is NOT filled
+  // (an applied redaction is a black box), and the hatching drawn instead is the token's black at 45%, so the words
+  // under it can still be checked.
+  const mark = preview.locator('.m-redact-mark');
+  const look = await mark.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return { fill: style.backgroundColor, hatch: style.backgroundImage, edge: style.borderTopColor };
+  });
+  expect(look.fill).toBe('rgba(0, 0, 0, 0)');
+  expect(look.hatch).toContain('repeating-linear-gradient');
+  expect(look.hatch).toContain('color(srgb 0 0 0 / 0.45)');
+  expect(look.edge).toBe('rgb(0, 0, 0)');
+
+  // THE LABEL, on the mark (it fits: 200 × 100 points), in an ink solved against its chip at the text floor.
+  const label = preview.locator('[data-annotation-label]');
+  await expect(label).toHaveText('Marked for redaction');
+  await expect(label).toHaveAttribute('data-place', 'inside');
+  const ink = await label.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return { colour: style.color, chip: style.backgroundColor };
+  });
+  expect(ink.chip).toBe('rgb(0, 0, 0)');
+  const [colour, chip] = [channels(ink.colour), channels(ink.chip)];
+  expect(colour, `the label's ink ${ink.colour} did not parse — was it solved at all?`).not.toBeNull();
+  expect(contrast(colour ?? [0, 0, 0], chip ?? [0, 0, 0])).toBeGreaterThanOrEqual(textContrastFloor('light'));
+  // AND THE INK IS THE SOLVED ONE, not an inherited colour that happens to clear the floor: this bridge's text colour
+  // is light, so on a black chip an unsolved label passes the line above too (measured, 3 October, with the solve
+  // pointed at another property). The layer carries the answer inline and the label draws in it.
+  const solved = await preview.evaluate((node) => {
+    const layer = node.closest<HTMLElement>('[data-annotation-layer]');
+    return layer === null ? '' : layer.style.getPropertyValue('color');
+  });
+  expect(solved, 'the layer carries no solved colour').not.toBe('');
+  expect(channels(solved)).toStrictEqual(colour);
 
   // WHERE, against the canvas the page is drawn in: 612 pt across the canvas's width is the scale, and the top of the
   // box is 792 − y1 down from the top of the page.
@@ -2552,6 +2831,71 @@ test('an existing REDACT mark is drawn as a SOLID preview over the region it cov
       `${key}: drawn ${String(box?.[key])}, expected ${String(expected[key])} at scale ${String(scale)}`,
     ).toBeLessThan(2);
   }
+});
+
+test('the SIGNATURES dialog keeps a 256-character unbroken name inside itself, and Close in view, at the narrowest window', async ({
+  page,
+}) => {
+  // F row 14 lets a signature whose strings are past 256 characters be READ, each shortened by the reader to 256 and an
+  // ellipsis; before it, such a document failed the read and the dialog never opened. Measured 2026-10-03 in Chromium
+  // 151: one unbroken signer name then ran past the dialog's edge, cut off, and its body scrolled sideways at 760, 1280
+  // and 1920 in every look.
+  await page.setViewportSize({ width: 760, height: 560 });
+  const bytes = await onePagePdf();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000d9');
+  const unbroken = `${'R'.repeat(255)}…`;
+  const words = `${'Approved for release by the regional board '.repeat(6).slice(0, 255)}…`;
+  const shown = {
+    notBefore: '2026-01-01T00:00:00Z',
+    notAfter: '2027-01-01T00:00:00Z',
+    coversDocument: true,
+    coversWholeFile: true,
+  };
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'signed.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    // TWO SIGNATURES, long enough together to be taller than the window: what put Close below the fold.
+    signatures: {
+      signatures: [
+        { ...shown, signer: unbroken, organisation: words, reason: unbroken, location: words },
+        { ...shown, signer: 'Ada Lovelace', organisation: '', reason: 'Approved', location: 'London' },
+      ],
+      unreadable: false,
+    },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+  await page.keyboard.press('Control+K');
+  await page.keyboard.type('Check signatures');
+  await page.getByRole('option', { name: 'Check signatures' }).first().click();
+  const dialog = page.getByRole('dialog', { name: 'Signatures' });
+  // THE BODY IS LOADED when the signer's line is there; an empty frame measures as fitting.
+  const signer = dialog.locator('.m-signatures__signer').first();
+  await expect(signer).toContainText('RRRR');
+  // CLOSE IS IN THE WINDOW, and the list is what scrolls — CONTROL: the list is taller than its region, or a dialog
+  // short enough to fit would pass this without the layout doing anything.
+  const close = dialog.locator('.m-dialog-footer').getByRole('button', { name: 'Close', exact: true });
+  const closeBox = await close.boundingBox();
+  expect(closeBox === null ? Infinity : closeBox.y + closeBox.height).toBeLessThanOrEqual(560);
+  expect(
+    await dialog.locator('.m-dialog-scroll').evaluate((scroll) => scroll.scrollHeight - scroll.clientHeight),
+  ).toBeGreaterThan(100);
+  const measured = await dialog.evaluate((node) => {
+    // THE SCROLL PART'S OWN OVERFLOW, which is what would scroll sideways: the body is `overflow: visible` beside a
+    // `DialogScroll`, and its scroll width counts the part's negative inline margin. Not the paragraphs: a paragraph's
+    // box stays at its parent's width while its text runs past it, so measuring them reads 0 with the defect present
+    // (measured, the same day).
+    const scroll = node.querySelector('.m-dialog-scroll');
+    return {
+      sideways: scroll === null ? null : scroll.scrollWidth - scroll.clientWidth,
+      // THE WHOLE NAME IS SHOWN, wrapped rather than cut: a fix that clipped it would also stop the overflow.
+      signerText: node.querySelector('.m-signatures__signer')?.textContent ?? '',
+    };
+  });
+  expect(measured).toStrictEqual({ sideways: 0, signerText: `${unbroken} — ${words}` });
+  // AND IT WRAPPED, so the case cannot pass on a window wide enough to hold the name on one line.
+  expect((await signer.boundingBox())?.height ?? 0).toBeGreaterThan(40);
 });
 
 test('the COMMENTS panel at its default width sets each row on one line, with the remove control beside it', async ({
@@ -2989,50 +3333,86 @@ test('the ORGANIZE GRID spans the whole page area at 1920 × 1080, as many colum
   expect(measured.state.heights[LANDSCAPE] ?? 0, detail).toBeLessThan(Math.min(...portrait) - 10);
 });
 
-// ORGANIZE'S FULL PAGE (the owner's sub-tabs, 2026-10-02): every page WHOLE, as tall as the grid allows. Only real
-// layout can show this — the height is read from the laid-out grid, and happy-dom lays nothing out.
-test('ORGANIZE’S FULL PAGE shows each page whole at the grid’s height at 1280 × 800, a landscape page as wide as it is', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
-  const pdf = await PDFDocument.create();
-  for (let at = 0; at < 6; at += 1) pdf.addPage(at === LANDSCAPE ? [792, 612] : [612, 792]);
-  const bytes = await pdf.save();
-  const docId = asDocId('00000000-0000-4000-8000-0000000000eb');
-  await bridge(page, {
-    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'lease.pdf' }],
-    documentBytes: new Map([[docId, bytes]]),
-    settings: { 'appearance.ribbon-section': 'organize' },
-  });
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Open PDF…' }).click();
-  const grid = page.getByRole('region', { name: 'Pages to organize' });
-  await grid.getByRole('button', { name: 'Full page' }).click();
-  await expect(grid.locator('[data-thumb-page="0"] canvas[data-drawn="true"]')).toBeAttached();
-  await expect(grid.locator(`[data-thumb-page="${String(LANDSCAPE)}"] canvas[data-drawn="true"]`)).toBeAttached();
+// ORGANIZE'S FULL PAGE (the owner's review of 0.1.9.0): ONE page to a row at the grid's whole width, read top to
+// bottom as the Home view reads, and the grid's gestures still act on it. Only real layout can show this — the width
+// is read from the laid-out grid, and happy-dom lays nothing out. At 1280 × 800 and at 1920 × 1080, because the
+// defect was two pages side by side, which only a strip wider than two height-fitted pages draws.
+for (const size of [
+  { width: 1280, height: 800 },
+  { width: 1920, height: 1080 },
+]) {
+  test(`ORGANIZE’S FULL PAGE shows ONE page to a row at the grid’s width at ${String(size.width)} × ${String(size.height)}, scrolling down`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(size);
+    const pdf = await PDFDocument.create();
+    for (let at = 0; at < 6; at += 1) pdf.addPage(at === LANDSCAPE ? [792, 612] : [612, 792]);
+    const bytes = await pdf.save();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000eb');
+    const sent: unknown[] = [];
+    await bridge(
+      page,
+      {
+        opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'lease.pdf' }],
+        documentBytes: new Map([[docId, bytes]]),
+        settings: { 'appearance.ribbon-section': 'organize' },
+      },
+      (channel, params) => {
+        if (channel === 'document.execute') sent.push(params);
+      },
+    );
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    const grid = page.getByRole('region', { name: 'Pages to organize' });
+    await grid.getByRole('button', { name: 'Full page' }).click();
+    await expect(grid.locator('[data-thumb-page="0"] canvas[data-drawn="true"]')).toBeAttached();
 
-  const measured = await page.evaluate((landscape) => {
-    const strip = document.querySelector('.m-page-grid .m-thumbnails')?.getBoundingClientRect();
-    const box = (at: number): DOMRect | undefined =>
-      document.querySelector(`.m-page-grid [data-thumb-page="${String(at)}"] canvas`)?.getBoundingClientRect();
-    const first = box(0);
-    const wide = box(landscape);
-    return {
-      stripTop: strip?.top ?? 0,
-      stripBottom: strip?.bottom ?? 0,
-      first: first === undefined ? null : { top: first.top, bottom: first.bottom, width: first.width, height: first.height },
-      wide: wide === undefined ? null : { width: wide.width, height: wide.height },
-    };
-  }, LANDSCAPE);
-  const detail = JSON.stringify(measured);
-  // WHOLE: the first page's picture ends inside the grid's box, so it is read without scrolling past it.
-  expect(measured.first?.bottom ?? Infinity, detail).toBeLessThanOrEqual(measured.stripBottom);
-  // AND LARGE: it takes most of that height. A thumbnail is 142 px tall; the grid here is about 560.
-  expect(measured.first?.height ?? 0, detail).toBeGreaterThan((measured.stripBottom - measured.stripTop) * 0.8);
-  // CONTROL: a landscape page is drawn at the SAME height and is wider, so the cards fit a height and not a width.
-  expect(Math.abs((measured.wide?.height ?? 0) - (measured.first?.height ?? 0)), detail).toBeLessThanOrEqual(1);
-  expect(measured.wide?.width ?? 0, detail).toBeGreaterThan((measured.first?.width ?? 0) + 50);
-});
+    const read = (): Promise<{
+      strip: { left: number; right: number; scrollWidth: number; clientWidth: number; scrollHeight: number; clientHeight: number };
+      cards: { left: number; top: number; width: number }[];
+      canvas: number;
+    }> =>
+      page.evaluate(() => {
+        const strip = document.querySelector<HTMLElement>('.m-page-grid .m-thumbnails');
+        const box = strip?.getBoundingClientRect();
+        const cards = [...document.querySelectorAll('.m-page-grid [data-thumb-page]')].map((card) => {
+          const r = card.getBoundingClientRect();
+          return { left: Math.round(r.left), top: Math.round(r.top), width: Math.round(r.width) };
+        });
+        return {
+          strip: {
+            left: box?.left ?? 0,
+            right: box?.right ?? 0,
+            scrollWidth: strip?.scrollWidth ?? 0,
+            clientWidth: strip?.clientWidth ?? 0,
+            scrollHeight: strip?.scrollHeight ?? 0,
+            clientHeight: strip?.clientHeight ?? 0,
+          },
+          cards,
+          canvas: document.querySelector('.m-page-grid [data-thumb-page="0"] canvas')?.getBoundingClientRect().width ?? 0,
+        };
+      });
+    const measured = await read();
+    const detail = JSON.stringify(measured);
+    // ONE TO A ROW: every card's top below the one before it, and every card in the same column.
+    for (let at = 1; at < measured.cards.length; at += 1) {
+      expect(measured.cards[at]?.top ?? 0, detail).toBeGreaterThan(measured.cards[at - 1]?.top ?? Infinity);
+      expect(measured.cards[at]?.left, detail).toBe(measured.cards[0]?.left);
+    }
+    // AT THE GRID'S WIDTH: the page takes most of the strip, and nothing scrolls sideways.
+    expect(measured.canvas, detail).toBeGreaterThan(measured.strip.clientWidth * 0.85);
+    expect(measured.strip.scrollWidth, detail).toBeLessThanOrEqual(measured.strip.clientWidth);
+    // SCROLLING DOWN: six pages at that width are taller than the strip.
+    expect(measured.strip.scrollHeight, detail).toBeGreaterThan(measured.strip.clientHeight * 2);
+
+    // THE GRID'S GESTURES ACT ON IT: a click ticks a page, and Delete sends the command for that page.
+    await grid.getByRole('button', { name: 'Page 3', exact: true }).click();
+    await expect(grid.getByRole('button', { name: 'Page 3', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('Delete');
+    await expect.poll(() => JSON.stringify(sent)).toContain('"deletePages"');
+    expect(JSON.stringify(sent)).toContain('[2]');
+  });
+}
 
 // THE MENU BAR (ADR-0107), in every theme: the window's top row above the title bar, reached from the keyboard by F10,
 // walked with the arrows, an open menu marking the current theme and disabling what cannot run — and passing the gate
@@ -3115,7 +3495,7 @@ for (const look of LOOKS) {
       // A STORED KEY IS WHAT OFFERS A PROVIDER; the value is a fixture no provider sees.
       secrets: { 'ai.openai-key': 'a-fixture-key' },
       aiModels: { source: 'fetched', models: [{ id: 'fixture-model', label: 'Fixture', capabilities: { vision: null, streaming: null } }] },
-      translation: { kind: 'translated', version: asDocVersion(1), blocks: [{ lines: [[3]], text: 'Bonjour' }] },
+      translation: { kind: 'translated', version: asDocVersion(1), edit: blockEditOf([{ lines: [[3]], text: 'Bonjour' }]) },
     });
     await page.goto('/');
     await page.getByRole('button', { name: 'Open PDF…' }).click();
@@ -3401,6 +3781,95 @@ for (const look of LOOKS) {
   });
 }
 
+// REDACTION MARKS NOBODY APPLIED, in every look (the owner's item N1): the pending mark draws with its label, Ctrl+S
+// asks *2 redactions are marked but not applied* — axe clean — and each answer sends what it says. CONTROL in the same
+// case: until the person answers, nothing was saved and nothing burnt in.
+for (const look of LOOKS) {
+  test(`${look.name}: a save with marks pending ASKS first, passes axe, and each answer does its job`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const bytes = await onePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000ce');
+    const sent: { channel: string; params: unknown }[] = [];
+    await bridgeUnder(
+      page,
+      look,
+      {
+        opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'marked.pdf' }],
+        documentBytes: new Map([[docId, bytes]]),
+        annotations: [
+          { page: 0, index: 0, kind: 'redact', rect: { x0: 100, y0: 600, x1: 300, y1: 700 } },
+          { page: 0, index: 1, kind: 'redact', rect: { x0: 100, y0: 300, x1: 160, y1: 312 } },
+          { page: 0, index: 2, kind: 'square', rect: { x0: 350, y0: 100, x1: 450, y1: 200 } },
+        ],
+      },
+      (channel, params) => {
+        sent.push({ channel, params });
+      },
+    );
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+
+    // THE MARKS, in this look: the large one labelled ON it, inside its box; the small one too small for the label,
+    // which is then not drawn at all — outside the mark it covered words nobody marked (3 October).
+    const labels = page.locator('[data-annotation-layer="0"] [data-annotation-label]');
+    await expect(labels).toHaveCount(2);
+    await expect(labels.nth(0)).toHaveAttribute('data-place', 'inside');
+    await expect(labels.nth(0)).toBeVisible();
+    const [labelBox, markBox] = await Promise.all([
+      labels.nth(0).boundingBox(),
+      page.locator('[data-annotation-layer="0"] [data-annotation-kind="redact"]').nth(0).boundingBox(),
+    ]);
+    if (labelBox === null || markBox === null) throw new Error('the label or its mark has no box');
+    expect(labelBox.x >= markBox.x - 0.5 && labelBox.y >= markBox.y - 0.5).toBe(true);
+    expect(labelBox.x + labelBox.width <= markBox.x + markBox.width + 0.5).toBe(true);
+    expect(labelBox.y + labelBox.height <= markBox.y + markBox.height + 0.5).toBe(true);
+    await expect(labels.nth(1)).toHaveAttribute('data-place', 'none');
+    await expect(labels.nth(1)).toBeHidden();
+
+    const writes = (): string[] =>
+      sent
+        .map((call) => call.channel)
+        .filter((channel) => channel === 'document.save' || channel === 'document.execute');
+
+    // CANCEL: nothing written, nothing burnt in.
+    await page.keyboard.press('Control+S');
+    const dialog = page.getByRole('dialog', { name: 'Redactions not applied' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('2 redactions are marked but not applied. Apply them now?');
+    expect(writes()).toStrictEqual([]);
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(writes()).toStrictEqual([]);
+
+    // SAVE WITHOUT APPLYING: the save, and no burn-in.
+    await page.keyboard.press('Control+S');
+    await dialog.getByRole('button', { name: 'Save without applying' }).click();
+    await expect.poll(writes).toStrictEqual(['document.save']);
+
+    // APPLY: the burn-in over every page, THEN the save.
+    await page.keyboard.press('Control+S');
+    await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+    await expect.poll(writes).toStrictEqual(['document.save', 'document.execute', 'document.save']);
+    const burnt = sent.find((call) => call.channel === 'document.execute')?.params as
+      | { readonly command?: unknown }
+      | undefined;
+    expect(burnt?.command).toStrictEqual({
+      kind: 'applyRedactions',
+      pages: 'all',
+      cover: 'solid',
+      images: 'pixels',
+      keepTitle: false,
+    });
+  });
+}
+
 // EDIT TEXT IN PLACE (ADR-0096), in every theme: the outlines sit over their words on the drawn
 // page, the editor opens over a block, and nothing on that screen fails the gate.
 for (const look of LOOKS) {
@@ -3420,10 +3889,16 @@ for (const look of LOOKS) {
         {
           box,
           lines: [
-            { runs: [{ index: 3, text: 'A paragraph of words ' }, { index: 5, text: 'set on the page' }], box: { x0: 100, y0: 686, x1: 400, y1: 700 } },
-            { runs: [{ index: 8, text: 'and a second line.' }], box: { x0: 100, y0: 600, x1: 260, y1: 614 } },
+            {
+              runs: [
+                { index: 3, text: 'A paragraph of words ', style: BODY_RUN },
+                { index: 5, text: 'set on the page', style: SET_APART_RUN },
+              ],
+              box: { x0: 100, y0: 686, x1: 400, y1: 700 },
+            },
+            { runs: [{ index: 8, text: 'and a second line.', style: BODY_RUN }], box: { x0: 100, y0: 600, x1: 260, y1: 614 } },
           ],
-          style: { size: 12, colour: { r: 30, g: 30, b: 30 }, serif: false, mono: false, italic: false, bold: false },
+          style: BODY_RUN,
         },
       ],
     });
@@ -3466,7 +3941,33 @@ for (const look of LOOKS) {
     await outline.click();
     const editor = page.locator('[data-text-editor]');
     await expect(editor).toBeFocused();
-    await expect(editor).toHaveValue('A paragraph of words set on the page\nand a second line.');
+    expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(
+      'A paragraph of words set on the page\nand a second line.',
+    );
+    // EACH RUN AS THE PAGE SETS IT (ADR-0145): its size at the scale the page is drawn at, its fill, its weight —
+    // computed, so it is what the browser draws and not what was asked of it.
+    const runs = await editor.locator('.m-text-editor__run').evaluateAll((spans) =>
+      spans.map((span) => {
+        const style = getComputedStyle(span);
+        return { size: Number.parseFloat(style.fontSize), colour: style.color, weight: style.fontWeight };
+      }),
+    );
+    expect(runs.map((run) => run.colour)).toStrictEqual(['rgb(30, 30, 30)', 'rgb(66, 83, 149)', 'rgb(30, 30, 30)']);
+    expect(runs.map((run) => run.weight)).toStrictEqual(['400', '700', '400']);
+    const sizes = [BODY_RUN.size, SET_APART_RUN.size, BODY_RUN.size];
+    expect(runs.map((run, at) => Math.abs(run.size - (sizes[at] ?? 0) * scale) < 0.05)).toStrictEqual([true, true, true]);
+    // TYPED AT THE END, the words go into the last run and take its style, and are read back as typed.
+    await page.keyboard.type(' More');
+    expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(
+      'A paragraph of words set on the page\nand a second line. More',
+    );
+    expect(
+      await editor.evaluate(() => {
+        const focus = document.getSelection()?.focusNode;
+        const element = focus instanceof Element ? focus : (focus?.parentElement ?? null);
+        return element === null ? '' : getComputedStyle(element).color;
+      }),
+    ).toBe('rgb(30, 30, 30)');
 
     const results = await new AxeBuilder({ page }).analyze();
     const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));

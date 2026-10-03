@@ -382,6 +382,29 @@ export interface DocumentContext {
   bumpVersion(writer: CommandWriter): DocVersion;
 
   /**
+   * Records that a command declaring `purpose: 'removal'` was applied — a redaction, Sanitize, a flatten — so the file
+   * on disk may hold what it removed until the next save
+   * ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)).
+   *
+   * **The document's fact, not the engine session's.** The session carries a mark of its own for the one question
+   * that is the engine's — whether its serialise collects (ADR-0045) — and a restore, an adopt or a host restart
+   * builds a new session without it. The save asked that mark which save it was, and after any rebuild a redaction's
+   * save backed up the unredacted file (the owner's review of 0.1.9.0). Here it lives on the record, which no rebuild
+   * replaces.
+   *
+   * Guarded by {@link CommandWriter}: the bus is the one place that knows a command's declared purpose.
+   */
+  recordRemoval(writer: CommandWriter): void;
+
+  /**
+   * Whether a removal was recorded since the file was last written: what a save reads to keep no backup of the file
+   * it replaces, and to delete the copies Monstera made. Cleared by {@link markSaved}, and by nothing else — an undo
+   * does not clear it, because the file still holds what the person removed, and keeping no copy of that file is the
+   * safe direction.
+   */
+  readonly removedSinceSave: boolean;
+
+  /**
    * This document's command log (ADR-0009 §4), for the bus to record into.
    *
    * **Per document, and on the record rather than on the bus.** A log held by
@@ -746,6 +769,8 @@ interface DocumentRecord {
    * only through {@link DocumentContext.markSaved}, inside the lane.
    */
   savedVersion: DocVersion;
+  /** {@link DocumentContext.removedSinceSave}: set by the bus, cleared by a save, inside the lane. */
+  removedSinceSave: boolean;
   /**
    * ADR-0009 §7's lane, **living on the record**.
    *
@@ -1571,6 +1596,8 @@ export class DocumentService {
       // §5: seeded from the initial version, never from 0. A freshly opened
       // document is clean.
       savedVersion: version,
+      // NOTHING REMOVED YET: the file and the document hold the same content at open.
+      removedSinceSave: false,
       lane: Promise.resolve(),
       queued: 0,
       log: new CommandLog(),
@@ -1917,6 +1944,13 @@ export class DocumentService {
             record.version = asDocVersion(record.version + 1);
             return record.version;
           },
+          recordRemoval: () => {
+            record.removedSinceSave = true;
+          },
+          // A GETTER, for `byteLength`'s reason below: a save reads it after the bus has run in the same entry.
+          get removedSinceSave() {
+            return record.removedSinceSave;
+          },
           // Same treatment, same reason: the token is not read, because being
           // unobtainable outside `commandBus.ts` is a compile-time property and
           // checking it here would be the runtime guard B5 says to prefer a
@@ -1980,6 +2014,8 @@ export class DocumentService {
           },
           markSaved: async () => {
             record.savedVersion = record.version;
+            // THE FILE NOW HOLDS THE DOCUMENT, removal included, so nothing on disk holds what was removed.
+            record.removedSinceSave = false;
             // THE FILE THE SAVE JUST RENAMED INTO PLACE, read inside the lane straight
             // after the rename. The window between the two is the one place an outside
             // writer could be recorded as ours; it is the same width as the gap every

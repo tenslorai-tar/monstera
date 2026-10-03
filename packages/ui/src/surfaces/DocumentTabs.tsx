@@ -1,9 +1,10 @@
 import { useLingui } from '@lingui/react';
 import type { DocId } from '@monstera/shared';
-import type { ReactElement, ReactNode } from 'react';
+import type { ReactElement } from 'react';
 
 import { TAB_CLOSE, TAB_OPEN_ANOTHER, TAB_STRIP_LABEL, TAB_UNSAVED } from '../messages/en.js';
 import { Icon } from '../primitives/Icon.js';
+import { MenuArea, type MenuAt } from './ContextMenu.js';
 
 /** One open document, as the strip needs to draw it. */
 export interface DocumentTab {
@@ -75,14 +76,14 @@ export function DocumentTabs({
   onSelect,
   onClose,
   onOpen,
-  menu,
+  menuAt,
 }: {
   /**
-   * Wraps one tab's controls in the tab context menu for THAT document (§7) — the shell's
-   * `ContextMenuArea`, handed in so the strip never names the registry. Around the tab's CONTENTS
-   * rather than the `<li>`, so the list keeps list items as its only children.
+   * The tab context menu (§7) for the tab a right-click lands on, built by the shell so the strip never names the
+   * registry. ONE menu around the list (`MenuArea`), which reads the tab from its own `data-tab` when the right-click
+   * happens — never one per tab, rebuilt with every render of the window.
    */
-  readonly menu: (docId: DocId, contents: ReactElement) => ReactNode;
+  readonly menuAt: MenuAt<DocId>;
   readonly tabs: readonly DocumentTab[];
   readonly activeId: DocId | undefined;
   readonly onSelect: (docId: DocId) => void;
@@ -102,8 +103,17 @@ export function DocumentTabs({
   // the start screen is a control that describes nothing.
   if (tabs.length === 0) return null;
 
+  // THE TAB A TARGET SITS IN, read from the row's own `data-tab` and answered as this strip's own `DocId`, so a mark
+  // naming no open document is no tab.
+  const tabAt = (target: EventTarget | null): DocId | undefined => {
+    const row = target instanceof Element ? target.closest<HTMLElement>('[data-tab]') : null;
+    return tabs.find((tab) => tab.docId === row?.dataset['tab'])?.docId;
+  };
+
   return (
     <nav className="m-tabs" aria-label={_(TAB_STRIP_LABEL)}>
+      {/* AROUND THE LIST, so the list keeps list items as its only children; the area adds no box. */}
+      <MenuArea keyAt={tabAt} menuAt={menuAt}>
       <ul className="m-tab-list">
         {tabs.map((tab) => {
           const showing = tab.docId === activeId;
@@ -113,7 +123,6 @@ export function DocumentTabs({
               className={showing ? 'm-tab m-tab-current' : 'm-tab'}
               data-tab={tab.docId}
             >
-              {menu(tab.docId, <>
               <button
                 type="button"
                 className="m-tab-name"
@@ -164,11 +173,11 @@ export function DocumentTabs({
                     name is what a screen reader announces. */}
                 {'×'}
               </button>
-              </>)}
             </li>
           );
         })}
       </ul>
+      </MenuArea>
       {/* OUTSIDE THE LIST, because it is not one of the documents. */}
       <button
         type="button"

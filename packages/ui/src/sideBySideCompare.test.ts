@@ -1,5 +1,5 @@
 import { type ContractClient, channels, createClient } from '@monstera/contract';
-import { type CompareBox, type DocId, asDocId, asDocVersion, err, ok } from '@monstera/shared';
+import { type CompareBox, type ComparePage, type DocId, asDocId, asDocVersion, comparePair, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { type CompareRow, type CompareSide, type DrawnPage, MAX_COMPARE_CHANGES, compareSides } from './sideBySideCompare.js';
@@ -13,6 +13,8 @@ interface FakePage {
   readonly lines: readonly string[];
   readonly notes?: readonly { readonly contents: string; readonly rect: readonly [number, number, number, number] }[];
   readonly squares?: readonly { readonly x: number; readonly y: number; readonly size: number }[];
+  /** Its text layer was cut short by the read's bound, as `document.pageTextLayer` says with `truncated`. */
+  readonly truncated?: boolean;
 }
 
 /** Every page is 200 × 200 points, unturned, its crop box at the origin, so display space is PDF space flipped. */
@@ -82,7 +84,7 @@ function clientFor(
       ok({
         version: moved ? asDocVersion(4) : VERSION,
         lines: (pages[page]?.lines ?? []).map((text, index) => ({ text, box: lineBox(text, index) })),
-        truncated: false,
+        truncated: pages[page]?.truncated ?? false,
         kind: 'text' as const,
       }),
     );
@@ -123,18 +125,31 @@ async function compare(left: readonly FakePage[], right: readonly FakePage[]): P
 const intro: FakePage = { lines: ['The agreement between the parties starts here'] };
 const terms: FakePage = { lines: ['Payment is due within thirty days of the invoice'] };
 const close: FakePage = { lines: ['Either party may end this agreement with notice'] };
+const appendix: FakePage = { lines: ['An appendix that the second version added in'] };
+
+/** A fixture page as the pair comparison takes it, with no picture: what `comparePair` sees of a page alone. */
+function comparable(page: FakePage): ComparePage {
+  return { size: { width: PAGE, height: PAGE }, lines: page.lines.map((text, index) => ({ text, box: lineBox(text, index) })), annotations: [], raster: undefined };
+}
 
 describe('Side by Side — the four fixtures ADR-0131 names, through the walk the overlay runs', () => {
   it('an INSERTED PAGE is one row, and the pages after it are matched to their counterparts and report nothing', async () => {
-    const extra: FakePage = { lines: ['An appendix that the second version added in'] };
-    const rows = await compare([intro, terms, close], [intro, extra, terms, close]);
+    const rows = await compare([intro, terms, close], [intro, appendix, terms, close]);
     expect(rows).toStrictEqual([{ kind: 'inserted', right: 1, box: { x0: 0, y0: 0, x1: PAGE, y1: PAGE } }]);
   });
 
-  it('CONTROL: the same documents compared page by page differ on every page after the insertion', async () => {
-    // WHAT PAGE-BY-NUMBER PAIRS: terms against the appendix, close against terms. Each pair alone differs.
-    const shifted = await compare([terms, close], [{ lines: ['An appendix that the second version added in'] }, terms]);
-    expect(shifted.length).toBeGreaterThan(0);
+  it('CONTROL: the same documents paired page by NUMBER differ on every page after the insertion, and on none before it', () => {
+    // PAGE i AGAINST PAGE i, through the pair comparison itself and no alignment: terms meets the appendix and close
+    // meets terms. So the case above reporting one row is the alignment's doing, not a fixture any pairing passes.
+    const left = [intro, terms, close];
+    const right = [intro, appendix, terms, close];
+    const byNumber = left.map((page, at) => {
+      const other = right[at];
+      if (other === undefined) throw new Error(`no right page ${String(at)}`);
+      return comparePair(comparable(page), comparable(other)).map((change) => change.kind);
+    });
+    expect(byNumber[0]).toStrictEqual([]);
+    expect(byNumber.slice(1).map((kinds) => kinds.includes('text'))).toStrictEqual([true, true]);
   });
 
   it('a TEXT EDIT is a text row naming the words, boxed on both pages', async () => {
@@ -227,6 +242,24 @@ describe('the list and the count', () => {
     if (outcome.kind !== 'done') throw new Error(`the comparison ended ${outcome.kind}`);
     expect([outcome.result.rows.length, outcome.result.found, outcome.result.more]).toStrictEqual([1, 1, false]);
   });
+
+  it('counts each matched pair whose text was CUT SHORT on either side, so the panel can say so (DDDDDDD-4)', async () => {
+    // Two pairs clipped — one on the left, one on the right — and one whole: a count of the pages, not of the sides.
+    const left: FakePage[] = [{ ...intro, truncated: true }, terms, close];
+    const right: FakePage[] = [intro, { ...terms, truncated: true }, close];
+    const { client } = clientFor(new Map([[LEFT, left], [RIGHT, right]]));
+    const outcome = await compareSides(client, side(LEFT, left), side(RIGHT, right), new AbortController().signal, () => undefined);
+    if (outcome.kind !== 'done') throw new Error(`the comparison ended ${outcome.kind}`);
+    expect(outcome.result.clipped).toBe(2);
+    // CONTROL: the same documents read whole count none, so the two above are the flags and not the fixture.
+    const whole = await (async () => {
+      const plain = [intro, terms, close];
+      const { client: other } = clientFor(new Map([[LEFT, plain], [RIGHT, plain]]));
+      return compareSides(other, side(LEFT, plain), side(RIGHT, plain), new AbortController().signal, () => undefined);
+    })();
+    if (whole.kind !== 'done') throw new Error(`the comparison ended ${whole.kind}`);
+    expect(whole.result.clipped).toBe(0);
+  });
 });
 
 describe('the walk — what it reads, and when it stops', () => {
@@ -257,5 +290,24 @@ describe('the walk — what it reads, and when it stops', () => {
     });
     expect(outcome.kind).toBe('cancelled');
     expect(reads).toStrictEqual(['left:0', 'left:1']);
+  });
+
+  // A STOP INSIDE A DRAW: `renderPage` rejects an aborted draw, and the walk read that as a page that could not be
+  // drawn — Side by Side's Stop then said *"A page could not be drawn"* (found writing C.b's Stop case, 2026-10-02).
+  it('a stop that lands INSIDE a draw is cancelled, not failed; CONTROL: the same rejection unstopped fails the walk', async () => {
+    const documents = new Map([[LEFT, [intro, terms]], [RIGHT, [intro, terms]]]);
+    const rejecting = (stopNow: AbortController | undefined): CompareSide => ({
+      ...side(LEFT, [intro, terms]),
+      draw: () => {
+        stopNow?.abort();
+        return Promise.reject(new Error('the draw was superseded'));
+      },
+    });
+    const stop = new AbortController();
+    const stopped = await compareSides(clientFor(documents).client, rejecting(stop), side(RIGHT, [intro, terms]), stop.signal, () => undefined);
+    expect(stopped.kind).toBe('cancelled');
+
+    const failing = compareSides(clientFor(documents).client, rejecting(undefined), side(RIGHT, [intro, terms]), new AbortController().signal, () => undefined);
+    await expect(failing).rejects.toThrow('the draw was superseded');
   });
 });

@@ -9,7 +9,7 @@ import {
   RULERS_TITLE,
   SPLIT_VIEW_TITLE,
 } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
 import {
   DARK_PAGE_SETTING,
@@ -71,6 +71,7 @@ import type { SettingsStore } from '../settingsStore.js';
 export function toggleRulersCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.toggle-rulers',
+    feedback: VISIBLE,
     icon: 'Ruler',
     title: RULERS_TITLE,
     shortcut: 'Ctrl+R',
@@ -120,6 +121,7 @@ export function toggleRulersCommand(deps: { readonly settings: SettingsStore }):
 export function commandPaletteCommand(deps: { readonly onToggle: () => void }): UiCommand {
   return {
     id: 'view.command-palette',
+    feedback: VISIBLE,
     icon: 'Command',
     title: PALETTE_TITLE,
     shortcut: 'Ctrl+K',
@@ -139,6 +141,7 @@ export function commandPaletteCommand(deps: { readonly onToggle: () => void }): 
 export function toggleGridCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.toggle-grid',
+    feedback: VISIBLE,
     icon: 'Grid3x3',
     title: GRID_TITLE,
     shortcut: 'Ctrl+G',
@@ -158,6 +161,7 @@ export function toggleGridCommand(deps: { readonly settings: SettingsStore }): U
 export function toggleLoupeCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.toggle-loupe',
+    feedback: VISIBLE,
     icon: 'Focus',
     title: LOUPE_TITLE,
     shortcut: 'Ctrl+Shift+L',
@@ -182,6 +186,7 @@ export function toggleLoupeCommand(deps: { readonly settings: SettingsStore }): 
 export function toggleSplitViewCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.toggle-split',
+    feedback: VISIBLE,
     icon: 'Columns2',
     title: SPLIT_VIEW_TITLE,
     shortcut: 'Ctrl+Shift+E',
@@ -214,6 +219,7 @@ export function autoscrollCommand(deps: {
 }): UiCommand {
   return {
     id: 'view.autoscroll',
+    feedback: VISIBLE,
     icon: 'MoveDown',
     title: AUTOSCROLL_TITLE,
     shortcut: 'Ctrl+Shift+H',
@@ -236,6 +242,7 @@ export function autoscrollCommand(deps: {
 export function toggleDarkPageCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.toggle-dark-page',
+    feedback: VISIBLE,
     icon: 'Moon',
     title: DARK_PAGE_TITLE,
     shortcut: 'Ctrl+Shift+D',

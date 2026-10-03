@@ -892,6 +892,236 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-02 — Stage audit of `cc6305d3..fcb1adac` — findings IIIIIII-1 to IIIIIII-8
+
+27 commits, 200 files (`npm run audit:scope`), all work/cloud-3: C.d and D (ADR-0139, ADR-0140), E (ADR-0141), and the
+large-document rows of table A in *No document-size refusals* (rows 2 to 13), with item H (ADR-0142). Written because
+row 14's commit would take the range to 202 files and the pre-commit gate refused it. Labels I, the next free after
+HHHHHHH on main and every work branch (read from each branch's JOURNAL).
+
+**Proofs modified, read for loosening.** Three checks became wider, each stated: `redrawOwner.test.ts` allows a second
+`update()`, in `redrawPage`, and became stricter on the other axis, naming the function each call sits in
+(IIIIIII-1); `pageImages.test.ts`' scale floor is the whole page's 0.01, not 1 (row 11, ADR-0090's correction);
+`officeConversion.test.ts`' *answers null past 64 blocks* became *keeps every block, names 64 and counts the rest*
+(row 12). `removalCollects.test.ts` lost the case asking the session whether a save is a removal's, because ADR-0139
+moved that fact to the document and `commandBus.test.ts` holds it. Every other deletion is a shape the range changed:
+page lists became page sets (row 4), the edit commands' wire form (ADR-0142), the layers and links answers in parts.
+Proofs removed: none.
+
+**IIIIIII-1** (medium, closed in `8023c59`): `c69d586` added `redrawPage`, a second `update()` call, and
+`redrawOwner.test.ts` was red on both CI legs at `3323cdc`. The test reads kernel source as text, so `vitest related`
+on the changed files, which is what was run, never selected it. Both redraws now end in one `reblend`, the search names
+each call's function, and a case proves the page form keeps a Normal mark Normal.
+
+**IIIIIII-2** (medium, closed in the commit after this one): `bed8981` imported `@monstera/contract` bare in
+`pdfiumTextEdit.ts`, which the PDFium host loads, and `hostLoad.proof.mjs` was red on Linux at `8023c59`. The rule is
+held by that proof alone, which runs in CI and in no local subset; row 14 then wrote the same import into
+`signatureRead.ts` before the failure was read. Both now take `@monstera/contract/host`, and the proof passes here.
+
+**IIIIIII-3** (medium, closed in the commit after this one): `bed8981` said every proof builds the edit commands
+through the contract's encoders. One case in `pdfiumCommand.proof.mjs` still built `replacements: [...]` behind a
+`/** @type {never} */` cast, so it typechecked and failed on Windows, the one runner with PDFium. The claim was
+asserted from a search for the old field name, which did not look behind casts (item 5). The case is typed as the
+command now. The file's other `never` casts are deliberate: a command routed to another writer, sent to be refused.
+
+**IIIIIII-4** (low, closed in `83d1f49` and `8023c59`): twice in this range an ADR gained a dated correction without
+its index row (`0f25280`, ADR-0129; `4fce56c`, ADR-0090). The index rule is whole-corpus, since a different file breaks
+it, so it runs in Guards only, and Guards was red from the first until `83d1f49`. Proposed, not built: a pre-commit
+rule that fires when an ADR is staged and reads that ADR's own index row, which is two files and still one decision.
+
+**IIIIIII-5** (low, closed in `3323cdc`): two research probes from rows 4 and 8 imported `dist/` without
+`refuseStaleBuild`; Guards' `buildFreshness.proof.mjs` was red at `10b8f41`.
+
+**IIIIIII-6** (low, closed in `4b97a0d`): the browser shim recorded no version for an `opened-incomplete` workbook, so
+its pages would be refused as stale. Found by rendering row 12's dialog, which is what looking at a screen is for.
+
+**IIIIIII-7** (low, open): `markdownImportProblem.ts` says its 255 is restated *because a dialog cannot import that
+constant*, while `pdfaRemovals.ts` and this range's `workbookIncomplete.ts` import contract constants. A comment that
+is false now, and possibly when written.
+
+**IIIIIII-8** (medium, open, the owner's): row 11's class reaches past the vision ask. Claude's OCR and its table read
+still refuse a region past 2,576 px at 72 dpi (*"too large for Claude to read without resizing, even at the smallest
+snapshot scale"*). Recognition reads characters, so a lower floor is the wrong answer there; tiling the region is the
+owed shape, and it is not in table A.
+
+**Would CI see it (item 3), from the runs.** `c679d79`: CI red only on the visual baselines. `83d1f49` and `10b8f41`:
+Guards red on IIIIIII-5. `3323cdc`: Guards green; CI red on IIIIIII-1 on both legs, and the visual baselines.
+`8023c59`: Guards green; CI red on IIIIIII-2 (Linux), IIIIIII-3 (Windows) and the visual baselines. The pushes between
+were cancelled by the next. `fcb1ada` was running when this was written. Three of the eight were found only by CI or
+Guards, and each names a check that no local subset runs.
+
+### 1. Root cause or workaround?
+
+Each fix names its mechanism in its commit: the deep copy through `/Parent` (row 4), MuPDF's per-annotation update
+walking the page (rows 8 and 9), the snapshot's floor enforced by the page rasteriser (row 11), the join's bounded list
+and the 65th block refused (row 12), the missing session (row 13). No workaround: the one interim cap kept, the panel's
+256 signatures, is stated as a crafted-file bound.
+
+### 2. Verified against the easy shape only?
+
+Each row was proven at its breaking size: 4,100 pages, 3,600 bookmarks, 1,100 layers, 5,000 links, 5,000 notes and
+fields, a 5,000-character block, an A0 page, 1,025 sheets and 65 missing blocks, 250 MiB plus one byte. The hard shape
+not reached is the live one: PDFium's proofs run on Windows only (IIIIIII-3), and row 13's sessions have not met either
+provider.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+The edit commands' proofs build through the encoders, so a wrong field is a compile error, except behind a cast
+(IIIIIII-3). `hostRoutes.test.ts`' pinned exceptions shrank to none for the PDFium kinds. Nothing moved from executed
+to asserted.
+
+### 3. Would CI have caught it?
+
+Answered above from the runs.
+
+### 4. Are the proofs non-vacuous?
+
+Each row's case was run against the fix removed or the old bound restored, and went red (the commits name each). The
+redraw owner case reddens with `reblend` taken out of `redrawPage`; the staged-join case with the stage skipped.
+
+### 4a. Resolution test before measuring?
+
+`extractGraftScale.mjs` separated 966 objects from 9, and `importAnnotationsScale.mjs` 6,623 ms from 157 ms, on runs
+that changed only the code under test.
+
+### 4b. A search with a positive control?
+
+`redrawOwner.test.ts` keeps its control, the call inside `redraw`, and gains one that the owner reading separates two
+declarations.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+The hostile-host bounds of rows 6 and 7 are derived from the answer ceiling over a measured smallest item, held to
+their division by `engineChannels.test.ts`, with a control one past each.
+
+### 5. Executed, or asserted?
+
+Executed: every case named, typecheck, lint, the contract proof, the host-load proof, the rendered looks of rows 6 and
+12, and the runs read above. Asserted: row 13 against live providers, PDFium's proofs until the next Windows run, and
+IIIIIII-8's shape.
+
+### 6. Architecture before the feature, or underneath it?
+
+ADR-0139 (`674c3ca`), ADR-0140 (`230636e`), ADR-0141 (`7deb956`) and ADR-0142 (`7859a23`) each precede the work they
+govern, in their own commits.
+
+### 7. Do the documents still match the code?
+
+The FEATURES rows each row touched were updated in its commit, and ADR-0090, ADR-0103 and ADR-0129 carry dated
+corrections with their index rows. IIIIIII-7 is the stale comment found.
+
+## 2026-10-02 — Stage audit of `2639b023..cc6305d3` — findings HHHHHHH-1 to HHHHHHH-6
+
+33 commits, 189 files (`git log` and `git diff --stat` over the range): work/cloud-2's commits after its own audit (`e294bea` to `7dfa342`, and the merge `6e741e8`),
+then work/cloud-3's A to C items. Written in the cloud session because the next commit (C.d, ADR-0139) would take the
+range past one batch. Labels H, the next free after GGGGGGG on every branch.
+
+**Proofs modified, read for loosening.** The deletions outside this session's own items are each a rule that became
+stronger: `schemaBound.test.ts` gains the file ceiling, and a case that a non-strict object is unbounded on the wire;
+`hostRoutes.test.ts` replaces the pinned `COMMAND_CARRYING`, `PAST_THE_FRAME` and `UNMEASURED` lists with every kind
+measured on its writer's route, pinning only PDFium's two text edits (item H of this session's list), with a control
+that the pre-read exemption is load-bearing; `pageAnnotations.test.ts` and `pdfiumHostBody.test.ts` move helpers.
+This session's own deletions follow its design changes: the Choose faces (A.b), the Full page width (A.d), the five
+tool windows mounted in their dialog (A.e). Proofs removed: none.
+
+**HHHHHHH-1** (medium, closed in `cc6305d`): B.d put `var(--m-fit-room)` and `var(--m-slot-h)` in `app.css` with no
+fallback. Both are set inline by `PageList`, and `definedTokens.mjs` reads stylesheets alone, so CI's Tests job was red
+on both legs at `2d54f43`. The project's spelling for an inline property is a fallback beside the `var()`; 0px, since
+before the pane is measured there is nothing to centre in. Not run locally because the item's own rendered cases were
+what was run, which is item 3 answered from the subject of a change rather than from a run.
+
+**HHHHHHH-2** (low, closed in `aa73c45`): `c9d27d7`, meant to change one line, also carried two renames `git mv` had
+staged for C.d, because a commit takes the whole index. At `c9d27d7` two imports name files that are gone, so that
+commit does not build. Not pushed; corrected by a new commit rather than a rewrite.
+
+**HHHHHHH-3** (low, closed in `c9d27d7`): `cbdda52` committed a type error in `sideBySide.pw.ts`, a file of the
+testing project, after typechecking the UI project alone. `npm run typecheck` found it before any push: the rule
+*run the project's command, never the underlying tool*, met by its own failure mode.
+
+**HHHHHHH-4** (low, closed in `c85f6d7`): `ffa67df` moved Export to PowerPoint and left `docs/manual-test-checklist.md`
+stale, a file snapshot `App.test.tsx` builds from the registry. The tests run for that item were picked by name; the
+snapshot is reached by any placement, which `vitest related` on `documentCommands.ts` would have included.
+
+**HHHHHHH-5** (medium, open): C.a, the right pane moving by itself after Compare, is not reproduced. `sideBySide.pw.ts`
+holds the behaviour in Chromium 151 under the shim, with scrollbars drawn, at device scales 1 and 1.5 (and, run once,
+1.25 and 1.75, 1280 and 1536 wide, on the old and new builds), and its recorder has a control that sees a scroll. What
+it cannot show is that it would catch the defect the owner recorded, whose environment it lacks: Electron on Windows,
+the real engine, and `text-page.pdf` against `sample5.pdf`. The local agent's run with those files is the owed step.
+
+**HHHHHHH-6** (low, stated): B.b's closing of an open menu on a press on the empty menu row or the title bar is proven
+by the computed `app-region` (no-drag while a menu is open, drag otherwise) and a click Chromium delivers. Chromium
+honours no drag region, so *the press closes the menu and does not move the window* is the Windows shell's to show.
+
+**Would CI see it (item 3), from the runs.** `b4707df`: Guards green; CI red on the accessibility gate (the rendered
+*Ask AI* case A.b broke, fixed in `228bf90`) and the visual baselines. `2d54f43`: Guards green; CI red on HHHHHHH-1 and
+the visual baselines; its accessibility gate green, which is `228bf90` confirmed. The visual baselines are expected
+red on every screen this range changes and are regenerated on Windows only. **Executed or asserted (item 5):** every
+finding above was read in a diff or a run here, except HHHHHHH-5's Windows reproduction and HHHHHHH-6's shell
+behaviour, which are the findings.
+
+*The checklist, item by item — added 2026-10-02 after Guards' document-scope proof refused this entry at `a58f0c83`
+for answering none of the items under its own heading; the prose above stands as written.*
+
+### 1. Root cause or workaround?
+
+Each fix states its mechanism in its commit: the Assistant's composer (`5e8003e`), the 22ch basis read as a height in a
+column (`b35f471`), the transparent overlay that declares no app region (`e779568`), the first frame's ordering
+(`2bc3840`), Fit page's padding and gap (`2d54f43`), the button unmounted under the focus and a stop inside a draw
+read as a failure (`cbdda52`), HHHHHHH-1's fallback (`cc6305d3`). C.a has no fix because it has no reproduction
+(HHHHHHH-5). No workaround in the range.
+
+### 2. Verified against the easy shape only?
+
+The rendered cases ran at narrow, default and wide sizes in light, dark and high contrast for the screens they changed.
+Fit page took 1600 × 852 and 1280 × 800; Side by Side's scroll took four device scales, two widths and scrollbars
+drawn. The hard shape not reached is Windows: the drag rows (HHHHHHH-6) and C.a's own files (HHHHHHH-5).
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+The tool windows' unit tests now mount each body inside its dialog, as the registry does; `ChoiceMenu.test.tsx` reads
+the face's name and its aria-label; `Thumbnails.test.tsx` replaces the fit-to-height case with a width case. Each moved
+with the design it tests, and none dropped a control.
+
+### 3. Would CI have caught it?
+
+Answered above from the runs of `b4707df` and `2d54f43`. HHHHHHH-1 is the one CI caught that the local runs did not.
+
+### 4. Are the proofs non-vacuous?
+
+Every new rendered case in the range carries a control run against the previous build or with the guard removed, and
+each failed it (the commits name them). The scroll recorder of HHHHHHH-5 has a positive control; whether it would see
+the recorded defect is the open finding.
+
+### 4a. Resolution test before measuring?
+
+The first-frame inspector and the scroll recorder were each shown to report a difference first: the inspector failed on
+the old build's frames, the recorder saw a planted scroll of 120 px.
+
+### 4b. A search with a positive control?
+
+`definedTokens.mjs` carries its own; the menu-glyph check in the registry names every offender and its case plants one.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+The registry's glyph check is derived from the commands registered, which is the growth direction; the menu case's
+control is a registry built with a command that has none.
+
+### 5. Executed, or asserted?
+
+Executed: every case named above, typecheck, lint, the contrast check, and the two CI runs read. Asserted: HHHHHHH-5's
+cause and HHHHHHH-6's shell behaviour.
+
+### 6. Architecture before the feature, or underneath it?
+
+No architecture changed in the range audited; ADR-0139 (`2b84035`) is in the range and precedes C.d, which follows it.
+
+### 7. Do the documents still match the code?
+
+The FEATURES rows each item touched were updated in its commit (Side by Side, compare, PowerPoint, Full page); the
+Help articles for the Assistant, Export to PowerPoint and Cloud storage were rewritten with them.
+
+---
+
 ## 2026-10-02 — The installed-app check on 0.1.9.0: two steps shown, three still a person's, one defect, one incident
 
 The owner's item: on the installed 0.1.9.0, on a copy of a corpus document, edit text and save, OCR a page, import a

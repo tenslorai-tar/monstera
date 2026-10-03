@@ -22,11 +22,12 @@ import {
   RIBBON_STRAIGHTEN_PHOTOS,
   TOAST_SEARCHABLE_SAVED,
 } from '../messages/en.js';
-import { type CommandContext, targetPages, type UiCommand } from '../registries/commands.js';
+import { type CommandContext, RESULT_DIALOG, targetPages, TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
 import type { TrackTask } from '../runningTask.js';
 import { confirmWritten } from './confirmWritten.js';
 import {
   type DocumentCommandDeps,
+  type SettlesMarksFirst,
   type WritesAFile,
   applyDocumentCommand,
   hasDocument,
@@ -93,6 +94,8 @@ export function recogniseTextCommand(
 ): UiCommand {
   return {
     id: 'document.ocr',
+    // THE TEXT IT ADDS IS INVISIBLE BY DESIGN, so the walk ends in its outcome dialog.
+    feedback: RESULT_DIALOG,
     icon: 'ScanText',
     title: OCR_COMMAND_TITLE,
     ribbonTitle: RIBBON_OCR,
@@ -171,6 +174,7 @@ export function enhanceScansCommand(
 ): UiCommand {
   return {
     id: 'document.enhance-scans',
+    feedback: VISIBLE,
     icon: 'WandSparkles',
     title: ENHANCE_COMMAND_TITLE,
     ribbonTitle: RIBBON_ENHANCE,
@@ -251,6 +255,7 @@ export function straightenScansCommand(
 ): UiCommand {
   return {
     id: 'document.straighten-scans',
+    feedback: VISIBLE,
     icon: 'ScanLine',
     title: SCAN_COMMAND_TITLE,
     ribbonTitle: RIBBON_STRAIGHTEN_PHOTOS,
@@ -408,7 +413,7 @@ export async function recogniseBeforeExport(
  * has undo.
  */
 export function exportSearchableCommand(
-  deps: DocumentCommandDeps & WritesAFile & {
+  deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst & {
     readonly track: TrackTask;
     readonly servicesReady: () => boolean;
     readonly ocrLanguages: () => OcrLanguages;
@@ -416,6 +421,7 @@ export function exportSearchableCommand(
 ): UiCommand {
   return {
     id: 'document.export-searchable',
+    feedback: TOASTS,
     icon: 'FileSearch',
     title: OCR_EXPORT_COMMAND_TITLE,
     ribbonTitle: RIBBON_OCR_EXPORT,
@@ -426,6 +432,7 @@ export function exportSearchableCommand(
       // The dialog's scope is ignored here (below), so its first choice only needs to be a page that exists.
       const pages = targetPages(context);
       if (docId === undefined || pages.length === 0 || pageCount === undefined) return;
+      if (!(await deps.settleMarks(docId, 'export'))) return;
 
       const models = await deps.client['app.ocrLanguages']({});
       if (!models.ok) return;

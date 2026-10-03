@@ -10,6 +10,7 @@ import {
   SIGNATURES_UNREADABLE,
   SIGNATURES_VALID_BETWEEN,
 } from '../messages/en.js';
+import { DialogScroll } from '../primitives/Dialog.js';
 import type { ShownSignature } from './signatures.js';
 
 /**
@@ -50,39 +51,44 @@ export default function SignaturesBody({
     );
   }
 
+  // THE LIST SCROLLS, NOT THE BODY: with the body scrolling, two signatures with long strings put Close below the fold
+  // at 760 x 560 (seen 2026-10-03). A fragment, so the scroll part is the body's own child, which the layout keys on;
+  // the sentence about trust stays in view beside the footer.
   return (
-    <div className="m-signatures">
-      <ul className="m-signatures__list">
-        {signatures.map((signature, index) => (
-          <li className="m-signatures__item" data-signature={index} key={index}>
-            <p className="m-signatures__signer">
-              {signature.signer}
-              {signature.organisation === '' ? '' : ` — ${signature.organisation}`}
-            </p>
-            <p
-              className="m-signatures__state"
-              data-covers={String(signature.coversDocument && signature.coversWholeFile)}
-            >
-              {_(
-                !signature.coversDocument
-                  ? SIGNATURES_CHANGED
-                  : signature.coversWholeFile
-                    ? SIGNATURES_INTACT
-                    : SIGNATURES_APPENDED,
-              )}
-            </p>
-            {signature.reason === '' ? null : <p>{signature.reason}</p>}
-            {signature.location === '' ? null : <p>{signature.location}</p>}
-            <p className="m-signatures__validity">
-              {_(SIGNATURES_VALID_BETWEEN, {
-                from: signature.notBefore.slice(0, 10),
-                to: signature.notAfter.slice(0, 10),
-              })}
-            </p>
-          </li>
-        ))}
-      </ul>
+    <>
+      <DialogScroll>
+        <ul className="m-signatures__list">
+          {signatures.map((signature, index) => (
+            <li className="m-signatures__item" data-signature={index} key={index}>
+              <p className="m-signatures__signer">
+                {signature.signer}
+                {signature.organisation === '' ? '' : ` — ${signature.organisation}`}
+              </p>
+              <p
+                className="m-signatures__state"
+                data-covers={String(signature.coversDocument && signature.coversWholeFile)}
+              >
+                {_(
+                  !signature.coversDocument
+                    ? SIGNATURES_CHANGED
+                    : signature.coversWholeFile
+                      ? SIGNATURES_INTACT
+                      : SIGNATURES_APPENDED,
+                )}
+              </p>
+              {signature.reason === '' ? null : <p>{signature.reason}</p>}
+              {signature.location === '' ? null : <p>{signature.location}</p>}
+              <p className="m-signatures__validity">
+                {_(SIGNATURES_VALID_BETWEEN, {
+                  from: signature.notBefore.slice(0, 10),
+                  to: signature.notAfter.slice(0, 10),
+                })}
+              </p>
+            </li>
+          ))}
+        </ul>
+      </DialogScroll>
       <p className="m-signatures__note">{_(SIGNATURES_NOT_TRUSTED)}</p>
-    </div>
+    </>
   );
 }

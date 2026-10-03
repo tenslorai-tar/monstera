@@ -4,6 +4,7 @@ import {
   DOCUMENT_ACCESS_VALUES,
   DOCUMENT_PASSWORD_MAX_CHARS,
   addAnnotationSchema,
+  pageSetSchema,
   placeImageSchema,
   placeSignatureMarkSchema,
   placeSignaturePictureSchema,
@@ -185,14 +186,13 @@ export const ENGINE_PAGE_TEXT_MAX_BYTES = 8 * 1024 * 1024;
  * each one is bounded by its own schema — so the only unbounded axis is how
  * many there are.
  *
- * 4096 for the same reason the byte bound is generous: the lower bound is the
- * real constraint. A page of a link-heavy index carries hundreds; a page with
- * four thousand is one no panel could present to a reader anyway.
- *
- * **The trigger:** the first page refused by this is the evidence the bound is
- * wrong, and the fix is a measurement of what such a page contains.
+ * {@link ENGINE_DESTINATIONS_MAX}' derivation: the answer ceiling over {@link SMALLEST_LINK_BYTES} and a comma,
+ * rounded down to a hundred (ADR-0130 Decision 3). It was 4,096 and the answer was refused whole past it, so the page's
+ * every link was unreadable (JOURNAL, *No document-size refusals*, table A row 7); the renderer reads them in parts.
  */
-export const ENGINE_PAGE_LINKS_MAX = 4096;
+export const ENGINE_PAGE_LINKS_MAX = 123_300;
+/** The fewest bytes one link serialises to on this wire. Measured by `engineChannels.test.ts`. */
+export const SMALLEST_LINK_BYTES = 67;
 
 /**
  * How many filled shapes one page's `engine/page-fills` answer may carry. The host is hostile by
@@ -224,9 +224,9 @@ export const ENGINE_WORD_LINE_MAX = 1024;
  * How long a link's URI may be.
  *
  * The one string in this shape that a document controls, so it is the one that
- * needs a length. 2048 is the ceiling every browser applies to a URL in
- * practice, which makes it a bound a real document cannot legitimately cross
- * rather than a number chosen here.
+ * needs a length. A real document DOES cross it — a tracking link runs past 2,048 —
+ * so the reader shows a longer URI shortened (`shownName.ts`) rather than the
+ * answer being refused, and nothing follows the shown text.
  */
 export const ENGINE_LINK_URI_MAX = 2048;
 
@@ -310,14 +310,16 @@ export const SMALLEST_DESTINATION_BYTES = 34;
 export const ENGINE_DESTINATION_TITLE_MAX = 512;
 
 /**
- * How many layers may cross, and how long a name may be.
+ * How many layers one answer may carry, and how long a name may be.
  *
- * Much smaller than the outline's, because the shapes differ: a design carries
- * a handful of optional-content groups where a manual carries hundreds of
- * headings. A bound copied from the outline would be one nobody had thought
- * about — the number is supposed to be a statement about what the thing is.
+ * {@link ENGINE_DESTINATIONS_MAX}' derivation: the answer ceiling over {@link SMALLEST_LAYER_BYTES} and a comma,
+ * rounded down to a hundred (ADR-0130 Decision 3). It was 1,024, which a CAD export's layers pass, and the answer was
+ * then refused whole (JOURNAL, *No document-size refusals*, table A row 6). A longer name is shown shortened
+ * (`shownName.ts`) rather than refusing every other layer.
  */
-export const ENGINE_LAYERS_MAX = 1024;
+export const ENGINE_LAYERS_MAX = 226_700;
+/** The fewest bytes one layer serialises to on this wire. Measured by `engineChannels.test.ts`. */
+export const SMALLEST_LAYER_BYTES = 36;
 export const ENGINE_LAYER_NAME_MAX = 256;
 
 /**
@@ -366,22 +368,6 @@ const engineLayerSchema = z
  * invariant 25 while that one is not.
  */
 export const ENGINE_DUPLICATE_PAGES_MAX = 4096;
-
-/**
- * How many page indices an extract may name.
- *
- * {@link ENGINE_DUPLICATE_PAGES_MAX}'s number for a different reason, stated
- * rather than shared: that one bounds an ANSWER a hostile host produces, and
- * this bounds a REQUEST main sends it. Extracting every page of a large
- * document is an ordinary thing to ask, so the bound is the document-shaped one
- * rather than a small guard — what it refuses is a list that could not have
- * come from a page count.
- *
- * Not an import of the other constant: two bounds that happen to agree are not
- * one bound, and tying them would make a change to either silently move the
- * other.
- */
-export const ENGINE_EXTRACT_PAGES_MAX = 4096;
 
 /**
  * How many annotations one answer may list — a bound against a HOSTILE host, derived, and one no real document
@@ -2016,8 +2002,12 @@ export const engineChannels = {
     z
       .object({
         session: sessionSchema,
-        /** Zero-based indices in the session's document, in the order asked. */
-        pages: z.array(z.number().int().nonnegative()).min(1).max(ENGINE_EXTRACT_PAGES_MAX),
+        /**
+         * The pages, in the order asked, as a page set (`pageSet.ts`): its largest encoding fits this frame, and
+         * *every page* of a document of any length is one run. It was a list capped at 4,096, so extracting or
+         * splitting off more failed (JOURNAL, *No document-size refusals*). The host lists it against the document.
+         */
+        pages: pageSetSchema,
         into: outputNameSchema,
       })
       .strict(),
@@ -2405,6 +2395,8 @@ export const engineChannels = {
          * than this is a page no reader can use a panel for.
          */
         links: z.array(engineLinkSchema).max(ENGINE_PAGE_LINKS_MAX),
+        /** Whether the bound stopped the walk. See `engine/destinations`. */
+        truncated: z.boolean(),
       })
       .strict(),
     ['no-such-session'],
@@ -2515,7 +2507,13 @@ export const engineChannels = {
   'engine/layers': fileAnswered(
     'Reads the document’s optional-content groups from a session this host holds.',
     z.object({ session: sessionSchema }).strict(),
-    z.object({ layers: z.array(engineLayerSchema).max(ENGINE_LAYERS_MAX) }).strict(),
+    z
+      .object({
+        layers: z.array(engineLayerSchema).max(ENGINE_LAYERS_MAX),
+        /** Whether the bound stopped the walk. See `engine/destinations`. */
+        truncated: z.boolean(),
+      })
+      .strict(),
     ['no-such-session'],
   ),
 
@@ -2553,15 +2551,15 @@ export const engineChannels = {
   /**
    * How many signatures the document carries and whether the NEXT SAVE keeps them — Part F's warning before a
    * signature-breaking save. Answered from the writer's own decision about that save (`signaturesKeptBySave`), so
-   * nothing is serialised to ask and the answer cannot disagree with the save that follows. And whether that save is a
-   * REMOVAL's, which writes no backup (the list of 29 September, item 6) — the same decision, so one question.
+   * nothing is serialised to ask and the answer cannot disagree with the save that follows. Not whether the save keeps
+   * a backup: that is the document's fact in main (ADR-0139), which no rebuild of this host's session can lose.
    */
   'engine/signatures-kept': channel(
-    'Says whether the next save of a session this host holds keeps its signatures, and whether it is a removal’s.',
+    'Says whether the next save of a session this host holds keeps its signatures.',
     z.object({ session: sessionSchema }).strict(),
-    z
-      .object({ signatures: z.number().int().nonnegative().max(ENGINE_SIGNATURES_MAX), kept: z.boolean(), removal: z.boolean() })
-      .strict(),
+    // A COUNT, unbounded but for being an integer: it crosses as one number, and bounding it at the list's
+    // ENGINE_SIGNATURES_MAX made every save of a document with more signatures fail (table A row 14).
+    z.object({ signatures: z.number().int().nonnegative(), kept: z.boolean() }).strict(),
     ['no-such-session'],
   ),
 

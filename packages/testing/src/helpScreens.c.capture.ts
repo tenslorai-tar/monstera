@@ -41,6 +41,7 @@ test('explore-start', async ({ page }) => {
     name,
     location: displayLocationSchema.parse({ within: 'documents', folder: 'Reports' }),
     openedAt: new Date(Date.now() - at * 3_600_000).toISOString(),
+    available: true,
   }));
   await openApp(page, {
     recent: entries,
@@ -300,6 +301,7 @@ function recentFiles(): ChannelEntries {
     name,
     location: displayLocationSchema.parse({ within: 'documents', folder: 'Reports' }),
     openedAt: new Date(Date.now() - at * 3_600_000).toISOString(),
+    available: true,
   }));
 }
 
@@ -327,6 +329,26 @@ test('recent-files-1', async ({ page }) => {
   await recent.scrollIntoViewIfNeeded();
   await expect(recent.getByRole('button', { name: 'Clear list' })).toBeVisible();
   await shoot(page, 'recent-files-1', recent);
+});
+
+test('recent-files-2', async ({ page }) => {
+  // FILE › RECENT (ADR-0143): the three files, and a fourth on a drive that is not connected, marked Unavailable.
+  const missing = {
+    handle: asFileHandle('handle-usb'),
+    name: 'Site survey.pdf',
+    location: displayLocationSchema.parse({ within: null, folder: 'Surveys' }),
+    openedAt: new Date(Date.now() - 86_400_000).toISOString(),
+    available: false,
+  };
+  await openApp(page, { recent: [...recentFiles(), missing] });
+  // BY THE KEYBOARD, so the pointer `shoot` parks in the corner cannot close what a hover opened.
+  await page.locator('.m-menu-bar__trigger[data-menu="file"]').focus();
+  await page.keyboard.press('Enter');
+  const recent = page.getByRole('menuitem', { name: 'Recent' });
+  await recent.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('menuitem', { name: 'Site survey.pdf, unavailable' })).toBeVisible();
+  await shoot(page, 'recent-files-2', 'window');
 });
 
 test('reopen-after-a-crash-1', async ({ page }) => {

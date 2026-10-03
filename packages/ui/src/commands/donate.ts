@@ -2,7 +2,7 @@ import type { ContractClient } from '@monstera/contract';
 
 import { DONATE_DIALOG_ID, type DonateAnswer } from '../dialogs/donate.js';
 import { DONATE_COMMAND_TITLE } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 
 /**
  * *Donate* — the gold button at the centre of the menu row (the owner's design, 2026-09-22, moved there
@@ -29,6 +29,8 @@ export function donateCommand(deps: {
 }): UiCommand {
   return {
     id: 'app.donate',
+    // ITS DIALOG, then the browser on the donation page.
+    feedback: VISIBLE,
     icon: 'Heart',
     title: DONATE_COMMAND_TITLE,
     placements: [

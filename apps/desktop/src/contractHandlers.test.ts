@@ -5,20 +5,25 @@ import {
   MAX_BARCODE_TEXT,
   MAX_IMAGE_BYTES,
   MAX_LIBRARY_PICTURE_BYTES,
+  MAX_OFFICE_MISSING_BLOCKS,
   MAX_PAGE_BARCODES,
   MAX_SETTINGS_FILE_BYTES,
   RECENT_PREVIEWS_SETTING_ID,
+  blockEditOf,
   channels,
 } from '@monstera/contract';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import {
   HUMAN_CHECKS,
   CapabilityRegistry,
+  DocumentBusyError,
   DocumentNotOpenError,
   DocumentService,
   ENGINE_BARCODE_TEXT_MAX,
   ENGINE_BARCODES_MAX,
+  type IdentityReader,
+  readFileIdentity,
 } from '@monstera/kernel';
 import { BARCODE_WRITE_FORMATS } from '@monstera/kernel/barcode';
 import {
@@ -113,6 +118,8 @@ function harness(
     readonly cloud?: CloudStorage;
     /** The paperclip's picker and readers (ADR-0135); nothing picked and nothing readable otherwise. */
     readonly attachments?: { readonly pick: () => Promise<readonly string[]>; readonly readers: AttachmentReaders };
+    /** Whether a path names a file (ADR-0143); the kernel's own `readFileIdentity` over the real disk otherwise. */
+    readonly fileIdentity?: IdentityReader;
   } = {},
 ) {
   const capabilities = new CapabilityRegistry();
@@ -183,6 +190,7 @@ function harness(
     recent,
     recentRoots: RECENT_ROOTS,
     recentPictures: pictures,
+    fileIdentity: overrides.fileIdentity ?? readFileIdentity,
     library: overrides.library ?? unusedLibrarySurface(),
     reviewPrompt: prompt,
     // RETURNED, so cases about persistence read the same object the handlers
@@ -421,6 +429,44 @@ describe('the person’s library (library.*, and document.placeImage with a kept
       { pages: [0], rect: { x0: 1, y0: 1, x1: 20, y1: 20 }, stamp: { author: 'A. Tester', created: '2026-09-28T12:00:00Z' }, picture },
     ]);
   });
+
+  /**
+   * `document.placeSignature`'s handler (ADR-0133), between the renderer's dispatch and main's placement. The renderer
+   * half asserts the channel is called and the main half runs `placeSignature` directly; this is the step neither
+   * crosses. `keep: true` and an outcome that is not the default `kept` are the inputs a handler dropping a field, or
+   * answering for main, would get wrong.
+   */
+  it('FORWARDS a plain signature’s every field to main, answers main’s outcome as named, and says a busy document is busy', async () => {
+    const docId = asDocId('00000000-0000-4000-8000-0000000000e3');
+    const request = {
+      page: 2,
+      rect: { x0: 10, y0: 20, x1: 160, y1: 70 },
+      mark: { kind: 'typed', text: 'Ada Lovelace', font: 'times-italic' },
+      keep: true,
+      stamp: { author: 'A. Tester', created: '2026-10-02T12:00:00Z' },
+    } as const;
+    const PLACED = { kind: 'placed', version: asDocVersion(4), byteLength: 2048, historyDropped: 0, kept: 'not-keepable' } as const;
+    const requested: unknown[] = [];
+    let busy = false;
+    const commands = {
+      placeSignature: (on: DocId, made: unknown) => {
+        requested.push({ on, made });
+        if (busy) return Promise.reject(new DocumentBusyError(on, 64));
+        return Promise.resolve(PLACED);
+      },
+    } as unknown as DocumentCommands;
+    const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+
+    const answer = await handlers['document.placeSignature']({ docId, ...request });
+    expect(answer).toStrictEqual({ ok: true, value: PLACED });
+    expect(requested).toStrictEqual([{ on: docId, made: request }]);
+
+    busy = true;
+    expect(await handlers['document.placeSignature']({ docId, ...request })).toStrictEqual({
+      ok: false,
+      error: { code: 'document-busy' },
+    });
+  });
 });
 
 describe('app.openWebPage', () => {
@@ -458,9 +504,34 @@ describe('document.newFromOffice — the rows a workbook lacks', () => {
 
     expect(result).toStrictEqual({
       ok: true,
-      value: { kind: 'opened-incomplete', docId: A_DOC, version: 1, byteLength: 1024, name: 'Budget.pdf', missing },
+      value: { kind: 'opened-incomplete', docId: A_DOC, version: 1, byteLength: 1024, name: 'Budget.pdf', missing, more: 0 },
     });
     expect(opened).toHaveLength(1);
+  });
+
+  it('opens a workbook with more blocks missing than it names, naming the first and COUNTING the rest (table A row 12)', async () => {
+    // Until 2026-10-02 the 65th block failed the import of a workbook whose every other row had converted.
+    const missing = Array.from({ length: MAX_OFFICE_MISSING_BLOCKS + 5 }, (_, index) => ({
+      sheet: 'Data',
+      from: index * 10 + 1,
+      to: index * 10 + 5,
+    }));
+    const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands: converting(missing) });
+
+    const result = await handlers['document.newFromOffice']({});
+
+    expect(result).toStrictEqual({
+      ok: true,
+      value: {
+        ...OPENED,
+        version: 1,
+        kind: 'opened-incomplete',
+        missing: missing.slice(0, MAX_OFFICE_MISSING_BLOCKS),
+        more: 5,
+      },
+    });
+    // AND THE ANSWER PASSES THE CHANNEL'S OWN SCHEMA, which bounds the named list.
+    expect(channels['document.newFromOffice'].result.safeParse(result.ok ? result.value : null).success).toBe(true);
   });
 
   it('CONTROL: answers plain opened where nothing is missing', async () => {
@@ -663,7 +734,7 @@ describe('document.open', () => {
           pickDocument: () => Promise.resolve(null),
           recent: createRecentFiles(createEphemeralSettings()),
           recentRoots: [],
-          recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
+          recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
           reviewPrompt: NO_REVIEW_PROMPT,
           settings: createEphemeralSettings(),
           secrets: createEphemeralSecrets(),
@@ -990,51 +1061,76 @@ describe('the recent list', () => {
     expect(result).toStrictEqual({ ok: false, error: { code: 'unknown-handle' } });
   });
 
-  it('FORGETS an entry whose file has gone', async () => {
-    // `absent` for a recent entry means the file moved or was deleted since it
-    // was opened. Leaving it would offer the reader the same dead row on every
-    // launch, for ever.
-    const capabilities = new CapabilityRegistry();
-    const handle = capabilities.mint('C:/docs/gone.pdf');
-    const { documents } = serviceAnswering({ kind: 'absent' });
-    const recent = createRecentFiles(createEphemeralSettings());
+  it('KEEPS an entry whose file has gone, and lists it as unavailable — never hidden (ADR-0143)', async () => {
+    // Until 2026-10-03 an `absent` open FORGOT the entry, which lost a file on a drive that was only disconnected.
+    // CONTROL in the same case: the open itself still answers `absent`, so the renderer still says it could not open.
+    const { capabilities, handlers, recent } = harness({ kind: 'absent' }, () => Promise.resolve(null));
     recent.record({ path: 'C:/docs/gone.pdf', name: 'gone.pdf' });
-    const handlers = createContractHandlers({
-      assistant: INERT_ASSISTANT,
-      appInfo,
-      capabilities,
-      commands: unusedCommands,
-      documents,
-      openedDocument: () => Promise.resolve(),
-      unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
-      pickDocument: () => Promise.resolve(null),
-      recent,
-      recentRoots: [],
-      recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
-      reviewPrompt: NO_REVIEW_PROMPT,
-      settings: createEphemeralSettings(),
-      secrets: createEphemeralSecrets(),
-      chatHistory: NO_HISTORY,
-      pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
-      revealLog: () => Promise.resolve(false),
-      revealPath: () => Promise.resolve(false),
-      titleBarOverlay: () => false,
-      confirmClose: () => false,
-      edit: () => false,
-      copyText: () => false,
-      openWebPage: () => Promise.resolve(false),
-      openStore: () => Promise.resolve(false),
-      closeListening: () => false,
-    cloud: unconfiguredCloud(),
-    attachments: NO_ATTACHMENTS,
-      readDictionary: () => Promise.resolve(null),
-      ocrLanguages: () => Promise.resolve([]),
-      components: () => Promise.resolve([]),
+    const handle = capabilities.mint('C:/docs/gone.pdf');
+
+    const opened = await handlers['document.openRecent']({ handle });
+
+    expect(opened).toStrictEqual({ ok: true, value: { kind: 'absent' } });
+    expect(recent.list().map((entry) => entry.name)).toStrictEqual(['gone.pdf']);
+    const listed = await handlers['document.recent']({});
+    expect(listed.ok ? listed.value.entries.map((entry) => [entry.name, entry.available]) : listed).toStrictEqual([
+      ['gone.pdf', false],
+    ]);
+  });
+
+  describe('which entries are there (ADR-0143)', () => {
+    /** A folder holding `here.pdf`, and the path of a `gone.pdf` beside it that does not exist. */
+    function aFolder(): { readonly here: string; readonly gone: string } {
+      const folder = mkdtempSync(join(tmpdir(), 'monstera-recent-'));
+      const here = join(folder, 'here.pdf');
+      writeFileSync(here, '%PDF-1.7\n');
+      return { here, gone: join(folder, 'gone.pdf') };
+    }
+    const availability = async (handlers: ReturnType<typeof harness>['handlers']): Promise<unknown> => {
+      const listed = await handlers['document.recent']({});
+      return listed.ok ? listed.value.entries.map((entry) => [entry.name, entry.available]) : listed;
+    };
+
+    it('reads each by the OPEN’S OWN RULE: a file on disk is available, a missing one is listed and not', async () => {
+      // BOTH DIRECTIONS IN ONE FIXTURE, so neither *always available* nor *never available* passes: the first is the
+      // missing file drawn as one that opens, the second a list that disables everything.
+      const { here, gone } = aFolder();
+      const { handlers, recent } = harness({ kind: 'absent' }, () => Promise.resolve(null));
+      recent.record({ path: gone, name: 'gone.pdf' });
+      recent.record({ path: here, name: 'here.pdf' });
+
+      expect(await availability(handlers)).toStrictEqual([
+        ['here.pdf', true],
+        ['gone.pdf', false],
+      ]);
     });
 
-    await handlers['document.openRecent']({ handle });
+    it('is read AT EACH ASK, never stored: a file deleted between two reads is unavailable on the second', async () => {
+      const { here } = aFolder();
+      const { handlers, recent } = harness({ kind: 'absent' }, () => Promise.resolve(null));
+      recent.record({ path: here, name: 'here.pdf' });
+      expect(await availability(handlers)).toStrictEqual([['here.pdf', true]]);
 
-    expect(recent.list()).toStrictEqual([]);
+      rmSync(here);
+
+      expect(await availability(handlers)).toStrictEqual([['here.pdf', false]]);
+    });
+
+    it('a check that THROWS is unavailable, and the rest of the list is still answered', async () => {
+      // A refused permission or a device error: an open would fail on it too, so it is not drawn as one that opens.
+      const { here } = aFolder();
+      const { handlers, recent } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
+        fileIdentity: (path) =>
+          path === 'C:/docs/locked.pdf' ? Promise.reject(new Error('EACCES: permission denied')) : readFileIdentity(path),
+      });
+      recent.record({ path: 'C:/docs/locked.pdf', name: 'locked.pdf' });
+      recent.record({ path: here, name: 'here.pdf' });
+
+      expect(await availability(handlers)).toStrictEqual([
+        ['here.pdf', true],
+        ['locked.pdf', false],
+      ]);
+    });
   });
 });
 
@@ -1091,7 +1187,7 @@ describe('log.reveal', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
-      recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
+      recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
 settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
@@ -1149,7 +1245,7 @@ describe('ai.checkKey', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
-      recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
+      recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
 settings: createEphemeralSettings(),
       secrets,
@@ -1281,7 +1377,7 @@ describe('ai.translatePage (ADR-0097)', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
-      recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
+      recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
 settings: createEphemeralSettings(),
       secrets,
@@ -1318,12 +1414,24 @@ settings: createEphemeralSettings(),
 
     expect(result).toStrictEqual({
       ok: true,
-      value: { kind: 'translated', version: 7, blocks: [{ lines: [[3]], text: 'Facture' }] },
+      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], text: 'Facture' }]) },
     });
     expect(asked).toHaveLength(1);
     // THE BLOCKS AS THE KERNEL WILL DIFF THEM: runs joined as they are, lines by a line break.
     expect(JSON.parse(asked[0]?.user ?? '[]')).toStrictEqual(['Invoice', 'Payment is due\nwithin 30 days.']);
     expect(asked[0]?.system).toContain('into French');
+  });
+
+  it('a translated paragraph past 4,096 characters is answered whole, not refused (table A row 10)', async () => {
+    // It was refused as an unreadable answer — blaming the provider for an ordinary page — because one block's text
+    // was bounded at 4,096. A block is bounded only by the page's text now (ADR-0142).
+    const long = 'Le paiement est dû dans les trente jours suivant la réception. '.repeat(80);
+    expect(long.length).toBeGreaterThan(4096);
+    const { handlers } = translating(BLOCKS, JSON.stringify([long, 'Payment is due\nwithin 30 days.']));
+    expect(await handlers['ai.translatePage'](ASK)).toStrictEqual({
+      ok: true,
+      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], text: long }]) },
+    });
   });
 
   it('an answer of the WRONG LENGTH is refused as unreadable — after ONE more ask, never matched by guess', async () => {
@@ -1340,7 +1448,7 @@ settings: createEphemeralSettings(),
     const { handlers, asked } = translating(BLOCKS, ['not an array', JSON.stringify(['Facture', 'Payment is due\nwithin 30 days.'])]);
     expect(await handlers['ai.translatePage'](ASK)).toStrictEqual({
       ok: true,
-      value: { kind: 'translated', version: 7, blocks: [{ lines: [[3]], text: 'Facture' }] },
+      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], text: 'Facture' }]) },
     });
     expect(asked).toHaveLength(2);
   });
@@ -1411,7 +1519,7 @@ describe('ai.history (ADR-0093)', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
-      recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
+      recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
 settings,
       secrets: createEphemeralSecrets(),
@@ -1580,7 +1688,7 @@ describe('cloud.saveBack', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
-      recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
+      recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
 settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
@@ -1682,6 +1790,137 @@ describe('a document-wide list answers in parts', () => {
       expect([...itemsOf(first.value), ...itemsOf(second.value)]).toStrictEqual(numbered);
     });
   }
+});
+
+/**
+ * A PAGE PAST ONE PART of its text blocks or its objects (finding AAAAAAA-1, ADR-0130): the real handlers answer it a
+ * part at a time, and EVERY PART PASSES THE CONTRACT'S OWN RESULT SCHEMA — the check that refused such a page as
+ * `internal` when it crossed whole. The fixtures are the breaking sizes: 600 blocks (a dense table page) and 8,400
+ * objects (a page drawn one glyph per object, measured 2026-10-02).
+ */
+describe('a dense page’s blocks and objects answer in parts the contract accepts', () => {
+  const OPENED = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' } as const;
+  const box = { x0: 10, y0: 10, x1: 40, y1: 20 };
+  const cell = { size: 9, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
+  const blocks = Array.from({ length: 600 }, (_, at) => ({
+    box,
+    lines: [{ runs: [{ index: at, text: `cell ${String(at)}`, style: cell }], box }],
+    style: cell,
+  }));
+  const objects = Array.from({ length: 8400 }, (_, at) => ({
+    index: at,
+    kind: 'text' as const,
+    left: 10,
+    bottom: 10,
+    right: 12,
+    top: 20,
+    fill: null,
+  }));
+  const commands = {
+    textBlocks: () => Promise.resolve({ version: asDocVersion(7), blocks, truncated: false, rotated: 0, unaddressable: 2 }),
+    pageObjects: () => Promise.resolve({ version: asDocVersion(7), objects, truncated: false }),
+  } as unknown as DocumentCommands;
+  const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands });
+
+  /** Every part from the first, each checked against the channel's own result schema as it arrives. */
+  async function walk(name: 'document.textBlocks' | 'document.pageObjects', itemsOf: (value: object) => readonly unknown[]) {
+    const items: unknown[] = [];
+    let parts = 0;
+    let from: number | null = 0;
+    while (from !== null) {
+      const at: number = from;
+      const answer: { readonly ok: boolean; readonly value?: object & { readonly next: number | null } } = await handlers[name]({
+        docId: A_DOC,
+        page: 0,
+        from: at,
+      });
+      if (!answer.ok || answer.value === undefined) throw new Error(`${name} refused the part from ${String(at)}`);
+      expect(channels[name].result.safeParse(answer.value).success, `${name} part from ${String(at)}`).toBe(true);
+      items.push(...itemsOf(answer.value));
+      from = answer.value.next;
+      parts += 1;
+    }
+    return { items, parts };
+  }
+
+  it('600 text blocks: two parts, both valid, and together the page', async () => {
+    const { items, parts } = await walk('document.textBlocks', (value) => (value as { blocks: unknown[] }).blocks);
+    expect(parts).toBe(2);
+    expect(items).toStrictEqual(blocks);
+  });
+
+  it('8,400 page objects: seventeen parts, all valid, and together the page', async () => {
+    const { items, parts } = await walk('document.pageObjects', (value) => (value as { objects: unknown[] }).objects);
+    expect(parts).toBe(17);
+    expect(items).toStrictEqual(objects);
+  });
+
+  it('CONTROL: the same page answered WHOLE is refused by the contract — the fixture is at the breaking size', () => {
+    const whole = { version: asDocVersion(7), next: null, truncated: false };
+    expect(channels['document.textBlocks'].result.safeParse({ ...whole, blocks, rotated: 0, unaddressable: 2 }).success).toBe(false);
+    expect(channels['document.pageObjects'].result.safeParse({ ...whole, objects }).success).toBe(false);
+  });
+});
+
+describe('a CAD export’s layers answer in parts the contract accepts', () => {
+  const OPENED = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' } as const;
+  const layers = Array.from({ length: 2500 }, (_, index) => ({ index, name: `Level ${String(index)}`, visible: true }));
+  const commands = {
+    layers: () => Promise.resolve({ version: asDocVersion(4), layers, truncated: false }),
+  } as unknown as DocumentCommands;
+  const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands });
+
+  it('2,500 layers: three parts, each valid, and together every layer', async () => {
+    const items: unknown[] = [];
+    let parts = 0;
+    let from: number | null = 0;
+    while (from !== null) {
+      const answer = await handlers['document.layers']({ docId: A_DOC, from });
+      if (!answer.ok) throw new Error(`the part from ${String(from)} was refused`);
+      expect(channels['document.layers'].result.safeParse(answer.value).success).toBe(true);
+      items.push(...answer.value.layers);
+      from = answer.value.next;
+      parts += 1;
+    }
+    expect(parts).toBe(3);
+    expect(items).toStrictEqual(layers);
+  });
+
+  it('CONTROL: the same layers answered WHOLE are refused by the contract — the fixture is at the breaking size', () => {
+    const whole = { version: asDocVersion(4), layers, next: null, truncated: false };
+    expect(channels['document.layers'].result.safeParse(whole).success).toBe(false);
+  });
+});
+
+describe('a link-heavy page’s links answer in parts the contract accepts', () => {
+  const OPENED = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' } as const;
+  const bounds = { x0: 1, y0: 2, x1: 3, y1: 4 };
+  const links = Array.from({ length: 5000 }, (_, index) => ({ kind: 'external' as const, uri: `https://example.org/${String(index)}`, bounds }));
+  const commands = {
+    pageLinks: () => Promise.resolve({ version: asDocVersion(4), links, truncated: false }),
+  } as unknown as DocumentCommands;
+  const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands });
+
+  it('5,000 links: two parts, each valid, and together every link', async () => {
+    const items: unknown[] = [];
+    let parts = 0;
+    let from: number | null = 0;
+    while (from !== null) {
+      const answer = await handlers['document.pageLinks']({ docId: A_DOC, page: 0, from });
+      if (!answer.ok) throw new Error(`the part from ${String(from)} was refused`);
+      expect(channels['document.pageLinks'].result.safeParse(answer.value).success).toBe(true);
+      items.push(...answer.value.links);
+      from = answer.value.next;
+      parts += 1;
+    }
+    expect(parts).toBe(2);
+    expect(items).toStrictEqual(links);
+  });
+
+  it('CONTROL: the same links answered WHOLE are refused by the contract — the fixture is at the breaking size', () => {
+    const whole = { version: asDocVersion(4), links, next: null, truncated: false };
+    expect(channels['document.pageLinks'].result.safeParse(whole).success).toBe(false);
+  });
 });
 
 /** The handle this registry would mint for a path, without minting a new one. */

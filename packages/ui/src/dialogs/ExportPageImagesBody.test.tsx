@@ -63,6 +63,30 @@ describe('ExportPageImagesBody', () => {
     expect(resolve).toHaveBeenCalledWith({ pages: [0, 1, 2], format: 'webp', dpi: 150, quality: 40 });
   });
 
+  it('ITS PAGE CHOICE IS THE EXPORTS’ SHARED ROW, and what it sends is the pages chosen there', () => {
+    // BY WHAT A PERSON MEETS, not by which component drew it: the group, its two options, a typed range refused only
+    // once the export is pressed, and the pages sent being the ones typed. A row of this dialog's own fails here —
+    // its words, or its refusing as the text is typed, or its button disabled so pressing it says nothing.
+    const { resolve } = opened();
+
+    expect(screen.getByRole('group', { name: 'Pages' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Every page' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Select pages' }));
+    const field = screen.getByRole('textbox', { name: 'Page numbers' });
+    fireEvent.change(field, { target: { value: '4' } });
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    fireEvent.click(EXPORT());
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toBe('“4” is outside this document, which has 3 pages.');
+
+    fireEvent.change(field, { target: { value: '3, 1' } });
+    fireEvent.click(EXPORT());
+
+    expect(resolve).toHaveBeenCalledWith({ pages: [0, 2], format: 'png', dpi: 150, quality: 85 });
+  });
+
   it('CONTROL: a PNG asks no quality and answers the default, whatever was typed for a lossy format', () => {
     // Without this, "the field is shown for WebP" is also what a dialog that
     // showed it for every format would pass.

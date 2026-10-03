@@ -1,6 +1,6 @@
 import { type ContractClient, MAX_TEXT_LAYER_LINES } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type { TextLayerLine } from './TextLayer.js';
 
@@ -46,6 +46,17 @@ export interface PageTextAnswer {
  * some pages at version 4 and some at version 5 is a page of text from two
  * documents, and there is no assertion a consumer could make about it.
  *
+ * ## KEPT across a change of the pages wanted, and that is what a selection lives in
+ *
+ * A page that stays wanted keeps its answer — the same lines, so its layer keeps
+ * its nodes — and only a page newly wanted is read. Answering a new set with
+ * nothing until every page of it had been read again unmounted every layer on
+ * every scroll that moved a page in or out, and a selection's ends are nodes in
+ * those layers: the browser moved them to the page's slot, and a drag that
+ * scrolled the view went on from the next page's top, or collapsed (measured
+ * 2026-10-03, N7). A page that leaves the set leaves the map, so what is held is
+ * bounded by what is wanted.
+ *
  * ## What a refusal does
  *
  * Nothing, deliberately. A page with no entry mounts no layer, so a refused read
@@ -74,23 +85,30 @@ export function usePageText(
   // every frame of a scroll — the per-slot arrow defect one layer up, where an
   // inline value in a dependency array turned one render into a full redraw.
   const wanted = [...visible].sort((a, b) => a - b).join(',');
-  const key = `${String(docId)}@${String(version)}#${wanted}`;
+  const key = `${String(docId)}@${String(version)}`;
 
   /**
-   * THE ANSWER CARRIES THE QUESTION IT ANSWERS, and that is B5 rather than
-   * bookkeeping.
+   * THE ANSWER CARRIES THE DOCUMENT AND VERSION IT ANSWERS, and that is B5 rather
+   * than bookkeeping.
    *
    * A bare map has to be *cleared* when the document or the version changes, and
    * clearing means calling `setState` in an effect body — which React's own lint
    * rule refuses, and rightly: between the change and the clear, a layer from the
    * previous document sits over the new one's raster. Holding the key beside the
    * map makes that state unrepresentable instead: a map whose key is not the
-   * current question is simply not returned.
+   * current document and version is simply not returned.
    */
   const [answered, setAnswered] = useState<{
     readonly key: string;
     readonly map: ReadonlyMap<number, PageTextAnswer>;
   }>({ key: '', map: EMPTY });
+  // WHAT IS HELD FOR THIS QUESTION, read by the effect to skip pages it already has. A ref, because the effect must
+  // not re-run when an answer lands — that would be a read per answer; kept current by a layout effect, which runs
+  // before the effect below reads it.
+  const held = useRef(answered);
+  useLayoutEffect(() => {
+    held.current = answered;
+  }, [answered]);
 
   useEffect(() => {
     if (client === undefined || docId === undefined || version === undefined) return;
@@ -103,10 +121,13 @@ export function usePageText(
     // lint rule says so. The second check is the load-bearing one.
     const stopped = (): boolean => cancelled;
     const pages = wanted === '' ? [] : wanted.split(',').map(Number);
+    const already = held.current.key === key ? held.current.map : EMPTY;
 
     const fetchAll = async (): Promise<void> => {
       const gathered = new Map<number, PageTextAnswer>();
       for (const page of pages) {
+        // A PAGE ALREADY ANSWERED AT THIS VERSION is not read again; its answer is carried below.
+        if (already.has(page)) continue;
         // CHECKED BEFORE THE CALL and after it: a teardown between pages costs
         // no round trip, and the answer to the page in flight arrives after the
         // effect was torn down.
@@ -126,7 +147,15 @@ export function usePageText(
         if (answer.value.version !== version) continue;
         gathered.set(page, { lines: answer.value.lines, kind: answer.value.kind });
       }
-      if (!stopped()) setAnswered({ key, map: gathered });
+      if (stopped()) return;
+      // THE PAGES STILL WANTED keep the answer they had — the same object, so their layers keep their nodes — and a
+      // page no longer wanted is let go. Nothing new and nothing gone is no new state at all.
+      setAnswered((previous) => {
+        const before = previous.key === key ? previous.map : EMPTY;
+        const kept = [...before].filter(([page]) => pages.includes(page));
+        if (gathered.size === 0 && previous.key === key && kept.length === before.size) return previous;
+        return { key, map: new Map([...kept, ...gathered]) };
+      });
     };
 
     void fetchAll();
@@ -135,7 +164,15 @@ export function usePageText(
     };
   }, [client, docId, key, version, wanted]);
 
-  return answered.key === key ? answered.map : EMPTY;
+  // ONLY THE PAGES WANTED NOW: an answer held for a page that has just left the set is not shown while its removal
+  // is on its way.
+  return useMemo(() => {
+    if (answered.key !== key) return EMPTY;
+    const pages = new Set(wanted === '' ? [] : wanted.split(',').map(Number));
+    return [...answered.map.keys()].every((page) => pages.has(page))
+      ? answered.map
+      : new Map([...answered.map].filter(([page]) => pages.has(page)));
+  }, [answered, key, wanted]);
 }
 
 /**

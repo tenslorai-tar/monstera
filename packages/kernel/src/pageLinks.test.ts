@@ -179,7 +179,8 @@ describe('readPageLinks', () => {
   it('reads both kinds, and RESOLVES an internal destination to its page', async () => {
     const session = await mupdfWriter.open(await documentWithLinks());
     try {
-      const links = await readPageLinks(session, 0);
+      const { links, truncated } = await readPageLinks(session, 0);
+      expect(truncated).toBe(false);
 
       expect(links).toHaveLength(2);
       // PAGE 2 ZERO-BASED, which is the third page — the one the destination
@@ -199,13 +200,57 @@ describe('readPageLinks', () => {
     }
   });
 
+  it('reads 4,200 links on one page, and shows a 3,000-character tracking link shortened', async () => {
+    // JOURNAL, *No document-size refusals*, table A row 7: past 4,096 links, or one URI past 2,048 characters, the
+    // answer was refused whole and the panel said the page's links could not be read.
+    const document = await PDFDocument.create();
+    const page = document.addPage([600, 800]);
+    const context = document.context;
+    const tracking = `https://example.org/track?id=${'a'.repeat(2970)}`;
+    const annots = context.obj(
+      Array.from({ length: 4200 }, (_, index) =>
+        context.register(
+          context.obj({
+            Type: 'Annot',
+            Subtype: 'Link',
+            Rect: [index % 500, 10, (index % 500) + 5, 15],
+            A: { S: 'URI', URI: PDFString.of(index === 3000 ? tracking : `https://example.org/${String(index)}`) },
+          }),
+        ),
+      ),
+    );
+    page.node.set(PDFName.of('Annots'), annots);
+
+    const session = await mupdfWriter.open(await document.save({ useObjectStreams: false }));
+    try {
+      const { links, truncated } = await readPageLinks(session, 0);
+      expect(links).toHaveLength(4200);
+      expect(truncated).toBe(false);
+      // THE WALK'S STOP (AAAAAAA-6), at a bound one under the links: it stops and says so, and at the count it is whole.
+      const stopped = await readPageLinks(session, 0, 4199);
+      expect([stopped.links.length, stopped.truncated]).toStrictEqual([4199, true]);
+      expect((await readPageLinks(session, 0, 4200)).truncated).toBe(false);
+      const long = links[3000];
+      expect(long?.kind).toBe('external');
+      if (long?.kind !== 'external') throw new Error('link 3,000 should be external');
+      expect(long.uri).toHaveLength(2048);
+      expect(long.uri.startsWith('https://example.org/track?id=aaa')).toBe(true);
+      expect(long.uri.endsWith('…')).toBe(true);
+      // CONTROL: the fixture's URI is past the bound, and the ones around it are whole.
+      expect(tracking.length).toBeGreaterThan(2048);
+      expect(links[2999]).toMatchObject({ uri: 'https://example.org/2999' });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
   it('answers per PAGE, so a page with no links reports none', async () => {
     // The control for the case above: without it, a reader that returned every
     // link in the document would pass — and that is the answer invariant 11
     // forbids as well as the wrong one.
     const session = await mupdfWriter.open(await documentWithLinks());
     try {
-      expect(await readPageLinks(session, 1)).toStrictEqual([]);
+      expect((await readPageLinks(session, 1)).links).toStrictEqual([]);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -218,13 +263,13 @@ describe('readPageLinks', () => {
     // of them.
     const session = await mupdfWriter.open(await nestedDocumentWithLinks());
     try {
-      const links = await readPageLinks(session, 0);
+      const { links } = await readPageLinks(session, 0);
       expect(links[0]).toMatchObject({ kind: 'internal', page: 2 });
       // AND THE PER-PAGE ANSWER SURVIVES THE NESTING, which is the half a
       // destination-only case would miss: page 1 sits under the intermediate
       // node beside page 0, so a reader walking the tree wrongly is as likely
       // to hand back its neighbour's links as the right page's.
-      expect(await readPageLinks(session, 1)).toStrictEqual([]);
+      expect((await readPageLinks(session, 1)).links).toStrictEqual([]);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -243,7 +288,7 @@ describe('readPageLinks', () => {
     });
     const session = await mupdfWriter.open(added);
     try {
-      const links = await readPageLinks(session, 0);
+      const { links } = await readPageLinks(session, 0);
       expect(links).toContainEqual({
         kind: 'external',
         uri: 'https://example.org/a',
@@ -270,7 +315,7 @@ describe('readPageLinks', () => {
     });
     const session = await mupdfWriter.open(added);
     try {
-      expect(await readPageLinks(session, 0)).toContainEqual(
+      expect((await readPageLinks(session, 0)).links).toContainEqual(
         expect.objectContaining({ kind: 'internal', page: 2 }),
       );
     } finally {
@@ -294,7 +339,7 @@ describe('readPageLinks', () => {
     });
     const session = await mupdfWriter.open(added);
     try {
-      expect(await readPageLinks(session, 0)).toHaveLength(1);
+      expect((await readPageLinks(session, 0)).links).toHaveLength(1);
       const listed = await readAnnotations(session);
       expect(listed.annotations).toStrictEqual([]);
     } finally {

@@ -12,7 +12,7 @@ import {
   GROUP_PAGES,
   RIBBON_EDIT_EXTERNALLY,
 } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import { type DocumentCommandDeps, hasDocument, reportProblem } from './documentCommands.js';
 import type { OpenedDocument } from './importMarkdown.js';
 
@@ -86,6 +86,8 @@ export function editPageExternallyCommand(
 ): UiCommand {
   return {
     id: 'document.edit-page-externally',
+    // THE OTHER APPLICATION OPENS WITH THE PAGE, and the page changes here when it is saved there.
+    feedback: VISIBLE,
     icon: 'ExternalLink',
     title: EDIT_PAGE_EXTERNALLY_COMMAND_TITLE,
     ribbonTitle: RIBBON_EDIT_EXTERNALLY,

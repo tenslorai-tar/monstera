@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
 import { asDocId, asDocVersion, messageKey } from '@monstera/shared';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -13,7 +13,7 @@ import { ALL_SETTINGS } from '../settings/all.js';
 import { CONTEXT_PANEL_OPEN_SETTING } from '../settings/layout.js';
 import { SettingsStore } from '../settingsStore.js';
 import { selectionPropertiesCommand } from '../commands/annotationCommands.js';
-import { ContextMenuArea } from './ContextMenu.js';
+import { ContextMenuArea, type MenuAt, inPageMenu, menuGroups } from './ContextMenu.js';
 
 /**
  * §7's context menus, rendered (the owner's section 7, 2026-09-19).
@@ -49,6 +49,7 @@ function recording(): { registry: CommandRegistry; runs: { id: string; page: num
   const runs: { id: string; page: number | undefined }[] = [];
   const command = (id: string, title: string, menu: 'page' | 'tab', order: number): UiCommand => ({
     id,
+    feedback: { kind: 'visible' },
     // Existing catalogue keys, so the rendered text is a real title rather than a raw key.
     title: messageKey(title),
     placements: [{ surface: 'context-menu', context: menu, order }],
@@ -192,5 +193,81 @@ describe('ContextMenuArea', () => {
     expect(screen.queryAllByRole('menuitem')).toStrictEqual([]);
     expect(container.querySelector('[data-context-menu]')).toBeNull();
     expect(screen.getByTestId('region').textContent).toBe('a note');
+  });
+});
+
+describe('a list’s ONE page menu (inPageMenu)', () => {
+  /** Three slots marked as `useVisiblePages` marks them, with a gap between the second and third that is no page. */
+  function list(registry: CommandRegistry, asked: number[]): ReactElement {
+    const menuAt: MenuAt<number> = (page) => {
+      asked.push(page);
+      const context = { ...CONTEXT, page };
+      const groups = menuGroups(registry, context, ['page']);
+      return groups.length === 0 ? undefined : { context, groups };
+    };
+    return (
+      <Wrapped>
+        {inPageMenu(
+          menuAt,
+          <>
+            <div data-page="0">page 1</div>
+            <div data-page="1">page 2</div>
+            <div data-testid="gap">between</div>
+            <div data-page="3">
+              <span data-testid="inside">page 4’s text</span>
+            </div>
+          </>,
+        )}
+      </Wrapped>
+    );
+  }
+
+  it('asks for nothing at render, and for THE RIGHT-CLICKED page at the right-click — whose items run against it', async () => {
+    const { registry, runs } = recording();
+    const asked: number[] = [];
+    const { container } = render(list(registry, asked));
+    // ONE MENU FOR THE LIST, and no page's menu built before a right-click asked for it.
+    expect(container.querySelectorAll('.m-context-menu-region')).toHaveLength(1);
+    expect(asked).toStrictEqual([]);
+
+    // A TARGET INSIDE THE SLOT, not the slot itself: the slot holding it is the page.
+    await act(async () => {
+      fireEvent.contextMenu(screen.getByTestId('inside'), { clientX: 20, clientY: 20 });
+      await Promise.resolve();
+    });
+    expect(asked).toStrictEqual([3]);
+    const rotate = (await screen.findAllByRole('menuitem'))[0];
+    if (rotate === undefined) throw new Error('no item');
+    await act(async () => {
+      fireEvent.click(rotate);
+      await Promise.resolve();
+    });
+    expect(runs).toStrictEqual([{ id: 't.rotate', page: 3 }]);
+  });
+
+  it('CONTROL: a right-click in NO page opens nothing — not even the menu the last page opened', async () => {
+    const { registry } = recording();
+    const asked: number[] = [];
+    render(list(registry, asked));
+    // A PAGE'S MENU FIRST, then closed: the area now holds page 4's answer, which is what a gap must not reopen.
+    await act(async () => {
+      fireEvent.contextMenu(screen.getByTestId('inside'), { clientX: 20, clientY: 20 });
+      await Promise.resolve();
+    });
+    expect(await screen.findAllByRole('menuitem')).not.toStrictEqual([]);
+    await act(async () => {
+      fireEvent.keyDown(screen.getAllByRole('menuitem')[0] ?? document.body, { key: 'Escape' });
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryAllByRole('menuitem')).toStrictEqual([]);
+    });
+
+    await act(async () => {
+      fireEvent.contextMenu(screen.getByTestId('gap'), { clientX: 20, clientY: 20 });
+      await Promise.resolve();
+    });
+    expect(asked).toStrictEqual([3]);
+    expect(screen.queryAllByRole('menuitem')).toStrictEqual([]);
   });
 });

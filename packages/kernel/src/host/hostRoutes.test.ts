@@ -39,12 +39,13 @@ const violationsOf = (channels: ChannelMap) =>
  * - `engine/invert`: its params are a capture's answer, which crossed under the same ceiling to reach main.
  * - `engine/applyPdfLib`: its pre-read is `engine/ocr-page`'s or `engine/destinations`' answer, by the same argument;
  *   the case below holds the rest of its params to the ceiling.
- * - PDFium's `engine/apply` and `engine/capture`: open, and the owner's. `replaceTextObject` and `editTextBlock`
- *   multiply per-entry bounds whose real limit is a page's total, and above the ceiling the call is refused as itself.
+ *
+ * PDFium's `engine/apply` and `engine/capture` LEFT this set with ADR-0142: its two text edits carry one list and one
+ * text each, so their worst is a sum under the ceiling (`commands.test.ts` measures both).
  */
 const PAST_THE_ROUTE: Readonly<Record<keyof typeof HOSTS, readonly string[]>> = {
   'MuPDF host': ['engine/invert', 'engine/applyPdfLib'],
-  'PDFium host': ['engine/invert', 'engine/apply', 'engine/capture'],
+  'PDFium host': ['engine/invert'],
   'compose host': [],
 };
 
@@ -66,6 +67,25 @@ describe('the engine hosts’ declared routes', () => {
   it('engine/applyPdfLib, its pre-read left out, fits the file ceiling at its worst', () => {
     const rest = engineChannels['engine/applyPdfLib'].params.omit({ reads: true });
     expect(maxEncodedBytes(rest, WORST_BYTES_PER_CHAR, 'input')).toBeLessThan(ENGINE_ANSWER_FILE_MAX_BYTES);
+  });
+
+  /**
+   * GENERATE TOC ON A REAL OUTLINE, the size that failed (JOURNAL, *No document-size refusals*, table A row 5): about
+   * 3,500 bookmarks of ordinary length were past the 256 KiB request frame, so the table of contents failed as
+   * `internal`. The pre-read crosses in a file (ADR-0138); `proof:hostfileanswers` drives that route through the real
+   * host. This holds the outline at the size that broke: admitted by the schema, and past the frame it once travelled in.
+   */
+  it('engine/applyPdfLib takes 3,600 ordinary bookmarks, which no frame carries, by the file route', () => {
+    const outline = Array.from({ length: 3600 }, (_, index) => ({
+      title: `Section ${String(index + 1)}: a heading of ordinary length`,
+      page: index,
+      depth: index % 3,
+    }));
+    const channel = engineChannels['engine/applyPdfLib'];
+    expect(channel.params.shape.reads.safeParse(outline).success).toBe(true);
+    expect(channel.request).toBe('file');
+    // THE INPUT IS AT THE BREAKING SIZE: an outline a frame carries would pass here against the framed route too.
+    expect(new TextEncoder().encode(JSON.stringify(outline)).byteLength).toBeGreaterThan(ENGINE_HOST_FRAME_MAX_BYTES);
   });
 
   /** THE CONTROL: with the pre-read in, the same channel is past the ceiling, so the exemption above is load-bearing. */
@@ -91,8 +111,11 @@ const WRITERS = {
 const capacityOf = (route: 'frame' | 'file'): number =>
   route === 'frame' ? ENGINE_HOST_FRAME_MAX_BYTES : ENGINE_ANSWER_FILE_MAX_BYTES;
 
-/** Kinds past their writer's route, by exact set: PDFium's two text edits, open (see `PAST_THE_ROUTE`). */
-const KINDS_PAST_THE_ROUTE: readonly string[] = ['replaceTextObject', 'editTextBlock'];
+/**
+ * Kinds past their writer's route, by exact set: none since ADR-0142 reshaped PDFium's two text edits, which were the
+ * two. Empty and still pinned, so a kind that grows past its route is red rather than tolerated.
+ */
+const KINDS_PAST_THE_ROUTE: readonly string[] = [];
 
 type KindOption = z.ZodObject<{ kind: z.ZodLiteral<string> }>;
 

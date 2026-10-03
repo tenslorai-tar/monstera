@@ -3,6 +3,18 @@ import { type RefCallback, useCallback, useEffect, useRef, useState } from 'reac
 import { FIRST_PAGE } from './pageNumbering.js';
 
 /**
+ * The page slot an event's target sits in, and its page: the reader of the `data-page` {@link useVisiblePages} writes
+ * on every slot it observes, so a list asking *which page was this* reads the one mark there is rather than keeping
+ * its own.
+ */
+export function pageSlotAt(target: EventTarget | null): { readonly element: HTMLElement; readonly page: number } | undefined {
+  const element = target instanceof Element ? target.closest('[data-page]') : null;
+  if (!(element instanceof HTMLElement)) return undefined;
+  const page = Number(element.dataset['page'] ?? '-1');
+  return Number.isInteger(page) && page >= 0 ? { element, page } : undefined;
+}
+
+/**
  * Which pages are near enough to a scroller to be worth rendering.
  *
  * ## ONE mechanism, two surfaces, and that is the point of extracting it

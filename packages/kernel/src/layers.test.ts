@@ -101,7 +101,8 @@ describe('readLayers', () => {
   it('reads each layers name and its ACTUAL visibility', async () => {
     const session = await mupdfWriter.open(await documentWithLayers());
     try {
-      const layers = await readLayers(session);
+      const { layers, truncated } = await readLayers(session);
+      expect(truncated).toBe(false);
 
       // THE DOCUMENT'S OWN ORDER, and the assertion is worth making rather
       // than obvious: MuPDF's layer enumeration reports **Hidden at index 0**
@@ -130,7 +131,7 @@ describe('readLayers', () => {
   it('reads /BaseState OFF, where /ON holds the exceptions', async () => {
     const session = await mupdfWriter.open(await documentWithBaseStateOff());
     try {
-      const layers = await readLayers(session);
+      const { layers } = await readLayers(session);
       // A reader that consulted `/OFF` alone answers `[true, true]` here, and
       // there is no `/OFF` key in this document at all — so it is not a
       // question the reader gets partly right.
@@ -143,12 +144,48 @@ describe('readLayers', () => {
     }
   });
 
+  it('reads a CAD export’s 1,100 layers whole, and shows a 300-character name shortened', async () => {
+    // JOURNAL, *No document-size refusals*, table A row 6: past 1,024 layers, or one name past 256 characters, the
+    // answer was refused whole and the panel said *"The layers could not be read"*. Both at once here.
+    const document = await PDFDocument.create();
+    document.addPage([200, 200]);
+    const context = document.context;
+    const all = PDFArray.withContext(context);
+    const LONG = `Level ${'x'.repeat(294)}`;
+    for (let index = 0; index < 1100; index += 1) {
+      const name = index === 700 ? LONG : `Level ${String(index)}`;
+      all.push(context.register(context.obj({ Type: PDFName.of('OCG'), Name: PDFString.of(name) })));
+    }
+    document.catalog.set(PDFName.of('OCProperties'), context.obj({ OCGs: all, D: context.obj({ Order: all }) }));
+
+    const session = await mupdfWriter.open(await document.save({ useObjectStreams: false }));
+    try {
+      const { layers, truncated } = await readLayers(session);
+      expect(layers).toHaveLength(1100);
+      expect(truncated).toBe(false);
+      expect(layers.at(-1)?.name).toBe('Level 1099');
+      // SHORTENED, and STILL AT ITS INDEX: the command addresses index 700, never the text.
+      const long = layers[700];
+      expect(long?.index).toBe(700);
+      expect(long?.name).toHaveLength(256);
+      expect(long?.name.endsWith('…')).toBe(true);
+      // CONTROL: the fixture's name really is past the bound, so the case is about the shortening.
+      expect(LONG.length).toBeGreaterThan(256);
+      // THE WALK'S STOP (AAAAAAA-6), at a bound one under the layers: it stops and says so, and at the count it is whole.
+      const stopped = await readLayers(session, 1099);
+      expect([stopped.layers.length, stopped.truncated, stopped.layers.at(-1)?.name]).toStrictEqual([1099, true, 'Level 1098']);
+      expect((await readLayers(session, 1100)).truncated).toBe(false);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
   it('CONTROL: a document with no layers answers with none', async () => {
     const bare = await PDFDocument.create();
     bare.addPage([200, 200]);
     const session = await mupdfWriter.open(await bare.save({ useObjectStreams: false }));
     try {
-      expect(await readLayers(session)).toStrictEqual([]);
+      expect(await readLayers(session)).toStrictEqual({ layers: [], truncated: false });
     } finally {
       await mupdfWriter.close(session);
     }
@@ -164,7 +201,7 @@ describe('readLayers', () => {
  * enumeration order none of them are claims about.
  */
 async function indexOf(session: Parameters<typeof readLayers>[0], name: string): Promise<number> {
-  const found = (await readLayers(session)).find((layer) => layer.name === name);
+  const found = (await readLayers(session)).layers.find((layer) => layer.name === name);
   if (found === undefined) throw new Error(`the fixture should carry a layer named "${name}"`);
   return found.index;
 }
@@ -174,7 +211,7 @@ async function visibilityOf(
   session: Parameters<typeof readLayers>[0],
   name: string,
 ): Promise<boolean> {
-  const found = (await readLayers(session)).find((layer) => layer.name === name);
+  const found = (await readLayers(session)).layers.find((layer) => layer.name === name);
   if (found === undefined) throw new Error(`the fixture should carry a layer named "${name}"`);
   return found.visible;
 }
@@ -327,7 +364,7 @@ describe('the setLayerVisibility command', () => {
       await documentWithBaseStateOff({ configuration: 'none' }),
     );
     try {
-      expect((await readLayers(session)).map((layer) => layer.visible)).toStrictEqual([true, true]);
+      expect((await readLayers(session)).layers.map((layer) => layer.visible)).toStrictEqual([true, true]);
 
       await applySetLayerVisibility(session, {
         kind: 'setLayerVisibility',

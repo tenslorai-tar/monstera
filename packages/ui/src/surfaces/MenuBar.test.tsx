@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { asDocId, asDocVersion, messageKey } from '@monstera/shared';
+import { displayLocationSchema } from '@monstera/contract';
+import { type FileHandle, asDocId, asDocVersion, asFileHandle, messageKey } from '@monstera/shared';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -9,7 +10,7 @@ import { activateCatalogue, i18n } from '../i18n.js';
 import { EN } from '../messages/en.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from '../registries/commands.js';
 import type { Placement } from '../registries/placement.js';
-import { MenuBar } from './MenuBar.js';
+import { MenuBar, type RecentMenu, type RecentMenuEntry } from './MenuBar.js';
 
 const CONTEXT: CommandContext = {
   selectedPages: [],
@@ -22,8 +23,9 @@ const CONTEXT: CommandContext = {
   openDocuments: [],
 };
 
+/** A command with a glyph, which the registry requires of every command a menu lists. */
 function command(id: string, title: string, placements: readonly Placement[], over: Partial<UiCommand> = {}): UiCommand {
-  return { id, title: messageKey(title), placements, run: () => undefined, ...over };
+  return { id, title: messageKey(title), placements, icon: 'File', run: () => undefined, feedback: { kind: 'visible' }, ...over };
 }
 
 beforeAll(() => {
@@ -34,13 +36,24 @@ beforeAll(() => {
     'test.menu.dark': 'Dark theme',
     'test.menu.rotate': 'Rotate',
     'test.menu.pages': 'Pages',
+    'test.menu.clear': 'Clear list',
   });
 });
 
-function drawn(commands: readonly UiCommand[], focusBefore: () => HTMLElement | undefined = () => undefined): ReactElement {
+/** A File › Recent that has never been read, for the cases not about it. */
+const NO_RECENT: RecentMenu = {
+  read: () => Promise.resolve(undefined),
+  open: () => undefined,
+};
+
+function drawn(
+  commands: readonly UiCommand[],
+  focusBefore: () => HTMLElement | undefined = () => undefined,
+  recent: RecentMenu = NO_RECENT,
+): ReactElement {
   return (
     <I18nProvider i18n={i18n}>
-      <MenuBar registry={new CommandRegistry(commands)} context={CONTEXT} focusBefore={focusBefore} />
+      <MenuBar registry={new CommandRegistry(commands)} context={CONTEXT} focusBefore={focusBefore} recent={recent} />
     </I18nProvider>
   );
 }
@@ -90,6 +103,35 @@ describe('MenuBar (ADR-0107)', () => {
     });
     expect(run).toHaveBeenCalledTimes(1);
     expect(run).toHaveBeenCalledWith(CONTEXT);
+  });
+
+  // THE GLYPH COLUMN (the owner's review of 0.1.8.0: the menus listed text only): every item draws its OWN command's
+  // icon in the column before its title, a disabled item's too, hidden from the item's name.
+  it('every item draws its command’s icon in the column before the title, a disabled one included', async () => {
+    render(
+      drawn([
+        command('a.open', 'test.menu.open', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 1 }], { icon: 'FolderOpen' }),
+        command('a.print', 'test.menu.print', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 2 }], {
+          icon: 'Printer',
+          when: () => false,
+        }),
+      ]),
+    );
+    await open('File');
+    const items = [await screen.findByRole('menuitem', { name: 'Open' }), screen.getByRole('menuitem', { name: 'Print' })];
+    // EACH ITEM'S OWN GLYPH, told apart by lucide's class for it: the same icon on every row would pass a bare count.
+    expect(items.map((each) => each.querySelector('.m-menu-bar__icon svg')?.getAttribute('class'))).toStrictEqual([
+      expect.stringContaining('lucide-folder-open'),
+      expect.stringContaining('lucide-printer'),
+    ]);
+    // BEFORE THE TITLE, and out of the name.
+    for (const each of items) {
+      const icon = each.querySelector('.m-menu-bar__icon');
+      const title = each.querySelector('.m-menu-bar__title');
+      expect(icon?.nextElementSibling).toBe(title);
+      expect(icon?.getAttribute('aria-hidden')).toBe('true');
+    }
+    expect(items[1]?.getAttribute('aria-disabled')).toBe('true');
   });
 
   it('a command that sets a state is a CHECKABLE item, checked exactly when it is on', async () => {
@@ -168,6 +210,117 @@ describe('MenuBar (ADR-0107)', () => {
       render(drawn([command('a.open', 'test.menu.open', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 1 }])]));
       expect(document.querySelector('.m-menu-bar__commands')).toBeNull();
       expect(document.querySelector('.m-menu-bar__reserve')).toBeNull();
+    });
+  });
+
+  describe('File › Recent, the row’s own value control (ADR-0143)', () => {
+    /** A recent entry as main answers one. */
+    const entry = (handle: string, name: string, available: boolean): RecentMenuEntry => ({
+      handle: asFileHandle(handle),
+      name,
+      location: displayLocationSchema.parse({ within: null, folder: null }),
+      openedAt: null,
+      available,
+    });
+    const clear = (run: () => void = () => undefined): UiCommand =>
+      command('a.clear', 'test.menu.clear', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 15, submenu: 'recent' }], {
+        icon: 'ListX',
+        run,
+      });
+    const openCommand = command('a.open', 'test.menu.open', [{ surface: 'menu-bar', menu: 'file', group: 0, order: 10 }]);
+
+    /** Opens File, then its Recent submenu, and answers the submenu's popup. */
+    async function openRecent(): Promise<HTMLElement> {
+      await open('File');
+      const trigger = await screen.findByRole('menuitem', { name: 'Recent' });
+      await act(async () => {
+        fireEvent.click(trigger);
+        await Promise.resolve();
+      });
+      const popup = document.querySelector<HTMLElement>('[data-submenu-popup="recent"]');
+      if (popup === null) throw new Error('File › Recent did not open');
+      return popup;
+    }
+
+    it('lists EVERY file main sends, a missing one DISABLED AND SAYING SO, then Clear list after a separator', async () => {
+      const opened = vi.fn<(handle: FileHandle) => void>();
+      const runClear = vi.fn();
+      const ten = [
+        entry('h-gone', 'gone.pdf', false),
+        ...Array.from({ length: 9 }, (_, at) => entry(`h-${String(at)}`, `file-${String(at)}.pdf`, true)),
+      ];
+      render(drawn([openCommand, clear(runClear)], undefined, { read: () => Promise.resolve(ten), open: opened }));
+      const popup = await openRecent();
+
+      // ALL TEN, in main's order — the start screen's four is that view's own number, never this one's.
+      const items = within(popup).getAllByRole('menuitem');
+      expect(items.map((item) => item.getAttribute('data-recent-file') ?? item.getAttribute('data-command'))).toStrictEqual([
+        'gone.pdf',
+        ...Array.from({ length: 9 }, (_, at) => `file-${String(at)}.pdf`),
+        'a.clear',
+      ]);
+      // NEVER HIDDEN: listed, disabled, and its state in its name and on screen.
+      const gone = within(popup).getByRole('menuitem', { name: 'gone.pdf, unavailable' });
+      expect(gone.getAttribute('aria-disabled')).toBe('true');
+      expect(gone.textContent).toContain('Unavailable');
+      // CONTROL: an available file is neither disabled nor marked.
+      const first = within(popup).getByRole('menuitem', { name: 'file-0.pdf' });
+      expect(first.getAttribute('aria-disabled')).not.toBe('true');
+      expect(first.textContent).not.toContain('Unavailable');
+      // THE SEPARATOR sits between the files and the submenu's command.
+      expect(popup.querySelector('[role="separator"]')?.nextElementSibling?.getAttribute('data-command')).toBe('a.clear');
+
+      await act(async () => {
+        fireEvent.click(first);
+        await Promise.resolve();
+      });
+      // BY THE HANDLE main minted for that row — the second row's, so a surface sending the first one's fails.
+      expect(opened.mock.calls).toStrictEqual([[asFileHandle('h-0')]]);
+    });
+
+    it('a click on an UNAVAILABLE file opens nothing', async () => {
+      const opened = vi.fn<(handle: FileHandle) => void>();
+      render(drawn([openCommand, clear()], undefined, { read: () => Promise.resolve([entry('h-gone', 'gone.pdf', false)]), open: opened }));
+      const popup = await openRecent();
+      await act(async () => {
+        fireEvent.click(within(popup).getByRole('menuitem', { name: 'gone.pdf, unavailable' }));
+        await Promise.resolve();
+      });
+      expect(opened).not.toHaveBeenCalled();
+    });
+
+    it('Clear list RUNS its command over a list, and is DISABLED over an empty one, which says so', async () => {
+      const runClear = vi.fn();
+      const { unmount } = render(
+        drawn([openCommand, clear(runClear)], undefined, { read: () => Promise.resolve([entry('h-a', 'a.pdf', true)]), open: () => undefined }),
+      );
+      let popup = await openRecent();
+      await act(async () => {
+        fireEvent.click(within(popup).getByRole('menuitem', { name: 'Clear list' }));
+        await Promise.resolve();
+      });
+      expect(runClear).toHaveBeenCalledTimes(1);
+      unmount();
+
+      render(drawn([openCommand, clear(runClear)], undefined, { read: () => Promise.resolve([]), open: () => undefined }));
+      popup = await openRecent();
+      expect(within(popup).getByRole('menuitem', { name: 'No recent files' }).getAttribute('aria-disabled')).toBe('true');
+      expect(within(popup).getByRole('menuitem', { name: 'Clear list' }).getAttribute('aria-disabled')).toBe('true');
+    });
+
+    it('reads main’s list EACH TIME File opens, so the submenu shows the list as it is now', async () => {
+      // TWO ANSWERS, one per opening: a submenu that kept its first read would still show the file the second removed.
+      const answers = [[entry('h-a', 'a.pdf', true)], [entry('h-a', 'a.pdf', false)]];
+      const read = vi.fn(() => Promise.resolve(answers.shift()));
+      render(drawn([openCommand, clear()], undefined, { read, open: () => undefined }));
+      let popup = await openRecent();
+      expect(within(popup).getByRole('menuitem', { name: 'a.pdf' })).toBeTruthy();
+      // CLOSED by the File trigger itself, which toggles its menu, and then opened again.
+      await open('File');
+      expect(document.querySelector('[data-submenu-popup="recent"]')).toBeNull();
+      popup = await openRecent();
+      expect(within(popup).getByRole('menuitem', { name: 'a.pdf, unavailable' })).toBeTruthy();
+      expect(read).toHaveBeenCalledTimes(2);
     });
   });
 });

@@ -53,8 +53,8 @@ function drawn(commands: readonly UiCommand[], settings = new SettingsStore(new 
 
 const rotate = vi.fn();
 const COMMANDS: readonly UiCommand[] = [
-  { id: 'edit.crop', title: CROP, icon: 'Crop', placements: [{ surface: 'quick-toolbar', order: 20 }], run: vi.fn() },
-  { id: 'edit.rotate', title: ROTATE, icon: 'RotateCw', placements: [{ surface: 'quick-toolbar', order: 10 }], run: rotate },
+  { id: 'edit.crop', title: CROP, icon: 'Crop', placements: [{ surface: 'quick-toolbar', order: 20 }], run: vi.fn(), feedback: { kind: 'visible' } },
+  { id: 'edit.rotate', title: ROTATE, icon: 'RotateCw', placements: [{ surface: 'quick-toolbar', order: 10 }], run: rotate, feedback: { kind: 'visible' } },
 ];
 
 describe('QuickToolbar', () => {
@@ -172,7 +172,7 @@ describe('QuickToolbar', () => {
 
     it('HOME runs Reset Float bar position — the same command the Window menu runs', () => {
       const reset = vi.fn();
-      inArea([...COMMANDS, { id: 'view.reset-float-bar', title: CROP, placements: [], run: reset }]);
+      inArea([...COMMANDS, { id: 'view.reset-float-bar', title: CROP, placements: [], run: reset, feedback: { kind: 'visible' } }]);
       fireEvent.keyDown(grip(), { key: 'Home' });
       expect(reset).toHaveBeenCalledWith(context);
     });

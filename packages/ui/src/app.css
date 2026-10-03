@@ -133,6 +133,16 @@ optgroup {
   block-size: 100dvh;
   overflow: hidden;
   background: var(--canvas);
+  /*
+   * THE CHROME IS NOT TEXT, so a drag that leaves a page's text layer holds its selection rather than moving it. A
+   * point on a selectable element with no text of its own — this grid's gaps, the page area around a page — is
+   * resolved by Chromium to a position in that element's content, and the first text there is the page's first
+   * line: dragging down to the bottom edge at 200% put the selection's end at the page's top (measured 2026-10-03,
+   * Chromium 151). On an element that is not selectable the selection stays where it was. The text layer
+   * (`.m-text-layer`) and the side panel's content (the rule after `.m-context-panel`) say `text` for themselves, and
+   * a field is always editable, so the words a reader copies are copyable as before; the labels and controls are not.
+   */
+  user-select: none;
 }
 
 /*
@@ -157,6 +167,20 @@ optgroup {
 }
 
 .m-title-bar button {
+  -webkit-app-region: no-drag;
+}
+
+/*
+ * WHILE A MENU IS OPEN, THE TWO DRAG ROWS ARE NOT DRAG ROWS (the owner's review of 0.1.8.0: an open menu closed only
+ * on a click in the document, and File, Protect, Forms, Comment and Organize opened one after another). Electron hands
+ * a press inside a `drag` region to the window frame, which starts a window drag and never reaches the page — so the
+ * menu's outside-press dismissal never saw a click on the empty menu row or the title bar. With any menu open both rows
+ * are `no-drag`: the press reaches the page, the menu closes, and no drag starts on that click. Closed, the rule no
+ * longer matches and both rows move the window again. Keyed on what Base UI marks every open menu with
+ * (`role="menu"`, `data-open`), so a menu added tomorrow is covered without joining a list — the dialog backdrop's
+ * reason in `primitives.css`, for menus, which have no backdrop.
+ */
+:root:has([role='menu'][data-open]) :is(.m-menu-bar, .m-title-bar) {
   -webkit-app-region: no-drag;
 }
 
@@ -257,13 +281,39 @@ optgroup {
    whether or not a group has marks. Given to the items through the shared item's two properties, never by a layout
    rule of the menu bar's own: `.m-context-menu-item` is the one class that lays an item out
    (`scripts/lib/layoutOwnership.mjs`). */
+/* THE MARK, THE GLYPH, THE TITLE AND THE CHORD: the check for a command that is on, then each command's icon in one
+   column so every title starts at one edge, then the words and the key at the end. */
 .m-menu-bar__popup {
-  --menu-item-columns: var(--icon-16) minmax(0, 1fr) auto;
+  --menu-item-columns: var(--icon-14) var(--icon-14) minmax(0, 1fr) auto;
   --menu-item-gap: var(--space-8);
 }
 
-.m-menu-bar__mark {
+.m-menu-bar__mark,
+.m-menu-bar__icon {
   display: inline-flex;
+}
+
+/* FILE › RECENT (ADR-0143): a file's name is a person's, and can be long. The submenu is held to a reading width and a
+   name past it ends in an ellipsis — the item's accessible name is the whole name all the same. */
+.m-menu-bar__submenu {
+  max-inline-size: 48ch;
+}
+
+.m-menu-bar__file {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The arrow that says an item opens a menu sits in the chord's column, centred on the line like a glyph. */
+.m-menu-bar__opens {
+  display: inline-flex;
+}
+
+/* AN ITEM WHOSE SUBMENU IS OPEN keeps the highlight while the focus is inside the submenu, so the path from the menu
+   to what is showing stays drawn — the fill a highlighted item takes. */
+.m-menu-bar__item[data-popup-open] {
+  background: var(--surface2);
 }
 
 .m-menu-bar__caption {
@@ -379,13 +429,8 @@ optgroup {
   flex-direction: column;
   align-items: center;
   gap: var(--space-24);
-  padding-block: var(--space-32) var(--space-16);
+  padding-block: var(--space-24) var(--space-16);
   text-align: center;
-}
-
-/* v5-01's glow over the start screen: the accent's wash from the top centre, over the window's own light. */
-.m-start-area {
-  background: radial-gradient(ellipse 60% 50% at 50% 0%, var(--tint-start), transparent 70%);
 }
 
 /*
@@ -436,12 +481,11 @@ optgroup {
   }
 }
 
-/* ADR-0002: the brand's height, and the width the image's own ratio gives it — never stretched. v5 lifts it on a soft
-   green shadow. */
+/* ADR-0002: the brand's height, and the width the image's own ratio gives it — never stretched. No shadow under it: v5
+   lifted it on a soft green one, which is a glow, and the ground has none (ADR-0140). */
 .m-start-logo {
   block-size: var(--logo-hero);
   inline-size: auto;
-  filter: drop-shadow(0 12px 28px var(--accent-soft));
 }
 
 /* "PDF EDITOR" in the brand face, the accent's text colour, letterspaced (v5: 16 px, 0.2em) — not grey. */
@@ -666,19 +710,39 @@ optgroup {
   border-block-end: 1px solid var(--border); /* decorative: separates the header row from the rows; nothing in it is operable */
 }
 
+/* THE PATTERN'S ROWS (the owner, 2 October): a soft line between one command and the next, as between dialog rows. */
+.m-shortcuts tbody tr {
+  border-block-end: 1px solid var(--border-soft); /* decorative: separates one command from the next */
+}
+
+.m-shortcuts tbody tr:last-child {
+  border-block-end: 0;
+}
+
+.m-shortcuts tbody :is(th, td) {
+  padding-block: var(--space-6);
+}
+
+/* THE CHANGES AT THE ROW'S END, where a dialog row keeps its control, on one line: the column takes the least width
+   that holds them, and the command's name and keys wrap first. */
+.m-shortcuts thead th:last-child,
+.m-shortcuts__actions {
+  text-align: end;
+}
+
+.m-shortcuts__actions {
+  inline-size: 1%;
+  white-space: nowrap;
+}
+
 .m-shortcuts kbd {
   font-family: inherit;
   font-variant-numeric: tabular-nums;
 }
 
-/* THE SHORTCUTS EDITOR (ADR-0111): the list above, with a row header per command, a column of changes, and one
-   *Reset all* at the foot. Several keys of one command sit side by side with the scale's own gap. */
-.m-shortcuts-editor {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
-}
-
+/* THE SHORTCUTS EDITOR (ADR-0111): the list above, scrolling in the dialog pattern, with a row header per command, a
+   column of changes, and one *Reset all* at the footer's start. Several keys of one command sit side by side with the
+   scale's own gap. */
 .m-shortcuts tbody th {
   font-weight: 400;
 }
@@ -694,10 +758,6 @@ optgroup {
 
 .m-shortcuts :is(th, td) {
   vertical-align: middle;
-}
-
-.m-shortcuts__actions {
-  white-space: nowrap;
 }
 
 .m-shortcuts__none {
@@ -728,11 +788,6 @@ optgroup {
 
 .m-shortcuts-editor__note {
   margin: 0;
-}
-
-.m-shortcuts-editor__actions {
-  display: flex;
-  justify-content: flex-end;
 }
 
 /* THE OCR DIALOG'S HANDWRITING NOTE and, while no key is stored, the link to the article on getting one under it. */
@@ -770,16 +825,17 @@ optgroup {
   align-items: center;
 }
 
-/* THE HELP CENTRE (ADR-0112): the search over the list, each article a full-width button naming it with its summary
-   under, and an article read at a comfortable measure. */
+/* THE HELP CENTRE (ADR-0112): the search above the list, which scrolls in the pattern's sections (`HelpBody`), each
+   article a full-width button naming it with its summary under, and an article read at a comfortable measure under
+   *Back to the list*. */
 .m-help {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
 }
 
-.m-help h3 {
-  margin: var(--space-8) 0 0;
+.m-help__back {
+  display: flex;
 }
 
 .m-help__count {
@@ -1032,6 +1088,25 @@ optgroup {
 .m-recent-item__line {
   color: var(--muted);
   font-size: var(--font-chrome-12);
+}
+
+/* A FILE THAT IS NOT THERE NOW (ADR-0143): listed, focusable and saying so in its line, and drawn as a disabled
+   control — no pointer, no hover fill, the name in the muted text a disabled menu item takes, the kept picture
+   faded. Focus still fills it, so a keyboard sees where it is. */
+.m-recent-item[data-unavailable='true'] {
+  cursor: default;
+}
+
+.m-recent-item[data-unavailable='true']:hover:not(:focus-visible) {
+  background: var(--bg);
+}
+
+.m-recent-item[data-unavailable='true'] .m-recent-item__name {
+  color: var(--muted);
+}
+
+.m-recent-item[data-unavailable='true'] .m-recent-item__picture {
+  opacity: 0.45;
 }
 
 /*
@@ -1679,16 +1754,9 @@ optgroup {
 }
 
 /*
- * The spell check review, and it needs the same two rules for the same reason.
- *
- * The comment above states this file's rule: every other dialog body carries no
- * CSS and relies on the dialog primitive's own flow — `m-word-count` has none
- * and is right not to. **A LIST IS THE EXCEPTION**, and this body is one: four
- * spans per row, which default flow stacks into four lines each, and a `<ul>`
- * that arrives with bullets and an indent the primitive did not ask for.
- *
- * The word and its detail are on one line with the action at the end, so a
- * reader scanning for a word finds it in the same column on every row.
+ * The spell check review: one dialog-pattern row per word (`SpellCheckBody`), the word and where it is on the left
+ * and its add at the row's end, in a `<ul>` that arrives with bullets and an indent the pattern did not ask for. The
+ * word carries the weight as the row's name; the count, the page and the suggestions are its muted notes.
  */
 .m-spell-check__list {
   list-style: none;
@@ -1696,32 +1764,18 @@ optgroup {
   padding: 0;
 }
 
-.m-spell-check__row {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-8);
-  padding-block: var(--space-2);
+.m-spell-check__list > .m-dialog-row:last-child {
+  border-block-end: 0;
 }
 
 /*
- * The misspelt word carries the weight, and its surroundings do not.
- *
- * `--muted` on the count, the page and the suggestions for
- * `.m-flat-fields__name`'s reason: the distinction has to survive being read
- * quickly, and colour carries it without a second line. The word itself is the
- * thing a reader is looking for, so it is the one thing at full contrast.
- */
-.m-spell-check__word {
-  font-weight: 600;
-}
-
-/*
- * The reading-order inspection: a list, so it takes the spell check's two rules
- * for their reason — no bullets or indent the primitive did not ask for, and one
- * line per element. The indent it does want is the depth, set on the row.
+ * The reading-order inspection: a list, so it needs two rules — no bullets or
+ * indent the primitive did not ask for, and one line per element. The indent it
+ * does want is the depth, set on the row.
  *
  * The role carries the weight; the document's own name and the line count are
- * `--muted` beside it, for `.m-spell-check__word`'s reason.
+ * `--muted` beside it: the distinction has to survive being read quickly, and
+ * colour carries it without a second line.
  */
 .m-page-structure__list {
   list-style: none;
@@ -1758,6 +1812,23 @@ optgroup {
 .m-pdfa-removals__list li {
   padding-block: var(--space-2);
   color: var(--muted);
+}
+
+/* The rows a workbook's PDF lacks. The sentence and the count sit outside the scroll, so their margins are the body's
+   gap alone; the row numbers line up by tabular figures. */
+.m-workbook-incomplete__said,
+.m-workbook-incomplete__more {
+  margin: 0;
+}
+
+.m-workbook-incomplete__list {
+  margin: 0;
+  padding-inline-start: var(--space-16);
+  font-variant-numeric: tabular-nums;
+}
+
+.m-workbook-incomplete__list li {
+  padding-block: var(--space-2);
 }
 
 /*
@@ -1894,21 +1965,6 @@ optgroup {
   letter-spacing: 0.04em;
 }
 
-.m-spell-check__where,
-.m-spell-check__suggestions,
-.m-spell-check__added {
-  color: var(--muted);
-}
-
-/*
- * The action sits at the end of the row rather than beside the word.
- *
- * Every row's button in the same column is what makes a list of them scannable;
- * left to flow, each would sit wherever its own word ended.
- */
-.m-spell-check__row > :last-child {
-  margin-inline-start: auto;
-}
 
 /*
  * The derived name, set apart from the document's own words beside it.
@@ -2183,6 +2239,25 @@ optgroup {
   background: var(--surface2);
 }
 
+/* A DOCUMENT'S NAME FOR A THING may be one unbroken word of 256 characters, which ran past the panel's edge. It breaks
+ * anywhere and shows three lines at most; the checkbox's label, and so its accessible name, keeps the whole text. */
+.m-layer-name,
+.m-destination-title,
+.m-links-external {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+/* A SIGNATURE'S STRINGS are the document's too, shortened to 256 characters by the reader, and one unbroken name ran
+ * past the dialog's edge. They break anywhere and are not clamped: this dialog is where a person reads them whole. */
+.m-signatures__item > p {
+  overflow-wrap: anywhere;
+}
+
 .m-destinations-empty,
 .m-layers-empty,
 .m-annotations-empty,
@@ -2404,6 +2479,12 @@ optgroup {
   overflow-y: auto;
 }
 
+/* ONE PANEL IN A TAB TAKES THE TAB. The lists' 40vh share is for the Bookmarks tab, where the outline and the links
+ * stack; a tab holding one list left the dock empty below 40vh, with the list scrolling inside a scrolling body. */
+.m-document-panel__body > :only-child {
+  max-block-size: none;
+}
+
 /* THE SLIM EDGE HANDLE §10.3 reopens a collapsed panel with, on the canvas's leading
    edge. */
 .m-document-panel-handle {
@@ -2429,6 +2510,13 @@ optgroup {
   min-block-size: 0;
   background: var(--bg2);
   border-inline-start: 1px solid var(--border); /* decorative: separates the panel from the page area; its controls draw their own focus rings */
+}
+
+/* THE PANEL'S CONTENT IS TEXT, its labels are not (`.m-document-surface`): an answer, what a person sent, a comment's
+   note, a link's address. A field needs no rule, being editable. The whole panel as text put a drag off the page into
+   Properties' labels, where the page's selection collapsed (measured 2026-10-03). */
+:is(.m-assistant__text, .m-assistant__sent, .m-annotations-note, .m-links-external) {
+  user-select: text;
 }
 
 .m-context-panel__header {
@@ -2519,13 +2607,44 @@ optgroup {
   border-block-start: 1px solid var(--border-soft); /* decorative: separates the conversation from the ask; the controls draw their own */
 }
 
-/* ONE ROW, NEVER WRAPPED (the owner, 2 October): *Choose*, the Context menu, the Sources menu. Each menu's face is its
-   value alone, which is what makes one row fit the pane's default width; `assistantPane.pw.ts` measures it. */
+/* ONE ROW, NEVER WRAPPED, ACROSS THE PANE (the owner's review of 0.1.9.0): *Choose*, then the Context and Sources menus
+   sharing what is left equally, so the row spans the pane at every width it allows rather than bunching at the start.
+   Each face reads its name, the shortest words the row can carry; `assistantPane.pw.ts` measures it at the pane's
+   narrowest and widest. */
 .m-assistant__choices {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
   gap: var(--space-6);
   min-inline-size: 0;
+}
+
+.m-assistant__choice {
+  display: flex;
+  min-inline-size: 0;
+}
+
+.m-assistant__choices .m-choice-menu {
+  flex: 1;
+  justify-content: space-between;
+  min-inline-size: 0;
+}
+
+/* AT THE PANE'S NARROWEST the word goes above the two menus rather than any of the three being cut. The row needs
+   192 px and the pane's 216 px floor leaves 182 inside it (measured 2026-10-02 in the production build on the cloud
+   session's Chromium 151, `cloud-3`), so the switch is set 16 px above that need, for a face drawn in another font. */
+.m-assistant__about {
+  container: choices / inline-size;
+}
+
+@container choices (inline-size < 208px) {
+  .m-assistant__choices {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .m-assistant__choose {
+    grid-column: 1 / -1;
+  }
 }
 
 .m-assistant__choose {
@@ -2564,6 +2683,14 @@ optgroup {
 .m-choice-menu__popup {
   --menu-item-columns: var(--icon-16) minmax(0, 1fr);
   --menu-item-gap: var(--space-8);
+}
+
+/* THE OPEN MENU'S HEADING: the menu bar's caption, inset to the items' text column so it reads as their title. */
+.m-choice-menu__heading {
+  padding: var(--space-4) var(--space-8) var(--space-2) calc(var(--space-8) + var(--icon-16) + var(--space-8));
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+  font-weight: 600;
 }
 
 .m-choice-menu__mark {
@@ -2874,8 +3001,24 @@ optgroup {
   margin-inline-start: auto;
 }
 
+/* THE PROVIDER AND THE MODEL, on their own row UNDER the box (the owner's review of 0.1.9.0): inside it they set the
+   foot's least width at their longest option's, and a pane narrower than that pushed Send out of the box and scrolled
+   it sideways. Here each takes half the row and may shrink to nothing, its text cut with an ellipsis, so the row is
+   the pane's width at every width the pane allows. */
+.m-assistant__models {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-8);
+}
+
+.m-assistant__picker {
+  display: flex;
+  min-inline-size: 0;
+}
+
 .m-assistant__picker select {
-  max-inline-size: var(--composer-picker);
+  flex: 1;
+  min-inline-size: 0;
   block-size: var(--title-control);
   padding-inline: var(--space-6);
   border: 1px solid var(--border-control);
@@ -2950,6 +3093,9 @@ optgroup {
    the Organize grid's first card stood 13 px above its neighbours. `Thumbnails.tsx` marks the canvas until it draws. */
 .m-thumb-canvas[data-drawn='false'] {
   aspect-ratio: 612 / 792;
+  /* A PLACEHOLDER, NOT A BLANK PAGE (the owner's review of 0.1.8.0 saw blank thumbnails on first open): until it draws,
+     a card is the surface's own tone, which reads as loading where a white page reads as an empty one. */
+  background: var(--surface2);
 }
 
 /*
@@ -3066,6 +3212,30 @@ optgroup {
 }
 
 /*
+ * FIT PAGE SHOWS ONE PAGE, AND PAGE DOWN MOVES ONE PAGE (the owner's review of 0.1.8.0: at 1600 × 852 a strip of the next
+ * page showed under page 1 at 63%). A fit page is often held by the WIDTH, so it is shorter than the pane, and the gap
+ * and padding the continuous layout puts between pages are all the space left before the next one — measured at
+ * 1600 × 852 in Chromium 151, page 1 ended at 544 of a 592 px pane and page 2 began at 560. Here each page takes exactly
+ * the pane's height, centred in it by margins computed from the pane (`--m-fit-room`, which `PageList` sets from the box
+ * it measures) and its own height (`--m-slot-h`), with no padding or gap besides, and the scroller snaps to each page,
+ * so a scroll or a Page Down rests on one page and never between two.
+ */
+.m-page-list--fit-page {
+  padding-block: 0;
+  row-gap: 0;
+  scroll-snap-type: y mandatory;
+}
+
+/* SET INLINE BY `PageList`, so each has a fallback here, as `--m-grid` does: before the pane is measured there is no room
+   to centre in, and a margin of 0 is what that is. Without one the whole declaration is invalid wherever either is
+   absent, and `definedTokens.mjs` reads stylesheets alone, so it reports both. */
+.m-page-list--fit-page .m-page-slot {
+  margin-block: calc((var(--m-fit-room, 0px) - var(--m-slot-h, 0px)) / 2);
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+}
+
+/*
  * THE PANE: one scroller and what must not scroll with its pages.
  *
  * The rulers and the loupe were the scroller's own absolutely positioned children, and an absolute child of a scroll
@@ -3074,6 +3244,39 @@ optgroup {
  * the scroller, so the horizontal one starts at the scroller's left edge and the vertical one at its top — an offset
  * measured from the scroller's box is an offset along a ruler — and the loupe is placed against this box.
  */
+/* UNTIL THE FIRST FRAME (`PageList`'s `firstFrame`): the pages are laid out, observed and drawn — so the fit is measured
+   and the starting page is drawn at it — out of sight, and the opening state stands in the list's place. Hidden by
+   visibility rather than removed, because a list that is not laid out cannot be measured or scrolled to its page. */
+.m-page-pane[data-first-frame='pending'] > :not(.m-page-opening),
+.m-page-pane[data-first-frame='pending']::before {
+  visibility: hidden;
+}
+
+.m-page-opening {
+  grid-area: list;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+}
+
+.m-page-opening svg {
+  animation: m-turn 1s linear infinite;
+}
+
+:root[data-motion='reduced'] .m-page-opening svg {
+  animation: none;
+}
+
+@keyframes m-turn {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
 .m-page-pane {
   display: grid;
   grid-template: 'list' minmax(0, 1fr) / minmax(0, 1fr);
@@ -3674,6 +3877,17 @@ optgroup {
   object-fit: contain;
 }
 
+/* A STATUS WITH NOTHING TO SAY TAKES NO ROOM: the live region stays in the page, so what it says next is announced. */
+.m-camera-capture__status:empty,
+.m-camera-capture__problem:empty {
+  display: none;
+}
+
+.m-camera-capture__status,
+.m-camera-capture__problem {
+  margin: 0;
+}
+
 /*
  * The About dialog's body: a definition list, laid out as label/value pairs.
  * `grid` rather than the browser's default `dd` indent, because that indent is a
@@ -3750,41 +3964,16 @@ optgroup {
   color: var(--muted);
 }
 
-/* CLOUD STORAGE (ADR-0091): a provider per row with where it stands, its actions beneath, and its
-   PDFs listed under it when asked for. */
-.m-cloud {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
-}
-
-.m-cloud__providers,
+/* CLOUD STORAGE (ADR-0091): a section per provider in the dialog pattern (`CloudStorageBody`), and its PDFs listed
+   under it as the pattern's rows when asked for. */
 .m-cloud__files {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.m-cloud__heading,
-.m-cloud__file,
-.m-cloud__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
-  align-items: center;
-}
-
-.m-cloud__heading {
-  justify-content: space-between;
-}
-
-.m-cloud__state,
-.m-cloud__hint {
-  margin: 0;
-  color: var(--muted);
+.m-cloud__files > .m-dialog-row:last-child {
+  border-block-end: 0;
 }
 
 .m-cloud__problem,
@@ -3800,18 +3989,10 @@ optgroup {
   margin: 0;
 }
 
+/* A FILE'S NAME breaks anywhere rather than widening the window; when it changed and how large it is is the row's note,
+   which tells apart files that share a name. */
 .m-cloud__file-name {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
   overflow-wrap: anywhere;
-}
-
-/* When it changed and how large it is — what tells apart files that share a name. */
-.m-cloud__file-meta {
-  color: var(--muted);
-  font-size: var(--font-chrome-12);
 }
 
 /* THE FIRST-RUN AI SETUP (E5): the sentence, the two fields, and Skip beside the check, the same
@@ -3926,6 +4107,17 @@ optgroup {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-4);
+}
+
+/* Redaction marks nobody applied, before a save, a close or an export: the question, why it matters, three answers —
+   the close question's shape, so the two read as one family when a close asks both. */
+.m-pending-redactions {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.m-pending-redactions p {
+  margin: 0;
 }
 
 /* *Support Monstera*: two short paragraphs and two answers. The measure is held because the text is
@@ -4125,7 +4317,7 @@ optgroup {
   cursor: pointer;
 }
 
-.m-split__both:disabled {
+.m-split__both:is(:disabled, [aria-disabled='true']) {
   color: var(--faint);
   cursor: default;
 }
@@ -4232,6 +4424,14 @@ optgroup {
   background: var(--bg2);
   border-inline-start: 1px solid var(--border); /* decorative: the list's edge; its rows draw their own state */
   font-size: var(--font-chrome-12);
+}
+
+/* THE PANEL'S HEADING AND ITS CLOSE on one line, the close at the end where a panel's close is looked for. */
+.m-side__list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
 }
 
 .m-side__heading {
@@ -4554,6 +4754,24 @@ optgroup {
   user-select: text;
 }
 
+/*
+ * WHAT A DRAG MEETS BETWEEN THE LINES, while the button is held. On the layer itself a point beside a short line is
+ * resolved by Chromium to the end of the nearest LONG line, which is often above it: a drag past *It ends here.* put
+ * the selection's end two lines up (measured 2026-10-03, Chromium 151). Over this cover, which is not selectable, the
+ * selection holds where it was and follows the pointer again on the next line it touches — PDF.js's `endOfContent`,
+ * for the same reason. Zero height while nothing is pressed, so a press on the page's margin starts a selection there
+ * exactly as before.
+ */
+.m-text-layer__gaps {
+  position: absolute;
+  inset: 100% 0 0;
+  user-select: none;
+}
+
+.m-text-layer:active .m-text-layer__gaps {
+  inset: 0;
+}
+
 .m-text-line {
   position: absolute;
   color: transparent;
@@ -4652,10 +4870,11 @@ optgroup {
 }
 
 /*
- * THE EDITOR IS SET LIKE THE PAGE, not like the application: its size, weight,
- * colour and paper come from the block as inline values, because they are the
- * document's. What is the application's is the face KIND — the page's own font
- * cannot be loaded by the renderer — and it is chosen by class.
+ * THE EDITOR IS SET LIKE THE PAGE, not like the application: each run's size,
+ * weight, slant and colour, and the block's paper, are inline values, because
+ * they are the document's (ADR-0145). What is the application's is the face
+ * KIND — the page's own font cannot be loaded by the renderer — and it is
+ * chosen by class, on each run and on the editor for text that is in no run.
  */
 .m-text-editor {
   display: block;
@@ -4669,7 +4888,6 @@ optgroup {
   margin: 0;
   padding: 0;
   border: 0;
-  resize: none;
   overflow: hidden;
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -4807,13 +5025,55 @@ optgroup {
   pointer-events: none;
 }
 
+/* One existing annotation's box, placed by the layer in the page's own pixels. */
+.m-annotation-layer__item {
+  position: absolute;
+}
+
 /*
- * The solid preview of a Redact mark: the region a burn-in removes, filled with
- * `--redact-mark`, a `graphic` token checked at 3:1 against `--page`. OPAQUE, and
- * no stroke — the page's own outline from the mark's appearance sits under it.
+ * A Redact mark NOBODY HAS APPLIED (`registries/annotationTypes.tsx`): the region a burn-in will remove, hatched and
+ * edged in `--redact-mark`, a `graphic` token checked at 3:1 against `--page`. NOT FILLED — a solid box in that
+ * colour is what an applied redaction looks like, and a mark is not one yet. The hatching leaves the content readable
+ * between its lines, which is what a person checks before applying. The edge is solid so the engine's own thin red
+ * outline under it does not show through the gaps of a dash.
  */
-.m-redact-preview {
-  fill: var(--redact-mark);
+.m-redact-mark {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border: var(--space-2) solid var(--redact-mark);
+  /* ONE PIXEL IN SEVEN, AT LESS THAN HALF THE INK: the solid edge is what carries the mark's 3:1, so the hatching
+     only has to say *this area*, and drawn in full black it made the words under a one-line mark hard to check
+     (looked at in the production build, 3 October). */
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--redact-mark) 45%, transparent) 0 1px,
+    transparent 1px 7px
+  );
+}
+
+/*
+ * *Marked for redaction*, on the mark. Its ink is inherited: `AnnotationLayer` solves the layer's `color` at the point
+ * of use against `--redact-mark` (ADR-0003: never stored). Drawn only where it fits on the mark
+ * (`labelPlace`): outside it, it covered words nobody marked.
+ */
+.m-redact-mark__label {
+  position: absolute;
+  inset-inline-start: calc(-1 * var(--space-2));
+  inset-block-start: calc(-1 * var(--space-2));
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-4);
+  background: var(--redact-mark);
+  font-family: var(--font-ui);
+  font-size: var(--font-chrome-10);
+  font-weight: 600;
+  /* COMPACT, so it fits on a one-line mark at the sizes text is usually read at. */
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.m-redact-mark__label[data-place='none'] {
+  display: none;
 }
 
 .m-annotation-overlay {
@@ -5950,7 +6210,14 @@ body {
 
 /* EVERY FLOATING SURFACE (v5): menus, the context menu, a group's More, the command palette — the float surface, its
    glass and its shadow, rounded 12; items 30 tall, rounded 6. */
+/* NEVER TALLER THAN HALF THE WINDOW, NOR THAN THE ROOM ITS SIDE OF THE TRIGGER HAS: `--available-height` is set by Base
+   UI's positioner on the element around the popup, and the smaller of the two wins. A menu longer than that scrolls
+   inside — `auto` draws the scrollbar exactly when it does — rather than covering the page or running past the window,
+   where its last items could not be reached at all. A highlighted item is focused, and focus scrolls it into view. */
 .m-context-menu {
+  box-sizing: border-box;
+  max-block-size: min(var(--available-height, var(--menu-max-block)), var(--menu-max-block));
+  overflow-y: auto;
   min-inline-size: var(--context-menu-min);
   padding: var(--space-4) var(--space-6);
   border: 1px solid var(--border); /* decorative: the menu's edge; every item draws its own focus state */
@@ -5960,7 +6227,10 @@ body {
   box-shadow: var(--float-shadow);
 }
 
+/* THIRTY TALL, PADDING INCLUDED: under the default content-box the minimum was the content's alone, so every item drew
+   38 px (measured 2026-10-02 in Chromium 151, `cloud-3`), and the View menu ran 74 px past a 1280 × 800 window. */
 .m-context-menu-item {
+  box-sizing: border-box;
   min-block-size: var(--menu-item);
   border-radius: var(--radius-6);
   font-size: var(--font-chrome-12);
@@ -6167,6 +6437,15 @@ body {
   justify-content: start;
   gap: var(--space-16);
   padding: var(--space-8) var(--space-16) var(--space-16);
+}
+
+/* FULL PAGE (the owner's review of 0.1.9.0): ONE page to a row at the grid's whole width, read top to bottom as the
+   Home view reads, never two side by side. The gutter is kept whether or not the pages overflow, so the width
+   `PageGrid` measures does not change when they first do. */
+.m-page-grid[data-page-view='full-page'] > .m-thumbnails--grid {
+  grid-template-columns: max-content;
+  justify-content: center;
+  scrollbar-gutter: stable;
 }
 
 /* A TICKED CARD: the accent round it, which is what v5-09 draws, and heavier than the current page's line. */

@@ -21,6 +21,8 @@ import {
   MAX_STRUCTURE_NAME,
   MAX_STRUCTURE_NODES,
   MAX_SERVICE_DETAIL,
+  type PageSet,
+  pageSetOf,
   type AskAbout,
   type AskSent,
   type AskLabel,
@@ -78,6 +80,8 @@ import {
   type ListedAnnotation,
   type ListedField,
   type Layer,
+  type ListedLayers,
+  type ListedPageLinks,
   type PageLink,
   type PageStructure,
   type PageText,
@@ -136,6 +140,7 @@ import {
   type RecognisedTable,
   RecognisedTableRefused,
   type PageWordBoxes,
+  pagesOf,
 } from '@monstera/kernel';
 import type { BarcodeWriteFormat } from '@monstera/kernel/barcode';
 import {
@@ -151,6 +156,7 @@ import {
 // renderer-facing type.
 import { basename, join } from 'node:path';
 
+import type { BackupProvenance } from './backupLedger.js';
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
 import {
   EXTERNAL_EDIT_WAIT_MS,
@@ -169,7 +175,7 @@ import {
 } from './officeConversion.js';
 import { type PdfaSource, PdfaFailedError } from './pdfaConversion.js';
 import type { HeldPicture } from './heldPicture.js';
-import type { PersonalLibrary } from './personalLibrary.js';
+import { type PersonalLibrary, pictureTypeOf } from './personalLibrary.js';
 import { type PrintDestination, PrintFailedError } from './printing.js';
 import { type ShareDestination, ShareFailedError, shareTitle } from './sharing.js';
 import { type OpenExternalEditor, isPdfPath } from './openExternalEditor.js';
@@ -673,24 +679,21 @@ export type PlaceImageOutcome =
 
 /** What a save came to: the pipeline's outcomes, or a save held back because it would break signatures. */
 export type SaveRequestOutcome =
-  /** Saved — and, where the save was a removal's, what it leaves that may still hold what was removed. */
-  | (Extract<SaveOutcome, { kind: 'saved' }> & { readonly staleCopies: StaleCopies | null })
+  /** Saved — and, where the save was a removal's, which older copies it deleted and which it kept. */
+  | (Extract<SaveOutcome, { kind: 'saved' }> & { readonly cleared: ClearedCopies | null })
   | Exclude<SaveOutcome, { kind: 'saved' }>
   | { readonly kind: 'breaks-signatures'; readonly signatures: number };
 
 /**
- * What a redaction's or Sanitize's save leaves that may still hold what was removed (the list of 29 September, item
- * 6): older backups beside the file, by name, and the undo copies of the document this application keeps.
+ * What a redaction's, Sanitize's or flatten's save deleted, permanently, because it may still have held what was
+ * removed ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)): the backups
+ * beside the file that Monstera made, by count, and the document's undo copies — and, BY NAME, the files with a
+ * backup's name that Monstera did not make, which are kept for the person to decide.
  */
-export interface StaleCopies {
-  readonly backups: readonly string[];
-  readonly undoCopies: number;
-}
-
-/** What {@link DocumentCommands.deleteStaleCopies} deleted: backups by count, and undo copies. */
-export interface StaleCopiesDeleted {
+export interface ClearedCopies {
   readonly backups: number;
   readonly undoCopies: number;
+  readonly kept: readonly string[];
 }
 
 /**
@@ -1029,6 +1032,12 @@ export interface SaveSource {
    * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md) Decision 2 and its addendum).
    */
   readonly stage: DocumentStage;
+  /**
+   * Which backups Monstera made, recorded as each save makes one and asked before a removal's save deletes one
+   * ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)). REQUIRED, so no
+   * composition can save without a record of what it may later delete.
+   */
+  readonly provenance: BackupProvenance;
 }
 
 /** {@link DocumentFlush}, staged. Composed in the same place, for the same reason. */
@@ -1264,11 +1273,11 @@ export type NetworkTableReader = (
  * limits every provider shape accepts, weighed in `main` and retaken smaller while it is over.
  * Composed beside {@link NetworkTableReader}, whose route it is.
  *
- * @throws {@link PageTooLargeToPicture} when even the smallest snapshot scale is over the limits
+ * @throws {@link PageTooLargeToPicture} when even the whole page's floor scale is over the limits
  */
 export type AskPictureReader = (docId: DocId, sessions: DocumentSessions, page: number) => Promise<Uint8Array>;
 
-/** A page too large to picture within the image limits even at the snapshot floor. */
+/** A page too large to picture within the image limits even at `MIN_PAGE_PICTURE_SCALE`, which no page PDF allows is. */
 export class PageTooLargeToPicture extends Error {
   constructor(readonly page: number) {
     super(`page ${String(page + 1)} is too large to picture within the image limits`);
@@ -1384,12 +1393,13 @@ export type DocumentPageLinksReader = (
   docId: DocId,
   sessions: DocumentSessions,
   page: number,
-) => Promise<readonly PageLink[]>;
+) => Promise<ListedPageLinks>;
 
-/** One page's links, stamped with the version the lane read them at. */
+/** One page's links, stamped with the version the lane read them at, and whether the walk stopped at its bound. */
 export interface DocumentPageLinks {
   readonly version: DocVersion;
   readonly links: readonly PageLink[];
+  readonly truncated: boolean;
 }
 
 /** Reads one page's word boxes (ADR-0137), injected for {@link DocumentPageLinksReader}'s reason. */
@@ -1444,7 +1454,8 @@ export interface DocumentDestinations {
 export type DocumentExtractReader = (
   docId: DocId,
   sessions: DocumentSessions,
-  pages: readonly number[],
+  /** A page set, listed against the document where the engine is (JOURNAL, *No document-size refusals*). */
+  pages: PageSet,
 ) => Promise<ByteImage>;
 
 /**
@@ -1814,12 +1825,13 @@ export interface DocumentPageRaster {
 export type DocumentLayersReader = (
   docId: DocId,
   sessions: DocumentSessions,
-) => Promise<readonly Layer[]>;
+) => Promise<ListedLayers>;
 
-/** The layers, stamped with the version the lane read them at. */
+/** The layers, stamped with the version the lane read them at, and whether the walk stopped at its bound. */
 export interface DocumentLayers {
   readonly version: DocVersion;
   readonly layers: readonly Layer[];
+  readonly truncated: boolean;
 }
 
 /**
@@ -2781,7 +2793,7 @@ export class DocumentCommands {
       return this.#pageLinks(docId, sessions, page);
     });
 
-    return { version, links: value };
+    return { version, links: value.links, truncated: value.truncated };
   }
 
   /**
@@ -2892,7 +2904,7 @@ export class DocumentCommands {
       return this.#layers(docId, sessions);
     });
 
-    return { version, layers: value };
+    return { version, layers: value.layers, truncated: value.truncated };
   }
 
   /**
@@ -3011,7 +3023,7 @@ export class DocumentCommands {
    */
   async placeBarcode(
     docId: DocId,
-    pages: readonly number[],
+    pages: PageSet,
     rect: AnnotationRect,
     text: string,
     format: BarcodeFormat,
@@ -3748,7 +3760,7 @@ export class DocumentCommands {
    * @throws `DocumentNotOpenError` before any dialog appears, for `saveCopy`'s
    * reason: a document this service does not hold has no name to offer.
    */
-  async extract(docId: DocId, pages: readonly number[]): Promise<CopyOutcome | undefined> {
+  async extract(docId: DocId, pages: PageSet): Promise<CopyOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'extract pages');
 
@@ -4238,7 +4250,11 @@ export class DocumentCommands {
    * @throws `DocumentNotOpenError` before any dialog appears, for `saveCopy`'s
    * reason.
    */
-  async split(docId: DocId, groups: readonly (readonly number[])[]): Promise<FolderOutcome | undefined> {
+  async split(
+    docId: DocId,
+    /** The ranges a person wrote, or one file for each page of a set (JOURNAL, *No document-size refusals*). */
+    split: { readonly groups: readonly PageSet[] } | { readonly each: PageSet },
+  ): Promise<FolderOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'split');
 
@@ -4252,10 +4268,18 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
+      // THE GROUPS LISTED AGAINST THIS VERSION'S PAGE COUNT, inside the lane, by the one expander: a page past the
+      // document is refused before any file is named. `each` is one file per page of its set.
+      const { pageCount } = await this.#geometry(docId, sessions, []);
+      const groups =
+        'each' in split
+          ? pagesOf(split.each, pageCount).map((page) => [page])
+          : split.groups.map((group) => pagesOf(group, pageCount));
+
       return await writeDocumentSplit(
         this.#save.deps,
         this.#copy.checkTarget,
-        (pages) => this.#extract(docId, sessions, pages),
+        (pages) => this.#extract(docId, sessions, pageSetOf(pages)),
         groups.map((pages) => ({
           destination: join(directory, splitPartName(suggest, pages)),
           pages,
@@ -4936,7 +4960,8 @@ export class DocumentCommands {
   async exportPageImages(
     docId: DocId,
     request: {
-      readonly pages: readonly number[];
+      /** A page set: *every page* of a document of any length is one run (JOURNAL, *No document-size refusals*). */
+      readonly pages: PageSet;
       readonly format: PageImageFormat;
       readonly dpi: number;
       readonly quality: number;
@@ -4955,6 +4980,10 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
+      // LISTED AGAINST THIS VERSION, `split`'s rule: a page past the document is refused before any file is named.
+      const { pageCount } = await this.#geometry(docId, sessions, []);
+      const pages = pagesOf(request.pages, pageCount);
+
       return await writeDocumentSplit(
         this.#save.deps,
         this.#copy.checkTarget,
@@ -4972,7 +5001,7 @@ export class DocumentCommands {
             quality: request.quality,
           });
         },
-        request.pages.map((page) => ({
+        pages.map((page) => ({
           destination: join(directory, pageImageName(suggest, page, request.format)),
           pages: [page],
         })),
@@ -5367,7 +5396,8 @@ export class DocumentCommands {
      * argument is assignable to one that passes it). `picture` names a kept stamp; `undefined` opens the picker.
      */
     request: {
-      readonly pages: readonly number[];
+      /** A page set: *every page* is one run (JOURNAL, *No document-size refusals*). */
+      readonly pages: PageSet;
       readonly rect: AnnotationRect;
       readonly stamp: AnnotationStamp;
       readonly picture: string | undefined;
@@ -5544,9 +5574,11 @@ export class DocumentCommands {
    * A requested signature look as a command carries it — **the one resolver for both routes** (ADR-0133 Decision 3):
    * *Sign with certificate* and the plain *Signature* ask the same question and take this answer.
    *
-   * `insertImage`'s ordering exactly: the extension routes to a decoder before anything is read, the read is bounded,
-   * and the decoder refusing is decided later by the apply. A picked picture answers its file's own name too, which is
-   * what the library names a kept picture by — never its folder.
+   * **A picked picture is typed by its BYTES**, with the library's `pictureTypeOf` (B3a), as `signature.pickPicture`
+   * types the picture the dialog previews: the extension still decides whether the file is read at all, the read is
+   * bounded, and the type the command carries is what the picture is, which *Sign with certificate*'s decoder is chosen
+   * by — so a PNG named `.jpg` is a PNG here. A picked picture answers its file's own name too, which is what the library
+   * names a kept picture by — never its folder.
    */
   async #markFor(mark: RequestedSignatureMark): Promise<
     | {
@@ -5581,11 +5613,13 @@ export class DocumentCommands {
 
     const picked = await this.#image.pick();
     if (picked === null) return { kind: 'cancelled' };
-    const mediaType = imageMediaType(picked);
-    if (mediaType === null) return { kind: 'image-unreadable' };
+    // AN EXTENSION WITH NO DECODER IS NOT READ, `insertImage`'s rule; it routes and never types.
+    if (imageMediaType(picked) === null) return { kind: 'image-unreadable' };
     const read = await this.#image.read(picked);
     if (read.kind === 'too-large') return { kind: 'image-too-large' };
     if (read.kind === 'unreadable') return { kind: 'image-unreadable' };
+    const mediaType = pictureTypeOf(read.bytes);
+    if (mediaType === null) return { kind: 'image-unreadable' };
     return { kind: 'ready', mark: { kind: 'image', bytes: read.bytes, mediaType }, picked: basename(picked) };
   }
 
@@ -5682,64 +5716,53 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      // THE WRITER'S OWN DECISION ABOUT THIS SAVE, asked once: whether it keeps the signatures, and whether it is a
-      // removal's — a redaction or Sanitize — which writes no backup (item 6 of the list of 29 September).
+      // THE WRITER'S OWN DECISION about its signatures, asked once.
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       const next = await this.#signaturesKept(session);
       if (!request.breakSignatures && !next.kept) return { kind: 'breaks-signatures', signatures: next.signatures };
 
+      // THE DOCUMENT'S FACT, read before the save clears it: whether a removal ran since the file was written
+      // (ADR-0139). Never the engine session's mark, which an undo's restore, an adopt or a host restart drops — the
+      // route by which a redaction's save backed up the unredacted file in 0.1.9.0.
+      const removal = context.removedSinceSave;
       // STAGED, so the document's bytes go from the host to the temporary file and never through `main`
       // (ADR-0121's addendum).
+      const names = this.#save.deps.names(context.path);
       const saved = await saveDocument(
         this.#save.deps,
         context,
         () => this.#save.stage(docId, sessions),
-        next.removal ? 'none' : 'keep',
+        removal ? 'none' : 'keep',
       );
       if (saved.kind !== 'saved') return saved;
-      return { ...saved, staleCopies: next.removal ? await this.#staleCopies(context) : null };
+      // THE BACKUP THIS SAVE MADE is the newest name, `atomicWrite`'s own reading of the same list.
+      const [newest] = names.backups;
+      if (saved.backedUp && newest !== undefined) await this.#save.provenance.made(newest);
+      return { ...saved, cleared: removal ? await this.#clearCopies(context) : null };
     });
 
     return value;
   }
 
   /**
-   * What a removal's save leaves that may still hold what was removed: the backups beside the file, by NAME — every
-   * name a backup of this file can have, kept or retired, that is on disk — and how many undo copies of the document
-   * this application keeps. Read in the save's own lane entry, so nothing lands between the save and the list.
+   * Deletes, PERMANENTLY and unasked, every older copy Monstera made that may still hold what a removal took out
+   * ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)): each backup beside
+   * the file — every name a backup of it can have, kept or retired — that the ledger shows Monstera wrote and nothing
+   * has changed since, and every undo copy of the document with the history that needs them. A file with a backup's
+   * name that Monstera did not make is kept and named. In the save's own lane entry, so nothing lands between.
    */
-  async #staleCopies(context: DocumentContext): Promise<StaleCopies> {
+  async #clearCopies(context: DocumentContext): Promise<ClearedCopies> {
     const names = this.#save.deps.names(context.path);
-    const backups: string[] = [];
+    let backups = 0;
+    const kept: string[] = [];
     for (const path of [...names.backups, ...names.retired]) {
-      if (await this.#save.deps.surface.exists(path)) backups.push(basename(path));
+      const outcome = await this.#save.provenance.deleteIfMade(path);
+      if (outcome === 'deleted') backups += 1;
+      else if (outcome === 'not-made') kept.push(basename(path));
     }
-    return { backups, undoCopies: this.#bus.undoCopies(context) };
-  }
-
-  /**
-   * Deletes, PERMANENTLY, the stale copies a person confirmed: the backups among `listed` that are still the
-   * document's and on disk, and every undo copy of the document with the history that needs them (the list of 29
-   * September, item 6).
-   *
-   * **The list is recomputed here, and `listed` only narrows it.** The renderer names what it showed; a name that is
-   * not one of this file's backup names is never deleted, whatever it says — so the page cannot aim this at another
-   * file. Not the recycle bin: a copy kept there would keep what the redaction removed.
-   */
-  async deleteStaleCopies(docId: DocId, listed: readonly string[]): Promise<StaleCopiesDeleted> {
-    const { value } = await this.#documents.run(docId, async (context): Promise<StaleCopiesDeleted> => {
-      const names = this.#save.deps.names(context.path);
-      let backups = 0;
-      for (const path of [...names.backups, ...names.retired]) {
-        if (!listed.includes(basename(path)) || !(await this.#save.deps.surface.exists(path))) continue;
-        await this.#save.deps.surface.remove(path);
-        backups += 1;
-      }
-      const before = this.#bus.undoCopies(context);
-      this.#bus.forgetUndoCopies(context);
-      return { backups, undoCopies: before - this.#bus.undoCopies(context) };
-    });
-    return value;
+    const before = this.#bus.undoCopies(context);
+    this.#bus.forgetUndoCopies(context);
+    return { backups, undoCopies: before - this.#bus.undoCopies(context), kept };
   }
 }

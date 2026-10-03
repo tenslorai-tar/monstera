@@ -41,8 +41,6 @@ export const DIALOG_CANCEL = messageKey('action.dialog-cancel.label');
 export const DIALOG_OK = messageKey('action.dialog-ok.label');
 export const DOCUMENT_SURFACE_LABEL = messageKey('surface.document.label');
 export const THEME_TITLE = messageKey('setting.appearance-theme.title');
-export const BACKGROUND_GLOW_TITLE = messageKey('setting.appearance-background-glow.title');
-export const BACKGROUND_GLOW_DESCRIPTION = messageKey('setting.appearance-background-glow.description');
 export const REDUCE_MOTION_TITLE = messageKey('setting.appearance-reduce-motion.title');
 export const REDUCE_MOTION_DESCRIPTION = messageKey('setting.appearance-reduce-motion.description');
 export const THUMBNAIL_SIZE_TITLE = messageKey('setting.viewing-thumbnail-size.title');
@@ -76,11 +74,10 @@ export const WARN_SIGNATURE_BREAK_DESCRIPTION = messageKey('setting.saving-warn-
 export const SIGNATURE_BREAK_TITLE = messageKey('dialog.signature-break.title');
 export const SIGNATURE_BREAK_EXPLAINS = messageKey('dialog.signature-break.explains');
 export const SIGNATURE_BREAK_APPLY = messageKey('dialog.signature-break.apply');
-export const STALE_COPIES_TITLE = messageKey('dialog.stale-copies.title');
-export const STALE_COPIES_EXPLAINS = messageKey('dialog.stale-copies.explains');
-export const STALE_COPIES_UNDO = messageKey('dialog.stale-copies.undo');
-export const STALE_COPIES_DELETE = messageKey('dialog.stale-copies.delete');
-export const TOAST_STALE_COPIES_DELETED = messageKey('toast.stale-copies-deleted');
+export const KEPT_BACKUPS_TITLE = messageKey('dialog.kept-backups.title');
+export const KEPT_BACKUPS_EXPLAINS = messageKey('dialog.kept-backups.explains');
+export const TOAST_SAVED_CLEARED = messageKey('toast.saved-cleared');
+export const TOAST_SAVED_CLEARED_BACKUPS = messageKey('toast.saved-cleared-backups');
 export const BACKUP_COPIES_DESCRIPTION = messageKey('setting.saving-backup-copies.description');
 /** `saving.backup-copies`' members, each its own exported key as the other option sets are. */
 export const BACKUP_COPIES_ONE = messageKey('setting.saving-backup-copies.one');
@@ -454,11 +451,7 @@ export const EXPORT_EXCEL_TABLE = messageKey('dialog.export-excel.table');
 export const EXPORT_EXCEL_CELL = messageKey('dialog.export-excel.cell');
 export const EXPORT_EXCEL_CLIPPED = messageKey('dialog.export-excel.clipped');
 export const EXPORT_EXCEL_TRUNCATED = messageKey('dialog.export-excel.truncated');
-export const EXPORT_PAGE_IMAGES_PAGES = messageKey('dialog.export-page-images.pages');
 export const EXPORT_PAGE_IMAGES_PAGES_NOTE = messageKey('dialog.export-page-images.pages-note');
-export const EXPORT_PAGE_IMAGES_ALL = messageKey('dialog.export-page-images.all');
-export const EXPORT_PAGE_IMAGES_RANGES = messageKey('dialog.export-page-images.ranges');
-export const EXPORT_PAGE_IMAGES_LABEL = messageKey('dialog.export-page-images.label');
 export const EXPORT_PAGE_IMAGES_EMPTY = messageKey('dialog.export-page-images.empty');
 export const EXPORT_PAGE_IMAGES_FORMAT = messageKey('dialog.export-page-images.format');
 export const EXPORT_PAGE_IMAGES_FORMAT_NOTE = messageKey('dialog.export-page-images.format-note');
@@ -471,6 +464,7 @@ export const EXPORT_PAGE_IMAGES_QUALITY = messageKey('dialog.export-page-images.
 export const EXPORT_PAGE_IMAGES_QUALITY_NOTE = messageKey('dialog.export-page-images.quality-note');
 export const EXPORT_PAGE_IMAGES_OUT_OF_BOUNDS = messageKey('dialog.export-page-images.out-of-bounds');
 export const EXPORT_PAGE_IMAGES_FILES = messageKey('dialog.export-page-images.files');
+export const EXPORT_PAGE_IMAGES_UNCHANGED = messageKey('dialog.export-page-images.unchanged');
 export const EXPORT_TEXT_COMMAND_TITLE = messageKey('command.export-text.title');
 export const EXPORT_LAYOUT_TEXT_COMMAND_TITLE = messageKey('command.export-layout-text.title');
 export const INSERT_IMAGE_COMMAND_TITLE = messageKey('command.insert-image.title');
@@ -542,8 +536,10 @@ export const MARKDOWN_IMPORT_TOO_MANY_COLUMNS_NO_LINE = messageKey(
 );
 export const MARKDOWN_IMPORT_WRITE_FAILED = messageKey('dialog.markdown-import-problem.write-failed');
 export const MARKDOWN_IMPORT_CONVERSION_FAILED = messageKey('dialog.markdown-import-problem.conversion-failed');
-export const MARKDOWN_IMPORT_WORKBOOK_INCOMPLETE = messageKey('dialog.markdown-import-problem.workbook-incomplete');
-export const MARKDOWN_IMPORT_WORKBOOK_BLOCK = messageKey('dialog.markdown-import-problem.workbook-block');
+export const WORKBOOK_INCOMPLETE_TITLE = messageKey('dialog.workbook-incomplete.title');
+export const WORKBOOK_INCOMPLETE_SAID = messageKey('dialog.workbook-incomplete.said');
+export const WORKBOOK_INCOMPLETE_BLOCK = messageKey('dialog.workbook-incomplete.block');
+export const WORKBOOK_INCOMPLETE_MORE = messageKey('dialog.workbook-incomplete.more');
 export const MARKDOWN_IMPORT_ABSENT = messageKey('dialog.markdown-import-problem.absent');
 export const MARKDOWN_IMPORT_AT_CAPACITY = messageKey('dialog.markdown-import-problem.at-capacity');
 export const MARKDOWN_IMPORT_IMAGE_UNREADABLE = messageKey(
@@ -640,8 +636,9 @@ export const SIDE_ZOOM_IN = messageKey('surface.side-by-side.zoom-in');
 export const SIDE_ZOOM = messageKey('surface.side-by-side.zoom');
 export const SIDE_COMPARE = messageKey('surface.side-by-side.compare');
 export const SIDE_COMPARING = messageKey('surface.side-by-side.comparing');
-export const SIDE_CANCEL = messageKey('surface.side-by-side.cancel');
+export const SIDE_STOP = messageKey('surface.side-by-side.stop');
 export const SIDE_DIFFERENCES = messageKey('surface.side-by-side.differences');
+export const SIDE_DIFFERENCES_CLOSE = messageKey('surface.side-by-side.differences-close');
 export const SIDE_COUNT = messageKey('surface.side-by-side.count');
 export const SIDE_NONE = messageKey('surface.side-by-side.none');
 export const SIDE_MORE = messageKey('surface.side-by-side.more');
@@ -720,6 +717,12 @@ export const OCR_LANGUAGE = messageKey('dialog.ocr.language');
 export const PAGE_SCOPE_LABEL = messageKey('dialog.page-scope.label');
 export const PAGE_SCOPE_TARGET = messageKey('dialog.page-scope.target');
 export const PAGE_SCOPE_ALL = messageKey('dialog.page-scope.all');
+/** The page range an export asks for (`PageRangeChoice`): every page, or the pages a person types. */
+export const PAGE_RANGE_LABEL = messageKey('dialog.page-range.label');
+export const PAGE_RANGE_EVERY = messageKey('dialog.page-range.every');
+export const PAGE_RANGE_SELECT = messageKey('dialog.page-range.select');
+export const PAGE_RANGE_NUMBERS = messageKey('dialog.page-range.numbers');
+export const PAGE_RANGE_NUMBERS_NOTE = messageKey('dialog.page-range.numbers-note');
 export const OCR_START = messageKey('dialog.ocr.start');
 export const OCR_HANDWRITING = messageKey('dialog.ocr.handwriting');
 export const OCR_KEYS_HELP = messageKey('dialog.ocr.keys-help');
@@ -977,14 +980,20 @@ export const RECENT_META = messageKey('surface.recent.meta');
 export const RECENT_LABEL = messageKey('surface.recent.label');
 export const RECENT_EMPTY = messageKey('surface.recent.empty');
 export const RECENT_MISSING = messageKey('surface.recent.missing');
+/** A recent file that is not there now, drawn disabled and saying so in both views (ADR-0143). */
+export const RECENT_UNAVAILABLE = messageKey('surface.recent.unavailable');
+export const RECENT_UNAVAILABLE_NAMED = messageKey('surface.recent.unavailable-named');
+export const RECENT_UNAVAILABLE_AT = messageKey('surface.recent.unavailable-at');
 export const RECOVER_OFFER = messageKey('surface.recent.recover-offer');
 export const RECOVER_LABEL = messageKey('surface.recent.recover-label');
 export const LAYERS_LABEL = messageKey('surface.layers.label');
 export const LAYERS_EMPTY = messageKey('surface.layers.empty');
 export const LAYERS_UNAVAILABLE = messageKey('surface.layers.unavailable');
+export const LAYERS_TRUNCATED = messageKey('surface.layers.truncated');
 export const LINKS_LABEL = messageKey('surface.links.label');
 export const LINKS_EMPTY = messageKey('surface.links.empty');
 export const LINKS_UNAVAILABLE = messageKey('surface.links.unavailable');
+export const LINKS_TRUNCATED = messageKey('surface.links.truncated');
 export const LINKS_TO_PAGE = messageKey('surface.links.to-page');
 export const LINKS_EXTERNAL = messageKey('surface.links.external');
 export const ANNOTATIONS_LABEL = messageKey('surface.annotations.label');
@@ -1021,6 +1030,8 @@ export const TEXT_EDIT_PROMOTE = messageKey('surface.text-edit.promote');
 export const TEXT_EDIT_ROTATED = messageKey('surface.text-edit.rotated');
 export const TEXT_EDIT_NOT_WRITABLE = messageKey('surface.text-edit.not-writable');
 export const PAGE_IMAGE_ONLY = messageKey('surface.page.image-only');
+/** What the page area says until its first page is drawn, in place of empty slots. */
+export const PAGE_OPENING = messageKey('surface.page.opening');
 export const FIND_REPLACE_WITH = messageKey('surface.find.replace-with');
 export const FIND_REPLACE_ALL = messageKey('surface.find.replace-all');
 export const FIND_REPLACED = messageKey('surface.find.replaced');
@@ -1337,6 +1348,9 @@ export const TOAST_SENT_TO_PRINTER = messageKey('toast.sent-to-printer');
 export const TOAST_DOCUMENT_SIGNED = messageKey('toast.document-signed');
 export const TOAST_ACTIVE_CONTENT_REMOVED = messageKey('toast.active-content-removed');
 export const TOAST_TRANSITION_SET = messageKey('toast.transition-set');
+export const TOAST_PROTECTION_SET = messageKey('toast.protection-set');
+export const TOAST_FORM_DATA_IMPORTED = messageKey('toast.form-data-imported');
+export const TOAST_COMMENTS_IMPORTED = messageKey('toast.comments-imported');
 export const TOAST_SAVED_BACK = messageKey('toast.saved-back');
 export const THUMBNAILS_LABEL = messageKey('surface.thumbnails.label');
 /**
@@ -1863,6 +1877,11 @@ export const MENU_GROUP_THEME = messageKey('surface.menu-bar.group.theme');
 export const MENU_GROUP_ZOOM = messageKey('surface.menu-bar.group.zoom');
 export const MENU_GROUP_SHOW = messageKey('surface.menu-bar.group.show');
 export const MENU_GROUP_PANELS = messageKey('surface.menu-bar.group.panels');
+/** File › Recent (ADR-0143): the submenu's name, and what it says with nothing in it. */
+export const MENU_RECENT = messageKey('surface.menu-bar.recent');
+export const MENU_RECENT_EMPTY = messageKey('surface.menu-bar.recent-empty');
+/** *Clear list*, the Recent submenu's one command, which the start screen's button also runs (ADR-0143). */
+export const CLEAR_RECENT_TITLE = messageKey('command.clear-recent.title');
 /** The commands the menu bar brought (ADR-0107). */
 export const EDIT_CUT_TITLE = messageKey('command.edit-cut.title');
 export const EDIT_COPY_TITLE = messageKey('command.edit-copy.title');
@@ -2002,6 +2021,16 @@ export const APPLY_REDACTIONS_KEEP_TITLE_WARNS = messageKey('dialog.apply-redact
 export const APPLY_REDACTIONS_IMAGES_PIXELS = messageKey('dialog.apply-redactions.images-pixels');
 export const APPLY_REDACTIONS_IMAGES_REMOVE = messageKey('dialog.apply-redactions.images-remove');
 export const APPLY_REDACTIONS_APPLY = messageKey('dialog.apply-redactions.apply');
+export const PENDING_REDACTIONS_TITLE = messageKey('dialog.pending-redactions.title');
+export const PENDING_REDACTIONS_QUESTION = messageKey('dialog.pending-redactions.question');
+export const PENDING_REDACTIONS_EXPLAINS = messageKey('dialog.pending-redactions.explains');
+export const PENDING_REDACTIONS_APPLY = messageKey('dialog.pending-redactions.apply');
+export const PENDING_REDACTIONS_WITHOUT_SAVE = messageKey('dialog.pending-redactions.without-save');
+export const PENDING_REDACTIONS_WITHOUT_CLOSE = messageKey('dialog.pending-redactions.without-close');
+export const PENDING_REDACTIONS_WITHOUT_EXPORT = messageKey('dialog.pending-redactions.without-export');
+export const PENDING_REDACTIONS_WITHOUT_PRINT = messageKey('dialog.pending-redactions.without-print');
+export const PENDING_REDACTIONS_WITHOUT_SEND = messageKey('dialog.pending-redactions.without-send');
+export const REDACT_MARK_LABEL = messageKey('surface.redact-mark.label');
 
 export const REDACT_MATCHES_COMMAND_TITLE = messageKey('command.redact-matches.title');
 export const REDACT_MATCHES_TITLE = messageKey('dialog.redact-matches.title');
@@ -2301,6 +2330,9 @@ export const CLOUD_GOOGLE_NOTE = messageKey('dialog.cloud.google-note');
 export const CLOUD_NOTE_SIGNED_IN = messageKey('dialog.cloud.note.signed-in');
 export const CLOUD_NOTE_SIGNED_OUT = messageKey('dialog.cloud.note.signed-out');
 export const CLOUD_NOTE_UPLOADED = messageKey('dialog.cloud.note.uploaded');
+/** A provider's one line under its name, by where it stands: what signing in gives, and what signed in offers. */
+export const CLOUD_EXPLAIN_SIGNED_OUT = messageKey('dialog.cloud.explain.signed-out');
+export const CLOUD_EXPLAIN_SIGNED_IN = messageKey('dialog.cloud.explain.signed-in');
 export const SAVE_BACK_NOT_FROM_CLOUD = messageKey('dialog.cloud-outcome.not-from-cloud');
 export const SAVE_BACK_SAVE_FAILED = messageKey('dialog.cloud-outcome.save-failed');
 export const SAVE_BACK_KEPT_HERE = messageKey('dialog.cloud-outcome.kept-here');
@@ -2379,9 +2411,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [DOCUMENT_SURFACE_LABEL]: 'Document',
   [THEME_TITLE]: 'Theme',
   // v5-10's Appearance rows. *Also on when Windows asks* is true of the build: `applyMotion` reads both.
-  [BACKGROUND_GLOW_TITLE]: 'Background glow',
-  [BACKGROUND_GLOW_DESCRIPTION]:
-    'The soft light behind the window, in your accent colour. Turn it off for a plain background. High contrast never shows it.',
   [REDUCE_MOTION_TITLE]: 'Reduce motion',
   [REDUCE_MOTION_DESCRIPTION]:
     'Turns off the transitions and animations in the interface. Also on whenever Windows asks for reduced motion.',
@@ -2412,13 +2441,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGNATURE_BREAK_EXPLAINS]:
     '{count, plural, one {This document is digitally signed.} other {This document carries # digital signatures.}} Saving it now rewrites the whole file, so {count, plural, one {the signature} other {the signatures}} will no longer verify. Close this window to keep {count, plural, one {it} other {them}}: your changes stay open and unsaved.',
   [SIGNATURE_BREAK_APPLY]: 'Save anyway',
-  [STALE_COPIES_TITLE]: 'Older copies may still hold what you removed',
-  [STALE_COPIES_EXPLAINS]:
-    'This save kept no backup, because a backup would keep what you redacted or sanitized. These older copies were made before, and may still hold it:',
-  [STALE_COPIES_UNDO]:
-    '{count, plural, one {# undo copy of this document that Monstera keeps. Undo will not go back past this point.} other {# undo copies of this document that Monstera keeps. Undo will not go back past this point.}}',
-  [STALE_COPIES_DELETE]: 'Delete permanently',
-  [TOAST_STALE_COPIES_DELETED]: 'Older copies deleted',
+  [KEPT_BACKUPS_TITLE]: 'Some older copies were kept',
+  [KEPT_BACKUPS_EXPLAINS]:
+    'Monstera permanently deleted the older copies it made, because they held what you removed. {count, plural, one {This file beside the document is named like a backup, but Monstera did not make it, so it was kept. It may still hold what you removed. Delete it yourself if you do not need it:} other {These files beside the document are named like backups, but Monstera did not make them, so they were kept. They may still hold what you removed. Delete them yourself if you do not need them:}}',
+  [TOAST_SAVED_CLEARED]: 'Saved. Older copies that held what you removed were deleted permanently, and undo cannot go back past this save.',
+  [TOAST_SAVED_CLEARED_BACKUPS]: 'Saved. Older copies that held what you removed were deleted permanently.',
   [BACKUP_COPIES_DESCRIPTION]:
     'Each save keeps the version it replaces beside the file, as report.pdf.bak, then .bak2 and so on, newest first. Choosing fewer removes the extra copies at the next save. At least one is kept, except by a save after a redaction or Sanitize, which keeps none.',
   [BACKUP_COPIES_OPTION_TITLES.one]: '1',
@@ -2577,8 +2604,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIDE_ZOOM]: '{percent}%',
   [SIDE_COMPARE]: 'Compare',
   [SIDE_COMPARING]: 'Comparing… {done} of {total}',
-  [SIDE_CANCEL]: 'Cancel',
+  [SIDE_STOP]: 'Stop',
   [SIDE_DIFFERENCES]: 'Differences',
+  [SIDE_DIFFERENCES_CLOSE]: 'Close Differences',
   [SIDE_COUNT]: '{count, plural, one {# difference} other {# differences}}',
   [SIDE_NONE]: 'No differences found.',
   [SIDE_MORE]: 'There are more differences than can be listed. Only the first {count} are shown.',
@@ -2672,7 +2700,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SPELL_CHECK_ADD]: 'Add {word} to dictionary',
   [SPELL_CHECK_ADDED]: 'Added to your dictionary',
   [SPELL_CHECK_SAVE]:
-    '{count, plural, one {Save one word to your dictionary} other {Save # words to your dictionary}}',
+    '{count, plural, =0 {Save to your dictionary} one {Save one word to your dictionary} other {Save # words to your dictionary}}',
   // NAMES WHAT IT PRODUCES, not the technique. *OCR* is the name of the thing in
   // the ribbon group, where a reader who knows the word will look for it; the
   // command says what happens to their document.
@@ -2704,6 +2732,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PAGE_SCOPE_LABEL]: 'Pages',
   [PAGE_SCOPE_TARGET]: '{count, plural, one {This page} other {These # pages}}',
   [PAGE_SCOPE_ALL]: 'All pages',
+  [PAGE_RANGE_LABEL]: 'Pages',
+  [PAGE_RANGE_EVERY]: 'Every page',
+  [PAGE_RANGE_SELECT]: 'Select pages',
+  [PAGE_RANGE_NUMBERS]: 'Page numbers',
+  [PAGE_RANGE_NUMBERS_NOTE]: 'Pages and ranges, separated by commas.',
   [OCR_START]: 'Recognise',
   // THE ONE LINE THE OWNER SPECIFIED (2026-09-18): handwriting is read by a
   // service since ADR-0085, and a key is what makes its tool appear.
@@ -2969,6 +3002,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // because the file moved or the list outlived the run that made it, and
   // neither is something they did.
   [RECENT_MISSING]: 'That document could not be opened. It may have been moved or renamed.',
+  // A FILE NOT THERE NOW, listed rather than dropped (ADR-0143): it may be on a drive that is not connected.
+  [RECENT_UNAVAILABLE]: 'Unavailable',
+  // THE ITEM'S NAME for a screen reader, so the state is heard with the file and not only seen as muted text.
+  [RECENT_UNAVAILABLE_NAMED]: '{name}, unavailable',
+  [RECENT_UNAVAILABLE_AT]: 'Unavailable · {where}',
   // NAMES NOTHING, because the list beneath it does. This read "Reopen
   // {name}?" while one document could be open and the newest recent entry was
   // that document; with tabs the offer is a recorded set, and a sentence
@@ -2981,9 +3019,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [LAYERS_LABEL]: 'Layers',
   [LAYERS_EMPTY]: 'This document has no layers.',
   [LAYERS_UNAVAILABLE]: 'The layers could not be read.',
+  [LAYERS_TRUNCATED]: 'This document carries more layers than can be read, so the rest are not listed.',
   [LINKS_LABEL]: 'Links on this page',
   [LINKS_EMPTY]: 'This page has no links.',
   [LINKS_UNAVAILABLE]: 'The links on this page could not be read.',
+  [LINKS_TRUNCATED]: 'This page carries more links than can be read, so the rest are not listed.',
   [LINKS_TO_PAGE]: 'Go to page {page}',
   [LINKS_EXTERNAL]: 'Opens {uri}',
   [ANNOTATIONS_LABEL]: 'Annotations in this document',
@@ -3066,6 +3106,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // reports a raster and no text, which is also what a full-page diagram is,
   // and a message may not claim more than the reading behind it.
   [PAGE_IMAGE_ONLY]: 'This page is a picture, so there is no text to select or search.',
+  [PAGE_OPENING]: 'Opening the document…',
   [EDIT_PAGE_OBJECT_TITLE]: 'Edit an object on this page',
   // SAYS WHAT A ROW IS BEFORE OFFERING ANY, `FlatFieldsBody`'s rule. Each row
   // is a thing drawn on the page and the numbers are where it sits, measured
@@ -3448,6 +3489,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_DOCUMENT_SIGNED]: 'Document signed. Save to keep the signature.',
   [TOAST_ACTIVE_CONTENT_REMOVED]: 'Active content removed. Save to keep the change.',
   [TOAST_TRANSITION_SET]: 'Page transition set. It plays when the document is presented.',
+  [TOAST_PROTECTION_SET]: 'Password and permissions set. They are applied when you save.',
+  [TOAST_FORM_DATA_IMPORTED]: 'Form data imported into the fields.',
+  [TOAST_COMMENTS_IMPORTED]: 'Comments imported.',
   [TOAST_SAVED_BACK]: 'Saved to cloud storage',
   [STATUS_ZOOM_SLIDER]: 'Zoom level',
   [THUMBNAILS_LABEL]: 'Page thumbnails',
@@ -3557,9 +3601,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CLOUD_DOWNLOADING]: 'Downloading the file…',
   [CLOUD_FILES_LABEL]: 'PDFs in cloud storage',
   [CLOUD_FILES_EMPTY]: 'No PDFs were found here.',
-  [CLOUD_GOOGLE_NOTE]:
-    'Monstera can see only the Google Drive files it put there, or that you choose. To open any other PDF, choose it in Google Drive.',
-  [CLOUD_PICK]: 'Choose a file in Google Drive…',
+  [CLOUD_GOOGLE_NOTE]: 'Monstera sees only the files it put in your Google Drive, and any file you choose.',
+  [CLOUD_PICK]: 'Choose a file…',
+  [CLOUD_EXPLAIN_SIGNED_OUT]: 'Sign in to open your PDFs from {provider} and upload copies to it.',
+  [CLOUD_EXPLAIN_SIGNED_IN]: 'Open your PDFs from {provider}, or upload this document to it.',
   [CLOUD_CHOOSING]: 'Waiting for your choice in Google Drive…',
   [CLOUD_PROBLEM_NOTHING_PICKED]: 'No file was chosen in Google Drive. Nothing was opened.',
   [CLOUD_NOTE_SIGNED_IN]: 'Signed in.',
@@ -3599,7 +3644,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CLOUD_PROBLEMS['unexpected-answer']]: 'The provider’s answer could not be read.',
   [CLOUD_PROBLEMS['changed-elsewhere']]:
     'The file changed in cloud storage since you opened it, so it was not overwritten. Your changes are saved on this computer.',
-  [CLOUD_PROBLEMS['too-large']]: 'The document is too large to send in one piece.',
+  [CLOUD_PROBLEMS['too-large']]: 'The cloud service refused the document as too large. Your storage may be full.',
   [CLOUD_PROBLEMS['not-a-pdf']]: 'That file is not a PDF Monstera can open.',
   // BUILD-PROMPT E5's FIRST-RUN STEP. Skip is said to be fine, because it is: nothing but the
   // assistant needs a key.
@@ -3806,7 +3851,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SETTINGS_ACTION_CLEAR_RECENT]: 'Clear recent files',
   // `document.clearRecent`'s own effect: the list and the pictures kept for it, and nothing else.
   [SETTINGS_ACTION_CLEAR_RECENT_DESCRIPTION]:
-    'Empties the Recent list on the start screen and deletes the previews kept for it. Your files are not touched.',
+    'Empties the Recent list on the start screen and in File › Recent, and deletes the previews kept for it. Your files are not touched.',
   [SETTINGS_ACTION_CLEARED]: 'Saved conversations were cleared.',
   // NAMES NO KEY: any key can be changed (ADR-0111), and a sentence naming one goes false the day a person moves it.
   [SETTINGS_KEYBOARD_NOTE]:
@@ -4221,11 +4266,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_EXCEL_CELL]: 'Table {table}, row {row}, column {column}',
   [EXPORT_EXCEL_CLIPPED]: 'This cell is too long to show whole, so it cannot be changed here.',
   [EXPORT_EXCEL_TRUNCATED]: 'This page has more cells than can be shown. The ones not shown are exported as found.',
-  [EXPORT_PAGE_IMAGES_PAGES]: 'Pages',
   [EXPORT_PAGE_IMAGES_PAGES_NOTE]: 'Each page becomes one picture file.',
-  [EXPORT_PAGE_IMAGES_ALL]: 'Every page',
-  [EXPORT_PAGE_IMAGES_RANGES]: 'These pages',
-  [EXPORT_PAGE_IMAGES_LABEL]: 'Page numbers',
   [EXPORT_PAGE_IMAGES_EMPTY]: 'Type the pages to export, for example 1-3, 5.',
   [EXPORT_PAGE_IMAGES_FORMAT]: 'Format',
   [EXPORT_PAGE_IMAGES_FORMAT_NOTE]: 'PNG keeps every detail. JPEG and WebP make smaller files and lose a little.',
@@ -4242,6 +4283,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Resolution must be a whole number from {minDpi} to {maxDpi}, and quality from {minQuality} to {maxQuality}.',
   [EXPORT_PAGE_IMAGES_FILES]:
     'This document is not changed. One image for each page: {files} files will be written.',
+  // WHILE THE TYPED PAGES NAME NONE, there is no count to give, and the half of the line above that is still true keeps
+  // the line from reading as a message that failed to arrive.
+  [EXPORT_PAGE_IMAGES_UNCHANGED]: 'This document is not changed.',
   [EXPORT_TEXT_COMMAND_TITLE]: 'Export text…',
   [EXPORT_LAYOUT_TEXT_COMMAND_TITLE]: 'Export text with layout…',
   [INSERT_IMAGE_COMMAND_TITLE]: 'Insert image…',
@@ -4325,9 +4369,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [MARKDOWN_IMPORT_CONTESTED]:
     'That file is open in this app, so nothing was written there. Close it, or choose another name.',
   [MARKDOWN_IMPORT_WRITE_FAILED]: 'The PDF could not be saved there. Nothing was imported.',
-  [MARKDOWN_IMPORT_WORKBOOK_INCOMPLETE]:
+  [WORKBOOK_INCOMPLETE_TITLE]: 'Some rows are not in the PDF',
+  [WORKBOOK_INCOMPLETE_SAID]:
     'The PDF is open, but these rows of the workbook are not in it. The converter could not convert them, even in smaller parts:',
-  [MARKDOWN_IMPORT_WORKBOOK_BLOCK]: 'Sheet “{sheet}”, rows {from} to {to}',
+  [WORKBOOK_INCOMPLETE_BLOCK]: 'Sheet “{sheet}”, rows {from, number} to {to, number}',
+  [WORKBOOK_INCOMPLETE_MORE]: '{count, plural, one {And # more block of rows.} other {And # more blocks of rows.}}',
   [MARKDOWN_IMPORT_CONVERSION_FAILED]:
     'That file could not be turned into a PDF. It may be damaged, or not the kind of file its name says. ' +
     'Nothing was imported.',
@@ -4397,6 +4443,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [MENU_GROUP_ZOOM]: 'Zoom',
   [MENU_GROUP_SHOW]: 'Show',
   [MENU_GROUP_PANELS]: 'Panels',
+  [MENU_RECENT]: 'Recent',
+  [MENU_RECENT_EMPTY]: 'No recent files',
+  // THE OWNER'S WORDS for the item (N3), the same as the start screen's own button over the cards.
+  [CLEAR_RECENT_TITLE]: 'Clear list',
   [EDIT_CUT_TITLE]: 'Cut',
   [EDIT_COPY_TITLE]: 'Copy',
   [EDIT_PASTE_TITLE]: 'Paste',
@@ -4482,6 +4532,22 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [APPLY_REDACTIONS_KEEP_TITLE_WARNS]:
     'A title can itself contain what you are redacting — or say it in other words. Everything else about the document is removed either way.',
   [APPLY_REDACTIONS_APPLY]: 'Apply redactions',
+  // THE OWNER'S SENTENCE (2 October, item N1), with the count.
+  [PENDING_REDACTIONS_TITLE]: 'Redactions not applied',
+  [PENDING_REDACTIONS_QUESTION]:
+    '{count, plural, one {# redaction is marked but not applied.} other {# redactions are marked but not applied.}} Apply {count, plural, one {it} other {them}} now?',
+  // WHY IT MATTERS, in the reader's terms: a mark is not yet a redaction. The second sentence is what Apply does — the
+  // whole document, a solid cover, the properties removed — because Apply here asks nothing more.
+  [PENDING_REDACTIONS_EXPLAINS]:
+    'Until a mark is applied, the content under it is still in the document, and anyone can read or copy it. Applying removes it from every page, along with the document’s author, subject and other properties. The only way back is Undo, in this session.',
+  [PENDING_REDACTIONS_APPLY]: 'Apply',
+  // THE MIDDLE ANSWER NAMES THE ACTION IT LETS GO AHEAD, so no answer depends on reading the question.
+  [PENDING_REDACTIONS_WITHOUT_SAVE]: 'Save without applying',
+  [PENDING_REDACTIONS_WITHOUT_CLOSE]: 'Close without applying',
+  [PENDING_REDACTIONS_WITHOUT_EXPORT]: 'Export without applying',
+  [PENDING_REDACTIONS_WITHOUT_PRINT]: 'Print without applying',
+  [PENDING_REDACTIONS_WITHOUT_SEND]: 'Send without applying',
+  [REDACT_MARK_LABEL]: 'Marked for redaction',
 
   [REDACT_MATCHES_COMMAND_TITLE]: 'Mark matches for redaction',
   [REDACT_MATCHES_TITLE]: 'Mark matches for redaction',

@@ -6,7 +6,7 @@ import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { type HeldSignaturePicture, SIGNATURE_ANSWERS, SIGNATURE_DIALOG_ID, type SignatureLook } from '../dialogs/signature.js';
 import { SIGNATURE_PROBLEM_DIALOG_ID } from '../dialogs/signatureProblem.js';
 import { GROUP_QUICK_TOOLS, GROUP_STAMPS, SIGNATURE_TITLE, TOAST_SIGNATURE_LIBRARY_FULL, TOAST_SIGNATURE_NOT_KEEPABLE } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import { confirmDone } from './confirmWritten.js';
 import { type DocumentCommandDeps, type WritesAFile, hasDocument, reportProblem } from './documentCommands.js';
 import { BLOB_URLS, type LibraryPageDeps, keptEntries } from './stampLibrary.js';
@@ -136,6 +136,8 @@ export interface SignatureCommandDeps {
 export function signatureCommand(deps: SignatureCommandDeps): UiCommand {
   return {
     id: SIGNATURE_TOOL_ID,
+    // THE MARK IS PLACED where the person clicks.
+    feedback: VISIBLE,
     title: SIGNATURE_TITLE,
     icon: 'Signature',
     placements: [

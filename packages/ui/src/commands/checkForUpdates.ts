@@ -1,7 +1,7 @@
 import type { ContractClient } from '@monstera/contract';
 
 import { CHECK_FOR_UPDATES_TITLE } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 
 /**
  * *Help › Check for updates* (ADR-0107): opens the Microsoft Store's *Downloads and updates* page, where the Store
@@ -15,6 +15,8 @@ import type { UiCommand } from '../registries/commands.js';
 export function checkForUpdatesCommand(deps: { readonly client: ContractClient }): UiCommand {
   return {
     id: 'app.check-for-updates',
+    // THE STORE OPENS on its updates page, which is the answer.
+    feedback: VISIBLE,
     icon: 'Download',
     title: CHECK_FOR_UPDATES_TITLE,
     placements: [{ surface: 'menu-bar', menu: 'help', group: 2, order: 10 }],

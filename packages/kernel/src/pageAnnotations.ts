@@ -30,6 +30,7 @@ import type {
   PDFPage,
 } from './mupdfRaw.js';
 
+import { BoundedList } from './boundedList.js';
 import type { CaptureResult } from './commandLog.js';
 import { contentNumber } from './contentNumber.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
@@ -37,7 +38,7 @@ import { ENGINE_ANNOTATIONS_MAX } from './host/engineChannels.js';
 import { decodedImage, withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
 import { snapRotation } from './rotatePages.js';
-import { pageInDocument } from './pageScope.js';
+import { pageInDocument, pagesOf } from './pageScope.js';
 import { type SignatureBox, type SignatureDrawing, drawSignature, signatureBox } from './signatureDrawing.js';
 
 /**
@@ -1216,7 +1217,22 @@ const BLEND_NAMES: Record<AnnotationBlend, string> = { multiply: 'Multiply', nor
 const BLEND_STATE = 'MonsteraBlend';
 
 /**
- * Redraws an annotation's appearance — the ONLY way this kernel calls `update()` (ADR-0103).
+ * Redraws every annotation on a page that changed, in one pass — {@link redraw}'s form for a caller placing many.
+ *
+ * MuPDF's per-annotation `update()` walks the page's whole annotation list, so N annotations redrawn one by one cost
+ * N² — measured 2026-10-02 (`scripts/research/importAnnotationsScale.mjs`): 1,000, 2,000 and 4,000 squares on one
+ * page took 344, 1,425 and 5,838 ms to create and update one by one, and 20, 39 and 75 ms to create and update the page
+ * once, which drew every one of them. The blend re-applied after is {@link redraw}'s, for its reason.
+ *
+ * @param annotations the annotations on `page` this caller created or changed
+ */
+export function redrawPage(page: PDFPage, annotations: readonly PDFAnnotation[], document: PDFDocument): void {
+  page.update();
+  for (const annotation of annotations) reblend(annotation, document);
+}
+
+/**
+ * Redraws an annotation's appearance — with {@link redrawPage}, the only way this kernel calls `update()` (ADR-0103).
  *
  * `update()` regenerates the appearance stream, and measured 2026-09-24 (MuPDF 1.28.0,
  * `scripts/research/annotationBlend.mjs`) it discards a blend written into that stream and ignores
@@ -1227,6 +1243,11 @@ const BLEND_STATE = 'MonsteraBlend';
  */
 export function redraw(annotation: PDFAnnotation, document: PDFDocument): void {
   annotation.update();
+  reblend(annotation, document);
+}
+
+/** What both redraws do after `update()`: the dictionary's `/BM` written back into the appearance MuPDF just drew. */
+function reblend(annotation: PDFAnnotation, document: PDFDocument): void {
   const mode = annotation.getObject().get('BM');
   if (mode.isName()) blendAppearance(annotation, document, mode.asName());
 }
@@ -1438,15 +1459,17 @@ export const applyPlaceImage: Apply<'mupdf', 'placeImage'> = (
 ): Promise<void> =>
   withDocument(session, (document) => {
     const total = document.countPages();
+    // THE PAGE SET LISTED ONCE, by the one expander: a run past the document is refused before it is listed.
+    const pages = pagesOf(command.pages, total);
 
     // DUPLICATES ARE REFUSED RATHER THAN COLLAPSED. Two identical stamps in one
     // place are indistinguishable in the walk that names them, so the second is
     // unerasable except by erasing the first — ADR-0041's argument against
     // content addressing, arriving as a payload that can ask for it.
-    const seen = new Set(command.pages);
-    if (seen.size !== command.pages.length) {
+    const seen = new Set(pages);
+    if (seen.size !== pages.length) {
       throw new RangeError(
-        `the same page is named ${String(command.pages.length - seen.size + 1)} times in one ` +
+        `the same page is named ${String(pages.length - seen.size + 1)} times in one ` +
           `placement. Two stamps in the same box on the same page cannot be told apart afterwards.`,
       );
     }
@@ -1454,7 +1477,7 @@ export const applyPlaceImage: Apply<'mupdf', 'placeImage'> = (
     // EVERY PAGE RESOLVED AND CHECKED FIRST. `pageAt` throws for an index past
     // the end, and a rectangle off the page is this module's other refusal —
     // asked here so that neither can happen once writing has begun.
-    const loaded = command.pages.map((page) => {
+    const loaded = pages.map((page) => {
       const found = pageAt(document, page, total);
       const transform = transformFor(found);
       const box = placedRect(command.rect, transform);
@@ -1765,13 +1788,16 @@ const MAX_LISTED = ENGINE_ANNOTATIONS_MAX;
  * per-page read would make the panel ask once per page and stitch the answers,
  * which is the same payload arriving as N round trips.
  *
- * Bounded and reported, exactly as the duplicate report is.
+ * Bounded and reported, exactly as the duplicate report is, through `BoundedList`.
+ *
+ * @param bound every caller passes none; a case passes a small one to reach the stop on a small document
  */
 export function readAnnotations(
   session: MupdfSession,
+  bound = MAX_LISTED,
 ): Promise<{ readonly annotations: readonly ListedAnnotation[]; readonly truncated: boolean }> {
   return withDocument(session, (document) => {
-    const found: ListedAnnotation[] = [];
+    const found = new BoundedList<ListedAnnotation>(bound);
     const pages = document.countPages();
     for (let page = 0; page < pages; page += 1) {
       // RESET PER PAGE, and counted from the walk rather than from `found`. The
@@ -1796,8 +1822,8 @@ export function readAnnotations(
         if (object.isIndirect()) positionOf.set(object.asIndirect(), at);
       }
       for (const annotation of marks) {
-        if (found.length >= MAX_LISTED) return { annotations: found, truncated: true };
-        found.push({
+        if (!found.room()) return listedOf(found);
+        found.add({
           page,
           index: index++,
           rect: transform === null ? null : readRect(annotation, transform),
@@ -1816,8 +1842,14 @@ export function readAnnotations(
         });
       }
     }
-    return { annotations: found, truncated: false };
+    return listedOf(found);
   });
+}
+
+/** A walk's list in the read's own field names. */
+function listedOf(found: BoundedList<ListedAnnotation>): { readonly annotations: readonly ListedAnnotation[]; readonly truncated: boolean } {
+  const { items, truncated } = found.answer();
+  return { annotations: items, truncated };
 }
 
 /**
@@ -1939,7 +1971,7 @@ export function capturePlaceImage(
 ): Promise<CaptureResult<never>> {
   return withDocument(session, (document) => {
     const total = document.countPages();
-    for (const page of command.pages) pageAt(document, page, total);
+    for (const page of pagesOf(command.pages, total)) pageAt(document, page, total);
     return {
       captured: false,
       reason:

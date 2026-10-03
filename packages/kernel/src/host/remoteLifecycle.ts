@@ -1,4 +1,4 @@
-import type { AnnotationDataFormat, ClientApi, FormDataFormat, WordMode } from '@monstera/contract';
+import type { AnnotationDataFormat, ClientApi, FormDataFormat, PageSet, WordMode } from '@monstera/contract';
 
 import type { ByteImage, LockedReason, MupdfSession } from '../engineSeam.js';
 import type { PageImageRequest } from '../pageImages.js';
@@ -281,7 +281,7 @@ export interface RemoteMupdfLifecycle {
    * The source document is not modified; this produces a second document's
    * bytes and hands them to main, which writes them where the user chose.
    */
-  readonly extract: (session: MupdfSession, pages: readonly number[]) => Promise<ByteImage>;
+  readonly extract: (session: MupdfSession, pages: PageSet) => Promise<ByteImage>;
   /**
    * The PNG bytes of a region of one page.
    *
@@ -397,9 +397,7 @@ export function remoteMupdfLifecycle(
       const into = areas.mintName();
       const answer = await client['engine/extract']({
         session: sessions.handleFor(session),
-        // COPIED OUT OF A READONLY ARRAY, because the channel's schema infers a
-        // mutable one and handing over the caller's array would be this side's
-        // guarantee stated and not held.
+        // COPIED, so the request holds its own array and not the caller's.
         pages: [...pages],
         into,
       });

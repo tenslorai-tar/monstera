@@ -8,6 +8,8 @@ import {
   describeCloudFile,
   exchangeCloudCode,
   fetchCloudPdf,
+  MAX_SIMPLE_UPLOAD_BYTES,
+  UPLOAD_SESSION_CHUNK_BYTES,
   listCloudPdfs,
   pickedFileId,
   refreshCloudTokens,
@@ -265,6 +267,93 @@ describe('whether the person may change a file', () => {
       json({ value: [{ roles: ['read'] }, { roles: ['write'] }] }),
     ]);
     expect((await describeCloudFile('onedrive', 't', 'id', fetchImpl)).canEdit).toBe(true);
+  });
+});
+
+/**
+ * A DOCUMENT PAST THE SIMPLE UPLOAD goes in a session (table A row 13): until 2026-10-02 it was refused before any
+ * request, as "too large to send in one piece". The buffer is one byte past the bound and never copied — each request
+ * carries a view of it — and the scripted provider answers what its documentation says it answers.
+ */
+describe('a document past the simple upload, in a session', () => {
+  const LARGE = new Uint8Array(MAX_SIMPLE_UPLOAD_BYTES + 1);
+  const CHUNKS = Math.ceil(LARGE.byteLength / UPLOAD_SESSION_CHUNK_BYTES);
+  /** The `Content-Range` each request named, in order. */
+  const ranges = (seen: readonly Seen[]): (string | null)[] =>
+    seen.filter((request) => request.init.method === 'PUT').map((request) => new Headers(request.init.headers).get('content-range'));
+  const expectedRanges = Array.from({ length: CHUNKS }, (_, index) => {
+    const start = index * UPLOAD_SESSION_CHUNK_BYTES;
+    const end = Math.min(start + UPLOAD_SESSION_CHUNK_BYTES, LARGE.byteLength) - 1;
+    return `bytes ${String(start)}-${String(end)}/${String(LARGE.byteLength)}`;
+  });
+
+  it('a request size both providers accept: a multiple of 320 KiB and of 256 KiB, under 60 MiB', () => {
+    expect(UPLOAD_SESSION_CHUNK_BYTES % 327_680).toBe(0);
+    expect(UPLOAD_SESSION_CHUNK_BYTES % 262_144).toBe(0);
+    expect(UPLOAD_SESSION_CHUNK_BYTES).toBeLessThan(60 * 1024 * 1024);
+  });
+
+  it('OneDrive Save back: a session made with If-Match, every range in order, and NO token sent to the upload URL', async () => {
+    const UPLOAD = 'https://sn3302.up.1drv.com/up/fe6987415ace7X4e1eF866337';
+    const { fetchImpl, seen } = scripted([
+      json({ uploadUrl: UPLOAD, expirationDateTime: '2026-10-03T00:00:00Z' }),
+      ...Array.from({ length: CHUNKS - 1 }, (_, index) => json({ nextExpectedRanges: [`${String((index + 1) * UPLOAD_SESSION_CHUNK_BYTES)}-`] }, 202)),
+      json({ id: 'id', eTag: '"etag-2"' }, 200),
+    ]);
+
+    expect(await replaceCloudPdf('onedrive', 't', 'id', '"etag-1"', LARGE, fetchImpl)).toBe('"etag-2"');
+
+    expect(seen[0]?.url).toBe('https://graph.microsoft.com/v1.0/me/drive/items/id/createUploadSession');
+    expect(new Headers(seen[0]?.init.headers).get('if-match')).toBe('"etag-1"');
+    expect(JSON.parse(seen[0]?.init.body as string)).toStrictEqual({ item: { '@microsoft.graph.conflictBehavior': 'replace' } });
+    expect(ranges(seen)).toStrictEqual(expectedRanges);
+    expect(seen.slice(1).every((request) => request.url === UPLOAD && !new Headers(request.init.headers).has('authorization'))).toBe(true);
+    // EVERY BYTE SENT, ONCE: the bodies' lengths add up to the document.
+    expect(seen.slice(1).reduce((sum, request) => sum + (request.init.body as Uint8Array).byteLength, 0)).toBe(LARGE.byteLength);
+  });
+
+  it('Google Drive Upload a copy: a resumable session, its address from Location, 308 until the last range', async () => {
+    const SESSION = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=abc';
+    const { fetchImpl, seen } = scripted([
+      new Response(null, { status: 200, headers: { location: SESSION } }),
+      ...Array.from(
+        { length: CHUNKS - 1 },
+        (_, index) => new Response(null, { status: 308, headers: { range: `bytes=0-${String((index + 1) * UPLOAD_SESSION_CHUNK_BYTES - 1)}` } }),
+      ),
+      json({ id: 'new-id' }, 200),
+    ]);
+
+    expect(await createCloudPdf('google-drive', 't', 'big.pdf', LARGE, fetchImpl)).toBe('new-id');
+
+    expect(seen[0]?.url).toBe('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id');
+    expect(new Headers(seen[0]?.init.headers).get('x-upload-content-length')).toBe(String(LARGE.byteLength));
+    expect(ranges(seen)).toStrictEqual(expectedRanges);
+    // A 308 IS GOOGLE'S "MORE, PLEASE", never a redirect to follow.
+    expect(seen.slice(1).every((request) => request.init.redirect === 'manual')).toBe(true);
+  });
+
+  it('CONTROL: a document AT the bound still goes in one request, the route the live runs proved', async () => {
+    const { fetchImpl, seen } = scripted([json({ id: 'new-id' })]);
+    await createCloudPdf('onedrive', 't', 'report.pdf', new Uint8Array(MAX_SIMPLE_UPLOAD_BYTES), fetchImpl);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.url).toContain(':/content?');
+  });
+
+  it('REFUSES a session on a host the provider is not declared to keep content on, and sends it nothing', async () => {
+    const { fetchImpl, seen } = scripted([json({ uploadUrl: 'https://uploads.example.org/up/1' })]);
+    await expect(createCloudPdf('onedrive', 't', 'big.pdf', LARGE, fetchImpl)).rejects.toMatchObject({ reason: 'unexpected-answer' });
+    expect(seen).toHaveLength(1);
+  });
+
+  it('ENDS a session that does not move forward, and cancels it, rather than sending the same bytes again', async () => {
+    const UPLOAD = 'https://sn3302.up.1drv.com/up/x';
+    const { fetchImpl, seen } = scripted([
+      json({ uploadUrl: UPLOAD }),
+      json({ nextExpectedRanges: ['0-'] }, 202),
+      new Response(null, { status: 204 }),
+    ]);
+    await expect(createCloudPdf('onedrive', 't', 'big.pdf', LARGE, fetchImpl)).rejects.toMatchObject({ reason: 'unexpected-answer' });
+    expect(seen.map((request) => request.init.method)).toStrictEqual(['POST', 'PUT', 'DELETE']);
   });
 });
 

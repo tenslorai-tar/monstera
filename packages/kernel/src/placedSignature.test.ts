@@ -273,8 +273,18 @@ describe('a placed signature', () => {
 
   it('REFUSES a box off the page, and text the font cannot encode, BEFORE writing anything', async () => {
     const blank = await blankPage();
-    await expect(placed(blank, 'typed', { x0: 900, y0: 900, x1: 1000, y1: 950 })).rejects.toThrow(RangeError);
+    // BOTH REFUSALS ON ONE SESSION, and its annotations read afterwards: a refusal that drew the stamp and then threw
+    // would leave it on the page, and the throw alone cannot tell the two apart.
     const untouched = await onSession(blank, async (session) => {
+      await expect(
+        applyPlaceSignatureMark(session, {
+          kind: 'placeSignatureMark',
+          page: 0,
+          rect: { x0: 900, y0: 900, x1: 1000, y1: 950 },
+          mark: typed,
+          stamp: STAMP,
+        }),
+      ).rejects.toThrow(RangeError);
       await expect(
         applyPlaceSignatureMark(session, {
           kind: 'placeSignatureMark',

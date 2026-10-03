@@ -1,3 +1,4 @@
+import { MIN_PAGE_PICTURE_SCALE } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -125,6 +126,17 @@ describe('claudeRasterScale', () => {
 
   it('answers null for a region too large at the smallest scale', () => {
     expect(claudeRasterScale(3000, 3000, 2, 1)).toBeNull();
+  });
+
+  it('pictures an A0 drawing at the whole page’s floor, which the snapshot’s refused (table A row 11)', () => {
+    // CONTROL FIRST: at the snapshot's floor of 72 dpi an A0 page has no scale — the refusal a person met.
+    expect(claudeRasterScale(2384, 3370, 2, 1)).toBeNull();
+    const scale = claudeRasterScale(2384, 3370, 2, MIN_PAGE_PICTURE_SCALE);
+    expect(scale).not.toBeNull();
+    if (scale === null) return;
+    expect(fitsClaudeImage(Math.ceil(2384 * scale) + 1, Math.ceil(3370 * scale) + 1)).toBe(true);
+    // AND THE LARGEST PAGE PDF ALLOWS, 14,400 pt an edge, so no real page reaches the refusal.
+    expect(claudeRasterScale(14_400, 14_400, 2, MIN_PAGE_PICTURE_SCALE)).not.toBeNull();
   });
 });
 

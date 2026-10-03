@@ -309,6 +309,7 @@ export {
   groupIntoBlocks,
   paragraphText,
   groupIntoLines,
+  settingOf,
 } from './textLines.js';
 // THE REFUSAL, from a module that imports nothing, so main can name it without
 // loading the engine that throws it (`signingRefusals.ts`' shape).
@@ -509,7 +510,7 @@ export {
 export { type TextAccuracy, scoreAgainstTruth } from './textAccuracy.js';
 // THE TYPES ONLY, for the reason above: a shape a consumer holds needs no
 // engine, and `readPageLinks` — which does — stays behind `/engine`.
-export type { LinkBounds, PageLink } from './pageLinks.js';
+export type { LinkBounds, ListedPageLinks, PageLink } from './pageLinks.js';
 export type { Destination, ListedDestinations } from './destinations.js';
 // TYPE ONLY, for the reason above. `readAnnotations` reaches MuPDF and is on
 // `@monstera/kernel/engine`; the listed shape is a plain object.
@@ -517,7 +518,7 @@ export type { AnnotationKindName, ListedAnnotation } from './pageAnnotations.js'
 // TYPE ONLY, for `ListedAnnotation`'s reason: `readFormFields` reaches MuPDF
 // and is on `@monstera/kernel/engine`; the listed shape is a plain object.
 export type { ListedField } from './formFields.js';
-export type { Layer, PriorLayerVisibility } from './layers.js';
+export type { Layer, ListedLayers, PriorLayerVisibility } from './layers.js';
 // TYPE ONLY. `findDuplicatePages` itself is on `@monstera/kernel/engine` with
 // every other value that binds the native library (ADR-0026); the group shape
 // is a plain object and a consumer naming it must not pull MuPDF in.

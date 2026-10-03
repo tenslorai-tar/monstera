@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, MAX_RANGE_BYTES, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -118,6 +118,69 @@ describe('DocumentRangeTransport', () => {
     // per range" is a contract with the parser rather than a style choice, and
     // a transport that started chunking would break it silently.
     expect(answered).toHaveBeenCalledTimes(1);
+  });
+
+  it('a range PAST ONE READ is read in bounded pieces and handed to PDF.js in one call (a scan’s large image)', async () => {
+    // TWO BOUNDS AND A THOUSAND BYTES: three pieces, the last short, so a joined answer at the wrong offset is a
+    // different array — the fixture counts.
+    const length = 2 * MAX_RANGE_BYTES + 1000;
+    const bytes = countingBytes(length);
+    const reads: { begin: number; end: number }[] = [];
+    const inner = clientOver(bytes, VERSION);
+    const client = createClient(channels, (id, params) => {
+      const { begin, end } = params as { begin: number; end: number };
+      reads.push({ begin, end });
+      if (id !== 'document.readRange') throw new Error(`this fixture answers document.readRange only, not ${id}`);
+      return inner['document.readRange'](params as never);
+    });
+    const transport = new DocumentRangeTransport({ client, docId: DOC, version: VERSION, byteLength: length, onVersionMoved: vi.fn() });
+    const answered = vi.spyOn(transport, 'onDataRange').mockImplementation(() => undefined);
+
+    transport.requestDataRange(0, length);
+    await settle(40);
+
+    expect(reads).toStrictEqual([
+      { begin: 0, end: MAX_RANGE_BYTES },
+      { begin: MAX_RANGE_BYTES, end: 2 * MAX_RANGE_BYTES },
+      { begin: 2 * MAX_RANGE_BYTES, end: length },
+    ]);
+    expect(answered).toHaveBeenCalledTimes(1);
+    const [begin, chunk] = answered.mock.calls[0] ?? [];
+    expect(begin).toBe(0);
+    // A BYTE COMPARISON, not a deep equality: 33 MB compared element by element runs for minutes.
+    if (!(chunk instanceof Uint8Array)) throw new Error('the range was answered with no bytes');
+    expect(chunk.byteLength).toBe(length);
+    let firstDifference = -1;
+    for (let at = 0; at < length && firstDifference === -1; at += 1) if (chunk[at] !== bytes[at]) firstDifference = at;
+    expect(firstDifference).toBe(-1);
+  });
+
+  it('CONTROL: that range as ONE read is refused by the contract — the fixture is past the bound', () => {
+    const asked = { docId: DOC, version: VERSION, begin: 0, end: 2 * MAX_RANGE_BYTES + 1000 };
+    expect(channels['document.readRange'].params.safeParse(asked).success).toBe(false);
+  });
+
+  it('a version that moves BETWEEN PIECES answers nothing, and reports the move', async () => {
+    const length = MAX_RANGE_BYTES + 10;
+    const bytes = countingBytes(length);
+    let asked = 0;
+    // THE FIRST PIECE AT THE BOUND VERSION, THE SECOND STALE: halves of two versions must never reach the parser.
+    const client = createClient(channels, (_id, params) => {
+      const { begin, end } = params as { begin: number; end: number };
+      asked += 1;
+      if (asked === 1) return Promise.resolve(ok({ kind: 'bytes', bytes: bytes.slice(begin, end) }));
+      return Promise.resolve(ok({ kind: 'stale', version: 9, byteLength: length }));
+    });
+    const onVersionMoved = vi.fn();
+    const transport = new DocumentRangeTransport({ client, docId: DOC, version: VERSION, byteLength: length, onVersionMoved });
+    const answered = vi.spyOn(transport, 'onDataRange').mockImplementation(() => undefined);
+
+    transport.requestDataRange(0, length);
+    await settle(40);
+
+    expect(asked).toBe(2);
+    expect(answered).not.toHaveBeenCalled();
+    expect(onVersionMoved).toHaveBeenCalledWith({ version: 9, byteLength: length });
   });
 
   it('reports a version that moved, and stops answering', async () => {

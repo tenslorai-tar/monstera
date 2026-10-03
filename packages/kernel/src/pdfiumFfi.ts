@@ -2,6 +2,7 @@ import { replacementsForLine } from '@monstera/shared';
 import koffi, { type KoffiFunc, type TypeObject } from 'koffi';
 
 import type { ByteImage, EngineWriter, PdfiumSession } from './engineSeam.js';
+import { type ProgramFace, faceOf, programFace } from './fontFace.js';
 import { TextNotWritableError } from './textEditRefusals.js';
 import { type JoinedRun, joinRuns, membersOf } from './textRunJoin.js';
 
@@ -110,6 +111,8 @@ interface Bound {
   readonly fontFlags: Native;
   readonly fontWeight: Native;
   readonly fontBaseName: Native;
+  readonly fontIsEmbedded: Native;
+  readonly fontData: Native;
   readonly fontAscent: Native;
   readonly fontDescent: Native;
   readonly loadStandardFont: Native;
@@ -375,6 +378,15 @@ export function openPdfium(libraryPath: string): void {
     // its name. The answer is bytes with a terminator, counted in bytes.
     fontBaseName: native(
       library.func('unsigned long FPDFFont_GetBaseFontName(void *font, _Out_ uint8_t *buffer, size_t length)'),
+    ),
+    // THE EMBEDDED PROGRAM, for the face it states about itself (`fontFace.ts`). Only where the font IS embedded:
+    // for one that is not, `FPDFFont_GetFontData` answers the program of the substitute PDFium draws with, whose
+    // weight is the substitute's and not the document's.
+    fontIsEmbedded: native(library.func('int FPDFFont_GetIsEmbedded(void *font)')),
+    fontData: native(
+      library.func(
+        'int FPDFFont_GetFontData(void *font, _Out_ uint8_t *buffer, size_t buflen, _Out_ size_t *outBuflen)',
+      ),
     ),
     // ASCENT AND DESCENT AT A SIZE, which is a line's height in the font's own
     // metrics — the pitch a new line takes when its block has only one line to
@@ -731,13 +743,18 @@ export interface RunStyle {
   readonly size: number;
   /** The fill colour its glyphs are painted in, 0–255 per channel. */
   readonly colour: { readonly r: number; readonly g: number; readonly b: number };
+  /**
+   * The font's base name, as PDFium answers it — which font the run is set in, for the block grouping's *a change of
+   * font starts a new block* (`textLines.ts`). It never reaches a renderer: the page's font cannot be loaded there.
+   */
+  readonly font: string;
   /** Font descriptor flag 2 — a serif face. */
   readonly serif: boolean;
   /** Font descriptor flag 1 — fixed pitch. */
   readonly mono: boolean;
-  /** Font descriptor flag 7, or a base name that says italic or oblique. */
+  /** Italic or oblique, from the embedded program, else the descriptor, else the name (`fontFace.ts`). */
   readonly italic: boolean;
-  /** Weight 600 or more, the force-bold flag, or a base name that says bold. */
+  /** Weight 600 or more, from the embedded program, else the descriptor, else the name (`fontFace.ts`). */
   readonly bold: boolean;
   /**
    * Whether the run is set straight — no rotation, no skew, no mirror.
@@ -902,12 +919,13 @@ export function objectRuns(session: PdfiumSession, page: number): Promise<PageTe
     onPage(session, page, (handle) => {
       const bindings = api();
       const walked = walkRuns(bindings, handle);
+      const programs = new Map<string, ProgramFace | undefined>();
       return {
         runs: [...walked.runs.entries()].map(([index, run]) => ({
           index,
           last: index,
           ...run,
-          style: styleOf(bindings, bindings.getObject(handle, index)),
+          style: styleOf(bindings, bindings.getObject(handle, index), programs),
         })),
         unaddressable: walked.unaddressable,
       };
@@ -924,11 +942,12 @@ function joinedWalk(
   handle: unknown,
   walked: { readonly runs: ReadonlyMap<number, WalkedRun> },
 ): JoinedRun<RunStyle>[] {
+  const programs = new Map<string, ProgramFace | undefined>();
   return joinRuns(
     [...walked.runs.entries()].map(([index, run]) => ({
       index,
       ...run,
-      style: styleOf(bindings, bindings.getObject(handle, index)),
+      style: styleOf(bindings, bindings.getObject(handle, index), programs),
     })),
   );
 }
@@ -1055,7 +1074,7 @@ function walkRuns(
  * 2 (value 2) serif, bit 7 (value 64) italic. PDFium answers `-1` for a font it
  * cannot describe, which reads as no flags rather than as every flag set.
  */
-function styleOf(bindings: Bound, object: unknown): RunStyle {
+function styleOf(bindings: Bound, object: unknown, programs: Map<string, ProgramFace | undefined>): RunStyle {
   const size = [0];
   numberFrom(bindings.textFontSize(object, size), 'FPDFTextObj_GetFontSize');
   const matrix: Record<string, number> = {};
@@ -1077,17 +1096,55 @@ function styleOf(bindings: Bound, object: unknown): RunStyle {
   const flags = rawFlags < 0 ? 0 : rawFlags;
   const weight = font === null ? 0 : numberFrom(bindings.fontWeight(font), 'FPDFFont_GetWeight');
   const name = font === null ? '' : baseNameOf(bindings, font);
+  // BOLD AND ITALIC FROM THE FIRST WITNESS THAT SPEAKS — the embedded program, then the descriptor, then the name
+  // (`fontFace.ts`, where each is measured).
+  const face = faceOf({
+    program: font === null ? undefined : programOf(bindings, font, programs),
+    weight: Math.max(0, weight),
+    flags: rawFlags < 0 ? undefined : rawFlags,
+    name,
+  });
   return {
     size: (size[0] ?? 0) * Math.hypot(a, b),
     colour: { r: red[0] ?? 0, g: green[0] ?? 0, b: blue[0] ?? 0 },
+    font: name,
     serif: (flags & 2) !== 0,
     mono: (flags & 1) !== 0,
-    // FORCE-BOLD (bit 19) is the descriptor's own way of saying bold for a font
-    // whose weight it does not state, which a standard font's descriptor is.
-    bold: weight >= 600 || (flags & 262144) !== 0 || /bold|black|heavy/iu.test(name),
-    italic: (flags & 64) !== 0 || /italic|oblique/iu.test(name),
+    bold: face.bold,
+    italic: face.italic,
     upright: isUpright(a, b, c, d),
   };
+}
+
+/**
+ * The most bytes of one font program read to find its `OS/2` table. A CJK font runs to tens of megabytes and the
+ * copy is the whole program, so one past this is decided by its descriptor instead — the face is still answered,
+ * by the next witness. 32 MiB is past every Latin and most CJK programs.
+ */
+const MAX_FONT_PROGRAM_BYTES = 32 * 1024 * 1024;
+
+/**
+ * What an EMBEDDED font's program says about its face, read once per font in a walk — `programs` is keyed by the
+ * font handle's address, which is the page's own font and stable while the page is open.
+ */
+function programOf(bindings: Bound, font: unknown, programs: Map<string, ProgramFace | undefined>): ProgramFace | undefined {
+  const key = String(koffi.address(font));
+  if (programs.has(key)) return programs.get(key);
+  let face: ProgramFace | undefined;
+  if (numberFrom(bindings.fontIsEmbedded(font), 'FPDFFont_GetIsEmbedded') === 1) {
+    const needed = [0];
+    if (numberFrom(bindings.fontData(font, null, 0, needed), 'FPDFFont_GetFontData') === 1) {
+      const length = needed[0] ?? 0;
+      if (length > 0 && length <= MAX_FONT_PROGRAM_BYTES) {
+        const bytes = new Uint8Array(length);
+        if (numberFrom(bindings.fontData(font, bytes, length, needed), 'FPDFFont_GetFontData') === 1) {
+          face = programFace(bytes);
+        }
+      }
+    }
+  }
+  programs.set(key, face);
+  return face;
 }
 
 /** A font's base name, as ASCII — what `FPDFFont_GetBaseFontName` answers. */
@@ -1540,6 +1597,8 @@ function layOutBlocks(
       const removed: unknown[] = [];
       /** The standard fonts this edit loaded, by name — ours to close. */
       const standardFonts = new Map<string, unknown>();
+      /** Each font program's face, read once for this edit (`programOf`). */
+      const programs = new Map<string, ProgramFace | undefined>();
 
       /**
        * Inserts `object` right after `anchor` in the page's order — the line it continues, or the
@@ -1618,7 +1677,7 @@ function layOutBlocks(
       };
       /** The standard font nearest `object`'s, loaded once per edit and closed with it. */
       const standardFontLike = (object: unknown): unknown => {
-        const name = standardFontFor(styleOf(bindings, object));
+        const name = standardFontFor(styleOf(bindings, object, programs));
         let font = standardFonts.get(name);
         if (font === undefined) {
           font = bindings.loadStandardFont(document, name);
@@ -2361,20 +2420,29 @@ export function promoteFormObjects(session: PdfiumSession, page: number): Promis
       }
       if (forms.length === 0) return 0;
 
-      let moved = 0;
-      for (const form of forms) {
-        const formMatrix: ObjectMatrix = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
-        if (numberFrom(bindings.getMatrix(form, formMatrix), 'FPDFPageObj_GetMatrix') !== 1) {
+      /** The form's matrix, or a throw: a form placed without it would draw its content somewhere else. */
+      const matrixOfForm = (form: unknown): ObjectMatrix => {
+        const matrix: ObjectMatrix = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+        if (numberFrom(bindings.getMatrix(form, matrix), 'FPDFPageObj_GetMatrix') !== 1) {
           throw new Error(
             `FPDFPageObj_GetMatrix refused a form object on page ${String(page)}, so its ` +
               'content cannot be placed and nothing was promoted.',
           );
         }
+        return matrix;
+      };
 
-        const children = numberFrom(
-          bindings.countFormObjects(form),
-          'FPDFFormObj_CountObjects',
-        );
+      let moved = 0;
+      /**
+       * Moves `form`'s content onto the page under `placed` — the form's matrix composed with every form around it —
+       * and A FORM INSIDE IT IS FLATTENED IN ITS PLACE, before the child after it. One promotion leaves no text in a
+       * form at any depth: taking a nested form up to the page as an object left its content a form's again, so each
+       * press emptied one level — measured in the owner's document 2026-10-02, 2,511 characters not editable, 597
+       * after the first press, 0 after the second. And in its place, because order is content (see above): flattened
+       * after its siblings, a nested form's lines would be read after the lines that follow it.
+       */
+      const flatten = (form: unknown, placed: ObjectMatrix): void => {
+        const children = numberFrom(bindings.countFormObjects(form), 'FPDFFormObj_CountObjects');
         const kids: unknown[] = [];
         for (let index = 0; index < children; index += 1) {
           kids.push(bindings.formObject(form, index));
@@ -2383,7 +2451,16 @@ export function promoteFormObjects(session: PdfiumSession, page: number): Promis
         for (const child of kids) {
           const own: ObjectMatrix = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
           if (numberFrom(bindings.getMatrix(child, own), 'FPDFPageObj_GetMatrix') !== 1) continue;
-          const target = composed(own, formMatrix);
+          const target = composed(own, placed);
+          if (numberFrom(bindings.objectType(child), 'FPDFPageObj_GetType') === OBJECT_FORM) {
+            flatten(child, target);
+            // THE EMPTIED INNER FORM GOES with its parent's other children: taken out of the parent and destroyed,
+            // since nothing on the page holds it.
+            if (numberFrom(bindings.removeFormObject(form, child), 'FPDFFormObj_RemoveObject') === 1) {
+              bindings.destroyObject(child);
+            }
+            continue;
+          }
           if (numberFrom(bindings.setMatrix(child, target), 'FPDFPageObj_SetMatrix') !== 1) {
             throw new Error(
               `FPDFPageObj_SetMatrix refused a promoted object on page ${String(page)}. Nothing ` +
@@ -2405,7 +2482,10 @@ export function promoteFormObjects(session: PdfiumSession, page: number): Promis
           }
           moved += 1;
         }
+      };
 
+      for (const form of forms) {
+        flatten(form, matrixOfForm(form));
         // THE EMPTIED FORM GOES, or the page keeps a shape that draws nothing
         // and every index after it counts something invisible.
         if (numberFrom(bindings.removeObject(handle, form), 'FPDFPage_RemoveObject') === 1) {

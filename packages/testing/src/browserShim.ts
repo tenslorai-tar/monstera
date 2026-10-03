@@ -16,7 +16,10 @@ import {
   ACCESSIBILITY_HUMAN_CHECKS,
   MAX_IMAGE_BYTES,
   MAX_LIBRARY_ENTRIES,
-  type ChannelParams,
+  LAYERS_PART,
+  PAGE_LINKS_PART,
+  PAGE_OBJECTS_PART,
+  TEXT_BLOCKS_PART,
   type LibraryEntry,
   NATIVE_COMPONENT_IDS,
   SECRET_SETTING_IDS,
@@ -141,16 +144,12 @@ export interface BrowserShim {
   revealedLog: () => number;
   /** Every written file the renderer asked main to show in its folder, in order. */
   revealedFiles: () => readonly FileHandle[];
-  /** Every plain signature the renderer asked main to place, with its arguments, in order (ADR-0133). */
-  placedSignatures: () => readonly ChannelParams<'document.placeSignature'>[];
   /** Every overlay the renderer asked main to paint, in order — the title bar's colours as it computed them. */
   titleBarOverlays: () => readonly { readonly color: string; readonly symbolColor: string; readonly height: number }[];
   /** How many times the renderer told main the window may close — `revealedLog`'s reason for a count. */
   windowCloses: () => number;
   /** How many times the renderer told main it is listening for close requests. */
   closeListenings: () => number;
-  /** Every deletion of a removal's stale copies the page asked for, in order, with the names it sent. */
-  staleCopiesDeleted: () => readonly { readonly docId: DocId; readonly backups: readonly string[] }[];
 }
 
 /**
@@ -173,6 +172,12 @@ export type ShimPageLink =
       readonly uri: string;
       readonly bounds: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
     };
+
+/** One line of a page's text layer and its box in display space at scale 1, as `document.pageTextLayer` reports it. */
+export interface ShimPlacedLine {
+  readonly text: string;
+  readonly box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
+}
 
 /**
  * One outline entry a test seeds a document with.
@@ -298,8 +303,6 @@ export interface BrowserShimOptions {
 
   /** Documents whose next save would break this many signatures — `document.save` answers so until agreed. */
   readonly saveBreaksSignatures?: ReadonlyMap<string, number>;
-  /** Documents whose save is a removal's: what it reports it left behind (item 6 of the 29 September list). */
-  readonly saveStaleCopies?: ReadonlyMap<string, { readonly backups: string[]; readonly undoCopies: number }>;
 
   /**
    * The person's library, as main would hold it: the entries it starts with, their pictures by id, and what the picker
@@ -406,6 +409,14 @@ export interface BrowserShimOptions {
    * count and text layer cannot describe two different texts.
    */
   readonly documentPageLines?: ReadonlyMap<DocId, readonly (readonly string[])[]>;
+
+  /**
+   * The lines WITH THE BOXES the engine reported, in place of {@link pageLines}, for a case about where the text sits —
+   * a drag through the gaps between lines is decided by geometry, and `pageLines`' evenly spaced rows of equal width
+   * have no paragraph gap, no indent, no column and no overlap. The text is these lines' own, so every page-text
+   * channel still reads one text.
+   */
+  readonly pageLinesPlaced?: readonly (readonly ShimPlacedLine[])[];
 
   /**
    * What `window.edit` runs through — main's attached window, for a shim that has a page. Absent,
@@ -549,6 +560,13 @@ export interface BrowserShimOptions {
    * browser — so a case that wants the write that follows a translation hands one in.
    */
   readonly translation?: ChannelResult<'ai.translatePage'>;
+  /**
+   * What `cloud.status` answers. Absent is every provider not configured, what a build without client values is — so
+   * a case that draws Cloud storage's signed-in and signed-out sections hands their states in.
+   */
+  readonly cloudStatus?: ChannelResult<'cloud.status'>;
+  /** Milliseconds a channel waits before it answers, by channel: main's time, for a case about what is drawn meanwhile. */
+  readonly delays?: Readonly<Partial<Record<keyof ContractHandlers, number>>>;
   /** What `ai.models` answers. Absent is an empty list, what a build with no provider offers. */
   readonly aiModels?: ChannelResult<'ai.models'>;
   /**
@@ -735,6 +753,23 @@ function acrossTheWire<T>(value: T): T {
 }
 
 /**
+ * One part of a seeded list, cut as `main`'s `listPart` cuts it: at most `size` items from `from`, and where the next
+ * part begins. Keyed by the field the channel names its items with, so each handler spreads it into its own answer.
+ */
+function shimPart<T, K extends string>(
+  whole: readonly T[],
+  from: number,
+  size: number,
+  key: K,
+): { readonly next: number | null } & Record<K, readonly T[]> {
+  const end = from + size;
+  return { next: end < whole.length ? end : null, [key]: whole.slice(from, end) } as { readonly next: number | null } & Record<
+    K,
+    readonly T[]
+  >;
+}
+
+/**
  * The affix file the shim's dictionary carries.
  *
  * One directive, which is all Hunspell requires: the encoding. Everything else
@@ -814,7 +849,6 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     return asFileHandle(`shim-written-${String(writes)}`);
   };
   const revealedFiles: FileHandle[] = [];
-  const placedSignatures: ChannelParams<'document.placeSignature'>[] = [];
   /** Whether the seeded crash report was shared or dismissed — then it is offered no more. */
   let crashReportDone = false;
   /** The seeded update status, which an acknowledgement moves as main's record does. */
@@ -824,8 +858,6 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   let closeListenings = 0;
   /** The version each document was last saved at; absent until its first save. */
   const savedAt = new Map<string, number>();
-  /** Every deletion of stale copies the page asked for, in order. */
-  const staleCopiesDeleted: { readonly docId: DocId; readonly backups: readonly string[] }[] = [];
 
   /**
    * What a command reports the document's new size as.
@@ -846,14 +878,25 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // Copied for the reason the opens queue is copied: this one is consumed, and
   // a test holding the array it seeded would watch it empty underneath.
   const viewModels = [...(options.viewModels ?? [])];
-  const pageLines = options.pageLines ?? [];
+  const placed = options.pageLinesPlaced;
+  const pageLines = placed?.map((lines) => lines.map((line) => line.text)) ?? options.pageLines ?? [];
   /** A document's page lines: its own where the case gave some, the shared fixture's otherwise. */
   const linesOf = (docId: DocId): readonly (readonly string[])[] => options.documentPageLines?.get(docId) ?? pageLines;
+  /** A line's box: the one the case placed it at, or the shim's evenly spaced row. */
+  const boxOf = (docId: DocId, page: number, index: number): ShimPlacedLine['box'] =>
+    (options.documentPageLines?.has(docId) === true ? undefined : placed?.[page]?.[index]?.box) ?? {
+      x0: 10,
+      y0: 20 + index * 15,
+      x1: 110,
+      y1: 32 + index * 15,
+    };
   const pageImages = options.pageImages ?? [];
   const pageLinks = options.pageLinks ?? [];
   const destinations = options.destinations ?? [];
   // Copied and consumed, exactly like `viewModels`.
   const layerLists = [...(options.layers ?? [])];
+  // The list the read in progress takes its parts from (`document.layers`).
+  let layersRead: readonly ShimLayer[] = [];
   const fieldLists = [...(options.formFields ?? [])];
   // `let`, because *Clear list* empties it as main's store empties itself.
   let recentEntries = options.recent ?? [];
@@ -940,7 +983,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
 
     'document.newFromOffice': () => {
       const answer = queuedOfficeNews.shift() ?? { kind: 'cancelled' as const };
-      if (answer.kind === 'opened') versions.set(answer.docId, answer.version);
+      // A WORKBOOK WITH ROWS MISSING OPENED TOO, and its pages are read at this version like any other.
+      if (answer.kind === 'opened' || answer.kind === 'opened-incomplete') versions.set(answer.docId, answer.version);
       return Promise.resolve(ok(answer));
     },
 
@@ -1242,16 +1286,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
 
       savedAt.set(docId, current);
       return Promise.resolve(
-        ok({ kind: 'saved' as const, version: asDocVersion(current), staleCopies: options.saveStaleCopies?.get(docId) ?? null }),
+        // THE SHIM RUNS NO REMOVAL, so no save of it deletes anything (ADR-0139).
+        ok({ kind: 'saved' as const, version: asDocVersion(current), cleared: null }),
       );
-    },
-
-    // WHAT THE PAGE ASKED TO DELETE, recorded for a case to read — the shim has no files, so the answer counts what was
-    // named and the undo copies the save reported.
-    'document.deleteStaleCopies': ({ docId, backups }) => {
-      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
-      staleCopiesDeleted.push({ docId, backups: [...backups] });
-      return Promise.resolve(ok({ backups: backups.length, undoCopies: options.saveStaleCopies?.get(docId)?.undoCopies ?? 0 }));
     },
 
     /**
@@ -1339,16 +1376,15 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       );
     },
     /**
-     * A placed signature (ADR-0133), recorded with every argument so a case can assert what the control sent; whether
-     * a `/Stamp` lands on the page is the kernel's case (`placedSignature.test.ts`). A kept look is resolved and a new
-     * one kept as main does, so a reuse after a keep reaches the same entry.
+     * A placed signature (ADR-0133); whether a `/Stamp` lands on the page is the kernel's case
+     * (`placedSignature.test.ts`), and what the control sends is `signatureCommands.test.ts`'. A kept look is resolved
+     * and a typed or drawn one kept as main does, so a reuse after a keep reaches the same entry. **A picture is never
+     * kept here**, where main keeps it or answers `not-keepable`: the shim holds no picked bytes to keep.
      */
-    'document.placeSignature': (request) => {
-      const { docId, mark, keep } = request;
+    'document.placeSignature': ({ docId, mark, keep }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
-      placedSignatures.push(request);
       if (mark.kind === 'saved' && !libraryEntries.some((entry) => entry.id === mark.id)) {
         return Promise.resolve(ok({ kind: 'absent' as const }));
       }
@@ -1607,7 +1643,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // success answers `files` from the group count, which is the one thing a
     // shim CAN answer honestly here: it is a function of the request rather
     // than of any document.
-    'document.split': ({ docId, groups }) => {
+    'document.split': ({ docId, split }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
       if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
 
@@ -1617,7 +1653,12 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (typeof chosen === 'object') {
         return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
       }
-      return Promise.resolve(ok({ kind: 'split' as const, files: groups.length, written: wrote() }));
+      // ONE FILE PER GROUP, or per page `each` names: a run counts its pages.
+      const files =
+        'each' in split
+          ? split.each.reduce<number>((sum, entry) => sum + (typeof entry === 'number' ? 1 : entry[1] - entry[0] + 1), 0)
+          : split.groups.length;
+      return Promise.resolve(ok({ kind: 'split' as const, files, written: wrote() }));
     },
     // THE SPLIT'S SHIM, one file per page: `files` is the page count asked for,
     // which is again a function of the request rather than of any document.
@@ -1855,10 +1896,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(
         ok({
           version: asDocVersion(current),
-          lines: kept.map((text, index) => ({
-            text,
-            box: { x0: 10, y0: 20 + index * 15, x1: 110, y1: 32 + index * 15 },
-          })),
+          lines: kept.map((text, index) => ({ text, box: boxOf(docId, page, index) })),
           // The same one-past-the-limit honesty the kernel has, so a shim answer
           // and a real one disagree about nothing a test could come to rely on.
           truncated: all.length > limit,
@@ -1961,7 +1999,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      * The document's layers, from the scripted sequence — see `layers` in the
      * options for why a toggle is not applied here.
      */
-    'document.layers': ({ docId }) => {
+    'document.layers': ({ docId, from }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
 
@@ -1969,8 +2007,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       // the reason `document.viewModel` states: a panel that appeared to lose
       // its layers on the third read would be reacting to a shim behaviour no
       // product code can produce.
-      const layers = layerLists.length > 1 ? (layerLists.shift() ?? []) : (layerLists[0] ?? []);
-      return Promise.resolve(ok({ version: asDocVersion(current), layers }));
+      //
+      // ONE READ TAKES ONE SCRIPTED LIST, so only its first part moves the queue, and the list is cut in parts as main
+      // cuts it: a scripted CAD export's thousands are past one part, which the contract refuses.
+      if (from === 0) layersRead = layerLists.length > 1 ? (layerLists.shift() ?? []) : (layerLists[0] ?? []);
+      return Promise.resolve(
+        ok({ version: asDocVersion(current), ...shimPart(layersRead, from, LAYERS_PART, 'layers'), truncated: false }),
+      );
     },
 
     /**
@@ -2058,7 +2101,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       );
     },
 
-    'document.textBlocks': ({ docId }) => {
+    'document.textBlocks': ({ docId, from }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
       // THE ENGINE'S ABSENCE IS THE DEFAULT HERE, and that is deliberate rather
@@ -2075,7 +2118,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
         // placeholders: a shim's fixture is text a case wrote down, upright and
         // addressable by construction. A shim that could report otherwise would
         // be inventing a Form XObject nobody built.
-        ok({ version: asDocVersion(current), blocks, truncated: false, rotated: 0, unaddressable: 0 }),
+        // CUT INTO REAL PARTS, so a case can seed a page past one part and watch the surface read it whole.
+        ok({ version: asDocVersion(current), ...shimPart(blocks, from, TEXT_BLOCKS_PART, 'blocks'), truncated: false, rotated: 0, unaddressable: 0 }),
       );
     },
 
@@ -2092,7 +2136,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(err({ code: 'engine-unavailable' }));
     },
 
-    'document.pageObjects': ({ docId }) => {
+    'document.pageObjects': ({ docId, from }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
       // THE ENGINE'S ABSENCE IS THE DEFAULT, `document.textBlocks`' reason.
@@ -2100,7 +2144,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (objects === undefined || objects === null) {
         return Promise.resolve(err({ code: 'engine-unavailable' }));
       }
-      return Promise.resolve(ok({ version: asDocVersion(current), objects, truncated: false }));
+      return Promise.resolve(
+        ok({ version: asDocVersion(current), ...shimPart(objects, from, PAGE_OBJECTS_PART, 'objects'), truncated: false }),
+      );
     },
 
     'document.duplicatePages': ({ docId }) => {
@@ -2109,14 +2155,16 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(ok({ version: asDocVersion(current), groups: [], truncated: false }));
     },
 
-    'document.pageLinks': ({ docId, page }) => {
+    'document.pageLinks': ({ docId, page, from }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
 
+      // CUT IN PARTS as main cuts them, so a scripted page past one part is answered rather than refused.
       return Promise.resolve(
         ok({
           version: asDocVersion(current),
-          links: pageLinks[page] ?? [],
+          ...shimPart(pageLinks[page] ?? [], from, PAGE_LINKS_PART, 'links'),
+          truncated: false,
         }),
       );
     },
@@ -2213,7 +2261,11 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // is what a build without its values is — not configured (ADR-0091 Decision 2).
     'cloud.status': () =>
       Promise.resolve(
-        ok({ providers: CLOUD_PROVIDER_IDS.map((provider) => ({ provider, state: 'not-configured' as const })) }),
+        ok(
+          options.cloudStatus ?? {
+            providers: CLOUD_PROVIDER_IDS.map((provider) => ({ provider, state: 'not-configured' as const })),
+          },
+        ),
       ),
     'cloud.signIn': () => Promise.resolve(ok({ kind: 'refused' as const, reason: 'not-configured' as const })),
     'cloud.signOut': () => Promise.resolve(ok({ state: 'not-configured' as const })),
@@ -2314,9 +2366,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     incidents.push(incident);
   });
 
-  const client = createClient(channels, async (id, params) =>
-    acrossTheWire(await wrapped[id](acrossTheWire(params))),
-  );
+  const client = createClient(channels, async (id, params) => {
+    // A CHANNEL MAIN TAKES TIME OVER, where a case says so: the first-open case holds the view model back the way the
+    // engine host does on a large scan, so the frames between the click and the first page are long enough to read.
+    const wait = options.delays?.[id];
+    if (wait !== undefined) await new Promise((resolve) => setTimeout(resolve, wait));
+    return acrossTheWire(await wrapped[id](acrossTheWire(params)));
+  });
 
   return {
     client,
@@ -2338,10 +2394,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     incidents,
     revealedLog: () => revealedLog,
     revealedFiles: () => [...revealedFiles],
-    placedSignatures: () => [...placedSignatures],
     titleBarOverlays: () => [...titleBarOverlays],
     windowCloses: () => windowCloses,
     closeListenings: () => closeListenings,
-    staleCopiesDeleted: () => [...staleCopiesDeleted],
   };
 }

@@ -14,9 +14,10 @@ import {
   type UpdateStatus,
   type WindowEditAction,
 } from '@monstera/contract';
-import type { DocId, DocVersion } from '@monstera/shared';
+import type { DocId, DocVersion, FileHandle } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -101,6 +102,7 @@ import {
   closeTabCommand,
   closeOthersCommand,
   openSideBySideCommand,
+  saveAttended,
   saveCommand,
   saveDocument,
   undoCommand,
@@ -108,6 +110,8 @@ import {
   zoomCommand,
   actualSizeCommand,
 } from './commands/documentCommands.js';
+import { proceeds, settlePendingRedactions } from './commands/pendingRedactions.js';
+import { PENDING_REDACTIONS_DIALOG, type PendingRedactionOccasion } from './dialogs/pendingRedactions.js';
 import { confirmCopied } from './commands/confirmWritten.js';
 import { editCommands } from './commands/editCommands.js';
 import { exitCommand, startScreenCommand } from './commands/windowCommands.js';
@@ -179,9 +183,11 @@ import {
   openDocument,
   openDocumentCommand,
   openDroppedFiles,
+  openRecentDocument,
   openWaitingDocuments,
   restoreLastSession,
 } from './commands/openDocument.js';
+import { clearRecentCommand } from './commands/recentCommands.js';
 import { revealLogCommand } from './commands/revealLog.js';
 import { donateCommand } from './commands/donate.js';
 import { rateUsCommand } from './commands/rateUs.js';
@@ -240,6 +246,7 @@ import {
 } from './commands/annotationData.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG } from './dialogs/insertImageProblem.js';
 import { MARKDOWN_IMPORT_PROBLEM_DIALOG } from './dialogs/markdownImportProblem.js';
+import { WORKBOOK_INCOMPLETE_DIALOG } from './dialogs/workbookIncomplete.js';
 import { OPEN_FROM_URL_DIALOG } from './dialogs/openFromUrl.js';
 import { CAMERA_CAPTURE_DIALOG } from './dialogs/cameraCapture.js';
 import { URL_OPEN_PROBLEM_DIALOG } from './dialogs/urlOpenProblem.js';
@@ -337,7 +344,6 @@ import { ToolRegistry } from './registries/tools.js';
 import { DialogRegistry } from './registries/dialogs.js';
 import { DialogHost, useDialogHost } from './surfaces/DialogHost.js';
 import {
-  BACKGROUND_GLOW_SETTING,
   HIGH_CONTRAST_QUERIES,
   REDUCED_MOTION_QUERY,
   REDUCE_MOTION_SETTING,
@@ -345,7 +351,6 @@ import {
   THUMBNAIL_SIZE_SETTING,
   type Theme,
   applyAppearance,
-  applyGlow,
   applyMotion,
   highContrastWanted,
 } from './settings/appearance.js';
@@ -406,13 +411,13 @@ import { isDirty, savedState, savedTick, windowTitle } from './savedState.js';
 import { autosaveEvery, createAutosave } from './autosave.js';
 import { AUTOSAVE_SETTING, CONFIRM_REDACTION_SETTING, WARN_SIGNATURE_BREAK_SETTING } from './settings/saving.js';
 import { SIGNATURE_BREAK_DIALOG } from './dialogs/signatureBreak.js';
-import { STALE_COPIES_DIALOG } from './dialogs/staleCopies.js';
+import { KEPT_BACKUPS_DIALOG } from './dialogs/keptBackups.js';
 import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
-import { PageList, type PageListProps } from './PageList.js';
+import { OpeningState, PageList, type PageListProps } from './PageList.js';
 import { type Side, SideBySide, type SidePreferences, drawForComparison } from './SideBySide.js';
 import { SplitView } from './SplitView.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
-import { ContextMenuArea } from './surfaces/ContextMenu.js';
+import { type MenuAt, NO_MENU, menuGroups } from './surfaces/ContextMenu.js';
 import { type TextSelection, readTextSelection } from './TextLayer.js';
 import {
   type TextSelectionDeps,
@@ -827,7 +832,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         ANNOTATION_TEXT_DIALOG,
         STAMP_DIALOG,
         SIGNATURE_BREAK_DIALOG,
-        STALE_COPIES_DIALOG,
+        PENDING_REDACTIONS_DIALOG,
+        KEPT_BACKUPS_DIALOG,
         ANNOTATION_NOTE_DIALOG,
         ANNOTATION_EDIT_DIALOG,
         ANNOTATION_REPLY_DIALOG,
@@ -859,6 +865,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         IMPORT_ANNOTATIONS_PROBLEM_DIALOG,
         INSERT_IMAGE_PROBLEM_DIALOG,
         MARKDOWN_IMPORT_PROBLEM_DIALOG,
+        WORKBOOK_INCOMPLETE_DIALOG,
         OPEN_FROM_URL_DIALOG,
         URL_OPEN_PROBLEM_DIALOG,
         CAMERA_CAPTURE_DIALOG,
@@ -961,17 +968,27 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   // command can only run with a focused document. It is the type saying that a
   // result arriving after a close belongs to nothing, which is the same
   // late-answer hazard `DocumentRangeTransport` drops bytes for.
-  const applied = useCallback(
-    (next: { readonly version: DocVersion; readonly byteLength: number }) => {
+  //
+  // NAMED BY DOCUMENT underneath, because one caller is not about the document in front: the close path asks about
+  // each document in turn, and *Apply* on its redaction question moves THAT document — `activate` has been called,
+  // but the `activeId` this closure holds is the one from before the close began.
+  const appliedTo = useCallback(
+    (docId: DocId | undefined, next: { readonly version: DocVersion; readonly byteLength: number }) => {
       setTabs((current) =>
-        current.map((tab) => (tab.docId === activeId ? { ...tab, ...next } : tab)),
+        current.map((tab) => (tab.docId === docId ? { ...tab, ...next } : tab)),
       );
       // THE DOCUMENT'S STORE HEARS OF IT TOO — `observed`'s first production caller. It had none, so the store's
       // version never left the opening one; nothing read it, and the Organize grid's selection (ADR-0104), which
       // must go when the version moves, is the first thing that needs it to move.
-      if (activeId !== undefined) stores.get(activeId)?.getState().observed(next.version);
+      if (docId !== undefined) stores.get(docId)?.getState().observed(next.version);
     },
-    [activeId, stores],
+    [stores],
+  );
+  const applied = useCallback(
+    (next: { readonly version: DocVersion; readonly byteLength: number }) => {
+      appliedTo(activeId, next);
+    },
+    [activeId, appliedTo],
   );
 
   /**
@@ -988,6 +1005,33 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const stamp = useCallback(
     (): AnnotationStamp => ({ author: authorFor(typedAuthor, userName), created: new Date().toISOString() }),
     [typedAuthor, userName],
+  );
+
+  /**
+   * The unapplied-redactions question (`pendingRedactions.ts`, the owner's item N1), composed once: the save, the
+   * close path and every export, print and send take this. `onApplied` names the document asked about, never the one
+   * in front — see `appliedTo`.
+   */
+  const settleMarksOf = useCallback(
+    (docId: DocId, occasion: PendingRedactionOccasion, beforeAsking?: () => void) =>
+      settlePendingRedactions(
+        {
+          client,
+          ask,
+          stamp,
+          onApplied: (next) => {
+            appliedTo(docId, next);
+          },
+        },
+        docId,
+        occasion,
+        beforeAsking,
+      ),
+    [appliedTo, ask, client, stamp],
+  );
+  const settleMarks = useCallback(
+    async (docId: DocId, occasion: PendingRedactionOccasion) => proceeds(await settleMarksOf(docId, occasion)),
+    [settleMarksOf],
   );
 
   /**
@@ -1502,9 +1546,21 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           const tab = tabs.find((candidate) => candidate.docId === docId);
           if (tab === undefined) continue;
           const answer = await client['document.unsaved']({ docId });
-          const unsaved = answer.ok
+          let unsaved = answer.ok
             ? answer.value.unsaved
             : answer.error.code !== 'document-not-open';
+          // A SAVED DOCUMENT STILL CARRYING MARKS asks about them here (the owner's item N1): the file on disk is the
+          // session, so the count is the file's, and closing is the last moment anyone is asked. *Apply* leaves the
+          // document unsaved, and the question below then asks whether to keep that. A document with unsaved changes
+          // is asked on its *Save* answer instead (`saveAttended`): *Don't save* writes nothing, and the session's count
+          // would not be the file's, so no count is claimed for it.
+          if (!unsaved) {
+            const settled = await settleMarksOf(docId, 'close', () => {
+              activate(docId);
+            });
+            if (!proceeds(settled)) return false;
+            unsaved = settled === 'applied';
+          }
           if (!unsaved) continue;
 
           activate(docId);
@@ -1518,7 +1574,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           // save that landed is still worth confirming — and the toast outlives the tab.
           if (
             choice.data === 'save' &&
-            !(await saveDocument({ client, ask, toast, onSaved, warnSignatureBreak }, docId, 'attended'))
+            !(await saveAttended({ client, ask, toast, onSaved, warnSignatureBreak, settleMarks }, docId))
           ) {
             return false;
           }
@@ -1529,7 +1585,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         setClosing(false);
       }
     },
-    [activate, ask, client, closing, onSaved, releaseTabs, tabs, toast, warnSignatureBreak],
+    [activate, ask, client, closing, onSaved, releaseTabs, settleMarks, settleMarksOf, tabs, toast, warnSignatureBreak],
   );
 
   // THE WINDOW'S CLOSE, held by main until this answers (`windowClose.ts`): every open
@@ -1822,7 +1878,15 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * is disabled on a page with none rather than a control that selects nothing — a THIRD reader of
    * `document.annotations`, which `usePageAnnotations`' header allows: one answer, several surfaces.
    */
-  const pageMarks = usePageAnnotations(client, open?.docId, open?.version);
+  //
+  // NOT BEFORE THE DOCUMENT'S FIRST FRAME: every read of a document waits in main's one lane, and asked at open this
+  // one was queued ahead of the rotation the first page cannot draw without (the first-open case, `firstOpen.pw.ts`).
+  // Until then the item is disabled, which is true: the page area is still opening.
+  const [framed, setFramed] = useState<ReadonlySet<DocId>>(new Set());
+  const markFramed = useCallback((docId: DocId): void => {
+    setFramed((current) => (current.has(docId) ? current : new Set(current).add(docId)));
+  }, []);
+  const pageMarks = usePageAnnotations(open !== undefined && framed.has(open.docId) ? client : undefined, open?.docId, open?.version);
   const marksOn = useCallback(
     (page: number): number => (pageMarks.get(page) ?? []).filter((mark) => mark.rect !== null).length,
     [pageMarks],
@@ -2399,6 +2463,35 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     [activate, client, opened],
   );
   const openCommand = useMemo(() => openDocumentCommand(openDeps), [openDeps]);
+  // THE ONE RECENT-OPEN ROUTE (ADR-0143), for the start screen's cards and File › Recent alike.
+  const openRecent = useCallback((handle: FileHandle) => openRecentDocument(openDeps, handle), [openDeps]);
+  // *Clear list*, one command for the submenu's item and the start screen's button: on main's answer, every view of
+  // the list reads it again — the start screen remounts on `recentReads`, and File › Recent reads it when it opens.
+  const clearRecent = useMemo(
+    () =>
+      clearRecentCommand({
+        client,
+        onCleared: () => {
+          setRecentReads((reads) => reads + 1);
+        },
+      }),
+    [client],
+  );
+  // FILE › RECENT'S VALUES (ADR-0143): main's list, read when the File menu opens. A read that fails or is refused is
+  // `undefined`, which the row draws as no values — never as an empty list.
+  const recentMenu = useMemo(
+    () => ({
+      read: () =>
+        client['document.recent']({}).then(
+          (answer) => (answer.ok ? answer.value.entries : undefined),
+          () => undefined,
+        ),
+      open: (handle: FileHandle) => {
+        void openRecent(handle);
+      },
+    }),
+    [client, openRecent],
+  );
   // A DROP OPENS THROUGH THE SAME DEPENDENCIES as the Open command, so its outcomes land where a pick's do.
   const onDroppedFiles = useCallback(
     (files: readonly File[]): void => {
@@ -2532,6 +2625,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       stamp,
       // EVERY WRITE CONFIRMS through `confirmWritten`, which needs where the toast goes.
       toast,
+      // THE UNAPPLIED-MARKS QUESTION, asked before any export writes (the owner's item N1).
+      settleMarks,
       recogniseFirst: (docId: DocId, pageCount: number) =>
         recogniseBeforeExport(
           {
@@ -2562,6 +2657,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         }),
         marksSelectAll,
         startScreenCommand({ showStart }),
+        // FILE › RECENT › CLEAR LIST (ADR-0143), built above because the start screen's button runs it too.
+        clearRecent,
         exitCommand({ closeWindow }),
         checkForUpdatesCommand({ client }),
         ...themeCommands({ settings }),
@@ -2651,7 +2748,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // whole of the mutation-dialog gate (ADR-0038).
         deletePagesCommand({ client, onApplied: applied, ask, stamp }),
         cropPagesCommand({ client, onApplied: applied, ask, stamp }),
-        protectDocumentCommand({ client, onApplied: applied, ask, stamp }),
+        protectDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
         sanitizeDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
         signDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
         signaturesCommand({ client, onApplied: applied, ask, stamp }),
@@ -2660,6 +2757,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onApplied: applied,
           ask,
           stamp,
+          settleMarks,
           docusignReady: () => docusignKeyStored,
         }),
         docusignRetrieveCommand({
@@ -2711,6 +2809,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           ask,
           stamp,
           toast,
+          settleMarks,
           track,
           servicesReady: () => azureReady || claudeKeyStored,
           ocrLanguages: storedOcrLanguages,
@@ -2738,7 +2837,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         openFromUrlCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         // CLOUD STORAGE (ADR-0091): the same two callbacks, so a cloud file arrives as a tab.
         cloudStorageCommand({ client, ask, toast, onOpened: opened, onAlreadyOpen: activate, busy }),
-        saveBackCommand({ client, ask, toast, onSaved }),
+        saveBackCommand({ client, ask, toast, onSaved, settleMarks }),
         // D9's WEBCAM ROW, the same callbacks: the pictures arrive as a tab.
         newFromCaptureCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         appendMarkdownCommand({
@@ -2763,19 +2862,20 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onOpened: opened,
           onActivate: activate,
         }),
-        extractPagesCommand({ client, onApplied: applied, ask, stamp, toast }),
-        splitDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
-        exportPageImagesCommand({ client, onApplied: applied, ask, stamp, toast }),
+        extractPagesCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
+        splitDocumentCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
+        exportPageImagesCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
         exportTextCommand(exportDeps),
         exportLayoutTextCommand(exportDeps),
         exportWordCommand(exportDeps),
-        exportPowerPointCommand({ client, onApplied: applied, ask, stamp, toast }),
+        exportPowerPointCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
         exportExcelCommand({
           client,
           onApplied: applied,
           ask,
           stamp,
           toast,
+          settleMarks,
           // THE SAME TWO FACTS the OCR tool's engines are offered on (`cloudReady`, `claudeReady`
           // below): a service is offered where its key is stored, and nowhere else (ADR-0086).
           tableEngines: () => [
@@ -2784,31 +2884,31 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             ...(claudeKeyStored ? (['claude'] as const) : []),
           ],
         }),
-        printCommand({ client, onApplied: applied, ask, stamp, settings, toast }),
-        emailCommand({ client, onApplied: applied, ask, stamp }),
+        printCommand({ client, onApplied: applied, ask, stamp, settings, toast, settleMarks }),
+        emailCommand({ client, onApplied: applied, ask, stamp, settleMarks }),
         exportPdfaCommand(exportDeps),
-        optimizeCommand({ client, onApplied: applied, ask, stamp, track, toast }),
+        optimizeCommand({ client, onApplied: applied, ask, stamp, track, toast, settleMarks }),
         generateTocCommand({ client, onApplied: applied, ask, stamp }),
         findDuplicatePagesCommand({ client, onApplied: applied, ask, stamp }),
         undoCommand({ client, onApplied: applied, ask, stamp }),
         redoCommand({ client, onApplied: applied, ask, stamp }),
-        saveCommand({ client, ask, toast, onSaved, warnSignatureBreak }),
+        saveCommand({ client, ask, toast, onSaved, warnSignatureBreak, settleMarks }),
         closeTabCommand({ close: (docId) => requestClose([docId]) }),
         closeOthersCommand({ close: requestClose }),
         // THE SHELL'S OWN `activeId` AND `showSideBySide`, which is what keeps this a second ROUTE
         // to Side by Side rather than a second owner of it: Review › Compare writes the same value.
         openSideBySideCommand({ focused: readActiveId, show: showSideBySide }),
-        saveCopyCommand({ client, onApplied: applied, ask, stamp, toast }),
+        saveCopyCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
         exportFormDataJsonCommand({ client, onApplied: applied, ask, stamp, toast }),
         exportFormDataXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
         exportFormDataFdfCommand({ client, onApplied: applied, ask, stamp, toast }),
-        importFormDataJsonCommand({ client, onApplied: applied, ask, stamp }),
-        importFormDataXfdfCommand({ client, onApplied: applied, ask, stamp }),
-        importFormDataFdfCommand({ client, onApplied: applied, ask, stamp }),
+        importFormDataJsonCommand({ client, onApplied: applied, ask, stamp, toast }),
+        importFormDataXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
+        importFormDataFdfCommand({ client, onApplied: applied, ask, stamp, toast }),
         // THE COMMENTS' FILES, Review › Comment files (ADR-0077).
-        importAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp }),
-        importAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp }),
-        importAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp }),
+        importAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
+        importAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp, toast }),
+        importAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp, toast }),
         // THE CLIPBOARD'S PASTE, beside the import it is: main mints the same command.
         marksPaste,
         exportAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
@@ -2953,12 +3053,15 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       navigator,
       openCommand,
       openDeps,
+      clearRecent,
       requestClose,
       togglePalette,
       // AUTOSCROLL'S TICK reads which document it runs on, and the toggle starts it on the one in front.
       autoscrollOn,
       // SAVE'S SIGNATURE WARNING, a reader of the store — stable while the store is.
       warnSignatureBreak,
+      // THE UNAPPLIED-MARKS QUESTION the save, the exports, print and send take — changes with `stamp`.
+      settleMarks,
       // THE OCR COMMANDS' STORED LANGUAGES, the same kind of reader.
       storedOcrLanguages,
       toggleAutoscroll,
@@ -3058,8 +3161,15 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     return {
       version: open.version,
       read: async (page) => {
-        const answer = await client['document.textBlocks']({ docId, page });
-        if (answer.ok) return answer.value;
+        // EVERY PART, read whole at one version (ADR-0130): a dense page is thousands of blocks.
+        const answer = await readWholeList(
+          (from) => client['document.textBlocks']({ docId, page, from }),
+          (part) => part.blocks,
+        );
+        if (answer.ok) {
+          const { version, items, last } = answer.value;
+          return { version, blocks: items, truncated: last.truncated, rotated: last.rotated, unaddressable: last.unaddressable };
+        }
         if (!refusal.reported) {
           refusal.reported = true;
           reportProblem(deps, answer.error);
@@ -3156,27 +3266,23 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * `when` is asked about it. On the page holding the selected annotations the annotation group comes first: the
    * selection's page is where its actions belong.
    *
-   * A NAMED CALLBACK rather than inline, because a background layer takes it too (ADR-0129): it wraps each page
-   * and thumbnail slot, and a layer that wrapped them in anything else would put a different component at that
-   * position, so bringing it forward would remount every slot and its canvas. Behind, the layer is inert, so its
-   * menus cannot open on the focused document's context.
+   * ASKED AT THE RIGHT-CLICK by the one menu each list draws (`PageMenuArea`), and given to the layer on show only. A
+   * background layer takes `NO_MENU` (ADR-0129): it is inert, so its menu cannot open, and it draws the same area
+   * component, so bringing it forward remounts no slot. This changes with the focused context, which a tab switch
+   * changes, so it is kept out of `background` — in it, every kept layer re-rendered on every switch.
    */
-  const pageMenu = useCallback(
-    (page: number, element: ReactElement): ReactNode => (
-      <ContextMenuArea
-        registry={registry}
-        // THE RIGHT-CLICKED PAGE, and the selection only when that page is in it: a right-click on a page
-        // outside what is ticked means THAT page, so the menu's commands must not act on the ticked ones.
-        context={{ ...context, page, selectedPages: context.selectedPages.includes(page) ? context.selectedPages : NO_PAGES }}
-        menus={[
-          ...(textSelection?.page === page ? (['selection'] as const) : []),
-          ...(selection?.page === page ? (['annotation'] as const) : []),
-          'page',
-        ]}
-      >
-        {element}
-      </ContextMenuArea>
-    ),
+  const menuAt = useCallback<MenuAt<number>>(
+    (page) => {
+      // THE RIGHT-CLICKED PAGE, and the selection only when that page is in it: a right-click on a page
+      // outside what is ticked means THAT page, so the menu's commands must not act on the ticked ones.
+      const at = { ...context, page, selectedPages: context.selectedPages.includes(page) ? context.selectedPages : NO_PAGES };
+      const groups = menuGroups(registry, at, [
+        ...(textSelection?.page === page ? (['selection'] as const) : []),
+        ...(selection?.page === page ? (['annotation'] as const) : []),
+        'page',
+      ]);
+      return groups.length === 0 ? undefined : { context: at, groups };
+    },
     [context, registry, selection?.page, textSelection?.page],
   );
 
@@ -3191,7 +3297,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       settings,
       requestPassword,
       onVersionMoved: movedBehind,
-      pageMenu,
+      menuAt: NO_MENU,
       rulers,
       showGrid,
       unit,
@@ -3202,8 +3308,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       pageBadges,
       smoothScroll,
       layout,
+      onFirstFrame: markFramed,
     }),
-    [client, layout, movedBehind, pageBadges, pageMenu, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, tileAbove, unit],
+    [client, layout, markFramed, movedBehind, pageBadges, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, tileAbove, unit],
   );
 
   return (
@@ -3241,21 +3348,17 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           status bar and every command below refer to. */}
       {/* THE MENU BAR, the window's top row in every mode and with no document too (§10.3, ADR-0107): the system's
           window controls are drawn over its end, and every item in it is a projection of the registry. */}
-      <MenuBar registry={registry} context={context} focusBefore={focusedField} />
+      <MenuBar registry={registry} context={context} focusBefore={focusedField} recent={recentMenu} />
       <TitleBar registry={registry} context={context} settings={settings}>
         <DocumentTabs
           // §7's TAB MENU, with the right-clicked tab's document as the context's — so *Close* closes
           // that tab. Its page and version are the focused document's only when it IS the focused
           // one: a tab in the background has no page on show, and an item must not act on another's.
-          menu={(docId, contents) => (
-            <ContextMenuArea
-              registry={registry}
-              context={docId === context.docId ? context : { ...context, docId, version: undefined, page: undefined, pageCount: undefined }}
-              menus={['tab']}
-            >
-              {contents}
-            </ContextMenuArea>
-          )}
+          menuAt={(docId) => {
+            const at = docId === context.docId ? context : { ...context, docId, version: undefined, page: undefined, pageCount: undefined };
+            const groups = menuGroups(registry, at, ['tab']);
+            return groups.length === 0 ? undefined : { context: at, groups };
+          }}
           tabs={tabStrip}
           activeId={activeId}
           onSelect={activate}
@@ -3294,7 +3397,14 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
               control, not a registered command, and registering one per row
               would mean rebuilding the registry whenever the list changed. */}
           {/* KEYED ON THE READS, so emptying the list from Settings remounts it and it asks main again. */}
-          <RecentFiles key={recentReads} client={client} onOpened={opened} />
+          <RecentFiles
+            key={recentReads}
+            client={client}
+            openRecent={openRecent}
+            onClear={async () => {
+              await clearRecent.run(context);
+            }}
+          />
           {/* THE FOOTER, after the recent list because §10.3 puts it there (see `StartFooter`). */}
           <StartFooter registry={registry} context={context} version={appVersion} />
         </div>
@@ -3336,10 +3446,14 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             zoom, so a switch changes props and never remounts. Each layer carries its own boundary, keyed with it. */}
         {tabs.map((tab) => (
         <DocumentLayer key={tab.docId} tab={tab} store={stores.get(tab.docId)} background={tab.docId === open.docId ? undefined : background}>
+        {/* THE ELEMENT ONLY FOR THE LAYER ON SHOW: a layer behind draws its own, and handed this one too it would
+            take a new prop on every render here and could never skip one. */}
+        {tab.docId !== open.docId ? undefined : (
         <PageCanvas
           client={client}
           document={open}
           onVersionMoved={opened}
+          onFirstFrame={markFramed}
           onCurrentPage={viewed}
           onPageBox={pageBoxed}
           mode={zoomMode}
@@ -3373,10 +3487,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           // `PageCanvas`' row beside the page area (design pass D).
           // §10.3's FLOATING QUICK TOOLBAR, placed inside the page area it floats over (pass F).
           quickToolbar={<QuickToolbar registry={registry} context={context} settings={settings} />}
-          pageMenu={pageMenu}
+          menuAt={menuAt}
           contextPanel={
             <ContextPanel
               assistant={
+                // ONLY FOR A DOCUMENT WITH ITS STORE: the conversation lives in that store, so the panel has nothing
+                // to hold one in otherwise and is not drawn.
+                activeId === undefined || store === undefined ? null : (
                 // THE ASSISTANT TAB (ADR-0083). It takes the same stored-secret list the
                 // other key-gated surfaces take, so *which providers have a key* is
                 // answered in one place, and the event subscriber `App` was given.
@@ -3388,11 +3505,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                   client={client}
                   toast={toast}
                   settings={settings}
-                  focused={
-                    activeId === undefined || store === undefined
-                      ? undefined
-                      : { docId: activeId, store, page: currentPage }
-                  }
+                  focused={{ docId: activeId, store, page: currentPage }}
                   onGoTo={navigator.jumpTo}
                   // EVERY OPEN TAB, for *All Open Docs*, and the jump its citations take to another one (ADR-0134).
                   openDocuments={assistantDocuments}
@@ -3408,6 +3521,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                   storedSecrets={storedSecrets}
                   subscribe={subscribe}
                 />
+                )
               }
               settings={settings}
             >
@@ -3491,6 +3605,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             ),
           }}
         />
+        )}
         </DocumentLayer>
         ))}
         </div>
@@ -3664,8 +3779,6 @@ function useTheme(settings: SettingsStore): void {
       // next action is unaffected. What a refusal needs is to be findable, and
       // the log is where a diagnostic goes.
       if (refusal !== undefined) console.warn(`Accent not applied: ${refusal}`);
-      // THE BACKGROUND GLOW (ADR-0114): one attribute; `tokens.css` keeps high contrast flat whatever it says.
-      applyGlow(root, settings.get(BACKGROUND_GLOW_SETTING.id) === true);
     };
     apply();
 
@@ -3678,7 +3791,7 @@ function useTheme(settings: SettingsStore): void {
 
     // `watch`, not `subscribe`: the stored theme arrives as a hydrate one round trip
     // after this first applies the fallback, and a hydrate names no single id.
-    const unsubscribe = settings.watch([THEME_SETTING.id, ACCENT_SETTING.id, BACKGROUND_GLOW_SETTING.id], apply);
+    const unsubscribe = settings.watch([THEME_SETTING.id, ACCENT_SETTING.id], apply);
 
     // MOTION, from the setting and the platform together (`applyMotion`), re-applied when either changes.
     const motion = (): void => {
@@ -3707,7 +3820,7 @@ type BackgroundLayer = Pick<
   | 'settings'
   | 'requestPassword'
   | 'onVersionMoved'
-  | 'pageMenu'
+  | 'menuAt'
   | 'rulers'
   | 'showGrid'
   | 'unit'
@@ -3718,6 +3831,7 @@ type BackgroundLayer = Pick<
   | 'pageBadges'
   | 'smoothScroll'
   | 'layout'
+  | 'onFirstFrame'
 >;
 
 const IGNORE = (): void => undefined;
@@ -3749,8 +3863,16 @@ const NO_PANELS: PageCanvasProps['panels'] = { bookmarks: null, comments: null, 
  * `visibility: hidden` over the same box (`app.css`), not `display: none`: a box with no layout loses its scroll
  * offset and its observers report every page gone, which would unmount the very canvases this keeps. `inert`
  * and `aria-hidden` take it out of the focus order, find-in-page and the accessibility tree.
+ *
+ * ## Memoised, so a switch renders two layers and not all of them
+ *
+ * A layer behind takes the same `tab`, `store` and `background` on every render of `App`, so it skips each one —
+ * a tab switch renders the layer leaving and the layer arriving, and none of the others. Before 2026-10-02 every
+ * layer was handed the focused context through the page menu and the element on show as `children`, so every
+ * render of `App` rendered every kept document's every page and thumbnail: measured in Chromium 151 with a 5-page
+ * and a 40-page document, 194 page slots and 160 thumbnails rendered across one switch (item D.b).
  */
-function DocumentLayer({
+const DocumentLayer = memo(function DocumentLayer({
   tab,
   store,
   background,
@@ -3760,8 +3882,8 @@ function DocumentLayer({
   readonly store: DocumentStore | undefined;
   /** The shared props when this layer is behind; `undefined` when it is the one on show. */
   readonly background: BackgroundLayer | undefined;
-  /** The `PageCanvas` element `App` builds for the document on show. */
-  readonly children: ReactElement;
+  /** The `PageCanvas` element `App` builds for the document on show, and only for it. */
+  readonly children?: ReactElement | undefined;
 }): ReactElement {
   const state = useSyncExternalStore(store?.subscribe ?? NO_DOCUMENT_SUBSCRIBE, () => store?.getState());
   const behind = background !== undefined;
@@ -3814,12 +3936,12 @@ function DocumentLayer({
             quickToolbar={null}
           />
         ) : (
-          children
+          (children ?? null)
         )}
       </ErrorBoundary>
     </div>
   );
-}
+});
 
 /**
  * Page 1 of the open document, rasterised.
@@ -3852,6 +3974,7 @@ function PageCanvas({
   goTo,
   onWentTo,
   onPageCount,
+  onFirstFrame,
   loupe,
   current,
   onJump,
@@ -3878,7 +4001,7 @@ function PageCanvas({
   panels,
   contextPanel,
   quickToolbar,
-  pageMenu,
+  menuAt,
 }: {
   readonly client: ContractClient;
   readonly document: OpenDocument;
@@ -3886,11 +4009,11 @@ function PageCanvas({
   readonly onPageBox: (page: number, crop: readonly [number, number, number, number]) => void;
   readonly onVersionMoved: (next: OpenedDocument) => void;
   /**
-   * Wraps a thumbnail or a page slot in the page context menu for that page (§7), built by `App`
-   * where the registry is. Handed to this document's thumbnails and both of its panes; never to
-   * Side by Side's halves, whose pages may belong to another document.
+   * The page context menu (§7) for the page a right-click lands on, built by `App` where the registry is. Handed to
+   * this document's thumbnails, its organize grid and both of its panes, each of which draws ONE menu around its
+   * pages; never to Side by Side's halves, whose pages may belong to another document.
    */
-  readonly pageMenu: (page: number, element: ReactElement) => ReactNode;
+  readonly menuAt: MenuAt<number>;
   readonly onCurrentPage: (page: number) => void;
   readonly mode: ZoomMode;
   readonly onZoomStep: (direction: ZoomDirection) => void;
@@ -3898,6 +4021,8 @@ function PageCanvas({
   readonly goTo: number | undefined;
   readonly onWentTo: () => void;
   readonly onPageCount: (count: number) => void;
+  /** Told once per mount, with this document, when its page area's first frame is shown (`PageList.onFirstFrame`). */
+  readonly onFirstFrame: (docId: DocId) => void;
   readonly loupe: boolean;
   /** The page the reader is on, so the thumbnail strip can mark it. */
   readonly current: number;
@@ -3993,6 +4118,15 @@ function PageCanvas({
   );
 
   const { ready, failed } = useDocumentView(client, open, moved, askPassword);
+  /**
+   * Whether the page area's first frame has been shown (`PageList.onFirstFrame`): until it has, the thumbnail strip
+   * asks main for nothing, so the first page is the first work main's lane does for this document.
+   */
+  const [firstFrameShown, setFirstFrameShown] = useState(false);
+  const firstFrameDone = useCallback((): void => {
+    setFirstFrameShown(true);
+    onFirstFrame(open.docId);
+  }, [onFirstFrame, open.docId]);
 
   /**
    * Whether the second pane of a split is the one the reader is working in — *focus follows the
@@ -4171,15 +4305,20 @@ function PageCanvas({
   }
 
   if (ready === undefined) {
-    // NOT A SPINNER: the parser is what knows how many pages there are, so
-    // until it opens there is nothing honest to lay out. The failure case above
-    // is the one that carries a marker. The document panel is already there, for the
-    // failure case's reason: five of its six panels do not wait for PDF.js.
+    // NO SLOTS: the parser is what knows how many pages there are, so until it opens there is nothing honest to lay
+    // out. The page area says the document is opening (§10.5's loading state) — until the owner's review of 0.1.8.0
+    // it was an empty dark pane for as long as a 210 MB scan's parse took. The failure case above is the one that
+    // carries a marker. The document panel is already there, for the failure case's reason: five of its six panels do
+    // not wait for PDF.js.
     return (
       <DocumentBody
         settings={settings}
         panel={<DocumentPanel settings={settings} panels={panels} pages={null} />}
-        page={<div className="m-page-pane" />}
+        page={
+          <div className="m-page-pane" data-first-frame="pending">
+            <OpeningState />
+          </div>
+        }
         contextPanel={contextPanel} quickToolbar={quickToolbar}
       />
     );
@@ -4209,6 +4348,7 @@ function PageCanvas({
       version={open.version}
       onCurrentPage={split ? reportLeft : reporting === 'first' ? onCurrentPage : ignorePage}
       onPageBox={onPageBox}
+      onFirstFrame={firstFrameDone}
       mode={mode}
       onZoomStep={onZoomStep}
       onShownZoom={reporting === 'first' ? onShownZoom : ignoreZoom}
@@ -4242,7 +4382,7 @@ function PageCanvas({
       // AUTOSCROLL MOVES THIS PANE, the document's first; the second is a place a reader looks across to.
       autoscroll={autoscroll}
       onAutoscrollEnd={onAutoscrollEnd}
-      pageMenu={pageMenu}
+      menuAt={menuAt}
     />
   );
   // SPLIT VIEW'S RIGHT HALF, over the SAME parser: one document in two viewports costs one more set of visible page
@@ -4281,7 +4421,7 @@ function PageCanvas({
       pageBadges={pageBadges}
       smoothScroll={smoothScroll}
       layout="single"
-      pageMenu={pageMenu}
+      menuAt={menuAt}
     />
   );
 
@@ -4311,8 +4451,11 @@ function PageCanvas({
             onJump={onJump}
             onMove={onMove}
             onSwap={onSwap}
-            pageMenu={pageMenu}
+            menuAt={menuAt}
             size={thumbnailSize}
+            // THE FIRST PAGE FIRST: the strip asks main for nothing until the page area has shown its first frame.
+            // Organize's grid shows no first pane, so it never waits.
+            waitForFirstFrame={!firstFrameShown && organize === undefined}
           />
         }
       />
@@ -4334,7 +4477,7 @@ function PageCanvas({
           onOpen={organize.onOpen}
           onMove={onMove}
           onDelete={organize.onDelete}
-          pageMenu={pageMenu}
+          menuAt={menuAt}
         />
       ) : (
       split ? (

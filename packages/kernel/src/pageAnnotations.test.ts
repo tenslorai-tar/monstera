@@ -49,6 +49,7 @@ import {
   invertEditAnnotationText,
   applyReplyToAnnotation,
   readAnnotations,
+  redrawPage,
 } from './pageAnnotations.js';
 
 /**
@@ -802,6 +803,10 @@ describe('applyAddAnnotation places a point annotation where the click was', () 
       { page: 0, index: 0, kind: 'sticky-note', contents: 'check this figure', authored: true },
       { page: 0, index: 1, kind: 'ink', contents: '', authored: true },
     ]);
+    // THE WALK'S STOP (AAAAAAA-6): at one it stops after the note and says so; at two, the count, it is whole.
+    const stopped = await onSession(both, (session) => readAnnotations(session, 1));
+    expect([stopped.annotations.map((each) => each.kind), stopped.truncated]).toStrictEqual([['sticky-note'], true]);
+    expect((await onSession(both, (session) => readAnnotations(session, 2))).truncated).toBe(false);
   });
 
   it('and removing the note takes its popup with it, leaving no orphan', async () => {
@@ -3202,15 +3207,23 @@ describe('applyPlaceImage', () => {
     // reading of `update()` leaving the appearance intact was taken right after creation, and `placeAnnotation`
     // calls `setRect` first, which marks the annotation as needing a new appearance. A `/Stamp` whose appearance MuPDF
     // regenerated would answer `[]` here, the image gone.
-    const resized = await onSession(await placedOn(await fixture()), async (session) => {
+    const RESIZED: AnnotationRect = { x0: 30, y0: 50, x1: 230, y1: 150 };
+    const placed = await placedOn(await fixture());
+    const resized = await onSession(placed, async (session) => {
       await applyPlaceAnnotation(session, {
         kind: 'placeAnnotation',
         page: 0,
-        placements: [{ index: 0, rect: { x0: 30, y0: 50, x1: 230, y1: 150 } }],
+        placements: [{ index: 0, rect: RESIZED }],
         version: asDocVersion(1),
       });
       return await mupdfWriter.serialise(session);
     });
+    // THE BOX BEFORE AND AFTER, so a placement that changed nothing fails here: the appearance read below is what
+    // the stamp was placed with, and a no-op keeps it as surely as a resize that preserved it.
+    const boxes = async (bytes: Uint8Array): Promise<(AnnotationRect | null)[]> =>
+      (await onSession(bytes, (session) => readAnnotations(session))).annotations.map((each) => each.rect);
+    expect(await boxes(placed)).toStrictEqual([BOX]);
+    expect(await boxes(resized)).toStrictEqual([RESIZED]);
     expect(await stampsOn(resized, 0)).toEqual([{ subtype: '/Stamp', images: ['7x3'] }]);
   });
 
@@ -3845,6 +3858,31 @@ describe('an annotation carries its author, its creation time and its blend', ()
     expect(await darkPixels(moved, movedBox)).toBe(0);
     const listed = await onSession(moved, (session) => readAnnotations(session));
     expect(listed.annotations[0]?.blend).toBe('normal');
+  });
+
+  it('the PAGE form of the redraw keeps Normal too, and CONTROL: the page update alone turns it Multiply', async () => {
+    const normal = await restyled(await drawnOn(await withText(), command({ annotation: HIGHLIGHT })), 'normal');
+    /** The Normal highlight made to need a new appearance, then redrawn by the page — with or without `redrawPage`. */
+    async function redrawn(form: 'redrawPage' | 'update only'): Promise<PDFDict> {
+      const bytes = await onSession(normal, async (session) => {
+        await withDocument(session, (document) => {
+          const page = document.loadPage(0);
+          const annotation = page.getAnnotations()[0];
+          if (annotation === undefined) throw new Error('no annotation');
+          annotation.setColor([0.2, 0.9, 1]);
+          if (form === 'redrawPage') redrawPage(page, [annotation], document);
+          else page.update();
+        });
+        return mupdfWriter.serialise(session);
+      });
+      const [stored] = await dictionaries(bytes);
+      if (stored === undefined) throw new Error('no annotation');
+      return stored;
+    }
+    expect(appearanceBlends(await redrawn('update only'))).toContain('/Multiply');
+    const kept = appearanceBlends(await redrawn('redrawPage'));
+    expect(kept.length).toBeGreaterThan(0);
+    expect(kept.every((mode) => mode === '/Normal')).toBe(true);
   });
 
   it('MULTIPLY on a kind whose appearance has no ExtGState: the prepended state reaches it', async () => {

@@ -187,12 +187,13 @@ async function measure(bytes) {
       for (const read of PAGE_TEXT_READS) {
         await take(`engine/page-text (${read})`, page, async () => ({ json: await readPageTextJson(session, page, read) }));
       }
-      await take('engine/page-links', page, async () => ({ links: await readPageLinks(session, page) }));
+      await take('engine/page-links', page, () => readPageLinks(session, page));
       await take('engine/page-fills', page, async () => ({ fills: await readPageFills(session, page) }));
       await take('engine/flat-fields', page, () => detectFlatFields(session, page));
     }
-    await take('engine/destinations', null, async () => ({ destinations: await readDestinations(session) }));
-    await take('engine/layers', null, async () => ({ layers: await readLayers(session) }));
+    // THE READERS' OWN ANSWERS, which are the channels' shapes: each is `{ list, truncated }` (ADR-0130).
+    await take('engine/destinations', null, () => readDestinations(session));
+    await take('engine/layers', null, () => readLayers(session));
     const listed = await readAnnotations(session);
     await take('engine/annotations', null, async () => listed);
     /** @type {Map<number, number[]>} */

@@ -4,6 +4,10 @@ import {
   ANNOTATIONS_PART,
   DESTINATIONS_PART,
   FORM_FIELDS_PART,
+  LAYERS_PART,
+  PAGE_LINKS_PART,
+  PAGE_OBJECTS_PART,
+  TEXT_BLOCKS_PART,
   type AiModelListAnswer,
   type AiProviderId,
   CHAT_HISTORY_STORED,
@@ -20,7 +24,8 @@ import {
   MAX_LIBRARY_PICTURE_BYTES,
   MAX_RASTER_BYTES,
   MAX_RASTER_PIXELS,
-  MAX_REPLACED_TEXT,
+  MAX_EDIT_TEXT,
+  blockEditOf,
   MAX_SETTINGS_FILE_BYTES,
   SECRET_SETTING_IDS,
   TRANSLATION_LANGUAGES,
@@ -50,6 +55,7 @@ import {
   type DocumentService,
   EngineFormDataExportFailed,
   EngineAnnotationDataExportFailed,
+  type IdentityReader,
   StaleTargetError,
   type WriteTargetVerdict,
   paragraphText,
@@ -94,6 +100,7 @@ import type { SecretStoreSurface } from './secretStore.js';
 import type { SettingsSurface } from './settingsFile.js';
 import type { DictionaryBytes } from './spellingDictionaries.js';
 import type { WebPage } from './webPages.js';
+import { toldBlocks } from './officeConversion.js';
 
 /**
  * Where a document comes from, as a value this module can be handed.
@@ -245,6 +252,13 @@ export function createContractHandlers(deps: {
   readonly recentRoots: readonly KnownRoot[];
   /** The recent list's pictures of first pages (ADR-0100). REQUIRED, for `recentRoots`' reason. */
   readonly recentPictures: RecentPictures;
+  /**
+   * Whether a path names a file now: the kernel's `readFileIdentity`, the rule `DocumentService.open` answers `absent`
+   * by, so a recent entry's `available` and an open of it cannot disagree (B3a,
+   * [ADR-0143](../../../docs/DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md)).
+   * REQUIRED, for `recentRoots`' reason: a default answering *there* would draw every missing file as one that opens.
+   */
+  readonly fileIdentity: IdentityReader;
   /**
    * The person's stamp and signature library, and how a picture reaches it: the image picker, a size taken before any
    * read, and the bounded read. REQUIRED, for `recentRoots`' reason.
@@ -422,7 +436,6 @@ export function createContractHandlers(deps: {
     'document.undo': undoHandler(deps.commands),
     'document.redo': redoHandler(deps.commands),
     'document.save': saveHandler(deps.commands),
-    'document.deleteStaleCopies': deleteStaleCopiesHandler(deps.commands),
     'document.extract': extractHandler(deps.commands, mintWritten),
     'document.snapshotRegion': snapshotRegionHandler(deps.commands, mintWritten),
     'document.exportFormData': exportFormDataHandler(deps.commands, mintWritten),
@@ -880,11 +893,11 @@ function saveHandler(commands: DocumentCommands): ContractHandlers['document.sav
     try {
       const outcome = await commands.save(docId, { breakSignatures });
       if (outcome.kind === 'saved') {
-        const stale = outcome.staleCopies;
+        const cleared = outcome.cleared;
         return ok({
           kind: 'saved',
           version: outcome.version,
-          staleCopies: stale === null ? null : { backups: [...stale.backups], undoCopies: stale.undoCopies },
+          cleared: cleared === null ? null : { backups: cleared.backups, undoCopies: cleared.undoCopies, kept: [...cleared.kept] },
         } as const);
       }
       if (outcome.kind === 'breaks-signatures') {
@@ -900,19 +913,6 @@ function saveHandler(commands: DocumentCommands): ContractHandlers['document.sav
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
-      throw thrown;
-    }
-  };
-}
-
-/** The stale copies a removal's save reported, deleted as the person confirmed — the save handler's classes. */
-function deleteStaleCopiesHandler(commands: DocumentCommands): ContractHandlers['document.deleteStaleCopies'] {
-  return async ({ docId, backups }): Promise<Awaited<ReturnType<ContractHandlers['document.deleteStaleCopies']>>> => {
-    try {
-      return ok(await commands.deleteStaleCopies(docId, backups));
-    } catch (thrown) {
-      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
-      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       throw thrown;
     }
   };
@@ -1827,10 +1827,10 @@ function importAnnotationsHandler(
 function splitHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['document.split'] {
   return async ({
     docId,
-    groups,
+    split,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.split']>>> => {
     try {
-      const outcome = await commands.split(docId, groups);
+      const outcome = await commands.split(docId, split);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'split') return ok({ kind: 'split', files: outcome.files, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
@@ -2356,10 +2356,12 @@ function pageLinksHandler(commands: DocumentCommands): ContractHandlers['documen
   return async ({
     docId,
     page,
+    from,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.pageLinks']>>> => {
     try {
-      const { version, links } = await commands.pageLinks(docId, page);
-      return ok({ version, links });
+      const read = await commands.pageLinks(docId, page);
+      const part = listPart(read.links, read.truncated, from, PAGE_LINKS_PART);
+      return ok({ version: read.version, links: part.items, next: part.next, truncated: part.truncated });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
@@ -2389,7 +2391,7 @@ function pageWordBoxesHandler(commands: DocumentCommands): ContractHandlers['doc
  * begins, and the walk's `truncated` on the LAST part only
  * ([ADR-0130](../../../docs/DECISIONS/0130-a-documents-size-never-refuses-an-action.md) Decision 2).
  *
- * The one place a part is cut, for the three channels that answer in parts — a second slicing would be a second
+ * The one place a part is cut, for every channel that answers in parts — a second slicing would be a second
  * opinion about where a part ends (B3a). The whole list is read for each part; the read is the one that already
  * crossed whole, and caching it per version is an economy, not a correctness question. A `from` past the end answers
  * an empty last part rather than a refusal: the list is shorter than the caller thought, which is an answer.
@@ -2436,10 +2438,11 @@ function destinationsHandler(
  * `document.execute`, so there is no mutating handler here.
  */
 function layersHandler(commands: DocumentCommands): ContractHandlers['document.layers'] {
-  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.layers']>>> => {
+  return async ({ docId, from }): Promise<Awaited<ReturnType<ContractHandlers['document.layers']>>> => {
     try {
-      const { version, layers } = await commands.layers(docId);
-      return ok({ version, layers });
+      const read = await commands.layers(docId);
+      const part = listPart(read.layers, read.truncated, from, LAYERS_PART);
+      return ok({ version: read.version, layers: part.items, next: part.next, truncated: part.truncated });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
@@ -2541,10 +2544,14 @@ function textBlocksHandler(commands: DocumentCommands): ContractHandlers['docume
   return async ({
     docId,
     page,
+    from,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.textBlocks']>>> => {
     try {
       const { version, blocks, truncated, rotated, unaddressable } = await commands.textBlocks(docId, page);
-      return ok({ version, blocks, truncated, rotated, unaddressable });
+      // A PART AT A TIME (ADR-0130): a dense page is thousands of blocks, and answered whole it was refused by the
+      // contract's bound as `internal` (AAAAAAA-1). The page's two counts ride on every part; they are the page's.
+      const part = listPart(blocks, truncated, from, TEXT_BLOCKS_PART);
+      return ok({ version, blocks: part.items, next: part.next, truncated: part.truncated, rotated, unaddressable });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
@@ -2567,10 +2574,11 @@ function textBlocksHandler(commands: DocumentCommands): ContractHandlers['docume
  * rewriting it would regenerate content for nothing, and a translation that changed nothing is
  * `nothing-to-translate`.
  *
- * ## An answer longer than a block may carry is unreadable, not cut
+ * ## An answer longer than a page's edit may carry is unreadable, not cut
  *
- * `MAX_REPLACED_TEXT` bounds what a block edit writes; a translation past it would have to be cut
- * to fit, and a translation cut mid-sentence is a wrong one. So the whole answer is refused.
+ * `MAX_EDIT_TEXT` bounds what one block edit writes, every block's words together (ADR-0142); a
+ * translation past it would have to be cut to fit, and a translation cut mid-sentence is a wrong one.
+ * So the whole answer is refused. A single block is bounded by nothing smaller.
  */
 function translatePageHandler(deps: {
   readonly commands: DocumentCommands;
@@ -2611,19 +2619,20 @@ function translatePageHandler(deps: {
       if (answer.refusal !== undefined) return ok({ kind: 'refused', problem: answer.refusal } as const);
       translated = readTranslation(answer.text, texts.length);
     }
-    if (translated === undefined || translated.some((text) => text.length > MAX_REPLACED_TEXT)) {
-      return ok({ kind: 'refused', problem: 'unreadable' } as const);
-    }
+    if (translated === undefined) return ok({ kind: 'refused', problem: 'unreadable' } as const);
     const blocks = read.blocks.flatMap((block, at) => {
       const text = translated[at];
       return text === undefined || text === texts[at]
         ? []
         : [{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), text }];
     });
-    const [first, ...rest] = blocks;
-    return first === undefined
-      ? ok({ kind: 'nothing-to-translate' } as const)
-      : ok({ kind: 'translated', version: read.version, blocks: [first, ...rest] } as const);
+    if (blocks.length === 0) return ok({ kind: 'nothing-to-translate' } as const);
+    // A BLOCK'S WORDS ARE BOUNDED ONLY BY THE PAGE'S (ADR-0142): a translated paragraph past 4,096 characters was
+    // refused here as an answer that could not be read, blaming the provider for an ordinary page (table A row 10).
+    // The page's text past `MAX_EDIT_TEXT` is a model that wrote far more than it was given, which that refusal names.
+    const edit = blockEditOf(blocks);
+    if (edit.text.length > MAX_EDIT_TEXT) return ok({ kind: 'refused', problem: 'unreadable' } as const);
+    return ok({ kind: 'translated', version: read.version, edit } as const);
   };
 }
 
@@ -2632,10 +2641,13 @@ function pageObjectsHandler(commands: DocumentCommands): ContractHandlers['docum
   return async ({
     docId,
     page,
+    from,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.pageObjects']>>> => {
     try {
       const { version, objects, truncated } = await commands.pageObjects(docId, page);
-      return ok({ version, objects, truncated });
+      // A PART AT A TIME, `textBlocksHandler`'s reason: a page drawn one glyph per object is thousands of objects.
+      const part = listPart(objects, truncated, from, PAGE_OBJECTS_PART);
+      return ok({ version, objects: part.items, next: part.next, truncated: part.truncated });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
@@ -2911,11 +2923,9 @@ function newFromOfficeHandler(
         const opened = (await openPath(deps, converted.destination)).outcome;
         // THE ROWS NOT IN IT RIDE WITH THE OPEN (decision C): a document that opened is told which rows it lacks, and
         // an open that answered anything else answers that — the file on disk is the same either way.
-        return ok(
-          opened.kind === 'opened' && converted.missing.length > 0
-            ? { ...opened, kind: 'opened-incomplete', missing: [...converted.missing] }
-            : opened,
-        );
+        if (opened.kind !== 'opened' || converted.missing.length === 0) return ok(opened);
+        const told = toldBlocks(converted.missing);
+        return ok({ ...opened, kind: 'opened-incomplete', missing: [...told.missing], more: told.more });
       }
     }
   };
@@ -3022,33 +3032,49 @@ function recentHandler(deps: {
   readonly capabilities: CapabilityRegistry;
   readonly recent: RecentFiles;
   readonly recentRoots: readonly KnownRoot[];
+  readonly fileIdentity: IdentityReader;
 }): ContractHandlers['document.recent'] {
-  return () =>
-    Promise.resolve(
-      ok({
-        // MINTED HERE, not stored. `mint` is idempotent per path, so the handle
-        // an entry carries is the same one that document would have if opened —
-        // and minting at the boundary rather than persisting the token means a
-        // list written by a previous run cannot carry a capability into this
-        // one.
-        entries: deps.recent.list().map((entry) => ({
-          handle: deps.capabilities.mint(entry.path),
-          name: entry.name,
-          // DERIVED HERE, from the path that never crosses: a known folder and one folder's name (ADR-0100).
-          location: displayLocationOf(entry.path, deps.recentRoots),
-          openedAt: entry.openedAt,
-        })),
-        lastExitClean: deps.recent.lastExitClean(),
-        // THE SAME MINTING, for the same reason. These entries are paths the
-        // previous run recorded as open; a handle minted here is one this run
-        // can resolve, and a token persisted across runs would be a capability
-        // surviving the process that granted it.
-        lastSession: deps.recent.lastSession().map((entry) => ({
-          handle: deps.capabilities.mint(entry.path),
-          name: entry.name,
-        })),
-      }),
-    );
+  /**
+   * Whether an open of this path would find a file (ADR-0143). `null` is the open's own `absent`; a read that THROWS is
+   * unavailable too, because an open would fail on it as well, and drawing it as one that opens is the fail-open.
+   */
+  const available = async (path: string): Promise<boolean> => {
+    try {
+      return (await deps.fileIdentity(path)) !== null;
+    } catch {
+      return false;
+    }
+  };
+  return async () => {
+    const listed = deps.recent.list();
+    // ALL AT ONCE, off the event loop: each is a `stat` and a `realpath` on the thread pool, so ten entries cost the
+    // slowest one rather than the sum. Read NOW, as the list is asked for, and never stored — a file comes and goes.
+    const present = await Promise.all(listed.map((entry) => available(entry.path)));
+    return ok({
+      // MINTED HERE, not stored. `mint` is idempotent per path, so the handle
+      // an entry carries is the same one that document would have if opened —
+      // and minting at the boundary rather than persisting the token means a
+      // list written by a previous run cannot carry a capability into this
+      // one.
+      entries: listed.map((entry, at) => ({
+        handle: deps.capabilities.mint(entry.path),
+        name: entry.name,
+        // DERIVED HERE, from the path that never crosses: a known folder and one folder's name (ADR-0100).
+        location: displayLocationOf(entry.path, deps.recentRoots),
+        openedAt: entry.openedAt,
+        available: present[at] === true,
+      })),
+      lastExitClean: deps.recent.lastExitClean(),
+      // THE SAME MINTING, for the same reason. These entries are paths the
+      // previous run recorded as open; a handle minted here is one this run
+      // can resolve, and a token persisted across runs would be a capability
+      // surviving the process that granted it.
+      lastSession: deps.recent.lastSession().map((entry) => ({
+        handle: deps.capabilities.mint(entry.path),
+        name: entry.name,
+      })),
+    });
+  };
 }
 
 /**
@@ -3059,9 +3085,10 @@ function recentHandler(deps: {
  * main minted for a path main recorded, which is the whole of why a renderer
  * naming a file here is not a renderer choosing one.
  *
- * **A file that has gone is FORGOTTEN.** `absent` for a recent entry means the
- * document moved or was deleted since it was opened, and leaving it in the list
- * would offer the user the same dead file every launch.
+ * **A file that has gone is KEPT** ([ADR-0143](../../../docs/DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md)).
+ * `absent` here answers this open and nothing more: the entry stays, and the next read of the list carries it as
+ * unavailable, drawn disabled and saying so. Until 2026-10-03 it was forgotten, which lost a file on a drive that was
+ * only disconnected — and the owner's rule for the list is *never hidden*.
  */
 function openRecentHandler(deps: OpenPathParts): ContractHandlers['document.openRecent'] {
   return async ({
@@ -3080,11 +3107,6 @@ function openRecentHandler(deps: OpenPathParts): ContractHandlers['document.open
     // crash puts the documents back on screen, and a run that recorded only
     // picker-opened documents would lose them all to a second crash.
     const { outcome } = await openPath(deps, path);
-
-    // WHAT THIS ROUTE ADDS: a file that has gone is FORGOTTEN, because leaving it
-    // in the list would offer the user the same dead file every launch.
-    if (outcome.kind === 'absent') deps.recent.forget(path);
-
     return ok(outcome);
   };
 }

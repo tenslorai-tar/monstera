@@ -2,7 +2,8 @@ import { AZURE_OPENAI_ENDPOINT_SETTING_ID, type ContractClient } from '@monstera
 
 import { AI_SETUP_DIALOG_ID, type AiSetupAnswer, type AiSetupProblem } from '../dialogs/aiSetup.js';
 import { AI_SETUP_COMMAND_TITLE, GROUP_AI, TOAST_AI_KEY_CHECKED, TOAST_AI_KEY_KEPT_UNCHECKED } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { TOASTS, type UiCommand } from '../registries/commands.js';
+import { confirmDone } from './confirmWritten.js';
 import { AI_SETUP_AT_START_SETTING } from '../settings/ai.js';
 import type { SettingsStore } from '../settingsStore.js';
 import type { ShowToast } from '../toasts.js';
@@ -38,6 +39,7 @@ export function aiSetupCommand(deps: {
 }): UiCommand {
   return {
     id: 'ai.setup',
+    feedback: TOASTS,
     icon: 'Sparkles',
     title: AI_SETUP_COMMAND_TITLE,
     // THE RIBBON AND THE PALETTE, and the first run opens it by itself. Not the start screen's
@@ -83,7 +85,7 @@ export function aiSetupCommand(deps: {
         deps.onSecretsChanged();
         // SAID ON SCREEN: the dialog closing is all an accepted key used to change, and a person could not tell it
         // from Cancel (the owner's review of 0.1.6.0). *Works* only where the provider was asked and said so.
-        deps.toast('done', checked.value.checked ? TOAST_AI_KEY_CHECKED : TOAST_AI_KEY_KEPT_UNCHECKED);
+        confirmDone(deps, checked.value.checked ? TOAST_AI_KEY_CHECKED : TOAST_AI_KEY_KEPT_UNCHECKED);
         return;
       }
     },

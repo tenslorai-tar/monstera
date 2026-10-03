@@ -18,7 +18,7 @@ const context: CommandContext = {
 };
 
 function command(id: string, over: Partial<UiCommand> = {}): UiCommand {
-  return { id, title: ANY_TITLE, placements: [], run: () => undefined, ...over };
+  return { id, title: ANY_TITLE, placements: [], run: () => undefined, feedback: { kind: 'visible' }, ...over };
 }
 
 function press(key: string, held: Partial<Omit<KeyChord, 'key'>> = {}): KeyChord {

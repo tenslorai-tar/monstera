@@ -228,7 +228,31 @@ export interface UiCommand {
   readonly checked?: (context: CommandContext) => boolean;
   /** Required. See the note above about what that does and does not buy. */
   readonly run: (context: CommandContext) => void | Promise<void>;
+  /**
+   * How a person learns this command did what they asked
+   * ([ADR-0141](../../../../docs/DECISIONS/0141-every-command-declares-how-a-person-learns-it-worked.md)). Required, so
+   * the question is asked of every command when it is written, and *silent* is a choice with a reason rather than
+   * something nobody decided. It is about SUCCESS: a failure says so through the command's own error path whatever this
+   * declares. Where a command has more than one route — a dialog, then a write — it names the one a person waits on.
+   */
+  readonly feedback: CommandFeedback;
 }
+
+/** One of ADR-0141's four answers to *how does a person learn it worked*. */
+export type CommandFeedback =
+  /** Drawn where the person is looking: the page, a pane, a panel or window it opens, the tool it arms, the theme it sets. */
+  | { readonly kind: 'visible' }
+  /** Finished out of sight, and says so: `confirmWritten` for a file, `confirmDone` otherwise, `confirmCopied` for a copy. */
+  | { readonly kind: 'toast' }
+  /** The answer is a result dialog's content: a check, a count, a list found. */
+  | { readonly kind: 'dialog' }
+  /** Nothing, and why — written where the command is, for the next person to judge. */
+  | { readonly kind: 'none'; readonly reason: string };
+
+/** The three answers that carry nothing else, named once so a command reads `feedback: VISIBLE` rather than spelling it. */
+export const VISIBLE: CommandFeedback = { kind: 'visible' };
+export const TOASTS: CommandFeedback = { kind: 'toast' };
+export const RESULT_DIALOG: CommandFeedback = { kind: 'dialog' };
 
 /**
  * The composed set of commands.
@@ -301,6 +325,14 @@ export class CommandRegistry {
             `primitives/icons.ts.`,
         );
       }
+      // SILENT WITH A REASON, never silent with none (ADR-0141): the type makes `feedback` present, and this makes
+      // a `none` say why — an empty string would pass the compiler and decide nothing.
+      if (command.feedback.kind === 'none' && command.feedback.reason.trim() === '') {
+        throw new Error(
+          `"${command.id}" declares no feedback and gives no reason. Say how a person learns it worked — ` +
+            `visible, a toast, a result dialog — or write why it shows nothing (ADR-0141).`,
+        );
+      }
       const existing = this.#byId.get(command.id);
       if (existing !== undefined) {
         throw new Error(
@@ -356,6 +388,23 @@ export class CommandRegistry {
         captions.set(key, { caption: placement.caption, by: command.id });
       }
     }
+    // ONE PLACE PER SUBMENU (ADR-0143): a submenu is drawn in its members' menu and group, so two members naming two
+    // places would draw the one list twice, or leave which place wins to registration order.
+    const submenus = new Map<string, { place: string; by: string }>();
+    for (const command of this.#byId.values()) {
+      for (const placement of command.placements) {
+        if (placement.surface !== 'menu-bar' || placement.submenu === undefined) continue;
+        const place = `${placement.menu} #${String(placement.group)}`;
+        const seen = submenus.get(placement.submenu);
+        if (seen !== undefined && seen.place !== place) {
+          throw new Error(
+            `"${command.id}" puts the ${placement.submenu} submenu in ${place}, and "${seen.by}" puts it in ` +
+              `${seen.place}. A submenu is drawn in one place (ADR-0143); give both the same menu and group.`,
+          );
+        }
+        submenus.set(placement.submenu, { place, by: command.id });
+      }
+    }
     // ONE NAME PER MENU (item 5b, 2026-10-02): two commands a menu lists under the same words are one action offered
     // twice or two a person cannot tell apart — the Edit menu drew *Copy* twice, `edit.copy` from its application
     // group and `text.copy` from the Edit section. By the WORDS DRAWN, the source catalogue's English, because those
@@ -378,6 +427,20 @@ export class CommandRegistry {
         }
         named.set(key, command.id);
       }
+    }
+    // EVERY COMMAND A MENU LISTS DRAWS ITS GLYPH (the owner's review of 0.1.8.0: the menu row's menus listed text
+    // only). The menu bar draws each item's icon in one column so the titles align, and a command with none would be
+    // the one row whose title sits in the icon's place. Which menu a placement lands in is `menuOf`'s, the rule the bar
+    // draws by, so a ribbon command in Organize is held as well as an explicit menu-bar placement. Every offender is
+    // named at once, because the fix for one is the fix for all.
+    const iconless = [...this.#byId.values()]
+      .filter((command) => command.icon === undefined && command.placements.some((placement) => menuOf(placement) !== undefined))
+      .map((command) => command.id);
+    if (iconless.length > 0) {
+      throw new Error(
+        `${iconless.map((id) => `"${id}"`).join(', ')} ${iconless.length === 1 ? 'is in a menu and names' : 'are in a menu and name'} ` +
+          `no icon. The menu bar draws every item's glyph in one column; give each an \`icon\` from primitives/icons.ts.`,
+      );
     }
     // EVERY RIBBON COMMAND IS IN SOME MENU (ADR-0107 Decision 3 and its correction). Every section but Home is a menu
     // by construction, so the one way to miss is a command placed in Home alone with no menu-bar placement. Refused

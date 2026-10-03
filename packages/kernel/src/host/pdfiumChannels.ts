@@ -111,9 +111,10 @@ export type PdfiumChannelExcludesEveryOtherKind = Excludes<
  * answered truncated: *"more text than can be outlined at once"*, and the rest could not be edited. The host now joins
  * a run's glyph objects before it answers (`textRunJoin.ts`), so that page answers 60 runs; and what stays here is the
  * bound against a peer that is not a document at all: the most runs an answer within `ENGINE_ANSWER_FILE_MAX_BYTES`
- * (8 MiB, ADR-0125) could carry at the smallest a run can serialise to — {@link SMALLEST_RUN_BYTES}, 182 bytes for a run
- * with no text, and one more for the comma between runs — which is 45,839, rounded down to 45,800. A real page's runs
- * are larger and far fewer.
+ * (8 MiB, ADR-0125) could carry at the smallest a run can serialise to — {@link SMALLEST_RUN_BYTES}, 192 bytes for a run
+ * with no text and no font name, and one more for the comma between runs — which is 43,464, rounded down to 43,400. It
+ * was 45,800 until the style carried the font's name (2026-10-03, for the block grouping's change of font). A real
+ * page's runs are larger and far fewer.
  *
  * A literal, not the division: computed at module load, a field added to the schema would move the bound with no line of
  * any diff saying so. `pdfiumChannels.test.ts` holds the literal to the division, so a change to either is a red case
@@ -129,13 +130,13 @@ export type PdfiumChannelExcludesEveryOtherKind = Excludes<
  * believed. Declared above the schemas because a `const` referenced during
  * module evaluation cannot be declared below them.
  */
-export const ENGINE_TEXT_OBJECTS_MAX = 45_800;
+export const ENGINE_TEXT_OBJECTS_MAX = 43_400;
 
 /**
  * The fewest bytes one text run can serialise to on this wire: no text, every number `0`, every flag `true`.
  * Measured by `pdfiumChannels.test.ts` against the schema's own shape, and the divisor of {@link ENGINE_TEXT_OBJECTS_MAX}.
  */
-export const SMALLEST_RUN_BYTES = 182;
+export const SMALLEST_RUN_BYTES = 192;
 
 /**
  * How long a captured run's text may be on this wire.
@@ -148,6 +149,12 @@ export const SMALLEST_RUN_BYTES = 182;
  * run it restores, which is worse than a command that cannot be undone.
  */
 export const PDFIUM_PRIOR_TEXT_MAX = 65_536;
+
+/**
+ * How long a run's font name may be on this wire: the adapter reads it through a 128-byte buffer whose last byte is
+ * the terminator (`baseNameOf` in `pdfiumFfi.ts`), so no name it answers is longer.
+ */
+export const PDFIUM_FONT_NAME_MAX = 127;
 
 /**
  * The prior state a PDFium command records, with its kind.
@@ -463,6 +470,8 @@ export const pdfiumChannels = {
                         b: z.number().int().min(0).max(255),
                       })
                       .strict(),
+                    /** Which font the run is set in, for the block grouping only; never to a renderer. */
+                    font: z.string().max(PDFIUM_FONT_NAME_MAX),
                     serif: z.boolean(),
                     mono: z.boolean(),
                     italic: z.boolean(),

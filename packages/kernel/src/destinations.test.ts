@@ -2,6 +2,7 @@ import { PDFArray, PDFDocument, PDFName, PDFNumber, PDFString } from '@cantoo/pd
 import { describe, expect, it } from 'vitest';
 
 import { readDestinations } from './destinations.js';
+import { ENGINE_DESTINATION_TITLE_MAX, engineChannels } from './host/engineChannels.js';
 import { mupdfWriter } from './mupdfWriter.js';
 
 /**
@@ -15,7 +16,7 @@ import { mupdfWriter } from './mupdfWriter.js';
  * as the format spells it — `/First`, `/Last`, `/Next`, `/Parent`, `/Count` —
  * which is also what makes the nesting real rather than implied.
  */
-async function documentWithOutline(): Promise<Uint8Array> {
+async function documentWithOutline(chapterOne = 'Chapter one'): Promise<Uint8Array> {
   const document = await PDFDocument.create();
   for (let page = 0; page < 4; page += 1) document.addPage([200, 200]);
 
@@ -36,7 +37,7 @@ async function documentWithOutline(): Promise<Uint8Array> {
   const childRef = context.register(child);
 
   const first = context.obj({
-    Title: PDFString.of('Chapter one'),
+    Title: PDFString.of(chapterOne),
     Dest: dest(1),
     First: childRef,
     Last: childRef,
@@ -85,6 +86,10 @@ describe('readDestinations', () => {
         'Somewhere unresolvable',
       ]);
       expect(found.map((entry) => entry.depth)).toStrictEqual([0, 1, 0]);
+      // THE WALK'S STOP (AAAAAAA-6), inside the tree: at two it stops after the child and says so; at three, whole.
+      const stopped = await readDestinations(session, 2);
+      expect([stopped.destinations.map((entry) => entry.title), stopped.truncated]).toStrictEqual([['Chapter one', 'A section'], true]);
+      expect((await readDestinations(session, 3)).truncated).toBe(false);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -116,6 +121,26 @@ describe('readDestinations', () => {
         page: null,
         depth: 0,
       });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('shows a heading past the wire’s bound shortened, and every other entry with it', async () => {
+    // One title past 512 characters was refused with the whole answer, so the panel showed *unavailable* for an
+    // outline a person could otherwise use (`shownName.ts`).
+    const long = `Chapter one ${'y'.repeat(600)}`;
+    const session = await mupdfWriter.open(await documentWithOutline(long));
+    try {
+      const found = (await readDestinations(session)).destinations;
+      expect(found).toHaveLength(3);
+      expect(found[0]?.title).toHaveLength(ENGINE_DESTINATION_TITLE_MAX);
+      expect(found[0]?.title.startsWith('Chapter one yyy')).toBe(true);
+      expect(found[0]?.title.endsWith('…')).toBe(true);
+      // CONTROL: the shortened answer is one the channel accepts, which the whole title was not.
+      const channel = engineChannels['engine/destinations'].result;
+      expect(channel.safeParse({ destinations: found, truncated: false }).success).toBe(true);
+      expect(channel.safeParse({ destinations: [{ ...found[0], title: long }], truncated: false }).success).toBe(false);
     } finally {
       await mupdfWriter.close(session);
     }

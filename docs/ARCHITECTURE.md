@@ -997,12 +997,16 @@ effect that can be re-applied.
 fsync, rename, Windows `EPERM`/`EBUSY` retry ladder) → stamp saved version. **The
 `.bak` of the file a save replaces is written for every save except a removal's**:
 `saveDocument` takes `backups: 'keep' | 'none'` as a required argument, and the
-writer's one answer about the next save (`signaturesKeptBySave`, which already
-reads the session's one-way removal mark) says which. A backup of the file a
-redaction replaces is a copy of what it removed, beside the redacted file. Older
-backups and the undo copies that may still hold removed content are named to the
-person after a removal's save and deleted only on their confirmation
-(`document.deleteStaleCopies`).
+DOCUMENT says which: `DocumentContext` records that a removal-purpose command was
+applied since the file was last written (set by the bus on execute and redo,
+cleared by `markSaved`), because an engine session's mark does not survive the
+rebuilds a restore, an adopt or a host restart perform
+([ADR-0139](DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)).
+A backup of the file a redaction replaces is a copy of what it removed, beside
+the redacted file. **A removal's save deletes, permanently and unasked, every older
+copy Monstera made**: the backups beside the file that main's ledger records by
+file identity, and the document's undo copies. A file with a backup's name that
+Monstera did not make is kept, and the save's confirmation names it.
 
 **The pipeline has one mode, and the purpose of the save chooses it** — never a
 default, never a setting ([ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md)):
@@ -1369,7 +1373,7 @@ A feature is finished when it is **registered**, not when it is wired.
 
 | Registry | Entry | Derives |
 |---|---|---|
-| **Commands** (`UiCommand`) | id, title (i18n key), icon, shortcut, `when(ctx)`, `checked?(ctx)`, `run(ctx)`, **`placements[]`** | ribbon, floating toolbar, menus, command palette, shortcut map, context menus, start-screen shortcuts, status-bar buttons, menu row's own buttons, the rail's foot |
+| **Commands** (`UiCommand`) | id, title (i18n key), icon, shortcut, `when(ctx)`, `checked?(ctx)`, `run(ctx)`, **`placements[]`**, **`feedback` — how a person learns it worked: visible, a toast, a result dialog, or none with a written reason; required (amended 2026-10-02, [ADR-0141](DECISIONS/0141-every-command-declares-how-a-person-learns-it-worked.md))** | ribbon, floating toolbar, menus, command palette, shortcut map, context menus, start-screen shortcuts, status-bar buttons, menu row's own buttons, the rail's foot |
 | **Dialogs** | id, lazy component, props schema, **result schema** | one mount point, one focus trap, one Escape/backdrop handler, and the promise an opener awaits |
 | **Settings** | id, type, default, category, i18n key, **a title per member of an enumerated setting**, **an unset title for a colour setting**, `secret?`, **`purpose?` — a text setting about the user names its autofill purpose, `name` or `email` (WCAG 1.3.5; amended 2026-09-27, [ADR-0116](DECISIONS/0116-a-text-setting-may-name-its-input-purpose.md))**, **`control?: 'ai-models'` — a choice whose options a provider answers, one per provider (amended 2026-09-28, [ADR-0117](DECISIONS/0117-an-ai-model-is-chosen-per-provider-from-the-fetched-list.md))**, migration | the entire Settings dialog — **one control per schema kind, a colour as a no-choice checkbox beside a colour input, a set of an enum's members as a box per member each refused where the schema would refuse the result (amended 2026-09-28), a secret write-only and never read back** ([ADR-0056](DECISIONS/0056-the-settings-dialog-derives-a-control-from-a-schema-and-a-secret-is-write-only.md)), **and a declared model list, fetched, a model without vision disabled where the choice reads images** — persistence, export (secrets excluded) |
 | **Annotation types** | geometry adapter, renderer, kernel writer mapping | overlay, panel, persistence |
@@ -1417,7 +1421,7 @@ type Placement =
   | { surface: 'rail';          order: number }
   | { surface: 'properties';    order: number }
   | { surface: 'menu-bar';      menu: 'file' | 'edit' | 'view' | 'window' | 'help'; group: number; order: number;
-      caption?: MessageKey }
+      caption?: MessageKey; submenu?: 'recent' }
 ```
 
 **The menu bar is a projection** (amended 2026-09-26,
@@ -1430,6 +1434,14 @@ ribbon placements are in Home must carry a `menu-bar` placement, since every oth
 time it is built). A menu lists every command and disables one whose `when` is false, where the ribbon hides it. A
 command may say it is ON with `checked(ctx)`, pure and synchronous like `when`, and the menu draws it with its mark —
 the current theme, layout, or a panel that is showing.
+
+**A `menu-bar` placement may name a submenu** (amended 2026-10-03,
+[ADR-0143](DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md)). File › Recent is
+the menu row's own value control, as the status bar's page field is the bar's: its entries are the recent list, data
+from main, read when the File menu opens and opened through the one recent-open route. Commands whose placement names
+`submenu: 'recent'` are drawn inside it after the entries and a separator — *Clear list* is one — and the submenu sits
+where its first member's `order` falls. Every placement naming a submenu names one menu and group, and the registry
+refuses one that does not. A submenu's commands act on its values, so they are disabled while it holds none.
 
 A command may carry several placements — Highlight legitimately lives in
 Home › Quick tools, Comment › Markup, and the annotation context menu.
@@ -1579,8 +1591,10 @@ reconciled.
   Settings › Privacy removes all of it.
 - **What reaches an AI provider, and who says so.** Document content goes to a
   provider **only when the person presses Send**, which is the explicit action.
-  The provider is named before anything is sent by the **provider picker beside
-  Send**, which always shows the provider the next message goes to. There is
+  The provider is named before anything is sent by the **provider picker under
+  the message box** (beside Send until the owner's review of 0.1.9.0 moved it
+  out of the box, where it pushed Send off a narrow pane), which always shows
+  the provider the next message goes to. There is
   **no separate consent line** in the assistant pane: the owner removed the
   *Asking about* line that restated scope and provider before Send
   (2026-10-01), so the picker is the naming and Send is the consent. What was
@@ -2520,13 +2534,15 @@ are token remaps under `data-*` attributes. **Components consume tokens only**;
 a raw hex value or magic pixel number in a component is a lint error unless the
 value is genuinely dynamic (a user-chosen annotation color).
 
-**The ground's light follows the accent** (amended 2026-09-27,
-[ADR-0114](DECISIONS/0114-the-grounds-light-follows-the-accent.md)). Every glow and tint the design draws in green is
+**The surfaces' tints follow the accent** (amended 2026-09-27,
+[ADR-0114](DECISIONS/0114-the-grounds-light-follows-the-accent.md)). Every tint the design draws in green is
 stored once as the design's value and turned, at the point of use, by the chosen accent's OKLCH hue (and scaled by its
-chroma), keeping each light's own lightness and drawing it at a fixed share of its alpha — so the default accent draws
-the design to the byte, and the lights a person can reach form a family small enough for the contrast check to sweep
-whole. The ground's own opaque colours do not turn: the floors were solved against them, to the hundredth. *Background glow*, on by
-default, turns the glows and grain off; high contrast has none either way.
+chroma), keeping each tint's own lightness and drawing it at a fixed share of its alpha — so the default accent draws
+the design to the byte, and the tints a person can reach form a family small enough for the contrast check to sweep
+whole. The ground's own opaque colours do not turn: the floors were solved against them, to the hundredth. **The ground
+has no lights** (amended 2026-10-02, [ADR-0140](DECISIONS/0140-the-ground-has-no-lights.md)): no radial glow over it,
+none over the page area or the start screen, and no halo round a page, in any theme. It keeps its grain, always;
+high contrast has none.
 
 **Contrast is enforced, not audited.** CI computes it from the token file
 itself, so the check never needs a wholesale exemption — an exempted check is
@@ -2654,7 +2670,9 @@ them.
   [ADR-0113](DECISIONS/0113-the-applications-own-commands-sit-at-the-centre-of-the-menu-row.md)): Donate in gold and
   Rate Us in violet, projected from the registry — centred while they fit, otherwise just after the last menu, never
   over the menus or the window controls, with a drag track always left; drawn as their icons alone when even that
-  cannot hold their labels.
+  cannot hold their labels. **File › Recent** (amended 2026-10-03,
+  [ADR-0143](DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md)) lists every recent
+  file main keeps — ten — an unavailable one disabled and saying so, then *Clear list*.
 - **Title bar:** below the menu bar — integrated document tabs, the Ctrl+K command search, a light and dark switch,
   and the layout switcher. It gives its whole width to the tabs; the application's own commands left it for the menu
   row on 2026-09-27 (ADR-0113), having been placed here by
@@ -2722,7 +2740,8 @@ them.
   You Work" — then one primary green **Open PDF… (Ctrl+O)** button, then a grid
   of six feature shortcuts (Annotate & mark up · Fill & create forms · OCR
   scanned pages · Split & merge · Encrypt & sign · Export anywhere), **each a
-  real entry point**. Recent files appear below the grid when they exist.
+  real entry point**. Recent files appear below the grid when they exist: the first four of the list main keeps
+  (amended 2026-10-03, ADR-0143), a file that is not there drawn disabled with its state rather than hidden.
   Footer: *Settings*, *About* and *Help centre*, "Press F1 for help" and version + © Tenslor Inc.
   (amended 2026-09-27,
   [ADR-0112](DECISIONS/0112-the-help-centre-is-bundled-articles-and-f1-opens-the-one-for-where-you-are.md): F1 opens
@@ -2843,6 +2862,11 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-03 | **File › Recent is the menu row's own value control; main keeps ten and says which are there** (§7's `Placement`, §10.3's menu-bar and start-screen clauses). The owner's item N3: main keeps 10, the start screen shows 4, the submenu has *Clear list* and shows a missing file as unavailable, never hidden. Each `document.recent` entry carries `available`, read by `readFileIdentity` — the open's own rule for *absent* — and an absent file is no longer forgotten. A `menu-bar` placement may name `submenu: 'recent'`; the entries are the row's own control and *Clear list* is the registered `document.clear-recent`. Rejected: a command per file, a hand-drawn submenu, a command kind with entries, a renderer copy of the list | `MAX_RECENT_ENTRIES`' four (the owner, 2026-10-01) and the recent list's forget-on-absent (2026-09-03) | [ADR-0143](DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md) |
+| 2026-10-02 | **A text edit carries one list of objects and one text** (§5's host pipe, PDFium's writer). [ADR-0142](DECISIONS/0142-a-text-edit-carries-one-list-of-objects-and-one-text.md) takes ADR-0138's proposed remedy: `replaceTextObject` and `editTextBlock` each carry one list of object indices and one text with where each entry starts, so the worst is a sum (5,767,280 B and 6,553,755 B against the 8 MiB file a PDFium command crosses in) and their channels leave the pinned exceptions. The bounds are a page's runs and text; one fit per edit; `ai.translatePage` answers in the same shape, so a translated paragraph past 4,096 characters is written. |
+| 2026-10-02 | **Every command declares how a person learns it worked** (§7, the Commands registry). The owner's review of 0.1.9.0, item E: `UiCommand.feedback` is required — `visible` (drawn where the person is looking), `toast` (through `confirmWritten`, `confirmDone` or `confirmCopied`), `dialog` (a result dialog's content) or `none` with a written reason — so a command declaring nothing is a compile error, and the registry refuses an empty reason. It names the route a person waits on, and success only. The manual checklist names each command's. Rejected: a scan for confirmations near writes, an optional field under a lint rule, inferring it from placements, a fifth kind for a dialog that opens | §7's Commands entry, which asked nothing about feedback | [0141](DECISIONS/0141-every-command-declares-how-a-person-learns-it-worked.md) |
+| 2026-10-02 | **The ground has no lights; the grain stays** (§10.2). The owner's review of 0.1.9.0: no glow anywhere, in every theme, and the window's grain kept. The four radial glows over the ground, the page area's two lights, the start screen's wash and dark's halo round a page go, with their tokens. The surfaces' linear tints stay and keep following the accent. The *Background glow* setting goes, because the only thing left for it to switch off was the grain. | §10.2's *"Every glow and tint … *Background glow*, on by default, turns the glows and grain off"*, and ADR-0114's setting | [ADR-0140](DECISIONS/0140-the-ground-has-no-lights.md) |
+| 2026-10-02 | **A removal's save deletes the backups Monstera made, and the removal is the document's fact** (§4, *Save is one pipeline*). The owner's review of 0.1.9.0 found a `.bak` beside a redacted file. Measured: the save's backup decision read a mark on the engine session, and a restore, an adopt or a host restart rebuilds the session without it, so the next save backed up the unredacted file and listed nothing. An earlier ordinary save's `.bak` also survived whenever nobody was asked (autosave) or the person kept it. The fact now lives on the document in main. A removal's save deletes, unasked, the backups main's ledger shows it made, plus the undo copies, and names any file with a backup's name that it did not make. | the 2026-10-01 row's *"named to the person … deleted only on their confirmation"*, and *"the writer's one answer about the next save … says which"* | [ADR-0139](DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md) |
 | 2026-10-02 | **A command whose intent can outgrow a frame crosses in a file** (§5's host pipe). Read on the side the JSON is parsed against, with every command object closed and a `DocId` bounded at 64 characters, MuPDF's 35 kinds fit the frame (largest 247,050 B at worst). `createFormField` (202 MB at worst), the pdf-lib channel's pre-read (an OCR page's recognition, an outline) and PDFium's two text edits do not, so a large enough recognition or outline is refused as too large (the schema's figure; no real page was run to it). `engine/applyPdfLib` and PDFium's `engine/apply` and `engine/capture` take their params by ADR-0125's file route; the route is declared per engine. `createFormField` carries many simple fields or one of any kind. A file-requested channel must fit the 8 MiB ceiling at worst; `engine/invert` and the pre-read are bounded by the answers that brought them, and PDFium's two edits stay open. Rejected: forcing strict in the check, raising the frame, a file for every command, a size threshold, lowering field bounds | ADR-0125's addenda: one file-requested channel, and five command channels pinned in the frame | [0138](DECISIONS/0138-a-command-whose-intent-can-outgrow-a-frame-crosses-in-a-file.md) |
 | 2026-10-02 | **A secondary ribbon tool is drawn in the row when there is room** (§7's `Placement`, ADR-0098's correction). The owner's answer of 2 October: secondaries go on the row when there is room and under *More* only when there is not. A group's row is its primaries, then its secondaries, and the width fold takes buttons from the end, so every secondary folds before any primary and a window wide enough for the group draws no *More*. Rejected: secondaries interleaved by `order` (a narrowing row would lose a tool from its middle), a breakpoint, a setting | ADR-0098 Decision 1's *in its group's More at every width* | [0098](DECISIONS/0098-a-ribbon-placement-may-be-secondary-and-the-rail-has-a-foot.md) |
 | 2026-10-02 | **A signature's mark is drawn by one module, for the signing writer and for MuPDF alike** (§3's annotation-appearance and digital-signature rows). The owner chose route B for the plain *Signature*: `signatureDrawing.ts`, importing neither engine, answers a mark's content stream, the resources it names and the matrix that keeps it upright; the signing writer wraps it as the widget's appearance and MuPDF as a `/Stamp`'s. Two MuPDF commands, `placeSignatureMark` (typed or drawn) and `placeSignaturePicture` (bytes, as `placeImage`'s), undone by checkpoint. Main resolves the look through the function *Sign with certificate* uses and keeps it after placing, a picked picture included. Placed by a click at a default size, then moved and resized as any mark, with the corners now drawn. Rejected: a PNG drawn in the renderer (route A), pdf-lib writing the stamp, FreeText and Ink, one command with optional bytes | §3's two rows, which named no drawing of a signature's mark | [0133](DECISIONS/0133-a-signatures-mark-is-drawn-once-for-both-writers.md) |

@@ -428,6 +428,13 @@ describe('readFormFields', () => {
     ]);
   });
 
+  it('STOPS AT ITS BOUND AND SAYS SO, and at the count it is whole (AAAAAAA-6)', async () => {
+    const bytes = await form();
+    const stopped = await onSession(bytes, (session) => readFormFields(session, 3));
+    expect([stopped.fields.length, stopped.truncated]).toStrictEqual([3, true]);
+    expect((await onSession(bytes, (session) => readFormFields(session, 7))).truncated).toBe(false);
+  });
+
   it('PLACES EACH FIELD, in PDF user space', async () => {
     const answer = await onSession(await form(), (session) => readFormFields(session));
     // THE FIRST ONE ONLY, because the rectangle's conversion is

@@ -5,6 +5,7 @@ import {
   ENGINE_HOST_FRAME_MAX_BYTES,
   FRAME_HEADER_BYTES,
   encodeFrame,
+  replacementFieldsOf,
 } from '@monstera/contract';
 
 import type { ByteImage } from '../engineSeam.js';
@@ -120,7 +121,16 @@ const RUNS = [
     top: 238.0,
     left: 72.5,
     right: 110.25,
-    style: { size: 11, colour: { r: 12, g: 34, b: 56 }, serif: true, mono: false, italic: true, bold: false, upright: true },
+    style: {
+      size: 11,
+      colour: { r: 12, g: 34, b: 56 },
+      font: 'Georgia-Italic',
+      serif: true,
+      mono: false,
+      italic: true,
+      bold: false,
+      upright: true,
+    },
   },
   {
     index: 3,
@@ -130,7 +140,16 @@ const RUNS = [
     top: 198.0,
     left: 72.5,
     right: 104.75,
-    style: { size: 9.5, colour: { r: 200, g: 0, b: 7 }, serif: false, mono: true, italic: false, bold: true, upright: false },
+    style: {
+      size: 9.5,
+      colour: { r: 200, g: 0, b: 7 },
+      font: 'Courier-Bold',
+      serif: false,
+      mono: true,
+      italic: false,
+      bold: true,
+      upright: false,
+    },
   },
 ];
 
@@ -364,7 +383,7 @@ describe('the PDFium host body', () => {
         command: {
           kind: 'replaceTextObject',
           page: 0,
-          replacements: [{ index: 2, text: 'hi' }],
+          ...replacementFieldsOf([{ index: 2, text: 'hi' }]),
           version: 1,
         },
         from: IN,
@@ -394,7 +413,7 @@ describe('the PDFium host body', () => {
         command: {
           kind: 'replaceTextObject',
           page: 0,
-          replacements: [{ index: 2, text: 'hi' }],
+          ...replacementFieldsOf([{ index: 2, text: 'hi' }]),
           version: 1,
         },
         from: IN,
@@ -429,7 +448,7 @@ describe('the PDFium host body', () => {
         command: {
           kind: 'replaceTextObject',
           page: 0,
-          replacements: [{ index: 2, text: 'hi' }],
+          ...replacementFieldsOf([{ index: 2, text: 'hi' }]),
           version: 1,
         },
         // A WELL-FORMED NAME NOTHING WROTE. It has to satisfy the schema, or
@@ -469,7 +488,7 @@ describe('the PDFium host body', () => {
           command: {
             kind: 'replaceTextObject',
             page: 0,
-            replacements: [{ index: 2, text: 'hi' }],
+            ...replacementFieldsOf([{ index: 2, text: 'hi' }]),
             version: 1,
           },
           from: IN,

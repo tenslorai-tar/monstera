@@ -231,14 +231,22 @@ describe('the dialog pattern', () => {
     expect(onChange).toHaveBeenCalledWith('second');
   });
 
-  it("a row shows its question and note beside its control, and the control keeps its own name", () => {
-    render(
+  it("a row's two children are its text part, holding the question then the note, and its control part, holding the control under its own name", () => {
+    // THE STRUCTURE THE ROW'S FLEX RULE LAYS OUT SIDE BY SIDE, not the layout: happy-dom measures nothing, and no
+    // rendered case measures `.m-dialog-row` today.
+    const { container } = render(
       <DialogRow label={QUESTION} note={QUESTION_NOTE}>
         <Button label={CONFIRM} />
       </DialogRow>,
     );
-    expect(screen.getByText('What to keep')).toBeDefined();
-    expect(screen.getByText('How much of the page')).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDefined();
+    const row = container.querySelector('.m-dialog-row');
+    if (row === null) throw new Error('no dialog row');
+    const [text, control] = [...row.children];
+    expect([...row.children].map((child) => child.className)).toStrictEqual(['m-dialog-row__text', 'm-dialog-row__control']);
+    expect([...(text?.children ?? [])].map((child) => [child.className, child.textContent])).toStrictEqual([
+      ['m-dialog-row__label', 'What to keep'],
+      ['m-dialog-row__note', 'How much of the page'],
+    ]);
+    expect(control?.contains(screen.getByRole('button', { name: 'Confirm' }))).toBe(true);
   });
 });

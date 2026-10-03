@@ -1,5 +1,5 @@
 import { PDFDocument, rgb } from '@cantoo/pdf-lib';
-import { MAX_SNAPSHOT_SCALE, MIN_SNAPSHOT_SCALE } from '@monstera/contract';
+import { MAX_SNAPSHOT_SCALE, MIN_PAGE_PICTURE_SCALE, MIN_SNAPSHOT_SCALE } from '@monstera/contract';
 import * as mupdf from './mupdfRaw.js';
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
@@ -171,10 +171,10 @@ describe('rasterisePageImage', () => {
 
     it('a scale outside the bounds, at both ends', async () => {
       const bytes = await contentPage();
-      await expect(image(bytes, { scale: MIN_SNAPSHOT_SCALE - 0.01 })).rejects.toThrow(/scale/u);
+      await expect(image(bytes, { scale: MIN_PAGE_PICTURE_SCALE / 2 })).rejects.toThrow(/scale/u);
       await expect(image(bytes, { scale: MAX_SNAPSHOT_SCALE + 0.01 })).rejects.toThrow(/scale/u);
       // CONTROL: the bounds themselves are admitted.
-      await expect(image(bytes, { scale: MIN_SNAPSHOT_SCALE })).resolves.toBeDefined();
+      await expect(image(bytes, { scale: MIN_PAGE_PICTURE_SCALE })).resolves.toBeDefined();
     });
 
     it('a quality outside 1–100', async () => {
@@ -200,5 +200,14 @@ describe('rasterisePageImage', () => {
 
       await expect(image(bytes)).rejects.toThrow(/displays no region/u);
     });
+  });
+
+  it('draws a whole A0 page below the snapshot floor, as a vision ask needs (table A row 11)', async () => {
+    // 2,384 × 3,370 pt is over Claude's 2,576 px edge at 72 dpi, so the ask draws it smaller. With the snapshot's floor
+    // as the host's, this scale was refused — the case reddens if that floor comes back.
+    const scale = 0.7;
+    expect(scale).toBeLessThan(MIN_SNAPSHOT_SCALE);
+    const bytes = await contentPage(2384, 3370);
+    expect(pngSize(await image(bytes, { scale }))).toEqual([Math.ceil(2384 * scale), Math.ceil(3370 * scale)]);
   });
 });

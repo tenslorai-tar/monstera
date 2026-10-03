@@ -5,7 +5,8 @@ import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN, GRID_TITLE, SAVE_TITLE, SHOW_SEARCH_TITLE } from '../messages/en.js';
+import { CLOSE_LABEL, EN, GRID_TITLE, KEYBOARD_SHORTCUTS_TITLE, SAVE_TITLE, SHOW_SEARCH_TITLE } from '../messages/en.js';
+import { Dialog } from '../primitives/Dialog.js';
 import KeyboardShortcutsBody from './KeyboardShortcutsBody.js';
 import type { KeyboardShortcutsAnswer } from './keyboardShortcuts.js';
 
@@ -15,9 +16,16 @@ import type { KeyboardShortcutsAnswer } from './keyboardShortcuts.js';
  * them, and that a refused key reports nothing and says why.
  */
 
+/** IN THE DIALOG, as the registry mounts it: the footer's Close is the popup's own close and exists only inside one. */
 function Wrapped({ children }: { children: ReactNode }): ReactElement {
   activateCatalogue('en', EN);
-  return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
+  return (
+    <I18nProvider i18n={i18n}>
+      <Dialog closeLabel={CLOSE_LABEL} onOpenChange={() => undefined} open title={KEYBOARD_SHORTCUTS_TITLE}>
+        {children}
+      </Dialog>
+    </I18nProvider>
+  );
 }
 
 afterEach(() => {

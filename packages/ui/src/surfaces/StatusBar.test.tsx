@@ -46,7 +46,7 @@ const context: CommandContext = {
 };
 
 function command(id: string, title: UiCommand['title'], placement: Placement, run = vi.fn()): UiCommand {
-  return { id, title, icon: 'File', placements: [placement], run };
+  return { id, title, icon: 'File', placements: [placement], run, feedback: { kind: 'visible' } };
 }
 
 interface Drawn {

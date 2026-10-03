@@ -1,11 +1,29 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { cleanup, render, screen, within } from '@testing-library/react';
+import type { ReactElement, ReactNode } from 'react';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN } from '../messages/en.js';
+import { CLOSE_LABEL, CLOUD_TITLE, EN } from '../messages/en.js';
+import { Dialog } from '../primitives/Dialog.js';
 import CloudStorageBody from './CloudStorageBody.js';
+
+/** IN THE DIALOG, as the registry mounts it: the footer's Close is the popup's own close and exists only inside one. */
+function Wrapped({ children }: { children: ReactNode }): ReactElement {
+  activateCatalogue('en', EN);
+  return (
+    <I18nProvider i18n={i18n}>
+      <Dialog closeLabel={CLOSE_LABEL} onOpenChange={() => undefined} open title={CLOUD_TITLE}>
+        {children}
+      </Dialog>
+    </I18nProvider>
+  );
+}
+
+afterEach(() => {
+  cleanup();
+});
 
 /**
  * The cloud list's rows. The Stage 9 run found four files with one name drawn as four identical rows; each row
@@ -13,10 +31,9 @@ import CloudStorageBody from './CloudStorageBody.js';
  */
 describe('CloudStorageBody', () => {
   it('two files with ONE NAME read differently: each row says when it changed and how large it is', () => {
-    activateCatalogue('en', EN);
     const at = (day: number): number => new Date(2025, 0, day, 9).getTime();
     render(
-      <I18nProvider i18n={i18n}>
+      <Wrapped>
         <CloudStorageBody
           providers={[{ provider: 'onedrive', state: 'signed-in' }]}
           listing={{
@@ -30,24 +47,25 @@ describe('CloudStorageBody', () => {
           resolve={() => undefined}
           update={() => undefined}
         />
-      </I18nProvider>,
+      </Wrapped>,
     );
 
-    const lines = [...document.querySelectorAll('.m-cloud__file-meta')].map((node) => node.textContent);
-    expect(lines).toStrictEqual(['Jan 10 · 2.4 MB', 'Jan 3 · 640 KB']);
+    const rows = [...document.querySelectorAll('.m-cloud__file')];
+    expect(rows.map((row) => row.querySelector('.m-dialog-row__note')?.textContent)).toStrictEqual([
+      'Jan 10 · 2.4 MB',
+      'Jan 3 · 640 KB',
+    ]);
     // THE NAMES are still both there and still the same — the line is what separates them.
-    const names = [...document.querySelectorAll('.m-cloud__file-name')].map((node) => node.firstChild?.textContent);
-    expect(names).toStrictEqual(['lease.pdf', 'lease.pdf']);
+    expect(rows.map((row) => row.querySelector('.m-cloud__file-name')?.textContent)).toStrictEqual(['lease.pdf', 'lease.pdf']);
     // And each Open button is still named by its file.
     expect(screen.getAllByRole('button', { name: /lease\.pdf/u })).toHaveLength(2);
   });
 
   it('GOOGLE’S PICKER is offered signed in and signed out, answers pick — and CONTROL: never for OneDrive or unconfigured', () => {
-    activateCatalogue('en', EN);
     const answers: unknown[] = [];
     const shown = (state: 'signed-in' | 'signed-out' | 'not-configured'): HTMLElement[] => {
       const { unmount } = render(
-        <I18nProvider i18n={i18n}>
+        <Wrapped>
           <CloudStorageBody
             providers={[
               { provider: 'onedrive', state: 'signed-in' },
@@ -57,9 +75,9 @@ describe('CloudStorageBody', () => {
             resolve={(answer) => answers.push(answer)}
             update={() => undefined}
           />
-        </I18nProvider>,
+        </Wrapped>,
       );
-      const buttons = screen.queryAllByRole('button', { name: 'Choose a file in Google Drive…' });
+      const buttons = screen.queryAllByRole('button', { name: 'Choose a file…' });
       buttons[0]?.click();
       unmount();
       return buttons;
@@ -73,5 +91,42 @@ describe('CloudStorageBody', () => {
     ]);
     // ONE BUTTON with OneDrive signed in beside it, so OneDrive has none; and none where Google is not configured.
     expect(shown('not-configured')).toHaveLength(0);
+  });
+
+  // IN THE PATTERN (the owner, 2 October): a section per provider named by its heading, its state at the heading's
+  // right, one line, the main action first and filled, and Sign out quieter and apart at the end of the row.
+  it('each provider is a SECTION with its state, a line, its main action first and Sign out apart', () => {
+    render(
+      <Wrapped>
+        <CloudStorageBody
+          providers={[
+            { provider: 'onedrive', state: 'signed-out' },
+            { provider: 'google-drive', state: 'signed-in' },
+          ]}
+          documentOpen
+          resolve={() => undefined}
+          update={() => undefined}
+        />
+      </Wrapped>,
+    );
+    const onedrive = screen.getByRole('region', { name: 'OneDrive' });
+    expect(onedrive.querySelector('.m-dialog-section__state')?.textContent).toBe('Not signed in');
+    expect(onedrive.querySelector('.m-dialog-section__note')?.textContent).toBe(
+      'Sign in to open your PDFs from OneDrive and upload copies to it.',
+    );
+    const signIn = within(onedrive).getByRole('button', { name: 'Sign in' });
+    expect(signIn.className).toContain('m-button--primary');
+    expect(within(onedrive).queryByRole('button', { name: 'Sign out' })).toBeNull();
+
+    const google = screen.getByRole('region', { name: 'Google Drive' });
+    expect(google.querySelector('.m-dialog-section__state')?.textContent).toBe('Signed in');
+    const actions = [...google.querySelectorAll('.m-dialog-actions button')].map((button) => button.textContent);
+    // THE MAIN ACTION FIRST, Sign out last.
+    expect(actions).toStrictEqual(['Show my PDFs', 'Upload this document', 'Choose a file…', 'Sign out']);
+    const signOut = within(google).getByRole('button', { name: 'Sign out' });
+    expect(signOut.closest('.m-dialog-actions__apart')).not.toBeNull();
+    expect(signOut.className).toContain('m-button--quiet');
+    // THE FOOTER'S ONE BUTTON puts the window away.
+    expect(document.querySelector('.m-dialog-footer')?.textContent).toBe('Close');
   });
 });

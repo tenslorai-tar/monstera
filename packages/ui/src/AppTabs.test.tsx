@@ -88,6 +88,10 @@ function client(): { readonly client: ContractClient; readonly sent: Sent[] } {
     if (id === 'document.close') return Promise.resolve(ok({ closed: true }));
     // CLEAN: these cases are about tabs, and closing one here must not stop to ask.
     if (id === 'document.unsaved') return Promise.resolve(ok({ unsaved: false }));
+    // NO REDACTION MARKS, so a close does not stop to ask about them either (item N1).
+    if (id === 'document.annotations') {
+      return Promise.resolve(ok({ version: asDocVersion(1), annotations: [], next: null, truncated: false }));
+    }
     if (id === 'document.recent') {
       return Promise.resolve(ok({ entries: [], lastExitClean: true }));
     }
@@ -524,14 +528,18 @@ describe('Side by Side through App (ADR-0131), and the two-document ask it took 
     expect(container.querySelector('main')?.dataset['coveredBy']).toBeUndefined();
   });
 
-  it('CONTROL: with Side by Side closed, the assistant offers no Left · Right · Both — the ask has no route (ADR-0131)', async () => {
-    const { settings } = await twoOpenWithMenuOnFirst();
+  it('CONTROL: with two documents open, App routes no document beside, so the assistant offers no Left · Right · Both — the ask has no route (ADR-0131)', async () => {
+    // TWO DOCUMENTS OPEN is the state in which a routed `beside` offers *Both*: App passing either tab beside the one
+    // in front turns this red. Side by Side covers the panel while it is open, so no state of App offers the choice.
+    const { container, settings } = await twoOpenWithMenuOnFirst();
     fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
     await act(async () => {
       settings.set(CONTEXT_PANEL_OPEN_SETTING.id, true);
       settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
       await Promise.resolve();
     });
+    expect(container.querySelectorAll('.m-tab')).toHaveLength(2);
+    expect(container.querySelector('[data-side-by-side]')).toBeNull();
     expect(screen.getByLabelText('Ask about this document')).toBeTruthy();
     expect(screen.queryByRole('radio', { name: 'Both' })).toBeNull();
   });

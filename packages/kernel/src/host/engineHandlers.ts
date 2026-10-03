@@ -1,4 +1,4 @@
-import type { AnnotationDataFormat, CommandOfKind, FormDataFormat, Handlers } from '@monstera/contract';
+import type { AnnotationDataFormat, CommandOfKind, FormDataFormat, Handlers, PageSet } from '@monstera/contract';
 
 import type { KindsRoutedTo } from '../commandRouting.js';
 import type { CommandExecution } from '../commandSpecs.js';
@@ -10,7 +10,7 @@ import type { ByteImage, DocumentAccess, EngineWriter, MupdfSession, PreReadValu
 import { DocumentLocked } from '../engineSeam.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
 import type { ListedDestinations } from '../destinations.js';
-import type { Layer } from '../layers.js';
+import type { ListedLayers } from '../layers.js';
 import type { ReadSignature } from '../signatureRead.js';
 import type { FlatFieldCandidate } from '../flatFields.js';
 import type { ListedField } from '../formFields.js';
@@ -29,7 +29,7 @@ import {
   type RecognisedPage,
 } from '../ocrRecognise.js';
 import type { PageFill } from '../cellFills.js';
-import type { PageLink } from '../pageLinks.js';
+import type { ListedPageLinks } from '../pageLinks.js';
 import type { PageWordBoxes } from '../wordBoxes.js';
 import type { PageTextRead } from '../textStructure.js';
 import type { AccessibilityReport } from '../accessibilityRules.js';
@@ -90,7 +90,7 @@ export type HostPageTextReader = (
 export type HostPageLinksReader = (
   session: MupdfSession,
   page: number,
-) => Promise<readonly PageLink[]>;
+) => Promise<ListedPageLinks>;
 
 /** Reads one page's filled shapes — what a table cell's background is joined from. */
 export type HostPageFillsReader = (session: MupdfSession, page: number) => Promise<readonly PageFill[]>;
@@ -129,7 +129,7 @@ export type HostOcrReader = (
 export type HostDestinationsReader = (session: MupdfSession) => Promise<ListedDestinations>;
 
 /** Reads the document's layers. Injected for the readers above's reason. */
-export type HostLayersReader = (session: MupdfSession) => Promise<readonly Layer[]>;
+export type HostLayersReader = (session: MupdfSession) => Promise<ListedLayers>;
 
 /**
  * Reading and verifying a document's signatures.
@@ -201,10 +201,7 @@ export type HostDuplicatesReader = (
  * `extractPages` in the host. It runs THERE rather than in main because it
  * reaches MuPDF, which invariant 20 keeps out of `main` (ADR-0026).
  */
-export type HostExtract = (
-  session: MupdfSession,
-  pages: readonly number[],
-) => Promise<ByteImage>;
+export type HostExtract = (session: MupdfSession, pages: PageSet) => Promise<ByteImage>;
 
 /**
  * A region of one page, as PNG bytes **and the frame they sit in**.
@@ -448,7 +445,7 @@ export interface EngineHandlerParts {
   readonly access: (session: MupdfSession) => DocumentAccess;
   /** Reads and verifies the document's signatures. `readSignatures`. */
   readonly signatures: HostSignaturesReader;
-  /** How many signatures, whether the next save keeps them, and whether it is a removal's. `signaturesKeptBySave`. */
+  /** How many signatures, and whether the next save keeps them. `signaturesKeptBySave`. */
   readonly signaturesKept: (session: MupdfSession) => Promise<NextSave>;
   readonly files: HostFilesystem;
   readonly probe: HostContainmentProbe;
@@ -837,7 +834,8 @@ export function createEngineHandlers({
       // NO try/catch, for the reader above's reason: a link read of a document
       // the adapter already parsed either works or is a defect, including a
       // page index outside it.
-      return { ok: true, value: { links: [...(await pageLinks(held.session, page))] } };
+      const listed = await pageLinks(held.session, page);
+      return { ok: true, value: { links: [...listed.links], truncated: listed.truncated } };
     },
 
     'engine/page-fills': async ({ session, page }) => {
@@ -866,7 +864,8 @@ export function createEngineHandlers({
     'engine/layers': async ({ session }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
-      return { ok: true, value: { layers: [...(await layers(held.session))] } };
+      const listed = await layers(held.session);
+      return { ok: true, value: { layers: [...listed.layers], truncated: listed.truncated } };
     },
 
     'engine/signatures': async ({ session }) => {

@@ -118,13 +118,15 @@ test('EVERY SETTINGS PAGE keeps every row’s description at its reading basis o
   // THE POSITIVE CONTROL: the page the owner named is among those walked, so an empty walk cannot pass.
   expect(names).toContain('OCR');
   const narrow: string[] = [];
-  let rows = 0;
+  const measured: string[] = [];
   for (const name of names) {
     await pages.filter({ hasText: name }).first().click();
     const found = await dialog.locator('.m-settings-row').evaluateAll((all) =>
       all.map((row) => {
         const text = row.querySelector<HTMLElement>('.m-settings-row__text');
-        if (text === null) return { label: '(no text)', width: 0, basis: 0, row: 1 };
+        // NO TEXT PART HAS NO DESCRIPTION TO MEASURE: every row the dialog draws carries one, so a row without it is
+        // reported rather than measured as zero against a zero basis, which no width can fall short of.
+        if (text === null) return null;
         const probe = document.createElement('span');
         probe.style.cssText = `position:absolute;visibility:hidden;inline-size:${getComputedStyle(text).flexBasis}`;
         text.append(probe);
@@ -138,14 +140,20 @@ test('EVERY SETTINGS PAGE keeps every row’s description at its reading basis o
         };
       }),
     );
-    rows += found.length;
     for (const row of found) {
+      if (row === null) {
+        narrow.push(`${name} › a row with no text part`);
+        continue;
+      }
+      measured.push(row.label);
       if (row.width + 0.5 < Math.min(row.basis, row.row)) {
         narrow.push(`${name} › ${row.label}: ${String(Math.round(row.width))} px of ${String(Math.round(row.basis))}`);
       }
     }
   }
-  expect(rows).toBeGreaterThan(20);
+  // MEASURED ROWS ONLY, and the row the owner named among them, so the twenty are rows whose text was read.
+  expect(measured.length).toBeGreaterThan(20);
+  expect(measured).toContain('Recognition languages');
   expect(narrow).toStrictEqual([]);
 });
 
@@ -173,6 +181,65 @@ test('a DIALOG’S OPTION GROUP has no bare frame, and each option is a line of 
   expect(tops[1]).toBeGreaterThan(tops[0] ?? Number.POSITIVE_INFINITY);
   expect(tops[2]).toBeGreaterThan(tops[1] ?? Number.POSITIVE_INFINITY);
 });
+
+// EVERY DIALOG WITH A COLUMN OF CHOICES (the owner's review of 0.1.9.0, Export to Word): the question sits on its first
+// option, no taller than its own words. The heading's flex basis, a width in a row, had become a 22ch height in the
+// column. Each dialog that draws `.m-dialog-choices` is opened here: Export to Word, Split and Signature › Type.
+for (const scene of [
+  {
+    name: 'Export to Word',
+    open: async (page: Page): Promise<void> => {
+      await openSection(page, 'Home');
+      await page.locator('.m-ribbon__tools').getByRole('button', { name: 'Word', exact: true }).click();
+    },
+  },
+  {
+    name: 'Split into several PDFs',
+    open: async (page: Page): Promise<void> => {
+      await runCommand(page, 'Split…');
+    },
+  },
+  {
+    name: 'Signature',
+    open: async (page: Page): Promise<void> => {
+      // THE PALETTE, as Split above: this case is about the dialog's columns, and where Home draws Signature at this
+      // width is the ribbon's fold, which `signature.pw.ts` exercises.
+      await runCommand(page, 'Signature');
+      await page.getByRole('dialog', { name: 'Signature' }).getByRole('button', { name: 'Type' }).click();
+    },
+  },
+]) {
+  test(`${scene.name}: a column of choices has no gap between its question and its first option`, async ({ page }) => {
+    await openApp(page);
+    await openDocument(page);
+    await scene.open(page);
+    const dialog = page.getByRole('dialog', { name: scene.name });
+    await expect(dialog.locator('.m-dialog-choices').first()).toBeVisible();
+    const groups = await dialog.locator('.m-dialog-choices').evaluateAll((elements) =>
+      elements.map((group) => {
+        const heading = group.firstElementChild;
+        const option = group.querySelector('.m-dialog-choice');
+        if (heading === null || option === null) return null;
+        const words = [...heading.children].map((child) => child.getBoundingClientRect());
+        const box = heading.getBoundingClientRect();
+        return {
+          // THE HEADING HUGS ITS WORDS: its content box ends within a pixel of its last line.
+          slack: Math.round(
+            box.bottom - Number.parseFloat(getComputedStyle(heading).paddingBottom) - Math.max(...words.map((word) => word.bottom)),
+          ),
+          // AND THE FIRST OPTION FOLLOWS at the pattern's spacing, not after a band.
+          gap: Math.round(option.getBoundingClientRect().top - Math.max(...words.map((word) => word.bottom))),
+        };
+      }),
+    );
+    expect(groups.length).toBeGreaterThan(0);
+    for (const group of groups) {
+      expect(group).not.toBeNull();
+      expect(group?.slack, JSON.stringify(groups)).toBeLessThanOrEqual(1);
+      expect(group?.gap, JSON.stringify(groups)).toBeLessThanOrEqual(12);
+    }
+  });
+}
 
 test('MERGE’s document list stands clear of the button under it', async ({ page }) => {
   await openTwoDocuments(page);

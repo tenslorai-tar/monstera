@@ -1,3 +1,4 @@
+import { MAX_DOCUMENT_NAME_LENGTH } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -50,27 +51,18 @@ const markdownImportProblemSchema = z.discriminatedUnion('reason', [
   z.object({ reason: z.literal('absent') }),
   z.object({ reason: z.literal('at-capacity') }),
   // AN IMAGE IMPORT'S OWN, and the two per-image reasons carry the FILE NAME where the
-  // line reasons carry a line: a person finds a picture by its name. 255 is the channel's
-  // name bound, restated because a dialog cannot import that constant.
+  // line reasons carry a line: a person finds a picture by its name, bounded by the
+  // channel's own name bound.
   z.object({
     reason: z.literal('image-unreadable'),
-    file: z.string().min(1).max(255).nullable(),
+    file: z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH).nullable(),
   }),
   z.object({
     reason: z.literal('too-many-pixels'),
-    file: z.string().min(1).max(255).nullable(),
+    file: z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH).nullable(),
   }),
   z.object({ reason: z.literal('too-many-images'), limit: z.number().int().positive() }),
   z.object({ reason: z.literal('images-too-large'), limitBytes: z.number().int().positive() }),
-  // A WORKBOOK THAT OPENED WITH ROWS IT COULD NOT CONVERT (decision C): each block named by sheet and rows, because
-  // "some rows are missing" is the silence the owner ruled out. 64 is the channel's bound, restated for the reason above.
-  z.object({
-    reason: z.literal('workbook-incomplete'),
-    missing: z
-      .array(z.object({ sheet: z.string().max(255), from: z.number().int().min(1), to: z.number().int().min(1) }))
-      .min(1)
-      .max(64),
-  }),
 ]);
 
 /**

@@ -121,6 +121,8 @@ export const PDFIUM_COMMAND = [
     'packages/kernel/dist/commandDeclarations.js',
     'tsc',
   ],
+  // THE COMMANDS' WIRE FORM, whose encoders the proofs build each edit through (ADR-0142).
+  ['packages/contract/src/commands.ts', 'packages/contract/dist/commands.js', 'tsc'],
 ];
 
 /**

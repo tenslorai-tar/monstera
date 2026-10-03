@@ -59,9 +59,12 @@ export type ApplyRedactionsAnswer = z.infer<typeof APPLY_REDACTIONS_RESULT>;
  * the choices a person would have been shown are exactly the ones applied without asking. The page in front of them,
  * a solid cover, the covered image pixels removed, and the title removed with the rest (ADR-0079: removal is the side
  * that cannot leak).
+ *
+ * **`'all'` is the third reader's scope**: *Apply* in the pending-redactions question (`pendingRedactions.ts`) answers a
+ * count of the whole document's marks, so it burns in every one of them — with these same choices, never a second set.
  */
-export function applyRedactionsDefaults(page: number): ApplyRedactionsAnswer {
-  return { pages: [page], cover: 'solid', images: 'pixels', keepTitle: false };
+export function applyRedactionsDefaults(scope: number | 'all'): ApplyRedactionsAnswer {
+  return { pages: scope === 'all' ? 'all' : [scope], cover: 'solid', images: 'pixels', keepTitle: false };
 }
 
 export const APPLY_REDACTIONS_DIALOG = declareDialog({

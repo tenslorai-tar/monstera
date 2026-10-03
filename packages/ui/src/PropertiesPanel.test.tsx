@@ -260,6 +260,7 @@ describe('PropertiesPanel with marks selected', () => {
   it('draws the commands placed at its foot, in order, and runs the one pressed', () => {
     const placed = (id: string, title: typeof REPLY_SELECTION_TITLE, order: number): UiCommand => ({
       id,
+      feedback: { kind: 'visible' },
       title,
       placements: [{ surface: 'properties', order }],
       run: () => undefined,
@@ -274,7 +275,14 @@ describe('PropertiesPanel with marks selected', () => {
 
   it('CONTROL: a foot command whose `when` is false is not drawn', () => {
     mounted(ONE, [
-      { id: 't.reply', title: REPLY_SELECTION_TITLE, placements: [{ surface: 'properties', order: 10 }], when: () => false, run: () => undefined },
+      {
+        id: 't.reply',
+        title: REPLY_SELECTION_TITLE,
+        placements: [{ surface: 'properties', order: 10 }],
+        when: () => false,
+        run: () => undefined,
+        feedback: { kind: 'visible' },
+      },
     ]);
     expect(screen.queryByRole('group', { name: 'Selected annotation' })).toBeNull();
   });
@@ -299,7 +307,13 @@ describe('PropertiesPanel with nothing selected', () => {
 
   it('offers no comment and no foot, which belong to a mark', () => {
     mounted(undefined, [
-      { id: 't.reply', title: REPLY_SELECTION_TITLE, placements: [{ surface: 'properties', order: 10 }], run: () => undefined },
+      {
+        id: 't.reply',
+        title: REPLY_SELECTION_TITLE,
+        placements: [{ surface: 'properties', order: 10 }],
+        run: () => undefined,
+        feedback: { kind: 'visible' },
+      },
     ]);
     expect(screen.queryByRole('textbox', { name: 'Comment' })).toBeNull();
     expect(screen.queryByRole('group', { name: 'Selected annotation' })).toBeNull();

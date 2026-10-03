@@ -78,3 +78,9 @@ turn; `--app-bg` and the ground gradient's three stops stay the design's.
 **The sweep is 360 degrees at five chroma scales, and it costs about a minute** (57 s measured on this machine): parsing
 the same colour strings again was over half of each evaluation (a CPU profile), so the one parser now remembers what it
 has parsed, and the sweep leaves out high contrast, whose lights never turn.
+
+## Superseded in part, 2026-10-02
+
+[ADR-0140](0140-the-ground-has-no-lights.md), on the owner's review of 0.1.9.0: the ground has no lights. The four
+glows, the page area's two lights, the start screen's wash and the *Background glow* setting are removed. Decision 1
+still holds for every tint that remains.

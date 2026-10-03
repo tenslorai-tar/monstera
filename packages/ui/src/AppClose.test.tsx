@@ -56,8 +56,15 @@ interface Sent {
 function client(options: {
   readonly unsaved: readonly DocId[];
   readonly save?: 'saved' | 'write-failed';
+  /**
+   * How many redaction marks nobody has applied each document carries (item N1). An applied burn-in leaves none and
+   * leaves the document unsaved, as main's do.
+   */
+  readonly marked?: Readonly<Partial<Record<DocId, number>>>;
 }): { readonly client: ContractClient; readonly sent: Sent[] } {
   const sent: Sent[] = [];
+  const unsaved = new Set<DocId>(options.unsaved);
+  const marked = new Map<DocId, number>(Object.entries(options.marked ?? {}) as [DocId, number][]);
   const opens = [
     { kind: 'opened' as const, docId: FIRST, version: asDocVersion(1), byteLength: 1024, name: 'report.pdf' },
     { kind: 'opened' as const, docId: SECOND, version: asDocVersion(1), byteLength: 2048, name: 'notes.pdf' },
@@ -69,13 +76,47 @@ function client(options: {
       case 'document.open':
         return Promise.resolve(ok(opens.shift() ?? { kind: 'cancelled' as const }));
       case 'document.unsaved':
-        return Promise.resolve(ok({ unsaved: docId !== undefined && options.unsaved.includes(docId) }));
+        return Promise.resolve(ok({ unsaved: docId !== undefined && unsaved.has(docId) }));
+      case 'document.annotations': {
+        // THE MARKS AND A SQUARE BESIDE THEM: a count of every annotation would ask about a document whose only
+        // annotation is a square, and the controls below would not see it.
+        const marks = docId === undefined ? 0 : (marked.get(docId) ?? 0);
+        return Promise.resolve(
+          ok({
+            version: asDocVersion(1),
+            annotations: [
+              ...Array.from({ length: marks }, (_unused, index) => ({ kind: 'redact' as const, index })),
+              { kind: 'square' as const, index: marks },
+            ].map(({ kind, index }) => ({
+              page: 0,
+              index,
+              rect: { x0: 10, y0: 10, x1: 50, y1: 30 },
+              inReplyTo: null,
+              kind,
+              style: { colour: [0, 0, 0], opacity: 1, borderWidth: null },
+              contents: '',
+              authored: true,
+              author: '',
+              created: null,
+              blend: 'normal' as const,
+            })),
+            next: null,
+            truncated: false,
+          }),
+        );
+      }
+      case 'document.execute':
+        if (docId !== undefined) {
+          marked.delete(docId);
+          unsaved.add(docId);
+        }
+        return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 1024, historyDropped: 0 }));
       case 'document.save':
         return Promise.resolve(
           ok(
             options.save === 'write-failed'
               ? { kind: 'write-failed' as const }
-              : { kind: 'saved' as const, version: asDocVersion(2), staleCopies: null },
+              : { kind: 'saved' as const, version: asDocVersion(2), cleared: null },
           ),
         );
       case 'document.close':
@@ -275,6 +316,115 @@ describe('a tab’s ×', () => {
     // is answered `breaks-signatures` and the warning asks — the same save the Save command sends.
     expect(called(sent, 'document.save')).toStrictEqual([{ docId: SECOND, breakSignatures: false }]);
     expect(called(sent, 'document.close')).toStrictEqual([]);
+  });
+});
+
+/**
+ * REDACTION MARKS NOBODY APPLIED, at the close (the owner's item N1).
+ *
+ * The observable is the call, again: whether `document.execute` carried the burn-in, and whether `document.save` and
+ * `document.close` were sent, in what order. A close that asked and then did nothing with the answer renders the same
+ * dialog as one that works.
+ */
+describe('a tab’s × on a document carrying marks nobody applied (item N1)', () => {
+  const QUESTION = /2 redactions are marked but not applied\. Apply them now\?/u;
+
+  it('CONTROL: a saved document whose only annotation is a square closes without a question', async () => {
+    // THE SQUARE IS THE POINT: a close that counted every annotation would ask here.
+    const { client: built, sent } = client({ unsaved: [], marked: { [SECOND]: 0 } });
+    const { container } = render(<App client={built} settings={freshSettings()} />);
+    await openBoth();
+
+    await clickTabClose(container, SECOND);
+
+    expect(screen.queryByText(/marked but not applied/u)).toBeNull();
+    expect(called(sent, 'document.close')).toStrictEqual([{ docId: SECOND }]);
+  });
+
+  it('asks about a SAVED document’s marks, and Cancel applies nothing and closes nothing', async () => {
+    const { client: built, sent } = client({ unsaved: [], marked: { [SECOND]: 2 } });
+    const { container } = render(<App client={built} settings={freshSettings()} />);
+    await openBoth();
+
+    await clickTabClose(container, SECOND);
+    expect(await screen.findByText(QUESTION)).toBeTruthy();
+    await answer('Cancel');
+
+    expect(called(sent, 'document.execute')).toStrictEqual([]);
+    expect(called(sent, 'document.close')).toStrictEqual([]);
+    expect(container.querySelector(`[data-tab="${SECOND}"]`)).not.toBeNull();
+  });
+
+  it('Close without applying closes it, writing nothing and burning in nothing', async () => {
+    const { client: built, sent } = client({ unsaved: [], marked: { [SECOND]: 2 } });
+    const { container } = render(<App client={built} settings={freshSettings()} />);
+    await openBoth();
+
+    await clickTabClose(container, SECOND);
+    await answer('Close without applying');
+
+    expect(called(sent, 'document.execute')).toStrictEqual([]);
+    expect(called(sent, 'document.save')).toStrictEqual([]);
+    expect(called(sent, 'document.close')).toStrictEqual([{ docId: SECOND }]);
+  });
+
+  it('Apply burns in every page’s marks, then asks whether to keep that — and Save writes it before the close', async () => {
+    const { client: built, sent } = client({ unsaved: [], marked: { [SECOND]: 2 } });
+    const { container } = render(<App client={built} settings={freshSettings()} />);
+    await openBoth();
+
+    await clickTabClose(container, SECOND);
+    await answer('Apply');
+    // THE BURN-IN, with the choices the Apply redactions dialog starts on, over the whole document.
+    expect(called(sent, 'document.execute')).toStrictEqual([
+      {
+        docId: SECOND,
+        command: { kind: 'applyRedactions', pages: 'all', cover: 'solid', images: 'pixels', keepTitle: false },
+      },
+    ]);
+    // AND NOTHING CLOSED YET: the burn-in is an unsaved change, so the close asks about it.
+    expect(called(sent, 'document.close')).toStrictEqual([]);
+    expect(await screen.findByText(/“notes\.pdf” has changes that are not saved/u)).toBeTruthy();
+    await answer('Save');
+
+    // NOT ASKED AGAIN: the save that follows counts no marks. Its question would be the second dialog in a row.
+    expect(screen.queryByText(/marked but not applied/u)).toBeNull();
+    const order = sent
+      .map((call) => call.id)
+      .filter((id) => id === 'document.execute' || id === 'document.save' || id === 'document.close');
+    expect(order).toStrictEqual(['document.execute', 'document.save', 'document.close']);
+  });
+
+  it('a document with UNSAVED changes is asked on its Save answer — Save without applying writes the marks as marks', async () => {
+    const { client: built, sent } = client({ unsaved: [SECOND], marked: { [SECOND]: 2 } });
+    const { container } = render(<App client={built} settings={freshSettings()} />);
+    await openBoth();
+
+    await clickTabClose(container, SECOND);
+    // THE CLOSE'S OWN QUESTION FIRST: the marks question belongs to the write, and Don't save writes nothing.
+    await screen.findByText(/“notes\.pdf” has changes that are not saved/u);
+    expect(screen.queryByText(/marked but not applied/u)).toBeNull();
+    await answer('Save');
+    expect(await screen.findByText(QUESTION)).toBeTruthy();
+    await answer('Save without applying');
+
+    expect(called(sent, 'document.execute')).toStrictEqual([]);
+    expect(called(sent, 'document.save')).toStrictEqual([{ docId: SECOND, breakSignatures: false }]);
+    expect(called(sent, 'document.close')).toStrictEqual([{ docId: SECOND }]);
+  });
+
+  it('CONTROL: Don’t save on a document with unsaved changes closes it with no marks question', async () => {
+    // WITHOUT THIS the case above passes for a close that asked about marks before every answer.
+    const { client: built, sent } = client({ unsaved: [SECOND], marked: { [SECOND]: 2 } });
+    const { container } = render(<App client={built} settings={freshSettings()} />);
+    await openBoth();
+
+    await clickTabClose(container, SECOND);
+    await answer('Don’t save');
+
+    expect(screen.queryByText(/marked but not applied/u)).toBeNull();
+    expect(called(sent, 'document.execute')).toStrictEqual([]);
+    expect(called(sent, 'document.close')).toStrictEqual([{ docId: SECOND }]);
   });
 });
 

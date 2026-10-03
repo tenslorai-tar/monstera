@@ -7,6 +7,8 @@ import { HELP_DIALOG_ID } from '../dialogs/help.js';
 import { OCR_DIALOG_ID } from '../dialogs/ocr.js';
 import { OCR_OUTCOME_DIALOG_ID } from '../dialogs/ocrOutcome.js';
 import { SCAN_OUTCOME_DIALOG_ID } from '../dialogs/scanOutcome.js';
+import { TOAST_SEARCHABLE_SAVED, TOAST_SHOW_IN_FOLDER } from '../messages/en.js';
+import type { ToastAction } from '../primitives/Toast.js';
 import type { CommandContext } from '../registries/commands.js';
 import { type TrackTask, UNTRACKED } from '../runningTask.js';
 import {
@@ -25,6 +27,8 @@ const STAMP = () => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' 
  * with `deu`), so a command dispatching the stored value where it should dispatch the answer could not pass.
  */
 const STORED: OcrLanguages = ['fra'];
+/** The unapplied-marks question answering *go ahead*: a document carrying no marks (item N1). */
+const NOTHING_MARKED = (): Promise<boolean> => Promise.resolve(true);
 
 /**
  * The UI half of the wired pair for D6 rows 2 and 3.
@@ -83,11 +87,16 @@ type ScriptedKind = 'text' | 'image-only' | 'empty';
 function clientOver(
   kinds: readonly (ScriptedKind | 'refused')[],
   options: { readonly languages?: readonly string[]; readonly refuseExecute?: boolean } = {},
-): { client: ContractClient; dispatched: Command[]; read: number[]; copies: () => number } {
+): { client: ContractClient; dispatched: Command[]; read: number[]; copies: () => number; revealed: unknown[] } {
   const dispatched: Command[] = [];
   const read: number[] = [];
+  const revealed: unknown[] = [];
   let copies = 0;
   const client = createClient(channels, (id, params) => {
+    if (id === 'file.reveal') {
+      revealed.push(params);
+      return Promise.resolve(ok({ revealed: true }));
+    }
     if (id === 'app.ocrLanguages') {
       return Promise.resolve(ok({ languages: options.languages ?? ['eng'] }));
     }
@@ -118,7 +127,7 @@ function clientOver(
     }
     throw new Error(`unexpected channel ${id}`);
   });
-  return { client, dispatched, read, copies: () => copies };
+  return { client, dispatched, read, copies: () => copies, revealed };
 }
 
 /** Records what the command opened, and answers the setup dialog from a script. */
@@ -395,13 +404,17 @@ describe('the recognise-text command', () => {
     expect(read).toStrictEqual([0]);
   });
 
-  it('EXPORT: recognises every scanned page and then writes a copy', async () => {
-    const { client, dispatched, read, copies } = clientOver(['image-only', 'text', 'image-only']);
+  it('EXPORT: recognises every scanned page, then writes a copy and CONFIRMS it', async () => {
+    const { client, dispatched, read, copies, revealed } = clientOver(['image-only', 'text', 'image-only']);
     const { ask } = recordingAsk({ pages: [0], languages: ['eng'] });
+    const said: { kind: string; message: string; action: ToastAction | undefined }[] = [];
 
     await exportSearchableCommand({
       client,
-      toast: () => undefined,
+      settleMarks: NOTHING_MARKED,
+      toast: (kind, message, action) => {
+        said.push({ kind, message, action });
+      },
       onApplied: () => undefined,
       stamp: STAMP,
       ask,
@@ -419,6 +432,12 @@ describe('the recognise-text command', () => {
       { kind: 'ocrPage', page: 2, languages: ['eng'], engine: 'tesseract' },
     ]);
     expect(copies()).toBe(1);
+    // THE WRITTEN COPY IS CONFIRMED, and its Show in folder reveals the handle the write answered — only when run.
+    expect(said.map(({ kind, message }) => [kind, message])).toStrictEqual([['done', TOAST_SEARCHABLE_SAVED]]);
+    expect(said[0]?.action?.label).toBe(TOAST_SHOW_IN_FOLDER);
+    expect(revealed).toStrictEqual([]);
+    said[0]?.action?.run();
+    expect(revealed).toStrictEqual([{ handle: asFileHandle('Handle-searchable-copy') }]);
   });
 
   it('EXPORT: writes NO copy when the reader cancels', async () => {
@@ -433,7 +452,7 @@ describe('the recognise-text command', () => {
       end: () => undefined,
     });
 
-    await exportSearchableCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, toast: () => undefined, track, servicesReady: () => false, ocrLanguages: () => STORED }).run(
+    await exportSearchableCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, toast: () => undefined, settleMarks: NOTHING_MARKED, track, servicesReady: () => false, ocrLanguages: () => STORED }).run(
       contextWith(2),
     );
 

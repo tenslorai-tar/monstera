@@ -8,6 +8,7 @@ import {
   JOB_LIMIT_KILL_ON_JOB_CLOSE,
   JOB_LIMIT_PROCESS_MEMORY,
 } from '@monstera/kernel';
+import { blockEditOf, replacementFieldsOf } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 
@@ -212,7 +213,7 @@ const ENGINE: FakePeer = (channel) => {
     // backup), and the default below sends no reply — so a save through this peer waited for ever. Answered as an
     // unsigned document with no removal: an ordinary save.
     case 'engine/signatures-kept':
-      return { ok: true, value: { signatures: 0, kept: true, removal: false } };
+      return { ok: true, value: { signatures: 0, kept: true } };
     default:
       return null;
   }
@@ -1115,7 +1116,7 @@ describe('the composition root, with BOTH engine hosts', () => {
       command: {
         kind: 'replaceTextObject',
         page: 0,
-        replacements: [{ index: 2, text: 'hi' }],
+        ...replacementFieldsOf([{ index: 2, text: 'hi' }]),
         version: opened.value.version,
       },
     });
@@ -1192,7 +1193,8 @@ describe('the composition root, with BOTH engine hosts', () => {
         command: {
           kind: 'editTextBlock',
           page: 0,
-          blocks: [{ lines: [[2, 4], [7]], text: 'new words', fit: 'reflow' }],
+          ...blockEditOf([{ lines: [[2, 4], [7]], text: 'new words' }]),
+          fit: 'reflow',
           version: opened.value.version,
         },
       });
@@ -1237,7 +1239,7 @@ describe('the composition root, with BOTH engine hosts', () => {
       command: {
         kind: 'replaceTextObject',
         page: 0,
-        replacements: [{ index: 2, text: 'hi' }],
+        ...replacementFieldsOf([{ index: 2, text: 'hi' }]),
         version: opened.value.version,
       },
     });

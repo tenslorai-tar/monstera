@@ -15,7 +15,7 @@ import {
   FEATURE_SPLIT_MERGE_TITLE,
 } from '../messages/en.js';
 import type { IconName } from '../primitives/icons.js';
-import type { CommandContext, UiCommand } from '../registries/commands.js';
+import { type CommandContext, type UiCommand, VISIBLE } from '../registries/commands.js';
 import type { SectionId } from '../registries/placement.js';
 import { RIBBON_SECTION_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
@@ -69,6 +69,8 @@ export function featureShortcutCommands(deps: {
   return FEATURE_SHORTCUTS.map(
     (feature, index): UiCommand => ({
       id: `start.${feature.name}`,
+      // THE DOCUMENT OPENS on the feature's section.
+      feedback: VISIBLE,
       icon: feature.icon,
       title: feature.title,
       summary: feature.summary,

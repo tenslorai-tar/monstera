@@ -19,6 +19,7 @@ import {
   SHORTCUTS_TYPING,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogScroll } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { normaliseChord } from '../surfaces/projections.js';
 import { type ChordRefusal, displayChord, validateChord } from '../surfaces/shortcutChoice.js';
@@ -125,102 +126,108 @@ export default function KeyboardShortcutsBody({
   };
 
   return (
-    <div className="m-shortcuts-editor">
+    <>
       {dropped.length === 0 ? null : (
         <p className="m-shortcuts-editor__note">{_(SHORTCUTS_DROPPED, { commands: dropped.map(titleOf).join(', ') })}</p>
       )}
-      <table className="m-shortcuts">
-        <thead>
-          <tr>
-            <th scope="col">{_(SHORTCUTS_COMMAND_HEADER)}</th>
-            <th scope="col">{_(SHORTCUTS_CHORD_HEADER)}</th>
-            <th scope="col">{_(SHORTCUTS_ACTIONS_HEADER)}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => {
-            const chord = chords[row.id] ?? null;
-            return (
-              <tr key={row.id}>
-                <th scope="row">{_(row.title)}</th>
-                <td>
-                  {/* THE KEYS IN THEIR OWN FLEX BOX, so the cell stays a table cell: a `td` made `display: flex`
-                      leaves the table's row alignment and drew every key above its command's name. */}
-                  <div className="m-shortcuts__keys">
-                  {waiting === row.id ? (
-                    <button
-                      // THE ONE PLACE A KEY PRESS IS TAKEN WHOLE: focused as it appears, so the next key is its.
-                      autoFocus
-                      className="m-shortcuts__capture"
-                      type="button"
-                      onBlur={() => {
-                        setWaiting(undefined);
-                      }}
-                      onKeyDown={(event) => {
-                        capture(row, event);
-                      }}
-                    >
-                      {_(SHORTCUTS_PRESS)}
-                    </button>
-                  ) : (
-                    [chord, ...row.also]
-                      .filter((each): each is string => each !== null)
-                      .map((each) => <kbd key={each}>{each}</kbd>)
-                  )}
-                  {chord === null && row.also.length === 0 && waiting !== row.id ? (
-                    <span className="m-shortcuts__none">{_(SHORTCUTS_NONE)}</span>
-                  ) : null}
-                  {refused?.id === row.id ? (
-                    <p className="m-shortcuts__refused" role="alert">
-                      {refused.text}
-                    </p>
-                  ) : null}
-                  </div>
-                </td>
-                <td className="m-shortcuts__actions">
-                  <Button
-                    label={SHORTCUTS_CHANGE}
-                    variant="quiet"
-                    onClick={() => {
-                      setRefused(undefined);
-                      setWaiting(row.id);
-                    }}
-                  />
-                  {chord === row.fallback ? null : (
+      <DialogScroll>
+        <table className="m-shortcuts">
+          <thead>
+            <tr>
+              <th scope="col">{_(SHORTCUTS_COMMAND_HEADER)}</th>
+              <th scope="col">{_(SHORTCUTS_CHORD_HEADER)}</th>
+              <th scope="col">{_(SHORTCUTS_ACTIONS_HEADER)}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const chord = chords[row.id] ?? null;
+              return (
+                <tr key={row.id}>
+                  <th scope="row">{_(row.title)}</th>
+                  <td>
+                    {/* THE KEYS IN THEIR OWN FLEX BOX, so the cell stays a table cell: a `td` made `display: flex`
+                        leaves the table's row alignment and drew every key above its command's name. */}
+                    <div className="m-shortcuts__keys">
+                      {waiting === row.id ? (
+                        <button
+                          // THE ONE PLACE A KEY PRESS IS TAKEN WHOLE: focused as it appears, so the next key is its.
+                          autoFocus
+                          className="m-shortcuts__capture"
+                          type="button"
+                          onBlur={() => {
+                            setWaiting(undefined);
+                          }}
+                          onKeyDown={(event) => {
+                            capture(row, event);
+                          }}
+                        >
+                          {_(SHORTCUTS_PRESS)}
+                        </button>
+                      ) : (
+                        [chord, ...row.also]
+                          .filter((each): each is string => each !== null)
+                          .map((each) => <kbd key={each}>{each}</kbd>)
+                      )}
+                      {chord === null && row.also.length === 0 && waiting !== row.id ? (
+                        <span className="m-shortcuts__none">{_(SHORTCUTS_NONE)}</span>
+                      ) : null}
+                      {refused?.id === row.id ? (
+                        <p className="m-shortcuts__refused" role="alert">
+                          {refused.text}
+                        </p>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="m-shortcuts__actions">
                     <Button
-                      label={SHORTCUTS_RESET}
-                        variant="quiet"
+                      label={SHORTCUTS_CHANGE}
+                      variant="quiet"
                       onClick={() => {
-                        choose(row.id, row.fallback);
+                        setRefused(undefined);
+                        setWaiting(row.id);
                       }}
                     />
-                  )}
-                  {chord === null ? null : (
-                    <Button
-                      label={SHORTCUTS_REMOVE}
+                    {chord === row.fallback ? null : (
+                      <Button
+                        label={SHORTCUTS_RESET}
                         variant="quiet"
-                      onClick={() => {
-                        choose(row.id, null);
-                      }}
-                    />
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      <div className="m-shortcuts-editor__actions">
-        <Button
-          label={SHORTCUTS_RESET_ALL}
-          onClick={() => {
-            setChords(Object.fromEntries(rows.map((row) => [row.id, row.fallback])));
-            setWaiting(undefined);
-            setRefused(undefined);
-            update({ kind: 'reset' });
-          }}
-        />
-      </div>
-    </div>
+                        onClick={() => {
+                          choose(row.id, row.fallback);
+                        }}
+                      />
+                    )}
+                    {chord === null ? null : (
+                      <Button
+                        label={SHORTCUTS_REMOVE}
+                        variant="quiet"
+                        onClick={() => {
+                          choose(row.id, null);
+                        }}
+                      />
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </DialogScroll>
+      {/* RESET ALL APART at the footer's start: it is about the whole list, neither its answer nor its dismissal. */}
+      <DialogFooter
+        aside={
+          <Button
+            label={SHORTCUTS_RESET_ALL}
+            onClick={() => {
+              setChords(Object.fromEntries(rows.map((row) => [row.id, row.fallback])));
+              setWaiting(undefined);
+              setRefused(undefined);
+              update({ kind: 'reset' });
+            }}
+          />
+        }
+        dismissal="close"
+      />
+    </>
   );
 }

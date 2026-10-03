@@ -6,6 +6,7 @@ import {
   PDFString,
   StandardFonts,
 } from '@cantoo/pdf-lib';
+import type { PageSet } from '@monstera/contract/host';
 import { describe, expect, it } from 'vitest';
 
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
@@ -108,7 +109,7 @@ async function nestedDocument(): Promise<Uint8Array> {
 }
 
 /** Runs an extract against a live session and gives back what it wrote. */
-async function extracted(bytes: Uint8Array, pages: readonly number[]): Promise<Uint8Array> {
+async function extracted(bytes: Uint8Array, pages: PageSet): Promise<Uint8Array> {
   const session = await mupdfWriter.open(bytes);
   try {
     return await extractPages(session, pages);
@@ -229,6 +230,42 @@ describe('extractPages', () => {
     expect((await readBack(written)).rotations).toStrictEqual([90, 0]);
   });
 
+  it('WRITES THE PAGES IT NAMES and not the rest of the source', async () => {
+    // A graft that reaches a leaf's `/Parent` copies every page through `/Kids`, once per page grafted
+    // (`pageGraft.ts`): measured 2026-10-02, a two-page extract of 160 pages wrote 966 objects — the whole source,
+    // readable by anything that walks the file — and an extract of 4,100 pages was refused by MuPDF outright. Two
+    // source sizes separate *these pages* from *this document*; the pages carry content, so a copy of them costs.
+    async function objectsIn(pages: number): Promise<number> {
+      const document = await PDFDocument.create();
+      for (let index = 0; index < pages; index += 1) {
+        document.addPage([WIDTH_BASE + index, 500]).drawRectangle({ x: 1, y: 1, width: 5, height: 5 });
+      }
+      const written = await extracted(await document.save({ useObjectStreams: false }), [0, 1]);
+      const session = await mupdfWriter.open(written);
+      try {
+        return await withDocument(session, (out) => out.countObjects());
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    }
+
+    const small = await objectsIn(4);
+    expect(await objectsIn(40)).toBe(small);
+  });
+
+  it('A PAGE NAMED TWICE IS TWO PAGES, not one object listed twice', async () => {
+    // One graft map answers a second graft of the same leaf with the first copy; `/Kids` naming one object twice is
+    // not a page tree, and a rotation of either page would rotate both.
+    const session = await mupdfWriter.open(await extracted(await richDocument(), [2, 2]));
+    try {
+      const numbers = await withDocument(session, (out) => [0, 1].map((page) => out.findPage(page).asIndirect()));
+      expect(numbers[0]).not.toBe(numbers[1]);
+      expect((await readBack(await mupdfWriter.serialise(session))).widths).toStrictEqual([102, 102]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
   it('REFUSES an empty extract, which would write a document nothing can open', async () => {
     const session = await mupdfWriter.open(await richDocument());
     try {
@@ -241,7 +278,7 @@ describe('extractPages', () => {
   it('REFUSES a page the document does not have', async () => {
     const session = await mupdfWriter.open(await richDocument());
     try {
-      await expect(extractPages(session, [0, 9])).rejects.toThrow(/outside a document of 4 page/u);
+      await expect(extractPages(session, [0, 9])).rejects.toThrow(/Page 9 is outside this document, which has 4 page/u);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -261,6 +298,11 @@ describe('extractPages', () => {
       expect(after.widths).toStrictEqual([100, 101, 102, 103]);
       expect(after.rotations).toStrictEqual([90, 90, 0, 0]);
       expect(after.fields).toStrictEqual(['applicant.name']);
+      // THE TREE IS PUT BACK: the graft runs with every leaf's `/Parent` removed (`pageGraft.ts`).
+      const parented = await withDocument(session, (document) =>
+        [0, 1, 2, 3].map((page) => !document.findPage(page).get('Parent').isNull()),
+      );
+      expect(parented).toStrictEqual([true, true, true, true]);
     } finally {
       await mupdfWriter.close(session);
     }

@@ -291,6 +291,21 @@ export const MIN_SNAPSHOT_SCALE = 1;
 export const MAX_SNAPSHOT_SCALE = 8;
 
 /**
+ * The smallest scale the host draws a WHOLE PAGE at — far below the snapshot's floor, because a whole page is asked
+ * for to be looked at, not read.
+ *
+ * A vision ask sends a picture of the page (ADR-0090), and a page larger than Claude's image limit at 72 dpi is one the
+ * provider would scale down itself, so drawing it smaller is what it would see anyway. With the snapshot's floor here
+ * every A0 drawing — 2,384 × 3,370 pt, over 2,576 px at scale 1 — was refused as *"too large to send as a picture"*
+ * (JOURNAL, *No document-size refusals*, table A row 11). The largest page PDF allows, 14,400 pt an edge (PDF 32000-1
+ * Annex C), fits at 0.17; this floor only stops main's search at a scale the engine still draws.
+ *
+ * The page-image EXPORT keeps 72 dpi as a person's floor, {@link MIN_PAGE_IMAGE_DPI}: that is the renderer's schema,
+ * and this is the host's.
+ */
+export const MIN_PAGE_PICTURE_SCALE = 0.01;
+
+/**
  * The raster formats a page can be exported as — D10's *Pages → PNG / JPEG / WebP*.
  *
  * MuPDF is the export rasteriser for all three (§3). Its pixmap encodes PNG and
@@ -304,8 +319,9 @@ export type PageImageFormat = (typeof PAGE_IMAGE_FORMATS)[number];
  * An exported page's resolution, in dots per inch.
  *
  * **The snapshot's scale bounds in the unit a person types**, derived rather than
- * restated: a PDF point is 1/72 inch, so the host's scale is `dpi / 72` and these
- * cannot drift from the bounds the host enforces.
+ * restated: a PDF point is 1/72 inch, so the host's scale is `dpi / 72`. The
+ * ceiling is the host's; the floor is the export's own, above the host's
+ * {@link MIN_PAGE_PICTURE_SCALE}, because an exported image is one a person reads.
  */
 export const MIN_PAGE_IMAGE_DPI = MIN_SNAPSHOT_SCALE * 72;
 export const MAX_PAGE_IMAGE_DPI = MAX_SNAPSHOT_SCALE * 72;

@@ -266,6 +266,8 @@ async function main() {
   /** @type {typeof import('../../apps/desktop/src/harnessComposition.js')} */
   const harnessModule = await built('apps/desktop/dist/harnessComposition.js');
   const { ENGINE_HOST_FRAME_MAX_BYTES } = await built('packages/contract/dist/hostProtocol.js');
+  /** @type {typeof import('../../packages/contract/src/commands.js')} */
+  const { blockEditOf } = await built('packages/contract/dist/commands.js');
   const pdfium = await built('packages/kernel/dist/pdfiumFfi.js');
 
   const scratch = mkdtempSync(join(tmpdir(), 'monstera-file-answers-live-'));
@@ -390,7 +392,7 @@ async function main() {
     let reopenedBlocks = null;
     if (opened?.ok === true && opened.value.kind === 'opened') {
       const docId = opened.value.docId;
-      blocks = await observed(() => handlers['document.textBlocks']({ docId, page: 0 }));
+      blocks = await observed(() => handlers['document.textBlocks']({ docId, page: 0, from: 0 }));
       const first = blocks?.ok === true ? blocks.value.blocks[0] : undefined;
       if (first !== undefined) {
         edited = await observed(() =>
@@ -399,13 +401,13 @@ async function main() {
             command: {
               kind: 'editTextBlock',
               page: 0,
-              blocks: [
+              ...blockEditOf([
                 {
                   lines: first.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
                   text: EDITED,
-                  fit: 'reflow',
                 },
-              ],
+              ]),
+              fit: 'reflow',
               version: blocks.value.version,
             },
           }),
@@ -416,7 +418,7 @@ async function main() {
       if (saved?.ok === true) {
         const again = await observed(() => handlers['document.open']({}));
         if (again?.ok === true && again.value.kind === 'opened') {
-          reopenedBlocks = await observed(() => handlers['document.textBlocks']({ docId: again.value.docId, page: 0 }));
+          reopenedBlocks = await observed(() => handlers['document.textBlocks']({ docId: again.value.docId, page: 0, from: 0 }));
         }
       }
     }
@@ -490,7 +492,7 @@ async function main() {
     let inlineText = '';
     if (inlineOpened?.ok === true && inlineOpened.value.kind === 'opened') {
       const docId = inlineOpened.value.docId;
-      const inlineBlocks = await observed(() => handlers['document.textBlocks']({ docId, page: 0 }));
+      const inlineBlocks = await observed(() => handlers['document.textBlocks']({ docId, page: 0, from: 0 }));
       const block = inlineBlocks?.ok === true ? inlineBlocks.value.blocks[0] : undefined;
       if (block !== undefined) {
         inlineEdited = await observed(() =>
@@ -499,13 +501,13 @@ async function main() {
             command: {
               kind: 'editTextBlock',
               page: 0,
-              blocks: [
+              ...blockEditOf([
                 {
                   lines: block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
                   text: 'Edited',
-                  fit: 'reflow',
                 },
-              ],
+              ]),
+              fit: 'reflow',
               version: inlineBlocks.value.version,
             },
           }),

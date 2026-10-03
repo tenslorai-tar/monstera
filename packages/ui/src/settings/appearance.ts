@@ -1,8 +1,6 @@
 import { z } from 'zod';
 
 import {
-  BACKGROUND_GLOW_DESCRIPTION,
-  BACKGROUND_GLOW_TITLE,
   REDUCE_MOTION_DESCRIPTION,
   REDUCE_MOTION_TITLE,
   THEME_DESCRIPTION,
@@ -105,25 +103,6 @@ export const REDUCE_MOTION_SETTING: SettingDefinition<z.ZodBoolean> = {
   category: 'appearance',
 };
 
-/**
- * *Background glow* (the owner's 27 September list, item 6; ADR-0114): the lights over the window's ground, and its
- * grain. On by default, which is the design; off draws the plain ground. High contrast draws none either way, which
- * `tokens.css` decides, so this setting cannot bring a light into that theme.
- */
-export const BACKGROUND_GLOW_SETTING: SettingDefinition<z.ZodBoolean> = {
-  id: 'appearance.background-glow',
-  title: BACKGROUND_GLOW_TITLE,
-  description: BACKGROUND_GLOW_DESCRIPTION,
-  schema: z.boolean(),
-  fallback: true,
-  category: 'appearance',
-};
-
-/** Puts the glow setting on the root as the one attribute the stylesheet reads. */
-export function applyGlow(root: HTMLElement, on: boolean): void {
-  root.dataset['glow'] = on ? 'on' : 'off';
-}
-
 /** How large the Pages panel draws its page pictures (v5-10's Appearance page). */
 export const THUMBNAIL_SIZE_SETTING: SettingDefinition<z.ZodEnum<{ small: 'small'; medium: 'medium'; large: 'large' }>> = {
   id: 'appearance.thumbnail-size',
@@ -138,7 +117,8 @@ export const THUMBNAIL_SIZE_SETTING: SettingDefinition<z.ZodEnum<{ small: 'small
 /**
  * The Organize grid's view (ADR-0104) — the owner's *Thumbnail* | *Full page* of 2 October, drawn by the grid itself.
  * *Thumbnail* is v5-09's Medium card: six columns across the canvas at a 1280 px window, read off the export.
- * *Full page* draws every page whole at the height the grid has, so a page is read without scrolling past it.
+ * *Full page* draws one page to a row at the grid's whole width, read top to bottom as the Home view reads (the
+ * owner's review of 0.1.9.0; until then it drew each page at the grid's height, two or more side by side).
  *
  * REMEMBERED, not a Settings row: the control for it is the grid's own segmented control, as a panel's width's
  * is its splitter.

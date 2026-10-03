@@ -343,6 +343,7 @@ describe('newFromOfficeCommand (ADR-0120)', () => {
         byteLength: 4096,
         name: 'Budget.pdf',
         missing,
+        more: 3,
       }),
     });
     const { calls, record, ask } = callbacks();
@@ -357,7 +358,8 @@ describe('newFromOfficeCommand (ADR-0120)', () => {
     // THE TAB FIRST, THEN THE LIST: the person reads which rows are missing beside the document that lacks them.
     expect(calls).toStrictEqual([
       { name: 'opened', value: { docId: COMPOSED, version: 1, byteLength: 4096, name: 'Budget.pdf' } },
-      { name: 'ask', value: { id: 'dialog.markdown-import-problem', props: { reason: 'workbook-incomplete', missing } } },
+      // ITS OWN DIALOG, since the import finished; and the count past the named ones rides with them.
+      { name: 'ask', value: { id: 'dialog.workbook-incomplete', props: { missing, more: 3 } } },
     ]);
   });
 

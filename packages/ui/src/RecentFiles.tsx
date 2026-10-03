@@ -1,9 +1,10 @@
 import { useLingui } from '@lingui/react';
 import type { ChannelResult, ContractClient } from '@monstera/contract';
-import type { DocId, DocVersion, FileHandle } from '@monstera/shared';
+import type { FileHandle } from '@monstera/shared';
 import { type ReactElement, useEffect, useId, useState } from 'react';
 
-import { recentLine } from './recentLine.js';
+import type { RecentOpenOutcome } from './commands/openDocument.js';
+import { type Translate, recentLine, recentWhere } from './recentLine.js';
 import { Button } from './primitives/Button.js';
 import {
   RECENT_CLEAR,
@@ -12,9 +13,19 @@ import {
   RECENT_LABEL,
   RECENT_MISSING,
   RECENT_PLACEHOLDER,
+  RECENT_UNAVAILABLE,
+  RECENT_UNAVAILABLE_AT,
   RECOVER_LABEL,
   RECOVER_OFFER,
 } from './messages/en.js';
+
+/**
+ * How many recent files the START SCREEN shows: the first four of the list main keeps (the owner, 2026-10-02, item
+ * N3: *"the start screen still shows 4"*). The start screen's own number, not the list's — main keeps ten
+ * (`MAX_RECENT_ENTRIES`), and File › Recent shows them all
+ * ([ADR-0143](../../../docs/DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md)).
+ */
+export const START_SCREEN_RECENT = 4;
 
 /**
  * The documents this reader opened before, and the offer after a run that did
@@ -51,32 +62,37 @@ import {
  */
 export function RecentFiles({
   client,
-  onOpened,
+  openRecent,
+  onClear,
 }: {
   readonly client: ContractClient;
-  /** Called with what was opened, exactly as `document.open`'s command reports. */
-  readonly onOpened: (opened: {
-    readonly docId: DocId;
-    readonly version: DocVersion;
-    readonly byteLength: number;
-    readonly name: string;
-  }) => void;
+  /**
+   * Opens an entry through the ONE recent-open route, `openRecentDocument` (ADR-0143), which File › Recent and the
+   * restore at start take too — so a card settles an open exactly as they do.
+   */
+  readonly openRecent: (handle: FileHandle) => Promise<RecentOpenOutcome>;
+  /** *Clear list*: the registered `document.clear-recent`'s own `run`, so the button and the menu item are one thing. */
+  readonly onClear: () => Promise<void>;
 }): ReactElement | null {
   const { _ } = useLingui();
   const [state, setState] = useState<RecentState>({ kind: 'idle' });
+  // HOW MANY TIMES THIS VIEW HAS ASKED MAIN AGAIN: an open that did not show a document reads the list once more, so a
+  // file found missing is drawn as unavailable rather than offered as though it would open.
+  const [reads, setReads] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     void client['document.recent']({}).then(
       (answer) => {
         if (cancelled || !answer.ok) return;
-        setState({
+        setState((current) => ({
           kind: 'listed',
           entries: answer.value.entries,
           lastExitClean: answer.value.lastExitClean,
           session: answer.value.lastSession,
-          missing: false,
-        });
+          // A SENTENCE ALREADY SHOWN STAYS through the read it caused: it answers what the reader just did.
+          missing: current.kind === 'listed' && current.missing,
+        }));
       },
       () => {
         // Nothing. A recent list that cannot be read is a convenience that is
@@ -87,35 +103,21 @@ export function RecentFiles({
     return (): void => {
       cancelled = true;
     };
-  }, [client]);
+  }, [client, reads]);
 
   if (state.kind === 'idle') return null;
 
   const open = async (handle: FileHandle): Promise<void> => {
-    const answer = await client['document.openRecent']({ handle });
-    if (!answer.ok) {
-      // A STALE HANDLE IS A DEAD ROW, and it is reported rather than retried:
-      // the registry is per-run, so a list held across a reload names handles
-      // this run never minted.
+    const outcome = await openRecent(handle);
+    if (outcome === 'shown') return;
+    // A STALE HANDLE is said here: the registry is per-run, so a list held across a reload names handles this run never
+    // minted. A file that has gone is said by the start screen's own problem line, which the shared route fills.
+    if (outcome === 'refused') {
       setState((current) => (current.kind === 'listed' ? { ...current, missing: true } : current));
-      return;
     }
-    if (answer.value.kind === 'absent') {
-      // MAIN HAS ALREADY FORGOTTEN IT, so the row is gone from the list this
-      // surface would fetch next — what is left is to say so.
-      setState((current) =>
-        current.kind === 'listed'
-          ? {
-              ...current,
-              missing: true,
-              entries: current.entries.filter((entry) => entry.handle !== handle),
-            }
-          : current,
-      );
-      return;
-    }
-    if (answer.value.kind !== 'opened') return;
-    onOpened(answer.value);
+    // EITHER WAY THE LIST IS READ AGAIN, and the row stays (ADR-0143): main keeps a file that has gone and now says it
+    // is unavailable, which is what this view draws next.
+    setReads((count) => count + 1);
   };
 
   return (
@@ -153,19 +155,17 @@ export function RecentFiles({
       ) : null}
       {state.missing ? <p className="m-recent-problem">{_(RECENT_MISSING)}</p> : null}
       {state.entries.length === 0 ? null : (
-        // v5-01's HEADER: the list's name and its one action. *Clear list* is the list's own control, as its
-        // cards are — ADR-0068 keeps the recent list out of the registry as data with a control.
+        // v5-01's HEADER: the list's name and its one action. The cards are the list's own content (ADR-0068);
+        // *Clear list* runs the registered `document.clear-recent`, the item File › Recent carries (ADR-0143).
         <div className="m-recent-header">
           <h2 className="m-recent-heading">{_(RECENT_HEADING)}</h2>
           <button
             type="button"
             className="m-recent-action"
             onClick={() => {
-              void client['document.clearRecent']({}).then(
-                (answer) => {
-                  if (!answer.ok) return;
-                  setState((current) => (current.kind === 'listed' ? { ...current, entries: [] } : current));
-                },
+              // THE COMMAND EMPTIES ON MAIN'S ANSWER and then has every view read the list again, this one included.
+              void onClear().then(
+                () => undefined,
                 () => {
                   // Nothing is cleared on the page unless main cleared it, so a failed ask leaves the list on
                   // screen — which is the true state, and says it did not happen.
@@ -181,9 +181,9 @@ export function RecentFiles({
         <p className="m-recent-empty">{_(RECENT_EMPTY)}</p>
       ) : (
         <ul className="m-recent-list">
-          {/* EVERY ENTRY MAIN SENDS, and main keeps four (`MAX_RECENT_ENTRIES`): the one number lives in the store that
-              writes the list, so the screen has no cap of its own to drift from it (B3). */}
-          {state.entries.map((entry) => (
+          {/* THE FIRST FOUR of the list main keeps (`START_SCREEN_RECENT`): this view's own number. Main keeps ten
+              and File › Recent shows them all — one list, two views (ADR-0143). */}
+          {state.entries.slice(0, START_SCREEN_RECENT).map((entry) => (
             // THE HANDLE IS THE KEY. It is minted per path and idempotent, so
             // it is the one value here that identifies a row — two files may
             // share a name, and a name key would make React reuse one row's
@@ -232,7 +232,15 @@ function RecentCard({
   const { _, i18n } = useLingui();
   const nameId = useId();
   const lineId = useId();
-  const line = recentLine(entry, new Date(), i18n.locale, (key, values) => _(key, values));
+  const translate: Translate = (key, values) => _(key, values);
+  // A FILE THAT IS NOT THERE NOW says so in place of when it was opened, beside where it was (ADR-0143) — listed, and
+  // never offered as one that opens.
+  const where = entry.available ? null : recentWhere(entry.location, translate);
+  const line = entry.available
+    ? recentLine(entry, new Date(), i18n.locale, translate)
+    : where === null
+      ? _(RECENT_UNAVAILABLE)
+      : _(RECENT_UNAVAILABLE_AT, { where });
   const picture = usePicture(client, entry.handle);
   return (
     <button
@@ -240,7 +248,11 @@ function RecentCard({
       className="m-recent-item"
       aria-labelledby={nameId}
       aria-describedby={line === null ? undefined : lineId}
-      onClick={onOpen}
+      // DISABLED AND STILL FOCUSABLE: `aria-disabled` rather than `disabled`, so a keyboard reaches the card and hears
+      // its state rather than skipping a file it was never told about.
+      aria-disabled={entry.available ? undefined : true}
+      data-unavailable={entry.available ? undefined : 'true'}
+      onClick={entry.available ? onOpen : undefined}
     >
       {/* THE PICTURE IS DECORATIVE: the card is named by the file, and a picture of a page says nothing a
           screen reader should read out. With none, the page's shape and its type, as a file icon shows. */}
@@ -315,6 +327,6 @@ type RecentState =
        * documents could be open at once.
        */
       readonly session: readonly RecentRow[];
-      /** Set when a row could not be opened, and cleared by nothing: the row goes. */
+      /** Set when a row's handle was refused, and cleared by nothing: the list is read again and the row stays. */
       readonly missing: boolean;
     };

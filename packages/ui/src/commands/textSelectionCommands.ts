@@ -15,7 +15,7 @@ import {
   STRIKEOUT_SELECTION_TITLE,
   UNDERLINE_SELECTION_TITLE,
 } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
 import type { TextSelection } from '../TextLayer.js';
 
 /**
@@ -58,6 +58,8 @@ const selected = (deps: TextSelectionDeps) => (): boolean => deps.selection() !=
 export function copySelectionCommand(deps: TextSelectionDeps): UiCommand {
   return {
     id: 'text.copy',
+    // THROUGH `windowEdit`, which confirms on main's word (`confirmCopied`).
+    feedback: TOASTS,
     title: COPY_SELECTION_TITLE,
     // NO CHORD OF ITS OWN: Ctrl+C is `edit.copy`'s, which runs this when the page's text is what is selected (ADR-0107).
     icon: 'Copy',
@@ -81,6 +83,7 @@ const MARKUPS: readonly { readonly type: MarkupType; readonly id: string; readon
 export function markupSelectionCommands(deps: TextSelectionDeps): readonly UiCommand[] {
   return MARKUPS.map(({ type, id, order, title }) => ({
     id,
+    feedback: VISIBLE,
     title,
     placements: [{ surface: 'context-menu', context: 'selection', order }] as const,
     when: selected(deps),
@@ -127,6 +130,7 @@ export function commentSelectionCommand(
 ): UiCommand {
   return {
     id: 'text.comment',
+    feedback: VISIBLE,
     title: COMMENT_SELECTION_TITLE,
     placements: [{ surface: 'context-menu', context: 'selection', order: 50 }],
     when: selected(deps),
@@ -165,6 +169,7 @@ export function commentSelectionCommand(
 export function redactSelectionCommand(deps: TextSelectionDeps): UiCommand {
   return {
     id: 'text.redact',
+    feedback: VISIBLE,
     title: REDACT_SELECTION_TITLE,
     placements: [{ surface: 'context-menu', context: 'selection', order: 60 }],
     when: selected(deps),
@@ -195,6 +200,7 @@ export function redactSelectionCommand(deps: TextSelectionDeps): UiCommand {
 export function searchSelectionCommand(deps: TextSelectionDeps): UiCommand {
   return {
     id: 'text.search',
+    feedback: VISIBLE,
     title: SEARCH_SELECTION_TITLE,
     placements: [{ surface: 'context-menu', context: 'selection', order: 70 }],
     when: selected(deps),

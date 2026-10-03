@@ -226,7 +226,6 @@ describe('browser shim', () => {
       'document.clearRecent',
       'document.close',
       'document.copyAnnotations',
-      'document.deleteStaleCopies',
       'document.destinations',
       'document.duplicatePages',
       'document.editPageExternally',

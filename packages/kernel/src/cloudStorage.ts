@@ -139,11 +139,28 @@ export interface CloudTokens {
 const MAX_JSON_BYTES = 4 * 1024 * 1024;
 
 /**
- * The largest document Save back sends in one request: Graph's simple upload takes up to 250 MB
- * (driveItem *Upload small files*); Google's `uploadType=media` up to 5 MB is *recommended* and
- * larger is accepted. A resumable session is not built, so the smaller bound holds for both.
+ * The largest document sent in one request: Graph's simple upload takes up to 250 MB (driveItem *Upload small files*);
+ * Google's `uploadType=media` up to 5 MB is *recommended* and larger is accepted. A larger document goes through an
+ * upload SESSION ({@link uploadInSession}); until 2026-10-02 it was refused as *"too large to send in one piece"*
+ * (JOURNAL, *No document-size refusals*, table A row 13). The simple route stays below this, because it is the one the
+ * live runs proved.
  */
 export const MAX_SIMPLE_UPLOAD_BYTES = 250 * 1024 * 1024;
+
+/**
+ * The bytes one request of an upload session carries: 40 MiB, a multiple of BOTH providers' fragment rules and under
+ * Graph's per-request ceiling, so one size serves either.
+ *
+ * - Graph: *"the size of each byte range MUST be a multiple of 320 KiB (327,680 bytes)"*, and *"the maximum bytes in
+ *   any given request is less than 60 MiB"* (driveItem-createUploadSession, ms.date 2025-10-15, read 2026-10-02 from
+ *   `microsoftgraph/microsoft-graph-docs-contrib` on GitHub; learn.microsoft.com is not reachable from the cloud
+ *   session that wrote this).
+ * - Google: a chunk is a multiple of `UPLOAD_CHUNK_SIZE = 262144` (`google-resumable-media-python`, `common.py`, read
+ *   the same day; developers.google.com was not reachable either).
+ *
+ * 40 MiB is 128 x 320 KiB and 160 x 256 KiB. The last request carries what is left, which both allow.
+ */
+export const UPLOAD_SESSION_CHUNK_BYTES = 40 * 1024 * 1024;
 
 /**
  * The file a Picker chose, from its redirect's parameter — the first id of the comma-separated list, or `null` where
@@ -217,7 +234,11 @@ async function callJson(
   url: string,
   init: RequestInit,
 ): Promise<Readonly<Record<string, unknown>>> {
-  const response = await call(fetchImpl, url, init);
+  return jsonOf(await call(fetchImpl, url, init), url);
+}
+
+/** A response's JSON object, refusing a failed status and anything that is not one bounded object. */
+async function jsonOf(response: Response, url: string): Promise<Readonly<Record<string, unknown>>> {
   if (!response.ok) {
     throw new CloudStorageRefused('rejected', `${new URL(url).host} answered HTTP ${String(response.status)}`);
   }
@@ -464,6 +485,108 @@ export function downloadHostDeclared(spec: CloudProviderSpec, host: string): boo
 }
 
 /**
+ * Whether an upload session's address may receive the document: HTTPS, on one of the provider's API hosts — Google's
+ * session is on the host the request went to — or on a host its content is declared to live on, where Graph's
+ * `uploadUrl` points (its documentation's example is `sn3302.up.1drv.com`). The same declared list as downloads, so
+ * there is one opinion about where a provider keeps content (B3a).
+ */
+function sessionUrlDeclared(spec: CloudProviderSpec, url: URL): boolean {
+  return url.protocol === 'https:' && (spec.apiHosts.includes(url.hostname.toLowerCase()) || downloadHostDeclared(spec, url.hostname));
+}
+
+/** Where the next byte of a session goes, from an intermediate answer; `null` where the answer does not say. */
+function nextOffset(provider: CloudProviderId, response: Response, body: Readonly<Record<string, unknown>> | null): number | null {
+  if (provider === 'google-drive') {
+    // `Range: bytes=0-N` — the bytes held so far; absent, none are (google-resumable-media's own reading).
+    const range = response.headers.get('range');
+    if (range === null) return 0;
+    const held = /^bytes=0-(\d+)$/u.exec(range.trim());
+    return held === null ? null : Number(held[1]) + 1;
+  }
+  // `nextExpectedRanges: ["26-"]` — Graph's documentation: the first missing range's start.
+  const ranges = body?.['nextExpectedRanges'];
+  const first: unknown = Array.isArray(ranges) ? (ranges as readonly unknown[])[0] : undefined;
+  const start = typeof first === 'string' ? /^(\d+)-/u.exec(first) : null;
+  return start === null ? null : Number(start[1]);
+}
+
+/**
+ * Sends `pdf` to an upload session in requests of {@link UPLOAD_SESSION_CHUNK_BYTES}, and answers the provider's final
+ * JSON — the item or file the session made.
+ *
+ * Each request names its range of the whole (`Content-Range: bytes a-b/total`), and the provider's answer says where
+ * the next starts: Graph's `202` with `nextExpectedRanges`, Google's `308` with `Range`. A next start that does not move
+ * forward is refused rather than sent again, so a provider that keeps asking for the same bytes ends the upload instead
+ * of looping. Graph's `uploadUrl` is pre-authorised and *"if you include the Authorization header … it might result in
+ * an HTTP 401"*, so the token goes only to Google's, which is its API host.
+ *
+ * A session that fails part way is CANCELLED (`DELETE`, both providers' documented way), so no half-written upload is
+ * left holding the person's quota; the failure that ended it is what is thrown, whatever the cancel answers.
+ */
+async function uploadInSession(
+  provider: CloudProviderId,
+  accessToken: string,
+  sessionUrl: string,
+  pdf: Uint8Array,
+  fetchImpl: typeof fetch,
+): Promise<Readonly<Record<string, unknown>>> {
+  const total = pdf.byteLength;
+  const auth = provider === 'google-drive' ? bearer(accessToken) : {};
+  let offset = 0;
+  try {
+    for (;;) {
+      const end = Math.min(offset + UPLOAD_SESSION_CHUNK_BYTES, total);
+      const response = await call(fetchImpl, sessionUrl, {
+        method: 'PUT',
+        // MANUAL: Google's "more, please" is a 308, which a fetch would otherwise treat as a redirect.
+        redirect: 'manual',
+        headers: { ...auth, 'content-range': `bytes ${String(offset)}-${String(end - 1)}/${String(total)}` },
+        body: pdf.subarray(offset, end),
+      });
+      if (response.status === 200 || response.status === 201) {
+        if (end !== total) throw new CloudStorageRefused('unexpected-answer', `the session finished at ${String(end)} of ${String(total)} bytes`);
+        return await jsonOf(response, sessionUrl);
+      }
+      const more = provider === 'google-drive' ? response.status === 308 : response.status === 202;
+      if (!more) throw new CloudStorageRefused('rejected', `the upload session answered HTTP ${String(response.status)}`);
+      const next = nextOffset(provider, response, provider === 'onedrive' ? await jsonOf(response, sessionUrl) : null);
+      if (next === null || next <= offset || next > total) {
+        throw new CloudStorageRefused('unexpected-answer', `the upload session asked for byte ${String(next)} after ${String(end)}`);
+      }
+      offset = next;
+    }
+  } catch (failure) {
+    // THE CANCEL'S OWN ANSWER IS NOT THE NEWS: the person is told why the upload failed, and a cancel that could not be
+    // made leaves a session the provider expires on its own (Graph: `expirationDateTime`).
+    await fetchImpl(sessionUrl, { method: 'DELETE', headers: auth }).catch(() => undefined);
+    throw failure;
+  }
+}
+
+/** Opens an upload session at `url` and answers its address, held to the provider's declared hosts. */
+async function openSession(
+  provider: CloudProviderId,
+  url: string,
+  init: RequestInit,
+  fetchImpl: typeof fetch,
+): Promise<string> {
+  const spec = CLOUD_PROVIDERS[provider];
+  let address: string | null;
+  if (provider === 'onedrive') {
+    address = text((await callJson(fetchImpl, url, init))['uploadUrl']);
+  } else {
+    const response = await call(fetchImpl, url, init);
+    if (!response.ok) throw new CloudStorageRefused('rejected', `${new URL(url).host} answered HTTP ${String(response.status)}`);
+    address = response.headers.get('location');
+  }
+  const target = address === null ? null : new URL(address, url);
+  if (target === null || !sessionUrlDeclared(spec, target)) {
+    throw new CloudStorageRefused('unexpected-answer', `the upload session is at ${target?.hostname ?? 'no address'}, which is not a declared host`);
+  }
+  return target.toString();
+}
+
+/**
  * A file's content, as a bounded PDF body (`pdfBody`: the ceiling and `%PDF-`, the URL route's own
  * check). Graph answers with a redirect to a pre-authorised address, which is followed only to a
  * declared host and without the bearer token.
@@ -520,16 +643,32 @@ export async function replaceCloudPdf(
   pdf: Uint8Array,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
-  if (pdf.byteLength > MAX_SIMPLE_UPLOAD_BYTES) {
-    throw new CloudStorageRefused('too-large', `the document is larger than ${String(MAX_SIMPLE_UPLOAD_BYTES)} bytes`);
-  }
   const id = encodeURIComponent(fileId);
+  const inSession = pdf.byteLength > MAX_SIMPLE_UPLOAD_BYTES;
   if (provider === 'onedrive') {
-    const answer = await callJson(fetchImpl, `https://graph.microsoft.com/v1.0/me/drive/items/${id}/content`, {
-      method: 'PUT',
-      headers: { ...bearer(accessToken), 'content-type': 'application/pdf', 'if-match': expected },
-      body: pdf,
-    });
+    // A SESSION KEEPS THE CONDITION: `if-match` on the session's creation, which answers 412 when the item moved.
+    const answer = inSession
+      ? await uploadInSession(
+          provider,
+          accessToken,
+          await openSession(
+            provider,
+            `https://graph.microsoft.com/v1.0/me/drive/items/${id}/createUploadSession`,
+            {
+              method: 'POST',
+              headers: { ...bearer(accessToken), 'content-type': 'application/json', 'if-match': expected },
+              body: JSON.stringify({ item: { '@microsoft.graph.conflictBehavior': 'replace' } }),
+            },
+            fetchImpl,
+          ),
+          pdf,
+          fetchImpl,
+        )
+      : await callJson(fetchImpl, `https://graph.microsoft.com/v1.0/me/drive/items/${id}/content`, {
+          method: 'PUT',
+          headers: { ...bearer(accessToken), 'content-type': 'application/pdf', 'if-match': expected },
+          body: pdf,
+        });
     const version = text(answer['eTag']);
     if (version === null) throw new CloudStorageRefused('unexpected-answer', 'the upload answer carries no eTag');
     return version;
@@ -538,11 +677,33 @@ export async function replaceCloudPdf(
   if (now.version !== expected) {
     throw new CloudStorageRefused('changed-elsewhere', 'the file changed since it was opened');
   }
-  const answer = await callJson(
-    fetchImpl,
-    `https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media&fields=version`,
-    { method: 'PATCH', headers: { ...bearer(accessToken), 'content-type': 'application/pdf' }, body: pdf },
-  );
+  const answer = inSession
+    ? await uploadInSession(
+        provider,
+        accessToken,
+        await openSession(
+          provider,
+          `https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=resumable&fields=version`,
+          {
+            method: 'PATCH',
+            headers: {
+              ...bearer(accessToken),
+              'content-type': 'application/json; charset=UTF-8',
+              'x-upload-content-type': 'application/pdf',
+              'x-upload-content-length': String(pdf.byteLength),
+            },
+            body: '{}',
+          },
+          fetchImpl,
+        ),
+        pdf,
+        fetchImpl,
+      )
+    : await callJson(fetchImpl, `https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media&fields=version`, {
+        method: 'PATCH',
+        headers: { ...bearer(accessToken), 'content-type': 'application/pdf' },
+        body: pdf,
+      });
   const version = text(answer['version']);
   if (version === null) throw new CloudStorageRefused('unexpected-answer', 'the upload answer carries no version');
   return version;
@@ -563,7 +724,55 @@ export async function createCloudPdf(
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
   if (pdf.byteLength > MAX_SIMPLE_UPLOAD_BYTES) {
-    throw new CloudStorageRefused('too-large', `the document is larger than ${String(MAX_SIMPLE_UPLOAD_BYTES)} bytes`);
+    const created =
+      provider === 'onedrive'
+        ? text(
+            (
+              await uploadInSession(
+                provider,
+                accessToken,
+                await openSession(
+                  provider,
+                  `https://graph.microsoft.com/v1.0/me/drive/root:/${encodeURIComponent(name)}:/createUploadSession`,
+                  {
+                    method: 'POST',
+                    headers: { ...bearer(accessToken), 'content-type': 'application/json' },
+                    body: JSON.stringify({ item: { '@microsoft.graph.conflictBehavior': 'rename' } }),
+                  },
+                  fetchImpl,
+                ),
+                pdf,
+                fetchImpl,
+              )
+            )['id'],
+          )
+        : text(
+            (
+              await uploadInSession(
+                provider,
+                accessToken,
+                await openSession(
+                  provider,
+                  'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id',
+                  {
+                    method: 'POST',
+                    headers: {
+                      ...bearer(accessToken),
+                      'content-type': 'application/json; charset=UTF-8',
+                      'x-upload-content-type': 'application/pdf',
+                      'x-upload-content-length': String(pdf.byteLength),
+                    },
+                    body: JSON.stringify({ name, mimeType: 'application/pdf' }),
+                  },
+                  fetchImpl,
+                ),
+                pdf,
+                fetchImpl,
+              )
+            )['id'],
+          );
+    if (created === null) throw new CloudStorageRefused('unexpected-answer', 'the upload answer carries no id');
+    return created;
   }
   if (provider === 'onedrive') {
     const url = `https://graph.microsoft.com/v1.0/me/drive/root:/${encodeURIComponent(name)}:/content?@microsoft.graph.conflictBehavior=rename`;

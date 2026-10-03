@@ -15,6 +15,7 @@ export {
   captureAddLink,
   invertAddLink,
   readPageLinks,
+  type ListedPageLinks,
   type PageLink,
   type LinkBounds,
 } from './pageLinks.js';
@@ -28,6 +29,7 @@ export {
   invertSetLayerVisibility,
   readLayers,
   type Layer,
+  type ListedLayers,
 } from './layers.js';
 export {
   applyDeletePages,

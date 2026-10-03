@@ -1,7 +1,11 @@
-import type { PDFDocument, PDFObject } from './mupdfRaw.js';
+import type { PageSet } from '@monstera/contract/host';
+
+import type { PDFDocument, PDFGraftMap, PDFObject } from './mupdfRaw.js';
 
 import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { bufferBytes, newDocument, withDocument } from './mupdfWriter.js';
+import { graftingWithoutPageTree } from './pageGraft.js';
+import { pagesOf } from './pageScope.js';
 
 /**
  * Building a NEW document out of some of another one's pages — the operation
@@ -82,35 +86,42 @@ const INHERITABLE = ['Resources', 'MediaBox', 'CropBox', 'Rotate'] as const;
  * one was.
  *
  * @param session the document to take pages from
- * @param pages zero-based indices, in the order they should appear
- * @throws RangeError for an empty list or a page the document does not have
+ * @param set the pages, in the order they should appear, as a page set: *every page* of a document of any length is
+ *   one run (JOURNAL, *No document-size refusals*; it was a list capped at 4,096)
+ * @throws RangeError for an empty set or a page the document does not have
  */
-export function extractPages(
-  session: MupdfSession,
-  pages: readonly number[],
-): Promise<ByteImage> {
+export function extractPages(session: MupdfSession, set: PageSet): Promise<ByteImage> {
   return withDocument(session, (source) => {
     const count = source.countPages();
     // REFUSED, both of them. An empty extract writes a PDF with no pages, which
     // is not one a reader opens — the same rule `deletePages` states from the
     // other side, and it needs the count for the second half exactly as that
     // one does.
-    if (pages.length === 0) {
+    if (set.length === 0) {
       throw new RangeError('an extract with no pages would write a document nothing can open');
     }
-    for (const page of pages) {
-      if (page < 0 || page >= count) {
-        throw new RangeError(
-          `page ${String(page)} is outside a document of ${String(count)} page(s)`,
-        );
-      }
-    }
+    // LISTED BY THE ONE EXPANDER, which refuses a page past the document before any is listed.
+    const pages = pagesOf(set, count);
+
+    // PUSHED DOWN BEFORE THE TREE IS DETACHED: `getInheritable` reads up `/Parent`.
+    const leaves = pages.map((page) => pushInheritablesDown(source, page));
 
     const out = newDocument();
-    for (const page of pages) {
-      out.insertPage(out.countPages(), out.graftObject(pushInheritablesDown(source, page)));
-    }
-    carryCatalog(source, out);
+    graftingWithoutPageTree(source, () => {
+      // ONE MAP FOR THE PAGES AND THE CATALOG, so a resource two pages share is one object, and an outline, a named
+      // destination or a widget's `/P` naming a kept page lands on that page's copy rather than on a second one.
+      const map = out.newGraftMap();
+      const placed = new Set<number>();
+      leaves.forEach((leaf, index) => {
+        const page = pages[index] ?? 0;
+        // A PAGE NAMED TWICE is two pages, and one map answers a second graft of a leaf with the first copy — the same
+        // object listed twice in `/Kids`, which is not a page tree. A map of its own makes the repeat a page.
+        const copy = placed.has(page) ? out.newGraftMap().graftObject(leaf) : map.graftObject(leaf);
+        placed.add(page);
+        out.insertPage(out.countPages(), copy);
+      });
+      carryCatalog(map, source, out);
+    });
     out.setPageTreeCache(true);
 
     // THE CALLER'S BYTES, never MuPDF's buffer, whose native memory this function
@@ -152,11 +163,11 @@ export function pushInheritablesDown(document: PDFDocument, page: number): PDFOb
  * empty `/Outlines` is not the same as one with none, and readers differ on
  * which they tolerate.
  */
-function carryCatalog(source: PDFDocument, out: PDFDocument): void {
+function carryCatalog(map: PDFGraftMap, source: PDFDocument, out: PDFDocument): void {
   const from = source.getTrailer().get('Root');
   const to = out.getTrailer().get('Root');
   for (const key of CATALOG_ENTRIES) {
     const entry = from.get(key);
-    if (!entry.isNull()) to.put(key, out.graftObject(entry));
+    if (!entry.isNull()) to.put(key, map.graftObject(entry));
   }
 }

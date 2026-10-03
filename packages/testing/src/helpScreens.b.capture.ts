@@ -49,9 +49,10 @@ test('export-pages-as-images-1', async ({ page }) => {
   await ribbonGroup(page, 'Export').getByRole('button', { name: 'Image', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Export pages as images' });
   await expect(dialog).toBeVisible();
-  await dialog.getByRole('radio', { name: 'These pages' }).check();
-  await dialog.getByRole('textbox', { name: /pages/iu }).first().fill('1-3');
-  await dialog.getByRole('radio', { name: /^JPEG/u }).check();
+  // THE PAGE ROW AND THE FORMAT ARE SEGMENTED CONTROLS: each option is a toggle, a button with a pressed state.
+  await dialog.getByRole('button', { name: 'Select pages', exact: true }).click();
+  await dialog.getByRole('textbox', { name: 'Page numbers' }).fill('1-3');
+  await dialog.getByRole('button', { name: 'JPEG', exact: true }).click();
   const quality = dialog.getByRole('textbox', { name: /quality/iu });
   if ((await quality.count()) > 0) await quality.fill('85');
   await shoot(page, 'export-pages-as-images-1', dialog);
@@ -213,9 +214,10 @@ test('export-text-1', async ({ page }) => {
 test('export-to-powerpoint-1', async ({ page }) => {
   await openApp(page);
   await openDocument(page);
-  const menu = await openGroupMenu(page, 'Tools', 'Convert');
-  await menu.getByRole('menuitem', { name: 'Export to PowerPoint…' }).focus();
-  await shoot(page, 'export-to-powerpoint-1', menu, 12);
+  await openSection(page, 'Home');
+  const group = ribbonGroup(page, 'Export');
+  await group.getByRole('button', { name: 'PowerPoint', exact: true }).focus();
+  await shoot(page, 'export-to-powerpoint-1', group, 8);
 });
 
 test('insert-a-blank-page-1', async ({ page }) => {

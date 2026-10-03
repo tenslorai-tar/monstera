@@ -15,8 +15,9 @@ import {
   TOAST_SAVED_BACK,
 } from '../messages/en.js';
 import type { ShowToast } from '../toasts.js';
-import type { CommandContext, UiCommand } from '../registries/commands.js';
-import { type WritesItsOwnFile, hasDocument, reportProblem } from './documentCommands.js';
+import { type CommandContext, TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
+import { confirmDone } from './confirmWritten.js';
+import { type SettlesMarksFirst, type WritesItsOwnFile, hasDocument, reportProblem } from './documentCommands.js';
 import type { OpenedDocument } from './importMarkdown.js';
 
 /**
@@ -59,7 +60,7 @@ async function offerCopy(
     void deps.ask(CLOUD_OUTCOME_DIALOG_ID, { outcome: uploaded.value.reason });
     return;
   }
-  deps.toast('done', TOAST_CLOUD_COPY_SAVED);
+  confirmDone(deps, TOAST_CLOUD_COPY_SAVED);
 }
 
 export function cloudStorageCommand(deps: {
@@ -74,6 +75,7 @@ export function cloudStorageCommand(deps: {
 }): UiCommand {
   return {
     id: 'cloud.storage',
+    feedback: VISIBLE,
     icon: 'Cloud',
     title: CLOUD_COMMAND_TITLE,
     // FILE, beside the other ways a document is opened. It needs no document — it is a way to START with one — so it
@@ -193,10 +195,12 @@ export function saveBackCommand(
   deps: {
     readonly client: ContractClient;
     readonly ask: (id: string, props: unknown) => Promise<unknown>;
-  } & WritesItsOwnFile,
+  } & WritesItsOwnFile &
+    SettlesMarksFirst,
 ): UiCommand {
   return {
     id: 'cloud.save-back',
+    feedback: TOASTS,
     icon: 'CloudUpload',
     title: SAVE_BACK_TITLE,
     placements: [{ surface: 'menu-bar', menu: 'file', group: 1, order: 30 }],
@@ -204,6 +208,8 @@ export function saveBackCommand(
     run: async (context: CommandContext): Promise<void> => {
       const { docId } = context;
       if (docId === undefined) return;
+      // A SAVE, and the file it writes is shared by definition: the marks question is Save's.
+      if (!(await deps.settleMarks(docId, 'save'))) return;
       const answer = await deps.client['cloud.saveBack']({ docId });
       if (!answer.ok) {
         reportProblem(deps, answer.error);
@@ -213,7 +219,7 @@ export function saveBackCommand(
       // THE STATE FIRST, THEN THE ANNOUNCEMENT, as `saveDocument` orders them.
       if (result.kind === 'saved-back' || result.kind === 'refused') deps.onSaved(docId, result.version);
       if (result.kind === 'saved-back') {
-        deps.toast('done', TOAST_SAVED_BACK);
+        confirmDone(deps, TOAST_SAVED_BACK);
         return;
       }
       // A FILE THIS PERSON MAY NOT CHANGE is not an error to report: the offer is a copy in their own storage. Known at

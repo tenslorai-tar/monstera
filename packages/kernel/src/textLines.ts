@@ -155,6 +155,24 @@ export interface BlockableRun<S> extends GroupableRun {
   readonly right: number;
   /** How the run is set. Carried through to the block, never read here. */
   readonly style: S;
+  /** The run's font, size and fill as one comparable key — {@link settingOf}'s, and read here only for equality. */
+  readonly setting: string;
+}
+
+/**
+ * A run's SETTING as one key: which font, the size it is drawn at, and the colour it is filled with. Two runs set
+ * alike have equal keys, and a block never continues across a change of key (`groupIntoBlocks`, step 3).
+ *
+ * The size to a hundredth of a point: the glyphs of one line come back with sizes equal to the last digit, and a
+ * hundredth is far below any two sizes a designer sets apart.
+ */
+export function settingOf(style: {
+  readonly font: string;
+  readonly size: number;
+  readonly colour: { readonly r: number; readonly g: number; readonly b: number };
+}): string {
+  const { r, g, b } = style.colour;
+  return `${style.font}|${style.size.toFixed(2)}|${String(r)},${String(g)},${String(b)}`;
 }
 
 /**
@@ -167,8 +185,12 @@ export interface BlockableRun<S> extends GroupableRun {
  */
 export interface EditableBlock<S> {
   readonly box: BlockBox;
-  readonly lines: readonly (EditableLine & { readonly box: BlockBox })[];
-  /** How the block's first run is set — what the editor over it is set in. */
+  /** Each line's runs with how EACH is set, which the editor draws them in (ADR-0145), and the line's box. */
+  readonly lines: readonly {
+    readonly runs: readonly { readonly index: number; readonly text: string; readonly style: S }[];
+    readonly box: BlockBox;
+  }[];
+  /** How the block's first line's longest run is set — what the editor over it is set in. */
   readonly style: S;
 }
 
@@ -180,6 +202,29 @@ interface Piece<S> {
   right: number;
   bottom: number;
   top: number;
+}
+
+/**
+ * A piece's setting: its LONGEST run's, by characters that are not spaces. A line of a paragraph with a bold word in it
+ * is set in the paragraph's face, and a list entry whose lead words are bold is set in the face of the rest of it — so
+ * a word set apart inside a line never breaks the block it is in, and a line set apart as a whole does.
+ */
+function settingOfPiece<S>(piece: Piece<S>): string {
+  return longestRun(piece)?.setting ?? '';
+}
+
+/** A piece's longest run by characters that are not spaces — the first of equals — or `undefined` for no runs. */
+function longestRun<S>(piece: Piece<S>): BlockableRun<S> | undefined {
+  let longest: BlockableRun<S> | undefined;
+  let most = -1;
+  for (const run of piece.runs) {
+    const length = run.text.replace(/\s/gu, '').length;
+    if (length > most) {
+      most = length;
+      longest = run;
+    }
+  }
+  return longest;
 }
 
 /**
@@ -195,10 +240,15 @@ interface Piece<S> {
  *    that is not on the page. A word gap is a fraction of the line's height; a
  *    tab stop, a column gutter and the gap after a bullet are more than it.
  * 3. **Blocks**: a piece joins a block whose last piece is directly above it —
- *    the two overlap horizontally, and the gap between them is smaller than the
- *    shorter one's height. A paragraph's lines are closer than a line is tall;
- *    the space between paragraphs, and between a heading and what follows it
- *    across a rule, is usually not.
+ *    the two overlap horizontally, the gap between them is smaller than the
+ *    shorter one's height, and the two are SET ALIKE: the same font, size and
+ *    colour ({@link settingOf}, by each piece's longest run). A paragraph's lines
+ *    are closer than a line is tall; the space between paragraphs is usually not.
+ *    A heading set tight over its text is not either, and the gap alone joined
+ *    them: measured 2026-10-02 in the owner's document, a 13 pt bold blue heading
+ *    7.99 pt above 9.2 pt grey list lines whose height is 8.47 became one block of
+ *    fourteen lines, whose editor took the heading's style — 1.42 times too large,
+ *    bold and blue over the list. A change of setting ends a block whatever the gap.
  *
  * **These are choices, and they are on screen**: every block is outlined
  * before anything is edited, so a person sees the grouping before it writes
@@ -246,12 +296,18 @@ export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly E
   const blocks: Piece<S>[][] = [];
   for (const piece of pieces) {
     const height = piece.top - piece.bottom;
+    const setting = settingOfPiece(piece);
     const block = blocks.find((held) => {
       const above = held[held.length - 1];
       if (above === undefined) return false;
       const overlaps = piece.left < above.right && piece.right > above.left;
       const gap = above.bottom - piece.top;
-      return overlaps && piece.top < above.top && gap < Math.min(height, above.top - above.bottom);
+      return (
+        overlaps &&
+        piece.top < above.top &&
+        gap < Math.min(height, above.top - above.bottom) &&
+        settingOfPiece(above) === setting
+      );
     });
     if (block === undefined) blocks.push([piece]);
     else block.push(piece);
@@ -264,8 +320,10 @@ export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly E
 
   return blocks.flatMap((block) => {
     const [first] = block;
-    const [firstRun] = first?.runs ?? [];
-    if (first === undefined || firstRun === undefined) return [];
+    // THE STYLE OF THE RUN THE BLOCK WAS GROUPED BY, its first piece's longest — every piece of the block is set alike
+    // by that same reading. Its first run was a list entry's bold lead word.
+    const setBy = first === undefined ? undefined : longestRun(first);
+    if (first === undefined || setBy === undefined) return [];
     return [
       {
         box: {
@@ -275,10 +333,10 @@ export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly E
           y1: Math.max(...block.map((piece) => piece.top)),
         },
         lines: block.map((piece) => ({
-          runs: piece.runs.map((run) => ({ index: run.index, text: run.text })),
+          runs: piece.runs.map((run) => ({ index: run.index, text: run.text, style: run.style })),
           box: { x0: piece.left, y0: piece.bottom, x1: piece.right, y1: piece.top },
         })),
-        style: firstRun.style,
+        style: setBy.style,
       },
     ];
   });

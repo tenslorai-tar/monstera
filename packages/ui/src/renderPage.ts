@@ -1,5 +1,7 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
+import { holdPage, residentPage } from './pageResidency.js';
+
 /**
  * Rasterises one page onto a canvas.
  *
@@ -144,7 +146,26 @@ export async function renderPage(
   document: PDFDocumentProxy,
   pageNumber: number,
   canvas: HTMLCanvasElement,
-  scale: number | { readonly fitWidth: number } | { readonly fitHeight: number },
+  scale: number | { readonly fitWidth: number },
+  rotation: number | undefined,
+  signal: AbortSignal,
+  raster?: SecondRasteriser,
+): Promise<RasterisedPage> {
+  // HELD FOR THE DRAW, and released after it whatever happened (`pageResidency.ts`): the page's decoded images are
+  // cleaned once nothing else holds it, so a page drawn once does not keep them for the life of the document.
+  const release = holdPage(document, pageNumber);
+  try {
+    return await drawPage(document, pageNumber, canvas, scale, rotation, signal, raster);
+  } finally {
+    release();
+  }
+}
+
+async function drawPage(
+  document: PDFDocumentProxy,
+  pageNumber: number,
+  canvas: HTMLCanvasElement,
+  scale: number | { readonly fitWidth: number },
   rotation: number | undefined,
   signal: AbortSignal,
   raster?: SecondRasteriser,
@@ -154,20 +175,17 @@ export async function renderPage(
   // types every later read as `false`, and the checks that matter most would read as dead.
   const superseded = (): boolean => signal.aborted;
   const page = await document.getPage(pageNumber);
+  residentPage(document, pageNumber, page);
   // BEFORE THE CANVAS IS TOUCHED: sizing it clears it, so a superseded draw that got this far
   // would wipe the newer one's pixels.
   if (superseded()) throw new RenderCancelledError(pageNumber);
-  // A WIDTH OR A HEIGHT TO FIT is answered from PDF.js' own viewport at scale 1, which sizes the
-  // page without drawing it. The thumbnail strip drew the whole page at full size to learn this,
-  // and that first pass is what a superseded draw left on its canvas (2026-09-18). A height is
-  // Organize's *Full page*: every page whole at the height the grid has, whatever its shape.
-  const unit = typeof scale === 'number' ? undefined : viewportOf(page, 1, rotation);
+  // A WIDTH TO FIT is answered from PDF.js' own viewport at scale 1, which sizes the page without
+  // drawing it. The thumbnail strip drew the whole page at full size to learn this, and that first
+  // pass is what a superseded draw left on its canvas (2026-09-18).
   const viewport =
     typeof scale === 'number'
       ? viewportOf(page, scale, rotation)
-      : 'fitWidth' in scale
-        ? viewportOf(page, scale.fitWidth / (unit?.width ?? 1), rotation)
-        : viewportOf(page, scale.fitHeight / (unit?.height ?? 1), rotation);
+      : viewportOf(page, scale.fitWidth / viewportOf(page, 1, rotation).width, rotation);
   const size = { width: Math.ceil(viewport.width), height: Math.ceil(viewport.height) };
   // ASKED BEFORE ANY DRAWING, so a canvas nobody can draw on refuses the page rather than after a
   // render has been paid for.
@@ -343,6 +361,21 @@ export async function pageGeometry(
 }
 
 /**
+ * A page's box at scale 1 in CSS pixels, turned by `rotation` as `renderPage` would turn it — exact, not `ceil`ed,
+ * because it is the other half of a FIT, and a fit computed from a rounded box is off by up to a pixel per page.
+ * Parses the one page asked for and draws nothing: what lets the first page be drawn at the fit it will be shown at,
+ * where waiting for a first drawing to learn its size drew it at 100% and then again.
+ */
+export async function pageBoxAtOne(
+  document: PDFDocumentProxy,
+  pageNumber: number,
+  rotation: number | undefined,
+): Promise<{ readonly width: number; readonly height: number }> {
+  const viewport = viewportOf(await document.getPage(pageNumber), 1, rotation);
+  return { width: viewport.width, height: viewport.height };
+}
+
+/**
  * Draws one REGION of page `pageNumber` at `scale` into `canvas`, sized to the region — a tile (`tiles.ts`) or the
  * loupe's window. The region is in the page's device pixels at `scale`, origin top-left, as the canvas counts.
  *
@@ -359,7 +392,26 @@ export async function renderRegion(
   region: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
   signal: AbortSignal,
 ): Promise<void> {
+  // HELD FOR THE DRAW, `renderPage`'s reason: a tile decodes the page's images as a whole page does.
+  const release = holdPage(document, pageNumber);
+  try {
+    await drawRegion(document, pageNumber, canvas, scale, rotation, region, signal);
+  } finally {
+    release();
+  }
+}
+
+async function drawRegion(
+  document: PDFDocumentProxy,
+  pageNumber: number,
+  canvas: HTMLCanvasElement,
+  scale: number,
+  rotation: number | undefined,
+  region: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+  signal: AbortSignal,
+): Promise<void> {
   const page = await document.getPage(pageNumber);
+  residentPage(document, pageNumber, page);
   // BEFORE THE CANVAS IS TOUCHED, `renderPage`'s reason.
   if (signal.aborted) throw new RenderCancelledError(pageNumber);
   const viewport = viewportOf(page, scale, rotation);

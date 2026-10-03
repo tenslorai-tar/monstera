@@ -245,6 +245,139 @@ describe('Compare — the walk runs when asked, and its list jumps to each chang
     expect(screen.getByText('No differences found.')).toBeTruthy();
   });
 
+  // THE OWNER'S REVIEW OF 0.1.9.0: the panel had no close, Cancel sat beside Compare, a second Compare walked again,
+  // and Esc left Side by Side with the panel still open.
+  it('the Differences close hides the panel; Compare then shows the HELD list again without reading anything', async () => {
+    const { client, read } = clientFor(
+      new Map([
+        [LEFT, 'The quick brown fox jumps over'],
+        [RIGHT, 'The quick red fox jumps over'],
+      ]),
+    );
+    const { container, closed } = mount(client);
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Compare' }));
+    await settle();
+    expect(container.querySelector('[data-side-count]')?.textContent).toBe('1 difference');
+    const body = container.querySelector('.m-side__body');
+    expect(body?.classList.contains('m-side__body--listed')).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close Differences' }));
+    await settle();
+    expect(container.querySelector('[data-side-differences]')).toBeNull();
+    expect(body?.classList.contains('m-side__body--listed')).toBe(false);
+    // ONLY THE PANEL: Side by Side itself is still open.
+    expect(closed).toStrictEqual([]);
+    // THE FOCUS IS BACK ON THE SURFACE, so the next Esc reaches it.
+    expect(document.activeElement).toBe(container.querySelector('section[data-side-by-side]'));
+
+    const before = read.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Compare' }));
+    await settle();
+    expect(container.querySelector('[data-side-count]')?.textContent).toBe('1 difference');
+    expect(read.length).toBe(before);
+  });
+
+  it('Compare is DISABLED while the panel shows the current answer; CONTROL: a new version of either half enables it', async () => {
+    const { client, read } = clientFor(
+      new Map([
+        [LEFT, 'The quick brown fox jumps over'],
+        [RIGHT, 'The quick red fox jumps over'],
+      ]),
+    );
+    const { rerender } = mount(client);
+    await settle();
+    const compare = screen.getByRole('button', { name: 'Compare' });
+    expect(compare.getAttribute('aria-disabled')).not.toBe('true');
+    compare.focus();
+    fireEvent.click(compare);
+    await settle();
+    // THE SAME BUTTON, disabled AND STILL HOLDING THE FOCUS, so Esc goes on reaching the surface; a click does nothing.
+    expect(screen.getByRole('button', { name: 'Compare' })).toBe(compare);
+    expect(compare.getAttribute('aria-disabled')).toBe('true');
+    expect(document.activeElement).toBe(compare);
+    const before = read.length;
+    fireEvent.click(compare);
+    await settle();
+    expect(read.length).toBe(before);
+
+    const [first, second] = DOCUMENTS;
+    if (first === undefined || second === undefined) throw new Error('no fixture documents');
+    rerender(first, { ...second, version: asDocVersion(2) });
+    await settle();
+    expect(screen.getByRole('button', { name: 'Compare' }).getAttribute('aria-disabled')).not.toBe('true');
+  });
+
+  it('while comparing, Compare BECOMES Stop in its place, and Stop ends the walk with no panel left', async () => {
+    const { client } = clientFor(
+      new Map([
+        [LEFT, 'The quick brown fox jumps over'],
+        [RIGHT, 'The quick red fox jumps over'],
+      ]),
+    );
+    // A DRAW THAT WAITS until it is aborted, so the walk is still running when Stop is pressed.
+    const held: DrawComparePage = (_view, _page, signal) =>
+      new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          reject(new DOMException('stopped', 'AbortError'));
+        });
+      });
+    const closed: number[] = [];
+    const [first, second] = DOCUMENTS;
+    if (first === undefined || second === undefined) throw new Error('no fixture documents');
+    const { container } = renderBare(
+      <SideBySide
+        client={client}
+        documents={DOCUMENTS}
+        left={first}
+        right={second}
+        onPick={() => undefined}
+        onOpenFile={() => undefined}
+        onClose={() => closed.push(1)}
+        draw={held}
+        preferences={PREFERENCES}
+      />,
+      { wrapper: Messages },
+    );
+    await settle();
+    const compare = screen.getByRole('button', { name: 'Compare' });
+    compare.focus();
+    fireEvent.click(compare);
+    await settle();
+    expect(screen.queryByRole('button', { name: 'Compare' })).toBeNull();
+    const stop = screen.getByRole('button', { name: 'Stop' });
+    // THE SAME ELEMENT, so the focus the press put on it stays there: the button before Close in the header.
+    expect(stop).toBe(compare);
+    expect(document.activeElement).toBe(stop);
+    expect(stop.nextElementSibling?.hasAttribute('data-side-close')).toBe(true);
+    fireEvent.click(stop);
+    await settle();
+    expect(screen.getByRole('button', { name: 'Compare' })).toBe(compare);
+    expect(document.activeElement).toBe(compare);
+    expect(container.querySelector('[data-side-differences]')).toBeNull();
+    expect(closed).toStrictEqual([]);
+  });
+
+  it('Esc closes the Differences panel FIRST, and only the next Esc closes Side by Side', async () => {
+    const { client } = clientFor(
+      new Map([
+        [LEFT, 'The quick brown fox jumps over'],
+        [RIGHT, 'The quick red fox jumps over'],
+      ]),
+    );
+    const { container, closed } = mount(client);
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Compare' }));
+    await settle();
+    const surface = container.querySelector('section[data-side-by-side]') ?? document.body;
+    fireEvent.keyDown(surface, { key: 'Escape' });
+    await settle();
+    expect(container.querySelector('[data-side-differences]')).toBeNull();
+    expect(closed).toStrictEqual([]);
+    fireEvent.keyDown(surface, { key: 'Escape' });
+    expect(closed).toStrictEqual([1]);
+  });
+
   it('a different pair drops the list, so a comparison of two other documents is never shown', async () => {
     const { client } = clientFor(
       new Map([

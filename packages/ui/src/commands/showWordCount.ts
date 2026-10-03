@@ -3,7 +3,7 @@ import type { ContractClient } from '@monstera/contract';
 import { WORD_COUNT_DIALOG_ID } from '../dialogs/wordCount.js';
 import { GROUP_PROOFING, WORD_COUNT_COMMAND_TITLE, WORD_COUNT_PROGRESS } from '../messages/en.js';
 import type { TrackTask } from '../runningTask.js';
-import type { CommandContext, UiCommand } from '../registries/commands.js';
+import { type CommandContext, RESULT_DIALOG, type UiCommand } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
 
 /**
@@ -66,6 +66,7 @@ export function showWordCountCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.word-count',
+    feedback: RESULT_DIALOG,
     icon: 'WholeWord',
     title: WORD_COUNT_COMMAND_TITLE,
     // THE RIBBON LANDED 2026-09-08 AND THIS IS THE ONE LINE IT PREDICTED. The

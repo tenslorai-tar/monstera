@@ -7,7 +7,7 @@ import {
   NEXT_PAGE_TITLE,
   PREVIOUS_PAGE_TITLE,
 } from '../messages/en.js';
-import type { CommandContext, UiCommand } from '../registries/commands.js';
+import { type CommandContext, type UiCommand, VISIBLE } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
 
 /**
@@ -100,6 +100,7 @@ export function pageMoveCommand(
 
   return {
     id: `view.page-${move}`,
+    feedback: VISIBLE,
     icon: icons[move],
     title: titles[move],
     shortcut: shortcuts[move],
@@ -145,7 +146,9 @@ export function pageMoveCommand(
 export function goToCommand(): UiCommand {
   return {
     id: 'view.go-to',
+    feedback: VISIBLE,
     title: GO_TO_TITLE,
+    icon: 'CornerDownRight',
     shortcut: 'Ctrl+Shift+G',
     // EDIT, after the clipboard: finding a place in the document, beside Find in the Edit section's groups (ADR-0107).
     placements: [{ surface: 'menu-bar', menu: 'edit', group: 2, order: 10 }],
@@ -176,6 +179,7 @@ export function historyCommand(
 ): UiCommand {
   return {
     id: direction === 'back' ? 'view.go-back' : 'view.go-forward',
+    feedback: VISIBLE,
     title: direction === 'back' ? GO_BACK_TITLE : GO_FORWARD_TITLE,
     shortcut: direction === 'back' ? 'Alt+ArrowLeft' : 'Alt+ArrowRight',
     placements: [],

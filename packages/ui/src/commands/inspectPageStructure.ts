@@ -3,7 +3,7 @@ import type { ContractClient } from '@monstera/contract';
 import { PAGE_STRUCTURE_DIALOG_ID } from '../dialogs/pageStructure.js';
 import { GROUP_ACCESSIBILITY, PAGE_STRUCTURE_COMMAND_TITLE } from '../messages/en.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
-import type { CommandContext, UiCommand } from '../registries/commands.js';
+import { type CommandContext, RESULT_DIALOG, type UiCommand } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
 
 /**
@@ -35,6 +35,7 @@ export function inspectPageStructureCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.inspect-page-structure',
+    feedback: RESULT_DIALOG,
     icon: 'ListTree',
     title: PAGE_STRUCTURE_COMMAND_TITLE,
     // REVIEW, which is where `BUILD-PROMPT.md`:491 lists it, in a group of its own:

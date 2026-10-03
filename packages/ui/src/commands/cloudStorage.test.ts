@@ -20,6 +20,8 @@ import { cloudStorageCommand, saveBackCommand } from './cloudStorage.js';
 const DOC = asDocId('00000000-0000-4000-8000-0000000000d1');
 const START = { docId: undefined } as unknown as CommandContext;
 const WITH_DOCUMENT = { docId: DOC } as unknown as CommandContext;
+/** The unapplied-marks question answering *go ahead*: a document carrying no marks (item N1). */
+const NOTHING_MARKED = (): Promise<boolean> => Promise.resolve(true);
 
 interface Sent {
   readonly id: string;
@@ -262,7 +264,7 @@ describe('Save back to cloud', () => {
     const { client: built, sent } = client({ 'cloud.saveBack': { kind: 'saved-back', version: asDocVersion(7) } });
     const { ask, shown } = dialogs([]);
     const { toast, onSaved, said, wrote } = saving();
-    await saveBackCommand({ client: built, ask, toast, onSaved }).run(WITH_DOCUMENT);
+    await saveBackCommand({ client: built, ask, toast, onSaved, settleMarks: NOTHING_MARKED }).run(WITH_DOCUMENT);
     expect(sent).toStrictEqual([{ id: 'cloud.saveBack', params: { docId: DOC } }]);
     expect(wrote).toStrictEqual([{ docId: DOC, version: asDocVersion(7) }]);
     expect(said).toStrictEqual([{ kind: 'done', message: TOAST_SAVED_BACK }]);
@@ -274,7 +276,7 @@ describe('Save back to cloud', () => {
       const { client: built } = client({ 'cloud.saveBack': { kind } });
       const { ask, shown } = dialogs([]);
       const { toast, onSaved, said, wrote } = saving();
-      await saveBackCommand({ client: built, ask, toast, onSaved }).run(WITH_DOCUMENT);
+      await saveBackCommand({ client: built, ask, toast, onSaved, settleMarks: NOTHING_MARKED }).run(WITH_DOCUMENT);
       expect(wrote, kind).toStrictEqual([]);
       expect(said, kind).toStrictEqual([]);
       expect(shown, kind).toStrictEqual([{ id: CLOUD_OUTCOME_DIALOG_ID, props: { outcome: kind } }]);
@@ -298,7 +300,7 @@ describe('Save back to cloud', () => {
         return Promise.resolve(id === CLOUD_VIEW_ONLY_DIALOG_ID ? { kind: 'save-copy' } : undefined);
       };
       const { toast, onSaved, said, wrote } = saving();
-      await saveBackCommand({ client: built, ask, toast, onSaved }).run(WITH_DOCUMENT);
+      await saveBackCommand({ client: built, ask, toast, onSaved, settleMarks: NOTHING_MARKED }).run(WITH_DOCUMENT);
 
       expect(wrote).toStrictEqual([{ docId: DOC, version: asDocVersion(4) }]);
       expect(shown).toStrictEqual([{ id: CLOUD_VIEW_ONLY_DIALOG_ID, props: { provider: 'google-drive', moment: reason } }]);
@@ -314,7 +316,7 @@ describe('Save back to cloud', () => {
     });
     const { ask, shown } = dialogs([]);
     const { toast, onSaved } = saving();
-    await saveBackCommand({ client: built, ask, toast, onSaved }).run(WITH_DOCUMENT);
+    await saveBackCommand({ client: built, ask, toast, onSaved, settleMarks: NOTHING_MARKED }).run(WITH_DOCUMENT);
     expect(shown).toStrictEqual([{ id: CLOUD_OUTCOME_DIALOG_ID, props: { outcome: 'unauthorised' } }]);
     expect(sent.map((call) => call.id)).toStrictEqual(['cloud.saveBack']);
   });
@@ -326,7 +328,7 @@ describe('Save back to cloud', () => {
     });
     const { ask } = dialogs([]);
     const { toast, onSaved, said } = saving();
-    await saveBackCommand({ client: built, ask, toast, onSaved }).run(WITH_DOCUMENT);
+    await saveBackCommand({ client: built, ask, toast, onSaved, settleMarks: NOTHING_MARKED }).run(WITH_DOCUMENT);
     expect(sent.map((call) => call.id)).toStrictEqual(['cloud.saveBack', 'cloud.access']);
     expect(said).toStrictEqual([]);
   });
@@ -337,7 +339,7 @@ describe('Save back to cloud', () => {
     });
     const { ask, shown } = dialogs([]);
     const { toast, onSaved, said, wrote } = saving();
-    await saveBackCommand({ client: built, ask, toast, onSaved }).run(WITH_DOCUMENT);
+    await saveBackCommand({ client: built, ask, toast, onSaved, settleMarks: NOTHING_MARKED }).run(WITH_DOCUMENT);
     // `document.unsaved` reads clean here — main wrote the working copy before sending — so a tab
     // left dirty would be the disagreement this command exists not to make.
     expect(wrote).toStrictEqual([{ docId: DOC, version: asDocVersion(4) }]);

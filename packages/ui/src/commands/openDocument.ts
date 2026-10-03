@@ -1,9 +1,9 @@
 import type { ChannelResult, ContractClient, DroppedOpenOutcome } from '@monstera/contract';
-import { type DocId, type DocVersion, type Failure, type Result, ok } from '@monstera/shared';
+import { type DocId, type DocVersion, type Failure, type FileHandle, type Result, ok } from '@monstera/shared';
 
 import type { DropOpener } from '../bridge.js';
 import { GROUP_FILE, OPEN_DOCUMENT_TITLE, RIBBON_OPEN } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 
 /**
  * The first registered command with a working `run`.
@@ -84,6 +84,7 @@ export interface OpenDocumentDeps {
 export function openDocumentCommand(deps: OpenDocumentDeps): UiCommand {
   return {
     id: 'document.open',
+    feedback: VISIBLE,
     icon: 'FolderOpen',
     title: OPEN_DOCUMENT_TITLE,
     // v5-02's Home › File caption. The start screen's button keeps the full *Open PDF…*.
@@ -172,9 +173,25 @@ export async function openWaitingDocuments(deps: OpenDocumentDeps): Promise<void
 export async function restoreLastSession(deps: OpenDocumentDeps): Promise<void> {
   const recent = await deps.client['document.recent']({});
   if (!recent.ok || !recent.value.lastExitClean) return;
-  for (const entry of recent.value.lastSession) {
-    settleOpen(deps, await deps.client['document.openRecent']({ handle: entry.handle }));
-  }
+  for (const entry of recent.value.lastSession) await openRecentDocument(deps, entry.handle);
+}
+
+/**
+ * What opening a recent entry left: what any open leaves, or `refused` — main did not know the handle, because the list
+ * it came from is older than this run, which a surface answers by asking for the list again.
+ */
+export type RecentOpenOutcome = OpenOutcome | 'refused';
+
+/**
+ * Opens a file the recent list named, by the handle main minted for it — THE ONE ROUTE over `document.openRecent`
+ * ([ADR-0143](../../../../docs/DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md)):
+ * File › Recent, the start screen's cards and its crash offer, and the restore at start all take it, so each settles an
+ * open as a pick does — a document already open is brought forward, a moved file or a full shell says so.
+ */
+export async function openRecentDocument(deps: OpenDocumentDeps, handle: FileHandle): Promise<RecentOpenOutcome> {
+  const answer = await deps.client['document.openRecent']({ handle });
+  if (!answer.ok && answer.error.code === 'unknown-handle') return 'refused';
+  return settleOpen(deps, answer);
 }
 
 /**

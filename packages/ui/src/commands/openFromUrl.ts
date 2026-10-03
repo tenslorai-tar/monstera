@@ -4,7 +4,7 @@ import type { DocId } from '@monstera/shared';
 import { OPEN_FROM_URL_DIALOG_ID, OPEN_FROM_URL_RESULT } from '../dialogs/openFromUrl.js';
 import { URL_OPEN_PROBLEM_DIALOG_ID, type UrlOpenProblem } from '../dialogs/urlOpenProblem.js';
 import { GROUP_CREATE, OPEN_FROM_URL_COMMAND_TITLE, RIBBON_OPEN_FROM_URL } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import { type DocumentCommandDeps, reportProblem } from './documentCommands.js';
 import type { OpenedDocument } from './importMarkdown.js';
 
@@ -57,6 +57,7 @@ export function openFromUrlCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.open-from-url',
+    feedback: VISIBLE,
     icon: 'Globe',
     title: OPEN_FROM_URL_COMMAND_TITLE,
     ribbonTitle: RIBBON_OPEN_FROM_URL,

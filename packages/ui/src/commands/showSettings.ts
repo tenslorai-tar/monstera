@@ -11,10 +11,10 @@ import {
   TOAST_SETTINGS_SAVED,
   TOAST_SETTINGS_UNREADABLE,
 } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import type { SettingsStore } from '../settingsStore.js';
 import type { ShowToast } from '../toasts.js';
-import { confirmWritten } from './confirmWritten.js';
+import { confirmDone, confirmWritten } from './confirmWritten.js';
 import { reportProblem } from './documentCommands.js';
 
 /**
@@ -59,6 +59,8 @@ export function showSettingsCommand(deps: {
 }): UiCommand {
   return {
     id: 'app.settings',
+    // A CHANGED SETTING SHOWS WHERE IT APPLIES; an export or an import from the dialog confirms through its own toast.
+    feedback: VISIBLE,
     icon: 'Settings',
     title: SETTINGS_COMMAND_TITLE,
     placements: [
@@ -166,7 +168,7 @@ export function showSettingsCommand(deps: {
       if (read.value.kind === 'unreadable') deps.toast('problem', TOAST_SETTINGS_UNREADABLE);
       if (read.value.kind === 'read') {
         const { skipped } = deps.settings.importValues(read.value.values);
-        deps.toast('done', skipped === 0 ? TOAST_SETTINGS_IMPORTED : TOAST_SETTINGS_IMPORTED_PARTLY);
+        confirmDone(deps, skipped === 0 ? TOAST_SETTINGS_IMPORTED : TOAST_SETTINGS_IMPORTED_PARTLY);
       }
       await open();
   }

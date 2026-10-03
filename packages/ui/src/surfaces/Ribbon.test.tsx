@@ -43,6 +43,7 @@ const CONTEXT: CommandContext = {
 function commandOf(id: string, title: string, placements: readonly Placement[]): UiCommand {
   return {
     id,
+    feedback: { kind: 'visible' },
     title: messageKey(title),
     // The registry refuses a ribbon command with no glyph (§10.4).
     icon: 'File',

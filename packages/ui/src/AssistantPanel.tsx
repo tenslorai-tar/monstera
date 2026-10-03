@@ -169,7 +169,7 @@ import { useSetting } from './useSetting.js';
  *
  * ## The provider is named before anything is sent; what went is named after
  *
- * The provider picker beside Send shows who receives the next ask, and Send is the explicit
+ * The provider picker under the message box shows who receives the next ask, and Send is the explicit
  * action (ARCHITECTURE §8, *What reaches an AI provider*). The Context menu chooses which part
  * of the document goes. Nothing about the document is read until Send, and each asked turn then
  * says which pages actually went, so a whole-document question about a long file says that it
@@ -216,8 +216,11 @@ export interface AssistantPanelProps {
   readonly storedSecrets: readonly string[];
   /** Where the provider and each provider's model are kept (ADR-0117) — the picker below writes them. */
   readonly settings: SettingsStore;
-  /** The focused document, or `undefined` on the start screen. */
-  readonly focused?: AssistantDocument | undefined;
+  /**
+   * The focused document, REQUIRED: the panel is mounted in an open document's page area only, so the start-screen
+   * conversation it once kept in its own state was a branch no build reached. The conversation lives in this store.
+   */
+  readonly focused: AssistantDocument;
   /** Goes to a page an answer cited, zero-based. */
   readonly onGoTo?: ((page: number) => void) | undefined;
   /** The latest request a command made of the panel. */
@@ -447,12 +450,7 @@ export function AssistantPanel({
    */
   const [webChosen, setWebChosen] = useState<{ readonly docId: DocId } | null>(null);
 
-  /** Turns for the start screen, where there is no document store to hold them. */
-  const [looseTurns, setLooseTurns] = useState<readonly ConversationTurn[]>([]);
-  /** The start screen's turns as the ask's closures read them, without a render between. */
-  const looseRef = useRef<readonly ConversationTurn[]>([]);
-  const documentTurns = useConversation(focused?.store);
-  const turns = focused === undefined ? looseTurns : documentTurns;
+  const turns = useConversation(focused.store);
 
   /**
    * The live ask: its subscription, and WHERE its answer goes — the conversation it was asked
@@ -485,7 +483,7 @@ export function AssistantPanel({
   // A SELECTION BELONGS TO THE DOCUMENT IT WAS MADE IN, and it is DERIVED from the request that
   // carried it rather than copied into state: switching tabs makes it vanish by construction, so
   // the Context menu can never offer words from a file that is not in front of the reader.
-  const docId = focused?.docId;
+  const docId = focused.docId;
   const selection =
     (request?.about.scope === 'selection' || request?.about.scope === 'comment') && request.about.docId === docId
       ? request.about
@@ -524,8 +522,8 @@ export function AssistantPanel({
   // LEFT · RIGHT · BOTH, offered only when it can mean something (ADR-0089): a second document
   // on the right, and a scope that names a page or the document. A selection or a comment belongs
   // to the document it was made in, and one document shown has nothing to choose between.
-  const sides = useSides(focused?.store);
-  const pairable = beside !== undefined && beside.docId !== focused?.docId && (scope === 'page' || scope === 'document');
+  const sides = useSides(focused.store);
+  const pairable = beside !== undefined && beside.docId !== focused.docId && (scope === 'page' || scope === 'document');
   // NO DEFAULT: with two documents and no choice, an ask waits rather than sending a document
   // nobody picked.
   const waitingForSides = pairable && sides === undefined;
@@ -537,7 +535,7 @@ export function AssistantPanel({
 
   // WHETHER THIS PROVIDER AND MODEL CAN SEARCH — `webSearchOf`, the one reading `main` also takes (ADR-0108).
   const webSupport = webSearchOf(provider, model);
-  const webPicked = webChosen !== null && webChosen.docId === focused?.docId;
+  const webPicked = webChosen !== null && webChosen.docId === focused.docId;
   // WHAT AN ASK SENDS: the person's choice, where this model can search at all.
   const webAsked = webPicked && webSupport.kind !== 'none';
   // A MODEL THAT ALWAYS SEARCHES is not asked *Document only* — `main` would refuse it; Send says so first.
@@ -586,7 +584,7 @@ export function AssistantPanel({
    */
   const requestFor = useCallback(
     (chosen: Scope): AskRequest | null => {
-      if (focused === undefined || chosen === 'nothing') return { about: undefined };
+      if (chosen === 'nothing') return { about: undefined };
       if (chosen === 'selection' || chosen === 'comment') return { about: selection ?? undefined };
       // THE DOCUMENT'S COMMENTS belong to the tab's document alone; they do not pair.
       if (chosen === 'comments') return { about: { scope: 'comments', docId: focused.docId } };
@@ -633,13 +631,10 @@ export function AssistantPanel({
       replyTo?: ReplyTarget,
     ): boolean => {
       if (text === '' || model === '' || live.current !== null) return false;
-      const store = focused?.store;
-      const read = (): readonly ConversationTurn[] => (store === undefined ? looseRef.current : store.getState().conversation);
+      const store = focused.store;
+      const read = (): readonly ConversationTurn[] => store.getState().conversation;
       const write = (next: readonly ConversationTurn[]): void => {
-        if (store === undefined) {
-          looseRef.current = next;
-          setLooseTurns(next);
-        } else store.getState().converse(next);
+        store.getState().converse(next);
       };
       const subscription = newSubscription();
       const before = read();
@@ -717,13 +712,10 @@ export function AssistantPanel({
     [client, focused, model, models, provider],
   );
 
-  /** The conversation the panel shows, and a way to replace it — the document's, or the loose one. */
+  /** Replaces the conversation the panel shows, the focused document's. */
   const writeTurns = useCallback(
     (next: readonly ConversationTurn[]): void => {
-      if (focused === undefined) {
-        looseRef.current = next;
-        setLooseTurns(next);
-      } else focused.store.getState().converse(next);
+      focused.store.getState().converse(next);
     },
     [focused],
   );
@@ -734,13 +726,13 @@ export function AssistantPanel({
    */
   // AN EDIT BELONGS TO ONE DOCUMENT'S CONVERSATION: held with that document's id, and read as no
   // edit anywhere else — so a tab switch cannot point its index into another document's turns.
-  const [editingIn, setEditingIn] = useState<{ readonly docId: DocId | undefined; readonly at: number } | null>(null);
-  const editing = editingIn !== null && editingIn.docId === focused?.docId ? editingIn.at : null;
+  const [editingIn, setEditingIn] = useState<{ readonly docId: DocId; readonly at: number } | null>(null);
+  const editing = editingIn !== null && editingIn.docId === focused.docId ? editingIn.at : null;
   const setEditing = useCallback(
     (at: number | null): void => {
-      setEditingIn(at === null ? null : { docId: focused?.docId, at });
+      setEditingIn(at === null ? null : { docId: focused.docId, at });
     },
-    [focused?.docId],
+    [focused.docId],
   );
 
   /**
@@ -794,11 +786,11 @@ export function AssistantPanel({
   // live run of 2026-09-21. A request naming another document is never asked here at all.
   useEffect(() => {
     if (request === undefined || request.serial === handled) return;
-    if (request.about.docId !== focused?.docId) return;
+    if (request.about.docId !== focused.docId) return;
     if (request.prompt === undefined || ask(i18n._(request.prompt), { about: request.about }, request.replyTo)) {
       onHandled(request.serial);
     }
-  }, [ask, focused?.docId, handled, i18n, onHandled, request, streaming]);
+  }, [ask, focused.docId, handled, i18n, onHandled, request, streaming]);
 
   const stop = useCallback(() => {
     if (streaming === null) return;
@@ -1078,7 +1070,7 @@ export function AssistantPanel({
                   }}
                   size="dense"
                 />
-                {onNote !== undefined && focused !== undefined && (
+                {onNote !== undefined && (
                   <IconButton
                     disabled={turn.noted === true}
                     icon={StickyNote}
@@ -1120,7 +1112,7 @@ export function AssistantPanel({
                     onReply({ kind: 'replyToAnnotation', page: target.page, index: target.index, text, version: target.version });
                     // ONCE: a second press would post the same reply again, which the live run of
                     // 2026-09-21 showed the button offering.
-                    focused?.store
+                    focused.store
                       .getState()
                       .converse(turns.map((each, index) => (index === at ? { ...each, posted: true } : each)));
                   }}
@@ -1143,103 +1135,102 @@ export function AssistantPanel({
           />
         </div>
       )}
-      {/* THE FOOT: the word *Choose*, then Context and Sources as two menus, ON ONE ROW over the message box (the
-          owner, 2 October; each menu's face is its value alone, so the row fits the pane), then the box itself with
-          the provider and model at its bottom-left and the send arrow at its bottom-right. The word names the group,
-          so a screen reader hears *Choose* once on entering it and each menu by its own name. */}
-      {focused !== undefined && (
-        <div className="m-assistant__about" data-assistant-about="">
-          <div aria-labelledby={chooseId} className="m-assistant__choices" role="group">
-            <span className="m-assistant__choose" id={chooseId}>
-              {i18n._(ASSISTANT_CHOOSE)}
-            </span>
-            <ChoiceMenu<Scope>
-              label={ASSISTANT_ABOUT_LABEL}
-              onChange={choose}
+      {/* THE FOOT: the word *Choose*, then the Context and Sources menus, ON ONE ROW across the pane over the message
+          box (the owner's review of 0.1.9.0: each face reads its name, and the value is in the name and the open menu);
+          then the box with the paperclip at its bottom-left and the send arrow at its bottom-right; then the provider
+          and model under it. The word names the group, so a screen reader hears *Choose* once on entering it and each
+          menu by its own name. */}
+      <div className="m-assistant__about" data-assistant-about="">
+        <div aria-labelledby={chooseId} className="m-assistant__choices" role="group">
+          <span className="m-assistant__choose" id={chooseId}>
+            {i18n._(ASSISTANT_CHOOSE)}
+          </span>
+          <ChoiceMenu<Scope>
+            label={ASSISTANT_ABOUT_LABEL}
+            onChange={choose}
+            options={[
+              ...(selection === null
+                ? []
+                : [
+                    {
+                      value: selection.scope,
+                      label: selection.scope === 'comment' ? ASSISTANT_CHIP_COMMENT : ASSISTANT_CHIP_SELECTION,
+                    },
+                  ]),
+              {
+                value: 'page' as const,
+                label: ASSISTANT_CHIP_PAGE,
+                // THE PAGE THAT WILL GO: the right pane's when the conversation asks the right.
+                values: { page: pdfjsPageOf(beside !== undefined && sides === 'right' ? beside.page : focused.page) },
+              },
+              { value: 'document' as const, label: ASSISTANT_CHIP_DOCUMENT },
+              // EVERY OPEN DOCUMENT (ADR-0134), offered only when there is more than one to ask about.
+              ...(openDocuments.length < 2 ? [] : [{ value: 'all' as const, label: ASSISTANT_CHIP_ALL }]),
+              { value: 'comments' as const, label: ASSISTANT_CHIP_COMMENTS },
+              // DISABLED, NOT DROPPED, for a model that says it cannot see (ADR-0081's rule).
+              { value: 'page-image' as const, label: ASSISTANT_CHIP_PICTURE, disabled: !canSee },
+              { value: 'nothing' as const, label: ASSISTANT_CHIP_NOTHING },
+            ]}
+            value={scope}
+          />
+          {/* DOCUMENT ONLY OR DOCUMENT + WEB (ADR-0108): each choice disabled, never dropped, where this provider
+              and model cannot take it — with the sentence that says why beneath. */}
+          <span className="m-assistant__choice" data-assistant-web="">
+            <ChoiceMenu<'document' | 'web'>
+              label={ASSISTANT_WEB_LABEL}
+              onChange={(next) => {
+                setWebChosen(next === 'web' ? { docId: focused.docId } : null);
+              }}
               options={[
-                ...(selection === null
-                  ? []
-                  : [
-                      {
-                        value: selection.scope,
-                        label: selection.scope === 'comment' ? ASSISTANT_CHIP_COMMENT : ASSISTANT_CHIP_SELECTION,
-                      },
-                    ]),
-                {
-                  value: 'page' as const,
-                  label: ASSISTANT_CHIP_PAGE,
-                  // THE PAGE THAT WILL GO: the right pane's when the conversation asks the right.
-                  values: { page: pdfjsPageOf(beside !== undefined && sides === 'right' ? beside.page : focused.page) },
-                },
-                { value: 'document' as const, label: ASSISTANT_CHIP_DOCUMENT },
-                // EVERY OPEN DOCUMENT (ADR-0134), offered only when there is more than one to ask about.
-                ...(openDocuments.length < 2 ? [] : [{ value: 'all' as const, label: ASSISTANT_CHIP_ALL }]),
-                { value: 'comments' as const, label: ASSISTANT_CHIP_COMMENTS },
-                // DISABLED, NOT DROPPED, for a model that says it cannot see (ADR-0081's rule).
-                { value: 'page-image' as const, label: ASSISTANT_CHIP_PICTURE, disabled: !canSee },
-                { value: 'nothing' as const, label: ASSISTANT_CHIP_NOTHING },
+                { value: 'document', label: ASSISTANT_WEB_DOCUMENT, disabled: webSupport.kind === 'always' },
+                { value: 'web', label: ASSISTANT_WEB_ON, disabled: webSupport.kind === 'none' },
               ]}
-              value={scope}
+              value={webAsked ? 'web' : 'document'}
             />
-            {/* DOCUMENT ONLY OR DOCUMENT + WEB (ADR-0108): each choice disabled, never dropped, where this provider
-                and model cannot take it — with the sentence that says why beneath. */}
-            <span className="m-assistant__choice" data-assistant-web="">
-              <ChoiceMenu<'document' | 'web'>
-                label={ASSISTANT_WEB_LABEL}
-                onChange={(next) => {
-                  setWebChosen(next === 'web' ? { docId: focused.docId } : null);
-                }}
-                options={[
-                  { value: 'document', label: ASSISTANT_WEB_DOCUMENT, disabled: webSupport.kind === 'always' },
-                  { value: 'web', label: ASSISTANT_WEB_ON, disabled: webSupport.kind === 'none' },
-                ]}
-                value={webAsked ? 'web' : 'document'}
-              />
-            </span>
-          </div>
-          {webSupport.kind === 'none' && (
-            <p className="m-assistant__state" data-assistant-web-absent={webSupport.reason}>
-              {i18n._(WEB_ABSENT[webSupport.reason])}
-            </p>
-          )}
-          {searchesAnyway && (
-            <p className="m-assistant__state" data-assistant-web-always="">
-              {i18n._(ASSISTANT_WEB_ALWAYS)}
-            </p>
-          )}
-          {pairable && (
-            // NATIVE RADIOS with nothing checked until a person chooses — a segmented control
-            // always holds one, and holding one here would be the default ADR-0089 refuses.
-            <fieldset className="m-assistant__sides" data-assistant-sides="">
-              <legend>{i18n._(ASSISTANT_SIDES_LABEL)}</legend>
-              {SIDE_CHOICES.map((choice) => (
-                <label className="m-assistant__side" key={choice.sides}>
-                  <input
-                    checked={sides === choice.sides}
-                    name={sidesName}
-                    onChange={() => {
-                      focused.store.getState().choseSides(choice.sides);
-                    }}
-                    type="radio"
-                    value={choice.sides}
-                  />
-                  {i18n._(choice.label)}
-                </label>
-              ))}
-            </fieldset>
-          )}
-          {blindForPicture && (
-            <p className="m-assistant__state" data-assistant-no-vision="">
-              {i18n._(ASSISTANT_NO_VISION)}
-            </p>
-          )}
-          {waitingForSides && (
-            <p className="m-assistant__state" data-assistant-sides-needed="">
-              {i18n._(ASSISTANT_SIDES_NEEDED)}
-            </p>
-          )}
+          </span>
         </div>
-      )}
+        {webSupport.kind === 'none' && (
+          <p className="m-assistant__state" data-assistant-web-absent={webSupport.reason}>
+            {i18n._(WEB_ABSENT[webSupport.reason])}
+          </p>
+        )}
+        {searchesAnyway && (
+          <p className="m-assistant__state" data-assistant-web-always="">
+            {i18n._(ASSISTANT_WEB_ALWAYS)}
+          </p>
+        )}
+        {pairable && (
+          // NATIVE RADIOS with nothing checked until a person chooses — a segmented control
+          // always holds one, and holding one here would be the default ADR-0089 refuses.
+          <fieldset className="m-assistant__sides" data-assistant-sides="">
+            <legend>{i18n._(ASSISTANT_SIDES_LABEL)}</legend>
+            {SIDE_CHOICES.map((choice) => (
+              <label className="m-assistant__side" key={choice.sides}>
+                <input
+                  checked={sides === choice.sides}
+                  name={sidesName}
+                  onChange={() => {
+                    focused.store.getState().choseSides(choice.sides);
+                  }}
+                  type="radio"
+                  value={choice.sides}
+                />
+                {i18n._(choice.label)}
+              </label>
+            ))}
+          </fieldset>
+        )}
+        {blindForPicture && (
+          <p className="m-assistant__state" data-assistant-no-vision="">
+            {i18n._(ASSISTANT_NO_VISION)}
+          </p>
+        )}
+        {waitingForSides && (
+          <p className="m-assistant__state" data-assistant-sides-needed="">
+            {i18n._(ASSISTANT_SIDES_NEEDED)}
+          </p>
+        )}
+      </div>
 
       {/* NOT UNDER A TOAST: the strip sits at the window's bottom-right, where this ends (`ToastStrip`). */}
       <div className="m-assistant__composer" data-toast-avoid="">
@@ -1306,56 +1297,6 @@ export function AssistantPanel({
             onClick={attach}
             size="control"
           />
-          {/* THE PROVIDER AND MODEL, inside the box at its bottom-left (v5-03), each a compact labelled select. EVERY
-              PROVIDER IS LISTED, with or without a key: a person choosing where to put a key must be able to see the
-              choice, and the no-key line above says what the chosen one needs. */}
-          <label className="m-assistant__picker" htmlFor={providerId}>
-            <span className="m-visually-hidden">{i18n._(ASSISTANT_PROVIDER_LABEL)}</span>
-            <select
-              data-assistant-provider=""
-              id={providerId}
-              onChange={(event) => {
-                setProvider(event.target.value as AiProviderId);
-              }}
-              value={provider}
-            >
-              {AI_PROVIDER_IDS.map((id) => (
-                <option key={id} value={id}>
-                  {i18n._(AI_PROVIDER_NAMES[id])}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="m-assistant__picker" htmlFor={modelId}>
-            <span className="m-visually-hidden">{i18n._(ASSISTANT_MODEL_LABEL)}</span>
-            <select
-              data-assistant-model=""
-              disabled={models.length === 0}
-              id={modelId}
-              onChange={(event) => {
-                setModel(event.target.value);
-              }}
-              value={model}
-            >
-              {/* A STORED CHOICE THE LIST NO LONGER NAMES stays shown and selected, marked, never silently swapped for
-                  another model (ADR-0117 Decision 3). */}
-              {/* NOTHING TO LIST SAYS SO, as the Settings row does, rather than drawing an empty box. */}
-              {models.length === 0 ? <option value="">{i18n._(AI_MODELS_NONE)}</option> : null}
-              {stored !== undefined && models.length > 0 && chosenEntry === undefined ? (
-                <option value={stored}>{i18n._(ASSISTANT_MODEL_NOT_OFFERED, { name: stored })}</option>
-              ) : null}
-              {/* DISABLED, NEVER DROPPED (ADR-0081, ADR-0117 Decision 4): where this choice reads images — Anthropic's,
-                  which the recogniser uses — a model that says it has no vision is listed and cannot be chosen. */}
-              {models.map((entry) => {
-                const blind = readsImages && !servesVision(entry);
-                return (
-                  <option disabled={blind} key={entry.id} value={entry.id}>
-                    {blind ? i18n._(ASSISTANT_MODEL_NO_VISION, { name: entry.label }) : entry.label}
-                  </option>
-                );
-              })}
-            </select>
-          </label>
           {/* THE SEND ARROW at the bottom-right, which becomes Stop while an answer arrives (v5-03). NOT A DEAD
               CONTROL (§10.5): with no key, or no model to ask, Send is disabled and the lines above say which. */}
           {streaming === null ? (
@@ -1371,6 +1312,59 @@ export function AssistantPanel({
             <IconButton icon={Square} label={ASSISTANT_STOP} onClick={stop} size="control" />
           )}
         </div>
+      </div>
+      {/* THE PROVIDER AND MODEL, on their own row UNDER the box (the owner's review of 0.1.9.0; inside it they pushed
+          Send out of a narrow pane), each a labelled select taking half the row. EVERY PROVIDER IS LISTED, with or
+          without a key: a person choosing where to put a key must be able to see the choice, and the no-key line above
+          says what the chosen one needs. */}
+      <div className="m-assistant__models" data-assistant-models="">
+        <label className="m-assistant__picker" htmlFor={providerId}>
+          <span className="m-visually-hidden">{i18n._(ASSISTANT_PROVIDER_LABEL)}</span>
+          <select
+            data-assistant-provider=""
+            id={providerId}
+            onChange={(event) => {
+              setProvider(event.target.value as AiProviderId);
+            }}
+            value={provider}
+          >
+            {AI_PROVIDER_IDS.map((id) => (
+              <option key={id} value={id}>
+                {i18n._(AI_PROVIDER_NAMES[id])}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="m-assistant__picker" htmlFor={modelId}>
+          <span className="m-visually-hidden">{i18n._(ASSISTANT_MODEL_LABEL)}</span>
+          <select
+            data-assistant-model=""
+            disabled={models.length === 0}
+            id={modelId}
+            onChange={(event) => {
+              setModel(event.target.value);
+            }}
+            value={model}
+          >
+            {/* A STORED CHOICE THE LIST NO LONGER NAMES stays shown and selected, marked, never silently swapped for
+                another model (ADR-0117 Decision 3). */}
+            {/* NOTHING TO LIST SAYS SO, as the Settings row does, rather than drawing an empty box. */}
+            {models.length === 0 ? <option value="">{i18n._(AI_MODELS_NONE)}</option> : null}
+            {stored !== undefined && models.length > 0 && chosenEntry === undefined ? (
+              <option value={stored}>{i18n._(ASSISTANT_MODEL_NOT_OFFERED, { name: stored })}</option>
+            ) : null}
+            {/* DISABLED, NEVER DROPPED (ADR-0081, ADR-0117 Decision 4): where this choice reads images — Anthropic's,
+                which the recogniser uses — a model that says it has no vision is listed and cannot be chosen. */}
+            {models.map((entry) => {
+              const blind = readsImages && !servesVision(entry);
+              return (
+                <option disabled={blind} key={entry.id} value={entry.id}>
+                  {blind ? i18n._(ASSISTANT_MODEL_NO_VISION, { name: entry.label }) : entry.label}
+                </option>
+              );
+            })}
+          </select>
+        </label>
       </div>
       {/* HOW THE BOX SENDS, for a screen reader through the box's description and drawn for nobody: the owner's
           review of 0.1.6.0 took every explanatory line out of the pane, and Enter sending is the platform's way. */}

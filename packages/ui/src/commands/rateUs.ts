@@ -1,7 +1,7 @@
 import type { ContractClient } from '@monstera/contract';
 
 import { RATE_US_COMMAND_TITLE, REVIEW_STORE_NOT_OPENED } from '../messages/en.js';
-import type { UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import type { ShowToast } from '../toasts.js';
 
 /**
@@ -29,6 +29,8 @@ export async function rateOnStore(client: ContractClient, toast: ShowToast): Pro
 export function rateUsCommand(deps: { readonly client: ContractClient; readonly toast: ShowToast }): UiCommand {
   return {
     id: 'app.rate',
+    // THE STORE OPENS on the review; only a Store that did not open is said.
+    feedback: VISIBLE,
     icon: 'Star',
     title: RATE_US_COMMAND_TITLE,
     placements: [

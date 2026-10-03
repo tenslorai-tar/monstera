@@ -36,7 +36,7 @@ const context: CommandContext = {
 const ANY_TITLE = messageKey('command.any.label');
 
 function command(id: string, over: Partial<UiCommand> = {}): UiCommand {
-  return { id, title: ANY_TITLE, placements: [], run: () => undefined, ...over };
+  return { id, title: ANY_TITLE, placements: [], run: () => undefined, feedback: { kind: 'visible' }, ...over };
 }
 
 describe('CommandRegistry', () => {
@@ -70,6 +70,20 @@ describe('CommandRegistry', () => {
     // Without this, "refuses a bad id" is satisfied by refusing every id — and
     // the message above would then be the only one anybody ever saw.
     expect(new CommandRegistry([command('view.toggle-quick-toolbar')]).size).toBe(1);
+  });
+
+  it('refuses a command that declares NO feedback with no reason, naming it (ADR-0141)', () => {
+    // THE TYPE MAKES `feedback` PRESENT; an empty reason is what still passes the compiler, and it decides nothing.
+    expect(() => new CommandRegistry([command('view.quiet', { feedback: { kind: 'none', reason: '  ' } })])).toThrow(
+      /"view\.quiet" declares no feedback and gives no reason/u,
+    );
+  });
+
+  it('CONTROL: none WITH a written reason is accepted, so the refusal is about the reason and not the kind', () => {
+    const registry = new CommandRegistry([
+      command('view.quiet', { feedback: { kind: 'none', reason: 'the key repeats a move the page already shows' } }),
+    ]);
+    expect(registry.size).toBe(1);
   });
 
   it('refuses a command DRAWN on a surface with no icon, and names the command and the surface', () => {
@@ -106,6 +120,27 @@ describe('CommandRegistry', () => {
       command('edit.palette-only'),
     ]);
     expect(registry.size).toBe(2);
+  });
+
+  // THE MENU BAR DRAWS EVERY ITEM'S GLYPH (the owner's review of 0.1.8.0): a command a menu lists with no icon would be
+  // the one row whose title sits in the icon's column. Every offender is named at once, so the fix is one pass.
+  it('refuses commands a MENU lists with no icon, naming every one of them', () => {
+    expect(
+      () =>
+        new CommandRegistry([
+          command('edit.paste', { placements: [{ surface: 'menu-bar', menu: 'edit', group: 1, order: 30 }] }),
+          command('app.exit', { placements: [{ surface: 'menu-bar', menu: 'file', group: 3, order: 90 }] }),
+        ]),
+    ).toThrow(/"edit\.paste", "app\.exit" are in a menu and name no icon/u);
+  });
+
+  it('CONTROL: the same menu commands WITH icons are accepted, and a palette-only command still may omit one', () => {
+    const registry = new CommandRegistry([
+      command('edit.paste', { icon: 'ClipboardPaste', placements: [{ surface: 'menu-bar', menu: 'edit', group: 1, order: 30 }] }),
+      command('app.exit', { icon: 'LogOut', placements: [{ surface: 'menu-bar', menu: 'file', group: 3, order: 90 }] }),
+      command('edit.palette-only'),
+    ]);
+    expect(registry.size).toBe(3);
   });
 
   it('treats an absent `when` as always, and a false one as ABSENT rather than disabled', () => {

@@ -41,7 +41,7 @@ const NO_DOCUMENT: CommandContext = {
 };
 
 function command(id: string, title: UiCommand['title'], extra: Partial<UiCommand> = {}): UiCommand {
-  return { id, title, placements: [], run: vi.fn(), ...extra };
+  return { id, title, placements: [], run: vi.fn(), feedback: { kind: 'visible' }, ...extra };
 }
 
 function Wrapped({ children }: { children: ReactNode }): ReactElement {

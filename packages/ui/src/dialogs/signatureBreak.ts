@@ -1,4 +1,3 @@
-import { MAX_SIGNATURES } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -22,7 +21,9 @@ export const SIGNATURE_BREAK_RESULT = z.object({ save: z.literal(true) }).strict
 export const SIGNATURE_BREAK_DIALOG = declareDialog({
   id: SIGNATURE_BREAK_DIALOG_ID,
   title: SIGNATURE_BREAK_TITLE,
-  props: z.object({ signatures: z.number().int().positive().max(MAX_SIGNATURES) }).strict(),
+  // THE CHANNEL'S COUNT, unbounded but for being an integer: the panel's MAX_SIGNATURES here refused the warning for a
+  // document with more signatures than a panel draws (table A row 14).
+  props: z.object({ signatures: z.number().int().positive() }).strict(),
   result: SIGNATURE_BREAK_RESULT,
   component: lazy(() => import('./SignatureBreakBody.js')),
 });

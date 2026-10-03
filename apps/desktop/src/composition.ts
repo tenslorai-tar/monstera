@@ -96,8 +96,10 @@ import {
   createRemoteSessions,
   engineChannels,
   groupIntoBlocks,
+  settingOf,
   hostedPdfLibExecution,
   nodeFileSurface,
+  readFileIdentity,
   signpdfWriterWith,
   parsePageStructure,
   parsePageTables,
@@ -150,6 +152,7 @@ import { createHeldPicture } from './heldPicture.js';
 import { createPersonalLibrary, memoryPictureFiles } from './personalLibrary.js';
 import { saveNamesFor } from './backupCopies.js';
 import { fileAnswersFor } from './hostFileAnswers.js';
+import { createBackupProvenance } from './backupLedger.js';
 import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
 import { createUpdateCheck, manifestTransport, UPDATE_PROVIDERS } from './updateCheck.js';
 import { createLaunchDocuments } from './launchDocuments.js';
@@ -175,8 +178,8 @@ import {
   MissingSessionError,
   NetworkKeyMissing,
   type OptimizeSource,
-  PageTooLargeToPicture,
 } from './documentCommands.js';
+import { pictureForAsk } from './askPicture.js';
 import { timestampTransport } from './timestampTransport.js';
 
 /**
@@ -222,7 +225,7 @@ import type { EditWatchSurface } from './externalEditWatch.js';
 import type { OpenExternalEditor } from './openExternalEditor.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import { type ChatHistory, noChatHistory } from './chatHistory.js';
-import type { SettingsSurface } from './settingsFile.js';
+import { type SettingsSurface, createEphemeralSettings } from './settingsFile.js';
 import type { ShellFailureSink } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
 import type { CrashReports } from './crashReports.js';
@@ -555,10 +558,11 @@ export interface ShellComposition {
   readonly openExternalEditor: OpenExternalEditor;
   /**
    * Shows a path a write produced in the file manager — `shell.showItemInFolder` for a file, `shell.openPath` for a
-   * folder — built in `entry.ts` for `openExternalEditor`'s reason. Optional, for `secrets`' reason below: a graph
-   * built for a unit test has no file manager, and answering `false` (nothing shown) is that state said honestly.
+   * folder — built in `entry.ts` for `openExternalEditor`'s reason. **Required**, for ADR-0069's reason: an optional
+   * one with a fallback answering `false` let a composition that dropped it compile, and every *Show in folder* then
+   * answered *nothing to show* for a file that was there. A harness says what it does in its place.
    */
-  readonly revealPath?: ((path: string) => Promise<boolean>) | undefined;
+  readonly revealPath: (path: string) => Promise<boolean>;
   /** The watch on a page sent out — `fs.watch`, built in `entry.ts` for the same reason. */
   readonly editWatch: EditWatchSurface;
   /** Where settings are stored. Required — see the note above. */
@@ -628,6 +632,11 @@ export interface ShellComposition {
    * prompt is ever due — every unit test's position, since a test that launched twice would be asked.
    */
   readonly engagementFile?: SettingsSurface;
+  /**
+   * Which backups Monstera made (ADR-0139), `backups-made.json` under `userData`, resolved in `entry.ts`. Absent, the
+   * record lives in memory for the run — every unit test's position, and never the product's.
+   */
+  readonly backupLedgerFile?: SettingsSurface;
   /**
    * Opens one of the Store application's pages — `shell.openExternal` of a constant from `STORE_URIS`, which only
    * `entry.ts` may reach. The rating prompt's *review* uses it in the Store build (absent, the web listing), and
@@ -787,6 +796,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     recentPictureFiles,
     libraryFiles,
     engagementFile,
+    backupLedgerFile = createEphemeralSettings(),
     openStore,
     updateRecordFile,
     fetchUpdateManifest,
@@ -1022,6 +1032,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       },
       flush: currentBytes,
       stage: stagedBytesOf,
+      // WHICH BACKUPS MONSTERA MADE, by the kernel's one identity reader, and deleted with the surface's own `rm`, which
+      // is permanent: a removal's save must not leave its copies in the recycle bin (ADR-0139).
+      provenance: createBackupProvenance(backupLedgerFile, {
+        identity: readFileIdentity,
+        remove: (path) => nodeFileSurface.remove(path),
+      }),
     },
     // THE SAME COMPOSITION POINT AS THE FLUSH, and for the same reason: the
     // geometry reader and the session are both in scope here and nowhere else.
@@ -1269,6 +1285,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         blocks: groupIntoBlocks(
           upright.map((run) => ({
             ...run,
+            // THE FONT CROSSES NO FURTHER: it is read for the grouping's change of setting and left here.
+            setting: settingOf(run.style),
             style: {
               size: run.style.size,
               colour: run.style.colour,
@@ -1459,21 +1477,17 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       }));
       return prepared.readTables(raster.png);
     },
-    // A PAGE AS A PICTURE FOR A VISION ASK (ADR-0090), by the table route above: the host draws the
-    // whole page and main weighs it. CLAUDE'S IMAGE LIMITS FOR EVERY PROVIDER — the tightest the
-    // three adapter shapes document — so one picture serves whichever the person chose.
-    askPicture: async (docId, sessions, page) => {
+    // A PAGE AS A PICTURE FOR A VISION ASK (ADR-0090), by the table route above: `pictureForAsk` holds the scale rule.
+    askPicture: (docId, sessions, page) => {
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-      const { sizes } = await engineHost.geometry(session, [page]);
-      const size = sizes[0];
-      if (size === undefined) throw new Error(`the engine reported no size for page ${String(page + 1)}`);
-      const scale = claudeRasterScale(size.width, size.height, AZURE_RASTER_SCALE, MIN_SNAPSHOT_SCALE);
-      if (scale === null) throw new PageTooLargeToPicture(page);
-      const { raster } = await rasterWithinLimit(scale, MIN_SNAPSHOT_SCALE, claudeAcceptsBytes, async (at) => ({
-        png: await engineHost.pageImage(session, { page, format: 'png', scale: at, quality: 100 }),
-      }));
-      return raster.png;
+      return pictureForAsk(
+        {
+          size: async (at) => (await engineHost.geometry(session, [at])).sizes[0],
+          draw: (at, scale) => engineHost.pageImage(session, { page: at, format: 'png', scale, quality: 100 }),
+        },
+        page,
+      );
     },
     // THE TEXT EXPORT'S DIALOG, a parameter for the folder picker's reason below.
     pickText,
@@ -1600,6 +1614,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       recent,
       recentRoots,
       recentPictures,
+      // THE KERNEL'S ONE RULE for *is there a file here*, the open's own, so the list and the open agree (ADR-0143).
+      fileIdentity: readFileIdentity,
       // THE STORE RATING PROMPT (E3). The Store build opens the Store application's own review page; every other
       // build opens the web listing, through the one HTTPS-only route pages already take. No record, no prompt.
       reviewPrompt:
@@ -1662,7 +1678,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // test in this repository — genuinely has no directory to reveal, and
       // saying so is the honest answer rather than a silent success.
       revealLog: log === null ? (): Promise<boolean> => Promise.resolve(false) : log.reveal,
-      revealPath: revealPath ?? ((): Promise<boolean> => Promise.resolve(false)),
+      revealPath,
       crashReports,
       launchDocuments: launched,
       // THE UPDATE CHECK (ADR-0110): this build's channel picks the provider, the contract's address decides whether

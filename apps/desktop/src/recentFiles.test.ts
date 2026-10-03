@@ -45,37 +45,40 @@ describe('the recent list', () => {
     // notice them parting. Raise one alone and every recent-files read is
     // refused at the boundary, at run time, with nothing red at build time.
     //
-    // FOUR, THE OWNER'S NUMBER (2026-10-01), asserted on the STORE: the boundary's bound is the contract's constant and
-    // the store imports it, so the two cannot disagree by number — only by the store keeping more than it says.
-    expect(MAX_RECENT_ENTRIES).toBe(4);
+    // TEN, THE OWNER'S NUMBER (2026-10-02, ADR-0143), asserted on the STORE: the boundary's bound is the contract's
+    // constant and the store imports it, so the two cannot disagree by number — only by the store keeping more than it
+    // says. The start screen's four is that view's own number and is held where the cards are.
+    expect(MAX_RECENT_ENTRIES).toBe(10);
     const recent = createRecentFiles(aFile());
     for (let index = 0; index < MAX_RECENT_ENTRIES + 3; index += 1) recent.record({ path: `C:/${String(index)}.pdf`, name: 'x.pdf' });
     expect(recent.list()).toHaveLength(MAX_RECENT_ENTRIES);
   });
 
-  it('cuts a STORED LIST longer than four as it opens — on disk at once — and hands the cut paths to the drop listener when it registers', () => {
+  it('cuts a STORED LIST longer than ten as it opens — on disk at once — and hands the cut paths to the drop listener when it registers', () => {
     // A document an earlier build wrote, when a person could keep up to thirty.
-    const entries = Array.from({ length: 10 }, (_, index) => ({ path: `C:/${String(index)}.pdf`, name: `${String(index)}.pdf` }));
+    const entries = Array.from({ length: 16 }, (_, index) => ({ path: `C:/${String(index)}.pdf`, name: `${String(index)}.pdf` }));
     const file = aFile({ entries });
     const recent = createRecentFiles(file);
 
-    // DISCARDED FROM THE DOCUMENT before anything reads the list: only the four newest are written back.
-    expect((file.held()['entries'] as unknown[]).length).toBe(4);
-    expect(recent.list().map((entry) => entry.name)).toStrictEqual(['0.pdf', '1.pdf', '2.pdf', '3.pdf']);
+    // DISCARDED FROM THE DOCUMENT before anything reads the list: only the ten newest are written back.
+    expect((file.held()['entries'] as unknown[]).length).toBe(10);
+    expect(recent.list().map((entry) => entry.name)).toStrictEqual(
+      Array.from({ length: 10 }, (_, index) => `${String(index)}.pdf`),
+    );
 
     // AND THEIR PICTURES GO TOO: the six cut before any listener existed are delivered the moment one registers.
     const left: string[][] = [];
     recent.onDropped((paths) => left.push([...paths]));
-    expect(left).toStrictEqual([['C:/4.pdf', 'C:/5.pdf', 'C:/6.pdf', 'C:/7.pdf', 'C:/8.pdf', 'C:/9.pdf']]);
+    expect(left).toStrictEqual([['C:/10.pdf', 'C:/11.pdf', 'C:/12.pdf', 'C:/13.pdf', 'C:/14.pdf', 'C:/15.pdf']]);
   });
 
-  it('CONTROL: a stored list of four or fewer hands nothing to the drop listener', () => {
-    const entries = [{ path: 'C:/a.pdf', name: 'a.pdf' }];
+  it('CONTROL: a stored list of ten or fewer hands nothing to the drop listener', () => {
+    const entries = Array.from({ length: 10 }, (_, index) => ({ path: `C:/${String(index)}.pdf`, name: `${String(index)}.pdf` }));
     const recent = createRecentFiles(aFile({ entries }));
     const left: string[][] = [];
     recent.onDropped((paths) => left.push([...paths]));
     expect(left).toStrictEqual([]);
-    expect(recent.list()).toHaveLength(1);
+    expect(recent.list()).toHaveLength(10);
   });
 
   it('keeps what was recorded, newest first', () => {
@@ -156,17 +159,8 @@ describe('the recent list', () => {
     expect(names.at(-1)).toBe('1.pdf');
   });
 
-  it('forgets one by path, and leaves the rest', () => {
-    const recent = createRecentFiles(aFile());
-    recent.record({ path: 'C:/a.pdf', name: 'a.pdf' });
-    recent.record({ path: 'C:/b.pdf', name: 'b.pdf' });
-
-    recent.forget('C:/a.pdf');
-
-    expect(recent.list().map((entry) => entry.name)).toStrictEqual(['b.pdf']);
-  });
-
-  it('says WHICH PATHS LEFT, however they left: forgotten, cleared, or pushed past the cap (ADR-0100)', () => {
+  it('says WHICH PATHS LEFT, however they left: cleared, or pushed past the cap (ADR-0100)', () => {
+    // TWO WAYS, since ADR-0143 withdrew the third: a file that has gone is listed as unavailable, never forgotten.
     const recent = createRecentFiles(aFile());
     const left: string[][] = [];
     recent.onDropped((paths) => left.push([...paths]));
@@ -174,18 +168,14 @@ describe('the recent list', () => {
     for (let index = 0; index <= MAX_RECENT; index += 1) {
       recent.record({ path: `C:/${String(index)}.pdf`, name: `${String(index)}.pdf` });
     }
-    recent.forget('C:/2.pdf');
-    // A path not on the list leaves nothing, so nothing is said.
-    recent.forget('C:/never.pdf');
     const cleared = recent.clear();
 
     expect(left).toStrictEqual([
-      // THE OLDEST, pushed out by the fifth: the quiet way to leave, and the one easiest to miss.
+      // THE OLDEST, pushed out by the eleventh: the quiet way to leave, and the one easiest to miss.
       ['C:/0.pdf'],
-      ['C:/2.pdf'],
-      ['C:/4.pdf', 'C:/3.pdf', 'C:/1.pdf'],
+      Array.from({ length: MAX_RECENT }, (_, index) => `C:/${String(MAX_RECENT - index)}.pdf`),
     ]);
-    expect(cleared).toBe(MAX_RECENT - 1);
+    expect(cleared).toBe(MAX_RECENT);
     expect(recent.list()).toStrictEqual([]);
   });
 
@@ -300,14 +290,14 @@ describe('the recent list', () => {
     const DRAFT = asDocId('00000000-0000-4000-8000-0000000000d1');
     const NOTES = asDocId('00000000-0000-4000-8000-0000000000d2');
 
-    it('carries EVERY open document after a crash, more than the four the recent list keeps', () => {
+    it('carries EVERY open document after a crash, more than the ten the recent list keeps', () => {
       // THE SESSION IS NOT TRIMMED TO THE RECENT CAP. It was, until 2026-10-01, and at four a reader with six tabs who
       // lost the application would have been offered four of them.
       const file = aFile();
       const first = createRecentFiles(file);
-      const names = Array.from({ length: 6 }, (_, index) => `${String(index)}.pdf`);
+      const names = Array.from({ length: 12 }, (_, index) => `${String(index)}.pdf`);
       names.forEach((name, index) => {
-        first.opened(asDocId(`00000000-0000-4000-8000-0000000000e${String(index)}`), { path: `C:/${name}`, name });
+        first.opened(asDocId(`00000000-0000-4000-8000-0000000000${(0xe0 + index).toString(16)}`), { path: `C:/${name}`, name });
       });
       // No `markCleanExit`: this run died.
       const next = createRecentFiles(file);
