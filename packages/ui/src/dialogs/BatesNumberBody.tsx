@@ -10,6 +10,7 @@ import {
   BATES_NUMBER_EDGE_HEADER,
   BATES_NUMBER_NOT_A_NUMBER,
   BATES_NUMBER_PREFIX,
+  BATES_NUMBER_FIRST,
   BATES_NUMBER_PREVIEW,
   BATES_NUMBER_SLOT,
   BATES_NUMBER_SLOT_CENTRE,
@@ -136,9 +137,13 @@ export default function BatesNumberBody({
           }}
         />
       </DialogRow>
-      <p className="m-bates-number__preview">
-        {ready ? previewOf(prefix, suffix, startValue, digitsValue) : _(BATES_NUMBER_PREVIEW)}
-      </p>
+      {/* A ROW WITH ITS NAME: the number alone, *0001*, sat under the fields with nothing saying what it was (the
+          gallery, 2026-10-03). An `output` because it is a value worked out from the fields above. */}
+      <DialogRow label={BATES_NUMBER_FIRST}>
+        <output className="m-bates-number__preview">
+          {ready ? previewOf(prefix, suffix, startValue, digitsValue) : _(BATES_NUMBER_PREVIEW)}
+        </output>
+      </DialogRow>
       {/* A NAMED GROUP WHOSE CHOICE IS ANNOUNCED (WCAG 1.3.1, 4.1.2): the segmented control, not a row of buttons
           that showed the choice only by which one was filled. */}
       <DialogRow label={BATES_NUMBER_EDGE}>

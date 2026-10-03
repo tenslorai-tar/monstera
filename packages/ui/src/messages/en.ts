@@ -215,6 +215,7 @@ export const BATES_NUMBER_SUFFIX = messageKey('dialog.bates-number.suffix');
 export const BATES_NUMBER_START = messageKey('dialog.bates-number.start');
 export const BATES_NUMBER_DIGITS = messageKey('dialog.bates-number.digits');
 export const BATES_NUMBER_PREVIEW = messageKey('dialog.bates-number.preview');
+export const BATES_NUMBER_FIRST = messageKey('dialog.bates-number.first');
 export const BATES_NUMBER_EDGE_HEADER = messageKey('dialog.bates-number.edge-header');
 export const BATES_NUMBER_EDGE = messageKey('dialog.bates-number.edge');
 export const BATES_NUMBER_SLOT = messageKey('dialog.bates-number.slot');
@@ -4927,7 +4928,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [BATES_NUMBER_SUFFIX]: 'Suffix',
   [BATES_NUMBER_START]: 'Start at',
   [BATES_NUMBER_DIGITS]: 'Digits',
-  [BATES_NUMBER_PREVIEW]: 'Fill in the fields to see the first number.',
+  [BATES_NUMBER_PREVIEW]: 'Fill in the fields to see it.',
+  [BATES_NUMBER_FIRST]: 'First number',
   [BATES_NUMBER_EDGE]: 'Edge of the page',
   [BATES_NUMBER_SLOT]: 'Position on that edge',
   [BATES_NUMBER_EDGE_HEADER]: 'Top',
