@@ -84,8 +84,23 @@ describe('the recognition dialog', () => {
         />
       </Wrapped>,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'How to get a key, and what it costs' }));
+    // THE DIALOG ENDS IN ITS FOOTER: the line above it, the link in it. Both were drawn under Cancel and Recognise.
+    const footer = document.querySelector('.m-dialog-footer');
+    const help = screen.getByRole('button', { name: 'How to get a key, and what it costs' });
+    expect(footer?.contains(help)).toBe(true);
+    expect(footer?.nextElementSibling ?? null).toBeNull();
+    fireEvent.click(help);
     expect(answers).toStrictEqual([{ help: 'ai-keys-and-pricing' }]);
+  });
+
+  it('with no model installed it still ends in a footer, whose one answer is Close', () => {
+    render(
+      <Wrapped>
+        <OcrBody pages={[0]} languages={[]} chosen={['eng']} servicesReady resolve={() => undefined} update={() => undefined} />
+      </Wrapped>,
+    );
+    const footer = document.querySelector('.m-dialog-footer');
+    expect([...(footer?.querySelectorAll('button') ?? [])].map((button) => button.textContent)).toStrictEqual(['Close']);
   });
 
   it('CONTROL: with a key stored there is no such link — the person it is for has one', () => {

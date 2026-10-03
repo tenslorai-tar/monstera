@@ -790,16 +790,12 @@ optgroup {
   margin: 0;
 }
 
-/* THE OCR DIALOG'S HANDWRITING NOTE and, while no key is stored, the link to the article on getting one under it. */
+/* THE OCR DIALOG'S HANDWRITING NOTE, above the footer; the link to the article on getting a key is in the footer's
+   aside while no key is stored. */
 .m-ocr__handwriting {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-4);
-}
-
-.m-ocr__handwriting p {
   margin: 0;
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
 }
 
 /* THE LANGUAGES, read together: a box per provisioned model under a legend. The fieldset keeps its group semantics
