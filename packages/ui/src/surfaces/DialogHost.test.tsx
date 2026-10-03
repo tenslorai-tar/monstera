@@ -125,7 +125,24 @@ const brokenEntry = declareDialog({
   ),
 });
 
-const registry = new DialogRegistry([renameEntry, pickEntry, brokenEntry]);
+/** A dialog whose chunk ARRIVES WHEN THE CASE SAYS, for the moment between the open and the body. */
+let arriveHeld: () => void = () => undefined;
+const heldEntry = declareDialog({
+  id: 'dialog.held',
+  title: messageKey('dialog.held.title'),
+  props: z.object({}),
+  informs: 'message',
+  component: lazy(
+    () =>
+      new Promise<{ default: () => ReactElement }>((arrive) => {
+        arriveHeld = () => {
+          arrive({ default: () => <p>the held body</p> });
+        };
+      }),
+  ),
+});
+
+const registry = new DialogRegistry([renameEntry, pickEntry, brokenEntry, heldEntry]);
 
 /**
  * A real catalogue, because the host no longer takes a resolver.
@@ -143,6 +160,7 @@ activateCatalogue('en', {
   [RENAME_TITLE]: 'Rename document',
   [PICK_TITLE]: 'Pick a page',
   [messageKey('dialog.broken.title')]: 'Broken dialog',
+  [messageKey('dialog.held.title')]: 'Held dialog',
   [DIALOG_PROBLEM_TITLE]: 'This could not be opened.',
   [DIALOG_PROBLEM_BODY]: 'Nothing was changed.',
   [CLOSE]: 'Close',
@@ -246,6 +264,27 @@ describe('DialogHost', () => {
     // the primitive does not govern, and that failure is invisible to every
     // assertion above.
     expect(dialog.contains(body)).toBe(true);
+  });
+
+  it('draws NO PART of a dialog whose body has not arrived, then the whole of it at once', async () => {
+    // The chrome used to be drawn over an empty body and then grow: an unfinished screen a person saw, and the frame
+    // CI's high-contrast Donate baseline photographed (214 × 92 against 626 × 254, on 6b7a6bd9).
+    render(<Harness id="dialog.held" props={{}} />);
+    screen.getByRole('button', { name: 'Open' }).click();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText('Held dialog')).toBeNull();
+
+    await act(async () => {
+      arriveHeld();
+      await Promise.resolve();
+    });
+    const dialog = await screen.findByRole('dialog', { name: 'Held dialog' });
+    // CONTROL: the body is inside it the first time the dialog is seen, with the footer the declaration gives it.
+    expect(dialog.textContent).toContain('the held body');
+    expect(screen.getByRole('button', { name: 'OK' })).toBeTruthy();
   });
 
   it('a dialog that ASKS NOTHING ends in its one button, which closes it — and CONTROL: one that answers gets none', async () => {

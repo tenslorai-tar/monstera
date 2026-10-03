@@ -1,6 +1,6 @@
 import type { MessageKey } from '@monstera/shared';
 import { Suspense, useCallback, useState } from 'react';
-import type { ReactElement, ReactNode } from 'react';
+import type { ReactElement } from 'react';
 
 import { ErrorBoundary } from '../ErrorBoundary.js';
 import { Dialog, DialogFooter } from '../primitives/Dialog.js';
@@ -44,8 +44,6 @@ export interface DialogHostProps {
   readonly registry: DialogRegistry;
   /** The close control's accessible name, as a key the control resolves. */
   readonly closeLabel: MessageKey;
-  /** Shown while a lazily-loaded dialog body is still arriving. */
-  readonly pending?: ReactNode;
 }
 
 /** What one open dialog is, while it is open. */
@@ -205,7 +203,6 @@ export function useDialogHost(registry: DialogRegistry): {
 export function DialogHost({
   registry,
   closeLabel,
-  pending = null,
   open,
   onClose,
   onResolve,
@@ -226,31 +223,37 @@ export function DialogHost({
   // wrong place to raise a programming error the open call already refuses.
   if (entry === undefined) return null;
 
+  // THE WHOLE DIALOG WAITS FOR ITS BODY. The Suspense boundary is OUTSIDE the chrome, so a body whose chunk has not
+  // arrived suspends the dialog with it, and nothing is drawn until both are. Inside the chrome, the title and its
+  // close button were drawn over an empty body first and the box then grew to the body's size: an unfinished screen
+  // a person saw, and the frame CI's high-contrast Donate baseline photographed (214 × 92 against 626 × 254, on
+  // 6b7a6bd9). A chunk loads from the package's own disk, so the wait is a few milliseconds.
   return (
-    <Dialog
-      open
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-      title={entry.title}
-      closeLabel={closeLabel}
-    >
-      {/* The entry mounts itself. `declareDialog` built this closure where the
-          schema and the component were still the same type, so nothing is cast
-          here — see EEEEE-2 in the entry's own comment. */}
-      {/* A BOUNDARY PER DIALOG BODY. A body that throws, or a lazy chunk that fails to
-          load — Suspense rethrows the import's rejection into the render — otherwise
-          reaches the root, and React unmounts the whole window: measured blank on
-          2026-09-21, a chunk the build had replaced. Keyed on the open dialog, so the
-          next one starts clean. */}
-      <ErrorBoundary key={open.id} fallback={() => <ViewProblem scope="dialog" />}>
-        <Suspense fallback={pending}>
+    <Suspense fallback={null}>
+      <Dialog
+        open
+        onOpenChange={(next) => {
+          if (!next) onClose();
+        }}
+        title={entry.title}
+        closeLabel={closeLabel}
+      >
+        {/* The entry mounts itself. `declareDialog` built this closure where the
+            schema and the component were still the same type, so nothing is cast
+            here — see EEEEE-2 in the entry's own comment. */}
+        {/* A BOUNDARY PER DIALOG BODY. A body that throws, or a lazy chunk that fails to
+            load — Suspense rethrows the import's rejection into the render — otherwise
+            reaches the root, and React unmounts the whole window: measured blank on
+            2026-09-21, a chunk the build had replaced. Keyed on the open dialog, so the
+            next one starts clean. A rejection is an error and stops here, inside the
+            chrome; a pending load is a promise, which passes this boundary to the
+            Suspense above. */}
+        <ErrorBoundary key={open.id} fallback={() => <ViewProblem scope="dialog" />}>
           {entry.mount(open.props, onResolve, onUpdate)}
-          {/* A dialog that asks nothing ends in its one button, from its declaration (`informs`). Inside the
-              Suspense, so the button never stands under a body that has not loaded. */}
+          {/* A dialog that asks nothing ends in its one button, from its declaration (`informs`). */}
           {entry.informs === undefined ? null : <DialogFooter dismissal={entry.informs === 'message' ? 'ok' : 'close'} />}
-        </Suspense>
-      </ErrorBoundary>
-    </Dialog>
+        </ErrorBoundary>
+      </Dialog>
+    </Suspense>
   );
 }
