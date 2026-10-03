@@ -772,6 +772,51 @@ export function removeFieldsOnPages(document: PDFDocument, pages: Iterable<numbe
 }
 
 /**
+ * Keeps only the form fields whose widgets sit on this document's own pages, and removes the form when none is left.
+ *
+ * **For a document BUILT from another one's pages** — an extract, a split, a page sent to another application — whose
+ * `/AcroForm` was grafted whole (`pageExtract.ts`). Grafted whole, it held every field of the source with its answer,
+ * and each widget's `/P` brought the page it sat on: measured 2026-10-03, extracting page 1 alone wrote the answers
+ * from page 4 and page 4 itself (the owner's item 12b).
+ *
+ * The rule is one sentence: a field node with no `/Kids` stays only when it is a widget on one of the pages, and
+ * {@link pruneEmptyFields} then takes away every parent that rule emptied. A value-only field, which the format allows
+ * and which no page shows, does not stay either: in a file built from some pages it is an answer with nowhere to be
+ * seen.
+ */
+export function keepFieldsOnPages(document: PDFDocument): void {
+  const root = document.getTrailer().get('Root');
+  const acroForm = root.get('AcroForm');
+  if (!acroForm.isDictionary()) return;
+  const fields = acroForm.get('Fields');
+  if (fields.isArray()) {
+    const onPages = new Set<number>();
+    for (let page = 0; page < document.countPages(); page += 1) {
+      const annots = document.findPage(page).get('Annots');
+      if (!annots.isArray()) continue;
+      for (let at = 0; at < annots.length; at += 1) {
+        const entry = annots.get(at);
+        if (entry.isIndirect()) onPages.add(entry.asIndirect());
+      }
+    }
+    const shown = (node: PDFObject): boolean => node.isIndirect() && onPages.has(node.asIndirect());
+    const sweep = (array: PDFObject): void => {
+      for (let index = array.length - 1; index >= 0; index -= 1) {
+        const node = array.get(index);
+        const kids = node.get('Kids');
+        if (kids.isArray()) sweep(kids);
+        else if (!shown(node)) array.delete(index);
+      }
+    };
+    sweep(fields);
+    pruneEmptyFields(document);
+  }
+  // NO FIELD LEFT IS NO FORM: an `/AcroForm` with empty `/Fields` is a form a reader offers to fill with nothing in it.
+  const left = acroForm.get('Fields');
+  if (!left.isArray() || left.length === 0) root.delete('AcroForm');
+}
+
+/**
  * Deletes the fields a handle names, and tidies the tree they leave behind.
  *
  * ## Descending order, for `applyRemoveAnnotation`'s reason
