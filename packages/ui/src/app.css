@@ -5053,8 +5053,8 @@ optgroup {
 }
 
 /*
- * *Marked for redaction*, on the mark. Its ink is `--m-redact-label-ink`, solved at the point of use against
- * `--redact-mark` by `AnnotationLayer` (ADR-0003: never stored). Drawn only where it fits on the mark
+ * *Marked for redaction*, on the mark. Its ink is inherited: `AnnotationLayer` solves the layer's `color` at the point
+ * of use against `--redact-mark` (ADR-0003: never stored). Drawn only where it fits on the mark
  * (`labelPlace`): outside it, it covered words nobody marked.
  */
 .m-redact-mark__label {
@@ -5064,7 +5064,6 @@ optgroup {
   padding: 0 var(--space-4);
   border-radius: var(--radius-4);
   background: var(--redact-mark);
-  color: var(--m-redact-label-ink);
   font-family: var(--font-ui);
   font-size: var(--font-chrome-10);
   font-weight: 600;

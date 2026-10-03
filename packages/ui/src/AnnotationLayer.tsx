@@ -63,8 +63,11 @@ function DrawnAnnotations({
   const root = useRef<HTMLDivElement>(null);
   // A LABEL'S INK, solved at the point of use against the chip it sits on (ADR-0003: a derived colour is never
   // stored), ONCE PER PAGE rather than once per mark — a page marked by search carries up to 4,096 of them, and each
-  // `useOnColor` holds its own observer. Every label on this page sits on `--redact-mark`, so one answer serves all.
-  useOnColor(root, '--m-redact-label-ink', '--page', ['--redact-mark'], 'text');
+  // `useOnColor` holds its own observer. Every label on this page sits on `--redact-mark`, so one answer serves all:
+  // it is the layer's `color`, which the labels inherit and nothing else in the layer draws with. The layer's own
+  // `color` rather than a custom property, as every other caller writes it: a property no stylesheet declares makes
+  // the label's declaration invalid until the hook has run, and `check:definedtokens` refuses it.
+  useOnColor(root, 'color', '--page', ['--redact-mark'], 'text');
   // WHERE EACH LABEL SITS, measured after layout and written to the element — no state, so no second render. Every
   // label is READ before any is written: a write moves layout, and a read after it would force a layout per mark.
   // AND EACH IS MEASURED DRAWN: a label placed `none` is `display: none` and measures 0 × 0, which fits any mark, so

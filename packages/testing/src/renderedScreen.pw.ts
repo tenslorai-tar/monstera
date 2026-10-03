@@ -2802,6 +2802,15 @@ test('an existing REDACT mark is drawn as PENDING over the region it covers, lab
   const [colour, chip] = [channels(ink.colour), channels(ink.chip)];
   expect(colour, `the label's ink ${ink.colour} did not parse — was it solved at all?`).not.toBeNull();
   expect(contrast(colour ?? [0, 0, 0], chip ?? [0, 0, 0])).toBeGreaterThanOrEqual(textContrastFloor('light'));
+  // AND THE INK IS THE SOLVED ONE, not an inherited colour that happens to clear the floor: this bridge's text colour
+  // is light, so on a black chip an unsolved label passes the line above too (measured, 3 October, with the solve
+  // pointed at another property). The layer carries the answer inline and the label draws in it.
+  const solved = await preview.evaluate((node) => {
+    const layer = node.closest<HTMLElement>('[data-annotation-layer]');
+    return layer === null ? '' : layer.style.getPropertyValue('color');
+  });
+  expect(solved, 'the layer carries no solved colour').not.toBe('');
+  expect(channels(solved)).toStrictEqual(colour);
 
   // WHERE, against the canvas the page is drawn in: 612 pt across the canvas's width is the scale, and the top of the
   // box is 792 − y1 down from the top of the page.
