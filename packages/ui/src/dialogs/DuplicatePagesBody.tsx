@@ -69,22 +69,25 @@ export default function DuplicatePagesBody({
           ))}
         </ul>
       )}
-      <DialogFooter>
-        <Button
-          label={DUPLICATE_PAGES_REMOVE}
-          values={{ count: extras.length }}
-          variant="primary"
-          disabled={extras.length === 0}
-          onClick={() => {
-            // GUARDED AGAIN rather than trusting the disabled attribute, for
-            // `DeletePagesBody`'s reason: the result schema refuses an empty
-            // list, and a mismatch would be a thrown `DialogResultRejected` over
-            // the user's document.
-            if (extras.length === 0) return;
-            resolve({ pages: extras });
-          }}
-        />
-      </DialogFooter>
+      {/* NOTHING FOUND, NOTHING OFFERED: the footer is the report's Close. It offered *Remove 0 duplicate pages*,
+          disabled, which is an action that does nothing drawn as though it were one (the gallery, 2026-10-03). */}
+      {extras.length === 0 ? (
+        <DialogFooter dismissal="close" />
+      ) : (
+        <DialogFooter>
+          <Button
+            label={DUPLICATE_PAGES_REMOVE}
+            values={{ count: extras.length }}
+            variant="primary"
+            onClick={() => {
+              // GUARDED, for `DeletePagesBody`'s reason: the result schema refuses an empty list, and a mismatch would
+              // be a thrown `DialogResultRejected` over the user's document.
+              if (extras.length === 0) return;
+              resolve({ pages: extras });
+            }}
+          />
+        </DialogFooter>
+      )}
     </div>
   );
 }

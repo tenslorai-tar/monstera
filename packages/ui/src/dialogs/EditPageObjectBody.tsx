@@ -182,7 +182,11 @@ export default function EditPageObjectBody({
         </p>
       ) : null}
       {objects.length === 0 ? (
-        <p className="m-edit-page-object__none">{_(EDIT_PAGE_OBJECT_NONE)}</p>
+        <>
+          <p className="m-edit-page-object__none">{_(EDIT_PAGE_OBJECT_NONE)}</p>
+          {/* A FOOTER IN THIS STATE TOO, for `FlatFieldsBody`'s reason: nothing on the page, so its one button is Close. */}
+          <DialogFooter dismissal="close" />
+        </>
       ) : (
         <>
           <fieldset className="m-edit-page-object__choice">

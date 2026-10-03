@@ -57,7 +57,12 @@ export default function FlatFieldsBody({
         </p>
       ) : null}
       {candidates.length === 0 ? (
-        <p className="m-flat-fields__none">{_(FLAT_FIELDS_NONE)}</p>
+        <>
+          <p className="m-flat-fields__none">{_(FLAT_FIELDS_NONE)}</p>
+          {/* A FOOTER IN THIS STATE TOO: with none the dialog had no button at all, only the title bar's close, and
+              sat outside the pattern's width (the gallery, 2026-10-03). Nothing found, so its one button is Close. */}
+          <DialogFooter dismissal="close" />
+        </>
       ) : (
         <>
           <ul className="m-flat-fields__list">
