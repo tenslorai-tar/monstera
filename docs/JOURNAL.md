@@ -892,6 +892,153 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-03 — Stage audit of `de106c45..5da42ae3` — findings MMMMMMM-1 to MMMMMMM-11
+
+33 commits, 199 files, all work/cloud-4: CR-DOC-10, CR-NAT-01, CR-SEC-16, CR-DOC-07 (ADR-0148, ADR-0149), Groups 2,
+3 and 4a (ADR-0150), the canvas proof's controls, and Group 7 (7a to 7d). Owed because 8a's commit would take the
+range past one batch (206 files). Label M: K is the highest on main, L on this branch (read from each branch's
+JOURNAL). The 62 modified tests were read diff by diff for removed lines, the two whose deletions the net diff hides
+through `git log -p`; every removal was a stronger replacement, a contract shape followed, or moved with its
+assertion named, except the four loosenings below, each checked against the code and, for MMMMMMM-10, by mutation
+before it was recorded.
+
+**MMMMMMM-1** (medium, closed in this commit): three of `docs/FEATURES.md`'s compound claims went half true in this
+range, in commits that touched none of them. Row 63 said *"`absent` and `at-capacity` now report"* and row 337 that
+the handle *"is revoked on `absent` and `at-capacity`"*, after `761f0a25` added `busy`, `denied` and `failed` to the
+first and `busy` and `denied` to the second; row 342 said nothing of the save's causes (`5da42ae3`). All three bodies
+now say what the code does. Item 7's own shape: the live clause vouched for the dead one beside it.
+
+**MMMMMMM-2** (medium, open, proposed): an ADR correction landed without its index row twice in this range, ADR-0148's
+and ADR-0150's (`070e21cb`), each caught only by Guards' document check after the push and closed in `ec61fd9a` and
+`57ae2d5e`. IIIIIII recorded the same shape twice. A rule that has failed in three ranges is not a habit to form, and
+`check:docs` by hand is ruled out by the owner for its cost. Proposed: the pre-commit hook runs only the document
+rule that pairs an ADR with its index row, which reads two files.
+
+**MMMMMMM-3** (medium, open, recurrence of LLLLLLL-3): `515b410e` made the signature's styles a menu and went out
+without `layoutReview.pw.ts`, which still asked that dialog for its column of choices and was red on windows-latest
+(fixed in `37a14f01`). LLLLLLL-3's proposal stands: nothing names the rendered cases a renderer change reaches.
+
+**MMMMMMM-4** (medium, open, the owner's): opening the same path a second time hands back the live document's handle,
+because `mint` is idempotent per path. So when the file at an open document's path has been deleted or replaced, the
+second open answers `absent` (since `761f0a25` also `busy` or `denied`) and the revoke strips the handle from the
+document that is still open. What then fails is the handle's other readers (*Show in folder*, the recent list), not
+the save, which reads the record's path. Found reading `openPath` for 7a; it predates this range, and 7a kept the new
+outcomes consistent with the old. Proposed: revoke only a handle no open document holds.
+
+**MMMMMMM-5** (low, open, the owner's): 144 of 233 gallery states draw a paragraph with the browser's own 12 px block
+margin (measured 2026-10-03 across every registered dialog state, light, 1280 x 800, with the open-problem dialog as
+the sweep's positive control), so about eighty dialogs space a sentence by the user-agent stylesheet rather than by a
+token. Two zero it (`.m-command-problem`, `.m-save-problem`), so one-sentence problem dialogs read differently from
+each other. A design-wide change with a baseline per dialog, and the owner's to take; the new open-problem dialog
+matches its siblings until then.
+
+**MMMMMMM-6** (low, open, proposed): the browser shim places every line of `documentPageLines` at an invented box,
+(10, 20) to (110, 32), not where the PDF draws its words, so no rendered case can test Compare's text-against-picture
+rule: in the built page a one-word edit is boxed at the top left and its drawn change reads as a picture (measured in
+the work after this range, 8a). Proposed: the shim takes each document's placed lines, as `pageLinesPlaced` already
+does for one.
+
+**MMMMMMM-7** (recorded): the ubuntu canvas proof is intermittent across this range, red at `515b410e` and `11d6b03e`
+and green at `37a14f01` and `5da42ae3`, with the same image and Electron each time. The red runs read alike: all four
+controls fully inked, the page white, settled by the 60 s bound, the 2D canvas in software. Its next instrument, the
+worker's console over CDP, is the local agent's, because the startup and engine-connection code it would touch is held
+for finding 1.
+
+**MMMMMMM-8** (medium, closed in this commit): `702f1c39` removed `signature.pickPicture`'s own size check as a second
+opinion about `readImage`'s bound, and its case's *past the bound, unread* assertion with it. The bound then lived only
+in `entry.ts`, the composition root, which no case reaches, and so did five siblings of the same shape: form data,
+annotation data, Markdown, CSV and Office, none ever tested. All six now live in `pickedFileReads.ts`, each a function
+naming its own bound and sharing one sized-then-read rule, and `pickedFileReads.test.ts` makes a sparse file one byte
+past each bound on the real disk and asserts the read refused it with nothing read. Control: CSV wired to Markdown's
+bound is red. Stated limit: form data and annotation data are both 8 MiB, so a swap between those two is invisible
+there, and changes nothing a person sees while they are equal.
+
+**MMMMMMM-9** (low, closed in this commit): `d0c2afa1` made two of Apply redactions' cases filter every
+`document.annotations` read out before asserting, so a second read, or a read in the wrong place, passed. They assert
+the whole sequence of channels now.
+
+**MMMMMMM-10** (low, closed in this commit): two of the signature's drawing rules had no case that could fail. A scale
+per axis in place of one passed all 28 drawing and placing cases (mutation run 2026-10-03), because every fixture's box
+had its line box's 2:1 shape; and pair kerning, applied since `515b410e`, had no case at all. A 2:1 name in a square box
+now asserts its proportions kept, and a kerned pair found in the bundled faces is framed at its advances plus the
+face's own kerning, with a positive control that one was found. Each was run red against its mutation.
+
+**MMMMMMM-11** (low, closed in this commit): a kept typed signature named by id was asserted refused with
+`rejects.toThrow(/outline/u)`, which any error mentioning an outline satisfies. It names the whole sentence.
+
+**Loosened by design, recorded.** `signature.pw.ts` compares the typed mark with `toMatchObject` plus a lower bound on
+its points, since a face's outline cannot be pinned by hand (`515b410e`). `calloutTool.test.ts`' *asks nothing* became
+*places the note there* by F-C7's own reversal (`a621db9b`). `commandProblem.test.ts` excludes `breaks-signatures` from
+the codes the dialog accepts, and pins the exclusion. Two cases compare a command's mark with the output of
+`outlinedMarkOf`, the module they forward, which proves the forwarding and not the outline; the outline is
+`signatureFaces.test.ts`' subject. One case name no longer described its file (`pdfLibSession.test.ts`) and now does.
+
+**Process, recorded rather than a finding.** One commit (`4a6a046a`) was made with the previous message reused
+(`git commit -F .git/COMMIT_EDITMSG`); it was never pushed, and was reset and made again as `702f1c39`. Guard denials
+in this session, each with nothing run: `node -e` inside a pipeline, a heredoc into `/dev/null`, a heredoc fed to
+`python3`, and `node -e 0` twice, the second while writing this entry. Two shell writes the guard does not cover, by its design since `cat` resolves no escape: an
+empty scratch file made with `cat >` (deleted at once) and `cat >> /dev/null`.
+
+### 1. Root cause or workaround?
+
+Each fix states its mechanism in its commit. 7c's two-hundred-millisecond cap on the recent list's check is the
+owner's answer (*"cap the wait so the list shows at once"*), not a timeout raised to pass. No workaround-shaped change.
+
+### 2. Verified against the easy shape only?
+
+The hard shapes were taken where they existed: a redaction of one line among tightly leaded neighbours (2a), a scanned
+signature with a printed line through it and specks beside it (3d), a recent file whose check never answers (7c), one
+refused rename that reads as two causes for two files (7b). The easy one stands for 7a and 7b's Windows codes, which no
+Linux run can produce: item 5. And the signature's fit was verified on one box shape only, MMMMMMM-10.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Once, against: `702f1c39` moved the image bound's proof onto a stub that answers *too large* itself, which left the
+bound unproven, MMMMMMM-8. Once, stronger: the save's write failure carries its cause, so its one case became five.
+
+### 3. Would CI have caught it?
+
+It did, twice: the ADR index rows (MMMMMMM-2) and the layout review (MMMMMMM-3). Every case added runs in CI except the
+scratch captures, which are not committed.
+
+### 4. Are the proofs non-vacuous?
+
+Each item's control was run against the old code and named in its commit, red. Four were not, MMMMMMM-8 to -11, each
+now with one.
+
+### 4a. Has every instrument passed a resolution test?
+
+The canvas readback's controls separate a drawn page from a blank one by the whole page (500,990 pixels against 0). The
+signature scan's thresholds are tested at their edges (a 36 px fleck, a piece of nine pixels).
+
+### 4b. Is the instrument a search, with a positive control?
+
+The dialog-margin sweep (MMMMMMM-5) refused to report unless it found the open-problem dialog, known to carry a bare
+paragraph, and the kerning case (MMMMMMM-10) refuses to pass unless it found a kerned pair. No search instrument was
+added to the repository.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+None added does. `pickedFileReads.test.ts` names its six reads and their bounds by hand, an independent anchor, and the
+shim's channel list stays a literal.
+
+### 5. Executed, or asserted?
+
+Asserted and not executed: the Windows codes for a sharing violation and the read-only attribute on a read and on an
+open for writing (libuv's mapping), that the open for writing leaves an NTFS file's last-write time alone, the packaged
+Electron 43.7.7, and 5c's `CREATE_NO_WINDOW` (Group 5 is the local agent's).
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before: ADR-0148, ADR-0149 and ADR-0150 came before their features. The new channels (`document.fileAccess`,
+`document.workOnCopy`) register into the contract's seam and add no concept the architecture lacks.
+
+### 7. Do the documents still match the code?
+
+Three rows did not, MMMMMMM-1, corrected in this commit.
+
+---
+
 ## 2026-10-03 — Stage audit of `54ea19e7..de106c45` — findings LLLLLLL-1 to LLLLLLL-5
 
 62 commits, all work/cloud-4: the JJJJJJJ follow-ups, Group 1 (every dialog by eye, 1c to 1f), ADR-0146 and ADR-0147

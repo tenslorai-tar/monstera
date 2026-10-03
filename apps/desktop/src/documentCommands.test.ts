@@ -4571,7 +4571,10 @@ describe('sign — a visible signature', () => {
     it('a kept TYPED signature named only by its id is REFUSED: main has no outline to draw (ADR-0150)', async () => {
       // THE RENDERER SENDS A KEPT TYPED NAME AS ITS OUTLINE (`chosenOfKept`), so this is its defect, answered as one —
       // never drawn as nothing, and never set in some face main would have to choose.
-      await expect(signingWith(KEPT_TYPED)).rejects.toThrow(/outline/u);
+      // THE WHOLE SENTENCE, so a different failure that happens to mention an outline cannot stand in for this one.
+      await expect(signingWith(KEPT_TYPED)).rejects.toThrow(
+        'a kept typed signature is placed by its outline, which the renderer makes, never by its id',
+      );
     });
 
     it('a kept PICTURE signs with the library’s bytes, and no picker opens', async () => {

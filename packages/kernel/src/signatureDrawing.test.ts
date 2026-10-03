@@ -41,6 +41,16 @@ describe('a TYPED name, as the outline the renderer made of it (ADR-0150)', () =
     expect(lines).toContain('h');
   });
 
+  it('ONE SCALE IN A BOX OF ANOTHER SHAPE: a 2:1 name in a square keeps its proportions and is centred top to bottom', () => {
+    // THE SHAPE THE CASE ABOVE CANNOT SEPARATE: its box is 2:1 like the line box, so one scale and a scale per axis
+    // land on the same points. Here 1000 × 500 goes into 100 × 100 at 0.9: one scale of 0.09, so 90 wide and 45 tall,
+    // 5 in from the sides and 27.5 up from the bottom. Per axis, the height would stretch to 90 and the base sit at 5.
+    const lines = drawSignature(outlined(BOWL), 100, 100).content.split('\n');
+    expect(lines).toContain('5.0000 27.5000 m');
+    expect(lines).toContain('95.0000 27.5000 l');
+    expect(lines).not.toContain('5.0000 5.0000 m');
+  });
+
   it('fits the line box AND the ink, so a swash past the advance is not cut', () => {
     // A stroke reaching half the advance again past the line box's right edge.
     const swash: SignatureOutline = { ops: outlineOpCodes('MLLZ'), points: [0, 500, 1000, 500, 1500, 250], frame: [0, 0, 1000, 500] };

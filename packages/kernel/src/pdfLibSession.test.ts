@@ -65,7 +65,7 @@ describe('a pdf-lib command appends its revision (ADR-0127)', () => {
     expect(startsWith(rewritten, input)).toBe(false);
   });
 
-  it('appendRevision refuses a document loaded whole — the two helpers are one route', async () => {
+  it('appendRevision refuses a document loaded whole, and takes one opened for writing — CONTROL in the second line', async () => {
     await expect(appendRevision(await loadedWhole(await document(1)))).rejects.toThrow(/forIncrementalUpdate/u);
     await expect(appendRevision(await openForWriting(await document(1)))).resolves.toBeInstanceOf(Uint8Array);
   });

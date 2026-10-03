@@ -4226,7 +4226,8 @@ describe('protectDocumentCommand', () => {
         confirm: () => true,
       }).run(CONTEXT);
 
-      expect(sent.filter((call) => call.id !== 'document.annotations')).toStrictEqual([]);
+      // THE MARKS WERE COUNTED, ONCE, AND NOTHING FOLLOWED: the whole sequence, so a dispatch or a second read fails it.
+      expect(sent.map((call) => call.id)).toStrictEqual(['document.annotations']);
     });
 
     it('with *Confirm before redacting* OFF, asks nothing and burns in THIS PAGE with the dialog’s own defaults', async () => {
@@ -4249,6 +4250,8 @@ describe('protectDocumentCommand', () => {
       }).run(CONTEXT);
 
       expect(opened).toStrictEqual([]);
+      // THE COUNT ONCE AND FIRST, then the one dispatch: the sequence whole, as the dismissed case reads it.
+      expect(calls.map((call) => call.id)).toStrictEqual(['document.annotations', 'document.execute']);
       const sent = calls.filter((call) => call.id !== 'document.annotations');
       expect(sent).toStrictEqual([
         {

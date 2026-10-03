@@ -63,6 +63,44 @@ describe('setName: a name as the outline it crosses as', () => {
     expect(moves[1] ?? 0).toBeGreaterThan((moves[0] ?? 0) + 1000);
   });
 
+  it('PAIR KERNING: a kerned pair is set as wide as its advances plus the face’s own kerning, never without it', async () => {
+    // THE FRAME'S WIDTH OVER ITS HEIGHT is the set width over the line box's height — both are scaled onto the grid by
+    // one unit — so it reads the kerning straight off the file's own tables. A setter that dropped the kerning would
+    // frame the pair at its advances alone, which the second assertion keeps apart from the first.
+    const pairs = [
+      ['A', 'V'],
+      ['T', 'o'],
+      ['T', 'y'],
+      ['W', 'a'],
+      ['Y', 'o'],
+      ['L', 'T'],
+    ] as const;
+    let checked = 0;
+    for (const face of await loadFaces()) {
+      const [font] = face.fonts;
+      if (font === undefined) continue;
+      for (const pair of pairs) {
+        const [a, b] = pair.map((character) => font.charToGlyphIndex(character));
+        if (a === undefined || b === undefined || a === 0 || b === 0) continue;
+        const [left, right] = [font.glyphs.get(a), font.glyphs.get(b)];
+        const kern = font.getKerningValue(left, right);
+        if (kern === 0) continue;
+        const text = pair.join('');
+        const set = setName(face, text);
+        if (set.kind !== 'outline') throw new Error(`${face.face} answered ${set.kind}`);
+        const [x0, y0, x1, y1] = set.outline.frame;
+        const lineBox = font.ascender - font.descender;
+        const advances = (left.advanceWidth ?? 0) + (right.advanceWidth ?? 0);
+        expect((x1 - x0) / (y1 - y0), `${face.face} ${text}`).toBeCloseTo((advances + kern) / lineBox, 3);
+        expect(Math.abs(kern / lineBox), `${face.face} ${text}`).toBeGreaterThan(0.002);
+        checked += 1;
+        break;
+      }
+    }
+    // POSITIVE CONTROL: at least one face kerns one of these pairs, or the case above checked nothing.
+    expect(checked).toBeGreaterThan(0);
+  }, 60_000);
+
   it('keeps the face’s line box: a name with no descender is framed as tall as one with them', async () => {
     const face = await loadFace('source-sans');
     const plain = setName(face, 'ace');

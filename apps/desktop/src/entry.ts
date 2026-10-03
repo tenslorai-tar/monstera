@@ -1,18 +1,18 @@
 import { open, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import {
-  MAX_ANNOTATION_DATA_BYTES,
-  MAX_CSV_BYTES,
-  MAX_FORM_DATA_BYTES,
-  MAX_IMAGE_BYTES,
-  MAX_MARKDOWN_BYTES,
-  MAX_OFFICE_IMPORT_BYTES,
-} from '@monstera/contract';
 import { sweepCheckpointDirectories } from '@monstera/kernel';
 import { BrowserWindow, app, clipboard, crashReporter, nativeImage, safeStorage, shell } from 'electron';
 
 import { createShellDependencies } from './composition.js';
+import {
+  readAnnotationDataFile,
+  readCsvFile,
+  readFormDataFile,
+  readImageFile,
+  readMarkdownFile,
+  readOfficeFile,
+} from './pickedFileReads.js';
 import { setNativeSource } from './nativeComponents.js';
 import {
   createAnnotationDataPicker,
@@ -328,27 +328,10 @@ startShell(() => {
       return true;
     },
     editWatch: nodeEditWatchSurface,
-    // THE BOUND IS CHECKED BEFORE THE READ, which is the whole reason this is a
-    // function here rather than a `readFile` at the call site: `stat` costs
-    // nothing and a 4 GB file a user picked by mistake is refused as a decided
-    // outcome instead of being loaded to find out.
-    //
-    // `readImage` is where Node's filesystem enters, for the same reason the
-    // pickers are where Electron does: `composition.ts` imports neither.
-    readImage: async (path: string) => {
-      try {
-        const { size } = await stat(path);
-        if (size > MAX_IMAGE_BYTES) return { kind: 'too-large' as const, byteLength: size };
-        return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
-      } catch {
-        // A FILE THAT VANISHED OR CANNOT BE OPENED reads as unreadable, which is
-        // what the user sees either way. The distinction between *deleted since
-        // you picked it* and *permission denied* is one this build cannot act on
-        // differently, so inventing two outcomes would be two sentences for one
-        // situation.
-        return { kind: 'unreadable' as const };
-      }
-    },
+    // EVERY PICKED FILE IS SIZED BEFORE IT IS READ, in `pickedFileReads.ts`, where a case reaches it; each read names
+    // its own bound there. This is where Node's filesystem enters, for the same reason the pickers are where Electron
+    // does: `composition.ts` imports neither.
+    readImage: (path: string) => readImageFile(path),
     // NO BOUND, and that is the decision `composition.ts` records: a file
     // picked through a dialog filtered to `.p12` is a few kilobytes or it is
     // not a certificate, and the signer's own parse is what says so. A number
@@ -362,54 +345,11 @@ startShell(() => {
         return { kind: 'unreadable' as const };
       }
     },
-    // THE SAME SHAPE AGAINST A DIFFERENT BOUND, written out rather than shared
-    // with a size parameter: the two bounds are separate decisions about
-    // separate risks — an image is large because images are, a form-data file
-    // large enough to notice is one somebody built — and a helper taking a
-    // number would make them look like one rule with two settings.
-    readFormData: async (path: string) => {
-      try {
-        const { size } = await stat(path);
-        if (size > MAX_FORM_DATA_BYTES) return { kind: 'too-large' as const, byteLength: size };
-        return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
-      } catch {
-        return { kind: 'unreadable' as const };
-      }
-    },
-    // `readFormData`'s shape against the annotation bound, written out for the reason above:
-    // `MAX_ANNOTATION_DATA_BYTES` is its own decision, equal today (ADR-0077).
-    readAnnotationData: async (path: string) => {
-      try {
-        const { size } = await stat(path);
-        if (size > MAX_ANNOTATION_DATA_BYTES) return { kind: 'too-large' as const, byteLength: size };
-        return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
-      } catch {
-        return { kind: 'unreadable' as const };
-      }
-    },
-    // `readFormData`'s shape against the Markdown bound, and written out for its
-    // reason: `MAX_MARKDOWN_BYTES` was set from what composing costs in the host
-    // (ADR-0060), which is a different decision from either bound above.
-    readMarkdown: async (path: string) => {
-      try {
-        const { size } = await stat(path);
-        if (size > MAX_MARKDOWN_BYTES) return { kind: 'too-large' as const, byteLength: size };
-        return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
-      } catch {
-        return { kind: 'unreadable' as const };
-      }
-    },
-    // THE SAME SHAPE AGAINST THE CSV BOUND, written out for `readFormData`'s reason:
-    // `MAX_CSV_BYTES` was measured on the CSV composer, not Markdown's.
-    readCsv: async (path: string) => {
-      try {
-        const { size } = await stat(path);
-        if (size > MAX_CSV_BYTES) return { kind: 'too-large' as const, byteLength: size };
-        return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
-      } catch {
-        return { kind: 'unreadable' as const };
-      }
-    },
+    // `readImage`'s rule, each against its own bound (`pickedFileReads.ts` says why the bounds are five decisions).
+    readFormData: (path: string) => readFormDataFile(path),
+    readAnnotationData: (path: string) => readAnnotationDataFile(path),
+    readMarkdown: (path: string) => readMarkdownFile(path),
+    readCsv: (path: string) => readCsvFile(path),
     // A SIZE AND NOTHING READ, so an image import's bounds are decided before any
     // picked byte is in memory. `null` for a file that cannot be stated — `readImage`'s
     // reason: gone and forbidden are one situation from where the person stands.
@@ -524,15 +464,7 @@ startShell(() => {
             platform: officePlatform,
             source: {
               pick: createOfficeImportPicker(OFFICE_IMPORT_FORMATS),
-              read: async (path: string) => {
-                try {
-                  const { size } = await stat(path);
-                  if (size > MAX_OFFICE_IMPORT_BYTES) return { kind: 'too-large' as const, byteLength: size };
-                  return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
-                } catch {
-                  return { kind: 'unreadable' as const };
-                }
-              },
+              read: (path: string) => readOfficeFile(path),
             },
           },
     // THE ENCODER, and it is here because `nativeImage` is Electron's.
