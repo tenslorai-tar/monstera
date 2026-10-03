@@ -7,6 +7,7 @@ import {
   JOB_LIMIT_ACTIVE_PROCESS,
   JOB_LIMIT_KILL_ON_JOB_CLOSE,
   JOB_LIMIT_PROCESS_MEMORY,
+  JOB_UI_RESTRICTIONS_ALL,
 } from '@monstera/kernel';
 import { MAX_OFFICE_MISSING_BLOCKS, MAX_WORKBOOK_PARTS } from '@monstera/contract';
 import { ok } from '@monstera/shared';
@@ -125,6 +126,7 @@ function platform(
           limitFlags: JOB_LIMIT_ACTIVE_PROCESS | JOB_LIMIT_PROCESS_MEMORY | JOB_LIMIT_KILL_ON_JOB_CLOSE,
           activeProcessLimit: 1,
           processMemoryLimitBytes: limit,
+          uiRestrictions: JOB_UI_RESTRICTIONS_ALL,
         }),
         resume: () => 1,
         terminate: () => undefined,

@@ -5,6 +5,8 @@ import {
   JOB_LIMIT_ACTIVE_PROCESS,
   JOB_LIMIT_KILL_ON_JOB_CLOSE,
   JOB_LIMIT_PROCESS_MEMORY,
+  JOB_UI_RESTRICTIONS,
+  JOB_UI_RESTRICTIONS_ALL,
 } from '@monstera/kernel';
 import { err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
@@ -107,6 +109,7 @@ function surface(
           JOB_LIMIT_ACTIVE_PROCESS | JOB_LIMIT_PROCESS_MEMORY | JOB_LIMIT_KILL_ON_JOB_CLOSE,
         activeProcessLimit: 1,
         processMemoryLimitBytes: appliedMemoryLimitBytes,
+        uiRestrictions: JOB_UI_RESTRICTIONS_ALL,
       }),
       overrides.readJobLimits,
     ),
@@ -175,6 +178,7 @@ describe('the contained host is created in one order', () => {
           JOB_LIMIT_ACTIVE_PROCESS | JOB_LIMIT_PROCESS_MEMORY | JOB_LIMIT_KILL_ON_JOB_CLOSE,
         activeProcessLimit: 2,
         processMemoryLimitBytes: ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
+        uiRestrictions: JOB_UI_RESTRICTIONS_ALL,
       }),
     });
     const result = createContainedHost(win32, ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES);
@@ -194,12 +198,38 @@ describe('the contained host is created in one order', () => {
           JOB_LIMIT_ACTIVE_PROCESS | JOB_LIMIT_PROCESS_MEMORY | JOB_LIMIT_KILL_ON_JOB_CLOSE,
         activeProcessLimit: 1,
         processMemoryLimitBytes: 0,
+        uiRestrictions: JOB_UI_RESTRICTIONS_ALL,
       }),
     });
     const result = createContainedHost(win32, ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES);
 
     expect(!result.ok && result.error.stage).toBe('containment-absent');
     expect(win32.calls).not.toContain('resume');
+  });
+
+  it('REFUSES a job missing any one UI restriction, and names it (CR-SEC-11)', () => {
+    // EACH ON ITS OWN, so a classifier that checked some of the set and not the rest fails here on the one it
+    // skipped, rather than passing on a reading that lacks everything.
+    for (const [name, bit] of Object.entries(JOB_UI_RESTRICTIONS)) {
+      const win32 = surface({
+        readJobLimits: () => ({
+          kind: 'read',
+          limitFlags:
+            JOB_LIMIT_ACTIVE_PROCESS | JOB_LIMIT_PROCESS_MEMORY | JOB_LIMIT_KILL_ON_JOB_CLOSE,
+          activeProcessLimit: 1,
+          processMemoryLimitBytes: ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
+          uiRestrictions: JOB_UI_RESTRICTIONS_ALL & ~bit,
+        }),
+      });
+      const result = createContainedHost(win32, ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES);
+
+      expect(!result.ok && result.error.stage, name).toBe('containment-absent');
+      expect(!result.ok && result.error.detail, name).toContain(`lack ${name}`);
+      expect(win32.calls, name).not.toContain('resume');
+    }
+    // THE SET IS ALL EIGHT, so the loop above is not over a list that lost members.
+    expect(Object.keys(JOB_UI_RESTRICTIONS)).toHaveLength(8);
+    expect(JOB_UI_RESTRICTIONS_ALL).toBe(0xff);
   });
 
   it('a containment reading that FAILED is its own stage, not absence', () => {

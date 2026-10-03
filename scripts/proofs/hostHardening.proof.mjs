@@ -16,6 +16,13 @@
  *
  * The holder is a separate process because that is the threat: a name another process created.
  *
+ * ## The job carries every UI restriction (CR-SEC-11)
+ *
+ * The shipped surface's `applyLimits` on a real job, then `readJobLimits` read back off it: the UI restrictions are
+ * the whole set `containment.ts` names. CONTROL: a fresh job read the same way shows none, so the read can see an
+ * absence rather than answering the set for any job. What a probe in that job can no longer reach was measured on
+ * Windows 11 and is in `containment.ts`; the factory's refusal of a job lacking any one is `engineHostFactory.test.ts`.
+ *
  * Usage: node scripts/proofs/hostHardening.proof.mjs [--require-transport]
  */
 
@@ -29,6 +36,7 @@ import { HOST_HARDENING, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
+import { electronBinaryPath } from '../provision/electron.mjs';
 
 const ROOT = repoRoot();
 const SELF = fileURLToPath(import.meta.url);
@@ -36,6 +44,8 @@ const BUILT = {
   pipeSurface: join(ROOT, 'apps', 'desktop', 'dist', 'win32PipeSurface.js'),
   pipeFactory: join(ROOT, 'apps', 'desktop', 'dist', 'enginePipeFactory.js'),
   dacl: join(ROOT, 'apps', 'desktop', 'dist', 'hostDacl.js'),
+  hostSurface: join(ROOT, 'apps', 'desktop', 'dist', 'win32HostSurface.js'),
+  containment: join(ROOT, 'packages', 'kernel', 'dist', 'host', 'containment.js'),
 };
 /** `PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED`, `PIPE_UNLIMITED_INSTANCES`: a holder as permissive as a name can be. */
 const HOLDER_OPEN_MODE = 0x00000003 | 0x40000000;
@@ -80,17 +90,19 @@ if (process.argv[2] === 'hold-pipe') {
       });
     }
   }
-  refuseStaleBuild(ROOT, HOST_HARDENING, 3);
+  refuseStaleBuild(ROOT, HOST_HARDENING, 5);
 
   const { createWin32PipeSurface, currentUserSid, hostContainerSid } = await import(
     '../../apps/desktop/dist/win32PipeSurface.js'
   );
   const { createHostPipe } = await import('../../apps/desktop/dist/enginePipeFactory.js');
   const { hostPipeDacl } = await import('../../apps/desktop/dist/hostDacl.js');
+  const { createWin32HostSurface } = await import('../../apps/desktop/dist/win32HostSurface.js');
+  const { JOB_UI_RESTRICTIONS_ALL } = await import('../../packages/kernel/dist/host/containment.js');
 
   /** @type {string[]} */
   const failures = [];
-  const roster = createRoster(failures, { cases: 3 });
+  const roster = createRoster(failures, { cases: 5 });
   /** @param {string} label @param {boolean} held @param {string} detail */
   const check = (label, held, detail) => {
     const mark = roster.mark();
@@ -153,6 +165,44 @@ if (process.argv[2] === 'hold-pipe') {
     made.ok ? `${String(made.value.instances.length)} instance(s)` : made.error.detail,
   );
   if (made.ok) for (const instance of made.value.instances) pipes.close(instance);
+
+  // THE JOB'S UI RESTRICTIONS. Only the job calls are made: no process is created, so the configuration below is the
+  // surface's required shape and nothing runs from it.
+  const hostSurface = createWin32HostSurface({
+    program: {
+      runs: 'electron-node',
+      // THE PROVISIONED RUNTIME, by the provisioning resolver: `electronBinaryOfThisProcess` mints the same path
+      // and throws outside Electron, and the two were measured to agree (`win32HostSurface.ts`).
+      executablePath: /** @type {import('../../apps/desktop/dist/win32HostSurface.js').ElectronBinaryPath} */ (
+        electronBinaryPath(ROOT)
+      ),
+      commandArguments: [],
+    },
+    workingDirectory: ROOT,
+    containerName: null,
+    diagnosticPath: null,
+  });
+  const limited = hostSurface.createJob();
+  const fresh = hostSurface.createJob();
+  if (limited === null || fresh === null) throw new Error('CreateJobObjectW returned no handle');
+  try {
+    const applied = hostSurface.applyLimits(limited, 512 * 1024 * 1024);
+    const read = hostSurface.readJobLimits(limited);
+    check(
+      'the shipped surface applies every UI restriction, read back off the job',
+      applied && read.kind === 'read' && read.uiRestrictions === JOB_UI_RESTRICTIONS_ALL,
+      `applied ${String(applied)}; read ${JSON.stringify(read)}; expected 0x${JOB_UI_RESTRICTIONS_ALL.toString(16)}`,
+    );
+    const untouched = hostSurface.readJobLimits(fresh);
+    check(
+      'CONTROL: a fresh job read the same way shows no UI restriction',
+      untouched.kind === 'read' && untouched.uiRestrictions === 0,
+      `read ${JSON.stringify(untouched)}`,
+    );
+  } finally {
+    hostSurface.close(limited);
+    hostSurface.close(fresh);
+  }
 
   if (failures.length > 0) {
     process.stderr.write(`\nHost hardening proof — ${String(failures.length)} failure(s):\n\n${failures.map((f) => `  - ${f}`).join('\n\n')}\n\n`);

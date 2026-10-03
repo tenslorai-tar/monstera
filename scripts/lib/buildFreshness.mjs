@@ -286,7 +286,8 @@ export const READER_DISPOSE = [
 ];
 
 /**
- * What `hostHardening.proof.mjs` runs: the shipped surfaces that create the engine host's pipe and its DACL.
+ * What `hostHardening.proof.mjs` runs: the shipped surfaces that create the engine host's pipe, its DACL and its job,
+ * and the classifier that names what the job must carry.
  *
  * @type {readonly BuildEdge[]}
  */
@@ -294,6 +295,8 @@ export const HOST_HARDENING = [
   ['apps/desktop/src/win32PipeSurface.ts', 'apps/desktop/dist/win32PipeSurface.js', 'tsc'],
   ['apps/desktop/src/enginePipeFactory.ts', 'apps/desktop/dist/enginePipeFactory.js', 'tsc'],
   ['apps/desktop/src/hostDacl.ts', 'apps/desktop/dist/hostDacl.js', 'tsc'],
+  ['apps/desktop/src/win32HostSurface.ts', 'apps/desktop/dist/win32HostSurface.js', 'tsc'],
+  ['packages/kernel/src/host/containment.ts', 'packages/kernel/dist/host/containment.js', 'tsc'],
 ];
 
 /**

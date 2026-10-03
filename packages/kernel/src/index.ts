@@ -425,6 +425,8 @@ export {
   JOB_LIMIT_ACTIVE_PROCESS,
   JOB_LIMIT_KILL_ON_JOB_CLOSE,
   JOB_LIMIT_PROCESS_MEMORY,
+  JOB_UI_RESTRICTIONS,
+  JOB_UI_RESTRICTIONS_ALL,
   classifyContainment,
   classifyProcessContainment,
   outcomeForErrorCode,

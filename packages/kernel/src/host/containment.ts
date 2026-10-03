@@ -593,6 +593,33 @@ export const JOB_LIMIT_ACTIVE_PROCESS = 0x00000008;
 export const JOB_LIMIT_PROCESS_MEMORY = 0x00000100;
 export const JOB_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
 
+/**
+ * The job's UI restrictions (`JOBOBJECT_BASIC_UI_RESTRICTIONS`), every one of them, defined here for the reason the
+ * limit flags are: the surface sets them and the classifier reads them back, from one list.
+ *
+ * Kernel-enforced and independent of the AppContainer, which matters where the container is weaker: a Store install's
+ * host runs as a child container of the package (ADR-0023 Decision 16). Measured 2026-10-03 on Windows 11, a probe
+ * created by the factory, contained as development contains it. Without these, it posted a message to the taskbar's
+ * window and found a global atom main created; with them, the post is refused (1400) and the atom is not found. Not
+ * measured, and why: the clipboard was refused by the container either way (an uncontained job'd probe opened it, and
+ * the factory refuses an uncontained host); the desktop restriction governs creating and switching desktops, which a
+ * probe should not do, and opening the input desktop is not what it refuses. No host has a window, a clipboard, an
+ * atom or a desktop of its own to need, so none is kept — measured by the hosts and converters running under it.
+ */
+export const JOB_UI_RESTRICTIONS = {
+  HANDLES: 0x00000001,
+  READCLIPBOARD: 0x00000002,
+  WRITECLIPBOARD: 0x00000004,
+  SYSTEMPARAMETERS: 0x00000008,
+  DISPLAYSETTINGS: 0x00000010,
+  GLOBALATOMS: 0x00000020,
+  DESKTOP: 0x00000040,
+  EXITWINDOWS: 0x00000080,
+} as const;
+
+/** Every restriction in {@link JOB_UI_RESTRICTIONS}, as the one value the job is given. */
+export const JOB_UI_RESTRICTIONS_ALL = Object.values(JOB_UI_RESTRICTIONS).reduce((all, bit) => all | bit, 0);
+
 /** What main read off the child's token, or why it could not. */
 export type IntegrityReading =
   | { readonly kind: 'read'; readonly rid: number }
@@ -605,6 +632,8 @@ export type JobLimitsReading =
       readonly limitFlags: number;
       readonly activeProcessLimit: number;
       readonly processMemoryLimitBytes: number;
+      /** `JOBOBJECT_BASIC_UI_RESTRICTIONS.UIRestrictionsClass`, read off the job. */
+      readonly uiRestrictions: number;
     }
   | { readonly kind: 'could-not-read'; readonly detail: string };
 
@@ -695,6 +724,20 @@ export function classifyProcessContainment(
         `The job's per-process memory limit reads ${String(job.processMemoryLimitBytes)} bytes ` +
         `and ${String(expectedProcessMemoryLimitBytes)} was asked for. The number that governs ` +
         `is the one on the job, so a limit that did not take is the ceiling nobody is under.`,
+    };
+  }
+
+  const unrestricted = Object.entries(JOB_UI_RESTRICTIONS)
+    .filter(([, bit]) => (job.uiRestrictions & bit) === 0)
+    .map(([name]) => name);
+  if (unrestricted.length > 0) {
+    return {
+      kind: 'not-contained',
+      property: 'job',
+      detail:
+        `The job's UI restrictions lack ${unrestricted.join(', ')} (0x${job.uiRestrictions.toString(16)}). A host ` +
+        `without them can reach the clipboard, other processes' windows, the global atoms or the desktop, whatever ` +
+        `its container allows.`,
     };
   }
 

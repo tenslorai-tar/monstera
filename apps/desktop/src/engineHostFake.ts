@@ -8,6 +8,7 @@ import {
   JOB_LIMIT_ACTIVE_PROCESS,
   JOB_LIMIT_KILL_ON_JOB_CLOSE,
   JOB_LIMIT_PROCESS_MEMORY,
+  JOB_UI_RESTRICTIONS_ALL,
 } from '@monstera/kernel';
 import type { ReaderMessage } from '@monstera/nodemode';
 import { ok } from '@monstera/shared';
@@ -309,6 +310,7 @@ export function hostHarness(
               JOB_LIMIT_ACTIVE_PROCESS | JOB_LIMIT_PROCESS_MEMORY | JOB_LIMIT_KILL_ON_JOB_CLOSE,
             activeProcessLimit: 1,
             processMemoryLimitBytes: appliedMemoryLimitBytes,
+            uiRestrictions: JOB_UI_RESTRICTIONS_ALL,
           }) as const,
         resume: () => {
           // THE PEER ARRIVES WHEN THE PROCESS IS RESUMED, which is the fake's

@@ -54,6 +54,7 @@ import {
   JOB_LIMIT_ACTIVE_PROCESS,
   JOB_LIMIT_KILL_ON_JOB_CLOSE,
   JOB_LIMIT_PROCESS_MEMORY,
+  JOB_UI_RESTRICTIONS_ALL,
 } from '@monstera/kernel';
 import { type Result, err, ok } from '@monstera/shared';
 import koffi from 'koffi';
@@ -246,6 +247,8 @@ const OPEN_ALWAYS = 4;
 const FILE_ATTRIBUTE_NORMAL = 0x00000080;
 
 const JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9;
+/** `JobObjectBasicUIRestrictions`: the restrictions themselves come from the classifier, as the limit flags do. */
+const JOB_OBJECT_BASIC_UI_RESTRICTIONS_CLASS = 4;
 
 // THE FLAGS COME FROM THE CLASSIFIER, and used to be declared here as three
 // literals of their own. The module that decides whether a job means the host
@@ -873,12 +876,22 @@ export function createWin32HostSurface(config: Win32HostSurfaceConfig): Converte
         PeakProcessMemoryUsed: 0,
         PeakJobMemoryUsed: 0,
       });
+      // THE UI RESTRICTIONS, in the same call that applies the limits, so a job is never handed out with one and not
+      // the other: `JOBOBJECT_BASIC_UI_RESTRICTIONS` is one DWORD.
+      const restrictions = Buffer.alloc(4);
+      restrictions.writeUInt32LE(JOB_UI_RESTRICTIONS_ALL);
       return (
         bindings.setInformationJobObject(
           job,
           JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS,
           limits,
           limits.length,
+        ) === true &&
+        bindings.setInformationJobObject(
+          job,
+          JOB_OBJECT_BASIC_UI_RESTRICTIONS_CLASS,
+          restrictions,
+          restrictions.length,
         ) === true
       );
     },
@@ -966,11 +979,27 @@ export function createWin32HostSurface(config: Win32HostSurfaceConfig): Converte
         BasicLimitInformation: { LimitFlags: number; ActiveProcessLimit: number };
         ProcessMemoryLimit: number;
       };
+      const restrictions = Buffer.alloc(4);
+      if (
+        bindings.queryInformationJobObject(
+          job,
+          JOB_OBJECT_BASIC_UI_RESTRICTIONS_CLASS,
+          restrictions,
+          restrictions.length,
+          returned,
+        ) !== true
+      ) {
+        return {
+          kind: 'could-not-read',
+          detail: `QueryInformationJobObject (UI restrictions) failed: ${String(bindings.lastError())}`,
+        };
+      }
       return {
         kind: 'read',
         limitFlags: decoded.BasicLimitInformation.LimitFlags,
         activeProcessLimit: decoded.BasicLimitInformation.ActiveProcessLimit,
         processMemoryLimitBytes: decoded.ProcessMemoryLimit,
+        uiRestrictions: restrictions.readUInt32LE(0),
       };
     },
 
