@@ -76,7 +76,7 @@ export default function AboutBody({
       {/* THE WORDMARK, from the owner's `monstera_new_logo.png` through the start screen's derivative. `alt=""`: the
           dialog's title already names the application, so the picture saying the same is not read twice. */}
       <img className="m-about__logo" src={heroLogo} alt="" />
-      <dl className="m-about__facts">
+      <dl className="m-dialog-facts">
         <dt>{_(ABOUT_VERSION_LABEL)}</dt>
         <dd>{version}</dd>
         <dt>{_(ABOUT_CHANNEL_LABEL)}</dt>

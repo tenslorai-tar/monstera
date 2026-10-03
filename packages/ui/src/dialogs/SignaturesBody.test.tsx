@@ -29,7 +29,7 @@ const SIGNED: ShownSignature = {
 /** Each fact as the dialog shows it: the name in a `dt`, the value in the `dd` after it. */
 function facts(): Record<string, string> {
   const pairs: Record<string, string> = {};
-  for (const name of document.querySelectorAll('.m-signatures__facts dt')) {
+  for (const name of document.querySelectorAll('[data-signature] .m-dialog-facts dt')) {
     const value = name.nextElementSibling;
     if (value?.tagName !== 'DD') throw new Error(`no value after ${name.textContent}`);
     pairs[name.textContent] = value.textContent;

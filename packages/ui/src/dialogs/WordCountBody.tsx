@@ -55,7 +55,8 @@ export default function WordCountBody({
 
   return (
     <div className="m-word-count">
-      <dl>
+      {/* THE PATTERN'S FACTS, each number beside its name: the browser's own list indented each one under it. */}
+      <dl className="m-dialog-facts">
         <dt>{_(WORD_COUNT_WORDS_LABEL)}</dt>
         <dd>{count(words)}</dd>
         <dt>{_(WORD_COUNT_CHARACTERS_LABEL)}</dt>

@@ -2249,29 +2249,11 @@ optgroup {
 }
 
 /* A SIGNATURE'S STRINGS are the document's too, shortened to 256 characters by the reader, and one unbroken name ran
- * past the dialog's edge. They break anywhere and are not clamped: this dialog is where a person reads them whole. */
-[data-signature] .m-dialog-section__title,
-.m-signatures__facts dd {
+ * past the dialog's edge. They break anywhere and are not clamped: this dialog is where a person reads them whole.
+ * Its facts are the pattern's (`.m-dialog-facts`), which break the same way. */
+[data-signature] .m-dialog-section__title {
   min-inline-size: 0;
   overflow-wrap: anywhere;
-}
-
-/* EACH FACT NAMED BESIDE ITS VALUE, the name muted in a column of its own as About's version and channel are, so a
-   reason and a place cannot be mistaken for each other. */
-.m-signatures__facts {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: var(--space-4) var(--space-16);
-  margin: 0;
-  font-size: var(--font-chrome-13);
-}
-
-.m-signatures__facts dt {
-  color: var(--muted);
-}
-
-.m-signatures__facts dd {
-  margin: 0;
 }
 
 .m-destinations-empty,
@@ -3925,24 +3907,9 @@ optgroup {
   inline-size: auto;
 }
 
-.m-about__facts {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: var(--space-4) var(--space-16);
-  margin: 0;
-}
-
 .m-about__line {
   margin: 0;
   line-height: 1.5;
-}
-
-.m-about dt {
-  color: var(--muted);
-}
-
-.m-about dd {
-  margin: 0;
 }
 
 /* COMPONENTS (ADR-0122): a line, the table of components, then Verify. Status only: nothing here downloads. */

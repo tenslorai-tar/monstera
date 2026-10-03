@@ -73,7 +73,7 @@ export default function SignaturesBody({
             title={signature.organisation === '' ? SIGNATURES_SIGNER : SIGNATURES_SIGNER_OF}
             values={{ signer: signature.signer, organisation: signature.organisation }}
           >
-            <dl className="m-signatures__facts">
+            <dl className="m-dialog-facts">
               <dt>{_(SIGNATURES_STATUS)}</dt>
               <dd data-covers={String(signature.coversDocument && signature.coversWholeFile)}>
                 {_(

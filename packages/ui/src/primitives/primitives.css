@@ -722,6 +722,28 @@
   min-inline-size: 0;
 }
 
+/* FACTS, EACH NAMED BESIDE ITS VALUE (a `dl`): the name muted in a column of its own, the value beside it. One rule for
+   every dialog that reports facts (About's version, Word count's totals, a signature's reason and place). Word count
+   drew the browser's own list, each number indented under its name, and About and Signatures had each written this
+   grid for themselves (the gallery, 2026-10-03). */
+.m-dialog-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-4) var(--space-16);
+  margin: 0;
+  font-size: var(--font-chrome-13);
+}
+
+.m-dialog-facts > dt {
+  color: var(--muted);
+}
+
+.m-dialog-facts > dd {
+  min-inline-size: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 /* THE ROW'S WHOLE WIDTH, under its name: three fields sized to their content stopped short of the row's end, so a
    header's Right field did not line up with the controls below it (the gallery's reading, 2026-10-03). */
 .m-dialog-row__control:has(> .m-dialog-row__fields) {
