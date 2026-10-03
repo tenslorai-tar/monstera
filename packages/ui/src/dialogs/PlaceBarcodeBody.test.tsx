@@ -45,8 +45,12 @@ describe('PlaceBarcodeBody', () => {
         <PlaceBarcodeBody resolve={resolve} update={() => undefined} />
       </Wrapped>,
     );
+    // QUIET UNTIL PRESSED, then says what is missing (`attempt.ts`), and opens in the field it asks for.
+    expect(screen.queryByText('Type the text or link the barcode should hold.')).toBeNull();
+    expect(document.activeElement).toBe(screen.getByLabelText('Text or link'));
     fireEvent.click(screen.getByRole('button', { name: 'Add to the page' }));
     expect(resolve).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toBe('Type the text or link the barcode should hold.');
     expect(screen.getByRole('radio', { name: 'QR Code' })).toHaveProperty('checked', true);
   });
 

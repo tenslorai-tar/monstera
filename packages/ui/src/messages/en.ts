@@ -420,6 +420,7 @@ export const PAGE_BARCODES_TYPE = messageKey('dialog.page-barcodes.type');
 export const PAGE_BARCODES_CONTENT = messageKey('dialog.page-barcodes.content');
 export const PLACE_BARCODE_TITLE = messageKey('dialog.place-barcode.title');
 export const PLACE_BARCODE_TEXT = messageKey('dialog.place-barcode.text');
+export const PLACE_BARCODE_EMPTY = messageKey('dialog.place-barcode.empty');
 export const PLACE_BARCODE_FORMAT = messageKey('dialog.place-barcode.format');
 export const PLACE_BARCODE_QR = messageKey('dialog.place-barcode.qr');
 export const PLACE_BARCODE_DATA_MATRIX = messageKey('dialog.place-barcode.data-matrix');
@@ -4236,6 +4237,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PAGE_BARCODES_CONTENT]: 'What it says',
   [PLACE_BARCODE_TITLE]: 'Add a barcode',
   [PLACE_BARCODE_TEXT]: 'Text or link',
+  [PLACE_BARCODE_EMPTY]: 'Type the text or link the barcode should hold.',
   [PLACE_BARCODE_FORMAT]: 'Barcode type',
   [PLACE_BARCODE_QR]: 'QR Code',
   [PLACE_BARCODE_DATA_MATRIX]: 'Data Matrix',
