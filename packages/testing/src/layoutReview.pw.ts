@@ -67,6 +67,26 @@ test('the SEARCH TAB is drawn in the application’s controls, not the browser�
   expect(read.input).not.toBe('0px');
 });
 
+test('the SEARCH TAB lays its two boxes out alike: one width, one left edge, each with its buttons below it (F-E1)', async ({
+  page,
+}) => {
+  await openApp(page);
+  await openDocument(page);
+  await page.keyboard.press('Control+F');
+  const panel = page.getByRole('tabpanel', { name: 'Search' });
+  await expect(panel).toBeVisible();
+  const find = await boxOf(panel.getByRole('textbox', { name: 'Find text' }));
+  const replace = await boxOf(panel.getByRole('textbox', { name: 'Replace with' }));
+  const replaceAll = await boxOf(panel.getByRole('button', { name: 'Replace everywhere' }));
+  const searchPage = await boxOf(panel.getByRole('button', { name: 'Search this page' }));
+
+  // THE SAME COLUMN: the replace box was one item in a wrapping row, beside its label and its button.
+  expect([replace.x, replace.width]).toStrictEqual([find.x, find.width]);
+  // EACH HALF'S BUTTON UNDER ITS OWN BOX, as the find half's are.
+  expect(searchPage.y).toBeGreaterThanOrEqual(find.y + find.height);
+  expect(replaceAll.y).toBeGreaterThanOrEqual(replace.y + replace.height);
+});
+
 test('the FORMS TAB shows each field’s whole name', async ({ page }) => {
   const rect = (y: number): { x0: number; y0: number; x1: number; y1: number } => ({ x0: 72, y0: y, x1: 300, y1: y + 20 });
   await openApp(page, {

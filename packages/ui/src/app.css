@@ -2113,11 +2113,12 @@ optgroup {
  * a question and these are an action on the answer, and a person scanning for
  * *Replace everywhere* should not have to read past the search box to find it.
  */
+/* THE FIND HALF'S COLUMN: a label, the box across the panel, then its action row. It was one wrapping row of label, box
+   and button, so the two boxes in one panel were laid out two ways (F-E1). */
 .m-find-replace {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: var(--space-8);
-  flex-wrap: wrap;
 }
 
 /*
@@ -2128,8 +2129,8 @@ optgroup {
  * track back from.
  */
 .m-find-replaced {
-  flex: 1 0 100%;
   max-width: 60ch;
+  margin: 0;
   color: var(--muted);
 }
 

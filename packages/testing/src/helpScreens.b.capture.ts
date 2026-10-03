@@ -346,7 +346,7 @@ test('find-text-1', async ({ page }) => {
   await page.keyboard.press('Control+F');
   const panel = page.getByRole('tabpanel', { name: 'Search' });
   await expect(panel).toBeVisible();
-  await panel.getByRole('textbox', { name: 'Find on this page' }).fill('renewals');
+  await panel.getByRole('textbox', { name: 'Find text' }).fill('renewals');
   await panel.getByRole('button', { name: 'Search all pages' }).click();
   await expect(panel.getByText(/matches in this document/u)).toBeVisible();
   // THE PANEL ALONE: the shim places a page's text boxes by line index rather than where the words are drawn, so a
@@ -360,7 +360,7 @@ test('find-and-replace-1', async ({ page }) => {
   await page.keyboard.press('Control+F');
   const panel = page.getByRole('tabpanel', { name: 'Search' });
   await expect(panel).toBeVisible();
-  await panel.getByRole('textbox', { name: 'Find on this page' }).fill('renewals');
+  await panel.getByRole('textbox', { name: 'Find text' }).fill('renewals');
   await panel.getByRole('textbox', { name: 'Replace with' }).fill('contract renewals');
   await shoot(page, 'find-and-replace-1', panel, 8);
 });

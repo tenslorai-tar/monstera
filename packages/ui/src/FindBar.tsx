@@ -568,20 +568,24 @@ export function FindBar({
               setReplacement(event.target.value);
             }}
           />
-          <button
-            type="button"
-            className="m-button m-button--default"
-            data-find-replace-all="true"
-            // DISABLED ON AN EMPTY QUERY, which is the same refusal the schema
-            // and the kernel make. A person with an empty box has not asked for
-            // anything, and every position matches an empty string.
-            disabled={query === '' || replacing}
-            onClick={() => {
-              void replaceAll();
-            }}
-          >
-            {_(FIND_REPLACE_ALL)}
-          </button>
+          {/* IN AN ACTION ROW, as the find half's buttons are, so the two halves read alike: a label, the box across
+              the panel, then what to do with it (F-E1). */}
+          <div className="m-find-actions">
+            <button
+              type="button"
+              className="m-button m-button--default"
+              data-find-replace-all="true"
+              // DISABLED ON AN EMPTY QUERY, which is the same refusal the schema
+              // and the kernel make. A person with an empty box has not asked for
+              // anything, and every position matches an empty string.
+              disabled={query === '' || replacing}
+              onClick={() => {
+                void replaceAll();
+              }}
+            >
+              {_(FIND_REPLACE_ALL)}
+            </button>
+          </div>
           {/* WHAT IT COST, said after it happened. A replace-all changes pages a
               person is not looking at, so a control that reported nothing would
               leave them checking the document to find out whether it ran. */}

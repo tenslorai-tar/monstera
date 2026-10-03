@@ -11,7 +11,7 @@ Find shows every place a word or phrase appears and highlights it on the page.
 ## Steps
 
 1. Press **Ctrl+F**, or in the rail choose **Edit**, then **Find** in the **Find** group. The **Search** tab of the document panel opens.
-2. Type what you are looking for in **Find on this page** and choose **Search this page**.
+2. Type what you are looking for in **Find text** and choose **Search this page**.
 3. To search every page, choose **Search all pages**. Progress shows as it goes; **Cancel** stops it.
 4. Use **Next match** and **Previous match** to step through the results. **Match … of …** (for example "Match 3 of 12") tells you where you are.
 5. Narrow the search with **Match case**, **Whole word** or **Regular expression**.

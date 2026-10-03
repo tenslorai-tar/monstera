@@ -4069,7 +4069,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [DOCUSIGN_ENVIRONMENT_PRODUCTION_TITLE]: 'Production',
   [DOCUSIGN_ENVIRONMENT_DEMO_TITLE]: 'Developer demo',
   [CLAUDE_REGION_TOOL_TITLE]: 'Send a box to Claude to recognise',
-  [FIND_LABEL]: 'Find on this page',
+  // THE FIELD'S NAME, NOT ITS SCOPE: the two buttons under it are *Search this page* and *Search all pages*, so a label
+  // saying *on this page* contradicted the second (F-E1).
+  [FIND_LABEL]: 'Find text',
   // NOT 'Find', which is the toolbar command's title: two controls sharing an
   // accessible name is one a screen-reader user cannot tell apart, and it was
   // found by a test that could not tell them apart either.

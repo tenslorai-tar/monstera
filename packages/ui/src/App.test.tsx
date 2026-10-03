@@ -1648,7 +1648,7 @@ describe('App', () => {
       await withDocumentOpen();
       await openPanel('Search');
 
-      const field = screen.getByLabelText('Find on this page');
+      const field = screen.getByLabelText('Find text');
       await act(async () => {
         fireEvent.change(field, { target: { value: 'needle' } });
         await Promise.resolve();
@@ -1753,7 +1753,7 @@ describe('App', () => {
         await withDocumentOpen();
         await openPanel('Search');
 
-        const field = screen.getByLabelText('Find on this page');
+        const field = screen.getByLabelText('Find text');
         await act(async () => {
           fireEvent.change(field, { target: { value: 'needle' } });
           await Promise.resolve();
@@ -1807,7 +1807,7 @@ describe('App', () => {
       await openPanel('Search');
 
       await act(async () => {
-        fireEvent.change(screen.getByLabelText('Find on this page'), {
+        fireEvent.change(screen.getByLabelText('Find text'), {
           target: { value: 'ne+dle' },
         });
         screen.getByLabelText('Regular expression').click();
@@ -1847,7 +1847,7 @@ describe('App', () => {
       await openPanel('Search');
 
       await act(async () => {
-        fireEvent.change(screen.getByLabelText('Find on this page'), {
+        fireEvent.change(screen.getByLabelText('Find text'), {
           target: { value: 'needle' },
         });
         await Promise.resolve();
@@ -1906,7 +1906,7 @@ describe('App', () => {
       await openPanel('Search');
 
       await act(async () => {
-        fireEvent.change(screen.getByLabelText('Find on this page'), {
+        fireEvent.change(screen.getByLabelText('Find text'), {
           target: { value: 'needle' },
         });
         await Promise.resolve();
@@ -1958,7 +1958,7 @@ describe('App', () => {
       await openPanel('Search');
 
       await act(async () => {
-        fireEvent.change(screen.getByLabelText('Find on this page'), { target: { value: '(' } });
+        fireEvent.change(screen.getByLabelText('Find text'), { target: { value: '(' } });
         screen.getByLabelText('Regular expression').click();
         await Promise.resolve();
       });
@@ -2002,7 +2002,7 @@ describe('App', () => {
       // case asserted before design pass C: the Pages panel shows by default, so the field
       // exists only if the chord opened the Search panel. A command that focused a field
       // it did not first reveal would find nothing to focus.
-      expect(screen.queryByLabelText('Find on this page')).toBeNull();
+      expect(screen.queryByLabelText('Find text')).toBeNull();
 
       await act(async () => {
         document.dispatchEvent(
@@ -2017,7 +2017,7 @@ describe('App', () => {
         });
       });
 
-      expect(document.activeElement).toBe(screen.getByLabelText('Find on this page'));
+      expect(document.activeElement).toBe(screen.getByLabelText('Find text'));
     });
 
     it('the GO-TO chord takes the caret to the status bar field', async () => {
@@ -3952,7 +3952,7 @@ describe('the menu bar, in the shell (ADR-0107)', () => {
     render(<App client={client} settings={freshSettings()} />);
     await withDocumentOpen();
     await openPanel('Search');
-    const field = screen.getByLabelText<HTMLInputElement>('Find on this page');
+    const field = screen.getByLabelText<HTMLInputElement>('Find text');
     await act(async () => {
       fireEvent.change(field, { target: { value: 'needle' } });
       field.focus();
@@ -3976,7 +3976,7 @@ describe('the menu bar, in the shell (ADR-0107)', () => {
     render(<App client={client} settings={freshSettings()} />);
     await withDocumentOpen();
     await openPanel('Search');
-    const field = screen.getByLabelText<HTMLInputElement>('Find on this page');
+    const field = screen.getByLabelText<HTMLInputElement>('Find text');
     await act(async () => {
       fireEvent.change(field, { target: { value: 'needle' } });
       field.focus();
