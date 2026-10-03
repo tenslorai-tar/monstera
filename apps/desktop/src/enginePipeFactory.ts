@@ -97,11 +97,18 @@ export interface SecurityDescriptor {
 export interface PipeCreationSurface {
   /** Parses an SDDL string. `null` when it did not parse. */
   readonly describe: (sddl: string) => SecurityDescriptor | null;
-  /** One `CreateNamedPipeW` instance. `null` when the call was refused. */
+  /**
+   * One `CreateNamedPipeW` instance. `null` when the call was refused.
+   *
+   * `first` is the instance that creates the name, and it must be refused if the name already exists — otherwise a
+   * process that created it earlier owns an instance of OUR pipe and the host may connect to it. Required rather than
+   * derived inside the surface, which cannot see which of a set it is making.
+   */
   readonly createInstance: (
     name: string,
     descriptor: SecurityDescriptor,
     instances: number,
+    first: boolean,
   ) => PipeHandle | null;
   /** `LocalFree` on the descriptor. Called exactly once, on every path. */
   readonly freeDescriptor: (descriptor: SecurityDescriptor) => void;
@@ -169,13 +176,13 @@ export function createHostPipe(
 
   const made: PipeHandle[] = [];
   for (let index = 0; index < instances; index += 1) {
-    const handle = surface.createInstance(name, descriptor, instances);
+    const handle = surface.createInstance(name, descriptor, instances, index === 0);
     if (handle === null) {
-      // EVERY INSTANCE OR NONE. Instance 0 creates the object; every later one
-      // opens it by name and is access checked against the DACL just written,
-      // so a partial set is what a descriptor that does not grant this process
-      // produces. Leaving the earlier instances open would leave a reachable
-      // pipe behind a failed creation.
+      // EVERY INSTANCE OR NONE. Instance 0 creates the object, and is refused if
+      // the name already exists; every later one opens it by name and is access
+      // checked against the DACL just written, so a partial set is what a
+      // descriptor that does not grant this process produces. Leaving the earlier
+      // instances open would leave a reachable pipe behind a failed creation.
       const why = surface.lastError();
       for (const open of made) surface.close(open);
       surface.freeDescriptor(descriptor);
@@ -183,9 +190,12 @@ export function createHostPipe(
         stage: 'instance',
         detail:
           `instance ${String(index)} of ${String(instances)} was refused (GetLastError ` +
-          `${String(why)}); the ${String(made.length)} already created were closed. Instance 0 ` +
-          'creates the object and is not access checked, so a failure after it means the DACL ' +
-          'does not grant this process the read and write PIPE_ACCESS_DUPLEX asks for.',
+          `${String(why)}); the ${String(made.length)} already created were closed. ` +
+          (index === 0
+            ? 'Instance 0 creates the name and is refused when the name already exists: another process ' +
+              'created this pipe first, and the host must not be sent to it.'
+            : 'Instance 0 created the object, so a failure after it means the DACL does not grant this ' +
+              'process the read and write PIPE_ACCESS_DUPLEX asks for.'),
       });
     }
     made.push(handle);

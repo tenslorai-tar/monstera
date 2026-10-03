@@ -1428,6 +1428,11 @@ jobs:
       - name: Prove disposing the reader channel never aborts the process
         run: node scripts/ci/annotate.mjs scripts/proofs/readerDispose.proof.mjs --require-transport
 
+      # THE ENGINE HOST'S WIN32 HARDENING on the shipped surfaces, each with its control: the pipe's
+      # name cannot be taken by a process that created it first.
+      - name: Prove the engine host's Win32 hardening
+        run: node scripts/ci/annotate.mjs scripts/proofs/hostHardening.proof.mjs --require-transport
+
       # Executes CVE-2026-7233's disclosed trigger against the built engine and
       # proves the fix is load-bearing by rebuilding libmupdf without it and
       # confirming the same input then crashes. Guards against a future MuPDF
@@ -1809,3 +1814,8 @@ jobs:
       # reproduces that abort; the shipped channel's arm must end cleanly.
       - name: Prove disposing the reader channel never aborts the process
         run: node scripts/ci/annotate.mjs scripts/proofs/readerDispose.proof.mjs --require-transport
+
+      # THE ENGINE HOST'S WIN32 HARDENING on the shipped surfaces, each with its control: the pipe's
+      # name cannot be taken by a process that created it first.
+      - name: Prove the engine host's Win32 hardening
+        run: node scripts/ci/annotate.mjs scripts/proofs/hostHardening.proof.mjs --require-transport

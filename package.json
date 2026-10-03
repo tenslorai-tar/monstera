@@ -140,6 +140,7 @@
     "proof:wordpictures": "node scripts/proofs/wordPictures.proof.mjs",
     "proof:rtltext": "node scripts/proofs/rtlText.proof.mjs",
     "proof:readerdispose": "node scripts/proofs/readerDispose.proof.mjs",
+    "proof:hosthardening": "node scripts/proofs/hostHardening.proof.mjs",
     "proof:shippedmodules": "node scripts/proofs/shippedModules.proof.mjs",
     "proof:lineagreement": "node scripts/research/lineAgreement.mjs",
     "proof:scannedpages": "node scripts/proofs/scannedPages.proof.mjs",

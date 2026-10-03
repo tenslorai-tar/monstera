@@ -80,6 +80,15 @@ const PIPE_ACCESS_DUPLEX = 0x00000003;
  * visible to whoever opens the name.
  */
 const FILE_FLAG_OVERLAPPED = 0x40000000;
+/**
+ * `FILE_FLAG_FIRST_PIPE_INSTANCE`, on the instance that creates the name only.
+ *
+ * Without it `CreateNamedPipeW` on a name that already exists succeeds as another INSTANCE of the existing pipe, whose
+ * creator chose its security and holds an instance of its own — so the host's connect could reach that process.
+ * Measured 2026-10-03: a process that created the name first, then the factory under the same name, and the factory
+ * answered a pipe. With the flag the call is refused (`ERROR_ACCESS_DENIED`) and the factory reports it.
+ */
+const FILE_FLAG_FIRST_PIPE_INSTANCE = 0x00080000;
 const SDDL_REVISION_1 = 1;
 /** `CreateNamedPipeW`'s in and out buffer sizes. The kernel treats these as a hint. */
 const PIPE_BUFFER_BYTES = 4096;
@@ -256,6 +265,7 @@ export function createWin32PipeSurface(): PipeCreationSurface {
       name: string,
       descriptor: SecurityDescriptor,
       instances: number,
+      first: boolean,
     ): PipeHandle | null => {
       // BUILT PER CALL rather than once per pipe. The struct holds a pointer to
       // the descriptor, and a buffer reused across calls is a buffer whose
@@ -274,7 +284,7 @@ export function createWin32PipeSurface(): PipeCreationSurface {
       });
       const handle: unknown = bindings.createNamedPipe(
         name,
-        PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+        PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | (first ? FILE_FLAG_FIRST_PIPE_INSTANCE : 0),
         0,
         instances,
         PIPE_BUFFER_BYTES,

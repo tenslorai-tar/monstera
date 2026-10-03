@@ -286,6 +286,17 @@ export const READER_DISPOSE = [
 ];
 
 /**
+ * What `hostHardening.proof.mjs` runs: the shipped surfaces that create the engine host's pipe and its DACL.
+ *
+ * @type {readonly BuildEdge[]}
+ */
+export const HOST_HARDENING = [
+  ['apps/desktop/src/win32PipeSurface.ts', 'apps/desktop/dist/win32PipeSurface.js', 'tsc'],
+  ['apps/desktop/src/enginePipeFactory.ts', 'apps/desktop/dist/enginePipeFactory.js', 'tsc'],
+  ['apps/desktop/src/hostDacl.ts', 'apps/desktop/dist/hostDacl.js', 'tsc'],
+];
+
+/**
  * What `shippedModules.proof.mjs` walks: every `dist/` the package takes modules from — the desktop's and the four
  * workspace packages' it ships beside it (decision E).
  *
@@ -437,6 +448,8 @@ export const ARTEFACT_EDGES = {
   'proof:rtltext': RTL_TEXT,
   // THE READER CHANNEL'S TEARDOWN on the shipped thread, which used to abort the process when it terminated it.
   'proof:readerdispose': READER_DISPOSE,
+  // THE ENGINE HOST'S WIN32 HARDENING on the shipped surfaces (the code review of 2026-10-03).
+  'proof:hosthardening': HOST_HARDENING,
   // THE PACKAGE'S MODULE CLOSURE, walked over the built `dist/`s it takes modules from (decision E).
   'proof:shippedmodules': SHIPPED_MODULES,
   // THE COMPILE-FAIL PROOF, whose probes `import type … from '@monstera/contract'`

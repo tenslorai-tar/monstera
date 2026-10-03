@@ -48,9 +48,9 @@ function surface(
       calls.push(`describe(${sddl})`);
       return describe(sddl);
     },
-    createInstance: (name, descriptor, instances) => {
-      calls.push(`createInstance(${name}, ${String(instances)})`);
-      return createInstance(name, descriptor, instances);
+    createInstance: (name, descriptor, instances, first) => {
+      calls.push(`createInstance(${name}, ${String(instances)}, ${first ? 'first' : 'later'})`);
+      return createInstance(name, descriptor, instances, first);
     },
     freeDescriptor: () => {
       calls.push('freeDescriptor');
@@ -80,12 +80,13 @@ describe('createHostPipe', () => {
     // THE ORDER IS THE PROPERTY. The descriptor is freed once, and only after
     // the last instance exists: the instances carry their own copy of the
     // security information, and freeing earlier would release memory a call
-    // still in flight is reading.
+    // still in flight is reading. And only instance 0 asks to be the FIRST of its name: it is the one that creates
+    // the name, and the later ones join it, which that flag would refuse.
     expect(win32.calls).toEqual([
       `describe(${hostPipeDacl(user, container)})`,
-      `createInstance(${NAME}, 3)`,
-      `createInstance(${NAME}, 3)`,
-      `createInstance(${NAME}, 3)`,
+      `createInstance(${NAME}, 3, first)`,
+      `createInstance(${NAME}, 3, later)`,
+      `createInstance(${NAME}, 3, later)`,
       'freeDescriptor',
     ]);
   });
@@ -109,10 +110,10 @@ describe('createHostPipe', () => {
   it('closes the instances it already made when a later one is refused', () => {
     let made = 0;
     const win32 = surface({
-      // Instance 0 creates the object and is not access checked; instance 1
-      // opens it by name and is. Measured on 2026-08-24: with a DACL that does
-      // not grant this process, instance 1 fails with GetLastError 5. This is
-      // that shape.
+      // Instance 0 creates the object and is not access checked against our
+      // DACL; instance 1 opens it by name and is. Measured on 2026-08-24: with a
+      // DACL that does not grant this process, instance 1 fails with
+      // GetLastError 5. This is that shape.
       createInstance: () => (made++ < 1 ? { __handle: 'pipe' } : null),
     });
     const result = createHostPipe(win32, NAME, user, container, 4);
@@ -127,8 +128,8 @@ describe('createHostPipe', () => {
     // a creation that reported failure — the worst of both.
     expect(win32.calls).toEqual([
       `describe(${hostPipeDacl(user, container)})`,
-      `createInstance(${NAME}, 4)`,
-      `createInstance(${NAME}, 4)`,
+      `createInstance(${NAME}, 4, first)`,
+      `createInstance(${NAME}, 4, later)`,
       'close',
       'freeDescriptor',
     ]);
@@ -146,9 +147,12 @@ describe('createHostPipe', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.detail).toContain('instance 0 of 4');
+    // A REFUSED FIRST INSTANCE IS NAMED AS THE NAME ALREADY EXISTING, which is what the first-instance flag refuses —
+    // not as a DACL problem, which only a later instance can have.
+    expect(result.error.detail).toContain('another process created this pipe first');
     expect(win32.calls).toEqual([
       `describe(${hostPipeDacl(user, container)})`,
-      `createInstance(${NAME}, 4)`,
+      `createInstance(${NAME}, 4, first)`,
       'freeDescriptor',
     ]);
   });

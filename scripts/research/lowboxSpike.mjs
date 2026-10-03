@@ -1467,7 +1467,7 @@ function createControlPipe(name, sddl, instances) {
   /** @type {unknown[]} */
   const handles = [];
   for (let instance = 0; instance < instances; instance += 1) {
-    const handle = pipeSurface.createInstance(name, descriptor, instances);
+    const handle = pipeSurface.createInstance(name, descriptor, instances, instance === 0);
     if (handle === null) {
       for (const open of handles) pipeSurface.close(open);
       pipeSurface.freeDescriptor(descriptor);
