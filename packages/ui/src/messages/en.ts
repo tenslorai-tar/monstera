@@ -4900,7 +4900,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [HEADER_FOOTER_LEFT]: 'Left',
   [HEADER_FOOTER_CENTRE]: 'Centre',
   [HEADER_FOOTER_RIGHT]: 'Right',
-  [HEADER_FOOTER_TOKENS]: 'Type {n} for the page number and {N} for the page count.',
+  [HEADER_FOOTER_TOKENS]: 'Type {page} for the page number and {count} for the page count.',
   [HEADER_FOOTER_SIZE]: 'Size (points)',
   [HEADER_FOOTER_MARGIN]: 'Margin (points)',
   [HEADER_FOOTER_APPLY]: 'Add',

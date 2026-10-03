@@ -1,5 +1,5 @@
 import { StandardFonts, rgb } from '@cantoo/pdf-lib';
-import type { CommandOfKind } from '@monstera/contract';
+import { type CommandOfKind, STAMP_TOKENS } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert } from './engineSeam.js';
@@ -77,10 +77,16 @@ type Slot = (typeof SLOTS)[number];
  * @param total the document's page count
  */
 export function resolveStampTokens(text: string, page: number, total: number): string {
-  return text.replace(/\{[nN]\}/gu, (token) =>
-    token === '{n}' ? String(page) : String(total),
+  return text.replace(STAMP_TOKEN_PATTERN, (token) =>
+    token === STAMP_TOKENS.page ? String(page) : String(total),
   );
 }
+
+/** Either token, matched as written: built from the contract's spelling rather than restating it (B3a). */
+const STAMP_TOKEN_PATTERN = new RegExp(
+  [STAMP_TOKENS.page, STAMP_TOKENS.count].map((token) => token.replace(/[{}]/gu, (brace) => `\\${brace}`)).join('|'),
+  'gu',
+);
 
 /**
  * Capture — which always refuses, exactly as `captureWatermarkPages` does.

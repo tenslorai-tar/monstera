@@ -1,4 +1,5 @@
 import { useLingui } from '@lingui/react';
+import { STAMP_TOKENS } from '@monstera/contract';
 import type { ReactElement } from 'react';
 import { useState } from 'react';
 
@@ -126,7 +127,7 @@ export default function HeaderFooterBody({
           </div>
         </DialogRow>
       ))}
-      <p className="m-header-footer__tokens">{_(HEADER_FOOTER_TOKENS)}</p>
+      <p className="m-header-footer__tokens">{_(HEADER_FOOTER_TOKENS, { page: STAMP_TOKENS.page, count: STAMP_TOKENS.count })}</p>
       <DialogRow label={HEADER_FOOTER_SIZE}>
         <Input
           label={HEADER_FOOTER_SIZE}

@@ -688,7 +688,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     {
       state: 'filled',
       props: { pages: [0] },
-      steps: [type('Left', 'Quarterly report'), type('Centre', 'Confidential'), type('Right', 'Page {page} of {pages}')],
+      steps: [type('Left', 'Quarterly report'), type('Centre', 'Confidential'), type('Right', 'Page {n} of {N}')],
     },
   ],
   'dialog.bates-number': [

@@ -319,6 +319,7 @@ export {
   duplicatePageSchema,
   generateTocSchema,
   headerFooterPagesSchema,
+  STAMP_TOKENS,
   insertBlankPageSchema,
   MAX_IMAGE_BYTES,
   type RenderableCommand,
