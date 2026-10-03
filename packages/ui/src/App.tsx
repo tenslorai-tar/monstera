@@ -111,7 +111,7 @@ import {
   actualSizeCommand,
 } from './commands/documentCommands.js';
 import { proceeds, settlePendingRedactions } from './commands/pendingRedactions.js';
-import { PENDING_REDACTIONS_DIALOG, type PendingRedactionOccasion } from './dialogs/pendingRedactions.js';
+import type { PendingRedactionOccasion } from './dialogs/pendingRedactions.js';
 import { confirmCopied } from './commands/confirmWritten.js';
 import { editCommands } from './commands/editCommands.js';
 import { exitCommand, startScreenCommand } from './commands/windowCommands.js';
@@ -195,46 +195,16 @@ import { updateAvailableCommand } from './commands/updateAvailable.js';
 import { showAboutCommand } from './commands/showAbout.js';
 import { showComponentsCommand } from './commands/showComponents.js';
 import { showSettingsCommand } from './commands/showSettings.js';
-import { SETTINGS_DIALOG } from './dialogs/settings.js';
 import { showWordCountCommand } from './commands/showWordCount.js';
 import { inspectPageStructureCommand } from './commands/inspectPageStructure.js';
 import { accessibilityCheckCommand } from './commands/accessibilityCheck.js';
-import { ACCESSIBILITY_DIALOG } from './dialogs/accessibilityCheck.js';
 import { placeBarcode, readBarcodesCommand } from './commands/barcodes.js';
-import { ABOUT_DIALOG } from './dialogs/about.js';
-import { COMPONENTS_DIALOG } from './dialogs/components.js';
-import { DONATE_DIALOG } from './dialogs/donate.js';
-import { SECURITY_UPDATE_DIALOG } from './dialogs/securityUpdate.js';
-import { AI_SETUP_DIALOG } from './dialogs/aiSetup.js';
-import { CLOUD_DIALOG } from './dialogs/cloudStorage.js';
-import { CLOUD_OUTCOME_DIALOG } from './dialogs/cloudOutcome.js';
-import { CLOUD_VIEW_ONLY_DIALOG } from './dialogs/cloudViewOnly.js';
 import { cloudStorageCommand, saveBackCommand } from './commands/cloudStorage.js';
 import { aiSetupCommand } from './commands/aiSetup.js';
 import { AI_SETUP_AT_START_SETTING } from './settings/ai.js';
-import { KEYBOARD_SHORTCUTS_DIALOG } from './dialogs/keyboardShortcuts.js';
-import { WORD_COUNT_DIALOG } from './dialogs/wordCount.js';
-import { PAGE_STRUCTURE_DIALOG } from './dialogs/pageStructure.js';
-import { SPELL_CHECK_DIALOG } from './dialogs/spellCheck.js';
 import { compareDocumentsCommand } from './commands/compareDocuments.js';
-import { OCR_DIALOG } from './dialogs/ocr.js';
-import { TRANSLATE_PAGE_DIALOG } from './dialogs/translatePage.js';
 import { translatePageCommand } from './commands/translatePage.js';
-import { OCR_OUTCOME_DIALOG } from './dialogs/ocrOutcome.js';
-import { ENHANCE_OUTCOME_DIALOG } from './dialogs/enhanceOutcome.js';
-import { SCAN_OUTCOME_DIALOG } from './dialogs/scanOutcome.js';
-import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
-import { CROP_PAGES_DIALOG } from './dialogs/cropPages.js';
-import { WATERMARK_PAGES_DIALOG } from './dialogs/watermarkPages.js';
-import { HEADER_FOOTER_DIALOG } from './dialogs/headerFooter.js';
-import { BATES_NUMBER_DIALOG } from './dialogs/batesNumber.js';
-import { PAGE_TRANSITION_DIALOG } from './dialogs/pageTransition.js';
-import { RESIZE_PAGES_DIALOG } from './dialogs/resizePages.js';
-import { GENERATE_TOC_PROBLEM_DIALOG } from './dialogs/generateTocProblem.js';
-import { FLAT_FIELDS_DIALOG } from './dialogs/flatFields.js';
-import { EDIT_PAGE_OBJECT_DIALOG } from './dialogs/editPageObject.js';
-import { IMPORT_FORM_DATA_PROBLEM_DIALOG } from './dialogs/importFormDataProblem.js';
-import { IMPORT_ANNOTATIONS_PROBLEM_DIALOG } from './dialogs/importAnnotationsProblem.js';
+import { COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
 import {
   exportAnnotationsFdfCommand,
   exportAnnotationsJsonCommand,
@@ -244,12 +214,6 @@ import {
   importAnnotationsXfdfCommand,
   pasteAnnotationsCommand,
 } from './commands/annotationData.js';
-import { INSERT_IMAGE_PROBLEM_DIALOG } from './dialogs/insertImageProblem.js';
-import { MARKDOWN_IMPORT_PROBLEM_DIALOG } from './dialogs/markdownImportProblem.js';
-import { WORKBOOK_INCOMPLETE_DIALOG } from './dialogs/workbookIncomplete.js';
-import { OPEN_FROM_URL_DIALOG } from './dialogs/openFromUrl.js';
-import { CAMERA_CAPTURE_DIALOG } from './dialogs/cameraCapture.js';
-import { URL_OPEN_PROBLEM_DIALOG } from './dialogs/urlOpenProblem.js';
 import { openFromUrlCommand } from './commands/openFromUrl.js';
 import { editPageExternallyCommand } from './commands/editPageExternally.js';
 import {
@@ -261,56 +225,13 @@ import {
   newFromOfficeCommand,
   newFromMarkdownCommand,
 } from './commands/importMarkdown.js';
-import { EXTRACT_PAGES_DIALOG } from './dialogs/extractPages.js';
-import { SPLIT_DOCUMENT_DIALOG } from './dialogs/splitDocument.js';
-import { EXPORT_PAGE_IMAGES_DIALOG } from './dialogs/exportPageImages.js';
-import { EXPORT_EXCEL_DIALOG } from './dialogs/exportExcel.js';
-import { SERVICE_REFUSED_DIALOG } from './dialogs/serviceRefused.js';
-import { OPTIMIZE_DIALOG } from './dialogs/optimize.js';
-import { PDFA_REMOVALS_DIALOG } from './dialogs/pdfaRemovals.js';
-import { PAGE_BARCODES_DIALOG } from './dialogs/pageBarcodes.js';
-import { PLACE_BARCODE_DIALOG } from './dialogs/placeBarcode.js';
-import { PRINT_DIALOG } from './dialogs/print.js';
-import { EXPORT_WORD_DIALOG } from './dialogs/exportWord.js';
-import { INSERT_FROM_PDF_DIALOG } from './dialogs/insertFromPdf.js';
-import { MERGE_DOCUMENT_DIALOG } from './dialogs/mergeDocument.js';
-import { REPLACE_PAGE_DIALOG } from './dialogs/replacePage.js';
-import { IMPORT_PAGE_AS_LAYER_DIALOG } from './dialogs/importPageAsLayer.js';
-import { REIMPORT_EXTERNAL_EDIT_DIALOG } from './dialogs/reimportExternalEdit.js';
-import { EXTERNAL_EDIT_PROBLEM_DIALOG } from './dialogs/externalEditProblem.js';
-import { MERGE_DOCUMENT_NONE_DIALOG } from './dialogs/mergeDocumentNone.js';
-import { LINK_ADDRESS_DIALOG, LINK_PAGE_DIALOG } from './dialogs/annotationLink.js';
 import {
-  DOCUMENT_PASSWORD_DIALOG,
   DOCUMENT_PASSWORD_DIALOG_ID,
   DOCUMENT_PASSWORD_RESULT,
 } from './dialogs/documentPassword.js';
-import { PROTECT_DOCUMENT_DIALOG } from './dialogs/protectDocument.js';
-import { APPLY_REDACTIONS_DIALOG } from './dialogs/applyRedactions.js';
-import { REDACT_MATCHES_DIALOG } from './dialogs/redactMatches.js';
-import { SANITIZE_DOCUMENT_DIALOG } from './dialogs/sanitizeDocument.js';
-import { SIGN_DOCUMENT_DIALOG } from './dialogs/signDocument.js';
-import { SIGN_PROBLEM_DIALOG } from './dialogs/signProblem.js';
-import { DOCUSIGN_NOTICE_DIALOG } from './dialogs/docusignNotice.js';
-import { DOCUSIGN_SEND_DIALOG } from './dialogs/docusignSend.js';
-import { SIGNATURES_DIALOG } from './dialogs/signatures.js';
-import { ANNOTATION_NOTE_DIALOG } from './dialogs/annotationNote.js';
-import { ANNOTATION_EDIT_DIALOG } from './dialogs/annotationEdit.js';
-import { ANNOTATION_REPLY_DIALOG } from './dialogs/annotationReply.js';
-import { CALLOUT_DIALOG } from './dialogs/callout.js';
-import { TYPEWRITER_DIALOG } from './dialogs/typewriter.js';
-import { ANNOTATION_TEXT_DIALOG } from './dialogs/annotationText.js';
-import { STAMP_DIALOG } from './dialogs/stamp.js';
 import { BLOB_URLS, stampLibrary } from './commands/stampLibrary.js';
-import { FORM_FIELD_DIALOGS } from './dialogs/formField.js';
-import { DELETE_PAGES_DIALOG } from './dialogs/deletePages.js';
-import { DUPLICATE_PAGES_DIALOG } from './dialogs/duplicatePages.js';
-import { HISTORY_TRIMMED_DIALOG } from './dialogs/historyTrimmed.js';
-import { SETTINGS_PROBLEM_DIALOG } from './dialogs/settingsProblem.js';
 import { persistSettings } from './settingsSync.js';
-import { SAVE_PROBLEM_DIALOG } from './dialogs/saveProblem.js';
 import {
-  CLOSE_UNSAVED_DIALOG,
   CLOSE_UNSAVED_DIALOG_ID,
   CLOSE_UNSAVED_RESULT,
 } from './dialogs/closeUnsaved.js';
@@ -324,8 +245,7 @@ import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SELECT_TOOL_ID, selectionOfNewest, selectionOfPage } from './annotations/selectTool.js';
 import { SIGNATURE_TOOL_ID } from './annotations/signatureTool.js';
 import { chooseSignature, placePlainSignature, signatureCommand } from './commands/signatureCommands.js';
-import { SIGNATURE_DIALOG, type SignatureLook } from './dialogs/signature.js';
-import { SIGNATURE_PROBLEM_DIALOG } from './dialogs/signatureProblem.js';
+import type { SignatureLook } from './dialogs/signature.js';
 import { applyCarrying } from './commands/applyCarrying.js';
 import {
   deleteSelectionCommand,
@@ -341,6 +261,7 @@ import {
 import { CommandRegistry, type CommandContext, type UiCommand } from './registries/commands.js';
 import { SHORTCUTS_SETTING } from './settings/keyboard.js';
 import { ToolRegistry } from './registries/tools.js';
+import { APPLICATION_DIALOGS } from './registries/applicationDialogs.js';
 import { DialogRegistry } from './registries/dialogs.js';
 import { DialogHost, useDialogHost } from './surfaces/DialogHost.js';
 import {
@@ -410,8 +331,6 @@ import { FocusHint } from './surfaces/FocusHint.js';
 import { isDirty, savedState, savedTick, windowTitle } from './savedState.js';
 import { autosaveEvery, createAutosave } from './autosave.js';
 import { AUTOSAVE_SETTING, CONFIRM_REDACTION_SETTING, WARN_SIGNATURE_BREAK_SETTING } from './settings/saving.js';
-import { SIGNATURE_BREAK_DIALOG } from './dialogs/signatureBreak.js';
-import { KEPT_BACKUPS_DIALOG } from './dialogs/keptBackups.js';
 import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { OpeningState, PageList, type PageListProps } from './PageList.js';
 import { type Side, SideBySide, type SidePreferences, drawForComparison } from './SideBySide.js';
@@ -437,7 +356,6 @@ import { CrashReportOffer } from './CrashReportOffer.js';
 import { DocumentTabs } from './surfaces/DocumentTabs.js';
 import { keyboardShortcutsCommand } from './commands/keyboardShortcuts.js';
 import { helpCommand } from './commands/help.js';
-import { HELP_DIALOG } from './dialogs/help.js';
 import { showMeModel } from './surfaces/projections.js';
 import { shortcutRows, withChosenShortcuts } from './surfaces/shortcutChoice.js';
 import { StartFooter } from './surfaces/StartFooter.js';
@@ -803,99 +721,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   // ONE registry instance, and the dialog host's state feeds the command that
   // opens it. `useDialogHost` owns `ask`, so the command captures it the same
   // way it captures the client — composition, not a global.
-  const dialogs = useMemo(
-    () =>
-      new DialogRegistry([
-        ABOUT_DIALOG,
-        COMPONENTS_DIALOG,
-        AI_SETUP_DIALOG,
-        DONATE_DIALOG,
-        SECURITY_UPDATE_DIALOG,
-        CLOUD_DIALOG,
-        CLOUD_OUTCOME_DIALOG,
-        CLOUD_VIEW_ONLY_DIALOG,
-        KEYBOARD_SHORTCUTS_DIALOG,
-        HELP_DIALOG,
-        WORD_COUNT_DIALOG,
-        PAGE_STRUCTURE_DIALOG,
-        SPELL_CHECK_DIALOG,
-        OCR_DIALOG,
-        TRANSLATE_PAGE_DIALOG,
-        OCR_OUTCOME_DIALOG,
-        ENHANCE_OUTCOME_DIALOG,
-        SCAN_OUTCOME_DIALOG,
-        SAVE_PROBLEM_DIALOG,
-        CLOSE_UNSAVED_DIALOG,
-        COMMAND_PROBLEM_DIALOG,
-        HISTORY_TRIMMED_DIALOG,
-        DELETE_PAGES_DIALOG,
-        ANNOTATION_TEXT_DIALOG,
-        STAMP_DIALOG,
-        SIGNATURE_BREAK_DIALOG,
-        PENDING_REDACTIONS_DIALOG,
-        KEPT_BACKUPS_DIALOG,
-        ANNOTATION_NOTE_DIALOG,
-        ANNOTATION_EDIT_DIALOG,
-        ANNOTATION_REPLY_DIALOG,
-        DOCUMENT_PASSWORD_DIALOG,
-        PROTECT_DOCUMENT_DIALOG,
-        APPLY_REDACTIONS_DIALOG,
-        REDACT_MATCHES_DIALOG,
-        SANITIZE_DOCUMENT_DIALOG,
-        SIGN_DOCUMENT_DIALOG,
-        SIGNATURE_DIALOG,
-        SIGNATURE_PROBLEM_DIALOG,
-        SIGN_PROBLEM_DIALOG,
-        SIGNATURES_DIALOG,
-        DOCUSIGN_SEND_DIALOG,
-        DOCUSIGN_NOTICE_DIALOG,
-        LINK_ADDRESS_DIALOG,
-        LINK_PAGE_DIALOG,
-        CALLOUT_DIALOG,
-        TYPEWRITER_DIALOG,
-        CROP_PAGES_DIALOG,
-        WATERMARK_PAGES_DIALOG,
-        HEADER_FOOTER_DIALOG,
-        BATES_NUMBER_DIALOG,
-        PAGE_TRANSITION_DIALOG,
-        RESIZE_PAGES_DIALOG,
-        FLAT_FIELDS_DIALOG,
-        EDIT_PAGE_OBJECT_DIALOG,
-        IMPORT_FORM_DATA_PROBLEM_DIALOG,
-        IMPORT_ANNOTATIONS_PROBLEM_DIALOG,
-        INSERT_IMAGE_PROBLEM_DIALOG,
-        MARKDOWN_IMPORT_PROBLEM_DIALOG,
-        WORKBOOK_INCOMPLETE_DIALOG,
-        OPEN_FROM_URL_DIALOG,
-        URL_OPEN_PROBLEM_DIALOG,
-        CAMERA_CAPTURE_DIALOG,
-        GENERATE_TOC_PROBLEM_DIALOG,
-        MERGE_DOCUMENT_DIALOG,
-        MERGE_DOCUMENT_NONE_DIALOG,
-        INSERT_FROM_PDF_DIALOG,
-        REPLACE_PAGE_DIALOG,
-        IMPORT_PAGE_AS_LAYER_DIALOG,
-        REIMPORT_EXTERNAL_EDIT_DIALOG,
-        EXTERNAL_EDIT_PROBLEM_DIALOG,
-        EXTRACT_PAGES_DIALOG,
-        SPLIT_DOCUMENT_DIALOG,
-        EXPORT_PAGE_IMAGES_DIALOG,
-        EXPORT_WORD_DIALOG,
-        EXPORT_EXCEL_DIALOG,
-        SERVICE_REFUSED_DIALOG,
-        PRINT_DIALOG,
-        PDFA_REMOVALS_DIALOG,
-        OPTIMIZE_DIALOG,
-        PAGE_BARCODES_DIALOG,
-        ACCESSIBILITY_DIALOG,
-        PLACE_BARCODE_DIALOG,
-        DUPLICATE_PAGES_DIALOG,
-        SETTINGS_PROBLEM_DIALOG,
-        SETTINGS_DIALOG,
-        ...FORM_FIELD_DIALOGS,
-      ]),
-    [],
-  );
+  const dialogs = useMemo(() => new DialogRegistry(APPLICATION_DIALOGS), []);
   const { open: openDialog, ask, close, resolve: resolveDialog, report: reportDialog } = useDialogHost(dialogs);
   // WHETHER A SAVE THAT BREAKS SIGNATURES ASKS FIRST, read through the store at each save rather than captured, so a
   // change on the Saving page applies to the next save.
@@ -3750,7 +3576,7 @@ function useShortcuts(registry: CommandRegistry, context: CommandContext, dialog
  * changed by a settings dialog would otherwise take effect on the next unrelated
  * render — which is the shape where a preference appears to work intermittently.
  */
-function useTheme(settings: SettingsStore): void {
+export function useTheme(settings: SettingsStore): void {
   // A LAYOUT effect, and the difference is a frame the user can see.
   //
   // Stored settings arrive one IPC round trip after the first paint — nothing
