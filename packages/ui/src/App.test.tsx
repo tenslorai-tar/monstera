@@ -10,7 +10,7 @@ import {
 import { asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
 import { act, cleanup, fireEvent, render as renderBare, screen, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App.js';
 import type { DropOpener, EventSubscriber } from './bridge.js';
@@ -2803,6 +2803,21 @@ describe('App', () => {
   });
 
   describe('the start screen reports an open that produced no document', () => {
+    /** What asked to be scrolled into view, and how. happy-dom implements no `scrollIntoView`, so it is recorded here. */
+    const scrolled: { readonly element: Element; readonly options: unknown }[] = [];
+    beforeEach(() => {
+      scrolled.length = 0;
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+        configurable: true,
+        value(this: HTMLElement, options: unknown): void {
+          scrolled.push({ element: this, options });
+        },
+      });
+    });
+    afterEach(() => {
+      Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
+    });
+
     /** A client whose `document.open` answers one outcome. */
     function openAnswering(outcome: unknown): ContractClient {
       return createClient(channels, (id) => {
@@ -2848,6 +2863,110 @@ describe('App', () => {
       expect(
         screen.getByText('There is not enough room to open that document. Close another one first.'),
       ).toBeDefined();
+    });
+
+    it('SAYS WHICH when the file is there and its read was refused (cloud-4 7a)', async () => {
+      // The defect this closes: a file another program held open answered EBUSY, which the
+      // service threw, which reached here as a failure and was settled as nothing at all.
+      const busy = render(<App client={openAnswering({ kind: 'busy' })} settings={freshSettings()} />);
+      await pick();
+      const line = screen.getByText(
+        'That file is open in another program that does not let others read it. Close it there, then open it again.',
+      );
+      // AND BROUGHT INTO VIEW, centred: in a short window the line is below the fold, under the footer.
+      expect(scrolled).toStrictEqual([{ element: line, options: { block: 'center' } }]);
+      busy.unmount();
+
+      render(<App client={openAnswering({ kind: 'denied' })} settings={freshSettings()} />);
+      await pick();
+      expect(
+        screen.getByText('You do not have permission to read that file. Ask its owner for access, or open a copy you can read.'),
+      ).toBeDefined();
+    });
+
+    it('CONTROL: a line already in view is NOT scrolled to, so the screen does not jump under the person', async () => {
+      const seen = vi.spyOn(document, 'elementFromPoint').mockImplementation(() => document.querySelector('.m-start-problem'));
+      render(<App client={openAnswering({ kind: 'busy' })} settings={freshSettings()} />);
+      await pick();
+
+      expect(document.querySelector('.m-start-problem')).not.toBeNull();
+      expect(seen).toHaveBeenCalled();
+      expect(scrolled).toStrictEqual([]);
+      seen.mockRestore();
+    });
+
+    it('SAYS SO when main answered the open with a failure, where it used to say nothing', async () => {
+      const client = createClient(channels, (id) => {
+        if (id === 'document.open') return Promise.resolve(err({ code: 'internal' as const, incident: 'incident-1' }));
+        const answer = OTHER_ANSWERS[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await pick();
+
+      expect(
+        screen.getByText('That file could not be opened. Try again, and if it happens again, restart Monstera.'),
+      ).toBeDefined();
+    });
+
+    /** A client whose `document.open` answers each outcome in turn, and a document's answers otherwise. */
+    function openAnsweringInTurn(outcomes: readonly unknown[]): ContractClient {
+      let asked = 0;
+      return createClient(channels, (id) => {
+        if (id === 'document.open') return Promise.resolve(ok(outcomes[asked++]));
+        const answer = (OPEN_DOCUMENT_ANSWERS as Readonly<Record<string, unknown>>)[id] ?? OTHER_ANSWERS[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+    }
+
+    it('says it in a DIALOG when a document is on screen, because the start screen’s line is not', async () => {
+      // The start screen is the only place the line is drawn, so an open from File with a document in
+      // front settled into a state nobody could see — the same silence, one surface along.
+      const { container } = render(
+        <App client={openAnsweringInTurn([OPEN_DOCUMENT_ANSWERS['document.open'], { kind: 'busy' }])} settings={freshSettings()} />,
+      );
+      await withDocumentOpen();
+      expect(container.querySelector('.m-start-area')).toBeNull();
+
+      await pressMenuItem('File', 'Open PDF…');
+      const dialog = await screen.findByRole('dialog', { name: 'The document could not be opened' });
+      expect(
+        within(dialog).getByText(
+          'That file is open in another program that does not let others read it. Close it there, then open it again.',
+        ),
+      ).toBeDefined();
+
+      // SAID ONCE: the start screen, reached later, does not say it again.
+      await act(async () => {
+        within(dialog).getByRole('button', { name: 'OK' }).click();
+        await Promise.resolve();
+      });
+      await pressMenuItem('File', 'Start screen');
+      expect(container.querySelector('.m-start-area')).not.toBeNull();
+      expect(container.querySelector('.m-start-problem')).toBeNull();
+    });
+
+    it('CONTROL: with no document on screen the same problem is the start screen’s line, and no dialog opens', async () => {
+      const { container } = render(<App client={openAnswering({ kind: 'busy' })} settings={freshSettings()} />);
+      await pick();
+
+      expect(container.querySelector('.m-start-problem')).not.toBeNull();
+      expect(screen.queryByRole('dialog', { name: 'The document could not be opened' })).toBeNull();
+    });
+
+    it('a document opened AFTER a problem clears it, so the start screen never shows a sentence about an old open', async () => {
+      const { container } = render(
+        <App client={openAnsweringInTurn([{ kind: 'absent' }, OPEN_DOCUMENT_ANSWERS['document.open']])} settings={freshSettings()} />,
+      );
+      await pick();
+      expect(container.querySelector('.m-start-problem')).not.toBeNull();
+
+      await withDocumentOpen();
+      await pressMenuItem('File', 'Start screen');
+      expect(container.querySelector('.m-start-area')).not.toBeNull();
+      expect(container.querySelector('.m-start-problem')).toBeNull();
     });
 
     it('CONTROL: a cancelled pick says nothing', async () => {

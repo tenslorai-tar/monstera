@@ -2,6 +2,7 @@ import type { ChannelResult, ContractClient, DroppedOpenOutcome } from '@monster
 import { type DocId, type DocVersion, type Failure, type FileHandle, type Result, ok } from '@monstera/shared';
 
 import type { DropOpener } from '../bridge.js';
+import type { OpenProblem } from '../dialogs/openProblemReasons.js';
 import { GROUP_FILE, OPEN_DOCUMENT_TITLE, RIBBON_OPEN } from '../messages/en.js';
 import { type UiCommand, VISIBLE } from '../registries/commands.js';
 
@@ -30,7 +31,7 @@ import { type UiCommand, VISIBLE } from '../registries/commands.js';
  * surface's decision and the strings are i18n keys, so a command producing a
  * sentence here would put user-facing text in the layer that dispatches.
  */
-export type OpenProblem = 'absent' | 'at-capacity' | 'no-path';
+export type { OpenProblem };
 
 /** What opening needs from the shell: the client, and where each outcome goes. */
 export interface OpenDocumentDeps {
@@ -60,10 +61,10 @@ export interface OpenDocumentDeps {
    * Called when the open did not produce a document and the user should be
    * told.
    *
-   * **`absent` and `at-capacity` only.** `cancelled` is a person changing their
-   * mind and needs no message; `already-open` is the document they asked for,
-   * on screen. Reporting those two would put an error in front of somebody who
-   * got what they wanted.
+   * **Every {@link OpenProblem}, and never `cancelled` or `already-open`.**
+   * `cancelled` is a person changing their mind and needs no message;
+   * `already-open` is the document they asked for, on screen. Reporting those
+   * two would put an error in front of somebody who got what they wanted.
    *
    * This existed as nothing at all until 2026-09-03: every non-`opened` outcome
    * returned silently, so picking a file that had been moved produced **no
@@ -203,33 +204,48 @@ function settleOpen(
   answer: Result<ChannelResult<'document.open'> | DroppedOpenOutcome, Failure>,
 ): OpenOutcome {
   // A failure here is `internal` — the channel declares no codes, because
-  // every way this ends that a user can cause is a variant of the result.
-  if (!answer.ok) return 'none';
-  if (answer.value.kind === 'absent' || answer.value.kind === 'at-capacity' || answer.value.kind === 'no-path') {
-    deps.onProblem(answer.value.kind);
+  // every way this ends that a user can cause is a variant of the result. It is
+  // still said: the person asked for a document and none came.
+  if (!answer.ok) {
+    deps.onProblem('failed');
     return 'none';
   }
-  // THE READER PICKED A FILE THEY ALREADY HAVE OPEN, and with tabs there
-  // is now somewhere to send them. `already-open` carries only a `docId`
-  // by design (ADR-0009 §2) — no version, no byte length, nothing to
-  // render from — and that is exactly enough to activate the tab whose
-  // state the renderer is already holding.
-  //
-  // It is not a problem and must not be reported as one: the reader asked
-  // for a document and the document is on screen.
-  if (answer.value.kind === 'already-open') {
-    deps.onAlreadyOpen(answer.value.docId);
-    return 'shown';
+  const outcome = answer.value;
+  // EVERY KIND NAMED, so a kind the channel gains is a compile error here
+  // rather than an open that ends in silence — which is how `busy` and
+  // `denied` would have arrived if this were still an if-chain.
+  switch (outcome.kind) {
+    case 'absent':
+    case 'at-capacity':
+    case 'no-path':
+    case 'busy':
+    case 'denied':
+      deps.onProblem(outcome.kind);
+      return 'none';
+    // A person changing their mind needs no message.
+    case 'cancelled':
+      return 'none';
+    // THE READER PICKED A FILE THEY ALREADY HAVE OPEN, and with tabs there
+    // is now somewhere to send them. `already-open` carries only a `docId`
+    // by design (ADR-0009 §2) — no version, no byte length, nothing to
+    // render from — and that is exactly enough to activate the tab whose
+    // state the renderer is already holding.
+    //
+    // It is not a problem and must not be reported as one: the reader asked
+    // for a document and the document is on screen.
+    case 'already-open':
+      deps.onAlreadyOpen(outcome.docId);
+      return 'shown';
+    case 'opened':
+      deps.onOpened({
+        docId: outcome.docId,
+        version: outcome.version,
+        byteLength: outcome.byteLength,
+        // CARRIED, not derived. There is no path here to derive it from, which
+        // is invariant L2 doing its job rather than a gap: main states the name
+        // because main is the only side that can.
+        name: outcome.name,
+      });
+      return 'shown';
   }
-  if (answer.value.kind !== 'opened') return 'none';
-  deps.onOpened({
-    docId: answer.value.docId,
-    version: answer.value.version,
-    byteLength: answer.value.byteLength,
-    // CARRIED, not derived. There is no path here to derive it from, which
-    // is invariant L2 doing its job rather than a gap: main states the name
-    // because main is the only side that can.
-    name: answer.value.name,
-  });
-  return 'shown';
 }

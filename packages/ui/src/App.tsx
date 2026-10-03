@@ -204,6 +204,7 @@ import { AI_SETUP_AT_START_SETTING } from './settings/ai.js';
 import { compareDocumentsCommand } from './commands/compareDocuments.js';
 import { translatePageCommand } from './commands/translatePage.js';
 import { COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
+import { OPEN_PROBLEM_DIALOG_ID } from './dialogs/openProblem.js';
 import {
   exportAnnotationsFdfCommand,
   exportAnnotationsJsonCommand,
@@ -716,7 +717,21 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * it and the command is registered here — a surface that owned this would
    * have to be reachable from the registry, which is the second wiring place.
    */
-  const [openProblem, setOpenProblem] = useState<OpenProblem | undefined>(undefined);
+  const [openProblem, setOpenProblem] = useState<{ readonly reason: OpenProblem } | undefined>(undefined);
+  /**
+   * WHERE that problem is said (cloud-4 7a), decided in the first render after it arrives from what is on screen
+   * then: the start screen's line with no document in front, and a dialog with the same sentence over one, because
+   * the line is not on screen and an open that ends in nothing seen is the control that appears to do nothing.
+   *
+   * Decided here rather than in the open's callback, which would have to read what is on screen through a ref or be
+   * rebuilt whenever it changes. Each arrival is a new object, so the same problem twice is said twice.
+   */
+  const [placedProblem, setPlacedProblem] = useState<
+    { readonly problem: { readonly reason: OpenProblem }; readonly onStart: boolean } | undefined
+  >(undefined);
+  if (openProblem !== placedProblem?.problem) {
+    setPlacedProblem(openProblem === undefined ? undefined : { problem: openProblem, onStart: open === undefined });
+  }
 
   // ONE registry instance, and the dialog host's state feeds the command that
   // opens it. `useDialogHost` owns `ask`, so the command captures it the same
@@ -2297,9 +2312,30 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    */
   // ONE SET OF OPEN DEPENDENCIES, for the Open command and the start screen's feature shortcuts, which run the same open.
   const openDeps = useMemo(
-    () => ({ client, onOpened: opened, onProblem: setOpenProblem, onAlreadyOpen: activate }),
+    () => ({
+      client,
+      // A DOCUMENT SHOWN ANSWERS THE LAST PROBLEM, so returning to the start screen later never shows a sentence
+      // about an open the person has since made.
+      onOpened: (document: OpenedDocument): void => {
+        setOpenProblem(undefined);
+        opened(document);
+      },
+      // SAID WHERE THE PERSON IS LOOKING, which `placedProblem` decides.
+      onProblem: (reason: OpenProblem): void => {
+        setOpenProblem({ reason });
+      },
+      onAlreadyOpen: (docId: DocId): void => {
+        setOpenProblem(undefined);
+        activate(docId);
+      },
+    }),
     [activate, client, opened],
   );
+  // THE DIALOG, once per problem placed over a document.
+  useEffect(() => {
+    if (placedProblem === undefined || placedProblem.onStart) return;
+    void ask(OPEN_PROBLEM_DIALOG_ID, { reason: placedProblem.problem.reason });
+  }, [ask, placedProblem]);
   const openCommand = useMemo(() => openDocumentCommand(openDeps), [openDeps]);
   // THE ONE RECENT-OPEN ROUTE (ADR-0143), for the start screen's cards and File › Recent alike.
   const openRecent = useCallback((handle: FileHandle) => openRecentDocument(openDeps, handle), [openDeps]);
@@ -3245,7 +3281,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // ONE GRID AREA for the start screen and its recent list, spanning the rail's
         // column: no rail is drawn with no document (`Ribbon` renders nothing).
         <div className="m-start-area">
-          <StartScreen registry={registry} context={context} problem={openProblem} />
+          <StartScreen
+            registry={registry}
+            context={context}
+            problem={placedProblem?.onStart === true ? placedProblem.problem : undefined}
+          />
           {/* THE CRASH REPORT OFFER (ADR-0109), above the recent list and its reopen offer: data with its own
               controls, which draws nothing unless the last run left a report not yet offered. */}
           <CrashReportOffer client={client} toast={toast} />

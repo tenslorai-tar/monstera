@@ -23,6 +23,8 @@ import {
   MARKDOWN_IMPORT_UNENCODABLE_LINE,
   MARKDOWN_IMPORT_UNREADABLE,
   MARKDOWN_IMPORT_WRITE_FAILED,
+  START_BUSY,
+  START_DENIED,
 } from '../messages/en.js';
 import type { MarkdownImportProblem } from './markdownImportProblem.js';
 
@@ -80,6 +82,11 @@ export default function MarkdownImportProblemBody(props: MarkdownImportProblem):
         return _(MARKDOWN_IMPORT_ABSENT);
       case 'at-capacity':
         return _(MARKDOWN_IMPORT_AT_CAPACITY);
+      // EVERY OPEN ROUTE'S OWN TWO SENTENCES, one key each (B3a).
+      case 'busy':
+        return _(START_BUSY);
+      case 'denied':
+        return _(START_DENIED);
       // THE FILE IS NAMED WHERE THERE IS ONE, for the line's reason above.
       case 'image-unreadable':
         return props.file === null

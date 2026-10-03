@@ -1236,11 +1236,18 @@ const openAtCapacitySchema = z.object({
   ceiling: z.number().int().nonnegative(),
 });
 
+/**
+ * The file is there and reading it was refused: `busy`, another program holds it open and lets nobody else read it;
+ * `denied`, this account may not read it. Each says what the person can do, so each is a kind of its own.
+ */
+const openReadRefusedSchema = z.object({ kind: z.enum(['busy', 'denied']) });
+
 const openOutcomeSchema = z.discriminatedUnion('kind', [
   openedSchema,
   z.object({ kind: z.literal('already-open'), docId: docIdSchema }),
   openAbsentSchema,
   openAtCapacitySchema,
+  openReadRefusedSchema,
   z.object({ kind: z.literal('cancelled') }),
 ]);
 
@@ -2472,6 +2479,11 @@ export const channels = {
       }),
       /** The edited file was gone before it could be opened. */
       z.object({ kind: z.literal('absent') }),
+      /**
+       * The edited file could not be read: the editor still holds it (`busy`), or this account may not read it
+       * (`denied`). Nothing was replaced; saving and closing it in the editor lets the edit come back.
+       */
+      openReadRefusedSchema,
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned', 'engine-unavailable'],
   ),
@@ -2978,6 +2990,7 @@ export const channels = {
       importWriteFailedSchema,
       openAbsentSchema,
       openAtCapacitySchema,
+      openReadRefusedSchema,
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned', 'stale-target'],
   ),
@@ -3162,6 +3175,8 @@ export const channels = {
       }),
       /** The composed file was written and was gone before it could be opened. */
       z.object({ kind: z.literal('absent') }),
+      /** The composed file was written and its read was refused: another program holds it, or no permission. */
+      openReadRefusedSchema,
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned', 'engine-unavailable'],
   ),

@@ -21,6 +21,8 @@ const urlOpenProblemSchema = z.union([
   z.object({ reason: z.literal('write-failed') }),
   z.object({ reason: z.literal('absent') }),
   z.object({ reason: z.literal('at-capacity') }),
+  // THE WRITTEN FILE'S READ REFUSED — another program holding it, or no permission (7a).
+  z.object({ reason: z.enum(['busy', 'denied']) }),
 ]);
 
 /** The props the dialog takes. Inferred from the schema, for `markdownImportProblem.ts`' reason. */

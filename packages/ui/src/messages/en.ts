@@ -310,6 +310,8 @@ export const EXTERNAL_EDIT_PROBLEM_DOCUMENT_CHANGED = messageKey(
 export const EXTERNAL_EDIT_PROBLEM_OPEN_ELSEWHERE = messageKey('dialog.external-edit-problem.open-elsewhere');
 export const EXTERNAL_EDIT_PROBLEM_ABSENT = messageKey('dialog.external-edit-problem.absent');
 export const EXTERNAL_EDIT_PROBLEM_AT_CAPACITY = messageKey('dialog.external-edit-problem.at-capacity');
+export const EXTERNAL_EDIT_PROBLEM_BUSY = messageKey('dialog.external-edit-problem.busy');
+export const EXTERNAL_EDIT_PROBLEM_DENIED = messageKey('dialog.external-edit-problem.denied');
 export const EXTRACT_PAGES_TITLE = messageKey('dialog.extract-pages.title');
 export const EXTRACT_PAGES_LABEL = messageKey('dialog.extract-pages.label');
 export const EXTRACT_PAGES_EMPTY = messageKey('dialog.extract-pages.empty');
@@ -968,6 +970,14 @@ export const FEATURE_EXPORT_SUMMARY = messageKey('command.start-export.summary')
 export const START_ABSENT = messageKey('surface.start.absent');
 export const START_AT_CAPACITY = messageKey('surface.start.at-capacity');
 export const START_NO_PATH = messageKey('surface.start.no-path');
+/** A file another program holds open and lets nobody else read — every open route says this one sentence (7a). */
+export const START_BUSY = messageKey('surface.start.busy');
+/** A file this account may not read — every open route says this one sentence (7a). */
+export const START_DENIED = messageKey('surface.start.denied');
+/** An open that failed for a reason this build did not expect: said, never silent (7a). */
+export const START_FAILED = messageKey('surface.start.failed');
+/** The dialog that says why an open did not happen while a document is already on screen. */
+export const OPEN_PROBLEM_TITLE = messageKey('dialog.open-problem.title');
 export const START_DROP_HINT = messageKey('surface.start.drop-hint');
 export const DROP_OVERLAY = messageKey('surface.drop.overlay');
 export const PRIVACY_RECENT_PREVIEWS_TITLE = messageKey('setting.privacy.recent-previews.title');
@@ -2365,6 +2375,8 @@ export const PROBLEM_RASTER_TOO_LARGE = messageKey('dialog.command-problem.raste
 export const PROBLEM_NOT_COPYABLE = messageKey('dialog.command-problem.not-copyable');
 export const PROBLEM_COPY_ABSENT = messageKey('dialog.command-problem.copy-absent');
 export const PROBLEM_COPY_AT_CAPACITY = messageKey('dialog.command-problem.copy-at-capacity');
+export const PROBLEM_COPY_BUSY = messageKey('dialog.command-problem.copy-busy');
+export const PROBLEM_COPY_DENIED = messageKey('dialog.command-problem.copy-denied');
 export const PROBLEM_SERVICE_NO_KEY = messageKey('dialog.command-problem.service-no-key');
 export const PROBLEM_SERVICE_UNAUTHORISED = messageKey('dialog.command-problem.service-unauthorised');
 export const PROBLEM_SERVICE_ADDRESS = messageKey('dialog.command-problem.service-address');
@@ -3042,6 +3054,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // A DROPPED ITEM WITH NO FILE BEHIND IT: something dragged out of a browser or another program that is
   // not a file on this computer. Says what to do instead.
   [START_NO_PATH]: 'That is not a file on this computer, so it cannot be opened. Drop a PDF from File Explorer instead.',
+  [START_BUSY]:
+    'That file is open in another program that does not let others read it. Close it there, then open it again.',
+  [START_DENIED]:
+    'You do not have permission to read that file. Ask its owner for access, or open a copy you can read.',
+  [START_FAILED]: 'That file could not be opened. Try again, and if it happens again, restart Monstera.',
+  [OPEN_PROBLEM_TITLE]: 'The document could not be opened',
   // v5-01's line under Open PDF, word for word.
   [START_DROP_HINT]: 'or drop a PDF anywhere in this window',
   [DROP_OVERLAY]: 'Drop to open',
@@ -4189,6 +4207,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'The edited file is no longer where it was saved, so nothing was put back. Your document has not changed.',
   [EXTERNAL_EDIT_PROBLEM_AT_CAPACITY]:
     'The edited file is too large to open alongside the documents already open, so nothing was put back. Close a document and try again. Your document has not changed.',
+  [EXTERNAL_EDIT_PROBLEM_BUSY]:
+    'The other app still holds the edited file and lets nobody else read it, so nothing was put back. Close it there and try again. Your document has not changed.',
+  [EXTERNAL_EDIT_PROBLEM_DENIED]:
+    'You do not have permission to read the edited file, so nothing was put back. Save it somewhere you can read and try again. Your document has not changed.',
   [EXTRACT_PAGES_TITLE]: 'Extract pages',
   [EXTRACT_PAGES_LABEL]: 'Pages to extract',
   // SAYS WHAT HAPPENS TO THE OPEN DOCUMENT, because the obvious worry about a
@@ -5143,6 +5165,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'The copy was saved, but the file was gone before it could be opened, so the change was not made. The signed document has not changed.',
   [PROBLEM_COPY_AT_CAPACITY]:
     'The copy was saved, but there is not enough room to open it beside the documents already open, so the change was not made. Close a document, then open the copy from where you saved it. The signed document has not changed.',
+  [PROBLEM_COPY_BUSY]:
+    'The copy was saved, but another program is holding it and does not let others read it, so the change was not made. Close it there, then open the copy from where you saved it. The signed document has not changed.',
+  [PROBLEM_COPY_DENIED]:
+    'The copy was saved, but you do not have permission to read it, so the change was not made. Save the copy somewhere you can read, then try again. The signed document has not changed.',
   // A SERVICE'S ANSWER TO A REGION, each naming what the reader can do; out of credit is the
   // assistant's own sentence, because it is one account whichever door it was met from.
   [PROBLEM_SERVICE_NO_KEY]: 'No key is stored for this service. Add it in Settings; nothing was changed.',

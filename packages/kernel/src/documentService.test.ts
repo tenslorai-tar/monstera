@@ -1238,6 +1238,32 @@ describe('the canonical image', () => {
     expect(reads).toBe(0);
   });
 
+  it('a file ANOTHER PROGRAM HOLDS is answered busy, and one this account may not read denied, with nothing held (7a)', async () => {
+    // THE FILE IS ON DISK, so only the read's refusal can make these outcomes: a service that ignored the read's error
+    // code would throw, and one that read the disk its own way would open the file.
+    const refusedWith = async (code: string): Promise<unknown> => {
+      const registry = new CapabilityRegistry();
+      const service = newService(registry, {
+        readBytes: () => Promise.reject(Object.assign(new Error(`${code}: refused, open '${original()}'`), { code })),
+      });
+      const outcome = await service.open(registry.mint(original()));
+      expect(service.residentDocumentBytes()).toBe(0);
+      return outcome;
+    };
+    expect(await refusedWith('EBUSY')).toStrictEqual({ kind: 'busy' });
+    // `EPERM` IS WINDOWS' ACCESS DENIED, as libuv maps it, and `EACCES` the same refusal elsewhere.
+    expect(await refusedWith('EPERM')).toStrictEqual({ kind: 'denied' });
+    expect(await refusedWith('EACCES')).toStrictEqual({ kind: 'denied' });
+  });
+
+  it('CONTROL: a read that fails for any other reason is a FAULT, never dressed up as the file’s answer', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry, {
+      readBytes: () => Promise.reject(Object.assign(new Error('EIO: i/o error'), { code: 'EIO' })),
+    });
+    await expect(service.open(registry.mint(original()))).rejects.toThrow(/EIO/u);
+  });
+
   it('admits a document that exactly fills the ceiling', async () => {
     const registry = new CapabilityRegistry();
     const size = statSync(original()).size;

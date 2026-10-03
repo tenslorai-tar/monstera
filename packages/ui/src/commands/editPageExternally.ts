@@ -67,6 +67,8 @@ export function reimportProblem(
     case 'open-elsewhere':
     case 'absent':
     case 'at-capacity':
+    case 'busy':
+    case 'denied':
       return answer.kind;
     case 'reimported':
     case 'no-edit':

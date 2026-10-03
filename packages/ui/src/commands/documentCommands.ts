@@ -677,6 +677,12 @@ async function editOnCopy(deps: DocumentCommandDeps, docId: DocId, command: Rend
     case 'at-capacity':
       reportProblem(deps, { code: 'copy-at-capacity' });
       return false;
+    case 'busy':
+      reportProblem(deps, { code: 'copy-busy' });
+      return false;
+    case 'denied':
+      reportProblem(deps, { code: 'copy-denied' });
+      return false;
   }
 }
 

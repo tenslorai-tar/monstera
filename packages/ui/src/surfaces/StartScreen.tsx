@@ -1,15 +1,12 @@
 import { useLingui } from '@lingui/react';
 import type { MessageKey } from '@monstera/shared';
-import { type ReactElement, useId } from 'react';
+import { type ReactElement, useEffect, useId, useRef } from 'react';
 
 import heroLogo from '../../../../assets/brand/logo-hero.png';
 import heroLogo2x from '../../../../assets/brand/logo-hero@2x.png';
-import type { OpenProblem } from '../commands/openDocument.js';
+import { OPEN_PROBLEM_SENTENCE, type OpenProblem } from '../dialogs/openProblemReasons.js';
 import {
-  START_ABSENT,
-  START_AT_CAPACITY,
   START_DROP_HINT,
-  START_NO_PATH,
   START_PRODUCT,
   START_TAGLINE,
   START_TITLE,
@@ -69,20 +66,32 @@ import { startScreenModel } from './projections.js';
 export interface StartScreenProps {
   readonly registry: CommandRegistry;
   readonly context: CommandContext;
-  /** The last open that ended with no document, or none. */
-  readonly problem: OpenProblem | undefined;
+  /**
+   * The last open that ended with no document, or none. An ARRIVAL, a new object each time one lands, so the same
+   * problem twice is brought into view twice.
+   */
+  readonly problem: { readonly reason: OpenProblem } | undefined;
 }
-
-/** What each problem says. A `Record`, so a problem added to `OpenProblem` is a compile error here until it has a sentence. */
-const PROBLEM_SENTENCE: Readonly<Record<OpenProblem, MessageKey>> = {
-  absent: START_ABSENT,
-  'at-capacity': START_AT_CAPACITY,
-  'no-path': START_NO_PATH,
-};
 
 export function StartScreen({ registry, context, problem }: StartScreenProps): ReactElement {
   const { _ } = useLingui();
   const { primary, shortcut } = startScreenModel(registry, context);
+
+  // BROUGHT INTO VIEW AS IT ARRIVES (cloud-4 7a): in a short window the line sits below the fold, under the footer, so
+  // a pick that failed changed nothing a person could see.
+  //
+  // ONLY WHEN IT IS NOT SEEN, asked of the page: the topmost element at its first and last line is the line itself, or
+  // something covers it or it is off screen. A line already in view moves nothing. To the CENTRE, because the footer
+  // stuck over the area's foot is one line or two depending on the width, so an edge alignment can leave it under it.
+  const problemLine = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    const line = problemLine.current;
+    if (problem === undefined || line === null) return;
+    const box = line.getBoundingClientRect();
+    const across = box.left + box.width / 2;
+    const seen = [box.top + 1, box.bottom - 1].every((down) => line.contains(document.elementFromPoint(across, down)));
+    if (!seen) line.scrollIntoView({ block: 'center' });
+  }, [problem]);
 
   return (
     <div className="m-start-screen">
@@ -121,8 +130,8 @@ export function StartScreen({ registry, context, problem }: StartScreenProps): R
         // appears in response to something the reader just did and there is
         // nothing else on screen that answers them. A polite region would queue
         // behind whatever a screen reader was saying about the button.
-        <p className="m-start-problem" role="alert">
-          {_(PROBLEM_SENTENCE[problem])}
+        <p ref={problemLine} className="m-start-problem" role="alert">
+          {_(OPEN_PROBLEM_SENTENCE[problem.reason])}
         </p>
       )}
       {shortcut.length === 0 ? null : (

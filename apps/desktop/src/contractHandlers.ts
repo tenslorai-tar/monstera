@@ -1142,6 +1142,9 @@ function appendMarkdownHandler(
 
       const { outcome, sessions } = await openPath(deps, composed.destination);
       if (outcome.kind === 'absent') return ok({ kind: 'absent' });
+      // A FILE THIS BUILD JUST WROTE CAN STILL BE HELD: a scanner opening it the moment it lands holds it as any
+      // program does, so the refusal is the person's to hear rather than a defect to throw.
+      if (outcome.kind === 'busy' || outcome.kind === 'denied') return ok({ kind: outcome.kind });
       if (outcome.kind === 'at-capacity') {
         return ok({ kind: 'at-capacity', wouldHold: outcome.wouldHold, ceiling: outcome.ceiling });
       }
@@ -1271,6 +1274,7 @@ function reimportExternalEditHandler(
 
       const { outcome, sessions } = await openPath(deps, path);
       if (outcome.kind === 'absent') return ok({ kind: 'absent' });
+      if (outcome.kind === 'busy' || outcome.kind === 'denied') return ok({ kind: outcome.kind });
       if (outcome.kind === 'at-capacity') {
         return ok({ kind: 'at-capacity', wouldHold: outcome.wouldHold, ceiling: outcome.ceiling });
       }
@@ -2148,7 +2152,10 @@ function editCopyHandler(
     }
 
     const { outcome: opened, sessions } = await openPath(deps, copied.destination);
-    if (opened.kind === 'absent' || opened.kind === 'at-capacity') return ok(opened);
+    // A REFUSED READ TOO, for `appendMarkdownHandler`'s reason: a file this build just wrote can still be held.
+    if (opened.kind === 'absent' || opened.kind === 'at-capacity' || opened.kind === 'busy' || opened.kind === 'denied') {
+      return ok(opened);
+    }
     if (opened.kind !== 'opened') {
       // UNREACHABLE BY `saveCopy`'s OWN RULE: a destination another open document reaches is refused before anything
       // is written, so the file just written cannot already be open.
@@ -2918,11 +2925,13 @@ function redoHandler(commands: DocumentCommands): ContractHandlers['document.red
  * reachable from the renderer's request, which carried no parameters, so
  * "opened the wrong file" is not a state a renderer can steer into.
  *
- * ## THE HANDLE IS REVOKED ON EXACTLY TWO OUTCOMES, AND NOT ON THE THIRD
+ * ## THE HANDLE IS REVOKED ON EVERY OUTCOME THAT HOLDS NO DOCUMENT, AND NOT ON `already-open`
  *
- * `absent` and `at-capacity` leave nothing holding the handle: the service did
- * not take it, so without a revoke a user repeatedly picking missing files
- * would grow the registry once per distinct path, forever.
+ * `absent`, `at-capacity`, `busy` and `denied` leave nothing holding the handle:
+ * the service did not take it, so without a revoke a user repeatedly picking
+ * missing files would grow the registry once per distinct path, forever.
+ * {@link HOLDS_NO_DOCUMENT} names every outcome, so one the service gains
+ * decides there whether its handle stays.
  *
  * `already-open` is the one that must **not** be revoked, and the reason is a
  * property of `mint` rather than of this function. Minting is *idempotent per
@@ -2932,9 +2941,9 @@ function redoHandler(commands: DocumentCommands): ContractHandlers['document.red
  * under a document that is open and working, and the failure would surface
  * later, somewhere else, as a resolve that throws.
  *
- * That is the whole finding: the tidy-up that looks symmetric across four
- * outcomes is correct on two, harmless on the one that took the handle, and
- * destructive on the one where two callers share it.
+ * That is the whole finding: the tidy-up that looks symmetric across every
+ * outcome is correct on the refusals, harmless on the one that took the handle,
+ * and destructive on the one where two callers share it.
  */
 /**
  * Fetches a PDF from a URL through the SSRF guard, and opens the file it wrote
@@ -3030,6 +3039,20 @@ function openDroppedHandler(deps: OpenPathParts): PreloadHandlers['document.open
   };
 }
 
+/**
+ * Whether an open's outcome left the handle it was given held by nothing, so {@link openPath} revokes it — the open
+ * handler's header has why `already-open` must not be. A `Record`, so an outcome the service gains is a compile error
+ * here until somebody decides.
+ */
+const HOLDS_NO_DOCUMENT: Readonly<Record<Awaited<ReturnType<DocumentService['open']>>['kind'], boolean>> = {
+  opened: false,
+  'already-open': false,
+  absent: true,
+  'at-capacity': true,
+  busy: true,
+  denied: true,
+};
+
 /** What {@link openPath} opens a document through. */
 interface OpenPathParts {
   readonly documents: DocumentService;
@@ -3072,9 +3095,7 @@ async function openPath(
   const handle = deps.capabilities.mint(path);
   const outcome = await deps.documents.open(handle);
 
-  if (outcome.kind === 'absent' || outcome.kind === 'at-capacity') {
-    deps.capabilities.revoke(handle);
-  }
+  if (HOLDS_NO_DOCUMENT[outcome.kind]) deps.capabilities.revoke(handle);
 
   // ONLY FOR A DOCUMENT THIS CALL OPENED, and `already-open` is the outcome
   // that makes the distinction load-bearing rather than pedantic: that

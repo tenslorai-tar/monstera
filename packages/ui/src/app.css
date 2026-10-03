@@ -1038,7 +1038,10 @@ optgroup {
 .m-start-problem {
   margin: 0;
   color: var(--text);
-  max-inline-size: 40ch;
+  /* 60ch AND BALANCED: the longest sentences run past a hundred characters, which at 40ch took three lines and left
+     one word alone on the last; balanced, the lines it takes are even. */
+  max-inline-size: 60ch;
+  text-wrap: balance;
 }
 
 .m-recent {

@@ -923,6 +923,13 @@ export type OpenOutcome =
   | { readonly kind: 'already-open'; readonly docId: DocId }
   | { readonly kind: 'absent' }
   /**
+   * The file is there and its read was refused: `busy` where another program holds it open and lets nobody else read
+   * it (`EBUSY` — Windows' sharing and lock violations), `denied` where this account may not read it (`EPERM` on
+   * Windows, `EACCES` elsewhere). Facts about the file a person can act on, so outcomes and not faults (cloud-4 7a).
+   */
+  | { readonly kind: 'busy' }
+  | { readonly kind: 'denied' }
+  /**
    * The canonical image would not fit under {@link DocumentServiceOptions.documentBytesCeiling}.
    *
    * **An outcome, not a defect.** Opening a document larger than main may hold,
@@ -1142,6 +1149,20 @@ function requireSoleOwnership(bytes: Uint8Array, path: string): void {
 
 /** The default: the file, whole, once. */
 const readFileBytes: BytesReader = (path) => readFile(path);
+
+/**
+ * Which refusal a failed read of a person's file is, or `null` for a failure that is not one.
+ *
+ * libuv's own mapping decides, because it is what Node reports: Windows' `ERROR_SHARING_VIOLATION` and
+ * `ERROR_LOCK_VIOLATION` — another program holding the file and letting nobody else read it — arrive as `EBUSY`, and
+ * `ERROR_ACCESS_DENIED` arrives as `EPERM`, where POSIX says `EACCES`.
+ */
+export function readRefusalOf(error: unknown): 'busy' | 'denied' | null {
+  const code = (error as { readonly code?: unknown } | null)?.code;
+  if (code === 'EBUSY') return 'busy';
+  if (code === 'EPERM' || code === 'EACCES') return 'denied';
+  return null;
+}
 
 /**
  * How a canonical image reaches a destination this service was handed.
@@ -1583,7 +1604,16 @@ export class DocumentService {
     const refusal = this.#refuseIfOverCeiling(identity.size);
     if (refusal !== null) return refusal;
 
-    const bytes = await this.#readBytes(path);
+    // A READ THE FILE REFUSED is an answer about the file — another program holding it, or no permission — and the
+    // person is told which. Any other failure is a fault and propagates.
+    let bytes: Uint8Array;
+    try {
+      bytes = await this.#readBytes(path);
+    } catch (error) {
+      const refused = readRefusalOf(error);
+      if (refused === null) throw error;
+      return { kind: refused };
+    }
     requireSoleOwnership(bytes, path);
 
     // The second check is the CORRECT one, and it is not redundant. `stat` and

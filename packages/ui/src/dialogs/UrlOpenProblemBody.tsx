@@ -17,6 +17,8 @@ import {
   URL_OPEN_UNREACHABLE,
   URL_OPEN_UNRESOLVABLE,
   URL_OPEN_WRITE_FAILED,
+  START_BUSY,
+  START_DENIED,
 } from '../messages/en.js';
 import type { UrlOpenProblem } from './urlOpenProblem.js';
 
@@ -63,6 +65,11 @@ function sentence(problem: UrlOpenProblem): MessageKey {
       return URL_OPEN_ABSENT;
     case 'at-capacity':
       return URL_OPEN_AT_CAPACITY;
+    // EVERY OPEN ROUTE'S OWN TWO SENTENCES, one key each (B3a).
+    case 'busy':
+      return START_BUSY;
+    case 'denied':
+      return START_DENIED;
     // EVERY GUARD REASON NAMED, not defaulted: a reason the contract gains is then a
     // lint error here as well as a compile error in the record above.
     case 'not-https':

@@ -705,6 +705,15 @@ describe('document.open', () => {
       expect(capabilities.has(handleOpened(opened))).toBe(false);
     });
 
+    it('revokes it when the read was refused, busy or denied, for the same reason (cloud-4 7a)', async () => {
+      for (const kind of ['busy', 'denied'] as const) {
+        const { capabilities, handlers, opened } = harness({ kind }, () => Promise.resolve('C:/docs/held.pdf'));
+
+        expect(await handlers['document.open']({})).toStrictEqual({ ok: true, value: { kind } });
+        expect(capabilities.has(handleOpened(opened))).toBe(false);
+      }
+    });
+
     it('does NOT revoke it when the document is already open', async () => {
       // THE CASE THE SYMMETRIC VERSION GETS WRONG. `mint` is idempotent per
       // path, so the handle minted here IS the live document's handle —
@@ -1011,6 +1020,21 @@ describe('document.editCopy — an edit of a signed document made on a copy (ADR
 
     expect(result).toMatchObject({ ok: true, value: { kind: 'edit-refused', docId: COPY, problem: 'text-not-writable' } });
     expect(closed).toStrictEqual([]);
+  });
+
+  it('a copy whose read was REFUSED says so and runs no edit, where it used to be thrown as a defect (cloud-4 7a)', async () => {
+    // A file this build just wrote can still be held: a scanner opening it the moment it lands holds it as any
+    // program does.
+    for (const kind of ['busy', 'denied'] as const) {
+      const { commands, executed } = commandsFor(() => Promise.reject(new Error('nothing may run on a copy not opened')));
+      const { handlers } = harness({ kind }, NO_PICKER, undefined, { commands });
+
+      const result = await handlers['document.editCopy']({ docId: A_DOC, command: NAMED });
+
+      expect(result).toStrictEqual({ ok: true, value: { kind } });
+      expect(executed).toStrictEqual([]);
+      expect(channels['document.editCopy'].result.safeParse({ kind }).success).toBe(true);
+    }
   });
 
   it('a DEFECT in the copy’s edit closes the copy before it is rethrown, so no document is open that no tab shows', async () => {

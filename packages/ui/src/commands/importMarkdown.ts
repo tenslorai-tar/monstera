@@ -83,6 +83,9 @@ export function markdownImportProblem(
       return { reason: 'absent' };
     case 'at-capacity':
       return { reason: 'at-capacity' };
+    case 'busy':
+    case 'denied':
+      return { reason: answer.kind };
     // `cancelled` is a person changing their mind; `opened`, `already-open` and
     // `appended` are the document they asked for. Named rather than defaulted, so an
     // outcome a channel gains later is a lint error here instead of a silence. And

@@ -809,6 +809,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'refused', props: {}, steps: [type('Address', 'http://example.com/reports/quarterly-report.pdf')] },
   ],
   'dialog.url-open-problem': [{ state: 'opened', props: { reason: 'not-a-pdf' } }],
+  'dialog.open-problem': [{ state: 'opened', props: { reason: 'busy' } }],
   'dialog.camera-capture': [{ state: 'opened', props: {} }],
   'dialog.generate-toc-problem': [{ state: 'opened', props: { reason: 'no-outline' } }],
   'dialog.merge-document': [

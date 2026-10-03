@@ -83,6 +83,7 @@ import { STAMP_DIALOG } from '../dialogs/stamp.js';
 import { TRANSLATE_PAGE_DIALOG } from '../dialogs/translatePage.js';
 import { TYPEWRITER_DIALOG } from '../dialogs/typewriter.js';
 import { URL_OPEN_PROBLEM_DIALOG } from '../dialogs/urlOpenProblem.js';
+import { OPEN_PROBLEM_DIALOG } from '../dialogs/openProblem.js';
 import { WATERMARK_PAGES_DIALOG } from '../dialogs/watermarkPages.js';
 import { WORD_COUNT_DIALOG } from '../dialogs/wordCount.js';
 import { WORKBOOK_INCOMPLETE_DIALOG } from '../dialogs/workbookIncomplete.js';
@@ -161,6 +162,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   WORKBOOK_INCOMPLETE_DIALOG,
   OPEN_FROM_URL_DIALOG,
   URL_OPEN_PROBLEM_DIALOG,
+  OPEN_PROBLEM_DIALOG,
   CAMERA_CAPTURE_DIALOG,
   GENERATE_TOC_PROBLEM_DIALOG,
   MERGE_DOCUMENT_DIALOG,
