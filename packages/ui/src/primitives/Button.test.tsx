@@ -19,7 +19,9 @@ import { Button } from './Button.js';
  * defect the resolver exists to prevent, so the name stays English on purpose.
  */
 const SAVE = messageKey('command.save.label');
-activateCatalogue('en', { [SAVE]: 'Save' });
+const OPEN_FILE = messageKey('dialog.cloud.open');
+const OPEN = messageKey('dialog.cloud.open-shown');
+activateCatalogue('en', { [SAVE]: 'Save', [OPEN_FILE]: 'Open {name}', [OPEN]: 'Open' });
 
 function Messages({ children }: { children: ReactNode }): ReactElement {
   return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
@@ -67,6 +69,14 @@ describe('Button', () => {
   it('renders its label as the accessible name', () => {
     render(<Button label={SAVE} />);
     expect(screen.getByRole('button', { name: 'Save' })).toBeDefined();
+  });
+
+  it('SHOWS its shorter words where given, and keeps the whole label as its name', () => {
+    render(<Button label={OPEN_FILE} shown={OPEN} values={{ name: 'lease.pdf' }} />);
+    const button = screen.getByRole('button', { name: 'Open lease.pdf' });
+    // What a sighted person reads is the one part not hidden from the eye; the name is the hidden part.
+    expect(button.querySelector('[aria-hidden]')?.textContent).toBe('Open');
+    expect(button.querySelector('.m-visually-hidden')?.textContent).toBe('Open lease.pdf');
   });
 
   it('calls onClick when activated', () => {

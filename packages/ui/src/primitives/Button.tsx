@@ -124,6 +124,15 @@ export interface ButtonProps {
    * the day the chord did, and the palette is where a screen-reader user meets chords.
    */
   chord?: string | undefined;
+  /**
+   * The words SHOWN, where the row beside the button already shows the rest of its name: *Open* beside a file whose
+   * name the row prints, where the label is *Open {name}* so each button is told apart by a screen reader. A long name
+   * drawn into the button made it wider than the row (the gallery, 2026-10-03).
+   *
+   * The label stays the accessible name, and must begin with these words (WCAG 2.5.3, the visible label is in the
+   * name), so a person who says what they see reaches the control.
+   */
+  shown?: MessageKey | undefined;
 }
 
 export function Button({
@@ -136,6 +145,7 @@ export function Button({
   chord,
   icon,
   iconOnly = false,
+  shown,
 }: ButtonProps): ReactElement {
   const element = useRef<HTMLElement>(null);
   // `useLingui` rather than the module-level `resolve`, so a locale change
@@ -169,7 +179,16 @@ export function Button({
       title={bare ? text : undefined}
     >
       {icon === undefined ? null : <Icon name={icon} size="dense" />}
-      {bare ? <span className="m-visually-hidden">{text}</span> : text}
+      {bare ? (
+        <span className="m-visually-hidden">{text}</span>
+      ) : shown === undefined ? (
+        text
+      ) : (
+        <>
+          <span aria-hidden>{_(shown)}</span>
+          <span className="m-visually-hidden">{text}</span>
+        </>
+      )}
       {chord === undefined ? null : (
         <kbd aria-hidden className="m-button__chord">
           {chord}
