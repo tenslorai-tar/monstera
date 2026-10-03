@@ -1,20 +1,27 @@
 // @ts-check
 /**
- * The child of `hostMemory.mjs`: a real shell and a real contained host, saving a document whose save raises the host's
- * private commit well above what the open leaves it at.
+ * The child of `hostMemory.mjs`: a real shell and a real contained host, holding a document whose session keeps the
+ * host's private commit well above what a small document's does — a LEVEL, which is what a sampler exists to see.
  *
  * Two cells, chosen by the first argument, differing in ONE value — the shell's `hostMemorySampling`:
  *
- * - `control`: the shell's own `HOST_MEMORY_SAMPLING`. The save completes and no host ends. It also MEASURES, with an
- *   independent sampler (`hostMemoryPeakWorker.mjs`): the host's commit with the document open, and its peak during
- *   the save. The driver puts the kill cell's threshold between the two.
- * - `kill`: the threshold the driver passes. The save must fail, the shell's log must name `memory-budget`, the file on
- *   disk must be untouched, a new host must appear, and the document must answer with the rotation it held.
+ * - `control`: the shell's own `HOST_MEMORY_SAMPLING`. A light document, then the 64 MiB heavy one beside it, each
+ *   rotated, and no host ends. It MEASURES the two levels, each read with the product sampler's own access once the
+ *   document's session is held. The driver puts the kill cell's threshold halfway between.
+ * - `kill`: the threshold the driver passes. The heavy document ALONE: its session holds the host above the threshold,
+ *   so the shell's log must name `memory-budget`, the document must end refused (`document-poisoned`, after the two
+ *   attempts ADR-0023 Decision 9a allows) rather than tried for ever, its file must be untouched, and a light document
+ *   opened afterwards must be served.
  *
- * WHY THE THRESHOLD IS MEASURED IN THE RUN: it was a constant, 320 MiB, between the open's ~255 MiB and the save's
- * ~388 MiB as measured on one development machine (2026-10-03, two runs). On CI's Windows runner the same save
- * completed under it (run 37131970878), and nothing in the report could say whether the sampler had not sampled or the
- * host had committed less there. A margin measured on one machine is not a margin on another.
+ * WHY A LEVEL AND NOT A SAVE: this measured a save's peak first, and on CI's runner a save that peaked at 388 MiB
+ * completed under a 321 MiB threshold (runs 37135035663 and 37138133293) while the product's read of the host
+ * succeeded. The whole save took about 0.36 s there (36 samples at 10 ms); a peak shorter than the sampler's 100 ms
+ * interval can fall between two samples. The sampler is sized for a host that grows and stays grown — the job limit is
+ * the backstop for a spike — so the proof now holds the commit up rather than catching a spike by luck.
+ *
+ * WHY THE KILL CELL OPENS NOTHING FIRST: a host death raises the failure count of EVERY document it held, and nothing
+ * resets it (a live review finding, 2026-10-03), so a light document opened first would be poisoned beside the heavy
+ * one. Opened afterwards, it shares none of the heavy one's deaths.
  *
  * Usage (under the Electron binary in Node mode, from the driver): hostMemoryHost.mjs control <report>
  *                                                                  hostMemoryHost.mjs kill <report> <kill-at-bytes>
@@ -27,7 +34,6 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { Worker } from 'node:worker_threads';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
@@ -37,8 +43,7 @@ const CELL = process.argv[2] ?? '';
 const REPORT_PATH = process.argv[3] ?? '';
 /** The kill cell's threshold, from the driver's measurement of the control cell. */
 const KILL_AT_BYTES = Number(process.argv[4] ?? 'NaN');
-/** How long a new host has to appear, and an old one to go — `hostRecoveryHost.mjs`' budgets. */
-const REBUILD_BUDGET_MS = 11_000;
+/** How long an old host has to go at teardown — `hostRecoveryHost.mjs`' budget. */
 const DEATH_BUDGET_MS = 5_000;
 const POLL_MS = 250;
 
@@ -88,13 +93,11 @@ async function waitForChildren(settled, budgetMs) {
   }
 }
 
-/**
- * Opens `pid` with the product sampler's access and reads its private commit once.
- *
- * @param {number} pid
- * @returns {{ opened: boolean, read: boolean, error: number, privateBytes: number }}
- */
-function readWithProductAccess(pid) {
+/** @type {ReturnType<typeof bindProbe> | null} */
+let probe = null;
+
+/** The Win32 calls the read needs, declared ONCE: koffi refuses a second struct of the same name. */
+function bindProbe() {
   const koffi = createRequire(join(ROOT, 'package.json'))('koffi');
   const kernel = koffi.load('kernel32.dll');
   koffi.struct('MONSTERA_PROBE_COUNTERS', {
@@ -110,10 +113,25 @@ function readWithProductAccess(pid) {
     PeakPagefileUsage: 'size_t',
     PrivateUsage: 'size_t',
   });
-  const openProcess = kernel.func('void *OpenProcess(uint32 access, bool inherit, uint32 pid)');
-  const memoryInfo = kernel.func('bool K32GetProcessMemoryInfo(void *process, _Out_ MONSTERA_PROBE_COUNTERS *counters, uint32 cb)');
-  const lastError = kernel.func('uint32 GetLastError()');
-  const closeHandle = kernel.func('bool CloseHandle(void *handle)');
+  return {
+    koffi,
+    openProcess: kernel.func('void *OpenProcess(uint32 access, bool inherit, uint32 pid)'),
+    memoryInfo: kernel.func('bool K32GetProcessMemoryInfo(void *process, _Out_ MONSTERA_PROBE_COUNTERS *counters, uint32 cb)'),
+    lastError: kernel.func('uint32 GetLastError()'),
+    closeHandle: kernel.func('bool CloseHandle(void *handle)'),
+  };
+}
+
+/**
+ * Opens `pid` with the product sampler's access (PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE,
+ * memorySamplerWorker.ts) and reads its private commit once.
+ *
+ * @param {number} pid
+ * @returns {{ opened: boolean, read: boolean, error: number, privateBytes: number }}
+ */
+function readWithProductAccess(pid) {
+  probe ??= bindProbe();
+  const { koffi, openProcess, memoryInfo, lastError, closeHandle } = probe;
   const handle = openProcess(0x1000 | 0x0001, false, pid);
   if (handle === null || koffi.address(handle) === 0n) return { opened: false, read: false, error: lastError(), privateBytes: 0 };
   /** @type {Record<string, unknown>} */
@@ -168,10 +186,13 @@ async function main() {
 
   const scratch = mkdtempSync(join(tmpdir(), 'monstera-host-memory-'));
   try {
-    const source = buildLargeFixture({ root: ROOT, targetBytes: 64 * 1024 ** 2, pages: 4 }).path;
-    const document = join(scratch, 'heavy.pdf');
-    copyFileSync(source, document);
-    const before = digest(document);
+    const heavy = join(scratch, 'heavy.pdf');
+    copyFileSync(buildLargeFixture({ root: ROOT, targetBytes: 64 * 1024 ** 2, pages: 4 }).path, heavy);
+    const light = join(scratch, 'light.pdf');
+    copyFileSync(buildLargeFixture({ root: ROOT, targetBytes: 64 * 1024, pages: 1, name: 'perf-baseline.pdf' }).path, light);
+    const before = digest(heavy);
+    /** What the next `document.open` picks. */
+    let next = light;
     const sessionRoot = join(scratch, 'engine-sessions');
     mkdirSync(sessionRoot, { recursive: true });
     const platform = platformModule.createEngineHostPlatform(sessionRoot, {
@@ -192,7 +213,7 @@ async function main() {
     const { handlers } = composition.createShellDependencies({
       ...harnessModule.harnessSurfaces('the host-memory harness'),
       appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
-      pickDocument: () => Promise.resolve(document),
+      pickDocument: () => Promise.resolve(next),
       enginePlatform: platform,
       hostMemorySampling,
       log: {
@@ -208,78 +229,67 @@ async function main() {
       },
     });
 
-    const opened = await handlers['document.open']({});
-    if (opened.ok !== true || opened.value.kind !== 'opened') throw new Error(`the document did not open: ${JSON.stringify(opened)}`);
-    const docId = opened.value.docId;
-    // A rotation, so the save has something to write; then the save, which is where the commit rises.
-    const rotated = await handlers['document.execute']({ docId, command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 } });
-    const hostsBefore = childProcessIds();
-    if (hostsBefore.length !== 1) throw new Error(`expected exactly one child, the engine host, and found ${String(hostsBefore.length)}`);
-    const firstHost = hostsBefore[0] ?? 0;
+    /** Opens `path` and gives back its id. @param {string} path */
+    const open = async (path) => {
+      next = path;
+      const opened = await handlers['document.open']({});
+      if (opened.ok !== true || opened.value.kind !== 'opened') throw new Error(`${path} did not open: ${JSON.stringify(opened)}`);
+      return opened.value.docId;
+    };
+    /** One rotation, answered as ok or by its error code. @param {import('@monstera/shared').DocId} docId */
+    const rotate = async (docId) => {
+      try {
+        const answer = await handlers['document.execute']({ docId, command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 } });
+        return answer.ok === true ? 'ok' : `${answer.error.code}`;
+      } catch (error) {
+        return `threw:${String(error?.constructor?.name ?? 'Error')}`;
+      }
+    };
+    /** The one engine host's commit, read with the product sampler's own access. */
+    const hostCommit = () => {
+      const ids = childProcessIds();
+      if (ids.length !== 1) throw new Error(`expected exactly one child, the engine host, and found ${String(ids.length)}`);
+      return readWithProductAccess(ids[0] ?? 0);
+    };
 
-    // ONE READ WITH THE PRODUCT SAMPLER'S OWN ACCESS (memorySamplerWorker.ts: PROCESS_QUERY_LIMITED_INFORMATION |
-    // PROCESS_TERMINATE), and the Windows error if it is refused — because on CI's runner the sampler once watched
-    // nothing while this harness's own reader, holding PROCESS_VM_READ as well, read the host's commit.
-    const productRead = CELL === 'control' ? readWithProductAccess(firstHost) : null;
-    // THE CONTROL MEASURES the host's commit through the save, on its own thread; its first reading is taken before the
-    // save starts, so it is the commit with the document open.
-    /** @type {{ first: number, peak: number, samples: number } | null} */
-    let measured = null;
-    /** @type {(() => Promise<void>) | null} */
-    let stopMeasuring = null;
+    /** @type {Record<string, unknown>} */
+    const report = { cell: CELL, killAtBytes: CELL === 'kill' ? KILL_AT_BYTES : budget.ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES - budget.HOST_MEMORY_SAMPLING.headroomBytes };
     if (CELL === 'control') {
-      const stop = new SharedArrayBuffer(4);
-      const worker = new Worker(join(ROOT, 'scripts', 'research', 'hostMemoryPeakWorker.mjs'), { workerData: { root: ROOT, pid: firstHost, stop } });
-      /** @type {Promise<{ first: number, peak: number, samples: number }>} */
-      const done = new Promise((resolve, reject) => {
-        worker.on('message', (/** @type {any} */ message) => {
-          if (message.kind === 'done') resolve(message);
-        });
-        worker.once('error', reject);
-      });
-      await new Promise((resolve, reject) => {
-        worker.on('message', (/** @type {any} */ message) => resolve(message));
-        worker.once('error', reject);
-      });
-      stopMeasuring = async () => {
-        Atomics.store(new Int32Array(stop), 0, 1);
-        Atomics.notify(new Int32Array(stop), 0);
-        measured = await done;
-      };
+      // THE TWO LEVELS, each read once the document's session is held, so each is a commit that STAYS — the light
+      // document alone, then with the heavy one beside it. A sampler every 100 ms sees a level; it may miss a spike.
+      const lightId = await open(light);
+      report['lightRotated'] = await rotate(lightId);
+      await sleep(1000);
+      const lightLevel = hostCommit();
+      const heavyId = await open(heavy);
+      report['heavyRotated'] = await rotate(heavyId);
+      await sleep(1000);
+      const heavyLevel = hostCommit();
+      report['productRead'] = heavyLevel;
+      report['measured'] = { first: lightLevel.privateBytes, peak: heavyLevel.privateBytes, samples: lightLevel.read && heavyLevel.read ? 2 : 0 };
+    } else {
+      // THE HEAVY DOCUMENT ALONE: opening it creates its session, which holds the host above the threshold. The shell
+      // tries a document's session twice and then poisons it (onDocumentOpened, ADR-0023 Decision 9a), so it is
+      // asked until it answers document-poisoned or the wait runs out — never for ever.
+      const heavyId = await open(heavy);
+      /** @type {string[]} */
+      const answers = [];
+      const began = Date.now();
+      while (Date.now() - began < 30_000) {
+        const answer = await rotate(heavyId);
+        answers.push(answer);
+        if (answer === 'document-poisoned') break;
+        await sleep(1000);
+      }
+      report['heavyAnswers'] = answers;
+      // AND THEN A LIGHT DOCUMENT, opened afterwards so it has no part in the heavy one's deaths: a host serves it.
+      const lightId = await open(light);
+      report['lightAfter'] = await rotate(lightId);
+      report['lightRotationAfter'] = await firstPageRotation(handlers, lightId);
     }
-    /** @type {{ ok: boolean, code: string | null }} */
-    let saved;
-    try {
-      const answer = await handlers['document.save']({ docId, breakSignatures: false });
-      saved = { ok: answer.ok === true, code: answer.ok === true ? null : `${answer.error.code}` };
-    } catch (error) {
-      saved = { ok: false, code: `threw:${String(error?.constructor?.name ?? 'Error')}` };
-    }
-    await stopMeasuring?.();
-
-    const firstGone = await waitForChildren((ids) => !ids.includes(firstHost), CELL === 'kill' ? DEATH_BUDGET_MS : 0);
-    /** @type {{ ids: number[], settled: boolean }} */
-    let rebuilt = { ids: [], settled: false };
-    if (CELL === 'kill') rebuilt = await waitForChildren((ids) => ids.some((id) => id !== firstHost), REBUILD_BUDGET_MS);
-    const rotationAfter = await firstPageRotation(handlers, docId);
-
-    writeFileSync(
-      REPORT_PATH,
-      `${JSON.stringify({
-        cell: CELL,
-        killAtBytes: CELL === 'kill' ? KILL_AT_BYTES : budget.ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES - budget.HOST_MEMORY_SAMPLING.headroomBytes,
-        measured,
-        productRead,
-        rotated: rotated?.ok === true,
-        saved,
-        logged,
-        fileUntouched: digest(document) === before,
-        firstHostGone: firstGone.settled,
-        newHost: rebuilt.ids.find((id) => id !== firstHost) ?? 0,
-        rotationAfter,
-      })}\n`,
-      'utf8',
-    );
+    report['logged'] = logged;
+    report['heavyUntouched'] = digest(heavy) === before;
+    writeFileSync(REPORT_PATH, `${JSON.stringify(report)}\n`, 'utf8');
     await teardown(scratch);
     process.exit(0);
   } catch (error) {
