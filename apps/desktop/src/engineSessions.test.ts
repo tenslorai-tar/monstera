@@ -12,6 +12,8 @@ import {
   DocumentService,
   EngineDocumentLocked,
   EngineOpenFailed,
+  HostConnectionLost,
+  type HostEnding,
   type HostTermination,
   type MupdfSession,
 } from '@monstera/kernel';
@@ -27,6 +29,7 @@ import type { DocumentSessions } from './documentCommands.js';
 import {
   type DocumentOpenSurfaces,
   EngineSessions,
+  endingCountsAgainst,
   type HostDeathSurfaces,
   onDocumentOpened,
   onEngineHostEnded,
@@ -120,117 +123,114 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     expect(engine.held).toBe(0);
   });
 
-  it('one host failure is not enough, and the SECOND is', () => {
+  it('one ending of its own is not enough, and the SECOND is', () => {
     // The counts are spelt out rather than computed from the bound. The bound
     // is a decision (ADR-0023 Decision 9a) and these two lines are what pins
     // it: derived from the constant, they would agree with any value it took.
     const engine = new EngineSessions();
     engine.hold(first, someSessions('a'));
 
-    engine.recordFailure([first], 'host-death');
+    engine.recordEnding([first], first);
     expect(engine.poisoned(first)).toBeUndefined();
 
-    engine.recordFailure([first], 'host-death');
+    engine.recordEnding([first], first);
     expect(engine.poisoned(first)).toBe(2);
   });
 
-  it('an unreadable document reaches the bound in ONE call, where a host death needs two', () => {
+  it('POISON reaches the bound in ONE call, where an ending of its own needs two', () => {
     const engine = new EngineSessions();
     engine.hold(first, someSessions('a'));
     engine.hold(second, someSessions('b'));
 
-    // The pair is the point. Both lines are one call with one argument
-    // different, so the reason is the only thing that can explain the two
-    // outcomes — and a version that ignored the reason would make them agree.
-    engine.recordFailure([first], 'document-unreadable');
-    engine.recordFailure([second], 'host-death');
+    // The pair is the point: one call each, and only the method explains the two outcomes.
+    engine.poison(first);
+    engine.recordEnding([second], second);
 
     expect(engine.poisoned(first)).toBe(2);
     expect(engine.poisoned(second)).toBeUndefined();
+    expect(engine.sessions(first)).toStrictEqual({});
   });
 
   it('never moves a count DOWNWARD, so this is not a route back from poisoned', () => {
     const engine = new EngineSessions();
     engine.hold(first, someSessions('a'));
-    engine.recordFailure([first], 'host-death');
-    engine.recordFailure([first], 'host-death');
-    engine.recordFailure([first], 'host-death');
+    engine.recordEnding([first], first);
+    engine.recordEnding([first], first);
+    engine.recordEnding([first], first);
     expect(engine.poisoned(first)).toBe(3);
 
     // A bare assignment to the bound would read 2 here, which still says
     // "poisoned" — so the assertion is the NUMBER rather than the state, for
     // the same reason as everything else on this page.
-    engine.recordFailure([first], 'document-unreadable');
+    engine.poison(first);
     expect(engine.poisoned(first)).toBe(3);
   });
 
-  it('a death takes the sessions with it, because the process holding them is gone', () => {
-    const engine = new EngineSessions();
-    engine.hold(first, someSessions('a'));
-    expect(engine.sessions(first)).toStrictEqual(someSessions('a'));
-
-    engine.recordFailure([first], 'host-death');
-
-    // Not merely absent from the poisoned document — absent after ONE death,
-    // which is the case a rebuild recovers from. A handle surviving here is one
-    // a queued command finds and calls into a process that no longer exists.
-    expect(engine.sessions(first)).toStrictEqual({});
-    expect(engine.poisoned(first)).toBeUndefined();
-  });
-
-  it('RESET ON SUCCESS is what stops the innocent being poisoned', () => {
-    // The load-bearing case for the plain counter. One host per engine means a
-    // death rejects calls for documents that had nothing to do with it; this is
-    // the sequence that separates them from the one that keeps killing hosts.
-    //
-    // The fixture is chosen so the defect cannot also produce the expected
-    // answer: without the reset, fail-succeed-fail is two failures and poisons.
-    const engine = new EngineSessions();
-    engine.hold(first, someSessions('a'));
-
-    engine.recordFailure([first], 'host-death');
-    engine.recordSuccess(first);
-    engine.recordFailure([first], 'host-death');
-
-    expect(engine.poisoned(first)).toBeUndefined();
-  });
-
-  it('a death increments EVERY document that had a call rejected, not one', () => {
+  it('an ending takes EVERY held document’s sessions with it, because the process holding them is gone', () => {
     const engine = new EngineSessions();
     engine.hold(first, someSessions('a'));
     engine.hold(second, someSessions('b'));
 
-    engine.recordFailure([first, second], 'host-death');
-    engine.recordFailure([first, second], 'host-death');
+    engine.recordEnding([first, second], first);
 
-    expect(engine.poisoned(first)).toBe(2);
-    expect(engine.poisoned(second)).toBe(2);
+    // Not merely absent from the document that caused it — absent from both,
+    // after ONE ending, which is the case a rebuild recovers from. A handle
+    // surviving here is one a queued command finds and calls into a process
+    // that no longer exists.
+    expect(engine.sessions(first)).toStrictEqual({});
+    expect(engine.sessions(second)).toStrictEqual({});
   });
 
-  it('THE RESIDUAL, PINNED: a document that caused neither death is poisoned anyway', () => {
-    // Decision 9a's DDDD-17 correction, asserted rather than described, so
-    // nobody quietly "fixes" a decided open residual and finds out later that
-    // the repair was 9a's rejected attribution.
-    //
-    // `second` is busy at both deaths and causes neither — it never gets a
-    // success in between, which is the condition it was in, so reset-on-success
-    // cannot save it. What repairs it is close-and-reopen, which arrives here
-    // as a fresh id with no entry.
+  it('an ending counts against the document whose call the host was running, and NO OTHER (P3)', () => {
+    // ADR-0023's correction of 2026-10-03. This counted every held document, so
+    // `second` — open the whole time, causing neither ending — was poisoned
+    // with `first`: the live review's P3. The fixture is the one the defect
+    // fails: both documents in the held set at both endings.
     const engine = new EngineSessions();
     engine.hold(first, someSessions('guilty'));
     engine.hold(second, someSessions('innocent'));
 
-    engine.recordFailure([first, second], 'host-death');
-    engine.recordFailure([first, second], 'host-death');
+    engine.recordEnding([first, second], first);
+    engine.recordEnding([first, second], first);
 
-    expect(engine.poisoned(second)).toBe(2);
+    expect(engine.poisoned(first)).toBe(2);
+    expect(engine.poisoned(second)).toBeUndefined();
+  });
+
+  it('CONTROL: an ending with NO document’s call running counts against nobody, and still drops every session', () => {
+    // The direction a broken count fails safe in would be counting everyone; this asserts the other half of the
+    // rule: undefined is "none", not "all".
+    const engine = new EngineSessions();
+    engine.hold(first, someSessions('a'));
+    engine.hold(second, someSessions('b'));
+
+    engine.recordEnding([first, second], undefined);
+    engine.recordEnding([first, second], undefined);
+
+    expect(engine.poisoned(first)).toBeUndefined();
+    expect(engine.poisoned(second)).toBeUndefined();
+    expect(engine.sessions(first)).toStrictEqual({});
+  });
+
+  it('NO RESET: two endings of a document’s own poison it whatever it answered between them', () => {
+    // Reset-on-success was withdrawn (ADR-0023, 2026-10-03): with the count exact it could only undo a correct one, and
+    // a document whose command ends the host, then answers a read, then ends it again would never reach the bound.
+    // There is no success to record — the method is gone — so what is pinned is that nothing between the two endings
+    // brings the first back down: a hold, which a rebuild's reopen does.
+    const engine = new EngineSessions();
+    engine.hold(first, someSessions('a'));
+    engine.recordEnding([first], first);
+    engine.hold(first, someSessions('reopened'));
+    engine.recordEnding([first], first);
+
+    expect(engine.poisoned(first)).toBe(2);
   });
 
   it('RECOVERY needs no mechanism: a fresh DocId has no entry', async () => {
     const engine = new EngineSessions();
     engine.hold(first, someSessions('a'));
-    engine.recordFailure([first], 'host-death');
-    engine.recordFailure([first], 'host-death');
+    engine.recordEnding([first], first);
+    engine.recordEnding([first], first);
     expect(engine.poisoned(first)).toBe(2);
 
     // Close: the entry's lifetime is the record's. Driven directly here; that
@@ -356,8 +356,8 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     engine.hold(first, someSessions('a'));
     await engine.releaseOnClose(first);
 
-    engine.recordFailure([first], 'host-death');
-    engine.recordFailure([first], 'host-death');
+    engine.recordEnding([first], first);
+    engine.recordEnding([first], first);
 
     expect(engine.poisoned(first)).toBeUndefined();
     expect(engine.held).toBe(0);
@@ -368,8 +368,8 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     // first and refuses — and a supervisor whose two answers disagree.
     const engine = new EngineSessions();
     engine.hold(first, someSessions('a'));
-    engine.recordFailure([first], 'host-death');
-    engine.recordFailure([first], 'host-death');
+    engine.recordEnding([first], first);
+    engine.recordEnding([first], first);
 
     expect(() => {
       engine.hold(first, someSessions('b'));
@@ -379,17 +379,44 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
   it('holding again replaces the sessions and leaves the count alone', () => {
     const engine = new EngineSessions();
     engine.hold(first, someSessions('a'));
-    engine.recordFailure([first], 'host-death');
+    engine.recordEnding([first], first);
 
     engine.hold(first, someSessions('b'));
 
     // The death above cleared them; this is the rebuild putting them back.
     expect(engine.sessions(first)).toStrictEqual(someSessions('b'));
-    // CONTROL for the case above: a `hold` that reset the count would make the
-    // reset-on-success case pass for the wrong reason, since a rebuild holds
-    // sessions again on the way back.
-    engine.recordFailure([first], 'host-death');
+    // A `hold` that reset the count would be reset-on-success arriving by the
+    // back door: a rebuild holds sessions again on the way back, so the
+    // document that caused the ending would start again at zero.
+    engine.recordEnding([first], first);
     expect(engine.poisoned(first)).toBe(2);
+  });
+});
+
+describe('whom a host’s ending counts against (ADR-0023, corrected 2026-10-03)', () => {
+  const at = (code: HostTermination['code'], during: DocId | undefined, last: DocId | undefined): HostEnding => ({
+    termination: { code, detail: 'x' },
+    during,
+    last,
+  });
+
+  it('the document whose call the host was running, for a crash, a deadline and a memory kill alike', () => {
+    for (const code of ['connection-lost', 'deadline', 'memory-budget'] as const) {
+      expect(endingCountsAgainst(at(code, first, first)), code).toBe(first);
+    }
+  });
+
+  it('with no call running, a MEMORY KILL counts against the last call’s document — and nothing else does', () => {
+    // A session holds its memory after the call that grew it has ended; counted against nobody, a document whose
+    // session alone holds the host over the threshold would be killed and reopened for ever (the addendum).
+    expect(endingCountsAgainst(at('memory-budget', undefined, first))).toBe(first);
+    // CONTROL, the same two values on another ending: the host ended from outside a call, which no document caused.
+    expect(endingCountsAgainst(at('connection-lost', undefined, first))).toBeUndefined();
+    expect(endingCountsAgainst(at('deadline', undefined, first))).toBeUndefined();
+  });
+
+  it('a deliberate close counts against nobody, even with a call on the wire', () => {
+    expect(endingCountsAgainst(at('shutdown', first, first))).toBeUndefined();
   });
 });
 
@@ -537,6 +564,7 @@ describe('a host death is reported, and every document is put back through its o
         return Promise.resolve(someSessions(`reopened-${docId.slice(0, 4)}`));
       },
       closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
+      hostEnded: (error) => error instanceof HostConnectionLost,
       ...over,
     };
   }
@@ -550,12 +578,15 @@ describe('a host death is reported, and every document is put back through its o
     detail: 'the reader stopped producing bytes',
   };
 
+  /** That ending, with `during` the document whose call the host was running, which was also the last call sent. */
+  const ended = (during?: DocId): HostEnding => ({ termination: died, during, last: during });
+
   it('reports the death on the shell sink as its OWN event, not as a child process', async () => {
     const engine = new EngineSessions();
     const { service, first } = await twoOpenDocuments(engine);
     const surface = surfaces(service);
 
-    await onEngineHostEnded(engine, died, surface);
+    await onEngineHostEnded(engine, ended(), surface);
 
     expect(surface.reported[0]?.event).toBe('engine-host-gone');
     expect(surface.reported[0]?.detail).toContain('connection-lost');
@@ -570,7 +601,7 @@ describe('a host death is reported, and every document is put back through its o
     const { service } = await twoOpenDocuments(engine);
     const surface = surfaces(service);
 
-    await onEngineHostEnded(engine, { code: 'shutdown', detail: 'closed' }, surface);
+    await onEngineHostEnded(engine, { termination: { code: 'shutdown', detail: 'closed' }, during: undefined, last: undefined }, surface);
 
     expect(surface.reported[0]?.detail).toContain('nothing here is a fault');
     expect(surface.rebuilds).toStrictEqual([]);
@@ -581,7 +612,7 @@ describe('a host death is reported, and every document is put back through its o
     const { service } = await twoOpenDocuments(engine);
     const surface = surfaces(service);
 
-    await onEngineHostEnded(engine, died, surface);
+    await onEngineHostEnded(engine, ended(), surface);
 
     // One host per engine (Decision 9c). Two documents, one rebuild.
     expect(surface.rebuilds).toStrictEqual([1]);
@@ -601,7 +632,7 @@ describe('a host death is reported, and every document is put back through its o
     });
     const surface = surfaces(service, { rebuild: () => held });
 
-    const recovering = onEngineHostEnded(engine, died, surface);
+    const recovering = onEngineHostEnded(engine, ended(), surface);
 
     // Issued while the rebuild is still outstanding, so it can only run after.
     const seen: DocumentSessions[] = [];
@@ -619,12 +650,12 @@ describe('a host death is reported, and every document is put back through its o
   it('a POISONED document is not rebuilt for, and the others still are', async () => {
     const engine = new EngineSessions();
     const { service, first, second } = await twoOpenDocuments(engine);
-    // One prior death for `first` only, so this death is its second.
-    engine.recordFailure([first], 'host-death');
+    // One prior ending caused by `first`, so this one — `first`'s call again — is its second.
+    engine.recordEnding([first], first);
     engine.hold(first, someSessions('a'));
     const surface = surfaces(service);
 
-    await onEngineHostEnded(engine, died, surface);
+    await onEngineHostEnded(engine, ended(first), surface);
 
     // THE ASSERTION IS THE DECISION, NOT THE RESULTING STATE, and the first
     // version of this case got that wrong. It asserted `sessions(first)` was
@@ -653,7 +684,7 @@ describe('a host death is reported, and every document is put back through its o
       },
     });
 
-    const recovering = onEngineHostEnded(engine, died, surface);
+    const recovering = onEngineHostEnded(engine, ended(), surface);
     // QUEUED AFTER THE DEATH: it can only run once the rebuild's lane entry — reopen AND replay — has finished.
     const later = service.run(first, () => {
       order.push('later command on first');
@@ -673,7 +704,7 @@ describe('a host death is reported, and every document is put back through its o
       replay: (docId) => (docId === first ? Promise.reject(new Error('rotate would not re-apply')) : Promise.resolve(0)),
     });
 
-    await onEngineHostEnded(engine, died, surface);
+    await onEngineHostEnded(engine, ended(), surface);
 
     // REFUSED AT ONCE: a failed replay is deterministic — the same entries onto the same image — so it goes straight
     // to the bound rather than being retried at the next death.
@@ -695,7 +726,7 @@ describe('a host death is reported, and every document is put back through its o
         docId === first ? Promise.reject(new DocumentNotOpenError(first, 'replay')) : Promise.resolve(0),
     });
 
-    await onEngineHostEnded(engine, died, surface);
+    await onEngineHostEnded(engine, ended(), surface);
 
     expect(engine.poisoned(first)).toBeUndefined();
     expect(surface.reported.filter((failure) => failure.detail.includes('could not be restored'))).toStrictEqual([]);
@@ -737,7 +768,7 @@ describe('a host death is reported, and every document is put back through its o
     const closing = service.close(first);
     expect(engine.documentIds()).toContain(first);
 
-    const recovering = onEngineHostEnded(engine, died, surface);
+    const recovering = onEngineHostEnded(engine, ended(), surface);
     releaseWork();
     await Promise.all([busy, closing, recovering]);
 
@@ -747,6 +778,60 @@ describe('a host death is reported, and every document is put back through its o
     expect(engine.sessions(second)).toStrictEqual(someSessions(`reopened-${second.slice(0, 4)}`));
   });
 
+  it('P3: two endings caused by ONE document poison it, and the OTHER, open the whole time, is rebuilt and works', async () => {
+    // The live review's P3, and its control is this same case before ADR-0023's correction of 2026-10-03: the
+    // handler counted every held document, and `second` read `poisoned: 2` here, having caused neither ending.
+    const engine = new EngineSessions();
+    const { service, first, second } = await twoOpenDocuments(engine);
+    const surface = surfaces(service);
+
+    await onEngineHostEnded(engine, ended(first), surface);
+    await onEngineHostEnded(engine, ended(first), surface);
+
+    expect(engine.poisoned(first)).toBe(2);
+    expect(engine.poisoned(second)).toBeUndefined();
+    // REBUILT AT BOTH ENDINGS, and `first` only at the first: its second ending poisoned it.
+    expect(surface.reopened).toStrictEqual([first, second, second]);
+    // AND IT WORKS: a command after both endings finds its rebuilt session in its lane.
+    const seen: DocumentSessions[] = [];
+    await service.run(second, () => {
+      seen.push(engine.sessions(second) ?? {});
+      return Promise.resolve();
+    });
+    expect(seen).toStrictEqual([someSessions(`reopened-${second.slice(0, 4)}`)]);
+  });
+
+  it('a replay the host ENDED under is not replay-failed: nothing is poisoned and nothing is reported for it', async () => {
+    // The replay runs on the rebuilt host; if THAT host ends — another document's call, say — the replay rejects with
+    // the ending. Counting it as `replay-failed` went straight to the bound, poisoning a document that did nothing.
+    const engine = new EngineSessions();
+    const { service, first } = await twoOpenDocuments(engine);
+    const surface = surfaces(service, {
+      replay: (docId) =>
+        docId === first
+          ? Promise.reject(new HostConnectionLost({ code: 'connection-lost', detail: 'the rebuilt host ended' }))
+          : Promise.resolve(0),
+    });
+
+    await onEngineHostEnded(engine, ended(), surface);
+
+    expect(engine.poisoned(first)).toBeUndefined();
+    expect(surface.reported).toHaveLength(1);
+  });
+
+  it('CONTROL: a replay that fails for its own reason IS still replay-failed', async () => {
+    // Without this, a handler that swallowed every replay failure would pass the case above.
+    const engine = new EngineSessions();
+    const { service, first } = await twoOpenDocuments(engine);
+    const surface = surfaces(service, {
+      replay: (docId) => (docId === first ? Promise.reject(new Error('rotate would not re-apply')) : Promise.resolve(0)),
+    });
+
+    await onEngineHostEnded(engine, ended(), surface);
+
+    expect(engine.poisoned(first)).toBe(2);
+  });
+
   it('CONTROL: a reopen that genuinely fails IS reported, so silence above means something', async () => {
     const engine = new EngineSessions();
     const { service } = await twoOpenDocuments(engine);
@@ -754,7 +839,7 @@ describe('a host death is reported, and every document is put back through its o
       reopen: () => Promise.reject(new Error('the rebuilt host refused this document')),
     });
 
-    await onEngineHostEnded(engine, died, surface);
+    await onEngineHostEnded(engine, ended(), surface);
 
     expect(surface.reported).toHaveLength(3);
     expect(surface.reported[1]?.detail).toContain('reopen failed');
@@ -869,6 +954,7 @@ describe('onDocumentOpened', () => {
       documents: service,
       failures: (failure) => reported.push(failure),
       closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
+      hostEnded: (error) => error instanceof HostConnectionLost,
       documentUnreadable: (error) => error instanceof EngineOpenFailed,
       documentLocked: (error) =>
         error instanceof EngineDocumentLocked ? error.reason : undefined,
@@ -928,7 +1014,7 @@ describe('onDocumentOpened', () => {
     expect(heldWhenCreationRan).toBe(1);
   });
 
-  it('retries once after a transient failure, and the count resets on the success', async () => {
+  it('retries once after a failure with no ending to blame, and counts NOTHING against the document for it', async () => {
     const engine = new EngineSessions();
     const { service, docId } = await oneOpenDocument(engine);
     const s = openSurfaces(service, 1);
@@ -940,6 +1026,30 @@ describe('onDocumentOpened', () => {
     // leave it poisoned — both are end states this call count separates.
     expect(s.created).toHaveLength(2);
     expect(engine.sessioned).toBe(1);
+    expect(engine.poisoned(docId)).toBeUndefined();
+    expect(s.reported).toEqual([]);
+    // THE ATTEMPT WAS NOT THE DOCUMENT'S: one ending of its own later is one, not the second. Counted in the
+    // supervisor, the failed build would have poisoned it here.
+    engine.recordEnding([docId], docId);
+    expect(engine.poisoned(docId)).toBeUndefined();
+  });
+
+  it('a creation rejected by a host ENDING counts nothing and does not retry: the death handler owns it (P3)', async () => {
+    // The ending was counted — against the document whose call the host was running — as the connection ended, and a
+    // reopen was queued in this document's lane. Counting it here counted one ending twice, and when another
+    // document's call had ended the host, poisoned this one at once.
+    const engine = new EngineSessions();
+    const { service, docId } = await oneOpenDocument(engine);
+    const s = openSurfaces(
+      service,
+      Number.POSITIVE_INFINITY,
+      {},
+      () => new HostConnectionLost({ code: 'connection-lost', detail: 'another document’s call ended the host' }),
+    );
+
+    await onDocumentOpened(engine, docId, s);
+
+    expect(s.created).toHaveLength(1);
     expect(engine.poisoned(docId)).toBeUndefined();
     expect(s.reported).toEqual([]);
   });

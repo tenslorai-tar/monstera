@@ -11,9 +11,10 @@
  *
  * - **CONTROL**, the shell's own threshold: a light document, then the 64 MiB heavy one beside it, both served — so the
  *   kill cell's ending is the sampler's. It MEASURES the host's commit at both levels, on this machine.
- * - **kill**, the threshold halfway between: the heavy document alone. The log names `memory-budget`, the document ends
- *   refused (`document-poisoned`, after Decision 9a's two attempts) rather than tried for ever, its file is untouched,
- *   and a light document opened afterwards is served by a new host.
+ * - **kill**, the threshold halfway between: a light document, open the whole time, then the heavy one. The log names
+ *   `memory-budget`, the heavy document ends refused (`document-poisoned`, after Decision 9a's two endings of its own)
+ *   rather than tried for ever, its file is untouched, and the light document — the cause of no ending — is served by a
+ *   new host (P3, ADR-0023's correction of 2026-10-03).
  *
  * A first case requires at least 64 MiB between the two levels, so a machine where no threshold fits says so instead of
  * failing at a later case.
@@ -55,7 +56,7 @@ const CASES = [
   'the shell logged a host ending as memory-budget, and no ending under any other name',
   'the heavy document ended refused — document-poisoned — and was not tried for ever',
   'the heavy document’s file on disk is untouched',
-  'a light document opened afterwards is served by a new host, and its rotation reads back',
+  'P3: the light document, open the whole time and the cause of no ending, is served by a new host and its rotation reads back',
   'CONTROL: under the shell’s own threshold both documents are served and nothing is logged',
   'CONTROL: and both harness processes exited cleanly',
 ];
@@ -156,11 +157,13 @@ if (!runnable) {
   );
   check(CASES[2] ?? '', heavyAnswers.at(-1) === 'document-poisoned', `the heavy document answered ${JSON.stringify(heavyAnswers)}`);
   check(CASES[3] ?? '', seen.heavyUntouched === true, 'the heavy document’s file changed');
-  // 90: one rotation, made after the heavy document's deaths, read back.
+  // 0 before; 90 after: one rotation, made after the heavy document's endings, read back. The control is this case
+  // before ADR-0023's correction of 2026-10-03, where every held document was counted and this one was poisoned too.
   check(
     CASES[4] ?? '',
-    seen.lightAfter === 'ok' && seen.lightRotationAfter === 90,
-    `the light document rotated ${JSON.stringify(seen.lightAfter)} and reads ${JSON.stringify(seen.lightRotationAfter)}`,
+    seen.lightBefore === 0 && seen.lightAfter === 'ok' && seen.lightRotationAfter === 90,
+    `the light document read ${JSON.stringify(seen.lightBefore)} before, rotated ${JSON.stringify(seen.lightAfter)} and ` +
+      `reads ${JSON.stringify(seen.lightRotationAfter)}`,
   );
   check(
     CASES[5] ?? '',

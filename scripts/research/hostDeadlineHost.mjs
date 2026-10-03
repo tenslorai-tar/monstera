@@ -10,22 +10,26 @@
  * Two cells, chosen by the first argument, differing in ONE value — the shell's `hostCallDeadline`:
  *
  * - `deadline`: a 4 s floor. The frozen call must end within the deadline, a new host appear, and the document answer
- *   a command again with what it held.
+ *   a command again with what it held. Then the same again, and that second deadline of the document's own poisons it.
  * - `control`: a 10-minute floor, the same freeze. The call must still be waiting when the deadline cell's would long
  *   have ended — which is the wedge the deadline exists to end, reproduced.
+ *
+ * In both, a BYSTANDER document is opened first and stays open throughout, making no call of its own while the
+ * other's are frozen: two deadlines ended under the frozen document's calls, and none counts against the bystander
+ * (ADR-0023's correction of 2026-10-03, the live review's P3). The deadline cell asks it to rotate at the end.
  *
  * Usage (under the Electron binary in Node mode, from the driver): hostDeadlineHost.mjs <deadline|control> <report>
  */
 
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { freezeHost } from './freezeHost.mjs';
 
 const ROOT = repoRoot();
 const CELL = process.argv[2] ?? '';
@@ -86,26 +90,6 @@ async function waitForChildren(settled, budgetMs) {
   }
 }
 
-/**
- * Suspends every thread of `pid`. A harness's fault injection: `NtSuspendProcess` is what a debugger's break does.
- *
- * @param {number} pid
- */
-function freeze(pid) {
-  const koffi = createRequire(join(ROOT, 'package.json'))('koffi');
-  const kernel32 = koffi.load('kernel32.dll');
-  const ntdll = koffi.load('ntdll.dll');
-  const openProcess = kernel32.func('void *OpenProcess(uint32 access, bool inherit, uint32 pid)');
-  const suspend = ntdll.func('int32 NtSuspendProcess(void *process)');
-  const closeHandle = kernel32.func('bool CloseHandle(void *handle)');
-  const PROCESS_SUSPEND_RESUME = 0x0800;
-  const handle = openProcess(PROCESS_SUSPEND_RESUME, false, pid);
-  if (koffi.address(handle) === 0n) throw new Error(`OpenProcess refused the host ${String(pid)}`);
-  const status = suspend(handle);
-  closeHandle(handle);
-  if (status !== 0) throw new Error(`NtSuspendProcess answered 0x${(status >>> 0).toString(16)}`);
-}
-
 /** @param {string} relative @returns {Promise<any>} */
 function built(relative) {
   return import(pathToFileURL(join(ROOT, relative)).href);
@@ -162,6 +146,10 @@ async function main() {
     const source = buildLargeFixture({ root: ROOT, targetBytes: 64 * 1024, pages: 1, name: 'perf-baseline.pdf' }).path;
     const document = join(scratch, 'frozen.pdf');
     copyFileSync(source, document);
+    const bystanderFile = join(scratch, 'bystander.pdf');
+    copyFileSync(source, bystanderFile);
+    /** What `document.open` picks next: the bystander, then the document the freezes are made under. */
+    const picks = [bystanderFile, document];
     const sessionRoot = join(scratch, 'engine-sessions');
     mkdirSync(sessionRoot, { recursive: true });
     const platform = platformModule.createEngineHostPlatform(sessionRoot, {
@@ -177,14 +165,20 @@ async function main() {
     const { handlers } = composition.createShellDependencies({
       ...harnessModule.harnessSurfaces('the host-deadline harness'),
       appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
-      pickDocument: () => Promise.resolve(document),
+      pickDocument: () => Promise.resolve(picks.shift() ?? null),
       enginePlatform: platform,
       hostCallDeadline: { floorMs, msPerMiB: 0 },
     });
 
-    const opened = await handlers['document.open']({});
-    if (opened.ok !== true || opened.value.kind !== 'opened') throw new Error(`the document did not open: ${JSON.stringify(opened)}`);
-    const docId = `${opened.value.docId}`;
+    const open = async () => {
+      const opened = await handlers['document.open']({});
+      if (opened.ok !== true || opened.value.kind !== 'opened') throw new Error(`a document did not open: ${JSON.stringify(opened)}`);
+      return `${opened.value.docId}`;
+    };
+    const bystanderId = await open();
+    const docId = await open();
+    // THE BYSTANDER'S SESSION is made before anything is frozen: its lane's first entry, settled by a read through it.
+    const bystanderBefore = await firstPageRotation(handlers, bystanderId);
 
     const first = await rotate(handlers, docId);
     const before = childProcessIds();
@@ -192,7 +186,7 @@ async function main() {
     const frozenPid = before[0] ?? 0;
 
     // THE FREEZE, then a call into it: from `main` this is a host that was sent a call and answers nothing.
-    freeze(frozenPid);
+    freezeHost(frozenPid);
     const sentAt = Date.now();
     /** @type {{ ok: boolean, code: string | null } | null} */
     let frozenCall = null;
@@ -212,11 +206,32 @@ async function main() {
     let rotationAfter = null;
     /** @type {{ ok: boolean, code: string | null } | null} */
     let afterRecovery = null;
+    /** @type {{ ok: boolean, code: string | null } | null} */
+    let afterSecondDeadline = null;
+    /** @type {{ ok: boolean, code: string | null } | null} */
+    let bystanderAfter = null;
+    /** @type {number | string | null} */
+    let bystanderRotation = null;
     if (CELL === 'deadline') {
       oldGone = await waitForChildren((ids) => !ids.includes(frozenPid), DEATH_BUDGET_MS);
       rebuilt = await waitForChildren((ids) => ids.some((id) => id !== frozenPid), REBUILD_BUDGET_MS);
       afterRecovery = await rotate(handlers, docId);
       rotationAfter = await firstPageRotation(handlers, docId);
+      // SETTLED BEFORE THE SECOND FREEZE: the bystander's rebuild — its reopen and replay — runs in its own lane, and a
+      // freeze under one of its calls would make that deadline its own. A read through its lane waits for that entry.
+      await firstPageRotation(handlers, bystanderId);
+
+      // THE SECOND DEADLINE UNDER THE SAME DOCUMENT'S CALL: its second ending of its own, which poisons it.
+      const secondPid = rebuilt.ids.find((id) => id !== frozenPid) ?? 0;
+      if (secondPid > 0) {
+        freezeHost(secondPid);
+        await rotate(handlers, docId);
+        await waitForChildren((ids) => !ids.includes(secondPid), DEATH_BUDGET_MS);
+        afterSecondDeadline = await rotate(handlers, docId);
+      }
+      // AND THE BYSTANDER, open the whole time, is served by the host rebuilt for it.
+      bystanderAfter = await rotate(handlers, bystanderId);
+      bystanderRotation = await firstPageRotation(handlers, bystanderId);
     }
 
     writeFileSync(
@@ -235,6 +250,10 @@ async function main() {
         newPid: rebuilt.ids.find((id) => id !== frozenPid) ?? 0,
         afterRecovery,
         rotationAfter,
+        afterSecondDeadline,
+        bystanderBefore,
+        bystanderAfter,
+        bystanderRotation,
       })}\n`,
       'utf8',
     );

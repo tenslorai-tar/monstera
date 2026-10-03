@@ -447,6 +447,7 @@ export {
   type HostClient,
   type HostClientOptions,
   HostConnectionLost,
+  type HostEnding,
   RequestTooLarge,
   createHostClient,
 } from './host/client.js';

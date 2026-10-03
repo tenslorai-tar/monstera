@@ -976,8 +976,8 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
     // accepted either would separate nothing.
     const poisoned = noSessions();
     poisoned.hold(docId, { mupdf: session });
-    poisoned.recordFailure([docId], 'host-death');
-    poisoned.recordFailure([docId], 'host-death');
+    poisoned.recordEnding([docId], docId);
+    poisoned.recordEnding([docId], docId);
 
     const commands = new DocumentCommands({ ...INERT, documents: service, bus: bus(), engine: poisoned });
 
@@ -1032,8 +1032,8 @@ describe('the view model is the route a mutation reaches the screen by (OOOOO-1)
   it('a POISONED document refuses the READ rather than answering an empty model', async () => {
     const poisoned = new EngineSessions();
     poisoned.hold(docId, { mupdf: session });
-    poisoned.recordFailure([docId], 'host-death');
-    poisoned.recordFailure([docId], 'host-death');
+    poisoned.recordEnding([docId], docId);
+    poisoned.recordEnding([docId], docId);
 
     const commands = new DocumentCommands({ ...LOCAL_READS, documents: service, bus: bus(), engine: poisoned });
 
@@ -1246,8 +1246,8 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       // throws; nothing proved the handler answers.
       const poisoned = new EngineSessions();
       poisoned.hold(docId, { mupdf: session });
-      poisoned.recordFailure([docId], 'host-death');
-      poisoned.recordFailure([docId], 'host-death');
+      poisoned.recordEnding([docId], docId);
+      poisoned.recordEnding([docId], docId);
       const commands = new DocumentCommands({ ...LOCAL_READS, documents: service, bus: bus(), engine: poisoned });
 
       const result = await wrappedRead(commands)({ docId, pages: [0] });
@@ -2223,8 +2223,8 @@ describe('search is E2s first consumer, through the composition point', () => {
     // the real component cannot produce.
     const poisonedHost = new EngineSessions();
     poisonedHost.hold(searchable, { mupdf: searchSession });
-    poisonedHost.recordFailure([searchable], 'host-death');
-    poisonedHost.recordFailure([searchable], 'host-death');
+    poisonedHost.recordEnding([searchable], searchable);
+    poisonedHost.recordEnding([searchable], searchable);
     const commands = new DocumentCommands({
       ...LOCAL_READS,
       documents: searchService,

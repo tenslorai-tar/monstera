@@ -682,6 +682,69 @@ describe('the composition root, with an engine host platform', () => {
     expect(opens).toHaveLength(2);
   });
 
+  it('P3: a host that ends twice under ONE document’s command poisons that document, and the OTHER keeps working', async () => {
+    // THROUGH THE COMPOSITION ROOT, the code between the client that knows which call was on the wire and the handler
+    // that counts it: which lane a call was made in, the connection's ending, and `onEngineHostEnded`. The control is
+    // this same case before ADR-0023's correction of 2026-10-03: the second document answered `document-poisoned`.
+    const paths = [aDocument('guilty.pdf'), aDocument('bystander.pdf')];
+    let next = 0;
+    let opened = 0;
+    // WHILE SET, an apply is taken and never answered: the case ends the host under it, as a crash would.
+    const crash = { armed: false };
+    const spy = platformAnswering((channel, params) => {
+      if (channel === 'engine/open') return { ok: true, value: { session: `ab0${String(opened++)}`, access: 1 } };
+      if (channel === 'engine/apply' && crash.armed) return null;
+      return ENGINE(channel, params);
+    });
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(paths[next++] ?? null),
+      enginePlatform: spy.platform,
+    });
+    const guilty = await handlers['document.open']({});
+    const bystander = await handlers['document.open']({});
+    if (!guilty.ok || guilty.value.kind !== 'opened') throw new Error('the first did not open');
+    if (!bystander.ok || bystander.value.kind !== 'opened') throw new Error('the second did not open');
+    const rotate = (docId: typeof guilty.value.docId) =>
+      handlers['document.execute']({ docId, command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 } });
+
+    const applies = (): number => spy.harness.calls.filter((call) => call === 'peer.request:engine/apply').length;
+    const outcomes: string[] = [];
+    for (let ending = 0; ending < 2; ending += 1) {
+      // SETTLED FIRST: after an ending each document's lane reopens and REPLAYS its log, and the bystander's replay is
+      // an apply of its own. Ended under that, the ending is the bystander's — rightly — which is how this case was
+      // first written wrong. A command through each lane completes only once that lane's rebuild has; and the guilty
+      // document answering one between its two endings is the withdrawn reset-on-success's case, which must not save it.
+      for (const docId of [guilty.value.docId, bystander.value.docId]) expect((await rotate(docId)).ok).toBe(true);
+      crash.armed = true;
+      const before = applies();
+      const dying = rotate(guilty.value.docId);
+      // THE GUILTY DOCUMENT'S CALL IS ON THE WIRE when the host ends, and nothing else is.
+      await vi.waitFor(() => {
+        expect(applies()).toBe(before + 1);
+      });
+      spy.harness.exit(1);
+      outcomes.push(
+        await dying.then(
+          (answer) => (answer.ok ? 'ok' : answer.error.code),
+          (thrown: unknown) => `threw:${String(thrown)}`,
+        ),
+      );
+      crash.armed = false;
+    }
+    // EACH COMMAND THE DYING HOST TOOK FAILED — thrown to the IPC wrapper, which answers `internal` — and none read ok.
+    expect(outcomes).toHaveLength(2);
+    expect(outcomes.filter((outcome) => !outcome.startsWith('threw:'))).toStrictEqual([]);
+
+    const answered = await rotate(bystander.value.docId);
+    expect(answered.ok).toBe(true);
+    const refused = await rotate(guilty.value.docId);
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.error.code).toBe('document-poisoned');
+  });
+
   it('SHUTDOWN closes the open document and then the host', async () => {
     const spy = platformAnswering((channel) =>
       channel === 'engine/probe-containment'

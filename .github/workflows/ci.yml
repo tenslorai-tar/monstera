@@ -1277,7 +1277,8 @@ jobs:
 
       # A HOST THAT ANSWERS NOTHING IS ENDED BY THE CALL'S DEADLINE (CR-SEC-09; ADR-0023 §3, corrected
       # 2026-10-03): a real host frozen mid-call is killed within a 4 s deadline and the document comes
-      # back with what it held; the control, a 10-minute deadline, is still waiting after 20 s.
+      # back with what it held; a second deadline poisons it, and a bystander open the whole time is still served;
+      # the control, a 10-minute deadline, is still waiting after 20 s.
       - name: A host call past its deadline ends a frozen host, and the document comes back
         run: node scripts/ci/annotate.mjs scripts/research/hostDeadline.mjs --require-containment
 
@@ -1285,7 +1286,7 @@ jobs:
       # corrected 2026-10-03): the control, the shell's own threshold, serves a light document and then a
       # 64 MiB one and measures the host's commit at both levels; with the threshold halfway between, the
       # heavy document's host is killed and logged as memory-budget, the document ends refused, and a light
-      # document opened afterwards is served.
+      # document open the whole time is still served (P3: an ending counts against the document that caused it).
       - name: A host past its memory threshold is ended by the sampler, and the document comes back
         run: node scripts/ci/annotate.mjs scripts/research/hostMemory.mjs --require-containment
 

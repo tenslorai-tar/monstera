@@ -9,7 +9,9 @@
  * with a real contained host and freezes the host mid-call (`hostDeadlineHost.mjs`), in two cells one value apart:
  *
  * - **deadline**, a 4 s floor: the frozen call ends within it, the frozen host is gone, a new one serves the document,
- *   and the rotation made before the freeze is still there.
+ *   and the rotation made before the freeze is still there. A second deadline under the same document's call poisons
+ *   it, and a bystander document open the whole time still answers (P3: an ending counts against the document whose
+ *   call the host was running, and only that one).
  * - **CONTROL**, a 10-minute floor and the same freeze: the call is still waiting after 20 s — the wedge, reproduced,
  *   so the first cell's ending is the deadline's and not something else ending the call.
  *
@@ -49,6 +51,8 @@ const CASES = [
   'the frozen host stopped existing',
   'a NEW host appeared, and the document answers a command again',
   'the document still holds the rotation made before the freeze',
+  'a SECOND deadline under the same document’s call poisons it rather than rebuilding for ever',
+  'P3: the document open the whole time, which caused neither deadline, still answers and holds its own rotation',
   'CONTROL: with a 10-minute deadline the same frozen call is still waiting after the whole watch',
   'CONTROL: and both harness processes exited cleanly',
 ];
@@ -134,6 +138,20 @@ if (!runnable) {
   check(CASES[4] ?? '', seen.rotationAfter === 180, `page 1 reads ${JSON.stringify(seen.rotationAfter)} after recovery, where 180 was expected`);
   check(
     CASES[5] ?? '',
+    seen.afterSecondDeadline?.code === 'document-poisoned',
+    `the rotate after the second deadline answered ${JSON.stringify(seen.afterSecondDeadline)}: ADR-0023 Decision 9a ` +
+      'refuses a document whose own calls ended the host twice, and a shell that never poisoned would loop on it',
+  );
+  // THE LIVE REVIEW'S P3, and its control is this case before ADR-0023's correction of 2026-10-03: every held document
+  // was counted at each ending, so the bystander answered document-poisoned here, having caused neither.
+  check(
+    CASES[6] ?? '',
+    seen.bystanderBefore === 0 && seen.bystanderAfter?.ok === true && seen.bystanderRotation === 90,
+    `the bystander read ${JSON.stringify(seen.bystanderBefore)} before, its rotate after both deadlines answered ` +
+      `${JSON.stringify(seen.bystanderAfter)}, and page 1 then reads ${JSON.stringify(seen.bystanderRotation)} where 90 was expected`,
+  );
+  check(
+    CASES[7] ?? '',
     slow.report.stillWaitingAfterWatch === true && slow.report.frozenCall === null,
     `the control's frozen call settled ${JSON.stringify(slow.report.frozenCall)} after ${String(slow.report.settledAfterMs)} ms with a ` +
       `${String(slow.report.floorMs)} ms deadline — something other than the deadline ends a frozen call, so the first cell proves nothing`,

@@ -2,10 +2,11 @@ import {
   type ClientFileAnswers,
   type HostCallDeadline,
   type HostClient,
+  type HostEnding,
   type HostTermination,
   createHostClient,
 } from '@monstera/kernel';
-import { type Result, err, ok } from '@monstera/shared';
+import { type DocId, type Result, err, ok } from '@monstera/shared';
 
 import {
   type HostPipe,
@@ -121,8 +122,13 @@ export interface EngineHostConnectionOptions {
    * bound is a correctness property and not a tuning knob.
    */
   readonly maxOutstandingWrites: number;
-  /** How many calls may be waiting for an answer. Required, as the client's is. */
+  /** How many calls may be outstanding, sent or waiting their turn. Required, as the client's is. */
   readonly maxInFlight: number;
+  /**
+   * The document a call is for, asked as it is made — `DocumentService.executingDocument`. What an ending is counted
+   * against ({@link HostEnding.during}). Required, as the client's is.
+   */
+  readonly owner: () => DocId | undefined;
   /** The job's `ProcessMemoryLimit`. `ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES`. */
   readonly processMemoryLimitBytes: number;
   /**
@@ -148,9 +154,10 @@ export interface EngineHostConnectionOptions {
    * diagnosable failure with an undiagnosable one.
    *
    * It is called **after** everything has been freed, so a caller may rebuild
-   * inside it without racing this module's teardown.
+   * inside it without racing this module's teardown. It receives why the connection ended and the document whose
+   * call the host was running then.
    */
-  readonly onEnded: (reason: HostTermination) => void;
+  readonly onEnded: (ending: HostEnding) => void;
 }
 
 /** Why a connection was not created. Every one of these leaves nothing running. */
@@ -413,7 +420,11 @@ export async function createEngineHostConnection(
     // ONLY for a connection that started. A host that never came up reports its
     // failure through the returned `Result`, and calling this as well would
     // report one failure twice — as a refusal and as a death.
-    if (state.started) options.onEnded(reason);
+    // THE CAUSE IS THE CLIENT'S, read after `fail` above: the call on the wire when it stopped, whichever stopped it,
+    // and the last call sent. Whom the ending counts against is the supervisor's to decide (`endingCountsAgainst`).
+    if (state.started) {
+      options.onEnded({ termination: reason, during: state.client?.during(), last: state.client?.last() });
+    }
   };
 
   const transport = createHostTransport(channel.channel, queue, {
@@ -424,6 +435,7 @@ export async function createEngineHostConnection(
   const client = createHostClient({
     transport,
     maxInFlight: options.maxInFlight,
+    owner: options.owner,
     correlate: options.correlate,
     deadline: options.deadline,
     ...(options.fileAnswers === undefined ? {} : { fileAnswers: options.fileAnswers }),

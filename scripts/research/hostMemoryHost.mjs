@@ -8,10 +8,10 @@
  * - `control`: the shell's own `HOST_MEMORY_SAMPLING`. A light document, then the 64 MiB heavy one beside it, each
  *   rotated, and no host ends. It MEASURES the two levels, each read with the product sampler's own access once the
  *   document's session is held. The driver puts the kill cell's threshold halfway between.
- * - `kill`: the threshold the driver passes. The heavy document ALONE: its session holds the host above the threshold,
- *   so the shell's log must name `memory-budget`, the document must end refused (`document-poisoned`, after the two
- *   attempts ADR-0023 Decision 9a allows) rather than tried for ever, its file must be untouched, and a light document
- *   opened afterwards must be served.
+ * - `kill`: the threshold the driver passes. A light document first, open the whole time, then the heavy one: its
+ *   session holds the host above the threshold, so the shell's log must name `memory-budget`, the heavy document must
+ *   end refused (`document-poisoned`, after the two endings of its own ADR-0023 Decision 9a allows) rather than tried
+ *   for ever, its file must be untouched, and the light document — which caused no ending — must still be served.
  *
  * WHY A LEVEL AND NOT A SAVE: this measured a save's peak first, and on CI's runner a save that peaked at 388 MiB
  * completed under a 321 MiB threshold (runs 37135035663 and 37138133293) while the product's read of the host
@@ -19,9 +19,12 @@
  * interval can fall between two samples. The sampler is sized for a host that grows and stays grown — the job limit is
  * the backstop for a spike — so the proof now holds the commit up rather than catching a spike by luck.
  *
- * WHY THE KILL CELL OPENS NOTHING FIRST: a host death raises the failure count of EVERY document it held, and nothing
- * resets it (a live review finding, 2026-10-03), so a light document opened first would be poisoned beside the heavy
- * one. Opened afterwards, it shares none of the heavy one's deaths.
+ * WHY THE LIGHT DOCUMENT IS OPENED FIRST AND MAKES NO CALL: it is the live review's P3. A host death raised the count
+ * of every document the host held, so a light document open beside the heavy one was poisoned with it; this cell
+ * opened it only afterwards until ADR-0023's correction of 2026-10-03 counted an ending against the document whose call
+ * the host was running — or, for a memory kill between calls, ran last. The light document is reopened at each
+ * rebuild, ahead of the heavy one (its entry is older), and asked nothing else until the heavy one is refused, so the
+ * calls that grow the host are the heavy document's.
  *
  * Usage (under the Electron binary in Node mode, from the driver): hostMemoryHost.mjs control <report>
  *                                                                  hostMemoryHost.mjs kill <report> <kill-at-bytes>
@@ -268,9 +271,12 @@ async function main() {
       report['productRead'] = heavyLevel;
       report['measured'] = { first: lightLevel.privateBytes, peak: heavyLevel.privateBytes, samples: lightLevel.read && heavyLevel.read ? 2 : 0 };
     } else {
-      // THE HEAVY DOCUMENT ALONE: opening it creates its session, which holds the host above the threshold. The shell
-      // tries a document's session twice and then poisons it (onDocumentOpened, ADR-0023 Decision 9a), so it is
-      // asked until it answers document-poisoned or the wait runs out — never for ever.
+      // THE LIGHT DOCUMENT FIRST, its session made before the heavy one exists: a read through its lane settles it.
+      const lightId = await open(light);
+      report['lightBefore'] = await firstPageRotation(handlers, lightId);
+      // THEN THE HEAVY ONE: opening it creates its session, which holds the host above the threshold. Two endings of
+      // its own poison it (ADR-0023 Decision 9a), so it is asked until it answers document-poisoned or the wait runs
+      // out — never for ever.
       const heavyId = await open(heavy);
       /** @type {string[]} */
       const answers = [];
@@ -282,8 +288,7 @@ async function main() {
         await sleep(1000);
       }
       report['heavyAnswers'] = answers;
-      // AND THEN A LIGHT DOCUMENT, opened afterwards so it has no part in the heavy one's deaths: a host serves it.
-      const lightId = await open(light);
+      // AND THE LIGHT DOCUMENT, open the whole time: the host rebuilt after the heavy one was refused serves it.
       report['lightAfter'] = await rotate(lightId);
       report['lightRotationAfter'] = await firstPageRotation(handlers, lightId);
     }

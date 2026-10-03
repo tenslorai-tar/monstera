@@ -1,4 +1,5 @@
 import { ENGINE_ANSWER_FILE_MAX_BYTES, ENGINE_HOST_FRAME_MAX_BYTES, encodeFrame } from '@monstera/contract';
+import { asDocId, type DocId } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { type HostCallDeadline, type HostClient, HostConnectionLost, RequestTooLarge, createHostClient } from './client.js';
@@ -38,7 +39,7 @@ function manualDeadline(ms = 30_000) {
  * before the rejections — and per-member spies would let those pass against a
  * client that did them backwards.
  */
-function harness(options: { maxInFlight?: number; ids?: string[] } = {}) {
+function harness(options: { maxInFlight?: number; ids?: string[]; owner?: () => DocId | undefined } = {}) {
   const writes: Uint8Array[] = [];
   const terminations: HostTermination[] = [];
   const ids = options.ids ?? [];
@@ -53,6 +54,7 @@ function harness(options: { maxInFlight?: number; ids?: string[] } = {}) {
     maxInFlight: options.maxInFlight ?? 4,
     correlate: () => ids[next++] ?? `id-${String(next)}`,
     deadline: clock.deadline,
+    owner: options.owner ?? (() => undefined),
   });
 
   return {
@@ -112,19 +114,40 @@ describe('createHostClient', () => {
     await expect(next).resolves.toEqual({ ok: true });
   });
 
-  it('resolves each call with ITS answer when they come back out of order', async () => {
+  it('sends ONE call at a time: the next is written only once the one on the wire has settled (ADR-0023, 2026-10-03)', async () => {
     const h = harness({ ids: ['a', 'b'] });
 
     const first = h.client.invoke('one', {});
     const second = h.client.invoke('two', {});
-    // OUT OF ORDER, which is the whole reason a correlation id exists: the host
-    // answers when it finishes, and a client that assumed a queue would hand
-    // the second answer to the first caller.
-    h.answer({ which: 'second' }, 'b');
-    h.answer({ which: 'first' }, 'a');
+    // THE SEPARATING ASSERTION: the second call is held here, not written. A client that sent both — as this one did
+    // until the correction — would leave the host running two calls, and an ending could not be pinned to either.
+    expect(h.sent()).toStrictEqual([{ id: 'a', channel: 'one', params: {} }]);
+    expect(h.clock.timers).toHaveLength(1);
 
+    h.answer({ which: 'first' }, 'a');
     await expect(first).resolves.toEqual({ which: 'first' });
+    // ITS DEADLINE STARTS WHEN IT IS SENT, so the wait behind the first is not counted against it.
+    expect(h.sent()).toStrictEqual([
+      { id: 'a', channel: 'one', params: {} },
+      { id: 'b', channel: 'two', params: {} },
+    ]);
+    expect(h.clock.timers).toHaveLength(2);
+    h.answer({ which: 'second' }, 'b');
     await expect(second).resolves.toEqual({ which: 'second' });
+  });
+
+  it('a REFUSED call settles its turn too, and the call behind it is sent', async () => {
+    // THE TURN PASSES ON HOWEVER A CALL SETTLES: a turn handed on only by an answer would leave every later call
+    // waiting for ever behind one the frame refused.
+    const h = harness({ ids: ['a', 'b'] });
+    const big = h.client.invoke('doc:big', { blob: 'x'.repeat(ENGINE_HOST_FRAME_MAX_BYTES) });
+    const next = h.client.invoke('doc:small', {});
+    await expect(big).rejects.toBeInstanceOf(RequestTooLarge);
+    await Promise.resolve();
+    // `b`: the refused call drew `a` before its frame was found too large.
+    expect(h.sent()).toStrictEqual([{ id: 'b', channel: 'doc:small', params: {} }]);
+    h.answer({ ok: true }, 'b');
+    await expect(next).resolves.toEqual({ ok: true });
   });
 
   it('ENDS on a response for an id nobody is waiting on', async () => {
@@ -181,8 +204,8 @@ describe('createHostClient', () => {
     const second = h.client.invoke('two', {});
     const third = h.client.invoke('three', {});
 
-    // Queueing moves the same unbounded growth into a list, which is the rule
-    // `runtime.ts` states for its own limit.
+    // THE BOUND COUNTS THE WAITING WITH THE SENT: one on the wire and one waiting are two. A wait with no bound moves
+    // the same unbounded growth into a list, which is the rule `runtime.ts` states for its own limit.
     expect(h.terminations.map((t) => t.code)).toEqual(['too-many-in-flight']);
     await expect(third).rejects.toBeInstanceOf(HostConnectionLost);
     await expect(first).rejects.toBeInstanceOf(HostConnectionLost);
@@ -202,23 +225,24 @@ describe('createHostClient', () => {
     // case above passes against it — because nothing completes there.
     expect(h.terminations).toEqual([]);
     h.answer({}, 'b');
-    h.answer({}, 'c');
     await expect(second).resolves.toEqual({});
+    h.answer({}, 'c');
     await expect(third).resolves.toEqual({});
   });
 
-  it('ENDS when the correlation source repeats an id that is outstanding', async () => {
+  it('an id the correlation source REPEATS is never outstanding twice, because one call is on the wire', async () => {
+    // The duplicate-id guard in `send` is kept and cannot now be reached: a call is sent only once the one before it
+    // has left the wire, so a repeated id names one call. Before the turn, two calls sharing an id resolved the wrong
+    // promise; this is that sequence, and each call gets its own answer.
     const h = harness({ ids: ['a', 'a'] });
 
     const first = h.client.invoke('one', {});
     const second = h.client.invoke('two', {});
-
-    // OUR defect rather than the peer's, and still terminal: two calls sharing
-    // an id means the next answer resolves the wrong promise and there is no
-    // way to tell which.
-    expect(h.terminations.map((t) => t.code)).toEqual(['duplicate-id']);
-    await expect(second).rejects.toBeInstanceOf(HostConnectionLost);
-    await expect(first).rejects.toBeInstanceOf(HostConnectionLost);
+    h.answer({ which: 'first' }, 'a');
+    await expect(first).resolves.toEqual({ which: 'first' });
+    h.answer({ which: 'second' }, 'a');
+    await expect(second).resolves.toEqual({ which: 'second' });
+    expect(h.terminations).toEqual([]);
   });
 
   it('REJECTS every waiting call when the transport reports the peer gone', async () => {
@@ -326,6 +350,7 @@ describe('createHostClient', () => {
       maxInFlight: 2,
       correlate: () => 'only',
       deadline: manualDeadline().deadline,
+      owner: () => undefined,
     });
 
     await expect(held.client.invoke('one', {})).resolves.toEqual({ echoed: true });
@@ -336,7 +361,8 @@ describe('createHostClient', () => {
     const h = harness({ ids: ['slow', 'other'] });
     const slow = h.client.invoke('engine:loop', {});
     const other = h.client.invoke('engine:read', {});
-    expect(h.clock.timers.map((timer) => timer.ms)).toStrictEqual([30_000, 30_000]);
+    // ONE TIMER: the call waiting behind the slow one has not been sent, so its deadline has not started.
+    expect(h.clock.timers.map((timer) => timer.ms)).toStrictEqual([30_000]);
 
     h.clock.expire();
 
@@ -346,6 +372,59 @@ describe('createHostClient', () => {
     expect(h.terminations[0]?.code).toBe('deadline');
     expect(h.terminations[0]?.detail).toContain('"engine:loop" had no answer within 30000 ms');
     expect(h.client.termination()?.code).toBe('deadline');
+  });
+
+  it('names the document whose call was ON THE WIRE when the connection ended — and only that one', async () => {
+    // Asked as each call is made, as the shell asks its lanes: `made` stands for the lane the caller runs in.
+    const made: { document: DocId | undefined } = { document: asDocId('aaaaaaaa-guilty') };
+    const h = harness({ ids: ['a', 'b'], owner: () => made.document });
+    const running = h.client.invoke('engine:apply', {});
+    made.document = asDocId('bbbbbbbb-waiting');
+    const waiting = h.client.invoke('engine:read', {});
+    expect(h.client.during()).toBeUndefined();
+
+    h.client.fail({ code: 'connection-lost', detail: 'the host crashed' });
+
+    await expect(running).rejects.toBeInstanceOf(HostConnectionLost);
+    await expect(waiting).rejects.toBeInstanceOf(HostConnectionLost);
+    // THE WAITING CALL'S DOCUMENT IS NOT NAMED: it was never sent, so the host cannot have been running it.
+    expect(h.client.during()).toBe(asDocId('aaaaaaaa-guilty'));
+  });
+
+  it('CONTROL: once the first call is answered the second is on the wire, and it is the one named', async () => {
+    // The fixture the defect would also pass is the one above with the order reversed; this is the same two calls with
+    // the first ANSWERED, so a client naming the first call made, rather than the one on the wire, goes red here.
+    const made: { document: DocId | undefined } = { document: asDocId('aaaaaaaa-answered') };
+    const h = harness({ ids: ['a', 'b'], owner: () => made.document });
+    const first = h.client.invoke('engine:read', {});
+    made.document = asDocId('bbbbbbbb-running');
+    const second = h.client.invoke('engine:apply', {});
+    h.answer({ fine: true }, 'a');
+    await first;
+
+    h.clock.expire();
+
+    await expect(second).rejects.toBeInstanceOf(HostConnectionLost);
+    expect(h.client.termination()?.code).toBe('deadline');
+    expect(h.client.during()).toBe(asDocId('bbbbbbbb-running'));
+  });
+
+  it('names NO document when nothing was on the wire, or the call on it was made outside every lane', async () => {
+    const idle = harness({ ids: ['a'], owner: () => asDocId('aaaaaaaa-idle') });
+    expect(idle.client.last()).toBeUndefined();
+    const answered = idle.client.invoke('engine:read', {});
+    idle.answer({}, 'a');
+    await answered;
+    idle.client.fail({ code: 'connection-lost', detail: 'ended between calls' });
+    expect(idle.client.during()).toBeUndefined();
+    // THE LAST CALL SENT is still named, settled as it is: what a memory kill between calls counts against.
+    expect(idle.client.last()).toBe(asDocId('aaaaaaaa-idle'));
+
+    const outside = harness({ ids: ['a'], owner: () => undefined });
+    const probe = outside.client.invoke('engine/probe-containment', {});
+    outside.client.fail({ code: 'connection-lost', detail: 'ended during the probe' });
+    await expect(probe).rejects.toBeInstanceOf(HostConnectionLost);
+    expect(outside.client.during()).toBeUndefined();
   });
 
   it('CONTROL: an answered call cancels its deadline, so its expiry ends nothing', async () => {
@@ -399,6 +478,7 @@ function fileHarness(take: Uint8Array | Error | Promise<Uint8Array> | null = nul
     maxInFlight: 4,
     correlate: () => 'c1',
     deadline: manualDeadline().deadline,
+    owner: () => undefined,
     fileAnswers: {
       routed: (channel) => channel === 'doc:big',
       mint: () => 'n1',

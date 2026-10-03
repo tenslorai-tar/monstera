@@ -35,6 +35,15 @@
  * one written only as "the command eventually succeeded". Asserting both ends
  * is what separates the implemented rule from either constant.
  *
+ * **Each kill comes while the document's call is on the wire.** A death counts
+ * against the document whose call the host was running, and only that one
+ * (ADR-0023's correction of 2026-10-03), so the host is frozen
+ * (`freezeHost.mjs`), sent the document's command, and killed under it — a crash
+ * inside that call, as main sees one. A BYSTANDER document is open the whole
+ * time and must still answer: the live review's P3, where it was poisoned with
+ * the other. Then two kills BETWEEN calls, which no document caused, and the
+ * bystander must still answer after those too.
+ *
  * ## Recovery is observed as a NEW CHILD, not as a retry succeeding
  *
  * After the kill this waits for a **different** process to appear as this
@@ -63,6 +72,7 @@ import { pathToFileURL } from 'node:url';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { freezeHost } from './freezeHost.mjs';
 
 const ROOT = repoRoot();
 
@@ -163,6 +173,25 @@ async function waitForChildren(settled, budgetMs) {
   }
 }
 
+/**
+ * Kills `pid` while `call` is its one call on the wire: frozen first, so the call is sent and cannot be answered, then
+ * ended. Returns when the host is gone and the call has settled.
+ *
+ * @param {number} pid
+ * @param {() => Promise<unknown>} call the document's command
+ */
+async function killDuring(pid, call) {
+  freezeHost(pid);
+  const settled = call();
+  // LONG ENOUGH FOR THE CALL TO BE WRITTEN: the shell sends it on the next turns of its event loop; the frozen host
+  // reads nothing, so the call stays on the wire for as long as it takes.
+  await sleep(POLL_MS * 2);
+  process.kill(pid);
+  const gone = await waitForChildren((ids) => !ids.includes(pid), DEATH_BUDGET_MS);
+  await settled;
+  return gone;
+}
+
 /** @param {string} relative @returns {Promise<any>} */
 function built(relative) {
   return import(pathToFileURL(join(ROOT, relative)).href);
@@ -256,6 +285,10 @@ async function main() {
     }).path;
     const document = join(scratch, 'recovered.pdf');
     copyFileSync(source, document);
+    const bystanderFile = join(scratch, 'bystander.pdf');
+    copyFileSync(source, bystanderFile);
+    /** What `document.open` picks next: the bystander, then the document the kills are made under. */
+    const picks = [bystanderFile, document];
 
     const sessionRoot = join(scratch, 'engine-sessions');
     mkdirSync(sessionRoot, { recursive: true });
@@ -279,15 +312,21 @@ async function main() {
     const { handlers } = composition.createShellDependencies({
       ...harnessModule.harnessSurfaces('the host-recovery harness'),
       appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
-      pickDocument: () => Promise.resolve(document),
+      pickDocument: () => Promise.resolve(picks.shift() ?? null),
       enginePlatform: platform,
     });
 
-    const opened = await handlers['document.open']({});
-    if (opened.ok !== true || opened.value.kind !== 'opened') {
-      throw new Error(`the document did not open: ${JSON.stringify(opened)}`);
-    }
-    const docId = `${opened.value.docId}`;
+    const open = async () => {
+      const opened = await handlers['document.open']({});
+      if (opened.ok !== true || opened.value.kind !== 'opened') {
+        throw new Error(`a document did not open: ${JSON.stringify(opened)}`);
+      }
+      return `${opened.value.docId}`;
+    };
+    const bystanderId = await open();
+    const docId = await open();
+    // THE BYSTANDER'S SESSION is made before anything is killed: its lane's first entry, settled by a read through it.
+    const bystanderBefore = await firstPageRotation(handlers, bystanderId);
 
     // FIRST COMMAND, and it is what establishes that a host is running at all.
     // Everything below is about what happens to a WORKING host when it dies,
@@ -306,12 +345,11 @@ async function main() {
     }
     const firstPid = before[0] ?? 0;
 
-    // THE KILL. `process.kill` is TerminateProcess on Windows, which is a death
-    // the shell did not ask for — `close()` would take the deliberate-shutdown
-    // path, and Decision 8 distinguishes the two precisely so that one rebuilds
-    // and the other does not.
-    process.kill(firstPid);
-    const died = await waitForChildren((ids) => !ids.includes(firstPid), DEATH_BUDGET_MS);
+    // THE KILL, under the document's own call. `process.kill` is TerminateProcess
+    // on Windows, which is a death the shell did not ask for — `close()` would
+    // take the deliberate-shutdown path, and Decision 8 distinguishes the two
+    // precisely so that one rebuilds and the other does not.
+    const died = await killDuring(firstPid, () => rotate(handlers, docId));
 
     // Recovery observed as a NEW child, with nothing asked of the shell.
     const rebuilt = await waitForChildren(
@@ -322,29 +360,50 @@ async function main() {
 
     // WHAT THE REBUILT SESSION HOLDS (ADR-0115, invariant 18 clause (ii)). The first rotate was a view-model command:
     // the canonical image never took it, and the log lists it as applied. A rebuild that reopened from the image alone
-    // hands back page 1 at 0°; one that replayed the log hands it back at 90°. Read through the document's lane, so it
-    // is answered after the rebuild's lane entry — replay included — and before anything else is asked of the session.
+    // hands back page 1 at 0°; one that replayed the log hands it back at 90°. The rotate killed under the host never
+    // applied. Read through the document's lane, so it is answered after the rebuild's lane entry — replay included —
+    // and before anything else is asked of the session.
     const rotationAfterRebuild = await firstPageRotation(handlers, docId);
 
     const afterFirstDeath = await rotate(handlers, docId);
+    // SETTLED BEFORE THE SECOND KILL: the bystander's rebuild — its reopen and replay — runs in its own lane, and a kill
+    // under one of its calls would make that death its own. A read through its lane waits for that entry.
+    await firstPageRotation(handlers, bystanderId);
 
-    // THE SECOND DEATH, which is the other end of Decision 9a. Skipped only if
-    // there is nothing to kill, and that case is reported rather than passed
-    // over — a shell that never rebuilt would arrive here with no child and
-    // must not look like one that recovered and was killed again.
+    // THE SECOND DEATH UNDER THE DOCUMENT'S CALL, which is the other end of
+    // Decision 9a. Skipped only if there is nothing to kill, and that case is
+    // reported rather than passed over — a shell that never rebuilt would arrive
+    // here with no child and must not look like one that recovered and was
+    // killed again.
     /** @type {{ ok: boolean, code: string | null } | null} */
     let afterSecondDeath = null;
     let secondKillHit = false;
     if (secondPid > 0) {
       secondKillHit = true;
-      process.kill(secondPid);
-      await waitForChildren((ids) => !ids.includes(secondPid), DEATH_BUDGET_MS);
-      // A poisoned document is not rebuilt for, so there is no new child to
-      // wait for here. The wait is for the shell to have NOTICED, which is the
-      // same event the first death's wait observed.
-      await sleep(POLL_MS * 5);
+      await killDuring(secondPid, () => rotate(handlers, docId));
       afterSecondDeath = await rotate(handlers, docId);
     }
+
+    // P3: THE BYSTANDER, open the whole time and the cause of neither death, is served by the host rebuilt for it.
+    const bystanderAfter = await rotate(handlers, bystanderId);
+    const bystanderRotation = await firstPageRotation(handlers, bystanderId);
+
+    // AND TWO DEATHS BETWEEN CALLS, which no document caused: the host serving the bystander, killed with nothing on
+    // the wire, twice. Counted against anybody, the second would poison the bystander.
+    /** @type {number[]} */
+    const idleKilled = [];
+    for (let kill = 0; kill < 2; kill += 1) {
+      const running = childProcessIds();
+      if (running.length !== 1) break;
+      const pid = running[0] ?? 0;
+      process.kill(pid);
+      await waitForChildren((ids) => !ids.includes(pid), DEATH_BUDGET_MS);
+      await waitForChildren((ids) => ids.some((id) => id !== pid), REBUILD_BUDGET_MS);
+      // The rebuild's reopen and replay settle before the next kill, so that kill is between calls too.
+      await firstPageRotation(handlers, bystanderId);
+      idleKilled.push(pid);
+    }
+    const bystanderAfterIdle = await rotate(handlers, bystanderId);
 
     const report = JSON.stringify({
       childrenBeforeKill: before.length,
@@ -359,6 +418,11 @@ async function main() {
       afterFirstDeath,
       secondKillHit,
       afterSecondDeath,
+      bystanderBefore,
+      bystanderAfter,
+      bystanderRotation,
+      idleKills: idleKilled.length,
+      bystanderAfterIdle,
     });
 
     // THE REPORT FIRST, because everything after it is cleanup and cleanup can

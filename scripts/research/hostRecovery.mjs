@@ -86,6 +86,8 @@ const CASES = [
   'the rebuilt session HOLDS the rotation applied before the death (ADR-0115)',
   'and a command after the first death SUCCEEDS',
   'CONTROL: the second death POISONS rather than rebuilding for ever',
+  'P3: the document open the whole time, which caused neither death, still answers and holds its own rotation',
+  'and two deaths BETWEEN calls count against nobody: it still answers after both',
   'CONTROL: and the harness process itself exited CLEANLY',
 ];
 
@@ -276,6 +278,24 @@ if (!runnable) {
       `Decision 9a stops at one rebuild per document, and without this a shell that never ` +
       `poisoned would pass every case above — as would one that poisoned immediately, against ` +
       `the case above this.`,
+  );
+
+  // THE LIVE REVIEW'S P3, and its control is this case before ADR-0023's correction of 2026-10-03: every held document
+  // was counted at each death, so the bystander answered document-poisoned here, having caused neither.
+  check(
+    'P3: the document open the whole time, which caused neither death, still answers and holds its own rotation',
+    seen.bystanderBefore === 0 && seen.bystanderAfter?.ok === true && seen.bystanderRotation === 90,
+    `the bystander read ${JSON.stringify(seen.bystanderBefore)} before, its rotate after both deaths answered ` +
+      `${JSON.stringify(seen.bystanderAfter)}, and page 1 then reads ${JSON.stringify(seen.bystanderRotation)} where 90 was expected.`,
+  );
+
+  check(
+    'and two deaths BETWEEN calls count against nobody: it still answers after both',
+    seen.idleKills === 2 && seen.bystanderAfterIdle?.ok === true,
+    `${String(seen.idleKills)} of 2 kills with nothing on the wire were made, and the bystander's rotate then answered ` +
+      `${JSON.stringify(seen.bystanderAfterIdle)}. An ending between calls is the host ended from outside a call, which no ` +
+      `document caused (ADR-0023's addendum of 2026-10-03); counted against the last call's document, as a memory kill is, ` +
+      `the second would have poisoned the bystander.`,
   );
 
   // THE SUBJECT'S OWN EXIT, and it is the assertion this file did not have.

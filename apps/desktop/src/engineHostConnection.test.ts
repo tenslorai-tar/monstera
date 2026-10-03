@@ -1,4 +1,5 @@
 import { ENGINE_HOST_FRAME_MAX_BYTES, encodeFrame } from '@monstera/contract';
+import { asDocId, type DocId } from '@monstera/shared';
 import { describe, expect, it, vi } from 'vitest';
 
 import { HOST_CONNECT_TIMEOUT_MS, createEngineHostConnection } from './engineHostConnection.js';
@@ -52,7 +53,17 @@ function expectOrder(calls: readonly string[], before: string, after: string): v
   expect(calls.indexOf(before)).toBeLessThan(calls.indexOf(after));
 }
 
-function connect(h: Harness) {
+/**
+ * @param owner the document each call is for, as the shell's lanes answer it
+ * @param during where each ending's running call's document is recorded, beside `h.endings`' reasons
+ * @param last where each ending's last call's document is recorded
+ */
+function connect(
+  h: Harness,
+  owner: () => DocId | undefined = () => undefined,
+  during: (DocId | undefined)[] = [],
+  last: (DocId | undefined)[] = [],
+) {
   return createEngineHostConnection(h.surfaces, {
     pipeName: PIPE_NAME,
     user: USER,
@@ -65,9 +76,12 @@ function connect(h: Harness) {
     correlate: () => 'id-1',
     // A DEADLINE THAT NEVER FIRES: no case here is about time, and the client's own cases own the deadline.
     deadline: { ms: () => 30_000, schedule: () => () => undefined },
-    onEnded: (reason) => {
-      h.calls.push(`onEnded:${reason.code}`);
-      h.endings.push(reason);
+    owner,
+    onEnded: (ending) => {
+      h.calls.push(`onEnded:${ending.termination.code}`);
+      h.endings.push(ending.termination);
+      during.push(ending.during);
+      last.push(ending.last);
     },
   });
 }
@@ -162,6 +176,46 @@ describe('createEngineHostConnection', () => {
     // one — sending its reader to the framing code.
     expect(h.endings.map((reason) => reason.code)).toEqual(['connection-lost']);
     expect(connection.value.ended()).toBe(true);
+  });
+
+  it('hands the ending the document whose call was ON THE WIRE, for a crash and a memory kill alike (P3)', async () => {
+    // THROUGH THE CONNECTION, which is what sits between the client that knows the call and the handler that counts
+    // it: a connection that read `during` before `fail`, or never passed it, would hand on `undefined` here.
+    const guilty = asDocId('aaaaaaaa-guilty');
+    for (const end of ['crash', 'memory kill'] as const) {
+      const h = harness();
+      const during: (DocId | undefined)[] = [];
+      const connection = await connect(h, () => guilty, during);
+      expect(connection.ok).toBe(true);
+      if (!connection.ok) return;
+      const call = connection.value.client.invoke('any', {});
+
+      if (end === 'crash') h.exit(1);
+      else h.samplerKills();
+
+      await expect(call).rejects.toThrow(/connection ended/u);
+      expect(during).toStrictEqual([guilty]);
+    }
+  });
+
+  it('CONTROL: an ending with no call on the wire is handed no document while running, and the LAST call’s', async () => {
+    // A call answered, then the sampler's kill between calls: what a session holding its memory after the call that
+    // grew it looks like. `during` must be empty — nothing was running — and `last` must name the answered call, which
+    // is what `endingCountsAgainst` counts a memory kill against.
+    const idle = asDocId('aaaaaaaa-answered');
+    const h = harness({ peer: () => ({ ok: true, value: {} }) });
+    const during: (DocId | undefined)[] = [];
+    const last: (DocId | undefined)[] = [];
+    const connection = await connect(h, () => idle, during, last);
+    expect(connection.ok).toBe(true);
+    if (!connection.ok) return;
+    await expect(connection.value.client.invoke('any', {})).resolves.toEqual({ ok: true, value: {} });
+
+    h.samplerKills();
+
+    expect(h.endings.map((reason) => reason.code)).toEqual(['memory-budget']);
+    expect(during).toStrictEqual([undefined]);
+    expect(last).toStrictEqual([idle]);
   });
 
   describe('the memory sampler (ADR-0023 §3, corrected 2026-10-03)', () => {

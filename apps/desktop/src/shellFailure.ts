@@ -256,10 +256,10 @@ export function describeEngineHostGone(termination: HostTermination): ShellFailu
       `code=${termination.code} ${termination.detail}. ` +
       (deliberate
         ? 'We closed this connection, so nothing here is a fault.'
-        : 'The host was supposed to be there. Sessions it held are gone and every document ' +
-          'that had a call in flight has had its consecutive-failure count raised ' +
-          '(ADR-0023 Decision 9a); at two with no success in between, that document is ' +
-          'refused engine work rather than rebuilt for.'),
+        : 'The host was supposed to be there. Sessions it held are gone, and the ending counts ' +
+          'against the one document whose call the host was running, if any (ADR-0023 Decision ' +
+          '9a, corrected 2026-10-03); a document whose own calls end the host twice is refused ' +
+          'engine work rather than rebuilt for.'),
   };
 }
 

@@ -2274,6 +2274,18 @@ export class DocumentService {
     return [...this.#records.keys()];
   }
 
+  /**
+   * The document whose lane entry the CALLER is running inside, or `undefined` outside every lane.
+   *
+   * The engine host client asks this as each call is made, so a host's ending counts against the document whose call
+   * the host was running (ADR-0023's correction of 2026-10-03). It answers from the same record that refuses lane
+   * reentry, so *whose work is this* has one authority rather than a second map kept beside the lanes. Read through
+   * `AsyncLocalStorage`, which follows the caller's awaits: work another lane does meanwhile is not the caller's.
+   */
+  executingDocument(): DocId | undefined {
+    return this.#executingDocument.getStore();
+  }
+
   // There is deliberately NO `versionOf(docId)`.
   //
   // It existed, and it was ADR-0009 §7's warned-about main-side field with a

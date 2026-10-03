@@ -78,7 +78,8 @@ import {
   type HostPageTextReader,
   type HostWordBoxesReader,
   type HostCallDeadline,
-  type HostTermination,
+  HostConnectionLost,
+  type HostEnding,
   type PageGeometryReader,
   type PdfiumArea,
   type PdfiumInputKeeper,
@@ -2411,7 +2412,9 @@ function engineSessionOpener(
       correlate: () => randomBytes(8).toString('hex'),
       deadline: policy.deadline,
       memorySampling: policy.memorySampling,
-      onEnded: (termination: HostTermination) => {
+      // THE LANE A CALL IS MADE IN is the document it is for: what this host's ending counts against.
+      owner: () => documents.executingDocument(),
+      onEnded: (ending: HostEnding) => {
         // CLEARED FIRST, so that the reopen entries this schedules find no host
         // and build a new one. Left in place, every one of them would await a
         // connection whose client has already settled every call.
@@ -2429,10 +2432,11 @@ function engineSessionOpener(
         // refuse, one layer down.
         geometry = null;
         pageText = null;
-        void onEngineHostEnded(sessions, termination, {
+        void onEngineHostEnded(sessions, ending, {
           documents,
           failures,
           closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
+          hostEnded: (error) => error instanceof HostConnectionLost,
           // SWALLOWED HERE, DELIBERATELY, AND THIS IS THE ONE PLACE IT IS
           // CORRECT. `onEngineHostEnded` awaits this before entering each
           // document's lane, and a rejection would escape into a `void`ed
@@ -2440,12 +2444,11 @@ function engineSessionOpener(
           // entries never queued and no diagnostic naming why.
           //
           // A failed rebuild is not lost: every document's reopen then fails to
-          // create a session, `recordFailure` counts it, and Decision 9a
-          // poisons at the bound. The state each document ends in is the same
-          // whether the host could not be built or its session could not be
-          // opened, which is what makes discarding the reason here safe rather
-          // than convenient. Found by a case that reddened with an unhandled
-          // rejection rather than a failure (KKKK-7).
+          // create a session, and that failure is reported per document with
+          // its reason. The reason is the reopen's to report, which is what
+          // makes discarding it here safe rather than convenient. Found by a
+          // case that reddened with an unhandled rejection rather than a
+          // failure (KKKK-7).
           rebuild: async () => {
             await ensure().catch(() => undefined);
           },
@@ -2682,6 +2685,7 @@ function engineSessionOpener(
       documents,
       failures,
       closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
+      hostEnded: (error) => error instanceof HostConnectionLost,
       documentUnreadable: (error) => error instanceof EngineOpenFailed,
       documentLocked: (error) =>
         error instanceof EngineDocumentLocked ? error.reason : undefined,
@@ -2921,7 +2925,10 @@ function pdfiumHostBinding(
       correlate: () => randomBytes(8).toString('hex'),
       deadline: policy.deadline,
       memorySampling: policy.memorySampling,
-      onEnded: (termination: HostTermination) => {
+      // NO CALL HERE BELONGS TO A DOCUMENT'S COUNT: this host holds no document's session, so its ending counts
+      // against nobody, and the cause is neither asked for nor read.
+      owner: () => undefined,
+      onEnded: ({ termination }: HostEnding) => {
         // CLEARED, AND THAT IS ALL. `onEngineHostEnded` is not called and must
         // not be: it walks the open documents and schedules a reopen for each,
         // which is right for the host a document's session lives in and wrong
@@ -3151,7 +3158,9 @@ function composeHostBinding(
       correlate: () => randomBytes(8).toString('hex'),
       deadline: policy.deadline,
       memorySampling: policy.memorySampling,
-      onEnded: (termination: HostTermination) => {
+      // NO CALL HERE BELONGS TO A DOCUMENT'S COUNT, for PDFium's reason: this host holds no document's session.
+      owner: () => undefined,
+      onEnded: ({ termination }: HostEnding) => {
         // CLEARED, AND THAT IS ALL, for PDFium's reason: `onEngineHostEnded` walks
         // the open documents and schedules a reopen for each, which is wrong for a
         // host that holds none. The granted pair is collected by the startup sweep,

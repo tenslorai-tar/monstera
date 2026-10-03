@@ -17,7 +17,7 @@ import type {
   DocumentService,
   DocumentTeardown,
   EngineSupervisor,
-  HostTermination,
+  HostEnding,
   LockedReason,
   MupdfSession,
   SnapshotWrite,
@@ -263,6 +263,16 @@ export interface HostDeathSurfaces {
    * one place that answers it.
    */
   readonly closedMeanwhile: (error: unknown) => boolean;
+  /**
+   * Whether a lane entry failed because the HOST CONNECTION ENDED under it — `HostConnectionLost`.
+   *
+   * Injected for {@link closedMeanwhile}'s reason: the class lives in the kernel barrel. An ending is counted once,
+   * against the document whose call the host was running, by {@link onEngineHostEnded} as the connection ends; and
+   * that handler queues a reopen in every other document's lane. So a lane entry that meets one counts nothing itself
+   * and does not retry — doing either would count or rebuild a second time for one ending (ADR-0023's correction of
+   * 2026-10-03).
+   */
+  readonly hostEnded: (error: unknown) => boolean;
 }
 
 /**
@@ -275,6 +285,7 @@ export interface DocumentOpenSurfaces {
   readonly documents: HostDeathSurfaces['documents'];
   readonly failures: HostDeathSurfaces['failures'];
   readonly closedMeanwhile: HostDeathSurfaces['closedMeanwhile'];
+  readonly hostEnded: HostDeathSurfaces['hostEnded'];
   /**
    * Whether a lane entry failed because the DOCUMENT will never parse, as
    * distinct from the host being unwell.
@@ -314,11 +325,20 @@ export interface DocumentOpenSurfaces {
  *
  * ## Why this retries, when the death path does not
  *
- * On a death the count is already raised and a second death poisons; there is a
- * later event to carry the outcome. At open there is no later event, so the
- * entry itself has to reach a terminal state. The loop is bounded by 9a's
- * counter and nothing else: each failure increments, and `POISON_AT` is 2, so
- * it makes at most two attempts.
+ * A HOST ENDING is not this entry's to answer. The death handler counted it, once,
+ * against the document whose call the host was running, and queued a reopen in
+ * this document's lane behind this entry; so an ending stops the entry, and the
+ * reopen is what reaches the terminal state. Counting it here as well counted a
+ * document twice for one ending, another document's included (ADR-0023's
+ * correction of 2026-10-03).
+ *
+ * Every other failure — no host could be built — has no later event to carry it,
+ * so the entry itself has to reach a terminal state. It makes `POISON_AT`
+ * attempts, two, and poisons the document when the last fails. The attempts are
+ * counted HERE and not in the supervisor's count, which holds only failures of
+ * the document's own: a host that could not be built once, at open, is not, and
+ * left in that count it would have poisoned the document at its first ending of
+ * its own later on.
  *
  * **That bound is why this is not 9a's rejected "try again".** The rejection is
  * of a retry that makes the second attempt *cheaper* than the first; this one
@@ -349,27 +369,24 @@ export async function onDocumentOpened(
   // synchronously from the caller's side — which is what puts the lane entry
   // ahead of anything the user does next.
   //
-  // `begin` is outside the entry rather than inside it: `recordFailure` skips a
+  // `begin` is outside the entry rather than inside it: `poison` skips a
   // document with no entry, so an entry that appeared only on success could
   // never record the failure this function exists to bound.
   sessions.begin(docId);
   const entered = surfaces.documents.run(docId, async () => {
-    // BOUNDED STRUCTURALLY AS WELL AS SEMANTICALLY, and the second bound is not
-    // belt-and-braces — it was found by mutation. The exit that matters is
-    // `poisoned()`, which is 9a's authority on when to stop; but `poisoned()`
-    // only ever becomes true because `recordFailure` incremented, and
-    // `recordFailure` silently skips a document with no entry. Delete the
-    // `begin` above and a `for (;;)` here does not fail — it SPINS, for ever,
-    // inside a lane, with no diagnostic. A loop whose termination depends on a
-    // different method's side effect is a runaway waiting for that method to
-    // change; `POISON_AT` bounds it here too, so the illegal state cannot be
-    // represented rather than being caught (B5).
-    for (let attempt = 0; attempt < POISON_AT; attempt += 1) {
+    // BOUNDED BY ITS OWN COUNT, and only by it. A loop whose termination depends
+    // on a different method's side effect is a runaway waiting for that method
+    // to change — it was found by mutation that deleting `begin` above made a
+    // loop ending on `poisoned()` SPIN for ever, inside a lane, with no
+    // diagnostic. Every path out of the last attempt returns.
+    for (let attempt = 1; attempt <= POISON_AT; attempt += 1) {
       try {
         sessions.hold(docId, await surfaces.create(docId));
         return;
       } catch (error) {
         if (surfaces.closedMeanwhile(error)) return;
+        // THE ENDING'S, NOT THIS ENTRY'S: counted where it happened and reopened behind this entry (see above).
+        if (surfaces.hostEnded(error)) return;
 
         // THE PASSWORD EXIT, and it is ABOVE the deterministic one because it
         // is the stronger claim: the host parsed the file far enough to read
@@ -379,9 +396,9 @@ export async function onDocumentOpened(
         // poisoned document answers every command with `document-poisoned`
         // until it is closed and reopened — which would lock it again.
         //
-        // No `recordFailure`, deliberately. The count is the supervisor's
-        // evidence about the HOST, and a host that answered a question
-        // correctly is healthy (ADR-0055).
+        // No `poison`, deliberately: a host that answered a question correctly
+        // is healthy, and nothing is wrong with the document but a missing
+        // password (ADR-0055).
         const locked = surfaces.documentLocked(error);
         if (locked !== undefined) {
           sessions.markLocked(docId, locked);
@@ -396,11 +413,10 @@ export async function onDocumentOpened(
         //
         // The two predicates are mutually exclusive — different classes — so
         // their ORDER is not load-bearing and no case asserts it. What is
-        // load-bearing is that this sits above `recordFailure`, because reaching
-        // that line at all is what turns a document's defect into evidence about
-        // the host.
+        // load-bearing is that this sits above the retry, because reaching it is
+        // what spends a host build to be told the same thing again.
         if (surfaces.documentUnreadable(error)) {
-          sessions.recordFailure([docId], 'document-unreadable');
+          sessions.poison(docId);
           surfaces.failures({
             event: 'document-unreadable',
             detail:
@@ -412,31 +428,19 @@ export async function onDocumentOpened(
           return;
         }
 
-        sessions.recordFailure([docId], 'host-death');
-        if (sessions.poisoned(docId) !== undefined) {
-          surfaces.failures({
-            event: 'engine-host-gone',
-            detail:
-              `no engine session could be created for document ${docId.slice(0, 8)}… and it ` +
-              `is now poisoned: ${String(error)}. Commands against it answer document-poisoned ` +
-              `rather than internal, and close-and-reopen is what clears it.`,
-          });
-          return;
-        }
+        // POSSIBLY TRANSIENT: one more attempt, counted here (see above).
+        if (attempt < POISON_AT) continue;
+        sessions.poison(docId);
+        surfaces.failures({
+          event: 'engine-host-gone',
+          detail:
+            `no engine session could be created for document ${docId.slice(0, 8)}… in ${String(POISON_AT)} ` +
+            `attempts and it is now poisoned: ${String(error)}. Commands against it answer document-poisoned ` +
+            `rather than internal, and close-and-reopen is what clears it.`,
+        });
+        return;
       }
     }
-
-    // Reached only if the attempts ran out without `poisoned()` agreeing, which
-    // means the counter and this loop disagree about 9a's bound. Reported rather
-    // than ignored: the document is open and sessionless, which is the one state
-    // this function exists to prevent, and silence here would restore it.
-    surfaces.failures({
-      event: 'engine-host-gone',
-      detail:
-        `supervisor defect: ${String(POISON_AT)} session-creation attempts for document ` +
-        `${docId.slice(0, 8)}… did not leave it poisoned, so it is open with no session. The ` +
-        `failure counter and this bound disagree.`,
-    });
   });
 
   try {
@@ -479,8 +483,17 @@ export async function onDocumentOpened(
  * lane already guarantees.
  *
  * **A poisoned document gets no reopen.** That is Decision 9a's whole content:
- * at two consecutive failures with no success between them, no session is
- * rebuilt and `document.execute` answers `document-poisoned`.
+ * at two failures of its own, no session is rebuilt and `document.execute`
+ * answers `document-poisoned`.
+ *
+ * ## Whom the ending counts against: one document, or none
+ *
+ * {@link endingCountsAgainst} decides: in short, the document whose call the
+ * host was running, and no other (ADR-0023's correction of 2026-10-03). The host
+ * client sends one call at a time, so the call running is known in main. Every
+ * other document loses its session to the same ending and is rebuilt, and
+ * nothing is counted against it — this counted every document the supervisor
+ * held, idle ones included, and one document's two failures poisoned the rest.
  *
  * **A document closed in the meantime is skipped by the seam, not by a check.**
  * `run` is get-or-miss on the record, so it refuses rather than resurrecting,
@@ -503,15 +516,16 @@ export async function onDocumentOpened(
  */
 export async function onEngineHostEnded(
   sessions: EngineSessions,
-  termination: HostTermination,
+  ending: HostEnding,
   surfaces: HostDeathSurfaces,
 ): Promise<void> {
+  const { termination } = ending;
   surfaces.failures(describeEngineHostGone(termination));
 
-  // Snapshotted BEFORE the count moves, because `recordFailure` is what decides
+  // Snapshotted BEFORE the count moves, because `recordEnding` is what decides
   // which of these are poisoned and the set itself must not change under it.
   const affected = sessions.documentIds();
-  sessions.recordFailure(affected, 'host-death');
+  sessions.recordEnding(affected, endingCountsAgainst(ending));
 
   // A deliberate close is not a rebuild. Nothing is coming back, and entering
   // lanes to await a host nobody is building would hang every document.
@@ -533,10 +547,12 @@ export async function onEngineHostEnded(
           try {
             await surfaces.replay(docId, context);
           } catch (error) {
-            if (surfaces.closedMeanwhile(error)) throw error;
+            // A HOST THAT ENDED UNDER THE REPLAY is not a log that will not re-apply: that ending is counted where it
+            // happened, and the reopen it queues replays again.
+            if (surfaces.closedMeanwhile(error) || surfaces.hostEnded(error)) throw error;
             // CLAUSE (i): the log kept, the file on disk untouched, the session released and every further command
             // refused — and the person told which document, and that its unsaved changes could not be restored.
-            sessions.recordFailure([docId], 'replay-failed');
+            sessions.poison(docId);
             surfaces.failures({
               event: 'engine-host-gone',
               detail:
@@ -547,15 +563,15 @@ export async function onEngineHostEnded(
           }
         });
       } catch (error) {
-        // A closed document is the seam working; anything else is a rebuild
-        // that did not arrive, and the document keeps its raised count.
-        if (surfaces.closedMeanwhile(error)) return;
+        // A closed document is the seam working, and a host that ended again is
+        // that ending's to count and to reopen for. Anything else is a rebuild
+        // that did not arrive.
+        if (surfaces.closedMeanwhile(error) || surfaces.hostEnded(error)) return;
         surfaces.failures({
           event: 'engine-host-gone',
           detail:
             `reopen failed for document ${docId.slice(0, 8)}…: ${String(error)}. Its session is ` +
-            `not restored and its consecutive-failure count stands, so a second death with no ` +
-            `success between them poisons it.`,
+            `not restored. Nothing is counted against it for a failure that was not its own call's.`,
         });
       }
     });
@@ -567,7 +583,25 @@ export async function onEngineHostEnded(
 }
 
 /**
- * How many consecutive engine-host failures poison a document.
+ * WHOM A HOST'S ENDING COUNTS AGAINST: one document, or none (ADR-0023's correction and addendum of 2026-10-03). The
+ * one place this is decided; the client reports what was on the wire and this reads it.
+ *
+ * - **A deliberate close counts against nobody**, whatever was on the wire: nothing failed.
+ * - **Otherwise, the document whose call the host was running.** A crash and a deadline happen during a call, and the
+ *   host client sends one at a time, so that call is the cause.
+ * - **With none running, a memory kill counts against the document whose call the host ran last.** The sampler kills
+ *   on a level, and a session holds its memory after the call that grew it has ended — counted against nobody, a
+ *   document whose session alone holds the host over the threshold would be killed and reopened for ever.
+ * - **Any other ending between calls counts against nobody**: the host was ended from outside a call.
+ */
+export function endingCountsAgainst({ termination, during, last }: HostEnding): DocId | undefined {
+  if (termination.code === 'shutdown') return undefined;
+  if (during !== undefined) return during;
+  return termination.code === 'memory-budget' ? last : undefined;
+}
+
+/**
+ * How many engine failures of a document's own poison it.
  *
  * **A decision, not a derivation** (ADR-0023 Decision 9a, decided 2026-08-25),
  * and its own text says so: the number is not derivable from anything that ADR
@@ -581,22 +615,14 @@ export async function onEngineHostEnded(
  */
 const POISON_AT = 2;
 
-/**
- * How many attempts a failure is worth, which is a judgement about the failure
- * rather than about the counter. See {@link EngineSessions.recordFailure}.
- *
- * A union rather than a boolean, because the pair are two *classifications* and
- * not one thing and its negation — a third (a host that is up but out of
- * memory, say) would read as a fourth state of a flag and as one more member
- * here.
- */
-export type SessionFailureReason = 'host-death' | 'document-unreadable' | 'replay-failed';
-
 /** One open document's supervisor state. See {@link EngineSessions}. */
 interface DocumentEntry {
   sessions: DocumentSessions;
-  /** Reset to zero by any call the host answers (Decision 9a). */
-  consecutiveFailures: number;
+  /**
+   * The engine failures this document's own work caused. Never reset while the document is open: close-and-reopen
+   * is the way back (ADR-0023's correction of 2026-10-03 withdrew reset-on-success).
+   */
+  failures: number;
   /**
    * How to end what this document holds outside the index, or `null` if it
    * holds nothing yet.
@@ -617,7 +643,7 @@ interface DocumentEntry {
    * class's two existing terminal states fits it
    * ([ADR-0055](../../../docs/DECISIONS/0055-a-password-crosses-into-the-host-and-unlocking-is-an-open.md)).
    *
-   * On this entry rather than in a second map, for `consecutiveFailures`'
+   * On this entry rather than in a second map, for `failures`'
    * reason: its lifetime IS this entry's, and two maps keyed by `DocId` drift
    * at the moment a document closes underneath a host death (B3).
    */
@@ -640,7 +666,7 @@ interface DocumentEntry {
 
 /**
  * The supervisor's per-document state: which engine sessions a document has,
- * and how many consecutive host failures it has had.
+ * and how many engine failures its own work has caused.
  *
  * ## Why the sessions and the count are ONE map
  *
@@ -667,7 +693,7 @@ interface DocumentEntry {
  *
  * ## What is not here
  *
- * The transport subscription that calls {@link EngineSessions.recordFailure},
+ * The transport subscription that calls {@link EngineSessions.recordEnding},
  * the host rebuild, and the lane entry that reopens each document's session
  * (Decisions 9b and 9c). This is the state those act on, written first for the
  * same reason the module's header gives for `openEngineSession`: the alternative
@@ -686,7 +712,7 @@ export class EngineSessions implements EngineSessionSource {
 
   /** The count that poisoned this document, or `undefined`. */
   readonly poisoned = (docId: DocId): number | undefined => {
-    const failures = this.#entries.get(docId)?.consecutiveFailures ?? 0;
+    const failures = this.#entries.get(docId)?.failures ?? 0;
     return failures >= POISON_AT ? failures : undefined;
   };
 
@@ -697,7 +723,7 @@ export class EngineSessions implements EngineSessionSource {
    * closes, and it did not exist until ADR-0023's 2026-08-27 correction: the
    * entry used to begin at the first {@link EngineSessions.hold}, so a document
    * whose open-time session creation failed had no entry at all — and
-   * {@link EngineSessions.recordFailure} skips a document with no entry, so its
+   * {@link EngineSessions.poison} skips a document with no entry, so its
    * failure could not be counted. Minting here is what lets that counter see the
    * open path without being given a second job (B3a).
    *
@@ -709,7 +735,7 @@ export class EngineSessions implements EngineSessionSource {
     if (this.#entries.has(docId)) return;
     this.#entries.set(docId, {
       sessions: {},
-      consecutiveFailures: 0,
+      failures: 0,
       release: null,
       locked: null,
       unlockedByPassword: false,
@@ -723,10 +749,9 @@ export class EngineSessions implements EngineSessionSource {
   /**
    * Records that the host answered an open with a password refusal.
    *
-   * **No failure is counted**, which is the whole of why this is a method and
-   * not a third `SessionFailureReason`: `recordFailure` feeds the bound that
-   * poisons, and a document nobody has typed a password for must not consume
-   * an attempt. A poisoned encrypted document would refuse every command until
+   * **No failure is counted**, which is the whole of why this is a method of
+   * its own: the count feeds the bound that poisons, and a document nobody has
+   * typed a password for must not consume an attempt. A poisoned encrypted document would refuse every command until
    * close-and-reopen, which would poison it again.
    */
   markLocked(docId: DocId, reason: LockedReason): void {
@@ -747,7 +772,7 @@ export class EngineSessions implements EngineSessionSource {
    */
   hold(docId: DocId, sessions: DocumentSessions): void {
     const entry = this.#entries.get(docId);
-    if (entry !== undefined && entry.consecutiveFailures >= POISON_AT) {
+    if (entry !== undefined && entry.failures >= POISON_AT) {
       throw new Error(
         `Supervisor defect: sessions offered for a poisoned document, whose whole meaning is ` +
           `that no session is rebuilt for it. (document ${docId.slice(0, 8)}…)`,
@@ -756,7 +781,7 @@ export class EngineSessions implements EngineSessionSource {
     if (entry === undefined) {
       this.#entries.set(docId, {
         sessions,
-        consecutiveFailures: 0,
+        failures: 0,
         release: null,
         locked: null,
         unlockedByPassword: false,
@@ -783,7 +808,7 @@ export class EngineSessions implements EngineSessionSource {
    *
    * This is what makes the entry's lifetime the record's. It is also why a
    * document closed between a call being issued and the host dying is simply
-   * absent from {@link EngineSessions.recordFailure}'s effect rather than
+   * absent from {@link EngineSessions.recordEnding}'s effect rather than
    * needing a case: there is nothing left to increment.
    *
    * ## Why it is typed as the seam rather than exposed as a method
@@ -968,8 +993,8 @@ export class EngineSessions implements EngineSessionSource {
   }
 
   /**
-   * A host death: increments every document that had a call rejected by it, and
-   * **drops the sessions that died with the host**.
+   * A host's ending: **drops the sessions that died with the host**, from every
+   * document in `held`, and counts it against `during` alone.
    *
    * Dropping is not bookkeeping. One host per engine means every session it held
    * is gone the moment it is, and a handle left in this map is one a queued
@@ -982,62 +1007,46 @@ export class EngineSessions implements EngineSessionSource {
    * entry is skipped, and the only way to be in the set without one is to have
    * been closed in between — see {@link EngineSessions.releaseOnClose}.
    *
-   * **Attribution is deliberately absent.** Decision 9a rejected counting only
-   * the document whose call was the sole one in flight: it is evadable by
-   * concurrency and buys nothing once a success resets the count. The residual
-   * it leaves is real and is recorded in the ADR's DDDD-17 correction — a
-   * document busy at two successive deaths caused by a *third* document's bytes
-   * reaches the bound having caused neither.
-   *
-   * ## Why the reason is a parameter and not two methods
-   *
-   * The counter is one concern with one writer (B3), and Decision 9a's bound is
-   * a property of the counter rather than of any caller. What the reason selects
-   * is not *whether* to record but **how many attempts the failure is worth**,
-   * and that is a judgement about the failure, which only the caller holds.
-   *
-   * `'host-death'` is the transient case the bound exists for: increment, and
-   * let a second death with no success between them decide. `'document-
-   * unreadable'` is the deterministic one — the host answered and said these
-   * bytes will never parse — so it goes straight to the bound. Retrying spends a
-   * host build to be told the same thing, and counting it as evidence about the
-   * host is what `EngineOpenFailed`'s message exists to refuse.
-   *
-   * Required rather than defaulted, deliberately: a default would be a guess
-   * about a failure the caller has already classified, and the wrong one is the
-   * silent direction — a deterministic failure counted as transient looks like
-   * an ordinary retry.
+   * **Counted against one document, or none** (ADR-0023's correction of
+   * 2026-10-03). `during` is the document whose call the host was running — the
+   * host client sends one at a time and reads it from the lane that made the call
+   * — and `undefined` when no document's call was running. This counted every
+   * document in `held`, so one document's two failures poisoned every other open
+   * document, idle ones included. Dropping and counting are one method because
+   * they are one event: a caller that dropped without counting, or counted
+   * without dropping, would leave the two halves of the ending disagreeing.
    */
-  recordFailure(docIds: Iterable<DocId>, reason: SessionFailureReason): void {
-    for (const docId of docIds) {
+  recordEnding(held: Iterable<DocId>, during: DocId | undefined): void {
+    for (const docId of held) {
       const entry = this.#entries.get(docId);
       if (entry === undefined) continue;
-      // `'replay-failed'` goes straight to the bound with the unreadable document (ADR-0115 Decision 3): the log's own
-      // entries would not re-apply to a session opened from the canonical image, and a retry re-applies the same
-      // entries to the same image — invariant 18 clause (i) is the answer, not a second attempt.
-      entry.consecutiveFailures =
-        reason === 'host-death'
-          ? entry.consecutiveFailures + 1
-          : // Never downward: a document already past the bound stays where it
-            // is, so this cannot be a route back from poisoned.
-            Math.max(entry.consecutiveFailures, POISON_AT);
       entry.sessions = {};
+      if (docId === during) entry.failures += 1;
     }
   }
 
   /**
-   * A call the host answered: back to zero.
+   * Poisons a document at once, for a failure that answers the question a
+   * second attempt would ask, and drops its sessions.
    *
-   * **This is what makes a plain counter correct**, and without it the count
-   * would poison the innocent. One host per engine means a death rejects calls
-   * for documents that had nothing to do with it; their next command succeeds
-   * against the rebuilt host and puts them back to zero, so only a document that
-   * fails twice with no success in between reaches the bound.
+   * Three callers, each a failure of the document's own that a retry would only
+   * repeat: the host answered that these bytes will never parse (counting it as
+   * evidence about the host is what `EngineOpenFailed`'s message exists to
+   * refuse); the log's own entries would not re-apply to a session opened from
+   * the canonical image (ADR-0115 Decision 3 — invariant 18 clause (i) is the
+   * answer, not a second attempt); and a session that could not be made in
+   * `onDocumentOpened`'s two attempts, which counts those itself.
+   *
+   * A host's ending is not one of these: {@link EngineSessions.recordEnding}
+   * counts it, against the one document whose call the host was running.
    */
-  recordSuccess(docId: DocId): void {
+  poison(docId: DocId): void {
     const entry = this.#entries.get(docId);
     if (entry === undefined) return;
-    entry.consecutiveFailures = 0;
+    // Never downward: a document already past the bound stays where it is, so
+    // this cannot be a route back from poisoned.
+    entry.failures = Math.max(entry.failures, POISON_AT);
+    entry.sessions = {};
   }
 
   /**
@@ -1085,7 +1094,7 @@ export class EngineSessions implements EngineSessionSource {
    * Every document this holds state for, in insertion order.
    *
    * The set a host death acts on: Decision 9c's rebuild set, and the argument
-   * {@link EngineSessions.recordFailure} is given. Snapshotted into an array
+   * {@link EngineSessions.recordEnding} is given. Snapshotted into an array
    * rather than exposing the map, because the caller mutates this state while
    * iterating — `hold` during a reopen would otherwise be a live-collection
    * hazard rather than a decision anybody made.

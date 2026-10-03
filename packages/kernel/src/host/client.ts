@@ -7,6 +7,8 @@ import {
   hostResponseSchema,
 } from '@monstera/contract';
 
+import type { DocId } from '@monstera/shared';
+
 import type { HostRuntimeTransport, HostTermination } from './runtime.js';
 
 /**
@@ -17,8 +19,17 @@ import type { HostRuntimeTransport, HostTermination } from './runtime.js';
  *
  * `runtime.ts` is the loop that runs INSIDE the host: bytes in, dispatch, bytes
  * out. This is its mirror on main's side: a call goes out as a framed request
- * carrying a correlation id, and the answer comes back on the same stream in
- * whatever order the host finishes.
+ * carrying a correlation id, and the answer comes back on the same stream.
+ *
+ * ## One call on the wire at a time, so an ending has one cause
+ *
+ * A call is sent only when no other is waiting for its answer; the rest wait here, in the order they were made
+ * (ADR-0023's correction of 2026-10-03). When a host ends — a crash, a deadline, a memory kill — the call it was
+ * running is then the one call sent and unanswered, known on this side without asking a host that invariant 25 says
+ * may be lying, and {@link HostClient.during} names the document that call was made for. With calls overlapping, a
+ * handler awaiting a file let another run, so an ending could not be pinned to either and every document was counted.
+ * Measured cost, 2026-10-03, on a real host: a light document's slowest page-text call rose from 57–78 ms to 113–133
+ * ms while a 64 MiB document's session was made beside it; the medians did not move.
  *
  * It adds **no validation of its own above the envelope**. `createClient`
  * already parses each answer against `envelopeSchema(channel.result)`, so this
@@ -60,6 +71,19 @@ export class HostConnectionLost extends Error {
 }
 
 /**
+ * A connection's ending as main reads it: why it ended, and what it counts against. One named object so a handler
+ * cannot take the reason and silently drop the cause — a function ignoring a trailing parameter is assignable to one
+ * that passes it (ADR-0069).
+ */
+export interface HostEnding {
+  readonly termination: HostTermination;
+  /** The document whose call the host was running ({@link HostClient.during}), or `undefined`. */
+  readonly during: DocId | undefined;
+  /** The document whose call the host was sent last ({@link HostClient.last}), or `undefined`. */
+  readonly last: DocId | undefined;
+}
+
+/**
  * One call this side could not send — too large for its route — refused BEFORE anything was written, so it ends that
  * call and nothing else: the connection, its other calls and every session on the host are as they were. The one
  * class both routes throw, the frame and the params file, so a caller has one thing to recognise.
@@ -78,14 +102,22 @@ export interface HostClientOptions {
   /** Where framed requests go and how the connection is given up. */
   readonly transport: HostRuntimeTransport;
   /**
-   * How many calls may be outstanding at once.
+   * How many calls may be outstanding at once: the one on the wire and those waiting their turn, together.
    *
    * Required and undefaulted, for the reason `runtime.ts` gives for its own:
    * "however many arrive" is not a limit anybody chose. Exceeding it rejects the
-   * call AND ends the connection rather than queueing, because queueing moves
-   * the same unbounded growth into a list.
+   * call AND ends the connection, because a wait with no bound moves the same
+   * unbounded growth into a list.
    */
   readonly maxInFlight: number;
+  /**
+   * The document a call being made is for, asked as it is made: `DocumentService.executingDocument`, the lane the
+   * caller is running in. `undefined` for a call made outside every lane — a containment probe, a closing document's
+   * `engine/close` — which no ending can count against.
+   *
+   * Required and undefaulted: an ending's cause is read from it, and a default would make every ending causeless.
+   */
+  readonly owner: () => DocId | undefined;
   /** The frame ceiling. Defaults to the engine host's declared maximum. */
   readonly maxFrameBytes?: number;
   /**
@@ -155,6 +187,17 @@ export interface HostClient {
   readonly inFlight: () => number;
   /** Why this client stopped, or `null` while it is running. */
   readonly termination: () => HostTermination | null;
+  /**
+   * The document whose call the host was running when this connection ended, or `undefined` — while it runs, when the
+   * call was made outside every lane, or when no call was on the wire. What a host's ending counts against.
+   */
+  readonly during: () => DocId | undefined;
+  /**
+   * The document the last call sent was made for, running or settled, or `undefined`. What a memory kill between
+   * calls counts against: a session holds its memory after the call that grew it has ended (ADR-0023's addendum of
+   * 2026-10-03).
+   */
+  readonly last: () => DocId | undefined;
 }
 
 export function createHostClient({
@@ -164,8 +207,10 @@ export function createHostClient({
   correlate,
   fileAnswers,
   deadline,
+  owner,
 }: HostClientOptions): HostClient {
   const decoder = new FrameDecoder(maxFrameBytes);
+  /** The call on the wire, waiting for its answer: one at most, because a call is sent only in its turn. */
   const pending = new Map<
     string,
     {
@@ -175,6 +220,8 @@ export function createHostClient({
       params: unknown;
       /** The name this call's answer is written under, when its channel answers in a file. */
       into: string | undefined;
+      /** The document this call was made for, read when it was made. */
+      owner: DocId | undefined;
     }
   >();
   /**
@@ -183,7 +230,17 @@ export function createHostClient({
    * guard and call the next check unreachable, and the check it would delete is
    * the one that stops a call being written into a connection that has ended.
    */
-  const state: { stopped: HostTermination | null } = { stopped: null };
+  const state: {
+    stopped: HostTermination | null;
+    /** The document whose call was on the wire when the connection ended. */
+    during: DocId | undefined;
+    /** The document the last call sent was made for. */
+    last: DocId | undefined;
+    /** Whether a call has been sent and has not settled — answered, file taken, or refused. */
+    busy: boolean;
+  } = { stopped: null, during: undefined, last: undefined, busy: false };
+  /** The calls waiting for their turn, oldest first. Each starts its own call when it is called. */
+  const waiting: (() => void)[] = [];
 
   /**
    * Read through a call, because narrowing survives one — the same idiom, and
@@ -208,8 +265,11 @@ export function createHostClient({
   const stop = (reason: HostTermination, ours: boolean): void => {
     if (state.stopped !== null) return;
     state.stopped = reason;
-    if (ours) transport.terminate(reason);
     const waiting = [...pending.values()];
+    // THE CALL THE HOST WAS RUNNING, read before anything settles. One at most, by the turn; were there two, neither
+    // could be told from the other, so neither is named.
+    state.during = waiting.length === 1 ? waiting[0]?.owner : undefined;
+    if (ours) transport.terminate(reason);
     pending.clear();
     // AFTER the map is cleared, so a rejection handler that calls `invoke`
     // synchronously meets a client that has already stopped rather than one
@@ -225,24 +285,18 @@ export function createHostClient({
     channel: string,
     params: unknown,
     paramsFile: { readonly session: string; readonly name: string; readonly bytes: number } | undefined,
+    made: DocId | undefined,
   ): Promise<unknown> => {
       const stopped = state.stopped;
       if (stopped !== null) throw new HostConnectionLost(stopped);
-
-      if (pending.size >= maxInFlight) {
-        const reason: HostTermination = {
-          code: 'too-many-in-flight',
-          detail: `${String(pending.size)} call(s) outstanding against a limit of ${String(maxInFlight)}`,
-        };
-        stop(reason, true);
-        throw new HostConnectionLost(reason);
-      }
 
       const id = correlate();
       if (pending.has(id)) {
         // OUR OWN defect, not the peer's, and it is still terminal: two calls
         // sharing an id means the next answer resolves the wrong promise, and
-        // there is no way to tell which.
+        // there is no way to tell which. Unreachable while the turn holds one
+        // call on the wire; kept, because what it refuses is still true of any
+        // client that sends a second before the first has left.
         const reason: HostTermination = {
           code: 'duplicate-id',
           detail: `the correlation source produced "${id}" while a call with that id was outstanding`,
@@ -301,14 +355,59 @@ export function createHostClient({
           },
           params,
           into,
+          owner: made,
         });
+        state.last = made;
         transport.write(frame);
       });
   };
 
+  /**
+   * Sends a call in its TURN: once every call made before it has settled, so one call at most is on the wire. The
+   * bound counts those waiting with the one sent, and is checked as the call is made. The deadline starts in `send`,
+   * so it times the call's own run and never its wait behind another.
+   */
+  const inTurn = (
+    channel: string,
+    params: unknown,
+    paramsFile: { readonly session: string; readonly name: string; readonly bytes: number } | undefined,
+    made: DocId | undefined,
+  ): Promise<unknown> => {
+    const stopped = state.stopped;
+    if (stopped !== null) return Promise.reject(new HostConnectionLost(stopped));
+    const outstanding = (state.busy ? 1 : 0) + waiting.length;
+    if (outstanding >= maxInFlight) {
+      const reason: HostTermination = {
+        code: 'too-many-in-flight',
+        detail: `${String(outstanding)} call(s) outstanding against a limit of ${String(maxInFlight)}`,
+      };
+      stop(reason, true);
+      return Promise.reject(new HostConnectionLost(reason));
+    }
+    return new Promise<unknown>((resolve, reject) => {
+      const start = (): void => {
+        state.busy = true;
+        // The next call starts once this one has SETTLED, however it settles; its outcome is its own caller's.
+        void send(channel, params, paramsFile, made)
+          .then(resolve, reject)
+          .finally(() => {
+            const next = waiting.shift();
+            if (next === undefined) state.busy = false;
+            else next();
+          });
+      };
+      // SENT NOW when nothing is ahead of it, in this same turn of the event loop, as every call was before the turn
+      // existed; otherwise behind the last call waiting.
+      if (state.busy) waiting.push(start);
+      else start();
+    });
+  };
+
   return {
     invoke: async (channel: string, params: unknown): Promise<unknown> => {
-      if (fileAnswers?.requested(channel) !== true) return send(channel, params, undefined);
+      // ASKED NOW, as the call is made, in the caller's own context — the lane it is running in.
+      const made = owner();
+      if (fileAnswers?.requested(channel) !== true) return inTurn(channel, params, undefined, made);
       // THE PARAMS GO IN A FILE, written before the call and removed when it ends however it ends (ADR-0125's
       // addendum). Above the ceiling this is refused here, before anything is written: the host would refuse it too,
       // and ending the connection over params this side chose to send would be our defect named as a violation.
@@ -324,7 +423,7 @@ export function createHostClient({
       const name = fileAnswers.mint();
       await fileAnswers.put(params, name, bytes);
       try {
-        return await send(channel, params, { session, name, bytes: bytes.byteLength });
+        return await inTurn(channel, params, { session, name, bytes: bytes.byteLength }, made);
       } finally {
         await fileAnswers.drop(params, name);
       }
@@ -441,5 +540,7 @@ export function createHostClient({
 
     inFlight: (): number => pending.size,
     termination: (): HostTermination | null => state.stopped,
+    during: (): DocId | undefined => state.during,
+    last: (): DocId | undefined => state.last,
   };
 }
