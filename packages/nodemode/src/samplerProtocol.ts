@@ -31,7 +31,7 @@ export interface SamplerWorkerData {
 export type SamplerMessage =
   /** The host reached `killAtBytes` and was terminated, at `privateBytes`. */
   | { readonly kind: 'killed'; readonly privateBytes: number }
-  /** Sampling ended without a kill — stopped, or the host was gone — with the highest commit seen. */
+  /** Sampling ended without a kill — main stopped it, or the host had ended — with the highest commit seen. */
   | { readonly kind: 'stopped'; readonly peakBytes: number }
-  /** The host could not be opened or read at all, so nothing was sampled. */
+  /** The sampler cannot see a host that is still running: it could not open it, or a read was refused. */
   | { readonly kind: 'failed'; readonly detail: string };

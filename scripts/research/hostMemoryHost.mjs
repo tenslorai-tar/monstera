@@ -23,6 +23,7 @@
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -85,6 +86,42 @@ async function waitForChildren(settled, budgetMs) {
     if (Date.now() - startedAt >= budgetMs) return { ids, settled: false };
     await sleep(POLL_MS);
   }
+}
+
+/**
+ * Opens `pid` with the product sampler's access and reads its private commit once.
+ *
+ * @param {number} pid
+ * @returns {{ opened: boolean, read: boolean, error: number, privateBytes: number }}
+ */
+function readWithProductAccess(pid) {
+  const koffi = createRequire(join(ROOT, 'package.json'))('koffi');
+  const kernel = koffi.load('kernel32.dll');
+  koffi.struct('MONSTERA_PROBE_COUNTERS', {
+    cb: 'uint32',
+    PageFaultCount: 'uint32',
+    PeakWorkingSetSize: 'size_t',
+    WorkingSetSize: 'size_t',
+    QuotaPeakPagedPoolUsage: 'size_t',
+    QuotaPagedPoolUsage: 'size_t',
+    QuotaPeakNonPagedPoolUsage: 'size_t',
+    QuotaNonPagedPoolUsage: 'size_t',
+    PagefileUsage: 'size_t',
+    PeakPagefileUsage: 'size_t',
+    PrivateUsage: 'size_t',
+  });
+  const openProcess = kernel.func('void *OpenProcess(uint32 access, bool inherit, uint32 pid)');
+  const memoryInfo = kernel.func('bool K32GetProcessMemoryInfo(void *process, _Out_ MONSTERA_PROBE_COUNTERS *counters, uint32 cb)');
+  const lastError = kernel.func('uint32 GetLastError()');
+  const closeHandle = kernel.func('bool CloseHandle(void *handle)');
+  const handle = openProcess(0x1000 | 0x0001, false, pid);
+  if (handle === null || koffi.address(handle) === 0n) return { opened: false, read: false, error: lastError(), privateBytes: 0 };
+  /** @type {Record<string, unknown>} */
+  const counters = {};
+  const read = memoryInfo(handle, counters, koffi.sizeof('MONSTERA_PROBE_COUNTERS')) === true;
+  const error = read ? 0 : lastError();
+  closeHandle(handle);
+  return { opened: true, read, error, privateBytes: Number(counters['PrivateUsage'] ?? 0) };
 }
 
 /** @param {string} path */
@@ -180,6 +217,10 @@ async function main() {
     if (hostsBefore.length !== 1) throw new Error(`expected exactly one child, the engine host, and found ${String(hostsBefore.length)}`);
     const firstHost = hostsBefore[0] ?? 0;
 
+    // ONE READ WITH THE PRODUCT SAMPLER'S OWN ACCESS (memorySamplerWorker.ts: PROCESS_QUERY_LIMITED_INFORMATION |
+    // PROCESS_TERMINATE), and the Windows error if it is refused — because on CI's runner the sampler once watched
+    // nothing while this harness's own reader, holding PROCESS_VM_READ as well, read the host's commit.
+    const productRead = CELL === 'control' ? readWithProductAccess(firstHost) : null;
     // THE CONTROL MEASURES the host's commit through the save, on its own thread; its first reading is taken before the
     // save starts, so it is the commit with the document open.
     /** @type {{ first: number, peak: number, samples: number } | null} */
@@ -228,6 +269,7 @@ async function main() {
         cell: CELL,
         killAtBytes: CELL === 'kill' ? KILL_AT_BYTES : budget.ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES - budget.HOST_MEMORY_SAMPLING.headroomBytes,
         measured,
+        productRead,
         rotated: rotated?.ok === true,
         saved,
         logged,

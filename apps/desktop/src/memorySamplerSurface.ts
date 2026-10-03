@@ -46,12 +46,29 @@ export function createMemorySamplerSurface(entryPath: string = memorySamplerEntr
       }
       // NOT A REASON TO STAY ALIVE: the sampler watches a host, and the host's own lifetime is what keeps things open.
       worker.unref();
+      // EVERY WAY THE THREAD CAN END IS ONE MESSAGE. The worker posts exactly one as it ends; a thread that throws, or
+      // exits without posting, has stopped watching just as surely, and is reported as a failure rather than as
+      // nothing — a sampler that ended in silence would leave a host watched by no one, which is the finding.
+      let ended = false;
+      let sinks: ((message: SamplerMessage) => void)[] = [];
+      const end = (message: SamplerMessage): void => {
+        if (ended) return;
+        ended = true;
+        for (const sink of sinks) sink(message);
+      };
+      worker.on('message', (message: SamplerMessage) => {
+        end(message);
+      });
+      worker.on('error', (error: unknown) => {
+        end({ kind: 'failed', detail: `the sampler thread threw: ${String(error)}` });
+      });
+      worker.on('exit', (code: number) => {
+        end({ kind: 'failed', detail: `the sampler thread exited (${String(code)}) without saying why` });
+      });
       return {
         killed: () => Atomics.load(view, SAMPLER_FLAG.KILLED) === 1,
         onMessage: (sink) => {
-          worker.on('message', (message: SamplerMessage) => {
-            sink(message);
-          });
+          sinks = [...sinks, sink];
         },
         stop: () => {
           Atomics.store(view, SAMPLER_FLAG.STOP, 1);

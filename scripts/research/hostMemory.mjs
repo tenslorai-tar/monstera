@@ -138,6 +138,7 @@ if (!runnable) {
     `the control measured ${JSON.stringify(measured)}: ${(window / MiB).toFixed(0)} MiB between the open document and the ` +
       `save's peak, where at least 64 MiB is needed to place a threshold with room either side`,
   );
+  process.stdout.write(`host-memory: one read with the product sampler's access: ${JSON.stringify(product.report.productRead)}\n`);
   process.stdout.write(
     measured === null
       ? 'host-memory: the control measured nothing\n'

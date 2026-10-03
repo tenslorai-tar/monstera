@@ -36,6 +36,7 @@ interface SamplerBindings {
   readonly terminate: (process: unknown, exitCode: number) => unknown;
   readonly closeHandle: (handle: unknown) => unknown;
   readonly lastError: () => number;
+  readonly exitCode: (process: unknown, code: number[]) => unknown;
 }
 
 const kernel = koffi.load('kernel32.dll');
@@ -59,7 +60,11 @@ const win32: SamplerBindings = {
   terminate: kernel.func('bool TerminateProcess(void *process, uint32 exitCode)'),
   closeHandle: kernel.func('bool CloseHandle(void *handle)'),
   lastError: kernel.func('uint32 GetLastError()'),
+  exitCode: kernel.func('bool GetExitCodeProcess(void *process, _Out_ uint32 *code)'),
 };
+
+/** `GetExitCodeProcess`' answer for a process that has not ended. */
+const STILL_ACTIVE = 259;
 
 /** `PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE`: what reading the commit and the kill need, nothing else. */
 const ACCESS = 0x1000 | 0x0001;
@@ -79,10 +84,22 @@ if (handle === null || koffi.address(handle) === 0n) {
   const size = koffi.sizeof(COUNTERS);
   let peak = 0;
   let killedAt: number | null = null;
+  let failure: string | null = null;
   while (Atomics.load(flags, SAMPLER_FLAG.STOP) === 0) {
     const counters: Record<string, unknown> = {};
-    // A READ THAT FAILS is a host that has gone — its ending reaches main through the pipe — so sampling stops.
-    if (win32.memoryInfo(handle, counters, size) !== true) break;
+    if (win32.memoryInfo(handle, counters, size) !== true) {
+      // A READ THAT FAILS IS ASKED WHY, and only a host that has ended stops the sampling quietly — its ending reaches
+      // main through the pipe. A read refused while the host still runs is a sampler that can no longer see, which
+      // is the state the finding was about, so it is reported as a failure and main ends the host. A failed read was
+      // once taken to mean "the host has gone" without asking, which made a sampler that could not see
+      // indistinguishable from one whose host had ended — both ended in silence.
+      const error = win32.lastError();
+      const exit = [0];
+      if (win32.exitCode(handle, exit) === true && exit[0] === STILL_ACTIVE) {
+        failure = `K32GetProcessMemoryInfo refused a running host (GetLastError ${String(error)})`;
+      }
+      break;
+    }
     const privateBytes = Number(counters['PrivateUsage']);
     peak = Math.max(peak, privateBytes);
     if (privateBytes >= data.killAtBytes) {
@@ -95,5 +112,11 @@ if (handle === null || koffi.address(handle) === 0n) {
     Atomics.wait(flags, SAMPLER_FLAG.STOP, 0, data.intervalMs);
   }
   win32.closeHandle(handle);
-  say(killedAt === null ? { kind: 'stopped', peakBytes: peak } : { kind: 'killed', privateBytes: killedAt });
+  say(
+    failure !== null
+      ? { kind: 'failed', detail: failure }
+      : killedAt === null
+        ? { kind: 'stopped', peakBytes: peak }
+        : { kind: 'killed', privateBytes: killedAt },
+  );
 }
