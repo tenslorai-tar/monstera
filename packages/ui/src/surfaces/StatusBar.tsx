@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { MessageKey } from '@monstera/shared';
-import { type ReactElement, useId, useState } from 'react';
+import { Fragment, type ReactElement, useCallback, useId, useLayoutEffect, useRef, useState } from 'react';
 
 import {
   STATUS_PAGES,
@@ -26,6 +26,13 @@ import type { RunningTask } from '../runningTask.js';
 import type { SavedState } from '../savedState.js';
 import { ZOOM_STEPS, type ZoomMode } from '../zoom.js';
 import { statusBarModel, type OrderedEntry } from './projections.js';
+import { type DocumentFact, FACT_ORDER, factsThatFit } from './statusFacts.js';
+
+/**
+ * The least the document's name is shortened to while it is shown, in ems of the line: about six characters, enough
+ * for *Annual…* to say which document this is. Below it the name leaves the line whole (`statusFacts.ts`).
+ */
+const NAME_MIN_EM = 6;
 
 /** The slider's ends: the zoom ladder's, so the slider offers no scale the ladder refuses. */
 const SLIDER_MIN = ZOOM_STEPS[0];
@@ -132,6 +139,62 @@ export function StatusBar({
   const [outside, setOutside] = useState(false);
   const fieldId = useId();
   const model = statusBarModel(registry, context);
+  const end = useRef<HTMLDivElement>(null);
+  const line = useRef<HTMLSpanElement>(null);
+  const ruler = useRef<HTMLSpanElement>(null);
+  const [shownFacts, setShownFacts] = useState<ReadonlySet<DocumentFact>>(() => new Set(FACT_ORDER));
+
+  /** The four facts as drawn — in the line, and the same elements in the ruler that measures them. */
+  const facts: Readonly<Record<DocumentFact, ReactElement>> = {
+    name: (
+      <span className="m-status-name" title={name}>
+        {name}
+      </span>
+    ),
+    pages: <span>{i18n._(STATUS_PAGES, { count: pageCount })}</span>,
+    size: <span>{byteSize(i18n, byteLength)}</span>,
+    saved: (
+      <span className="m-status-saved" data-dirty={saved.dirty ? 'true' : 'false'}>
+        {i18n._(saved.message, saved.values)}
+      </span>
+    ),
+  };
+
+  // THE LINE'S ROOM, read after every render — a task's progress joining the end region takes from it without the
+  // region changing size — and on every resize of the region or of the ruler, which a language or a name moves. The room
+  // is the end region less its other controls and its gaps, so it does not depend on which facts are drawn.
+  const measureFacts = useCallback((): void => {
+    const region = end.current;
+    const own = line.current;
+    const names = ruler.current;
+    if (region === null || own === null || names === null) return;
+    const others = [...region.children].filter((child) => child !== own && child !== names);
+    const regionGap = parseFloat(getComputedStyle(region).columnGap || '0');
+    const room =
+      region.clientWidth -
+      others.reduce((sum, child) => sum + (child instanceof HTMLElement ? child.offsetWidth : 0), 0) -
+      regionGap * others.length;
+    const width = (fact: string): number => names.querySelector<HTMLElement>(`[data-ruler-fact="${fact}"]`)?.offsetWidth ?? 0;
+    const style = getComputedStyle(own);
+    const next = factsThatFit(
+      { name: width('name'), pages: width('pages'), size: width('size'), saved: width('saved') },
+      NAME_MIN_EM * parseFloat(style.fontSize),
+      width('separator'),
+      parseFloat(style.columnGap || '0'),
+      room,
+    );
+    setShownFacts((was) => (was.size === next.size && [...next].every((fact) => was.has(fact)) ? was : next));
+  }, []);
+  // AFTER EVERY RENDER: no dependency list, because what moves the room — a task, a name, a count — is any prop.
+  useLayoutEffect(measureFacts);
+  useLayoutEffect(() => {
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measureFacts);
+    for (const element of [end.current, ruler.current]) if (element !== null) observer.observe(element);
+    return (): void => {
+      observer.disconnect();
+    };
+  }, [measureFacts]);
 
   const buttons = (entries: readonly OrderedEntry[]): ReactElement[] =>
     entries.flatMap((entry) => {
@@ -221,21 +284,18 @@ export function StatusBar({
         </form>
         {buttons(model.navigation.after)}
       </div>
-      <div className="m-status-end">
+      <div className="m-status-end" ref={end}>
         {/* THE DOCUMENT ITSELF, on the zoom's side as v5-02 draws it: its name, its length, its size, and whether it
             is on disk — the four facts about the file rather than the view, in one line with the design's separators. */}
-        <span className="m-status-document">
-          <span className="m-status-name" title={name}>
-            {name}
-          </span>
-          <span aria-hidden="true">·</span>
-          <span>{i18n._(STATUS_PAGES, { count: pageCount })}</span>
-          <span aria-hidden="true">·</span>
-          <span>{byteSize(i18n, byteLength)}</span>
-          <span aria-hidden="true">·</span>
-          <span className="m-status-saved" data-dirty={saved.dirty ? 'true' : 'false'}>
-            {i18n._(saved.message, saved.values)}
-          </span>
+        {/* WHOLE FACTS ONLY (`statusFacts.ts`): a line too narrow for all four gives up the size, then the length,
+            then the name, and keeps whether the document is saved. */}
+        <span className="m-status-document" ref={line}>
+          {FACT_ORDER.filter((fact) => shownFacts.has(fact)).map((fact, index) => (
+            <Fragment key={fact}>
+              {index === 0 ? null : <span aria-hidden="true">·</span>}
+              {facts[fact]}
+            </Fragment>
+          ))}
         </span>
         {model.chrome.length === 0 ? null : (
           <div className="m-status-cluster" role="group" aria-label={i18n._(STATUS_CHROME_GROUP)}>
@@ -281,6 +341,17 @@ export function StatusBar({
             </button>
           </span>
         )}
+        {/* THE LINE'S RULER: each fact whole and the dot between two, under the line's own rule, out of the region's
+            flow and out of reach, so the room is read against every fact's width whatever is shown. Last, so the
+            line's neighbour is still the control beside it. */}
+        <span className="m-status-document__ruler" ref={ruler} aria-hidden="true" inert>
+          {FACT_ORDER.map((fact) => (
+            <span data-ruler-fact={fact} key={fact}>
+              {facts[fact]}
+            </span>
+          ))}
+          <span data-ruler-fact="separator">·</span>
+        </span>
       </div>
     </footer>
   );

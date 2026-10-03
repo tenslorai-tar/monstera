@@ -2143,6 +2143,53 @@ test('a NARROW WINDOW keeps the page: both panels at the minimum window, then th
   await expect(leftResize).toBeVisible();
 });
 
+test('the STATUS BAR’s document line shows whole facts only, giving up the size and the length first, at every width', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+
+  /** The line's facts as drawn, its dots aside, and whether any of them is cut short. */
+  const line = async (width: number, height: number): Promise<{ texts: string[]; cut: string[] }> => {
+    await page.setViewportSize({ width, height });
+    const read = (): Promise<{ texts: string[]; cut: string[] }> =>
+      page.evaluate(() => {
+        const drawn = [
+          ...document.querySelectorAll<HTMLElement>(
+            '.m-status-bar .m-status-document > :not([aria-hidden="true"])',
+          ),
+        ];
+        return {
+          texts: drawn.map((fact) => fact.textContent),
+          // A FACT CUT SHORT is one whose words are wider than its box. The name may be: it is the one that reads so.
+          cut: drawn.filter((fact) => !fact.matches('.m-status-name') && fact.scrollWidth > fact.clientWidth).map((fact) => fact.textContent),
+        };
+      });
+    return settled(page, read, () => true, `the document line at ${String(width)}`);
+  };
+
+  // CONTROL, WIDE: all four, so what leaves below is the width's doing.
+  const wide = await line(1280, 800);
+  expect(wide.texts).toHaveLength(4);
+  expect(wide.texts.at(-1)).toBe('Saved');
+  expect(wide.cut).toStrictEqual([]);
+
+  // THE MINIMUM WINDOW, where every fact read "8 p… · 1… · Sa…" until 2026-10-03: whole facts, the size and the length
+  // gone first, whether it is saved kept.
+  const minimum = await line(MINIMUM_WINDOW.width, MINIMUM_WINDOW.height);
+  expect(minimum.cut).toStrictEqual([]);
+  expect(minimum.texts.at(-1)).toBe('Saved');
+  expect(minimum.texts.length).toBeLessThan(4);
+
+  // NARROWER: never a fact cut short, whatever is left.
+  for (const [width, height] of [[960, 516], [760, 560]] as const) {
+    expect((await line(width, height)).cut, `a fact cut short at ${String(width)}`).toStrictEqual([]);
+  }
+});
+
 // BOTH BRAND TONES ARE FILLS, in every look (the owner's decision, 2026-10-01): Rate Us was an outline on a translucent
 // wash until then, which paints no `background-image` — so a Rate Us drawn as an outline again fails the FILL loop below
 // in all three, before anything about its label is asked. Measured against the outline's own code on 2026-10-01: the

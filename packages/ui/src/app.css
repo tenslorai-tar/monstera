@@ -6387,7 +6387,10 @@ body {
 
 /* THE DOCUMENT'S LINE takes the free space before it in the end region, so it sits beside the zoom as the design
    draws it, and gives up its name first when the bar is narrow. The tool's words at the start ellipsise the same way. */
-.m-status-document {
+/* THE LINE AND ITS RULER under one rule, so the gap the room is read with is the gap the facts are drawn with; the ruler
+   keeps its own class so a selector for the line finds only the line. */
+.m-status-document,
+.m-status-document__ruler {
   display: flex;
   align-items: center;
   gap: var(--space-4);
@@ -6413,6 +6416,28 @@ body {
 
 .m-status-document > .m-status-name {
   flex: 1 1 0;
+}
+
+/* THE LINE'S RULER (`statusFacts.ts`): each fact whole, under the line's rule, out of the end region's flow, unseen and
+   no wider than nothing, so it never gives the bar a scroll bar. Its facts keep their own widths, which is all it is for. */
+.m-status-end {
+  position: relative;
+}
+
+.m-status-document__ruler {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  inline-size: 0;
+  margin: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.m-status-document__ruler > * {
+  flex: none;
+  overflow: visible;
 }
 
 /* THE HAND TOOL (§10.3's floating toolbar): a grab cursor over the page area, a grabbing one while a
