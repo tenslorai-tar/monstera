@@ -2143,6 +2143,45 @@ test('a NARROW WINDOW keeps the page: both panels at the minimum window, then th
   await expect(leftResize).toBeVisible();
 });
 
+test('a SHORT WINDOW folds the rail’s last entries into More, never the active section, and nothing runs past the rail (ADR-0147)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+  const rail = page.locator('.m-ribbon__rail');
+  const more = page.locator('[data-rail-more]');
+  const spills = (): Promise<boolean> => rail.evaluate((element) => element.scrollHeight > element.clientHeight + 0.5);
+  const drawnSections = (): Promise<string[]> =>
+    rail.locator('button[data-ribbon-section]').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('data-ribbon-section') ?? ''));
+
+  // CONTROL, TALL: every entry on the rail and no More, so the More below is the height's doing.
+  await expect(rail.getByRole('button', { name: 'Settings' })).toBeVisible();
+  await expect(more).toHaveCount(0);
+  expect(await spills()).toBe(false);
+
+  // SHORT — the work area of a 1080p display at 200% — and nothing runs past the rail.
+  await page.setViewportSize({ width: 960, height: 516 });
+  await expect(more).toBeVisible();
+  await expect.poll(spills).toBe(false);
+  const short = await drawnSections();
+  expect(short[0]).toBe('home');
+  expect(short.length).toBeLessThan(8);
+
+  // MORE HOLDS THE REST in the column's order, and a section chosen there becomes the active one, drawn on the rail.
+  await more.click();
+  const folded = page.locator('[role="menu"] [data-ribbon-section]');
+  await expect(folded.first()).toBeVisible();
+  const foldedIds = await folded.evaluateAll((items) => items.map((item) => item.getAttribute('data-ribbon-section') ?? ''));
+  expect([...short, ...foldedIds]).toStrictEqual(['home', 'organize', 'edit', 'comment', 'forms', 'protect', 'review', 'tools']);
+  await expect(page.locator('[role="menu"] [data-command="app.settings"]')).toBeVisible();
+  await page.locator('[role="menu"] [data-ribbon-section="tools"]').click();
+  await expect(rail.locator('button[data-ribbon-section="tools"]')).toHaveAttribute('aria-current', 'true');
+  await expect.poll(spills).toBe(false);
+});
+
 test('the STATUS BAR’s document line shows whole facts only, giving up the size and the length first, at every width', async ({
   page,
 }) => {
@@ -2521,7 +2560,31 @@ test('BELOW THE FLOOR whole groups fold into the row’s More, nothing scrolls s
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   const tools = page.locator('.m-ribbon__tools');
   await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
-  const sections = page.locator('.m-ribbon__tab[data-ribbon-section]:not([disabled])');
+  // THE SECTIONS BY ID, read once on the tall window, and each chosen the way a person reaches it: on the rail, or from
+  // the rail's More when a short window has folded it there (ADR-0147). By place on the rail, a fold at 640 x 360 made
+  // the first place Tools, the active section, and the case compared Tools' row with Home's.
+  const ids = await page
+    .locator('.m-ribbon__tab[data-ribbon-section]:not([disabled])')
+    .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('data-ribbon-section') ?? ''));
+  const choose = async (id: string): Promise<void> => {
+    // THE RAIL AS SETTLED, never mid-fold: read in the frame before a fold answers, a section looks drawn and is then
+    // folded out from under the click (measured: Home at 640 x 360, detached on every retry).
+    const drawn = await settled(
+      page,
+      () =>
+        page
+          .locator('.m-ribbon__rail button[data-ribbon-section]')
+          .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('data-ribbon-section') ?? '')),
+      () => true,
+      'the rail',
+    );
+    if (drawn.includes(id)) {
+      await page.locator(`.m-ribbon__rail button[data-ribbon-section="${id}"]`).click();
+      return;
+    }
+    await page.locator('[data-rail-more]').click();
+    await page.locator(`[role="menu"] [data-ribbon-section="${id}"]`).click();
+  };
 
   // WHAT A SECTION OFFERS, read the same way at every width: the tools drawn on the row, and every tool a More holds.
   // The join is asserted as SET EQUALITY against the wide row, so a tool that vanished at a width fails, and so does
@@ -2537,9 +2600,11 @@ test('BELOW THE FLOOR whole groups fold into the row’s More, nothing scrolls s
         .filter((id) => id !== '')
         .sort(),
     );
+  expect(ids.length).toBeGreaterThan(1);
   const wide: string[][] = [];
-  for (let index = 0; index < (await sections.count()); index += 1) {
-    await sections.nth(index).click();
+  for (const id of ids) {
+    await choose(id);
+    await expect(tools).toHaveAttribute('data-ribbon-active', id);
     await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
     wide.push(await reachable());
   }
@@ -2547,12 +2612,14 @@ test('BELOW THE FLOOR whole groups fold into the row’s More, nothing scrolls s
   let hidden = 0;
   for (const width of [960, 800, 640]) {
     await page.setViewportSize({ width, height: width === 640 ? 360 : 516 });
-    for (let index = 0; index < (await sections.count()); index += 1) {
-      await sections.nth(index).click();
+    for (const [index, id] of ids.entries()) {
+      await choose(id);
+      // THE SECTION ASKED FOR IS THE ONE DRAWN, so the row compared below is that section's.
+      await expect(tools).toHaveAttribute('data-ribbon-active', id);
       await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
       // A SETTLED row: the overflow is read once the fold has answered for this width.
       await expect.poll(() => tools.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
-      expect(await reachable(), `section ${String(index)} at ${String(width)}`).toStrictEqual(wide[index]);
+      expect(await reachable(), `section ${id} at ${String(width)}`).toStrictEqual(wide[index]);
       const rest = tools.locator('.m-ribbon__rest .m-ribbon__more');
       if ((await rest.count()) > 0) {
         hidden += 1;

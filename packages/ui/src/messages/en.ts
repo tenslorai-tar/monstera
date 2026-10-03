@@ -1856,6 +1856,8 @@ export const DOCUMENT_TOOLS_LABEL = messageKey('surface.quick-toolbar.label');
  * from different files share one group, which is the whole point of a group.
  */
 export const RIBBON_RAIL_LABEL = messageKey('surface.ribbon.rail');
+/** The rail's own *More*, holding the entries a short window folds (ADR-0147). */
+export const RAIL_MORE = messageKey('surface.ribbon.rail-more');
 export const RIBBON_TOOLS_LABEL = messageKey('surface.ribbon.tools');
 export const RIBBON_MORE = messageKey('surface.ribbon.more');
 export const RIBBON_MORE_GROUPS = messageKey('surface.ribbon.more-groups');
@@ -4439,6 +4441,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'from. Your document has not changed.',
   [DOCUMENT_TOOLS_LABEL]: 'Float bar',
   [RIBBON_RAIL_LABEL]: 'Sections',
+  // THE WORD THE RIBBON AND THE MENU ROW USE for what they fold, so the three folds read alike.
+  [RAIL_MORE]: 'More',
   [RIBBON_TOOLS_LABEL]: 'Tools',
   // A WORD, not a bare ellipsis glyph: the button that holds the tools which did not fit is a named
   // control, and `⋯` alone would be an icon-only one needing a tooltip to say the same thing.

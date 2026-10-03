@@ -1,7 +1,9 @@
+import { Menu } from '@base-ui/react/menu';
 import { useLingui } from '@lingui/react';
-import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import {
+  RAIL_MORE,
   RIBBON_RAIL_LABEL,
   RIBBON_MORE_GROUPS,
   RIBBON_TOOLS_LABEL,
@@ -24,6 +26,7 @@ import { LAYOUT_MODE_SETTING, RIBBON_SECTION_SETTING } from '../settings/layout.
 import type { SettingsStore } from '../settingsStore.js';
 import { useSetting } from '../useSetting.js';
 import { type RibbonSection, railModel, ribbonModel } from './projections.js';
+import { railCapacity, railFolded } from './railFold.js';
 import { RibbonMore, RibbonMoreGauge } from './RibbonMore.js';
 import { restEntries, splitFold } from './ribbonFolding.js';
 import { useRibbonFold } from './useRibbonFold.js';
@@ -214,6 +217,33 @@ export function Ribbon({ registry, context, settings, showing }: RibbonProps): R
   const activeSection = filled.find((section) => section.section === chosen) ?? filled[0];
   const fold = useRibbonFold(activeSection);
 
+  // THE RAIL'S FOLD (ADR-0147): the column is the sections then the foot's commands, and a short window folds its last
+  // entries into a *More* at the foot. The room is the rail's own height in buttons as the RULER draws one — its content
+  // height — so what is folded cannot move the answer. Measured whenever the rail's height changes, and again when the
+  // active section or the column's length does, since both decide which entries fold.
+  const railRuler = useRef<HTMLSpanElement | null>(null);
+  const [railFold, setRailFold] = useState<ReadonlySet<number>>(() => new Set());
+  const railTotal = SECTION_IDS.length + foot.length;
+  const railActive = activeSection === undefined ? undefined : SECTION_IDS.indexOf(activeSection.section);
+  useLayoutEffect(() => {
+    const rail = railRef.current;
+    const ruler = railRuler.current;
+    if (rail === null || ruler === null || typeof ResizeObserver === 'undefined') return undefined;
+    const measure = (): void => {
+      const style = getComputedStyle(rail);
+      const inner = rail.clientHeight - parseFloat(style.paddingBlockStart) - parseFloat(style.paddingBlockEnd);
+      const capacity = railCapacity(inner, ruler.offsetHeight, parseFloat(style.rowGap || '0'));
+      const next = railFolded(railTotal, railActive, capacity);
+      setRailFold((was) => (was.size === next.size && [...next].every((place) => was.has(place)) ? was : next));
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(rail);
+    observer.observe(ruler);
+    return (): void => {
+      observer.disconnect();
+    };
+  }, [railActive, railTotal, mode]);
+
   // SHOW ME (ADR-0112 Decision 4): ring the control that runs `showing.id` — its own button, or the *More* or named
   // menu that holds it, which carries its members in `data-holds` because a closed menu's items are not in the page.
   // In Studio the tools are an overlay, open while one is asking (`open` above); when the ring ends the overlay stays,
@@ -273,7 +303,8 @@ export function Ribbon({ registry, context, settings, showing }: RibbonProps): R
     // so this component never learns where the shell puts them.
     <div className="m-ribbon" data-pane="ribbon">
       <nav aria-label={i18n._(RIBBON_RAIL_LABEL)} className="m-ribbon__rail" ref={railRef}>
-        {SECTION_IDS.map((id) => {
+        {SECTION_IDS.map((id, place) => {
+          if (railFold.has(place)) return null;
           const has = filled.some((section) => section.section === id);
           return (
             <button
@@ -296,24 +327,97 @@ export function Ribbon({ registry, context, settings, showing }: RibbonProps): R
         })}
         {/* THE RAIL'S FOOT (ADR-0098): the commands placed on `rail`, below the sections — the
             owner's design draws Settings there. A projection like every other surface here. */}
-        {foot.length === 0 ? null : (
+        {foot.length === 0 && railFold.size === 0 ? null : (
           <div className="m-ribbon__rail-foot">
-            {foot.map((entry) => (
-              <button
-                className="m-ribbon__tab"
-                data-command={entry.command.id}
-                key={entry.command.id}
-                onClick={() => {
-                  void entry.command.run(context);
-                }}
-                type="button"
-              >
-                <Icon name={entry.command.icon ?? 'File'} size="control" />
-                <span className="m-ribbon__tab-label">{i18n._(entry.command.ribbonTitle ?? entry.command.title)}</span>
-              </button>
-            ))}
+            {foot.map((entry, index) =>
+              railFold.has(SECTION_IDS.length + index) ? null : (
+                <button
+                  className="m-ribbon__tab"
+                  data-command={entry.command.id}
+                  key={entry.command.id}
+                  onClick={() => {
+                    void entry.command.run(context);
+                  }}
+                  type="button"
+                >
+                  <Icon name={entry.command.icon ?? 'File'} size="control" />
+                  <span className="m-ribbon__tab-label">{i18n._(entry.command.ribbonTitle ?? entry.command.title)}</span>
+                </button>
+              ),
+            )}
+            {railFold.size === 0 ? null : (
+              // THE FOLDED ENTRIES (ADR-0147), in the column's order: a section chosen here becomes the active one, a
+              // command here runs. Its members are named for *Show me*, which rings this when one of them is asked for.
+              <Menu.Root>
+                <Menu.Trigger
+                  className="m-ribbon__tab"
+                  data-rail-more=""
+                  data-holds={foot
+                    .filter((_, index) => railFold.has(SECTION_IDS.length + index))
+                    .map((entry) => entry.command.id)
+                    .join(' ')}
+                  nativeButton
+                >
+                  <Icon name="Ellipsis" size="control" />
+                  <span className="m-ribbon__tab-label">{i18n._(RAIL_MORE)}</span>
+                </Menu.Trigger>
+                <Menu.Portal>
+                  <Menu.Positioner side="right" align="end" sideOffset={4}>
+                    {/* THE MENU ROW'S COLUMNS — a mark, a glyph and the name — so the two folds read alike. */}
+                    <Menu.Popup className="m-context-menu m-menu-bar__popup">
+                      {SECTION_IDS.map((id, place) =>
+                        railFold.has(place) ? (
+                          <Menu.Item
+                            key={id}
+                            className="m-context-menu-item"
+                            data-ribbon-section={id}
+                            disabled={!filled.some((section) => section.section === id)}
+                            label={i18n._(SECTION_TITLES[id])}
+                            onClick={() => {
+                              settings.set(RIBBON_SECTION_SETTING.id, id);
+                              if (mode === 'studio') setOverlay(true);
+                            }}
+                          >
+                            <span className="m-menu-bar__mark" aria-hidden="true" />
+                            <span className="m-menu-bar__icon" aria-hidden="true">
+                              <Icon name={SECTION_ICONS[id]} size="dense" />
+                            </span>
+                            <span className="m-menu-bar__title">{i18n._(SECTION_TITLES[id])}</span>
+                          </Menu.Item>
+                        ) : null,
+                      )}
+                      {foot.map((entry, index) =>
+                        railFold.has(SECTION_IDS.length + index) ? (
+                          <Menu.Item
+                            key={entry.command.id}
+                            className="m-context-menu-item"
+                            data-command={entry.command.id}
+                            label={i18n._(entry.command.title)}
+                            onClick={() => {
+                              void entry.command.run(context);
+                            }}
+                          >
+                            <span className="m-menu-bar__mark" aria-hidden="true" />
+                            <span className="m-menu-bar__icon" aria-hidden="true">
+                              <Icon name={entry.command.icon ?? 'File'} size="dense" />
+                            </span>
+                            <span className="m-menu-bar__title">{i18n._(entry.command.ribbonTitle ?? entry.command.title)}</span>
+                          </Menu.Item>
+                        ) : null,
+                      )}
+                    </Menu.Popup>
+                  </Menu.Positioner>
+                </Menu.Portal>
+              </Menu.Root>
+            )}
           </div>
         )}
+        {/* THE RULER (ADR-0147): one rail button's content, under the rail buttons' own rule, unseen, out of the
+            column's flow and out of reach, so the room is counted in buttons at the height they shrink to. */}
+        <span className="m-ribbon__tab-ruler" ref={railRuler} aria-hidden="true" inert>
+          <Icon name={SECTION_ICONS.home} size="control" />
+          <span className="m-ribbon__tab-label">{i18n._(SECTION_TITLES.home)}</span>
+        </span>
       </nav>
       {mode === 'ribbon' || open ? (
       <div

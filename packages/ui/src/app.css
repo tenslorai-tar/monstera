@@ -3657,8 +3657,10 @@ optgroup {
 
 /* A LABELLED ICON (§10.3), the glyph at §10.4's primary-control size over a
    10 px caption, which is M2's floor. No fixed width: §10.3 names none, so the
-   rail is as wide as its longest label. */
-.m-ribbon__tab {
+   rail is as wide as its longest label. The rail's RULER takes every rule that sizes a button (ADR-0147), under its own
+   class so a selector for a rail button finds only the buttons. */
+.m-ribbon__tab,
+.m-ribbon__tab-ruler {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3689,6 +3691,9 @@ optgroup {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  /* IT SHRINKS AS THE SECTIONS DO, so its buttons give way to their content height like theirs: as a column of its
+     own it kept its buttons' full 48 as its minimum, and the rail's fold counts every button at the one height. */
+  min-block-size: 0;
   margin-block-start: auto;
 }
 
@@ -6131,7 +6136,8 @@ body {
   inline-size: var(--rail-studio);
 }
 
-.m-ribbon__tab {
+.m-ribbon__tab,
+.m-ribbon__tab-ruler {
   position: relative;
   justify-content: center;
   block-size: var(--rail-button);
@@ -6141,10 +6147,26 @@ body {
   line-height: 1;
 }
 
-.m-ribbon__tab .m-icon {
+.m-ribbon__tab .m-icon,
+.m-ribbon__tab-ruler .m-icon {
   inline-size: var(--icon-20);
   block-size: var(--icon-20);
   stroke-width: var(--icon-stroke);
+}
+
+/* THE RULER ITSELF (ADR-0147): a button at its CONTENT height — the height the rail's buttons shrink to before any
+   entry folds — out of the column's flow and unseen. Inside the rail's width, so its label lays out as theirs does. */
+.m-ribbon__rail {
+  position: relative;
+}
+
+.m-ribbon__tab-ruler {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  block-size: auto;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .m-document-surface[data-layout='studio'] .m-ribbon__tab {
