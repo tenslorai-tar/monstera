@@ -25,7 +25,7 @@ import {
   splitPlaceholderAsset,
   taggedPrior,
 } from './engineChannels.js';
-import { placeholderRefusalFor } from './placeholderRefusals.js';
+import { hostRefusalFor } from './hostRefusals.js';
 import { EngineSerialiseMismatch, type SessionAreaSurface, takeAnnounced } from './remoteLifecycle.js';
 import type {
   HostDestinationsReader,
@@ -663,16 +663,17 @@ export function remotePdfLibHost(
     }
     let byteLength: number;
     try {
-      byteLength = answered(
-        'engine/applyPdfLib',
-        await client['engine/applyPdfLib']({
-          session: sessions.handleFor(session),
-          command: split.command,
-          asset,
-          reads,
-          into,
-        }),
-      ).bytes;
+      const result = await client['engine/applyPdfLib']({
+        session: sessions.handleFor(session),
+        command: split.command,
+        asset,
+        reads,
+        into,
+      });
+      // A REFUSAL A PERSON CAN ACT ON comes back as the class it was thrown as (`hostRefusals.ts`).
+      const refusal = result.ok ? undefined : hostRefusalFor(result.error.code);
+      if (refusal !== undefined) throw refusal;
+      byteLength = answered('engine/applyPdfLib', result).bytes;
     } finally {
       if (asset !== undefined) await assets.remove(area.snapshotDirectory, asset);
     }
@@ -718,7 +719,7 @@ export function remoteSignatureHost(
         asset,
         into,
       });
-      const refusal = result.ok ? undefined : placeholderRefusalFor(result.error.code);
+      const refusal = result.ok ? undefined : hostRefusalFor(result.error.code);
       if (refusal !== undefined) throw refusal;
       answer = answered('engine/prepareSignature', result);
     } catch (error) {

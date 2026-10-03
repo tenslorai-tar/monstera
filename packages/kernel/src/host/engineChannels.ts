@@ -1330,14 +1330,21 @@ export function joinPlaceholderAsset(
 }
 
 /**
- * The refusals a placeholder can meet that a person can act on, by the code each crosses the pipe as. A throw crossing
- * the boundary becomes `internal` with its diagnostic withheld, so each is returned under its own code and main
- * rethrows the class its signing outcomes are chosen by (`documentCommands.sign`).
+ * The refusals a hosted command can meet that a person can act on, by the code each crosses the pipe as. A throw
+ * crossing the boundary becomes `internal` with its diagnostic withheld, so each is returned under its own code and
+ * main rethrows the class its outcomes are chosen by (`documentCommands.insertImage`, `documentCommands.sign`).
+ * `hostRefusals.ts` is the one table both directions read.
+ *
+ * A picture past the pixel bound is any picture's: Insert image's, run in pdf-lib here since ADR-0121, and a visible
+ * signature's.
  */
+export const PICTURE_REFUSALS = ['picture-too-many-pixels'] as const;
+
+/** {@link PICTURE_REFUSALS}, and the two only a signature's appearance meets. */
 export const PLACEHOLDER_REFUSALS = [
   'signature-text-unencodable',
   'signature-picture-unreadable',
-  'signature-picture-too-many-pixels',
+  ...PICTURE_REFUSALS,
 ] as const;
 
 /** {@link carriesAsset} over a pdf-lib wire command: both halves from `declaredCommands`, as there. */
@@ -2061,7 +2068,7 @@ export const engineChannels = {
       })
       .strict(),
     z.object({ bytes: z.number().int().nonnegative() }).strict(),
-    ['no-such-session', 'asset-missing', 'apply-failed', 'serialise-failed'],
+    ['no-such-session', 'asset-missing', 'apply-failed', 'serialise-failed', ...PICTURE_REFUSALS],
   ),
 
   /**

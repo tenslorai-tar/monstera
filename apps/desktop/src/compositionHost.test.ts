@@ -1378,6 +1378,37 @@ describe('the composition root, a HOSTED pdf-lib command (ADR-0121 Decision 3)',
     // AND MAIN'S IMAGE IS THE REBUILT SESSION'S BYTES, by length — the renderer's answer.
     expect(executed.value.byteLength).toBe(result.length);
   });
+
+  it('a picture the host refuses past the PIXEL bound is answered as too many pixels, never as unreadable', async () => {
+    // THE CODE BETWEEN THE PAIR: `documentCommands.test.ts` inserts through pdf-lib in its own process, where the
+    // refusal keeps its class, and `remoteLifecycle.test.ts` crosses the pipe without the outcome a person reads.
+    // Here the host answers the way the real one does and the root decides the outcome.
+    const insertingWith = async (code: string): Promise<unknown> => {
+      // A HOST THAT SERIALISES, because the bus checkpoints before a terminal command and that is a real file.
+      const serving = documentServingEngine(new TextEncoder().encode('%PDF-1.7\n% a document to insert into\n'));
+      const spy = platformAnswering((channel, params) =>
+        channel === 'engine/applyPdfLib' ? { ok: false, error: { code } } : serving(channel, params),
+      );
+      const { handlers } = createShellDependencies({
+        ...harnessSurfaces('the composition-host test'),
+        appInfo,
+        pickDocument: () => Promise.resolve(aDocument(`pixels-${code}.pdf`)),
+        pickImage: () => Promise.resolve(join(scratch, 'a-large-picture.png')),
+        readImage: () => Promise.resolve({ kind: 'read', bytes: Uint8Array.of(0x89, 0x50, 0x4e, 0x47) }),
+        enginePlatform: spy.platform,
+        checkpointDirectory: join(scratch, `checkpoints-pixels-${code}`),
+      });
+      const opened = await handlers['document.open']({});
+      if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+      const inserted = await handlers['document.insertImage']({ docId: opened.value.docId, at: 0 });
+      if (!inserted.ok) throw new Error(JSON.stringify(inserted));
+      return inserted.value.kind;
+    };
+
+    expect(await insertingWith('picture-too-many-pixels')).toBe('too-many-pixels');
+    // CONTROL: the host's ordinary failure is still the picture being unreadable, so the outcome above is the code's.
+    expect(await insertingWith('apply-failed')).toBe('unreadable');
+  });
 });
 
 describe('the composition root, SAVING (ADR-0121 addendum)', () => {

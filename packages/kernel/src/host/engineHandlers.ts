@@ -51,7 +51,7 @@ import {
   joinPlaceholderAsset,
   taggedPrior,
 } from './engineChannels.js';
-import { placeholderRefusalCodeOf } from './placeholderRefusals.js';
+import { pictureRefusalCodeOf, placeholderRefusalCodeOf } from './hostRefusals.js';
 
 /**
  * Reads one page's structured text as MuPDF's own JSON.
@@ -738,7 +738,9 @@ export function createEngineHandlers({
         const written = await files.writeOutput(held.outputDirectory, into, result);
         return { ok: true, value: { bytes: written } };
       } catch (error) {
-        return failed('apply-failed', error);
+        // A PICTURE PAST THE PIXEL BOUND keeps its name across the pipe, so Insert image says so rather than calling
+        // a valid picture unreadable; anything else is the document's failure.
+        return failed(pictureRefusalCodeOf(error) ?? 'apply-failed', error);
       }
     },
 

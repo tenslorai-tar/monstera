@@ -33,7 +33,9 @@ import {
   type RemoteSessions,
   type SessionArea,
   createRemoteSessions,
+  remotePdfLibHost,
   remoteSignatureHost,
+  type SessionAssets,
 } from './remoteEngine.js';
 import { PngPixelsRefused } from '../imageDimensions.js';
 import type { PlaceholderRequest } from '../signatureHole.js';
@@ -335,11 +337,18 @@ function joined(
     open: (image: Uint8Array) => openAsSupervisor(client, sessions, areas, image),
     lifecycle: remoteMupdfLifecycle(client, sessions, areas),
     // THE SIGNER'S HOST HALF, through the same client and areas, with assets written where the host reads them.
-    signer: remoteSignatureHost(client, sessions, areas, {
-      name: areas.mintName,
-      write: (directory, name, bytes) => writeFile(join(directory, name), bytes),
-      remove: (directory, name) => rm(join(directory, name), { force: true }),
-    }),
+    signer: remoteSignatureHost(client, sessions, areas, fileAssets(areas)),
+    // AND pdf-lib's, for the same reason: a hosted command's refusal crosses this same pipe.
+    pdfLib: remotePdfLibHost(client, sessions, areas, fileAssets(areas)),
+  };
+}
+
+/** Assets written where the host reads them, under names the areas mint. */
+function fileAssets(areas: FakeAreas): SessionAssets {
+  return {
+    name: areas.mintName,
+    write: (directory, name, bytes) => writeFile(join(directory, name), bytes),
+    remove: (directory, name) => rm(join(directory, name), { force: true }),
   };
 }
 
@@ -1023,6 +1032,38 @@ describe("a signature's placeholder, prepared in the host and taken by main (ADR
     // EACH ASSET WAS REMOVED, and nothing the host might have written is left in its output directory.
     expect(await readdir(area.snapshotDirectory)).toStrictEqual(before);
     expect(await readdir(area.outputDirectory)).toStrictEqual([]);
+    await lifecycle.close(session);
+  });
+});
+
+describe('a hosted pdf-lib command’s refusal, across the pipe (ADR-0121 Decision 3)', () => {
+  afterEach(async () => {
+    while (mintedRoots.length > 0) {
+      const root = mintedRoots.pop();
+      if (root !== undefined) await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('a page image past the PIXEL bound arrives in main as that refusal, not as the host failing', async () => {
+    // `documentCommands.insertImage` answers *too many pixels* only for this class; anything else it answers as an
+    // unreadable picture, which blames a valid one. The rule runs in the host since pdf-lib moved there.
+    const areas = realAreas();
+    const { open, pdfLib, lifecycle } = joined(areas);
+    const session = await open(flat);
+    const header = new Uint8Array(29);
+    header.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+    new DataView(header.buffer).setUint32(16, 12_000);
+    new DataView(header.buffer).setUint32(20, 12_000);
+    const refused = pdfLib(session, { kind: 'insertImagePage', at: 0, bytes: header, mediaType: 'image/png' }, undefined);
+    await expect(refused).rejects.toBeInstanceOf(PngPixelsRefused);
+    await expect(refused).rejects.toMatchObject({ reason: 'too-many-pixels' });
+    // CONTROL: bytes that are no picture at all are the command's failure, as before.
+    const unreadable = pdfLib(
+      session,
+      { kind: 'insertImagePage', at: 0, bytes: Uint8Array.of(1, 2, 3), mediaType: 'image/jpeg' },
+      undefined,
+    );
+    await expect(unreadable).rejects.toBeInstanceOf(EngineCallFailed);
     await lifecycle.close(session);
   });
 });
