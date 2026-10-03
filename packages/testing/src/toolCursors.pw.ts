@@ -3,6 +3,7 @@ import { type Page, expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
+import { pageShown } from './settled.js';
 
 /**
  * Each tool's pointer, and the highlighter's gesture, in a real browser (the owner's review of 0.1.6.0,
@@ -35,6 +36,8 @@ async function openWithText(page: Page, sent: Sent[]): Promise<void> {
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   await expect(page.locator('[data-text-layer="0"] [data-text-line]')).toHaveCount(2);
+  // THE PANE SHOWN: the lines mount while it is still hidden for its first frame.
+  await pageShown(page);
 }
 
 async function chooseTool(page: Page, title: string): Promise<void> {
@@ -56,18 +59,19 @@ async function cursorOverPage(page: Page): Promise<string> {
 
 test('each TOOL shows its own pointer: the arrow to pick or place, the I-beam on text, the crosshair to draw', async ({ page }) => {
   await openWithText(page, []);
-  const read: Record<string, string> = {};
-  for (const title of ['Select annotations', 'Note', 'Highlight text', 'Rectangle']) {
-    await chooseTool(page, title);
-    await expect(page.locator('.m-palette-query')).toHaveCount(0);
-    read[title] = await cursorOverPage(page);
-  }
-  expect(read).toStrictEqual({
+  const wanted: Readonly<Record<string, string>> = {
     'Select annotations': 'default',
     Note: 'default',
     'Highlight text': 'text',
     Rectangle: 'crosshair',
-  });
+  };
+  for (const [title, cursor] of Object.entries(wanted)) {
+    await chooseTool(page, title);
+    await expect(page.locator('.m-palette-query')).toHaveCount(0);
+    // POLLED FOR THE TOOL'S POINTER: the palette closing is not the tool's surface mounting over the page, so one read
+    // straight after it can be the previous tool's pointer. A wrong pointer still fails, naming what was received.
+    await expect.poll(() => cursorOverPage(page), title).toBe(cursor);
+  }
 });
 
 test('HIGHLIGHT selects the words as they are dragged over, and marks exactly that selection on release', async ({ page }) => {

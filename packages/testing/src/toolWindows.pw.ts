@@ -1,9 +1,10 @@
 import { AxeBuilder } from '@axe-core/playwright';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import { type Locator, type Page, expect, test } from '@playwright/test';
 
 import { samplePdf } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { settled } from './settled.js';
 
 /**
  * The five tool windows the owner had redrawn in the dialog pattern on 2 October — Cloud storage, Help, Keyboard
@@ -23,11 +24,36 @@ async function palette(page: Page, title: string): Promise<void> {
   await page.getByRole('option', { name: title }).first().click();
 }
 
-const WINDOWS: readonly { readonly name: string; readonly title: string; readonly open: (page: Page) => Promise<void> }[] = [
-  { name: 'Cloud storage', title: 'Cloud storage', open: (page) => palette(page, 'Cloud storage…') },
+/**
+ * Each window, how a person opens it, and WHAT IT HOLDS ONCE ITS CONTENT HAS ARRIVED. The body's chunk arrives with
+ * the dialog; a provider's state and the misspelt words arrive afterwards over IPC, so a window measured on its footer
+ * alone can be measured empty.
+ */
+const WINDOWS: readonly {
+  readonly name: string;
+  readonly title: string;
+  readonly open: (page: Page) => Promise<void>;
+  readonly arrived?: (dialog: Locator) => Promise<void>;
+}[] = [
+  {
+    name: 'Cloud storage',
+    title: 'Cloud storage',
+    open: (page) => palette(page, 'Cloud storage…'),
+    arrived: async (dialog) => {
+      await expect(dialog.getByText('OneDrive', { exact: true }).first()).toBeVisible();
+      await expect(dialog.getByText('Google Drive', { exact: true }).first()).toBeVisible();
+    },
+  },
   { name: 'Help', title: 'Help centre', open: (page) => page.keyboard.press('F1') },
   { name: 'Keyboard shortcuts', title: 'Keyboard shortcuts', open: (page) => page.keyboard.press('Control+Slash') },
-  { name: 'Spell check', title: 'Spell check', open: (page) => palette(page, 'Spell check') },
+  {
+    name: 'Spell check',
+    title: 'Spell check',
+    open: (page) => palette(page, 'Spell check'),
+    arrived: async (dialog) => {
+      await expect(dialog.getByText('documnet').first()).toBeVisible();
+    },
+  },
   { name: 'Camera capture', title: 'Take pictures', open: (page) => palette(page, 'New PDF from camera…') },
 ];
 
@@ -62,6 +88,8 @@ for (const tool of WINDOWS) {
         await expect(dialog).toBeVisible();
         const footer = dialog.locator('.m-dialog-footer');
         await expect(footer).toBeVisible();
+        await tool.arrived?.(dialog);
+        await settled(page, () => dialog.boundingBox(), (box) => box !== null, tool.name);
 
         const shape = await dialog.evaluate((popup) => {
           const box = popup.getBoundingClientRect();

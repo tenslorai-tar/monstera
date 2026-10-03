@@ -20,7 +20,7 @@ import { type Page, expect, test } from '@playwright/test';
 // and `LOOKS` is theirs too: §10.4's gate and §10.7's baselines check the same three themes, and
 // two lists would drift the day one gains a fourth (audit finding IIIIII-2).
 import { LOOKS, type Look, bridge, bridgeUnder } from './pageBridge.js';
-import { settled } from './settled.js';
+import { pageShown, popupPlaced, settled } from './settled.js';
 
 /**
  * §10.4's mandated gate: axe-core on a Playwright-rendered screen.
@@ -813,7 +813,10 @@ async function pressOnSecondParagraph(page: Page, zoom: string): Promise<{ from:
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   const anchor = page.locator('[data-text-layer="0"] [data-text-line="4"]');
   await expect(anchor).toHaveText('A second paragraph, shorter than the first.');
-  const from = await anchor.boundingBox();
+  // THE PANE SHOWN, not only its lines mounted: the lines mount while the pane is still hidden for its first frame,
+  // and a press then lands on the loading state.
+  await pageShown(page);
+  const from = await settled(page, () => anchor.boundingBox(), (box) => box !== null, 'the second paragraph');
   const layer = await page.locator('[data-text-layer="0"]').boundingBox();
   if (from === null || layer === null) throw new Error('the paragraph or its layer has no box');
   await page.mouse.move(from.x + 2, from.y + from.height / 2);
@@ -936,6 +939,7 @@ test('SELECTED TEXT opens the selected-text menu above the page’s, in the owne
 
   const line = page.locator('[data-text-layer="0"] [data-text-line="0"]');
   await expect(line).toHaveCount(1);
+  await pageShown(page);
   const box = await line.boundingBox();
   if (box === null) throw new Error('the first line has no box');
   await page.mouse.move(box.x + 2, box.y + box.height / 2);
@@ -998,6 +1002,7 @@ test('right-click › ASK AI quotes the selected words in the assistant’s box,
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   const line = page.locator('[data-text-layer="0"] [data-text-line="0"]');
   await expect(line).toHaveCount(1);
+  await pageShown(page);
   const box = await line.boundingBox();
   if (box === null) throw new Error('the first line has no box');
   await page.mouse.move(box.x + 2, box.y + box.height / 2);
@@ -1042,6 +1047,7 @@ test('a triple-click on a page’s LAST LINE still opens the selected-text menu,
 
   const line = page.locator('[data-text-layer="0"] [data-text-line="1"]');
   await expect(line).toHaveCount(1);
+  await pageShown(page);
   const box = await line.boundingBox();
   if (box === null) throw new Error('the last line has no box');
   await line.click({ clickCount: 3, position: { x: box.width / 2, y: box.height / 2 } });
@@ -1318,9 +1324,12 @@ test('a page ZOOMED WIDER THAN ITS PANE can still be scrolled to its left edge',
   await bar.getByRole('slider', { name: 'Zoom level' }).fill('4');
   await expect(bar.locator('.m-status-zoom')).toHaveText('400%');
 
-  const reach = await page.evaluate(() => {
+  // THE PAGE'S SLOT, not its canvas: 150 ms after a zoom settles the page is redrawn, and above the tiling threshold
+  // the one canvas is replaced by tiles, so a canvas read can find nothing on a slow runner. The slot is the page's
+  // box however it is drawn; the reading is taken once it has stopped changing.
+  const reach = await settled(page, () => page.evaluate(() => {
     const list = document.querySelector('.m-page-list');
-    const canvas = document.querySelector('canvas.m-page');
+    const canvas = document.querySelector('.m-page-slot');
     if (list === null || canvas === null) return null;
     // SCROLLED HOME FIRST, because the question is whether the left edge can be reached AT ALL:
     // a pane that happens to be scrolled right would hide the defect behind a scroll position.
@@ -1335,7 +1344,7 @@ test('a page ZOOMED WIDER THAN ITS PANE can still be scrolled to its left edge',
       scrollWidth: list.scrollWidth,
       pageWidth: Math.round(drawn.width),
     };
-  });
+  }), (now) => now !== null, 'the page at 400%');
 
   expect(reach).not.toBeNull();
   // THE VACUITY GUARD, and it is the load-bearing line: with a page NARROWER than its pane there
@@ -1393,7 +1402,11 @@ test('the FLOATING TOOLBAR is a pill inside the page area, off the rail and the 
 
   const toolbar = page.getByRole('toolbar', { name: 'Float bar' });
   await expect(toolbar).toBeVisible();
-  const box = await toolbar.boundingBox();
+  // THE PAGE SHOWN AND THE RULER IN: the bar is visible before the first frame, and it moves 18 px when the vertical
+  // ruler mounts with the first page measure (`app.css`), so its box is read once both have happened and it stops.
+  await pageShown(page);
+  await expect(page.locator('.m-ruler-v')).toBeVisible();
+  const box = await settled(page, () => toolbar.boundingBox(), (now) => now !== null, 'the Float bar');
   const area = await page.locator('.m-canvas-area').boundingBox();
   const organize = await page.getByRole('button', { name: 'Organize' }).boundingBox();
   const panelPane = await page.locator('.m-splitter__pane').first().boundingBox();
@@ -1823,6 +1836,8 @@ for (const [chosen, expected] of [
     await page.getByRole('button', { name: 'Open PDF…' }).click();
     const percentage = page.locator('.m-status-bar .m-status-zoom');
     await expect(percentage).toHaveText('100%');
+    // THE PAGES SHOWN: the zoom reads 100% before the first frame, while the pane is still hidden for it.
+    await pageShown(page);
     const scroller = await page.locator('.m-page-list').first().boundingBox();
     if (scroller === null) throw new Error('the page list is laid out');
     await page.mouse.move(scroller.x + scroller.width / 2, scroller.y + scroller.height / 2);
@@ -1945,13 +1960,19 @@ test('DONATE AND RATE US sit at the MENU ROW’s centre while they fit, and afte
   /** The three boxes, read after the layout has settled at a width. */
   const boxes = async (width: number): Promise<{ group: Box; menu: Box; reserve: Box; row: Box }> => {
     await page.setViewportSize({ width, height: 800 });
-    await page.waitForTimeout(150);
     const read = async (locator: typeof row): Promise<Box> => {
       const box = await locator.boundingBox();
       if (box === null) throw new Error(`a box at ${String(width)}`);
       return box;
     };
-    return { group: await read(group), menu: await read(lastMenu), reserve: await read(reserve), row: await read(row) };
+    // SETTLED, not slept on: the row's fit runs through a ResizeObserver and may take more than one pass, so the four
+    // boxes are read once they agree across two frames rather than after a fixed 150 ms.
+    return settled(
+      page,
+      async () => ({ group: await read(group), menu: await read(lastMenu), reserve: await read(reserve), row: await read(row) }),
+      (now) => Math.round(now.row.width) === width,
+      `the menu row at ${String(width)}`,
+    );
   };
 
   // WIDE: centred on the window to the pixel, which is what the equal outer tracks and the equal padding give. At
@@ -2036,7 +2057,10 @@ for (const look of LOOKS) {
       await button.blur();
 
       // HOVER and PRESS each change what is drawn, and differently from each other and from rest.
-      const filter = (): Promise<string> => button.evaluate((element) => getComputedStyle(element).filter);
+      // EACH READ ONCE THE FILTER HAS STOPPED MOVING: `.m-button` transitions its filter over 140 ms, so a read straight
+      // after the hover or the press is a value on the way, and the first frame of a transition is the rest value.
+      const filter = (): Promise<string> =>
+        settled(page, () => button.evaluate((element) => getComputedStyle(element).filter), () => true, `${name}'s filter`);
       const rest = await filter();
       await button.hover();
       const hovered = await filter();
@@ -2371,9 +2395,9 @@ test('LIVE CHECK 1.4.13: a tooltip shows on hover and on keyboard focus, stays w
 
   await trigger.hover();
   await expect(tip).toHaveText('New PDF from Word, Excel or PowerPoint…');
-  // HOVERABLE: the pointer moves onto the tooltip itself and it stays.
-  const box = await tip.boundingBox();
-  if (box === null) throw new Error('the tooltip has no box');
+  // HOVERABLE: the pointer moves onto the tooltip itself and it stays. Its box once PLACED: an unplaced popup sits at
+  // the window's origin at opacity 0, which counts as visible, and a move there leaves the trigger.
+  const box = await popupPlaced(page, tip, 'the tooltip');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 5 });
   await expect(tip).toBeVisible();
   // DISMISSIBLE without moving the pointer.
@@ -2487,6 +2511,9 @@ for (const [theme, offers] of [
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     const bar = page.locator('.m-title-bar');
     await expect(bar.getByRole('button', { name: offers })).toBeVisible();
+    // THE DOCUMENT'S TAB IN THE ROW, which is what the fit is measured WITH: the theme and the switch are both there
+    // before the tab arrives, so a row read on them alone is measured without the share the tabs take.
+    await expect(bar.getByRole('navigation', { name: 'Open documents' }).getByText('width.pdf')).toBeVisible();
 
     const fit = await bar.evaluate((element) => {
       const search = element.querySelector<HTMLElement>('.m-command-search');
@@ -2525,7 +2552,10 @@ test('LIVE CHECK toasts: a toast never covers the assistant’s Send button', as
   await page.keyboard.press('Control+S');
   const toast = page.locator('.m-toast').first();
   await expect(toast).toBeVisible();
-  const [a, b] = [await toast.boundingBox(), await send.boundingBox()];
+  // ITS BOX ONCE IT HAS ARRIVED: a toast slides 8 px up over 160 ms (`m-toast-in`), so a read on appearance is a
+  // point on the way.
+  const a = await settled(page, () => toast.boundingBox(), (box) => box !== null, 'the toast');
+  const b = await send.boundingBox();
   if (a === null || b === null) throw new Error('a box is missing');
   const overlaps = a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
   expect(overlaps, `toast ${JSON.stringify(a)} against Send ${JSON.stringify(b)}`).toBe(false);
@@ -2596,6 +2626,9 @@ test('the START SCREEN draws the supplied logo, the hero lines, one primary Open
     return [...document.fonts].filter((face) => face.family.replaceAll('"', '') === 'Marcellus').map((face) => face.status);
   });
   expect(marcellus).toStrictEqual(['loaded']);
+  // DECODED BEFORE IT IS MEASURED: a visible image may not have decoded yet, and its natural width is then 0.
+  await expect.poll(() => hero.evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  await expect.poll(() => page.locator('.m-menu-bar__logo').evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   const drawn = await measure(hero);
   // DECODED — a broken source is still a laid-out box, with a natural width of zero.
   expect(drawn.natural).toBeGreaterThan(0);
@@ -3297,7 +3330,9 @@ test('the ORGANIZE GRID spans the whole page area at 1920 × 1080, as many colum
   // THE LANDSCAPE CARD DRAWN, so it is genuinely shorter when the row is read — undrawn, it is a portrait slot.
   await expect(grid.locator(`[data-thumb-page="${String(LANDSCAPE)}"] canvas[data-drawn="true"]`)).toBeAttached();
 
-  const measured = await page.evaluate(() => {
+  // SETTLED WITH THE ROW DRAWN FOR ITS WIDTH: the strip gaining a scrollbar re-measures the grid, which redraws the
+  // cards (`stale` meanwhile), so one card drawn says nothing about the row being read.
+  const measured = await settled(page, () => page.evaluate(() => {
     const area = document.querySelector('.m-canvas-area')?.getBoundingClientRect();
     const region = document.querySelector('.m-page-grid')?.getBoundingClientRect();
     const all = [...document.querySelectorAll('.m-page-grid [data-thumb-page]')];
@@ -3313,7 +3348,7 @@ test('the ORGANIZE GRID spans the whole page area at 1920 × 1080, as many colum
       columns,
     };
     return { area: area?.width ?? 0, region: region?.width ?? 0, count, state };
-  });
+  }), (now) => now.state.drawn.length > 0 && now.state.drawn.every((drawn) => drawn === 'true'), 'the Organize grid’s first row');
   const detail = JSON.stringify(measured.state);
   expect(measured.area, 'the page area was measured').toBeGreaterThan(1000);
   expect(measured.region, `the grid is ${String(measured.region)} px of a ${String(measured.area)} px page area`).toBeGreaterThanOrEqual(

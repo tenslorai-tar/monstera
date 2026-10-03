@@ -1,4 +1,43 @@
-import { type Page, expect } from '@playwright/test';
+import { type Locator, type Page, expect } from '@playwright/test';
+
+/**
+ * Waits until the page pane has shown its first frame.
+ *
+ * Until then its children are `visibility: hidden` (`app.css`, `.m-page-pane[data-first-frame='pending']`) while the
+ * pages are laid out and drawn, but the text layer's lines are already mounted. A wait on those lines' count or text
+ * does not need visibility, so it passes over a pane a person cannot see, and a press or a drag then lands on the
+ * loading state (the sweep of 2026-10-03, its M2).
+ */
+export async function pageShown(page: Page): Promise<void> {
+  await expect(page.locator('.m-page-pane[data-first-frame="shown"]').first()).toBeAttached();
+}
+
+/**
+ * Waits until a Base UI popup (a menu, a tooltip, a select's list) has been PLACED, and answers its box.
+ *
+ * Before it is placed, its positioner sits at the window's top left with an inline `opacity: 0`
+ * (`@base-ui/react/internals/useAnchorPositioning.js`), and Playwright counts opacity 0 as visible — so a box read
+ * once the popup is "visible" can be the unplaced one, and a case asking whether a menu fits the window passes on a
+ * box at the origin. This waits for no ancestor of the popup to carry that opacity and for the box to settle.
+ */
+export async function popupPlaced(page: Page, popup: Locator, what: string): Promise<{ x: number; y: number; width: number; height: number }> {
+  return settled(
+    page,
+    () =>
+      popup.evaluate((element) => {
+        let node: HTMLElement | null = element instanceof HTMLElement ? element : null;
+        let hidden = false;
+        while (node !== null) {
+          if (node.style.opacity === '0') hidden = true;
+          node = node.parentElement;
+        }
+        const box = element.getBoundingClientRect();
+        return { hidden, x: box.x, y: box.y, width: box.width, height: box.height };
+      }),
+    (now) => !now.hidden && now.width > 0,
+    what,
+  ).then(({ x, y, width, height }) => ({ x, y, width, height }));
+}
 
 /**
  * Waits until what a rendered case is about to measure has STOPPED CHANGING and means what the case asks, then answers

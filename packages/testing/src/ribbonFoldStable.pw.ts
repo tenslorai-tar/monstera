@@ -3,6 +3,7 @@ import { type Page, expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
+import { pageShown, settled as settledOn } from './settled.js';
 
 /**
  * The ribbon's fold holds still while the selection changes, read frame by frame in a real browser.
@@ -44,8 +45,10 @@ test('the COMMENT ribbon keeps one fold while a text selection changes', async (
   // THE ROW HAS FOLDED: at this width the Comment section does not fit unfolded, so its row More is drawn. Without
   // it the case below would pass for a row that never folds, which is the one shape that cannot oscillate.
   await expect(page.locator('.m-ribbon__tools button.m-ribbon__more').first()).toBeVisible({ timeout: 10_000 });
-  await page.waitForTimeout(300);
-  const settled = await drawnButtons(page);
+  // THE FOLD AT REST AND THE PAGE SHOWN, in place of a 300 ms sleep: the count the case compares against is the one
+  // the row holds once it has stopped changing, and the line pressed below is only on screen after the first frame.
+  await pageShown(page);
+  const settled = await settledOn(page, () => drawnButtons(page), () => true, 'the folded Comment row');
 
   await page.evaluate(() => {
     const state = { counts: [] as number[], running: true };

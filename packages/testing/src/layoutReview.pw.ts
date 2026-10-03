@@ -2,6 +2,7 @@ import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
 import { openApp, openDocument, openSection, runCommand, samplePdf } from './helpScreensHarness.js';
+import { settled } from './settled.js';
 
 /**
  * Six layout defects from the owner's screenshot review of 0.1.6.0, each asserted as the geometry or computed style it
@@ -120,7 +121,13 @@ test('EVERY SETTINGS PAGE keeps every row’s description at its reading basis o
   const narrow: string[] = [];
   const measured: string[] = [];
   for (const name of names) {
-    await pages.filter({ hasText: name }).first().click();
+    const chosen = pages.filter({ hasText: name }).first();
+    await chosen.click();
+    // THAT PAGE SHOWN AND ITS ROWS STILL, before they are measured: the click alone says nothing about which page's
+    // rows are in the dialog, and a page's rows may arrive after its button is pressed. A page may hold no rows of
+    // this kind at all (Keyboard is a list of commands), so the count is waited on to stop changing, not to be some.
+    await expect(chosen).toHaveAttribute('aria-current', 'page');
+    await settled(page, () => dialog.locator('.m-settings-row').count(), () => true, `the ${name} page`);
     const found = await dialog.locator('.m-settings-row').evaluateAll((all) =>
       all.map((row) => {
         const text = row.querySelector<HTMLElement>('.m-settings-row__text');
@@ -161,8 +168,17 @@ test('the FLOAT BAR covers no ORGANIZE card at 1280 × 800', async ({ page }) =>
   await openApp(page);
   await openDocument(page);
   await openSection(page, 'Organize');
-  const bar = await boxOf(page.getByRole('toolbar', { name: 'Float bar' }));
-  const first = await boxOf(page.locator('.m-page-grid').getByRole('button', { name: 'Page 1', exact: true }));
+  // THE GRID LAID OUT AND STILL: it is sized through a ResizeObserver, and the bar docks against it.
+  await expect(page.locator('.m-page-grid [data-thumb-page="0"] canvas[data-drawn="true"]')).toBeAttached();
+  const [bar, first] = await settled(
+    page,
+    async () => [
+      await boxOf(page.getByRole('toolbar', { name: 'Float bar' })),
+      await boxOf(page.locator('.m-page-grid').getByRole('button', { name: 'Page 1', exact: true })),
+    ] as const,
+    () => true,
+    'the Float bar beside the Organize grid',
+  );
   expect(first.x).toBeGreaterThanOrEqual(bar.x + bar.width);
 });
 

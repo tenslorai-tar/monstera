@@ -3,6 +3,7 @@ import { type Locator, type Page, expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
+import { popupPlaced, settled } from './settled.js';
 
 /**
  * The menus, in a real browser: every popup can be used where it overlaps the window's drag rows, and a disabled
@@ -67,9 +68,10 @@ test('HELP › HELP CENTRE, lying over the title bar, is a no-drag region, and o
   expect(await appRegion(titleBar)).toBe('drag');
   await page.getByRole('menuitem', { name: 'Help', exact: true }).click();
   await expect(item).toBeVisible();
+  // PLACED, not only visible: an unplaced menu sits at the window's origin, over the title bar whatever is wrong.
+  const box = await popupPlaced(page, item, 'the Help menu’s item');
   const bar = await titleBar.boundingBox();
-  const box = await item.boundingBox();
-  if (bar === null || box === null) throw new Error('the title bar and the item have boxes');
+  if (bar === null) throw new Error('the title bar has a box');
   expect(box.y < bar.y + bar.height && box.y + box.height > bar.y).toBe(true);
 
   // WHAT DECIDES IT: the item lies in a no-drag region, its popup's.
@@ -246,6 +248,8 @@ test('every MENU draws a glyph for every item in one column, titles aligned, and
     await page.getByRole('menubar').getByRole('menuitem', { name, exact: true }).click();
     const popup = page.locator('.m-menu-bar__popup');
     await expect(popup).toBeVisible();
+    // PLACED: an unplaced popup sits at the window's top, which passes "inside the window" whatever is wrong.
+    await popupPlaced(page, popup, `the ${name} menu`);
     const read = await popup.evaluate((menu) => {
       const items = [...menu.querySelectorAll<HTMLElement>('.m-menu-bar__item')];
       const box = menu.getBoundingClientRect();
@@ -295,6 +299,7 @@ for (const size of [
     for (const name of names) {
       await page.getByRole('menubar').getByRole('menuitem', { name, exact: true }).click();
       await expect(popup).toBeVisible();
+      await popupPlaced(page, popup, `the ${name} menu`);
       const read = await popup.evaluate((menu) => {
         const box = menu.getBoundingClientRect();
         return {
@@ -331,7 +336,8 @@ for (const size of [
         await page.keyboard.press('ArrowDown');
       }
       await expect(last, name).toHaveAttribute('data-highlighted', '');
-      const seen = await popup.evaluate((menu) => {
+      // READ ONCE THE SCROLL HAS STOPPED: the highlight is set before the item is scrolled into view.
+      const seen = await settled(page, () => popup.evaluate((menu) => {
         const items = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]')].filter(
           (item) => !item.hasAttribute('data-disabled'),
         );
@@ -342,7 +348,7 @@ for (const size of [
         const bottom = top + menu.clientHeight;
         const box = item?.getBoundingClientRect();
         return { scrolled: menu.scrollTop, inside: box !== undefined && box.top >= top - 0.5 && box.bottom <= bottom + 0.5 };
-      });
+      }), () => true, `the ${name} menu after ArrowDown`);
       expect(seen.scrolled, `${name} scrolled`).toBeGreaterThan(0);
       expect(seen.inside, `${name}: the last item is inside the menu's visible box`).toBe(true);
       await page.keyboard.press('Escape');

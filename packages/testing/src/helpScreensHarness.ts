@@ -8,6 +8,7 @@ import { type Locator, type Page, expect } from '@playwright/test';
 
 import type { createBrowserShim } from './browserShim.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { settled } from './settled.js';
 
 /**
  * What every Help centre screenshot scene shares (the Help centre row's *screenshots owed*; ADR-0112).
@@ -106,13 +107,16 @@ export async function runCommand(page: Page, title: string): Promise<void> {
 export async function shoot(page: Page, id: string, target: Locator | 'window', pad = 16): Promise<void> {
   mkdirSync(OUT, { recursive: true });
   await page.mouse.move(2, 2);
-  await page.waitForTimeout(300);
+  // THE FACES LOADED AND THE TARGET STILL, in place of a 300 ms sleep: a capture is of what a person sees once it has
+  // arrived, and a box read while a popup is placed or a toast slides in is a point on the way.
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
   const path = join(OUT, `${id}.png`);
   if (target === 'window') {
+    await settled(page, () => page.evaluate(() => document.body.getBoundingClientRect().height), () => true, id);
     await page.screenshot({ path });
     return;
   }
-  const box = await target.boundingBox();
+  const box = await settled(page, () => target.boundingBox(), (now) => now !== null, id);
   if (box === null) throw new Error(`screenshot ${id}: its target is not on screen`);
   const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
   const x = Math.max(0, box.x - pad);
