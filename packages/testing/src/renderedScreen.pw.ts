@@ -2398,11 +2398,11 @@ test('the START SCREEN draws the supplied logo, the hero lines, one primary Open
   const drawn = await measure(hero);
   // DECODED — a broken source is still a laid-out box, with a natural width of zero.
   expect(drawn.natural).toBeGreaterThan(0);
-  // 118, the owner's 40% over the 84 it was (review of 0.1.6.0); `--logo-hero`.
-  expect(drawn.height).toBeCloseTo(118, 0);
-  // AND THE ARTWORK HAS THE PIXELS FOR IT on a 2x display: a derivative smaller than twice the drawn height is
-  // upscaled, which is blur that no layout assertion sees.
-  expect(drawn.natural).toBeGreaterThanOrEqual(2 * drawn.height);
+  // 142: the owner's 118 (84 × 1.4, review of 0.1.6.0), then about 142 on 2 October; `--logo-hero`.
+  expect(drawn.height).toBeCloseTo(142, 0);
+  // AND THE ARTWORK HAS THE PIXELS FOR IT at this display's scale, 1: a derivative smaller than the drawn height is
+  // upscaled, which is blur that no layout assertion sees. The 2x display's file is the case below.
+  expect(drawn.natural).toBeGreaterThanOrEqual(drawn.height);
   // UNSTRETCHED: drawn at the image's OWN ratio. This asserted the portrait master's 1652 × 2050 until the owner's
   // square masters replaced it on 2026-09-19 and it failed on a correct drawing — a ratio written down is a claim about
   // one artwork, and the image's own ratio is the property ADR-0002 states for any.
@@ -2444,6 +2444,45 @@ test('the START SCREEN draws the supplied logo, the hero lines, one primary Open
   if (links === null || build === null) throw new Error('a footer region has no box');
   expect(links.x).toBeLessThan(viewport.width / 4);
   expect(build.x + build.width).toBeGreaterThan((viewport.width * 3) / 4);
+});
+
+test('the START SCREEN draws its 2x artwork on a 2x display, and its tiles fit a 1280 × 800 window', async ({ browser }) => {
+  // A `srcset`'s choice is the browser's, so the case reads which file was DECODED, not which was named: a 1x file on a
+  // 2x display draws at 142 from 142 pixels, which is the blur this file exists to stop and passes every layout check.
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 });
+  const page = await context.newPage();
+  await bridge(page);
+  await page.goto('/');
+  const hero = page.locator('.m-start-logo');
+  await expect(hero).toBeVisible();
+  await expect.poll(() => hero.evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  // THE FILE'S OWN PIXELS, decoded apart: the element's `naturalWidth` is divided by the candidate's density (HTML's
+  // "density-corrected natural width"), so a 284 px file chosen as 2x reads 142 there, the same as the 1x file.
+  const decoded = await hero.evaluate(async (image) => {
+    const img = image as HTMLImageElement;
+    const file = new Image();
+    file.src = img.currentSrc;
+    await file.decode();
+    return { source: img.currentSrc, natural: file.naturalWidth, height: img.getBoundingClientRect().height };
+  });
+  expect(decoded.source).toContain('logo-hero@2x');
+  expect(decoded.natural).toBeGreaterThanOrEqual(2 * decoded.height);
+
+  // THE LOGO GREW 24 PX and the room it took came from the drop zone and the top padding, so at the size the owner works
+  // at the first screen still holds the hero, Open and every tile, unscrolled. Measured against the area that scrolls,
+  // not the footer: the footer FOLLOWS the content (`margin-block-start: auto`), so "the last tile is above the footer"
+  // holds at any height and separates nothing. The recent list and the footer below the tiles scroll by design.
+  const fit = await page.locator('.m-start-card').last().evaluate((card) => {
+    let area: HTMLElement | null = card.parentElement;
+    while (area !== null && !['auto', 'scroll'].includes(getComputedStyle(area).overflowY)) area = area.parentElement;
+    return area === null
+      ? null
+      : { top: area.scrollTop, tile: card.getBoundingClientRect().bottom, room: area.getBoundingClientRect().bottom };
+  });
+  if (fit === null) throw new Error('the start area has no scrolling ancestor');
+  expect(fit.top).toBe(0);
+  expect(fit.tile).toBeLessThanOrEqual(fit.room);
+  await context.close();
 });
 
 test('F1 opens the HELP CENTRE, Ctrl+/ the keyboard shortcuts, and the start screen footer names F1', async ({ page }) => {

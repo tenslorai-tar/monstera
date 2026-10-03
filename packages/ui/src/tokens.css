@@ -481,7 +481,9 @@
   --dialog-head-height: 48px;
   --settings-pages: 184px;
   --start-drop-width: 720px;
-  --start-drop-height: 132px;
+  /* 108, not v5's 132: the hero grew 24 px to 142 (2 October), and the drop zone's own content (a 32 px button, its hint
+     and padding) is 93 px, so the 24 px came from here and the tiles' second row stays inside a 1280 × 800 window. */
+  --start-drop-height: 108px;
   --start-card-width: 232px;
   --start-card-height: 88px;
   --start-footer: 36px;
@@ -500,8 +502,9 @@
      and the title bar 26 px"*. The derivatives are drawn at twice these, for a 2x display. v5 draws the mark in the
      MENU BAR at 18 (ADR-0107), which is where it moved from the title bar; the 26 px title-bar size is retired with it. */
   --logo-menu: 18px;
-  /* 118, not the 84 named above: the owner's review of 0.1.6.0 asked for the hero 40% larger (84 × 1.4 = 117.6). */
-  --logo-hero: 118px;
+  /* 142, not the 84 named above: the owner asked for 118 in the review of 0.1.6.0 (84 × 1.4) and about 142 on
+     2 October (118 × 1.2). Drawn from `logo-hero.png` (142 px) at 1x and `logo-hero@2x.png` (284 px) at 2x. */
+  --logo-hero: 142px;
   /* The About window's, from the same wordmark derivative as the hero (the owner's list: the wordmark master for the
      start screen, About and the website), drawn smaller because the window is. */
   --logo-about: 64px;

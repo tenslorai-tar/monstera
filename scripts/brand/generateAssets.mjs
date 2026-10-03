@@ -53,18 +53,19 @@ const MASTERS = {
  * Committed outputs, each from one master.
  *
  * `logo-256.png` is what README.md displays: 256 px keeps a 132 px render crisp on a 2x display
- * without shipping a megabyte to every reader of the front page. `logo-hero.png` and
- * `logo-title.png` are what the RENDERER draws — the start screen's hero at 118 px, and the mark
- * at 26 px in the title bar until ADR-0107 moved it to the menu bar at 18 (`tokens.css`) — each
- * at least twice that so a 2x display draws real pixels. The masters
- * are square, so each is a square of `size`; the title bar takes the mark without its word, which
- * at 26 px is a smudge rather than a name.
+ * without shipping a megabyte to every reader of the front page. `logo-hero.png`,
+ * `logo-hero@2x.png` and `logo-title.png` are what the RENDERER draws — the start screen's hero
+ * at 142 px (`--logo-hero`), from the 1x file on a 1x display and the 2x file on a 2x one so each
+ * draws real pixels without downscaling twice its size, and the mark at 18 px in the menu bar
+ * (ADR-0107), at least twice that. The masters are square, so each is a square of `size`; the
+ * menu bar takes the mark without its word, which at 18 px is a smudge rather than a name.
  *
  * @type {readonly {file: string, master: keyof typeof MASTERS, size: number}[]}
  */
 const OUTPUTS = [
   { file: 'logo-256.png', master: 'wordmark', size: 256 },
-  { file: 'logo-hero.png', master: 'wordmark', size: 236 },
+  { file: 'logo-hero.png', master: 'wordmark', size: 142 },
+  { file: 'logo-hero@2x.png', master: 'wordmark', size: 284 },
   { file: 'logo-title.png', master: 'mark', size: 52 },
 ];
 

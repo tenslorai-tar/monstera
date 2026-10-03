@@ -396,7 +396,7 @@ optgroup {
   flex-direction: column;
   align-items: center;
   gap: var(--space-24);
-  padding-block: var(--space-32) var(--space-16);
+  padding-block: var(--space-24) var(--space-16);
   text-align: center;
 }
 
