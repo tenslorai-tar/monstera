@@ -12,7 +12,7 @@ Find duplicate pages lists groups of pages that are exact copies, and can remove
 
 1. In the rail, choose **Organize**, then **Find duplicate pages…** in the **Pages** group. In a narrower window it is under the group's **More**.
 2. Look at the list of groups, for example "Pages 2, 7".
-3. To remove the extra copies, choose **Remove … duplicate page(s)**. The button says how many pages will go.
+3. To remove the extra copies, choose **Remove … duplicate pages**. The button says how many pages will go. When none were found, the window says so and offers only **Close**.
 
 ![The Duplicate pages window listing a group and the Remove button](screenshot:find-duplicate-pages-1)
 

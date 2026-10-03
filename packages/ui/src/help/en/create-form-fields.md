@@ -13,7 +13,7 @@ You can turn any document into a fillable form by drawing fields on it.
 1. In the rail, choose **Forms**. In the **Fields** group, choose **Text field**, **Tick box**, **Radio option**, **Dropdown** or **List box**.
 2. Drag a box on the page where the field goes.
 3. Give it a **Field name**.
-   - For a radio option, type the group name in **Group name — type the same name for every option in this group** and **This option's value**.
+   - For a radio option, type the group's name in **Group name**, the same for every option in the group, and this option's in **This option's value**.
    - For a dropdown or list box, type each **Choice**; use **Add a choice** for more.
 4. Choose the **Add …** button, for example **Add text field**.
 
