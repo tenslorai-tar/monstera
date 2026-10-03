@@ -1918,10 +1918,6 @@ optgroup {
   gap: var(--space-8);
 }
 
-.m-place-barcode__text {
-  width: 100%;
-}
-
 /* THE FORMATS, a row's control: each radio beside its word, wrapping inside the control. */
 .m-place-barcode__formats {
   display: flex;
@@ -5684,7 +5680,11 @@ optgroup {
   border-block-start: 1px solid var(--border); /* decorative: closes the frame above the footer's own controls */
 }
 
+/* THE NOTE WRAPS, THE BUTTONS DO NOT: both shrank to share the row, so each button broke its label over two lines
+   ("Export / settings...") beside a note with room to spare (the gallery, 2026-10-03, every Settings page). */
 .m-settings__footer-note {
+  flex: 1 1 auto;
+  min-inline-size: 0;
   margin: 0;
   color: var(--muted);
   font-size: var(--font-chrome-12);
@@ -5692,6 +5692,7 @@ optgroup {
 
 .m-settings__footer-controls {
   display: flex;
+  flex: none;
   gap: var(--space-8);
 }
 
