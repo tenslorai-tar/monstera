@@ -600,8 +600,12 @@ question.
 ([ADR-0045](DECISIONS/0045-a-removals-garbage-collection-belongs-to-the-command.md)).
 A command declares `purpose: 'ordinary' | 'removal'`, and the adapter that owns
 the session records that a removal was applied to it and maps that to its
-engine's write options from then on — MuPDF's `garbage`, against an empty option
-string otherwise. There is no default and no setting, which is §4's rule kept
+engine's write options from then on. **Since 2026-10-03 both purposes collect**
+([ADR-0151](DECISIONS/0151-every-full-save-collects-and-a-deleted-page-takes-its-fields.md)):
+MuPDF's plain save wrote every object in the cross-reference table, so a
+deleted page, a deleted field and its answer stayed in the file. What the
+removal still decides is that no prior revision is kept and that the next save
+keeps no backup. There is no default and no setting, which is §4's rule kept
 rather than restated.
 
 The reason it is state and not a parameter is measured rather than stylistic. A
@@ -1048,6 +1052,18 @@ value stays readable to anything walking the cross-reference table instead of
 the catalog. That is invariant 19's mechanism arriving by a route ADR-0008 did
 not name: not an incremental save leaving a prior revision, but a full save
 carrying orphans.
+
+**AND IT WAS NEVER ONLY A REMOVAL'S, so every full save collects since
+2026-10-03** ([ADR-0151](DECISIONS/0151-every-full-save-collects-and-a-deleted-page-takes-its-fields.md)).
+Measured that day: a deleted page, the widgets on it and their answers, and a
+field `deleteFormFields` removed, were all written out by the plain save. A page
+delete also removes its pages' widgets and prunes the field tree, by the calls
+`deleteFormFields` makes, because until then `/AcroForm` still named the
+widgets and each widget's `/P` kept the deleted page reachable. A collecting
+save re-encodes a foreign annotation exactly as the plain one did, so the
+divergence set below is unchanged. An appended save, a signed document's,
+keeps its earlier revision whole by construction, and that is ADR-0149's
+question rather than this one.
 
 Save invariants (hard-won; each has a mechanism):
 
@@ -2886,6 +2902,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-03 | **Every full save collects, and a deleted page takes its fields with it** (§2's purpose paragraph, §4's removal row). The owner's item 12a: a page delete left the page's form answers in the saved file. Measured: a page delete rewrote `/Kids` only, so `/AcroForm` still named its widgets and their `/P` kept the page reachable; and MuPDF's plain save wrote every object in the cross-reference table, so a deleted page, a deleted field and its answer were all in the file. A page delete now removes its widgets and prunes the tree by `deleteFormFields`' calls, and `'ordinary'` maps to `garbage` as `'removal'` did. Measured against ADR-0045's objection: a collecting save re-encodes a foreign annotation exactly as the plain one does, and costs no more (19.5 to 39.9 ms against 21.7 to 44.7 ms on 400 pages). A removal still keeps no prior revision and no backup; a page delete keeps its backup. Rejected: a page delete declared a removal, a third purpose, deleting objects by number, pruning alone | ADR-0045's *Garbage-collect every save* rejection; §2's and §4's *"an empty option string otherwise"* | [0151](DECISIONS/0151-every-full-save-collects-and-a-deleted-page-takes-its-fields.md) |
 | 2026-10-03 | **A typed signature is written as outlines of a bundled face** (§3's annotation-appearance row, its signature clause). The owner's item 3c: about fifteen faces, mostly script, no font program in the document. Fifteen OFL faces from npm; the renderer makes the outline from each face's bytes in lazy chunks, so §9.27 is unchanged, and sends it as an `outlined` mark; the library keeps the name; the kernel fills the path and writes no font. A face's character map decides what it can draw, and a character it cannot is said. Rejected: the host or `main` making the outline, embedding a subset, flattening to lines, keeping the outline in the library, keeping the base-14 faces beside it | the `SIGNATURE_FONTS` base-14 decision; ADR-0133 Decision 1's typed half | [0150](DECISIONS/0150-a-typed-signature-is-written-as-outlines-of-a-bundled-face.md) |
 | 2026-10-03 | **A signature is appended, and an edit that would break one is asked before it is made** (§4's save invariants; §3's digital-signatures row). The owner's decision on CR-DOC-07 and CR-NAT-11. Measured: a second signature rewrote the file and the first no longer verified; written by `commit()` uncompressed, the first file is a prefix and both verify. PDFium's saves are full rewrites (`FPDF_SaveAsCopy`, flags 0). A command routed to PDFium, and a removal, breaks a signature, derived in one place from the writer and the purpose; inside the lane, before it runs on a signed document, it answers `breaks-signatures` and nothing changes, and the renderer asks: work on a copy (written where the person chooses, opened, the edit applied there), edit this document, or cancel. Agreed once per open document, so a removal's save does not ask twice. Rejected: PDFium saving incrementally (unmeasured), asking at save, a per-command field, refusing, a copy edited by hand | §4's *"Text edits save incrementally. A full PDFium rewrite corrupts non-embedded font references"*; ADR-0054 Decision 3's whole save for the placeholder; ADR-0127's *the signer keeps its route* | [0149](DECISIONS/0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md) |
 | 2026-10-03 | **Signing's parse runs in the MuPDF host; `main` keeps only the key and the byte ranges** (§3's digital-signatures row; §9.17's *"never parses"*). The owner's decision on CR-SEC-16: `signpdf` becomes a hosted writer on the MuPDF host, as pdf-lib did. The host writes the placeholder and the appearance (the picture decoded there) and runs `@signpdf`'s own `SignPdf.sign` with a signer that answers no bytes, which writes the ranges and leaves the hole; `main` takes the file by the one taker, checks the four numbers against the hole in time proportional to the hole, signs the bytes outside it and fills it, by one fill a proof holds byte-identical to `@signpdf`'s. The command crosses without the certificate or the passphrase. Stays in `main`, said so: the PKCS#12 parse, the timestamp reply's parse, and the prepared bytes for one signature, so signing is still not under the 1.5× budget. Rejected: the key in the host, a signing host of its own, `main` scanning for the ranges, trusting them unchecked, patching `@signpdf` | ADR-0121's *What stays in `main`* for signing, and `writerShapes`' `signpdf: 'byte-image'` | [0148](DECISIONS/0148-signings-parse-runs-in-the-mupdf-host-and-main-keeps-only-the-key.md) |
