@@ -149,6 +149,18 @@ export interface CanvasReadback {
    * one environment reads exactly like a renderer that drew nothing (ubuntu, d6228f28, 2026-10-03).
    */
   readonly ink: number;
+  /**
+   * The counter on a canvas of the page's size that a BITMAP was drawn onto, made the way PDF.js's worker makes one
+   * for an image when `OffscreenCanvas` exists: ink put into a 144 × 144 `OffscreenCanvas` with `putImageData`,
+   * `transferToImageBitmap()`, then `drawImage` of the bitmap scaled across the page. It must equal `pixels`; `-2`
+   * means this renderer has no `OffscreenCanvas`, so PDF.js took its other path.
+   *
+   * {@link ink} cannot see this path, and it is the one the fixture's only content takes. Measured on ubuntu at
+   * ce194428 (2026-10-03): the page read 500990 white and 0 inked while {@link ink} counted whole, so the ground was
+   * drawn and the image was not. This control is what separates *a bitmap made this way carries nothing here* from
+   * the one difference it cannot reach, which is that PDF.js makes its bitmap in a worker.
+   */
+  readonly bitmapInk: number;
   /** What the run's environment did around the draw, so a failure here can be attributed. */
   readonly environment: EnvironmentReadback;
   /**
@@ -883,6 +895,41 @@ export async function reportCanvasPixels(
     'ink control',
   );
 
+  // THE IMAGE'S OWN PATH, as far as this page can reach it: the bitmap PDF.js's worker hands the page for an image
+  // (`pdf.worker.mjs`, `transferToImageBitmap` after `putImageData` on an `OffscreenCanvas`), drawn scaled as the
+  // fixture's 144-pixel image is. The colour is the ink control's, so the two read the same when both paths work.
+  const bitmapInk = await evaluate(
+    contents,
+    `(async () => {
+       const source = document.querySelector('canvas.m-page');
+       if (source === null) return -1;
+       if (typeof OffscreenCanvas === 'undefined') return -2;
+       const side = 144;
+       const offscreen = new OffscreenCanvas(side, side);
+       const drawing = offscreen.getContext('2d');
+       if (drawing === null) return -1;
+       const image = drawing.createImageData(side, side);
+       for (let at = 0; at < image.data.length; at += 4) {
+         image.data[at] = 0x33;
+         image.data[at + 1] = 0x66;
+         image.data[at + 2] = 0xcc;
+         image.data[at + 3] = 0xff;
+       }
+       drawing.putImageData(image, 0, 0);
+       const bitmap = offscreen.transferToImageBitmap();
+       const control = document.createElement('canvas');
+       control.width = source.width;
+       control.height = source.height;
+       const context = control.getContext('2d');
+       if (context === null) return -1;
+       context.drawImage(bitmap, 0, 0, control.width, control.height);
+       bitmap.close();
+       return (${COUNT_PAINTED})(control);
+     })()`,
+    (value): value is number => typeof value === 'number',
+    'bitmap control',
+  );
+
   const zoomed = await readZoomed(contents, zoomControlName, settled.width);
   const pixelsTo = pixelPath === undefined ? null : await writePixels(contents, pixelPath);
 
@@ -926,6 +973,7 @@ export async function reportCanvasPixels(
   const readback: CanvasReadback = {
     tally: settled.tally,
     ink,
+    bitmapInk,
     environment: {
       visibility,
       processesGone,

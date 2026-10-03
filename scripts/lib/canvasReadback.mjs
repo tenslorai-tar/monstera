@@ -113,6 +113,7 @@ export function controlName(key) {
  *   pageCanvases: Array<{ page: string | null, width: number, height: number, failed: boolean, reason: string | null }>,
  *   tally: { transparent: number, white: number, painted: number } | null,
  *   ink: number,
+ *   bitmapInk: number,
  *   environment: {
  *     visibility: string,
  *     processesGone: Array<{ type: string, reason: string, exitCode: number }>,

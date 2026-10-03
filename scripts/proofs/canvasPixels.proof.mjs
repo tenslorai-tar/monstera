@@ -178,6 +178,7 @@ const RUNTIME_CASES = [
   'the canvas CARRIES A DRAWN PAGE, which is what shows-page-1 means',
   'CONTROL: the same counter reports ZERO for a blank canvas of the same size',
   'CONTROL: a canvas this renderer FILLS and copies, as renderPage presents, is counted WHOLE',
+  'CONTROL: a BITMAP made as PDF.js makes an image’s, drawn scaled across the page, is counted WHOLE',
   'the shipped zoom-in control was found and clicked, so the zoom reading means something',
   'the canvas is EXACTLY the page at the zoom, which is the rasteriser honouring the scale',
   'the zoomed canvas CARRIES A DRAWN PAGE, so the bigger bitmap is not a stretched empty one',
@@ -220,17 +221,21 @@ function withinSpan(hex, span) {
  * step that copies a finished drawing onto it. So the question a failure leaves is which of two things the copy
  * held, and the tally answers it: WHITE is PDF.js having drawn the page's ground and not what is on it; TRANSPARENT
  * is a copy or a readback holding nothing, which the ink control then says of this renderer's canvas in general.
+ * The two controls' readings go beside it, so the page's own line says which path held ink in the same run.
  *
  * @param {{ transparent: number, white: number, painted: number } | null} tally
  * @param {ReturnType<typeof readback>['environment']} environment
+ * @param {Pick<ReturnType<typeof readback>, 'ink' | 'bitmapInk' | 'pixels'>} controls
  */
-function describeRun(tally, environment) {
+function describeRun(tally, environment, controls) {
   const counted =
     tally === null
       ? 'no canvas or no 2d context to tally'
       : `${String(tally.transparent)} transparent, ${String(tally.white)} white, ${String(tally.painted)} inked`;
   return (
     `tally: ${counted}.\n      ` +
+    `controls of ${String(controls.pixels)}: copied ink ${String(controls.ink)}, bitmap ink ` +
+    `${String(controls.bitmapInk)}.\n      ` +
     `renderer: visibility ${environment.visibility}; 2d_canvas ${environment.gpu.canvas2d}, gpu_compositing ` +
     `${environment.gpu.gpuCompositing}, rasterization ${environment.gpu.rasterization}; processes gone ` +
     `${JSON.stringify(environment.processesGone)}; render process gone ${JSON.stringify(environment.renderProcessGone)}.` +
@@ -371,7 +376,7 @@ try {
         // the second (ubuntu, d6228f28, 2026-10-03): the page canvas was at 595x842, so it had presented, and a
         // count of zero could not say whether what it presented was white or empty.
         `page canvases ${JSON.stringify(seen.pageCanvases)}.\n      ` +
-        describeRun(seen.tally, seen.environment),
+        describeRun(seen.tally, seen.environment, seen),
     );
 
     check(
@@ -398,7 +403,22 @@ try {
         `renderer's 2D canvas holds ink and gives it back, through the copy renderPage presents with. Red here ` +
         `and on the page means this renderer's canvas held nothing in this run, so the page's zero is not about ` +
         `the page; green here and red on the page means the page is what drew nothing.\n      ` +
-        describeRun(seen.tally, seen.environment),
+        describeRun(seen.tally, seen.environment, seen),
+    );
+
+    check(
+      'CONTROL: a BITMAP made as PDF.js makes an image’s, drawn scaled across the page, is counted WHOLE',
+      seen.bitmapInk === seen.pixels,
+      `the counter reported ${String(seen.bitmapInk)} inked pixel(s) of ${String(seen.pixels)} for a canvas a ` +
+        `144x144 bitmap was drawn across: ink put into an OffscreenCanvas with putImageData, ` +
+        `transferToImageBitmap, then drawImage scaled to the page.\n      ` +
+        `THE FIXTURE'S ONLY CONTENT TAKES THIS PATH, and the ink control above does not: when OffscreenCanvas ` +
+        `exists, PDF.js's worker hands the page a bitmap made this way for an image. Measured on ubuntu at ` +
+        `ce194428 (2026-10-03): the page read all white while the ink control counted whole, so the ground was ` +
+        `drawn and the image was not. Red here with the page red names the bitmap path; green here with the ` +
+        `page red leaves the one difference this page cannot reach, that PDF.js makes its bitmap in a worker. ` +
+        `-2 means no OffscreenCanvas, so PDF.js took its other path; -1 is a broken probe.\n      ` +
+        describeRun(seen.tally, seen.environment, seen),
     );
 
     // -------------------------------------------------------------------------
@@ -453,7 +473,7 @@ try {
         `clears it, so a renderer that sized the backing store and then failed to draw ` +
         `produces exactly the dimensions asserted above — which is the display-only defect ` +
         `arriving inside the mechanism that measures it.\n      ` +
-        describeRun(zoomed.tally, seen.environment),
+        describeRun(zoomed.tally, seen.environment, seen),
     );
 
     // §10.3's WINDOW CONTROLS OVERLAY, on the window this harness created the shipped way — the attach included.
