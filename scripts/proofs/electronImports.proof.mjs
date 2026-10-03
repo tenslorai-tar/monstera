@@ -300,6 +300,18 @@ try {
       },
     ],
     [
+      'scripts/proofs/hostHardening.proof.mjs',
+      {
+        sites: 1,
+        reason:
+          'imports apps/desktop/dist/win32HostSurface.js through a file:// URL so the job it creates names the ' +
+          'Electron binary by `electronBinaryPath()` itself, which `check:electronbinary` requires of a plain-Node ' +
+          'caller. A literal import types the surface, and its branded executable type then needs a cast around ' +
+          'the resolver, which that scan refuses (Guards at 41878dbe). Every other plain-Node driver of the ' +
+          'surface takes this route for the same reason.',
+      },
+    ],
+    [
       'scripts/proofs/win32Handle.proof.mjs',
       {
         sites: 1,
