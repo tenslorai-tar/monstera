@@ -843,24 +843,32 @@ for (const zoom of ['100pct', '200pct']) {
     // next page's top ("Quarterly report…" at 200%) or collapsed to nothing (100%). A page that stays wanted keeps its
     // layer now, and a page holding the selection stays wanted when it scrolls away.
     const { from, layer } = await pressOnSecondParagraph(page, zoom);
+    const scrolled = (): Promise<number> => page.locator('.m-page-list').evaluate((list) => {
+      let area: Element | null = list;
+      while (area !== null && !['auto', 'scroll'].includes(getComputedStyle(area).overflowY)) area = area.parentElement;
+      return area?.scrollTop ?? 0;
+    });
+    const pressedAt = await scrolled();
     const steps: { y: number; text: string; inLayer: boolean; where: string; anchor: string }[] = [];
     const x = layer.x + layer.width * 0.3;
     for (let y = from.y + from.height / 2; y < 790; y += 2) {
       await page.mouse.move(x, y);
       steps.push({ y, ...(await selectionNow(page)) });
     }
-    // THE VIEW SCROLLS while the pointer is held past the page area's foot — asserted, or the hold proves nothing.
-    const scrolled = (): Promise<number> => page.locator('.m-page-list').evaluate((list) => {
-      let area: Element | null = list;
-      while (area !== null && !['auto', 'scroll'].includes(getComputedStyle(area).overflowY)) area = area.parentElement;
-      return area?.scrollTop ?? 0;
-    });
-    const before = await scrolled();
-    for (let sample = 0; sample < 10; sample += 1) {
-      await page.waitForTimeout(150);
-      steps.push({ y: 789, ...(await selectionNow(page)) });
-    }
-    expect(await scrolled()).toBeGreaterThan(before + 400);
+    // HELD UNTIL THE VIEW HAS MOVED ONE PAGE FROM THE PRESS, so the pages in view have changed under the selection —
+    // the thing the hold is for — and sampled at every poll. Measured FROM THE PRESS, because the moves above already
+    // autoscroll once the pointer passes the page area's foot, and how far depends on how long they take: a hold that
+    // asked for 400 px more from the END of the moves met the document's last scroll position (1,900 px at 100%) on
+    // the Windows CI image, which had scrolled 1,612 px before the hold began (job 111087637711, 2026-10-03).
+    await expect
+      .poll(
+        async () => {
+          steps.push({ y: 789, ...(await selectionNow(page)) });
+          return (await scrolled()) - pressedAt;
+        },
+        { intervals: [150] },
+      )
+      .toBeGreaterThan(layer.height);
     await page.mouse.up();
     // THE DRAG REACHED THE CHROME, or the case is a drag over text and proves nothing about leaving it.
     expect(await page.evaluate(() => document.elementFromPoint(400, 789)?.closest('[data-text-layer]') === null)).toBe(true);
