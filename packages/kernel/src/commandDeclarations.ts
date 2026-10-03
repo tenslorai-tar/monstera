@@ -1584,11 +1584,13 @@ const declarations = {
     targets: 'none',
     reads: 'none',
     asset: 'none',
-    // ORDINARY. Protection changes how the document is WRITTEN and removes no
-    // object, so there is nothing for a collection to reclaim — and asking for
-    // one would rewrite every object in a document whose bytes are about to be
-    // re-encrypted anyway.
-    purpose: 'ordinary',
+    // A REMOVAL (CR-DOC-05, the owner's decision of 2026-10-03): what it removes is
+    // the READABLE form. Declared ordinary, its save backed up the file as it was —
+    // a copy without the password beside the document just protected — so it takes
+    // a removal's save: no backup, and the copies Monstera made deleted
+    // (ADR-0139). The collection that also comes with the axis costs nothing here,
+    // since a change of encryption rewrites every object anyway (`saveTermsOf`).
+    purpose: 'removal',
   },
   applyRedactions: {
     kind: 'applyRedactions',

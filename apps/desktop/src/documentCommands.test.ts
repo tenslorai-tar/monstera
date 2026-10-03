@@ -1522,6 +1522,22 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ backedUp: true, cleared: null });
     });
 
+    it('PROTECTING a document keeps no readable copy: the save deletes the backup Monstera made and writes none', async () => {
+      // CR-DOC-05: the copy beside a newly protected file is the document WITHOUT its password, which is what the
+      // person just asked nobody may read. So a protection change takes a removal's save (ADR-0139).
+      const { commands, saved, path, before } = await aSavableDocument();
+      await commands.execute(saved, rotateOnce);
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ backedUp: true });
+      expect(holdsReplaced(path, before)).toStrictEqual([`${basename(path)}.bak`]);
+
+      await commands.execute(saved, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: 'open-me' });
+      const outcome = await commands.save(saved, { breakSignatures: false });
+      expect(outcome).toMatchObject({ kind: 'saved', backedUp: false, cleared: { backups: 1, kept: [] } });
+      expect(existsSync(`${path}.bak`)).toBe(false);
+      // AND THE FILE IS THE PROTECTED ONE: a removal's save still writes the encryption the command asked for.
+      expect(Buffer.from(readFileSync(path)).includes('/Encrypt')).toBe(true);
+    });
+
     it('NEVER deletes a file Monstera did not make, or one changed since — it keeps and names them; nor any other file', async () => {
       // NOT MONSTERA'S: written by hand under the backup's own name.
       const foreign = await aSavableDocument();

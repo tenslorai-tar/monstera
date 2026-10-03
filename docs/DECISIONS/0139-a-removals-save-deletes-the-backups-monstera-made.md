@@ -81,3 +81,18 @@ and no copy left.
 - Autosave saves quietly, so an autosaved removal deletes the copies without a toast. Whether autosave should wait for
   a person before a removal's save is the owner's question, carried in the report of this range.
 - The stale-copies dialog, its strings and `document.deleteStaleCopies` are removed. No caller is left.
+
+## Addition, 2026-10-03: a protection change is a removal
+
+The code review of c89e7266 (CR-DOC-05) found that *Protect document* declared an ordinary purpose, so the save after
+it backed the file up as it was: a copy without the password, beside the document just protected. The owner's
+decision of 2026-10-03: protection changes take this ADR's removal save. The law already said so: invariant 19 and
+§4's save-mode table both name an encryption change and a password removal as removals, so the declaration was a
+regression against them rather than a new rule. What `setDocumentProtection` removes is the
+**readable form**, and its case in `removalCollects.test.ts` reads exactly that, whether the bytes open with no
+password. Its apply marks the session as every removal's does (ADR-0045), so the axis keeps one meaning; the
+collection that brings costs nothing, since a change of encryption rewrites every object anyway.
+
+The other 51 commands were read for the same question, *does the copy beside the file hold what the person asked
+nobody may read*. None does: deleting pages, objects, annotations or fields is ordinary editing, where the backup is
+the safety net this ADR keeps.

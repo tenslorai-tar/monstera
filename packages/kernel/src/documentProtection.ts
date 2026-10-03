@@ -2,7 +2,7 @@ import { PDF_PERMISSIONS, type CommandOfKind, type PdfPermission } from '@monste
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, MupdfSession } from './engineSeam.js';
-import { protectSession, withDocument } from './mupdfWriter.js';
+import { protectSession, withDocument, withDocumentRemoving } from './mupdfWriter.js';
 
 /**
  * A document's protection — set, changed or removed.
@@ -125,10 +125,12 @@ export function protectionOptions(command: CommandOfKind<'setDocumentProtection'
  * in-session encryption to set. The session's token is the key, so a forged one
  * is refused by `protectSession` before anything is recorded.
  */
-export const applySetDocumentProtection: Apply<'mupdf', 'setDocumentProtection'> = (
-  session,
-  command,
-) => protectSession(session, protectionOptions(command));
+export const applySetDocumentProtection: Apply<'mupdf', 'setDocumentProtection'> = async (session, command) => {
+  await protectSession(session, protectionOptions(command));
+  // ON THE REMOVAL AXIS LIKE ITS DECLARATION (CR-DOC-05): the session is marked as every removal's is, so its save
+  // collects (ADR-0045) and the axis keeps one meaning. What it removes is the readable form.
+  await withDocumentRemoving(session, () => undefined);
+};
 
 /**
  * Reports that a protection change's prior state is not recorded.

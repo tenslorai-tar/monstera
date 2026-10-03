@@ -382,8 +382,8 @@ export interface DocumentContext {
   bumpVersion(writer: CommandWriter): DocVersion;
 
   /**
-   * Records that a command declaring `purpose: 'removal'` was applied — a redaction, Sanitize, a flatten — so the file
-   * on disk may hold what it removed until the next save
+   * Records that a command declaring `purpose: 'removal'` was applied — a redaction, Sanitize, a flatten, a protection
+   * change — so the file on disk may hold what it removed until the next save
    * ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)).
    *
    * **The document's fact, not the engine session's.** The session carries a mark of its own for the one question
