@@ -158,6 +158,7 @@ const handlers: ContractHandlers = {
   'document.editCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.workOnCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.fileAccess': () => Promise.resolve(ok({ access: 'writable' as const })),
+  'document.newerOf': () => Promise.resolve(ok({ newer: 'neither' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.newFromMarkdown': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.newFromCsv': () => Promise.resolve(ok({ kind: 'cancelled' as const })),

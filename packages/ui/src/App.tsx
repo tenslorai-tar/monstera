@@ -2598,7 +2598,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         }),
         aiSetup,
         showWordCountCommand({ client, ask, track }),
-        compareDocumentsCommand({ show: showSideBySide }),
+        compareDocumentsCommand({ client, show: showSideBySide }),
         translatePageCommand({ client, onApplied: applied, ask, stamp, signatures, toast, track, storedSecrets: () => storedSecrets }),
         inspectPageStructureCommand({ client, ask }),
         accessibilityCheckCommand({ client, ask }),

@@ -2317,6 +2317,17 @@ export const channels = {
    * Asked of the file at each call and never kept, because the answer changes under the document. It is something to
    * tell a person and never a reason to refuse a save, which tries the file itself. No path crosses.
    */
+  /**
+   * Which of two open documents' files was written later (cloud-4 8a): what Compare asks so the newer file goes on the
+   * right, where the summary's *inserted* and *removed* read as what changed since the older. An answer, never a time.
+   */
+  'document.newerOf': channel(
+    'Answers which of two open documents’ files was written later.',
+    z.object({ first: docIdSchema, second: docIdSchema }).strict(),
+    z.object({ newer: z.enum(['first', 'second', 'neither']) }),
+    ['document-not-open'],
+  ),
+
   'document.fileAccess': channel(
     'Answers whether an open document’s own file could be written over now.',
     z.object({ docId: docIdSchema }).strict(),

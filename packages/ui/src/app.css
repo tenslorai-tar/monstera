@@ -4416,11 +4416,16 @@ optgroup {
   visibility: hidden;
 }
 
-/* TWO EQUAL HALVES, and the summary list beside them once a comparison has run. */
+/* TWO EQUAL HALVES, and the summary list beside them once a comparison has run.
+   THE LINES BETWEEN THEM ARE THE GAP, the body's ground showing through one pixel that belongs to no column. A border
+   on the second half took that pixel from its content alone, so two copies of one document fitted to two widths and
+   read two zooms (F-C2: 622 and 621 pixels at 1280 wide, measured 2026-10-03). */
 .m-side__body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 1px;
   min-block-size: 0;
+  background: var(--border); /* decorative: the dividers between the columns; nothing is clicked on them */
 }
 
 .m-side__body--listed {
@@ -4432,10 +4437,7 @@ optgroup {
   grid-template-rows: auto minmax(0, 1fr);
   min-inline-size: 0;
   min-block-size: 0;
-}
-
-.m-side__half + .m-side__half {
-  border-inline-start: 1px solid var(--border); /* decorative: the divider between the halves; nothing is clicked on it */
+  background: var(--canvas);
 }
 
 .m-side__tools {
@@ -4468,7 +4470,6 @@ optgroup {
   overflow-y: auto;
   padding: var(--space-8);
   background: var(--bg2);
-  border-inline-start: 1px solid var(--border); /* decorative: the list's edge; its rows draw their own state */
   font-size: var(--font-chrome-12);
 }
 

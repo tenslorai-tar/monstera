@@ -1,4 +1,5 @@
-import { type DocId, asDocId, asDocVersion } from '@monstera/shared';
+import { channels, createClient } from '@monstera/contract';
+import { type DocId, asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { GROUP_COMPARE, GROUP_DISPLAY } from '../messages/en.js';
@@ -24,15 +25,44 @@ function contextWith(open: readonly DocId[], focused: { readonly docId: DocId | 
   };
 }
 
-function recorded(): { shown: (readonly [DocId, DocId])[]; command: ReturnType<typeof compareDocumentsCommand> } {
+/** The command, with main answering `document.newerOf` as `newer` — or failing, for `'refused'`. */
+function recorded(newer: 'first' | 'second' | 'neither' | 'refused' = 'neither'): {
+  shown: (readonly [DocId, DocId])[];
+  asked: unknown[];
+  command: ReturnType<typeof compareDocumentsCommand>;
+} {
   const shown: (readonly [DocId, DocId])[] = [];
-  return { shown, command: compareDocumentsCommand({ show: (left, right) => shown.push([left, right]) }) };
+  const asked: unknown[] = [];
+  const client = createClient(channels, (id, params) => {
+    if (id !== 'document.newerOf') throw new Error(`this case does not answer ${id}`);
+    asked.push(params);
+    return Promise.resolve(newer === 'refused' ? err({ code: 'document-not-open' as const }) : ok({ newer }));
+  });
+  return { shown, asked, command: compareDocumentsCommand({ client, show: (left, right) => shown.push([left, right]) }) };
 }
 
 describe('Review › Compare opens Side by Side (ADR-0131)', () => {
-  it('this document on the left and the next open one on the right', async () => {
-    const { shown, command } = recorded();
+  it('this document on the left and the next open one on the right, when neither file is newer', async () => {
+    const { shown, asked, command } = recorded('neither');
     await command.run(contextWith([HERE, OTHER, THIRD]));
+    expect(asked).toStrictEqual([{ first: HERE, second: OTHER }]);
+    expect(shown).toStrictEqual([[HERE, OTHER]]);
+  });
+
+  it('THE NEWER FILE ON THE RIGHT: this document goes right when its file was written later (8a, F-C3)', async () => {
+    const newerHere = recorded('first');
+    await newerHere.command.run(contextWith([HERE, OTHER]));
+    expect(newerHere.shown).toStrictEqual([[OTHER, HERE]]);
+
+    // CONTROL: the other way round leaves this one on the left, so the order is the files' and not a swap.
+    const newerThere = recorded('second');
+    await newerThere.command.run(contextWith([HERE, OTHER]));
+    expect(newerThere.shown).toStrictEqual([[HERE, OTHER]]);
+  });
+
+  it('a question main could not answer keeps this document on the left, and still opens the surface', async () => {
+    const { shown, command } = recorded('refused');
+    await command.run(contextWith([HERE, OTHER]));
     expect(shown).toStrictEqual([[HERE, OTHER]]);
   });
 
@@ -44,9 +74,11 @@ describe('Review › Compare opens Side by Side (ADR-0131)', () => {
   });
 
   it('with only this document open, it shows it on both sides, where the right half chooses another', async () => {
-    const { shown, command } = recorded();
+    const { shown, asked, command } = recorded();
     await command.run(contextWith([HERE]));
     expect(shown).toStrictEqual([[HERE, HERE]]);
+    // NOTHING TO ORDER, so nothing is asked.
+    expect(asked).toStrictEqual([]);
   });
 
   it('CONTROL: it is unavailable with no document, and shows nothing if run there', async () => {

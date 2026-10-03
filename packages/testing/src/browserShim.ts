@@ -275,6 +275,8 @@ export interface BrowserShimOptions {
    * a person just opened usually is.
    */
   readonly fileAccess?: ReadonlyMap<string, FileAccess>;
+  /** Which of two documents' files is the newer, for `document.newerOf`; `neither` when a case does not say. */
+  readonly newerOf?: (first: string, second: string) => 'first' | 'second' | 'neither';
   /** What `document.workOnCopy` answers, in turn; `cancelled` once these run out, the dismissed picker. */
   readonly workOnCopies?: readonly ChannelResult<'document.workOnCopy'>[];
   /**
@@ -1828,6 +1830,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (answer.kind === 'opened') versions.set(answer.docId, answer.version);
       return Promise.resolve(ok(answer));
     },
+    // THE SHIM HOLDS NO FILES, so no file is newer: `neither`, and Compare keeps the document in front on the left.
+    'document.newerOf': ({ first, second }) =>
+      Promise.resolve(
+        versions.has(first) && versions.has(second)
+          ? ok({ newer: options.newerOf?.(first, second) ?? ('neither' as const) })
+          : err({ code: 'document-not-open' as const }),
+      ),
     'document.fileAccess': ({ docId }) =>
       Promise.resolve(
         versions.has(docId)

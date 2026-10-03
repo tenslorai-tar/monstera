@@ -353,6 +353,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // `editCopy`'s dialog, flush and open with no command (cloud-4 7b): a `DocId` in, the open's fields or a reason out.
   'document.workOnCopy': 'needs an engine session, a save dialog and an open',
   'document.fileAccess': 'one DocId in, one of four words out',
+  'document.newerOf': 'two DocIds in, one of three words out',
   // `saveCopy`'s answer exactly — a byte count and three outcomes — and a
   // REQUEST that is the one thing here worth a second look: it names pages. It
   // is a page set, where *every page* is one run, so an extract of any length

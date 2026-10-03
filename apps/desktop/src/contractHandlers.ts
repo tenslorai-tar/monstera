@@ -476,6 +476,15 @@ export function createContractHandlers(deps: {
     'document.saveCopy': saveCopyHandler(deps.commands, mintWritten),
     'document.editCopy': editCopyHandler(deps),
     'document.workOnCopy': workOnCopyHandler(deps),
+    // WHICH FILE IS NEWER, from the times main holds for each open document; no time crosses (cloud-4 8a).
+    'document.newerOf': ({ first, second }) => {
+      try {
+        return Promise.resolve(ok({ newer: deps.documents.newerOf(first, second) }));
+      } catch (thrown) {
+        if (thrown instanceof DocumentNotOpenError) return Promise.resolve(err({ code: 'document-not-open' as const }));
+        throw thrown;
+      }
+    },
     // ASKED OF THE FILE AT EACH CALL (cloud-4 7b): the answer is something to tell a person, never kept.
     'document.fileAccess': async ({ docId }) => {
       try {

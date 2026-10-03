@@ -41,6 +41,7 @@ import {
   SIDE_ROW_RIGHT,
   SIDE_ROW_TEXT,
   SIDE_STOP,
+  SIDE_PICK_SECOND,
   SIDE_SUBTITLE,
   SIDE_TITLE,
   SIDE_ZOOM,
@@ -216,6 +217,10 @@ export function SideBySide({
   const current = state.kind === 'done';
   // ON SHOW ALREADY: the panel is open on the current answer, so Compare has nothing to do.
   const answered = listed && current;
+  // ONE DOCUMENT IN BOTH HALVES (F-H2): a document compared with itself has nothing to find, so Compare is not offered
+  // and the bar says how to choose a second.
+  const alone = left.docId === right.docId;
+  const hintId = useId();
 
   const section = useRef<HTMLElement>(null);
   // FOCUS ARRIVES HERE ON OPENING, so Esc works at once: the control that opened it is now covered.
@@ -301,7 +306,9 @@ export function SideBySide({
     >
       <header className="m-split__bar">
         <span className="m-split__title">{i18n._(SIDE_TITLE)}</span>
-        <span className="m-split__of">{i18n._(SIDE_SUBTITLE)}</span>
+        <span className="m-split__of" data-side-alone={alone ? '' : undefined} id={hintId}>
+          {i18n._(alone ? SIDE_PICK_SECOND : SIDE_SUBTITLE)}
+        </span>
         <span className="m-split__spacer" />
         {state.kind === 'running' ? (
           <span className="m-split__of" data-side-progress="" role="status">
@@ -314,14 +321,15 @@ export function SideBySide({
             to compare, and a natively disabled button drops the focus it holds. Base UI's focusable-disabled button is
             not the spelling either: it cancels every key but Tab, Esc included, so the surface below would skip it. */}
         <button
-          aria-disabled={answered ? 'true' : undefined}
+          aria-describedby={alone ? hintId : undefined}
+          aria-disabled={answered || alone ? 'true' : undefined}
           className="m-split__both"
           data-side-compare={state.kind === 'running' ? undefined : ''}
           data-side-stop={state.kind === 'running' ? '' : undefined}
           disabled={state.kind !== 'running' && (leftView.ready === undefined || rightView.ready === undefined)}
           onClick={() => {
             if (state.kind === 'running') state.stop.abort();
-            else if (!answered) start();
+            else if (!answered && !alone) start();
           }}
           type="button"
         >

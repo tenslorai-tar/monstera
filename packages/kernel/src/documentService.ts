@@ -2217,6 +2217,22 @@ export class DocumentService {
   }
 
   /**
+   * Which of two open documents' files was written later, by the last-write time each was opened from or last saved
+   * to — `neither` when the times are equal (cloud-4 8a, F-C3). An answer, never a time, so nothing about a file
+   * crosses but which of two the person has open is the later.
+   *
+   * @throws {DocumentNotOpenError} if either is not open.
+   */
+  newerOf(first: DocId, second: DocId): 'first' | 'second' | 'neither' {
+    const a = this.#records.get(first);
+    if (a === undefined) throw new DocumentNotOpenError(first, 'compare its file’s age');
+    const b = this.#records.get(second);
+    if (b === undefined) throw new DocumentNotOpenError(second, 'compare its file’s age');
+    const [was, is] = [a.openedIdentity.modifiedMs, b.openedIdentity.modifiedMs];
+    return was === is ? 'neither' : was > is ? 'first' : 'second';
+  }
+
+  /**
    * Whether this document's own file could be written over NOW (cloud-4 7b) — asked of the file at each call and never
    * kept, because the answer changes under the document: the person clears the read-only box, closes the program that
    * held it. So it is something to TELL a person, never a reason to refuse a save, which tries the file itself.

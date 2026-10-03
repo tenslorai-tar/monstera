@@ -101,9 +101,17 @@ function serviceAnswering(outcome: OpenOutcome): {
       closed.push(docId);
       return Promise.resolve();
     },
+    // THE SECOND IS NEWER, unless one is the document no case opened.
+    newerOf: (first: DocId, second: DocId) => {
+      if (first === NOT_OPEN || second === NOT_OPEN) throw new DocumentNotOpenError(NOT_OPEN, 'compare its file’s age');
+      return 'second';
+    },
   } as unknown as DocumentService;
   return { documents, opened, closed };
 }
+
+/** The document no case opened, for the declared failures of the reads that name a document. */
+const NOT_OPEN: DocId = asDocId('doc-not-open');
 
 /** What the harness's page image answers: a JPEG's first two bytes, enough to be told apart from nothing. */
 const PAGE_ONE_JPEG = Uint8Array.of(0xff, 0xd8, 0x01);
@@ -1122,6 +1130,15 @@ describe('document.workOnCopy and document.fileAccess — a file that cannot be 
     const { commands } = commandsCopying({ outcome: { kind: 'copied', bytes: 1024 }, destination: COPY_PATH });
     const { handlers } = harness({ kind: 'busy' }, NO_PICKER, undefined, { commands });
     expect(await handlers['document.workOnCopy']({ docId: A_DOC })).toStrictEqual({ ok: true, value: { kind: 'busy' } });
+  });
+
+  it('newerOf answers the service’s word for the two files, and a document that is not open as the declared failure (8a)', async () => {
+    const { handlers } = harness(OPENED, NO_PICKER);
+    expect(await handlers['document.newerOf']({ first: A_DOC, second: COPY })).toStrictEqual({ ok: true, value: { newer: 'second' } });
+    expect(await handlers['document.newerOf']({ first: A_DOC, second: NOT_OPEN })).toStrictEqual({
+      ok: false,
+      error: { code: 'document-not-open' },
+    });
   });
 
   it('fileAccess answers the file’s own state, and a document that is not open as the declared failure', async () => {

@@ -254,6 +254,7 @@ describe('browser shim', () => {
       'document.newFromImages',
       'document.newFromMarkdown',
       'document.newFromOffice',
+      'document.newerOf',
       'document.open',
       'document.openFromUrl',
       'document.openRecent',

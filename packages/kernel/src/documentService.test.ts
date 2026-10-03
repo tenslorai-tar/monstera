@@ -1287,6 +1287,26 @@ describe('the canonical image', () => {
     expect(asked).toStrictEqual([original(), original()]);
   });
 
+  it('WHICH FILE IS NEWER is answered from each document’s own last-write time, either way round (8a, F-C3)', async () => {
+    const older = join(root, 'older.pdf');
+    const newer = join(root, 'newer.pdf');
+    writeFileSync(older, 'the first version\n');
+    writeFileSync(newer, 'the second version\n');
+    utimesSync(older, new Date(1_700_000_000_000), new Date(1_700_000_000_000));
+    utimesSync(newer, new Date(1_700_000_600_000), new Date(1_700_000_600_000));
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const a = await service.open(registry.mint(older));
+    const b = await service.open(registry.mint(newer));
+    if (a.kind !== 'opened' || b.kind !== 'opened') throw new Error('fixture did not open');
+
+    // BOTH ORDERS, so the answer follows the files and not the argument positions.
+    expect([service.newerOf(a.docId, b.docId), service.newerOf(b.docId, a.docId)]).toStrictEqual(['second', 'first']);
+    // CONTROL: one document against itself is neither.
+    expect(service.newerOf(a.docId, a.docId)).toBe('neither');
+    expect(() => service.newerOf(a.docId, asDocId('doc-never-opened'))).toThrow(DocumentNotOpenError);
+  });
+
   it('a document that is not open has no file to ask about', async () => {
     const service = newService(new CapabilityRegistry());
     await expect(service.fileAccess(asDocId('doc-never-opened'))).rejects.toBeInstanceOf(DocumentNotOpenError);

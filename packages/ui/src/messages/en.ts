@@ -640,6 +640,8 @@ export const SPLIT_CLOSE = messageKey('surface.split.close');
 export const SPLIT_HALF_PAGE = messageKey('surface.split.half-page');
 export const SIDE_TITLE = messageKey('surface.side-by-side.title');
 export const SIDE_SUBTITLE = messageKey('surface.side-by-side.subtitle');
+/** What the bar says in place of its subtitle when both halves show one document (cloud-4 8a, F-H2). */
+export const SIDE_PICK_SECOND = messageKey('surface.side-by-side.pick-second');
 export const SIDE_CLOSE = messageKey('surface.side-by-side.close');
 export const SIDE_CLOSE_TEXT = messageKey('surface.side-by-side.close-text');
 export const SIDE_LEFT = messageKey('surface.side-by-side.left');
@@ -2688,6 +2690,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SPLIT_HALF_PAGE]: 'Page {page}',
   [SIDE_TITLE]: 'Side by Side',
   [SIDE_SUBTITLE]: 'Compare two open documents',
+  [SIDE_PICK_SECOND]: 'Choose a second document on the right, or open another PDF, to compare',
   [SIDE_CLOSE]: 'Close Side by Side',
   [SIDE_CLOSE_TEXT]: 'Close',
   [SIDE_LEFT]: 'Left',
