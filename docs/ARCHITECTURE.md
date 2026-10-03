@@ -2670,7 +2670,9 @@ them.
   [ADR-0113](DECISIONS/0113-the-applications-own-commands-sit-at-the-centre-of-the-menu-row.md)): Donate in gold and
   Rate Us in violet, projected from the registry — centred while they fit, otherwise just after the last menu, never
   over the menus or the window controls, with a drag track always left; drawn as their icons alone when even that
-  cannot hold their labels. **File › Recent** (amended 2026-10-03,
+  cannot hold their labels, and **then the last menus fold into a final *More*** (amended 2026-10-03,
+  [ADR-0146](DECISIONS/0146-a-narrow-window-keeps-the-page-and-folds-the-chrome.md)), each folded menu a submenu
+  there, decided from a ruler of the menus' names. The row is always one line. **File › Recent** (amended 2026-10-03,
   [ADR-0143](DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md)) lists every recent
   file main keeps — ten — an unavailable one disabled and saying so, then *Clear list*.
 - **Title bar:** below the menu bar — integrated document tabs, the Ctrl+K command search, a light and dark switch,
@@ -2716,6 +2718,13 @@ them.
   fit mode, all real controls.
 - **Both side panels are collapsible**: a chevron in the panel header collapses
   it; a slim edge handle on the canvas reopens it. State is persisted per panel.
+  **The page area keeps a floor of 440 px** (amended 2026-10-03,
+  [ADR-0146](DECISIONS/0146-a-narrow-window-keeps-the-page-and-folds-the-chrome.md)):
+  the panels narrow to their minimums first. When the row still cannot hold
+  the floor, the right panel and then the left give way to their handles, with
+  their open settings unwritten. A panel that has given way opens, when asked
+  for, as a sheet over the page's edge until it is closed. `panelPresence.ts`
+  is the one writer of both open settings.
 - **The right contextual panel holds TABS**, as the left one does (amended
   2026-09-17, [ADR-0083](DECISIONS/0083-the-contextual-panel-holds-tabs-and-the-assistant-is-one.md)):
   **Properties**, which is what it held before, and **Assistant**, the owner's
@@ -2862,6 +2871,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-03 | **A narrow window keeps the page, and folds the chrome around it** (§10.3's side-panel and menu-bar clauses). The owner's item 1f: at 760 wide the page area was 174 px between two panels and the menu row wanted 834 px. The page area keeps a 440 px floor (a Letter page at 50% plus the fit gutter); the panels narrow first, then the right and the left give way to their handles without writing their open settings, and a panel that gave way opens as a sheet over the page's edge when asked for. `panelPresence.ts` becomes the one writer of both open settings, and the Window toggles tick what is on screen. The menu row's words stay on one line, and after ADR-0113's icon form the last menus fold into a *More*, decided from a ruler of the menus' names. Rejected: panels below their minimums, a row that scrolls sideways, open panels drawn over the page, the window writing the open settings, the side last asked for winning the row, menus on two lines, a CSS breakpoint | ADR-0113 Decision 3's two states | [ADR-0146](DECISIONS/0146-a-narrow-window-keeps-the-page-and-folds-the-chrome.md) |
 | 2026-10-03 | **File › Recent is the menu row's own value control; main keeps ten and says which are there** (§7's `Placement`, §10.3's menu-bar and start-screen clauses). The owner's item N3: main keeps 10, the start screen shows 4, the submenu has *Clear list* and shows a missing file as unavailable, never hidden. Each `document.recent` entry carries `available`, read by `readFileIdentity` — the open's own rule for *absent* — and an absent file is no longer forgotten. A `menu-bar` placement may name `submenu: 'recent'`; the entries are the row's own control and *Clear list* is the registered `document.clear-recent`. Rejected: a command per file, a hand-drawn submenu, a command kind with entries, a renderer copy of the list | `MAX_RECENT_ENTRIES`' four (the owner, 2026-10-01) and the recent list's forget-on-absent (2026-09-03) | [ADR-0143](DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md) |
 | 2026-10-02 | **A text edit carries one list of objects and one text** (§5's host pipe, PDFium's writer). [ADR-0142](DECISIONS/0142-a-text-edit-carries-one-list-of-objects-and-one-text.md) takes ADR-0138's proposed remedy: `replaceTextObject` and `editTextBlock` each carry one list of object indices and one text with where each entry starts, so the worst is a sum (5,767,280 B and 6,553,755 B against the 8 MiB file a PDFium command crosses in) and their channels leave the pinned exceptions. The bounds are a page's runs and text; one fit per edit; `ai.translatePage` answers in the same shape, so a translated paragraph past 4,096 characters is written. |
 | 2026-10-02 | **Every command declares how a person learns it worked** (§7, the Commands registry). The owner's review of 0.1.9.0, item E: `UiCommand.feedback` is required — `visible` (drawn where the person is looking), `toast` (through `confirmWritten`, `confirmDone` or `confirmCopied`), `dialog` (a result dialog's content) or `none` with a written reason — so a command declaring nothing is a compile error, and the registry refuses an empty reason. It names the route a person waits on, and success only. The manual checklist names each command's. Rejected: a scan for confirmations near writes, an optional field under a lint rule, inferring it from placements, a fifth kind for a dialog that opens | §7's Commands entry, which asked nothing about feedback | [0141](DECISIONS/0141-every-command-declares-how-a-person-learns-it-worked.md) |
