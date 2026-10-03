@@ -10,6 +10,7 @@ import { accessFor, mupdfWriter, signaturesKeptBySave, withDocument } from '../m
 import { readSignatures } from '../signatureRead.js';
 import { extractPages } from '../pageExtract.js';
 import { applyPdfLibImage } from '../pdfLibWriter.js';
+import { prepareSignature } from '../signaturePlaceholder.js';
 import { rasterisePageImage } from '../pageImages.js';
 import { snapshotRegion } from '../pageSnapshot.js';
 import { readPageGeometry } from '../pageGeometry.js';
@@ -342,6 +343,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       duplicates: findDuplicatePages,
       extract: extractPages,
       applyPdfLib: applyPdfLibImage,
+      prepareSignature,
       snapshot: snapshotRegion,
       exportFormData: async (session, format) =>
         serialiseFormData(await readFormData(session), format),
@@ -798,6 +800,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         applyPdfLib: () => {
           throw new Error('unused');
         },
+        prepareSignature: () => {
+          throw new Error('unused');
+        },
         snapshot: () => {
           throw new Error('unused');
         },
@@ -939,6 +944,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         applyPdfLib: () => {
           throw new Error('the rotation-refusal case must not run pdf-lib');
+        },
+        prepareSignature: () => {
+          throw new Error('the rotation-refusal case must not prepare a signature');
         },
         snapshot: () => {
           throw new Error('the rotation-refusal case must not rasterise a page');

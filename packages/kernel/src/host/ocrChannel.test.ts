@@ -168,6 +168,9 @@ async function joined(ocr: HostOcrReader): Promise<{
       applyPdfLib: () => {
         throw new Error('a recognition must not run pdf-lib');
       },
+      prepareSignature: () => {
+        throw new Error('a recognition must not prepare a signature');
+      },
       snapshot: () => {
         throw new Error('a recognition must not write a PNG out');
       },

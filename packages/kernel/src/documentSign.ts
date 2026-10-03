@@ -1,79 +1,33 @@
-import { PDFArray, PDFDict, PDFHexString, PDFName, PDFNumber, PDFString } from '@cantoo/pdf-lib';
-import type { PDFDocument, PDFPage, PDFRef } from '@cantoo/pdf-lib';
-import type { CommandOfKind, TimestampAuthority } from '@monstera/contract';
+import type { Command, CommandOfKind, TimestampAuthority } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
-import type { Apply, ByteImage } from './engineSeam.js';
-import { PngPixelsRefused, checkPngPixels } from './imageDimensions.js';
-import { openWhole } from './pdfLibSession.js';
-import { type DrawableMark, drawSignature, signatureBox } from './signatureDrawing.js';
+import type { CommandExecution } from './commandRouting.js';
+import type { MupdfSession } from './engineSeam.js';
+import { stagedBytes } from './savePipeline.js';
 import {
-  SignatureAppearanceRefusedError,
-  SignatureCredentialRefusedError,
-  SignatureTooLargeError,
-  TimestampUnreachableError,
-} from './signingRefusals.js';
+  type PlaceholderRequest,
+  type PreparedSignature,
+  placeholderRequestOf,
+  reservedSignatureBytes,
+} from './signatureHole.js';
+import { SignatureCredentialRefusedError, SignatureTooLargeError, TimestampUnreachableError } from './signingRefusals.js';
 
 /**
- * Digitally signing a document — Stage 7's PKCS#7 row, over a placeholder this
- * build writes
- * ([ADR-0054](../../../docs/DECISIONS/0054-the-signing-core-ships-and-the-placeholder-is-ours.md)).
+ * Digitally signing a document, the half that holds the key — Stage 7's PKCS#7 row, over a placeholder this build
+ * writes ([ADR-0054](../../../docs/DECISIONS/0054-the-signing-core-ships-and-the-placeholder-is-ours.md)).
  *
- * ## Two libraries, one command, and that is not two writers of one concern
+ * ## `main` signs over FOUR NUMBERS, and parses nothing
  *
- * §3's matrix names the writer of record for signatures as *`@signpdf/signpdf` +
- * `@signpdf/signer-p12`, **over a placeholder THIS BUILD writes***. The two
- * halves are one row in that table because they are one operation with a seam
- * down the middle: `@cantoo/pdf-lib` produces a document with a hole in it, and
- * `@signpdf` fills the hole. Neither can do the other's half.
+ * [ADR-0148](../../../docs/DECISIONS/0148-signings-parse-runs-in-the-mupdf-host-and-main-keeps-only-the-key.md):
+ * `@signpdf`'s `SignPdf.sign` is a keyless half — find the placeholder, find the hole, write the ranges — and a keyed
+ * half — sign the bytes outside the hole and fill it. The keyless half runs in the MuPDF host beside the session
+ * (`signaturePlaceholder.ts`), with the placeholder and the picture's decode. This module is the keyed half: it takes
+ * the prepared bytes and their four numbers, checks the numbers against the hole without scanning the document, signs,
+ * and fills. It imports neither pdf-lib nor the placeholder writer, and `proof:hostload` reads the emit to say so.
  *
- * The placeholder helpers that would have removed the seam are refused, with
- * the measurement, in ADR-0054 Decision 2: `@signpdf/placeholder-plain` takes
- * the tree from 4 packages to **125**, seven of them shipping no licence text
- * and one deprecated with weak crypto.
- *
- * ## THE LITERAL TOKEN SHAPE IS THE CONTRACT
- *
- * ADR-0054 Decision 3, measured. `findByteRange` requires the array to be
- * exactly `/ByteRange [0 /********** /********** /**********]` — slot 0 the
- * **number** zero, slots 1 to 3 PDF **name** objects of ten asterisks. Four
- * numbers, which is the obvious shape, is refused with *"No ByteRangeStrings
- * found within PDF buffer"* — a message that names the wrong thing, because
- * they were found and were not the shape it wanted.
+ * The host is hostile (invariant 25), so it is handed {@link placeholderRequestOf}'s command, which has no certificate
+ * and no passphrase, and what it answers is checked rather than trusted.
  */
-
-/** ADR-0054 Decision 3's slot: a `/**********` name, ten asterisks. */
-const BYTE_RANGE_SLOT = '*'.repeat(10);
-
-/**
- * How many bytes of `/Contents` the placeholder reserves for the signature.
- *
- * Measured 2026-09-12 in the gate's own run: a self-signed P12 produced a
- * **1,295-byte** PKCS#7 blob. This is the gate's 8,192, which leaves room for a
- * chain of several certificates and a timestamp token later — and the number
- * matters in one direction only, because the signed file must be **exactly** as
- * long as the placeholder. Too small and the signature does not fit; too large
- * costs padding.
- */
-const SIGNATURE_BYTES = 8192;
-
-/**
- * How many bytes the placeholder reserves when a timestamp is asked for.
- *
- * **A bound, not a measurement**, and chosen from the one direction that matters:
- * a token carries the authority's certificate — RFC 3161 §2.4.1 obliges it when
- * `certReq` is set, which this build sets — and often its chain, so the 8,192
- * above is not a ceiling a timestamped signature can be held to. Too large costs
- * zero padding and nothing else; too small refuses a signature by name
- * (`SignatureTooLargeError`), which is how a figure that proves wrong announces
- * itself.
- */
-const TIMESTAMPED_SIGNATURE_BYTES = 32_768;
-
-/** The space the placeholder reserves for this command's signature. */
-function reservedSignatureBytes(command: CommandOfKind<'signDocument'>): number {
-  return command.timestamp === undefined ? SIGNATURE_BYTES : TIMESTAMPED_SIGNATURE_BYTES;
-}
 
 /**
  * The PKCS#7 `P12Signer` produced, with an accepted timestamp token added to its
@@ -86,7 +40,7 @@ function reservedSignatureBytes(command: CommandOfKind<'signDocument'>): number 
  * transport failure is named unreachable, and a reply that fails a check is named
  * by that module.
  *
- * node-forge and the token module load here, dynamically, for `applySignDocument`'s
+ * node-forge and the token module load here, dynamically, for {@link signPrepared}'s
  * reason: main pays for them only when somebody asks for a timestamp.
  */
 async function timestamped(
@@ -156,307 +110,99 @@ async function timestamped(
   return Buffer.from(asn1.toDer(contentInfo).getBytes(), 'binary');
 }
 
+/** `<` and `>`, which bracket the hole, and `0`, which fills it until a signature does. */
+const OPEN = 0x3c;
+const CLOSE = 0x3e;
+const ZERO = 0x30;
+
 /**
- * `/DocMDP`'s `/P`, by the word the payload carries.
+ * Refuses a prepared document whose four numbers do not describe its own hole, in time proportional to the hole.
  *
- * ISO 32000-2 table 257. Keyed on the contract's own enum, so a level added
- * there without a number here is a compile error rather than a certification
- * that silently permits everything.
+ * **What it rules out is a signature that covers less than the file.** `main` signs exactly the bytes outside
+ * `[holeStart, holeEnd)`, so ranges that start past zero, overlap, or stop short of the end would leave bytes the
+ * signature does not cover, in a document that would still read as signed. The hole itself must be the placeholder's:
+ * bracketed, exactly twice the reserved length, and all `0`, so a host that wrote anything into it is refused.
+ *
+ * A host that wrote a `/ByteRange` into the file other than the one it announced gains nothing: `main` signs the bytes
+ * the announced ranges describe, and every reader then reports the signature invalid over the file's own ranges.
  */
-const DOC_MDP_LEVELS: Readonly<Record<'no-changes' | 'form-fill' | 'form-fill-and-annotate', number>> =
-  {
-    'no-changes': 1,
-    'form-fill': 2,
-    'form-fill-and-annotate': 3,
+function checkPrepared(prepared: PreparedSignature, reserved: number): void {
+  const { bytes, byteRange } = prepared;
+  const [start, holeStart, holeEnd, rest] = byteRange;
+  const refuse = (why: string): never => {
+    throw new Error(`the engine host prepared a signature whose ranges ${JSON.stringify(byteRange)} ${why}`);
   };
-
-/** `/Filter` and `/SubFilter`, the two names a reader dispatches on. */
-const ADOBE_PPKLITE = 'Adobe.PPKLite';
-const DETACHED_PKCS7 = 'adbe.pkcs7.detached';
-
-/**
- * How a visible signature looks, as the command carries it.
- */
-type SignatureAppearance = NonNullable<CommandOfKind<'signDocument'>['appearance']>;
-type SignatureMark = SignatureAppearance['mark'];
-
-/**
- * A picture, embedded so the drawing can name it — and its size, which is what the drawing scales by.
- *
- * `applyInsertImagePage`'s two calls and its rule that the media type chooses
- * the decoder. The decoder refusing is what validates the bytes, and it is
- * named here because main would otherwise report it as a wrong passphrase.
- */
-async function embeddedPicture(
-  document: PDFDocument,
-  mark: Extract<SignatureMark, { kind: 'image' }>,
-): Promise<{ readonly ref: PDFRef; readonly width: number; readonly height: number }> {
-  // THE PIXEL RULE BEFORE THE DECODER. `embedPng` decodes every pixel, and this decode
-  // runs in `main`. Bytes with no PNG header ARE an unreadable picture, and are named
-  // so; a picture with too many pixels is a valid picture, so that refusal propagates
-  // for main to answer as one — naming it unreadable would blame the file.
-  if (mark.mediaType === 'image/png') {
-    try {
-      checkPngPixels(mark.bytes);
-    } catch (error) {
-      if (error instanceof PngPixelsRefused && error.reason === 'no-header') {
-        throw new SignatureAppearanceRefusedError(
-          'unreadable-image',
-          'the signature picture has no PNG header this build can read',
-          { cause: error },
-        );
-      }
-      throw error;
-    }
+  if (!byteRange.every((value) => Number.isSafeInteger(value) && value >= 0)) refuse('are not whole numbers');
+  if (start !== 0) refuse('do not start at the first byte');
+  if (holeEnd + rest !== bytes.byteLength) refuse(`do not end at the file's last byte, ${String(bytes.byteLength)}`);
+  if (holeEnd - holeStart !== reserved * 2 + 2) {
+    refuse(`hold a hole of ${String(holeEnd - holeStart)} bytes where the placeholder reserved ${String(reserved * 2 + 2)}`);
   }
-  let embedded;
+  if (bytes[holeStart] !== OPEN || bytes[holeEnd - 1] !== CLOSE) refuse('do not bracket a hex string');
+  for (let at = holeStart + 1; at < holeEnd - 1; at += 1) {
+    if (bytes[at] !== ZERO) refuse(`hold a hole that is not empty at byte ${String(at)}`);
+  }
+}
+
+/**
+ * The bytes a signature covers: everything but the hole, in file order.
+ *
+ * `SignPdf.sign`'s own cut, so a signature made here is a signature of the bytes `@signpdf` would have handed its signer
+ * for the same file — the fill's proof requires the two to agree.
+ */
+export function bytesToSign(prepared: PreparedSignature): Buffer {
+  const [, holeStart, holeEnd] = prepared.byteRange;
+  return Buffer.concat([prepared.bytes.subarray(0, holeStart), prepared.bytes.subarray(holeEnd)]);
+}
+
+/**
+ * Writes a signature into the prepared hole, in place, and answers the signed document.
+ *
+ * **The fill, spelt once.** It is `SignPdf.sign`'s last step: the signature hexed, padded with zeros to the hole's
+ * length, between the brackets. The hole is already all zeros and of that length, so writing the hex from just after
+ * the `<` is the whole of it, and the file keeps its length — the property the ranges rest on. Its proof requires the
+ * result to be byte-identical to `SignPdf.sign` over the same placeholder with the same signature.
+ *
+ * @throws {@link SignatureTooLargeError} when the signature does not fit the reserved space
+ */
+export function fillSignature(prepared: PreparedSignature, signature: Uint8Array): Uint8Array {
+  const [, holeStart, holeEnd] = prepared.byteRange;
+  const reserved = (holeEnd - holeStart - 2) / 2;
+  if (signature.byteLength > reserved) throw new SignatureTooLargeError(signature.byteLength, reserved);
+  const hex = Buffer.from(Buffer.from(signature).toString('hex'), 'latin1');
+  prepared.bytes.set(hex, holeStart + 1);
+  return prepared.bytes;
+}
+
+/**
+ * Signs a prepared document: checks its ranges, signs the bytes outside the hole, adds a timestamp when one is asked
+ * for, and fills the hole.
+ *
+ * **Each failure is named where it happens.** The credential's refusal is only what `P12Signer` itself throws; a
+ * signature too large for its hole is `fillSignature`'s; a host whose ranges do not describe its file is a defect and
+ * propagates as one. Wrapping all of it in the credential's name would tell a person a wrong password for a document
+ * problem.
+ *
+ * `@signpdf/signer-p12` loads here, dynamically, so main pays for node-forge only when somebody signs something — the
+ * same reason `nspell` is behind one.
+ */
+export async function signPrepared(
+  prepared: PreparedSignature,
+  command: CommandOfKind<'signDocument'>,
+  requestTimestamp: RequestTimestamp,
+): Promise<Uint8Array> {
+  checkPrepared(prepared, reservedSignatureBytes(command));
+  const { P12Signer } = await import('@signpdf/signer-p12');
+  let raw: Buffer;
   try {
-    embedded =
-      mark.mediaType === 'image/png'
-        ? await document.embedPng(mark.bytes)
-        : await document.embedJpg(mark.bytes);
+    // THE PASSPHRASE REACHES ONE CALL. Nothing here records it, and the error carries none of it.
+    raw = await new P12Signer(command.bytes, { passphrase: command.passphrase }).sign(bytesToSign(prepared));
   } catch (cause) {
-    throw new SignatureAppearanceRefusedError(
-      'unreadable-image',
-      `the signature picture is not a ${mark.mediaType} this build can decode`,
-      { cause },
-    );
+    throw new SignatureCredentialRefusedError({ cause });
   }
-  return { ref: embedded.ref, width: embedded.width, height: embedded.height };
+  const withToken = command.timestamp === undefined ? raw : await timestamped(raw, command.timestamp, requestTimestamp);
+  return fillSignature(prepared, withToken);
 }
-
-/** A visible widget's rectangle and the appearance stream drawn for it. */
-interface PlacedAppearance {
-  readonly rect: readonly [number, number, number, number];
-  readonly form: PDFRef;
-}
-
-/**
- * Draws the appearance for a placement, upright as the page is seen.
- *
- * **What is drawn is `signatureDrawing.ts`'s** (ADR-0133): the box, the matrix that keeps the mark upright, the content
- * stream and the names it uses. This function turns those names into pdf-lib objects of this document — the base-14
- * font as a Type 1 dictionary, the picture as the XObject pdf-lib embedded — and wraps the stream as the widget's form.
- * MuPDF's placed signature takes the same drawing, so a mark looks the same with a certificate and without.
- */
-async function appearanceFor(
-  document: PDFDocument,
-  page: PDFPage,
-  appearance: SignatureAppearance,
-): Promise<PlacedAppearance> {
-  // `getRotation` reads the inheritable `/Rotate`; `signatureBox` snaps it through the shared function every other
-  // reader of it agrees on.
-  const box = signatureBox(appearance.rect, page.getRotation().angle);
-  const { mark } = appearance;
-  let picture: Awaited<ReturnType<typeof embeddedPicture>> | undefined;
-  let drawable: DrawableMark;
-  if (mark.kind === 'image') {
-    picture = await embeddedPicture(document, mark);
-    drawable = { kind: 'picture', width: picture.width, height: picture.height };
-  } else {
-    drawable = mark;
-  }
-  const drawing = await drawSignature(drawable, box.seenWide, box.seenTall);
-
-  const context = document.context;
-  const resources: Record<string, Record<string, PDFRef>> = {};
-  if (drawing.font !== undefined) {
-    const font = context.obj({
-      Type: 'Font',
-      Subtype: 'Type1',
-      BaseFont: drawing.font.baseFont,
-      Encoding: 'WinAnsiEncoding',
-    });
-    resources['Font'] = { [drawing.font.name]: context.register(font) };
-  }
-  if (drawing.picture !== undefined && picture !== undefined) {
-    resources['XObject'] = { [drawing.picture.name]: picture.ref };
-  }
-  const form = context.stream(drawing.content, {
-    Type: 'XObject',
-    Subtype: 'Form',
-    BBox: [0, 0, box.seenWide, box.seenTall],
-    Matrix: [...box.matrix],
-    Resources: resources,
-  });
-  return { rect: box.rect, form: context.register(form) };
-}
-
-/**
- * Writes an empty signature dictionary, its widget, and the `/AcroForm` entry.
- *
- * Three objects, which is what a signature placeholder is — four with a visible
- * appearance. Without one the widget is **invisible**: a zero-size `/Rect` with
- * the hidden flag clear and `/F 132` (print + locked). With one it carries the
- * placement's rectangle and an `/AP /N` stream, because a widget given a
- * rectangle and no appearance renders as a black box in some readers.
- *
- * @returns the document, mutated; the caller serialises.
- */
-function placeSignature(
-  document: PDFDocument,
-  page: PDFPage,
-  command: CommandOfKind<'signDocument'>,
-  placed: PlacedAppearance | undefined,
-): void {
-  const context = document.context;
-
-  const byteRange = context.obj([
-    PDFNumber.of(0),
-    PDFName.of(BYTE_RANGE_SLOT),
-    PDFName.of(BYTE_RANGE_SLOT),
-    PDFName.of(BYTE_RANGE_SLOT),
-  ]);
-
-  // THE HOLE, as a hex string of `SIGNATURE_BYTES` zero bytes. `@signpdf`
-  // locates it by its length in the raw file and overwrites it in place, which
-  // is why the placeholder's size is the signature's ceiling.
-  const contents = PDFHexString.of('0'.repeat(reservedSignatureBytes(command) * 2));
-
-  const signature = context.obj({
-    Type: PDFName.of('Sig'),
-    Filter: PDFName.of(ADOBE_PPKLITE),
-    SubFilter: PDFName.of(DETACHED_PKCS7),
-    ByteRange: byteRange,
-    Contents: contents,
-    M: PDFString.fromDate(new Date()),
-  });
-  // OPTIONAL FIELDS ARE OMITTED, never written empty: a `/Reason ()` is a
-  // reason a reader displays as blank, which is worse than no reason at all.
-  if (command.name !== undefined) signature.set(PDFName.of('Name'), PDFString.of(command.name));
-  if (command.reason !== undefined) {
-    signature.set(PDFName.of('Reason'), PDFString.of(command.reason));
-  }
-  if (command.location !== undefined) {
-    signature.set(PDFName.of('Location'), PDFString.of(command.location));
-  }
-  if (command.contactInfo !== undefined) {
-    signature.set(PDFName.of('ContactInfo'), PDFString.of(command.contactInfo));
-  }
-  // CERTIFICATION, which is a different claim from a signature.
-  //
-  // An approval signature says *I signed this*. A certifying one says *I am
-  // the author, and this is what may change* — written as a `/DocMDP`
-  // transform on the signature's own `/Reference`, plus a `/Perms /DocMDP`
-  // entry in the catalogue pointing back at it. ISO 32000-2: there may be at
-  // most ONE, and it must be the first signature in the document.
-  //
-  // The two halves are written together because a reader honours neither
-  // alone: `/Reference` without `/Perms` is a transform nothing points at, and
-  // `/Perms` without `/Reference` names a signature that makes no claim.
-  if (command.certify !== undefined) {
-    const reference = context.obj({
-      Type: PDFName.of('SigRef'),
-      TransformMethod: PDFName.of('DocMDP'),
-      TransformParams: context.obj({
-        Type: PDFName.of('TransformParams'),
-        V: PDFName.of('1.2'),
-        P: PDFNumber.of(DOC_MDP_LEVELS[command.certify]),
-      }),
-    });
-    signature.set(PDFName.of('Reference'), context.obj([context.register(reference)]));
-  }
-  const signatureRef = context.register(signature);
-  if (command.certify !== undefined) {
-    document.catalog.set(
-      PDFName.of('Perms'),
-      context.obj({ DocMDP: signatureRef }),
-    );
-  }
-
-  const widget = context.obj({
-    Type: PDFName.of('Annot'),
-    Subtype: PDFName.of('Widget'),
-    FT: PDFName.of('Sig'),
-    Rect: context.obj([...(placed?.rect ?? [0, 0, 0, 0])]),
-    V: signatureRef,
-    T: PDFString.of(`Signature${String(Date.now())}`),
-    // 132 = print (bit 3) + locked (bit 8). Not hidden: a hidden widget is one
-    // some readers refuse to treat as a signature field at all.
-    F: 132,
-    P: page.ref,
-  });
-  // THE APPEARANCE IS WRITTEN BEFORE THE SIGNER RUNS, so it lies inside the
-  // covered byte ranges: replacing the picture afterwards is a change to the
-  // signed bytes, and every reader reports it as one.
-  if (placed !== undefined) widget.set(PDFName.of('AP'), context.obj({ N: placed.form }));
-  const widgetRef = context.register(widget);
-  page.node.addAnnot(widgetRef);
-
-  // `/AcroForm` WITH `/SigFlags 3` — append-only plus signatures-exist, which
-  // is what tells a reader the document has a signature to check.
-  const catalogue = document.catalog;
-  const existing = catalogue.lookupMaybe(PDFName.of('AcroForm'), PDFDict);
-  const acroForm = existing ?? context.obj({});
-  if (existing === undefined) catalogue.set(PDFName.of('AcroForm'), context.register(acroForm));
-  acroForm.set(PDFName.of('SigFlags'), PDFNumber.of(3));
-  const fields = acroForm.lookupMaybe(PDFName.of('Fields'), PDFArray) ?? context.obj([]);
-  fields.push(widgetRef);
-  acroForm.set(PDFName.of('Fields'), fields);
-}
-
-/**
- * The document with a signature placeholder in it, serialised.
- *
- * **`useObjectStreams: false`**, ADR-0054 Decision 3's second constraint: the
- * signer locates the `/Contents` hole in the raw bytes, so a signature
- * dictionary compressed into an object stream is invisible to it. This is the
- * one save in the codebase that must not compress.
- *
- * Exported so the row's proof can assert the placeholder's shape without
- * signing — the byte range's four slots are the whole contract with `@signpdf`,
- * and a case that only ever saw a signed file could not tell a correct
- * placeholder from one the signer happened to tolerate.
- */
-export async function withSignaturePlaceholder(
-  image: ByteImage,
-  command: CommandOfKind<'signDocument'>,
-): Promise<ByteImage> {
-  // WHOLE, the signer's own route (`openWhole`), never the pdf-lib commands' appended one (ADR-0127).
-  const document = await openWhole(image);
-  // THE FIRST PAGE FOR AN INVISIBLE SIGNATURE, which has no page a person
-  // chose; the placement's page for a visible one, refused rather than clamped
-  // when the document does not have it — a signature drawn on a different page
-  // from the one somebody pointed at is a signature in the wrong place.
-  const index = command.appearance?.page ?? 0;
-  const total = document.getPageCount();
-  if (index >= total) {
-    throw new RangeError(
-      `Page ${String(index)} is outside this document, which has ${String(total)} page(s). ` +
-        'Page indices are zero-based.',
-    );
-  }
-  const page = document.getPage(index);
-  const placed =
-    command.appearance === undefined
-      ? undefined
-      : await appearanceFor(document, page, command.appearance);
-  placeSignature(document, page, command, placed);
-  return document.save({ useObjectStreams: false });
-}
-
-/**
- * Signs the document, over a placeholder this build wrote.
- *
- * ## THE CLASS, NOT THE DEFAULT INSTANCE, and the measurement is why
- *
- * ADR-0054 Decision 3's third constraint says `@signpdf/signpdf` is CommonJS
- * with a `default` export and *the instance is one level in*. Measured
- * 2026-09-12, it is **two**: the namespace's `default` is `module.exports`,
- * whose own `default` is the singleton — `namespace.default.sign` is
- * `undefined` and `namespace.default.default.sign` is a function. That is the
- * shape the ADR's sentence describes from one side.
- *
- * So this constructs `SignPdf`, which the namespace exports directly and which
- * needs no interop reasoning at all. It also avoids the singleton's
- * `lastSignature`, which is per-instance state two concurrent signs would
- * share.
- *
- * The import is dynamic so main pays for `node-forge` only when somebody signs
- * something — the same reason `nspell` is behind one.
- */
-export const applySignDocument: Apply<'signpdf', 'signDocument'> = (image, command) =>
-  signDocumentWith(NO_TIMESTAMPS)(image, command);
 
 /**
  * Asks a timestamp authority, by id, with a DER TimeStampReq, and answers the
@@ -475,85 +221,14 @@ export type RequestTimestamp = (authority: TimestampAuthority, query: Uint8Array
  * rather than signed without one, which is the decorative defect ADR-0058 exists
  * to rule out.
  */
-const NO_TIMESTAMPS: RequestTimestamp = () =>
+export const NO_TIMESTAMPS: RequestTimestamp = () =>
   Promise.reject(new Error('no timestamp transport is registered with this writer'));
 
 /**
- * The signing apply, over a timestamp port.
- *
- * `applySignDocument` is this with {@link NO_TIMESTAMPS}, so the spec table keeps
- * one apply per kind and the writer the composition registers passes the real
- * port — one function, parameterised, rather than two bodies that could drift.
+ * Prepares a signature beside `session`, in the process that holds it, and answers the prepared bytes and their
+ * ranges: the MuPDF host's `engine/prepareSignature` in `main`, a local session's serialise in a test.
  */
-export function signDocumentWith(
-  requestTimestamp: RequestTimestamp,
-): Apply<'signpdf', 'signDocument'> {
-  return async (image, command) => {
-    const placed = await withSignaturePlaceholder(image, command);
-    const reserved = reservedSignatureBytes(command);
-
-    const [{ SignPdf }, { P12Signer }, { Signer }] = await Promise.all([
-      import('@signpdf/signpdf'),
-      import('@signpdf/signer-p12'),
-      import('@signpdf/utils'),
-    ]);
-
-    /**
-     * `P12Signer`, then the timestamp, then the length — inside the signer, so
-     * each failure is named WHERE it happens.
-     *
-     * The credential's refusal is only what `P12Signer` itself throws. This apply
-     * used to wrap all of `SignPdf.sign` in that name, so a signature too large for
-     * its hole — `@signpdf` refuses one with a `SignPdfError` of `TYPE_INPUT`, the
-     * same type as its other input refusals — would have been reported to a person
-     * as a wrong password. The type cannot separate them; the call site can.
-     */
-    class TimestampingSigner extends Signer {
-      override async sign(pdfBuffer: Buffer, signingTime?: Date): Promise<Buffer> {
-        let raw: Buffer;
-        try {
-          // THE PASSPHRASE REACHES ONE CALL. Nothing here records it, and the
-          // error carries none of it.
-          raw = await new P12Signer(command.bytes, { passphrase: command.passphrase }).sign(
-            pdfBuffer,
-            signingTime,
-          );
-        } catch (cause) {
-          throw new SignatureCredentialRefusedError({ cause });
-        }
-        const withToken =
-          command.timestamp === undefined ? raw : await timestamped(raw, command.timestamp, requestTimestamp);
-        if (withToken.byteLength > reserved) {
-          throw new SignatureTooLargeError(withToken.byteLength, reserved);
-        }
-        return withToken;
-      }
-    }
-
-    // NOTHING HERE IS RE-NAMED. The signer names its own refusals, and anything
-    // else `SignPdf` throws — a placeholder it cannot find — is a defect, which
-    // propagates and is reported as one.
-    const signed = await new SignPdf().sign(Buffer.from(placed), new TimestampingSigner());
-
-    // THE LENGTH IS THE PROPERTY THE WHOLE SCHEME RESTS ON, asserted rather than
-    // assumed: `@signpdf` overwrites the hole in place and rewrites the ranges to
-    // describe the file they are in, so a signed document is byte-for-byte as
-    // long as its placeholder. A length that moved means the ranges describe
-    // something else, and every reader would report the signature as invalid over
-    // bytes that are in fact intact.
-    if (signed.byteLength !== placed.byteLength) {
-      throw new Error(
-        `the signed document is ${String(signed.byteLength)} bytes where its placeholder was ` +
-          `${String(placed.byteLength)}: the byte ranges no longer describe the file they are in`,
-      );
-    }
-    // COPIED INTO AN ARRAY THAT OWNS ITS BUFFER. `Buffer` is a view onto a pooled
-    // allocation, so `new Uint8Array(buffer)` would share it — the same hazard
-    // `mupdfWriter.ts` records for `asUint8Array()`, from a different allocator.
-    // `ByteImage` is what the service holds across commands.
-    return Uint8Array.from(signed);
-  };
-}
+export type SignatureHost = (session: MupdfSession, request: PlaceholderRequest) => Promise<PreparedSignature>;
 
 /**
  * Reports that a signature's prior state is not recorded.
@@ -573,3 +248,31 @@ export const captureSignDocument = (): Promise<CaptureResult<never>> =>
 export const invertSignDocument = (): never => {
   throw new Error('signDocument is declared non-invertible. Undo restores the checkpoint.');
 };
+
+/**
+ * The signing writer's execution: the placeholder prepared by `host` beside the MuPDF session, the signature made here
+ * ([ADR-0148](../../../docs/DECISIONS/0148-signings-parse-runs-in-the-mupdf-host-and-main-keeps-only-the-key.md)).
+ *
+ * The signed bytes are this process's own, so they are staged as bytes in hand; the bus places them where `adopt`
+ * rebuilds the session, as it does any hosted result. `capture` answers from nothing, as {@link captureSignDocument}
+ * says, and `invert` is unreachable for the same reason.
+ *
+ * @param requestTimestamp the composition's timestamp port, or {@link NO_TIMESTAMPS}
+ */
+export function signpdfExecutionWith(host: SignatureHost, requestTimestamp: RequestTimestamp): CommandExecution<'signpdf'> {
+  return {
+    apply: async ({ session, command }) => {
+      // `signDocument` IS THE ONE KIND ROUTED HERE, and the kind is still read rather than assumed: a routing defect
+      // must not reach the signer as some other command's payload. The cast is that check's: `K` is generic over the
+      // kinds routed to this writer, and the checker cannot narrow `CommandOfKind<K>` by a discriminant.
+      const routed: Command = command;
+      if (routed.kind !== 'signDocument') throw new Error(`"${routed.kind}" is not routed to the signpdf writer.`);
+      const signing = routed;
+      const prepared = await host(session, placeholderRequestOf(signing));
+      return stagedBytes(await signPrepared(prepared, signing, requestTimestamp));
+    },
+    capture: () => captureSignDocument(),
+    invert: (_session, kind) =>
+      Promise.reject(new Error(`${kind} is not invertible — its prior state is never — so nothing can hold an inverse to run.`)),
+  };
+}

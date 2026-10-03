@@ -1020,9 +1020,10 @@ const SANITIZE_SPEC = `  sanitizeDocument: {
 /**
  * Filler, and the only spec here routed to a THIRD writer.
  *
- * `signpdf` is byte-image like `pdf-lib`, so the shape is the same; what makes
- * it worth a fixture of its own is that `commandSpecs.ts` spreads three writers'
- * tables now, and a table missing one is the failure this file exists for.
+ * `signpdf` is hosted like `pdf-lib`, so its spec has the same image-in, image-out
+ * shape; what makes it worth a fixture of its own is that `commandSpecs.ts`
+ * spreads three writers' tables now, and a table missing one is the failure this
+ * file exists for.
  */
 const SIGN_SPEC = `  signDocument: {
     kind: 'signDocument',
@@ -3166,9 +3167,9 @@ import type { ByteImage, CommandExecution } from '@monstera/kernel';
 
 // A byte-image writer's execution: apply and invert CONSUME an image and
 // PRODUCE a new one. Capture is the same shape for both kinds, because
-// capture only ever reads. THE SIGNER since ADR-0121 Decision 3 hosted pdf-lib:
-// it is the byte-image writer that stays in main.
-export const execution: CommandExecution<'signpdf'> = {
+// capture only ever reads. PDFIUM since ADR-0148 hosted the signer as
+// ADR-0121 Decision 3 hosted pdf-lib: it is the byte-image writer left.
+export const execution: CommandExecution<'pdfium'> = {
   // THE COMMAND IS NOT READ AT ALL, and the history is the interesting part.
   // This read the rotation's own pages while one command kind existed, then
   // narrowed to the DISCRIMINANT when a second kind arrived, and now reads
@@ -3210,12 +3211,12 @@ export const execution: CommandExecution<'signpdf'> = {
     // `(image: ByteImage, command:` — the two diagnostics agree line for line
     // otherwise, and the harness refuses to certify either verdict while one
     // matcher accepts the other's reason.
-    because: /request: ApplyRequest<"signpdf", K>\)[\s\S]*Type 'void' is not assignable to type 'Promise<ByteImage>'/u,
+    because: /request: ApplyRequest<"pdfium", K>\)[\s\S]*Type 'void' is not assignable to type 'Promise<ByteImage>'/u,
     notBecause: null,
     source: `
 import type { CommandExecution } from '@monstera/kernel';
 
-export const execution: Pick<CommandExecution<'signpdf'>, 'apply'> = {
+export const execution: Pick<CommandExecution<'pdfium'>, 'apply'> = {
   apply: () => {},
 };
 `,

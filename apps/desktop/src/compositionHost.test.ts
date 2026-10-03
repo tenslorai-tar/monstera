@@ -7,7 +7,9 @@ import {
   JOB_LIMIT_ACTIVE_PROCESS,
   JOB_LIMIT_KILL_ON_JOB_CLOSE,
   JOB_LIMIT_PROCESS_MEMORY,
+  type PreparedSignature,
 } from '@monstera/kernel';
+import { prepareSignature } from '@monstera/kernel/engine';
 import { blockEditOf, replacementFieldsOf } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -1278,6 +1280,16 @@ function lastOutputDirectory(directories: readonly string[]): string {
   return last.slice('create:'.length);
 }
 
+/** What a signing host was asked and what it answered, so a case can hold both ends of a signature. */
+interface SigningLog {
+  /** Every `engine/prepareSignature` request, as it arrived. */
+  readonly requests: unknown[];
+  /** What the host answers with: `prepareSignature`'s output on the served document. */
+  readonly prepared: PreparedSignature;
+  /** The snapshot every `engine/open` was handed, in order. */
+  readonly opened: Uint8Array[];
+}
+
 /**
  * A host that serialises a REAL document.
  *
@@ -1286,12 +1298,26 @@ function lastOutputDirectory(directories: readonly string[]): string {
  * document pdf-lib can open — and the bytes come from the host, exactly as the
  * product's byte-image path takes them.
  */
-function documentServingEngine(document: Uint8Array): FakePeer {
+function documentServingEngine(document: Uint8Array, signing?: SigningLog): FakePeer {
   let output: string | null = null;
   return (channel, params) => {
     if (channel === 'engine/open') {
-      output = (params as { outputDirectory: string }).outputDirectory;
+      const sent = params as { snapshotDirectory: string; snapshotName: string; outputDirectory: string };
+      output = sent.outputDirectory;
+      signing?.opened.push(new Uint8Array(readFileSync(join(sent.snapshotDirectory, sent.snapshotName))));
       return SESSION;
+    }
+    // THE REAL PLACEHOLDER WRITER's output, made from the document this host serves before the case ran — a peer
+    // answers synchronously — and written where main takes it from, as the MuPDF host does (ADR-0148).
+    if (channel === 'engine/prepareSignature' && signing !== undefined) {
+      if (output === null) throw new Error('engine/prepareSignature before engine/open');
+      const { into } = params as { into: string };
+      signing.requests.push(params);
+      writeFileSync(join(output, into), signing.prepared.bytes);
+      return {
+        ok: true,
+        value: { bytes: signing.prepared.bytes.byteLength, byteRange: [...signing.prepared.byteRange] },
+      };
     }
     if (channel !== 'engine/serialise') return ENGINE(channel, params);
     if (output === null) throw new Error('engine/serialise before engine/open');
@@ -1415,7 +1441,14 @@ describe('the composition root, SIGNING', () => {
       .getBytes();
     const certificate = Uint8Array.from(p12, (character: string) => character.charCodeAt(0));
 
-    const mupdf = platformAnswering(documentServingEngine(document));
+    // THE HOST'S ANSWER, by the real placeholder writer: an invisible signature with no timestamp, which is what this
+    // case asks for, so the reserved hole matches the one main checks.
+    const signing: SigningLog = {
+      requests: [],
+      prepared: await prepareSignature(document, { kind: 'signDocument' }),
+      opened: [],
+    };
+    const mupdf = platformAnswering(documentServingEngine(document, signing));
     const { handlers } = createShellDependencies({
       ...harnessSurfaces('the composition-host test'),
       appInfo,
@@ -1443,11 +1476,28 @@ describe('the composition root, SIGNING', () => {
     if (signed.value.kind !== 'signed') throw new Error('unreachable');
     expect(signed.value.version).toBeGreaterThan(opened.value.version);
 
-    // AND THE SIGNED BYTES WERE INSTALLED: a byte-image command's result becomes
+    // AND THE SIGNED BYTES WERE INSTALLED: a hosted command's result becomes
     // the canonical image and rebuilds the live session, which is a further
     // `engine/open` on the host. A root that answered `signed` and dropped the
     // bytes would pass the lines above.
     expect(spy(mupdf.harness.calls, 'peer.request:engine/open')).toBeGreaterThan(opensBefore);
+
+    // THE HOST WAS ASKED, ONCE, AND HANDED NO CREDENTIAL (ADR-0148): neither the certificate's bytes nor the
+    // passphrase, by name or by value.
+    expect(signing.requests).toHaveLength(1);
+    const asked = JSON.stringify(signing.requests[0]);
+    expect(asked).not.toMatch(/"bytes"|passphrase/u);
+
+    // MAIN SIGNED WHAT THE HOST PREPARED, AND NOTHING ELSE: the session was rebuilt from the prepared file with only
+    // its hole changed, and the hole now holds a signature. A root that installed the host's file unsigned, or signed
+    // bytes of its own, fails one of the two.
+    const rebuilt = signing.opened.at(-1);
+    const [, holeStart, holeEnd] = signing.prepared.byteRange;
+    expect(rebuilt?.byteLength).toBe(signing.prepared.bytes.byteLength);
+    if (rebuilt === undefined) throw new Error('unreachable');
+    expect(Buffer.from(rebuilt.subarray(0, holeStart)).equals(Buffer.from(signing.prepared.bytes.subarray(0, holeStart)))).toBe(true);
+    expect(Buffer.from(rebuilt.subarray(holeEnd)).equals(Buffer.from(signing.prepared.bytes.subarray(holeEnd)))).toBe(true);
+    expect(Buffer.from(rebuilt.subarray(holeStart + 1, holeStart + 9)).toString('latin1')).not.toBe('00000000');
   }, 120_000);
 });
 

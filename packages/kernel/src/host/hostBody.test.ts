@@ -176,6 +176,9 @@ function start(stream: HostByteStream) {
     applyPdfLib: () => {
       throw new Error('no case here runs pdf-lib');
     },
+    prepareSignature: () => {
+      throw new Error('no case here prepares a signature');
+    },
     snapshot: () => {
       throw new Error('no case here rasterises a page');
     },

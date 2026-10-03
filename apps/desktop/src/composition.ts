@@ -101,7 +101,7 @@ import {
   nodeFileSurface,
   readAnnounced,
   readFileIdentity,
-  signpdfWriterWith,
+  signpdfExecutionWith,
   takeAnnounced,
   parsePageStructure,
   parsePageTables,
@@ -1993,15 +1993,22 @@ function engineSessionOpener(
       serialiseInto: (session, destination) => liveWriter().serialiseInto(session, destination),
       ...hostedPdfLibExecution((session, command, reads) => liveWriter().pdfLib(session, command, reads)),
     },
-    // THE SIGNER, registered directly for `pdf-lib`'s reason: a byte-image writer
-    // of pure JavaScript, complete at composition, with no host to wait for. It
-    // was absent until 2026-09-13, and `compositionHost.test.ts`' signing case is
-    // the one that routes a signature through this map rather than a bus of its
-    // own — which is the only kind of case that could have seen it.
-    // AND ITS TIMESTAMP PORT, built here because this is the one module that may
-    // decide a request leaves the machine (ADR-0058 Decision 4). The kernel's own
-    // `localSignpdfWriter` has no transport, and refuses a timestamp through it.
-    signpdf: signpdfWriterWith(timestampTransport()),
+    // THE SIGNER, HOSTED IN THE MuPDF HOST since ADR-0148, and written the way `pdf-lib` is for that reason: its
+    // placeholder is prepared in a host that does not exist until one does. It was registered directly, as a
+    // byte-image writer of pure JavaScript in `main` — which parsed the whole document in the process that holds the
+    // key. The host writes the placeholder and the ranges; `main` checks the four numbers and signs. It was absent
+    // until 2026-09-13, and `compositionHost.test.ts`' signing case is the one that routes a signature through this
+    // map rather than a bus of its own — which is the only kind of case that could have seen it.
+    // AND ITS TIMESTAMP PORT, built here because this is the one module that may decide a request leaves the machine
+    // (ADR-0058 Decision 4). The kernel's own `localSignpdfWriter` has no transport, and refuses a timestamp through it.
+    signpdf: {
+      serialise: (session) => liveWriter().serialise(session),
+      serialiseInto: (session, destination) => liveWriter().serialiseInto(session, destination),
+      ...signpdfExecutionWith(
+        (session, request) => liveWriter().prepareSignature(session, request),
+        timestampTransport(),
+      ),
+    },
   };
 
   /**

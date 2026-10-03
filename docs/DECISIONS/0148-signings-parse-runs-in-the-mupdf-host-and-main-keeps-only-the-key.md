@@ -91,3 +91,12 @@ ranges are four numbers.
 ## Amendment only
 
 Nothing is built on this in the commit that records it.
+
+## Correction, 2026-10-03 — Decision 3's guard is the request's type, not the host's schema
+
+Decision 3 says the host's schema cannot hold the credential. That is true and it is the weaker half: the contract's
+client validates answers, never requests, so the host's strict schema refuses a credential **after** it has crossed
+the pipe. Measured while building it: with `main` handing the host the whole command, the composition case's request
+reached the fake host carrying both fields. What keeps them from crossing is the request type — `PlaceholderRequest`
+declares `bytes` and `passphrase` as `never`, so handing a host the command is a compile error — and the composition
+case that asserts the request a host receives carries neither. The schema stays, as the host's own refusal.

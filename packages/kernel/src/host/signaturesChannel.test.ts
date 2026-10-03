@@ -87,6 +87,7 @@ async function joined(parts: {
       duplicates: refuse('look for duplicates'),
       extract: refuse('build a document'),
       applyPdfLib: refuse('run pdf-lib'),
+      prepareSignature: refuse('prepare a signature'),
       snapshot: refuse('write a PNG out'),
       exportFormData: refuse('encode an export'),
       pageImage: refuse('export a page image'),

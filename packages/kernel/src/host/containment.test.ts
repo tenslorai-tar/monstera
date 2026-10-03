@@ -560,6 +560,9 @@ describe('the engine host answers a containment probe', () => {
     applyPdfLib: () => {
       throw new Error('a containment probe must not run pdf-lib');
     },
+    prepareSignature: () => {
+      throw new Error('a containment probe must not prepare a signature');
+    },
     snapshot: () => {
       throw new Error('a containment probe must not rasterise a page');
     },

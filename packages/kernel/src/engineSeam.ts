@@ -234,9 +234,10 @@ export const writerShapes = {
   // 'byte-image' IN `main` UNTIL 2026-09-29 (ADR-0121 Decision 3): the bus serialised the session into `main`, and
   // pdf-lib parsed it there — the parse §9.17's *"never parses"* forbids. Its apply now runs in the MuPDF host.
   'pdf-lib': 'hosted-image',
-  // STAYS IN `main`, and that is the owner's trade to take: signing needs the private key, and a hostile host must
-  // never hold it (ADR-0121, *What stays in `main`*).
-  signpdf: 'byte-image',
+  // 'byte-image' IN `main` UNTIL 2026-10-03 (ADR-0148), the owner's trade ADR-0121 left open: the placeholder parsed
+  // the whole document in the process that holds the key. It is written in the MuPDF host now, and `main` keeps the
+  // key and signs over four numbers it checked — so the host never holds the certificate.
+  signpdf: 'hosted-image',
 } as const satisfies Readonly<Record<keyof WriterSession, WriterShape>>;
 
 /** Which shape each writer of record is. Derived — see {@link writerShapes}. */
@@ -254,6 +255,8 @@ export type HostedWriter = {
  */
 export const hostedOn = {
   'pdf-lib': 'mupdf',
+  // The signer's placeholder is written on the same serialise (ADR-0148).
+  signpdf: 'mupdf',
 } as const satisfies Readonly<Record<HostedWriter, keyof WriterSession>>;
 
 /**

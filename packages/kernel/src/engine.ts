@@ -167,16 +167,12 @@ export {
   captureSanitizeDocument,
   invertSanitizeDocument,
 } from './documentSanitize.js';
-// `documentSign.ts` BINDS NO NATIVE LIBRARY — it is pdf-lib and `@signpdf`,
-// both plain JavaScript. Its apply and capture are exported here beside their
-// siblings; the writer the composition root registers, `localSignpdfWriter`, is
-// on the main barrel, which is how main reaches it.
-export {
-  applySignDocument,
-  captureSignDocument,
-  invertSignDocument,
-  withSignaturePlaceholder,
-} from './documentSign.js';
+// SIGNING BINDS NO NATIVE LIBRARY — it is pdf-lib and `@signpdf`, both plain JavaScript. Its spec's apply, capture and
+// placeholder are exported here beside their siblings; the execution the composition root registers,
+// `signpdfExecutionWith`, is on the main barrel, which is how main reaches it (ADR-0148).
+export { captureSignDocument, invertSignDocument } from './documentSign.js';
+export { applySignDocument, signDocumentWith } from './signpdfWriter.js';
+export { prepareSignature, withSignaturePlaceholder } from './signaturePlaceholder.js';
 export {
   applyImportFormData,
   captureImportFormData,
@@ -226,7 +222,7 @@ export {
   type RegionRequest,
   snapshotRegion,
 } from './pageSnapshot.js';
-export { localMupdfWriter, localPdfLibWriter } from './localEngine.js';
+export { localMupdfWriter, localPdfLibWriter, localSignpdfWriter, localSignpdfWriterWith } from './localEngine.js';
 
 /**
  * `@monstera/kernel/engine` — everything whose import binds a native library

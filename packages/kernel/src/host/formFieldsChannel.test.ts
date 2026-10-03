@@ -186,6 +186,9 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
       applyPdfLib: () => {
         throw new Error('a field read must not run pdf-lib');
       },
+      prepareSignature: () => {
+        throw new Error('a field read must not prepare a signature');
+      },
       snapshot: () => {
         throw new Error('a field read must not rasterise');
       },

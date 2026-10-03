@@ -70,6 +70,9 @@ import {
   createFormFieldSchema,
   ocrPageSchema,
   generateTocSchema,
+  keepableSignatureSchema,
+  signDocumentSchema,
+  signaturePlacementSchema,
 } from '@monstera/contract/host';
 import { z } from 'zod';
 
@@ -77,6 +80,7 @@ import { HUMAN_CHECKS } from '../accessibilityRules.js';
 import type { CommandPrior } from '../commandLog.js';
 import { type DeclaredCommands, declaredCommands } from '../commandDeclarations.js';
 import type { KindsRoutedTo } from '../commandRouting.js';
+import type { PlaceholderRequest } from '../signatureHole.js';
 import { PAGE_TEXT_READS } from '../textStructure.js';
 import { PROBE_CODE_MAX_CHARS, PROBE_CODE_PATTERN } from './containment.js';
 
@@ -1273,6 +1277,69 @@ export function joinPdfLibAsset(
   return { ...command, bytes: asset };
 }
 
+/**
+ * The signing command as `engine/prepareSignature` carries it to the MuPDF host
+ * ([ADR-0148](../../../../docs/DECISIONS/0148-signings-parse-runs-in-the-mupdf-host-and-main-keeps-only-the-key.md)).
+ *
+ * **No certificate and no passphrase, by the schema**: `signDocumentSchema` with both omitted, so a host cannot be
+ * handed a key whatever main's code does. The picture of a visible signature travels without its bytes, for
+ * `insertImagePage`'s reason: this wire is JSON, so they cross as an asset in the session's snapshot directory.
+ */
+const placeholderRequestSchema = signDocumentSchema
+  .omit({ bytes: true, passphrase: true, appearance: true })
+  .extend({
+    appearance: signaturePlacementSchema
+      .extend({
+        mark: z.discriminatedUnion('kind', [
+          ...keepableSignatureSchema.options,
+          z.object({ kind: z.literal('image'), mediaType: z.enum(['image/jpeg', 'image/png']) }).strict(),
+        ]),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+/** A placeholder request once its picture has been taken out. */
+export type PlaceholderWireRequest = z.infer<typeof placeholderRequestSchema>;
+
+/** {@link splitPdfLibAsset} for a signature's picture: the request without its bytes, and the bytes. */
+export function splitPlaceholderAsset(request: PlaceholderRequest): {
+  readonly request: PlaceholderWireRequest;
+  readonly asset: Uint8Array | undefined;
+} {
+  const { appearance, ...rest } = request;
+  if (appearance === undefined) return { request: rest, asset: undefined };
+  const { mark, ...where } = appearance;
+  if (mark.kind !== 'image') return { request: { ...rest, appearance: { ...where, mark } }, asset: undefined };
+  const { bytes, ...picture } = mark;
+  return { request: { ...rest, appearance: { ...where, mark: picture } }, asset: bytes };
+}
+
+/** {@link joinPdfLibAsset} for a signature's picture: whole again, or `undefined` where the request and asset disagree. */
+export function joinPlaceholderAsset(
+  request: PlaceholderWireRequest,
+  asset: Uint8Array | undefined,
+): PlaceholderRequest | undefined {
+  const { appearance, ...rest } = request;
+  if (appearance === undefined) return asset === undefined ? rest : undefined;
+  const { mark, ...where } = appearance;
+  if (mark.kind !== 'image') return asset === undefined ? { ...rest, appearance: { ...where, mark } } : undefined;
+  if (asset === undefined) return undefined;
+  return { ...rest, appearance: { ...where, mark: { ...mark, bytes: asset } } };
+}
+
+/**
+ * The refusals a placeholder can meet that a person can act on, by the code each crosses the pipe as. A throw crossing
+ * the boundary becomes `internal` with its diagnostic withheld, so each is returned under its own code and main
+ * rethrows the class its signing outcomes are chosen by (`documentCommands.sign`).
+ */
+export const PLACEHOLDER_REFUSALS = [
+  'signature-text-unencodable',
+  'signature-picture-unreadable',
+  'signature-picture-too-many-pixels',
+] as const;
+
 /** {@link carriesAsset} over a pdf-lib wire command: both halves from `declaredCommands`, as there. */
 function pdfLibCarriesAsset(
   command: PdfLibWireCommand,
@@ -1995,6 +2062,42 @@ export const engineChannels = {
       .strict(),
     z.object({ bytes: z.number().int().nonnegative() }).strict(),
     ['no-such-session', 'asset-missing', 'apply-failed', 'serialise-failed'],
+  ),
+
+  /**
+   * A signature's placeholder, written BESIDE the session it signs, and its ranges prepared
+   * ([ADR-0148](../../../../docs/DECISIONS/0148-signings-parse-runs-in-the-mupdf-host-and-main-keeps-only-the-key.md)).
+   *
+   * The host serialises the session it holds, writes the placeholder and the appearance with pdf-lib (the picture is
+   * decoded here), and runs `@signpdf`'s range step with a signer that answers no bytes. The file it writes under the
+   * name main chose has its ranges written and its hole all `0`; the answer is the count and the four numbers, which
+   * main checks against the file before it signs. The request carries no credential, by its schema. The session is not
+   * rebuilt here: main signs the file and rebuilds it through `adopt`, as for any byte-image result.
+   */
+  // FILE-REQUESTED for `engine/applyPdfLib`'s reason: a drawn signature's strokes can outgrow a frame at their worst.
+  'engine/prepareSignature': fileRequested(
+    'Writes a signature placeholder into the image of a session this host holds and prepares its byte ranges, ' +
+      'writing the result to the output directory.',
+    z
+      .object({
+        session: sessionSchema,
+        request: placeholderRequestSchema,
+        asset: outputNameSchema.optional(),
+        into: outputNameSchema,
+      })
+      .strict(),
+    z
+      .object({
+        bytes: z.number().int().nonnegative(),
+        byteRange: z.tuple([
+          z.number().int().nonnegative(),
+          z.number().int().nonnegative(),
+          z.number().int().nonnegative(),
+          z.number().int().nonnegative(),
+        ]),
+      })
+      .strict(),
+    ['no-such-session', 'asset-missing', 'apply-failed', 'serialise-failed', ...PLACEHOLDER_REFUSALS],
   ),
 
   'engine/extract': channel(

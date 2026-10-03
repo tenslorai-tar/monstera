@@ -57,6 +57,8 @@ const MUPDF_READS = [
   // session's serialise, taken in the process that holds it, and the result goes to the output directory
   // (ADR-0121 Decision 3). A second engine holds no such session and owes none of it.
   'engine/applyPdfLib',
+  // A SIGNATURE'S PLACEHOLDER is MuPDF's for pdf-lib's reason: written on this session's serialise (ADR-0148).
+  'engine/prepareSignature',
   'engine/snapshotRegion',
   'engine/pageImage',
   // THE WORD EXPORT IS ONE OF MuPDF'S READS for `engine/pageImage`'s reason: it draws this session's pictures,

@@ -170,6 +170,12 @@ const engineHandlers = createEngineHandlers({
     const { applyPdfLibImage } = await import('../pdfLibWriter.js');
     return applyPdfLibImage(image, command, reads);
   },
+  // A SIGNATURE'S PLACEHOLDER, here for the same reason and loaded the same way (ADR-0148): it parses the whole
+  // document and decodes the picture. The key half is `main`'s and this process never loads it.
+  prepareSignature: async (image, request) => {
+    const { prepareSignature } = await import('../signaturePlaceholder.js');
+    return prepareSignature(image, request);
+  },
   // AND FOR THE SAME REASON, with a second one on top: a raster is the one
   // payload that scales with what the user dragged, so it is built here and
   // written into the granted directory rather than crossing the pipe.

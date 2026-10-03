@@ -16,14 +16,17 @@ import type { DuplicatePageGroup } from '../pageDuplicates.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
 import type { ReadSignature } from '../signatureRead.js';
 import type { PdfLibHost } from '../pdfLibWriter.js';
+import type { SignatureHost } from '../documentSign.js';
 import {
   type EngineChannels,
   type MupdfWireCommand,
   splitAsset,
   splitPdfLibAsset,
+  splitPlaceholderAsset,
   taggedPrior,
 } from './engineChannels.js';
-import { EngineSerialiseMismatch, type SessionAreaSurface } from './remoteLifecycle.js';
+import { placeholderRefusalFor } from './placeholderRefusals.js';
+import { EngineSerialiseMismatch, type SessionAreaSurface, takeAnnounced } from './remoteLifecycle.js';
 import type {
   HostDestinationsReader,
   HostAnnotationsReader,
@@ -681,6 +684,50 @@ export function remotePdfLibHost(
       },
       discard: () => areas.removeOutput(area, into),
     };
+  };
+}
+
+/**
+ * A signature's placeholder, prepared by the MuPDF host that holds `session`, and taken into `main` to be signed
+ * ([ADR-0148](../../../../docs/DECISIONS/0148-signings-parse-runs-in-the-mupdf-host-and-main-keeps-only-the-key.md)).
+ *
+ * **TAKEN, never moved.** `main` signs these bytes, so they leave the host's area by the one taker before anything is
+ * done with them: a regular file of exactly the announced size, removed whatever happens. A host that writes to the
+ * name afterwards writes to nothing `main` reads. The request carries no credential, and the picture crosses as an
+ * asset by {@link remotePdfLibHost}'s rule. A refusal a person can act on comes back as the class it was thrown as.
+ */
+export function remoteSignatureHost(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+  areas: Pick<SessionAreaSurface, 'mintName' | 'takeOutput' | 'removeOutput'>,
+  assets: SessionAssets,
+): SignatureHost {
+  return async (session, request) => {
+    const area = sessions.areaFor(session);
+    const into = areas.mintName();
+    const split = splitPlaceholderAsset(request);
+    const asset = split.asset === undefined ? undefined : assets.name();
+    if (asset !== undefined && split.asset !== undefined) {
+      await assets.write(area.snapshotDirectory, asset, split.asset);
+    }
+    let answer: { readonly bytes: number; readonly byteRange: readonly [number, number, number, number] };
+    try {
+      const result = await client['engine/prepareSignature']({
+        session: sessions.handleFor(session),
+        request: split.request,
+        asset,
+        into,
+      });
+      const refusal = result.ok ? undefined : placeholderRefusalFor(result.error.code);
+      if (refusal !== undefined) throw refusal;
+      answer = answered('engine/prepareSignature', result);
+    } catch (error) {
+      await areas.removeOutput(area, into);
+      throw error;
+    } finally {
+      if (asset !== undefined) await assets.remove(area.snapshotDirectory, asset);
+    }
+    return { bytes: await takeAnnounced(areas, area, into, answer.bytes), byteRange: answer.byteRange };
   };
 }
 

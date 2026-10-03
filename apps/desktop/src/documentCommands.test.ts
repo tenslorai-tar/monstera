@@ -4237,8 +4237,9 @@ describe('sign — a visible signature', () => {
    */
   function refusingSigner(error: Error): RegisteredWriter<'signpdf'> {
     return {
-      serialise: (session) => Promise.resolve(session),
-      serialiseInto: serialiseIntoFile((session: Uint8Array) => Promise.resolve(session)),
+      // HOSTED ON THE MuPDF SESSION since ADR-0148, so its checkpoint is that session's serialise.
+      serialise: (held) => mupdfWriter.serialise(held),
+      serialiseInto: serialiseIntoFile((held: MupdfSession) => mupdfWriter.serialise(held)),
       apply: () => Promise.reject(error),
       capture: () =>
         Promise.resolve({ captured: false as const, reason: 'the refusing signer records nothing' }),
@@ -4350,8 +4351,8 @@ describe('sign — a visible signature', () => {
       const certificate = recordingCertificate();
       let mark: unknown;
       const recording: RegisteredWriter<'signpdf'> = {
-        serialise: (session) => Promise.resolve(session),
-        serialiseInto: serialiseIntoFile((session: Uint8Array) => Promise.resolve(session)),
+        serialise: (held) => mupdfWriter.serialise(held),
+        serialiseInto: serialiseIntoFile((held: MupdfSession) => mupdfWriter.serialise(held)),
         apply: (request) => {
           const command: unknown = request.command;
           mark = (command as { readonly appearance?: { readonly mark?: unknown } }).appearance?.mark;
@@ -4372,14 +4373,7 @@ describe('sign — a visible signature', () => {
           read: () => Promise.reject(new Error('a kept signature reads no picked file')),
         },
         certificate: certificate.source,
-        save: {
-          ...noSaving,
-          flush: (_docId, sessions) => {
-            const held = sessions.mupdf;
-            if (held === undefined) throw new Error('the fixture holds a session');
-            return mupdfWriter.serialise(held);
-          },
-        },
+        save: noSaving,
       });
       const outcome = await commands.sign(docId, { passphrase: '', appearance: { ...placement, mark: { kind: 'saved', id } } });
       return { outcome, mark, certificate: certificate.asked };
@@ -4407,11 +4401,11 @@ describe('sign — a visible signature', () => {
 
   it('names each refusal by its CLASS, and CONTROL: an unnamed failure is not called a wrong password', async () => {
     // THE FIXTURE REACHES THE SIGNER, which the first draft of this case did
-    // not: a byte-image command's bytes come from the save source's `flush`,
-    // `INERT`'s refuses, and that refusal arrived at the catch and was answered
-    // `wrong-passphrase` — for all three inputs, so the control passed by the
-    // same route as the defect. The flush below serialises the held session,
-    // exactly as the save cases' real one does.
+    // not: while the signer was a byte-image writer its bytes came from the
+    // save source's `flush`, `INERT`'s refused, and that refusal arrived at the
+    // catch and was answered `wrong-passphrase` — for all three inputs, so the
+    // control passed by the same route as the defect. Since ADR-0148 the signer
+    // is hosted on the MuPDF session and is handed it, so no flush is asked.
     const signing = (error: Error): Promise<unknown> => {
       const commands = new DocumentCommands({
         ...INERT,
@@ -4419,14 +4413,7 @@ describe('sign — a visible signature', () => {
         bus: new CommandBus({ mupdf: localMupdfWriter, signpdf: refusingSigner(error) }),
         engine: engine(),
         certificate: recordingCertificate().source,
-        save: {
-          ...noSaving,
-          flush: (_docId, sessions) => {
-            const held = sessions.mupdf;
-            if (held === undefined) throw new Error('the fixture holds a session');
-            return mupdfWriter.serialise(held);
-          },
-        },
+        save: noSaving,
       });
       return commands.sign(docId, {
         passphrase: '',

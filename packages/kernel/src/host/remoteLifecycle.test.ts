@@ -9,6 +9,7 @@ import { type ClientApi, createClient, type Incident, wrapHandlers } from '@mons
 import { localMupdfExecution } from '../commandSpecs.js';
 import { extractPages } from '../pageExtract.js';
 import { applyPdfLibImage } from '../pdfLibWriter.js';
+import { prepareSignature } from '../signaturePlaceholder.js';
 import {
   parseAnnotationData,
   readInterchangeAnnotations,
@@ -28,10 +29,15 @@ import { type EngineChannels, engineChannels } from './engineChannels.js';
 import { type HostSession, createEngineHandlers } from './engineHandlers.js';
 import { hostFilesystem } from './hostNodeSurfaces.js';
 import {
+  EngineCallFailed,
   type RemoteSessions,
   type SessionArea,
   createRemoteSessions,
+  remoteSignatureHost,
 } from './remoteEngine.js';
+import { PngPixelsRefused } from '../imageDimensions.js';
+import type { PlaceholderRequest } from '../signatureHole.js';
+import { SignatureAppearanceRefusedError } from '../signingRefusals.js';
 import {
   EngineOpenFailed,
   EngineSerialiseMismatch,
@@ -262,6 +268,8 @@ function joined(
       extract: extractPages,
       // THE REAL pdf-lib RUN, for the same reason (ADR-0121 Decision 3): a hosted apply is this trip with a spec in it.
       applyPdfLib: applyPdfLibImage,
+      // AND THE SIGNATURE'S PLACEHOLDER, for pdf-lib's reason (ADR-0148).
+      prepareSignature,
       // AND THE REAL ONE FOR THE SAME REASON: a snapshot takes the identical
       // round trip through the granted area, and this file is where that trip
       // is driven end to end.
@@ -326,6 +334,12 @@ function joined(
     held,
     open: (image: Uint8Array) => openAsSupervisor(client, sessions, areas, image),
     lifecycle: remoteMupdfLifecycle(client, sessions, areas),
+    // THE SIGNER'S HOST HALF, through the same client and areas, with assets written where the host reads them.
+    signer: remoteSignatureHost(client, sessions, areas, {
+      name: areas.mintName,
+      write: (directory, name, bytes) => writeFile(join(directory, name), bytes),
+      remove: (directory, name) => rm(join(directory, name), { force: true }),
+    }),
   };
 }
 
@@ -621,6 +635,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         applyPdfLib: () => {
           throw new Error('the byte-size case must not run pdf-lib');
+        },
+        prepareSignature: () => {
+          throw new Error('the byte-size case must not prepare a signature');
         },
         snapshot: () => {
           throw new Error('the byte-size case must not rasterise a page');
@@ -938,5 +955,74 @@ describe('remoteMupdfLifecycle', () => {
     expect(await exists(two?.snapshotDirectory ?? '')).toBe(true);
 
     await lifecycle.close(second);
+  });
+});
+
+describe("a signature's placeholder, prepared in the host and taken by main (ADR-0148)", () => {
+  afterEach(async () => {
+    while (mintedRoots.length > 0) {
+      const root = mintedRoots.pop();
+      if (root !== undefined) await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  const RECT = { x0: 10, y0: 10, x1: 110, y1: 60 };
+  const typed = { kind: 'typed', text: 'Grace Hopper', font: 'courier' } as const;
+
+  it("prepares the placeholder beside the session, and main TAKES the file out of the host's area", async () => {
+    const areas = realAreas();
+    const { open, signer, lifecycle } = joined(areas);
+    const session = await open(flat);
+    const area = areas.made[0];
+    if (area === undefined) throw new Error('the fixture made no area');
+
+    const prepared = await signer(session, { kind: 'signDocument', appearance: { page: 0, rect: RECT, mark: typed } });
+    const [start, holeStart, holeEnd, rest] = prepared.byteRange;
+    expect(start).toBe(0);
+    expect(holeEnd + rest).toBe(prepared.bytes.byteLength);
+    expect(Buffer.from(prepared.bytes.subarray(holeStart, holeEnd)).toString('latin1')).toBe(`<${'0'.repeat(8192 * 2)}>`);
+    // NOTHING LEFT WHERE THE HOST CAN WRITE: the prepared file was taken, not copied, so a host writing to that name
+    // afterwards writes to nothing main signs.
+    expect(await readdir(area.outputDirectory)).toStrictEqual([]);
+    await lifecycle.close(session);
+  });
+
+  it('a REFUSAL a person can act on keeps its class across the pipe, the picture having crossed as an asset', async () => {
+    const areas = realAreas();
+    const { open, signer, lifecycle } = joined(areas);
+    const session = await open(flat);
+    const area = areas.made[0];
+    if (area === undefined) throw new Error('the fixture made no area');
+    const before = await readdir(area.snapshotDirectory);
+    const picture = (bytes: Uint8Array, mediaType: 'image/jpeg' | 'image/png'): PlaceholderRequest => ({
+      kind: 'signDocument',
+      appearance: { page: 0, rect: RECT, mark: { kind: 'image', bytes, mediaType } },
+    });
+
+    // NOT A JPEG: the host decoded what it was sent and refused it, which it can only do if the asset arrived — a
+    // missing one is `asset-missing`, a different code and no appearance refusal at all.
+    const unreadable = signer(session, picture(Uint8Array.of(1, 2, 3), 'image/jpeg'));
+    await expect(unreadable).rejects.toBeInstanceOf(SignatureAppearanceRefusedError);
+    await expect(unreadable).rejects.toMatchObject({ reason: 'unreadable-image' });
+
+    // A PNG HEADER CLAIMING 12,000 × 12,000, refused by the pixel rule before a decoder runs.
+    const header = new Uint8Array(29);
+    header.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+    new DataView(header.buffer).setUint32(16, 12_000);
+    new DataView(header.buffer).setUint32(20, 12_000);
+    const tooLarge = signer(session, picture(header, 'image/png'));
+    await expect(tooLarge).rejects.toBeInstanceOf(PngPixelsRefused);
+    await expect(tooLarge).rejects.toMatchObject({ reason: 'too-many-pixels' });
+
+    // CONTROL: a page the document does not have is the DOCUMENT's failure, and comes back as the host's, not as
+    // something a person could fix by choosing another picture.
+    const elsewhere = signer(session, { kind: 'signDocument', appearance: { page: 9, rect: RECT, mark: typed } });
+    await expect(elsewhere).rejects.toBeInstanceOf(EngineCallFailed);
+    await expect(elsewhere).rejects.toMatchObject({ code: 'apply-failed' });
+
+    // EACH ASSET WAS REMOVED, and nothing the host might have written is left in its output directory.
+    expect(await readdir(area.snapshotDirectory)).toStrictEqual(before);
+    expect(await readdir(area.outputDirectory)).toStrictEqual([]);
+    await lifecycle.close(session);
   });
 });

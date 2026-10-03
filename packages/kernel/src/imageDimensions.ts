@@ -69,10 +69,14 @@ export class PngPixelsRefused extends Error {
   readonly size: PixelSize | null;
 
   constructor(reason: 'no-header' | 'too-many-pixels', size: PixelSize | null) {
+    // BY THE REASON, then the size: a refusal that crossed from an engine host carries its reason and no size, and
+    // keying on the size alone would call that one a missing header.
     super(
-      size === null
+      reason === 'no-header'
         ? 'the PNG has no readable header, so its size cannot be stated before a decode'
-        : `the PNG is ${String(size.width)} × ${String(size.height)}, past ${String(MAX_IMPORT_IMAGE_PIXELS)} pixels`,
+        : size === null
+          ? `the PNG is past ${String(MAX_IMPORT_IMAGE_PIXELS)} pixels`
+          : `the PNG is ${String(size.width)} × ${String(size.height)}, past ${String(MAX_IMPORT_IMAGE_PIXELS)} pixels`,
     );
     this.reason = reason;
     this.size = size;

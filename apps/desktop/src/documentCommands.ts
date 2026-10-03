@@ -5533,8 +5533,9 @@ export class DocumentCommands {
         };
       }
       // A SIGNATURE PICTURE PAST THE PIXEL BOUND, refused before `embedPng` decodes it
-      // in this process. `image-too-large` is the sentence a picture past the byte
-      // bound already gets, and both mean *choose a smaller picture*.
+      // in the MuPDF host, which answers it under its own code so it arrives here as
+      // this class (ADR-0148). `image-too-large` is the sentence a picture past the
+      // byte bound already gets, and both mean *choose a smaller picture*.
       if (error instanceof PngPixelsRefused && error.reason === 'too-many-pixels') {
         return { kind: 'image-too-large' };
       }

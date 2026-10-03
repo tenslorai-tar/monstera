@@ -180,6 +180,9 @@ async function joined(): Promise<{
       applyPdfLib: () => {
         throw new Error('unused');
       },
+      prepareSignature: () => {
+        throw new Error('unused');
+      },
       snapshot: () => {
         throw new Error('unused');
       },

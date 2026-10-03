@@ -12,6 +12,7 @@ import type { PageGeometryReader } from '../pageGeometry.js';
 import type { ListedDestinations } from '../destinations.js';
 import type { ListedLayers } from '../layers.js';
 import type { ReadSignature } from '../signatureRead.js';
+import type { PlaceholderRequest, PreparedSignature } from '../signatureHole.js';
 import type { FlatFieldCandidate } from '../flatFields.js';
 import type { ListedField } from '../formFields.js';
 import type { NextSave } from '../mupdfWriter.js';
@@ -47,8 +48,10 @@ import {
   type MupdfWireCommand,
   joinAsset,
   joinPdfLibAsset,
+  joinPlaceholderAsset,
   taggedPrior,
 } from './engineChannels.js';
+import { placeholderRefusalCodeOf } from './placeholderRefusals.js';
 
 /**
  * Reads one page's structured text as MuPDF's own JSON.
@@ -475,6 +478,11 @@ export interface EngineHandlerParts {
     command: CommandOfKind<KindsRoutedTo<'pdf-lib'>>,
     reads: PreReadValue | undefined,
   ) => Promise<ByteImage>;
+  /**
+   * How this process writes a signature's placeholder and prepares its ranges. `prepareSignature` —
+   * `engine/prepareSignature` (ADR-0148).
+   */
+  readonly prepareSignature: (image: ByteImage, request: PlaceholderRequest) => Promise<PreparedSignature>;
   readonly snapshot: HostSnapshot;
   /** How this process writes the form's data out. `engine/exportFormData`. */
   readonly exportFormData: HostFormDataExport;
@@ -515,6 +523,7 @@ export function createEngineHandlers({
   duplicates,
   extract,
   applyPdfLib,
+  prepareSignature,
   snapshot,
   exportFormData,
   exportAnnotationData,
@@ -730,6 +739,41 @@ export function createEngineHandlers({
         return { ok: true, value: { bytes: written } };
       } catch (error) {
         return failed('apply-failed', error);
+      }
+    },
+
+    'engine/prepareSignature': async ({ session, request, asset, into }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // THE PICTURE, by `engine/applyPdfLib`'s door: a name inside this session's own snapshot directory.
+      let picture: Uint8Array | undefined;
+      if (asset !== undefined) {
+        try {
+          picture = await files.readSnapshot(held.snapshotDirectory, asset);
+        } catch (error) {
+          return failed('asset-missing', error);
+        }
+      }
+      const whole = joinPlaceholderAsset(request, picture);
+      if (whole === undefined) {
+        return failed(
+          'asset-missing',
+          new Error('the signature request and the picture sent with it disagree about whether it carries one'),
+        );
+      }
+      let image: ByteImage;
+      try {
+        image = await writer.serialise(held.session);
+      } catch (error) {
+        return failed('serialise-failed', error);
+      }
+      try {
+        const prepared = await prepareSignature(image, whole);
+        const written = await files.writeOutput(held.outputDirectory, into, prepared.bytes);
+        return { ok: true, value: { bytes: written, byteRange: [...prepared.byteRange] } };
+      } catch (error) {
+        // A REFUSAL A PERSON CAN ACT ON keeps its name across the pipe; anything else is the document's failure.
+        return failed(placeholderRefusalCodeOf(error) ?? 'apply-failed', error);
       }
     },
 

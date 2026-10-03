@@ -3,7 +3,8 @@ import type { CommandOfKind, TimestampAuthority } from '@monstera/contract';
 import forge from 'node-forge';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { applySignDocument, type RequestTimestamp, signDocumentWith } from './documentSign.js';
+import type { RequestTimestamp } from './documentSign.js';
+import { applySignDocument, signDocumentWith } from './signpdfWriter.js';
 import { mupdfWriter } from './mupdfWriter.js';
 import { pkcs7Asn1, readSignatures } from './signatureRead.js';
 import { TimestampRefusedError, TimestampUnreachableError } from './signingRefusals.js';

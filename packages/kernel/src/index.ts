@@ -545,15 +545,14 @@ export {
   hostedPdfLibExecution,
   pdfLibWriter,
 } from './pdfLibWriter.js';
-// ON THE MAIN BARREL, for `localPdfLibWriter`'s reason: pdf-lib and `@signpdf` are
-// plain JavaScript, so nothing native enters the graph of the composition root
-// that imports this. Until 2026-09-13 it was exported nowhere a composition could
-// reach, and the root registered no signer — so signing, certifying and visible
-// signatures were refused as an unregistered writer in the running application
-// while every test that built its own bus passed.
-export { localSignpdfWriter, signpdfWriterWith } from './signpdfWriter.js';
+// ON THE MAIN BARREL, because the composition root registers it: the signing writer's execution, whose placeholder is
+// prepared in the MuPDF host and whose signature is made in `main` (ADR-0148). Until 2026-09-13 the signer was exported
+// nowhere a composition could reach, and the root registered none — so signing, certifying and visible signatures were
+// refused as an unregistered writer in the running application while every test that built its own bus passed.
+export { NO_TIMESTAMPS, signpdfExecutionWith } from './documentSign.js';
+export type { RequestTimestamp, SignatureHost } from './documentSign.js';
+export type { PlaceholderRequest, PreparedSignature } from './signatureHole.js';
 export { serialiseIntoFile } from './checkpointFile.js';
-export type { RequestTimestamp } from './documentSign.js';
 export {
   applyWatermarkPages,
   captureWatermarkPages,
