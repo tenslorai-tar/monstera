@@ -102,13 +102,40 @@ describe('calloutTool', () => {
     expect(asked).toStrictEqual([CALLOUT_DIALOG_ID]);
   });
 
-  it('sends nothing, and ASKS NOTHING, when the second press did not drag', async () => {
-    // A note with no box is a callout pointing at something and saying it
-    // nowhere. Asserted on `asked` as well, so a tool that opened the dialog and
-    // then discarded the answer is not mistaken for this.
+  it('a second press that did NOT drag places the note THERE, in a box that fits its words (F-C7)', async () => {
+    // IT USED TO MAKE NOTHING, which threw away a callout the person had placed. The box is the typewriter's click
+    // rule: from the point pressed, as wide as the words at the type size.
     const { tool, asked } = built({ text: 'see this' });
-    expect(await commit(tool, twoPress(tool, [20, 20], [100, 100], [102, 101]))).toBeUndefined();
-    expect(asked).toStrictEqual([]);
+    const placed = (await commit(tool, twoPress(tool, [20, 20], [100, 100], [102, 101]))) as
+      | { annotation?: { at?: unknown; rect?: { x0: number; y0: number; x1: number; y1: number } } }
+      | undefined;
+    expect(asked).toStrictEqual([CALLOUT_DIALOG_ID]);
+    expect(placed?.annotation?.at).toStrictEqual({ x: 60, y: 390 });
+    // THE BOX STARTS AT THE SECOND PRESS — (100, 100) at zoom 2 is (100, 350) — and runs right and down from it.
+    expect(placed?.annotation?.rect?.x0).toBe(100);
+    expect(placed?.annotation?.rect?.y0).toBe(350);
+    expect(placed?.annotation?.rect?.x1).toBeGreaterThan(100);
+    expect(placed?.annotation?.rect?.y1).toBeLessThan(350);
+  });
+
+  it('a single DRAG from the point finishes it, with the note where the drag ended (F-C7)', async () => {
+    // THE GESTURE PEOPLE REACH FOR: press on the thing, drag to where the note goes, let go. It used to keep the
+    // gesture, leave the leader on the page and make nothing.
+    const { tool, asked } = built({ text: 'see this' });
+    const dragged = tool.controller.update(tool.controller.begin(viewportPoint(20, 20)), viewportPoint(100, 100));
+    expect(tool.controller.complete(dragged)).toBe(true);
+    const placed = (await commit(tool, dragged)) as
+      | { annotation?: { at?: unknown; rect?: { x0: number; y0: number } } }
+      | undefined;
+    expect(asked).toStrictEqual([CALLOUT_DIALOG_ID]);
+    expect(placed?.annotation?.at).toStrictEqual({ x: 60, y: 390 });
+    expect(placed?.annotation?.rect).toMatchObject({ x0: 100, y0: 350 });
+  });
+
+  it('CONTROL: a first press that hardly moved is a CLICK on the point, and waits for the second press', () => {
+    const { tool } = built({ text: 'see this' });
+    const clicked = tool.controller.update(tool.controller.begin(viewportPoint(20, 20)), viewportPoint(23, 22));
+    expect(tool.controller.complete(clicked)).toBe(false);
   });
 
   it('sends nothing when the dialog is dismissed', async () => {

@@ -227,7 +227,7 @@ const INSET = 3;
  * Its far corner is found in VIEWPORT space and both corners mapped by {@link draggedRect}, as a drag's are, so a
  * rotated or offset page is handled by the one conversion the drag uses rather than by arithmetic of its own.
  */
-function clickedRect(
+export function clickedRect(
   at: ViewportPoint,
   text: string,
   fontSize: number,

@@ -11,9 +11,8 @@ A callout is a text box joined by a line to the spot it describes.
 ## Steps
 
 1. In the rail, choose **Comment**, then **Callout** in the **Markup** group.
-2. Click the spot the line should point at.
-3. Press again and drag to draw the box for the text.
-4. In the **Callout** window, type the **Note**, then choose **Add callout**.
+2. Press on the spot the line should point at, and drag to where the text should go. Or click the spot, then drag to draw the box for the text, or click where the box should start.
+3. In the **Callout** window, type the **Note**, then choose **Add callout**. Where you did not draw a box, it is made to fit the note.
 
 ![A callout pointing at a figure, with its text box](screenshot:add-a-callout-1)
 

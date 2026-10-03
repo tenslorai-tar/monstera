@@ -7,7 +7,7 @@ import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
-import type { TextToolDeps } from './textTools.js';
+import { type TextToolDeps, clickedRect } from './textTools.js';
 
 /**
  * The callout — point at something, then draw the note that talks about it.
@@ -19,10 +19,16 @@ import type { TextToolDeps } from './textTools.js';
  * can define a box or a pointer and not both, and a gesture that survives a
  * release can define each in turn. This is that, spent.
  *
- * **Press once where it points; press again and drag the box.** The first
- * release does not finish the gesture — `complete` answers `false` while only
- * one press has happened — so the second press extends the same gesture rather
- * than starting a new one, and the drag from it is an ordinary rectangle.
+ * **Press once where it points; press again and drag the box.** A first release
+ * that did not drag does not finish the gesture — `complete` answers `false`
+ * while only that one press has happened — so the second press extends the
+ * same gesture rather than starting a new one, and the drag from it is an
+ * ordinary rectangle.
+ *
+ * **Or drag once from the point to where the note goes**, and a second press
+ * that does not drag places the note there: in both, the box fits the words at
+ * that point (`clickedRect`, the typewriter's rule). Every way of making a
+ * callout ends in one; none leaves a leader on the page and makes nothing (F-C7).
  *
  * ## Two presses and not three, with the elbow OWED
  *
@@ -56,6 +62,12 @@ export const CALLOUT_TOOL_ID = 'annotate.callout';
  */
 const MINIMUM_DRAG = 4;
 
+/**
+ * How far the FIRST press must drag to be the whole gesture: the point, then where the note goes, in one stroke.
+ * Twice the box's minimum, so a click that moved a little still waits for the second press.
+ */
+const POINTING_DRAG = 2 * MINIMUM_DRAG;
+
 export function calloutTool(deps: TextToolDeps): UiTool {
   /** The box the second press has dragged out, or `undefined` before it has. */
   const boxOf = (
@@ -70,28 +82,41 @@ export function calloutTool(deps: TextToolDeps): UiTool {
     return { from: second, to };
   };
 
+  /** Whether the first press was dragged far enough to be the whole gesture: pointing, then placing the note. */
+  const pointedInOneDrag = (gesture: Gesture): boolean => {
+    if (gesture.presses.length !== 1) return false;
+    const from = startOf(gesture);
+    const to = endOf(gesture);
+    return Math.hypot(to.x - from.x, to.y - from.y) >= POINTING_DRAG;
+  };
+
   const controller: ToolController = {
     ...pointerPath,
-    // THE FIRST RELEASE DOES NOT END IT. Answering `true` here is what every
-    // other drag tool does and is exactly what would make this impossible: the
-    // gesture would commit after the point was pressed and the box would never
-    // be drawn.
-    complete: (gesture: Gesture): boolean => gesture.presses.length >= 2,
+    // A CLICK ON THE POINT DOES NOT END IT, so a second press can drag the box: answering `true` for every release, as
+    // a drag tool does, would commit before the box was drawn. A DRAG FROM THE POINT DOES (F-C7): it is the gesture
+    // people reach for, and keeping it alive left its leader on the page and made nothing.
+    complete: (gesture: Gesture): boolean => gesture.presses.length >= 2 || pointedInOneDrag(gesture),
     commit: async (
       gesture: Gesture,
       page: number,
       transform: PageTransform,
     ): Promise<DispatchableCommand | undefined> => {
+      // A CLICK ON THE POINT ALONE says where it points and nothing about where the note goes.
+      if (gesture.presses.length < 2 && !pointedInOneDrag(gesture)) return undefined;
       const box = boxOf(gesture);
-      if (box === undefined) return undefined;
+      // WHERE THE NOTE GOES WHEN NO BOX WAS DRAGGED: the second press, or where the one drag ended. A second press
+      // that did not drag used to make nothing, which threw away a callout the person had placed.
+      const place = gesture.presses[1] ?? endOf(gesture);
       // BOTH READ BEFORE THE ASK, `textTools.ts`' rule: the transform is the one
       // the overlay measured at the release, and converting after the person has
       // typed would place the callout using whatever zoom the page has by then.
       const at = toPdf(startOf(gesture), transform);
-      const rect = draggedRect(box.from, box.to, transform);
+      const dragged = box === undefined ? undefined : draggedRect(box.from, box.to, transform);
 
       const answered = ANNOTATION_TEXT_RESULT.safeParse(await deps.ask(CALLOUT_DIALOG_ID, {}));
       if (!answered.success) return undefined;
+      // A BOX THAT FITS THE WORDS where none was dragged: the typewriter's click rule, which needs the words.
+      const rect = dragged ?? clickedRect(place, answered.data.text, deps.style.fontSize, transform);
 
       return {
         kind: 'addAnnotation',
