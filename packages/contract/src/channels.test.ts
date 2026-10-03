@@ -99,6 +99,8 @@ const handlers: ContractHandlers = {
             // BOTH HALVES SET, for this fixture's reason: `null` in either is what a boundary that dropped it produces.
             location: displayLocationSchema.parse({ within: 'documents', folder: 'Leases' }),
             openedAt: '2026-09-25T08:00:00.000Z',
+            // `false`, the unusual state (ADR-0143): an entry listed and not there.
+            available: false,
           },
         ],
         lastExitClean: false,

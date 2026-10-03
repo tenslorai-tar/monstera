@@ -293,6 +293,29 @@ optgroup {
   display: inline-flex;
 }
 
+/* FILE › RECENT (ADR-0143): a file's name is a person's, and can be long. The submenu is held to a reading width and a
+   name past it ends in an ellipsis — the item's accessible name is the whole name all the same. */
+.m-menu-bar__submenu {
+  max-inline-size: 48ch;
+}
+
+.m-menu-bar__file {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The arrow that says an item opens a menu sits in the chord's column, centred on the line like a glyph. */
+.m-menu-bar__opens {
+  display: inline-flex;
+}
+
+/* AN ITEM WHOSE SUBMENU IS OPEN keeps the highlight while the focus is inside the submenu, so the path from the menu
+   to what is showing stays drawn — the fill a highlighted item takes. */
+.m-menu-bar__item[data-popup-open] {
+  background: var(--surface2);
+}
+
 .m-menu-bar__caption {
   padding: var(--space-4) var(--space-8) var(--space-2);
   color: var(--muted);
@@ -1065,6 +1088,25 @@ optgroup {
 .m-recent-item__line {
   color: var(--muted);
   font-size: var(--font-chrome-12);
+}
+
+/* A FILE THAT IS NOT THERE NOW (ADR-0143): listed, focusable and saying so in its line, and drawn as a disabled
+   control — no pointer, no hover fill, the name in the muted text a disabled menu item takes, the kept picture
+   faded. Focus still fills it, so a keyboard sees where it is. */
+.m-recent-item[data-unavailable='true'] {
+  cursor: default;
+}
+
+.m-recent-item[data-unavailable='true']:hover:not(:focus-visible) {
+  background: var(--bg);
+}
+
+.m-recent-item[data-unavailable='true'] .m-recent-item__name {
+  color: var(--muted);
+}
+
+.m-recent-item[data-unavailable='true'] .m-recent-item__picture {
+  opacity: 0.45;
 }
 
 /*

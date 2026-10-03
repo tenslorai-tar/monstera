@@ -388,6 +388,23 @@ export class CommandRegistry {
         captions.set(key, { caption: placement.caption, by: command.id });
       }
     }
+    // ONE PLACE PER SUBMENU (ADR-0143): a submenu is drawn in its members' menu and group, so two members naming two
+    // places would draw the one list twice, or leave which place wins to registration order.
+    const submenus = new Map<string, { place: string; by: string }>();
+    for (const command of this.#byId.values()) {
+      for (const placement of command.placements) {
+        if (placement.surface !== 'menu-bar' || placement.submenu === undefined) continue;
+        const place = `${placement.menu} #${String(placement.group)}`;
+        const seen = submenus.get(placement.submenu);
+        if (seen !== undefined && seen.place !== place) {
+          throw new Error(
+            `"${command.id}" puts the ${placement.submenu} submenu in ${place}, and "${seen.by}" puts it in ` +
+              `${seen.place}. A submenu is drawn in one place (ADR-0143); give both the same menu and group.`,
+          );
+        }
+        submenus.set(placement.submenu, { place, by: command.id });
+      }
+    }
     // ONE NAME PER MENU (item 5b, 2026-10-02): two commands a menu lists under the same words are one action offered
     // twice or two a person cannot tell apart — the Edit menu drew *Copy* twice, `edit.copy` from its application
     // group and `text.copy` from the Edit section. By the WORDS DRAWN, the source catalogue's English, because those

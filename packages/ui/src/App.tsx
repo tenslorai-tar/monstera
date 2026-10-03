@@ -14,7 +14,7 @@ import {
   type UpdateStatus,
   type WindowEditAction,
 } from '@monstera/contract';
-import type { DocId, DocVersion } from '@monstera/shared';
+import type { DocId, DocVersion, FileHandle } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
 import {
   memo,
@@ -180,9 +180,11 @@ import {
   openDocument,
   openDocumentCommand,
   openDroppedFiles,
+  openRecentDocument,
   openWaitingDocuments,
   restoreLastSession,
 } from './commands/openDocument.js';
+import { clearRecentCommand } from './commands/recentCommands.js';
 import { revealLogCommand } from './commands/revealLog.js';
 import { donateCommand } from './commands/donate.js';
 import { rateUsCommand } from './commands/rateUs.js';
@@ -2408,6 +2410,35 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     [activate, client, opened],
   );
   const openCommand = useMemo(() => openDocumentCommand(openDeps), [openDeps]);
+  // THE ONE RECENT-OPEN ROUTE (ADR-0143), for the start screen's cards and File › Recent alike.
+  const openRecent = useCallback((handle: FileHandle) => openRecentDocument(openDeps, handle), [openDeps]);
+  // *Clear list*, one command for the submenu's item and the start screen's button: on main's answer, every view of
+  // the list reads it again — the start screen remounts on `recentReads`, and File › Recent reads it when it opens.
+  const clearRecent = useMemo(
+    () =>
+      clearRecentCommand({
+        client,
+        onCleared: () => {
+          setRecentReads((reads) => reads + 1);
+        },
+      }),
+    [client],
+  );
+  // FILE › RECENT'S VALUES (ADR-0143): main's list, read when the File menu opens. A read that fails or is refused is
+  // `undefined`, which the row draws as no values — never as an empty list.
+  const recentMenu = useMemo(
+    () => ({
+      read: () =>
+        client['document.recent']({}).then(
+          (answer) => (answer.ok ? answer.value.entries : undefined),
+          () => undefined,
+        ),
+      open: (handle: FileHandle) => {
+        void openRecent(handle);
+      },
+    }),
+    [client, openRecent],
+  );
   // A DROP OPENS THROUGH THE SAME DEPENDENCIES as the Open command, so its outcomes land where a pick's do.
   const onDroppedFiles = useCallback(
     (files: readonly File[]): void => {
@@ -2571,6 +2602,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         }),
         marksSelectAll,
         startScreenCommand({ showStart }),
+        // FILE › RECENT › CLEAR LIST (ADR-0143), built above because the start screen's button runs it too.
+        clearRecent,
         exitCommand({ closeWindow }),
         checkForUpdatesCommand({ client }),
         ...themeCommands({ settings }),
@@ -2962,6 +2995,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       navigator,
       openCommand,
       openDeps,
+      clearRecent,
       requestClose,
       togglePalette,
       // AUTOSCROLL'S TICK reads which document it runs on, and the toggle starts it on the one in front.
@@ -3254,7 +3288,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           status bar and every command below refer to. */}
       {/* THE MENU BAR, the window's top row in every mode and with no document too (§10.3, ADR-0107): the system's
           window controls are drawn over its end, and every item in it is a projection of the registry. */}
-      <MenuBar registry={registry} context={context} focusBefore={focusedField} />
+      <MenuBar registry={registry} context={context} focusBefore={focusedField} recent={recentMenu} />
       <TitleBar registry={registry} context={context} settings={settings}>
         <DocumentTabs
           // §7's TAB MENU, with the right-clicked tab's document as the context's — so *Close* closes
@@ -3303,7 +3337,14 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
               control, not a registered command, and registering one per row
               would mean rebuilding the registry whenever the list changed. */}
           {/* KEYED ON THE READS, so emptying the list from Settings remounts it and it asks main again. */}
-          <RecentFiles key={recentReads} client={client} onOpened={opened} />
+          <RecentFiles
+            key={recentReads}
+            client={client}
+            openRecent={openRecent}
+            onClear={async () => {
+              await clearRecent.run(context);
+            }}
+          />
           {/* THE FOOTER, after the recent list because §10.3 puts it there (see `StartFooter`). */}
           <StartFooter registry={registry} context={context} version={appVersion} />
         </div>

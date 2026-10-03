@@ -55,6 +55,7 @@ import {
   type DocumentService,
   EngineFormDataExportFailed,
   EngineAnnotationDataExportFailed,
+  type IdentityReader,
   StaleTargetError,
   type WriteTargetVerdict,
   paragraphText,
@@ -251,6 +252,13 @@ export function createContractHandlers(deps: {
   readonly recentRoots: readonly KnownRoot[];
   /** The recent list's pictures of first pages (ADR-0100). REQUIRED, for `recentRoots`' reason. */
   readonly recentPictures: RecentPictures;
+  /**
+   * Whether a path names a file now: the kernel's `readFileIdentity`, the rule `DocumentService.open` answers `absent`
+   * by, so a recent entry's `available` and an open of it cannot disagree (B3a,
+   * [ADR-0143](../../../docs/DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md)).
+   * REQUIRED, for `recentRoots`' reason: a default answering *there* would draw every missing file as one that opens.
+   */
+  readonly fileIdentity: IdentityReader;
   /**
    * The person's stamp and signature library, and how a picture reaches it: the image picker, a size taken before any
    * read, and the bounded read. REQUIRED, for `recentRoots`' reason.
@@ -3024,33 +3032,49 @@ function recentHandler(deps: {
   readonly capabilities: CapabilityRegistry;
   readonly recent: RecentFiles;
   readonly recentRoots: readonly KnownRoot[];
+  readonly fileIdentity: IdentityReader;
 }): ContractHandlers['document.recent'] {
-  return () =>
-    Promise.resolve(
-      ok({
-        // MINTED HERE, not stored. `mint` is idempotent per path, so the handle
-        // an entry carries is the same one that document would have if opened —
-        // and minting at the boundary rather than persisting the token means a
-        // list written by a previous run cannot carry a capability into this
-        // one.
-        entries: deps.recent.list().map((entry) => ({
-          handle: deps.capabilities.mint(entry.path),
-          name: entry.name,
-          // DERIVED HERE, from the path that never crosses: a known folder and one folder's name (ADR-0100).
-          location: displayLocationOf(entry.path, deps.recentRoots),
-          openedAt: entry.openedAt,
-        })),
-        lastExitClean: deps.recent.lastExitClean(),
-        // THE SAME MINTING, for the same reason. These entries are paths the
-        // previous run recorded as open; a handle minted here is one this run
-        // can resolve, and a token persisted across runs would be a capability
-        // surviving the process that granted it.
-        lastSession: deps.recent.lastSession().map((entry) => ({
-          handle: deps.capabilities.mint(entry.path),
-          name: entry.name,
-        })),
-      }),
-    );
+  /**
+   * Whether an open of this path would find a file (ADR-0143). `null` is the open's own `absent`; a read that THROWS is
+   * unavailable too, because an open would fail on it as well, and drawing it as one that opens is the fail-open.
+   */
+  const available = async (path: string): Promise<boolean> => {
+    try {
+      return (await deps.fileIdentity(path)) !== null;
+    } catch {
+      return false;
+    }
+  };
+  return async () => {
+    const listed = deps.recent.list();
+    // ALL AT ONCE, off the event loop: each is a `stat` and a `realpath` on the thread pool, so ten entries cost the
+    // slowest one rather than the sum. Read NOW, as the list is asked for, and never stored — a file comes and goes.
+    const present = await Promise.all(listed.map((entry) => available(entry.path)));
+    return ok({
+      // MINTED HERE, not stored. `mint` is idempotent per path, so the handle
+      // an entry carries is the same one that document would have if opened —
+      // and minting at the boundary rather than persisting the token means a
+      // list written by a previous run cannot carry a capability into this
+      // one.
+      entries: listed.map((entry, at) => ({
+        handle: deps.capabilities.mint(entry.path),
+        name: entry.name,
+        // DERIVED HERE, from the path that never crosses: a known folder and one folder's name (ADR-0100).
+        location: displayLocationOf(entry.path, deps.recentRoots),
+        openedAt: entry.openedAt,
+        available: present[at] === true,
+      })),
+      lastExitClean: deps.recent.lastExitClean(),
+      // THE SAME MINTING, for the same reason. These entries are paths the
+      // previous run recorded as open; a handle minted here is one this run
+      // can resolve, and a token persisted across runs would be a capability
+      // surviving the process that granted it.
+      lastSession: deps.recent.lastSession().map((entry) => ({
+        handle: deps.capabilities.mint(entry.path),
+        name: entry.name,
+      })),
+    });
+  };
 }
 
 /**
@@ -3061,9 +3085,10 @@ function recentHandler(deps: {
  * main minted for a path main recorded, which is the whole of why a renderer
  * naming a file here is not a renderer choosing one.
  *
- * **A file that has gone is FORGOTTEN.** `absent` for a recent entry means the
- * document moved or was deleted since it was opened, and leaving it in the list
- * would offer the user the same dead file every launch.
+ * **A file that has gone is KEPT** ([ADR-0143](../../../docs/DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md)).
+ * `absent` here answers this open and nothing more: the entry stays, and the next read of the list carries it as
+ * unavailable, drawn disabled and saying so. Until 2026-10-03 it was forgotten, which lost a file on a drive that was
+ * only disconnected — and the owner's rule for the list is *never hidden*.
  */
 function openRecentHandler(deps: OpenPathParts): ContractHandlers['document.openRecent'] {
   return async ({
@@ -3082,11 +3107,6 @@ function openRecentHandler(deps: OpenPathParts): ContractHandlers['document.open
     // crash puts the documents back on screen, and a run that recorded only
     // picker-opened documents would lose them all to a second crash.
     const { outcome } = await openPath(deps, path);
-
-    // WHAT THIS ROUTE ADDS: a file that has gone is FORGOTTEN, because leaving it
-    // in the list would offer the user the same dead file every launch.
-    if (outcome.kind === 'absent') deps.recent.forget(path);
-
     return ok(outcome);
   };
 }

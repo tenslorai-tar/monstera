@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 221 — and the checks only the installed window can answer.
+Every command the application registers — 222 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -225,6 +225,7 @@ is not available.
 - [ ] **Pages panel** · `view.show-pages` · Shows: on screen
 - [ ] **Ribbon layout** · `view.layout-ribbon` · Shows: on screen · Help: *Choose a layout: Ribbon, Studio or Focus*
 - [ ] **Show or hide the document panel** · `view.toggle-panel` · Shows: on screen · Help: *Use the document panel*
+- [ ] **Clear list** · `document.clear-recent` · Shows: on screen · Help: *Reopen a recent file*
 - [ ] **Bookmarks panel** · `view.show-bookmarks` · Shows: on screen
 - [ ] **Command palette** · `view.command-palette` · Shows: on screen · Help: *Find any tool by name*
 - [ ] **Light theme** · `view.theme-light` · Shows: on screen

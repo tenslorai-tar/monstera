@@ -120,7 +120,20 @@ export interface MenuBarPlacement {
   readonly group: number;
   readonly order: number;
   readonly caption?: MessageKey | undefined;
+  /**
+   * The submenu this command is drawn INSIDE, after the submenu's own values and a separator
+   * ([ADR-0143](../../../../docs/DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md)).
+   * The submenu sits in this placement's menu and group, where its first member's `order` falls; every placement
+   * naming one submenu names the same menu and group, which the registry holds.
+   */
+  readonly submenu?: MenuBarSubmenu | undefined;
 }
+
+/**
+ * A submenu of an application menu. A CLOSED union rather than a caption, because the menu row draws each submenu's
+ * own values — File › Recent's files — so a submenu the row cannot draw is a compile error there, not an empty list.
+ */
+export type MenuBarSubmenu = 'recent';
 
 /**
  * A button at the FOOT of the right panel's Properties tab, drawn while marks are selected

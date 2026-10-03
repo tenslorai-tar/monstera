@@ -872,13 +872,15 @@ export type DisplayLocation = z.infer<typeof displayLocationSchema>;
  * a mechanism reads exactly like one, which is why the audit that found this
  * looked for the case rather than for a disagreement.
  *
- * **FOUR, AND NOT A CHOICE (the owner, 2026-10-01): *"Show just exactly 4 and nothing more. Discard the rest. Keep
- * only the latest 4."*** From 2026-09-28 the cap was a person's choice of 5 to 30 (`viewing.recent-length`), and the
- * start screen then showed four of them; a remembered file no surface showed, under a setting that changed nothing a
- * person could see, is the display-only defect. So the store keeps four, the start screen shows what it keeps, and the
- * setting is withdrawn.
+ * **TEN, AND NOT A CHOICE (the owner, 2026-10-02, item N3): *"Main keeps up to 10 recent files; the start screen
+ * still shows 4."*** ([ADR-0143](../../../docs/DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md)).
+ * From 2026-09-28 the cap was a person's choice of 5 to 30 (`viewing.recent-length`) while the start screen showed
+ * four, and on 2026-10-01 the owner cut it to four (*"Keep only the latest 4"*): a remembered file no surface showed is
+ * the display-only defect. That reason still holds and is what makes ten right now — File › Recent shows every entry
+ * this bounds, and the start screen shows the first four of the same answer (`START_SCREEN_RECENT`, the start
+ * screen's own number).
  */
-export const MAX_RECENT_ENTRIES = 4;
+export const MAX_RECENT_ENTRIES = 10;
 
 /**
  * How many documents a recorded SESSION carries — what was open when a run ended, for the crash offer and
@@ -1780,6 +1782,12 @@ export const channels = {
              * older build recorded without one.
              */
             openedAt: annotationInstantSchema.nullable(),
+            /**
+             * Whether the file is there NOW, read by main as the list is asked for — by `readFileIdentity`, the rule
+             * an open answers `absent` by, so the list and the open agree (ADR-0143). `false` is listed and drawn
+             * disabled, never dropped: a file on a drive that is not connected is back when the drive is.
+             */
+            available: z.boolean(),
           }),
         )
         .max(MAX_RECENT_ENTRIES)

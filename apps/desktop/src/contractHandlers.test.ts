@@ -12,7 +12,7 @@ import {
   blockEditOf,
   channels,
 } from '@monstera/contract';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import {
   HUMAN_CHECKS,
@@ -22,6 +22,8 @@ import {
   DocumentService,
   ENGINE_BARCODE_TEXT_MAX,
   ENGINE_BARCODES_MAX,
+  type IdentityReader,
+  readFileIdentity,
 } from '@monstera/kernel';
 import { BARCODE_WRITE_FORMATS } from '@monstera/kernel/barcode';
 import {
@@ -116,6 +118,8 @@ function harness(
     readonly cloud?: CloudStorage;
     /** The paperclip's picker and readers (ADR-0135); nothing picked and nothing readable otherwise. */
     readonly attachments?: { readonly pick: () => Promise<readonly string[]>; readonly readers: AttachmentReaders };
+    /** Whether a path names a file (ADR-0143); the kernel's own `readFileIdentity` over the real disk otherwise. */
+    readonly fileIdentity?: IdentityReader;
   } = {},
 ) {
   const capabilities = new CapabilityRegistry();
@@ -186,6 +190,7 @@ function harness(
     recent,
     recentRoots: RECENT_ROOTS,
     recentPictures: pictures,
+    fileIdentity: overrides.fileIdentity ?? readFileIdentity,
     library: overrides.library ?? unusedLibrarySurface(),
     reviewPrompt: prompt,
     // RETURNED, so cases about persistence read the same object the handlers
@@ -729,7 +734,7 @@ describe('document.open', () => {
           pickDocument: () => Promise.resolve(null),
           recent: createRecentFiles(createEphemeralSettings()),
           recentRoots: [],
-          recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
+          recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
           reviewPrompt: NO_REVIEW_PROMPT,
           settings: createEphemeralSettings(),
           secrets: createEphemeralSecrets(),
@@ -1056,51 +1061,76 @@ describe('the recent list', () => {
     expect(result).toStrictEqual({ ok: false, error: { code: 'unknown-handle' } });
   });
 
-  it('FORGETS an entry whose file has gone', async () => {
-    // `absent` for a recent entry means the file moved or was deleted since it
-    // was opened. Leaving it would offer the reader the same dead row on every
-    // launch, for ever.
-    const capabilities = new CapabilityRegistry();
-    const handle = capabilities.mint('C:/docs/gone.pdf');
-    const { documents } = serviceAnswering({ kind: 'absent' });
-    const recent = createRecentFiles(createEphemeralSettings());
+  it('KEEPS an entry whose file has gone, and lists it as unavailable — never hidden (ADR-0143)', async () => {
+    // Until 2026-10-03 an `absent` open FORGOT the entry, which lost a file on a drive that was only disconnected.
+    // CONTROL in the same case: the open itself still answers `absent`, so the renderer still says it could not open.
+    const { capabilities, handlers, recent } = harness({ kind: 'absent' }, () => Promise.resolve(null));
     recent.record({ path: 'C:/docs/gone.pdf', name: 'gone.pdf' });
-    const handlers = createContractHandlers({
-      assistant: INERT_ASSISTANT,
-      appInfo,
-      capabilities,
-      commands: unusedCommands,
-      documents,
-      openedDocument: () => Promise.resolve(),
-      unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
-      pickDocument: () => Promise.resolve(null),
-      recent,
-      recentRoots: [],
-      recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
-      reviewPrompt: NO_REVIEW_PROMPT,
-      settings: createEphemeralSettings(),
-      secrets: createEphemeralSecrets(),
-      chatHistory: NO_HISTORY,
-      pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
-      revealLog: () => Promise.resolve(false),
-      revealPath: () => Promise.resolve(false),
-      titleBarOverlay: () => false,
-      confirmClose: () => false,
-      edit: () => false,
-      copyText: () => false,
-      openWebPage: () => Promise.resolve(false),
-      openStore: () => Promise.resolve(false),
-      closeListening: () => false,
-    cloud: unconfiguredCloud(),
-    attachments: NO_ATTACHMENTS,
-      readDictionary: () => Promise.resolve(null),
-      ocrLanguages: () => Promise.resolve([]),
-      components: () => Promise.resolve([]),
+    const handle = capabilities.mint('C:/docs/gone.pdf');
+
+    const opened = await handlers['document.openRecent']({ handle });
+
+    expect(opened).toStrictEqual({ ok: true, value: { kind: 'absent' } });
+    expect(recent.list().map((entry) => entry.name)).toStrictEqual(['gone.pdf']);
+    const listed = await handlers['document.recent']({});
+    expect(listed.ok ? listed.value.entries.map((entry) => [entry.name, entry.available]) : listed).toStrictEqual([
+      ['gone.pdf', false],
+    ]);
+  });
+
+  describe('which entries are there (ADR-0143)', () => {
+    /** A folder holding `here.pdf`, and the path of a `gone.pdf` beside it that does not exist. */
+    function aFolder(): { readonly here: string; readonly gone: string } {
+      const folder = mkdtempSync(join(tmpdir(), 'monstera-recent-'));
+      const here = join(folder, 'here.pdf');
+      writeFileSync(here, '%PDF-1.7\n');
+      return { here, gone: join(folder, 'gone.pdf') };
+    }
+    const availability = async (handlers: ReturnType<typeof harness>['handlers']): Promise<unknown> => {
+      const listed = await handlers['document.recent']({});
+      return listed.ok ? listed.value.entries.map((entry) => [entry.name, entry.available]) : listed;
+    };
+
+    it('reads each by the OPEN’S OWN RULE: a file on disk is available, a missing one is listed and not', async () => {
+      // BOTH DIRECTIONS IN ONE FIXTURE, so neither *always available* nor *never available* passes: the first is the
+      // missing file drawn as one that opens, the second a list that disables everything.
+      const { here, gone } = aFolder();
+      const { handlers, recent } = harness({ kind: 'absent' }, () => Promise.resolve(null));
+      recent.record({ path: gone, name: 'gone.pdf' });
+      recent.record({ path: here, name: 'here.pdf' });
+
+      expect(await availability(handlers)).toStrictEqual([
+        ['here.pdf', true],
+        ['gone.pdf', false],
+      ]);
     });
 
-    await handlers['document.openRecent']({ handle });
+    it('is read AT EACH ASK, never stored: a file deleted between two reads is unavailable on the second', async () => {
+      const { here } = aFolder();
+      const { handlers, recent } = harness({ kind: 'absent' }, () => Promise.resolve(null));
+      recent.record({ path: here, name: 'here.pdf' });
+      expect(await availability(handlers)).toStrictEqual([['here.pdf', true]]);
 
-    expect(recent.list()).toStrictEqual([]);
+      rmSync(here);
+
+      expect(await availability(handlers)).toStrictEqual([['here.pdf', false]]);
+    });
+
+    it('a check that THROWS is unavailable, and the rest of the list is still answered', async () => {
+      // A refused permission or a device error: an open would fail on it too, so it is not drawn as one that opens.
+      const { here } = aFolder();
+      const { handlers, recent } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
+        fileIdentity: (path) =>
+          path === 'C:/docs/locked.pdf' ? Promise.reject(new Error('EACCES: permission denied')) : readFileIdentity(path),
+      });
+      recent.record({ path: 'C:/docs/locked.pdf', name: 'locked.pdf' });
+      recent.record({ path: here, name: 'here.pdf' });
+
+      expect(await availability(handlers)).toStrictEqual([
+        ['here.pdf', true],
+        ['locked.pdf', false],
+      ]);
+    });
   });
 });
 
@@ -1157,7 +1187,7 @@ describe('log.reveal', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
-      recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
+      recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
 settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
@@ -1215,7 +1245,7 @@ describe('ai.checkKey', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
-      recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
+      recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
 settings: createEphemeralSettings(),
       secrets,
@@ -1347,7 +1377,7 @@ describe('ai.translatePage (ADR-0097)', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
-      recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
+      recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
 settings: createEphemeralSettings(),
       secrets,
@@ -1489,7 +1519,7 @@ describe('ai.history (ADR-0093)', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
-      recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
+      recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
 settings,
       secrets: createEphemeralSecrets(),
@@ -1658,7 +1688,7 @@ describe('cloud.saveBack', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
-      recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
+      recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
 settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),

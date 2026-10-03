@@ -1614,6 +1614,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       recent,
       recentRoots,
       recentPictures,
+      // THE KERNEL'S ONE RULE for *is there a file here*, the open's own, so the list and the open agree (ADR-0143).
+      fileIdentity: readFileIdentity,
       // THE STORE RATING PROMPT (E3). The Store build opens the Store application's own review page; every other
       // build opens the web listing, through the one HTTPS-only route pages already take. No record, no prompt.
       reviewPrompt:

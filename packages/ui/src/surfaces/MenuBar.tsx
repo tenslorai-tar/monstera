@@ -1,7 +1,8 @@
 import { Menu } from '@base-ui/react/menu';
 import { Menubar } from '@base-ui/react/menubar';
 import { useLingui } from '@lingui/react';
-import type { MessageKey } from '@monstera/shared';
+import type { ChannelResult } from '@monstera/contract';
+import type { FileHandle, MessageKey } from '@monstera/shared';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactElement } from 'react';
 
 import titleLogo from '../../../../assets/brand/logo-title.png';
@@ -9,8 +10,12 @@ import {
   MENU_BAR_LABEL,
   MENU_FILE,
   MENU_HELP,
+  MENU_RECENT,
+  MENU_RECENT_EMPTY,
   MENU_VIEW,
   MENU_WINDOW,
+  RECENT_UNAVAILABLE,
+  RECENT_UNAVAILABLE_NAMED,
   SECTION_COMMENT,
   SECTION_EDIT,
   SECTION_FORMS,
@@ -21,16 +26,43 @@ import {
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { Icon } from '../primitives/Icon.js';
+import type { IconName } from '../primitives/icons.js';
 import type { CommandContext, CommandRegistry, UiCommand } from '../registries/commands.js';
+import type { MenuBarSubmenu } from '../registries/placement.js';
 import { LABELLED, type RowFit, nextRowFit } from './menuRowFit.js';
 import {
   type MenuBarCommandEntry,
   type MenuBarItem,
   type MenuBarMenuModel,
+  type MenuBarSubmenuEntry,
   menuBarCommandsModel,
   menuBarModel,
   shortcutMapOf,
 } from './projections.js';
+
+/** A recent file as `document.recent` answers it: a handle, a name, and whether it is there now (ADR-0143). */
+export type RecentMenuEntry = ChannelResult<'document.recent'>['entries'][number];
+
+/**
+ * What File › Recent draws and does — the menu row's OWN value control
+ * ([ADR-0143](../../../../docs/DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md)),
+ * as the status bar's page field is the bar's. The entries are main's list; an entry opens through the one recent-open
+ * route the start screen takes. Never a command per file.
+ */
+export interface RecentMenu {
+  /**
+   * Main's list as it is now, with each entry's availability, or `undefined` when it could not be read. Never rejects:
+   * an unreadable list is answered as `undefined`, which the row draws as no values rather than as an empty list.
+   */
+  readonly read: () => Promise<readonly RecentMenuEntry[] | undefined>;
+  /** Opens one, by the handle main minted for it. */
+  readonly open: (handle: FileHandle) => void;
+}
+
+/** Each submenu's name and glyph. Keyed by the placement's union, so a submenu with no name is a compile error. */
+const SUBMENU_FACES: Readonly<Record<MenuBarSubmenu, { readonly title: MessageKey; readonly icon: IconName }>> = {
+  recent: { title: MENU_RECENT, icon: 'History' },
+};
 
 /** The Button variant each placement tone draws as. Keyed by the placement's union, so a new tone fails to compile. */
 const TONE_VARIANT: Readonly<Record<MenuBarCommandEntry['tone'], 'gold' | 'violet' | 'default'>> = {
@@ -89,15 +121,21 @@ export function MenuBar({
   registry,
   context,
   focusBefore,
+  recent,
 }: {
   readonly registry: CommandRegistry;
   readonly context: CommandContext;
   /** The text field that held the focus before the bar took it, if one did (`typingFocus.ts`). */
   readonly focusBefore: () => HTMLElement | undefined;
+  /** File › Recent's values and how one opens (ADR-0143). */
+  readonly recent: RecentMenu;
 }): ReactElement {
   const { _ } = useLingui();
   // A COUNTER THE OPENING OF A MENU MOVES, so the model below is recomputed at that moment.
   const [, setOpened] = useState(0);
+  // THE RECENT LIST AS MAIN LAST ANSWERED IT, read again each time a menu holding File › Recent opens — so the submenu
+  // shows the list, and which files are there, as they are when the person looks. `undefined` until an answer comes.
+  const [recentEntries, setRecentEntries] = useState<readonly RecentMenuEntry[] | undefined>(undefined);
   const menus = menuBarModel(registry, context);
   const buttons = menuBarCommandsModel(registry, context);
   const chords = new Map([...shortcutMapOf(registry)].map(([, command]) => [command.id, command.shortcut]));
@@ -174,8 +212,13 @@ export function MenuBar({
     void command.run(context);
   };
 
-  const item = ({ command, enabled, checked }: MenuBarItem): ReactElement => {
+  /**
+   * One command item. `held` is false for a submenu's command while the submenu has no values: it acts on them, so with
+   * none there is nothing for it to do (ADR-0143) — *Clear list* over an empty list.
+   */
+  const item = ({ command, enabled, checked }: MenuBarItem, held = true): ReactElement => {
     const chord = chords.get(command.id);
+    const runs = enabled && held;
     const face = (
       <>
         <span className="m-menu-bar__mark" aria-hidden="true">
@@ -203,7 +246,7 @@ export function MenuBar({
         key={command.id}
         className="m-context-menu-item m-menu-bar__item"
         data-command={command.id}
-        disabled={!enabled}
+        disabled={!runs}
         label={_(command.title)}
         aria-keyshortcuts={chord}
         onClick={() => {
@@ -217,7 +260,7 @@ export function MenuBar({
         key={command.id}
         className="m-context-menu-item m-menu-bar__item"
         data-command={command.id}
-        disabled={!enabled}
+        disabled={!runs}
         label={_(command.title)}
         aria-keyshortcuts={chord}
         checked={checked}
@@ -231,6 +274,106 @@ export function MenuBar({
     );
   };
 
+  /** File › Recent's own values: each file main keeps, an unavailable one disabled and saying so (ADR-0143). */
+  const recentValues = (): readonly ReactElement[] | undefined => {
+    if (recentEntries === undefined) return undefined;
+    if (recentEntries.length === 0) {
+      return [
+        <Menu.Item key="empty" className="m-context-menu-item m-menu-bar__item" disabled>
+          <span className="m-menu-bar__mark" aria-hidden="true" />
+          <span className="m-menu-bar__icon" aria-hidden="true" />
+          <span className="m-menu-bar__title">{_(MENU_RECENT_EMPTY)}</span>
+        </Menu.Item>,
+      ];
+    }
+    return recentEntries.map((entry) => (
+      // THE HANDLE IS THE KEY, as on the start screen: two files may share a name.
+      <Menu.Item
+        key={entry.handle}
+        className="m-context-menu-item m-menu-bar__item"
+        data-recent-file={entry.name}
+        // LISTED AND DISABLED, NEVER HIDDEN: a file on a drive that is not connected is back when the drive is. Its
+        // name carries the state, so a screen reader hears it with the file rather than only seeing muted text.
+        disabled={!entry.available}
+        label={entry.name}
+        aria-label={entry.available ? undefined : _(RECENT_UNAVAILABLE_NAMED, { name: entry.name })}
+        onClick={() => {
+          recent.open(entry.handle);
+        }}
+      >
+        <span className="m-menu-bar__mark" aria-hidden="true" />
+        <span className="m-menu-bar__icon" aria-hidden="true">
+          <Icon name="FileText" size="dense" />
+        </span>
+        <span className="m-menu-bar__title m-menu-bar__file">{entry.name}</span>
+        {entry.available ? null : (
+          <span className="m-context-menu-chord" aria-hidden="true">
+            {_(RECENT_UNAVAILABLE)}
+          </span>
+        )}
+      </Menu.Item>
+    ));
+  };
+
+  /**
+   * What each submenu holds of the row's own: how its values are read when its menu opens, the values as drawn, and
+   * whether it holds any. Keyed by the closed union, so a submenu added to the placement fails to compile here until the
+   * row can read and draw what it holds.
+   */
+  const sources: Readonly<
+    Record<
+      MenuBarSubmenu,
+      { readonly read: () => void; readonly values: readonly ReactElement[] | undefined; readonly held: boolean }
+    >
+  > = {
+    recent: {
+      read: () => {
+        void recent.read().then((entries) => {
+          if (entries !== undefined) setRecentEntries(entries);
+        });
+      },
+      values: recentValues(),
+      held: recentEntries !== undefined && recentEntries.length > 0,
+    },
+  };
+
+  /**
+   * A submenu (ADR-0143): its trigger in the parent menu where its first member falls, then — inside — the row's own
+   * values, a separator, and the commands placed in it.
+   */
+  const submenu = (entry: MenuBarSubmenuEntry): ReactElement => {
+    const face = SUBMENU_FACES[entry.id];
+    const { values, held } = sources[entry.id];
+    return (
+      <Menu.SubmenuRoot key={`submenu:${entry.id}`}>
+        <Menu.SubmenuTrigger className="m-context-menu-item m-menu-bar__item" data-submenu={entry.id} label={_(face.title)}>
+          <span className="m-menu-bar__mark" aria-hidden="true" />
+          <span className="m-menu-bar__icon" aria-hidden="true">
+            <Icon name={face.icon} size="dense" />
+          </span>
+          <span className="m-menu-bar__title">{_(face.title)}</span>
+          {/* THE ARROW in the chord's column: this item opens a menu rather than running something. */}
+          <span className="m-context-menu-chord m-menu-bar__opens" aria-hidden="true">
+            <Icon name="ChevronRight" size="dense" />
+          </span>
+        </Menu.SubmenuTrigger>
+        <Menu.Portal>
+          <Menu.Positioner side="right" align="start" sideOffset={4} alignOffset={-5}>
+            <Menu.Popup className="m-context-menu m-menu-bar__popup m-menu-bar__submenu" data-submenu-popup={entry.id}>
+              {values}
+              {values === undefined ? null : <Menu.Separator className="m-context-menu-separator" />}
+              {entry.items.map((member) => item(member, held))}
+            </Menu.Popup>
+          </Menu.Positioner>
+        </Menu.Portal>
+      </Menu.SubmenuRoot>
+    );
+  };
+
+  /** The submenus a menu holds, whose values are read as it opens. */
+  const submenusIn = (menu: MenuBarMenuModel): readonly MenuBarSubmenu[] =>
+    menu.groups.flatMap((group) => group.items.flatMap((each) => (each.kind === 'submenu' ? [each.id] : [])));
+
   return (
     <div className="m-menu-bar" ref={bar}>
       <div className="m-menu-bar__start" ref={start}>
@@ -241,7 +384,12 @@ export function MenuBar({
             <Menu.Root
               key={menu.id}
               onOpenChange={(open) => {
-                if (open) setOpened((count) => count + 1);
+                if (!open) return;
+                setOpened((count) => count + 1);
+                // ASKED AS THE MENU OPENS, so the answer is in by the time the pointer or the arrow key reaches the
+                // submenu. A failed read leaves the last answer, and before any, no values at all — never a list
+                // claiming to be empty that was only unread.
+                for (const id of submenusIn(menu)) sources[id].read();
               }}
             >
               <Menu.Trigger className="m-menu-bar__trigger" data-menu={menu.id}>
@@ -257,7 +405,7 @@ export function MenuBar({
                           {group.caption === undefined ? null : (
                             <Menu.GroupLabel className="m-menu-bar__caption">{_(group.caption)}</Menu.GroupLabel>
                           )}
-                          {group.items.map(item)}
+                          {group.items.map((each) => (each.kind === 'submenu' ? submenu(each) : item(each)))}
                         </Menu.Group>
                       </Fragment>
                     ))}

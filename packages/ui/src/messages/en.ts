@@ -980,6 +980,10 @@ export const RECENT_META = messageKey('surface.recent.meta');
 export const RECENT_LABEL = messageKey('surface.recent.label');
 export const RECENT_EMPTY = messageKey('surface.recent.empty');
 export const RECENT_MISSING = messageKey('surface.recent.missing');
+/** A recent file that is not there now, drawn disabled and saying so in both views (ADR-0143). */
+export const RECENT_UNAVAILABLE = messageKey('surface.recent.unavailable');
+export const RECENT_UNAVAILABLE_NAMED = messageKey('surface.recent.unavailable-named');
+export const RECENT_UNAVAILABLE_AT = messageKey('surface.recent.unavailable-at');
 export const RECOVER_OFFER = messageKey('surface.recent.recover-offer');
 export const RECOVER_LABEL = messageKey('surface.recent.recover-label');
 export const LAYERS_LABEL = messageKey('surface.layers.label');
@@ -1873,6 +1877,11 @@ export const MENU_GROUP_THEME = messageKey('surface.menu-bar.group.theme');
 export const MENU_GROUP_ZOOM = messageKey('surface.menu-bar.group.zoom');
 export const MENU_GROUP_SHOW = messageKey('surface.menu-bar.group.show');
 export const MENU_GROUP_PANELS = messageKey('surface.menu-bar.group.panels');
+/** File › Recent (ADR-0143): the submenu's name, and what it says with nothing in it. */
+export const MENU_RECENT = messageKey('surface.menu-bar.recent');
+export const MENU_RECENT_EMPTY = messageKey('surface.menu-bar.recent-empty');
+/** *Clear list*, the Recent submenu's one command, which the start screen's button also runs (ADR-0143). */
+export const CLEAR_RECENT_TITLE = messageKey('command.clear-recent.title');
 /** The commands the menu bar brought (ADR-0107). */
 export const EDIT_CUT_TITLE = messageKey('command.edit-cut.title');
 export const EDIT_COPY_TITLE = messageKey('command.edit-copy.title');
@@ -2983,6 +2992,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // because the file moved or the list outlived the run that made it, and
   // neither is something they did.
   [RECENT_MISSING]: 'That document could not be opened. It may have been moved or renamed.',
+  // A FILE NOT THERE NOW, listed rather than dropped (ADR-0143): it may be on a drive that is not connected.
+  [RECENT_UNAVAILABLE]: 'Unavailable',
+  // THE ITEM'S NAME for a screen reader, so the state is heard with the file and not only seen as muted text.
+  [RECENT_UNAVAILABLE_NAMED]: '{name}, unavailable',
+  [RECENT_UNAVAILABLE_AT]: 'Unavailable · {where}',
   // NAMES NOTHING, because the list beneath it does. This read "Reopen
   // {name}?" while one document could be open and the newest recent entry was
   // that document; with tabs the offer is a recorded set, and a sentence
@@ -3827,7 +3841,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SETTINGS_ACTION_CLEAR_RECENT]: 'Clear recent files',
   // `document.clearRecent`'s own effect: the list and the pictures kept for it, and nothing else.
   [SETTINGS_ACTION_CLEAR_RECENT_DESCRIPTION]:
-    'Empties the Recent list on the start screen and deletes the previews kept for it. Your files are not touched.',
+    'Empties the Recent list on the start screen and in File › Recent, and deletes the previews kept for it. Your files are not touched.',
   [SETTINGS_ACTION_CLEARED]: 'Saved conversations were cleared.',
   // NAMES NO KEY: any key can be changed (ADR-0111), and a sentence naming one goes false the day a person moves it.
   [SETTINGS_KEYBOARD_NOTE]:
@@ -4419,6 +4433,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [MENU_GROUP_ZOOM]: 'Zoom',
   [MENU_GROUP_SHOW]: 'Show',
   [MENU_GROUP_PANELS]: 'Panels',
+  [MENU_RECENT]: 'Recent',
+  [MENU_RECENT_EMPTY]: 'No recent files',
+  // THE OWNER'S WORDS for the item (N3), the same as the start screen's own button over the cards.
+  [CLEAR_RECENT_TITLE]: 'Clear list',
   [EDIT_CUT_TITLE]: 'Cut',
   [EDIT_COPY_TITLE]: 'Copy',
   [EDIT_PASTE_TITLE]: 'Paste',

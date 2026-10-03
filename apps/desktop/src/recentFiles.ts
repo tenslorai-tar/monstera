@@ -58,14 +58,18 @@ export interface RecentFiles {
   list(): readonly ListedRecent[];
   /** Moves a document to the front, or adds it, stamped with the time it was opened. */
   record(entry: RecentEntry): void;
-  /** Drops one, for a file that is no longer there. */
-  forget(path: string): void;
-  /** Empties the list, answering how many entries went (ADR-0100's *Clear list*). */
+  /**
+   * Empties the list, answering how many entries went (ADR-0100's *Clear list*).
+   *
+   * **There is no way to drop one entry.** A file that has gone stays listed and is shown as unavailable
+   * ([ADR-0143](../../../docs/DECISIONS/0143-file-recent-is-the-menu-rows-own-value-control-and-main-keeps-ten.md)):
+   * forgetting it lost a file on a drive that was only disconnected. An entry leaves by this, or past the cap.
+   */
   clear(): number;
   /** Whether a path is on the list now. */
   has(path: string): boolean;
   /**
-   * Names who is told the paths of entries that LEFT the list — forgotten, cleared, or pushed past the cap —
+   * Names who is told the paths of entries that LEFT the list — cleared, or pushed past the cap —
    * so what is kept about an entry leaves with it (ADR-0100: a picture never outlives its entry). This store
    * is the one place that knows every way an entry leaves, so it is the one that says so. One listener: the
    * composition root registers the pictures' `drop` as it builds them, before any handler can run.
@@ -124,7 +128,7 @@ export const RECENT_FILE = 'recent.json';
  * @param file the document, from `createJsonFile`. Injected rather than opened
  *   here for `SettingsSurface`'s reason: the directory is Electron's question
  *   and this module answers a different one.
- * The list holds at most `MAX_RECENT_ENTRIES` — four, the owner's number — and nothing older is kept anywhere.
+ * The list holds at most `MAX_RECENT_ENTRIES` — ten, the owner's number — and nothing older is kept anywhere.
  *
  * @param now the clock an opening is stamped from, injected so a case can assert the instant recorded
  */
@@ -132,7 +136,7 @@ export function createRecentFiles(file: SettingsSurface, now: () => Date = () =>
   /** Who is told when entries leave; see {@link RecentFiles.onDropped}. */
   let dropped: ((paths: readonly string[]) => void) | undefined;
   /**
-   * Paths that left before anybody was listening: a stored list longer than four — written by a build that kept up to
+   * Paths that left before anybody was listening: a stored list longer than ten — written by a build that kept up to
    * thirty — is cut as this store opens, which is before the composition root registers the pictures' `drop`. Held
    * here and handed over at registration, so a picture never outlives its entry for want of a listener at the moment
    * the entry went.
@@ -155,7 +159,7 @@ export function createRecentFiles(file: SettingsSurface, now: () => Date = () =>
   // build writes on start and clears on shutdown — means a run that did not
   // finish.
   const wasClean = stored['cleanExit'] !== false;
-  // THE STORED LIST, CUT TO FOUR NOW — not when it is next read — so the document written below already holds only
+  // THE STORED LIST, CUT TO THE CAP NOW — not when it is next read — so the document written below already holds only
   // what is kept, and what was past the cap leaves with its pictures (`announce`).
   const read = readEntries(stored['entries']);
   let entries = read.slice(0, MAX_RECENT_ENTRIES);
@@ -204,12 +208,6 @@ export function createRecentFiles(file: SettingsSurface, now: () => Date = () =>
       persist(false);
       // PUSHED PAST THE CAP is leaving too, and the quietest way to: nobody asked for it.
       announce(ordered.slice(MAX_RECENT_ENTRIES).map((held) => held.path));
-    },
-    forget: (path) => {
-      const before = entries.length;
-      entries = entries.filter((held) => held.path !== path);
-      persist(false);
-      if (entries.length < before) announce([path]);
     },
     clear: () => {
       const gone = entries.map((held) => held.path);
@@ -266,7 +264,7 @@ function readEntries(value: unknown): readonly ListedRecent[] {
     const instant = annotationInstantSchema.safeParse(openedAt);
     entries.push({ path, name, openedAt: instant.success ? instant.data : null });
   }
-  // EVERY READABLE ROW, uncut: the store cuts to four itself, so the rows past the cap are known and leave with their
+  // EVERY READABLE ROW, uncut: the store cuts to the cap itself, so the rows past the cap are known and leave with their
   // pictures rather than vanishing here unannounced.
   return entries;
 }

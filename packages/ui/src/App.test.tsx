@@ -20,6 +20,7 @@ import { HELP_ARTICLES } from './help/articles.js';
 import type { CommandRegistry } from './registries/commands.js';
 import type { DialogRegistry } from './registries/dialogs.js';
 import { SECTION_IDS } from './registries/placement.js';
+import { START_SCREEN_RECENT } from './RecentFiles.js';
 import { CONTEXT_PANEL_TAB_SETTING, DOCUMENT_PANEL_SETTING, FLOAT_BAR_POSITION_SETTING } from './settings/layout.js';
 import { SECTION_TITLES } from './surfaces/Ribbon.js';
 import type { Article, Inline } from './help/article.js';
@@ -3117,11 +3118,19 @@ describe('App', () => {
       answeredBy: Readonly<Record<string, () => Promise<unknown>>> = {},
     ): { readonly client: ContractClient; readonly sent: Sent[] } {
       const sent: Sent[] = [];
+      // MAIN'S LIST, which a clear empties as main's store does — so a view that reads it again after a clear sees what
+      // main would answer, and a view that did not read again still shows the old cards.
+      let held = recent;
       const client = createClient(channels, (id, params) => {
         sent.push({ id, params });
         const own = answeredBy[id];
         if (own !== undefined) return own();
-        if (id === 'document.recent') return Promise.resolve(ok(recent));
+        if (id === 'document.recent') return Promise.resolve(ok(held));
+        if (id === 'document.clearRecent') {
+          const before = held as { readonly entries: readonly unknown[] };
+          held = { ...before, entries: [] };
+          return Promise.resolve(ok({ cleared: before.entries.length }));
+        }
         if (id === 'document.openRecent') {
           return Promise.resolve(
             ok({
@@ -3141,8 +3150,12 @@ describe('App', () => {
     }
 
     /** A listed entry as `document.recent` answers one, with no place or time — what these cases are not about. */
-    function row(handle: string, name: string): { handle: string; name: string; location: unknown; openedAt: null } {
-      return { handle, name, location: { within: null, folder: null }, openedAt: null };
+    function row(
+      handle: string,
+      name: string,
+      available = true,
+    ): { handle: string; name: string; location: unknown; openedAt: null; available: boolean } {
+      return { handle, name, location: { within: null, folder: null }, openedAt: null, available };
     }
 
     it('a card shows the picture main kept, asked for by the list’s handle, and the placeholder otherwise', async () => {
@@ -3239,10 +3252,12 @@ describe('App', () => {
       }
     });
 
-    it('the start screen shows the four recent files main keeps, all of them, with nothing to show more of (the owner, 2026-10-01)', async () => {
-      // FOUR IS MAIN'S NUMBER (`recentFiles.test.ts` holds the store to it); the screen shows what it is sent.
+    it('the start screen shows the FIRST FOUR of the list main keeps, and File › Recent holds the rest (the owner, 2026-10-02)', async () => {
+      // SIX SENT, more than four: a screen showing what it is sent draws six. Main keeps ten (`recentFiles.test.ts`);
+      // four is this view's own number, `START_SCREEN_RECENT`.
+      const names = ['a.pdf', 'b.pdf', 'c.pdf', 'd.pdf', 'e.pdf', 'f.pdf'];
       const { client } = withRecent({
-        entries: ['a.pdf', 'b.pdf', 'c.pdf', 'd.pdf'].map((name, at) => row(`handle-${String(at)}`, name)),
+        entries: names.map((name, at) => row(`handle-${String(at)}`, name)),
         lastExitClean: true,
         lastSession: [],
       });
@@ -3250,15 +3265,27 @@ describe('App', () => {
       await act(async () => {
         await Promise.resolve();
       });
-      expect(document.querySelectorAll('.m-recent-list > li')).toHaveLength(4);
-      expect(screen.getByRole('button', { name: 'd.pdf' })).toBeTruthy();
+      expect(START_SCREEN_RECENT).toBe(4);
+      expect([...document.querySelectorAll('.m-recent-list > li')].map((card) => card.textContent)).toStrictEqual([
+        'PDFa.pdf',
+        'PDFb.pdf',
+        'PDFc.pdf',
+        'PDFd.pdf',
+      ]);
+      expect(screen.queryByRole('button', { name: 'e.pdf' })).toBeNull();
       expect(screen.queryByRole('button', { name: /^Show (all|fewer)/u })).toBeNull();
     });
 
     it('a card is NAMED by the file and DESCRIBED by when and where it was opened (ADR-0100)', async () => {
       const { client } = withRecent({
         entries: [
-          { handle: 'handle-a', name: 'annual.pdf', location: { within: 'documents', folder: 'Leases' }, openedAt: new Date().toISOString() },
+          {
+            handle: 'handle-a',
+            name: 'annual.pdf',
+            location: { within: 'documents', folder: 'Leases' },
+            openedAt: new Date().toISOString(),
+            available: true,
+          },
         ],
         lastExitClean: true,
         lastSession: [],
@@ -3447,16 +3474,18 @@ describe('App', () => {
       expect(screen.queryByRole('button', { name: 'Reopen' })).toBeNull();
     });
 
-    it('says so when a row cannot be opened, and drops it', async () => {
-      // A handle from a list held across a reload resolves to nothing this run
-      // minted. The reader gets a sentence and the dead row goes.
+    it('says so when a row’s handle is refused, and asks main for the list again rather than dropping the row', async () => {
+      // A handle from a list held across a reload resolves to nothing this run minted. The reader gets a sentence, and
+      // the list is read again — main still keeps the file, and the fresh read carries a handle this run knows.
       const sent: Sent[] = [];
       const client = createClient(channels, (id, params) => {
         sent.push({ id, params });
         if (id === 'document.recent') {
           return Promise.resolve(
             ok({
-              entries: [{ handle: 'stale', name: 'annual.pdf', location: { within: null, folder: null }, openedAt: null }],
+              entries: [
+                { handle: 'stale', name: 'annual.pdf', location: { within: null, folder: null }, openedAt: null, available: true },
+              ],
               lastExitClean: true,
               lastSession: [],
             }),
@@ -3474,12 +3503,45 @@ describe('App', () => {
 
       await act(async () => {
         screen.getByRole('button', { name: 'annual.pdf' }).click();
-        await Promise.resolve();
+        await new Promise((settle) => setTimeout(settle, 0));
       });
 
       expect(
         screen.getByText('That document could not be opened. It may have been moved or renamed.'),
       ).toBeDefined();
+      // READ AGAIN, and the row is still there: main keeps it (ADR-0143).
+      expect(sent.filter((call) => call.id === 'document.recent').length).toBeGreaterThanOrEqual(2);
+      expect(screen.getByRole('button', { name: 'annual.pdf' })).toBeDefined();
+    });
+
+    it('an UNAVAILABLE file is a card that says so, is disabled and opens nothing — listed, never hidden (ADR-0143)', async () => {
+      const { client, sent } = withRecent({
+        entries: [row('handle-gone', 'gone.pdf', false), row('handle-here', 'here.pdf')],
+        lastExitClean: true,
+        lastSession: [],
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      const gone = screen.getByRole('button', { name: 'gone.pdf' });
+      expect(gone.getAttribute('aria-disabled')).toBe('true');
+      expect(document.getElementById(gone.getAttribute('aria-describedby') ?? '')?.textContent).toBe('Unavailable');
+      // CONTROL: the file that is there is a card like any other.
+      const here = screen.getByRole('button', { name: 'here.pdf' });
+      expect(here.getAttribute('aria-disabled')).toBeNull();
+
+      await act(async () => {
+        gone.click();
+        here.click();
+        await Promise.resolve();
+      });
+      // THE AVAILABLE ONE ALONE was asked for — so a card that ignored its state, and a surface that sent nothing at
+      // all, both fail.
+      expect(sent.filter((call) => call.id === 'document.openRecent')).toStrictEqual([
+        { id: 'document.openRecent', params: { handle: 'handle-here' } },
+      ]);
     });
   });
 

@@ -460,7 +460,7 @@ startShell(() => {
     // `settings.load` hands the renderer everything that file holds, so a path
     // stored there would be a path in the renderer with nothing having decided
     // to send it.
-    // FOUR ENTRIES, the contract's `MAX_RECENT_ENTRIES`; not a setting since 2026-10-01.
+    // TEN ENTRIES, the contract's `MAX_RECENT_ENTRIES` (ADR-0143); not a setting since 2026-10-01.
     recent: createRecentFiles(createJsonFile(app.getPath('userData'), RECENT_FILE)),
     // WHERE a recent file is, for display (ADR-0100): the known folders are Electron's answers and the
     // environment's, resolved here for the working directory's reason.

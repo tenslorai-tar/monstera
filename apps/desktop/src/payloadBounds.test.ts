@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { PRELOAD_CHANNEL_IDS, channelIds, channels, unboundedMembers } from '@monstera/contract';
-import { CapabilityRegistry, DocumentService } from '@monstera/kernel';
+import { CapabilityRegistry, DocumentService, readFileIdentity } from '@monstera/kernel';
 import { type DocId, asDocVersion } from '@monstera/shared';
 
 import { createAssistant } from './assistant.js';
@@ -161,7 +161,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     pickDocument: () => Promise.resolve(null),
     recent: createRecentFiles(createEphemeralSettings()),
     recentRoots: [],
-    recentPictures: NO_RECENT_PICTURES, library: unusedLibrarySurface(),
+    recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
     reviewPrompt: NO_REVIEW_PROMPT,
     settings: createEphemeralSettings(),
     secrets: createEphemeralSecrets(),
