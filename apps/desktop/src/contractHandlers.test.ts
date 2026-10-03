@@ -33,7 +33,7 @@ import {
   asDocVersion,
   asFileHandle,
 } from '@monstera/shared';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { CloudOutcomeRefused, type CloudStorage, unconfiguredCloud } from './cloudSession.js';
@@ -1118,12 +1118,15 @@ describe('the recent list', () => {
 
     it('a check that THROWS is unavailable, and the rest of the list is still answered', async () => {
       // A refused permission or a device error: an open would fail on it too, so it is not drawn as one that opens.
+      // THE LOCKED FILE EXISTS ON DISK, so only the injected check makes it unavailable: a handler that read the disk
+      // its own way, ignoring the check it is given, would report it available and fail here.
       const { here } = aFolder();
+      const locked = join(dirname(here), 'locked.pdf');
+      writeFileSync(locked, '%PDF-1.7\n');
       const { handlers, recent } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
-        fileIdentity: (path) =>
-          path === 'C:/docs/locked.pdf' ? Promise.reject(new Error('EACCES: permission denied')) : readFileIdentity(path),
+        fileIdentity: (path) => (path === locked ? Promise.reject(new Error('EACCES: permission denied')) : readFileIdentity(path)),
       });
-      recent.record({ path: 'C:/docs/locked.pdf', name: 'locked.pdf' });
+      recent.record({ path: locked, name: 'locked.pdf' });
       recent.record({ path: here, name: 'here.pdf' });
 
       expect(await availability(handlers)).toStrictEqual([

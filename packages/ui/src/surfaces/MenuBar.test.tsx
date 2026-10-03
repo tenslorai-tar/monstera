@@ -305,7 +305,14 @@ describe('MenuBar (ADR-0107)', () => {
       render(drawn([openCommand, clear(runClear)], undefined, { read: () => Promise.resolve([]), open: () => undefined }));
       popup = await openRecent();
       expect(within(popup).getByRole('menuitem', { name: 'No recent files' }).getAttribute('aria-disabled')).toBe('true');
-      expect(within(popup).getByRole('menuitem', { name: 'Clear list' }).getAttribute('aria-disabled')).toBe('true');
+      const disabled = within(popup).getByRole('menuitem', { name: 'Clear list' });
+      expect(disabled.getAttribute('aria-disabled')).toBe('true');
+      // THE DECISION, not only its look: pressed over an empty list it runs nothing.
+      await act(async () => {
+        fireEvent.click(disabled);
+        await Promise.resolve();
+      });
+      expect(runClear).toHaveBeenCalledTimes(1);
     });
 
     it('reads main’s list EACH TIME File opens, so the submenu shows the list as it is now', async () => {

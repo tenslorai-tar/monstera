@@ -2830,8 +2830,9 @@ describe('a document past 4,096 pages is extracted and split whole', () => {
 
     // AND THE WRITES ARE RECORDED, for the same reason. Each part is written durably, a `FileHandle.sync()` per file,
     // whose cost is the runner's disk: on the Windows CI image this case took 39.8 s on one run (job 111087637711,
-    // 2026-10-03) and passed 120 s on another (job 111076780068, 2026-10-02), the same code. The durable write is
-    // `atomicWrite`'s, proven in its own cases and by this file's real-disk splits; here it is the lane's file count.
+    // 2026-10-03) and ran past its 120 s limit on another (job 111076780068, 2026-10-02), the same code. The durable
+    // write is `atomicWrite`'s, proven in its own cases, and a split's parts reach a real disk in the case after this
+    // one; here it is the lane's file count.
     const files = new Map<string, Uint8Array>();
     const take = (path: string): Uint8Array => {
       const bytes = files.get(path);
@@ -2874,6 +2875,27 @@ describe('a document past 4,096 pages is extracted and split whole', () => {
     // number of files from a different list.
     expect(asked).toStrictEqual(Array.from({ length: PAGES }, (_, index) => [index]));
   }, 120_000);
+
+  it('SPLITS to a REAL DISK: each part is a file there, whole, and no temporary is left', async () => {
+    // THE CASE ABOVE RECORDS ITS WRITES, so without this one no split here reaches a disk: three parts through the
+    // production surface, read back from the folder.
+    const parts: PageSet[] = [];
+    const page = await PDFDocument.create();
+    page.addPage([100, 100]);
+    const onePage = await page.save();
+    const recording: DocumentExtractReader = (_id, _sessions, pages) => {
+      parts.push(pages);
+      return Promise.resolve(onePage);
+    };
+    const folder = mkdtempSync(join(directory, 'disk-split-'));
+    const outcome = await writingTo(join(directory, 'unused.pdf'), folder, recording).split(longDoc, { each: [[0, 2]] });
+    expect(outcome).toEqual({ kind: 'split', files: 3, destination: folder });
+    const written = readdirSync(folder);
+    expect(written.filter((name) => name.endsWith('.pdf'))).toHaveLength(3);
+    expect(written.filter((name) => name.endsWith('.monstera-tmp'))).toStrictEqual([]);
+    for (const name of written) expect((await PDFDocument.load(readFileSync(join(folder, name)))).getPageCount()).toBe(1);
+    expect(parts).toStrictEqual([[0], [1], [2]]);
+  });
 
   it('CONTROL: a run past the document is refused before anything is written', async () => {
     const file = join(mkdtempSync(join(directory, 'long-past-')), 'past.pdf');

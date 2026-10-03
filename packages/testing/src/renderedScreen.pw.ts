@@ -20,6 +20,7 @@ import { type Page, expect, test } from '@playwright/test';
 // and `LOOKS` is theirs too: §10.4's gate and §10.7's baselines check the same three themes, and
 // two lists would drift the day one gains a fourth (audit finding IIIIII-2).
 import { LOOKS, type Look, bridge, bridgeUnder } from './pageBridge.js';
+import { readsAtTextFloor } from './inkOnScreen.js';
 import { pageShown, popupPlaced, settled } from './settled.js';
 
 /**
@@ -306,7 +307,15 @@ for (const look of LOOKS) {
           name: 'notes.pdf',
           location: displayLocationSchema.parse({ within: 'onedrive', folder: null }),
           openedAt: null,
-          // UNAVAILABLE (ADR-0143), so a disabled card's contrast, name and focus are measured with the rest.
+          available: true,
+        },
+        {
+          handle: asFileHandle('handle-c'),
+          name: 'site survey.pdf',
+          location: displayLocationSchema.parse({ within: 'documents', folder: 'Surveys' }),
+          openedAt: new Date().toISOString(),
+          // UNAVAILABLE (ADR-0143). Axe does NOT measure this card's text: its colour-contrast rule skips any node under
+          // `aria-disabled="true"` (axe-core 4.13.0, `isDisabled`), so its contrast is measured below, by this case.
           available: false,
         },
       ],
@@ -318,6 +327,12 @@ for (const look of LOOKS) {
     });
 
     await expectNoSeriousViolations(page, look, 'Monstera closed unexpectedly. These documents were open:');
+
+    // THE UNAVAILABLE CARD'S WORDS READ AT THE THEME'S TEXT FLOOR, its name and its "Unavailable" line, against what
+    // is drawn behind them (`inkOnScreen.ts`): the card is translucent, so its own background colour is not that.
+    const card = page.locator('.m-recent-item[data-unavailable="true"]');
+    await expect(card).toHaveCount(1);
+    await readsAtTextFloor(page, card, look);
   });
 }
 
@@ -4009,13 +4024,18 @@ for (const look of LOOKS) {
     expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(
       'A paragraph of words set on the page\nand a second line. More',
     );
+    // IN THE LAST RUN'S OWN SPAN, read by which span holds the caret. Its colour could not say so: the last run is set
+    // as the block's base, which the editor root and each line carry too, so words typed beside the run, into the
+    // line or the root, read the same colour.
     expect(
-      await editor.evaluate(() => {
+      await editor.evaluate((root) => {
         const focus = document.getSelection()?.focusNode;
         const element = focus instanceof Element ? focus : (focus?.parentElement ?? null);
-        return element === null ? '' : getComputedStyle(element).color;
+        const run = element?.closest('.m-text-editor__run') ?? null;
+        const spans = [...root.querySelectorAll('.m-text-editor__run')];
+        return { inRun: run !== null, last: run !== null && run === spans[spans.length - 1], text: run?.textContent ?? '' };
       }),
-    ).toBe('rgb(30, 30, 30)');
+    ).toStrictEqual({ inRun: true, last: true, text: 'and a second line. More' });
 
     const results = await new AxeBuilder({ page }).analyze();
     const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));

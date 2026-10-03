@@ -4,6 +4,7 @@ import { asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
+import { readsAtTextFloor } from './inkOnScreen.js';
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
 
 /**
@@ -117,7 +118,9 @@ test('CLEAR LIST empties the one list both views show, and the submenu then says
 
 // IN EVERY THEME, the open submenu with a missing file passes the gate, and so does the start screen beside it: the
 // submenu scoped as the menu bar's own case scopes an open menu (Base UI's portal placeholder, measured there), and the
-// start screen whole, its disabled card included.
+// start screen whole. AXE DOES NOT MEASURE THE MISSING FILE'S TEXT in either: its colour-contrast rule skips any node
+// under `aria-disabled="true"` (axe-core 4.13.0, `isDisabled`). So the case measures it itself, at the theme's text
+// floor: an inactive control is exempt in WCAG, and a person still has to read which file has gone.
 for (const look of LOOKS) {
   test(`${look.name}: File › Recent and the start screen's four cards, a missing file among them, pass axe`, async ({ page }) => {
     await started(page, look);
@@ -129,10 +132,14 @@ for (const look of LOOKS) {
         blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
       ).toEqual([]);
     };
-    await expect(page.getByRole('button', { name: 'Site survey.pdf' })).toHaveAttribute('aria-disabled', 'true');
+    const card = page.getByRole('button', { name: 'Site survey.pdf' });
+    await expect(card).toHaveAttribute('aria-disabled', 'true');
     await gate(new AxeBuilder({ page }));
+    await readsAtTextFloor(page, card, look);
     const popup = await openRecentByKeyboard(page);
-    await expect(popup.getByRole('menuitem', { name: 'Site survey.pdf, unavailable' })).toBeVisible();
+    const item = popup.getByRole('menuitem', { name: 'Site survey.pdf, unavailable' });
+    await expect(item).toBeVisible();
     await gate(new AxeBuilder({ page }).include('[data-submenu-popup="recent"]'));
+    await readsAtTextFloor(page, item, look);
   });
 }

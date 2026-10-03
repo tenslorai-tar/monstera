@@ -3502,6 +3502,9 @@ describe('App', () => {
       await act(async () => {
         await Promise.resolve();
       });
+      // COUNTED BEFORE THE CLICK, so the read the refusal causes is told apart from however many the mount made.
+      const readsBefore = sent.filter((call) => call.id === 'document.recent').length;
+      expect(readsBefore).toBeGreaterThan(0);
 
       await act(async () => {
         screen.getByRole('button', { name: 'annual.pdf' }).click();
@@ -3512,7 +3515,7 @@ describe('App', () => {
         screen.getByText('That document could not be opened. It may have been moved or renamed.'),
       ).toBeDefined();
       // READ AGAIN, and the row is still there: main keeps it (ADR-0143).
-      expect(sent.filter((call) => call.id === 'document.recent').length).toBeGreaterThanOrEqual(2);
+      expect(sent.filter((call) => call.id === 'document.recent').length).toBeGreaterThan(readsBefore);
       expect(screen.getByRole('button', { name: 'annual.pdf' })).toBeDefined();
     });
 

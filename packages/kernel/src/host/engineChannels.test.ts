@@ -124,7 +124,10 @@ describe('a save of a document with more signatures than a list carries', () => 
     expect(300).toBeGreaterThan(ENGINE_SIGNATURES_MAX);
     expect(engineChannels['engine/signatures-kept'].result.safeParse({ signatures: 300, kept: false }).success).toBe(true);
     expect(channels['document.save'].result.safeParse({ kind: 'breaks-signatures', signatures: 300 }).success).toBe(true);
-    // CONTROL: the count is still a count — a fraction or a negative is refused.
-    expect(engineChannels['engine/signatures-kept'].result.safeParse({ signatures: -1, kept: false }).success).toBe(false);
+    // CONTROL: the count is still a count — a fraction or a negative is refused, on both channels.
+    for (const signatures of [-1, 2.5]) {
+      expect(engineChannels['engine/signatures-kept'].result.safeParse({ signatures, kept: false }).success).toBe(false);
+      expect(channels['document.save'].result.safeParse({ kind: 'breaks-signatures', signatures }).success).toBe(false);
+    }
   });
 });
