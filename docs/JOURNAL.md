@@ -892,6 +892,131 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-03 — Stage audit of `fcb1adac..024602b2` — findings KKKKKKK-1 to KKKKKKK-6
+
+40 commits, 198 files (`npm run audit:scope`). Written because CR-SEC-11's commit would take the range to 207 files
+and the pre-commit gate refused it; the merge procedure lists this audit after the merge and it was not run then
+(KKKKKKK-2). Labels K: J is taken by work/cloud-4's audit of `fcb1adac..54ea19e7`, which is not on main.
+
+**What this entry covers, and what it cites.** The range holds 27 commits of work/cloud-3 after `fcb1adac` and 13 of
+this branch: the installed-app check (`e8f02ab`, `dac8168`, `895d02d`, `6b7a6bd`), ADR-0138's Windows correction
+(`2ab553b`), two baseline commits (`085b8ef`, `d7d78c1`), the cloud-3 merge (`c89e726`), the start check's port file
+(`e6ebaeb`), the 0.1.10.0 record (`60c5422`), finding 1 (`ccd2b22`), and CR-SEC-14 and CR-SEC-17 (`ee430cc`,
+`024602b`). The cloud-3 part is audited in detail by work/cloud-4's JJJJJJJ entry, whose four fixes (`8c488cb`) are on
+that branch and not here; this entry re-read its proofs independently and agrees, and audits this branch's 13 itself.
+
+**Proofs modified, read for loosening** (42 files, every deleted or changed line, read by a subagent and spot-checked).
+No skip, no raised timeout, no tolerance changed. Three checks changed shape, each stated in its commit: the
+4,100-page split moved from disk to an in-memory surface (`bd23ed1`), and its message's *"this file's real-disk
+splits"* names nothing that still splits to disk — JJJJJJJ-3, closed on work/cloud-4 only; the held drag is measured
+from the press (`4c399ac`, with its control); the logo's 2x requirement moved to a case that opens a 2x context
+(`ccc11c7`, verified present). This branch's own: `backupCopies.test.ts`' exact temp name became a pattern and a
+difference between two calls, since the name is random now (CR-SEC-17); `enginePipeFactory.test.ts` gained `first`
+and `later` in its call order, and one assertion. Proofs removed: none.
+
+**KKKKKKK-1** (medium, closed in the commit after this one): `designBaselines.visual.ts` waits for a dialog's ready
+button with `.first()`, and for the dialogs ready at *Close* the first is the title bar's ×, which carries the same
+name and exists before the lazily loaded body. CI at `024602b` photographed About at 200 x 92 px against its
+626 x 394 baseline, a dialog with no body; the same case passed on `d7d78c1` and `ccd2b22`, on the branch and on main.
+The footer's button is rendered inside the body's Suspense (`DialogHost.tsx`), so it is the one that means *loaded*.
+
+**KKKKKKK-2** (low, closed by this entry): the merge procedure is *merge, typecheck and build, MSIX, then baselines,
+audit, push*, and the audit step was skipped at `c89e726` because the range was then under one batch. The gate is
+what made it owed; the procedure's order was not followed. The next merge runs `audit:scope` as written.
+
+**KKKKKKK-3** (medium, closed before any commit, recorded for the readings it nearly falsified): after the overnight
+review the review worktree's container grants were revoked with `containerGrants.mjs --revoke`. That worktree's
+`.tools` was a junction to this checkout's, so the revoke removed `ALL APPLICATION PACKAGES` from this checkout's
+runtime, and every development host then died at `icu_util.cc` and poisoned every document. The first reading of it
+was a product defect in the merge. `npm run provision:grants` restored it (`icacls` read back); the worktree was later
+removed by unlinking the junction first. An instrument that runs through a junction acts on the target.
+
+**KKKKKKK-4** (low, open): `officeConversion.test.ts`' two largest cases (the staged join, and the sheet past 2,048
+conversions) timed out at 60 s and 120 s when `vitest related` ran them beside 64 other files on this 4-processor
+machine, and pass alone (23 of 23, 135 s). Their margins are load, not the code; recorded beside the owner's two
+timing-dependent tests already queued for the cloud agent.
+
+**KKKKKKK-5** (low, open, the owner's): CR-SEC-23 did not reproduce. On Windows 11 every reserved name the cloud working
+copy can be given (`CON.pdf`, `NUL.pdf`, `COM1.pdf`, `CONIN$.pdf`, …) is an ordinary file holding the written bytes;
+`safeFileName` always appends `.pdf`, so a bare device name cannot occur. The package's minimum is 10.0.17763, where
+Windows documents `CON.pdf` as the device; that is unmeasured here, and nothing was changed.
+
+**KKKKKKK-6** (low, closed before any commit): three instruments behind finding 1's figures were wrong before they were
+used, each caught by a control rather than by the answer: the first process sampler took its first reading at 11 s
+(too slow to see a 10 s window); the CPU sampler labelled the Claude desktop app's GPU and renderer as this
+application's, until processes were named by executable; and `--force-prefers-reduced-motion` never reached the page
+(`matchMedia` read false), so a run reported as *reduced motion still churns* was not that control. The commit's
+figures come from the corrected ones, and the alternated series that separates every pair.
+
+**Would CI see it (item 3), from the runs.** work/cloud-3: `35b020d` Windows unit tests (the 4,100-page split) and
+visual; `62d0238` axe gate and visual; `6c0ad1e` both legs on undeclared `var()`s and visual; `54ea19e` visual only,
+the baselines this branch then regenerated. This branch: `d7d78c1` and `ccd2b22` green on the branch and on main;
+`024602b` CI red on KKKKKKK-1 only, Guards green. Guards green throughout. KKKKKKK-2, -3 and -6 are invisible to any
+run by their nature; -1 was found by one.
+
+### 1. Root cause or workaround?
+
+`e6ebaeb`: the port file exists before it can be opened (measured: 11 to 46 refused reads, then complete, never
+after); `EBUSY` is read as *not yet*, as absence already was, and anything else still throws. `ccd2b22`: the coupling
+is removed (an indicator that runs as long as the start it waits on); why an attached debugger makes each frame cost
+a processor is Chromium's and not established, and the commit says so. `ee430cc` and `024602b` close the mechanism
+each finding names. No retry, timeout or limit was raised.
+
+### 2. Verified against the easy shape only?
+
+CR-SEC-17 was measured with hard links at the temp and at `.bak` and a junction at each; a file symbolic link was not
+(it needs a privilege this account lacks). CR-SEC-14's holder is the most permissive (any instance count, default
+security). Finding 1's figures are one 4-processor machine; the timeout needs other load, and the alternated four did
+not reproduce it, which the commit states.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Finding 1's proof is a stylesheet rule, not the live timeout, because the timeout depends on the machine's load; the
+live series is the evidence and is recorded, not a CI case.
+
+### 3. Would CI have caught it?
+
+Answered above from the runs.
+
+### 4. Are the proofs non-vacuous?
+
+Each new case was run against the fix removed: the port-file case with the `EBUSY` branch removed, the stylesheet case
+with the rule put back, the pipe case with the flag removed, and the save cases against the previous surface (three
+red). Each failed naming what it guards.
+
+### 4a. Resolution test before measuring?
+
+The port-file probe separated *absent*, *refused* and *complete* in one run; the alternated series separated every
+pair by 3.4x or more in GPU CPU-seconds. KKKKKKK-6 is this item's finding.
+
+### 4b. A search with a positive control?
+
+`stylesheetMotion.test.ts` asserts it read all three stylesheets and found their animation declarations, and reports
+the removed rule while ignoring the same words in a comment.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+The stylesheet set is found by glob and anchored by its three names, so a stylesheet lost to the glob fails, and a new
+one fails until it is named.
+
+### 5. Executed, or asserted?
+
+Executed: every case and mutation named, the measurements above, the MSIX's start and the owner's install (rotate,
+save, reopen). Asserted: CR-SEC-23 on Windows 10 (KKKKKKK-5); main's cross-volume move with `COPYFILE_EXCL`, which no
+run here crossed volumes for.
+
+### 6. Architecture before the feature, or underneath it?
+
+No seam moved in this branch's commits. ADR-0143 and ADR-0145 precede their features in the cloud-3 part.
+
+### 7. Do the documents still match the code?
+
+`fileSurface.ts`, `atomicWrite.ts`' surface contract, `startCheck.mjs`' header and the opening state's comments were
+rewritten with their changes; no document names the temp's old fixed name (searched). JJJJJJJ-3's stale comment is
+corrected on work/cloud-4 only.
+
+---
+
 ## 2026-10-02 — Stage audit of `cc6305d3..fcb1adac` — findings IIIIIII-1 to IIIIIII-8
 
 27 commits, 200 files (`npm run audit:scope`), all work/cloud-3: C.d and D (ADR-0139, ADR-0140), E (ADR-0141), and the
