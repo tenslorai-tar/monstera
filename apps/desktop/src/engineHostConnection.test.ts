@@ -61,6 +61,7 @@ function connect(h: Harness) {
     maxOutstandingWrites: 8,
     maxInFlight: 8,
     processMemoryLimitBytes: 3_221_225_472,
+    memorySampling: { intervalMs: 100, headroomBytes: 536_870_912 },
     correlate: () => 'id-1',
     // A DEADLINE THAT NEVER FIRES: no case here is about time, and the client's own cases own the deadline.
     deadline: { ms: () => 30_000, schedule: () => () => undefined },
@@ -161,6 +162,71 @@ describe('createEngineHostConnection', () => {
     // one — sending its reader to the framing code.
     expect(h.endings.map((reason) => reason.code)).toEqual(['connection-lost']);
     expect(connection.value.ended()).toBe(true);
+  });
+
+  describe('the memory sampler (ADR-0023 §3, corrected 2026-10-03)', () => {
+    it('starts once the host exists, at the job limit less its headroom, and stops before the host is killed', async () => {
+      const h = harness();
+      const connection = await connect(h);
+      expect(connection.ok).toBe(true);
+      if (!connection.ok) return;
+
+      // 3 GiB less 512 MiB, every 100 ms, for the fake's process 4242: what `connect` was configured with.
+      const started = h.calls.find((call) => call.startsWith('sampler.start:'));
+      expect(started).toBe(`sampler.start:${String(connection.value.pid)}:${String(3_221_225_472 - 536_870_912)}:100`);
+      expectOrder(h.calls, 'host.createSuspended', started ?? '');
+
+      connection.value.close();
+      expectOrder(h.calls, 'sampler.stop', 'host.terminate');
+    });
+
+    it('names an ending the sampler caused MEMORY-BUDGET, not a host that vanished', async () => {
+      const h = harness();
+      const connection = await connect(h);
+      expect(connection.ok).toBe(true);
+      if (!connection.ok) return;
+
+      h.samplerKills();
+
+      expect(h.endings.map((reason) => reason.code)).toEqual(['memory-budget']);
+      expect(h.endings[0]?.detail).toContain(String(3_221_225_472 - 536_870_912));
+    });
+
+    it('CONTROL: the same ending with no kill recorded is still CONNECTION-LOST', async () => {
+      // The flag is what separates the two, so a connection that read nothing would report this one as above.
+      const h = harness();
+      const connection = await connect(h);
+      expect(connection.ok).toBe(true);
+      if (!connection.ok) return;
+
+      h.exit(1);
+
+      expect(h.endings.map((reason) => reason.code)).toEqual(['connection-lost']);
+    });
+
+    it('ENDS the host when the sampler cannot watch it, by name, rather than leaving it to the backstop', async () => {
+      const h = harness();
+      const connection = await connect(h);
+      expect(connection.ok).toBe(true);
+      if (!connection.ok) return;
+
+      h.samplerFails('OpenProcess refused process 4242 (GetLastError 5)');
+
+      expect(h.endings.map((reason) => reason.code)).toEqual(['sampler-failed']);
+      expect(h.endings[0]?.detail).toContain('GetLastError 5');
+      expect(h.calls).toContain('host.terminate');
+    });
+
+    it('refuses the host when the sampler thread cannot start, and the process is killed', async () => {
+      const h = harness({ sampler: true });
+      const connection = await connect(h);
+
+      expect(connection.ok).toBe(false);
+      if (connection.ok) return;
+      expect(connection.error.stage).toBe('host');
+      expect(connection.error.detail).toContain('memory sampler');
+      expect(h.calls).toContain('host.terminate');
+    });
   });
 
   it('maps a deliberate close to SHUTDOWN, and reports it rather than staying silent', async () => {

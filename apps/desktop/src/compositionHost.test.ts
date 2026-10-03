@@ -738,6 +738,8 @@ describe('the composition root, with an engine host platform', () => {
       'peer.request:engine/close',
       'reader.signal',
       'writes.abandon',
+      // THE SAMPLER BEFORE THE TERMINATE, so it never reads, or kills, a process this shell is ending on purpose.
+      'sampler.stop',
       'host.terminate',
       'host.close:process',
       'host.close:job',

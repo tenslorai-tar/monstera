@@ -76,3 +76,21 @@ export interface HostCallDeadlinePolicy {
  * open-document ceiling (1.42 GiB) it is about 2 hours, where a legitimate Word export may take about 35 minutes.
  */
 export const HOST_CALL_DEADLINE: HostCallDeadlinePolicy = { floorMs: 120_000, msPerMiB: 5_000 };
+
+/** How a host's memory is watched below the job's limit: how often, and how far below it the kill comes. */
+export interface HostMemorySampling {
+  readonly intervalMs: number;
+  readonly headroomBytes: number;
+}
+
+/**
+ * ADR-0023 §3's primary, corrected 2026-10-03: a sampler on its own thread kills a host whose private commit reaches
+ * `ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES` less this headroom, which stays the hard limit as the backstop. A kill AT
+ * the limit could never come first, since the allocation that crosses it fails inside the engine.
+ *
+ * Measured 2026-10-03 on Windows 11 (4 logical processors), a sampler on its own thread every 10 ms through opening,
+ * saving and a Word export of the 200 MiB fixtures: the largest rise in private commit was 234 MiB within 100 ms and
+ * 321 MiB within 250 ms (its longest gap between samples, under load, 533 ms). 512 MiB is 1.6 times the 250 ms rise,
+ * sampled every 100 ms.
+ */
+export const HOST_MEMORY_SAMPLING: HostMemorySampling = { intervalMs: 100, headroomBytes: 536_870_912 };

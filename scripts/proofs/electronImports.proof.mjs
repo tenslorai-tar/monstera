@@ -628,6 +628,19 @@ try {
       },
     ],
     [
+      'scripts/research/hostMemoryHost.mjs',
+      {
+        sites: 1,
+        reason:
+          'ONE helper loads five built modules through file:// URLs — the composition root, the engine ' +
+          'host platform, the harness surfaces, the budget and the fixture builder. The whole subject is ' +
+          'the SHIPPED memory sampler (CR-SEC-09): a real worker thread reading a real host’s commit and ' +
+          'killing it, which engineHostConnection.test.ts answers only against a fake sampler. It runs ' +
+          'UNDER the Electron binary in Node mode rather than starting it — its driver does that, through ' +
+          'electronBinaryPath() — and it never imports the electron package.',
+      },
+    ],
+    [
       'scripts/research/composeHostLiveHost.mjs',
       {
         sites: 1,

@@ -10,7 +10,7 @@ import {
   JOB_LIMIT_PROCESS_MEMORY,
   JOB_UI_RESTRICTIONS_ALL,
 } from '@monstera/kernel';
-import type { ReaderMessage } from '@monstera/nodemode';
+import type { ReaderMessage, SamplerMessage } from '@monstera/nodemode';
 import { ok } from '@monstera/shared';
 
 import type { PipeHandle, SecurityDescriptor } from './enginePipeFactory.js';
@@ -82,6 +82,13 @@ export interface HostHarness {
   readonly connectOnResume: () => void;
   /** Ends the reader thread, as an exit would. */
   readonly exit: (code: number) => void;
+  /**
+   * The memory sampler kills the host, as the worker does: its flag set first, then the process gone — modelled as
+   * the reader ending, which is how a killed host's ending reaches the connection.
+   */
+  readonly samplerKills: () => void;
+  /** The memory sampler reports that it could not watch the host. */
+  readonly samplerFails: (detail: string) => void;
 }
 
 /**
@@ -129,6 +136,8 @@ export function hostHarness(
      * comes back.
      */
     said?: string;
+    /** The memory sampler's thread cannot be started. */
+    sampler?: boolean;
   } = {},
 ): HostHarness {
   const decoder = new FrameDecoder(ENGINE_HOST_FRAME_MAX_BYTES);
@@ -164,8 +173,20 @@ export function hostHarness(
     onError: () => undefined,
     onExit: (sink) => sinks.exit.push(sink),
   };
+  const sampler: { killed: boolean; sinks: ((message: SamplerMessage) => void)[] } = { killed: false, sinks: [] };
 
   const surfaces: EngineHostConnectionSurfaces = {
+    sampler: {
+      start: (pid, killAtBytes, intervalMs) => {
+        calls.push(`sampler.start:${String(pid)}:${String(killAtBytes)}:${String(intervalMs)}`);
+        if (failures.sampler === true) return null;
+        return {
+          killed: () => sampler.killed,
+          onMessage: (sink) => sampler.sinks.push(sink),
+          stop: () => calls.push('sampler.stop'),
+        };
+      },
+    },
     pipes: {
       describe: () => {
         calls.push('pipe.describe');
@@ -352,6 +373,13 @@ export function hostHarness(
     },
     connectOnResume: () => {
       eager = true;
+    },
+    samplerKills: () => {
+      sampler.killed = true;
+      for (const sink of sinks.message) sink({ kind: 'ended', detail: 'the pipe broke: the host is gone' });
+    },
+    samplerFails: (detail) => {
+      for (const sink of sampler.sinks) sink({ kind: 'failed', detail });
     },
   };
 }

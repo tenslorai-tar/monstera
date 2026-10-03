@@ -139,6 +139,16 @@ export interface HostTermination {
      * a violation: nothing the host sent was wrong, it sent nothing.
      */
     | 'deadline'
+    /**
+     * MAIN: the host's private commit reached the budget less its headroom, and the memory sampler killed it — §3's
+     * designed kill-and-restart, before the job's limit fails an allocation inside the engine. A death.
+     */
+    | 'memory-budget'
+    /**
+     * MAIN: the memory sampler could not watch this host, so it was ended rather than left to run with only the
+     * backstop. A death, and a defect to report: the sampler opens a process main itself created.
+     */
+    | 'sampler-failed'
     /** The LOOP: a declared result cannot be sent within the frame maximum. */
     | 'unsendable-response'
     /**

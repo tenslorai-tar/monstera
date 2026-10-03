@@ -371,7 +371,7 @@ async function measureHost() {
   // THROUGH THE OWNER (B3a). This was one of three private copies of the same
   // rule, none of which carried the exclusions `buildFreshness.mjs` had already
   // measured into it — a directory walk, tests skipped, an empty walk refused.
-  refuseStaleBuild(ROOT, ROLE_MUPDF_HOST, 2);
+  refuseStaleBuild(ROOT, ROLE_MUPDF_HOST, 4);
 
   // NOT ANNOTATED, deliberately. A dynamic import of a computed path is `any`,
   // which is what lets these modules be reached by property name; annotating the
@@ -387,6 +387,7 @@ async function measureHost() {
 
   const pipes = await built('apps/desktop/dist/win32PipeSurface.js');
   const readerSurface = await built('apps/desktop/dist/readerHostSurface.js');
+  const samplerSurface = await built('apps/desktop/dist/memorySamplerSurface.js');
   const hostSurface = await built('apps/desktop/dist/win32HostSurface.js');
   const directorySurface = await built('apps/desktop/dist/win32DirectorySurface.js');
   const sessionDirectories = await built('apps/desktop/dist/sessionDirectories.js');
@@ -448,6 +449,8 @@ async function measureHost() {
     {
       pipes: pipes.createWin32PipeSurface(),
       reader: readerSurface.createReaderHostSurface(),
+      // THE SHIPPED SAMPLER, so the host measured is watched as the shell's is (ADR-0023 §3, corrected 2026-10-03).
+      sampler: samplerSurface.createMemorySamplerSurface(),
       writesFor: pipes.createWin32WriteSurface,
       /** @param {string} pipeName */
       hostFor: (pipeName) =>
@@ -479,6 +482,7 @@ async function measureHost() {
       maxOutstandingWrites: 16,
       maxInFlight: contract.ENGINE_HOST_MAX_IN_FLIGHT,
       processMemoryLimitBytes: budget.ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
+      memorySampling: budget.HOST_MEMORY_SAMPLING,
       correlate: () => `role-${String(calls++)}`,
       // THE SHELL'S DEADLINE POLICY with this one document open (ADR-0023 §3, corrected 2026-10-03), so a measured
       // call that ran past it is one the shipped host would not be allowed to finish either.

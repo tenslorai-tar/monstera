@@ -18,6 +18,7 @@ import {
   hostCommandArguments,
 } from './engineHostPrograms.js';
 import { type PackageDataLock, gatePackageData } from './packageDataLock.js';
+import { createMemorySamplerSurface } from './memorySamplerSurface.js';
 import { createReaderHostSurface } from './readerHostSurface.js';
 import {
   type SessionDirectoryName,
@@ -218,6 +219,7 @@ export function createEngineHostPlatform(sessionRoot: string, packageData: Packa
     surfaces: {
       pipes,
       reader: createReaderHostSurface(),
+      sampler: createMemorySamplerSurface(),
       writesFor: createWin32WriteSurface,
       hostFor: (pipeName) =>
         createWin32HostSurface({

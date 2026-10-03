@@ -1281,6 +1281,13 @@ jobs:
       - name: A host call past its deadline ends a frozen host, and the document comes back
         run: node scripts/ci/annotate.mjs scripts/research/hostDeadline.mjs --require-containment
 
+      # AND A HOST WHOSE COMMIT PASSES ITS THRESHOLD IS ENDED BY THE MEMORY SAMPLER (CR-SEC-09; ADR-0023 §3,
+      # corrected 2026-10-03): with the threshold at 320 MiB, a save that raises a real host's commit to
+      # ~388 MiB is killed, logged as memory-budget, and the document comes back; the control, the shell's
+      # own threshold, completes the same save.
+      - name: A host past its memory threshold is ended by the sampler, and the document comes back
+        run: node scripts/ci/annotate.mjs scripts/research/hostMemory.mjs --require-containment
+
       # THE COMPOSE HOST, RUN FOR REAL. `compositionHost.test.ts` drives both import
       # channels through a fake platform, so a third host created in its own
       # AppContainer and composing through its pipe was asserted and executed nowhere

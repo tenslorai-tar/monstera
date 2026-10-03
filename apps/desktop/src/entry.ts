@@ -12,7 +12,7 @@ import {
 import { sweepCheckpointDirectories } from '@monstera/kernel';
 import { BrowserWindow, app, clipboard, crashReporter, nativeImage, safeStorage, shell } from 'electron';
 
-import { HOST_CALL_DEADLINE } from './budget.js';
+import { HOST_CALL_DEADLINE, HOST_MEMORY_SAMPLING } from './budget.js';
 import { createShellDependencies } from './composition.js';
 import { setNativeSource } from './nativeComponents.js';
 import {
@@ -499,6 +499,8 @@ startShell(() => {
     enginePlatform,
     // HOW LONG A HOST CALL MAY GO UNANSWERED before the host is killed and rebuilt (ADR-0023 §3, corrected 2026-10-03).
     hostCallDeadline: HOST_CALL_DEADLINE,
+    // AND HOW EACH HOST'S MEMORY IS WATCHED below the job's limit (the same correction).
+    hostMemorySampling: HOST_MEMORY_SAMPLING,
     // THE SECOND ENGINE'S PLATFORM, and `null` on three separate roads: no
     // Win32 surfaces at all, no `pdfium.dll` path supplied, or a container SID
     // that could not be derived. All three end the same way and that is

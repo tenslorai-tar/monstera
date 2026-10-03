@@ -22,6 +22,8 @@ import {
 import { type HostCreationSurface, createContainedHost } from './engineHostFactory.js';
 import { type OverlappedWriteSurface, createHostWriteQueue } from './hostWriteQueue.js';
 import { type TransportEnd, createHostTransport } from './hostTransport.js';
+import type { HostMemorySampling } from './budget.js';
+import type { MemorySampler, MemorySamplerSurface } from './memorySamplerSurface.js';
 
 /**
  * The composition point that creates a host, a pipe, a reader and a transport
@@ -98,6 +100,8 @@ export interface EngineHostConnectionSurfaces {
    * exists, and the name cannot exist before this call.
    */
   readonly hostFor: (pipeName: string) => HostCreationSurface;
+  /** The host's memory sampler, started once its process exists. `createMemorySamplerSurface()`. */
+  readonly sampler: MemorySamplerSurface;
 }
 
 export interface EngineHostConnectionOptions {
@@ -121,6 +125,11 @@ export interface EngineHostConnectionOptions {
   readonly maxInFlight: number;
   /** The job's `ProcessMemoryLimit`. `ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES`. */
   readonly processMemoryLimitBytes: number;
+  /**
+   * How the host's memory is watched below that limit (ADR-0023 §3, corrected 2026-10-03): the sampler kills it at
+   * `processMemoryLimitBytes` less `headroomBytes`, sampling every `intervalMs`. Required, as the limit is.
+   */
+  readonly memorySampling: HostMemorySampling;
   /** The correlation id source, injected so a test can make it deterministic. */
   readonly correlate: () => string;
   /**
@@ -337,7 +346,14 @@ export async function createEngineHostConnection(
      * every path, including the one where the peer arrived.
      */
     whenEnded: (() => void) | null;
-  } = { client: null, host: null, started: false, end: null, whenEnded: null };
+    /** The host's memory sampler, from the moment its process exists. */
+    sampler: MemorySampler | null;
+    /**
+     * An ending THIS module raised — the sampler could not watch the host — recorded before the transport is
+     * terminated, because a termination this side asks for otherwise reads as a deliberate close.
+     */
+    raised: HostTermination | null;
+  } = { client: null, host: null, started: false, end: null, whenEnded: null, sampler: null, raised: null };
 
   /**
    * Which termination the ending really is.
@@ -354,8 +370,18 @@ export async function createEngineHostConnection(
    * somebody would have had to have committed.
    */
   const reasonFor = (end: TransportEnd): HostTermination => {
-    const raised = state.client?.termination() ?? null;
+    const raised = state.client?.termination() ?? state.raised;
     if (raised !== null) return raised;
+    // THE SAMPLER'S KILL, read before the ending is named a lost connection: the worker sets its flag before it
+    // terminates the host, and this ending arrives only once the host is gone, so a kill is never missed here.
+    if (state.sampler?.killed() === true) {
+      return {
+        code: 'memory-budget',
+        detail:
+          `the host's private commit reached ${String(options.processMemoryLimitBytes - options.memorySampling.headroomBytes)} ` +
+          'bytes, the budget less its headroom, and the memory sampler killed it',
+      };
+    }
     return end.by === 'peer'
       ? { code: 'connection-lost', detail: end.detail }
       : { code: 'shutdown', detail: end.detail };
@@ -421,6 +447,9 @@ export async function createEngineHostConnection(
   state.host = {
     pid: host.value.pid,
     free: () => {
+      // THE SAMPLER FIRST: it holds its own handle to this process, and stopping it before the kill means it never
+      // reads a process that is being torn down.
+      state.sampler?.stop();
       // TERMINATED BEFORE ANY HANDLE IS CLOSED, which is `engineHostFactory.ts`'s
       // own rule: the job carries `KILL_ON_JOB_CLOSE`, and relying on that makes
       // the kill a side effect of tidying up rather than the thing we asked for.
@@ -433,6 +462,26 @@ export async function createEngineHostConnection(
       surface.discardDiagnostics();
     },
   };
+
+  // THE MEMORY SAMPLER, the moment the process exists (ADR-0023 §3, corrected 2026-10-03). A host it cannot watch is
+  // ended rather than left with only the backstop, by the same one teardown path, and with its own name.
+  const raise = (reason: HostTermination): void => {
+    state.raised ??= reason;
+    transport.terminate(reason);
+  };
+  const sampler = surfaces.sampler.start(
+    host.value.pid,
+    options.processMemoryLimitBytes - options.memorySampling.headroomBytes,
+    options.memorySampling.intervalMs,
+  );
+  if (sampler === null) {
+    raise({ code: 'sampler-failed', detail: 'the memory sampler thread could not be started' });
+    return err({ stage: 'host', detail: 'sampler: the memory sampler thread could not be started' });
+  }
+  state.sampler = sampler;
+  sampler.onMessage((message) => {
+    if (message.kind === 'failed') raise({ code: 'sampler-failed', detail: message.detail });
+  });
 
   // THE PEER, BEFORE THE CLIENT. Everything above built something; this waits
   // for the other end to exist. See {@link HOST_CONNECT_TIMEOUT_MS} for the

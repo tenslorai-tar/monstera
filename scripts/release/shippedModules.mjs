@@ -49,7 +49,8 @@ import { basename, dirname, join, posix, relative, resolve, sep } from 'node:pat
 /**
  * The modules the application is known to load by path — the closure's positive control. The host entries are read
  * from the built table the shell starts them from (`ENGINE_HOST_ENTRY_FILE`), so a host added there is controlled
- * here without an edit; the preload and the reader's worker are each named by one literal in the shell.
+ * here without an edit; the preload, the reader's worker and the memory sampler's worker are each named by one literal
+ * in the shell.
  *
  * @param {string} desktopDist the desktop package's built `dist/`
  * @returns {Promise<string[]>}
@@ -61,7 +62,7 @@ export async function modulesLoadedByPath(desktopDist) {
   const table = await import(`file://${resolve(programs).replaceAll('\\', '/')}`);
   const hosts = Object.values(table.ENGINE_HOST_ENTRY_FILE);
   if (hosts.length === 0) throw new Error('ENGINE_HOST_ENTRY_FILE names no host: an empty table is a broken read.');
-  return [...hosts, 'preload.cjs', 'readerWorker.js'];
+  return [...hosts, 'preload.cjs', 'readerWorker.js', 'memorySamplerWorker.js'];
 }
 
 /** A module file, by extension. */

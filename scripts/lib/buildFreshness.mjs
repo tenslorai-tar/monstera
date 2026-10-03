@@ -509,6 +509,10 @@ export const ROLE_MUPDF_HOST = [
     'apps/desktop/dist/engineHostConnection.js',
     'tsc',
   ],
+  // THE MEMORY SAMPLER the connection starts for the host (ADR-0023 §3, corrected 2026-10-03): its surface, and the
+  // worker it loads by path.
+  ['apps/desktop/src/memorySamplerSurface.ts', 'apps/desktop/dist/memorySamplerSurface.js', 'tsc'],
+  ['packages/nodemode/src/memorySamplerWorker.ts', 'packages/nodemode/dist/memorySamplerWorker.js', 'tsc'],
 ];
 
 /**
