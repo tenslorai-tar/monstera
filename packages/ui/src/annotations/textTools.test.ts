@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { ANNOTATION_TEXT_DIALOG_ID } from '../dialogs/annotationText.js';
 import { overlayTransform } from './annotationSpace.js';
 import { type AnnotationStyle, PLAIN_STYLE } from './annotationStyle.js';
-import { TEXT_BOX_TOOL_ID, textBoxTool } from './textTools.js';
+import { TYPEWRITER_DIALOG_ID } from '../dialogs/typewriter.js';
+import { TEXT_BOX_TOOL_ID, textBoxTool, typewriterTool } from './textTools.js';
 
 /**
  * The text box's controller, driven without a DOM.
@@ -164,5 +165,67 @@ describe('textBoxTool', () => {
   it('claims the id its command selects', () => {
     // A tool's id is its command's, and the two are written in different files.
     expect(textBoxTool({ ask: () => Promise.resolve(undefined), style: PLAIN_STYLE }).id).toBe(TEXT_BOX_TOOL_ID);
+  });
+});
+
+/**
+ * The typewriter PLACES ON A CLICK as well as a drag (the owner's item 1e): a click asks for the words and makes the
+ * box at the point clicked, sized for them. The text box's *does not ask at all for a drag too small to be meant*
+ * above is the control — a stray click there is still nothing.
+ */
+describe('typewriterTool', () => {
+  /** A typewriter whose dialog answers `text`, and the record of what it was asked. */
+  function typewriterAnswering(text: string): {
+    readonly tool: ReturnType<typeof typewriterTool>;
+    readonly asked: string[];
+  } {
+    const asked: string[] = [];
+    const tool = typewriterTool({
+      ask: (id) => {
+        asked.push(id);
+        return Promise.resolve({ text });
+      },
+      style: PLAIN_STYLE,
+    });
+    return { tool, asked };
+  }
+
+  /** The rectangle of the command a gesture produced. */
+  function rectOf(command: DispatchableCommand | undefined): unknown {
+    if (command?.kind !== 'addAnnotation') throw new Error('no annotation was added');
+    return command.annotation.type === 'typewriter' ? command.annotation.rect : undefined;
+  }
+
+  it('asks on a CLICK, and makes the box at the point clicked, as wide as the words and one line tall', async () => {
+    const { tool, asked } = typewriterAnswering('see figure 3');
+    // At (40, 40) on a page whose crop starts at (50, 100) and whose top is 400, at zoom 2: the click is at (70, 380)
+    // in the page's points. Twelve characters at 12 points and 0.6 em, plus 3 either side, is 92.4 points wide; one
+    // line at 1.2 spacing plus 3 above and below is 20.4 tall.
+    const command = await drag(tool,[40, 40], [41, 41]);
+    expect(asked).toStrictEqual([TYPEWRITER_DIALOG_ID]);
+    const rect = rectOf(command) as { x0: number; y0: number; x1: number; y1: number };
+    expect(rect.x0).toBeCloseTo(70, 6);
+    expect(rect.y0).toBeCloseTo(380, 6);
+    expect(rect.x1).toBeCloseTo(162.4, 6);
+    expect(rect.y1).toBeCloseTo(359.6, 6);
+  });
+
+  it('keeps a click near the right edge on the page: the words wrap, and the box is taller by the lines that makes', async () => {
+    const { tool } = typewriterAnswering('see figure 3');
+    // At x = 360 of a 400-wide viewport there are 20 points to the right: 92.4 points of words wrap onto 5 lines.
+    const rect = rectOf(await drag(tool,[360, 40], [361, 41])) as {
+      x0: number;
+      y0: number;
+      x1: number;
+      y1: number;
+    };
+    expect(rect.x1 - rect.x0).toBeCloseTo(20, 6);
+    expect(rect.y0 - rect.y1).toBeCloseTo(5 * 12 * 1.2 + 6, 6);
+  });
+
+  it('CONTROL: a DRAG still makes the dragged box, whatever the words', async () => {
+    const { tool } = typewriterAnswering('a line far longer than the box the person drew for it');
+    const rect = rectOf(await drag(tool,[20, 20], [120, 80]));
+    expect(rect).toStrictEqual({ x0: 60, y0: 390, x1: 110, y1: 360 });
   });
 });

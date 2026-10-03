@@ -1,5 +1,5 @@
 import type { AnnotationColour, DispatchableCommand } from '@monstera/contract';
-import type { PageTransform } from '@monstera/shared';
+import { type PageTransform, type ViewportPoint, viewportPoint } from '@monstera/shared';
 
 import { ANNOTATION_TEXT_DIALOG_ID } from '../dialogs/annotationText.js';
 import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
@@ -119,6 +119,7 @@ function boxTextTool(
   dialog: string,
   type: 'text-box' | 'typewriter',
   deps: TextToolDeps,
+  placesOnClick = false,
 ): UiTool {
   const drawn = (gesture: Gesture): ToolPreview | undefined => {
     const measured = box(gesture);
@@ -138,12 +139,17 @@ function boxTextTool(
       // THE SAME THRESHOLD AS THE PREVIEW, read from it rather than restated —
       // and here it also decides whether a modal opens at all, so the two
       // coming apart would be a dialog appearing for a drag that showed no box.
-      if (drawn(gesture) === undefined) return undefined;
+      // A CLICK is the typewriter's other gesture (`placesOnClick`): there it
+      // asks, and the box is made to fit the words at the point clicked.
+      const clicked = drawn(gesture) === undefined;
+      if (clicked && !placesOnClick) return undefined;
 
       // THE RECTANGLE IS BUILT BEFORE THE ASK, from the transform the overlay
       // read at pointer-up. Building it after would convert a gesture using
-      // whatever zoom the page is at when the person finishes typing.
-      const rect = draggedRect(startOf(gesture), endOf(gesture), transform);
+      // whatever zoom the page is at when the person finishes typing. A click's
+      // box needs the words, so it is built after the answer — from the same
+      // `transform`, the one read at pointer-up, which is what the rule protects.
+      const dragged = clicked ? undefined : draggedRect(startOf(gesture), endOf(gesture), transform);
 
       const answered = ANNOTATION_TEXT_RESULT.safeParse(await deps.ask(dialog, {}));
       // A DISMISSED DIALOG IS `undefined` AND SO IS A REFUSED ANSWER, which is
@@ -157,6 +163,7 @@ function boxTextTool(
       // registration defect and not a person's doing. Refusing quietly is right
       // for the same reason a dismissal is: the page is unchanged either way.
       if (!answered.success) return undefined;
+      const rect = dragged ?? clickedRect(startOf(gesture), answered.data.text, deps.style.fontSize, transform);
 
       return {
         kind: 'addAnnotation',
@@ -198,5 +205,39 @@ export function textBoxTool(deps: TextToolDeps): UiTool {
  * leave a person guessing where their words are about to go.
  */
 export function typewriterTool(deps: TextToolDeps): UiTool {
-  return boxTextTool(TYPEWRITER_TOOL_ID, TYPEWRITER_DIALOG_ID, 'typewriter', deps);
+  return boxTextTool(TYPEWRITER_TOOL_ID, TYPEWRITER_DIALOG_ID, 'typewriter', deps, true);
+}
+
+/**
+ * The widest a character of the three faces may be, as a fraction of the type size: Courier's fixed advance, 0.6 em,
+ * which is wider than Helvetica's and Times' average. A typewriter draws no border, so a box a little wide is invisible
+ * and one too narrow wraps the words — the safe side is the wide one.
+ */
+const WIDEST_ADVANCE = 0.6;
+/** The distance between lines MuPDF sets a FreeText's text at: 14.4 for 12 points, measured in its appearance stream. */
+const LINE_SPACING = 1.2;
+/** Room around the words, in points: MuPDF insets a FreeText's text by 2 and its border by half a point. */
+const INSET = 3;
+
+/**
+ * The box a typewriter's CLICK makes: starting at the point clicked, wide enough for the longest line and tall enough
+ * for every line, and no wider than the page's room to its right — a line that does not fit then wraps, and the box is
+ * taller by the lines that makes.
+ *
+ * Its far corner is found in VIEWPORT space and both corners mapped by {@link draggedRect}, as a drag's are, so a
+ * rotated or offset page is handled by the one conversion the drag uses rather than by arithmetic of its own.
+ */
+function clickedRect(
+  at: ViewportPoint,
+  text: string,
+  fontSize: number,
+  transform: PageTransform,
+): ReturnType<typeof draggedRect> {
+  const lines = text.split('\n');
+  const room = Math.max(fontSize, (transform.viewport.width - at.x) / transform.scale);
+  const widths = lines.map((line) => line.length * fontSize * WIDEST_ADVANCE + 2 * INSET);
+  const width = Math.min(room, Math.max(...widths));
+  const drawnLines = widths.reduce((count, each) => count + Math.max(1, Math.ceil(each / width)), 0);
+  const height = drawnLines * fontSize * LINE_SPACING + 2 * INSET;
+  return draggedRect(at, viewportPoint(at.x + width * transform.scale, at.y + height * transform.scale), transform);
 }
