@@ -892,6 +892,62 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-03 — Stage audit of `54ea19e7..de106c45` — findings LLLLLLL-1 to LLLLLLL-5
+
+62 commits, all work/cloud-4: the JJJJJJJ follow-ups, Group 1 (every dialog by eye, 1c to 1f), ADR-0146 and ADR-0147
+with their folds, and the first 11-HIGH items (CR-SEC-01, -02, -08, CR-DOC-05, -06). Owed because the next commit,
+CR-DOC-10's, would take the range past one batch (208 files). Labels L: K is taken on `work/2026-10-01` (read from
+each branch's JOURNAL). The 40 modified tests and the 12 rendered files were read diff by diff for removed lines; each
+was a stronger replacement or followed a deliberate change (the attempt rule, the renamed messages), with the one
+loosening recorded as LLLLLLL-5.
+
+**LLLLLLL-1** (medium, closed in `f2bfeb16`): `39118641` kept a dialog's footer in view by making it sticky inside the
+scrolling body, so the rows passed under it and had to be covered, and the dialog's ground is glass no colour can
+match: an opaque white band across about thirty dialog states at 760 x 560 in light, a lighter one in dark. Its
+evidence, the gallery's footer-in-view reading, measured position and could not see colour; the full sheets read by
+eye found it. The footer is now drawn in the popup's foot, outside the scroll, so nothing passes under it; the
+tool-window case asserts that on every window (red in 30 of 30 on the old primitive).
+
+**LLLLLLL-2** (medium, closed in `de106c45`): the audit scope's `isProof` did not match `*.pw.ts` or `*.visual.ts`,
+so this range's rendered suite, `renderedScreen.pw.ts` at +486/-38 among twelve files, sat in the source column,
+outside the instruction to read each diff for a loosened check. W-1's shape for the next test runner. Fixed with a
+control that is red on the old rule.
+
+**LLLLLLL-3** (medium, open, proposed): nothing names the rendered cases a renderer change reaches. `a2ef0bc0` folded
+the menu row and was pushed without `menus.pw.ts`, which read the row and went red on both CI legs (run
+37114204045); `vitest related` does not reach Playwright, and `affectedProofs.mjs` reaches only `scripts/` imports, by
+its own stated limit. Proposed: name the Playwright configs whose renderer bundle contains a changed module, read from
+that build's module graph, so the tests a change reaches include them. The whole rendered set costs 5.3 minutes here
+(271 cases, 2026-10-03), which is the comparison for the cost.
+
+**LLLLLLL-4** (low, open, proposed): the gallery's *warning before any step* flag counts every non-empty
+`role="status"` line, so seventeen states per look were flagged where the line informs (Insert from PDF's page range,
+Split's file count, Settings' footer, Cloud storage's *Signed in.*). Each was read by eye and is correct, which is the
+cost: a flag that is mostly right reads as noise. Proposed: the line `attempt.ts` renders after a refused attempt
+carries a mark, and the flag reads the mark rather than the role.
+
+**LLLLLLL-5** (recorded, not a defect): one loosened check. `assistantPane.pw.ts` compared the pane's width exactly and
+now within a pixel (`9625e67e`), with the mechanism measured: the splitter rounds a pane's share, and at 264 the
+rounded width read 263 for 262.
+
+**JJJJJJJ-5 recurred twice** in this range's last two commits. Staging CR-SEC-08 beside CR-DOC-10's unstaged work, the
+pre-commit hook compiled the working tree and refused a commit whose index was sound; it went through only once the
+other work was set aside (`git stash --keep-index`), the discipline that finding says is not a mechanism. Still open,
+with its proposal unchanged. **JJJJJJJ-6** is closed by `20bf7ee2` (the start footer at the window's foot, which
+paints the window's own opaque ground, so it covers without a band).
+
+**Items without a finding.** 1: each fix states its mechanism in its commit; the workaround-shaped one was LLLLLLL-1.
+2: the hard shapes were taken where the easy one would pass: Azure's sovereign and regional hosts and a look-alike
+suffix, nine password shapes, a file that grows after it is sized, a directory under an output's name. 3: every case
+added runs in CI; the gallery capture does not, by design. 4: each item's control was run against the old code, and
+each named in its commit went red. 5, asserted and not executed: Azure's 21Vianet hosts (no primary source was
+reachable, so they are not accepted), the packaged Electron 43.7.7 (the local agent's), and a bound on a host's
+announced count (none exists). 6: ADR-0146 and ADR-0147 came before their features; the footer's move is inside the
+one primitive; CR-DOC-05 conforms to invariant 19, which already named an encryption change a removal. 7: ADR-0139
+carries two additions; the sticky footer was described only in the code it lived in.
+
+---
+
 ## 2026-10-03 — Stage audit of `fcb1adac..54ea19e7` — findings JJJJJJJ-1 to JJJJJJJ-6
 
 27 commits, 127 files, all work/cloud-3: the IIIIIII follow-ups, J, K, N1 to N7 and F row 14 (ADR-0143, ADR-0145).
