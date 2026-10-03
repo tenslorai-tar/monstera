@@ -3094,6 +3094,55 @@ test('F1 opens the HELP CENTRE, Ctrl+/ the keyboard shortcuts, and the start scr
   await expect(dialog).toHaveCount(0);
 });
 
+test('KEYBOARD SHORTCUTS: the changes end under their header, each key is its own chip, and the prompt is one line', async ({ page }) => {
+  // THE GALLERY'S READING, 2026-10-03, at the minimum window: `.m-shortcuts td` outranked the actions' own class, so the
+  // buttons sat at the cell's start under a header at its end; two keys were two words a gap apart, "Ctrl+W Ctrl+F4",
+  // which reads as one chord; and the waiting prompt wrapped "cancel" onto a line of its own.
+  await page.setViewportSize({ width: 760, height: 560 });
+  await bridge(page);
+  await page.goto('/');
+  await startScreenListening(page);
+  await page.keyboard.press('Control+Slash');
+  const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+  await expect(dialog).toBeVisible();
+
+  // THE PROMPT FIRST, then a key for it: a changed row gains *Reset*, which widens the column of changes, and only then
+  // does a row with two buttons have room to sit at the start. With every row alike the column hugs them, start and end
+  // coincide, and the alignment below holds under the old rule too — measured, so the order is the control.
+  await dialog.getByRole('row').filter({ hasText: 'Open PDF…' }).getByRole('button', { name: 'Change', exact: true }).click();
+  const prompt = dialog.locator('.m-shortcuts__capture');
+  await expect(prompt).toBeFocused();
+  const lines = await prompt.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const inner = element.getBoundingClientRect().height - Number.parseFloat(style.paddingTop) - Number.parseFloat(style.paddingBottom);
+    return inner / Number.parseFloat(style.lineHeight === 'normal' ? String(Number.parseFloat(style.fontSize) * 1.2) : style.lineHeight);
+  });
+  expect(lines, 'the prompt is drawn on one line').toBeLessThan(1.5);
+  await page.keyboard.press('Control+Shift+9');
+  const openPdf = dialog.getByRole('row').filter({ hasText: 'Open PDF…' });
+  await expect(openPdf.getByRole('button', { name: 'Reset', exact: true })).toBeVisible();
+
+  const closeTab = dialog.getByRole('row').filter({ hasText: 'Close tab' });
+  const ends = await closeTab.evaluate((row) => {
+    const cell = row.querySelector<HTMLElement>('.m-shortcuts__actions');
+    const buttons = cell?.querySelectorAll('button') ?? [];
+    const last = buttons[buttons.length - 1];
+    if (cell === null || last === undefined) return null;
+    const style = getComputedStyle(cell);
+    return { content: cell.getBoundingClientRect().right - Number.parseFloat(style.paddingRight), button: last.getBoundingClientRect().right };
+  });
+  expect(ends, 'the row has an actions cell with a button').not.toBeNull();
+  expect(Math.abs((ends?.content ?? 0) - (ends?.button ?? Number.POSITIVE_INFINITY))).toBeLessThanOrEqual(1);
+
+  // A COMMAND WITH TWO KEYS, whichever it is in this build: the case is about two keys side by side, not a command.
+  const twoKeys = dialog.getByRole('row').filter({ has: page.locator('kbd + kbd') }).first();
+  const keys = twoKeys.locator('kbd');
+  expect(await keys.count(), 'some command shows two keys').toBeGreaterThanOrEqual(2);
+  for (const key of await keys.all()) {
+    expect(await key.evaluate((element) => getComputedStyle(element).borderTopStyle)).not.toBe('none');
+  }
+});
+
 test('a START SCREEN SHORTCUT opens a document and lands on its feature’s section', async ({ page }) => {
   // §10.3: six feature shortcuts, "each a real entry point" — BUILD-PROMPT :1106, "opens a file then routes to that
   // feature". Encrypt & sign is the separating tile: Protect is neither the fallback section nor the first.

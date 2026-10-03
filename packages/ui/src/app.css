@@ -775,18 +775,25 @@ optgroup {
 }
 
 /* THE CHANGES AT THE ROW'S END, where a dialog row keeps its control, on one line: the column takes the least width
-   that holds them, and the command's name and keys wrap first. */
+   that holds them, and the command's name and keys wrap first. Scoped under the table, because `.m-shortcuts td`
+   above outranks a bare class: the buttons sat at the cell's start while the header, matched more strongly, sat at
+   its end (the gallery's reading, 2026-10-03). */
 .m-shortcuts thead th:last-child,
-.m-shortcuts__actions {
+.m-shortcuts .m-shortcuts__actions {
   text-align: end;
 }
 
-.m-shortcuts__actions {
+.m-shortcuts .m-shortcuts__actions {
   inline-size: 1%;
   white-space: nowrap;
 }
 
+/* EACH KEY ITS OWN CHIP: a command with two shortcuts drew them as plain words a gap apart, and "Ctrl+W Ctrl+F4" read
+   as one chord to press in turn (the gallery's reading, 2026-10-03). */
 .m-shortcuts kbd {
+  padding: var(--space-2) var(--space-6);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
   font-family: inherit;
   font-variant-numeric: tabular-nums;
 }
@@ -824,6 +831,9 @@ optgroup {
   background: var(--surface);
   color: var(--text);
   font: inherit;
+  /* ONE LINE, so the table gives its column the prompt's width: wrapping, it took the column's share and broke
+     "cancel" onto a line of its own (the gallery's reading, 2026-10-03). The names and the keys wrap instead. */
+  white-space: nowrap;
 }
 
 .m-shortcuts__capture:focus-visible {
