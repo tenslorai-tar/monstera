@@ -2,7 +2,7 @@ import { useLingui } from '@lingui/react';
 import { Dialog as BaseDialog } from '@base-ui/react/dialog';
 import type { MessageKey } from '@monstera/shared';
 import { X } from 'lucide-react';
-import { type ReactElement, type ReactNode, type RefObject, useId, useRef } from 'react';
+import { type ReactElement, type ReactNode, type RefObject, useId, useLayoutEffect, useRef } from 'react';
 
 import { CLOSE_LABEL, DIALOG_CANCEL, DIALOG_OK } from '../messages/en.js';
 import { Button } from './Button.js';
@@ -104,11 +104,31 @@ export function Dialog({
   // `IconButton` to accept one, which is the prop type this commit removes.
   const { _ } = useLingui();
   const popup = useRef<HTMLDivElement>(null);
+  // WHETHER A PRESS HAS BEGUN SINCE THE DIALOG OPENED, from a capturing listener attached in the commit that opens
+  // it — before any later input event can be dispatched. `onOpenChange` below reads it.
+  const pressedWhileOpen = useRef(false);
+  useLayoutEffect(() => {
+    pressedWhileOpen.current = false;
+    if (!open) return undefined;
+    const pressed = (): void => {
+      pressedWhileOpen.current = true;
+    };
+    document.addEventListener('pointerdown', pressed, true);
+    return (): void => {
+      document.removeEventListener('pointerdown', pressed, true);
+    };
+  }, [open]);
 
   return (
     <BaseDialog.Root
       modal
-      onOpenChange={(next): void => {
+      onOpenChange={(next, details): void => {
+        // AN OUTSIDE PRESS COUNTS ONLY IF IT BEGAN WHILE THIS DIALOG WAS OPEN. Base UI's `intentional` dismissal closes
+        // on any outside `click` whose press did not start inside the popup, and never asks whether the press began
+        // before the dialog existed — so a dialog opened on a pointer-up (a drawn text box, a typewriter's click) was
+        // closed by the `click` that ends that same press whenever Base UI's listener was attached before the browser
+        // dispatched it (measured 2026-10-03: reason `outside-press`, event `click`, 1 ms after the `mouseup`).
+        if (!next && details.reason === 'outside-press' && !pressedWhileOpen.current) return;
         onOpenChange(next);
       }}
       open={open}

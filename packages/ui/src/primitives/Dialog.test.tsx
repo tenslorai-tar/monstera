@@ -79,6 +79,32 @@ describe('Dialog', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it('is NOT closed by the click that ends a press begun before it opened, and IS by a press begun after', async () => {
+    // A dialog opened on a pointer-up — a drawn text box — was closed by the `click` that ends that same press:
+    // Base UI's `intentional` dismissal asks only whether the press started inside the popup (measured 2026-10-03,
+    // reason `outside-press` on a `click` 1 ms after the `mouseup`).
+    const onOpenChange = vi.fn();
+    render(<Harness onOpenChange={onOpenChange} />);
+    await screen.findByRole('dialog', { name: 'Rename document' });
+    const outside = document.body;
+    outside.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }));
+    outside.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0 }));
+    await new Promise((settle) => setTimeout(settle, 0));
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+
+    // CONTROL: a whole press outside, begun while the dialog is open, still closes it.
+    for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+      outside.dispatchEvent(
+        type.startsWith('pointer')
+          ? new PointerEvent(type, { bubbles: true, button: 0, pointerType: 'mouse' })
+          : new MouseEvent(type, { bubbles: true, button: 0 }),
+      );
+    }
+    await waitFor(() => {
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+  });
+
   it('asks to close on Escape', () => {
     const onOpenChange = vi.fn();
     render(<Harness onOpenChange={onOpenChange} />);
