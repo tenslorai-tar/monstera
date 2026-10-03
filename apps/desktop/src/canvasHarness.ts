@@ -138,6 +138,19 @@ export interface CanvasReadback {
   readonly elapsedMs: number;
   /** Every page canvas as the wait settled — see {@link PAGE_CANVASES}. */
   readonly pageCanvases: readonly PageCanvasState[];
+  /** The wait's own reading split three ways — see {@link TALLY_PIXELS}. `null` with no canvas or no context. */
+  readonly tally: PixelTally | null;
+  /**
+   * The counter on a canvas of the page's size that this renderer FILLED and then copied, the way `renderPage`
+   * presents a drawing: filled on a scratch canvas, then `drawImage` onto the measured one. It must equal `pixels`.
+   *
+   * The blank control proves the counter can say zero; this proves the renderer's 2D canvas can hold ink and give
+   * it back, so a zero on the page is about the page. Without it, a canvas whose copy or readback holds nothing in
+   * one environment reads exactly like a renderer that drew nothing (ubuntu, d6228f28, 2026-10-03).
+   */
+  readonly ink: number;
+  /** What the run's environment did around the draw, so a failure here can be attributed. */
+  readonly environment: EnvironmentReadback;
   /**
    * The same reading taken again after the shipped zoom control was clicked.
    *
@@ -158,6 +171,29 @@ export interface CanvasReadback {
    * applied with what the bar computed, in one run, rather than trusting either half.
    */
   readonly overlay: OverlayReadback;
+}
+
+/** A canvas's pixels counted three ways, in one reading. */
+export interface PixelTally {
+  readonly transparent: number;
+  readonly white: number;
+  readonly painted: number;
+}
+
+/**
+ * The renderer's surroundings during the run, reported rather than inferred.
+ *
+ * `processesGone` is every `child-process-gone` the app announced, the GPU process's among them, and
+ * `renderProcessGone` the window's own; a 2D canvas whose GPU process died loses what it held. `gpu` is Chromium's
+ * own account of which paths are accelerated, read at the end. `console` is the renderer's warnings and errors, so
+ * a PDF.js warning about an image it skipped is in the report rather than on a channel nothing reads.
+ */
+export interface EnvironmentReadback {
+  readonly visibility: string;
+  readonly processesGone: readonly { readonly type: string; readonly reason: string; readonly exitCode: number }[];
+  readonly renderProcessGone: readonly string[];
+  readonly gpu: { readonly canvas2d: string; readonly gpuCompositing: string; readonly rasterization: string };
+  readonly console: readonly string[];
 }
 
 /** Each channel's lowest and highest value over a captured rectangle, and how many pixels were read. */
@@ -210,6 +246,8 @@ export interface ZoomedReadback {
   readonly width: number;
   readonly height: number;
   readonly painted: number;
+  /** The zoom wait's reading split three ways, as {@link CanvasReadback.tally}. */
+  readonly tally: PixelTally | null;
   /**
    * The window's device-pixel ratio, so the expected size is readable.
    *
@@ -248,20 +286,40 @@ export interface ZoomedReadback {
  * counters would let the control pass for a reason the measurement does not
  * share, which is the shape where a control certifies its own implementation
  * rather than the instrument.
+ *
+ * ## The two exclusions are COUNTED, not only skipped
+ *
+ * A page canvas at its page's size carrying no ink is two different failures: white is PDF.js having drawn the
+ * page's ground and not what is on it, and transparent is a copy or a readback holding nothing at all. The count
+ * alone reads zero for both (ubuntu, d6228f28, 2026-10-03), so {@link TALLY_PIXELS} keeps the three apart and the
+ * count is its third.
  */
-const COUNT_PAINTED = `(canvas) => {
-  if (canvas === null || canvas === undefined) return -1;
+const TALLY_PIXELS = `(canvas) => {
+  if (canvas === null || canvas === undefined) return null;
   const context = canvas.getContext('2d');
-  if (context === null) return -1;
+  if (context === null) return null;
   const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  let transparent = 0;
+  let white = 0;
   let painted = 0;
   for (let at = 0; at < data.length; at += 4) {
     const alpha = data[at + 3];
-    if (alpha === 0) continue;
-    if (data[at] === 255 && data[at + 1] === 255 && data[at + 2] === 255 && alpha === 255) continue;
+    if (alpha === 0) {
+      transparent += 1;
+      continue;
+    }
+    if (data[at] === 255 && data[at + 1] === 255 && data[at + 2] === 255 && alpha === 255) {
+      white += 1;
+      continue;
+    }
     painted += 1;
   }
-  return painted;
+  return { transparent, white, painted };
+}`;
+
+const COUNT_PAINTED = `(canvas) => {
+  const tally = (${TALLY_PIXELS})(canvas);
+  return tally === null ? -1 : tally.painted;
 }`;
 
 /**
@@ -430,6 +488,7 @@ function isCanvasState(value: unknown): value is {
   height: number;
   failed: boolean;
   painted: number;
+  tally: PixelTally | null;
 } {
   if (typeof value !== 'object' || value === null) return false;
   const candidate = value as Record<string, unknown>;
@@ -438,6 +497,17 @@ function isCanvasState(value: unknown): value is {
     typeof candidate['width'] === 'number' &&
     typeof candidate['height'] === 'number' &&
     typeof candidate['failed'] === 'boolean' &&
+    typeof candidate['painted'] === 'number' &&
+    (candidate['tally'] === null || isPixelTally(candidate['tally']))
+  );
+}
+
+function isPixelTally(value: unknown): value is PixelTally {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate['transparent'] === 'number' &&
+    typeof candidate['white'] === 'number' &&
     typeof candidate['painted'] === 'number'
   );
 }
@@ -548,6 +618,8 @@ async function waitForCanvas(
   failed: boolean;
   /** Counted in the same reading as the size, so the two describe one canvas at one moment. */
   painted: number;
+  /** That reading's whole tally, `null` with no canvas or no context. */
+  tally: PixelTally | null;
   elapsedMs: number;
 }> {
   const startedAt = process.hrtime.bigint();
@@ -564,28 +636,30 @@ async function waitForCanvas(
       contents,
       `(() => {
          const canvas = document.querySelector('canvas.m-page');
+         const tally = (${TALLY_PIXELS})(canvas);
          return {
            present: canvas !== null,
            width: canvas === null ? 0 : canvas.width,
            height: canvas === null ? 0 : canvas.height,
            failed: canvas !== null && canvas.dataset.failed === 'true',
-           painted: (${COUNT_PAINTED})(canvas),
+           painted: tally === null ? -1 : tally.painted,
+           tally,
          };
        })()`,
       isCanvasState,
       'canvas state',
     );
+    const reading = (settledBy: CanvasReadback['settledBy']) => ({
+      settledBy,
+      width: state.width,
+      height: state.height,
+      failed: state.failed,
+      painted: state.painted,
+      tally: state.tally,
+      elapsedMs: elapsed(),
+    });
 
-    if (state.failed) {
-      return {
-        settledBy: 'failed',
-        width: state.width,
-        height: state.height,
-        failed: true,
-        painted: state.painted,
-        elapsedMs: elapsed(),
-      };
-    }
+    if (state.failed) return reading('failed');
     // POLLED ON THE PIXELS, not on the canvas's dimensions. A sized canvas says
     // nothing about whether a draw finished, and the size it is sized to is a
     // property of the document, so "it is no longer the element default" is not
@@ -594,26 +668,8 @@ async function waitForCanvas(
     // of not having done it — including no canvas at all, the path an Open control that
     // dispatches into the void leaves (measured 2026-08-29: a probe that threw
     // there reported "the harness broke" for the defect it exists to find).
-    if (state.present && state.width !== notWidth && state.painted > 0) {
-      return {
-        settledBy: 'drawn',
-        width: state.width,
-        height: state.height,
-        failed: false,
-        painted: state.painted,
-        elapsedMs: elapsed(),
-      };
-    }
-    if (elapsed() >= DRAW_BOUND_MS) {
-      return {
-        settledBy: 'bound',
-        width: state.width,
-        height: state.height,
-        failed: state.failed,
-        painted: state.painted,
-        elapsedMs: elapsed(),
-      };
-    }
+    if (state.present && state.width !== notWidth && state.painted > 0) return reading('drawn');
+    if (elapsed() >= DRAW_BOUND_MS) return reading('bound');
     await settle(POLL_MS);
   }
 }
@@ -674,6 +730,7 @@ async function readZoomed(
     width: settled.width,
     height: settled.height,
     painted: settled.painted,
+    tally: settled.tally,
     devicePixelRatio: ratio,
   };
 }
@@ -690,6 +747,12 @@ export async function reportCanvasPixels(
   zoomControlName: string,
   pixelPath?: string,
 ): Promise<void> {
+  // SUBSCRIBED BEFORE READY, because the GPU process starts with the app and a death there is the first thing a
+  // blank canvas would want to be asked about.
+  const processesGone: { type: string; reason: string; exitCode: number }[] = [];
+  app.on('child-process-gone', (_event, details) => {
+    processesGone.push({ type: details.type, reason: details.reason, exitCode: details.exitCode });
+  });
   await app.whenReady();
 
   // THE SHIPPED THREE CALLS, in the shipped order. `main.ts` creates the window
@@ -735,6 +798,18 @@ export async function reportCanvasPixels(
   registerContractHandlers(ipcMain, deps.handlers, deps.incidents, senderCheckFor(window));
 
   const contents = window.webContents;
+  const renderProcessGone: string[] = [];
+  contents.on('render-process-gone', (_event, details) => {
+    renderProcessGone.push(`${details.reason} (exit ${String(details.exitCode)})`);
+  });
+  // THE FIRST TWENTY warnings and errors, each cut to a line: enough to name a skipped image or a lost context, and
+  // bounded so a renderer logging in a loop cannot make the one marker line unreadable.
+  const consoleLines: string[] = [];
+  contents.on('console-message', (event) => {
+    if ((event.level === 'warning' || event.level === 'error') && consoleLines.length < 20) {
+      consoleLines.push(`${event.level}: ${event.message}`.slice(0, 300));
+    }
+  });
   await new Promise<void>((resolve) => {
     contents.once('did-finish-load', () => {
       resolve();
@@ -782,6 +857,32 @@ export async function reportCanvasPixels(
     'blank control',
   );
 
+  // THE OTHER DIRECTION, through `present()`'s own path: filled on a canvas nobody sees, then copied onto the one that
+  // is counted. Not white and not transparent, so every pixel of it is ink only a canvas that holds pixels gives back.
+  const ink = await evaluate(
+    contents,
+    `(() => {
+       const source = document.querySelector('canvas.m-page');
+       if (source === null) return -1;
+       const scratch = document.createElement('canvas');
+       scratch.width = source.width;
+       scratch.height = source.height;
+       const drawing = scratch.getContext('2d');
+       if (drawing === null) return -1;
+       drawing.fillStyle = '#3366cc';
+       drawing.fillRect(0, 0, scratch.width, scratch.height);
+       const control = document.createElement('canvas');
+       control.width = source.width;
+       control.height = source.height;
+       const context = control.getContext('2d');
+       if (context === null) return -1;
+       context.drawImage(scratch, 0, 0);
+       return (${COUNT_PAINTED})(control);
+     })()`,
+    (value): value is number => typeof value === 'number',
+    'ink control',
+  );
+
   const zoomed = await readZoomed(contents, zoomControlName, settled.width);
   const pixelsTo = pixelPath === undefined ? null : await writePixels(contents, pixelPath);
 
@@ -814,7 +915,28 @@ export async function reportCanvasPixels(
     height: Math.floor(overlayPage.barHeight ?? 0),
   });
 
+  const visibility = await evaluate(
+    contents,
+    'document.visibilityState',
+    (value): value is string => typeof value === 'string',
+    'visibility',
+  );
+  const gpuStatus = app.getGPUFeatureStatus();
+
   const readback: CanvasReadback = {
+    tally: settled.tally,
+    ink,
+    environment: {
+      visibility,
+      processesGone,
+      renderProcessGone,
+      gpu: {
+        canvas2d: gpuStatus['2d_canvas'],
+        gpuCompositing: gpuStatus.gpu_compositing,
+        rasterization: gpuStatus.rasterization,
+      },
+      console: consoleLines,
+    },
     dispatched,
     zoomed,
     overlay: { ...overlayPage, groundBeneathControls, painted: overlaysPainted },

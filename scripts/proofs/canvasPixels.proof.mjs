@@ -177,6 +177,7 @@ const RUNTIME_CASES = [
   "the canvas is sized to the PAGE'S OWN box, which is renderPage reading a viewport",
   'the canvas CARRIES A DRAWN PAGE, which is what shows-page-1 means',
   'CONTROL: the same counter reports ZERO for a blank canvas of the same size',
+  'CONTROL: a canvas this renderer FILLS and copies, as renderPage presents, is counted WHOLE',
   'the shipped zoom-in control was found and clicked, so the zoom reading means something',
   'the canvas is EXACTLY the page at the zoom, which is the rasteriser honouring the scale',
   'the zoomed canvas CARRIES A DRAWN PAGE, so the bigger bitmap is not a stretched empty one',
@@ -210,6 +211,31 @@ function withinSpan(hex, span) {
     const value = Number.parseInt(pair ?? '', 16);
     return value >= (span.low[channel] ?? 256) && value <= (span.high[channel] ?? -1);
   });
+}
+
+/**
+ * What a canvas reading held and what the run's surroundings did, for a failure message.
+ *
+ * A page canvas at its page's size with no ink has drawn and presented, because `renderPage` sizes it only in the
+ * step that copies a finished drawing onto it. So the question a failure leaves is which of two things the copy
+ * held, and the tally answers it: WHITE is PDF.js having drawn the page's ground and not what is on it; TRANSPARENT
+ * is a copy or a readback holding nothing, which the ink control then says of this renderer's canvas in general.
+ *
+ * @param {{ transparent: number, white: number, painted: number } | null} tally
+ * @param {ReturnType<typeof readback>['environment']} environment
+ */
+function describeRun(tally, environment) {
+  const counted =
+    tally === null
+      ? 'no canvas or no 2d context to tally'
+      : `${String(tally.transparent)} transparent, ${String(tally.white)} white, ${String(tally.painted)} inked`;
+  return (
+    `tally: ${counted}.\n      ` +
+    `renderer: visibility ${environment.visibility}; 2d_canvas ${environment.gpu.canvas2d}, gpu_compositing ` +
+    `${environment.gpu.gpuCompositing}, rasterization ${environment.gpu.rasterization}; processes gone ` +
+    `${JSON.stringify(environment.processesGone)}; render process gone ${JSON.stringify(environment.renderProcessGone)}.` +
+    `\n      renderer warnings and errors: ${JSON.stringify(environment.console)}.`
+  );
 }
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
@@ -336,13 +362,16 @@ try {
         `output.\n      ` +
         `\`settledBy\` says which failure it is: "failed" means \`PageCanvas\` set ` +
         `\`data-failed\`, so the parse threw and the defect is in the channel or the transport, ` +
-        `not in drawing; "bound" means the canvas never acquired a pixel within the harness's ` +
-        `liveness bound, which on Linux without a display is what a working renderer also ` +
-        `produces.\n      ` +
+        `not in drawing; "bound" means no ink arrived within the harness's liveness bound. A ` +
+        `"bound" canvas still at 300x150 never presented a drawing; one at the page's size did, ` +
+        `and the tally says what the drawing held.\n      ` +
         // EVERY PAGE CANVAS AT THE END OF THE WAIT, because a "bound" with no failure is otherwise silent about
         // which page was missing and whether any canvas existed at all (ubuntu, bf17dfc2, 2026-10-01: 0 pixels
-        // after 60 s, renderFailed false, and nothing to say why).
-        `page canvases ${JSON.stringify(seen.pageCanvases)}.`,
+        // after 60 s, renderFailed false, and nothing to say why). THE TALLY AND THE RENDERER'S SURROUNDINGS since
+        // the second (ubuntu, d6228f28, 2026-10-03): the page canvas was at 595x842, so it had presented, and a
+        // count of zero could not say whether what it presented was white or empty.
+        `page canvases ${JSON.stringify(seen.pageCanvases)}.\n      ` +
+        describeRun(seen.tally, seen.environment),
     );
 
     check(
@@ -358,6 +387,18 @@ try {
         `produces.\n      ` +
         `-1 means the control canvas had no 2d context, or the page canvas was gone when the ` +
         `control was built; either is a broken probe rather than a failing measurement.`,
+    );
+
+    check(
+      'CONTROL: a canvas this renderer FILLS and copies, as renderPage presents, is counted WHOLE',
+      seen.ink === seen.pixels,
+      `the counter reported ${String(seen.ink)} inked pixel(s) of ${String(seen.pixels)} for a canvas filled ` +
+        `#3366cc on a scratch canvas and copied onto it with drawImage.\n      ` +
+        `THE BLANK CONTROL'S OTHER HALF. That one proves the counter can say zero; this one proves this ` +
+        `renderer's 2D canvas holds ink and gives it back, through the copy renderPage presents with. Red here ` +
+        `and on the page means this renderer's canvas held nothing in this run, so the page's zero is not about ` +
+        `the page; green here and red on the page means the page is what drew nothing.\n      ` +
+        describeRun(seen.tally, seen.environment),
     );
 
     // -------------------------------------------------------------------------
@@ -411,7 +452,8 @@ try {
         `THE SIZE CASE ALONE WOULD PASS FOR A RESIZED, BLANK CANVAS. Setting a canvas's width ` +
         `clears it, so a renderer that sized the backing store and then failed to draw ` +
         `produces exactly the dimensions asserted above — which is the display-only defect ` +
-        `arriving inside the mechanism that measures it.`,
+        `arriving inside the mechanism that measures it.\n      ` +
+        describeRun(zoomed.tally, seen.environment),
     );
 
     // §10.3's WINDOW CONTROLS OVERLAY, on the window this harness created the shipped way — the attach included.

@@ -111,12 +111,22 @@ export function controlName(key) {
  *   renderFailed: boolean,
  *   elapsedMs: number,
  *   pageCanvases: Array<{ page: string | null, width: number, height: number, failed: boolean, reason: string | null }>,
+ *   tally: { transparent: number, white: number, painted: number } | null,
+ *   ink: number,
+ *   environment: {
+ *     visibility: string,
+ *     processesGone: Array<{ type: string, reason: string, exitCode: number }>,
+ *     renderProcessGone: string[],
+ *     gpu: { canvas2d: string, gpuCompositing: string, rasterization: string },
+ *     console: string[],
+ *   },
  *   zoomed: {
  *     clicks: number,
  *     settledBy: 'resized' | 'bound',
  *     width: number,
  *     height: number,
  *     painted: number,
+ *     tally: { transparent: number, white: number, painted: number } | null,
  *     devicePixelRatio: number,
  *   },
  *   overlay: {
