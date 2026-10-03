@@ -512,6 +512,8 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'opened', props: { code: 'document-busy' } },
     // An internal failure adds the reference a person quotes when reporting it.
     { state: 'internal', props: { code: 'internal', incident: 'inc-20261001-0930-4f2a9c' } },
+    // A COPY MADE FOR AN EDIT OF A SIGNED DOCUMENT and not opened: the longest sentence this dialog carries.
+    { state: 'copy-at-capacity', props: { code: 'copy-at-capacity' } },
   ],
   'dialog.history-trimmed': [{ state: 'opened', props: { dropped: 25 } }],
   'dialog.delete-pages': [
@@ -536,6 +538,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     },
   ],
   'dialog.signature-break': [{ state: 'opened', props: { signatures: 2 } }],
+  'dialog.signed-edit': [{ state: 'opened', props: {} }],
   'dialog.pending-redactions': [{ state: 'opened', props: { count: 3, occasion: 'save' } }],
   'dialog.kept-backups': [
     { state: 'opened', props: { kept: ['Quarterly report.bak.pdf'] } },

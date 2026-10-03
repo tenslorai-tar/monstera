@@ -119,6 +119,11 @@ function contextStub(acceptsImages = false): DocumentContext & {
     get removedSinceSave(): boolean {
       return removals > 0;
     },
+    // THE BUS NEITHER ASKS NOR AGREES about signatures; that is the command layer's (ADR-0149).
+    signaturesBreakAgreed: false,
+    agreeToBreakSignatures: (): never => {
+      throw new Error('the bus does not agree to break signatures');
+    },
     removals: () => removals,
     commandLog(_writer: CommandWriter): CommandLog {
       return log;

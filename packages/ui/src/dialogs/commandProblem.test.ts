@@ -26,9 +26,16 @@ import { COMMAND_PROBLEM_DIALOG } from './commandProblem.js';
 /** The channels whose refusals reach a user through this dialog. */
 const REPORTED = ['document.execute', 'document.undo', 'document.redo', 'document.save'] as const;
 
+/**
+ * The codes that are a QUESTION and never a problem: `applyDocumentCommand` asks the person in a dialog of their own
+ * and resends (ADR-0149), and its type stops it handing them to `reportProblem`. Named here so the exclusion is a list
+ * a reader can see, and checked below so it cannot outlive its code or quietly become a sentence.
+ */
+const ASKED: ReadonlySet<string> = new Set(['breaks-signatures']);
+
 describe('the command-problem dialog covers every code a document command can report', () => {
   it('accepts every failure the reporting channels declare', () => {
-    const declared = [...new Set(REPORTED.flatMap((id) => [...channels[id].failures]))];
+    const declared = [...new Set(REPORTED.flatMap((id) => [...channels[id].failures]))].filter((code) => !ASKED.has(code));
 
     // A BROKEN LOOKUP IS NOT A CLEAN RESULT. An empty list would make the loop
     // below assert nothing and pass, which is the reassuring answer for a
@@ -58,6 +65,17 @@ describe('the command-problem dialog covers every code a document command can re
     expect(
       COMMAND_PROBLEM_DIALOG.props.safeParse({ code: 'document-busy', incident: 'i1' }).success,
     ).toBe(false);
+  });
+
+  it('every ASKED code is one a reporting channel still declares, and one this dialog refuses', () => {
+    const declared = new Set(REPORTED.flatMap((id) => [...channels[id].failures]));
+    for (const code of ASKED) {
+      // AN EXCLUSION WITH NO CODE BEHIND IT is a hole kept open for a code that might arrive later.
+      expect(declared.has(code as never), `"${code}" is excluded and no reporting channel declares it`).toBe(true);
+      // AND NOT A SENTENCE HERE: a question rendered as "that could not be done" would tell a person their document
+      // refused them, which is the one thing ADR-0149 exists to avoid.
+      expect(COMMAND_PROBLEM_DIALOG.props.safeParse({ code }).success).toBe(false);
+    }
   });
 
   it('CONTROL: a code no channel declares is refused', () => {

@@ -74,6 +74,10 @@ export const WARN_SIGNATURE_BREAK_DESCRIPTION = messageKey('setting.saving-warn-
 export const SIGNATURE_BREAK_TITLE = messageKey('dialog.signature-break.title');
 export const SIGNATURE_BREAK_EXPLAINS = messageKey('dialog.signature-break.explains');
 export const SIGNATURE_BREAK_APPLY = messageKey('dialog.signature-break.apply');
+export const SIGNED_EDIT_TITLE = messageKey('dialog.signed-edit.title');
+export const SIGNED_EDIT_EXPLAINS = messageKey('dialog.signed-edit.explains');
+export const SIGNED_EDIT_COPY = messageKey('dialog.signed-edit.copy');
+export const SIGNED_EDIT_THIS = messageKey('dialog.signed-edit.this');
 export const KEPT_BACKUPS_TITLE = messageKey('dialog.kept-backups.title');
 export const KEPT_BACKUPS_EXPLAINS = messageKey('dialog.kept-backups.explains');
 export const HELD_COPIES_TITLE = messageKey('dialog.held-copies.title');
@@ -1039,6 +1043,7 @@ export const TEXT_EDIT_UNADDRESSABLE = messageKey('surface.text-edit.unaddressab
 export const TEXT_EDIT_PROMOTE = messageKey('surface.text-edit.promote');
 export const TEXT_EDIT_ROTATED = messageKey('surface.text-edit.rotated');
 export const TEXT_EDIT_NOT_WRITABLE = messageKey('surface.text-edit.not-writable');
+export const TEXT_EDIT_HELD = messageKey('surface.text-edit.held');
 export const PAGE_IMAGE_ONLY = messageKey('surface.page.image-only');
 /** What the page area says until its first page is drawn, in place of empty slots. */
 export const PAGE_OPENING = messageKey('surface.page.opening');
@@ -2331,6 +2336,8 @@ export const PROBLEM_STALE_TARGET = messageKey('dialog.command-problem.stale-tar
 export const PROBLEM_ENGINE_UNAVAILABLE = messageKey('dialog.command-problem.engine-unavailable');
 export const PROBLEM_RASTER_TOO_LARGE = messageKey('dialog.command-problem.raster-too-large');
 export const PROBLEM_NOT_COPYABLE = messageKey('dialog.command-problem.not-copyable');
+export const PROBLEM_COPY_ABSENT = messageKey('dialog.command-problem.copy-absent');
+export const PROBLEM_COPY_AT_CAPACITY = messageKey('dialog.command-problem.copy-at-capacity');
 export const PROBLEM_SERVICE_NO_KEY = messageKey('dialog.command-problem.service-no-key');
 export const PROBLEM_SERVICE_UNAUTHORISED = messageKey('dialog.command-problem.service-unauthorised');
 export const PROBLEM_SERVICE_ADDRESS = messageKey('dialog.command-problem.service-address');
@@ -2463,13 +2470,18 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Saves each document with unsaved changes to its own file on a timer. Off unless you turn it on, because a save replaces the file.',
   [CONFIRM_REDACTION_TITLE]: 'Confirm before redacting',
   [BACKUP_COPIES_TITLE]: 'Backup copies to keep',
-  [WARN_SIGNATURE_BREAK_TITLE]: 'Warn before a save breaks a signature',
+  [WARN_SIGNATURE_BREAK_TITLE]: 'Warn before a change breaks a signature',
   [WARN_SIGNATURE_BREAK_DESCRIPTION]:
-    'Asks first when saving would make a digital signature stop verifying — after a redaction, a flatten or a new password. Other changes are saved without breaking signatures.',
+    'Asks first when a change or a save would make a digital signature stop verifying, such as a redaction, a flatten, a new password or an edit to the text, and offers to make the change on a copy. Other changes keep signatures.',
   [SIGNATURE_BREAK_TITLE]: 'This save will break signatures',
   [SIGNATURE_BREAK_EXPLAINS]:
     '{count, plural, one {This document is digitally signed.} other {This document carries # digital signatures.}} Saving it now rewrites the whole file, so {count, plural, one {the signature} other {the signatures}} will no longer verify. Close this window to keep {count, plural, one {it} other {them}}: your changes stay open and unsaved.',
   [SIGNATURE_BREAK_APPLY]: 'Save anyway',
+  [SIGNED_EDIT_TITLE]: 'This change will break signatures',
+  [SIGNED_EDIT_EXPLAINS]:
+    'This document is digitally signed. This change rewrites the whole file, so its signatures will no longer verify. Work on a copy to keep the signed document exactly as it is: the copy is saved where you choose and opens with this change made.',
+  [SIGNED_EDIT_COPY]: 'Work on a copy',
+  [SIGNED_EDIT_THIS]: 'Change this document',
   [KEPT_BACKUPS_TITLE]: 'Some older copies were kept',
   [KEPT_BACKUPS_EXPLAINS]:
     'Monstera permanently deleted the older copies it made, because they held what you removed. {count, plural, one {This file beside the document is named like a backup, but Monstera did not make it, so it was kept. It may still hold what you removed. Delete it yourself if you do not need it:} other {These files beside the document are named like backups, but Monstera did not make them, so they were kept. They may still hold what you removed. Delete them yourself if you do not need them:}}',
@@ -3136,6 +3148,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // words, so the person can change the ones the font cannot show.
   [TEXT_EDIT_NOT_WRITABLE]:
     'Nothing was changed: the font on this page can’t show some of the characters you typed. Change them, or press Esc to put the text back.',
+  [TEXT_EDIT_HELD]:
+    'Nothing was changed, so the signatures still verify. Keep typing and you will be asked again when you finish, or press Esc to put the text back.',
   // SAYS WHAT THE PAGE IS, not what the application cannot do. A reader looking
   // at words they cannot select has one question — why — and *this page is a
   // picture* answers it. It deliberately does not say *scanned*: the kernel
@@ -5064,6 +5078,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // and that the rest of a mixed selection still would.
   [PROBLEM_NOT_COPYABLE]:
     'These marks can’t be copied. Image stamps and some annotations from other applications don’t copy; comments, shapes, drawings and highlights do.',
+  [PROBLEM_COPY_ABSENT]:
+    'The copy was saved, but the file was gone before it could be opened, so the change was not made. The signed document has not changed.',
+  [PROBLEM_COPY_AT_CAPACITY]:
+    'The copy was saved, but there is not enough room to open it beside the documents already open, so the change was not made. Close a document, then open the copy from where you saved it. The signed document has not changed.',
   // A SERVICE'S ANSWER TO A REGION, each naming what the reader can do; out of credit is the
   // assistant's own sentence, because it is one account whichever door it was met from.
   [PROBLEM_SERVICE_NO_KEY]: 'No key is stored for this service. Add it in Settings; nothing was changed.',

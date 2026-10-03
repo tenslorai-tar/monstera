@@ -5,8 +5,10 @@ import {
   type AnnotationStamp,
   type LibraryEntry,
   MAX_ANNOTATION_DATA_BYTES,
+  type Command,
   type CommandKind,
   type CommandOfKind,
+  targetVersionOf,
   type FormDataFormat,
   type FormDataImportFormat,
   MAX_FORM_DATA_BYTES,
@@ -141,6 +143,8 @@ import {
   RecognisedTableRefused,
   type PageWordBoxes,
   pagesOf,
+  breaksSignatures,
+  StaleTargetError,
 } from '@monstera/kernel';
 import type { BarcodeWriteFormat } from '@monstera/kernel/barcode';
 import {
@@ -1112,6 +1116,24 @@ export class DocumentPoisonedError extends Error {
         'canonical bytes and the command log stay in main, intact and unappliable — refusing ' +
         'STRANDS the work where closing would destroy it, which is the whole of why this is a ' +
         `refusal. (document ${docId.slice(0, 8)}…)`,
+    );
+  }
+}
+
+/**
+ * An edit that would break a signed document's signatures, refused before anything changed
+ * ([ADR-0149](../../../docs/DECISIONS/0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)).
+ *
+ * Not a fault: it is the question the person is asked, and the handler answers it as the declared
+ * `breaks-signatures`. The count is a main-side diagnostic.
+ */
+export class SignaturesWouldBreakError extends Error {
+  override readonly name = 'SignaturesWouldBreakError';
+
+  constructor(kind: CommandKind, signatures: number) {
+    super(
+      `${kind} would rewrite a document carrying ${String(signatures)} signature(s) whole, which breaks them; ` +
+        'nothing was changed, and the person is asked first (ADR-0149).',
     );
   }
 }
@@ -3198,6 +3220,11 @@ export class DocumentCommands {
   async execute<K extends CommandKind>(
     docId: DocId,
     command: CommandOfKind<K>,
+    /**
+     * `breakSignatures`: the person agreed this edit may break the document's signatures (ADR-0149). Absent is not
+     * agreed, so a command `main` mints itself is asked about like any other — none of them breaks one today.
+     */
+    options: { readonly breakSignatures?: boolean } = {},
   ): Promise<Applied> {
     // THE ROUTING TABLE IS NO LONGER READ HERE, and the note that used to stand
     // in its place is worth keeping because it was half right. It read: *the
@@ -3223,6 +3250,21 @@ export class DocumentCommands {
       // from *this writer has no session*, and only the bus can tell the second
       // one apart from a byte-image writer that never has a stored session.
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      // A SIGNED DOCUMENT IS ASKED ABOUT BEFORE THE EDIT, never at the save after it (ADR-0149). A command that
+      // rewrites the document whole breaks every signature in it, and by the save the image is already rewritten —
+      // MuPDF then reopens it, finds the signature dictionaries, will append, and answers *kept*. So the question is
+      // asked here, inside the lane, before the bus has touched anything, of the document's own session.
+      if (breaksSignatures(command.kind) && !context.signaturesBreakAgreed) {
+        if (options.breakSignatures === true) {
+          context.agreeToBreakSignatures();
+        } else {
+          const session = sessions.mupdf;
+          if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+          const { signatures } = await this.#signaturesKept(session);
+          if (signatures > 0) throw new SignaturesWouldBreakError(command.kind, signatures);
+        }
+      }
 
       const { trimmed } = await this.#bus.execute<K>(
         sessions,
@@ -3600,6 +3642,34 @@ export class DocumentCommands {
   }
 
   async saveCopy(docId: DocId): Promise<CopyOutcome | undefined> {
+    return (await this.#writeCopy(docId, () => undefined))?.outcome;
+  }
+
+  /**
+   * A copy of the document to make an edit on, written where the person chooses, so the original keeps the
+   * signatures that edit would break
+   * ([ADR-0149](../../../docs/DECISIONS/0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)
+   * Decision 5). {@link saveCopy}'s picker and write exactly, and the path the copy went to, which the handler opens.
+   *
+   * **A command composed against a version the document has moved past is stale here too**, checked inside the lane
+   * against the version the copy is written at: the copy holds the document as it is now, so an edit named against an
+   * older one would land on content it was not composed for, as it would on the original.
+   */
+  async copyForEditing(
+    docId: DocId,
+    command: Command,
+  ): Promise<{ readonly outcome: CopyOutcome; readonly destination: string } | undefined> {
+    return this.#writeCopy(docId, (version) => {
+      const named = targetVersionOf(command);
+      if (named !== undefined && named !== version) throw new StaleTargetError(command.kind, named, version);
+    });
+  }
+
+  /** {@link saveCopy}'s pick and write, with `inLane` run first inside the lane against the version being copied. */
+  async #writeCopy(
+    docId: DocId,
+    inLane: (version: DocVersion) => void,
+  ): Promise<{ readonly outcome: CopyOutcome; readonly destination: string } | undefined> {
     // THE NAME IS READ BEFORE THE LANE and the document may close while the
     // dialog is up — which is fine, because a filename is all that was taken
     // and the guards inside the lane below refuse a closed document anyway. A
@@ -3612,17 +3682,19 @@ export class DocumentCommands {
     const destination = await this.#copy.pick(suggestedCopyName(suggest));
     if (destination === null) return undefined;
 
-    // THE LANE ENTRY TAKES NO CONTEXT, and that is `writeDocumentCopy`'s own
-    // argument arriving one layer out: a context is what a stamp is made
-    // through, this must not stamp, so it is not given one. The lane is still
-    // entered — the flush must be serialised against every other operation on
-    // this document — and what it cannot do is mark the document clean.
-    const { value } = await this.#documents.run(docId, async () => {
+    // THE CONTEXT IS READ FOR ITS VERSION AND NOTHING ELSE, and the write is
+    // never handed it: a context is what a stamp is made through, and a copy
+    // must not stamp. The lane is entered so the flush is serialised against
+    // every other operation on this document, and so the version `inLane`
+    // checks is the version the copy is written at.
+    const { value } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      inLane(context.version);
 
       // THE SAME FLUSH A SAVE USES, so a copy and a save cannot disagree about
       // what this document currently is (B3a). `writeDocumentCopy` is handed no
@@ -3635,7 +3707,7 @@ export class DocumentCommands {
       );
     });
 
-    return value;
+    return { outcome: value, destination };
   }
 
   /**
@@ -5727,7 +5799,11 @@ export class DocumentCommands {
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       const next = await this.#signaturesKept(session);
-      if (!request.breakSignatures && !next.kept) return { kind: 'breaks-signatures', signatures: next.signatures };
+      // ASKED ONCE PER DOCUMENT: a person who answered *edit this document* before a breaking edit has given this
+      // document's signatures up, and its save would otherwise ask the same question again (ADR-0149 Decision 6).
+      if (!request.breakSignatures && !next.kept && !context.signaturesBreakAgreed) {
+        return { kind: 'breaks-signatures', signatures: next.signatures };
+      }
 
       // THE DOCUMENT'S FACT, read before the save clears it: whether a removal ran since the file was written
       // (ADR-0139). Never the engine session's mark, which an undo's restore, an adopt or a host restart drops — the

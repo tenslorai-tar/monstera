@@ -23,6 +23,8 @@ import {
   ENGINE_BARCODE_TEXT_MAX,
   ENGINE_BARCODES_MAX,
   type IdentityReader,
+  StaleTargetError,
+  TextNotWritableError,
   readFileIdentity,
 } from '@monstera/kernel';
 import { BARCODE_WRITE_FORMATS } from '@monstera/kernel/barcode';
@@ -84,15 +86,21 @@ type OpenOutcome = Awaited<ReturnType<DocumentService['open']>>;
 function serviceAnswering(outcome: OpenOutcome): {
   documents: DocumentService;
   opened: FileHandle[];
+  closed: DocId[];
 } {
   const opened: FileHandle[] = [];
+  const closed: DocId[] = [];
   const documents = {
     open: (handle: FileHandle) => {
       opened.push(handle);
       return Promise.resolve(outcome);
     },
+    close: (docId: DocId) => {
+      closed.push(docId);
+      return Promise.resolve();
+    },
   } as unknown as DocumentService;
-  return { documents, opened };
+  return { documents, opened, closed };
 }
 
 /** What the harness's page image answers: a JPEG's first two bytes, enough to be told apart from nothing. */
@@ -123,7 +131,7 @@ function harness(
   } = {},
 ) {
   const capabilities = new CapabilityRegistry();
-  const { documents, opened } = serviceAnswering(outcome);
+  const { documents, opened, closed } = serviceAnswering(outcome);
   // RECORDED RATHER THAN IGNORED. Whether a document gets an engine session is
   // decided by this call being made, and the outcomes it must NOT be made for
   // produce exactly the same handler result as the one it must.
@@ -244,6 +252,7 @@ function harness(
   });
   return {
     capabilities,
+    closed,
     engagementFile,
     handlers,
     opened,
@@ -865,6 +874,100 @@ describe('document.openDropped (ADR-0099)', () => {
     // line above.
     expect(opened).toStrictEqual([]);
     expect(recent.list()).toStrictEqual([]);
+  });
+});
+
+describe('document.editCopy — an edit of a signed document made on a copy (ADR-0149)', () => {
+  const COPY_PATH = resolve('copies', 'signed copy.pdf');
+  const COPY: DocId = asDocId('doc-copy');
+  const OPENED: OpenOutcome = { kind: 'opened', docId: COPY, version: asDocVersion(1), byteLength: 1024, name: 'signed copy.pdf' };
+  const NO_PICKER: PickDocument = () => Promise.reject(new Error('a copy for editing never runs the open picker'));
+  // A COMMAND THAT NAMES A VERSION, so the case can see it re-bound: the original was at 3 when it was composed.
+  const NAMED = { kind: 'removeAnnotation', page: 0, indices: [0], version: asDocVersion(3) } as const;
+
+  /** The commands the handler calls, recording each `execute` and throwing what a case says the copy's edit throws. */
+  function commandsFor(edit: () => Promise<unknown>): {
+    commands: DocumentCommands;
+    executed: unknown[][];
+    copied: unknown[][];
+  } {
+    const executed: unknown[][] = [];
+    const copied: unknown[][] = [];
+    const commands = {
+      copyForEditing: (...args: unknown[]) => {
+        copied.push(args);
+        return Promise.resolve({ outcome: { kind: 'copied', bytes: 1024 }, destination: COPY_PATH });
+      },
+      execute: (...args: unknown[]) => {
+        executed.push(args);
+        return edit();
+      },
+    } as unknown as DocumentCommands;
+    return { commands, executed, copied };
+  }
+
+  it('writes the copy, opens it by the one route, and applies the SAME edit there, its version re-bound and agreed', async () => {
+    const { commands, executed, copied } = commandsFor(() =>
+      Promise.resolve({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }),
+    );
+    const { capabilities, handlers, opened, sessioned, closed } = harness(OPENED, NO_PICKER, undefined, { commands });
+
+    const result = await handlers['document.editCopy']({ docId: A_DOC, command: NAMED });
+
+    expect(result).toStrictEqual({
+      ok: true,
+      value: { kind: 'edited', docId: COPY, version: 2, byteLength: 2048, name: 'signed copy.pdf', historyDropped: 0 },
+    });
+    // THE ORIGINAL IS ASKED FOR A COPY, AND NOTHING ELSE: no `execute` names it.
+    expect(copied).toStrictEqual([[A_DOC, NAMED]]);
+    expect(capabilities.resolve(handleOpened(opened))).toBe(COPY_PATH);
+    expect(sessioned).toStrictEqual([COPY]);
+    expect(executed).toStrictEqual([[COPY, { ...NAMED, version: 1 }, { breakSignatures: true }]]);
+    expect(closed).toStrictEqual([]);
+    // WHAT CROSSES IS THE CHANNEL'S OWN SHAPE: the spread of the open's answer and the edit's must parse as declared.
+    if (!result.ok) throw new Error('the case answered a failure');
+    expect(channels['document.editCopy'].result.safeParse(result.value).success).toBe(true);
+  });
+
+  it('a refusal the person can act on leaves the copy OPEN and says why', async () => {
+    const { commands } = commandsFor(() => Promise.reject(new TextNotWritableError()));
+    const { handlers, closed } = harness(OPENED, NO_PICKER, undefined, { commands });
+
+    const result = await handlers['document.editCopy']({ docId: A_DOC, command: NAMED });
+
+    expect(result).toMatchObject({ ok: true, value: { kind: 'edit-refused', docId: COPY, problem: 'text-not-writable' } });
+    expect(closed).toStrictEqual([]);
+  });
+
+  it('a DEFECT in the copy’s edit closes the copy before it is rethrown, so no document is open that no tab shows', async () => {
+    const { commands } = commandsFor(() => Promise.reject(new Error('a defect')));
+    const { handlers, closed } = harness(OPENED, NO_PICKER, undefined, { commands });
+
+    await expect(handlers['document.editCopy']({ docId: A_DOC, command: NAMED })).rejects.toThrow('a defect');
+    expect(closed).toStrictEqual([COPY]);
+  });
+
+  it('a dismissed picker is CANCELLED and opens nothing — CONTROL: a stale command is the declared stale-target', async () => {
+    const dismissed = {
+      copyForEditing: () => Promise.resolve(undefined),
+      execute: () => Promise.reject(new Error('nothing may run after a dismissed picker')),
+    } as unknown as DocumentCommands;
+    const cancelled = harness(OPENED, NO_PICKER, undefined, { commands: dismissed });
+    expect(await cancelled.handlers['document.editCopy']({ docId: A_DOC, command: NAMED })).toStrictEqual({
+      ok: true,
+      value: { kind: 'cancelled' },
+    });
+    expect(cancelled.opened).toStrictEqual([]);
+
+    const stale = {
+      copyForEditing: () => Promise.reject(new StaleTargetError('removeAnnotation', asDocVersion(3), asDocVersion(4))),
+    } as unknown as DocumentCommands;
+    const refused = harness(OPENED, NO_PICKER, undefined, { commands: stale });
+    expect(await refused.handlers['document.editCopy']({ docId: A_DOC, command: NAMED })).toStrictEqual({
+      ok: false,
+      error: { code: 'stale-target' },
+    });
+    expect(refused.opened).toStrictEqual([]);
   });
 });
 

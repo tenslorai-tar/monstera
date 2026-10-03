@@ -1,4 +1,11 @@
-import { type AnnotationStamp, type ContractClient, type LibraryEntry, channels, createClient } from '@monstera/contract';
+import {
+  type AnnotationStamp,
+  type ContractClient,
+  type DispatchableCommand,
+  type LibraryEntry,
+  channels,
+  createClient,
+} from '@monstera/contract';
 import { type DocId, type DocVersion, type MessageKey, asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -105,6 +112,7 @@ import {
   saveDocument,
   snapshotRegion,
   undoCommand,
+  type SignedEditing,
 } from './documentCommands.js';
 
 /**
@@ -180,6 +188,17 @@ const NO_DOCUMENT: CommandContext = {
 
 /** Who and when an annotation is attributed to — every deps object carries it. */
 const stamp = (): AnnotationStamp => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' });
+
+/**
+ * What an edit of a signed document needs (ADR-0149). No document a case here names is signed unless the case says so
+ * with a bag of its own, so a copy opening through this one is a defect of the case and throws.
+ */
+const signatures: SignedEditing = {
+  warn: () => true,
+  onOpened: () => {
+    throw new Error('a case opened a copy for an edit without asking for one');
+  },
+};
 
 /**
  * A client answering one channel, through the real schemas.
@@ -281,7 +300,7 @@ describe('rotate page', () => {
       historyDropped: 0,
     });
 
-    await rotatePageCommand({ client, onApplied, ask, stamp }).run(CONTEXT);
+    await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
 
     // The byte length is the half that is easy to drop, and dropping it is not
     // visible in any state: the version alone rebinds the renderer's transport
@@ -303,7 +322,7 @@ describe('rotate page', () => {
       historyDropped: 3,
     });
 
-    await rotatePageCommand({ client, onApplied, ask, stamp }).run(CONTEXT);
+    await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
 
     expect(shown).toStrictEqual([
       { id: 'dialog.history-trimmed', props: { dropped: 3 } },
@@ -321,7 +340,7 @@ describe('rotate page', () => {
     // only thing that separates this from a command that always reports.
     const { applied, onApplied, ask } = recorder();
 
-    await rotatePageCommand({ client: clientFailing('document-busy'), onApplied, ask, stamp }).run(
+    await rotatePageCommand({ client: clientFailing('document-busy'), onApplied, ask, stamp, signatures }).run(
       CONTEXT,
     );
 
@@ -338,7 +357,7 @@ describe('rotate page', () => {
     // that is passed through.
     const { shown, onApplied, ask } = recorder();
 
-    await rotatePageCommand({ client: clientFailing('document-busy'), onApplied, ask, stamp }).run(
+    await rotatePageCommand({ client: clientFailing('document-busy'), onApplied, ask, stamp, signatures }).run(
       CONTEXT,
     );
 
@@ -358,7 +377,7 @@ describe('rotate page', () => {
       historyDropped: 0,
     });
 
-    await rotatePageCommand({ client, onApplied, ask, stamp }).run(CONTEXT);
+    await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
 
     expect(shown).toStrictEqual([]);
   });
@@ -369,7 +388,7 @@ describe('rotate page', () => {
     // difference between a control that is absent and one that is present and
     // does nothing.
     const { onApplied, ask } = recorder();
-    const command = rotatePageCommand({ client: clientFailing('document-busy'), onApplied, ask, stamp });
+    const command = rotatePageCommand({ client: clientFailing('document-busy'), onApplied, ask, stamp, signatures });
 
     expect(command.when?.(NO_DOCUMENT)).toBe(false);
     expect(command.when?.(CONTEXT)).toBe(true);
@@ -381,7 +400,7 @@ describe('redo', () => {
     const { applied, onApplied, ask } = recorder();
     const client = clientAnswering('document.redo', { kind: 'redone', version: asDocVersion(4), byteLength: 777 });
 
-    await redoCommand({ client, onApplied, ask, stamp }).run(CONTEXT);
+    await redoCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
 
     expect(applied).toStrictEqual([{ version: 4, byteLength: 777 }]);
   });
@@ -389,7 +408,7 @@ describe('redo', () => {
   it('nothing-to-redo changed nothing, so the view is not rebuilt — the call not made', async () => {
     const { applied, shown, onApplied, ask } = recorder();
 
-    await redoCommand({ client: clientAnswering('document.redo', { kind: 'nothing-to-redo' }), onApplied, ask, stamp }).run(
+    await redoCommand({ client: clientAnswering('document.redo', { kind: 'nothing-to-redo' }), onApplied, ask, stamp, signatures }).run(
       CONTEXT,
     );
 
@@ -400,7 +419,7 @@ describe('redo', () => {
   it('a declared failure is REPORTED, with its code', async () => {
     const { applied, shown, onApplied, ask } = recorder();
 
-    await redoCommand({ client: clientFailing('document-busy'), onApplied, ask, stamp }).run(CONTEXT);
+    await redoCommand({ client: clientFailing('document-busy'), onApplied, ask, stamp, signatures }).run(CONTEXT);
 
     expect(applied).toStrictEqual([]);
     expect(shown).toStrictEqual([{ id: 'dialog.command-problem', props: { code: 'document-busy' } }]);
@@ -426,7 +445,7 @@ describe('move page up / down — Organize › Arrange', () => {
     const { client, sent } = recordingExecute();
     const { onApplied, ask } = recorder();
 
-    await movePageCommand({ client, onApplied, ask, stamp }, direction).run(CONTEXT);
+    await movePageCommand({ client, onApplied, ask, stamp, signatures }, direction).run(CONTEXT);
 
     expect(sent).toStrictEqual([
       { id: 'document.execute', params: { docId: DOC, command: { kind: 'movePage', from: 3, to } } },
@@ -438,8 +457,8 @@ describe('move page up / down — Organize › Arrange', () => {
     // direction would hide *Move page up* on the last page, which no single-end case sees.
     const { onApplied, ask } = recorder();
     const client = clientFailing('document-busy');
-    const up = movePageCommand({ client, onApplied, ask, stamp }, 'earlier');
-    const down = movePageCommand({ client, onApplied, ask, stamp }, 'later');
+    const up = movePageCommand({ client, onApplied, ask, stamp, signatures }, 'earlier');
+    const down = movePageCommand({ client, onApplied, ask, stamp, signatures }, 'later');
     const first = { ...CONTEXT, page: 0 };
     const last = { ...CONTEXT, page: 9 };
 
@@ -458,7 +477,7 @@ describe('undo', () => {
       byteLength: 900,
     });
 
-    await undoCommand({ client, onApplied, ask, stamp }).run(CONTEXT);
+    await undoCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
 
     // NO `historyDropped`, and that is the channel rather than an omission:
     // `document.undo` does not carry one, because undo cannot grow the log and
@@ -474,7 +493,7 @@ describe('undo', () => {
     const { applied, onApplied, ask } = recorder();
     const client = clientAnswering('document.undo', { kind: 'nothing-to-undo' });
 
-    await undoCommand({ client, onApplied, ask, stamp }).run(CONTEXT);
+    await undoCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
 
     expect(applied).toStrictEqual([]);
   });
@@ -484,7 +503,7 @@ describe('undo', () => {
     // here is the whole of registering it. A keymap listing it separately would
     // be the second wiring place.
     const { onApplied, ask } = recorder();
-    expect(undoCommand({ client: clientFailing('document-busy'), onApplied, ask, stamp }).shortcut).toBe(
+    expect(undoCommand({ client: clientFailing('document-busy'), onApplied, ask, stamp, signatures }).shortcut).toBe(
       'Ctrl+Z',
     );
   });
@@ -862,6 +881,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await deletePagesCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         opened.push({ id, props });
@@ -896,6 +916,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await deletePagesCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
@@ -913,6 +934,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await cropPagesCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () =>
         Promise.resolve({ pages: 'all', margins: { top: 1, right: 2, bottom: 3, left: 4 } }),
@@ -946,6 +968,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await watermarkPagesCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () =>
         Promise.resolve({
@@ -987,6 +1010,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await headerFooterCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () =>
         Promise.resolve({
@@ -1041,6 +1065,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       settleMarks: NOTHING_MARKED,
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       toast,
       ask: (id, props) => {
@@ -1076,6 +1101,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       settleMarks: NOTHING_MARKED,
         client,
         stamp,
+        signatures,
         onApplied: () => undefined,
         toast,
         ask: (id, props) => {
@@ -1106,7 +1132,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       sent.push({ id, params });
       return Promise.resolve(ok({ kind: 'copied', bytes: 512, written: WRITTEN }));
     });
-    const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, toast: () => undefined };
+    const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures, toast: () => undefined };
 
     await exportFormDataJsonCommand(deps).run(CONTEXT);
     await exportFormDataXfdfCommand(deps).run(CONTEXT);
@@ -1142,6 +1168,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       client,
       toast: () => undefined,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         opened.push({ id, props });
@@ -1166,7 +1193,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         ok({ kind: 'imported', version: asDocVersion(2), byteLength: 99, historyDropped: 0 }),
       );
     });
-    const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, toast: () => undefined };
+    const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures, toast: () => undefined };
 
     await importFormDataJsonCommand(deps).run(CONTEXT);
     await importFormDataXfdfCommand(deps).run(CONTEXT);
@@ -1191,7 +1218,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     for (const [name, answer] of Object.entries(answers)) {
       const { toast, said } = saving();
       const client = createClient(channels, () => Promise.resolve(answer));
-      await importFormDataJsonCommand({ client, stamp, onApplied: () => undefined, ask: () => Promise.resolve(undefined), toast }).run(CONTEXT);
+      await importFormDataJsonCommand({ client, stamp, signatures, onApplied: () => undefined, ask: () => Promise.resolve(undefined), toast }).run(CONTEXT);
       saidFor[name] = said;
     }
 
@@ -1218,6 +1245,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await importFormDataJsonCommand({
       client,
       stamp,
+      signatures,
       onApplied: (value) => applied.push(value),
       ask: () => Promise.resolve(undefined),
       toast: () => undefined,
@@ -1238,6 +1266,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       await importFormDataFdfCommand({
         client,
         stamp,
+        signatures,
         onApplied: () => undefined,
         toast: () => undefined,
         ask: (id, props) => {
@@ -1260,6 +1289,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await importFormDataJsonCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       toast: () => undefined,
       ask: (id, props) => {
@@ -1305,6 +1335,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await detectFlatFieldsCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       // ONE OF THE TWO REJECTED, which is what makes this a review rather than
       // a confirmation: a command that sent everything it was offered would
@@ -1438,7 +1469,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     });
     const applied: Applied[] = [];
     const outcome = await commitTextBlock(
-      { client, onApplied: (next) => applied.push(next), ask: () => Promise.resolve(undefined), stamp },
+      { client, onApplied: (next) => applied.push(next), ask: () => Promise.resolve(undefined), stamp, signatures },
       DOC,
       3,
       BLOCK,
@@ -1480,7 +1511,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0 }));
     });
     const outcome = await commitTextBlock(
-      { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp },
+      { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures },
       DOC,
       3,
       BLOCK,
@@ -1498,6 +1529,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       {
         client,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: (id) => {
           asked.push(id);
@@ -1523,7 +1555,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       sent.push({ id, params });
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0 }));
     });
-    await promoteTextOnPage({ client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp }, DOC, 3);
+    await promoteTextOnPage({ client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures }, DOC, 3);
     expect(sent).toStrictEqual([
       { id: 'document.execute', params: { docId: DOC, command: { kind: 'promoteFormObjects', page: 3 } } },
     ]);
@@ -1538,6 +1570,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       {
         client,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: (id) => {
           asked.push(id);
@@ -1552,6 +1585,32 @@ describe('delete pages — the mutation-dialog gate', () => {
     );
     expect(outcome).toBe('refused');
     expect(asked).toStrictEqual(['dialog.command-problem']);
+  });
+
+  it('A SIGNED DOCUMENT LEFT AS IT WAS keeps the words: Cancel on the signatures question is `held` (ADR-0149)', async () => {
+    const asked: string[] = [];
+    const client = createClient(channels, () => Promise.resolve(err({ code: 'breaks-signatures' as const })));
+    const outcome = await commitTextBlock(
+      {
+        client,
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        // CANCEL: the signatures question dismissed.
+        ask: (id) => {
+          asked.push(id);
+          return Promise.resolve(undefined);
+        },
+      },
+      DOC,
+      3,
+      BLOCK,
+      'The quick brown dog',
+      asDocVersion(7),
+    );
+    // NOT `refused`, which closes the editor over what was typed; and nothing is reported, since the person chose it.
+    expect(outcome).toBe('held');
+    expect(asked).toStrictEqual(['dialog.signed-edit']);
   });
 
   it('EDIT OBJECT DISPATCHES ONE OF THREE COMMANDS, by what the dialog answered', async () => {
@@ -1650,6 +1709,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       await editPageObjectCommand({
         client,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: () => Promise.resolve(answer),
       }).run(CONTEXT);
@@ -1679,6 +1739,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         );
       }),
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (_id, props) => {
         offered = props;
@@ -1704,6 +1765,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         );
       }),
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
@@ -1717,6 +1779,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         return Promise.resolve(err({ code: 'engine-unavailable' as const }));
       }),
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id) => {
         asked += 1;
@@ -1745,6 +1808,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await detectFlatFieldsCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
@@ -1764,6 +1828,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await batesNumberCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () =>
         Promise.resolve({
@@ -1815,6 +1880,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       client,
       toast: (_kind, message) => said.push(message),
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve({ pages: 'all', style: 'replace', durationSeconds: 0 }),
     }).run(CONTEXT);
@@ -1847,6 +1913,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await pageBackgroundCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         opened.push({ id, props });
@@ -1885,6 +1952,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await resizePagesCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         opened.push({ id, props });
@@ -1924,6 +1992,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await deskewPagesCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => {
         throw new Error('a deskew asks nothing');
@@ -1948,6 +2017,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await resizePagesCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve({ pages: 'all', widthPoints: 612, heightPoints: 792 }),
     }).run(CONTEXT);
@@ -1990,6 +2060,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await insertImageCommand({
       client,
       stamp,
+      signatures,
       onApplied: (a) => applied.push(a),
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
@@ -2012,6 +2083,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await insertImageCommand({
       client,
       stamp,
+      signatures,
       onApplied: (a) => applied.push(a),
       ask: (id, props) => {
         opened.push({ id, props });
@@ -2030,6 +2102,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await insertImageCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         opened.push({ id, props });
@@ -2054,6 +2127,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await insertImageCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         opened.push({ id, props });
@@ -2078,6 +2152,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await insertImageCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         opened.push({ id, props });
@@ -2230,6 +2305,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await mergeDocumentCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         opened.push({ id, props });
@@ -2269,6 +2345,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await mergeDocumentCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         opened.push({ id, props });
@@ -2299,6 +2376,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await insertFromPdfCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       // `at: 0` is the FRONT, and it is not the default the body offers — a
       // dialog stub answering the default would let a command that ignored the
@@ -2321,6 +2399,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await insertFromPdfCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         opened.push({ id, props });
@@ -2350,6 +2429,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await replacePageCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         opened.push({ id, props });
@@ -2388,6 +2468,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await replacePageCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
@@ -2402,6 +2483,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await importPageAsLayerCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         opened.push({ id, props });
@@ -2441,6 +2523,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await importPageAsLayerCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
@@ -2457,6 +2540,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await importPageAsLayerCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve({ source: DOC }),
     }).run(CONTEXT);
@@ -2474,6 +2558,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       settleMarks: NOTHING_MARKED,
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       toast: () => undefined,
       ask: (id, props) => {
@@ -2506,6 +2591,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       settleMarks: NOTHING_MARKED,
       client: quiet.client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       toast: worked.toast,
       ask: (id, props) => {
@@ -2527,6 +2613,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       settleMarks: NOTHING_MARKED,
       client: refused.client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       toast: failed.toast,
       ask: (id, props) => {
@@ -2551,6 +2638,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       client,
       toast: () => undefined,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve({ groups: [[0, 1], [2]] }),
     }).run(CONTEXT);
@@ -2574,6 +2662,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       client,
       toast: () => undefined,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve({ groups }),
     }).run({ ...CONTEXT, pageCount: 5000 });
@@ -2589,6 +2678,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       client,
       toast: () => undefined,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
@@ -2607,6 +2697,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       client,
       toast: () => undefined,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         asked.push({ id, props });
@@ -2636,6 +2727,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       client,
       toast: () => undefined,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         spoken.push({ id, props });
@@ -2659,6 +2751,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       client,
       toast: () => undefined,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         asked.push({ id, props });
@@ -2684,6 +2777,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         client,
         toast: () => undefined,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: (id, props) => {
           asked.push({ id, props });
@@ -2705,6 +2799,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       client,
       toast: () => undefined,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         asked.push({ id, props });
@@ -2732,6 +2827,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           client,
           toast: () => undefined,
           stamp,
+          signatures,
           onApplied: () => undefined,
           ask: (id, props) => {
             asked.push({ id, props });
@@ -2761,6 +2857,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           client,
           toast: () => undefined,
           stamp,
+          signatures,
           onApplied: () => undefined,
           ask: (id, props) => {
             asked.push({ id, props });
@@ -2860,6 +2957,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         settleMarks: NOTHING_MARKED,
         client,
         stamp,
+        signatures,
         onApplied: () => undefined,
         toast: () => undefined,
         ask: (id, props) => {
@@ -2953,6 +3051,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         settleMarks: NOTHING_MARKED,
         client,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: (id, props) => {
           asked.push({ id, props });
@@ -2976,6 +3075,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         settleMarks: NOTHING_MARKED,
           client,
           stamp,
+          signatures,
           onApplied: () => undefined,
           ask: (id, props) => {
             asked.push({ id, props });
@@ -3002,6 +3102,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           client,
           toast: () => undefined,
           stamp,
+          signatures,
           settings: printSettings(),
           onApplied: () => undefined,
           ask: (id, props) => {
@@ -3029,6 +3130,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           client: recording().client,
           toast: () => undefined,
           stamp,
+          signatures,
           settings,
           onApplied: () => undefined,
           ask: (id, props) => {
@@ -3050,6 +3152,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         onApplied: () => undefined,
         ask: () => Promise.resolve(undefined),
         stamp,
+        signatures,
         settings: printSettings(),
       }).run(CONTEXT);
 
@@ -3070,6 +3173,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           client,
           toast: () => undefined,
           stamp,
+          signatures,
           settings: printSettings(),
           onApplied: () => undefined,
           ask: (id, props) => {
@@ -3093,6 +3197,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           client: recording({ 'document.print': answered }).client,
           toast: (_kind, message) => said.push(message),
           stamp,
+          signatures,
           settings: printSettings(),
           onApplied: () => undefined,
           ask: () => Promise.resolve({ dpi: 300 }),
@@ -3139,6 +3244,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         toast: () => undefined,
         tableEngines: () => ['automatic'],
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: (id, props) => {
           asked.push({ id, props });
@@ -3211,6 +3317,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         toast: () => undefined,
         tableEngines: () => ['automatic'],
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: (_id, props) => {
           opened.push((props as { edits: unknown }).edits);
@@ -3231,6 +3338,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         toast: () => undefined,
         tableEngines: () => ['automatic'],
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: (id, props) => {
           spoken.push({ id, props });
@@ -3255,6 +3363,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         toast: () => undefined,
         tableEngines: () => ['automatic'],
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: () => Promise.resolve(undefined),
       }).run(CONTEXT);
@@ -3277,6 +3386,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           toast: () => undefined,
           tableEngines: () => ['automatic'],
           stamp,
+          signatures,
           onApplied: () => undefined,
           ask: (id, props) => {
             spoken.push({ id, props });
@@ -3310,6 +3420,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         toast: () => undefined,
         tableEngines: () => ['automatic', 'claude'],
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: (id, props) => {
           spoken.push({ id, props });
@@ -3343,6 +3454,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       client,
       toast: () => undefined,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
@@ -3362,6 +3474,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       client,
       toast: () => undefined,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
@@ -3383,6 +3496,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         client,
         toast: () => undefined,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: (id, props) => {
           spoken.push({ id, props });
@@ -3404,6 +3518,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       client,
       toast: () => undefined,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         spoken.push({ id, props });
@@ -3432,6 +3547,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           client,
           toast: () => undefined,
           stamp,
+          signatures,
           onApplied: () => undefined,
           settleMarks: NOTHING_MARKED,
           ask: (id) => {
@@ -3503,6 +3619,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       client,
       toast: () => undefined,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
@@ -3517,6 +3634,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       settleMarks: NOTHING_MARKED,
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       toast: () => undefined,
       ask: () => Promise.resolve(undefined),
@@ -3531,6 +3649,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await mergeDocumentCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
@@ -3544,6 +3663,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await resizePagesCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
@@ -3560,6 +3680,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       client,
       toast: () => undefined,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
@@ -3573,6 +3694,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await batesNumberCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
@@ -3586,6 +3708,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await headerFooterCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
@@ -3602,6 +3725,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await watermarkPagesCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
@@ -3629,6 +3753,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await findDuplicatePagesCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         opened.push({ id, props });
@@ -3664,6 +3789,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await findDuplicatePagesCommand({
       client: clientFailing('document-poisoned'),
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         if (id === 'dialog.duplicate-pages') opened.push(props);
@@ -3684,6 +3810,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await cropPagesCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
@@ -3701,6 +3828,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await deletePagesCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         opened.push({ id, props });
@@ -3748,6 +3876,7 @@ describe('generate table of contents', () => {
     await generateTocCommand({
       client,
       stamp,
+      signatures,
       onApplied: record.onApplied,
       ask: record.ask,
     }).run(CONTEXT);
@@ -3776,6 +3905,7 @@ describe('generate table of contents', () => {
     await generateTocCommand({
       client,
       stamp,
+      signatures,
       onApplied: record.onApplied,
       ask: record.ask,
     }).run(CONTEXT);
@@ -3795,6 +3925,7 @@ describe('generate table of contents', () => {
     await generateTocCommand({
       client: clientFailing('document-busy'),
       stamp,
+      signatures,
       onApplied: record.onApplied,
       ask: record.ask,
     }).run(CONTEXT);
@@ -3815,6 +3946,7 @@ describe('generate table of contents', () => {
     await generateTocCommand({
       client,
       stamp,
+      signatures,
       onApplied: record.onApplied,
       ask: record.ask,
     }).run(NO_DOCUMENT);
@@ -3852,6 +3984,7 @@ describe('protectDocumentCommand', () => {
     await protectDocumentCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       toast,
       ask: () =>
@@ -3895,6 +4028,7 @@ describe('protectDocumentCommand', () => {
     await protectDocumentCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       toast: () => undefined,
       ask: () => Promise.resolve({ encryption: 'none', permissions: [] }),
@@ -3918,6 +4052,7 @@ describe('protectDocumentCommand', () => {
     await protectDocumentCommand({
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       toast,
       ask: () => Promise.resolve(undefined),
@@ -3939,6 +4074,7 @@ describe('protectDocumentCommand', () => {
       await applyRedactionsCommand({
         client,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: (id, props) => {
           opened.push({ id, props });
@@ -3985,6 +4121,7 @@ describe('protectDocumentCommand', () => {
       await applyRedactionsCommand({
         client,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: () => Promise.resolve(undefined),
         confirm: () => true,
@@ -4002,6 +4139,7 @@ describe('protectDocumentCommand', () => {
       await applyRedactionsCommand({
         client,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: (id) => {
           opened.push(id);
@@ -4076,6 +4214,7 @@ describe('protectDocumentCommand', () => {
         client,
         toast: (_kind, message) => said.push(message),
         stamp,
+        signatures,
         onApplied: (value) => applied.push(value),
         ask: () =>
           Promise.resolve({ passphrase: 'secret', name: 'Grace Hopper', reason: 'Approved' }),
@@ -4112,6 +4251,7 @@ describe('protectDocumentCommand', () => {
         client,
         toast: () => undefined,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: () => Promise.resolve({ passphrase: 'secret', timestamp: 'digicert' }),
       }).run(CONTEXT);
@@ -4132,6 +4272,7 @@ describe('protectDocumentCommand', () => {
         client,
         toast: () => undefined,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: (id, props) => {
           shown.push({ id, props });
@@ -4157,6 +4298,7 @@ describe('protectDocumentCommand', () => {
         client,
         toast: () => undefined,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: (id, props) => {
           shown.push({ id, props });
@@ -4182,6 +4324,7 @@ describe('protectDocumentCommand', () => {
         client,
         toast: () => undefined,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: (id) => {
           shown.push(id);
@@ -4199,6 +4342,7 @@ describe('protectDocumentCommand', () => {
         client,
         toast: () => undefined,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: () => Promise.resolve(undefined),
       }).run(CONTEXT);
@@ -4268,6 +4412,7 @@ describe('protectDocumentCommand', () => {
         client,
         toast: () => undefined,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: (id, props) => {
           asked.push({ id, props });
@@ -4446,6 +4591,7 @@ describe('protectDocumentCommand', () => {
           client,
           toast: () => undefined,
           stamp,
+          signatures,
           onApplied: () => undefined,
           ask: () => Promise.resolve(undefined),
           settleMarks: NOTHING_MARKED,
@@ -4455,6 +4601,7 @@ describe('protectDocumentCommand', () => {
           client,
           toast: () => undefined,
           stamp,
+          signatures,
           onApplied: () => undefined,
           ask: () => Promise.resolve(undefined),
           settleMarks: NOTHING_MARKED,
@@ -4475,6 +4622,7 @@ describe('protectDocumentCommand', () => {
         settleMarks: NOTHING_MARKED,
         client,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: (id, props) => {
           shown.push({ id, props });
@@ -4502,6 +4650,7 @@ describe('protectDocumentCommand', () => {
         settleMarks: NOTHING_MARKED,
         client,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: () => Promise.resolve(undefined),
         docusignReady: () => true,
@@ -4518,6 +4667,7 @@ describe('protectDocumentCommand', () => {
         settleMarks: NOTHING_MARKED,
         client,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: (id, props) => {
           shown.push({ id, props });
@@ -4565,6 +4715,7 @@ describe('protectDocumentCommand', () => {
           client,
           toast: () => undefined,
           stamp,
+          signatures,
           onApplied: () => undefined,
           ask: (id, props) => {
             shown.push({ id, props });
@@ -4604,6 +4755,7 @@ describe('protectDocumentCommand', () => {
       await signaturesCommand({
         client,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: (id, props) => {
           shown.push({ id, props });
@@ -4627,6 +4779,7 @@ describe('protectDocumentCommand', () => {
       await signaturesCommand({
         client,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: (id, props) => {
           shown.push({ id, props });
@@ -4652,6 +4805,7 @@ describe('protectDocumentCommand', () => {
         client,
         toast: (_kind, message) => said.push(message),
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: () => Promise.resolve({ parts: ['javascript', 'embedded-files'] }),
       }).run(CONTEXT);
@@ -4676,6 +4830,7 @@ describe('protectDocumentCommand', () => {
         client,
         toast: (_kind, message) => said.push(message),
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: () => Promise.resolve(undefined),
       }).run(CONTEXT);
@@ -4694,6 +4849,7 @@ describe('protectDocumentCommand', () => {
       await redactMatchesCommand({
         client,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: () => Promise.resolve({ query: 'Salary', pages: 'all' }),
       }).run(CONTEXT);
@@ -4715,6 +4871,7 @@ describe('protectDocumentCommand', () => {
       await redactMatchesCommand({
         client,
         stamp,
+        signatures,
         onApplied: () => undefined,
         ask: () => Promise.resolve(undefined),
       }).run(CONTEXT);
@@ -4741,6 +4898,7 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
       client,
       ask: () => Promise.resolve(undefined),
       onApplied: () => undefined,
+      signatures,
       // COUNTED, so the case shows the stamp is asked for at the send and not taken from a value
       // captured earlier — the time must be the send's.
       stamp: (): AnnotationStamp => {
@@ -4784,6 +4942,7 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
     const deps = {
       client,
       ask: () => Promise.resolve(undefined),
+      signatures,
       onApplied: () => undefined,
       stamp: (): AnnotationStamp => ({ author: 'Priya Raman', created: times.shift() ?? 'exhausted' }),
     };
@@ -4808,7 +4967,7 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
       [deletePageCommand, 'deletePages'],
     ] as const) {
       const ticked = sending();
-      await factory({ client: ticked.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp }).run({
+      await factory({ client: ticked.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures }).run({
         ...CONTEXT,
         page: 2,
         selectedPages: [0, 3],
@@ -4816,7 +4975,7 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
       expect(ticked.sent.map((command) => (command as { pages?: unknown }).pages), kind).toStrictEqual([[0, 3]]);
 
       const none = sending();
-      await factory({ client: none.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp }).run({
+      await factory({ client: none.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures }).run({
         ...CONTEXT,
         page: 2,
         selectedPages: [],
@@ -4836,7 +4995,7 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
       [deletePageCommand, 'deletePages'],
     ] as const) {
       const ticked = sending();
-      await factory({ client: ticked.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp }).run({
+      await factory({ client: ticked.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures }).run({
         ...CONTEXT,
         page: 2,
         selectedPages: [4, 5, 6, 7, 9],
@@ -4856,12 +5015,12 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
       [shown, [2], 3],
     ] as const) {
       const duplicated = sending();
-      await duplicatePageCommand({ client: duplicated.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp }).run(context);
+      await duplicatePageCommand({ client: duplicated.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures }).run(context);
       expect(duplicated.sent).toStrictEqual([{ kind: 'duplicatePage', pages }]);
 
       // AFTER THE LAST TARGET PAGE, which is the page on show when nothing is ticked.
       const inserted = sending();
-      await insertBlankPageCommand({ client: inserted.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp }).run(context);
+      await insertBlankPageCommand({ client: inserted.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures }).run(context);
       expect(inserted.sent).toStrictEqual([{ kind: 'insertBlankPage', at }]);
 
       // EVERY PAGE DIALOG is opened with the same pages; a dismissal sends nothing, so only the props are read.
@@ -4884,6 +5043,7 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
           },
           onApplied: () => undefined,
           stamp,
+          signatures,
         }).run(context);
         expect(opened).toStrictEqual([{ pages }]);
         expect(quiet.sent).toStrictEqual([]);
@@ -4902,6 +5062,7 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
           onApplied: () => undefined,
           toast: () => undefined,
           stamp,
+          signatures,
           settleMarks: NOTHING_MARKED,
         }).run(context);
         expect(opened).toStrictEqual([{ pageCount: CONTEXT.pageCount, pages }]);
@@ -4912,7 +5073,7 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
   it('CONTROL: a command that creates nothing goes out with no stamp', async () => {
     const { client, sent } = sending();
     await applyDocumentCommand(
-      { client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp },
+      { client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures },
       DOC,
       { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
     );
@@ -4955,6 +5116,7 @@ describe('every file write confirms, and its Show in folder reveals the file the
     const deps = {
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       toast: (kind: string, message: MessageKey, action?: ToastAction) => {
         said.push({ kind, message, action });
@@ -5109,5 +5271,182 @@ describe('every file write confirms, and its Show in folder reveals the file the
     expect(sent.some((call) => call.id === 'file.reveal')).toBe(false);
     said[0]?.action?.run();
     expect(sent.at(-1)).toStrictEqual({ id: 'file.reveal', params: { handle: WRITTEN } });
+  });
+});
+
+/**
+ * ADR-0149 Decision 4, the renderer's half: main refused an edit of a signed document without changing it, and the
+ * one dispatcher asks the person. Main's half — that nothing changed, and that agreed it applies — is
+ * `apps/desktop/src/documentCommands.test.ts`' *an edit that would break a signature*.
+ */
+describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
+  const SANITIZE: DispatchableCommand = { kind: 'sanitizeDocument', parts: ['javascript'] };
+  const COPY = asDocId('doc-copy');
+  const APPLIED = { version: asDocVersion(5), byteLength: 4096, historyDropped: 0 };
+
+  /** Main as ADR-0149 has it: `breaks-signatures` until the edit is sent agreed, and `editCopy` answering `copy`. */
+  function signedMain(copy: unknown = { kind: 'cancelled' }): {
+    client: ContractClient;
+    sent: { id: string; params: unknown }[];
+  } {
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      if (id === 'document.editCopy') return Promise.resolve(ok(copy as never));
+      if (id !== 'document.execute') throw new Error(`this fixture has no answer for ${id}`);
+      const agreed = (params as { breakSignatures?: boolean }).breakSignatures === true;
+      return Promise.resolve(agreed ? ok(APPLIED) : err({ code: 'breaks-signatures' as const }));
+    });
+    return { client, sent };
+  }
+
+  /** Answers the signatures question with `answer`, and records every dialog opened. */
+  function answering(answer: unknown): { ask: (id: string, props: unknown) => Promise<unknown>; asked: string[] } {
+    const asked: string[] = [];
+    return {
+      asked,
+      ask: (id) => {
+        asked.push(id);
+        return Promise.resolve(id === 'dialog.signed-edit' ? answer : undefined);
+      },
+    };
+  }
+
+  /** The copy's opener, recording what it was handed. */
+  function opening(warn = true): { signatures: SignedEditing; opened: unknown[] } {
+    const opened: unknown[] = [];
+    return { opened, signatures: { warn: () => warn, onOpened: (document) => opened.push(document) } };
+  }
+
+  it('CHANGE THIS DOCUMENT sends the SAME command again, agreed, and the document moves', async () => {
+    const { client, sent } = signedMain();
+    const { ask, asked } = answering('this');
+    const applied: Applied[] = [];
+    const { signatures: signed, opened } = opening();
+
+    const moved = await applyDocumentCommand(
+      { client, ask, stamp, signatures: signed, onApplied: (next) => applied.push(next) },
+      DOC,
+      SANITIZE,
+    );
+
+    expect(moved).toBe(true);
+    expect(asked).toStrictEqual(['dialog.signed-edit']);
+    expect(sent).toStrictEqual([
+      { id: 'document.execute', params: { docId: DOC, command: SANITIZE } },
+      { id: 'document.execute', params: { docId: DOC, command: SANITIZE, breakSignatures: true } },
+    ]);
+    expect(applied).toStrictEqual([APPLIED]);
+    expect(opened).toStrictEqual([]);
+  });
+
+  it('WORK ON A COPY sends the command to a copy, opens it as a tab, and never sends it to the original again', async () => {
+    const copy = { kind: 'edited', docId: COPY, version: 2, byteLength: 2048, name: 'signed copy.pdf', historyDropped: 0 };
+    const { client, sent } = signedMain(copy);
+    const { ask, asked } = answering('copy');
+    const applied: Applied[] = [];
+    const { signatures: signed, opened } = opening();
+
+    const moved = await applyDocumentCommand(
+      { client, ask, stamp, signatures: signed, onApplied: (next) => applied.push(next) },
+      DOC,
+      SANITIZE,
+    );
+
+    // THE ORIGINAL DID NOT MOVE, so its caller is told so and its view is not reopened.
+    expect(moved).toBe(false);
+    expect(applied).toStrictEqual([]);
+    expect(sent).toStrictEqual([
+      { id: 'document.execute', params: { docId: DOC, command: SANITIZE } },
+      { id: 'document.editCopy', params: { docId: DOC, command: SANITIZE } },
+    ]);
+    expect(opened).toStrictEqual([{ docId: COPY, version: 2, byteLength: 2048, name: 'signed copy.pdf' }]);
+    expect(asked).toStrictEqual(['dialog.signed-edit']);
+  });
+
+  it('a copy whose edit was refused is still OPENED, and the refusal is said over it', async () => {
+    const copy = { kind: 'edit-refused', docId: COPY, version: 1, byteLength: 1024, name: 'signed copy.pdf', problem: 'text-not-writable' };
+    const { client } = signedMain(copy);
+    const { ask, asked } = answering('copy');
+    const { signatures: signed, opened } = opening();
+
+    await applyDocumentCommand({ client, ask, stamp, signatures: signed, onApplied: () => undefined }, DOC, SANITIZE);
+
+    expect(opened).toHaveLength(1);
+    expect(asked).toStrictEqual(['dialog.signed-edit', 'dialog.command-problem']);
+  });
+
+  it('CANCEL sends nothing more and reports nothing — the caller is told, so it can keep what was typed', async () => {
+    const { client, sent } = signedMain();
+    const { ask, asked } = answering(undefined);
+    const kept: string[] = [];
+
+    const moved = await applyDocumentCommand(
+      { client, ask, stamp, signatures, onApplied: () => undefined },
+      DOC,
+      SANITIZE,
+      {
+        keep: (error) => {
+          kept.push(error.code);
+          return true;
+        },
+      },
+    );
+
+    expect(moved).toBe(false);
+    expect(sent).toHaveLength(1);
+    expect(asked).toStrictEqual(['dialog.signed-edit']);
+    expect(kept).toStrictEqual(['breaks-signatures']);
+  });
+
+  it('a DISMISSED copy picker is a Cancel too: nothing opened, nothing reported, the caller told', async () => {
+    const { client, sent } = signedMain({ kind: 'cancelled' });
+    const { ask, asked } = answering('copy');
+    const kept: string[] = [];
+    const { signatures: signed, opened } = opening();
+
+    await applyDocumentCommand({ client, ask, stamp, signatures: signed, onApplied: () => undefined }, DOC, SANITIZE, {
+      keep: (error) => {
+        kept.push(error.code);
+        return true;
+      },
+    });
+
+    expect(sent.map((call) => call.id)).toStrictEqual(['document.execute', 'document.editCopy']);
+    expect(opened).toStrictEqual([]);
+    expect(asked).toStrictEqual(['dialog.signed-edit']);
+    expect(kept).toStrictEqual(['breaks-signatures']);
+  });
+
+  it('WITH THE WARNING TURNED OFF nobody is asked: the command is sent again agreed', async () => {
+    const { client, sent } = signedMain();
+    const { ask, asked } = answering('copy');
+    const { signatures: unwarned } = opening(false);
+
+    const moved = await applyDocumentCommand(
+      { client, ask, stamp, signatures: unwarned, onApplied: () => undefined },
+      DOC,
+      SANITIZE,
+    );
+
+    expect(moved).toBe(true);
+    expect(asked).toStrictEqual([]);
+    expect(sent.at(-1)).toStrictEqual({
+      id: 'document.execute',
+      params: { docId: DOC, command: SANITIZE, breakSignatures: true },
+    });
+  });
+
+  it('CONTROL: an edit main applies at once is never asked about, and is sent exactly once', async () => {
+    const sent: unknown[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      return Promise.resolve(ok(APPLIED));
+    });
+    const { ask, asked } = answering('this');
+
+    expect(await applyDocumentCommand({ client, ask, stamp, signatures, onApplied: () => undefined }, DOC, SANITIZE)).toBe(true);
+    expect(sent).toHaveLength(1);
+    expect(asked).toStrictEqual([]);
   });
 });

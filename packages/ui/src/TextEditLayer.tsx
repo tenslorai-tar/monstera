@@ -10,6 +10,7 @@ import {
   TEXT_EDIT_BLOCK_LABEL,
   TEXT_EDIT_EDITOR_LABEL,
   TEXT_EDIT_LAYER_LABEL,
+  TEXT_EDIT_HELD,
   TEXT_EDIT_NONE,
   TEXT_EDIT_NOT_WRITABLE,
   TEXT_EDIT_PROMOTE,
@@ -386,7 +387,8 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
   const { _ } = useLingui();
   const original = wordsOf(block);
   const [text, setText] = useState(original);
-  const [problem, setProblem] = useState(false);
+  /** Why the words are still here after a commit wrote nothing: the font's refusal, or a signed document left as it was. */
+  const [problem, setProblem] = useState<'not-writable' | 'held' | undefined>(undefined);
   const area = useRef<HTMLDivElement>(null);
   /** Set while a write is in flight, so a blur during it does not write twice. */
   const writing = useRef(false);
@@ -434,10 +436,13 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
     writing.current = true;
     const outcome = await onCommit(text);
     writing.current = false;
-    if (outcome === 'not-writable') {
+    if (outcome === 'not-writable' || outcome === 'held') {
       // THE EDITOR STAYS, with the words and the sentence beside them: the
-      // person can change the characters the font cannot show.
-      setProblem(true);
+      // person can change the characters the font cannot show, or — on a signed
+      // document they chose to leave as it was (ADR-0149) — keep what they typed
+      // until they decide. A blur no longer writes until they type again, so a
+      // focus the closing dialog moves cannot ask the same question twice.
+      setProblem(outcome);
       area.current?.focus();
       return;
     }
@@ -451,7 +456,7 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
     // AFTER A REFUSAL, Escape puts the text back rather than trying again: the
     // sentence says so, and a second Escape that re-sent the same words would
     // meet the same refusal.
-    if (problem) {
+    if (problem !== undefined) {
       onClose();
       return;
     }
@@ -472,11 +477,11 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
         contentEditable="plaintext-only"
         data-text-editor=""
         onBlur={() => {
-          if (!problem) void finish();
+          if (problem === undefined) void finish();
         }}
         onInput={(event) => {
           setText(event.currentTarget.innerText);
-          setProblem(false);
+          setProblem(undefined);
         }}
         onKeyDown={onKeyDown}
         ref={area}
@@ -497,11 +502,11 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
       {(['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const).map((corner) => (
         <span aria-hidden className={`m-text-editor-handle m-text-editor-handle--${corner}`} key={corner} />
       ))}
-      {problem ? (
+      {problem === undefined ? null : (
         <p className="m-text-editor-problem" role="alert">
-          {_(TEXT_EDIT_NOT_WRITABLE)}
+          {_(problem === 'held' ? TEXT_EDIT_HELD : TEXT_EDIT_NOT_WRITABLE)}
         </p>
-      ) : null}
+      )}
     </div>
   );
 }

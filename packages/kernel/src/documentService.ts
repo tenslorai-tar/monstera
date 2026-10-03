@@ -405,6 +405,18 @@ export interface DocumentContext {
   readonly removedSinceSave: boolean;
 
   /**
+   * That the person agreed, for this open document, that an edit may break its signatures
+   * ([ADR-0149](../../../docs/DECISIONS/0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)
+   * Decision 6). Recorded by {@link agreeToBreakSignatures} when they answer *edit this document*; read by the edit
+   * gate and by the save, so a removal's save does not ask the question a second time. It ends with the document: the
+   * record is dropped at close, and nothing clears it before then.
+   */
+  readonly signaturesBreakAgreed: boolean;
+
+  /** Records {@link signaturesBreakAgreed}. One-way for the life of the open document. */
+  agreeToBreakSignatures(): void;
+
+  /**
    * This document's command log (ADR-0009 §4), for the bus to record into.
    *
    * **Per document, and on the record rather than on the bus.** A log held by
@@ -771,6 +783,8 @@ interface DocumentRecord {
   savedVersion: DocVersion;
   /** {@link DocumentContext.removedSinceSave}: set by the bus, cleared by a save, inside the lane. */
   removedSinceSave: boolean;
+  /** {@link DocumentContext.signaturesBreakAgreed}: set once, by the person's answer, for the life of the record. */
+  signaturesBreakAgreed: boolean;
   /**
    * ADR-0009 §7's lane, **living on the record**.
    *
@@ -1598,6 +1612,8 @@ export class DocumentService {
       savedVersion: version,
       // NOTHING REMOVED YET: the file and the document hold the same content at open.
       removedSinceSave: false,
+      // NOTHING AGREED YET: a signed document's first breaking edit asks.
+      signaturesBreakAgreed: false,
       lane: Promise.resolve(),
       queued: 0,
       log: new CommandLog(),
@@ -1950,6 +1966,12 @@ export class DocumentService {
           // A GETTER, for `byteLength`'s reason below: a save reads it after the bus has run in the same entry.
           get removedSinceSave() {
             return record.removedSinceSave;
+          },
+          get signaturesBreakAgreed() {
+            return record.signaturesBreakAgreed;
+          },
+          agreeToBreakSignatures: () => {
+            record.signaturesBreakAgreed = true;
           },
           // Same treatment, same reason: the token is not read, because being
           // unobtainable outside `commandBus.ts` is a compile-time property and

@@ -347,6 +347,9 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // request is a `DocId` and its whole answer is a byte count and three
   // outcomes, so there is no payload here that could scale with anything.
   'document.saveCopy': 'needs an engine session and a save dialog',
+  // `saveCopy`'s dialog and flush, then an open and a command: its request is a `DocId` and a renderable command, whose
+  // bounds are the command's own, and its answer is the open's fields and a reason (ADR-0149).
+  'document.editCopy': 'needs an engine session, a save dialog and an open',
   // `saveCopy`'s answer exactly — a byte count and three outcomes — and a
   // REQUEST that is the one thing here worth a second look: it names pages. It
   // is a page set, where *every page* is one run, so an extract of any length

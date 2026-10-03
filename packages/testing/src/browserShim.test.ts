@@ -229,6 +229,7 @@ describe('browser shim', () => {
       'document.deleteHeldCopies',
       'document.destinations',
       'document.duplicatePages',
+      'document.editCopy',
       'document.editPageExternally',
       'document.email',
       'document.execute',

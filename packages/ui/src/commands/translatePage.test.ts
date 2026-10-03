@@ -68,6 +68,13 @@ async function run(options: {
     client,
     onApplied: (a) => applied.push(a),
     stamp: () => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' }),
+    // NOT SIGNED (ADR-0149): a copy opened for this translation is a defect of the case.
+    signatures: {
+      warn: () => true,
+      onOpened: () => {
+        throw new Error('the case opened a copy for an edit without asking for one');
+      },
+    },
     ask: (id, props) => {
       asked.push({ id, props });
       // `in`, not `??`: a DISMISSAL is `undefined`, and a case must be able to pass exactly that.

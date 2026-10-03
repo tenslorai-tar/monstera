@@ -328,6 +328,13 @@ describe('FindBar replace-all', () => {
             onApplied: applied,
             ask: vi.fn(),
             stamp: () => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' }),
+            // NOT SIGNED (ADR-0149): a copy opened for this replace is a defect of the case.
+            signatures: {
+              warn: () => true,
+              onOpened: () => {
+                throw new Error('the case opened a copy for an edit without asking for one');
+              },
+            },
           }}
         />
       </Wrapped>,

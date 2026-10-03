@@ -21,6 +21,7 @@ import {
   saveCommand,
   saveCopyCommand,
   splitDocumentCommand,
+  type SignedEditing,
 } from './documentCommands.js';
 import { countPendingRedactions, settlePendingRedactions } from './pendingRedactions.js';
 import { exportSearchableCommand } from './recogniseText.js';
@@ -41,6 +42,13 @@ import { SettingsStore } from '../settingsStore.js';
 
 const DOC = asDocId('doc-n1');
 const stamp = (): AnnotationStamp => ({ author: 'A. Tester', created: '2026-10-02T09:00:00.000Z' });
+/** No document here is signed, so a copy opened for an edit is a defect of the case. */
+const signatures: SignedEditing = {
+  warn: () => true,
+  onOpened: () => {
+    throw new Error('a case opened a copy for an edit without asking for one');
+  },
+};
 
 const CONTEXT: CommandContext = {
   selectedPages: [],
@@ -176,7 +184,7 @@ describe('settlePendingRedactions', () => {
     const { ask, asked } = asking(answer);
     const moved: unknown[] = [];
     const settled = await settlePendingRedactions(
-      { client, ask, stamp, onApplied: (applied) => moved.push(applied) },
+      { client, ask, stamp, signatures, onApplied: (applied) => moved.push(applied) },
       DOC,
       occasion,
     );
@@ -238,7 +246,7 @@ describe('Save, with marks nobody applied', () => {
       throw new Error(`no ${id}`);
     });
     const { ask, asked } = asking(answer);
-    const deps = { client, ask, stamp, onApplied: () => undefined };
+    const deps = { client, ask, stamp, signatures, onApplied: () => undefined };
     const command = saveCommand({
       client,
       ask,
@@ -286,7 +294,7 @@ describe('an export, with marks nobody applied', () => {
       throw new Error(`no ${id}`);
     });
     const { ask } = asking(answer);
-    const deps = { client, ask, stamp, onApplied: () => undefined };
+    const deps = { client, ask, stamp, signatures, onApplied: () => undefined };
     const command = saveCopyCommand({
       ...deps,
       toast: () => undefined,
@@ -370,6 +378,7 @@ describe('every save, export, print and send asks before it does anything', () =
       settled,
       client,
       stamp,
+      signatures,
       onApplied: () => undefined,
       onSaved: () => undefined,
       toast: () => undefined,

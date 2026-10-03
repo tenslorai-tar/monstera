@@ -38,6 +38,7 @@ import {
   type SpellingLanguage,
   type StorePage,
   type WindowEditAction,
+  withTargetVersion,
 } from '@monstera/contract';
 import {
   type AiModelList,
@@ -57,6 +58,8 @@ import {
   EngineAnnotationDataExportFailed,
   type IdentityReader,
   StaleTargetError,
+  TextNotWritableError,
+  UnregisteredWriterError,
   type WriteTargetVerdict,
   paragraphText,
   readDocumentRange,
@@ -466,6 +469,7 @@ export function createContractHandlers(deps: {
     'document.optimizeMeasure': optimizeMeasureHandler(deps.commands),
     'document.optimize': optimizeHandler(deps.commands, mintWritten),
     'document.saveCopy': saveCopyHandler(deps.commands, mintWritten),
+    'document.editCopy': editCopyHandler(deps),
     'document.insertImage': insertImageHandler(deps.commands),
     'document.newFromMarkdown': newFromImportHandler(deps, 'markdown'),
     'document.newFromCsv': newFromImportHandler(deps, 'csv'),
@@ -2109,6 +2113,71 @@ function saveCopyHandler(commands: DocumentCommands, mint: MintWritten): Contrac
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * An edit made on a copy, so a signed original keeps its signatures
+ * ([ADR-0149](../../../docs/DECISIONS/0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)
+ * Decision 5): `saveCopy`'s picker and write, the one open route ({@link openPath}), then the command applied to the
+ * copy once its sessions exist, with the version it names re-bound to the copy's.
+ *
+ * ## The copy stays open whatever its edit does, unless nothing can say why
+ *
+ * A refusal the person can act on answers `edit-refused` beside the open copy. Anything else is a defect, and it is
+ * rethrown so the boundary records it — after the copy is CLOSED, because an answer that is not `edited` or
+ * `edit-refused` carries no document, and a document open in `main` that no tab shows is one nobody can close. The
+ * copy's file stays where the person put it.
+ */
+function editCopyHandler(
+  deps: OpenPathParts & { readonly commands: DocumentCommands },
+): ContractHandlers['document.editCopy'] {
+  return async ({ docId, command }): Promise<Awaited<ReturnType<ContractHandlers['document.editCopy']>>> => {
+    let copied;
+    try {
+      copied = await deps.commands.copyForEditing(docId, command);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof StaleTargetError) return err({ code: 'stale-target' });
+      throw thrown;
+    }
+    if (copied === undefined) return ok({ kind: 'cancelled' } as const);
+    if (copied.outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+    if (copied.outcome.kind === 'refused') {
+      return ok({ kind: 'destination-contested', openElsewhere: copied.outcome.others.length } as const);
+    }
+
+    const { outcome: opened, sessions } = await openPath(deps, copied.destination);
+    if (opened.kind === 'absent' || opened.kind === 'at-capacity') return ok(opened);
+    if (opened.kind !== 'opened') {
+      // UNREACHABLE BY `saveCopy`'s OWN RULE: a destination another open document reaches is refused before anything
+      // is written, so the file just written cannot already be open.
+      throw new Error(`a copy written for editing opened as "${opened.kind}", which its write refuses`);
+    }
+
+    // THE COPY'S SESSIONS FIRST, as a merge waits for a source it just opened: the edit runs in them.
+    await sessions;
+    try {
+      const applied = await deps.commands.execute(opened.docId, withTargetVersion(command, opened.version), {
+        breakSignatures: true,
+      });
+      return ok({ ...opened, kind: 'edited', ...applied } as const);
+    } catch (thrown) {
+      const problem =
+        thrown instanceof UnregisteredWriterError
+          ? 'engine-unavailable'
+          : thrown instanceof TextNotWritableError
+            ? 'text-not-writable'
+            : thrown instanceof DocumentPoisonedError
+              ? 'document-poisoned'
+              : undefined;
+      if (problem !== undefined) return ok({ ...opened, kind: 'edit-refused', problem } as const);
+      await deps.documents.close(opened.docId);
+      deps.recent.closed(opened.docId);
       throw thrown;
     }
   };

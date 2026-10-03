@@ -1206,17 +1206,23 @@ const openedSchema = z.object({
     name: z.string().max(MAX_DOCUMENT_NAME_LENGTH),
   });
 
+/** The file is not where it was named — gone between being chosen and being read. */
+const openAbsentSchema = z.object({ kind: z.literal('absent') });
+
+/** Opening it would take the documents held in memory past their ceiling. */
+const openAtCapacitySchema = z.object({
+  kind: z.literal('at-capacity'),
+  /** What the resident total would have become, in bytes. */
+  wouldHold: z.number().int().nonnegative(),
+  /** The ceiling it would have crossed. */
+  ceiling: z.number().int().nonnegative(),
+});
+
 const openOutcomeSchema = z.discriminatedUnion('kind', [
   openedSchema,
   z.object({ kind: z.literal('already-open'), docId: docIdSchema }),
-  z.object({ kind: z.literal('absent') }),
-  z.object({
-    kind: z.literal('at-capacity'),
-    /** What the resident total would have become, in bytes. */
-    wouldHold: z.number().int().nonnegative(),
-    /** The ceiling it would have crossed. */
-    ceiling: z.number().int().nonnegative(),
-  }),
+  openAbsentSchema,
+  openAtCapacitySchema,
   z.object({ kind: z.literal('cancelled') }),
 ]);
 
@@ -2037,7 +2043,19 @@ export const channels = {
     // image main reads from a picked file, so the one channel a renderer could
     // put a command on refuses it at the boundary — the capability is
     // unrepresentable rather than merely unused. See `commands.ts`.
-    z.object({ docId: docIdSchema, command: renderableCommandSchema }),
+    z.object({
+      docId: docIdSchema,
+      command: renderableCommandSchema,
+      /**
+       * That the person agreed this edit may break the document's signatures
+       * ([ADR-0149](../../../docs/DECISIONS/0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)).
+       *
+       * **Optional, and absent is the direction that asks.** Elsewhere this contract makes a field required so a
+       * caller cannot satisfy it by not reading it; here not sending it gets the question, never a broken signature,
+       * so forgetting it is safe and only the answer to that question sends `true`.
+       */
+      breakSignatures: z.boolean().optional(),
+    }),
     z.object({
       version: docVersionSchema,
       byteLength: z.number().int().nonnegative(),
@@ -2076,6 +2094,8 @@ export const channels = {
     // `text-not-writable` IS AN IN-PLACE EDIT'S (ADR-0096): the page's font cannot carry what
     // was typed. It is the PERSON's to act on — type something else, or edit another way — so
     // it is a sentence and never `internal` with an incident id for a document working as made.
+    // `breaks-signatures` IS A QUESTION, NOT A FAULT (ADR-0149): the edit would rewrite a signed document whole, and
+    // nothing has changed. The dispatcher asks the person and sends the command again, agreed, or works on a copy.
     [
       'document-not-open',
       'document-busy',
@@ -2083,6 +2103,7 @@ export const channels = {
       'stale-target',
       'engine-unavailable',
       'text-not-writable',
+      'breaks-signatures',
       ...SERVICE_PROBLEMS,
     ],
   ),
@@ -2903,6 +2924,40 @@ export const channels = {
       z.object({ kind: z.literal('write-failed') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Makes an edit on a COPY of a signed document, so the original keeps its signatures
+   * ([ADR-0149](../../../docs/DECISIONS/0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)
+   * Decision 5).
+   *
+   * `document.saveCopy`'s picker and write, then the open route a picked file takes, then the command applied to the
+   * copy with the version it names re-bound to the copy's. Asked for when an edit answered `breaks-signatures` and the
+   * person chose to work on a copy.
+   *
+   * ## The copy is opened whatever the edit does there
+   *
+   * Once the file is written it is a document the person chose to make, so it opens, and the answer says whether the
+   * edit applied: `edited`, or `edit-refused` with a reason the person can act on, beside the copy that is open either
+   * way. Any other failure is a defect: main closes the copy, whose file stays where it was put, and the boundary
+   * records it — an answer carrying no document must leave none open that no tab shows.
+   */
+  'document.editCopy': channel(
+    'Writes a copy of an open document where the user picks, opens it, and applies one command to the copy.',
+    z.object({ docId: docIdSchema, command: renderableCommandSchema }),
+    z.discriminatedUnion('kind', [
+      openedSchema.extend({ kind: z.literal('edited'), historyDropped: z.number().int().nonnegative() }),
+      openedSchema.extend({
+        kind: z.literal('edit-refused'),
+        problem: z.enum(['engine-unavailable', 'text-not-writable', 'document-poisoned']),
+      }),
+      z.object({ kind: z.literal('cancelled') }),
+      importContestedSchema,
+      importWriteFailedSchema,
+      openAbsentSchema,
+      openAtCapacitySchema,
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned', 'stale-target'],
   ),
 
   /**

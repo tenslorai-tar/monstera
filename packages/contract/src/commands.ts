@@ -5229,6 +5229,19 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
 }
 
 /**
+ * {@link targetVersionOf}'s inverse: the same command, composed against `version` instead.
+ *
+ * For applying an edit to a COPY of the document it was composed on
+ * ([ADR-0149](../../../docs/DECISIONS/0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)
+ * Decision 5): the copy holds the same content under its own version, so a command naming the original's must name the
+ * copy's to apply there. Keyed on {@link targetVersionOf}'s kinds, never on a field spelt `version`, for that function's
+ * reason; a kind that names no version comes back unchanged.
+ */
+export function withTargetVersion<C extends Command>(command: C, version: DocVersion): C {
+  return targetVersionOf(command) === undefined ? command : { ...command, version };
+}
+
+/**
  * Which kinds {@link targetVersionOf} answers with a version for.
  *
  * Exported for the kernel to anchor against its `targets` axis, exactly as

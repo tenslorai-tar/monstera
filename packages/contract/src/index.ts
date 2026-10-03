@@ -439,6 +439,7 @@ export {
   setAnnotationAuthorSchema,
   renderableCommandSchema,
   targetVersionOf,
+  withTargetVersion,
   replacePageSchema,
   importPageAsLayerSchema,
   sourceIdsOf,

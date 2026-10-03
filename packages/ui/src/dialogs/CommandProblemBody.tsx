@@ -11,6 +11,8 @@ import {
   PROBLEM_SERVICE_UNAUTHORISED,
   PROBLEM_SERVICE_UNAVAILABLE,
   PROBLEM_BUSY,
+  PROBLEM_COPY_ABSENT,
+  PROBLEM_COPY_AT_CAPACITY,
   PROBLEM_ENGINE_UNAVAILABLE,
   PROBLEM_RASTER_TOO_LARGE,
   PROBLEM_NOT_COPYABLE,
@@ -32,6 +34,8 @@ export type CommandProblem =
   | { readonly code: 'raster-too-large' }
   | { readonly code: 'not-copyable' }
   | { readonly code: 'text-not-writable' }
+  | { readonly code: 'copy-absent' }
+  | { readonly code: 'copy-at-capacity' }
   | { readonly code: (typeof SERVICE_PROBLEMS)[number] }
   | { readonly code: 'internal'; readonly incident: string };
 
@@ -52,6 +56,8 @@ const MESSAGE: Readonly<Record<CommandProblem['code'], MessageKey>> = {
   'raster-too-large': PROBLEM_RASTER_TOO_LARGE,
   'not-copyable': PROBLEM_NOT_COPYABLE,
   'text-not-writable': TEXT_EDIT_NOT_WRITABLE,
+  'copy-absent': PROBLEM_COPY_ABSENT,
+  'copy-at-capacity': PROBLEM_COPY_AT_CAPACITY,
   'service-no-key': PROBLEM_SERVICE_NO_KEY,
   'service-unauthorised': PROBLEM_SERVICE_UNAUTHORISED,
   'service-address': PROBLEM_SERVICE_ADDRESS,

@@ -223,6 +223,32 @@ describe('Edit text on the page (ADR-0096)', () => {
     expect(view.container.querySelector('[data-text-editor]')).toBeNull();
   });
 
+  it('A SIGNED DOCUMENT LEFT AS IT WAS keeps the editor and the words, and a blur does not ask again (ADR-0149)', async () => {
+    const { view, answerWith, commits } = mount();
+    answerWith('held');
+    fireEvent.click(find(view.container, '[data-text-block="0"]'));
+    const editor = editorIn(view.container);
+    typeInto(editor, 'WORK HISTORY');
+    await act(async () => {
+      fireEvent.keyDown(editor, { key: 'Escape' });
+      await Promise.resolve();
+    });
+    expect(view.container.querySelector('[data-text-editor]')).not.toBeNull();
+    expect(view.container.querySelector('[role="alert"]')?.textContent).toContain('signatures still verify');
+    // A FOCUS THE CLOSING DIALOG MOVES writes nothing: the question is asked once per finish, not once per blur.
+    await act(async () => {
+      fireEvent.blur(find(view.container, '[data-text-editor]'));
+      await Promise.resolve();
+    });
+    expect(commits).toHaveLength(1);
+    // AND ESCAPE PUTS THE TEXT BACK, as after the font's refusal.
+    await act(async () => {
+      fireEvent.keyDown(find(view.container, '[data-text-editor]'), { key: 'Escape' });
+      await Promise.resolve();
+    });
+    expect(view.container.querySelector('[data-text-editor]')).toBeNull();
+  });
+
   it('ESCAPE WITH NO BLOCK OPEN leaves the mode', () => {
     const { view, onLeave } = mount();
     fireEvent.keyDown(find(view.container, '[data-text-edit-layer]'), { key: 'Escape' });

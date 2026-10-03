@@ -53,6 +53,13 @@ function recording(answers: Readonly<Record<string, unknown>>): {
 
 /** Every callback a command can make, recorded in order. */
 const STAMP = () => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' });
+/** No document here is signed (ADR-0149), so a copy opened for an edit is a defect of the case. */
+const signatures = {
+  warn: () => true,
+  onOpened: () => {
+    throw new Error('a case opened a copy for an edit without asking for one');
+  },
+};
 
 function callbacks(): {
   readonly calls: { name: string; value: unknown }[];
@@ -184,6 +191,7 @@ describe('appendMarkdownCommand', () => {
       client,
       ask,
       stamp: STAMP,
+      signatures,
       onApplied: record('applied'),
       onOpened: record('opened'),
       onActivate: record('activate'),
@@ -214,6 +222,7 @@ describe('appendMarkdownCommand', () => {
       client,
       ask,
       stamp: STAMP,
+      signatures,
       onApplied: record('applied'),
       onOpened: record('opened'),
       onActivate: record('activate'),
@@ -240,6 +249,7 @@ describe('appendMarkdownCommand', () => {
       client,
       ask,
       stamp: STAMP,
+      signatures,
       onApplied: record('applied'),
       onOpened: record('opened'),
       onActivate: record('activate'),

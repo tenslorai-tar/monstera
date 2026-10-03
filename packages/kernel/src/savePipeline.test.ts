@@ -110,6 +110,11 @@ function held(version: number): Held {
       },
       // The pipeline takes the backup choice as an argument; the caller reads this, so no case here does.
       removedSinceSave: false,
+      // Nor does it ask about signatures, which is the command layer's question (ADR-0149).
+      signaturesBreakAgreed: false,
+      agreeToBreakSignatures: (): never => {
+        throw new Error('saving does not agree to break signatures');
+      },
       commandLog: (_writer: CommandWriter): CommandLog => log,
       log,
       markSaved: (_writer: SaveWriter): Promise<DocVersion> => {

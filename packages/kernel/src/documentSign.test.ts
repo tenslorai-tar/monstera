@@ -18,6 +18,7 @@ import { preparePlaced, withSignaturePlaceholder } from './signaturePlaceholder.
 import { type PlaceholderRequest, placeholderRequestOf } from './signatureHole.js';
 import { engineChannels } from './host/engineChannels.js';
 import { signatureValues } from './signatureFields.js';
+import { breaksSignatures } from './signatureKeeping.js';
 import type { ByteImage } from './engineSeam.js';
 import { PngPixelsRefused } from './imageDimensions.js';
 import { mupdfWriter, signaturesKeptBySave, withDocument, withDocumentRemoving } from './mupdfWriter.js';
@@ -391,6 +392,27 @@ describe('a SECOND signature (CR-DOC-07)', () => {
       await mupdfWriter.close(session);
     }
   }, 120_000);
+
+  it('a signed file is counted as signed by the question main asks BEFORE a breaking edit (ADR-0149)', async () => {
+    // MAIN'S GATE asks `signaturesKept` of the document's session and refuses the edit when it counts one or more
+    // (`apps/desktop/src/documentCommands.test.ts`' *an edit that would break a signature*, over an injected count).
+    // This is the other end of that pair: the real count, over a really signed file — without it the gate could be
+    // proven against a number no signed document produces.
+    const once = await applySignDocument(unsigned, { ...command, bytes: certificate });
+    const signed = await mupdfWriter.open(once);
+    const plain = await mupdfWriter.open(unsigned);
+    try {
+      expect((await signaturesKeptBySave(signed)).signatures).toBe(1);
+      // CONTROL: the unsigned file the signature was added to counts none, so the gate lets every edit through.
+      expect((await signaturesKeptBySave(plain)).signatures).toBe(0);
+    } finally {
+      await mupdfWriter.close(signed);
+      await mupdfWriter.close(plain);
+    }
+    // AND THE KINDS THE GATE ASKS ABOUT: a removal does; a rotation, which MuPDF appends, does not.
+    expect(breaksSignatures('sanitizeDocument')).toBe(true);
+    expect(breaksSignatures('rotatePages')).toBe(false);
+  }, 60_000);
 
   it('CONTROL: one signature covers the whole file it is in', async () => {
     const once = await applySignDocument(unsigned, { ...command, bytes: certificate });

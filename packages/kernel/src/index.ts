@@ -550,6 +550,7 @@ export {
 // nowhere a composition could reach, and the root registered none — so signing, certifying and visible signatures were
 // refused as an unregistered writer in the running application while every test that built its own bus passed.
 export { NO_TIMESTAMPS, signpdfExecutionWith } from './documentSign.js';
+export { breaksSignatures } from './signatureKeeping.js';
 export type { RequestTimestamp, SignatureHost } from './documentSign.js';
 export type { PlaceholderRequest, PreparedSignature } from './signatureHole.js';
 export { serialiseIntoFile } from './checkpointFile.js';

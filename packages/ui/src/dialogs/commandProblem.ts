@@ -67,6 +67,10 @@ export const COMMAND_PROBLEM_DIALOG = declareDialog({
     // AN IN-PLACE EDIT THE PAGE'S FONT CANNOT CARRY (ADR-0096). The editor says it beside the
     // words; this is the sentence for any other surface that writes a block.
     z.object({ code: z.literal('text-not-writable') }).strict(),
+    // A COPY MADE FOR AN EDIT OF A SIGNED DOCUMENT (ADR-0149) that was written and could not be opened: gone before
+    // the open, or no room beside the documents already open. The file is where the person put it, without the edit.
+    z.object({ code: z.literal('copy-absent') }).strict(),
+    z.object({ code: z.literal('copy-at-capacity') }).strict(),
     // A SERVICE'S ANSWER to a region recognition — `SERVICE_PROBLEMS` in the contract.
     z.object({ code: z.enum(SERVICE_PROBLEMS) }).strict(),
     z.object({ code: z.literal('internal'), incident: z.string().min(1) }).strict(),

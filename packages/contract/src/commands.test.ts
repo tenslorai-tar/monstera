@@ -11,7 +11,10 @@ import {
   replacementFieldsOf,
   replacementsOf,
   styleAnnotationSchema,
+  targetVersionOf,
+  withTargetVersion,
 } from './commands.js';
+import { asDocVersion } from '@monstera/shared';
 import { ENGINE_ANSWER_FILE_MAX_BYTES } from './hostProtocol.js';
 import { WORST_BYTES_PER_CHAR, maxEncodedBytes } from './schemaBound.js';
 
@@ -187,5 +190,19 @@ describe('the restyle payload', () => {
 
   it('REFUSES one naming none of them, which would be an undo step for no change', () => {
     expect(styleAnnotationSchema.safeParse(named).success).toBe(false);
+  });
+});
+
+describe('withTargetVersion (ADR-0149)', () => {
+  it('re-binds the version a command names, and targetVersionOf reads the new one back', () => {
+    const edit = { kind: 'replaceTextObject' as const, page: 0, ...replacementFieldsOf([{ index: 2, text: 'hi' }]), version: asDocVersion(7) };
+    const moved = withTargetVersion(edit, asDocVersion(1));
+    expect(targetVersionOf(moved)).toBe(asDocVersion(1));
+    expect({ ...moved, version: edit.version }).toStrictEqual(edit);
+  });
+
+  it('CONTROL: a command that names no version comes back as it was', () => {
+    const rotate = { kind: 'rotatePages' as const, pages: [0], quarterTurns: 1 as const };
+    expect(withTargetVersion(rotate, asDocVersion(1))).toStrictEqual(rotate);
   });
 });

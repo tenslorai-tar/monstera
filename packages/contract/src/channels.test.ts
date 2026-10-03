@@ -154,6 +154,7 @@ const handlers: ContractHandlers = {
   'document.optimizeMeasure': () => Promise.resolve(ok({ kind: 'unavailable' as const })),
   'document.optimize': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.editCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.newFromMarkdown': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.newFromCsv': () => Promise.resolve(ok({ kind: 'cancelled' as const })),

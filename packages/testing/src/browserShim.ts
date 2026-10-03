@@ -648,6 +648,17 @@ export interface BrowserShimOptions {
    * changes nothing. An `opened` answer seeds the document as `document.open`'s does.
    */
   readonly markdownNews?: readonly ChannelResult<'document.newFromMarkdown'>[];
+  /**
+   * Documents that carry signatures, by id: `document.execute` there answers `breaks-signatures` unless the request
+   * says the person agreed (ADR-0149). The shim models no engine, so it cannot tell which commands break one; a case
+   * that needs the question names the document, as `busy` names a saturated lane.
+   */
+  readonly signed?: ReadonlySet<string>;
+  /**
+   * What `document.editCopy` answers, in order — `markdownNews`' queue and default: unset or exhausted is `cancelled`.
+   * An `edited` or `edit-refused` answer seeds the copy, which is open either way.
+   */
+  readonly editCopies?: readonly ChannelResult<'document.editCopy'>[];
   /** What `document.newFromCsv` answers, in order — `markdownNews`' queue and default. */
   readonly csvNews?: readonly ChannelResult<'document.newFromCsv'>[];
   /** What `document.newFromOffice` answers, in order — `markdownNews`' queue and default. */
@@ -820,6 +831,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // entries off it would mutate a value the caller may still be reading.
   const queuedOpens: OpenAnswer[] = [...(options.opens ?? [])];
   const queuedMarkdownNews = [...(options.markdownNews ?? [])];
+  const queuedEditCopies = [...(options.editCopies ?? [])];
   const queuedCsvNews = [...(options.csvNews ?? [])];
   const queuedOfficeNews = [...(options.officeNews ?? [])];
   const queuedImageNews = [...(options.imageNews ?? [])];
@@ -1164,7 +1176,11 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(ok(answer));
     },
 
-    'document.execute': ({ docId }) => {
+    'document.execute': ({ docId, breakSignatures }) => {
+      // ASKED BEFORE ANYTHING CHANGES, as main asks (ADR-0149): no version moves for the question.
+      if (options.signed?.has(docId) === true && breakSignatures !== true) {
+        return Promise.resolve(err({ code: 'breaks-signatures' }));
+      }
       if (options.faulty?.has(docId) === true) {
         // Thrown, not returned. `wrapHandlers` records it and hands the client
         // `internal` plus an incident id — the same split the real boundary
@@ -1779,6 +1795,15 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
         return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
       }
       return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen, written: wrote() }));
+    },
+
+    // `document.open`'s seeding, for its reason: a copy reported open must be one the rest of the shim accepts.
+    'document.editCopy': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+      const answer = queuedEditCopies.shift() ?? { kind: 'cancelled' as const };
+      if (answer.kind === 'edited' || answer.kind === 'edit-refused') versions.set(answer.docId, answer.version);
+      return Promise.resolve(ok(answer));
     },
 
     // THE STALE RULE IS MODELLED, and it is the one behaviour here that is not

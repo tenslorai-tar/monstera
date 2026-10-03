@@ -8,7 +8,12 @@ import {
 } from '@monstera/kernel';
 import { err, ok } from '@monstera/shared';
 
-import { type DocumentCommands, DocumentPoisonedError, serviceReasonOf } from './documentCommands.js';
+import {
+  type DocumentCommands,
+  DocumentPoisonedError,
+  SignaturesWouldBreakError,
+  serviceReasonOf,
+} from './documentCommands.js';
 
 /**
  * The first IPC handler, and the first code in this repository that answers
@@ -50,16 +55,19 @@ import { type DocumentCommands, DocumentPoisonedError, serviceReasonOf } from '.
 export function executeCommandHandler(
   commands: DocumentCommands,
 ): ContractHandlers['document.execute'] {
-  return async ({ docId, command }) => {
+  return async ({ docId, command, breakSignatures }) => {
     try {
       // TWO SCALARS CROSS, and `Executed` still does not. An entry holds an
       // inverse or a checkpoint — a whole byte image — so what the bus produced
       // never leaves main. The version says the renderer's view is stale and the
       // byte length is what it rebuilds that view against, both the same size
       // for any document.
-      const applied = await commands.execute(docId, command);
+      const applied = await commands.execute(docId, command, { breakSignatures: breakSignatures === true });
       return ok(applied);
     } catch (thrown) {
+      // A QUESTION FOR THE PERSON, not a fault (ADR-0149): the edit would break a signed document's signatures and
+      // nothing changed. The count stays main-side; the dispatcher asks and sends the command again, or a copy.
+      if (thrown instanceof SignaturesWouldBreakError) return err({ code: 'breaks-signatures' });
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       // A DECISION, not an inconsistency. The supervisor bounded a rebuild loop

@@ -10,6 +10,7 @@ import {
   type FormDataImportFormat,
   type OptimizeSetting,
   type PageSet,
+  type RenderableCommand,
   type SignaturePlacement,
   blockEditOf,
   pageSetOf,
@@ -91,6 +92,8 @@ import { HELD_COPIES_DIALOG_ID, HELD_COPIES_RESULT } from '../dialogs/heldCopies
 import { KEPT_BACKUPS_DIALOG_ID } from '../dialogs/keptBackups.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { SIGNATURE_BREAK_DIALOG_ID, SIGNATURE_BREAK_RESULT } from '../dialogs/signatureBreak.js';
+import { SIGNED_EDIT_DIALOG_ID, SIGNED_EDIT_RESULT } from '../dialogs/signedEdit.js';
+import type { OpenedDocument } from './importMarkdown.js';
 import type { PendingRedactionOccasion } from '../dialogs/pendingRedactions.js';
 import { WATERMARK_PAGES_DIALOG_ID } from '../dialogs/watermarkPages.js';
 import type { WatermarkPagesAnswer } from '../dialogs/watermarkPagesResult.js';
@@ -363,6 +366,21 @@ export interface DocumentCommandDeps {
    * the send's and not the moment this bag was built.
    */
   readonly stamp: () => AnnotationStamp;
+  /**
+   * What an edit that would break the document's signatures needs
+   * ([ADR-0149](../../../../docs/DECISIONS/0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)).
+   * REQUIRED, because every command goes through {@link applyDocumentCommand} and any of them may be the one: a bag
+   * built without it would turn *Work on a copy* into a choice that opens nothing.
+   */
+  readonly signatures: SignedEditing;
+}
+
+/** See {@link DocumentCommandDeps.signatures}. */
+export interface SignedEditing {
+  /** Whether a change that would break a signature asks first: the save's switch, `saving.warn-signature-break`. */
+  readonly warn: () => boolean;
+  /** Adds the copy an edit was made on as a tab, as an open does. */
+  readonly onOpened: (document: OpenedDocument) => void;
 }
 
 /**
@@ -569,13 +587,36 @@ export async function applyDocumentCommand(
 ): Promise<boolean> {
   // PAGES AS RUNS (decision D), here where every command leaves the renderer, so no surface has to remember: a
   // selection of ten thousand pages in one stretch crosses as one entry, and every command fits a host's frame.
-  const answer = await deps.client['document.execute']({ docId, command: withPageRuns(withStamp(command, deps.stamp())) });
+  const sent = withPageRuns(withStamp(command, deps.stamp()));
+  let answer = await deps.client['document.execute']({ docId, command: sent });
+
+  // A SIGNED DOCUMENT IS ASKED ABOUT BEFORE IT CHANGES (ADR-0149): main answered without touching it. *Change this
+  // document* sends the same command again, stamp and all, agreed; *Work on a copy* sends it to a copy; Cancel, or a
+  // dismissed picker on the way to a copy, leaves the document as it was and lets the caller keep what was typed.
+  if (!answer.ok && answer.error.code === 'breaks-signatures') {
+    const asked = deps.signatures.warn()
+      ? SIGNED_EDIT_RESULT.safeParse(await deps.ask(SIGNED_EDIT_DIALOG_ID, {}))
+      : ({ success: true, data: 'this' } as const);
+    if (asked.success && asked.data === 'this') {
+      answer = await deps.client['document.execute']({ docId, command: sent, breakSignatures: true });
+    } else {
+      if (!asked.success || !(await editOnCopy(deps, docId, sent))) options.keep?.(answer.error);
+      return false;
+    }
+  }
 
   // A DECLARED FAILURE IS AN OUTCOME AND CHANGES NOTHING — see
   // `rotatePageCommand`, whose comment this behaviour was extracted from. It is
   // still REPORTED: a refusal nobody renders is a control that did nothing.
   if (!answer.ok) {
-    if (options.keep?.(answer.error) !== true) reportProblem(deps, answer.error);
+    // AGREED, main applies rather than asking (`DocumentCommands.execute`), so a second question is a defect of main's
+    // and not a refusal a person could act on.
+    const failure = answer.error;
+    if (failure.code === 'breaks-signatures') throw new Error('main asked again about an edit sent agreed');
+    // REBUILT ONLY TO DROP THAT CODE FROM THE TYPE, and `internal` passes whole so its incident reaches the dialog.
+    if (options.keep?.(failure) !== true) {
+      reportProblem(deps, failure.code === 'internal' ? failure : { code: failure.code });
+    }
     return false;
   }
   deps.onApplied(answer.value);
@@ -586,6 +627,52 @@ export async function applyDocumentCommand(
     void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: answer.value.historyDropped });
   }
   return true;
+}
+
+/**
+ * *Work on a copy*: main writes a copy where the person chooses, opens it and makes the edit there, and the signed
+ * document is not touched (ADR-0149 Decision 5).
+ *
+ * @returns whether a copy is open for the edit. `false` is none — the picker dismissed, or the write or the open
+ * refused, each said here but the dismissal — so the caller may keep what the person typed, which went nowhere.
+ */
+async function editOnCopy(deps: DocumentCommandDeps, docId: DocId, command: RenderableCommand): Promise<boolean> {
+  const answer = await deps.client['document.editCopy']({ docId, command });
+  if (!answer.ok) {
+    reportProblem(deps, answer.error);
+    return false;
+  }
+  const outcome = answer.value;
+  switch (outcome.kind) {
+    case 'edited':
+    case 'edit-refused': {
+      deps.signatures.onOpened({
+        docId: outcome.docId,
+        version: outcome.version,
+        byteLength: outcome.byteLength,
+        name: outcome.name,
+      });
+      // THE COPY IS OPEN EITHER WAY, and a refusal of the edit there is said over it: the file is where the person
+      // put it, unchanged, and closing its tab is theirs.
+      if (outcome.kind === 'edit-refused') reportProblem(deps, { code: outcome.problem });
+      else if (outcome.historyDropped > 0) void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: outcome.historyDropped });
+      return true;
+    }
+    case 'cancelled':
+      return false;
+    case 'destination-contested':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'contested' });
+      return false;
+    case 'write-failed':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'write-failed' });
+      return false;
+    case 'absent':
+      reportProblem(deps, { code: 'copy-absent' });
+      return false;
+    case 'at-capacity':
+      reportProblem(deps, { code: 'copy-at-capacity' });
+      return false;
+  }
 }
 
 /**
@@ -3716,7 +3803,7 @@ export async function promoteTextOnPage(deps: DocumentCommandDeps, docId: DocId,
 export type TextBlock = ChannelResult<'document.textBlocks'>['blocks'][number];
 
 /** How writing one block ended, as far as the editor over it has to act. */
-export type BlockCommit = 'written' | 'unchanged' | 'not-writable' | 'refused';
+export type BlockCommit = 'written' | 'unchanged' | 'not-writable' | 'held' | 'refused';
 
 /**
  * Writes one block's new words: `editTextBlock`, through the one dispatcher.
@@ -3740,6 +3827,11 @@ export type BlockCommit = 'written' | 'unchanged' | 'not-writable' | 'refused';
  * Neither the page's font nor a standard one can carry what was typed (ADR-0097);
  * the editor stays open with the words and says so beside them, where the person
  * can change them. Every other refusal goes where every refusal goes.
+ *
+ * ## `held`: a signed document the person chose to leave as it is
+ *
+ * The words went nowhere — Cancel on the signatures question, or no copy made
+ * (ADR-0149) — so the editor keeps them rather than closing over what was typed.
  */
 export async function commitTextBlock(
   deps: DocumentCommandDeps,
@@ -3751,8 +3843,8 @@ export async function commitTextBlock(
 ): Promise<BlockCommit> {
   const before = block.lines.map((line) => lineText(line.runs)).join('\n');
   if (text === before) return 'unchanged';
-  /** Set by the hook below when the refusal kept was the font's. */
-  const kept: { unwritable: boolean } = { unwritable: false };
+  /** Set by the hook below to the refusal kept: the font's, or the signatures question left unanswered. */
+  const kept: { code: 'text-not-writable' | 'breaks-signatures' | undefined } = { code: undefined };
   const applied = await applyDocumentCommand(
     deps,
     docId,
@@ -3767,13 +3859,13 @@ export async function commitTextBlock(
     },
     {
       keep: (error) => {
-        kept.unwritable = error.code === 'text-not-writable';
-        return kept.unwritable;
+        kept.code = error.code === 'text-not-writable' || error.code === 'breaks-signatures' ? error.code : undefined;
+        return kept.code !== undefined;
       },
     },
   );
   if (applied) return 'written';
-  return kept.unwritable ? 'not-writable' : 'refused';
+  return kept.code === 'text-not-writable' ? 'not-writable' : kept.code === 'breaks-signatures' ? 'held' : 'refused';
 }
 
 /**

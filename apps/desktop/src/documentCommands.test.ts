@@ -175,6 +175,7 @@ import {
   type FormDataSource,
   type SaveSource,
   type SnapshotSource,
+  SignaturesWouldBreakError,
 } from './documentCommands.js';
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
 import { EngineSessions } from './engineSessions.js';
@@ -1397,6 +1398,8 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       signaturesKept: DocumentCommandsParts['signaturesKept'] = signaturesKeptBySave,
       /** Which backups Monstera made — the product's ledger on the real disk unless a case holds a file. */
       provenance: BackupProvenance = ledger(),
+      /** Where *Save a copy*'s picker answers, for the cases that write one; a dismissed picker otherwise. */
+      copyTo: string | null = null,
     ): Promise<{
       commands: DocumentCommands;
       saved: DocId;
@@ -1404,6 +1407,10 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       before: Uint8Array;
       /** Rebuilds the document's session from its own bytes and holds the new one — the supervisor's restore, adopt and restart. */
       rebuild: () => Promise<void>;
+      /** The document's version, read through its lane as every command reads it. */
+      version: () => Promise<DocVersion>;
+      /** The bytes the document's session holds now. */
+      serialised: () => Promise<Uint8Array>;
     }> {
       savables += 1;
       const path = join(directory, `save-${String(savables)}.pdf`);
@@ -1426,6 +1433,12 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           current = await mupdfWriter.open(await mupdfWriter.serialise(current));
           held.hold(outcome.docId, { mupdf: current });
         },
+        version: async () => (await own.run(outcome.docId, (context) => Promise.resolve(context.version))).value,
+        serialised: () => {
+          const now = held.sessions(outcome.docId)?.mupdf;
+          if (now === undefined) throw new Error('the fixture holds a session');
+          return mupdfWriter.serialise(now);
+        },
         saved: outcome.docId,
         commands: new DocumentCommands({
           ...LOCAL_READS,
@@ -1433,6 +1446,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           documents: own,
           bus: bus(),
           engine: held,
+          copy: { pick: () => Promise.resolve(copyTo), checkTarget: (target) => own.checkCopyTarget(target) },
           save: {
             provenance,
             // THE REAL SURFACE AND THE REAL CHECK. Every other case in this
@@ -1508,6 +1522,95 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       const kept = await ordinary.commands.save(ordinary.saved, { breakSignatures: false });
       expect(kept).toMatchObject({ kind: 'saved', backedUp: true, cleared: null });
       expect(holdsReplaced(ordinary.path, ordinary.before)).toStrictEqual([`${basename(ordinary.path)}.bak`]);
+    });
+
+    /**
+     * ADR-0149 (CR-DOC-07): an edit that rewrites a signed document whole is asked about BEFORE it is made. The writer's
+     * answer is the one a removal's save gets — signatures present, not kept — so the save's own question would also
+     * fire, which is what lets the third assertion separate *agreed once* from *never asked*.
+     */
+    describe('an edit that would break a signature (ADR-0149)', () => {
+      const signedAndBroken: DocumentCommandsParts['signaturesKept'] = () => Promise.resolve({ signatures: 1, kept: false });
+
+      it('is REFUSED before any byte changes: the same version, the same session bytes, no history', async () => {
+        const t = await aSavableDocument(signedAndBroken);
+        const version = await t.version();
+        const bytes = await t.serialised();
+
+        await expect(t.commands.execute(t.saved, sanitize)).rejects.toBeInstanceOf(SignaturesWouldBreakError);
+
+        expect(await t.version()).toBe(version);
+        expect(Buffer.from(await t.serialised()).equals(Buffer.from(bytes))).toBe(true);
+        // NOTHING TO UNDO: the bus never ran, so the log holds no entry the refusal could have left.
+        expect(await t.commands.undo(t.saved)).toBeUndefined();
+      });
+
+      it('AGREED, it is applied, and the save after it does not ask the same question again', async () => {
+        const t = await aSavableDocument(signedAndBroken);
+        const version = await t.version();
+
+        await t.commands.execute(t.saved, sanitize, { breakSignatures: true });
+        expect(await t.version()).not.toBe(version);
+        // A SECOND BREAKING EDIT IS NOT ASKED either: the person gave this document's signatures up once.
+        await t.commands.execute(t.saved, { kind: 'sanitizeDocument', parts: ['embedded-files'] });
+
+        expect((await t.commands.save(t.saved, { breakSignatures: false })).kind).toBe('saved');
+      });
+
+      it('CONTROL: an edit that appends — a rotation — is never asked, on the same signed document', async () => {
+        const t = await aSavableDocument(signedAndBroken);
+        const version = await t.version();
+
+        await t.commands.execute(t.saved, rotateOnce);
+
+        expect(await t.version()).not.toBe(version);
+        // AND THE SAVE STILL ASKS, since nobody agreed to anything: the rotation was not an agreement.
+        expect(await t.commands.save(t.saved, { breakSignatures: false })).toStrictEqual({
+          kind: 'breaks-signatures',
+          signatures: 1,
+        });
+      });
+
+      it('WORK ON A COPY writes the document as it is where the person chose, and leaves the original untouched', async () => {
+        const destination = join(directory, `copy-for-editing-${String(savables + 1)}.pdf`);
+        const t = await aSavableDocument(signedAndBroken, ledger(), destination);
+        const version = await t.version();
+        const bytes = await t.serialised();
+
+        const copied = await t.commands.copyForEditing(t.saved, sanitize);
+
+        expect(copied).toMatchObject({ outcome: { kind: 'copied' }, destination });
+        expect(Buffer.from(readFileSync(destination)).equals(Buffer.from(bytes))).toBe(true);
+        // THE ORIGINAL: its file, its version and its session are as they were.
+        expect(Buffer.from(readFileSync(t.path)).equals(Buffer.from(t.before))).toBe(true);
+        expect(await t.version()).toBe(version);
+        expect(Buffer.from(await t.serialised()).equals(Buffer.from(bytes))).toBe(true);
+      });
+
+      it('a command composed against an EARLIER version is stale for the copy too, and nothing is written', async () => {
+        const destination = join(directory, `copy-for-editing-stale-${String(savables + 1)}.pdf`);
+        const t = await aSavableDocument(signedAndBroken, ledger(), destination);
+        const composedAt = await t.version();
+        await t.commands.execute(t.saved, rotateOnce);
+        const named: Command = { kind: 'removeAnnotation', page: 0, indices: [0], version: composedAt };
+
+        await expect(t.commands.copyForEditing(t.saved, named)).rejects.toBeInstanceOf(StaleTargetError);
+        expect(existsSync(destination)).toBe(false);
+
+        // CONTROL: the same command named at the version the document is at now is written.
+        const current: Command = { ...named, version: await t.version() };
+        expect((await t.commands.copyForEditing(t.saved, current))?.outcome.kind).toBe('copied');
+        expect(existsSync(destination)).toBe(true);
+      });
+
+      it('CONTROL: an unsigned document is not asked about the same removal', async () => {
+        const t = await aSavableDocument(() => Promise.resolve({ signatures: 0, kept: true }));
+        const version = await t.version();
+
+        await t.commands.execute(t.saved, sanitize);
+
+        expect(await t.version()).not.toBe(version);
+      });
     });
 
     it('a removal’s save DELETES the backup Monstera made, and the undo copies, unasked; the next save backs up again', async () => {

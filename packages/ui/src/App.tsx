@@ -730,6 +730,87 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   // change on the Saving page applies to the next save.
   const warnSignatureBreak = useCallback(() => settings.get(WARN_SIGNATURE_BREAK_SETTING.id) !== false, [settings]);
 
+  /**
+   * Brings a document to the front.
+   *
+   * ## Why activation is one callback rather than `setActiveId` in four places
+   *
+   * Every route that changes the active document comes through here rather than
+   * calling `setActiveId`, so there is one name for it.
+   *
+   * ## Every open document's view is mounted, and the active one is shown (ADR-0129)
+   *
+   * Until 2026-10-01 only the active document's view was mounted, as a budget
+   * decision: one set of page bitmaps rather than one per open document. Each
+   * switch then mounted a scroller from nothing, which re-parsed the document
+   * (against §6's *nothing is snapshotted, restored, or re-parsed*) and showed
+   * it building up in three stages. Each document now has a layer of its own,
+   * kept behind the active one (`DocumentLayer`), so activating changes which
+   * layer is shown and its scroll offset, zoom and drawn pages are already
+   * there. `startAt` and the scroller's own reveal (`PageList`'s
+   * `revealedStart`) still serve the mounts that remain: a document opening,
+   * and the error boundary's retry.
+   *
+   * The budget question did not go away; it moved. §9.17's renderer budget is
+   * still provisional, and ADR-0129 states the expected cost per kept tab and
+   * what to do if a measurement breaks it.
+   */
+  const activate = useCallback((docId: DocId): void => {
+    setActiveId(docId);
+  }, []);
+  /**
+   * *File › Start screen* (ADR-0107): no document in front, every tab kept — `activate`'s one other route, named beside
+   * it for the reason above. The start screen draws whenever nothing is active, so this is all it takes.
+   */
+  const showStart = useCallback((): void => {
+    setActiveId(undefined);
+  }, []);
+
+  // THE ZOOM A NEW DOCUMENT OPENS AT (Settings › Viewing › *Starting zoom*), read by the opener below.
+  const startingZoom = useSetting(settings, STARTING_ZOOM_SETTING);
+
+  /**
+   * A document main has opened, added as a tab and brought to the front.
+   *
+   * **Deduped by `docId`**, which is not defensiveness: `document.openRecent`
+   * can answer with a document that is already open, and appending would put a
+   * second tab in front of the reader for the file they asked to look at. The
+   * dedupe and the activation together are what make *open the thing I already
+   * have* mean *show it to me*.
+   *
+   * **Declared here, ahead of the document commands**, because the copy an edit of a signed document is made on
+   * opens through it (`signatures` below), and a callback's dependency list is read when it is declared.
+   */
+  const opened = useCallback(
+    // TAKES WHAT A COMMAND CAN REPORT — `OpenedDocument`, which is `main`'s answer — and seeds
+    // the saved state here. A command has nothing to say about it: opening a document is the one
+    // moment its content and its file are the same by construction, so the seed is a fact about
+    // the event and not a field anyone could get wrong at a call site.
+    (document: OpenedDocument): void => {
+      // THE STORE IS MINTED HERE, beside the tab, because the two have the same
+      // lifetime and `stores.open` refuses a second one for a document that
+      // already has it. Guarded by the same `get`-misses read the render uses,
+      // so re-opening an open document activates its tab rather than throwing.
+      if (stores.get(document.docId) === undefined) {
+        // AT THE ZOOM THE PERSON CHOSE TO START AT (Settings › Viewing); from here on the zoom is this document's.
+        stores.open(document.docId, document.version, startingZoomMode(startingZoom));
+      }
+      setTabs((current) =>
+        current.some((tab) => tab.docId === document.docId)
+          ? current
+          : // THE FILE HOLDS THIS VERSION, and `savedAt` stays undefined: this window has not
+            // watched a save, so the bar reads "Saved" with no time rather than claiming one.
+            [...current, { ...document, savedVersion: document.version, savedAt: undefined }],
+      );
+      activate(document.docId);
+    },
+    [activate, startingZoom, stores],
+  );
+
+  // AN EDIT THAT WOULD BREAK A SIGNATURE (ADR-0149): whether to ask, by the save's switch, and how the copy it can be
+  // made on opens. One object, stable while the store and the opener are, so every command bag takes the same one.
+  const signatures = useMemo(() => ({ warn: warnSignatureBreak, onOpened: opened }), [opened, warnSignatureBreak]);
+
   // AUTOSAVE (`autosave.ts`), off unless the Saving page turns it on. The pass reads the tabs through a ref, so a
   // version moving does not restart the timer; the ref is written in an effect, never during render.
   const autosaveInterval = useSetting(settings, AUTOSAVE_SETTING);
@@ -848,6 +929,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           client,
           ask,
           stamp,
+          signatures,
           onApplied: (next) => {
             appliedTo(docId, next);
           },
@@ -856,7 +938,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         occasion,
         beforeAsking,
       ),
-    [appliedTo, ask, client, stamp],
+    [appliedTo, ask, client, signatures, stamp],
   );
   const settleMarks = useCallback(
     async (docId: DocId, occasion: PendingRedactionOccasion) => proceeds(await settleMarksOf(docId, occasion)),
@@ -883,7 +965,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     (from: number, to: number): void => {
       if (activeId === undefined) return;
       void applyDocumentCommand(
-        { client, onApplied: applied, ask, stamp },
+        { client, onApplied: applied, ask, stamp, signatures },
         activeId,
         { kind: 'movePage', from, to },
       ).then((moved) => {
@@ -902,7 +984,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         stores.get(activeId)?.getState().movedPages(count, { from, to });
       });
     },
-    [activeId, applied, ask, client, stamp, stores],
+    [activeId, applied, ask, client, signatures, stamp, stores],
   );
 
   /**
@@ -927,7 +1009,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const removeAnnotation = useCallback(
     (handle: { page: number; index: number; version: DocVersion }): void => {
       if (activeId === undefined) return;
-      void applyDocumentCommand({ client, onApplied: applied, ask, stamp }, activeId, {
+      void applyDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }, activeId, {
         kind: 'removeAnnotation',
         page: handle.page,
         // A ROW NAMES ONE. The payload is plural because a selection can be
@@ -938,7 +1020,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         version: handle.version,
       });
     },
-    [activeId, applied, ask, client, stamp],
+    [activeId, applied, ask, client, signatures, stamp],
   );
 
   /**
@@ -950,13 +1032,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const setLayerVisibility = useCallback(
     (layer: number, visible: boolean): void => {
       if (activeId === undefined) return;
-      void applyDocumentCommand({ client, onApplied: applied, ask, stamp }, activeId, {
+      void applyDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }, activeId, {
         kind: 'setLayerVisibility',
         layer,
         visible,
       });
     },
-    [activeId, applied, ask, client, stamp],
+    [activeId, applied, ask, client, signatures, stamp],
   );
 
   /**
@@ -979,7 +1061,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       value: FieldFill;
     }): void => {
       if (activeId === undefined) return;
-      void applyDocumentCommand({ client, onApplied: applied, ask, stamp }, activeId, {
+      void applyDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }, activeId, {
         kind: 'fillFormField',
         page: handle.page,
         index: handle.index,
@@ -987,7 +1069,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         version: handle.version,
       });
     },
-    [activeId, applied, ask, client, stamp],
+    [activeId, applied, ask, client, signatures, stamp],
   );
 
   /**
@@ -1001,14 +1083,14 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const deleteFormField = useCallback(
     (handle: { page: number; index: number; version: DocVersion }): void => {
       if (activeId === undefined) return;
-      void applyDocumentCommand({ client, onApplied: applied, ask, stamp }, activeId, {
+      void applyDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }, activeId, {
         kind: 'deleteFormFields',
         page: handle.page,
         indices: [handle.index],
         version: handle.version,
       });
     },
-    [activeId, applied, ask, client, stamp],
+    [activeId, applied, ask, client, signatures, stamp],
   );
 
   /**
@@ -1017,8 +1099,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    */
   const flattenActiveForm = useCallback((): void => {
     if (activeId === undefined) return;
-    void flattenForm({ client, onApplied: applied, ask, stamp }, activeId);
-  }, [activeId, applied, ask, client, stamp]);
+    void flattenForm({ client, onApplied: applied, ask, stamp, signatures }, activeId);
+  }, [activeId, applied, ask, client, signatures, stamp]);
 
   /**
    * Removing everything the select tool has picked.
@@ -1035,14 +1117,14 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const removeSelection = useCallback(
     (chosen: AnnotationSelection): void => {
       if (activeId === undefined) return;
-      void applyDocumentCommand({ client, onApplied: applied, ask, stamp }, activeId, {
+      void applyDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }, activeId, {
         kind: 'removeAnnotation',
         page: chosen.page,
         indices: chosen.items.map((item) => item.index),
         version: chosen.version,
       });
     },
-    [activeId, applied, ask, client, stamp],
+    [activeId, applied, ask, client, signatures, stamp],
   );
 
   /**
@@ -1061,8 +1143,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     // WHETHER THE VERSION MOVED, handed back: the drawing overlay holds a committed shape until the
     // page redraws with it, and drops it at once when the command was refused.
     (docId: DocId, command: DispatchableCommand): Promise<boolean> =>
-      applyCarrying({ client, onApplied: applied, ask, stamp, carry: setPicked }, docId, command),
-    [applied, ask, client, stamp],
+      applyCarrying({ client, onApplied: applied, ask, stamp, signatures, carry: setPicked }, docId, command),
+    [applied, ask, client, signatures, stamp],
   );
 
   /**
@@ -1092,12 +1174,12 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     (a: number, b: number): void => {
       if (activeId === undefined) return;
       void applyDocumentCommand(
-        { client, onApplied: applied, ask, stamp },
+        { client, onApplied: applied, ask, stamp, signatures },
         activeId,
         { kind: 'swapPages', a, b },
       );
     },
-    [activeId, applied, ask, client, stamp],
+    [activeId, applied, ask, client, signatures, stamp],
   );
 
   /**
@@ -1116,84 +1198,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    */
   const [goTo, setGoTo] = useState<number | undefined>(undefined);
 
-  /**
-   * Brings a document to the front.
-   *
-   * ## Why activation is one callback rather than `setActiveId` in four places
-   *
-   * Every route that changes the active document comes through here rather than
-   * calling `setActiveId`, so there is one name for it.
-   *
-   * ## Every open document's view is mounted, and the active one is shown (ADR-0129)
-   *
-   * Until 2026-10-01 only the active document's view was mounted, as a budget
-   * decision: one set of page bitmaps rather than one per open document. Each
-   * switch then mounted a scroller from nothing, which re-parsed the document
-   * (against §6's *nothing is snapshotted, restored, or re-parsed*) and showed
-   * it building up in three stages. Each document now has a layer of its own,
-   * kept behind the active one (`DocumentLayer`), so activating changes which
-   * layer is shown and its scroll offset, zoom and drawn pages are already
-   * there. `startAt` and the scroller's own reveal (`PageList`'s
-   * `revealedStart`) still serve the mounts that remain: a document opening,
-   * and the error boundary's retry.
-   *
-   * The budget question did not go away; it moved. §9.17's renderer budget is
-   * still provisional, and ADR-0129 states the expected cost per kept tab and
-   * what to do if a measurement breaks it.
-   */
-  const activate = useCallback((docId: DocId): void => {
-    setActiveId(docId);
-  }, []);
-  /**
-   * *File › Start screen* (ADR-0107): no document in front, every tab kept — `activate`'s one other route, named beside
-   * it for the reason above. The start screen draws whenever nothing is active, so this is all it takes.
-   */
-  const showStart = useCallback((): void => {
-    setActiveId(undefined);
-  }, []);
-
-  // THE ZOOM A NEW DOCUMENT OPENS AT (Settings › Viewing › *Starting zoom*), read by the opener below.
-  const startingZoom = useSetting(settings, STARTING_ZOOM_SETTING);
   // THE KEYS A PERSON CHOSE in the shortcuts dialog (ADR-0111), applied when the command registry is built below.
   const chosenShortcuts = useSetting(settings, SHORTCUTS_SETTING);
 
   // HOW MANY TIMES THE RECENT LIST HAS BEEN EMPTIED FROM SETTINGS — its key, so each empty is a fresh read.
   const [recentReads, setRecentReads] = useState(0);
-
-  /**
-   * A document main has opened, added as a tab and brought to the front.
-   *
-   * **Deduped by `docId`**, which is not defensiveness: `document.openRecent`
-   * can answer with a document that is already open, and appending would put a
-   * second tab in front of the reader for the file they asked to look at. The
-   * dedupe and the activation together are what make *open the thing I already
-   * have* mean *show it to me*.
-   */
-  const opened = useCallback(
-    // TAKES WHAT A COMMAND CAN REPORT — `OpenedDocument`, which is `main`'s answer — and seeds
-    // the saved state here. A command has nothing to say about it: opening a document is the one
-    // moment its content and its file are the same by construction, so the seed is a fact about
-    // the event and not a field anyone could get wrong at a call site.
-    (document: OpenedDocument): void => {
-      // THE STORE IS MINTED HERE, beside the tab, because the two have the same
-      // lifetime and `stores.open` refuses a second one for a document that
-      // already has it. Guarded by the same `get`-misses read the render uses,
-      // so re-opening an open document activates its tab rather than throwing.
-      if (stores.get(document.docId) === undefined) {
-        // AT THE ZOOM THE PERSON CHOSE TO START AT (Settings › Viewing); from here on the zoom is this document's.
-        stores.open(document.docId, document.version, startingZoomMode(startingZoom));
-      }
-      setTabs((current) =>
-        current.some((tab) => tab.docId === document.docId)
-          ? current
-          : // THE FILE HOLDS THIS VERSION, and `savedAt` stays undefined: this window has not
-            // watched a save, so the bar reads "Saved" with no time rather than claiming one.
-            [...current, { ...document, savedVersion: document.version, savedAt: undefined }],
-      );
-      activate(document.docId);
-    },
-    [activate, startingZoom, stores],
-  );
 
   /**
    * The open document's own store, which is where the back-stack lives.
@@ -1527,13 +1536,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         settings.set(RIBBON_SECTION_SETTING.id, 'home');
       },
       onDelete: (pages: readonly number[]) => {
-        void applyDocumentCommand({ client, onApplied: applied, ask, stamp }, activeId, {
+        void applyDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }, activeId, {
           kind: 'deletePages',
           pages: [...pages],
         });
       },
     };
-  }, [activeId, applied, ask, client, navigator, organizing, selectedPages, settings, stamp, store]);
+  }, [activeId, applied, ask, client, navigator, organizing, selectedPages, settings, signatures, stamp, store]);
 
   /**
    * What a command last asked of the assistant (ADR-0088), and the one way to ask it.
@@ -2442,7 +2451,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     const marksCopyDeps = { ...selectionDeps, client, ask, onCopied: setCopiedCount, toast };
     const marksCopy = copyAnnotationsCommand(marksCopyDeps);
     const marksDelete = deleteSelectionCommand(selectionDeps);
-    const marksPaste = pasteAnnotationsCommand({ client, onApplied: applied, ask, stamp, hasCopied: readHasCopied });
+    const marksPaste = pasteAnnotationsCommand({ client, onApplied: applied, ask, stamp, signatures, hasCopied: readHasCopied });
     const marksSelectAll = selectAllMarksCommand({ marksOn, selectAll: selectAllOn });
     // RECOGNISING FIRST, for the exports whose output is the text (ADR-0118): the searchable export's walk, composed
     // here because `recogniseText.ts` imports the module the exports live in. Both settings are read when an export
@@ -2452,6 +2461,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       onApplied: applied,
       ask,
       stamp,
+      signatures,
       // EVERY WRITE CONFIRMS through `confirmWritten`, which needs where the toast goes.
       toast,
       // THE UNAPPLIED-MARKS QUESTION, asked before any export writes (the owner's item N1).
@@ -2463,6 +2473,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             onApplied: applied,
             ask,
             stamp,
+            signatures,
             track,
             recogniseOnExport: () => settings.get(RECOGNISE_ON_EXPORT_SETTING.id) === true,
             ocrLanguages: storedOcrLanguages,
@@ -2548,7 +2559,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         aiSetup,
         showWordCountCommand({ client, ask, track }),
         compareDocumentsCommand({ show: showSideBySide }),
-        translatePageCommand({ client, onApplied: applied, ask, stamp, toast, track, storedSecrets: () => storedSecrets }),
+        translatePageCommand({ client, onApplied: applied, ask, stamp, signatures, toast, track, storedSecrets: () => storedSecrets }),
         inspectPageStructureCommand({ client, ask }),
         accessibilityCheckCommand({ client, ask }),
         readBarcodesCommand({ client, ask }),
@@ -2562,30 +2573,31 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // THREE ROTATIONS, one factory. D2's row is a surface over the command
         // Stage 0 already declared — `rotatePages` takes the quarter turns, so
         // 180 and 270 needed no new command and no new contract entry.
-        rotatePageCommand({ client, onApplied: applied, ask, stamp }, 1),
-        rotatePageCommand({ client, onApplied: applied, ask, stamp }, 2),
-        rotatePageCommand({ client, onApplied: applied, ask, stamp }, 3),
+        rotatePageCommand({ client, onApplied: applied, ask, stamp, signatures }, 1),
+        rotatePageCommand({ client, onApplied: applied, ask, stamp, signatures }, 2),
+        rotatePageCommand({ client, onApplied: applied, ask, stamp, signatures }, 3),
         // THE FIRST DESTRUCTIVE COMMAND, and it registers exactly like the
         // three above it. What is different is invisible here and deliberately
         // so: its log entry is terminal, and undoing it restores the checkpoint
         // the bus took rather than an inverse (ADR-0037).
-        insertBlankPageCommand({ client, onApplied: applied, ask, stamp }),
-        duplicatePageCommand({ client, onApplied: applied, ask, stamp }),
-        deletePageCommand({ client, onApplied: applied, ask, stamp }),
+        insertBlankPageCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        duplicatePageCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        deletePageCommand({ client, onApplied: applied, ask, stamp, signatures }),
         // THE FIRST COMMAND WHOSE ARGUMENTS COME FROM A DIALOG. Its `run`
         // awaits an answer and dispatches only if there was one, which is the
         // whole of the mutation-dialog gate (ADR-0038).
-        deletePagesCommand({ client, onApplied: applied, ask, stamp }),
-        cropPagesCommand({ client, onApplied: applied, ask, stamp }),
-        protectDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
-        sanitizeDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
-        signDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
-        signaturesCommand({ client, onApplied: applied, ask, stamp }),
+        deletePagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        cropPagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        protectDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        sanitizeDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        signDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        signaturesCommand({ client, onApplied: applied, ask, stamp, signatures }),
         docusignSendCommand({
           client,
           onApplied: applied,
           ask,
           stamp,
+          signatures,
           settleMarks,
           docusignReady: () => docusignKeyStored,
         }),
@@ -2594,25 +2606,27 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onApplied: applied,
           ask,
           stamp,
+          signatures,
           toast,
           docusignReady: () => docusignKeyStored,
         }),
-        redactMatchesCommand({ client, onApplied: applied, ask, stamp }),
+        redactMatchesCommand({ client, onApplied: applied, ask, stamp, signatures }),
         applyRedactionsCommand({
           client,
           onApplied: applied,
           ask,
           stamp,
+          signatures,
           // ANYTHING BUT AN EXPLICIT OFF ASKS: an unread or unexpected value lands on the safe side.
           confirm: () => settings.get(CONFIRM_REDACTION_SETTING.id) !== false,
         }),
-        watermarkPagesCommand({ client, onApplied: applied, ask, stamp }),
-        headerFooterCommand({ client, onApplied: applied, ask, stamp }),
-        batesNumberCommand({ client, onApplied: applied, ask, stamp }),
-        pageTransitionCommand({ client, onApplied: applied, ask, stamp, toast }),
-        pageBackgroundCommand({ client, onApplied: applied, ask, stamp }),
-        resizePagesCommand({ client, onApplied: applied, ask, stamp }),
-        deskewPagesCommand({ client, onApplied: applied, ask, stamp }),
+        watermarkPagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        headerFooterCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        batesNumberCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        pageTransitionCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        pageBackgroundCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        resizePagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        deskewPagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
         // TAKES `track` AS WELL AS THE THREE ABOVE, and it is the first mutating
         // command to: recognition is 3.8–4.4 s per page and this one dispatches
         // once per page, so the status bar is where a reader watches it and where
@@ -2624,6 +2638,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onApplied: applied,
           ask,
           stamp,
+          signatures,
           track,
           servicesReady: () => azureReady || claudeKeyStored,
           ocrLanguages: storedOcrLanguages,
@@ -2637,6 +2652,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onApplied: applied,
           ask,
           stamp,
+          signatures,
           toast,
           settleMarks,
           track,
@@ -2647,11 +2663,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // dialog — the levels come from each image's own histogram — and it reads the
         // page kinds for the same reason the OCR commands do: levelling is only
         // meaningful where the page's content is a raster.
-        enhanceScansCommand({ client, onApplied: applied, ask, stamp, track }),
+        enhanceScansCommand({ client, onApplied: applied, ask, stamp, signatures, track }),
         // D9's DOCUMENT SCAN ROW, enhance's shape and its walk: the image-only pages,
         // one command, one undo.
-        straightenScansCommand({ client, onApplied: applied, ask, stamp, track }),
-        insertImageCommand({ client, onApplied: applied, ask, stamp }),
+        straightenScansCommand({ client, onApplied: applied, ask, stamp, signatures, track }),
+        insertImageCommand({ client, onApplied: applied, ask, stamp, signatures }),
         // D9's MARKDOWN ROW. The new document arrives as a tab by `openCommand`'s
         // callbacks; the append also adds a tab, then returns to the document it
         // changed (ADR-0060's correction).
@@ -2674,13 +2690,14 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onApplied: applied,
           ask,
           stamp,
+          signatures,
           onOpened: opened,
           onActivate: activate,
         }),
-        mergeDocumentCommand({ client, onApplied: applied, ask, stamp }),
-        insertFromPdfCommand({ client, onApplied: applied, ask, stamp }),
-        replacePageCommand({ client, onApplied: applied, ask, stamp }),
-        importPageAsLayerCommand({ client, onApplied: applied, ask, stamp }),
+        mergeDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        insertFromPdfCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        replacePageCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        importPageAsLayerCommand({ client, onApplied: applied, ask, stamp, signatures }),
         // D9's EDIT PAGE IN ANOTHER APP: its reimport opens the edited page as a tab, so it takes
         // `appendMarkdownCommand`'s two callbacks as well as `replacePageCommand`'s (ADR-0062).
         editPageExternallyCommand({
@@ -2688,21 +2705,23 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onApplied: applied,
           ask,
           stamp,
+          signatures,
           onOpened: opened,
           onActivate: activate,
         }),
-        extractPagesCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
-        splitDocumentCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
-        exportPageImagesCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
+        extractPagesCommand({ client, onApplied: applied, ask, stamp, signatures, toast, settleMarks }),
+        splitDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast, settleMarks }),
+        exportPageImagesCommand({ client, onApplied: applied, ask, stamp, signatures, toast, settleMarks }),
         exportTextCommand(exportDeps),
         exportLayoutTextCommand(exportDeps),
         exportWordCommand(exportDeps),
-        exportPowerPointCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
+        exportPowerPointCommand({ client, onApplied: applied, ask, stamp, signatures, toast, settleMarks }),
         exportExcelCommand({
           client,
           onApplied: applied,
           ask,
           stamp,
+          signatures,
           toast,
           settleMarks,
           // THE SAME TWO FACTS the OCR tool's engines are offered on (`cloudReady`, `claudeReady`
@@ -2713,38 +2732,38 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             ...(claudeKeyStored ? (['claude'] as const) : []),
           ],
         }),
-        printCommand({ client, onApplied: applied, ask, stamp, settings, toast, settleMarks }),
-        emailCommand({ client, onApplied: applied, ask, stamp, settleMarks }),
+        printCommand({ client, onApplied: applied, ask, stamp, signatures, settings, toast, settleMarks }),
+        emailCommand({ client, onApplied: applied, ask, stamp, signatures, settleMarks }),
         exportPdfaCommand(exportDeps),
-        optimizeCommand({ client, onApplied: applied, ask, stamp, track, toast, settleMarks }),
-        generateTocCommand({ client, onApplied: applied, ask, stamp }),
-        findDuplicatePagesCommand({ client, onApplied: applied, ask, stamp }),
-        undoCommand({ client, onApplied: applied, ask, stamp }),
-        redoCommand({ client, onApplied: applied, ask, stamp }),
+        optimizeCommand({ client, onApplied: applied, ask, stamp, signatures, track, toast, settleMarks }),
+        generateTocCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        findDuplicatePagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        undoCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        redoCommand({ client, onApplied: applied, ask, stamp, signatures }),
         saveCommand({ client, ask, toast, onSaved, warnSignatureBreak, settleMarks }),
         closeTabCommand({ close: (docId) => requestClose([docId]) }),
         closeOthersCommand({ close: requestClose }),
         // THE SHELL'S OWN `activeId` AND `showSideBySide`, which is what keeps this a second ROUTE
         // to Side by Side rather than a second owner of it: Review › Compare writes the same value.
         openSideBySideCommand({ focused: readActiveId, show: showSideBySide }),
-        saveCopyCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
-        exportFormDataJsonCommand({ client, onApplied: applied, ask, stamp, toast }),
-        exportFormDataXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
-        exportFormDataFdfCommand({ client, onApplied: applied, ask, stamp, toast }),
-        importFormDataJsonCommand({ client, onApplied: applied, ask, stamp, toast }),
-        importFormDataXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
-        importFormDataFdfCommand({ client, onApplied: applied, ask, stamp, toast }),
+        saveCopyCommand({ client, onApplied: applied, ask, stamp, signatures, toast, settleMarks }),
+        exportFormDataJsonCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        exportFormDataXfdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        exportFormDataFdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        importFormDataJsonCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        importFormDataXfdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        importFormDataFdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         // THE COMMENTS' FILES, Review › Comment files (ADR-0077).
-        importAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
-        importAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp, toast }),
-        importAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp, toast }),
+        importAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        importAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        importAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         // THE CLIPBOARD'S PASTE, beside the import it is: main mints the same command.
         marksPaste,
-        exportAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
-        exportAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp, toast }),
-        exportAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp, toast }),
-        detectFlatFieldsCommand({ client, onApplied: applied, ask, stamp }),
-        flattenFormCommand({ client, onApplied: applied, ask, stamp }),
+        exportAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        exportAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        exportAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        detectFlatFieldsCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        flattenFormCommand({ client, onApplied: applied, ask, stamp, signatures }),
         // EDIT TEXT, a MODE in the tool slot (ADR-0096): it toggles as a drawing
         // tool's command does, and `editing` below is what the mode draws.
         editTextCommand({ activeTool: readTool, onSelect: setToolId }),
@@ -2757,7 +2776,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         }),
         handToolCommand({ activeTool: readTool, onSelect: setToolId }),
         selectTextCommand({ onSelect: setToolId, activeTool: readTool }),
-        editPageObjectCommand({ client, onApplied: applied, ask, stamp }),
+        editPageObjectCommand({ client, onApplied: applied, ask, stamp, signatures }),
         // NO DEPS: it takes the caret to the find bar and searches nothing, so
         // there is no client for it to hold. A command needing none is what a
         // command that acts on a surface looks like.
@@ -2765,8 +2784,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // THE TWO LISTS, from their own ribbon sections (the placement audit, 2026-09-23).
         showPanelCommand({ settings, presence },'comments'),
         showPanelCommand({ settings, presence },'forms'),
-        movePageCommand({ client, onApplied: applied, ask, stamp }, 'earlier'),
-        movePageCommand({ client, onApplied: applied, ask, stamp }, 'later'),
+        movePageCommand({ client, onApplied: applied, ask, stamp, signatures }, 'earlier'),
+        movePageCommand({ client, onApplied: applied, ask, stamp, signatures }, 'later'),
         // §7's SELECTED-TEXT MENU. The markups dispatch through the one dispatcher, drawn in the
         // tools' own style; *Search* opens the Search panel and seeds the find field.
         ...(() => {
@@ -2903,6 +2922,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       refreshSecrets,
       selectionDeps,
       settings,
+      // THE SIGNATURES QUESTION'S TWO INPUTS (ADR-0149), stable while the store and the opener are.
+      signatures,
       track,
       // THE FILE-WRITING COMMANDS' TWO CALLBACKS. Both are stable — `useCallback` over a store
       // and over `setTabs` — so listing them rebuilds the registry never rather than on every
@@ -2988,7 +3009,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     const { docId } = open;
     /** Whether this mode has reported a refused read already — once per entry into it. */
     const refusal = { reported: false };
-    const deps = { client, onApplied: applied, ask, stamp };
+    const deps = { client, onApplied: applied, ask, stamp, signatures };
     return {
       version: open.version,
       read: async (page) => {
@@ -3017,7 +3038,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         setToolId(undefined);
       },
     };
-  }, [applied, ask, client, open, stamp, toolId]);
+  }, [applied, ask, client, open, signatures, stamp, toolId]);
 
   // The start screen's context: no document focused. `hasSelection` and `dirty`
   // are false because there is nothing to select in and nothing to dirty — not
@@ -3437,7 +3458,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                 onJump={navigator.jumpTo}
                 onHighlight={setSearch}
                 seed={findSeed}
-                commands={{ client, onApplied: applied, ask, stamp }}
+                commands={{ client, onApplied: applied, ask, stamp, signatures }}
               />
             ),
           }}

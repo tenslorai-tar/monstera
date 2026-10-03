@@ -21,6 +21,13 @@ import {
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000000fe');
 const STAMP = () => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' });
+/** No document here is signed (ADR-0149), so a copy opened for an edit is a defect of the case. */
+const signatures = {
+  warn: () => true,
+  onOpened: () => {
+    throw new Error('a case opened a copy for an edit without asking for one');
+  },
+};
 
 /**
  * The stored `OCR_LANGUAGE_SETTING` every case hands the command. NOT the dialog's answers below (`eng`, and `eng`
@@ -178,6 +185,7 @@ describe('the recognise-text command', () => {
       client,
       onApplied: () => undefined,
       stamp: STAMP,
+      signatures,
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
@@ -205,6 +213,7 @@ describe('the recognise-text command', () => {
       client,
       onApplied: () => undefined,
       stamp: STAMP,
+      signatures,
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
@@ -228,6 +237,7 @@ describe('the recognise-text command', () => {
       client,
       onApplied: () => undefined,
       stamp: STAMP,
+      signatures,
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
@@ -249,6 +259,7 @@ describe('the recognise-text command', () => {
       client,
       onApplied: () => undefined,
       stamp: STAMP,
+      signatures,
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
@@ -270,6 +281,7 @@ describe('the recognise-text command', () => {
       client,
       onApplied: () => undefined,
       stamp: STAMP,
+      signatures,
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
@@ -294,6 +306,7 @@ describe('the recognise-text command', () => {
       client,
       onApplied: () => undefined,
       stamp: STAMP,
+      signatures,
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
@@ -315,6 +328,7 @@ describe('the recognise-text command', () => {
       client,
       onApplied: () => undefined,
       stamp: STAMP,
+      signatures,
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
@@ -336,7 +350,7 @@ describe('the recognise-text command', () => {
     const { ask } = recordingAsk({ pages: 'all', languages: ['eng'] });
     const { track, steps, totals, ended } = recordingTrack();
 
-    await recogniseTextCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, track, servicesReady: () => false, ocrLanguages: () => STORED }).run(
+    await recogniseTextCommand({ client, onApplied: () => undefined, stamp: STAMP, signatures, ask, track, servicesReady: () => false, ocrLanguages: () => STORED }).run(
       contextWith(3),
     );
 
@@ -365,7 +379,7 @@ describe('the recognise-text command', () => {
       end: () => undefined,
     });
 
-    await recogniseTextCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, track, servicesReady: () => false, ocrLanguages: () => STORED }).run(
+    await recogniseTextCommand({ client, onApplied: () => undefined, stamp: STAMP, signatures, ask, track, servicesReady: () => false, ocrLanguages: () => STORED }).run(
       contextWith(3),
     );
 
@@ -391,6 +405,7 @@ describe('the recognise-text command', () => {
       client,
       onApplied: () => undefined,
       stamp: STAMP,
+      signatures,
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
@@ -417,6 +432,7 @@ describe('the recognise-text command', () => {
       },
       onApplied: () => undefined,
       stamp: STAMP,
+      signatures,
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
@@ -452,7 +468,7 @@ describe('the recognise-text command', () => {
       end: () => undefined,
     });
 
-    await exportSearchableCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, toast: () => undefined, settleMarks: NOTHING_MARKED, track, servicesReady: () => false, ocrLanguages: () => STORED }).run(
+    await exportSearchableCommand({ client, onApplied: () => undefined, stamp: STAMP, signatures, ask, toast: () => undefined, settleMarks: NOTHING_MARKED, track, servicesReady: () => false, ocrLanguages: () => STORED }).run(
       contextWith(2),
     );
 
@@ -474,6 +490,7 @@ describe('the recognise-text command', () => {
       client,
       onApplied: () => undefined,
       stamp: STAMP,
+      signatures,
       ask,
       track: UNTRACKED,
     }).run(contextWith(4));
@@ -497,6 +514,7 @@ describe('the recognise-text command', () => {
       client,
       onApplied: () => undefined,
       stamp: STAMP,
+      signatures,
       ask,
       track: UNTRACKED,
     }).run(contextWith(2));
@@ -514,7 +532,7 @@ describe('the recognise-text command', () => {
     const { client, dispatched, read } = clientOver(['text', 'image-only', 'empty', 'image-only']);
     const { ask, opened } = recordingAsk(undefined);
 
-    await straightenScansCommand({ client, onApplied: () => undefined, stamp: STAMP, ask, track: UNTRACKED }).run(
+    await straightenScansCommand({ client, onApplied: () => undefined, stamp: STAMP, signatures, ask, track: UNTRACKED }).run(
       contextWith(4),
     );
 
@@ -526,7 +544,7 @@ describe('the recognise-text command', () => {
   it('STRAIGHTEN: says so when there is nothing to straighten, and a cancelled walk sends and says nothing', async () => {
     const empty = clientOver(['text']);
     const told = recordingAsk(undefined);
-    await straightenScansCommand({ client: empty.client, onApplied: () => undefined, stamp: STAMP, ask: told.ask, track: UNTRACKED }).run(
+    await straightenScansCommand({ client: empty.client, onApplied: () => undefined, stamp: STAMP, signatures, ask: told.ask, track: UNTRACKED }).run(
       contextWith(1),
     );
     expect(empty.dispatched).toStrictEqual([]);
@@ -544,7 +562,7 @@ describe('the recognise-text command', () => {
       },
       end: () => undefined,
     });
-    await straightenScansCommand({ client: cancelled.client, onApplied: () => undefined, stamp: STAMP, ask: quiet.ask, track }).run(
+    await straightenScansCommand({ client: cancelled.client, onApplied: () => undefined, stamp: STAMP, signatures, ask: quiet.ask, track }).run(
       contextWith(2),
     );
     expect(cancelled.dispatched).toStrictEqual([]);
@@ -559,6 +577,7 @@ describe('the recognise-text command', () => {
       client,
       onApplied: () => undefined,
       stamp: STAMP,
+      signatures,
       ask,
       track: UNTRACKED,
       servicesReady: () => false,
@@ -583,6 +602,7 @@ describe('recognising before an export (ADR-0118)', () => {
         client: clientParts.client,
         onApplied: () => undefined,
         stamp: STAMP,
+        signatures,
         ask: () => Promise.resolve(undefined),
         track: UNTRACKED,
         recogniseOnExport: () => on,
