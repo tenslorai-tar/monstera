@@ -76,6 +76,24 @@ export function permissionBits(granted: readonly PdfPermission[]): number {
 }
 
 /**
+ * A value a person typed, as MuPDF's option string carries it whole — the ONE spelling of that rule here, because a
+ * password is the only free text this kernel puts in an option string.
+ *
+ * The string is comma-separated `key=value` terms, so a bare password ended at its first comma: on MuPDF 1.28.0 `a,b`
+ * became `user-password=a` and a stray key `b`, and the save threw *Unused pdf arguments found*; a password whose
+ * second piece is a real option's name would save silently with the first piece alone. MuPDF's own rule, read from
+ * `source/fitz/options.c` (`fz_parse_options_csv`, 1.28.0): a value in double quotes runs to the closing quote, a
+ * quote inside it is written twice, and nothing else is special — no backslash, no other escape — so every character
+ * of the password, commas, equals signs and non-ASCII included, arrives as typed.
+ *
+ * Its JSON syntax is not used: `unescape_json` turns `\n` into a bare `n`, so a password a JSON encoder escaped would
+ * not arrive as typed.
+ */
+export function optionText(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
+/**
  * The MuPDF save options for a protection command.
  *
  * Exported for its own case, and the case is the interesting one: the option
@@ -91,8 +109,8 @@ export function permissionBits(granted: readonly PdfPermission[]): number {
 export function protectionOptions(command: CommandOfKind<'setDocumentProtection'>): string {
   if (command.encryption === 'none') return 'encrypt=none';
   const terms = [`encrypt=${command.encryption}`];
-  if (command.userPassword !== undefined) terms.push(`user-password=${command.userPassword}`);
-  if (command.ownerPassword !== undefined) terms.push(`owner-password=${command.ownerPassword}`);
+  if (command.userPassword !== undefined) terms.push(`user-password=${optionText(command.userPassword)}`);
+  if (command.ownerPassword !== undefined) terms.push(`owner-password=${optionText(command.ownerPassword)}`);
   if (command.permissions !== undefined) {
     terms.push(`permissions=${String(permissionBits(command.permissions))}`);
   }
