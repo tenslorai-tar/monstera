@@ -1,7 +1,6 @@
-import { Encodings, Font } from '@pdf-lib/standard-fonts';
+import { type SignatureOutline, outlineOpCodes } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
-import { SignatureAppearanceRefusedError } from './signingRefusals.js';
 import { drawSignature, signatureBox } from './signatureDrawing.js';
 
 /**
@@ -10,61 +9,56 @@ import { drawSignature, signatureBox } from './signatureDrawing.js';
  * the drawing's own arithmetic, read off the stream it answers.
  */
 
-/** The `x y Td` a typed drawing positions its line with. */
-function lineStart(content: string): { readonly x: number; readonly y: number } {
-  const match = /(-?[\d.]+) (-?[\d.]+) Td/u.exec(content);
-  if (match === null) throw new Error(`no Td in the stream:\n${content}`);
-  return { x: Number(match[1]), y: Number(match[2]) };
+/**
+ * A line box twice as wide as it is tall, holding a straight base and one quadratic back to its start: the curve is
+ * where a cubic built wrongly from a quadratic shows, and the box's shape is where one scale per axis would.
+ */
+const BOWL: SignatureOutline = { ops: outlineOpCodes('MLQZ'), points: [0, 500, 1000, 500, 500, 0, 0, 500], frame: [0, 0, 1000, 500] };
+
+function outlined(outline: SignatureOutline): Parameters<typeof drawSignature>[0] {
+  return { kind: 'outlined', text: 'Ada', font: 'great-vibes', outline };
 }
 
-/** The size the `/F0 n Tf` sets. */
-function fontSize(content: string): number {
-  const match = /\/F0 ([\d.]+) Tf/u.exec(content);
-  if (match === null) throw new Error(`no Tf in the stream:\n${content}`);
-  return Number(match[1]);
-}
-
-describe('a TYPED mark', () => {
-  it('names a base-14 Type 1 font as F0 and shows the text in its WinAnsi codes', async () => {
-    const drawing = await drawSignature({ kind: 'typed', text: 'Ada', font: 'times-italic' }, 200, 80);
-    expect(drawing.font).toStrictEqual({ name: 'F0', baseFont: 'Times-Italic' });
+describe('a TYPED name, as the outline the renderer made of it (ADR-0150)', () => {
+  it('fills a PATH and names no font: no text object, no font resource', () => {
+    const drawing = drawSignature(outlined(BOWL), 200, 100);
     expect(drawing.picture).toBeUndefined();
-    // A, d, a in WinAnsi: 41 64 61.
-    expect(drawing.content).toContain('<416461> Tj');
+    expect(drawing.content).not.toMatch(/\b(BT|ET|Tf|Tj|TJ)\b/u);
+    expect(drawing.content.split('\n').slice(-2)).toStrictEqual(['f', 'Q']);
   });
 
-  it('CENTRES on the advances it draws, WITHOUT kerning — `Tj` applies none', async () => {
-    // "AV" is the pair the kerning table moves most in Helvetica (A V -70 per mille), so it is the input on which a
-    // width that added kerning and one that did not differ by the most: a fixture without a kerned pair would be
-    // centred identically either way and separate nothing.
-    const width = 400;
-    const drawing = await drawSignature({ kind: 'typed', text: 'AV', font: 'helvetica' }, width, 100);
-    const font = Font.load('Helvetica');
-    const advance = ['A', 'V'].reduce((sum, letter) => {
-      const glyph = Encodings.WinAnsi.encodeUnicodeCodePoint(letter.codePointAt(0) ?? 0);
-      return sum + (font.getWidthOfGlyph(glyph.name) ?? 0);
-    }, 0);
-    const kern = font.getXAxisKerningForPair('A', 'V') ?? 0;
-    expect(kern, 'the fixture pair is kerned, or this case separates nothing').toBeLessThan(0);
-
-    const size = fontSize(drawing.content);
-    const drawn = (advance / 1000) * size;
-    expect(lineStart(drawing.content).x).toBeCloseTo((width - drawn) / 2, 3);
-    // CONTROL: centring on the kerned width would start the line this much further right.
-    const kerned = ((advance + kern) / 1000) * size;
-    expect(Math.abs((width - kerned) / 2 - lineStart(drawing.content).x)).toBeGreaterThan(1);
+  it('draws a quadratic as the cubic that IS the same curve, fitted with one scale and turned y-up', () => {
+    // 1000 × 500 into 200 × 100 at 0.9: one scale of 0.18, 10 in from the sides and 5 up from the bottom. The grid's
+    // y = 500 is the BOTTOM of the line box, so it lands 5 up; the quadratic's control at y = 0 is its top.
+    const lines = drawSignature(outlined(BOWL), 200, 100).content.split('\n');
+    expect(lines).toContain('10.0000 5.0000 m');
+    expect(lines).toContain('190.0000 5.0000 l');
+    // THE CUBIC'S CONTROLS sit two thirds of the way from each end to the quadratic's one control (500, 0): (666.67,
+    // 166.67) and (333.33, 166.67) on the grid, (130, 65) and (70, 65) in the form.
+    expect(lines).toContain('130.0000 65.0000 70.0000 65.0000 10.0000 5.0000 c');
+    // CONTROL: the cubic a careless conversion writes — the quadratic's control used twice — is a different curve.
+    expect(lines).not.toContain('100.0000 95.0000 100.0000 95.0000 10.0000 5.0000 c');
+    expect(lines).toContain('h');
   });
 
-  it('REFUSES a character WinAnsi cannot encode, by name, rather than drawing something else', async () => {
-    const refused = drawSignature({ kind: 'typed', text: 'Ada ✓', font: 'courier' }, 200, 80);
-    await expect(refused).rejects.toBeInstanceOf(SignatureAppearanceRefusedError);
-    await expect(refused).rejects.toMatchObject({ reason: 'unencodable-text' });
+  it('fits the line box AND the ink, so a swash past the advance is not cut', () => {
+    // A stroke reaching half the advance again past the line box's right edge.
+    const swash: SignatureOutline = { ops: outlineOpCodes('MLLZ'), points: [0, 500, 1000, 500, 1500, 250], frame: [0, 0, 1000, 500] };
+    const xs = [...drawSignature(outlined(swash), 200, 100).content.matchAll(/^(-?[\d.]+) (-?[\d.]+) [ml]$/gmu)].map(
+      (match) => Number(match[1]),
+    );
+    expect(Math.max(...xs)).toBeLessThanOrEqual(190);
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(10);
   });
 
-  it('fits the narrower axis: a long name in a short box is sized by the width', async () => {
-    const narrow = await drawSignature({ kind: 'typed', text: 'Bartholomew Featherstonehaugh', font: 'helvetica' }, 120, 80);
-    const roomy = await drawSignature({ kind: 'typed', text: 'Bartholomew Featherstonehaugh', font: 'helvetica' }, 480, 80);
-    expect(fontSize(narrow.content)).toBeLessThan(fontSize(roomy.content));
+  it('keeps the line box’s height when the ink is shorter, so a name without descenders is not drawn taller', () => {
+    // INK IN THE TOP HALF OF THE LINE BOX ONLY: fitted to the ink, it would fill the box's height; fitted to the line
+    // box, it stays the top half of it.
+    const short: SignatureOutline = { ops: outlineOpCodes('MLLZ'), points: [0, 0, 1000, 0, 500, 250], frame: [0, 0, 1000, 500] };
+    const ys = [...drawSignature(outlined(short), 200, 100).content.matchAll(/^(-?[\d.]+) (-?[\d.]+) [ml]$/gmu)].map(
+      (match) => Number(match[2]),
+    );
+    expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(45, 3);
   });
 });
 
@@ -77,8 +71,8 @@ describe('a DRAWN mark', () => {
     }));
   }
 
-  it('fits its INK into the box and turns the pad’s y-down into the form’s y-up', async () => {
-    const drawing = await drawSignature(
+  it('fits its INK into the box and turns the pad’s y-down into the form’s y-up', () => {
+    const drawing = drawSignature(
       {
         kind: 'drawn',
         strokes: [
@@ -95,7 +89,7 @@ describe('a DRAWN mark', () => {
       200,
       100,
     );
-    expect(drawing.font).toBeUndefined();
+    expect(drawing.picture).toBeUndefined();
     const [first, second, dot] = points(drawing.content);
     // THE LINE IS ABOVE THE DOT in the form, because it was above it on the pad: a drawing that kept y down would put
     // it below.
@@ -108,8 +102,8 @@ describe('a DRAWN mark', () => {
 });
 
 describe('a PICTURE mark', () => {
-  it('names Im0 and scales it to fit without distortion, centred', async () => {
-    const drawing = await drawSignature({ kind: 'picture', width: 40, height: 20 }, 200, 50);
+  it('names Im0 and scales it to fit without distortion, centred', () => {
+    const drawing = drawSignature({ kind: 'picture', width: 40, height: 20 }, 200, 50);
     expect(drawing.picture).toStrictEqual({ name: 'Im0' });
     const match = /([\d.]+) 0 0 ([\d.]+) ([\d.]+) ([\d.]+) cm/u.exec(drawing.content);
     const [wide, tall, left, bottom] = (match?.slice(1) ?? []).map(Number);

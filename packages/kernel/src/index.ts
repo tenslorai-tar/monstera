@@ -364,9 +364,6 @@ export {
   TimestampRefusedError,
   TimestampUnreachableError,
 } from './signingRefusals.js';
-// THE TYPED-SIGNATURE RULE, for main to answer before a placed signature crosses to the host (ADR-0133). The module
-// loads its font tables on demand and imports no engine, so the barrel stays free of both (ADR-0026).
-export { drawsInStandardFont } from './signatureDrawing.js';
 export {
   DocumentBusyError,
   type DocumentContext,

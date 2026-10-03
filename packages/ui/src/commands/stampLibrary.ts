@@ -1,4 +1,4 @@
-import type { ContractClient, LibraryKind } from '@monstera/contract';
+import { type ContractClient, type LibraryKind, signatureFontOf } from '@monstera/contract';
 
 import type { StampDeps, StampPictures } from '../annotations/stampTool.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG_ID } from '../dialogs/insertImageProblem.js';
@@ -39,6 +39,11 @@ export async function keptEntries(
   const kept: KeptSignature[] = [];
   if (listed.ok) {
     for (const entry of listed.value.entries) {
+      if (entry.look.kind === 'typed') {
+        // IN THE FACE IT IS SHOWN AND PLACED IN: a face retired by ADR-0150 is read as its nearest, here, once.
+        kept.push({ id: entry.id, look: { ...entry.look, font: signatureFontOf(entry.look.font) } });
+        continue;
+      }
       if (entry.look.kind !== 'picture') {
         kept.push({ id: entry.id, look: entry.look });
         continue;

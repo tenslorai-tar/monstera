@@ -5,9 +5,11 @@ import {
   PDFDocument,
   PDFName,
   PDFNumber,
+  PDFRawStream,
   StandardFonts,
+  decodePDFRawStream,
 } from '@cantoo/pdf-lib';
-import { MAX_SIGNATURE_FIELD } from '@monstera/contract';
+import { MAX_SIGNATURE_FIELD, outlineOpCodes } from '@monstera/contract';
 import * as mupdf from './mupdfRaw.js';
 import forge from 'node-forge';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -22,10 +24,7 @@ import { breaksSignatures } from './signatureKeeping.js';
 import type { ByteImage } from './engineSeam.js';
 import { PngPixelsRefused } from './imageDimensions.js';
 import { mupdfWriter, signaturesKeptBySave, withDocument, withDocumentRemoving } from './mupdfWriter.js';
-import {
-  SignatureAppearanceRefusedError,
-  SignatureCredentialRefusedError,
-} from './signingRefusals.js';
+import { SignatureCredentialRefusedError } from './signingRefusals.js';
 import { pkcs7Asn1, rangeCoversWholeFile, readSignatures } from './signatureRead.js';
 import type { ReadSignature } from './signatureRead.js';
 
@@ -899,11 +898,23 @@ describe('a VISIBLE signature', () => {
     picture = pixmap.asPNG();
   });
 
+  /** A typed name as the renderer sends it (ADR-0150): an outline, a block and a curve under it, in its line box. */
+  const typedLook = {
+    kind: 'outlined',
+    text: 'Grace Hopper',
+    font: 'great-vibes',
+    outline: {
+      ops: outlineOpCodes('MLLLZMLQZ'),
+      points: [0, 100, 1000, 100, 1000, 400, 0, 400, 0, 440, 1000, 440, 500, 500, 0, 440],
+      frame: [0, 0, 1000, 500],
+    },
+  } satisfies NonNullable<Parameters<typeof withSignaturePlaceholder>[1]['appearance']>['mark'];
+
   it('writes the ordered rectangle and an /AP /N stream — and the invisible CONTROL writes neither', async () => {
     const visible = await widgetOf(
       await withSignaturePlaceholder(unsigned, {
         ...placeholder,
-        appearance: { page: 0, rect: RECT, mark: { kind: 'typed', text: 'Grace Hopper', font: 'times-italic' } },
+        appearance: { page: 0, rect: RECT, mark: typedLook },
       }),
     );
     const rect = visible.lookup(PDFName.of('Rect'), PDFArray).asArray();
@@ -916,11 +927,6 @@ describe('a VISIBLE signature', () => {
     expect(invisible.lookupMaybe(PDFName.of('AP'), PDFDict)).toBeUndefined();
   });
 
-  const typedLook: { kind: 'typed'; text: string; font: 'helvetica' } = {
-    kind: 'typed',
-    text: 'Grace Hopper',
-    font: 'helvetica',
-  };
   const drawnLook: { kind: 'drawn'; strokes: [number, number][][] } = {
     kind: 'drawn',
     strokes: [
@@ -1026,14 +1032,16 @@ describe('a VISIBLE signature', () => {
     expect(Math.max(...(groups[1] ?? [across])) / across, 'the DOT is below it').toBeLessThan(0.2);
   });
 
-  it('REFUSES text the chosen font cannot encode, by name', async () => {
-    const refused = applySignDocument(unsigned, {
-      ...command,
-      bytes: certificate,
-      appearance: { page: 0, rect: RECT, mark: { kind: 'typed', text: 'Grace ✓', font: 'courier' } },
-    });
-    await expect(refused).rejects.toBeInstanceOf(SignatureAppearanceRefusedError);
-    await expect(refused).rejects.toMatchObject({ reason: 'unencodable-text' });
+  it('writes a typed name as a FILLED PATH and no font, so no font program reaches the document (ADR-0150)', async () => {
+    const visible = await widgetOf(
+      await withSignaturePlaceholder(unsigned, { ...placeholder, appearance: { page: 0, rect: RECT, mark: typedLook } }),
+    );
+    const form = visible.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N'));
+    if (!(form instanceof PDFRawStream)) throw new Error('no appearance stream was written');
+    const content = Buffer.from(decodePDFRawStream(form).decode()).toString('latin1');
+    expect(content).toMatch(/[\d.]+ [\d.]+ c\n[\s\S]*\nf\nQ/u);
+    expect(content).not.toMatch(/\b(BT|Tf|Tj)\b/u);
+    expect(form.dict.lookupMaybe(PDFName.of('Resources'), PDFDict)?.get(PDFName.of('Font'))).toBeUndefined();
   });
 
   it.each(['image/png', 'image/jpeg'] as const)(
@@ -1070,7 +1078,7 @@ describe('a VISIBLE signature', () => {
   });
 
   it('REFUSES a page the document does not have, and a rectangle with no area', async () => {
-    const typed = { kind: 'typed', text: 'Grace Hopper', font: 'courier' } as const;
+    const typed = typedLook;
     await expect(
       withSignaturePlaceholder(unsigned, { ...placeholder, appearance: { page: 1, rect: RECT, mark: typed } }),
     ).rejects.toThrow(/outside this document/);

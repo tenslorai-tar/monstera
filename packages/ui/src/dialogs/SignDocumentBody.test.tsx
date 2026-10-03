@@ -127,7 +127,7 @@ describe('SignDocumentBody', () => {
     expect(screen.getByLabelText('Reason (optional)').getAttribute('autocomplete')).toBeNull();
   });
 
-  it('PLACED and typed: Sign waits for text, then answers it trimmed in the chosen face', () => {
+  it('PLACED and typed: Sign waits for text, then answers it trimmed in the face chosen from the style menu', async () => {
     const { answers } = opened(true);
     // QUIET ON OPEN, and the press with nothing typed signs nothing and says why (`attempt.ts`).
     expect(screen.getByRole('status').textContent).toBe('');
@@ -136,12 +136,21 @@ describe('SignDocumentBody', () => {
     expect(screen.getByRole('status').textContent).toBe('Type or draw the signature first.');
 
     fireEvent.change(screen.getByLabelText('Signature'), { target: { value: '  Grace Hopper ' } });
-    choose('[data-sign-font]', 'courier');
+    fireEvent.click(await screen.findByRole('button', { name: 'Style: Dancing Script' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Courier Prime' }));
     fireEvent.click(SIGN());
 
     expect(answers).toStrictEqual([
-      { passphrase: '', mark: { kind: 'typed', text: 'Grace Hopper', font: 'courier' } },
+      { passphrase: '', mark: { kind: 'typed', text: 'Grace Hopper', font: 'courier-prime' } },
     ]);
+  });
+
+  it('PLACED and typed in a face that CANNOT WRITE it: says which characters, and Sign answers nothing', async () => {
+    const { answers } = opened(true);
+    fireEvent.change(screen.getByLabelText('Signature'), { target: { value: 'Grace 王' } });
+    await screen.findByText('This style cannot write 王. Choose another style, or draw or upload your signature.');
+    fireEvent.click(SIGN());
+    expect(answers).toStrictEqual([]);
   });
 
   it('PLACED and drawn: strokes arrive in the PAD’S unit, divided by its width', () => {
@@ -225,32 +234,39 @@ describe('SignDocumentBody', () => {
   describe('the signature library', () => {
     const TYPED: KeptSignature = {
       id: '00000000-0000-4000-8000-0000000000a1',
-      look: { kind: 'typed', text: 'Grace Hopper', font: 'courier' },
+      look: { kind: 'typed', text: 'Grace Hopper', font: 'courier-prime' },
     };
     const DRAWN: KeptSignature = {
       id: '00000000-0000-4000-8000-0000000000a2',
       look: { kind: 'drawn', strokes: [[[0.1, 0.1], [0.4, 0.3]]] },
     };
 
-    it('KEEP asks to keep a typed look once signed (the case after is its control)', () => {
+    /** Waits for the typed name to be set in its face, which is when there is a mark to sign with. */
+    const typedAndSet = async (text: string): Promise<void> => {
+      fireEvent.change(screen.getByLabelText('Signature'), { target: { value: text } });
+      await screen.findByRole('img', { name: 'Your signature, as it will be placed' });
+    };
+
+    it('KEEP asks to keep a typed look once signed (the case after is its control)', async () => {
       const ticked = opened(true);
-      fireEvent.change(screen.getByLabelText('Signature'), { target: { value: 'Grace Hopper' } });
+      await typedAndSet('Grace Hopper');
       fireEvent.click(screen.getByLabelText('Keep this signature for next time'));
       fireEvent.click(SIGN());
       expect(ticked.answers[0]?.keep).toBe(true);
     });
 
-    it('CONTROL: an unticked look is not kept', () => {
+    it('CONTROL: an unticked look is not kept', async () => {
       const plain = opened(true);
-      fireEvent.change(screen.getByLabelText('Signature'), { target: { value: 'Grace Hopper' } });
+      await typedAndSet('Grace Hopper');
       fireEvent.click(SIGN());
       expect(plain.answers[0]).not.toHaveProperty('keep');
     });
 
-    it('with kept signatures it OPENS ON THEM and signs with the one chosen, by id', () => {
+    it('with kept signatures it OPENS ON THEM and signs with the one chosen, by id', async () => {
       const { answers } = opened(true, [TYPED, DRAWN]);
       expect(document.querySelector<HTMLSelectElement>('[data-sign-look]')?.value).toBe('saved');
-      expect(screen.getByText('Grace Hopper')).toBeTruthy();
+      // A KEPT TYPED NAME IS DRAWN as the outline it will be placed as, named by its words.
+      expect(await screen.findByRole('img', { name: 'Grace Hopper' })).toBeTruthy();
       expect(screen.getByRole('img', { name: 'Drawn signature 2' })).toBeTruthy();
       const second = document.querySelector(`[data-sign-kept="${DRAWN.id}"] input`);
       if (second === null) throw new Error('no second kept signature');

@@ -10,7 +10,6 @@ import {
   SIGN_PROBLEM_TIMESTAMP_REFUSED,
   SIGN_PROBLEM_TIMESTAMP_UNREACHABLE,
   SIGN_PROBLEM_TIMESTAMP_UNVERIFIABLE,
-  SIGN_PROBLEM_UNENCODABLE_TEXT,
   SIGN_PROBLEM_UNREADABLE,
   SIGN_PROBLEM_WRONG_PASSPHRASE,
 } from '../messages/en.js';
@@ -26,7 +25,6 @@ import type { SIGN_PROBLEMS } from './signProblem.js';
 const SENTENCES: Readonly<Record<(typeof SIGN_PROBLEMS)[number], MessageKey>> = {
   'wrong-passphrase': SIGN_PROBLEM_WRONG_PASSPHRASE,
   unreadable: SIGN_PROBLEM_UNREADABLE,
-  'unencodable-text': SIGN_PROBLEM_UNENCODABLE_TEXT,
   'image-unreadable': SIGN_PROBLEM_IMAGE_UNREADABLE,
   'signature-too-large': SIGN_PROBLEM_SIGNATURE_TOO_LARGE,
   'timestamp-unreachable': SIGN_PROBLEM_TIMESTAMP_UNREACHABLE,

@@ -1,25 +1,28 @@
-import type { AnnotationRect, KeepableSignature } from '@monstera/contract/host';
+import { type AnnotationRect, type DrawableSignature, OUTLINE_OPS } from '@monstera/contract/host';
 import { snapRotation } from '@monstera/shared';
 
 import { contentNumber } from './contentNumber.js';
-import { SignatureAppearanceRefusedError } from './signingRefusals.js';
 
 /**
  * How a signature's mark is drawn — ONE module for every writer
  * ([ADR-0133](../../../docs/DECISIONS/0133-a-signatures-mark-is-drawn-once-for-both-writers.md)).
  *
  * *Sign with certificate* draws a visible signature's look into its widget with pdf-lib; the plain *Signature* draws
- * the same look into a `/Stamp` with MuPDF. What a typed name measures, how drawn ink fits its box and how a picture is
+ * the same look into a `/Stamp` with MuPDF. How a typed name's outline and drawn ink fit their box and how a picture is
  * scaled are decided here, once (B3a), so the same mark looks the same either way. **This module imports neither
- * engine**: it answers a content stream in text, the names that stream uses, and the form matrix that keeps it
- * upright, and each writer turns the names into objects of its own document.
+ * engine**: it answers a content stream in text, the name that stream uses for a picture, and the form matrix that
+ * keeps it upright, and each writer turns the name into an object of its own document.
+ *
+ * **A typed name names no font** ([ADR-0150](../../../docs/DECISIONS/0150-a-typed-signature-is-written-as-outlines-of-a-bundled-face.md)):
+ * it arrives as the outline the renderer made from a bundled face, and is filled as a path, so no font program and no
+ * subsetting reaches the document.
  */
 
 /**
- * A typed or drawn mark, as it is kept and as both writers draw it. The placing command carries a drawing flattened
+ * A typed name's outline or drawn strokes, as both writers draw them. The placing command carries a drawing flattened
  * (`placedMarkOf`), and its apply takes it back to strokes before it reaches this module.
  */
-export type KeptMark = KeepableSignature;
+export type KeptMark = DrawableSignature;
 
 /** A picture mark, by the one thing the drawing needs from it: its size in pixels. */
 export interface PictureMark {
@@ -31,123 +34,85 @@ export interface PictureMark {
 /** Any mark the module draws. */
 export type DrawableMark = KeptMark | PictureMark;
 
-/** A base-14 face's PostScript name, as `/BaseFont` carries it. */
-export type StandardFaceName = 'Helvetica' | 'Times-Roman' | 'Times-Italic' | 'Courier';
-
 /** What a mark draws, and what its stream names. */
 export interface SignatureDrawing {
   /** The form's content stream, PDF operators in text. */
   readonly content: string;
-  /** `F0`, a Type 1 base-14 font in `WinAnsiEncoding`, for a typed mark; `undefined` for any other. */
-  readonly font: { readonly name: 'F0'; readonly baseFont: StandardFaceName } | undefined;
   /** `Im0`, the mark's own picture, for a picture mark; `undefined` for any other. */
   readonly picture: { readonly name: 'Im0' } | undefined;
 }
 
-/** The resource name a typed mark's font is reached by. Private to the form, so it collides with nothing. */
-const FONT_NAME = 'F0';
-
-/** The resource name a picture mark's image is reached by, for {@link FONT_NAME}'s reason. */
+/** The resource name a picture mark's image is reached by. Private to the form, so it collides with nothing. */
 const PICTURE_NAME = 'Im0';
-
-/**
- * Each typed face's base-14 font, keyed on the contract's own list — a face added to `SIGNATURE_FONTS` without an entry
- * here is a compile error rather than a signature set in whatever the default happened to be.
- */
-const FACES: Readonly<Record<Extract<KeptMark, { kind: 'typed' }>['font'], StandardFaceName>> = {
-  helvetica: 'Helvetica',
-  'times-roman': 'Times-Roman',
-  'times-italic': 'Times-Italic',
-  courier: 'Courier',
-};
 
 /** How much of the box the mark may fill, on its tighter axis. */
 const FILL = 0.9;
-
-/**
- * An AFM figure, or the fallback where the font gives none — **zero counts as none**, which is pdf-lib's rule for the
- * same data (a missing width is 250, a missing ascender is the bounding box's top). Spelt as a function because the
- * rule is not `??`'s: `??` would keep a zero, and the two readers of these tables would then disagree about one glyph.
- */
-function afm(value: unknown, fallback: number): number {
-  return typeof value === 'number' && value !== 0 ? value : fallback;
-}
 
 /** The pen's width as a share of the box's shorter side, for a drawn mark. */
 const PEN_SHARE = 0.03;
 
 /**
- * Whether a base-14 font can draw every character of `text` — WinAnsi decides.
+ * A typed name's outline, filled and centred in the box.
  *
- * Exported so `main` can answer *that name cannot be drawn* BEFORE a placed signature crosses to the engine host,
- * whose refusal reaches main as a host failure rather than as {@link SignatureAppearanceRefusedError}. One rule, here,
- * for that question and for {@link typedDrawing}'s refusal (B3a).
+ * **What is fitted is the face's line box and the ink together** (the outline's `frame` and every point): the line box
+ * alone would cut a swash that reaches past the advance, and the ink alone would draw *ace* as tall as *Jgy*. Both axes
+ * share one scale, so the letters keep their shape.
+ *
+ * **A quadratic becomes the cubic that is the same curve** — control points two thirds of the way from each end to the
+ * quadratic's one — because PDF has no quadratic operator; nothing is approximated. The path is filled by the nonzero
+ * rule (`f`), the rule TrueType and CFF outlines are both drawn by.
  */
-export async function drawsInStandardFont(text: string): Promise<boolean> {
-  const { Encodings } = await import('@pdf-lib/standard-fonts');
-  for (const character of text) {
-    if (!Encodings.WinAnsi.canEncodeUnicodeCodePoint(character.codePointAt(0) ?? -1)) return false;
+function outlinedDrawing(mark: Extract<KeptMark, { kind: 'outlined' }>, width: number, height: number): SignatureDrawing {
+  const { ops, points, frame } = mark.outline;
+  let [left, top, right, bottom] = frame;
+  // A LOOP AND NOT `Math.min(...points)`, for the drawn mark's reason: an outline may carry 24,576 numbers.
+  for (let at = 0; at + 1 < points.length; at += 2) {
+    const x = points[at] ?? left;
+    const y = points[at + 1] ?? top;
+    left = Math.min(left, x);
+    right = Math.max(right, x);
+    top = Math.min(top, y);
+    bottom = Math.max(bottom, y);
   }
-  return true;
-}
+  // THE FRAME HAS AN AREA, which the schema refines, so both spans are positive and the scale is finite.
+  const scale = Math.min((width * FILL) / (right - left), (height * FILL) / (bottom - top));
+  const originX = (width - (right - left) * scale) / 2;
+  const originY = (height - (bottom - top) * scale) / 2;
+  // THE GRID IS Y-DOWN and a form is y-up, so a point's distance from the box's BOTTOM edge is its height in the form.
+  const at = (x: number, y: number): string =>
+    `${contentNumber(originX + (x - left) * scale)} ${contentNumber(originY + (bottom - y) * scale)}`;
 
-/**
- * Typed text, set in a base-14 font and centred in the box.
- *
- * **The AFM data is the authority on the font**: `@pdf-lib/standard-fonts` carries the base-14 fonts' own metrics and
- * the WinAnsi encoding, the same data pdf-lib reads. It is loaded here, on demand, so a host that never draws a typed
- * signature never pays for its tables (§9.17).
- *
- * **WinAnsi decides what can be drawn.** A character outside it has no code in the font, so it is refused by name
- * rather than drawn as something else.
- *
- * **The width is the glyphs' advances alone.** `Tj` applies no kerning, so a width that added the AFM's kerning pairs
- * would centre the text on a width it is not drawn at — which pdf-lib's `widthOfTextAtSize` does, and which centred
- * the certificate's typed name off by the kerning of its letters until this module drew it.
- */
-async function typedDrawing(mark: Extract<KeptMark, { kind: 'typed' }>, width: number, height: number): Promise<SignatureDrawing> {
-  if (!(await drawsInStandardFont(mark.text))) {
-    throw new SignatureAppearanceRefusedError(
-      'unencodable-text',
-      'the signature text holds a character the chosen standard font cannot encode',
-    );
-  }
-  const { Encodings, Font } = await import('@pdf-lib/standard-fonts');
-  const baseFont = FACES[mark.font];
-  const font = Font.load(baseFont);
-  const codes: number[] = [];
-  let advance = 0;
-  for (const character of mark.text) {
-    const glyph = Encodings.WinAnsi.encodeUnicodeCodePoint(character.codePointAt(0) ?? -1);
-    codes.push(glyph.code);
-    // 250 for a glyph the AFM gives no width, as pdf-lib does, so the two never disagree about a gap.
-    advance += afm(font.getWidthOfGlyph(glyph.name), 250);
-  }
-  const across = advance / 1000;
-  // TEXT THAT ADVANCES NOTHING DRAWS NOTHING, and a visible signature with no ink is the display-only defect on the
-  // page. The dialogs trim, so this is not reachable from the surfaces that send the commands.
-  if (across <= 0) throw new RangeError('the signature text draws nothing');
-  const size = Math.min(height * FILL * 0.75, (width * FILL) / across);
-  // THE CAP HEIGHT ABOVE THE BASELINE, which is what centres a line by eye: the ascender less the descender's depth,
-  // pdf-lib's `heightAtSize(size, { descender: false })` exactly, so the baseline sits where it always has.
-  const top = afm(font.Ascender, font.FontBBox[3]);
-  const bottom = afm(font.Descender, font.FontBBox[1]);
-  const rise = ((top - bottom + afm(font.Descender, 0)) / 1000) * size;
-  const hex = codes.map((code) => code.toString(16).padStart(2, '0').toUpperCase()).join('');
-  return {
-    content: [
-      'q',
-      '0 g',
-      'BT',
-      `/${FONT_NAME} ${contentNumber(size)} Tf`,
-      `${contentNumber((width - across * size) / 2)} ${contentNumber((height - rise) / 2)} Td`,
-      `<${hex}> Tj`,
-      'ET',
-      'Q',
-    ].join('\n'),
-    font: { name: FONT_NAME, baseFont },
-    picture: undefined,
+  const lines = ['q', '0 g'];
+  let next = 0;
+  const take = (): readonly [number, number] => {
+    const point = [points[next] ?? 0, points[next + 1] ?? 0] as const;
+    next += 2;
+    return point;
   };
+  let current: readonly [number, number] = [0, 0];
+  for (const code of ops) {
+    const op = OUTLINE_OPS[code];
+    if (op === 'M' || op === 'L') {
+      current = take();
+      lines.push(`${at(...current)} ${op === 'M' ? 'm' : 'l'}`);
+    } else if (op === 'Q') {
+      const control = take();
+      const end = take();
+      const first = [current[0] + (2 / 3) * (control[0] - current[0]), current[1] + (2 / 3) * (control[1] - current[1])] as const;
+      const second = [end[0] + (2 / 3) * (control[0] - end[0]), end[1] + (2 / 3) * (control[1] - end[1])] as const;
+      lines.push(`${at(...first)} ${at(...second)} ${at(...end)} c`);
+      current = end;
+    } else if (op === 'C') {
+      const first = take();
+      const second = take();
+      current = take();
+      lines.push(`${at(...first)} ${at(...second)} ${at(...current)} c`);
+    } else if (op === 'Z') {
+      lines.push('h');
+    }
+  }
+  lines.push('f', 'Q');
+  return { content: lines.join('\n'), picture: undefined };
 }
 
 /**
@@ -199,7 +164,7 @@ function drawnDrawing(mark: Extract<KeptMark, { kind: 'drawn' }>, width: number,
     lines.push('S');
   }
   lines.push('Q');
-  return { content: lines.join('\n'), font: undefined, picture: undefined };
+  return { content: lines.join('\n'), picture: undefined };
 }
 
 /** A picture, scaled to fit the box without distortion and centred. */
@@ -215,14 +180,13 @@ function pictureDrawing(mark: PictureMark, width: number, height: number): Signa
       `/${PICTURE_NAME} Do`,
       'Q',
     ].join('\n'),
-    font: undefined,
     picture: { name: PICTURE_NAME },
   };
 }
 
 /** Draws a mark into a box of the given size, as the page is seen. */
-export async function drawSignature(mark: DrawableMark, width: number, height: number): Promise<SignatureDrawing> {
-  if (mark.kind === 'typed') return typedDrawing(mark, width, height);
+export function drawSignature(mark: DrawableMark, width: number, height: number): SignatureDrawing {
+  if (mark.kind === 'outlined') return outlinedDrawing(mark, width, height);
   if (mark.kind === 'drawn') return drawnDrawing(mark, width, height);
   return pictureDrawing(mark, width, height);
 }

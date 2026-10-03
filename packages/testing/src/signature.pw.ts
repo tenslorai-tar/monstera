@@ -71,6 +71,8 @@ test('Home › SIGNATURE: the dialog, Use Signature, a click on the page — and
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: 'Type' }).click();
   await dialog.getByRole('textbox', { name: 'Your name' }).fill('Ada Lovelace');
+  // THE NAME SET IN ITS FACE, read from the bundle in the built page (ADR-0150): the preview is the outline main is sent.
+  await expect(dialog.getByRole('img', { name: 'Your signature, as it will be placed' })).toBeVisible();
   await dialog.getByRole('button', { name: 'Use Signature' }).click();
   await expect(dialog).toBeHidden();
 
@@ -89,7 +91,12 @@ test('Home › SIGNATURE: the dialog, Use Signature, a click on the page — and
     readonly keep: boolean;
   }[];
   expect(request?.page).toBe(0);
-  expect(request?.mark).toStrictEqual({ kind: 'typed', text: 'Ada Lovelace', font: 'times-italic' });
+  // A TYPED NAME CROSSES AS ITS OUTLINE, made in this page from the default face's own glyphs.
+  expect(request?.mark).toMatchObject({ kind: 'outlined', text: 'Ada Lovelace', font: 'dancing-script' });
+  const outline = (request?.mark as { readonly outline?: { readonly ops: readonly number[]; readonly points: readonly number[] } })
+    .outline;
+  expect(outline?.ops[0]).toBe(0);
+  expect(outline?.points.length).toBeGreaterThan(1000);
   // SAVE FOR REUSE WAS TICKED, the owner's default, and the page did not untick it.
   expect(request?.keep).toBe(true);
   // THE DEFAULT BOX, 150 by 50 points, centred where the click was on the 612 × 792 page: across its middle, and a

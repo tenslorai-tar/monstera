@@ -100,7 +100,7 @@ const SIGNATURE_PICTURE = picture(
 
 const KEPT_TYPED = {
   id: '00000000-0000-4000-8000-0000000000a1',
-  look: { kind: 'typed', text: 'Alex Example', font: 'times-italic' },
+  look: { kind: 'typed', text: 'Alex Example', font: 'great-vibes' },
 } as const;
 const KEPT_DRAWN = {
   id: '00000000-0000-4000-8000-0000000000a2',
@@ -620,6 +620,8 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'opened', props: { kept: [] } },
     { state: 'type', props: { kept: [] }, steps: [press('Type')] },
     { state: 'typed', props: { kept: [] }, steps: [press('Type'), type('Your name', 'Alex Example')] },
+    // A NAME ITS STYLE CANNOT WRITE: the status line names the letters, and the style list says it of each face.
+    { state: 'cannot-write', props: { kept: [] }, steps: [press('Type'), type('Your name', 'Алекс')] },
     { state: 'upload', props: { kept: [] }, steps: [press('Upload')] },
     {
       state: 'picked',
@@ -631,7 +633,10 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     },
     { state: 'kept', props: { kept: [KEPT_TYPED, KEPT_DRAWN] } },
   ],
-  'dialog.signature-problem': [{ state: 'opened', props: { reason: 'unreadable' } }],
+  'dialog.signature-problem': [
+    { state: 'opened', props: { reason: 'unreadable' } },
+    { state: 'cannot-write', props: { reason: 'cannot-write', characters: 'А л е к с' } },
+  ],
   'dialog.sign-problem': [{ state: 'opened', props: { reason: 'wrong-passphrase' } }],
   'dialog.signatures': [
     { state: 'opened', props: { signatures: SIGNATURES, unreadable: false } },

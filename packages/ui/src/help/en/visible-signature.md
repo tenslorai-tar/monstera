@@ -13,7 +13,7 @@ A visible signature shows your signature on the page and signs the document digi
 1. In the rail, choose **Protect**, then **Sign with certificate** in the **Signatures** group.
 2. Drag a box where the signature should appear.
 3. In **How the signature looks**, choose:
-   - **Type it**, then type your **Signature** and pick a **Font**;
+   - **Type it**, then type your **Signature** and pick a **Style**; each style in the list shows your name in it, and the large preview shows it as it will be placed;
    - **Draw it**, then draw in **Draw your signature here** (**Clear** starts again);
    - **Use a picture of it**; you will pick a PNG or JPEG first;
    - **Use one of my signatures**, then pick one you kept earlier.
@@ -25,7 +25,8 @@ A visible signature shows your signature on the page and signs the document digi
 
 - You still need a certificate file (.p12 or .pfx).
 - The signature appears upright even on turned pages.
-- If the typed font cannot draw a character, Monstera says so; try another font or plain letters.
+- There are fifteen styles, most of them handwriting. If a style cannot write a letter of your name, Monstera names the letter, and the list marks each style that cannot. The styles write Latin letters, and some write Cyrillic and Greek too; a name in Arabic, Hebrew, Chinese, Japanese or Korean can be drawn or used as a picture.
+- A typed signature is drawn into the document as the shapes of its letters, so no font file is added to it.
 - To use a signature again next time, tick **Keep this signature for next time** when you type or draw it. It is kept once the document is signed.
 - Under **Use one of my signatures**, **Add a picture…** keeps a picture of your signature, and **Remove** takes one away. Kept signatures stay on this computer, and up to 16 are kept. Signatures saved with **Signature** appear here too.
 

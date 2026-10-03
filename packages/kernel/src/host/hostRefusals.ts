@@ -23,20 +23,13 @@ export function pictureRefusalCodeOf(error: unknown): PictureRefusal | undefined
 
 /** `engine/prepareSignature`'s code for `error`: a picture's refusal, or one only a signature's appearance meets. */
 export function placeholderRefusalCodeOf(error: unknown): PlaceholderRefusal | undefined {
-  if (error instanceof SignatureAppearanceRefusedError) {
-    return error.reason === 'unencodable-text' ? 'signature-text-unencodable' : 'signature-picture-unreadable';
-  }
+  if (error instanceof SignatureAppearanceRefusedError) return 'signature-picture-unreadable';
   return pictureRefusalCodeOf(error);
 }
 
 /** The class `main` throws for a refusal a host answered, or `undefined` for any other code. */
 export function hostRefusalFor(code: string): Error | undefined {
   switch (code) {
-    case 'signature-text-unencodable':
-      return new SignatureAppearanceRefusedError(
-        'unencodable-text',
-        'the engine host could not encode the typed signature in its chosen font',
-      );
     case 'signature-picture-unreadable':
       return new SignatureAppearanceRefusedError('unreadable-image', 'the engine host could not decode the signature picture');
     case 'picture-too-many-pixels':

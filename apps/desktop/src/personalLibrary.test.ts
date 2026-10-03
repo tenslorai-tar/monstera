@@ -55,16 +55,30 @@ describe('the person’s library', () => {
 
   it('keeps a typed or drawn signature as it was made, and a picture signature beside them', () => {
     const { store } = library();
-    const typed = store.keepSignature({ kind: 'typed', text: 'A. Tester', font: 'times-italic' });
+    const typed = store.keepSignature({ kind: 'typed', text: 'A. Tester', font: 'garamond-italic' });
     const drawn = store.keepSignature({ kind: 'drawn', strokes: [[[0.1, 0.1], [0.5, 0.2]]] });
     store.addPicture('signature', 'ink.jpg', JPEG);
     expect(store.list('signature').map((entry) => entry.look.kind)).toStrictEqual(['typed', 'drawn', 'picture']);
     expect(typed.kind === 'added' ? store.lookup(typed.entry.id)?.look : undefined).toStrictEqual({
       kind: 'typed',
       text: 'A. Tester',
-      font: 'times-italic',
+      font: 'garamond-italic',
     });
     expect(drawn.kind).toBe('added');
+  });
+
+  it('READS a library kept before ADR-0150, whose typed signatures name a retired face — nothing is dropped', () => {
+    // THE FILE AS AN EARLIER BUILD WROTE IT: one typed signature in each of the four base-14 faces. A library is read
+    // whole and refused whole, so a schema that took only the fifteen faces would answer it damaged and lose all four.
+    const { store, files, reported } = library();
+    const entries = (['helvetica', 'times-roman', 'times-italic', 'courier'] as const).map((font, at) => ({
+      id: `00000000-0000-4000-8000-00000000000${String(at + 1)}`,
+      kind: 'signature',
+      look: { kind: 'typed', text: 'A. Tester', font },
+    }));
+    files.write('index.json', new TextEncoder().encode(JSON.stringify({ version: 1, entries })));
+    expect(store.list('signature').map((entry) => entry.look)).toStrictEqual(entries.map((entry) => entry.look));
+    expect(reported).toStrictEqual([]);
   });
 
   it('holds at most the bound of each kind — the next is FULL and keeps nothing, while the other kind still has room', () => {

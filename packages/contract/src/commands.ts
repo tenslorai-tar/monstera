@@ -2962,17 +2962,168 @@ export const flattenFormFieldsSchema = z.object({
 export const MAX_SIGNATURE_FIELD = 256;
 
 /**
- * The faces a typed signature may be set in.
+ * The faces a typed signature may be set in, in the order a person is offered them
+ * ([ADR-0150](../../../docs/DECISIONS/0150-a-typed-signature-is-written-as-outlines-of-a-bundled-face.md)).
  *
- * **pdf-lib's standard fonts, so what is written is a name and not a font
- * program** — nothing is embedded, and nothing here ships a font file. That is
- * also the limit, stated where the choice is made: a standard font encodes
- * WinAnsi, so text outside it cannot be drawn. The kernel refuses such text
- * against the font's own character set (B3a — the font is the authority on what
- * it can encode), and this list is deliberately not accompanied by a character
- * rule of its own.
+ * **Fifteen bundled OFL faces, twelve of them script or italic**, and what reaches a document is their OUTLINES,
+ * never a font: the renderer makes the path from the face's own glyphs ({@link outlinedSignatureMarkSchema}), so no
+ * font program and no subsetting goes into the file. Which characters a face can draw is the face's character map,
+ * read where the faces are (B3a), and this list carries no character rule of its own.
  */
-export const SIGNATURE_FONTS = ['helvetica', 'times-roman', 'times-italic', 'courier'] as const;
+export const SIGNATURE_FONTS = [
+  'dancing-script',
+  'great-vibes',
+  'allura',
+  'alex-brush',
+  'sacramento',
+  'parisienne',
+  'pinyon-script',
+  'mr-dafoe',
+  'herr-von-muellerhoff',
+  'la-belle-aurore',
+  'caveat',
+  'garamond-italic',
+  'garamond',
+  'source-sans',
+  'courier-prime',
+] as const;
+
+/** One of {@link SIGNATURE_FONTS}. */
+export type SignatureFont = (typeof SIGNATURE_FONTS)[number];
+
+/**
+ * The faces a signature KEPT before ADR-0150 may name, each with the face it is shown and placed in now — the nearest:
+ * the sans, the serif, its italic and the mono. A library on disk is read whole and refused whole when one entry does
+ * not parse, so these stay readable for as long as a kept entry may name one; nothing writes them.
+ */
+export const RETIRED_SIGNATURE_FONTS = {
+  helvetica: 'source-sans',
+  'times-roman': 'garamond',
+  'times-italic': 'garamond-italic',
+  courier: 'courier-prime',
+} as const satisfies Readonly<Record<string, SignatureFont>>;
+
+/** A face a kept typed signature may name: a current one, or a retired one it is mapped from. */
+export type KeptSignatureFont = SignatureFont | keyof typeof RETIRED_SIGNATURE_FONTS;
+
+/** The face a kept typed signature is shown and placed in: its own, or the one its retired face maps to. */
+export function signatureFontOf(font: KeptSignatureFont): SignatureFont {
+  return font in RETIRED_SIGNATURE_FONTS ? RETIRED_SIGNATURE_FONTS[font as keyof typeof RETIRED_SIGNATURE_FONTS] : (font as SignatureFont);
+}
+
+/**
+ * The grid an outline's points lie on: whole numbers from 0 to this, y down, the outline's own box scaled to fit on
+ * its longer side. Five digits at most, so a coordinate's encoded size is bounded by its shape.
+ */
+export const SIGNATURE_OUTLINE_GRID = 32767;
+
+/**
+ * How many points an outline may carry: 10,240. At most five digits and a comma per coordinate, the points are at most
+ * 122,880 bytes; the operators, at most one and a half per point and two bytes each, 30,720 — together under three
+ * quarters of the engine host's frame, where `hostRoutes.test.ts` holds every command it can measure (ADR-0150
+ * Decision 7). At about 160 points a letter in the most intricate face measured, that is some sixty letters.
+ */
+export const MAX_SIGNATURE_OUTLINE_POINTS = 10240;
+
+/**
+ * The path operators, by the code an outline carries: a move, a line, a quadratic, a cubic, a close.
+ *
+ * **Codes rather than letters**, because a string is priced at a `\u` escape a character wherever a bound is read
+ * (`maxEncodedBytes`), so a string of operators cost six bytes each where a code costs two.
+ */
+export const OUTLINE_OPS = ['M', 'L', 'Q', 'C', 'Z'] as const;
+
+/** One of {@link OUTLINE_OPS}. */
+export type OutlineOp = (typeof OUTLINE_OPS)[number];
+
+/** The codes for operators written as letters — `'MLQZ'` — which is how a path is read by a person and by a font. */
+export function outlineOpCodes(letters: string): number[] {
+  const codes: number[] = [];
+  // BY INDEX: an operator is one ASCII letter, so a code unit is a letter, and anything else is refused below.
+  for (let at = 0; at < letters.length; at += 1) {
+    const letter = letters.charAt(at);
+    const code = OUTLINE_OPS.indexOf(letter as OutlineOp);
+    if (code < 0) throw new RangeError(`${letter} is not a path operator`);
+    codes.push(code);
+  }
+  return codes;
+}
+
+/** How many points each operator takes, in {@link OUTLINE_OPS}' order. */
+const OUTLINE_ARITY: readonly number[] = [1, 1, 2, 3, 0];
+
+/** {@link OUTLINE_OPS}' codes for the two operators the path rule is about. */
+const MOVE = OUTLINE_OPS.indexOf('M');
+const CLOSE = OUTLINE_OPS.indexOf('Z');
+
+/**
+ * How many points an outline's operators take — THE ONE COUNT, for the schema's check and for the renderer that
+ * writes the path, so the two cannot disagree about an operator's arity (B3a).
+ */
+export function outlinePointsOf(ops: readonly number[]): number {
+  let points = 0;
+  for (const op of ops) points += OUTLINE_ARITY[op] ?? 0;
+  return points;
+}
+
+/**
+ * Whether operators make a path — THE ONE RULE for what a well-formed outline is: every subpath a move followed by at
+ * least one line or curve, closed or not. So a subpath holds two points at least, and there are never more than one and
+ * a half operators a point, which is what {@link MAX_SIGNATURE_OUTLINE_POINTS}' bound on the operators rests on.
+ */
+export function outlineOpsArePath(ops: readonly number[]): boolean {
+  // HOW MANY LINES AND CURVES THE OPEN SUBPATH HAS, or that none is open: before the first move, and after a close.
+  let segments: number | 'none open' = 'none open';
+  for (const op of ops) {
+    if (op === MOVE) {
+      if (segments === 0) return false;
+      segments = 0;
+    } else if (op === CLOSE) {
+      if (segments === 'none open' || segments === 0) return false;
+      segments = 'none open';
+    } else {
+      if (segments === 'none open') return false;
+      segments += 1;
+    }
+  }
+  // AN OPEN SUBPATH AT THE END is a path if it drew something; no subpath at all is not one.
+  return segments === 'none open' ? ops.length > 0 : segments > 0;
+}
+
+/** A coordinate on {@link SIGNATURE_OUTLINE_GRID}. */
+const outlineCoordinate = z.number().int().min(0).max(SIGNATURE_OUTLINE_GRID);
+
+/**
+ * A typed name's outline: a path, filled by the nonzero rule both TrueType and CFF outlines use.
+ *
+ * - `ops` — the operators, by {@link OUTLINE_OPS}' codes, each subpath a move followed by lines and curves and closed
+ *   or not. A quadratic is kept as one: the kernel turns it into the cubic that is the same curve, so nothing is
+ *   approximated on the way.
+ * - `points` — the operators' points, flat, `x` then `y`, on {@link SIGNATURE_OUTLINE_GRID}.
+ * - `frame` — the face's line box on the same grid, `[left, top, right, bottom]`: the name's advance by the face's
+ *   ascender and descender. The kernel fits this and the ink together, so a name without descenders is not drawn
+ *   taller than one with them, and a swash past the advance is not cut.
+ */
+const signatureOutlineSchema = z
+  .object({
+    ops: z
+      .array(z.number().int().min(0).max(OUTLINE_OPS.length - 1))
+      .min(2)
+      .max((3 * MAX_SIGNATURE_OUTLINE_POINTS) / 2),
+    points: z.array(outlineCoordinate).min(4).max(2 * MAX_SIGNATURE_OUTLINE_POINTS),
+    frame: z.tuple([outlineCoordinate, outlineCoordinate, outlineCoordinate, outlineCoordinate]),
+  })
+  .strict()
+  .refine(({ ops }) => outlineOpsArePath(ops), { message: 'the operators do not make a path' })
+  .refine(({ ops, points }) => points.length === 2 * outlinePointsOf(ops), {
+    message: 'the points are not the ones the operators take',
+  })
+  .refine(({ frame: [left, top, right, bottom] }) => left < right && top < bottom, {
+    message: 'the frame has no area',
+  });
+
+/** See {@link signatureOutlineSchema}. */
+export type SignatureOutline = z.infer<typeof signatureOutlineSchema>;
 
 /**
  * The RFC 3161 timestamp authorities a signature may ask, each with its one URL
@@ -3028,7 +3179,6 @@ export const TIMESTAMP_AUTHORITY_IDS = ['digicert', 'globalsign', 'sectigo'] as 
 export const SIGN_REFUSALS = [
   'wrong-passphrase',
   'unreadable',
-  'unencodable-text',
   'image-unreadable',
   'image-too-large',
   /** The signature and its timestamp do not fit the space the placeholder reserves. */
@@ -3069,7 +3219,8 @@ export const MAX_SIGNATURE_STROKE_POINTS = 1024;
  */
 const signaturePointSchema = z.tuple([z.number().min(0).max(1), z.number().min(0).max(1)]);
 
-const typedSignatureMarkSchema = z
+/** A typed name as it is MADE and kept: the name, and the face. */
+export const typedSignatureMarkSchema = z
   .object({
     kind: z.literal('typed'),
     text: z.string().min(1).max(MAX_SIGNATURE_FIELD),
@@ -3077,7 +3228,40 @@ const typedSignatureMarkSchema = z
   })
   .strict();
 
-const drawnSignatureMarkSchema = z
+/** A typed name as the library READS it: a current face, or a retired one ({@link RETIRED_SIGNATURE_FONTS}). */
+const keptTypedSignatureMarkSchema = typedSignatureMarkSchema
+  .extend({
+    font: z.enum([
+      ...SIGNATURE_FONTS,
+      ...(Object.keys(RETIRED_SIGNATURE_FONTS) as (keyof typeof RETIRED_SIGNATURE_FONTS)[]),
+    ]),
+  })
+  .strict();
+
+/**
+ * A typed name as it is DRAWN: the name and the face, and the outline the renderer made of it
+ * ([ADR-0150](../../../docs/DECISIONS/0150-a-typed-signature-is-written-as-outlines-of-a-bundled-face.md) Decision 3).
+ *
+ * **Its own kind rather than an optional field on `typed`**, so a typed mark that reaches a writer without its outline
+ * cannot be written: the kept form and the drawn form are different shapes, and a writer takes only this one (B5). The
+ * name and the face travel with it so a placement can be kept as the person made it.
+ */
+export const outlinedSignatureMarkSchema = z
+  .object({
+    kind: z.literal('outlined'),
+    text: z.string().min(1).max(MAX_SIGNATURE_FIELD),
+    font: z.enum(SIGNATURE_FONTS),
+    outline: signatureOutlineSchema,
+  })
+  .strict();
+
+/** See {@link outlinedSignatureMarkSchema}. */
+export type OutlinedSignatureMark = z.infer<typeof outlinedSignatureMarkSchema>;
+
+/** A typed name as it is made and kept: {@link typedSignatureMarkSchema}. */
+export type TypedSignatureMark = z.infer<typeof typedSignatureMarkSchema>;
+
+export const drawnSignatureMarkSchema = z
   .object({
     kind: z.literal('drawn'),
     strokes: z
@@ -3138,7 +3322,7 @@ export const libraryEntrySchema = z.discriminatedUnion('kind', [
     .object({
       id: libraryIdSchema,
       kind: z.literal('signature'),
-      look: z.discriminatedUnion('kind', [libraryPictureSchema, typedSignatureMarkSchema, drawnSignatureMarkSchema]),
+      look: z.discriminatedUnion('kind', [libraryPictureSchema, keptTypedSignatureMarkSchema, drawnSignatureMarkSchema]),
     })
     .strict(),
 ]);
@@ -3148,8 +3332,25 @@ export type LibraryEntry = z.infer<typeof libraryEntrySchema>;
 /** A signature a person may keep as it is made: typed or drawn. A picture is added by main's picker. */
 export const keepableSignatureSchema = z.discriminatedUnion('kind', [typedSignatureMarkSchema, drawnSignatureMarkSchema]);
 
-/** One of {@link keepableSignatureSchema}'s looks: what is kept, and what both signature writers draw from. */
+/** One of {@link keepableSignatureSchema}'s looks: what is kept. */
 export type KeepableSignature = z.infer<typeof keepableSignatureSchema>;
+
+/**
+ * A typed or drawn signature as both writers DRAW it: a typed name's outline, or the strokes. The kept typed form is
+ * not here, because it has nothing to draw until the renderer makes its outline (ADR-0150).
+ */
+export const drawableSignatureSchema = z.discriminatedUnion('kind', [outlinedSignatureMarkSchema, drawnSignatureMarkSchema]);
+
+/** One of {@link drawableSignatureSchema}'s looks. */
+export type DrawableSignature = z.infer<typeof drawableSignatureSchema>;
+
+/**
+ * What the library keeps of a look that was drawn: a typed name's name and face without its outline, which is derived
+ * and so is never stored (ADR-0150 Decision 3); a drawing as it is.
+ */
+export function keptLookOf(mark: DrawableSignature): KeepableSignature {
+  return mark.kind === 'outlined' ? { kind: 'typed', text: mark.text, font: mark.font } : mark;
+}
 
 /**
  * How many points a drawing may carry where it is PLACED — `placeSignatureMark`, which crosses the MuPDF host's pipe
@@ -3190,22 +3391,22 @@ const placedDrawingSchema = z
 /** See {@link placedDrawingSchema}. */
 export type PlacedDrawing = z.infer<typeof placedDrawingSchema>;
 
-/** A signature's look as `placeSignatureMark` carries it: typed as kept, or a drawing in its placed form. */
-const placedSignatureMarkSchema = z.discriminatedUnion('kind', [typedSignatureMarkSchema, placedDrawingSchema]);
+/** A signature's look as `placeSignatureMark` carries it: a typed name's outline, or a drawing in its placed form. */
+const placedSignatureMarkSchema = z.discriminatedUnion('kind', [outlinedSignatureMarkSchema, placedDrawingSchema]);
 
 /** See {@link placedSignatureMarkSchema}. */
 export type PlacedSignatureMark = z.infer<typeof placedSignatureMarkSchema>;
 
 /**
- * A kept look in the form the placing command carries — the ONE place a drawing is fitted to
- * {@link MAX_PLACED_SIGNATURE_POINTS} and flattened (B3a).
+ * A look in the form the placing command carries — the ONE place a drawing is fitted to
+ * {@link MAX_PLACED_SIGNATURE_POINTS} and flattened (B3a). An outline is already bounded by its own schema.
  *
  * **Thinned, never cut**: while the drawing is too long, every stroke longer than two points keeps its first point,
  * every other point after it, and its last. Each pass about halves the drawing and keeps every stroke and both its ends,
  * so the shape survives at a lower resolution; cutting the points past the bound would drop the end of the signature.
  */
-export function placedMarkOf(mark: KeepableSignature): PlacedSignatureMark {
-  if (mark.kind === 'typed') return mark;
+export function placedMarkOf(mark: DrawableSignature): PlacedSignatureMark {
+  if (mark.kind === 'outlined') return mark;
   let strokes = mark.strokes;
   const total = (): number => strokes.reduce((sum, stroke) => sum + stroke.length, 0);
   while (total() > MAX_PLACED_SIGNATURE_POINTS) {
@@ -3237,16 +3438,43 @@ export function strokesOfPlaced(drawing: PlacedDrawing): Extract<KeepableSignatu
  * Signature's dialog previewed (ADR-0133's second correction). `saved` names a
  * signature the person kept, by its library id — main looks it up, so a kept
  * picture's bytes never have to travel back.
+ *
+ * **A typed name arrives as its outline**, made by the renderer (ADR-0150), and a KEPT typed one is sent the same way
+ * rather than by `saved`: main has the name and the face but no outline to draw.
  */
 export const requestedSignatureMarkSchema = z.discriminatedUnion('kind', [
-  typedSignatureMarkSchema,
+  outlinedSignatureMarkSchema,
   drawnSignatureMarkSchema,
-  z.object({ kind: z.literal('image'), picked: fileHandleSchema.optional() }).strict(),
-  z.object({ kind: z.literal('saved'), id: libraryIdSchema }).strict(),
+  pictureRequestSchema(),
+  savedRequestSchema(),
 ]);
 
-/** One of {@link requestedSignatureMarkSchema}'s three looks. */
+/** A picture the renderer asks for: picked now by main, or the one main holds under `picked`. */
+function pictureRequestSchema() {
+  return z.object({ kind: z.literal('image'), picked: fileHandleSchema.optional() }).strict();
+}
+
+/** A kept signature, by its library id. */
+function savedRequestSchema() {
+  return z.object({ kind: z.literal('saved'), id: libraryIdSchema }).strict();
+}
+
+/** One of {@link requestedSignatureMarkSchema}'s looks. */
 export type RequestedSignatureMark = z.infer<typeof requestedSignatureMarkSchema>;
+
+/**
+ * A look as a person CHOSE it, before the renderer has made a typed name's outline: {@link requestedSignatureMarkSchema}
+ * with the typed name as it was typed. What the signing dialogs answer; what crosses to main is the requested form.
+ */
+export const chosenSignatureMarkSchema = z.discriminatedUnion('kind', [
+  typedSignatureMarkSchema,
+  drawnSignatureMarkSchema,
+  pictureRequestSchema(),
+  savedRequestSchema(),
+]);
+
+/** One of {@link chosenSignatureMarkSchema}'s looks. */
+export type ChosenSignatureMark = z.infer<typeof chosenSignatureMarkSchema>;
 
 /**
  * How a visible signature looks, as the COMMAND carries it.
@@ -3256,7 +3484,7 @@ export type RequestedSignatureMark = z.infer<typeof requestedSignatureMarkSchema
  * `placeImageSchema`'s bound, for their reasons.
  */
 const signatureMarkSchema = z.discriminatedUnion('kind', [
-  typedSignatureMarkSchema,
+  outlinedSignatureMarkSchema,
   drawnSignatureMarkSchema,
   z
     .object({

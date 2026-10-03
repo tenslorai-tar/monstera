@@ -3523,8 +3523,6 @@ export const channels = {
       z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
       /** The kept signature named is no longer kept — removed since the dialog opened. */
       z.object({ kind: z.literal('absent') }),
-      /** The typed name holds a character the chosen standard font cannot draw. */
-      z.object({ kind: z.literal('unencodable-text') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

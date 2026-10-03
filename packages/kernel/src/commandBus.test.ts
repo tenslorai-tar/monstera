@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { type Command, type CommandOfKind, NETWORK_OCR_ENGINES, type PageSet } from '@monstera/contract';
+import { type Command, type CommandOfKind, NETWORK_OCR_ENGINES, type PageSet, outlineOpCodes } from '@monstera/contract';
 import { type DocVersion, asDocVersion } from '@monstera/shared';
 
 import {
@@ -959,7 +959,13 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
           kind: 'placeSignatureMark',
           page: 1,
           rect: { x0: 100, y0: 100, x1: 300, y1: 180 },
-          mark: { kind: 'typed', text: 'Grace Hopper', font: 'times-italic' },
+          // A TYPED NAME as the renderer sends it, an outline (ADR-0150): one filled block in its line box.
+          mark: {
+            kind: 'outlined',
+            text: 'Grace Hopper',
+            font: 'great-vibes',
+            outline: { ops: outlineOpCodes('MLLLZ'), points: [0, 100, 1000, 100, 1000, 400, 0, 400], frame: [0, 0, 1000, 500] },
+          },
           stamp: { author: 'Priya Raman', created: '2026-10-02T09:00:00.000Z' },
         },
         showingInputs(session),

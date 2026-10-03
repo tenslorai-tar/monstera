@@ -11,6 +11,7 @@ import {
   type OptimizeSetting,
   type PageSet,
   type RenderableCommand,
+  type RequestedSignatureMark,
   type SignaturePlacement,
   blockEditOf,
   pageSetOf,
@@ -37,7 +38,9 @@ import type { RedactMatchesAnswer } from '../dialogs/redactMatches.js';
 import { SANITIZE_DOCUMENT_DIALOG_ID } from '../dialogs/sanitizeDocument.js';
 import type { SanitizeDocumentAnswer } from '../dialogs/sanitizeDocument.js';
 import { SIGN_DOCUMENT_DIALOG_ID } from '../dialogs/signDocument.js';
-import type { SignDocumentAnswer, SignDocumentAnswers } from '../dialogs/signDocument.js';
+import type { KeptSignature, SignDocumentAnswer, SignDocumentAnswers } from '../dialogs/signDocument.js';
+import { SIGNATURE_PROBLEM_DIALOG_ID } from '../dialogs/signatureProblem.js';
+import { chosenOfKept, requestedMarkOf } from './signatureMarks.js';
 import { BLOB_URLS, type LibraryPageDeps, keepPicture, keptEntries } from './stampLibrary.js';
 import { SIGN_PROBLEM_DIALOG_ID } from '../dialogs/signProblem.js';
 import { DOCUSIGN_NOTICE_DIALOG_ID } from '../dialogs/docusignNotice.js';
@@ -4061,9 +4064,11 @@ export async function signDocument(
   // THE SIGNATURE LIBRARY, offered only where a signature is SEEN — a placement. Adding or removing a kept one is an
   // answer, after which the library is read again and the dialog asked again (`SIGN_DOCUMENT_ANSWERS`).
   let answer: SignDocumentAnswer | undefined;
+  let offered: readonly KeptSignature[];
   for (;;) {
     const { kept, release } =
       placement === undefined ? { kept: [], release: (): void => undefined } : await keptEntries(library, 'signature');
+    offered = kept;
     let answered: SignDocumentAnswers | undefined;
     try {
       answered = (await deps.ask(SIGN_DOCUMENT_DIALOG_ID, { placed: placement !== undefined, kept })) as
@@ -4081,6 +4086,18 @@ export async function signDocument(
     else await deps.client['library.remove']({ id: answered.id });
   }
   if (placement !== undefined && answer.mark === undefined) return;
+  // THE LOOK AS IT IS SENT: a kept typed one by its name and face, and a typed name as its outline (ADR-0150). Refused
+  // here, before the certificate is asked for, so a name its face cannot write never costs a passphrase.
+  const chosen = answer.mark === undefined ? undefined : chosenOfKept(answer.mark, offered);
+  let mark: RequestedSignatureMark | undefined;
+  if (chosen !== undefined) {
+    const requested = await requestedMarkOf(chosen);
+    if (requested.kind === 'problem') {
+      void deps.ask(SIGNATURE_PROBLEM_DIALOG_ID, requested.problem);
+      return;
+    }
+    mark = requested.mark;
+  }
 
   const signed = await deps.client['document.sign']({
     docId,
@@ -4091,9 +4108,9 @@ export async function signDocument(
     ...(answer.contactInfo === undefined ? {} : { contactInfo: answer.contactInfo }),
     ...(answer.certify === undefined ? {} : { certify: answer.certify }),
     ...(answer.timestamp === undefined ? {} : { timestamp: answer.timestamp }),
-    ...(placement === undefined || answer.mark === undefined
+    ...(placement === undefined || mark === undefined
       ? {}
-      : { appearance: { page: placement.page, rect: placement.rect, mark: answer.mark } }),
+      : { appearance: { page: placement.page, rect: placement.rect, mark } }),
   });
   if (!signed.ok) {
     reportProblem(deps, signed.error);
@@ -4104,8 +4121,8 @@ export async function signDocument(
     deps.onApplied({ version: signed.value.version, byteLength: signed.value.byteLength });
     // KEPT ONCE IT HAS SIGNED, so a look that failed to sign is not kept as though it had worked. Only a typed or drawn
     // look is kept here; a picture is kept through the library's own picker, and a kept one already is.
-    if (answer.keep === true && (answer.mark?.kind === 'typed' || answer.mark?.kind === 'drawn')) {
-      await deps.client['library.keepSignature']({ mark: answer.mark });
+    if (answer.keep === true && (chosen?.kind === 'typed' || chosen?.kind === 'drawn')) {
+      await deps.client['library.keepSignature']({ mark: chosen });
     }
     // THE TRIM IS TOLD, exactly as `applyDocumentCommand` tells it: the log
     // has a ceiling, and a person whose earliest undo went away finds out

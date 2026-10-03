@@ -4,7 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { type ClientApi, createClient, type Incident, wrapHandlers } from '@monstera/contract';
+import {
+  type ClientApi,
+  createClient,
+  type Incident,
+  type OutlinedSignatureMark,
+  outlineOpCodes,
+  wrapHandlers,
+} from '@monstera/contract';
 
 import { localMupdfExecution } from '../commandSpecs.js';
 import { extractPages } from '../pageExtract.js';
@@ -976,7 +983,13 @@ describe("a signature's placeholder, prepared in the host and taken by main (ADR
   });
 
   const RECT = { x0: 10, y0: 10, x1: 110, y1: 60 };
-  const typed = { kind: 'typed', text: 'Grace Hopper', font: 'courier' } as const;
+  // A TYPED NAME as the renderer sends it, an outline (ADR-0150).
+  const typed: OutlinedSignatureMark = {
+    kind: 'outlined',
+    text: 'Grace Hopper',
+    font: 'courier-prime',
+    outline: { ops: outlineOpCodes('MLLLZ'), points: [0, 100, 1000, 100, 1000, 400, 0, 400], frame: [0, 0, 1000, 500] },
+  };
 
   it("prepares the placeholder beside the session, and main TAKES the file out of the host's area", async () => {
     const areas = realAreas();

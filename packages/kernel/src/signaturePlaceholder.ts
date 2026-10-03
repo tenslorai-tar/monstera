@@ -120,8 +120,8 @@ interface PlacedAppearance {
  * Draws the appearance for a placement, upright as the page is seen.
  *
  * **What is drawn is `signatureDrawing.ts`'s** (ADR-0133): the box, the matrix that keeps the mark upright, the content
- * stream and the names it uses. This function turns those names into pdf-lib objects of this document — the base-14
- * font as a Type 1 dictionary, the picture as the XObject pdf-lib embedded — and wraps the stream as the widget's form.
+ * stream and the name it uses for a picture. This function turns that name into the XObject pdf-lib embedded, and wraps
+ * the stream as the widget's form. A typed name is a filled path and names no font (ADR-0150).
  * MuPDF's placed signature takes the same drawing, so a mark looks the same with a certificate and without.
  */
 async function appearanceFor(
@@ -141,19 +141,10 @@ async function appearanceFor(
   } else {
     drawable = mark;
   }
-  const drawing = await drawSignature(drawable, box.seenWide, box.seenTall);
+  const drawing = drawSignature(drawable, box.seenWide, box.seenTall);
 
   const context = document.context;
   const resources: Record<string, Record<string, PDFRef>> = {};
-  if (drawing.font !== undefined) {
-    const font = context.obj({
-      Type: 'Font',
-      Subtype: 'Type1',
-      BaseFont: drawing.font.baseFont,
-      Encoding: 'WinAnsiEncoding',
-    });
-    resources['Font'] = { [drawing.font.name]: context.register(font) };
-  }
   if (drawing.picture !== undefined && picture !== undefined) {
     resources['XObject'] = { [drawing.picture.name]: picture.ref };
   }

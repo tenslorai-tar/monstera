@@ -3,10 +3,20 @@ import { describe, expect, it } from 'vitest';
 import {
   type KeepableSignature,
   MAX_PLACED_SIGNATURE_POINTS,
+  MAX_SIGNATURE_OUTLINE_POINTS,
   MAX_SIGNATURE_STROKE_POINTS,
   MAX_SIGNATURE_STROKES,
+  RETIRED_SIGNATURE_FONTS,
+  SIGNATURE_OUTLINE_GRID,
+  type SignatureOutline,
+  keepableSignatureSchema,
+  libraryEntrySchema,
+  outlineOpCodes,
+  outlineOpsArePath,
+  outlinePointsOf,
   placeSignatureMarkSchema,
   placedMarkOf,
+  signatureFontOf,
   strokesOfPlaced,
 } from './commands.js';
 
@@ -64,8 +74,95 @@ describe('placedMarkOf and strokesOfPlaced', () => {
     expect(placeSignatureMarkSchema.safeParse({ ...PLACING, mark: { kind: 'drawn', points, starts: [0, 2, 4] } }).success).toBe(true);
   });
 
-  it('a typed look crosses unchanged', () => {
-    const typed = { kind: 'typed', text: 'Ada Lovelace', font: 'courier' } as const;
-    expect(placedMarkOf(typed)).toStrictEqual(typed);
+  it('a typed name’s outline crosses unchanged', () => {
+    const outlined = { kind: 'outlined', text: 'Ada', font: 'courier-prime', outline: SQUARE } as const;
+    expect(placedMarkOf(outlined)).toStrictEqual(outlined);
+    expect(placeSignatureMarkSchema.safeParse({ ...PLACING, mark: outlined }).success).toBe(true);
+  });
+});
+
+/** A closed square with one curved side: a move, two lines, a quadratic and a close — 1 + 1 + 1 + 2 points. */
+const SQUARE: SignatureOutline = {
+  ops: outlineOpCodes('MLLQZ'),
+  points: [0, 0, 100, 0, 100, 100, 50, 150, 0, 100],
+  frame: [0, 0, 100, 120],
+};
+
+describe('the outline a typed name crosses as (ADR-0150)', () => {
+  const placing = (outline: unknown): boolean =>
+    placeSignatureMarkSchema.safeParse({ ...PLACING, mark: { kind: 'outlined', text: 'Ada', font: 'allura', outline } }).success;
+
+  it('takes a path whose points are exactly the ones its operators take', () => {
+    expect(outlinePointsOf(SQUARE.ops)).toBe(5);
+    expect(placing(SQUARE)).toBe(true);
+  });
+
+  it('refuses points the operators do not take — one pair short, one pair over', () => {
+    expect(placing({ ...SQUARE, points: SQUARE.points.slice(2) })).toBe(false);
+    expect(placing({ ...SQUARE, points: [...SQUARE.points, 1, 1] })).toBe(false);
+  });
+
+  it('takes subpaths open or closed, one after another', () => {
+    for (const letters of ['ML', 'MLZ', 'MLML', 'MLZML', 'MQCZMLZ']) {
+      expect(outlineOpsArePath(outlineOpCodes(letters)), letters).toBe(true);
+    }
+  });
+
+  it('refuses operators that are not a path: no move first, a move or close with nothing drawn, a code past the five', () => {
+    for (const letters of ['', 'L', 'LLZ', 'MZ', 'MMLZ', 'MLZZ', 'MLZL', 'MLM']) {
+      expect(outlineOpsArePath(outlineOpCodes(letters)), letters).toBe(false);
+    }
+    expect(placing({ ...SQUARE, ops: outlineOpCodes('LLLQZ') })).toBe(false);
+    expect(placing({ ...SQUARE, ops: [0, 1, 1, 2, 5] })).toBe(false);
+    expect(() => outlineOpCodes('MX')).toThrow(RangeError);
+  });
+
+  it('refuses a coordinate off the grid, and a frame with no area', () => {
+    expect(placing({ ...SQUARE, points: [0, 0, 100, 0, 100, 100, 50, SIGNATURE_OUTLINE_GRID + 1, 0, 100] })).toBe(false);
+    expect(placing({ ...SQUARE, points: [0, 0, 100, 0, 100, 100, 50, 0.5, 0, 100] })).toBe(false);
+    expect(placing({ ...SQUARE, frame: [100, 0, 100, 120] })).toBe(false);
+  });
+
+  it('CONTROL: the bound bites — one point past it is refused, the bound itself is taken', () => {
+    const lines = (count: number): SignatureOutline => ({
+      ops: outlineOpCodes(`M${'L'.repeat(count - 1)}`),
+      points: Array.from({ length: 2 * count }, (_, at) => at % SIGNATURE_OUTLINE_GRID),
+      frame: [0, 0, 10, 10],
+    });
+    expect(placing(lines(MAX_SIGNATURE_OUTLINE_POINTS))).toBe(true);
+    expect(placing(lines(MAX_SIGNATURE_OUTLINE_POINTS + 1))).toBe(false);
+  });
+
+  it('a placing command at the bound fits the engine host’s frame with a quarter to spare', () => {
+    // THE LONGEST IT CAN ENCODE: every point a five-digit coordinate, and the most operators those points allow — the
+    // shortest subpath a path may have, a move, a line and a close, so one and a half a point.
+    const outline = {
+      ops: outlineOpCodes('MLZ'.repeat(MAX_SIGNATURE_OUTLINE_POINTS / 2)),
+      points: Array.from({ length: 2 * MAX_SIGNATURE_OUTLINE_POINTS }, () => SIGNATURE_OUTLINE_GRID),
+      frame: [0, 0, SIGNATURE_OUTLINE_GRID, SIGNATURE_OUTLINE_GRID],
+    };
+    // AND THE LONGEST NAME: a control character is six bytes in JSON, the most any character of the name can be.
+    const command = { ...PLACING, mark: { kind: 'outlined', text: '\u0001'.repeat(256), font: 'herr-von-muellerhoff', outline } };
+    expect(placeSignatureMarkSchema.safeParse(command).success).toBe(true);
+    // EVERY CHARACTER OF THAT ENCODING IS ASCII — the name's are escapes — so its length is its size in bytes.
+    const encoded = JSON.stringify(command);
+    expect(/^[\x20-\x7e]*$/u.test(encoded)).toBe(true);
+    expect(encoded.length).toBeLessThan(0.75 * 262_144);
+  });
+});
+
+describe('a kept typed signature in a face that is retired', () => {
+  it('is read, and is shown and placed in the nearest face', () => {
+    for (const [retired, current] of Object.entries(RETIRED_SIGNATURE_FONTS)) {
+      const entry = { id: '7c8f2d1e-3b4a-4c5d-8e9f-0a1b2c3d4e5f', kind: 'signature', look: { kind: 'typed', text: 'Ada', font: retired } };
+      expect(libraryEntrySchema.safeParse(entry).success, retired).toBe(true);
+      expect(signatureFontOf(retired as keyof typeof RETIRED_SIGNATURE_FONTS)).toBe(current);
+    }
+    expect(signatureFontOf('great-vibes')).toBe('great-vibes');
+  });
+
+  it('CONTROL: a retired face is READ only — a new keep naming one is refused', () => {
+    expect(keepableSignatureSchema.safeParse({ kind: 'typed', text: 'Ada', font: 'times-italic' }).success).toBe(false);
+    expect(keepableSignatureSchema.safeParse({ kind: 'typed', text: 'Ada', font: 'garamond-italic' }).success).toBe(true);
   });
 });

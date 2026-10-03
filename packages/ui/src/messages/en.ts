@@ -2097,6 +2097,28 @@ export const SIGNATURE_UPLOAD = messageKey('dialog.signature.upload');
 export const SIGNATURE_PAD_HINT = messageKey('dialog.signature.pad-hint');
 export const SIGNATURE_NAME = messageKey('dialog.signature.name');
 export const SIGNATURE_STYLE = messageKey('dialog.signature.style');
+export const SIGNATURE_STYLE_CHOSEN = messageKey('dialog.signature.style-chosen');
+export const SIGNATURE_PREVIEW = messageKey('dialog.signature.preview');
+export const SIGNATURE_FACE_CANNOT_WRITE = messageKey('dialog.signature.face-cannot-write');
+export const SIGNATURE_CANNOT_WRITE = messageKey('dialog.signature.cannot-write');
+export const SIGNATURE_OUTLINE_TOO_LONG = messageKey('dialog.signature.outline-too-long');
+export const SIGNATURE_BLANK = messageKey('dialog.signature.blank');
+export const SIGNATURE_FACES_LOADING = messageKey('dialog.signature.faces-loading');
+export const SIGNATURE_FACE_DANCING_SCRIPT = messageKey('signature.face.dancing-script');
+export const SIGNATURE_FACE_GREAT_VIBES = messageKey('signature.face.great-vibes');
+export const SIGNATURE_FACE_ALLURA = messageKey('signature.face.allura');
+export const SIGNATURE_FACE_ALEX_BRUSH = messageKey('signature.face.alex-brush');
+export const SIGNATURE_FACE_SACRAMENTO = messageKey('signature.face.sacramento');
+export const SIGNATURE_FACE_PARISIENNE = messageKey('signature.face.parisienne');
+export const SIGNATURE_FACE_PINYON_SCRIPT = messageKey('signature.face.pinyon-script');
+export const SIGNATURE_FACE_MR_DAFOE = messageKey('signature.face.mr-dafoe');
+export const SIGNATURE_FACE_HERR_VON_MUELLERHOFF = messageKey('signature.face.herr-von-muellerhoff');
+export const SIGNATURE_FACE_LA_BELLE_AURORE = messageKey('signature.face.la-belle-aurore');
+export const SIGNATURE_FACE_CAVEAT = messageKey('signature.face.caveat');
+export const SIGNATURE_FACE_GARAMOND_ITALIC = messageKey('signature.face.garamond-italic');
+export const SIGNATURE_FACE_GARAMOND = messageKey('signature.face.garamond');
+export const SIGNATURE_FACE_SOURCE_SANS = messageKey('signature.face.source-sans');
+export const SIGNATURE_FACE_COURIER_PRIME = messageKey('signature.face.courier-prime');
 export const SIGNATURE_TOO_LONG = messageKey('dialog.signature.too-long');
 export const SIGNATURE_UPLOAD_NOTE = messageKey('dialog.signature.upload-note');
 export const SIGNATURE_PICTURE = messageKey('dialog.signature.picture');
@@ -2111,7 +2133,9 @@ export const SIGNATURE_PROBLEM_TITLE = messageKey('dialog.signature-problem.titl
 export const SIGNATURE_PROBLEM_UNREADABLE = messageKey('dialog.signature-problem.unreadable');
 export const SIGNATURE_PROBLEM_TOO_LARGE = messageKey('dialog.signature-problem.too-large');
 export const SIGNATURE_PROBLEM_ABSENT = messageKey('dialog.signature-problem.absent');
-export const SIGNATURE_PROBLEM_UNENCODABLE = messageKey('dialog.signature-problem.unencodable');
+export const SIGNATURE_PROBLEM_CANNOT_WRITE = messageKey('dialog.signature-problem.cannot-write');
+export const SIGNATURE_PROBLEM_TOO_LONG = messageKey('dialog.signature-problem.too-long');
+export const SIGNATURE_PROBLEM_BLANK = messageKey('dialog.signature-problem.blank');
 export const TOAST_SIGNATURE_LIBRARY_FULL = messageKey('toast.signature.library-full');
 export const TOAST_SIGNATURE_NOT_KEEPABLE = messageKey('toast.signature.not-keepable');
 export const SIGN_DOCUMENT_EXPLAINS = messageKey('dialog.sign-document.explains');
@@ -2140,7 +2164,6 @@ export const SIGN_DOCUMENT_TIMESTAMP_NOTE = messageKey('dialog.sign-document.tim
 export const SIGN_PROBLEM_TITLE = messageKey('dialog.sign-problem.title');
 export const SIGN_PROBLEM_WRONG_PASSPHRASE = messageKey('dialog.sign-problem.wrong-passphrase');
 export const SIGN_PROBLEM_UNREADABLE = messageKey('dialog.sign-problem.unreadable');
-export const SIGN_PROBLEM_UNENCODABLE_TEXT = messageKey('dialog.sign-problem.unencodable-text');
 export const SIGN_PROBLEM_IMAGE_UNREADABLE = messageKey('dialog.sign-problem.image-unreadable');
 export const SIGN_PROBLEM_IMAGE_TOO_LARGE = messageKey('dialog.sign-problem.image-too-large');
 export const SIGN_PROBLEM_SAVED_MISSING = messageKey('dialog.sign-problem.saved-missing');
@@ -2163,13 +2186,6 @@ export const SIGN_DOCUMENT_KEPT_ADD = messageKey('dialog.sign-document.kept-add'
 export const SIGN_DOCUMENT_KEPT_REMOVE = messageKey('dialog.sign-document.kept-remove');
 export const SIGN_DOCUMENT_KEPT_DRAWN = messageKey('dialog.sign-document.kept-drawn');
 export const SIGN_DOCUMENT_TEXT = messageKey('dialog.sign-document.text');
-export const SIGN_DOCUMENT_FONT = messageKey('dialog.sign-document.font');
-export const SIGN_DOCUMENT_FONT_HELVETICA = messageKey('dialog.sign-document.font-helvetica');
-export const SIGN_DOCUMENT_FONT_TIMES = messageKey('dialog.sign-document.font-times');
-export const SIGN_DOCUMENT_FONT_TIMES_ITALIC = messageKey(
-  'dialog.sign-document.font-times-italic',
-);
-export const SIGN_DOCUMENT_FONT_COURIER = messageKey('dialog.sign-document.font-courier');
 export const SIGN_DOCUMENT_PAD = messageKey('dialog.sign-document.pad');
 export const SIGN_DOCUMENT_CLEAR = messageKey('dialog.sign-document.clear');
 export const SIGN_DOCUMENT_IMAGE_NOTE = messageKey('dialog.sign-document.image-note');
@@ -4674,8 +4690,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'That password did not open the certificate. Nothing has been changed.',
   [SIGN_PROBLEM_UNREADABLE]:
     'That file is not a certificate this application can read. Nothing has been changed.',
-  [SIGN_PROBLEM_UNENCODABLE_TEXT]:
-    'The signature has a character that font cannot draw. Try another font or plain letters. Nothing has been changed.',
   [SIGN_PROBLEM_IMAGE_UNREADABLE]:
     'That picture could not be read. Choose a PNG or JPEG file. Nothing has been changed.',
   [SIGN_PROBLEM_IMAGE_TOO_LARGE]: 'That picture is too large to place. Nothing has been changed.',
@@ -4701,11 +4715,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_DOCUMENT_KEPT_REMOVE]: 'Remove',
   [SIGN_DOCUMENT_KEPT_DRAWN]: 'Drawn signature {number}',
   [SIGN_DOCUMENT_TEXT]: 'Signature',
-  [SIGN_DOCUMENT_FONT]: 'Font',
-  [SIGN_DOCUMENT_FONT_HELVETICA]: 'Helvetica',
-  [SIGN_DOCUMENT_FONT_TIMES]: 'Times',
-  [SIGN_DOCUMENT_FONT_TIMES_ITALIC]: 'Times Italic',
-  [SIGN_DOCUMENT_FONT_COURIER]: 'Courier',
   [SIGN_DOCUMENT_PAD]: 'Draw your signature here',
   [SIGN_DOCUMENT_CLEAR]: 'Clear',
   [SIGN_DOCUMENT_IMAGE_NOTE]:
@@ -4722,6 +4731,28 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGNATURE_PAD_HINT]: 'Draw your signature above',
   [SIGNATURE_NAME]: 'Your name',
   [SIGNATURE_STYLE]: 'Style',
+  [SIGNATURE_STYLE_CHOSEN]: 'Style: {face}',
+  [SIGNATURE_PREVIEW]: 'Your signature, as it will be placed',
+  [SIGNATURE_FACE_CANNOT_WRITE]: 'Cannot write {characters}',
+  [SIGNATURE_CANNOT_WRITE]: 'This style cannot write {characters}. Choose another style, or draw or upload your signature.',
+  [SIGNATURE_OUTLINE_TOO_LONG]: 'This name is too long to write in this style. Shorten it, or choose a plainer style.',
+  [SIGNATURE_BLANK]: 'This name has nothing to draw. Type your name in letters.',
+  [SIGNATURE_FACES_LOADING]: 'Preparing the styles…',
+  [SIGNATURE_FACE_DANCING_SCRIPT]: 'Dancing Script',
+  [SIGNATURE_FACE_GREAT_VIBES]: 'Great Vibes',
+  [SIGNATURE_FACE_ALLURA]: 'Allura',
+  [SIGNATURE_FACE_ALEX_BRUSH]: 'Alex Brush',
+  [SIGNATURE_FACE_SACRAMENTO]: 'Sacramento',
+  [SIGNATURE_FACE_PARISIENNE]: 'Parisienne',
+  [SIGNATURE_FACE_PINYON_SCRIPT]: 'Pinyon Script',
+  [SIGNATURE_FACE_MR_DAFOE]: 'Mr Dafoe',
+  [SIGNATURE_FACE_HERR_VON_MUELLERHOFF]: 'Herr Von Muellerhoff',
+  [SIGNATURE_FACE_LA_BELLE_AURORE]: 'La Belle Aurore',
+  [SIGNATURE_FACE_CAVEAT]: 'Caveat',
+  [SIGNATURE_FACE_GARAMOND_ITALIC]: 'EB Garamond Italic',
+  [SIGNATURE_FACE_GARAMOND]: 'EB Garamond',
+  [SIGNATURE_FACE_SOURCE_SANS]: 'Source Sans 3',
+  [SIGNATURE_FACE_COURIER_PRIME]: 'Courier Prime',
   [SIGNATURE_TOO_LONG]: 'A name can be at most {limit} characters.',
   [SIGNATURE_UPLOAD_NOTE]: 'A PNG or JPEG picture of your signature, shown here before you place it.',
   [SIGNATURE_PICTURE]: 'Picture',
@@ -4736,8 +4767,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGNATURE_PROBLEM_UNREADABLE]: 'That file is not a PNG or JPEG picture this app can read. Nothing was placed.',
   [SIGNATURE_PROBLEM_TOO_LARGE]: 'That picture is larger than {limit} megabytes. Nothing was placed.',
   [SIGNATURE_PROBLEM_ABSENT]: 'That saved signature has been removed. Nothing was placed.',
-  [SIGNATURE_PROBLEM_UNENCODABLE]:
-    'The name has a character this signature style cannot draw. Nothing was placed. Try typing it with plain letters.',
+  [SIGNATURE_PROBLEM_CANNOT_WRITE]:
+    'This signature style cannot write {characters}. Nothing was placed. Choose another style, or draw or upload your signature.',
+  [SIGNATURE_PROBLEM_TOO_LONG]:
+    'This name is too long to write in its style. Nothing was placed. Shorten it, or choose a plainer style.',
+  [SIGNATURE_PROBLEM_BLANK]: 'This name has nothing to draw. Nothing was placed.',
   [TOAST_SIGNATURE_LIBRARY_FULL]: 'Signature placed. Your saved signatures are full, so this one was not kept.',
   [TOAST_SIGNATURE_NOT_KEEPABLE]: 'Signature placed. This picture could not be kept for reuse.',
   [PLACE_SIGNATURE_TOOL_TITLE]: 'Sign with certificate',

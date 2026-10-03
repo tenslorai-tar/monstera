@@ -70,7 +70,7 @@ import {
   createFormFieldSchema,
   ocrPageSchema,
   generateTocSchema,
-  keepableSignatureSchema,
+  drawableSignatureSchema,
   signDocumentSchema,
   signaturePlacementSchema,
 } from '@monstera/contract/host';
@@ -1291,7 +1291,7 @@ const placeholderRequestSchema = signDocumentSchema
     appearance: signaturePlacementSchema
       .extend({
         mark: z.discriminatedUnion('kind', [
-          ...keepableSignatureSchema.options,
+          ...drawableSignatureSchema.options,
           z.object({ kind: z.literal('image'), mediaType: z.enum(['image/jpeg', 'image/png']) }).strict(),
         ]),
       })
@@ -1340,9 +1340,8 @@ export function joinPlaceholderAsset(
  */
 export const PICTURE_REFUSALS = ['picture-too-many-pixels'] as const;
 
-/** {@link PICTURE_REFUSALS}, and the two only a signature's appearance meets. */
+/** {@link PICTURE_REFUSALS}, and the one only a signature's appearance meets. */
 export const PLACEHOLDER_REFUSALS = [
-  'signature-text-unencodable',
   'signature-picture-unreadable',
   ...PICTURE_REFUSALS,
 ] as const;

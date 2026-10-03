@@ -13,7 +13,7 @@ Signature puts your handwritten, typed or pictured signature on a page. It does 
 1. In the rail, choose **Home**, then **Signature** in the **Quick tools** group. It is also in **Comment**, in the **Stamps** group.
 2. In the **Signature** window, under **New signature**, choose:
    - **Draw**, then draw on the white pad above **Draw your signature above** (**Clear** starts again);
-   - **Type**, then type **Your name** and pick a **Style**;
+   - **Type**, then type **Your name** and pick a **Style**; each style in the list shows your name in it, and the large preview shows it as it will be placed;
    - **Upload**, then **Choose picture…** and pick a PNG or JPEG; the picture is shown in the window before you place it (**Choose another…** picks again).
 3. Leave **Save for reuse** ticked to keep the signature for next time, or untick it for a one-off.
 4. Choose **Use Signature**, then click the page where the signature should go.
@@ -26,7 +26,8 @@ Signature puts your handwritten, typed or pictured signature on a page. It does 
 - A signature you saved appears under **Your signatures** the next time. Choose it, then click the page. **Remove** beside it takes it away.
 - Saved signatures stay on this computer, and up to 16 are kept. The same signatures appear in **Sign with certificate**.
 - The signature appears upright even on turned pages.
-- If the style you chose cannot draw a character in your name, Monstera says so and places nothing; try another style or plain letters.
+- There are fifteen styles, most of them handwriting. If a style cannot write a letter of your name, Monstera names the letter as you type, and the list marks each style that cannot. The styles write Latin letters, and some write Cyrillic and Greek too; a name in Arabic, Hebrew, Chinese, Japanese or Korean can be drawn or uploaded instead.
+- A typed signature is drawn into the document as the shapes of its letters, so no font file is added to it.
 - Undo with **Ctrl+Z**. To remove a signature later, select it and press **Delete**.
 
 <!--

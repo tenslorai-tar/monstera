@@ -36,6 +36,8 @@ import {
   MAX_LIBRARY_PICTURE_BYTES,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
+  type OutlinedSignatureMark,
+  outlineOpCodes,
   type PageSet,
   type WordMode,
 } from '@monstera/contract';
@@ -722,6 +724,19 @@ const localLayers: DocumentLayersReader = (id, sessions) => {
 
 /** Every page of the three-page fixture, in order. */
 const ALL_PAGES = [0, 1, 2];
+
+/**
+ * A typed name as the renderer sends it (ADR-0150): its outline, here one filled block in its line box. Main does not
+ * read the outline; it carries it to the writer and keeps the name and the face.
+ */
+function outlined(text: string): OutlinedSignatureMark {
+  return {
+    kind: 'outlined',
+    text,
+    font: 'courier-prime',
+    outline: { ops: outlineOpCodes('MLLLZ'), points: [0, 100, 1000, 100, 1000, 400, 0, 400], frame: [0, 0, 1000, 500] },
+  };
+}
 
 /** What a case supplies for itself: the three that vary between them. */
 type Varying = Pick<DocumentCommandsParts, 'documents' | 'bus' | 'engine'>;
@@ -4425,7 +4440,7 @@ describe('sign — a visible signature', () => {
         passphrase: '',
         appearance: {
           ...placement,
-          mark: { kind: 'typed', text: 'Grace Hopper', font: 'courier' },
+          mark: outlined('Grace Hopper'),
         },
       }),
     ).toStrictEqual({ kind: 'cancelled' });
@@ -4440,7 +4455,7 @@ describe('sign — a visible signature', () => {
     const library: LibraryReader = {
       lookup: (id) =>
         id === KEPT_TYPED
-          ? { id, kind: 'signature', look: { kind: 'typed', text: 'Grace Hopper', font: 'courier' } }
+          ? { id, kind: 'signature', look: { kind: 'typed', text: 'Grace Hopper', font: 'courier-prime' } }
           : id === KEPT_PICTURE
             ? { id, kind: 'signature', look: { kind: 'picture', name: 'ink' } }
             : id === KEPT_STAMP
@@ -4482,9 +4497,10 @@ describe('sign — a visible signature', () => {
       return { outcome, mark, certificate: certificate.asked };
     };
 
-    it('a kept TYPED signature signs as itself', async () => {
-      const signed = await signingWith(KEPT_TYPED);
-      expect(signed.mark).toStrictEqual({ kind: 'typed', text: 'Grace Hopper', font: 'courier' });
+    it('a kept TYPED signature named only by its id is REFUSED: main has no outline to draw (ADR-0150)', async () => {
+      // THE RENDERER SENDS A KEPT TYPED NAME AS ITS OUTLINE (`chosenOfKept`), so this is its defect, answered as one —
+      // never drawn as nothing, and never set in some face main would have to choose.
+      await expect(signingWith(KEPT_TYPED)).rejects.toThrow(/outline/u);
     });
 
     it('a kept PICTURE signs with the library’s bytes, and no picker opens', async () => {
@@ -4522,14 +4538,11 @@ describe('sign — a visible signature', () => {
         passphrase: '',
         appearance: {
           ...placement,
-          mark: { kind: 'typed', text: 'Grace Hopper', font: 'courier' },
+          mark: outlined('Grace Hopper'),
         },
       });
     };
 
-    expect(
-      await signing(new SignatureAppearanceRefusedError('unencodable-text', 'refused by the case')),
-    ).toStrictEqual({ kind: 'unencodable-text' });
     expect(
       await signing(new SignatureAppearanceRefusedError('unreadable-image', 'refused by the case')),
     ).toStrictEqual({ kind: 'image-unreadable' });
@@ -4693,16 +4706,18 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
     return { outcome, kinds, types, library };
   };
 
-  it('a TYPED mark reaches the engine as placeSignatureMark, and Save for reuse KEEPS it as it was made', async () => {
-    const mark = { kind: 'typed', text: 'Ada Lovelace', font: 'times-italic' } as const;
-    const placed = await placing(mark, true);
+  it('a TYPED mark reaches the engine as placeSignatureMark, and Save for reuse KEEPS its name and face', async () => {
+    const placed = await placing(outlined('Ada Lovelace'), true);
     expect(placed.outcome).toMatchObject({ kind: 'placed', kept: 'kept' });
     expect(placed.kinds).toStrictEqual(['placeSignatureMark']);
-    expect(placed.library.list('signature').map((entry) => entry.look)).toStrictEqual([mark]);
+    // THE OUTLINE IS NOT KEPT: it is derived from the name and the face, and storing a derived value goes stale.
+    expect(placed.library.list('signature').map((entry) => entry.look)).toStrictEqual([
+      { kind: 'typed', text: 'Ada Lovelace', font: 'courier-prime' },
+    ]);
   });
 
   it('CONTROL: with Save for reuse off, the same mark is placed and the library is left empty', async () => {
-    const placed = await placing({ kind: 'typed', text: 'Ada Lovelace', font: 'times-italic' }, false);
+    const placed = await placing(outlined('Ada Lovelace'), false);
     expect(placed.outcome).toMatchObject({ kind: 'placed', kept: 'not-asked' });
     expect(placed.library.list('signature')).toStrictEqual([]);
   });
@@ -4737,12 +4752,6 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
     const placed = await placing({ kind: 'image' }, true, { path: 'big.png', bytes: large });
     expect(placed.outcome).toMatchObject({ kind: 'placed', kept: 'not-keepable' });
     expect(placed.library.list('signature')).toStrictEqual([]);
-  });
-
-  it('a typed name the font cannot draw is refused BEFORE any command reaches the engine', async () => {
-    const placed = await placing({ kind: 'typed', text: 'Ada ✓', font: 'courier' }, true);
-    expect(placed.outcome).toStrictEqual({ kind: 'unencodable-text' });
-    expect(placed.kinds).toStrictEqual([]);
   });
 
   it('a PREVIEWED picture is placed from the bytes main HOLDS, no picker opens, and the handle is released once placed', async () => {
@@ -4852,7 +4861,7 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
     const outcome = await commands.placeSignature(docId, {
       page: 0,
       rect: RECT,
-      mark: { kind: 'typed', text: 'Grace Hopper', font: 'helvetica' },
+      mark: outlined('Grace Hopper'),
       keep: false,
       stamp: STAMP,
     });

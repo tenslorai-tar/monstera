@@ -2082,16 +2082,6 @@ function writeSignatureStamp(
   stamp: AnnotationStamp,
 ): void {
   const resources = document.newDictionary();
-  if (drawing.font !== undefined) {
-    const font = document.newDictionary();
-    font.put('Type', document.newName('Font'));
-    font.put('Subtype', document.newName('Type1'));
-    font.put('BaseFont', document.newName(drawing.font.baseFont));
-    font.put('Encoding', document.newName('WinAnsiEncoding'));
-    const fonts = document.newDictionary();
-    fonts.put(drawing.font.name, document.addObject(font));
-    resources.put('Font', fonts);
-  }
   if (drawing.picture !== undefined && picture !== undefined) {
     resources.put('XObject', pictureThroughForm(document, drawing.picture.name, picture));
   }
@@ -2114,22 +2104,20 @@ function writeSignatureStamp(
  * Places a plain signature, typed or drawn, on one page (ADR-0133).
  *
  * **Three steps, and only the last writes.** The page is resolved and the box checked first, so a page the document
- * does not have or a box off the page refuses before anything is drawn; the mark is drawn next, outside the document,
- * because its only wait is the font tables loading; then the stamp is written in one synchronous pass.
+ * does not have or a box off the page refuses before anything is drawn; the mark is drawn next; then the stamp is
+ * written. A typed name arrives as its outline (ADR-0150), so drawing it reads nothing and the three are one pass.
  */
-export const applyPlaceSignatureMark: Apply<'mupdf', 'placeSignatureMark'> = async (
+export const applyPlaceSignatureMark: Apply<'mupdf', 'placeSignatureMark'> = (
   session: MupdfSession,
   command: CommandOfKind<'placeSignatureMark'>,
-): Promise<void> => {
-  const { box } = await withDocument(session, (document) => signaturePlacement(document, command.page, command.rect));
-  // A DRAWING CROSSES FLATTENED, so the command fits the host's frame (`placedMarkOf`); the strokes are taken back here,
-  // at the one step that draws them.
-  const mark = command.mark.kind === 'drawn' ? { kind: 'drawn' as const, strokes: strokesOfPlaced(command.mark) } : command.mark;
-  const drawing = await drawSignature(mark, box.seenWide, box.seenTall);
-  await withDocument(session, (document) => {
-    writeSignatureStamp(document, signaturePlacement(document, command.page, command.rect), drawing, undefined, command.stamp);
+): Promise<void> =>
+  withDocument(session, (document) => {
+    const target = signaturePlacement(document, command.page, command.rect);
+    // A DRAWING CROSSES FLATTENED, so the command fits the host's frame (`placedMarkOf`); the strokes are taken back
+    // here, at the one step that draws them.
+    const mark = command.mark.kind === 'drawn' ? { kind: 'drawn' as const, strokes: strokesOfPlaced(command.mark) } : command.mark;
+    writeSignatureStamp(document, target, drawSignature(mark, target.box.seenWide, target.box.seenTall), undefined, command.stamp);
   });
-};
 
 /**
  * Places a plain signature that is a picture, as {@link applyPlaceSignatureMark} places a typed one.
@@ -2144,7 +2132,7 @@ export const applyPlaceSignaturePicture: Apply<'mupdf', 'placeSignaturePicture'>
 ): Promise<void> => {
   const { box } = await withDocument(session, (document) => signaturePlacement(document, command.page, command.rect));
   const image = decodedImage(command.bytes);
-  const drawing = await drawSignature(
+  const drawing = drawSignature(
     { kind: 'picture', width: image.getWidth(), height: image.getHeight() },
     box.seenWide,
     box.seenTall,

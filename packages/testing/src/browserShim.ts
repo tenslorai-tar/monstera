@@ -16,6 +16,7 @@ import {
   ACCESSIBILITY_HUMAN_CHECKS,
   MAX_IMAGE_BYTES,
   MAX_LIBRARY_ENTRIES,
+  keptLookOf,
   LAYERS_PART,
   PAGE_LINKS_PART,
   PAGE_OBJECTS_PART,
@@ -1415,14 +1416,15 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       const version = asDocVersion(current + 1);
       versions.set(docId, version);
       let kept: 'kept' | 'not-asked' | 'library-full' = 'not-asked';
-      if (keep && (mark.kind === 'typed' || mark.kind === 'drawn')) {
+      if (keep && (mark.kind === 'outlined' || mark.kind === 'drawn')) {
         if (libraryEntries.filter((entry) => entry.kind === 'signature').length >= MAX_LIBRARY_ENTRIES) {
           kept = 'library-full';
         } else {
           libraryMinted += 1;
           libraryEntries = [
             ...libraryEntries,
-            { id: `00000000-0000-4000-8000-${String(libraryMinted).padStart(12, '0')}`, kind: 'signature', look: mark },
+            // KEPT AS MAIN KEEPS IT: a typed name's name and face, its outline being derived (ADR-0150).
+            { id: `00000000-0000-4000-8000-${String(libraryMinted).padStart(12, '0')}`, kind: 'signature', look: keptLookOf(mark) },
           ];
           kept = 'kept';
         }

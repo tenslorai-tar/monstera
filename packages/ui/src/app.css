@@ -5248,27 +5248,121 @@ optgroup {
   stroke-linejoin: round;
 }
 
+/* A KEPT TYPED SIGNATURE as the outline it will be placed as (ADR-0150): ink on the page's white, a line tall. */
 .m-sign-document__kept-typed {
-  color: var(--text);
+  display: block;
+  block-size: calc(var(--space-32) * 1.25);
+  max-inline-size: calc(var(--space-32) * 7);
+  background: var(--page);
+  color: var(--signature-ink);
+}
+
+.m-sign-document__kept-typed path {
+  fill: currentColor;
+}
+
+/* Until its faces are read, or where its face cannot set it, a kept typed name is its words. */
+.m-sign-document__kept-text {
+  color: var(--signature-ink);
   font-size: var(--font-content-20);
 }
 
-/* A KEPT TYPED SIGNATURE in the face it will be drawn in: the four standard faces the signing look offers. */
-.m-sign-font--helvetica {
-  font-family: Helvetica, Arial, sans-serif;
+/* THE TYPE TAB (ADR-0150): the name across the dialog, the style chosen from a menu that shows the name in each face,
+   and the name large on the page's white, as it will be placed. */
+.m-typed-signature {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+  padding-block: var(--space-10);
+  border-block-end: 1px solid var(--border-soft); /* decorative: as a row's */
 }
 
-.m-sign-font--times-roman {
-  font-family: 'Times New Roman', Times, serif;
+.m-typed-signature .m-input {
+  inline-size: 100%;
+  box-sizing: border-box;
 }
 
-.m-sign-font--times-italic {
-  font-family: 'Times New Roman', Times, serif;
-  font-style: italic;
+.m-typed-signature__style {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
 }
 
-.m-sign-font--courier {
-  font-family: 'Courier New', Courier, monospace;
+.m-typed-signature__preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  inline-size: 100%;
+  block-size: calc(var(--space-32) * 3);
+  padding: var(--space-10) var(--space-16);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--page);
+  color: var(--signature-ink);
+}
+
+.m-typed-signature__ink {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.m-typed-signature__ink path {
+  fill: currentColor;
+}
+
+/* NOTHING TYPED YET: the preview shows the style's own name, in faint ink, so it reads as an example. */
+.m-typed-signature__preview[data-signature-preview='face'] {
+  color: var(--faint);
+}
+
+/* THE STYLE MENU: each choice the name in that face on a strip of the page's white, its face's name beside it. Taller
+   than a menu of words, so it scrolls inside its own box rather than past the window. */
+.m-signature-faces {
+  /* THE CHOICE MENU'S COLUMNS with one more: the tick's fixed column, so every sample starts at one edge whichever is
+     chosen, then the sample, then the face's name. */
+  --menu-item-columns: var(--icon-16) auto minmax(0, 1fr);
+  --menu-item-gap: var(--space-8);
+  max-block-size: min(calc(var(--space-32) * 13), calc(100vh - var(--space-32) * 4));
+  overflow-y: auto;
+}
+
+.m-signature-faces__sample {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  inline-size: calc(var(--space-32) * 6);
+  block-size: calc(var(--space-32) * 1.25);
+  padding: var(--space-2) var(--space-6);
+  border-radius: var(--radius-4);
+  background: var(--page);
+  color: var(--signature-ink);
+}
+
+.m-signature-faces__ink {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+/* A FACE THAT CANNOT WRITE THE NAME shows its own name, faint, beside the note that says which letters it lacks. */
+.m-signature-faces__sample[data-faint] {
+  color: var(--faint);
+}
+
+.m-signature-faces__ink path {
+  fill: currentColor;
+}
+
+.m-signature-faces__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.m-signature-faces__cannot {
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
 }
 
 .m-stamp-chooser__empty {
@@ -5361,10 +5455,6 @@ optgroup {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-8);
-}
-
-.m-signature__face {
-  font-size: var(--font-content-20);
 }
 
 .m-signature__upload {

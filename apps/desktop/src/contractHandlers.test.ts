@@ -450,10 +450,16 @@ describe('the person’s library (library.*, and document.placeImage with a kept
     const request = {
       page: 2,
       rect: { x0: 10, y0: 20, x1: 160, y1: 70 },
-      mark: { kind: 'typed', text: 'Ada Lovelace', font: 'times-italic' },
+      // A TYPED NAME as the renderer sends it, its outline (ADR-0150).
+      mark: {
+        kind: 'outlined',
+        text: 'Ada Lovelace',
+        font: 'allura',
+        outline: { ops: [0, 1, 1, 1, 4], points: [0, 100, 1000, 100, 1000, 400, 0, 400], frame: [0, 0, 1000, 500] },
+      },
       keep: true,
       stamp: { author: 'A. Tester', created: '2026-10-02T12:00:00Z' },
-    } as const;
+    } satisfies Parameters<DocumentCommands['placeSignature']>[1];
     const PLACED = { kind: 'placed', version: asDocVersion(4), byteLength: 2048, historyDropped: 0, kept: 'not-keepable' } as const;
     const requested: unknown[] = [];
     let busy = false;

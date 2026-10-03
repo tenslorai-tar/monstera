@@ -1,5 +1,5 @@
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, decodePDFRawStream, degrees } from '@cantoo/pdf-lib';
-import { type AnnotationRect, type KeepableSignature, placedMarkOf } from '@monstera/contract';
+import { type AnnotationRect, type DrawableSignature, outlineOpCodes, placedMarkOf } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
 import { beforeAll, describe, expect, it } from 'vitest';
 
@@ -83,8 +83,21 @@ function inkIn(
   return { samples, columns: columns.size };
 }
 
-const typed = { kind: 'typed', text: 'Grace Hopper', font: 'times-italic' } as const;
-const drawn: KeepableSignature = {
+/**
+ * A typed name as the renderer sends it (ADR-0150): an outline on the grid, y down, inside its face's line box. Two
+ * subpaths, a block and a curved stroke under it, so the fill and the quadratic both reach the page.
+ */
+const typed: DrawableSignature = {
+  kind: 'outlined',
+  text: 'Grace Hopper',
+  font: 'great-vibes',
+  outline: {
+    ops: outlineOpCodes('MLLLZMLQZ'),
+    points: [0, 100, 1000, 100, 1000, 400, 0, 400, 0, 440, 1000, 440, 500, 500, 0, 440],
+    frame: [0, 0, 1000, 500],
+  },
+};
+const drawn: DrawableSignature = {
   kind: 'drawn',
   strokes: [
     [
@@ -106,7 +119,7 @@ beforeAll(() => {
 /** Places one look on `bytes` and answers the saved document. */
 async function placed(
   bytes: Uint8Array,
-  look: 'typed' | 'drawn' | 'picture' | KeepableSignature,
+  look: 'typed' | 'drawn' | 'picture' | DrawableSignature,
   rect: AnnotationRect = BOX,
 ): Promise<Uint8Array> {
   return await onSession(bytes, async (session) => {
@@ -140,9 +153,11 @@ async function expectWrittenAppearance(saved: Uint8Array, look: 'typed' | 'drawn
   const stream = annot?.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N'));
   if (!(stream instanceof PDFRawStream)) throw new Error('no appearance stream was written');
   const content = Buffer.from(decodePDFRawStream(stream).decode()).toString('latin1');
-  const expected = { typed: /\/F0 [\d.]+ Tf/u, drawn: /[\d.]+ [\d.]+ l\n/u, picture: /\/Im0 Do/u }[look];
+  // A TYPED NAME IS A FILLED PATH with its curves, and names no font (ADR-0150).
+  const expected = { typed: /[\d.]+ [\d.]+ c\n[\s\S]*\nf\nQ/u, drawn: /[\d.]+ [\d.]+ l\n/u, picture: /\/Im0 Do/u }[look];
   expect(content).toMatch(expected);
   expect(content).not.toMatch(/Draft/u);
+  expect(content).not.toMatch(/\bTf\b/u);
 }
 
 describe('a placed signature', () => {
@@ -180,13 +195,13 @@ describe('a placed signature', () => {
     // 64 strokes of 1,024 points: the drawing DDDDDDD-1 measured at ten times the host's frame. Each stroke a zigzag
     // across the pad, so a thinning that dropped a stroke or its ends would leave columns of the box empty. Four times
     // as wide as it is tall, so the ink is fitted to the box's WIDTH (200 × 80) and every column is the drawing's.
-    const zigzags = (perStroke: number): KeepableSignature => ({
+    const zigzags = (perStroke: number): DrawableSignature => ({
       kind: 'drawn',
       strokes: Array.from({ length: 64 }, (_, row) =>
         Array.from({ length: perStroke }, (_, at) => [at / (perStroke - 1), (row + (at % 2)) / 264] as [number, number]),
       ),
     });
-    const inked = async (mark: KeepableSignature): Promise<{ samples: number; columns: number }> => {
+    const inked = async (mark: DrawableSignature): Promise<{ samples: number; columns: number }> => {
       const page = rendered(await placed(await blankPage(), mark));
       return inkIn(page, seen(page.transform, BOX));
     };
@@ -244,8 +259,8 @@ describe('a placed signature', () => {
   it.each(['typed', 'drawn', 'picture'] as const)(
     'a RESIZED %s signature still draws, inside its NEW box: placeAnnotation keeps the written appearance',
     async (look) => {
-      // Each look is asked rather than assumed from another's reading: a typed mark names a font resource, a drawn one
-      // none, and a picture an image behind a form. The stream is read back too, because ink alone would pass for a
+      // Each look is asked rather than assumed from another's reading: a typed mark is a filled path, a drawn one a
+      // stroked one, and a picture an image behind a form. The stream is read back too, because ink alone would pass for a
       // stamp MuPDF had redrawn as its own.
       const grown: AnnotationRect = { x0: 50, y0: 300, x1: 350, y1: 420 };
       const resized = await onSession(await placed(await blankPage(), look), async (session) => {
@@ -271,10 +286,10 @@ describe('a placed signature', () => {
     expect(listed.annotations[0]).toMatchObject({ page: 0, index: 0, kind: 'stamp', author: STAMP.author });
   });
 
-  it('REFUSES a box off the page, and text the font cannot encode, BEFORE writing anything', async () => {
+  it('REFUSES a box off the page BEFORE writing anything', async () => {
     const blank = await blankPage();
-    // BOTH REFUSALS ON ONE SESSION, and its annotations read afterwards: a refusal that drew the stamp and then threw
-    // would leave it on the page, and the throw alone cannot tell the two apart.
+    // ITS ANNOTATIONS READ AFTERWARDS: a refusal that drew the stamp and then threw would leave it on the page, and the
+    // throw alone cannot tell the two apart.
     const untouched = await onSession(blank, async (session) => {
       await expect(
         applyPlaceSignatureMark(session, {
@@ -285,15 +300,6 @@ describe('a placed signature', () => {
           stamp: STAMP,
         }),
       ).rejects.toThrow(RangeError);
-      await expect(
-        applyPlaceSignatureMark(session, {
-          kind: 'placeSignatureMark',
-          page: 0,
-          rect: BOX,
-          mark: { kind: 'typed', text: 'Grace ✓', font: 'courier' },
-          stamp: STAMP,
-        }),
-      ).rejects.toMatchObject({ reason: 'unencodable-text' });
       return await readAnnotations(session);
     });
     expect(untouched.annotations).toHaveLength(0);

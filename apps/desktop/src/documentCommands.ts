@@ -45,6 +45,7 @@ import {
   type TimestampAuthority,
   type TextBlockStyle,
   type WordMode,
+  keptLookOf,
   placedMarkOf,
   sourceIdsOf,
 } from '@monstera/contract';
@@ -121,7 +122,6 @@ import {
   type MupdfSession,
   type NextSave,
   type ReadSignature,
-  drawsInStandardFont,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
   SignatureTooLargeError,
@@ -728,9 +728,7 @@ export type PlaceSignatureOutcome =
   | { readonly kind: 'unreadable' }
   | { readonly kind: 'too-large'; readonly limitBytes: number }
   /** The kept signature named is no longer kept. */
-  | { readonly kind: 'absent' }
-  /** The typed name holds a character the chosen standard font cannot draw. */
-  | { readonly kind: 'unencodable-text' };
+  | { readonly kind: 'absent' };
 
 /**
  * Which decoder an extension routes to, or `null` for one this build has none for.
@@ -5599,11 +5597,9 @@ export class DocumentCommands {
       // refusal and the appearance's where each happens; anything else is not a
       // person's mistake, and propagates to the handler, which turns an
       // unmapped class into `internal` with the diagnostic kept main-side.
-      if (error instanceof SignatureAppearanceRefusedError) {
-        return {
-          kind: error.reason === 'unencodable-text' ? 'unencodable-text' : 'image-unreadable',
-        };
-      }
+      // THE APPEARANCE'S ONE REFUSAL is a picture its decoder would not read: a typed name arrives as its outline, so
+      // which characters it can draw was answered in the renderer (ADR-0150).
+      if (error instanceof SignatureAppearanceRefusedError) return { kind: 'image-unreadable' };
       // A SIGNATURE PICTURE PAST THE PIXEL BOUND, refused before `embedPng` decodes it
       // in the MuPDF host, which answers it under its own code so it arrives here as
       // this class (ADR-0148). `image-too-large` is the sentence a picture past the
@@ -5676,7 +5672,13 @@ export class DocumentCommands {
       // refusal rather than a picture that would not decode.
       const entry = this.#library.lookup(mark.id);
       if (entry?.kind !== 'signature') return { kind: 'saved-signature-missing' };
-      if (entry.look.kind !== 'picture') return { kind: 'ready', mark: entry.look, picked: undefined };
+      // A KEPT TYPED NAME IS NEVER NAMED BY ITS ID: main holds its name and face and no outline to draw, so the renderer
+      // sends it as the outline it makes (ADR-0150). Reaching here is the renderer's defect, not a person's doing, and
+      // the handler answers it as `internal`.
+      if (entry.look.kind === 'typed') {
+        throw new Error('a kept typed signature is placed by its outline, which the renderer makes, never by its id');
+      }
+      if (entry.look.kind === 'drawn') return { kind: 'ready', mark: entry.look, picked: undefined };
       const kept = this.#library.picture(mark.id);
       if (kept === null) return { kind: 'saved-signature-missing' };
       return { kind: 'ready', mark: { kind: 'image', bytes: kept.bytes, mediaType: kept.mediaType }, picked: undefined };
@@ -5706,13 +5708,13 @@ export class DocumentCommands {
    * Places a plain signature, with no certificate, and keeps it when asked (ADR-0133).
    *
    * The look is resolved by {@link #markFor}, as a certificate signature's is, so a kept look and a picked picture mean
-   * exactly what they mean there. **A typed name is checked BEFORE the host** by the drawing module's own rule
-   * (`drawsInStandardFont`): the engine host would refuse it too, but its refusal reaches main as a host failure rather
-   * than as the named class, and a person deserves the sentence that says which character.
+   * exactly what they mean there. A typed name arrives as its outline (ADR-0150), so whether its face can draw it was
+   * answered in the renderer, where the person can still change it, and nothing here asks again.
    *
    * ## Keeping comes after the mark is on the page
    *
-   * A placement the engine refused keeps nothing. A typed or drawn mark is kept as it was made; a picked picture as a
+   * A placement the engine refused keeps nothing. A typed mark is kept as its name and face, its outline being derived
+   * (`keptLookOf`), and a drawn one as it was made; a picked picture as a
    * signature picture, with the bytes this call already read — bounded by the library's own bound, which is smaller than
    * a placed picture's, so a larger one is placed and answered `not-keepable`. A full library is a placed mark that was
    * not kept, never a refused placement.
@@ -5729,9 +5731,6 @@ export class DocumentCommands {
   ): Promise<PlaceSignatureOutcome> {
     if (this.#documents.nameOf(docId) === undefined) {
       throw new DocumentNotOpenError(docId, 'place a signature');
-    }
-    if (request.mark.kind === 'typed' && !(await drawsInStandardFont(request.mark.text))) {
-      return { kind: 'unencodable-text' };
     }
     const resolved = await this.#markFor(request.mark);
     if (resolved.kind === 'cancelled') return { kind: 'cancelled' };
@@ -5765,7 +5764,7 @@ export class DocumentCommands {
 
     if (!request.keep || request.mark.kind === 'saved') return { kind: 'placed', ...applied, kept: 'not-asked' };
     if (mark.kind !== 'image') {
-      const kept = this.#library.keepSignature(mark);
+      const kept = this.#library.keepSignature(keptLookOf(mark));
       return { kind: 'placed', ...applied, kept: kept.kind === 'added' ? 'kept' : 'library-full' };
     }
     if (mark.bytes.byteLength > MAX_LIBRARY_PICTURE_BYTES || resolved.picked === undefined) {

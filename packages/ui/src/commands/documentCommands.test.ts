@@ -41,6 +41,7 @@ import type { CommandContext } from '../registries/commands.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
 import { SettingsStore } from '../settingsStore.js';
+import { outlinedMarkOf } from '../signatureFaces.js';
 import type { ShowToast } from '../toasts.js';
 import {
   type Applied,
@@ -4444,7 +4445,7 @@ describe('protectDocumentCommand', () => {
     });
 
     const PLACEMENT = { page: 2, rect: { x0: 10, y0: 20, x1: 110, y1: 70 } };
-    const TYPED = { kind: 'typed', text: 'Grace Hopper', font: 'courier' } as const;
+    const TYPED = { kind: 'typed', text: 'Grace Hopper', font: 'courier-prime' } as const;
 
     it('CONTROL: a PLACED signature that signed says nothing, because the page shows it', async () => {
       const { client } = signingClient({ kind: 'signed', version: asDocVersion(2), byteLength: 4096, historyDropped: 0 });
@@ -4486,12 +4487,37 @@ describe('protectDocumentCommand', () => {
       );
 
       expect(asked).toStrictEqual([{ id: 'dialog.sign-document', props: { placed: true, kept: [] } }]);
+      // THE TYPED LOOK CROSSES AS ITS OUTLINE, made by the one module that sets names (ADR-0150).
+      const outlined = await outlinedMarkOf(TYPED);
+      if (outlined.kind !== 'ready') throw new Error(outlined.kind);
       expect(sent).toStrictEqual([
         {
           id: 'document.sign',
-          params: { docId: DOC, passphrase: '', appearance: { ...PLACEMENT, mark: TYPED } },
+          params: { docId: DOC, passphrase: '', appearance: { ...PLACEMENT, mark: outlined.mark } },
         },
       ]);
+    });
+
+    it('a typed name its face CANNOT WRITE asks for no certificate, and says which characters', async () => {
+      const { client, sent } = signingClient({ kind: 'cancelled' });
+      const shown: { id: string; props: unknown }[] = [];
+      await signDocument(
+        {
+          client,
+          toast: () => undefined,
+          onApplied: () => undefined,
+          ask: (id, props) => {
+            shown.push({ id, props });
+            return Promise.resolve(
+              id === 'dialog.sign-document' ? { passphrase: '', mark: { kind: 'typed', text: 'Grace 王', font: 'allura' } } : undefined,
+            );
+          },
+        },
+        DOC,
+        PLACEMENT,
+      );
+      expect(sent).toStrictEqual([]);
+      expect(shown[1]).toStrictEqual({ id: 'dialog.signature-problem', props: { reason: 'cannot-write', characters: '王' } });
     });
 
     it('CONTROL: the ribbon opens it UNPLACED and sends no appearance, even if a look came back', async () => {
@@ -4582,6 +4608,26 @@ describe('protectDocumentCommand', () => {
         expect(revoked).toStrictEqual(['blob:kept-1']);
       });
 
+      it('signs with a kept TYPED signature by its OUTLINE, made here, and CONTROL: a kept picture by its id', async () => {
+        const signingWith = async (id: string): Promise<unknown> => {
+          const { client, sent } = signingClient({ kind: 'cancelled' }, [KEPT_TYPED, KEPT_PICTURE]);
+          await signDocument(
+            {
+              client,
+              toast: () => undefined,
+              onApplied: () => undefined,
+              ask: (asked) => Promise.resolve(asked === 'dialog.sign-document' ? { passphrase: '', mark: { kind: 'saved', id } } : undefined),
+            },
+            DOC,
+            PLACEMENT,
+            counting().urls,
+          );
+          return (sent[0]?.params as { appearance?: { mark?: unknown } } | undefined)?.appearance?.mark;
+        };
+        expect(await signingWith(KEPT_TYPED.id)).toMatchObject({ kind: 'outlined', text: 'Grace Hopper', font: 'courier-prime' });
+        expect(await signingWith(KEPT_PICTURE.id)).toStrictEqual({ kind: 'saved', id: KEPT_PICTURE.id });
+      });
+
       it('ADD and REMOVE change the library and ASK AGAIN before anything is signed', async () => {
         const { client, sent, library } = signingClient({ kind: 'cancelled' }, [KEPT_TYPED]);
         const answers = [{ library: 'add' }, { library: 'remove', id: KEPT_TYPED.id }, undefined];
@@ -4634,7 +4680,7 @@ describe('protectDocumentCommand', () => {
       });
     });
 
-    it.each(['unencodable-text', 'image-unreadable', 'image-too-large'] as const)(
+    it.each(['image-unreadable', 'image-too-large'] as const)(
       'SHOWS %s rather than returning quietly',
       async (reason) => {
         const { client } = signingClient({ kind: reason });
