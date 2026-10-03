@@ -3022,6 +3022,42 @@ test('the START SCREEN draws its 2x artwork on a 2x display, and its tiles fit a
   await context.close();
 });
 
+for (const look of LOOKS) {
+  test(`${look.name}: the START SCREEN's footer COVERS what scrolls under it, so no card shows through its text`, async ({
+    page,
+  }) => {
+    // MEASURED 2026-10-03 in high contrast: the footer's ground was the ambient gradient alone, which is `none` there, so a
+    // recent card scrolled under the bar was drawn through "Press F1 for help". The ground is the window's colour with
+    // the gradient over it, as `.m-document-surface` lays it, and what the bar must do in every look is cover.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await bridgeUnder(page, look, {
+      recent: ['Annual report.pdf', 'Board minutes.pdf', 'Supplier contract.pdf', 'Lease.pdf'].map((name, at) => ({
+        handle: asFileHandle(`handle-${String(at)}`),
+        name,
+        location: displayLocationSchema.parse({ within: 'documents', folder: 'Reports' }),
+        openedAt: new Date(Date.now() - at * 3_600_000).toISOString(),
+        availability: 'available' as const,
+      })),
+    });
+    await page.goto('/');
+    const footer = page.locator('.m-start-footer');
+    await expect(footer).toBeVisible();
+    // A CARD UNDER THE BAR, so the case is about a screen where something can show through.
+    const card = await page.locator('.m-recent-item').first().boundingBox();
+    const bar = await footer.boundingBox();
+    expect((card?.y ?? 0) + (card?.height ?? 0)).toBeGreaterThan(bar?.y ?? Infinity);
+    // COVERS means an opaque colour or a gradient laid over the bar — the ground's own colours are opaque hex — and
+    // neither is what high contrast had, where the colour was transparent and `--ambient` is `none`.
+    const ground = await footer.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { color: style.backgroundColor, image: style.backgroundImage };
+    });
+    const alpha = /^rgba\([^)]*,\s*([\d.]+)\)$/u.exec(ground.color)?.[1];
+    const opaque = alpha === undefined || Number(alpha) === 1;
+    expect(opaque || ground.image !== 'none', JSON.stringify(ground)).toBe(true);
+  });
+}
+
 test('the START SCREEN keeps its footer at the window’s foot at 1280 × 800, with recent files under the tiles', async ({
   page,
 }) => {

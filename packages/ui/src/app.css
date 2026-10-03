@@ -700,12 +700,16 @@ optgroup {
   font-size: var(--font-chrome-11);
   /* ALONG THE WINDOW'S FOOT ALWAYS, as the design draws it: with recent files under the tiles the screen is taller than
      the window, and the footer followed them below its edge (the owner's item 1f). Stuck to the area's foot, it covers
-     what scrolls under it with the window's own ground — the ambient gradient laid against the viewport, so the bar
-     is seamless with the ground behind it in every look. */
+     what scrolls under it with the window's own ground — `.m-document-surface`'s colour with the ambient gradient over
+     it, laid against the viewport, so the bar is seamless with the ground behind it in every look. THE COLOUR TOO, not
+     the gradient alone: high contrast's `--ambient` is `none`, and the gradient alone painted nothing there, so what
+     scrolled under the bar showed through its text. */
   position: sticky;
   inset-block-end: 0;
   z-index: 1;
-  background: var(--ambient) fixed;
+  background-color: var(--app-bg);
+  background-image: var(--ambient);
+  background-attachment: fixed;
 }
 
 .m-start-footer__commands {
