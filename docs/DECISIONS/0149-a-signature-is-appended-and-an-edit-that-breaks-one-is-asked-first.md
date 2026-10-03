@@ -74,3 +74,17 @@ signatures no longer verify, finds their dictionaries, will append, and answers 
 ## Amendment only
 
 Nothing is built on this in the commit that records it.
+
+## Addition, 2026-10-03 — three things Decision 4 left open, settled before it is built
+
+1. **One switch for both questions.** `saving.warn-signature-break` already decides whether the save asks. The edit's
+   question is the same question asked earlier, and the save after an agreed edit does not ask (Decision 6), so a
+   second switch would let a person who turned the warning off be asked by the other one. Off, the dispatcher sends
+   the edit agreed without asking. The setting reads *Warn before a change breaks a signature*; its id is unchanged.
+2. **Cancel keeps what was typed.** In the in-place text editor a refusal closes the editor over the words, and Cancel
+   here is the person choosing to leave the document as it is, not a refusal of what they wrote. The editor stays
+   open with the words and a sentence saying nothing was changed; Escape puts the text back. A dismissed picker on the
+   way to a copy is the same Cancel.
+3. **A copy written and not opened is said.** The copy can be written and then be gone before it opens, or find no room
+   beside the documents already open. Each is told in the command-problem dialog, with the copy's file left where the
+   person put it, and the signed document unchanged.
