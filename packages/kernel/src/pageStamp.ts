@@ -1,5 +1,6 @@
 import { StandardFonts, rgb } from '@cantoo/pdf-lib';
-import { type CommandOfKind, STAMP_TOKENS } from '@monstera/contract';
+import type { CommandOfKind } from '@monstera/contract';
+import { STAMP_TOKENS } from '@monstera/contract/host';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert } from './engineSeam.js';

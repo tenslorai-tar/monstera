@@ -364,6 +364,15 @@ const stampSlotsSchema = z
   .strict();
 
 /**
+ * The two tokens, spelt once: the kernel resolves them (`resolveStampTokens`) and the dialog names them to the person.
+ *
+ * ONE SPELLING because there were two and they disagreed in effect: the dialog's hint carried `{n}` and `{N}` inside
+ * its message, where the message format reads a brace as a value to fill, so the hint drew *"Type  for the page number
+ * and  for the page count"* with both tokens missing (the gallery's reading, 2026-10-03).
+ */
+export const STAMP_TOKENS = { page: '{n}', count: '{N}' } as const;
+
+/**
  * Draw headers and footers on pages.
  *
  * ## The page number is a TOKEN, and there are exactly two
@@ -387,15 +396,6 @@ const stampSlotsSchema = z
  * the log for one intent and cost two undos, which is `swapPages`' argument
  * against being two `movePage`s.
  */
-/**
- * The two tokens, spelt once: the kernel resolves them (`resolveStampTokens`) and the dialog names them to the person.
- *
- * ONE SPELLING because there were two and they disagreed in effect: the dialog's hint carried `{n}` and `{N}` inside
- * its message, where the message format reads a brace as a value to fill, so the hint drew *"Type  for the page number
- * and  for the page count"* with both tokens missing (the gallery's reading, 2026-10-03).
- */
-export const STAMP_TOKENS = { page: '{n}', count: '{N}' } as const;
-
 export const headerFooterPagesSchema = z.object({
   kind: z.literal('headerFooterPages'),
   /** Which pages. `'all'` is resolved by the kernel, which holds the count. */
