@@ -328,6 +328,8 @@ export function TextLayer({
 
   return (
     <div className="m-text-layer" data-text-layer={String(page)} ref={container}>
+      {/* FIRST, so every line paints and hit-tests above it: what a drag meets between the lines (`.m-text-layer__gaps`). */}
+      <div className="m-text-layer__gaps" aria-hidden="true" />
       {lines.map((line, index) => {
         // Display space to PDF user space, then PDF to the viewport. Both
         // corners, because a rotation swaps which one is topmost and taking the

@@ -732,6 +732,176 @@ test('THUMBNAIL SIZE: a stored Large lays the Pages strip in ONE column of 160 p
   expect(columns.trim().split(/\s+/u)).toHaveLength(1);
 });
 
+/**
+ * A page's lines WHERE MUPDF PUTS THEM: `readPageText` and `textLayerOf` over a page drawn with pdf-lib — a 22 pt
+ * heading, an indented paragraph at 11 on 14, a short paragraph, three bullets, a 14 pt subheading, two columns at 10 on
+ * 13 and a footer — read 2026-10-03. The boxes overlap by a point, a bullet is a line of its own, and there are
+ * paragraph gaps, a gutter and an empty half page: the geometry a drag crosses, which the shim's even rows have none of.
+ */
+const PLACED_LINES: readonly { text: string; box: { x0: number; y0: number; x1: number; y1: number } }[] = [
+  ['Quarterly report', 72, 28, 239, 58],
+  ['The first paragraph opens the report with a sentence that runs to the margin', 90, 80, 458, 95],
+  ['and continues onto a second line of ordinary body text, set at eleven points', 72, 94, 436, 109],
+  ['with fourteen points of leading.', 72, 108, 221, 123],
+  ['A second paragraph, shorter than the first.', 72, 132, 278, 147],
+  ['It ends here.', 72, 146, 133, 161],
+  ['•', 90, 170, 93, 185],
+  ['First item in the list', 104, 170, 195, 185],
+  ['•', 90, 186, 93, 201],
+  ['Second item, a little longer than the first', 104, 186, 297, 201],
+  ['•', 90, 202, 93, 217],
+  ['Third', 104, 202, 129, 217],
+  ['Two columns', 72, 227, 161, 246],
+  ['Column 1 line 1 with some words', 72, 253, 218, 266],
+  ['Column 1 line 2 with some words', 72, 266, 218, 279],
+  ['Column 1 line 3 with some words', 72, 279, 218, 292],
+  ['Column 1 line 4 with some words', 72, 292, 218, 305],
+  ['Column 2 line 1 with some words', 320, 253, 466, 266],
+  ['Column 2 line 2 with some words', 320, 266, 466, 279],
+  ['Column 2 line 3 with some words', 320, 279, 466, 292],
+  ['Column 2 line 4 with some words', 320, 292, 466, 305],
+  ['Page 1 of 1', 280, 742, 326, 754],
+].map(([text, x0, y0, x1, y1]) => ({ text: String(text), box: { x0: Number(x0), y0: Number(y0), x1: Number(x1), y1: Number(y1) } }));
+
+/**
+ * The selection now: its text, whether its moving end is in a page's text layer, the element that end is in, and
+ * where its fixed end is as `page/line` — or the element it was moved to, when the line it was in has gone.
+ */
+function selectionNow(page: Page): Promise<{ text: string; inLayer: boolean; where: string; anchor: string }> {
+  return page.evaluate(() => {
+    const selection = document.getSelection();
+    const elementOf = (node: Node | null | undefined): Element | null =>
+      node instanceof Element ? node : (node?.parentElement ?? null);
+    const element = elementOf(selection?.focusNode);
+    const start = elementOf(selection?.anchorNode);
+    const line = start?.closest('[data-text-line]') ?? null;
+    return {
+      text: selection?.toString() ?? '',
+      inLayer: element?.closest('[data-text-layer]') !== null,
+      where: element === null ? 'none' : `${element.tagName.toLowerCase()}.${element.className}`,
+      anchor:
+        line === null
+          ? `${start?.tagName.toLowerCase() ?? 'none'}.${start?.className ?? ''}`
+          : `${line.closest('[data-text-layer]')?.getAttribute('data-text-layer') ?? '?'}/${line.getAttribute('data-text-line') ?? '?'}`,
+    };
+  });
+}
+
+/** {@link PLACED_LINES} open at `zoom`, the pointer pressed at the start of the second paragraph; its line's box. */
+async function pressOnSecondParagraph(page: Page, zoom: string): Promise<{ from: Box; layer: Box }> {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const bytes = await threePagePdf();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000f7');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'lines.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    // EVERY PAGE CARRIES TEXT, so a page scrolled into view mounts a layer of its own — the change of set that unmounted
+    // the layers under a selection.
+    pageLinesPlaced: [PLACED_LINES, PLACED_LINES, PLACED_LINES],
+    settings: { 'viewing.starting-zoom': zoom },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const anchor = page.locator('[data-text-layer="0"] [data-text-line="4"]');
+  await expect(anchor).toHaveText('A second paragraph, shorter than the first.');
+  const from = await anchor.boundingBox();
+  const layer = await page.locator('[data-text-layer="0"]').boundingBox();
+  if (from === null || layer === null) throw new Error('the paragraph or its layer has no box');
+  await page.mouse.move(from.x + 2, from.y + from.height / 2);
+  await page.mouse.down();
+  return { from, layer };
+}
+
+interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+for (const zoom of ['100pct', '200pct']) {
+  test(`a drag DOWN TO THE WINDOW’S FOOT, held there while the view scrolls, keeps its selection (${zoom})`, async ({
+    page,
+  }) => {
+    // N7, two mechanisms, both measured 2026-10-03 in Chromium 151.
+    //
+    // LEAVING THE PAGE: at 200% the drag reached the window's grid gap above the status bar, and the selection's end
+    // moved to the page's first line. A point on a selectable element with no text of its own resolves into that
+    // element's content, whose first text is the page's; the chrome is not text now, and a drag over it holds.
+    //
+    // HELD AT THE FOOT, the view scrolls under the drag, and every page's text layer UNMOUNTED on each change of the
+    // pages in view — the page text was answered with nothing until every page had been read again — so the browser
+    // moved the selection's fixed end out of its gone line into the page's slot: from there the selection ran from the
+    // next page's top ("Quarterly report…" at 200%) or collapsed to nothing (100%). A page that stays wanted keeps its
+    // layer now, and a page holding the selection stays wanted when it scrolls away.
+    const { from, layer } = await pressOnSecondParagraph(page, zoom);
+    const steps: { y: number; text: string; inLayer: boolean; where: string; anchor: string }[] = [];
+    const x = layer.x + layer.width * 0.3;
+    for (let y = from.y + from.height / 2; y < 790; y += 2) {
+      await page.mouse.move(x, y);
+      steps.push({ y, ...(await selectionNow(page)) });
+    }
+    // THE VIEW SCROLLS while the pointer is held past the page area's foot — asserted, or the hold proves nothing.
+    const scrolled = (): Promise<number> => page.locator('.m-page-list').evaluate((list) => {
+      let area: Element | null = list;
+      while (area !== null && !['auto', 'scroll'].includes(getComputedStyle(area).overflowY)) area = area.parentElement;
+      return area?.scrollTop ?? 0;
+    });
+    const before = await scrolled();
+    for (let sample = 0; sample < 10; sample += 1) {
+      await page.waitForTimeout(150);
+      steps.push({ y: 789, ...(await selectionNow(page)) });
+    }
+    expect(await scrolled()).toBeGreaterThan(before + 400);
+    await page.mouse.up();
+    // THE DRAG REACHED THE CHROME, or the case is a drag over text and proves nothing about leaving it.
+    expect(await page.evaluate(() => document.elementFromPoint(400, 789)?.closest('[data-text-layer]') === null)).toBe(true);
+    // IT SELECTED: lines below the anchor were reached on the way, so an empty selection cannot pass below.
+    expect(steps.some((step) => step.text.includes('It ends here'))).toBe(true);
+    // AND AT NO STEP did the selection lose where the press was — its fixed end still in page 1's fifth line, and its
+    // text beginning there: a line above it in the selection is the jump, whichever line — nor its end leave the text.
+    expect(
+      steps.filter((step) => step.anchor !== '0/4' || !step.text.startsWith('A second paragraph') || !step.inLayer),
+    ).toStrictEqual([]);
+  });
+}
+
+test('a drag PAST A SHORT LINE and on into the side panel holds its selection rather than snapping upward', async ({
+  page,
+}) => {
+  // N7's other half, measured the same day at 100%: on the empty layer beside *It ends here.*, Chromium resolved the
+  // point to the end of a LONG line above it — line 2's at 702 px, line 1's at 854 — so the selection's end climbed
+  // towards the page's top as the pointer moved right; and on Properties' labels the selection collapsed. Between the
+  // lines a drag now meets a cover that is not selectable, and off the page the chrome is not text: both hold.
+  await pressOnSecondParagraph(page, '100pct');
+  const end = await page.locator('[data-text-layer="0"] [data-text-line="5"]').boundingBox();
+  const panel = await page.locator('.m-context-panel').boundingBox();
+  if (end === null || panel === null) throw new Error('the paragraph’s end or the panel has no box');
+  // THROUGH THE PARAGRAPH'S LAST LINE first, so there is a selection to keep.
+  await page.mouse.move(end.x + end.width - 2, end.y + end.height / 2, { steps: 6 });
+  const selected = await selectionNow(page);
+  expect(selected.text).toContain('It ends');
+  // THEN ACROSS INTO THE PANEL, and down it.
+  const steps: { text: string; inLayer: boolean; where: string }[] = [];
+  for (let x = end.x + end.width; x < panel.x + panel.width / 2; x += 8) {
+    await page.mouse.move(x, end.y + end.height / 2);
+    steps.push(await selectionNow(page));
+  }
+  for (let y = end.y; y < panel.y + panel.height - 8; y += 8) {
+    await page.mouse.move(panel.x + panel.width / 2, y);
+    steps.push(await selectionNow(page));
+  }
+  await page.mouse.up();
+  // THE PANEL WAS REACHED, or this is a drag across the page alone.
+  expect(await page.evaluate(([x, y]) => document.elementFromPoint(x ?? 0, y ?? 0)?.closest('.m-context-panel') !== null, [
+    panel.x + panel.width / 2,
+    panel.y + panel.height / 2,
+  ])).toBe(true);
+  expect(
+    steps.filter((step) => !step.text.startsWith('A second paragraph') || !step.text.includes('It ends') || !step.inLayer),
+  ).toStrictEqual([]);
+});
+
 test('SELECTED TEXT opens the selected-text menu above the page’s, in the owner’s order (§7)', async ({ page }) => {
   // A real mouse drag over the text layer, in the production build: the selection is the browser's,
   // `readTextSelection` reads it through the layer's own transform, and the menu's groups are
@@ -858,18 +1028,32 @@ test('a triple-click on a page’s LAST LINE still opens the selected-text menu,
   const box = await line.boundingBox();
   if (box === null) throw new Error('the last line has no box');
   await line.click({ clickCount: 3, position: { x: box.width / 2, y: box.height / 2 } });
-  // THE PREMISE, asserted rather than assumed: the far end really is outside the layer, so a pass
-  // below is the clipping working and not a drag that happened to stop on a word.
-  expect(
-    await page.evaluate(() => {
+  // THE TRIPLE-CLICK NOW ENDS IN THE LAYER: the page slot it ended in is not text since N7 (2026-10-03,
+  // `.m-document-surface`), so the next block a selection can end at is the layer's own. Asserted, because the
+  // spill this case was written for is now a fact about what a selection CAN be rather than what a triple-click does.
+  const focusInLayer = (): Promise<boolean> =>
+    page.evaluate(() => {
       const focus = document.getSelection()?.focusNode ?? null;
       const element = focus instanceof Element ? focus : (focus?.parentElement ?? null);
-      return element?.closest('[data-text-layer]') === null;
-    }),
-  ).toBe(true);
-
-  await line.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } });
+      return element?.closest('[data-text-layer]') !== null;
+    });
+  expect(await focusInLayer()).toBe(true);
   const menuItems = page.getByRole('menu').getByRole('menuitem');
+  await line.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } });
+  await expect(menuItems.first()).toHaveText('Copy');
+  await page.keyboard.press('Escape');
+
+  // AND THE SHAPE IT USED TO PRODUCE still opens the menu: the line selected, its far end in the page slot after the
+  // layer. `readTextSelection` clips that end to the layer; the premise is asserted, so a pass is the clipping.
+  await page.evaluate(() => {
+    const words = document.querySelector('[data-text-layer="0"] [data-text-line="1"]')?.firstChild;
+    const layer = document.querySelector('[data-text-layer="0"]');
+    const slot = layer?.parentElement;
+    if (words == null || layer === null || slot == null) throw new Error('no line, layer or slot');
+    document.getSelection()?.setBaseAndExtent(words, 0, slot, [...slot.childNodes].indexOf(layer) + 1);
+  });
+  expect(await focusInLayer()).toBe(false);
+  await line.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } });
   await expect(menuItems.first()).toBeVisible();
   await expect(menuItems.first()).toHaveText('Copy');
   await expect(page.getByRole('menuitem', { name: 'Explain' })).toBeVisible();

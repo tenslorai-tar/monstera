@@ -173,6 +173,12 @@ export type ShimPageLink =
       readonly bounds: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
     };
 
+/** One line of a page's text layer and its box in display space at scale 1, as `document.pageTextLayer` reports it. */
+export interface ShimPlacedLine {
+  readonly text: string;
+  readonly box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
+}
+
 /**
  * One outline entry a test seeds a document with.
  *
@@ -403,6 +409,14 @@ export interface BrowserShimOptions {
    * count and text layer cannot describe two different texts.
    */
   readonly documentPageLines?: ReadonlyMap<DocId, readonly (readonly string[])[]>;
+
+  /**
+   * The lines WITH THE BOXES the engine reported, in place of {@link pageLines}, for a case about where the text sits —
+   * a drag through the gaps between lines is decided by geometry, and `pageLines`' evenly spaced rows of equal width
+   * have no paragraph gap, no indent, no column and no overlap. The text is these lines' own, so every page-text
+   * channel still reads one text.
+   */
+  readonly pageLinesPlaced?: readonly (readonly ShimPlacedLine[])[];
 
   /**
    * What `window.edit` runs through — main's attached window, for a shim that has a page. Absent,
@@ -864,9 +878,18 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // Copied for the reason the opens queue is copied: this one is consumed, and
   // a test holding the array it seeded would watch it empty underneath.
   const viewModels = [...(options.viewModels ?? [])];
-  const pageLines = options.pageLines ?? [];
+  const placed = options.pageLinesPlaced;
+  const pageLines = placed?.map((lines) => lines.map((line) => line.text)) ?? options.pageLines ?? [];
   /** A document's page lines: its own where the case gave some, the shared fixture's otherwise. */
   const linesOf = (docId: DocId): readonly (readonly string[])[] => options.documentPageLines?.get(docId) ?? pageLines;
+  /** A line's box: the one the case placed it at, or the shim's evenly spaced row. */
+  const boxOf = (docId: DocId, page: number, index: number): ShimPlacedLine['box'] =>
+    (options.documentPageLines?.has(docId) === true ? undefined : placed?.[page]?.[index]?.box) ?? {
+      x0: 10,
+      y0: 20 + index * 15,
+      x1: 110,
+      y1: 32 + index * 15,
+    };
   const pageImages = options.pageImages ?? [];
   const pageLinks = options.pageLinks ?? [];
   const destinations = options.destinations ?? [];
@@ -1873,10 +1896,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(
         ok({
           version: asDocVersion(current),
-          lines: kept.map((text, index) => ({
-            text,
-            box: { x0: 10, y0: 20 + index * 15, x1: 110, y1: 32 + index * 15 },
-          })),
+          lines: kept.map((text, index) => ({ text, box: boxOf(docId, page, index) })),
           // The same one-past-the-limit honesty the kernel has, so a shim answer
           // and a real one disagree about nothing a test could come to rely on.
           truncated: all.length > limit,

@@ -133,6 +133,16 @@ optgroup {
   block-size: 100dvh;
   overflow: hidden;
   background: var(--canvas);
+  /*
+   * THE CHROME IS NOT TEXT, so a drag that leaves a page's text layer holds its selection rather than moving it. A
+   * point on a selectable element with no text of its own — this grid's gaps, the page area around a page — is
+   * resolved by Chromium to a position in that element's content, and the first text there is the page's first
+   * line: dragging down to the bottom edge at 200% put the selection's end at the page's top (measured 2026-10-03,
+   * Chromium 151). On an element that is not selectable the selection stays where it was. The text layer
+   * (`.m-text-layer`) and the side panel's content (the rule after `.m-context-panel`) say `text` for themselves, and
+   * a field is always editable, so the words a reader copies are copyable as before; the labels and controls are not.
+   */
+  user-select: none;
 }
 
 /*
@@ -2454,6 +2464,13 @@ optgroup {
   border-inline-start: 1px solid var(--border); /* decorative: separates the panel from the page area; its controls draw their own focus rings */
 }
 
+/* THE PANEL'S CONTENT IS TEXT, its labels are not (`.m-document-surface`): an answer, what a person sent, a comment's
+   note, a link's address. A field needs no rule, being editable. The whole panel as text put a drag off the page into
+   Properties' labels, where the page's selection collapsed (measured 2026-10-03). */
+:is(.m-assistant__text, .m-assistant__sent, .m-annotations-note, .m-links-external) {
+  user-select: text;
+}
+
 .m-context-panel__header {
   display: flex;
   align-items: center;
@@ -4676,6 +4693,24 @@ optgroup {
   line-height: 1;
   /* Selection is what this exists for, and a stray caret is not. */
   user-select: text;
+}
+
+/*
+ * WHAT A DRAG MEETS BETWEEN THE LINES, while the button is held. On the layer itself a point beside a short line is
+ * resolved by Chromium to the end of the nearest LONG line, which is often above it: a drag past *It ends here.* put
+ * the selection's end two lines up (measured 2026-10-03, Chromium 151). Over this cover, which is not selectable, the
+ * selection holds where it was and follows the pointer again on the next line it touches — PDF.js's `endOfContent`,
+ * for the same reason. Zero height while nothing is pressed, so a press on the page's margin starts a selection there
+ * exactly as before.
+ */
+.m-text-layer__gaps {
+  position: absolute;
+  inset: 100% 0 0;
+  user-select: none;
+}
+
+.m-text-layer:active .m-text-layer__gaps {
+  inset: 0;
 }
 
 .m-text-line {

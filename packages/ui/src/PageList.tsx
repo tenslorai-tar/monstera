@@ -25,6 +25,7 @@ const NO_MARKS: readonly DifferenceMark[] = [];
 import { type PageAnnotation, usePageAnnotations } from './usePageAnnotations.js';
 import { usePageRotations } from './usePageRotations.js';
 import { type PageTextAnswer, usePageText } from './usePageText.js';
+import { useSelectedTextPages } from './useSelectedTextPages.js';
 import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY, PAGE_LIST_LABEL, PAGE_OPENING } from './messages/en.js';
 import { Icon } from './primitives/Icon.js';
 import type { UiTool } from './registries/tools.js';
@@ -480,11 +481,13 @@ export function PageList({
   //
   // NOT BEFORE THE FIRST FRAME, with the marks below: both are reads in main's one lane, and asked at mount they were
   // queued ahead of the rotation the first page waits for. Neither is drawn before a page is measured anyway.
-  const pageText = usePageText(client, docId, version, firstFrame ? visible : NOTHING_VISIBLE);
+  const scroller = useRef<HTMLDivElement | null>(null);
+  // AND THE PAGES A SELECTION IS IN, on screen or not: their layers hold the selection's ends (`useSelectedTextPages`).
+  const selectedPages = useSelectedTextPages(scroller);
+  const pageText = usePageText(client, docId, version, firstFrame ? new Set([...visible, ...selectedPages]) : NOTHING_VISIBLE);
   // EVERY PAGE'S MARKS, one read per version: the channel is whole-document, so there is nothing
   // to narrow to the visible set, and the layer is mounted only on slots that are measured.
   const pageAnnotations = usePageAnnotations(firstFrame ? client : undefined, docId, version);
-  const scroller = useRef<HTMLDivElement | null>(null);
   /** The pane around the scroller, which holds what must not scroll: the rulers and the loupe. */
   const pane = useRef<HTMLDivElement | null>(null);
   /**
