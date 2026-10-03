@@ -123,12 +123,28 @@ for (const look of LOOKS) {
                     sideways.push(`${node.tagName.toLowerCase()}.${[...node.classList].join('.')} ${String(node.scrollWidth)}>${String(node.clientWidth)}`);
                   }
                 }
+                // SHOWN, not merely inside the window: a footer the body has scrolled away is clipped by the body and
+                // the popup while its box still lies within the window, so the window alone read it as in view. The
+                // part shown is the window cut by every clipping box from the footer up to the dialog.
+                let shown = { top: 0, bottom: window.innerHeight };
+                for (let at = footer?.parentElement ?? null; at !== null; at = at.parentElement) {
+                  if (getComputedStyle(at).overflowY !== 'visible') {
+                    const clip = at.getBoundingClientRect();
+                    shown = { top: Math.max(shown.top, clip.top), bottom: Math.min(shown.bottom, clip.bottom) };
+                  }
+                  if (at === element) break;
+                }
                 return {
                   dialog: { width: Math.round(box.width), height: Math.round(box.height) },
-                  footerInView: footerBox === undefined ? null : footerBox.bottom <= window.innerHeight && footerBox.top >= 0,
+                  footerInView:
+                    footerBox === undefined ? null : footerBox.bottom <= shown.bottom + 1 && footerBox.top >= shown.top - 1,
                   sideways,
                   tallerThanWindow: box.height > window.innerHeight,
-                  alert: element.querySelector('[role="alert"]') !== null,
+                  // A REFUSAL ON SCREEN, by either role a body speaks it through: an alert, or a status line with words
+                  // in it. Alerts alone missed Watermark's *"A watermark needs some text"*, which is a status line.
+                  alert:
+                    element.querySelector('[role="alert"]') !== null ||
+                    [...element.querySelectorAll('[role="status"]')].some((status) => status.textContent.trim() !== ''),
                 };
               });
           const folder = join(OUT, look.name, size.name);
