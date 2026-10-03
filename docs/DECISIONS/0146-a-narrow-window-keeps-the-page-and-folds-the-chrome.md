@@ -106,3 +106,12 @@ the height the overlay reports.
   is told, and gives up a row of the page for chrome.
 - **A breakpoint in CSS.** The widths that decide are the menus' and the panels', which a language and the person's
   stored widths change. A number chosen in English at default widths is wrong somewhere by construction.
+
+## Correction, 2026-10-03 — the ruler's names have a class of their own
+
+Decision 5 said the ruler's names are *"set in the triggers' own class"*. Built that way, every selector for a trigger
+also matched the ruler: ADR-0113's rendered case took `.m-menu-bar__trigger` last as the last menu, read the ruler's
+*More* at the row's start instead, and failed. The menu bar's own F10 lookup takes the first match, which was still
+right only because the ruler comes later in the document. The names now carry `m-menu-bar__name`, and the triggers'
+one rule lists both classes. So the box the room is read from is still a trigger's box exactly, and a trigger's
+selector matches only triggers.

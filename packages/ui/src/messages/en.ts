@@ -1886,6 +1886,8 @@ export const MENU_GROUP_PANELS = messageKey('surface.menu-bar.group.panels');
 /** File › Recent (ADR-0143): the submenu's name, and what it says with nothing in it. */
 export const MENU_RECENT = messageKey('surface.menu-bar.recent');
 export const MENU_RECENT_EMPTY = messageKey('surface.menu-bar.recent-empty');
+/** The menu that holds the menus a narrow row folds (ADR-0146). */
+export const MENU_MORE = messageKey('surface.menu-bar.more');
 /** *Clear list*, the Recent submenu's one command, which the start screen's button also runs (ADR-0143). */
 export const CLEAR_RECENT_TITLE = messageKey('command.clear-recent.title');
 /** The commands the menu bar brought (ADR-0107). */
@@ -4465,6 +4467,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [MENU_GROUP_PANELS]: 'Panels',
   [MENU_RECENT]: 'Recent',
   [MENU_RECENT_EMPTY]: 'No recent files',
+  // THE RIBBON'S WORD for what it folds, so one row of chrome and the next say the same thing.
+  [MENU_MORE]: 'More',
   // THE OWNER'S WORDS for the item (N3), the same as the start screen's own button over the cards.
   [CLEAR_RECENT_TITLE]: 'Clear list',
   [EDIT_CUT_TITLE]: 'Cut',

@@ -209,6 +209,8 @@ optgroup {
   min-block-size: max(var(--menu-bar), env(titlebar-area-height, 0px));
   padding-inline: var(--space-10);
   -webkit-app-region: drag;
+  /* THE RULER'S CONTAINING BLOCK (ADR-0146), so it is measured where the row is. */
+  position: relative;
 }
 
 .m-menu-bar__start {
@@ -228,6 +230,9 @@ optgroup {
   block-size: var(--title-control);
   padding-block: 0;
   font-size: var(--font-chrome-12);
+  /* ONE LINE (ADR-0146): a label that wraps draws a group narrower than its words, and the row's slack, read from that
+     width, was never negative — *Rate Us* went onto two lines at 960 with the row sure it fitted. */
+  white-space: nowrap;
   -webkit-app-region: no-drag;
 }
 
@@ -246,13 +251,34 @@ optgroup {
   inline-size: auto;
 }
 
-.m-menu-bar__menus {
+/* ONE RULE FOR THE MENUS AND THEIR RULER, so the gap the room is read with is the gap they are drawn with. */
+.m-menu-bar__menus,
+.m-menu-bar__ruler {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
 
-.m-menu-bar__trigger {
+/* THE RULER (ADR-0146): out of the row's flow, unseen and unreachable, and no wider than nothing, so it can never give
+   the window a scroll bar; its names keep their own widths, which is all that is read from it. */
+.m-menu-bar__ruler {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  inline-size: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.m-menu-bar__ruler > * {
+  flex: none;
+}
+
+/* THE RULER'S NAMES TAKE THIS RULE TOO (ADR-0146), so what the room is read from is a trigger's box exactly; their own
+   class keeps every selector for a trigger to the triggers. */
+.m-menu-bar__trigger,
+.m-menu-bar__name {
   display: inline-flex;
   align-items: center;
   block-size: var(--menu-bar-item);

@@ -10,6 +10,7 @@ import {
   MENU_BAR_LABEL,
   MENU_FILE,
   MENU_HELP,
+  MENU_MORE,
   MENU_RECENT,
   MENU_RECENT_EMPTY,
   MENU_VIEW,
@@ -29,7 +30,7 @@ import { Icon } from '../primitives/Icon.js';
 import type { IconName } from '../primitives/icons.js';
 import type { CommandContext, CommandRegistry, UiCommand } from '../registries/commands.js';
 import type { MenuBarSubmenu } from '../registries/placement.js';
-import { LABELLED, type RowFit, nextRowFit } from './menuRowFit.js';
+import { LABELLED, type RowFit, menusThatFit, nextRowFit } from './menuRowFit.js';
 import {
   type MenuBarCommandEntry,
   type MenuBarItem,
@@ -111,6 +112,16 @@ const MENU_TITLES: Readonly<Record<MenuBarMenuModel['id'], MessageKey>> = {
  * wider than their half they keep their width and the commands follow them. When even that cannot hold the words, the
  * buttons draw as their icons (`menuRowFit.ts`), which the row decides from its own measured slack.
  *
+ * ## Then the last menus fold into a *More*
+ *
+ * [ADR-0146](../../../../docs/DECISIONS/0146-a-narrow-window-keeps-the-page-and-folds-the-chrome.md): when the icons
+ * still do not fit after eleven menus — a 960 px window with the system's controls is enough — the menus from *Help*
+ * backwards fold into a final *More*, each a submenu there drawn from the same model. The room is read against a hidden
+ * **ruler** of the menus' names under the triggers' own rule, so folding a menu does not change what decides it, and the
+ * words go before any menu does. The row is one line in every state: a button's label never wraps, because a wrapped
+ * label is a group that measures narrower than it draws, and the slack read from it was never negative (the defect
+ * that let *Rate Us* go onto two lines at 960).
+ *
  * ## Alt and F10
  *
  * The Windows convention: F10, or Alt pressed and released with no other key between, moves the focus to the first
@@ -143,29 +154,50 @@ export function MenuBar({
   const start = useRef<HTMLDivElement | null>(null);
   const commands = useRef<HTMLDivElement | null>(null);
   const reserve = useRef<HTMLDivElement | null>(null);
-  const [fit, setFit] = useState<RowFit>(LABELLED);
+  const logo = useRef<HTMLImageElement | null>(null);
+  const ruler = useRef<HTMLDivElement | null>(null);
+  // THE ROW'S STATE, one value because the two halves are decided together: whether the commands keep their words, and
+  // how many menus, from the first, are drawn as triggers — every one until the row says otherwise.
+  const [row, setRow] = useState<{ readonly fit: RowFit; readonly shown: number }>({
+    fit: LABELLED,
+    shown: Number.POSITIVE_INFINITY,
+  });
+  const { fit } = row;
   const hasButtons = buttons.length > 0;
 
-  // THE ROW'S SLACK, measured whenever any of its parts changes width — a window resize, a language, a button
-  // appearing. Its width less its padding, the three parts as drawn, and the two gaps between them.
+  // THE ROW'S ROOM, measured whenever any of its parts changes width — a window resize, a language, a button
+  // appearing. Its width less its padding and its gaps, the reserve, the mark, the commands as drawn, and the menus as
+  // the RULER draws them, which is their whole width whatever is folded.
   useLayoutEffect(() => {
-    const row = bar.current;
-    if (row === null || !hasButtons || typeof ResizeObserver === 'undefined') return undefined;
+    const element = bar.current;
+    const names = ruler.current;
+    if (element === null || names === null || typeof ResizeObserver === 'undefined') return undefined;
     const measure = (): void => {
-      const style = getComputedStyle(row);
-      const inner = row.clientWidth - parseFloat(style.paddingInlineStart) - parseFloat(style.paddingInlineEnd);
-      const gaps = 2 * parseFloat(style.columnGap || '0');
-      const held = [start, commands, reserve].reduce((sum, part) => sum + (part.current?.offsetWidth ?? 0), 0);
+      const style = getComputedStyle(element);
+      const inner = element.clientWidth - parseFloat(style.paddingInlineStart) - parseFloat(style.paddingInlineEnd);
+      const gaps = hasButtons ? 2 * parseFloat(style.columnGap || '0') : 0;
+      const lead = (logo.current?.offsetWidth ?? 0) + parseFloat(getComputedStyle(start.current ?? element).columnGap || '0');
+      const widths = [...names.querySelectorAll<HTMLElement>('[data-ruler-menu]')].map((name) => name.offsetWidth);
+      const more = names.querySelector<HTMLElement>('[data-ruler-more]')?.offsetWidth ?? 0;
+      const menuGap = parseFloat(getComputedStyle(names).columnGap || '0');
+      const whole = widths.reduce((sum, width) => sum + width, 0) + menuGap * Math.max(0, widths.length - 1);
       const drawn = commands.current?.offsetWidth ?? 0;
-      setFit((was) => {
-        const next = nextRowFit(was, inner - held - gaps, drawn);
-        return next.iconsOnly === was.iconsOnly && next.labelled === was.labelled ? was : next;
+      const room = inner - gaps - (reserve.current?.offsetWidth ?? 0) - lead - drawn;
+      setRow((was) => {
+        const fitNext = hasButtons ? nextRowFit(was.fit, room - whole, drawn) : was.fit;
+        // THE WORDS GO FIRST (ADR-0113's state before ADR-0146's): no menu folds while the commands still have their
+        // words, and none in the pass that drops them, because `drawn` is still the labelled width there and would fold
+        // menus the icons leave room for. The commands' own resize brings the next pass.
+        const folding = !hasButtons || (was.fit.iconsOnly && fitNext.iconsOnly);
+        const shown = folding ? menusThatFit(widths, menuGap, room, more) : widths.length;
+        const same = fitNext.iconsOnly === was.fit.iconsOnly && fitNext.labelled === was.fit.labelled;
+        return same && shown === was.shown ? was : { fit: same ? was.fit : fitNext, shown };
       });
     };
     // NO FIRST CALL HERE: an observer reports every element once when it starts observing, which is the first
     // measurement, and it arrives as a callback rather than as a state change inside this effect.
     const observer = new ResizeObserver(measure);
-    for (const part of [row, start.current, commands.current]) if (part !== null) observer.observe(part);
+    for (const part of [element, start.current, commands.current, names]) if (part !== null) observer.observe(part);
     return (): void => {
       observer.disconnect();
     };
@@ -374,46 +406,91 @@ export function MenuBar({
   const submenusIn = (menu: MenuBarMenuModel): readonly MenuBarSubmenu[] =>
     menu.groups.flatMap((group) => group.items.flatMap((each) => (each.kind === 'submenu' ? [each.id] : [])));
 
+  /**
+   * As a menu opens: the bar re-renders so the model is read now, and the values of every submenu it holds are asked
+   * for — so the answer is in by the time the pointer or the arrow key reaches one. A failed read leaves the last
+   * answer, and before any, no values at all: never a list claiming to be empty that was only unread.
+   */
+  const opening = (held: readonly MenuBarMenuModel[]) => (open: boolean): void => {
+    if (!open) return;
+    setOpened((count) => count + 1);
+    for (const menu of held) for (const id of submenusIn(menu)) sources[id].read();
+  };
+
+  /** A menu's groups, captioned and separated: the same whether its trigger is on the row or in *More*. */
+  const groupsOf = (menu: MenuBarMenuModel): ReactElement[] =>
+    menu.groups.map((group, index) => (
+      <Fragment key={`${String(index)}:${group.caption ?? ''}`}>
+        {index === 0 ? null : <Menu.Separator className="m-context-menu-separator" />}
+        <Menu.Group className="m-menu-bar__group">
+          {group.caption === undefined ? null : (
+            <Menu.GroupLabel className="m-menu-bar__caption">{_(group.caption)}</Menu.GroupLabel>
+          )}
+          {group.items.map((each) => (each.kind === 'submenu' ? submenu(each) : item(each)))}
+        </Menu.Group>
+      </Fragment>
+    ));
+
+  const drawnMenus = menus.slice(0, row.shown);
+  const foldedMenus = menus.slice(drawnMenus.length);
+
   return (
     <div className="m-menu-bar" ref={bar}>
       <div className="m-menu-bar__start" ref={start}>
         {/* ADR-0002: the supplied artwork. Decorative — the bar is named, and the window's title names the application. */}
-        <img className="m-menu-bar__logo" src={titleLogo} alt="" />
+        <img className="m-menu-bar__logo" ref={logo} src={titleLogo} alt="" />
         <Menubar className="m-menu-bar__menus" aria-label={_(MENU_BAR_LABEL)}>
-          {menus.map((menu) => (
-            <Menu.Root
-              key={menu.id}
-              onOpenChange={(open) => {
-                if (!open) return;
-                setOpened((count) => count + 1);
-                // ASKED AS THE MENU OPENS, so the answer is in by the time the pointer or the arrow key reaches the
-                // submenu. A failed read leaves the last answer, and before any, no values at all — never a list
-                // claiming to be empty that was only unread.
-                for (const id of submenusIn(menu)) sources[id].read();
-              }}
-            >
+          {drawnMenus.map((menu) => (
+            <Menu.Root key={menu.id} onOpenChange={opening([menu])}>
               <Menu.Trigger className="m-menu-bar__trigger" data-menu={menu.id}>
                 {_(MENU_TITLES[menu.id])}
               </Menu.Trigger>
               <Menu.Portal>
                 <Menu.Positioner side="bottom" align="start" sideOffset={2}>
                   <Menu.Popup className="m-context-menu m-menu-bar__popup" finalFocus={() => focusBefore() ?? true}>
-                    {menu.groups.map((group, index) => (
-                      <Fragment key={`${String(index)}:${group.caption ?? ''}`}>
-                        {index === 0 ? null : <Menu.Separator className="m-context-menu-separator" />}
-                        <Menu.Group className="m-menu-bar__group">
-                          {group.caption === undefined ? null : (
-                            <Menu.GroupLabel className="m-menu-bar__caption">{_(group.caption)}</Menu.GroupLabel>
-                          )}
-                          {group.items.map((each) => (each.kind === 'submenu' ? submenu(each) : item(each)))}
-                        </Menu.Group>
-                      </Fragment>
-                    ))}
+                    {groupsOf(menu)}
                   </Menu.Popup>
                 </Menu.Positioner>
               </Menu.Portal>
             </Menu.Root>
           ))}
+          {foldedMenus.length === 0 ? null : (
+            // THE FOLDED MENUS (ADR-0146): one more menu on the row, each folded menu a submenu in it, in order.
+            <Menu.Root onOpenChange={opening(foldedMenus)}>
+              <Menu.Trigger className="m-menu-bar__trigger" data-menu="more">
+                {_(MENU_MORE)}
+              </Menu.Trigger>
+              <Menu.Portal>
+                <Menu.Positioner side="bottom" align="start" sideOffset={2}>
+                  <Menu.Popup className="m-context-menu m-menu-bar__popup" finalFocus={() => focusBefore() ?? true}>
+                    {foldedMenus.map((menu) => (
+                      <Menu.SubmenuRoot key={menu.id}>
+                        <Menu.SubmenuTrigger
+                          className="m-context-menu-item m-menu-bar__item"
+                          data-folded-menu={menu.id}
+                          label={_(MENU_TITLES[menu.id])}
+                        >
+                          <span className="m-menu-bar__mark" aria-hidden="true" />
+                          <span className="m-menu-bar__icon" aria-hidden="true" />
+                          <span className="m-menu-bar__title">{_(MENU_TITLES[menu.id])}</span>
+                          <span className="m-context-menu-chord m-menu-bar__opens" aria-hidden="true">
+                            <Icon name="ChevronRight" size="dense" />
+                          </span>
+                        </Menu.SubmenuTrigger>
+                        <Menu.Portal>
+                          <Menu.Positioner side="right" align="start" sideOffset={4} alignOffset={-5}>
+                            <Menu.Popup className="m-context-menu m-menu-bar__popup m-menu-bar__submenu">
+                              {groupsOf(menu)}
+                            </Menu.Popup>
+                          </Menu.Positioner>
+                        </Menu.Portal>
+                      </Menu.SubmenuRoot>
+                    ))}
+                  </Menu.Popup>
+                </Menu.Positioner>
+              </Menu.Portal>
+            </Menu.Root>
+          )}
         </Menubar>
       </div>
       {hasButtons ? (
@@ -435,6 +512,19 @@ export function MenuBar({
       {/* THE DRAG TRACK'S MINIMUM, as a box the row can measure: the window controls' area plus `--menu-drag-min`.
           Empty and hidden from the accessibility tree; the row itself is what moves the window. */}
       {hasButtons ? <div className="m-menu-bar__reserve" ref={reserve} aria-hidden="true" /> : null}
+      {/* THE RULER (ADR-0146): every menu's name and *More*'s, under the triggers' own rule, out of the row's flow and out
+          of reach — hidden, inert and outside the accessibility tree — so the room is read against the menus' whole
+          width whatever is folded. */}
+      <div className="m-menu-bar__ruler" ref={ruler} aria-hidden="true" inert>
+        {menus.map((menu) => (
+          <span className="m-menu-bar__name" data-ruler-menu={menu.id} key={menu.id}>
+            {_(MENU_TITLES[menu.id])}
+          </span>
+        ))}
+        <span className="m-menu-bar__name" data-ruler-more="">
+          {_(MENU_MORE)}
+        </span>
+      </div>
     </div>
   );
 }

@@ -2014,6 +2014,62 @@ test('DONATE AND RATE US sit at the MENU ROW’s centre while they fit, and afte
   expect(narrow.reserve.x + narrow.reserve.width).toBeLessThanOrEqual(narrow.row.x + narrow.row.width + 0.5);
 });
 
+test('a NARROW MENU ROW stays one line: the words go, then the last menus fold into More, and each is reachable there (ADR-0146)', async ({
+  page,
+}) => {
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  const row = page.locator('.m-menu-bar');
+  const triggers = page.locator('.m-menu-bar__menus .m-menu-bar__trigger');
+  await expect(row.getByRole('button', { name: 'Donate' })).toBeVisible();
+  const ALL = ['File', 'Edit', 'View', 'Organize', 'Comment', 'Forms', 'Review', 'Protect', 'Tools', 'Window', 'Help'];
+
+  /** The row at a width, once its fit has settled: the triggers drawn, whether it overflows, and each button's fit. */
+  const at = async (width: number): Promise<{ names: string[]; spills: boolean; wrapped: boolean[] }> => {
+    await page.setViewportSize({ width, height: 800 });
+    const read = async (): Promise<{ names: string[]; spills: boolean; wrapped: boolean[] }> => ({
+      names: await triggers.allTextContents(),
+      spills: await row.evaluate((element) => element.scrollWidth > element.clientWidth),
+      // A LABEL ON TWO LINES is a button whose content is taller than its box: the box is a fixed height.
+      wrapped: await page
+        .locator('.m-menu-bar__commands .m-button')
+        .evaluateAll((buttons) => buttons.map((button) => button.scrollHeight > button.clientHeight)),
+    });
+    return settled(page, read, () => true, `the menu row at ${String(width)}`);
+  };
+
+  // CONTROL, WIDE: every menu on the row and no More, so the More below is the narrow width's doing.
+  const wide = await at(1920);
+  expect(wide.names).toEqual(ALL);
+  expect(wide.spills).toBe(false);
+
+  // 960, where the row measured its words as fitting while Rate Us drew on two lines: one line now, at any width.
+  for (const width of [1920, 1024, 960, 900, 822, 760]) {
+    const now = await at(width);
+    expect(now.spills, `the row overflows at ${String(width)}`).toBe(false);
+    expect(now.wrapped, `a label wraps at ${String(width)}`).toEqual([false, false]);
+  }
+
+  // 760: menus fold from the END into More, which comes last; the drawn ones are the leading part of the order.
+  const tight = await at(760);
+  expect(tight.names.at(-1)).toBe('More');
+  const drawn = tight.names.slice(0, -1);
+  expect(drawn).toEqual(ALL.slice(0, drawn.length));
+  expect(drawn.length).toBeLessThan(ALL.length);
+  const folded = ALL.slice(drawn.length);
+
+  // EVERY FOLDED MENU IS IN MORE, in order, and its commands are there: Help › About opens from inside it.
+  await triggers.filter({ hasText: 'More' }).click();
+  const inMore = page.locator('[data-folded-menu]');
+  await expect(inMore).toHaveCount(folded.length);
+  expect(await inMore.allTextContents()).toEqual(folded);
+  await page.locator('[data-folded-menu="help"]').hover();
+  const about = page.locator('[data-command="app.about"]');
+  await expect(about).toBeVisible();
+  await about.click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+});
+
 // BOTH BRAND TONES ARE FILLS, in every look (the owner's decision, 2026-10-01): Rate Us was an outline on a translucent
 // wash until then, which paints no `background-image` — so a Rate Us drawn as an outline again fails the FILL loop below
 // in all three, before anything about its label is asked. Measured against the outline's own code on 2026-10-01: the
