@@ -20,6 +20,7 @@ import { type Page, expect, test } from '@playwright/test';
 // and `LOOKS` is theirs too: §10.4's gate and §10.7's baselines check the same three themes, and
 // two lists would drift the day one gains a fourth (audit finding IIIIII-2).
 import { LOOKS, type Look, bridge, bridgeUnder } from './pageBridge.js';
+import { settled } from './settled.js';
 
 /**
  * §10.4's mandated gate: axe-core on a Playwright-rendered screen.
@@ -3364,10 +3365,17 @@ for (const size of [
     await page.goto('/');
     await page.getByRole('button', { name: 'Open PDF…' }).click();
     const grid = page.getByRole('region', { name: 'Pages to organize' });
+    const firstCanvas = grid.locator('[data-thumb-page="0"] canvas');
+    // CONTROL FOR THE WAIT BELOW: this case once waited for the first canvas to be drawn, and that is ALREADY TRUE in
+    // thumbnail view, before Full page is chosen — so it could pass at once and the reading was of thumbnails (CI,
+    // ubuntu-latest, 6b7a6bd9: first card 143 px). Asserted here so the old wait is shown to mean nothing about Full page.
+    await expect(firstCanvas).toHaveAttribute('data-drawn', 'true');
+    await expect(grid).toHaveAttribute('data-page-view', 'thumbnail');
     await grid.getByRole('button', { name: 'Full page' }).click();
-    await expect(grid.locator('[data-thumb-page="0"] canvas[data-drawn="true"]')).toBeAttached();
 
     const read = (): Promise<{
+      view: string | null;
+      drawn: string | null;
       strip: { left: number; right: number; scrollWidth: number; clientWidth: number; scrollHeight: number; clientHeight: number };
       cards: { left: number; top: number; width: number }[];
       canvas: number;
@@ -3380,6 +3388,8 @@ for (const size of [
           return { left: Math.round(r.left), top: Math.round(r.top), width: Math.round(r.width) };
         });
         return {
+          view: document.querySelector('.m-page-grid')?.getAttribute('data-page-view') ?? null,
+          drawn: document.querySelector('.m-page-grid [data-thumb-page="0"] canvas')?.getAttribute('data-drawn') ?? null,
           strip: {
             left: box?.left ?? 0,
             right: box?.right ?? 0,
@@ -3392,7 +3402,10 @@ for (const size of [
           canvas: document.querySelector('.m-page-grid [data-thumb-page="0"] canvas')?.getBoundingClientRect().width ?? 0,
         };
       });
-    const measured = await read();
+    // WHAT THE READING MEANS: the grid in Full page, its first page drawn FOR THE WIDTH NOW ASKED (`data-drawn` reads
+    // `stale` while a drawing made for the thumbnail width is still shown), and nothing moving across two frames — the
+    // strip's scrollbar arriving re-measures the width once more.
+    const measured = await settled(page, read, (now) => now.view === 'full-page' && now.drawn === 'true', 'Organize’s Full page');
     const detail = JSON.stringify(measured);
     // ONE TO A ROW: every card's top below the one before it, and every card in the same column.
     for (let at = 1; at < measured.cards.length; at += 1) {

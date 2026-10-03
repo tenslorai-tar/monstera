@@ -310,7 +310,14 @@ function ThumbCanvas({
   readonly rotation: number | undefined;
 }): ReactElement {
   const canvas = useRef<HTMLCanvasElement | null>(null);
-  const [size, setSize] = useState<{ width: number; height: number } | undefined>(undefined);
+  // WHAT THE CANVAS HOLDS AND WHAT IT WAS DRAWN FOR. A new width, rotation or version redraws, and until that draw lands
+  // the canvas still holds the last one: drawn, but not for what is asked now. Keeping the inputs beside the size is
+  // what lets the element say which — a size alone read `drawn` from the first draw on, so a reader waiting for the
+  // Organize grid's Full page saw thumbnail-sized pages as ready (CI, ubuntu-latest, on 6b7a6bd9).
+  const [size, setSize] = useState<
+    { width: number; height: number; for: { view: DocumentView; page: number; width: number; rotation: number | undefined } } | undefined
+  >(undefined);
+  const current = size !== undefined && size.for.view === view && size.for.page === page && size.for.width === width && size.for.rotation === rotation;
 
   useEffect(() => {
     const element = canvas.current;
@@ -323,7 +330,7 @@ function ThumbCanvas({
       // page at full size first to learn its width, and that first pass is what a superseded
       // draw left behind: a canvas 612 points wide in a 96-pixel column (measured 2026-09-18).
       const drawn = await renderPage(view.document, pdfjsPageOf(page), element, { fitWidth: width }, rotation, superseded.signal);
-      setSize({ width: drawn.width, height: drawn.height });
+      setSize({ width: drawn.width, height: drawn.height, for: { view, page, width, rotation } });
     };
 
     void drawThumb().catch((error: unknown) => {
@@ -345,13 +352,15 @@ function ThumbCanvas({
       ref={canvas}
       className="m-thumb-canvas"
       // UNDRAWN, the canvas keeps the browser's default 300 × 150, a 2 : 1 ratio no page has; the stylesheet gives
-      // it a portrait page's ratio until the drawing sets its size, so a card is one height drawn or not.
-      data-drawn={size === undefined ? 'false' : 'true'}
+      // it a portrait page's ratio until the drawing sets its size, so a card is one height drawn or not. `stale` is a
+      // drawing made for another width, rotation or version, shown until the redraw lands.
+      data-drawn={size === undefined ? 'false' : current ? 'true' : 'stale'}
       style={
         size === undefined
           ? undefined
-          : // THE COLUMN'S WIDTH EXACTLY, and the height the page's shape gives it.
-            { width: `${String(width)}px`, height: `${String(size.height)}px` }
+          : // THE COLUMN'S WIDTH EXACTLY, and the height the page's shape gives it — the last drawing's shape while a
+            // redraw is under way, so a card being redrawn at a new width is not stretched to the old height.
+            { width: `${String(width)}px`, height: `${String(current ? size.height : (size.height * width) / size.width)}px` }
       }
     />
   );

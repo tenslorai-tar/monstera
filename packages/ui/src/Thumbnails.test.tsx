@@ -30,6 +30,9 @@ const rasterised: [number, number | { readonly fitWidth: number }][] = [];
 const signals: AbortSignal[] = [];
 /** The rotation each rasterisation was handed, in the same order. */
 const drawnAt: (number | undefined)[] = [];
+/** When set, each draw waits for the case to finish it through {@link held}. */
+let holdDraws = false;
+const held: (() => void)[] = [];
 
 vi.mock('./renderPage.js', async (importOriginal) => ({
   // THE REAL MODULE UNDER THE STUB, so `RenderCancelledError` is the class callers test against.
@@ -47,7 +50,14 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
     signals.push(signal);
     // A 600 × 800 page, fitted the way the real one fits it: from its own width.
     const factor = typeof scale === 'number' ? scale : scale.fitWidth / 600;
-    return Promise.resolve({ width: 600 * factor, height: 800 * factor });
+    const size = { width: 600 * factor, height: 800 * factor };
+    if (!holdDraws) return Promise.resolve(size);
+    // A DRAW STILL UNDER WAY, finished by the case, which is the moment a redraw at a new width is in.
+    return new Promise((resolve) => {
+      held.push(() => {
+        resolve(size);
+      });
+    });
   },
 }));
 
@@ -98,6 +108,8 @@ beforeEach(() => {
   rasterised.length = 0;
   drawnAt.length = 0;
   signals.length = 0;
+  holdDraws = false;
+  held.length = 0;
   latestVersion = VERSION;
   const target: { IntersectionObserver: typeof IntersectionObserver } = globalThis;
   target.IntersectionObserver = class {
@@ -210,6 +222,48 @@ describe('Thumbnails as the Organize grid (ADR-0104)', () => {
     rerender(card(110));
     await settle();
     expect(rasterised.at(-1)).toStrictEqual([1, { fitWidth: 110 }]);
+  });
+
+  it('says a drawing made for ANOTHER width is stale until the redraw lands, and keeps its shape meanwhile', async () => {
+    // `data-drawn` read `true` from the first draw on, so a reader waiting for Organize's Full page took a canvas drawn
+    // at thumbnail size as ready and measured a thumbnail (CI on 6b7a6bd9). It names what the drawing was made FOR.
+    const view0 = view();
+    const card = (width: number): ReactElement => (
+      <Wrapped>
+        <Thumbnails
+          {...reads()}
+          view={view0}
+          pageCount={4}
+          current={0}
+          onJump={vi.fn()}
+          grid={{ width, selected: [], onSelect: vi.fn(), onOpen: vi.fn(), onDelete: vi.fn() }}
+        />
+      </Wrapped>
+    );
+    const { container, rerender } = render(card(110));
+    await settle();
+    const canvas = (): HTMLElement | null => container.querySelector<HTMLElement>('[data-thumb-page="0"] canvas');
+    expect(canvas()?.dataset['drawn']).toBe('true');
+
+    holdDraws = true;
+    rerender(card(660));
+    await settle();
+    expect(rasterised.at(-1)).toStrictEqual([1, { fitWidth: 660 }]);
+    expect(canvas()?.dataset['drawn']).toBe('stale');
+    // THE LAST DRAWING'S SHAPE at the new width — 3 : 4 — not the old drawing's height under the new width.
+    expect([canvas()?.style.width, canvas()?.style.height]).toStrictEqual(['660px', '880px']);
+
+    await act(async () => {
+      for (const finish of held) finish();
+      await Promise.resolve();
+    });
+    await settle();
+    expect(canvas()?.dataset['drawn']).toBe('true');
+    // CONTROL: undrawn is a third state, so `stale` is not what a canvas with no drawing reads.
+    holdDraws = true;
+    const fresh = render(card(110));
+    await settle();
+    expect(fresh.container.querySelector<HTMLElement>('[data-thumb-page="0"] canvas')?.dataset['drawn']).toBe('false');
   });
 
   it('CONTROL: the side strip — no grid — jumps on click, swaps on Shift+click, and Delete does nothing', () => {
