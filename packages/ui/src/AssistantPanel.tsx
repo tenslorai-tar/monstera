@@ -93,6 +93,7 @@ import {
   ASSISTANT_MODEL_LABEL,
   ASSISTANT_MODEL_NOT_OFFERED,
   ASSISTANT_MODEL_NO_VISION,
+  ASSISTANT_NO_COMMENTS,
   ASSISTANT_NO_KEY,
   ASSISTANT_SEARCHES_THE_WEB,
   ASSISTANT_WEB_ALWAYS,
@@ -321,6 +322,7 @@ const PROBLEMS = {
   'no-key': ASSISTANT_NO_KEY,
   'page-too-large': ASSISTANT_PROBLEM_PAGE_TOO_LARGE,
   'searches-the-web': ASSISTANT_SEARCHES_THE_WEB,
+  'no-comments': ASSISTANT_NO_COMMENTS,
 } as const;
 
 /** Why *Document + web* is off, as the sentence beside the disabled choice (ADR-0108). */
@@ -632,7 +634,11 @@ export function AssistantPanel({
       { about, alongside, sides: asked, documents, attachments, web = false }: AskRequest,
       replyTo?: ReplyTarget,
     ): boolean => {
-      if (text === '' || model === '' || live.current !== null) return false;
+      // NO KEY FOR THE CHOSEN PROVIDER IS AN ASK THAT CANNOT BEGIN, here where every route asks: the Send button, a
+      // command's request and Regenerate. A model can be chosen without a key, since the list answers without one,
+      // so the model was never the gate: a request went to main, which refused it after the turn was written, and
+      // the panel said the missing key twice and *no text was found* once (F-V1). The readiness line says it once.
+      if (text === '' || model === '' || !hasKey || live.current !== null) return false;
       const store = focused.store;
       const read = (): readonly ConversationTurn[] => store.getState().conversation;
       const write = (next: readonly ConversationTurn[]): void => {
@@ -706,12 +712,19 @@ export function AssistantPanel({
         }
         live.current = null;
         setStreaming(null);
+        // NO COMMENTS TO ASK ABOUT sent nothing, so the question it would have asked is taken back off the conversation
+        // and the one sentence says what is missing (F-V1). The draft was never cleared, so typed words stay.
+        if (!result.ok && result.error.code === 'no-comments') {
+          write(read().filter((each) => each !== turn));
+          setProblem('no-comments');
+          return;
+        }
         // A PAGE TOO LARGE TO PICTURE is its own sentence: the person can ask about its text.
         setProblem(!result.ok && result.error.code === 'page-too-large' ? 'page-too-large' : 'rejected');
       });
       return true;
     },
-    [client, focused, model, models, provider],
+    [client, focused, hasKey, model, models, provider],
   );
 
   /** Replaces the conversation the panel shows, the focused document's. */

@@ -2083,6 +2083,38 @@ describe('search is E2s first consumer, through the composition point', () => {
       expect(bodies).toStrictEqual([]);
     });
 
+    it('SUMMARISE COMMENTS on a document with NO comments is refused by name, and nothing reaches the provider (F-V1)', async () => {
+      // A DOCUMENT WITH TEXT AND A KEY: absent the refusal this ask starts, carrying an empty window, so the probe is
+      // one the guard alone stops.
+      const { bodies, handlers } = askHandlers();
+      const answer = await handlers['ai.ask']({
+        subscription: 'ask-c0',
+        provider: 'anthropic',
+        model: 'claude-opus-5',
+        messages: [{ role: 'user', text: 'Summarise the comments.' }],
+        about: { scope: 'comments', docId: searchable },
+        web: false,
+      });
+      await new Promise((settle) => setTimeout(settle, 0));
+      expect(answer.ok ? null : answer.error.code).toBe('no-comments');
+      expect(bodies).toStrictEqual([]);
+    });
+
+    it('CONTROL: the same document asked about its TEXT still goes, so the refusal is the comments’ and not the document’s', async () => {
+      const { bodies, handlers } = askHandlers();
+      const answer = await handlers['ai.ask']({
+        subscription: 'ask-c1',
+        provider: 'anthropic',
+        model: 'claude-opus-5',
+        messages: [{ role: 'user', text: 'What does it say?' }],
+        about: { scope: 'document', docId: searchable },
+        web: false,
+      });
+      await new Promise((settle) => setTimeout(settle, 0));
+      expect(answer.ok).toBe(true);
+      expect(bodies).toHaveLength(1);
+    });
+
     it('A PICTURE ASK through the handler: the drawn page reaches the provider with the last turn, and a picture is what went (ADR-0090)', async () => {
       // BYTES THE CASE CHOSE, so the provider's body can be checked for exactly them: the host's
       // drawing is the composition's, and what this crosses is handler → part → assistant → adapter.

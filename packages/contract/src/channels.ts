@@ -5494,7 +5494,9 @@ export const channels = {
     }),
     // THE DOCUMENT'S REFUSALS, because an ask about one reads it in its lane first — and a page
     // too large to draw within the image limits, which a picture ask refuses by name (ADR-0090).
-    ['subscription-in-use', 'document-not-open', 'document-busy', 'document-poisoned', 'page-too-large'],
+    // `no-comments` is an ask about the comments of a document that has none to send and no file beside them: a
+    // question about nothing, refused before any provider is reached (F-V1).
+    ['subscription-in-use', 'document-not-open', 'document-busy', 'document-poisoned', 'page-too-large', 'no-comments'],
   ),
 
   /**

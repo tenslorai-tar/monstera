@@ -18,7 +18,8 @@ When a document has many comments, the assistant can summarise them for you, cit
 
 ## Good to know
 
-- You need a key for an AI provider; see "Get and add keys for AI and online reading services". The provider bills you directly.
+- You need a key for an AI provider; see "Get and add keys for AI and online reading services". The provider bills you directly. With no key, the assistant says so and sends nothing; once you add one, the summary you asked for begins.
+- A document with no comments sends nothing, and the assistant says so.
 - Only the comments' words are sent, not the rest of the document.
 - If the list is too long to send whole, the first comments are sent and the line says so.
 

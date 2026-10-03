@@ -7,6 +7,7 @@ import {
   type ChannelResult,
   type ContractClient,
   type ContractHandlers,
+  type DeclaredOf,
   type FileAccess,
   type FormFieldKind,
   type SaveWriteCause,
@@ -582,6 +583,11 @@ export interface BrowserShimOptions {
   readonly delays?: Readonly<Partial<Record<keyof ContractHandlers, number>>>;
   /** What `ai.models` answers. Absent is an empty list, what a build with no provider offers. */
   readonly aiModels?: ChannelResult<'ai.models'>;
+  /**
+   * A refusal `ai.ask` answers by code, for a case about what the panel says of one. Absent is an ask that did not
+   * start, since no provider is reached from a browser.
+   */
+  readonly aiAskRefusal?: DeclaredOf<typeof channels, 'ai.ask'>;
   /**
    * What `ai.history.load` answers: a conversation saved for the document, so a rendered case can show one without a
    * provider to ask. Absent is nothing saved, the setting's default.
@@ -2312,7 +2318,10 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'settings.export': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
     // A BROWSER HAS NO FILE TO IMPORT, which is main's answer for a picker dismissed.
     'settings.import': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
-    'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),
+    'ai.ask': () =>
+      Promise.resolve(
+        options.aiAskRefusal === undefined ? ok({ started: false, sent: null }) : err({ code: options.aiAskRefusal }),
+      ),
     // NO FILE PICKER IN A BROWSER: what `main` answers a picker the person cancelled.
     'ai.attach': () => Promise.resolve(ok({ files: [], dropped: 0 })),
     'ai.stop': () => Promise.resolve(ok({ stopped: false })),

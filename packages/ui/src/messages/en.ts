@@ -1464,6 +1464,8 @@ export const ASSISTANT_ASSISTANT = messageKey('assistant.assistant');
 export const ASSISTANT_EMPTY = messageKey('assistant.empty');
 export const ASSISTANT_ASK = messageKey('assistant.ask-hint');
 export const ASSISTANT_NO_KEY = messageKey('assistant.no-key');
+/** An ask about the comments of a document that has none, refused by main before any provider is reached (F-V1). */
+export const ASSISTANT_NO_COMMENTS = messageKey('assistant.no-comments');
 /** A *Document only* ask to a model that searches the web for every answer, refused before sending (ADR-0108). */
 export const ASSISTANT_SEARCHES_THE_WEB = messageKey('assistant.searches-the-web');
 /** The *Document only / Document + web* switch, the Sources menu, and why a choice is disabled (ADR-0108). */
@@ -3674,6 +3676,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_EMPTY]: 'No provider key is stored yet. Add one in Settings › AI and the assistant can start answering.',
   [ASSISTANT_ASK]: 'Enter sends. Shift+Enter starts a new line.',
   [ASSISTANT_NO_KEY]: 'This provider has no key stored. Add it in Settings › AI; the key stays on this machine.',
+  [ASSISTANT_NO_COMMENTS]: 'This document has no comments to ask about, so nothing was sent.',
   [ASSISTANT_SEARCHES_THE_WEB]:
     'This model searches the web for every answer, so nothing was sent. Choose another model, or turn on Document + web.',
   [ASSISTANT_WEB_LABEL]: 'Sources',

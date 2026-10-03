@@ -62,6 +62,8 @@ function recording(
     readonly files?: readonly AskFile[];
     readonly share?: number;
   } = {},
+  /** A refusal `main` answers every ask with, by code, in place of starting it. */
+  refusal?: 'no-comments',
 ): {
   readonly client: ContractClient;
   readonly sent: { id: string; params: unknown }[];
@@ -83,6 +85,7 @@ function recording(
       });
     }
     if (id === 'ai.ask') {
+      if (refusal !== undefined) return Promise.resolve({ ok: false, error: { code: refusal } });
       // THE SECOND WINDOW ONLY WHEN THE ASK HAD A SECOND DOCUMENT, as `main` answers it.
       const paired = (params as { alongside?: unknown }).alongside !== undefined;
       const several = (params as { about?: { scope?: unknown } }).about?.scope === 'documents';
@@ -168,6 +171,7 @@ async function drawn(options: {
   readonly openDocuments?: AssistantPanelProps['openDocuments'];
   readonly onGoToDocument?: AssistantPanelProps['onGoToDocument'];
   readonly attaching?: Parameters<typeof recording>[6];
+  readonly refusal?: Parameters<typeof recording>[7];
 } = {}) {
   const wire = events();
   const settings = options.settings ?? new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
@@ -179,6 +183,7 @@ async function drawn(options: {
     options.copied ?? true,
     options.among,
     options.attaching,
+    options.refusal,
   );
   // EVERY TOAST THE PANEL RAISES, in order: a copy's confirmation goes through the window's toast.
   const toasts: unknown[][] = [];
@@ -754,6 +759,77 @@ describe('the assistant about a document (ADR-0088)', () => {
     expect(lastAbout(sent)).toStrictEqual(request.about);
     expect(screen.getByText('Explain the selected text in plain language.')).toBeTruthy();
     expect(chosenIn('Context')).toBe('Selection');
+  });
+
+  it('WITH NO KEY a command’s request says once what is missing and sends nothing (F-V1)', async () => {
+    // A MODEL REMEMBERED for the provider, as a person who removed a key has: the model list is not what stops this.
+    const request: AssistantRequest = {
+      serial: 1,
+      about: { scope: 'comments', docId: DOC_A },
+      prompt: ASSISTANT_PROMPT_SUMMARISE_COMMENTS,
+    };
+    const focused = focusedOn();
+    const { sent } = await drawn({ focused, request, stored: [] });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(sent.filter((entry) => entry.id === 'ai.ask')).toStrictEqual([]);
+    expect(focused.store.getState().conversation).toStrictEqual([]);
+    const lines = [...document.querySelectorAll('.m-assistant__state, .m-assistant__problem')].map((line) => line.textContent);
+    expect(lines).toStrictEqual([
+      'No provider key is stored yet. Add one in Settings › AI and the assistant can start answering.',
+    ]);
+  });
+
+  it('a request held for want of a key is asked once the key is stored, and only once', async () => {
+    const request: AssistantRequest = {
+      serial: 1,
+      about: { scope: 'comments', docId: DOC_A },
+      prompt: ASSISTANT_PROMPT_SUMMARISE_COMMENTS,
+    };
+    const { sent, redraw } = await drawn({ focused: focusedOn(), request, stored: [] });
+    expect(sent.filter((entry) => entry.id === 'ai.ask')).toStrictEqual([]);
+    // THE PERSON ADDS THE KEY the line asked for: what they asked is what arrives.
+    await redraw({ storedSecrets: [ANTHROPIC_KEY] });
+    await redraw({ storedSecrets: [ANTHROPIC_KEY] });
+    expect(sent.filter((entry) => entry.id === 'ai.ask').map((entry) => (entry.params as { about: unknown }).about)).toStrictEqual([
+      request.about,
+    ]);
+  });
+
+  it('NO COMMENTS, refused by main, takes the question back off and says once that nothing was sent (F-V1)', async () => {
+    const request: AssistantRequest = {
+      serial: 1,
+      about: { scope: 'comments', docId: DOC_A },
+      prompt: ASSISTANT_PROMPT_SUMMARISE_COMMENTS,
+    };
+    const focused = focusedOn();
+    const { sent } = await drawn({ focused, request, refusal: 'no-comments' });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // ASKED, and main's word decided it: the panel does not count comments of its own (B3a).
+    expect(lastAbout(sent)).toStrictEqual(request.about);
+    expect(focused.store.getState().conversation).toStrictEqual([]);
+    const lines = [...document.querySelectorAll('.m-assistant__state, .m-assistant__problem')].map((line) => line.textContent);
+    expect(lines).toStrictEqual(['This document has no comments to ask about, so nothing was sent.']);
+    // CONTROL: not the line for a refused request, which would read as the provider's doing.
+    expect(screen.queryByText(/refused the request/u)).toBeNull();
+  });
+
+  it('CONTROL: the same request WITH a key asks at once', async () => {
+    const request: AssistantRequest = {
+      serial: 1,
+      about: { scope: 'comments', docId: DOC_A },
+      prompt: ASSISTANT_PROMPT_SUMMARISE_COMMENTS,
+    };
+    const { sent } = await drawn({ focused: focusedOn(), request });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(lastAbout(sent)).toStrictEqual(request.about);
   });
 
   it('CONTROL: a selection from ANOTHER document is not offered, so the menu never offers words not on show', async () => {

@@ -706,6 +706,12 @@ export function createContractHandlers(deps: {
         if (code !== undefined) return err({ code });
         throw thrown;
       }
+      // NO COMMENTS AND NOTHING ELSE TO SEND is a question about nothing: refused by name before a provider is reached,
+      // so the panel says what is missing rather than posting a turn whose answer could only be invented. The count is
+      // the window's own, `commentsWindow`'s, so this asks the reader that decides what a comment is (B3a).
+      if (about?.scope === 'comments' && window?.sent.comments === 0 && attached.length === 0) {
+        return err({ code: 'no-comments' });
+      }
       const context =
         many !== null
           ? many.system

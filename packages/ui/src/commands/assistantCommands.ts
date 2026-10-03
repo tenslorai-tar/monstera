@@ -115,9 +115,10 @@ export function assistantSelectionCommands(deps: AssistantCommandDeps): readonly
  * list in the document's lane — so the summary is of the comments a person can see, and the
  * *Asking about* line says so before anything is sent a second time.
  *
- * Shown for any open document. A document with no comments is asked anyway and the window says
- * it carried nothing, which is a truthful answer; hiding the item would need a read on every
- * render to decide.
+ * Shown for any open document; hiding the item would need a read on every render to decide. A
+ * document with no comments is refused by `main` before any provider is reached, and the panel
+ * says so once and keeps nothing in the conversation (F-V1). With no key the panel does not ask at
+ * all, and its readiness line is the one sentence.
  */
 export function summariseCommentsCommand(deps: { readonly ask: AskAssistant }): UiCommand {
   return {
