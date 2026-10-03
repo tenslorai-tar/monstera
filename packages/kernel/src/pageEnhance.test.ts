@@ -44,6 +44,7 @@ function flatJpeg(spacing = 40): Uint8Array {
   for (let y = 20; y < HEIGHT; y += spacing) {
     for (let x = 0; x < WIDTH; x += 1) pixels[y * stride + x] = 90;
   }
+  pixmap.setPixels(pixels);
   const jpeg = new Uint8Array(pixmap.asJPEG(90, false));
   pixmap.destroy();
   return jpeg;

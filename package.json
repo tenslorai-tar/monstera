@@ -57,6 +57,7 @@
     "proof:budgets": "node scripts/proofs/memoryBudgets.proof.mjs",
     "proof:peakrss": "node scripts/proofs/peakRss.proof.mjs",
     "proof:nativeaddon": "node scripts/proofs/nativeAddon.proof.mjs",
+    "proof:hostruntime": "node scripts/proofs/hostRuntime.proof.mjs",
     "proof:perfbudget": "node scripts/proofs/perfBudget.proof.mjs",
     "perf:byteimage": "node scripts/perf/byteImageCost.mjs",
     "perf:gate": "node scripts/perf/budgetGate.mjs",

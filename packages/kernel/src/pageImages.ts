@@ -188,12 +188,12 @@ export interface RgbaImage {
 }
 
 /**
- * The pixmap's RGB widened to RGBA, COPIED out of the engine's heap.
+ * The pixmap's RGB widened to RGBA.
  *
- * `getPixels` answers a view into MuPDF's WASM memory, which `destroy` frees in
- * the `finally` above — so the copy is made here, before that runs, and the
- * encoder never reads memory the engine may reuse. The pixmap was drawn with no
- * alpha for the snapshot's reason (a page is paper), so every alpha is 255.
+ * `getPixels` answers a copy of the engine's samples (a view over native memory
+ * aborts the Electron runtime the hosts run in), so nothing here outlives the
+ * pixmap that `destroy` frees in the `finally` above. The pixmap was drawn with
+ * no alpha for the snapshot's reason (a page is paper), so every alpha is 255.
  */
 function rgbaOf(pixmap: Pixmap): RgbaImage {
   const width = pixmap.getWidth();

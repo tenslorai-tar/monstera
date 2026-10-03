@@ -875,6 +875,14 @@ jobs:
       - name: Unit tests
         run: node scripts/ci/annotate.mjs --npm test
 
+      # THE SAME KERNEL SUITE IN THE RUNTIME THE ENGINE HOSTS RUN IN: the pinned Electron binary with
+      # ELECTRON_RUN_AS_NODE=1. `npm test` runs plain Node, which permits what Electron refuses at a native boundary;
+      # `getPixels` made a view over native memory, every kernel test passed, and Deskew, Enhance scans, Straighten
+      # scans and Read barcodes killed the host in the application. Node mode needs no display, so it runs on both legs
+      # (measured on Linux without xvfb, 2026-10-03), and --require-electron makes a missing binary or engine red.
+      - name: The kernel's tests pass in the engine hosts' runtime
+        run: node scripts/ci/annotate.mjs scripts/proofs/hostRuntime.proof.mjs --require-electron
+
       # §10.4'S MANDATED GATE: "axe-core running on every Playwright-rendered
       # screen from Stage 0, with zero serious violations". BUILD-PROMPT.md:768
       # names the same vehicle against the browser shim.

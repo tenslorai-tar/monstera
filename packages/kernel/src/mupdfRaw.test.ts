@@ -80,17 +80,52 @@ describe('the native MuPDF binding', () => {
     }
   });
 
-  it('gives getPixels as a LIVE view: a write through it is what the pixmap then holds', () => {
-    // Enhance levels samples in place and the scan straightener warps into them, then each encodes the pixmap; a
-    // copy would lose every write without an error.
+  it('gives getPixels as a COPY that owns its buffer, so no view over native memory reaches the caller', () => {
+    // A view over native memory is an external ArrayBuffer, which aborts the Electron runtime the engine hosts run
+    // in; `proof:hostruntime` runs the commands under that runtime. Here, in plain Node, the copy is what can be seen.
     const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceGray, [0, 0, 4, 4], false);
     try {
       pixmap.clear(200);
       const first = pixmap.getPixels();
+      expect(first.byteOffset).toBe(0);
+      expect(first.buffer.byteLength).toBe(16);
       first[5] = 17;
+      // A write into the copy is not a write into the pixmap.
+      expect(pixmap.getPixels()[5]).toBe(200);
+    } finally {
+      pixmap.destroy();
+    }
+  });
+
+  it('writes samples back through setPixels: what the pixmap then holds, and only those samples', () => {
+    // Enhance levels samples and the scan straightener warps into them, then each encodes the pixmap; without the
+    // write-back each would encode the unchanged image without an error.
+    const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceGray, [0, 0, 4, 4], false);
+    try {
+      pixmap.clear(200);
+      const samples = pixmap.getPixels();
+      samples[5] = 17;
+      pixmap.setPixels(samples);
       expect(pixmap.getPixels()[5]).toBe(17);
       // CONTROL: the untouched sample kept the clear, so the read is of the pixmap and not of zeroed memory.
       expect(pixmap.getPixels()[4]).toBe(200);
+    } finally {
+      pixmap.destroy();
+    }
+  });
+
+  it('refuses setPixels of any length but the pixmap’s own, rather than writing short or past its end', () => {
+    const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceGray, [0, 0, 4, 4], false);
+    try {
+      pixmap.clear(200);
+      expect(() => {
+        pixmap.setPixels(new Uint8Array(17));
+      }).toThrow(RangeError);
+      expect(() => {
+        pixmap.setPixels(new Uint8Array(15));
+      }).toThrow(RangeError);
+      // CONTROL: the refused writes left the pixmap as it was.
+      expect(Array.from(pixmap.getPixels())).toStrictEqual(new Array<number>(16).fill(200));
     } finally {
       pixmap.destroy();
     }

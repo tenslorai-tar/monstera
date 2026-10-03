@@ -410,7 +410,10 @@ function straighten(document: PDFDocument, page: number): ScanOutcome {
     if (map === null) return 'no-sheet';
 
     straightened = new mupdf.Pixmap(mupdf.ColorSpace.DeviceGray, [0, 0, width, height], false);
-    warpGrey(source, { samples: straightened.getPixels(), width, height, stride: straightened.getStride() }, map);
+    // Warped into a copy and handed back: `getPixels` makes no view over engine memory.
+    const target = straightened.getPixels();
+    warpGrey(source, { samples: target, width, height, stride: straightened.getStride() }, map);
+    straightened.setPixels(target);
     writeGreyJpeg(only.object, straightened);
 
     // THE PAGE BECOMES THE SHEET'S SHAPE, keeping its longer side, and draws the one

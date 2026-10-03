@@ -153,6 +153,9 @@ function level(object: PDFObject): boolean {
       const value = ((samples[index] ?? 0) - dark) * scale;
       samples[index] = value < 0 ? 0 : value > 255 ? 255 : Math.round(value);
     }
+    // `getPixels` is a copy (the native binding makes no view over engine memory), so the levelled samples go
+    // back into the pixmap before it is encoded.
+    grey.setPixels(samples);
 
     writeGreyJpeg(object, grey);
     return true;

@@ -1989,9 +1989,26 @@ export class Pixmap extends Userdata<"fz_pixmap"> {
 		let s = libmupdf._wasm_pixmap_get_stride(this.pointer)
 		let h = libmupdf._wasm_pixmap_get_h(this.pointer)
 		let p = libmupdf._wasm_pixmap_get_samples(this.pointer)
-		/* MONSTERA: a view over the pixmap's own samples, as upstream's was: callers write into it (Enhance levels
-		 * in place, the scan straightener warps into it) and then encode the pixmap. It lives as long as the pixmap. */
-		return new Uint8ClampedArray(boundNative().view(p, s * h))
+		/* MONSTERA: a COPY of the samples, where upstream returned a view into the WASM heap. A view over native
+		 * memory is an external ArrayBuffer, and Electron's runtime refuses those: koffi's `view` there aborts the
+		 * process (`FATAL ERROR: Error::New napi_get_last_error_info`, measured under ELECTRON_RUN_AS_NODE on
+		 * Electron 43.4.1, 2026-10-03), which is how Deskew, Enhance, Straighten and Read barcodes killed the engine
+		 * host while plain Node, which allows them, kept every kernel test green. A caller that changes the samples
+		 * hands them back through `setPixels`. */
+		const out = new Uint8ClampedArray(s * h)
+		if (out.length > 0) boundNative().read(p, out, out.length)
+		return out
+	}
+
+	/* MONSTERA: the write half of the copy above, which upstream did not need because its view wrote through. The
+	 * length is the pixmap's own, so a buffer of any other size is refused rather than written short or past the end. */
+	setPixels(samples: Uint8ClampedArray | Uint8Array) {
+		let s = libmupdf._wasm_pixmap_get_stride(this.pointer)
+		let h = libmupdf._wasm_pixmap_get_h(this.pointer)
+		if (samples.length !== s * h)
+			throw new RangeError(`a pixmap of stride ${s} and height ${h} holds ${s * h} samples; ${samples.length} were given`)
+		let p = libmupdf._wasm_pixmap_get_samples(this.pointer)
+		if (samples.length > 0) boundNative().write(p, samples, samples.length)
 	}
 
 	asPNG() {
@@ -5309,7 +5326,6 @@ interface NativeAccess {
 	read(from: number, to: ArrayBufferView, n: number): void
 	write(to: number, from: ArrayBufferView, n: number): void
 	strlen(s: number): number
-	view(address: number, n: number): ArrayBuffer
 }
 
 let nativeAccess: NativeAccess | undefined
@@ -5406,12 +5422,14 @@ export function openMupdfShim(libraryPath: string): void {
 	const read = library.func("void mzg_read(intptr_t from, void *to, size_t n)") as unknown as (a: number, b: ArrayBufferView, n: number) => void
 	const write = library.func("void mzg_write(intptr_t to, const void *from, size_t n)") as unknown as (a: number, b: ArrayBufferView, n: number) => void
 	const strlen = library.func("size_t mzg_strlen(intptr_t s)") as unknown as (s: number) => number
-	const pointer = library.func("void *mzg_pointer(intptr_t address)") as unknown as (address: number) => unknown
+	/* NO VIEW OVER NATIVE MEMORY, by construction: every crossing is a copy through `read` or `write`, because an
+	 * external ArrayBuffer aborts the Electron runtime the engine hosts run in (`getPixels`). `proof:hostruntime`
+	 * runs the kernel's whole suite under that runtime, which is what fails if one comes back, under any spelling.
+	 * (`mzg_pointer` in the shim's runtime C existed only for the view, and nothing binds it now.) */
 	nativeAccess = {
 		read: (from, to, n) => read(from, to, n),
 		write: (to, from, n) => write(to, from, n),
 		strlen: (s) => strlen(s),
-		view: (address, n) => koffi.view(pointer(address), n),
 	}
 
 	const callbackType = koffi.proto("int MzgJs(const char *target, int argc, const double *argv, double *result)")
