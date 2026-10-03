@@ -108,6 +108,7 @@ export {
   MAX_CHAT_TURNS,
   MAX_MODEL_ID,
   // ONE LIST SHAPE for `ai.models` and the Settings dialog's props (ADR-0117).
+  AI_LIST_PROBLEMS,
   type AiModelListAnswer,
   aiModelListSchema,
   type SavedTurn,

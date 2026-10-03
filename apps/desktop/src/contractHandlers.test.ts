@@ -1297,6 +1297,26 @@ settings: createEphemeralSettings(),
     expect(asked).toStrictEqual([]);
   });
 
+  it('an Azure OpenAI address that is not Azure’s own is asked NOTHING from main, and its key is not kept', async () => {
+    // THE CHANNEL TAKES ANY STRING, so main is what refuses: without the check this is a request from main, with the
+    // typed key, to whatever the renderer named — and the provider answering 200 would keep the key.
+    const { handlers, secrets, asked } = checking(200);
+    for (const endpoint of ['https://example.test', 'http://mine.openai.azure.com', 'https://127.0.0.1:8080']) {
+      const result = await handlers['ai.checkKey']({ provider: 'azure-openai', key: 'a-key', endpoint });
+      expect({ endpoint, result }).toEqual({ endpoint, result: { ok: true, value: { accepted: false, problem: 'not-the-service' } } });
+    }
+    expect(asked).toStrictEqual([]);
+    expect(secrets.read()['ai.azure-openai-key']).toBeUndefined();
+  });
+
+  it('CONTROL: the same check at an Azure OpenAI resource is asked once, and keeps the key', async () => {
+    const { handlers, secrets, asked } = checking(200);
+    const result = await handlers['ai.checkKey']({ provider: 'azure-openai', key: 'a-key', endpoint: 'https://mine.openai.azure.com' });
+    expect(result).toEqual({ ok: true, value: { accepted: true, checked: true } });
+    expect(asked).toHaveLength(1);
+    expect(secrets.read()['ai.azure-openai-key']).toBe('a-key');
+  });
+
   it('ai.models.held answers every provider from what main holds, and asks no provider (ADR-0117)', async () => {
     const { handlers, asked } = checking(200);
 

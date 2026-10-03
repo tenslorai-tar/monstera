@@ -1,4 +1,5 @@
 import { AI_PROVIDERS, type AiModel, type AiProviderId } from '@monstera/contract';
+import { serviceOrigin } from '@monstera/shared';
 
 /**
  * What models a provider offers, asked of the provider
@@ -101,7 +102,11 @@ export interface AiModelList {
   readonly models: readonly AiModel[];
   readonly source: AiModelSource;
   /** Present when a fetch was attempted and did not answer a list. */
-  readonly problem?: 'unauthorised' | 'unreachable' | 'rejected' | 'unreadable';
+  /**
+   * `not-the-service` is an address that is not one of the provider's own, and nothing was asked: the key goes only
+   * where `serviceOrigin` says the provider is.
+   */
+  readonly problem?: 'unauthorised' | 'unreachable' | 'rejected' | 'unreadable' | 'not-the-service';
 }
 
 export interface AiModelRequest {
@@ -126,13 +131,21 @@ export interface AiModelRequest {
  */
 export const MODEL_LIST_TIMEOUT_MS = 10_000;
 
-/** The request's URL and headers, or `null` where this provider has no list. */
-function request(provider: AiProviderId, key: string, endpoint: string): { url: string; headers: Record<string, string> } | null {
+/**
+ * The request's URL and headers, `null` where this provider has no list, or `not-the-service` where the person's
+ * address is not one of the provider's own and so nothing may be sent to it.
+ */
+function request(
+  provider: AiProviderId,
+  key: string,
+  endpoint: string,
+): { url: string; headers: Record<string, string> } | null | 'not-the-service' {
   const list = LIST_ENDPOINTS[provider];
   if (provider === 'azure-openai') {
-    const base = endpoint.replace(/\/+$/u, '');
-    if (base === '') return null;
-    return { url: `${base}/openai/models?api-version=${AZURE_API_VERSION}`, headers: { 'api-key': key } };
+    if (endpoint === '') return null;
+    const origin = serviceOrigin('azure-openai', endpoint);
+    if (origin === null) return 'not-the-service';
+    return { url: `${origin}/openai/models?api-version=${AZURE_API_VERSION}`, headers: { 'api-key': key } };
   }
   if (list.url === null) return null;
   if (list.auth === 'query-key') return { url: `${list.url}?key=${encodeURIComponent(key)}`, headers: {} };
@@ -206,6 +219,7 @@ export async function listModels({
   const asked = key === '' ? null : request(provider, key, endpoint);
   // NO KEY, no list endpoint, or no Azure resource: all three are "nothing to ask".
   if (asked === null) return unaskedList(provider);
+  if (asked === 'not-the-service') return { provider, models: fallback, source: 'fallback', problem: 'not-the-service' };
 
   // ONE SIGNAL FOR THE REQUEST AND THE BODY: a provider can send its headers and then stall, and
   // a bound on the headers alone would leave `json()` waiting for ever.

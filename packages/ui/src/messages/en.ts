@@ -1449,6 +1449,7 @@ export const ASSISTANT_PROBLEM_REJECTED = messageKey('assistant.problem-rejected
 /** Anthropic's account out of credit — one sentence for the assistant and Claude recognition alike. */
 export const ANTHROPIC_OUT_OF_CREDIT = messageKey('service.anthropic-out-of-credit');
 export const ASSISTANT_PROBLEM_UNREADABLE = messageKey('assistant.problem-unreadable');
+export const ASSISTANT_PROBLEM_NOT_THE_SERVICE = messageKey('assistant.problem-not-the-service');
 export const AI_PROVIDER_ANTHROPIC = messageKey('assistant.provider-name.anthropic');
 export const AI_PROVIDER_OPENAI = messageKey('assistant.provider-name.openai');
 export const AI_PROVIDER_GEMINI = messageKey('assistant.provider-name.gemini');
@@ -1502,6 +1503,7 @@ export const AI_SETUP_UNREACHABLE = messageKey('dialog.ai-setup.unreachable');
 export const AI_SETUP_REJECTED = messageKey('dialog.ai-setup.rejected');
 export const AI_SETUP_UNREADABLE = messageKey('dialog.ai-setup.unreadable');
 export const AI_SETUP_NOT_STORED = messageKey('dialog.ai-setup.not-stored');
+export const AI_SETUP_NOT_THE_SERVICE = messageKey('dialog.ai-setup.not-the-service');
 export const AI_SETUP_AT_START_TITLE = messageKey('setting.ai.setup-at-start.title');
 export const AI_PROVIDER_TITLE = messageKey('setting.ai.provider.title');
 export const AI_PROVIDER_DESCRIPTION = messageKey('setting.ai.provider.description');
@@ -2326,6 +2328,7 @@ export const PROBLEM_RASTER_TOO_LARGE = messageKey('dialog.command-problem.raste
 export const PROBLEM_NOT_COPYABLE = messageKey('dialog.command-problem.not-copyable');
 export const PROBLEM_SERVICE_NO_KEY = messageKey('dialog.command-problem.service-no-key');
 export const PROBLEM_SERVICE_UNAUTHORISED = messageKey('dialog.command-problem.service-unauthorised');
+export const PROBLEM_SERVICE_ADDRESS = messageKey('dialog.command-problem.service-address');
 export const PROBLEM_SERVICE_UNAVAILABLE = messageKey('dialog.command-problem.service-unavailable');
 export const PROBLEM_SERVICE_REFUSED = messageKey('dialog.command-problem.service-refused');
 export const COPY_ANNOTATIONS_TITLE = messageKey('command.annotate.copy-selection');
@@ -3588,6 +3591,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // Claude recognition, and it names the one place that fixes it.
   [ANTHROPIC_OUT_OF_CREDIT]: 'Your Anthropic account is out of credit — add credit at console.anthropic.com',
   [ASSISTANT_PROBLEM_UNREADABLE]: 'The answer stopped part way. What is above is what arrived.',
+  [ASSISTANT_PROBLEM_NOT_THE_SERVICE]:
+    'The Azure OpenAI address in Settings › AI is not an Azure OpenAI address, so nothing was sent. It looks like https://your-resource.openai.azure.com.',
   [AI_PROVIDER_NAMES.anthropic]: 'Anthropic',
   [AI_PROVIDER_NAMES.openai]: 'OpenAI',
   [AI_PROVIDER_NAMES.gemini]: 'Google Gemini',
@@ -3689,6 +3694,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AI_SETUP_REJECTED]: 'The provider refused the check, so the key was not saved.',
   [AI_SETUP_UNREADABLE]: 'The provider’s answer could not be read, so the key was not saved.',
   [AI_SETUP_NOT_STORED]: 'The key could not be stored securely on this computer, so it was not saved.',
+  [AI_SETUP_NOT_THE_SERVICE]:
+    'That is not an Azure OpenAI address, so nothing was sent and the key was not saved. It looks like https://your-resource.openai.azure.com.',
   [AI_SETUP_AT_START_TITLE]: 'Offer AI setup when Monstera starts',
   [AI_SAVE_HISTORY_TITLE]: 'Save chat history',
   [ASSISTANT_CHIP_SELECTION]: 'Selection',
@@ -5049,6 +5056,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // assistant's own sentence, because it is one account whichever door it was met from.
   [PROBLEM_SERVICE_NO_KEY]: 'No key is stored for this service. Add it in Settings; nothing was changed.',
   [PROBLEM_SERVICE_UNAUTHORISED]: 'The service did not accept the stored key. Check it in Settings; nothing was changed.',
+  [PROBLEM_SERVICE_ADDRESS]:
+    'The service address in Settings is not the service’s own HTTPS address, such as https://your-resource.cognitiveservices.azure.com. Nothing was sent or changed.',
   [PROBLEM_SERVICE_UNAVAILABLE]:
     'The service could not be reached or is busy. Nothing was changed — try again in a moment.',
   [PROBLEM_SERVICE_REFUSED]: 'The service did not read this area, so nothing was changed.',

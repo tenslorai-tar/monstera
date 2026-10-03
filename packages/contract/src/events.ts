@@ -51,6 +51,8 @@ export const AI_ANSWER_REFUSALS = [
   // A *Document only* ask to a model that searches the web before every answer (ADR-0108): refused in `main` before
   // anything is sent, so the document never reaches a search engine the person did not choose.
   'searches-the-web',
+  // An Azure OpenAI address that is not Azure's own: refused in `main` before anything is sent.
+  'not-the-service',
 ] as const;
 
 /** The most web sources one answer carries (ADR-0108) — Anthropic's five searches, each with a handful of results. */

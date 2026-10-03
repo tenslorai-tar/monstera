@@ -283,6 +283,7 @@ export const TABLE_ENGINES = ['automatic', 'azure', 'claude'] as const;
 export const SERVICE_REFUSALS = [
   'no-key',
   'not-https',
+  'not-the-service',
   'unauthorised',
   'out-of-credit',
   'rejected',
@@ -302,13 +303,14 @@ export const SERVICE_REFUSALS = [
  * which reaches the service from a command's pre-read (ADR-0051, ADR-0057).
  *
  * **Codes and no sentence**, because that channel carries no free text (`commandHandlers.ts`), so
- * the reason is folded into the few a reader acts on differently: enter a key, fix the key, add
- * credit, try later — and everything else, which is *the service did not read it*. Until this
- * existed every one of them reached the renderer as `internal` with an incident id.
+ * the reason is folded into the few a reader acts on differently: enter a key, fix the key, fix the
+ * address, add credit, try later — and everything else, which is *the service did not read it*.
+ * Until this existed every one of them reached the renderer as `internal` with an incident id.
  */
 export const SERVICE_PROBLEMS = [
   'service-no-key',
   'service-unauthorised',
+  'service-address',
   'service-out-of-credit',
   'service-unavailable',
   'service-refused',
@@ -317,7 +319,9 @@ export const SERVICE_PROBLEMS = [
 /** Each refusal's code. A reason added above without a row here is a compile error. */
 export const SERVICE_PROBLEM_OF = {
   'no-key': 'service-no-key',
-  'not-https': 'service-refused',
+  // THE ADDRESS IN SETTINGS, either way it is wrong: nothing was sent, and it is the person's to fix.
+  'not-https': 'service-address',
+  'not-the-service': 'service-address',
   unauthorised: 'service-unauthorised',
   'out-of-credit': 'service-out-of-credit',
   rejected: 'service-refused',
@@ -457,13 +461,19 @@ export const MAX_CHAT_TEXT = 16_384;
 export const MAX_CHAT_TURNS = 64;
 
 /**
+ * Why asking a provider for its models did not answer a list — the one set a list and a key check both carry.
+ * `not-the-service` is an address that is not the provider's own, and nothing was sent to it.
+ */
+export const AI_LIST_PROBLEMS = ['unauthorised', 'unreachable', 'rejected', 'unreadable', 'not-the-service'] as const;
+
+/**
  * One provider's model list as it crosses: where it came from, what went wrong asking, and the models. The ONE
  * shape `ai.models` answers and the Settings dialog opens with (ADR-0117), so the two surfaces cannot disagree
  * about what a list is.
  */
 export const aiModelListSchema = z.object({
   source: z.enum(['fetched', 'fallback', 'no-list']),
-  problem: z.enum(['unauthorised', 'unreachable', 'rejected', 'unreadable']).optional(),
+  problem: z.enum(AI_LIST_PROBLEMS).optional(),
   models: z
     .array(
       z.object({
@@ -5200,7 +5210,7 @@ export const channels = {
       }),
       z.object({
         accepted: z.literal(false),
-        problem: z.enum(['unauthorised', 'unreachable', 'rejected', 'unreadable']),
+        problem: z.enum(AI_LIST_PROBLEMS),
       }),
     ]),
     ['secret-storage-unavailable'],

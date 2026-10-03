@@ -55,6 +55,9 @@ export {
 // of them changed — which is exactly what happened to the matching rule above.
 export { type TextToken, type WordCount, countWords, tokensOf, wordsOf } from './wordCount.js';
 export { EDGE_HANDLE_WIDTH, MINIMUM_WINDOW, PAGE_AREA_MIN_WIDTH, minimumWindowFor } from './windowSize.js';
+// WHERE A KEY MAY GO when a person typed the address, once: the model list, the chat, the recogniser, and the hosts
+// whose own answers name the next address (DocuSign's base URI, a cloud upload session) all take it.
+export { type AddressedService, SERVICE_DOMAINS, hostWithin, onOrigin, serviceOrigin } from './serviceAddress.js';
 export { type AlignmentStep, type LineChange, alignSequences, comparableLine, diffLines } from './lineDiff.js';
 export {
   type CompareAnnotation,

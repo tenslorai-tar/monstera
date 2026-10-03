@@ -355,7 +355,8 @@ export const AZURE_DI_ENDPOINT_SETTING: SettingDefinition<z.ZodString> = {
   // FROM THE CONTRACT — the id, the schema and the default (`storedSettings.ts`): main reads this one to make the call,
   // and two definitions that agree today is exactly the shape B3a is about. The schema is a plain string, NOT a URL:
   // a reader typing an address mid-keystroke would have a setting that refuses to store what they are in the middle
-  // of writing, and the scheme check that matters happens where the request is made, before anything is sent.
+  // of writing, and the address check that matters (`serviceOrigin`: HTTPS, on the service's own hosts) happens where
+  // the request is made, before anything is sent.
   ...AZURE_ENDPOINT_STORED,
   title: EDITING_AZURE_ENDPOINT_TITLE,
   // AZURE DOCUMENT INTELLIGENCE reads scans, so its address and key sit on the owner's OCR page

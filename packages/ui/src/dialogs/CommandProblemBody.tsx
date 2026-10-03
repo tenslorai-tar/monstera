@@ -5,6 +5,7 @@ import type { ReactElement } from 'react';
 
 import {
   ANTHROPIC_OUT_OF_CREDIT,
+  PROBLEM_SERVICE_ADDRESS,
   PROBLEM_SERVICE_NO_KEY,
   PROBLEM_SERVICE_REFUSED,
   PROBLEM_SERVICE_UNAUTHORISED,
@@ -53,6 +54,7 @@ const MESSAGE: Readonly<Record<CommandProblem['code'], MessageKey>> = {
   'text-not-writable': TEXT_EDIT_NOT_WRITABLE,
   'service-no-key': PROBLEM_SERVICE_NO_KEY,
   'service-unauthorised': PROBLEM_SERVICE_UNAUTHORISED,
+  'service-address': PROBLEM_SERVICE_ADDRESS,
   'service-out-of-credit': ANTHROPIC_OUT_OF_CREDIT,
   'service-unavailable': PROBLEM_SERVICE_UNAVAILABLE,
   'service-refused': PROBLEM_SERVICE_REFUSED,

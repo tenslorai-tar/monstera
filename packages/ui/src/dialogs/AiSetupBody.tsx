@@ -10,6 +10,7 @@ import {
   AI_SETUP_INTRO,
   AI_SETUP_KEY,
   AI_SETUP_NOT_STORED,
+  AI_SETUP_NOT_THE_SERVICE,
   AI_SETUP_PROVIDER,
   AI_SETUP_REJECTED,
   AI_SETUP_SKIP,
@@ -30,6 +31,7 @@ const PROBLEM_TEXT: Readonly<Record<AiSetupProblem, MessageKey>> = {
   unreachable: AI_SETUP_UNREACHABLE,
   rejected: AI_SETUP_REJECTED,
   unreadable: AI_SETUP_UNREADABLE,
+  'not-the-service': AI_SETUP_NOT_THE_SERVICE,
   'not-stored': AI_SETUP_NOT_STORED,
 };
 

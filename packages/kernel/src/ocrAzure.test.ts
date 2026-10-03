@@ -233,6 +233,48 @@ describe('the Azure recogniser', () => {
     expect(asked).toHaveLength(0);
   });
 
+  it('sends the page and the key to NO https address that is not Azure Document Intelligence’s own', async () => {
+    // EACH IS HTTPS, so the scheme check above lets every one through, and without the host check each is sent the
+    // raster and the key.
+    for (const endpoint of [
+      'https://example.test',
+      'https://example.cognitiveservices.azure.com.example.test',
+      'https://user:pass@example.cognitiveservices.azure.com',
+      'https://example.cognitiveservices.azure.com:8443',
+    ]) {
+      const { fetchImpl, asked } = service(accepted(), [polled('succeeded', [])]);
+      await expect(recogniseThroughAzure({ endpoint, key: 'k' }, { png: PNG, ...FRAME, fetchImpl }, INSTANT)).rejects.toMatchObject({
+        reason: 'not-the-service',
+      });
+      expect({ endpoint, asked }).toStrictEqual({ endpoint, asked: [] });
+    }
+  });
+
+  it('CONTROL: each host form Azure documents for the service reaches it, so the refusal above is the HOST', async () => {
+    for (const origin of ['https://westeurope.api.cognitive.microsoft.com', 'https://example.cognitiveservices.azure.us']) {
+      const { fetchImpl, asked } = service(accepted(`${origin}/operations/1`), [polled('succeeded', [{ words: [], lines: [] }])]);
+      await recogniseThroughAzure({ endpoint: `${origin}/`, key: 'k' }, { png: PNG, ...FRAME, fetchImpl }, INSTANT);
+      expect(asked).toStrictEqual([
+        `${origin}/documentintelligence/documentModels/prebuilt-read:analyze?api-version=2024-11-30`,
+        `${origin}/operations/1`,
+      ]);
+    }
+  });
+
+  it('sends the key to no poll address but the resource’s own: an Operation-Location elsewhere is never asked', async () => {
+    // THE SERVICE NAMES WHERE TO POLL, and the poll and the delete both carry the key. An answer naming another host
+    // would otherwise receive it, on a request the person never made.
+    const { fetchImpl, asked, deleted } = service(accepted('https://example.test/operations/1'), [
+      polled('succeeded', [{ words: [], lines: [] }]),
+    ]);
+    await expect(recogniseThroughAzure(CREDENTIALS, { png: PNG, ...FRAME, fetchImpl }, INSTANT)).rejects.toMatchObject({
+      reason: 'unreadable-answer',
+      message: expect.stringMatching(/outside example\.cognitiveservices\.azure\.com/u) as unknown,
+    });
+    expect(asked).toHaveLength(1);
+    expect(deleted).toStrictEqual([]);
+  });
+
   it('CONTROL: the same call over https:// reaches the service, so the refusal is the SCHEME', async () => {
     const { fetchImpl, asked } = service(accepted(), [
       polled('succeeded', [{ words: [], lines: [] }]),

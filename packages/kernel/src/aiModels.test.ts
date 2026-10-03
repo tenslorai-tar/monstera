@@ -90,6 +90,38 @@ describe('listModels', () => {
     expect(list.source).toBe('fallback');
   });
 
+  it('sends the key to NO address that is not an Azure OpenAI resource, and says which problem it is', async () => {
+    // EACH WOULD BE ASKED WITHOUT THE CHECK: every one parses as a URL, so nothing else on the path refuses it, and
+    // the call count is the claim.
+    for (const endpoint of [
+      'http://mine.openai.azure.com',
+      'https://example.test',
+      'https://mine.openai.azure.com.example.test',
+      'https://evilopenai.azure.com',
+      'https://user:pass@mine.openai.azure.com',
+      'https://mine.openai.azure.com:8443',
+      'https://127.0.0.1',
+    ]) {
+      const { fetchImpl, asked } = fetching({ status: 200, body: { data: [{ id: 'x' }] } });
+      const list = await listModels({ provider: 'azure-openai', key: 'k', endpoint, fetchImpl });
+      expect({ endpoint, asked }).toStrictEqual({ endpoint, asked: [] });
+      expect(list).toMatchObject({ source: 'fallback', problem: 'not-the-service' });
+    }
+  });
+
+  it('CONTROL: every host form Azure documents is asked, at the resource’s own origin', async () => {
+    for (const [endpoint, origin] of [
+      ['https://mine.openai.azure.com/openai/v1/', 'https://mine.openai.azure.com'],
+      ['https://mine.services.ai.azure.com', 'https://mine.services.ai.azure.com'],
+      ['https://mine.openai.azure.us/', 'https://mine.openai.azure.us'],
+      ['https://MINE.OpenAI.Azure.com:443', 'https://mine.openai.azure.com'],
+    ] as const) {
+      const { fetchImpl, asked } = fetching({ status: 200, body: { data: [{ id: 'x' }] } });
+      await listModels({ provider: 'azure-openai', key: 'k', endpoint, fetchImpl });
+      expect(asked.map((each) => each.url)).toStrictEqual([`${origin}/openai/models?api-version=2024-10-21`]);
+    }
+  });
+
   it('asks nothing without a key, for any provider', async () => {
     for (const provider of ['openai', 'anthropic', 'gemini'] as const) {
       const { fetchImpl, asked } = fetching({ status: 200, body: { data: [{ id: 'x' }] } });

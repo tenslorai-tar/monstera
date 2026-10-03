@@ -1,6 +1,6 @@
 import type { OcrLanguage } from '@monstera/contract';
 import type { PdfPoint, Rotation } from '@monstera/shared';
-import { pageTransform, toPdf, viewportPoint } from '@monstera/shared';
+import { onOrigin, pageTransform, serviceOrigin, toPdf, viewportPoint } from '@monstera/shared';
 
 import type { RecognisedLine, RecognisedPage, RecognisedWord } from './ocrRecognise.js';
 import { type RecognisedTable, recognisedTable } from './recognisedTables.js';
@@ -159,6 +159,8 @@ export function pollDelay(header: string | null, now: number): number {
 /** Why a recognition did not happen. */
 export type AzureRefusal =
   | 'not-https'
+  // An https address in Settings that is not one of the service's own (`serviceOrigin`). Nothing is sent to it.
+  | 'not-the-service'
   | 'unauthorised'
   | 'rejected'
   | 'unreachable'
@@ -247,8 +249,15 @@ interface AnalyzeAnswer {
  * stake. The endpoint is a setting a person types, so unlike a pinned download
  * URL it is not a compile-time constant and this is the only thing standing
  * between a typo and a plaintext upload.
+ *
+ * **And on the service's own hosts** (`serviceOrigin`), because every https host
+ * passes a scheme check: the page and the key go only to an address that is
+ * Document Intelligence's. The scheme is still told apart, so a person who typed
+ * `http://` reads that the address must be HTTPS rather than that it is foreign.
+ *
+ * @returns the analyze URL, and the origin every later request must stay on
  */
-function analyzeUrl(endpoint: string, model: AzureModel): string {
+function analyzeUrl(endpoint: string, model: AzureModel): { url: string; origin: string } {
   let parsed: URL;
   try {
     parsed = new URL(endpoint);
@@ -265,8 +274,15 @@ function analyzeUrl(endpoint: string, model: AzureModel): string {
       `Refusing to send a page to ${parsed.protocol}//${parsed.host}: the endpoint must be HTTPS.`,
     );
   }
-  const base = parsed.toString().replace(/\/+$/u, '');
-  return `${base}/documentintelligence/documentModels/${model}:analyze?api-version=${AZURE_API_VERSION}`;
+  const origin = serviceOrigin('azure-document-intelligence', endpoint);
+  if (origin === null) {
+    throw new AzureRecognitionRefused(
+      'not-the-service',
+      `Refusing to send a page to ${parsed.host}: it is not an Azure Document Intelligence address. ` +
+        'A resource address looks like https://<name>.cognitiveservices.azure.com.',
+    );
+  }
+  return { url: `${origin}/documentintelligence/documentModels/${model}:analyze?api-version=${AZURE_API_VERSION}`, origin };
 }
 
 /**
@@ -491,8 +507,18 @@ async function analyseThroughAzure(
   clock: AzureClock,
 ): Promise<AnalyzeAnswer> {
   const fetchImpl = request.fetchImpl ?? fetch;
-  const url = analyzeUrl(credentials.endpoint, model);
+  const { url, origin } = analyzeUrl(credentials.endpoint, model);
   const { location, retryAfter } = await startAnalysis(url, credentials, request.png, fetchImpl);
+  // THE POLL AND THE DELETE CARRY THE KEY TO WHERE THE SERVICE SAID, so that address is held to the resource the page
+  // went to. One elsewhere is an answer this build cannot use and is never asked, so the result cannot be deleted from
+  // here either; the sentence says so.
+  if (!onOrigin(location, origin)) {
+    throw new AzureRecognitionRefused(
+      'unreadable-answer',
+      `The service named a result address outside ${new URL(origin).host}, so the key was not sent there and the ` +
+        'result could not be deleted from here.',
+    );
+  }
 
   let answer: AnalyzeAnswer;
   try {
