@@ -107,15 +107,26 @@ for (const tool of WINDOWS) {
               );
             })
             .map((element) => `${element.tagName}.${element.className}`);
+          // NOTHING PASSES UNDER THE FOOTER: it is drawn after the scrolling body, not inside it, and on the dialog's own
+          // ground. Pinned inside the body it had to cover the rows, and an opaque cover drew a band the glass ground
+          // cannot match (the gallery's reading, 2026-10-03).
+          const body = popup.querySelector('.m-dialog__body');
+          const footer = popup.querySelector('.m-dialog-footer');
+          const bodyBox = body?.getBoundingClientRect();
           return {
             inWindow: box.left >= 0 && box.top >= 0 && box.right <= window.innerWidth && box.bottom <= window.innerHeight,
             footInPopup: foot !== undefined && foot.bottom <= box.bottom + 0.5 && foot.top >= box.top,
+            footBelowBody:
+              footer !== null && body !== null && !body.contains(footer) && foot !== undefined && bodyBox !== undefined && foot.top >= bodyBox.bottom - 0.5,
+            footGround: footer === null ? null : getComputedStyle(footer).backgroundColor,
             wide,
             sections: popup.querySelectorAll('.m-dialog-section, .m-dialog-row').length,
           };
         });
         expect(shape.inWindow).toBe(true);
         expect(shape.footInPopup).toBe(true);
+        expect(shape.footBelowBody, 'the footer is after the scrolling body, not in it').toBe(true);
+        expect(shape.footGround, 'the footer is drawn on the dialog’s ground').toBe('rgba(0, 0, 0, 0)');
         expect(shape.wide, JSON.stringify(shape.wide)).toStrictEqual([]);
         // IN THE PATTERN: the window is built of its sections or rows, not a layout of its own. Help and Shortcuts are
         // a list and a table inside the pattern's scroll, so the scroll is what is asked of them.

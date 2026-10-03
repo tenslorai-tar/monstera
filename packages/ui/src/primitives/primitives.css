@@ -826,52 +826,29 @@
   display: flex;
   justify-content: flex-end;
   gap: var(--space-8);
-  /* EDGE TO EDGE, over the body's inset (`.m-dialog:has(.m-dialog-footer) > .m-dialog__body`), so that when it covers
-     rows below it covers them to the dialog's edges. Where its content sits is unchanged: the margins give back what
-     the padding takes. Its line stays inset, drawn as a background line so the cover can sit under it. */
-  margin: var(--space-8) calc(-1 * var(--space-24)) calc(-1 * var(--space-24));
   padding: var(--space-12) var(--space-24) var(--space-24);
   /* decorative: separates the questions from the answer */
   background-image: linear-gradient(var(--border-soft), var(--border-soft));
   background-position: top center;
   background-repeat: no-repeat;
   background-size: calc(100% - 2 * var(--space-24)) 1px;
-  /* ALWAYS IN VIEW. A body taller than the dialog scrolls, and the footer is the body's last part, so it scrolled out
-     with the rows: Sign document's placed look, Page structure with a long tree, most dialogs with more than a few
-     rows at 760 × 560 (the gallery's reading, 2026-10-03). Sticky to the body's foot, it stays where the person looks
-     for the answer while the rows move under it. */
-  position: sticky;
-  /* MINUS THE BODY'S INSET: Chromium keeps a sticky box inside the scroll container's padding, so at 0 the footer sat
-     24 px above its own place in every dialog, scrolled or not (measured 2026-10-03, About and Sign document). Its own
-     bottom padding is that inset, so at −24 its box meets the dialog's edge with the buttons where they were. */
-  inset-block-end: calc(-1 * var(--space-24));
-  z-index: 1;
-  /* AND COVERING ONLY WHILE ROWS ARE UNDER IT. The surface is translucent glass, so a footer with a colour of its own
-     would draw a denser band in every dialog, scrolled or not. Its colour follows the body's scroll instead: covering
-     while there is more below, none once the end is reached and the footer sits in its own place. A body that does
-     not scroll has an inactive timeline, so its footer is drawn exactly as before.
-
-     THE SURFACE MADE OPAQUE, its own colour at full alpha: as it is, it lets about a sixth of the rows through
-     (light's `--float` is white at 0.83) and they read as ghost text behind the buttons. A blur over them, as the
-     popup has, does nothing here: measured 2026-10-03, a backdrop filter inside the popup's own sees nothing to
-     blur. */
-  animation: m-dialog-footer-cover linear both;
-  animation-timeline: scroll(nearest block);
 }
 
-@keyframes m-dialog-footer-cover {
-  0%,
-  99% {
-    /* `/ 1` SPELT OUT: an alpha left out of a relative colour is the origin's, so `r g b` alone stayed at 0.83. */
-    background-color: rgb(from var(--float) r g b / 1);
-  }
-
-  100% {
-    background-color: transparent;
-  }
+/* ALWAYS IN VIEW, BY PLACE: the footer is drawn in the popup's foot, after the body and outside its scroll (`FooterSlot`
+   in `Dialog.tsx`), so a long body scrolls above it and nothing passes under it. The gap above its line is the body's
+   own inset (below) and none of the popup's: the column's gap is given back. A popup with no footer has an empty foot,
+   which takes no place. */
+.m-dialog__foot {
+  margin-block-start: calc(-1 * var(--space-16));
 }
 
-:is(.m-dialog-row, .m-dialog-choices):has(+ .m-dialog-footer) {
+.m-dialog__foot:empty {
+  display: none;
+}
+
+/* THE LAST ROW DRAWS NO LINE of its own, because the footer's line follows it. The body's last row, or its last
+   wrapper's: the footer is no longer the rows' sibling, so the rule names where the rows end. */
+:is(.m-dialog__body, .m-dialog__body > :last-child) > :is(.m-dialog-row, .m-dialog-choices):last-child {
   border-block-end: 0;
 }
 
@@ -892,7 +869,7 @@
   border-block-end: 1px solid var(--border-soft); /* decorative: separates one section from the next */
 }
 
-:is(.m-dialog-section:has(+ .m-dialog-footer), .m-dialog-scroll > .m-dialog-section:last-child) {
+:is(.m-dialog__body, .m-dialog__body > :last-child, .m-dialog-scroll) > .m-dialog-section:last-child {
   border-block-end: 0;
 }
 
@@ -971,8 +948,8 @@
   /* 36rem of ROWS, and the inset either side of them, which the body holds now (below). */
   inline-size: calc(36rem + 2 * var(--space-24));
   /* THE BODY HOLDS THE INSET, not the popup, in the pattern: the body is the part that scrolls, so its scroll bar
-     sits at the dialog's edge and the footer pinned to its foot can cover to the edges (`.m-dialog-footer`). Where
-     the rows sit is unchanged. A popup outside the pattern (the command palette) keeps its own padding. */
+     sits at the dialog's edge, and the footer below it holds its own. Where the rows sit is unchanged. A popup outside
+     the pattern (the command palette) keeps its own padding. */
   padding-inline: 0;
   padding-block-end: 0;
 }
@@ -981,8 +958,10 @@
   margin-inline: 0;
 }
 
+/* ITS FOOT INSET IS THE GAP ABOVE THE FOOTER'S LINE, and room inside the scroll's clip for a focus ring on the last
+   control. 16, the pattern's: inside the body the footer had the column's 8 and its own margin's 8 above its line. */
 .m-dialog:has(.m-dialog-footer) > .m-dialog__body {
-  padding: 0 var(--space-24) var(--space-24);
+  padding: 0 var(--space-24) var(--space-16);
 }
 
 .m-dialog__body {

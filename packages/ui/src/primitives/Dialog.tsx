@@ -6,11 +6,15 @@ import {
   type ReactElement,
   type ReactNode,
   type RefObject,
+  createContext,
   useCallback,
+  useContext,
   useId,
   useLayoutEffect,
   useRef,
+  useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 
 import { CLOSE_LABEL, DIALOG_CANCEL, DIALOG_OK } from '../messages/en.js';
 import { Button } from './Button.js';
@@ -114,6 +118,19 @@ function openingField(popup: HTMLElement | null): HTMLElement | null {
   return popup?.querySelector<HTMLElement>(`.m-dialog__body [${OPENS_FOCUSED}]:not(:disabled)`) ?? null;
 }
 
+/**
+ * Where a body's `DialogFooter` is drawn: the popup's foot, after the body and outside it, so the body scrolls and the
+ * footer never does. `undefined` outside a dialog (a body rendered on its own, as a unit test renders one), where the
+ * footer stays in place; `null` for the one commit before the foot is attached.
+ *
+ * **WHY A SLOT, and not a footer pinned inside the scrolling body.** A sticky footer stayed in view, but the rows
+ * scrolled under it and had to be covered, and the dialog's ground is glass — translucent over a blur of the window —
+ * which no colour of the footer's own can match: an opaque cover drew a white band in light (measured 2026-10-03,
+ * Reading order and tags and Sign document at 760 × 560), and one at the ground's own alpha let the rows through. A
+ * footer outside the scroll has nothing under it, so it is drawn on the ground itself.
+ */
+const FooterSlot = createContext<HTMLElement | null | undefined>(undefined);
+
 export function Dialog({
   open,
   onOpenChange,
@@ -144,6 +161,9 @@ export function Dialog({
   // WHETHER A PRESS HAS BEGUN SINCE THE DIALOG OPENED, from a capturing listener attached in the commit that opens
   // it — before any later input event can be dispatched. `onOpenChange` below reads it.
   const pressedWhileOpen = useRef(false);
+  // THE FOOT, held as state so the body's footer renders into it once it is attached. A ref callback's update is applied
+  // in the same commit, before the browser paints, so the footer is never drawn a frame late.
+  const [foot, setFoot] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => {
     pressedWhileOpen.current = false;
     if (!open) return undefined;
@@ -189,7 +209,10 @@ export function Dialog({
                 from this button did not. */}
             <BaseDialog.Close nativeButton render={<IconButton icon={X} label={closeLabel} size="control" />} />
           </div>
-          <div className="m-dialog__body">{children}</div>
+          <FooterSlot.Provider value={foot}>
+            <div className="m-dialog__body">{children}</div>
+          </FooterSlot.Provider>
+          <div className="m-dialog__foot" ref={setFoot} />
         </BaseDialog.Popup>
       </BaseDialog.Portal>
     </BaseDialog.Root>
@@ -401,9 +424,10 @@ export function DialogFooter({
    * With no `children` the closing button is the dialog's only action, so it is the primary one.
    */
   readonly dismissal?: 'cancel' | 'ok' | 'close' | 'own';
-}): ReactElement {
+}): ReactElement | null {
   const only = children === undefined;
-  return (
+  const slot = useContext(FooterSlot);
+  const footer = (
     <div className="m-dialog-footer">
       {aside === undefined ? null : <span className="m-dialog-footer__aside">{aside}</span>}
       {dismissal === 'own' ? null : (
@@ -415,6 +439,9 @@ export function DialogFooter({
       {children}
     </div>
   );
+  // IN THE POPUP'S FOOT where there is one (`FooterSlot`); in place where the body is rendered on its own.
+  if (slot === undefined) return footer;
+  return slot === null ? null : createPortal(footer, slot);
 }
 
 const DISMISSAL: Readonly<Record<'cancel' | 'ok' | 'close', MessageKey>> = {
