@@ -1195,15 +1195,17 @@ export function PageList({
 }
 
 /**
- * WHAT THE PAGE AREA SHOWS UNTIL ITS FIRST PAGE IS DRAWN (§10.5's loading state): one sentence and a turning mark,
- * centred, never an empty slot. A status, so a screen reader hears that the document is opening; the mark is still
- * where motion is reduced. Exported because the page area shows it while the parser opens too, before there is a list.
+ * WHAT THE PAGE AREA SHOWS UNTIL ITS FIRST PAGE IS DRAWN (§10.5's loading state): one sentence and a document mark,
+ * centred, never an empty slot. A status, so a screen reader hears that the document is opening. The mark does not
+ * move, and `app.css` says why: this state lasts exactly as long as the engine host takes to start, and a moving mark
+ * competed with that start for the processor. Exported because the page area shows it while the parser opens too,
+ * before there is a list.
  */
 export function OpeningState(): ReactElement {
   const { i18n } = useLingui();
   return (
     <div className="m-page-opening" role="status">
-      <Icon name="LoaderCircle" size="control" />
+      <Icon name="FileText" size="control" />
       <span>{i18n._(PAGE_OPENING)}</span>
     </div>
   );

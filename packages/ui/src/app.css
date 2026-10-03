@@ -3252,6 +3252,15 @@ optgroup {
   visibility: hidden;
 }
 
+/* STILL, AND THAT IS THE MECHANISM RATHER THAN A LOOK. This state lasts until the first page is drawn, which waits on the
+   engine host's first read, so the host is starting while it shows. A mark turning here made the window composite a
+   frame every 16 ms for exactly that long. Measured 2026-10-03 on a 4-processor Windows machine, a debugger attached at
+   launch: four starts alternated with and without the turn, the GPU process spent 18.7 to 25.6 CPU-seconds in the
+   first 40 s turning and 5.1 to 5.5 still, and the window answered at 21.7 to 28.5 s against 10.8 to 16.9 s. With
+   other load on the machine the starting host got about a tenth of a processor and missed its 10 s connect bound, so
+   the document was poisoned: 7 of 15 turning starts that day, 0 of 6 still ones. Software rendering with no debugger:
+   the host connected 0.8 to 1.1 s later with it turning. `stylesheetMotion.test.ts` refuses an animation that repeats
+   for ever. */
 .m-page-opening {
   grid-area: list;
   z-index: 1;
@@ -3261,20 +3270,6 @@ optgroup {
   gap: var(--space-8);
   color: var(--muted);
   font-size: var(--font-chrome-12);
-}
-
-.m-page-opening svg {
-  animation: m-turn 1s linear infinite;
-}
-
-:root[data-motion='reduced'] .m-page-opening svg {
-  animation: none;
-}
-
-@keyframes m-turn {
-  to {
-    transform: rotate(1turn);
-  }
 }
 
 .m-page-pane {
