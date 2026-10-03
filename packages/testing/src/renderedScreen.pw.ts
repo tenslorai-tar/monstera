@@ -2720,7 +2720,8 @@ test('the START SCREEN draws its 2x artwork on a 2x display, and its tiles fit a
   // THE LOGO GREW 24 PX and the room it took came from the drop zone and the top padding, so at the size the owner works
   // at the first screen still holds the hero, Open and every tile, unscrolled. Measured against the area that scrolls,
   // not the footer: the footer FOLLOWS the content (`margin-block-start: auto`), so "the last tile is above the footer"
-  // holds at any height and separates nothing. The recent list and the footer below the tiles scroll by design.
+  // holds at any height and separates nothing. The recent list below the tiles scrolls; the footer stays at the window's
+  // foot over it, which the case after this one holds.
   const fit = await page.locator('.m-start-card').last().evaluate((card) => {
     let area: HTMLElement | null = card.parentElement;
     while (area !== null && !['auto', 'scroll'].includes(getComputedStyle(area).overflowY)) area = area.parentElement;
@@ -2732,6 +2733,49 @@ test('the START SCREEN draws its 2x artwork on a 2x display, and its tiles fit a
   expect(fit.top).toBe(0);
   expect(fit.tile).toBeLessThanOrEqual(fit.room);
   await context.close();
+});
+
+test('the START SCREEN keeps its footer at the window’s foot at 1280 × 800, with recent files under the tiles', async ({
+  page,
+}) => {
+  // THE OWNER'S ITEM 1f: the footer ended 48 px below the window, and with recent files it followed them further. The
+  // rhythm tightens on a short window and the footer is stuck to the area's foot, so it is in the window either way.
+  // WITH RECENT FILES, because that is the screen the owner sees, and it makes the content taller than the window — a
+  // case without them would hold for the tightening alone.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridge(page, {
+    recent: ['Annual report.pdf', 'Board minutes.pdf', 'Supplier contract.pdf', 'Lease.pdf'].map((name, at) => ({
+      handle: asFileHandle(`handle-${String(at)}`),
+      name,
+      location: displayLocationSchema.parse({ within: 'documents', folder: 'Reports' }),
+      openedAt: new Date(Date.now() - at * 3_600_000).toISOString(),
+      available: true,
+    })),
+  });
+  await page.goto('/');
+  const footer = page.locator('.m-start-footer');
+  await expect(footer).toBeVisible();
+  await expect(page.locator('.m-recent')).toBeAttached();
+  const read = await footer.evaluate((element) => {
+    const area = element.closest('.m-start-area');
+    return {
+      bottom: element.getBoundingClientRect().bottom,
+      window: window.innerHeight,
+      // THE CONTENT IS TALLER THAN THE AREA, or the case separates nothing: a short screen pins its footer anyway.
+      overflows: area === null ? null : area.scrollHeight > area.clientHeight,
+    };
+  });
+  expect(read.overflows).toBe(true);
+  expect(read.bottom).toBeLessThanOrEqual(read.window);
+  // AND IT COVERS NO TILE: stuck to the foot over the design's own rhythm, the footer cut the last row of tiles in half
+  // (measured 2026-10-03). The tightening on a short window is what makes room for it.
+  const tile = await page.locator('.m-start-card').last().boundingBox();
+  const bar = await footer.boundingBox();
+  expect((tile?.y ?? Infinity) + (tile?.height ?? 0)).toBeLessThanOrEqual(bar?.y ?? -Infinity);
+
+  // CONTROL: on a window with room the design's own rhythm is kept — the tightening is the short window's alone.
+  await page.setViewportSize({ width: 1280, height: 881 });
+  expect(await page.locator('.m-start-screen').evaluate((element) => getComputedStyle(element).rowGap)).toBe('24px');
 });
 
 test('F1 opens the HELP CENTRE, Ctrl+/ the keyboard shortcuts, and the start screen footer names F1', async ({ page }) => {

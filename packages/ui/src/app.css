@@ -444,6 +444,21 @@ optgroup {
   gap: var(--space-12);
 }
 
+/* A SHORT WINDOW TIGHTENS THE RHYTHM, so the footer is on the screen without scrolling: at 1280 × 800 it ended 48 px
+   below the window (measured 2026-10-03, the owner's item 1f), and these gaps are those 48 px. Above 880 px there is
+   room for the design's own spacing. A HEIGHT, unlike the menu row's measured widths (ADR-0113): what the start screen
+   holds is a fixed number of lines whatever the language, where a label's width is not. */
+@media (max-height: 880px) {
+  .m-start-screen {
+    gap: var(--space-12);
+    padding-block: var(--space-12) var(--space-8);
+  }
+
+  .m-start-hero {
+    gap: var(--space-8);
+  }
+}
+
 /* The heading holds only the artwork, so a text line box would add its height under the image. */
 /* THE WORDMARK (ADR-0100): the product's name in Marcellus, bundled because §9.27's policy allows no remote
    font, and set once at display size. Nothing else in the application uses this face. */
@@ -657,6 +672,14 @@ optgroup {
   border-block-start: 1px solid var(--border-soft); /* decorative: separates the footer bar from the screen above; its links carry their own focus rings */
   color: var(--muted);
   font-size: var(--font-chrome-11);
+  /* ALONG THE WINDOW'S FOOT ALWAYS, as the design draws it: with recent files under the tiles the screen is taller than
+     the window, and the footer followed them below its edge (the owner's item 1f). Stuck to the area's foot, it covers
+     what scrolls under it with the window's own ground — the ambient gradient laid against the viewport, so the bar
+     is seamless with the ground behind it in every look. */
+  position: sticky;
+  inset-block-end: 0;
+  z-index: 1;
+  background: var(--ambient) fixed;
 }
 
 .m-start-footer__commands {
@@ -685,7 +708,9 @@ optgroup {
   margin: 0;
 }
 
-.m-start-footer__build > span + span::before {
+/* ON THE PIECE BEFORE, so a narrow window that wraps the line ends one line with the dot and starts the next with words:
+   on the piece after, the wrapped line began "· AGPL 3.0 or later" (the owner's item 1f, at 760 wide). */
+.m-start-footer__build > span:not(:last-child)::after {
   content: '·';
   padding-inline: var(--space-8);
 }
