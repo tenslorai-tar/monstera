@@ -107,6 +107,11 @@ try {
   // "counts everything" produce the same non-empty columns.
   commit('unit.test.ts', 'export const a = 1;\n');
   commit('plain.ts', 'export const a = 1;\n');
+  // W-1's shape again, for the RENDERED cases (the audit of 54ea19e7..6cf88324): `*.pw.ts` and `*.visual.ts` hold
+  // controls and run in CI, and `isProof` matched neither, so a range's +486/-38 in the rendered suite was listed as a
+  // changed source file, outside the column that says "read each diff".
+  commit('screen.pw.ts', 'export const a = 1;\n');
+  commit('look.visual.ts', 'export const a = 1;\n');
   // WW-2's subject: a NON-PROOF SOURCE file that existed at the watermark, so a
   // later edit to it lands in the CHANGED column rather than in none at all.
   // The added-only filter is what hid four converted instruments in one range,
@@ -152,6 +157,8 @@ try {
     writeFileSync(join(scratch, 'added.test.ts'), 'export const a = 1;\n', 'utf8');
     writeFileSync(join(scratch, 'unit.test.ts'), 'export const a = 2;\n', 'utf8');
     writeFileSync(join(scratch, 'plain.ts'), 'export const a = 2;\n', 'utf8');
+    writeFileSync(join(scratch, 'screen.pw.ts'), 'export const a = 2;\n', 'utf8');
+    writeFileSync(join(scratch, 'look.visual.ts'), 'export const a = 2;\n', 'utf8');
     // WW-2's subject, edited.
     writeFileSync(join(scratch, 'scripts', 'existing.mjs'), 'export const a = 2;\n', 'utf8');
     // X-1's subject: an instrument that is not under scripts/.
@@ -216,6 +223,12 @@ try {
       scope.proofsModified.includes('unit.test.ts'),
       `modified: ${scope.proofsModified.join(', ') || '(none)'} — a control whose assertion ` +
         `changed is exactly what this column exists to make someone read.`,
+    );
+    check(
+      'a RENDERED case and a VISUAL case that changed are MODIFIED proofs, not changed sources',
+      scope.proofsModified.includes('screen.pw.ts') && scope.proofsModified.includes('look.visual.ts'),
+      `modified: ${scope.proofsModified.join(', ') || '(none)'} — the rendered suite holds this ` +
+        `project's controls for what a person sees, and a loosened one there reads like any edit.`,
     );
     // WW-2. The instrument column filtered ADDED FILES, so an instrument that
     // already existed and whose behaviour moved was in no column at all — and
