@@ -124,6 +124,12 @@ describe('ExportExcelBody', () => {
 
     expect(screen.getByText(/All 3 pages of this document will be sent to Azure Document Intelligence/u)).toBeTruthy();
     expect(screen.queryByRole('textbox')).toBeNull();
+    // IN THE FOOTER BESIDE CANCEL, as in the other state: it stood alone at the body's left (the gallery, 2026-10-03).
+    const footer = document.querySelector('.m-dialog-footer');
+    expect([...(footer?.querySelectorAll('button') ?? [])].map((button) => button.textContent)).toStrictEqual([
+      'Cancel',
+      'Choose where to save…',
+    ]);
     fireEvent.click(screen.getByRole('button', { name: 'Choose where to save…' }));
     expect(resolve).toHaveBeenCalledWith({ kind: 'export', layout: 'sheet-per-page', engine: 'azure', edits: [] });
   });

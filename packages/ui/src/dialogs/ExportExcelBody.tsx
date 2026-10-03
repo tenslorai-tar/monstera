@@ -146,13 +146,17 @@ export default function ExportExcelBody({
         {engineChoice}
         <p>{_(SENDS[engine], { count: pageCount })}</p>
         {layoutChoice}
-        <Button
-          label={EXPORT_EXCEL_APPLY}
-          variant="primary"
-          onClick={() => {
-            resolve({ kind: 'export', layout, engine, edits: [] });
-          }}
-        />
+        {/* IN THE FOOTER, beside Cancel, as in the other state: here it stood alone at the body's left with no way to
+            decline but the title bar, and the dialog sat outside the pattern's width (the gallery, 2026-10-03). */}
+        <DialogFooter>
+          <Button
+            label={EXPORT_EXCEL_APPLY}
+            variant="primary"
+            onClick={() => {
+              resolve({ kind: 'export', layout, engine, edits: [] });
+            }}
+          />
+        </DialogFooter>
       </div>
     );
   }
