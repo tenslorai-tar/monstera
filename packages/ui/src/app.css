@@ -2252,6 +2252,12 @@ optgroup {
   overflow: hidden;
 }
 
+/* A SIGNATURE'S STRINGS are the document's too, shortened to 256 characters by the reader, and one unbroken name ran
+ * past the dialog's edge. They break anywhere and are not clamped: this dialog is where a person reads them whole. */
+.m-signatures__item > p {
+  overflow-wrap: anywhere;
+}
+
 .m-destinations-empty,
 .m-layers-empty,
 .m-annotations-empty,

@@ -2824,6 +2824,71 @@ test('an existing REDACT mark is drawn as PENDING over the region it covers, lab
   }
 });
 
+test('the SIGNATURES dialog keeps a 256-character unbroken name inside itself, and Close in view, at the narrowest window', async ({
+  page,
+}) => {
+  // F row 14 lets a signature whose strings are past 256 characters be READ, each shortened by the reader to 256 and an
+  // ellipsis; before it, such a document failed the read and the dialog never opened. Measured 2026-10-03 in Chromium
+  // 151: one unbroken signer name then ran past the dialog's edge, cut off, and its body scrolled sideways at 760, 1280
+  // and 1920 in every look.
+  await page.setViewportSize({ width: 760, height: 560 });
+  const bytes = await onePagePdf();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000d9');
+  const unbroken = `${'R'.repeat(255)}…`;
+  const words = `${'Approved for release by the regional board '.repeat(6).slice(0, 255)}…`;
+  const shown = {
+    notBefore: '2026-01-01T00:00:00Z',
+    notAfter: '2027-01-01T00:00:00Z',
+    coversDocument: true,
+    coversWholeFile: true,
+  };
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'signed.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    // TWO SIGNATURES, long enough together to be taller than the window: what put Close below the fold.
+    signatures: {
+      signatures: [
+        { ...shown, signer: unbroken, organisation: words, reason: unbroken, location: words },
+        { ...shown, signer: 'Ada Lovelace', organisation: '', reason: 'Approved', location: 'London' },
+      ],
+      unreadable: false,
+    },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+  await page.keyboard.press('Control+K');
+  await page.keyboard.type('Check signatures');
+  await page.getByRole('option', { name: 'Check signatures' }).first().click();
+  const dialog = page.getByRole('dialog', { name: 'Signatures' });
+  // THE BODY IS LOADED when the signer's line is there; an empty frame measures as fitting.
+  const signer = dialog.locator('.m-signatures__signer').first();
+  await expect(signer).toContainText('RRRR');
+  // CLOSE IS IN THE WINDOW, and the list is what scrolls — CONTROL: the list is taller than its region, or a dialog
+  // short enough to fit would pass this without the layout doing anything.
+  const close = dialog.locator('.m-dialog-footer').getByRole('button', { name: 'Close', exact: true });
+  const closeBox = await close.boundingBox();
+  expect(closeBox === null ? Infinity : closeBox.y + closeBox.height).toBeLessThanOrEqual(560);
+  expect(
+    await dialog.locator('.m-dialog-scroll').evaluate((scroll) => scroll.scrollHeight - scroll.clientHeight),
+  ).toBeGreaterThan(100);
+  const measured = await dialog.evaluate((node) => {
+    // THE SCROLL PART'S OWN OVERFLOW, which is what would scroll sideways: the body is `overflow: visible` beside a
+    // `DialogScroll`, and its scroll width counts the part's negative inline margin. Not the paragraphs: a paragraph's
+    // box stays at its parent's width while its text runs past it, so measuring them reads 0 with the defect present
+    // (measured, the same day).
+    const scroll = node.querySelector('.m-dialog-scroll');
+    return {
+      sideways: scroll === null ? null : scroll.scrollWidth - scroll.clientWidth,
+      // THE WHOLE NAME IS SHOWN, wrapped rather than cut: a fix that clipped it would also stop the overflow.
+      signerText: node.querySelector('.m-signatures__signer')?.textContent ?? '',
+    };
+  });
+  expect(measured).toStrictEqual({ sideways: 0, signerText: `${unbroken} — ${words}` });
+  // AND IT WRAPPED, so the case cannot pass on a window wide enough to hold the name on one line.
+  expect((await signer.boundingBox())?.height ?? 0).toBeGreaterThan(40);
+});
+
 test('the COMMENTS panel at its default width sets each row on one line, with the remove control beside it', async ({
   page,
 }) => {
