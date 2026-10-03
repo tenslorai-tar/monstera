@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import type { ContractClient, FieldFill, FormFieldKind } from '@monstera/contract';
 import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useId, useState } from 'react';
 
 import {
   FORMS_CHOICE_EMPTY,
@@ -128,17 +128,18 @@ export function FormsPanel({
    * rather than a simplification: MuPDF's `bake` takes no page and no field
    * list, so there is nothing to name and no version to be stale against.
    *
-   * **No confirmation dialog**, and that is this project's own recorded ruling
-   * rather than an omission — `dialogs/deletePages.ts`: *"a confirmation dialog
-   * over an undoable command would be a modal the user learns to dismiss
-   * without reading, which is worse than none."* A flatten declares
-   * `undo: 'checkpoint'`, so it is undoable; what carries the warning is the
-   * control's own label, which names the consequence rather than the verb.
+   * **The command asks first** (`dialogs/flattenForm.ts`), which is the owner's
+   * F-F1 and departs from `dialogs/deletePages.ts`' *no confirmation over an
+   * undoable command* for a reason that ruling does not meet: a deleted page
+   * is gone from the screen, and a flattened field is drawn from its own appearance.
+   * Nothing on the page says the form is gone, and the checkpoint that undoes
+   * it is dropped when the document closes.
    */
   readonly onFlatten: () => void;
 }): ReactElement | null {
   const { i18n } = useLingui();
   const [state, setState] = useState<PanelState>({ kind: 'idle' });
+  const panelId = useId();
 
   useEffect(() => {
     if (docId === undefined || version === undefined) return;
@@ -217,6 +218,7 @@ export function FormsPanel({
                 </button>
                 <FieldControl
                   field={field}
+                  group={`${panelId}:${field.name}`}
                   onFill={(value) => {
                     onFill({
                       page: field.page,
@@ -302,9 +304,12 @@ export function FormsPanel({
  */
 function FieldControl({
   field,
+  group,
   onFill,
 }: {
   readonly field: PanelField;
+  /** The radio group this field's options share: its name, scoped by the panel. */
+  readonly group: string;
   readonly onFill: (value: FieldFill) => void;
 }): ReactElement {
   const { i18n } = useLingui();
@@ -334,7 +339,7 @@ function FieldControl({
     );
   }
 
-  if (field.kind === 'checkbox' || field.kind === 'radio') {
+  if (field.kind === 'checkbox') {
     return (
       <input
         className="m-forms-check"
@@ -346,13 +351,35 @@ function FieldControl({
         onChange={(event) => {
           onFill({ set: 'button', on: event.currentTarget.checked });
         }}
-        // A CHECKBOX INPUT FOR BOTH, and the type is not a mistake. An HTML
-        // radio group is a set of inputs sharing a `name` where exactly one is
-        // chosen and none can be unchosen by clicking it; a PDF radio group
-        // deselects when its lit widget is toggled — measured. Rendering it as
-        // an HTML radio would hide a state the document has and the format
-        // allows. The row's own label says which option this is.
         type="checkbox"
+      />
+    );
+  }
+
+  if (field.kind === 'radio') {
+    return (
+      <input
+        className="m-forms-check"
+        aria-label={field.name}
+        checked={field.on === true}
+        // ONE GROUP PER FIELD NAME, which is what makes the options one radio
+        // group to the keyboard and to a screen reader: every widget of a PDF
+        // radio group answers the same name. Scoped by the panel, so a field
+        // called what some other control in the window is called is not
+        // grouped with it.
+        name={group}
+        // CHOOSING is a change, and CLEARING is a click on the chosen one,
+        // because a browser fires no change for a radio that is already on. A
+        // PDF radio group deselects when its lit widget is toggled — measured
+        // — so an option that could not be cleared here would hide a state the
+        // document has and the format allows.
+        onChange={() => {
+          onFill({ set: 'button', on: true });
+        }}
+        onClick={() => {
+          if (field.on === true) onFill({ set: 'button', on: false });
+        }}
+        type="radio"
       />
     );
   }

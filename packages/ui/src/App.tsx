@@ -1115,8 +1115,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    */
   const flattenActiveForm = useCallback((): void => {
     if (activeId === undefined) return;
-    void flattenForm({ client, onApplied: applied, ask, stamp, signatures }, activeId);
-  }, [activeId, applied, ask, client, signatures, stamp]);
+    void flattenForm({ client, onApplied: applied, ask, stamp, signatures, toast }, activeId);
+  }, [activeId, applied, ask, client, signatures, stamp, toast]);
 
   /**
    * Removing everything the select tool has picked.
@@ -2804,7 +2804,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         exportAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         exportAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         detectFlatFieldsCommand({ client, onApplied: applied, ask, stamp, signatures }),
-        flattenFormCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        flattenFormCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         // EDIT TEXT, a MODE in the tool slot (ADR-0096): it toggles as a drawing
         // tool's command does, and `editing` below is what the mode draws.
         editTextCommand({ activeTool: readTool, onSelect: setToolId }),

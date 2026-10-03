@@ -2184,7 +2184,7 @@ describe('App', () => {
       expect(sent.filter((call) => call.id === 'document.readRange')).toHaveLength(before);
     });
 
-    it('FORMS › MANAGE › FLATTEN sends flattenFormFields, the command the Forms panel’s button runs', async () => {
+    it('FORMS › MANAGE › FLATTEN asks, then sends flattenFormFields and says it did (F-F1)', async () => {
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
         'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
@@ -2193,10 +2193,13 @@ describe('App', () => {
       await withDocumentOpen();
 
       await pressCommand('Flatten', 'Forms');
-      await act(async () => {
-        await Promise.resolve();
-      });
+      // THROUGH THE COMPOSITION: the shell's own dialog registry opens the question, and nothing is sent before it.
+      const question = await screen.findByRole('dialog', { name: 'Flatten the form' });
+      expect(sent.filter((call) => call.id === 'document.execute')).toStrictEqual([]);
+      fireEvent.click(within(question).getByRole('button', { name: 'Flatten form' }));
 
+      // THE SHELL'S TOAST, which a root that dropped `toast` from flatten's dependencies could not show.
+      expect(await screen.findByText('Form flattened. Save to keep the change.')).toBeTruthy();
       const executed = sent.filter((call) => call.id === 'document.execute');
       expect(executed).toHaveLength(1);
       expect((executed[0]?.params as { command: { kind: string } }).command.kind).toBe('flattenFormFields');

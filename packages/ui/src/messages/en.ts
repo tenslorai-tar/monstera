@@ -1101,6 +1101,9 @@ export const OBJECT_KIND_FORM = messageKey('dialog.edit-page-object.kind-form');
 export const FORMS_DELETE = messageKey('surface.forms.delete');
 export const FORMS_FLATTEN = messageKey('surface.forms.flatten');
 export const FORMS_FLATTEN_CONFIRM = messageKey('surface.forms.flatten-confirm');
+export const FLATTEN_FORM_TITLE = messageKey('dialog.flatten-form.title');
+export const FLATTEN_FORM_EXPLAINS = messageKey('dialog.flatten-form.explains');
+export const FLATTEN_FORM_APPLY = messageKey('dialog.flatten-form.apply');
 export const FORM_FIELD_TEXT_TOOL_TITLE = messageKey('command.forms.field-text');
 export const FORM_FIELD_CHECKBOX_TOOL_TITLE = messageKey('command.forms.field-checkbox');
 export const FORM_FIELD_RADIO_TOOL_TITLE = messageKey('command.forms.field-radio');
@@ -1386,6 +1389,7 @@ export const TOAST_SETTINGS_NOT_SAVED = messageKey('toast.settings-not-saved');
 export const TOAST_SENT_TO_PRINTER = messageKey('toast.sent-to-printer');
 export const TOAST_DOCUMENT_SIGNED = messageKey('toast.document-signed');
 export const TOAST_ACTIVE_CONTENT_REMOVED = messageKey('toast.active-content-removed');
+export const TOAST_FORM_FLATTENED = messageKey('toast.form-flattened');
 export const TOAST_TRANSITION_SET = messageKey('toast.transition-set');
 export const TOAST_PROTECTION_SET = messageKey('toast.protection-set');
 export const TOAST_FORM_DATA_IMPORTED = messageKey('toast.form-data-imported');
@@ -3274,6 +3278,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FORMS_FLATTEN]: 'Flatten form',
   [FORMS_FLATTEN_CONFIRM]:
     'Flattening draws every field’s contents onto the page and removes the form. The fields can no longer be filled in. Comments are not affected.',
+  [FLATTEN_FORM_TITLE]: 'Flatten the form',
+  [FLATTEN_FORM_EXPLAINS]:
+    'Every field’s contents are drawn onto its page and the form is removed, so the fields can no longer be filled in. Comments are not affected. The only way back is Undo, in this session.',
+  [FLATTEN_FORM_APPLY]: 'Flatten form',
   // THE TOOLS SAY "DRAW", which is what the gesture is and what separates them
   // from the Forms panel's controls: those fill a field that exists, these put
   // one on the page.
@@ -3608,6 +3616,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_SENT_TO_PRINTER]: 'Sent to the printer',
   [TOAST_DOCUMENT_SIGNED]: 'Document signed. Save to keep the signature.',
   [TOAST_ACTIVE_CONTENT_REMOVED]: 'Active content removed. Save to keep the change.',
+  [TOAST_FORM_FLATTENED]: 'Form flattened. Save to keep the change.',
   [TOAST_TRANSITION_SET]: 'Page transition set. It plays when the document is presented.',
   [TOAST_PROTECTION_SET]: 'Password and permissions set. They are applied when you save.',
   [TOAST_FORM_DATA_IMPORTED]: 'Form data imported into the fields.',

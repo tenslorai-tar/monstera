@@ -96,6 +96,7 @@ import { HELD_COPIES_DIALOG_ID, HELD_COPIES_RESULT } from '../dialogs/heldCopies
 import { KEPT_BACKUPS_DIALOG_ID } from '../dialogs/keptBackups.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { SIGNATURE_BREAK_DIALOG_ID, SIGNATURE_BREAK_RESULT } from '../dialogs/signatureBreak.js';
+import { FLATTEN_FORM_DIALOG_ID, FLATTEN_FORM_RESULT } from '../dialogs/flattenForm.js';
 import { SIGNED_EDIT_DIALOG_ID, SIGNED_EDIT_RESULT } from '../dialogs/signedEdit.js';
 import type { OpenedDocument } from './importMarkdown.js';
 import type { PendingRedactionOccasion } from '../dialogs/pendingRedactions.js';
@@ -241,6 +242,7 @@ import {
   TOAST_SIGNED_COPY_SAVED,
   TOAST_SNAPSHOT_SAVED,
   TOAST_ACTIVE_CONTENT_REMOVED,
+  TOAST_FORM_FLATTENED,
   TOAST_DOCUMENT_SIGNED,
   TOAST_SENT_TO_PRINTER,
   TOAST_TRANSITION_SET,
@@ -3582,15 +3584,22 @@ export const importFormDataFdfCommand = importFormDataCommand(
  * **Takes no handle**: MuPDF's `bake` acts on the document and names neither a page nor a field, so
  * there is no answer this could be composed against and therefore no version to be refused on.
  * `targets: 'none'` says the same thing from the declaration side. It is one command and one undo.
+ *
+ * **Asked first and confirmed after** (the owner's F-F1). The undo is a checkpoint, which closing the document drops,
+ * and a flatten changes nothing the page shows: each field's appearance is what gets drawn. So the dialog is the only
+ * place a person learns what the control removes, and the toast is the only sign that it ran. Dismissing dispatches
+ * nothing, and a refused flatten says its own problem through {@link applyDocumentCommand} rather than the toast.
  */
-export async function flattenForm(deps: DocumentCommandDeps, docId: DocId): Promise<void> {
-  await applyDocumentCommand(deps, docId, { kind: 'flattenFormFields' });
+export async function flattenForm(deps: DocumentCommandDeps & WritesAFile, docId: DocId): Promise<void> {
+  if (!FLATTEN_FORM_RESULT.safeParse(await deps.ask(FLATTEN_FORM_DIALOG_ID, {})).success) return;
+  if (await applyDocumentCommand(deps, docId, { kind: 'flattenFormFields' })) confirmDone(deps, TOAST_FORM_FLATTENED);
 }
 
-export function flattenFormCommand(deps: DocumentCommandDeps): UiCommand {
+export function flattenFormCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.flatten-form',
-    feedback: VISIBLE,
+    // OUT OF SIGHT: a flattened field is drawn from its own appearance, so the page shows nothing new.
+    feedback: TOASTS,
     icon: 'Layers',
     title: FORMS_FLATTEN,
     ribbonTitle: RIBBON_FLATTEN_FORM,

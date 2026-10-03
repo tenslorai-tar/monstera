@@ -127,7 +127,7 @@ is not available.
 - [ ] **Draw a list box** — Fields · `forms.field-listbox` · Shows: on screen · Help: *Create form fields*
 - [ ] **Fields list** — Fields · `view.show-fields` · Shows: on screen · Help: *Delete a form field*
 - [ ] **Find fields on this page…** — Manage · `document.find-flat-fields` · Shows: a result dialog · Help: *Find fields on a flat form*
-- [ ] **Flatten form** — Manage · `document.flatten-form` · Shows: on screen · Help: *Flatten a form*
+- [ ] **Flatten form** — Manage · `document.flatten-form` · Shows: a toast · Help: *Flatten a form*
 
 ## Ribbon › Protect
 

@@ -226,17 +226,54 @@ describe('FormsPanel', () => {
     ]);
   });
 
-  it('OFFERS A RADIO AS A BOX THAT CAN BE CLEARED, because the format allows it', async () => {
+  it('DRAWS A RADIO OPTION AS A RADIO, its group as one group, and a tick box as a tick box (F-F2)', async () => {
+    await panel([
+      field({ name: 'applicant.post', kind: 'radio', on: true, index: 1 }),
+      field({ name: 'applicant.post', kind: 'radio', on: false, index: 2 }),
+      field({ name: 'applicant.agrees', kind: 'checkbox', on: false, index: 3 }),
+    ]);
+    const options = screen.getAllByRole<HTMLInputElement>('radio');
+    expect(options.map((option) => option.checked)).toStrictEqual([true, false]);
+    // ONE GROUP, so the keyboard and a screen reader treat the two as one question.
+    const [first, second] = options;
+    expect(first?.name).not.toBe('');
+    expect(second?.name).toBe(first?.name);
+    // CONTROL: the tick box is still a tick box, so the radio above is chosen by kind and not drawn for every button.
+    expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+  });
+
+  it('CHOOSES an option that is off, with the handle from its own row', async () => {
+    const { fills } = await panel([
+      field({ name: 'applicant.post', kind: 'radio', on: true, index: 1 }),
+      field({ name: 'applicant.post', kind: 'radio', on: false, index: 2 }),
+    ]);
+    fireEvent.click(screen.getByRole('radio', { checked: false }));
+    expect(fills).toStrictEqual([
+      { page: 0, index: 2, version: asDocVersion(1), value: { set: 'button', on: true } },
+    ]);
+  });
+
+  it('CLEARS the chosen option when it is clicked, because the format allows it', async () => {
     // Measured: toggling a PDF radio group's lit widget deselects the whole
-    // group. An HTML radio cannot express that — clicking a chosen one does
-    // nothing — so rendering it as one would hide a state the document has.
+    // group, and a browser fires no change for a radio already on — so without
+    // the click this state could not be reached from the panel.
     const { fills } = await panel([
       field({ name: 'applicant.post', kind: 'radio', on: true, index: 1 }),
     ]);
-    fireEvent.click(screen.getByLabelText('applicant.post'));
+    fireEvent.click(screen.getByRole('radio'));
     expect(fills).toStrictEqual([
       { page: 0, index: 1, version: asDocVersion(1), value: { set: 'button', on: false } },
     ]);
+  });
+
+  it('CONTROL: two different radio fields are two groups', async () => {
+    await panel([
+      field({ name: 'applicant.post', kind: 'radio', on: true, index: 1 }),
+      field({ name: 'applicant.shift', kind: 'radio', on: true, index: 2 }),
+    ]);
+    const [first, second] = screen.getAllByRole<HTMLInputElement>('radio');
+    expect(second?.name).not.toBe(first?.name);
+    expect([first?.checked, second?.checked]).toStrictEqual([true, true]);
   });
 
   it('DISPATCHES A CHOICE, and offers the empty option as a real value', async () => {

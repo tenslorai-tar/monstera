@@ -31,6 +31,7 @@ import { EXPORT_WORD_DIALOG } from '../dialogs/exportWord.js';
 import { EXTERNAL_EDIT_PROBLEM_DIALOG } from '../dialogs/externalEditProblem.js';
 import { EXTRACT_PAGES_DIALOG } from '../dialogs/extractPages.js';
 import { FLAT_FIELDS_DIALOG } from '../dialogs/flatFields.js';
+import { FLATTEN_FORM_DIALOG } from '../dialogs/flattenForm.js';
 import { FORM_FIELD_DIALOGS } from '../dialogs/formField.js';
 import { GENERATE_TOC_PROBLEM_DIALOG } from '../dialogs/generateTocProblem.js';
 import { HEADER_FOOTER_DIALOG } from '../dialogs/headerFooter.js';
@@ -155,6 +156,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   PAGE_TRANSITION_DIALOG,
   RESIZE_PAGES_DIALOG,
   FLAT_FIELDS_DIALOG,
+  FLATTEN_FORM_DIALOG,
   EDIT_PAGE_OBJECT_DIALOG,
   IMPORT_FORM_DATA_PROBLEM_DIALOG,
   IMPORT_ANNOTATIONS_PROBLEM_DIALOG,

@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   TOAST_ACTIVE_CONTENT_REMOVED,
+  TOAST_FORM_FLATTENED,
   TOAST_FORM_DATA_IMPORTED,
   TOAST_PROTECTION_SET,
   TOAST_COPY_SAVED,
@@ -99,6 +100,7 @@ import {
   applyRedactionsCommand,
   redactMatchesCommand,
   sanitizeDocumentCommand,
+  flattenFormCommand,
   signDocument,
   signDocumentCommand,
   signaturesCommand,
@@ -4985,6 +4987,67 @@ describe('protectDocumentCommand', () => {
       }).run(CONTEXT);
 
       expect([sent, said]).toStrictEqual([[], []]);
+    });
+  });
+
+  describe('flattenFormCommand (F-F1)', () => {
+    it('ASKS FIRST, then flattens, then SAYS it did', async () => {
+      const { client, sent } = recordingClient();
+      const said: unknown[] = [];
+      const asked: string[] = [];
+      await flattenFormCommand({
+        client,
+        toast: (_kind, message) => said.push(message),
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        ask: (id) => {
+          // NOTHING SENT YET when the question opens: a dialog asked after the command would be a notice, not a question.
+          asked.push(`${id} after ${String(sent.length)} sent`);
+          return Promise.resolve({ flatten: true });
+        },
+      }).run(CONTEXT);
+
+      expect(asked).toStrictEqual(['dialog.flatten-form after 0 sent']);
+      expect(sent).toStrictEqual([
+        { id: 'document.execute', params: { docId: DOC, command: { kind: 'flattenFormFields' } } },
+      ]);
+      expect(said).toStrictEqual([TOAST_FORM_FLATTENED]);
+    });
+
+    it('CONTROL: a DISMISSED question dispatches nothing and says nothing', async () => {
+      const { client, sent } = recordingClient();
+      const said: unknown[] = [];
+      await flattenFormCommand({
+        client,
+        toast: (_kind, message) => said.push(message),
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        ask: () => Promise.resolve(undefined),
+      }).run(CONTEXT);
+
+      expect([sent, said]).toStrictEqual([[], []]);
+    });
+
+    it('CONTROL: a REFUSED flatten says its problem, never that the form was flattened', async () => {
+      const said: unknown[] = [];
+      const asked: string[] = [];
+      const client = createClient(channels, () => Promise.resolve(err({ code: 'document-busy' as const })));
+      await flattenFormCommand({
+        client,
+        toast: (_kind, message) => said.push(message),
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        ask: (id) => {
+          asked.push(id);
+          return Promise.resolve(id === 'dialog.flatten-form' ? { flatten: true } : undefined);
+        },
+      }).run(CONTEXT);
+
+      expect(said).toStrictEqual([]);
+      expect(asked).toStrictEqual(['dialog.flatten-form', 'dialog.command-problem']);
     });
   });
 
