@@ -51,7 +51,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { electronBinaryPath } from '../provision/electron.mjs';
+import { ELECTRON_VERSION, electronBinaryPath } from '../provision/electron.mjs';
 
 const scratch = mkdtempSync(join(tmpdir(), 'monstera-perm-'));
 
@@ -139,7 +139,7 @@ try {
         : `CAUSE 2: Electron's own Node does not carry the permission model either, with no\n` +
           `utility process anywhere in the path. No Electron process of any kind can have it,\n` +
           `which is the durable sentence for ADR-0023 — and it is a claim about Electron\n` +
-          `43.4.1 specifically, so it expires when the pin moves.\n`),
+          `${ELECTRON_VERSION} specifically, so it expires when the pin moves.\n`),
   );
 } finally {
   rmSync(scratch, { recursive: true, force: true });
