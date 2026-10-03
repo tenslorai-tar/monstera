@@ -111,6 +111,8 @@ describe('placePlainSignature', () => {
       [{ kind: 'unreadable' }, { reason: 'unreadable' }],
       [{ kind: 'too-large', limitBytes: 67_108_864 }, { reason: 'too-large', limitBytes: 67_108_864 }],
       [{ kind: 'absent' }, { reason: 'absent' }],
+      [{ kind: 'scan-blank' }, { reason: 'scan-blank' }],
+      [{ kind: 'scan-locked' }, { reason: 'scan-locked' }],
     ] as const) {
       const { client } = answering(answer);
       const ask = vi.fn(() => Promise.resolve(undefined));
@@ -197,6 +199,21 @@ describe('chooseSignature', () => {
     await chooseSignature({ client, ask: refusedAsk }, { make: () => 'blob:never', revoke: () => undefined });
     expect(refusedAsk).toHaveBeenNthCalledWith(2, SIGNATURE_PROBLEM_DIALOG_ID, { reason: 'unreadable' });
     expect(refusedAsk).toHaveBeenNthCalledWith(3, SIGNATURE_DIALOG_ID, { kept: [], keep: true });
+  });
+
+  it('a scanned PDF Upload could not use says WHY — no ink, or a password — and asks again (G3d)', async () => {
+    for (const kind of ['scan-blank', 'scan-locked'] as const) {
+      const client = createClient(channels, (id) => Promise.resolve(ok(id === 'library.list' ? { entries: [] } : { kind })));
+      const ask = vi
+        .fn()
+        .mockResolvedValueOnce({ upload: 'pick', keep: true })
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined);
+      await chooseSignature({ client, ask }, { make: () => 'blob:never', revoke: () => undefined });
+      // ITS OWN REASON, never `unreadable`: the file was read, and what it lacked is what the person can change.
+      expect(ask).toHaveBeenNthCalledWith(2, SIGNATURE_PROBLEM_DIALOG_ID, { reason: kind });
+      expect(ask).toHaveBeenNthCalledWith(3, SIGNATURE_DIALOG_ID, { kept: [], keep: true });
+    }
   });
 
   it('a KEPT TYPED signature chosen by its id answers its name and face, and CONTROL: a kept drawing stays its id', async () => {

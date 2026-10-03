@@ -58,10 +58,13 @@ export async function chooseSignature(
           const { handle, name, mediaType, bytes } = answer.value;
           picked = { handle, name, src: urls.make(bytes, mediaType) };
         } else if (answer.value.kind !== 'cancelled') {
-          // REFUSED BY ITS BYTES OR ITS SIZE, said where the person is looking, before they are asked again.
+          // REFUSED BY ITS BYTES OR ITS SIZE, or a scanned PDF with no ink or a password, said where the person is
+          // looking, before they are asked again.
           await deps.ask(
             SIGNATURE_PROBLEM_DIALOG_ID,
-            answer.value.kind === 'too-large' ? { reason: 'too-large', limitBytes: answer.value.limitBytes } : { reason: 'unreadable' },
+            answer.value.kind === 'too-large'
+              ? { reason: 'too-large', limitBytes: answer.value.limitBytes }
+              : { reason: answer.value.kind },
           );
         }
         continue;

@@ -3518,11 +3518,15 @@ export const channels = {
       }),
       /** The picture picker was closed. */
       z.object({ kind: z.literal('cancelled') }),
-      /** The picked file is not a PNG or a JPEG this build can decode. */
+      /** The picked file is not a PNG or a JPEG this build can decode, nor a PDF it can read. */
       z.object({ kind: z.literal('unreadable') }),
       z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
       /** The kept signature named is no longer kept — removed since the dialog opened. */
       z.object({ kind: z.literal('absent') }),
+      /** A scanned signature PDF picked at the click, whose first page carries no ink. */
+      z.object({ kind: z.literal('scan-blank') }),
+      /** A scanned signature PDF picked at the click, which needs a password to be read. */
+      z.object({ kind: z.literal('scan-locked') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
@@ -3594,9 +3598,13 @@ export const channels = {
         })
         .strict(),
       z.object({ kind: z.literal('cancelled') }).strict(),
-      /** Not a PNG or a JPEG by its bytes, or it could not be read. */
+      /** Not a PNG or a JPEG by its bytes, nor a PDF this build can read, or it could not be read. */
       z.object({ kind: z.literal('unreadable') }).strict(),
       z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }).strict(),
+      /** A scanned signature PDF whose first page carries no ink. */
+      z.object({ kind: z.literal('scan-blank') }).strict(),
+      /** A scanned signature PDF that needs a password to be read. */
+      z.object({ kind: z.literal('scan-locked') }).strict(),
     ]),
   ),
 

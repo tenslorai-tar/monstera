@@ -636,6 +636,8 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
   'dialog.signature-problem': [
     { state: 'opened', props: { reason: 'unreadable' } },
     { state: 'cannot-write', props: { reason: 'cannot-write', characters: 'А л е к с' } },
+    // THE LONGEST SENTENCE this dialog says, a scanned PDF with a password (G3d).
+    { state: 'scan-locked', props: { reason: 'scan-locked' } },
   ],
   'dialog.sign-problem': [{ state: 'opened', props: { reason: 'wrong-passphrase' } }],
   'dialog.signatures': [

@@ -15,7 +15,7 @@ A visible signature shows your signature on the page and signs the document digi
 3. In **How the signature looks**, choose:
    - **Type it**, then type your **Signature** and pick a **Style**; each style in the list shows your name in it, and the large preview shows it as it will be placed;
    - **Draw it**, then draw in **Draw your signature here** (**Clear** starts again);
-   - **Use a picture of it**; you will pick a PNG or JPEG first;
+   - **Use a picture of it**; you will pick a PNG or JPEG, or a scanned PDF of your signature, first;
    - **Use one of my signatures**, then pick one you kept earlier.
 4. Fill in the rest as in "Sign a document digitally", and choose **Choose certificate and sign**.
 

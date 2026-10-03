@@ -179,7 +179,8 @@ import {
 } from './officeConversion.js';
 import { type PdfaSource, PdfaFailedError } from './pdfaConversion.js';
 import type { HeldPicture } from './heldPicture.js';
-import { type PersonalLibrary, pictureTypeOf } from './personalLibrary.js';
+import { type SignaturePictureSource, pickSignaturePicture } from './signaturePicture.js';
+import type { PersonalLibrary } from './personalLibrary.js';
 import { type PrintDestination, PrintFailedError } from './printing.js';
 import { type ShareDestination, ShareFailedError, shareTitle } from './sharing.js';
 import { type OpenExternalEditor, isPdfPath } from './openExternalEditor.js';
@@ -728,7 +729,18 @@ export type PlaceSignatureOutcome =
   | { readonly kind: 'unreadable' }
   | { readonly kind: 'too-large'; readonly limitBytes: number }
   /** The kept signature named is no longer kept. */
-  | { readonly kind: 'absent' };
+  | { readonly kind: 'absent' }
+  /** A scanned signature PDF picked at the click: its first page carries no ink, or it needs a password. */
+  | { readonly kind: 'scan-blank' | 'scan-locked' };
+
+/** Why a requested signature look did not resolve to a mark: the outcomes both routes share, named once. */
+type NoSignatureMark =
+  | { readonly kind: 'cancelled' }
+  | { readonly kind: 'image-unreadable' }
+  | { readonly kind: 'image-too-large' }
+  | { readonly kind: 'saved-signature-missing' }
+  | { readonly kind: 'scan-blank' }
+  | { readonly kind: 'scan-locked' };
 
 /**
  * Which decoder an extension routes to, or `null` for one this build has none for.
@@ -2122,6 +2134,8 @@ export interface DocumentCommandsParts {
   readonly library: LibraryReader & LibraryKeeper;
   /** The picture the plain Signature's dialog previewed, placed from here and released once it is (ADR-0133). */
   readonly heldPicture: HeldPicture;
+  /** Where a signature picture is picked from at the click: a PNG, a JPEG or a scanned PDF. See {@link SignaturePictureSource}. */
+  readonly signaturePicture: SignaturePictureSource;
   /** Each import format's picker and bounded read. See {@link ImportSource}. */
   readonly imports: Readonly<Record<ImportFormat, ImportSource>>;
   /**
@@ -2324,6 +2338,7 @@ export class DocumentCommands {
   readonly #image: ImageSource;
   readonly #library: LibraryReader & LibraryKeeper;
   readonly #heldPicture: HeldPicture;
+  readonly #signaturePicture: SignaturePictureSource;
   readonly #imports: Readonly<Record<ImportFormat, ImportSource>>;
   readonly #compose: ComposeImport;
   readonly #imageFiles: ImageFilesSource;
@@ -2395,6 +2410,7 @@ export class DocumentCommands {
     this.#image = parts.image;
     this.#library = parts.library;
     this.#heldPicture = parts.heldPicture;
+    this.#signaturePicture = parts.signaturePicture;
     this.#imports = parts.imports;
     this.#compose = parts.compose;
     this.#imageFiles = parts.imageFiles;
@@ -5633,10 +5649,7 @@ export class DocumentCommands {
         readonly kind: 'ready';
         readonly value: CommandOfKind<'signDocument'>['appearance'];
       }
-    | { readonly kind: 'cancelled' }
-    | { readonly kind: 'image-unreadable' }
-    | { readonly kind: 'image-too-large' }
-    | { readonly kind: 'saved-signature-missing' }
+    | NoSignatureMark
   > {
     if (requested === undefined) return { kind: 'ready', value: undefined };
     const { mark, page, rect } = requested;
@@ -5649,11 +5662,9 @@ export class DocumentCommands {
    * A requested signature look as a command carries it — **the one resolver for both routes** (ADR-0133 Decision 3):
    * *Sign with certificate* and the plain *Signature* ask the same question and take this answer.
    *
-   * **A picked picture is typed by its BYTES**, with the library's `pictureTypeOf` (B3a), as `signature.pickPicture`
-   * types the picture the dialog previews: the extension still decides whether the file is read at all, the read is
-   * bounded, and the type the command carries is what the picture is, which *Sign with certificate*'s decoder is chosen
-   * by — so a PNG named `.jpg` is a PNG here. A picked picture answers its file's own name too, which is what the library
-   * names a kept picture by — never its folder.
+   * **A picture picked at the click is `pickSignaturePicture`'s**, the resolver `signature.pickPicture` takes too
+   * (B3a): a PNG or a JPEG typed by its bytes, or a scanned PDF made a picture in the compose host — so what *Sign with
+   * certificate* places from a file is what the Signature dialog would have previewed from it.
    */
   async #markFor(mark: RequestedSignatureMark): Promise<
     | {
@@ -5661,10 +5672,7 @@ export class DocumentCommands {
         readonly mark: NonNullable<CommandOfKind<'signDocument'>['appearance']>['mark'];
         readonly picked: string | undefined;
       }
-    | { readonly kind: 'cancelled' }
-    | { readonly kind: 'image-unreadable' }
-    | { readonly kind: 'image-too-large' }
-    | { readonly kind: 'saved-signature-missing' }
+    | NoSignatureMark
   > {
     if (mark.kind === 'saved') {
       // A KEPT SIGNATURE, looked up by id: a typed or drawn one is its own look, and a picture's bytes come from the
@@ -5692,16 +5700,19 @@ export class DocumentCommands {
       return { kind: 'ready', mark: { kind: 'image', bytes: held.bytes, mediaType: held.mediaType }, picked: held.name };
     }
 
-    const picked = await this.#image.pick();
-    if (picked === null) return { kind: 'cancelled' };
-    // AN EXTENSION WITH NO DECODER IS NOT READ, `insertImage`'s rule; it routes and never types.
-    if (imageMediaType(picked) === null) return { kind: 'image-unreadable' };
-    const read = await this.#image.read(picked);
-    if (read.kind === 'too-large') return { kind: 'image-too-large' };
-    if (read.kind === 'unreadable') return { kind: 'image-unreadable' };
-    const mediaType = pictureTypeOf(read.bytes);
-    if (mediaType === null) return { kind: 'image-unreadable' };
-    return { kind: 'ready', mark: { kind: 'image', bytes: read.bytes, mediaType }, picked: basename(picked) };
+    const picked = await pickSignaturePicture(this.#signaturePicture);
+    switch (picked.kind) {
+      case 'picture':
+        return { kind: 'ready', mark: { kind: 'image', bytes: picked.bytes, mediaType: picked.mediaType }, picked: picked.name };
+      case 'unreadable':
+        return { kind: 'image-unreadable' };
+      case 'too-large':
+        return { kind: 'image-too-large' };
+      case 'cancelled':
+      case 'scan-blank':
+      case 'scan-locked':
+        return { kind: picked.kind };
+    }
   }
 
   /**
@@ -5737,6 +5748,7 @@ export class DocumentCommands {
     if (resolved.kind === 'image-unreadable') return { kind: 'unreadable' };
     if (resolved.kind === 'image-too-large') return { kind: 'too-large', limitBytes: MAX_IMAGE_BYTES };
     if (resolved.kind === 'saved-signature-missing') return { kind: 'absent' };
+    if (resolved.kind === 'scan-blank' || resolved.kind === 'scan-locked') return { kind: resolved.kind };
 
     const { page, rect, stamp } = request;
     const { mark } = resolved;

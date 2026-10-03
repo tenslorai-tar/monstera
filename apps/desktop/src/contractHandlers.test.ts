@@ -46,7 +46,8 @@ import { NO_RECENT_PICTURES, createRecentPictures } from './recentPictures.js';
 import { createHeldPicture } from './heldPicture.js';
 import { unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
-import type { DocumentCommands } from './documentCommands.js';
+import type { DocumentCommands, ImageRead } from './documentCommands.js';
+import type { ScannedSignaturePicture } from './signaturePicture.js';
 import { type LaunchDocuments, createLaunchDocuments } from './launchDocuments.js';
 import { createRecentFiles } from './recentFiles.js';
 import { createEphemeralSecrets } from './secretStore.js';
@@ -383,9 +384,41 @@ describe('the person’s library (library.*, and document.placeImage with a kept
     expect(small.read).toStrictEqual(['small.png']);
   });
 
+  /**
+   * The library surface with Upload's source answering `picked` — its read answering `read` and recording each path, its
+   * scan answering `scan` and recording the bytes it was handed.
+   */
+  function signaturePicking(
+    picked: string,
+    read: ImageRead,
+    scan: ScannedSignaturePicture | null = null,
+  ): { readonly surface: ReturnType<typeof unusedLibrarySurface>; readonly read: string[]; readonly scanned: Uint8Array[] } {
+    const reads: string[] = [];
+    const scanned: Uint8Array[] = [];
+    const surface = {
+      ...unusedLibrarySurface(),
+      held: createHeldPicture(),
+      signaturePicture: {
+        pick: () => Promise.resolve(picked),
+        read: (path: string) => {
+          reads.push(path);
+          return Promise.resolve(read);
+        },
+        scan:
+          scan === null
+            ? null
+            : (bytes: Uint8Array) => {
+                scanned.push(bytes);
+                return Promise.resolve(scan);
+              },
+      },
+    };
+    return { surface, read: reads, scanned };
+  }
+
   it('signature.pickPicture HOLDS the bytes it answers, under the handle it answers (ADR-0133’s second correction)', async () => {
     const held = createHeldPicture();
-    const { surface } = libraryPicking(join('C:', 'Users', 'someone', 'My signature.png'), PNG.byteLength);
+    const { surface } = signaturePicking(join('C:', 'Users', 'someone', 'My signature.png'), { kind: 'read', bytes: PNG });
     const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
       library: { ...surface, held },
     });
@@ -398,22 +431,54 @@ describe('the person’s library (library.*, and document.placeImage with a kept
     expect(answer.value.bytes).toStrictEqual(PNG);
   });
 
-  it('signature.pickPicture refuses what is not a picture BY ITS BYTES and holds nothing — CONTROL: past the bound, unread', async () => {
+  it('signature.pickPicture refuses what is not a picture BY ITS BYTES and holds nothing — CONTROL: past the bound, the read’s answer', async () => {
     const held = createHeldPicture();
-    // NAMED .png AND READ IN FULL: the bytes are a PDF's header, so only a type read from the bytes refuses it.
-    const notAPicture = libraryPicking('a picture.png', 4, Uint8Array.of(0x25, 0x50, 0x44, 0x46)).surface;
+    // NAMED .png AND READ IN FULL: the bytes are a PDF's header, so only a type read from the bytes refuses it — and a
+    // .png is never sent to the compose host, whose scan here would answer a picture.
+    const notAPicture = signaturePicking('a picture.png', { kind: 'read', bytes: Uint8Array.of(0x25, 0x50, 0x44, 0x46) }, {
+      kind: 'drawn',
+      png: PNG,
+    });
     const refused = await harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
-      library: { ...notAPicture, held },
+      library: { ...notAPicture.surface, held },
     }).handlers['signature.pickPicture']({});
     expect(refused.ok ? refused.value : undefined).toStrictEqual({ kind: 'unreadable' });
-    const large = libraryPicking('huge.png', MAX_IMAGE_BYTES + 1);
+    expect(notAPicture.scanned).toStrictEqual([]);
+    // THE BOUND IS THE READ'S, `readImage`'s, which sizes a file before reading it: one opinion about it, not two.
+    const large = signaturePicking('huge.png', { kind: 'too-large', byteLength: MAX_IMAGE_BYTES + 1 });
     const tooLarge = await harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
       library: { ...large.surface, held },
     }).handlers['signature.pickPicture']({});
     expect(tooLarge.ok ? tooLarge.value : undefined).toStrictEqual({ kind: 'too-large', limitBytes: MAX_IMAGE_BYTES });
-    expect(large.read).toStrictEqual([]);
     // NOTHING HELD by either refusal, so no later placement can find a picture the person was told was refused.
     expect(held.held(asFileHandle('anything'))).toBeUndefined();
+  });
+
+  it('signature.pickPicture sends a SCANNED PDF to the compose host and holds the PNG it answers, never the PDF (G3d)', async () => {
+    const held = createHeldPicture();
+    const pdf = new TextEncoder().encode('%PDF-1.7 a scanned signature');
+    const picking = signaturePicking(join('C:', 'Scans', 'Signature.PDF'), { kind: 'read', bytes: pdf }, { kind: 'drawn', png: PNG });
+    const answer = await harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
+      library: { ...picking.surface, held },
+    }).handlers['signature.pickPicture']({});
+    if (!answer.ok || answer.value.kind !== 'picked') throw new Error(`no picture was picked: ${JSON.stringify(answer)}`);
+    // AN UPPER-CASE EXTENSION routes the same way, and the PDF's own bytes are what the host was handed.
+    expect(picking.scanned).toStrictEqual([pdf]);
+    expect(answer.value).toMatchObject({ name: 'Signature.PDF', mediaType: 'image/png', bytes: PNG });
+    expect(held.held(answer.value.handle)?.bytes).toStrictEqual(PNG);
+  });
+
+  it('signature.pickPicture says a scanned PDF with no ink, or a password, and holds nothing', async () => {
+    const pdf = new TextEncoder().encode('%PDF-1.7');
+    for (const kind of ['blank', 'locked'] as const) {
+      const held = createHeldPicture();
+      const picking = signaturePicking('scan.pdf', { kind: 'read', bytes: pdf }, { kind });
+      const answer = await harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
+        library: { ...picking.surface, held },
+      }).handlers['signature.pickPicture']({});
+      expect(answer.ok ? answer.value : undefined).toStrictEqual({ kind: `scan-${kind}` });
+      expect(held.held(asFileHandle('anything'))).toBeUndefined();
+    }
   });
 
   it('FORWARDS a kept picture’s id to the placement — the delegate that could drop it, asserted at the handler', async () => {

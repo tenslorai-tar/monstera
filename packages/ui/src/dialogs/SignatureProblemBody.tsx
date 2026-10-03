@@ -6,6 +6,8 @@ import {
   SIGNATURE_PROBLEM_ABSENT,
   SIGNATURE_PROBLEM_BLANK,
   SIGNATURE_PROBLEM_CANNOT_WRITE,
+  SIGNATURE_PROBLEM_SCAN_BLANK,
+  SIGNATURE_PROBLEM_SCAN_LOCKED,
   SIGNATURE_PROBLEM_TOO_LARGE,
   SIGNATURE_PROBLEM_TOO_LONG,
   SIGNATURE_PROBLEM_UNREADABLE,
@@ -20,7 +22,9 @@ type Problem =
   | { readonly reason: 'absent' }
   | { readonly reason: 'cannot-write'; readonly characters: string }
   | { readonly reason: 'too-long' }
-  | { readonly reason: 'blank' };
+  | { readonly reason: 'blank' }
+  | { readonly reason: 'scan-blank' }
+  | { readonly reason: 'scan-locked' };
 
 /**
  * Each reason that carries nothing, and its sentence — a `Record`, `SignProblemBody`'s reason: a reason added without
@@ -31,6 +35,8 @@ const SENTENCES: Readonly<Record<Exclude<Problem['reason'], 'too-large' | 'canno
   absent: SIGNATURE_PROBLEM_ABSENT,
   'too-long': SIGNATURE_PROBLEM_TOO_LONG,
   blank: SIGNATURE_PROBLEM_BLANK,
+  'scan-blank': SIGNATURE_PROBLEM_SCAN_BLANK,
+  'scan-locked': SIGNATURE_PROBLEM_SCAN_LOCKED,
 };
 
 /**

@@ -222,7 +222,7 @@ describe('SignDocumentBody', () => {
     choose('[data-sign-look]', 'image');
     expect(
       screen.getByText(
-        'You will be asked for a PNG or JPEG picture of your signature first, then for your certificate.',
+        'You will be asked for a picture or a scanned PDF of your signature first, then for your certificate.',
       ),
     ).toBeDefined();
 

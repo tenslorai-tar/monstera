@@ -101,6 +101,13 @@ const MAX_REWRITE_DPI = 2400;
  */
 export const MAX_PICTURE_SIDE = 2 ** 31 - 1;
 
+/**
+ * The longest side a scanned signature PDF's page is drawn at, in pixels: eight inches at 300 dpi, past any signature
+ * (`signatureScan.ts`). Here, beside the channel whose answer it bounds, because main builds that channel's client and
+ * must not load the module that draws.
+ */
+export const MAX_SCAN_SIDE = 2400;
+
 /** Sheets in one workbook this outline answers. Excel's own is memory; a workbook past this is a crafted one. */
 export const MAX_WORKBOOK_SHEETS = 4096;
 
@@ -307,6 +314,32 @@ export const composeChannels = {
         })
         .strict(),
       z.object({ kind: z.literal('unreadable') }).strict(),
+    ]),
+    ['no-such-session', 'asset-missing'],
+  ),
+
+  /**
+   * A scanned signature PDF made into the picture the plain Signature places (`signatureScan.ts`): its first page
+   * drawn, cut to the ink and the paper made transparent, written into the area as a PNG. `blank`, `locked` and
+   * `unreadable` are the file's answers; `unavailable` is a host started without the native library, `engine/optimize`'s
+   * rule.
+   */
+  'engine/signature-from-scan': channel(
+    'Makes the first page of a scanned signature PDF from the area a transparent PNG, written into the area.',
+    z.object({ session: sessionSchema, from: outputNameSchema, into: outputNameSchema }).strict(),
+    z.discriminatedUnion('kind', [
+      z
+        .object({
+          kind: z.literal('drawn'),
+          bytes: z.number().int().positive(),
+          width: z.number().int().positive().max(MAX_SCAN_SIDE),
+          height: z.number().int().positive().max(MAX_SCAN_SIDE),
+        })
+        .strict(),
+      z.object({ kind: z.literal('blank') }).strict(),
+      z.object({ kind: z.literal('locked') }).strict(),
+      z.object({ kind: z.literal('unreadable') }).strict(),
+      z.object({ kind: z.literal('unavailable') }).strict(),
     ]),
     ['no-such-session', 'asset-missing'],
   ),

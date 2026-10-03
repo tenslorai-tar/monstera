@@ -2,7 +2,7 @@
 id: add-a-signature
 title: Add your signature
 summary: Draw, type or upload your signature, then click where it goes on the page.
-keywords: [signature, sign, sign here, add signature, draw signature, type signature, upload signature, handwritten signature, e-signature, saved signatures]
+keywords: [signature, sign, sign here, add signature, draw signature, type signature, upload signature, scanned signature, handwritten signature, e-signature, saved signatures]
 commands: [annotate.signature]
 contexts: [dialog.signature, dialog.signature-problem, home, comment]
 ---
@@ -14,7 +14,7 @@ Signature puts your handwritten, typed or pictured signature on a page. It does 
 2. In the **Signature** window, under **New signature**, choose:
    - **Draw**, then draw on the white pad above **Draw your signature above** (**Clear** starts again);
    - **Type**, then type **Your name** and pick a **Style**; each style in the list shows your name in it, and the large preview shows it as it will be placed;
-   - **Upload**, then **Choose picture…** and pick a PNG or JPEG; the picture is shown in the window before you place it (**Choose another…** picks again).
+   - **Upload**, then **Choose picture…** and pick a PNG or JPEG, or a PDF of your signature scanned on paper; the picture is shown in the window before you place it (**Choose another…** picks again). From a PDF, Monstera reads the first page, trims it to the signature and makes the paper clear.
 3. Leave **Save for reuse** ticked to keep the signature for next time, or untick it for a one-off.
 4. Choose **Use Signature**, then click the page where the signature should go.
 

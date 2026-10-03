@@ -67,6 +67,22 @@ export function createImagePicker(): PickImage {
 }
 
 /**
+ * The open dialog for a signature picture: `createImagePicker`'s, with `.pdf` offered beside the pictures, because a
+ * signature scanned to PDF is made a picture in the compose host (`signaturePicture.ts`). Its own picker rather than a
+ * widened one, so inserting an image and keeping a stamp still offer only what they can take.
+ */
+export function createSignaturePicturePicker(): PickImage {
+  return async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'dontAddToRecent'],
+      filters: [{ name: 'Pictures and PDFs', extensions: ['jpg', 'jpeg', 'png', 'pdf'] }],
+    });
+    if (result.canceled) return null;
+    return result.filePaths[0] ?? null;
+  };
+}
+
+/**
  * The open dialog for a Markdown file to import
  * ([ADR-0060](../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)).
  *

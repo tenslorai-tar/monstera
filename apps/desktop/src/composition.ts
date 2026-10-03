@@ -151,6 +151,7 @@ import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, type PictureFiles, createRecentPictures } from './recentPictures.js';
 import { NO_REQUEST_LOG, createRequestLog, observedHandlers } from './requestLog.js';
 import { createHeldPicture } from './heldPicture.js';
+import type { ScanSignature } from './signaturePicture.js';
 import { createPersonalLibrary, memoryPictureFiles } from './personalLibrary.js';
 import { saveNamesFor } from './backupCopies.js';
 import { fileAnswersFor } from './hostFileAnswers.js';
@@ -479,6 +480,8 @@ export interface ShellComposition {
    * unmoved. Three earlier additions each cost a person a click at a dialog.
    */
   readonly pickImage: PickImage;
+  /** Which picture signs: `pickImage`'s dialog with `.pdf` offered too, a scanned signature (`signaturePicture.ts`). */
+  readonly pickSignaturePicture: PickImage;
   /**
    * Where a split's outputs go.
    *
@@ -771,6 +774,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     openAnnotationData,
     readAnnotationData,
     pickImage,
+    pickSignaturePicture,
     pickDirectory,
     readImage,
     pickMarkdown,
@@ -893,6 +897,13 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // then refused by name rather than composed in `main` (ADR-0060).
   const composeHost =
     composePlatform === null ? null : composeHostBinding(composePlatform, failures);
+  // A SIGNATURE PICTURE, a PNG, a JPEG or a scanned PDF, from either route that asks for one: the PDF is made a picture
+  // in the compose host, `null` where there is none, which is a graph a picked PDF cannot reach in a build.
+  const signaturePicture = {
+    pick: pickSignaturePicture,
+    read: readImage,
+    scan: composeHost === null ? null : composeHost.signatureFromScan,
+  };
   // BUILT AFTER THE COMPOSE HOST, which it asks to keep a page's inline images before every regenerating command
   // (ADR-0126). Without one there is nothing to ask, and each edit says so in the log rather than in silence.
   const pdfiumHost =
@@ -1374,6 +1385,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // A KEPT PICTURE OR SIGNATURE, read — never changed — when one is placed or signs.
     library,
     heldPicture,
+    signaturePicture,
     // EDITING A PAGE ELSEWHERE, and every member is a parameter for `image`'s reason:
     // `shell` is Electron's and `fs.watch` is Node's, and this file imports neither (ADR-0062).
     externalEdit: { pick: pickDestination, open: openExternalEditor, watch: editWatch },
@@ -1583,7 +1595,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       commands,
       documents,
       // THE LIBRARY'S CHANNELS: the image picker, and a size before the bounded read, as the image import takes them.
-      library: { store: library, pick: pickImage, size: sizeImage, read: readImage, held: heldPicture },
+      library: { store: library, pick: pickImage, size: sizeImage, read: readImage, held: heldPicture, signaturePicture },
       // THE PAPERCLIP (ADR-0135): any file, each read by the contained reader its family names — `null` where this
       // build has none, which names the file rather than reading it anywhere else.
       attachments: {
@@ -3077,6 +3089,7 @@ function composeHostBinding(
   readonly keepInlineImages: PdfiumInputKeeper;
   readonly workbooks: WorkbookComposer;
   readonly imageSize: NonNullable<AttachmentReaders['pictureSize']>;
+  readonly signatureFromScan: ScanSignature;
   readonly close: () => Promise<void>;
 } {
   /** What one built host holds. Cleared together, or not at all. */
@@ -3462,6 +3475,25 @@ function composeHostBinding(
       );
       if (!answer.ok) throw new Error(`the compose host could not size the picture: ${answer.error.code}`);
       return answer.value.kind === 'sized' ? { width: answer.value.width, height: answer.value.height } : null;
+    },
+
+    // A SCANNED SIGNATURE PDF (`signaturePicture.ts`): `imageSize`'s steps, and the PNG taken from the area against the
+    // count the host reported, as a composed PDF is. `unavailable` throws: the document engine is the same library, so a
+    // build without it opens no document, and a person cannot reach a signature to ask.
+    signatureFromScan: async (pdf) => {
+      const built = await ensure();
+      const area = { snapshotDirectory: built.paths.snapshot, outputDirectory: built.paths.output };
+      const from = areas.mintName();
+      const into = areas.mintName();
+      await writeFile(join(area.snapshotDirectory, from), pdf);
+      const answer = await built.client['engine/signature-from-scan']({ session: built.session, from, into }).finally(() =>
+        rm(join(area.snapshotDirectory, from), { force: true }),
+      );
+      if (!answer.ok) throw new Error(`the compose host could not read the signature PDF: ${answer.error.code}`);
+      const value = answer.value;
+      if (value.kind === 'unavailable') throw new Error('the compose host has no MuPDF library to read a signature PDF with');
+      if (value.kind !== 'drawn') return { kind: value.kind };
+      return { kind: 'drawn', png: await takeComposed(area, into, value.bytes) };
     },
 
     close: async () => {

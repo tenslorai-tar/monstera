@@ -1,4 +1,4 @@
-import { PDFDocument } from '@cantoo/pdf-lib';
+import { PDFDocument, rgb } from '@cantoo/pdf-lib';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -14,7 +14,8 @@ import { type ComposePageSize, ComposeRefused } from '../composeLayout.js';
 import type { ImportImage } from '../imageCompose.js';
 import { TOKEN_BYTES } from '../token.js';
 import { composeChannels } from './composeChannels.js';
-import { type ImageOptimizer, type InlineImageKeeper, createComposeHandlers } from './composeHandlers.js';
+import { signatureFromScan } from '../signatureScan.js';
+import { type ImageOptimizer, type InlineImageKeeper, type SignatureScanner, createComposeHandlers } from './composeHandlers.js';
 import { ENGINE_SESSION_ID_MAX_CHARS } from './engineChannels.js';
 import type { HostArea } from './engineHandlers.js';
 import { sessionFileAnswers } from './fileAnswers.js';
@@ -148,6 +149,13 @@ function start(
             );
             return optimizer === null ? Promise.reject(new Error('unreachable')) : optimizer(area, from, into, setting);
           },
+    signatureFromScan:
+      scanner === null
+        ? null
+        : (pdf) => {
+            calls.push(`scan:${String(pdf.byteLength)}`);
+            return scanner === null ? { kind: 'unreadable' } : scanner(pdf);
+          },
     areas,
     files: surface,
     probe: () =>
@@ -208,6 +216,8 @@ let stream = stubStream();
 /** The rewriter every `start` binds, set by a case before it opens its area; `null` is none bound. */
 let optimizer: ImageOptimizer | null = () => Promise.resolve({ kind: 'optimized', bytes: 1234 });
 let keeper: InlineImageKeeper | null = () => Promise.resolve({ kind: 'kept', bytes: 999, converted: 2, left: 1 });
+/** The scanned-signature reader every `start` binds: the real one, over the shim the test setup binds; `null` is none. */
+let scanner: SignatureScanner | null = signatureFromScan;
 
 /** The response inside one frame, with the header stripped by the contract's constant. */
 function answerIn(frame: Uint8Array | undefined): unknown {
@@ -287,6 +297,7 @@ describe('the compose host channel set', () => {
         'engine/join-pdfs',
         'engine/pdf-pages',
         'engine/image-size',
+        'engine/signature-from-scan',
         'engine/workbook-outline',
         'engine/workbook-part',
       ].sort(),
@@ -693,6 +704,47 @@ describe('the compose host — a workbook in parts (decision C)', () => {
     expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'sized', width: 3024, height: 4032 } } });
     expect(answerIn(stream.sent[2])).toMatchObject({ body: { ok: true, value: { kind: 'unreadable' } } });
     expect(answerIn(stream.sent[3])).toMatchObject({ body: { ok: false, error: { code: 'asset-missing' } } });
+  });
+
+  it('makes a SCANNED SIGNATURE PDF a PNG in the output directory, and answers the file’s own refusals and the transport’s miss', async () => {
+    const files = emptyFiles();
+    const { session, calls } = await openArea(files);
+    const scan = await PDFDocument.create();
+    scan.addPage([400, 300]).drawRectangle({ x: 100, y: 120, width: 200, height: 40, color: rgb(0.1, 0.1, 0.5) });
+    const scanned = await scan.save();
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, scanned);
+    files.read.set(`${AREA.snapshotDirectory}|${SECOND}`, await pdfOf(1));
+
+    stream.feed(request('g1', 'engine/signature-from-scan', { session, from: IN, into: OUT }));
+    await stream.whenSent(2);
+    stream.feed(request('g2', 'engine/signature-from-scan', { session, from: SECOND, into: 'cafe-02' }));
+    await stream.whenSent(3);
+    stream.feed(request('g3', 'engine/signature-from-scan', { session, from: 'abad1dea', into: 'cafe-03' }));
+    await stream.whenSent(4);
+
+    // THE FILE THE REQUEST NAMED is the one read, and the PNG goes under the name it gave.
+    expect(calls).toStrictEqual([`scan:${String(scanned.byteLength)}`, expect.stringMatching(/^scan:/u)]);
+    const png = files.written.get(`${AREA.outputDirectory}|${OUT}`);
+    expect([...(png ?? new Uint8Array()).subarray(0, 4)]).toStrictEqual([0x89, 0x50, 0x4e, 0x47]);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'drawn', bytes: png?.length } } });
+    expect(answerIn(stream.sent[2])).toMatchObject({ body: { ok: true, value: { kind: 'blank' } } });
+    expect(files.written.has(`${AREA.outputDirectory}|cafe-02`)).toBe(false);
+    expect(answerIn(stream.sent[3])).toMatchObject({ body: { ok: false, error: { code: 'asset-missing' } } });
+  });
+
+  it('answers a scanned signature UNAVAILABLE with no library bound, and reads nothing', async () => {
+    scanner = null;
+    try {
+      const files = emptyFiles();
+      const { session, calls } = await openArea(files);
+      files.read.set(`${AREA.snapshotDirectory}|${IN}`, await pdfOf(1));
+      stream.feed(request('g1', 'engine/signature-from-scan', { session, from: IN, into: OUT }));
+      await stream.whenSent(2);
+      expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'unavailable' } } });
+      expect(calls).toStrictEqual([]);
+    } finally {
+      scanner = signatureFromScan;
+    }
   });
 
   it('counts a PDF’s pages, and answers one it cannot read as unreadable', async () => {

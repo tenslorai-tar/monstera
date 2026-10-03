@@ -3181,6 +3181,10 @@ export const SIGN_REFUSALS = [
   'unreadable',
   'image-unreadable',
   'image-too-large',
+  /** A scanned signature PDF whose first page carries no ink. */
+  'scan-blank',
+  /** A scanned signature PDF that needs a password to be read. */
+  'scan-locked',
   /** The signature and its timestamp do not fit the space the placeholder reserves. */
   'signature-too-large',
   /** The authority could not be reached, or answered with an HTTP error. */

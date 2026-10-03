@@ -95,7 +95,8 @@ import { CloudOutcomeRefused, type CloudStorage } from './cloudSession.js';
 import { type KnownRoot, displayLocationOf } from './displayLocation.js';
 import type { RecentPictures } from './recentPictures.js';
 import type { HeldPicture } from './heldPicture.js';
-import { type PersonalLibrary, pictureTypeOf } from './personalLibrary.js';
+import type { PersonalLibrary } from './personalLibrary.js';
+import { type SignaturePictureSource, pickSignaturePicture } from './signaturePicture.js';
 import type { ReviewPrompt } from './engagement.js';
 import type { ComponentStatus } from './componentStatus.js';
 import type { RecentFiles } from './recentFiles.js';
@@ -273,6 +274,8 @@ export function createContractHandlers(deps: {
     readonly read: ImageSource['read'];
     /** The plain Signature's previewed picture, the slot `DocumentCommands.placeSignature` places from. */
     readonly held: HeldPicture;
+    /** Where Upload picks a signature picture from: a PNG, a JPEG or a scanned PDF. */
+    readonly signaturePicture: SignaturePictureSource;
   };
   /** The Store rating prompt (E3). REQUIRED, for `recentRoots`' reason. */
   readonly reviewPrompt: ReviewPrompt;
@@ -1391,35 +1394,26 @@ function addLibraryPictureHandler(library: {
 }
 
 /**
- * Picks a picture for the plain Signature and HOLDS what it read (ADR-0133's second correction): the size before any
- * read, the bounded read, then the type from the bytes by the library's own resolver — so a file that is not a picture
- * is refused here, where the person is looking, rather than after the click. The bytes answered are the bytes held,
- * so the preview is of exactly what will be placed.
+ * Picks a picture for the plain Signature and HOLDS what it read (ADR-0133's second correction): the bounded read,
+ * which sizes a file before reading it, then the type from the bytes by the library's own resolver — so a file that is
+ * not a picture is refused here, where the person is looking, rather than after the click. The bytes answered are the
+ * bytes held, so the preview is of exactly what will be placed.
+ *
+ * The picture is `pickSignaturePicture`'s, the one resolver *Sign with certificate* takes too: a PNG or a JPEG, or a
+ * scanned PDF the compose host made a picture of — and then what is held and previewed is that PNG, never the PDF.
  */
 function pickSignaturePictureHandler(
-  library: {
-    readonly pick: PickImage;
-    readonly size: (path: string) => Promise<number | null>;
-    readonly read: ImageSource['read'];
-    readonly held: HeldPicture;
-  },
+  library: { readonly signaturePicture: SignaturePictureSource; readonly held: HeldPicture },
   capabilities: CapabilityRegistry,
 ): ContractHandlers['signature.pickPicture'] {
   return async () => {
-    const picked = await library.pick();
-    if (picked === null) return ok({ kind: 'cancelled' } as const);
-    const size = await library.size(picked);
-    if (size === null) return ok({ kind: 'unreadable' } as const);
-    if (size > MAX_IMAGE_BYTES) return ok({ kind: 'too-large', limitBytes: MAX_IMAGE_BYTES } as const);
-    const read = await library.read(picked);
-    if (read.kind === 'too-large') return ok({ kind: 'too-large', limitBytes: MAX_IMAGE_BYTES } as const);
-    if (read.kind !== 'read') return ok({ kind: 'unreadable' } as const);
-    const mediaType = pictureTypeOf(read.bytes);
-    if (mediaType === null) return ok({ kind: 'unreadable' } as const);
-    const handle = capabilities.mint(picked);
-    const name = basename(picked);
-    library.held.hold(handle, { name, mediaType, bytes: read.bytes });
-    return ok({ kind: 'picked', handle, name, mediaType, bytes: read.bytes } as const);
+    const picked = await pickSignaturePicture(library.signaturePicture);
+    if (picked.kind === 'too-large') return ok({ kind: 'too-large', limitBytes: MAX_IMAGE_BYTES } as const);
+    if (picked.kind !== 'picture') return ok({ kind: picked.kind });
+    const { bytes, mediaType, name } = picked;
+    const handle = capabilities.mint(picked.path);
+    library.held.hold(handle, { name, mediaType, bytes });
+    return ok({ kind: 'picked', handle, name, mediaType, bytes } as const);
   };
 }
 

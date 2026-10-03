@@ -121,6 +121,7 @@ import { createContractHandlers } from './contractHandlers.js';
 import { createRecentFiles } from './recentFiles.js';
 import { NO_RECENT_PICTURES } from './recentPictures.js';
 import { type HeldPicture, NO_HELD_PICTURE, createHeldPicture } from './heldPicture.js';
+import type { ScanSignature, SignaturePictureSource } from './signaturePicture.js';
 import { createPersonalLibrary, memoryPictureFiles, unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT } from './engagement.js';
 import { type BackupProvenance, createBackupProvenance } from './backupLedger.js';
@@ -433,6 +434,13 @@ const noCopying: CopySource = {
 const noImages: ImageSource = {
   pick: () => Promise.reject(new Error('this case does not insert an image')),
   read: () => Promise.reject(new Error('this case does not read an image')),
+};
+
+/** A signature picture source no member of which a case reaches unless it supplies its own. */
+const noSignaturePicture: SignaturePictureSource = {
+  pick: () => Promise.reject(new Error('this case picks no signature picture')),
+  read: () => Promise.reject(new Error('this case reads no signature picture')),
+  scan: () => Promise.reject(new Error('this case reads no signature PDF')),
 };
 
 /** An import source neither member of which a case reaches unless it supplies its own. */
@@ -775,6 +783,7 @@ const INERT = {
     },
   },
   heldPicture: NO_HELD_PICTURE,
+  signaturePicture: noSignaturePicture,
   // DOCUSIGN REFUSES BY NAME here, like every inert surface: a case that reached it
   // without meaning to fails at the call rather than sending anything anywhere.
   docusign: {
@@ -4378,7 +4387,8 @@ describe('sign — a visible signature', () => {
       documents: service,
       bus: bus(),
       engine: engine(),
-      image: {
+      signaturePicture: {
+        ...noSignaturePicture,
         pick: () => Promise.resolve('signature.gif'),
         read: () => Promise.reject(new Error('an extension with no decoder must not be read')),
       },
@@ -4394,6 +4404,28 @@ describe('sign — a visible signature', () => {
     expect(certificate.asked).toStrictEqual([]);
   });
 
+  it('a SCANNED PDF that needs a password is said before any credential is asked for (G3d)', async () => {
+    const certificate = recordingCertificate();
+    const pdf = new TextEncoder().encode('%PDF-1.7 locked');
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      signaturePicture: {
+        pick: () => Promise.resolve('signature.pdf'),
+        read: () => Promise.resolve({ kind: 'read', bytes: pdf }),
+        scan: () => Promise.resolve({ kind: 'locked' }),
+      },
+      certificate: certificate.source,
+    });
+
+    expect(
+      await commands.sign(docId, { passphrase: '', appearance: { ...placement, mark: { kind: 'image' } } }),
+    ).toStrictEqual({ kind: 'scan-locked' });
+    expect(certificate.asked).toStrictEqual([]);
+  });
+
   it('a CANCELLED picture asks for no credential either', async () => {
     const certificate = recordingCertificate();
     const commands = new DocumentCommands({
@@ -4401,7 +4433,8 @@ describe('sign — a visible signature', () => {
       documents: service,
       bus: bus(),
       engine: engine(),
-      image: {
+      signaturePicture: {
+        ...noSignaturePicture,
         pick: () => Promise.resolve(null),
         read: () => Promise.reject(new Error('a cancelled picker must not read')),
       },
@@ -4486,9 +4519,10 @@ describe('sign — a visible signature', () => {
         bus: new CommandBus({ mupdf: localMupdfWriter, signpdf: recording }),
         engine: engine(),
         // NO PICTURE IS PICKED for a kept one: the picker refusing makes reaching it a failure of the case.
-        image: {
+        signaturePicture: {
           pick: () => Promise.reject(new Error('a kept signature opens no picture picker')),
           read: () => Promise.reject(new Error('a kept signature reads no picked file')),
+          scan: () => Promise.reject(new Error('a kept signature reads no signature PDF')),
         },
         certificate: certificate.source,
         save: noSaving,
@@ -4673,6 +4707,7 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
     keep: boolean,
     picked: { readonly path: string; readonly bytes: Uint8Array } | null = null,
     heldPicture: HeldPicture = NO_HELD_PICTURE,
+    scan: ScanSignature | null = null,
   ): Promise<{ outcome: unknown; kinds: string[]; types: (string | undefined)[]; library: ReturnType<typeof createPersonalLibrary> }> => {
     const kinds: string[] = [];
     // THE MEDIA TYPE each command carried — *Sign with certificate*'s decoder is chosen by it.
@@ -4696,10 +4731,11 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
       documents: service,
       bus: new CommandBus({ mupdf: recording }),
       engine: engine(),
-      image: {
+      signaturePicture: {
         pick: () => Promise.resolve(picked?.path ?? null),
         read: () =>
           Promise.resolve(picked === null ? { kind: 'unreadable' as const } : { kind: 'read' as const, bytes: picked.bytes }),
+        scan,
       },
     });
     const outcome = await commands.placeSignature(docId, { page: 0, rect: RECT, mark, keep, stamp: STAMP });
@@ -4736,6 +4772,43 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
     const placed = await placing({ kind: 'image' }, false, { path: 'scan.jpg', bytes: PICTURE });
     expect(placed.outcome).toMatchObject({ kind: 'placed' });
     expect(placed.types).toStrictEqual(['image/png']);
+  });
+
+  it('a SCANNED PDF picked at the click goes to the compose host, and the PNG it answers is placed and kept (G3d)', async () => {
+    const pdf = new TextEncoder().encode('%PDF-1.7 a scanned signature');
+    const scanned: Uint8Array[] = [];
+    const scan: ScanSignature = (bytes) => {
+      scanned.push(bytes);
+      return Promise.resolve({ kind: 'drawn', png: PICTURE });
+    };
+    const placed = await placing({ kind: 'image' }, true, { path: '/scans/My signature.pdf', bytes: pdf }, NO_HELD_PICTURE, scan);
+    // THE PDF'S OWN BYTES reached the host, and main placed what came back — never the PDF.
+    expect(scanned).toStrictEqual([pdf]);
+    expect(placed.outcome).toMatchObject({ kind: 'placed', kept: 'kept' });
+    expect(placed.kinds).toStrictEqual(['placeSignaturePicture']);
+    expect(placed.types).toStrictEqual(['image/png']);
+    const [entry] = placed.library.list('signature');
+    expect(entry?.look).toStrictEqual({ kind: 'picture', name: 'My signature' });
+    expect(placed.library.picture(entry?.id ?? '')?.bytes).toStrictEqual(PICTURE);
+  });
+
+  it('a scanned PDF with no ink, or a password, is said, and nothing reaches the engine', async () => {
+    const pdf = new TextEncoder().encode('%PDF-1.7');
+    for (const kind of ['blank', 'locked'] as const) {
+      const placed = await placing({ kind: 'image' }, true, { path: 'scan.pdf', bytes: pdf }, NO_HELD_PICTURE, () =>
+        Promise.resolve({ kind }),
+      );
+      expect(placed.outcome).toStrictEqual({ kind: `scan-${kind}` });
+      expect(placed.kinds).toStrictEqual([]);
+      expect(placed.library.list('signature')).toStrictEqual([]);
+    }
+  });
+
+  it('CONTROL: a PNG is never sent to the compose host, and a PDF with none to read it is a fault, not the file’s', async () => {
+    const scan: ScanSignature = () => Promise.reject(new Error('a picture must not be sent to the compose host'));
+    const placed = await placing({ kind: 'image' }, false, { path: 'signature.png', bytes: PICTURE }, NO_HELD_PICTURE, scan);
+    expect(placed.outcome).toMatchObject({ kind: 'placed' });
+    await expect(placing({ kind: 'image' }, false, { path: 'scan.pdf', bytes: PICTURE })).rejects.toThrow(/no compose host/u);
   });
 
   it('CONTROL: bytes that are no picture, named .png, are unreadable BEFORE any command reaches the engine', async () => {

@@ -3,6 +3,7 @@ import type { Handlers } from '@monstera/contract';
 import { type ComposePageSize, ComposeRefused } from '../composeLayout.js';
 import type { ImportImage } from '../imageCompose.js';
 import { pictureSize } from '../pictureSize.js';
+import type { ScannedSignature } from '../signatureScan.js';
 import {
   WorkbookUnreadable,
   WorkbookUnsplittable,
@@ -68,8 +69,16 @@ export type InlineImageKeeper = (
   | { readonly kind: 'unreadable' | 'missing' }
 >;
 
+/**
+ * How this process makes a scanned signature PDF a picture — `signatureFromScan` in the host, a fake in a proof. It
+ * takes the bytes, since what it opens is a document in memory rather than a path.
+ */
+export type SignatureScanner = (pdf: Uint8Array) => ScannedSignature;
+
 /** What the compose host's handlers are built from. */
 export interface ComposeHandlerParts {
+  /** How this process reads a scanned signature, or `null` without the native library — `optimize`'s rule. */
+  readonly signatureFromScan: SignatureScanner | null;
   /** How this process keeps inline images, or `null` without the native library — `optimize`'s rule. */
   readonly keepInlineImages: InlineImageKeeper | null;
   /**
@@ -104,6 +113,7 @@ export function createComposeHandlers({
   keepInlineImages,
   optimize,
   probe,
+  signatureFromScan,
 }: ComposeHandlerParts): Handlers<ComposeChannels> {
   // THE MISS IS RETURNED, NEVER THROWN — `engineHandlers.ts`' rule: a throw
   // crossing this boundary becomes `internal` with its diagnostic withheld, and a
@@ -251,6 +261,20 @@ export function createComposeHandlers({
         return { ok: true, value: { kind: 'unreadable' } };
       }
       return { ok: true, value: { kind: 'sized', width: size.width, height: size.height } };
+    },
+
+    // A SCANNED SIGNATURE (`signatureScan.ts`): the transport's miss returned as a code, the library's absence answered,
+    // the file's own answers passed on, and the picture written into the area with its count.
+    'engine/signature-from-scan': async ({ session, from, into }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+      if (signatureFromScan === null) return { ok: true, value: { kind: 'unavailable' } };
+      const source = await readSource(held, from);
+      if (source === null) return { ok: false, error: { code: 'asset-missing' } };
+      const scanned = signatureFromScan(source);
+      if (scanned.kind !== 'drawn') return { ok: true, value: { kind: scanned.kind } };
+      const bytes = await files.writeOutput(held.outputDirectory, into, scanned.png);
+      return { ok: true, value: { kind: 'drawn', bytes, width: scanned.width, height: scanned.height } };
     },
 
     'engine/pdf-pages': async ({ session, from }) => {

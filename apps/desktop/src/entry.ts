@@ -31,6 +31,7 @@ import {
   createCertificatePicker,
   createFormDataOpenPicker,
   createImagePicker,
+  createSignaturePicturePicker,
   createImagesPicker,
   createAttachmentPicker,
   createCsvPicker,
@@ -275,6 +276,8 @@ startShell(() => {
     // together — and the first surface added since composition became an
     // object, which is why `pickerProbe.ts` is absent from this commit.
     pickImage: createImagePicker(),
+    // A SIGNATURE PICTURE, beside it: the same dialog with `.pdf` offered, a scanned signature.
+    pickSignaturePicture: createSignaturePicturePicker(),
     // A MARKDOWN FILE TO IMPORT, beside the image picker because both open a file a
     // person chose so that main can make pages of it (ADR-0060).
     pickMarkdown: createMarkdownPicker(),

@@ -2136,6 +2136,8 @@ export const SIGNATURE_PROBLEM_ABSENT = messageKey('dialog.signature-problem.abs
 export const SIGNATURE_PROBLEM_CANNOT_WRITE = messageKey('dialog.signature-problem.cannot-write');
 export const SIGNATURE_PROBLEM_TOO_LONG = messageKey('dialog.signature-problem.too-long');
 export const SIGNATURE_PROBLEM_BLANK = messageKey('dialog.signature-problem.blank');
+export const SIGNATURE_PROBLEM_SCAN_BLANK = messageKey('dialog.signature-problem.scan-blank');
+export const SIGNATURE_PROBLEM_SCAN_LOCKED = messageKey('dialog.signature-problem.scan-locked');
 export const TOAST_SIGNATURE_LIBRARY_FULL = messageKey('toast.signature.library-full');
 export const TOAST_SIGNATURE_NOT_KEEPABLE = messageKey('toast.signature.not-keepable');
 export const SIGN_DOCUMENT_EXPLAINS = messageKey('dialog.sign-document.explains');
@@ -2167,6 +2169,8 @@ export const SIGN_PROBLEM_UNREADABLE = messageKey('dialog.sign-problem.unreadabl
 export const SIGN_PROBLEM_IMAGE_UNREADABLE = messageKey('dialog.sign-problem.image-unreadable');
 export const SIGN_PROBLEM_IMAGE_TOO_LARGE = messageKey('dialog.sign-problem.image-too-large');
 export const SIGN_PROBLEM_SAVED_MISSING = messageKey('dialog.sign-problem.saved-missing');
+export const SIGN_PROBLEM_SCAN_BLANK = messageKey('dialog.sign-problem.scan-blank');
+export const SIGN_PROBLEM_SCAN_LOCKED = messageKey('dialog.sign-problem.scan-locked');
 export const SIGN_PROBLEM_SIGNATURE_TOO_LARGE = messageKey('dialog.sign-problem.signature-too-large');
 export const SIGN_PROBLEM_TIMESTAMP_UNREACHABLE = messageKey(
   'dialog.sign-problem.timestamp-unreachable',
@@ -4691,7 +4695,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_PROBLEM_UNREADABLE]:
     'That file is not a certificate this application can read. Nothing has been changed.',
   [SIGN_PROBLEM_IMAGE_UNREADABLE]:
-    'That picture could not be read. Choose a PNG or JPEG file. Nothing has been changed.',
+    'That file could not be read. Choose a PNG or JPEG picture, or a scanned PDF of your signature. Nothing has been changed.',
+  [SIGN_PROBLEM_SCAN_BLANK]:
+    'No signature was found on the first page of that PDF. Nothing has been changed.',
+  [SIGN_PROBLEM_SCAN_LOCKED]:
+    'That PDF needs a password to be read. Choose a copy saved without one, or a picture of your signature. Nothing has been changed.',
   [SIGN_PROBLEM_IMAGE_TOO_LARGE]: 'That picture is too large to place. Nothing has been changed.',
   [SIGN_PROBLEM_SAVED_MISSING]:
     'That kept signature is no longer in your library. Choose another look and sign again. Nothing has been changed.',
@@ -4718,7 +4726,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_DOCUMENT_PAD]: 'Draw your signature here',
   [SIGN_DOCUMENT_CLEAR]: 'Clear',
   [SIGN_DOCUMENT_IMAGE_NOTE]:
-    'You will be asked for a PNG or JPEG picture of your signature first, then for your certificate.',
+    'You will be asked for a picture or a scanned PDF of your signature first, then for your certificate.',
   [SIGN_DOCUMENT_MARK_MISSING]: 'Type or draw the signature first.',
   [SIGNATURE_TITLE]: 'Signature',
   [SIGNATURE_KEPT]: 'Your signatures',
@@ -4754,7 +4762,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGNATURE_FACE_SOURCE_SANS]: 'Source Sans 3',
   [SIGNATURE_FACE_COURIER_PRIME]: 'Courier Prime',
   [SIGNATURE_TOO_LONG]: 'A name can be at most {limit} characters.',
-  [SIGNATURE_UPLOAD_NOTE]: 'A PNG or JPEG picture of your signature, shown here before you place it.',
+  [SIGNATURE_UPLOAD_NOTE]: 'A PNG or JPEG picture of your signature, or a scanned PDF, shown here before you place it.',
   [SIGNATURE_PICTURE]: 'Picture',
   [SIGNATURE_UPLOAD_CHOOSE]: 'Choose picture…',
   [SIGNATURE_UPLOAD_CHOOSE_ANOTHER]: 'Choose another…',
@@ -4764,8 +4772,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGNATURE_SAVE_NOTE]: 'Kept on this computer, ready to place again here or with Sign with certificate.',
   [SIGNATURE_USE]: 'Use Signature',
   [SIGNATURE_PROBLEM_TITLE]: 'The signature was not placed',
-  [SIGNATURE_PROBLEM_UNREADABLE]: 'That file is not a PNG or JPEG picture this app can read. Nothing was placed.',
-  [SIGNATURE_PROBLEM_TOO_LARGE]: 'That picture is larger than {limit} megabytes. Nothing was placed.',
+  [SIGNATURE_PROBLEM_UNREADABLE]:
+    'That file is not a PNG or JPEG picture, or a PDF, this app can read. Nothing was placed.',
+  [SIGNATURE_PROBLEM_TOO_LARGE]: 'That file is larger than {limit} megabytes. Nothing was placed.',
+  [SIGNATURE_PROBLEM_SCAN_BLANK]:
+    'No signature was found on the first page of that PDF. Nothing was placed. Scan it on plain paper, or choose a picture of it.',
+  [SIGNATURE_PROBLEM_SCAN_LOCKED]:
+    'That PDF needs a password to be read. Nothing was placed. Choose a copy saved without one, or a picture of your signature.',
   [SIGNATURE_PROBLEM_ABSENT]: 'That saved signature has been removed. Nothing was placed.',
   [SIGNATURE_PROBLEM_CANNOT_WRITE]:
     'This signature style cannot write {characters}. Nothing was placed. Choose another style, or draw or upload your signature.',

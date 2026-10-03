@@ -8,6 +8,7 @@ import { composeCsv } from '../csvCompose.js';
 import { composeImages } from '../imageCompose.js';
 import { composeMarkdown } from '../markdownCompose.js';
 import { MupdfOpenRefused, keepInlineImages, openMupdfShim, rewriteImages } from '../mupdfRaw.js';
+import { signatureFromScan } from '../signatureScan.js';
 import { cryptoBytes } from '../token.js';
 import { composeChannels } from './composeChannels.js';
 import { type ImageOptimizer, type InlineImageKeeper, createComposeHandlers } from './composeHandlers.js';
@@ -130,6 +131,8 @@ const areas = createHostSessions<HostArea>(cryptoBytes);
 const handlers = createComposeHandlers({
   keepInlineImages: keepInlineImagesIn,
   optimize,
+  // DRAWN WITH THE BOUND LIBRARY, so it is there exactly when Optimize is.
+  signatureFromScan: shimPath === null ? null : signatureFromScan,
   areas,
   files: hostFilesystem,
   probe: probeContainment,
