@@ -62,10 +62,10 @@ import { type Result, err, ok } from '@monstera/shared';
 
 /** The filesystem calls this ordering makes, as it needs to see them. */
 export interface AtomicWriteSurface {
-  /** Writes `bytes` to `path`, creating or truncating. */
+  /** Writes `bytes` to `path`, creating it; refused when anything is already at `path`, which is never written through. */
   readonly write: (path: string, bytes: Uint8Array) => Promise<void>;
   /**
-   * Writes `chunks` to `path` as they arrive, creating or truncating.
+   * Writes `chunks` to `path` as they arrive, creating it; refused when anything is already at `path`.
    *
    * For contents that must never be held whole — a document fetched from a URL
    * (ADR-0061 Decision 6). A failure of the source arrives as this call's rejection.
@@ -81,7 +81,7 @@ export interface AtomicWriteSurface {
   readonly sync: (path: string) => Promise<void>;
   /** Renames `from` over `to`, replacing it. */
   readonly rename: (from: string, to: string) => Promise<void>;
-  /** Copies `from` to `to`, replacing it. Used for the backup. */
+  /** Copies `from` to `to`, replacing what is at `to` without writing through it. Used for the backup. */
   readonly copy: (from: string, to: string) => Promise<void>;
   /** Removes `path`. Must not throw when it is already gone. */
   readonly remove: (path: string) => Promise<void>;

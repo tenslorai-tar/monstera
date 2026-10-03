@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { constants as fileConstants, createReadStream } from 'node:fs';
 import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { type Server, connect, createServer } from 'node:net';
 import { dirname, join } from 'node:path';
@@ -3507,14 +3507,15 @@ function sessionAreas(platform: EngineHostPlatform): SessionAreaSurface {
     // A MOVE, so the bytes never pass through `main` (ADR-0121). A checkpoint or a refreshed image lands beside the
     // session root under `sessionData`, one volume, so it is a rename. A SAVE's temporary file sits beside the
     // person's document, which may be on any drive: there `rename` answers `EXDEV`, and a move across volumes is a
-    // copy and a delete — streamed by the operating system, never a buffer here.
+    // copy and a delete — streamed by the operating system, never a buffer here. EXCLUSIVE, like every write of the
+    // save's siblings (`fileSurface.ts`): a copy onto an object already at the destination would write through it.
     moveOutput: async (area, name, destination) => {
       const path = join(area.outputDirectory, name);
       try {
         await rename(path, destination);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error;
-        await copyFile(path, destination);
+        await copyFile(path, destination, fileConstants.COPYFILE_EXCL);
         await rm(path, { force: true });
       }
       return (await stat(destination)).size;

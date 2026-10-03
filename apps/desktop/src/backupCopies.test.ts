@@ -18,8 +18,13 @@ describe('backup copies to keep, as a save reads the setting', () => {
   });
 
   it('names the kept copies newest first, and retires every name up to the longest choice', () => {
-    expect(siblingNames('C:/d/report.pdf', 3)).toStrictEqual({
-      temp: 'C:/d/report.pdf.monstera-tmp',
+    const three = siblingNames('C:/d/report.pdf', 3);
+    // THE TEMP'S NAME IS NEW AT EVERY CALL (CR-SEC-17): beside the target, attributable, and nothing another account
+    // could have created first.
+    expect(three.temp).toMatch(/^C:\/d\/report\.pdf\.[0-9a-f]{16}\.monstera-tmp$/u);
+    expect(siblingNames('C:/d/report.pdf', 3).temp).not.toBe(three.temp);
+    expect(three).toStrictEqual({
+      temp: three.temp,
       backups: ['C:/d/report.pdf.bak', 'C:/d/report.pdf.bak2', 'C:/d/report.pdf.bak3'],
       retired: Array.from({ length: MAX_BACKUP_COPIES - 3 }, (_unused, index) => `C:/d/report.pdf.bak${String(index + 4)}`),
     });
