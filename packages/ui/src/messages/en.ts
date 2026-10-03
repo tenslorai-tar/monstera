@@ -2158,6 +2158,12 @@ export const SIGNATURES_CHANGED = messageKey('dialog.signatures.changed');
 export const SIGNATURES_APPENDED = messageKey('dialog.signatures.appended');
 export const SIGNATURES_VALID_BETWEEN = messageKey('dialog.signatures.valid-between');
 export const SIGNATURES_NOT_TRUSTED = messageKey('dialog.signatures.not-trusted');
+export const SIGNATURES_SIGNER = messageKey('dialog.signatures.signer');
+export const SIGNATURES_SIGNER_OF = messageKey('dialog.signatures.signer-of');
+export const SIGNATURES_STATUS = messageKey('dialog.signatures.status');
+export const SIGNATURES_REASON = messageKey('dialog.signatures.reason');
+export const SIGNATURES_LOCATION = messageKey('dialog.signatures.location');
+export const SIGNATURES_CERTIFICATE = messageKey('dialog.signatures.certificate');
 
 /**
  * A long command's own name, as the status bar announces it while it runs.
@@ -4679,7 +4685,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGNATURES_CHANGED]: 'The document has changed since this signature was made',
   [SIGNATURES_APPENDED]:
     'Intact, but something was added to the document afterwards that this signature does not cover',
-  [SIGNATURES_VALID_BETWEEN]: 'Certificate valid from {from} to {to}',
+  [SIGNATURES_VALID_BETWEEN]: 'Valid from {from} to {to}',
+  [SIGNATURES_SIGNER]: '{signer}',
+  [SIGNATURES_SIGNER_OF]: '{signer} — {organisation}',
+  [SIGNATURES_STATUS]: 'Status',
+  [SIGNATURES_REASON]: 'Reason',
+  [SIGNATURES_LOCATION]: 'Location',
+  [SIGNATURES_CERTIFICATE]: 'Certificate',
   [SIGNATURES_NOT_TRUSTED]:
     'These checks compare the signature against the bytes it covers. They do not say whether the certificate itself is one you should trust.',
 

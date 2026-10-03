@@ -2254,8 +2254,28 @@ optgroup {
 
 /* A SIGNATURE'S STRINGS are the document's too, shortened to 256 characters by the reader, and one unbroken name ran
  * past the dialog's edge. They break anywhere and are not clamped: this dialog is where a person reads them whole. */
-.m-signatures__item > p {
+[data-signature] .m-dialog-section__title,
+.m-signatures__facts dd {
+  min-inline-size: 0;
   overflow-wrap: anywhere;
+}
+
+/* EACH FACT NAMED BESIDE ITS VALUE, the name muted in a column of its own as About's version and channel are, so a
+   reason and a place cannot be mistaken for each other. */
+.m-signatures__facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-4) var(--space-16);
+  margin: 0;
+  font-size: var(--font-chrome-13);
+}
+
+.m-signatures__facts dt {
+  color: var(--muted);
+}
+
+.m-signatures__facts dd {
+  margin: 0;
 }
 
 .m-destinations-empty,

@@ -2920,7 +2920,7 @@ test('the SIGNATURES dialog keeps a 256-character unbroken name inside itself, a
   await page.getByRole('option', { name: 'Check signatures' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Signatures' });
   // THE BODY IS LOADED when the signer's line is there; an empty frame measures as fitting.
-  const signer = dialog.locator('.m-signatures__signer').first();
+  const signer = dialog.locator('[data-signature] .m-dialog-section__title').first();
   await expect(signer).toContainText('RRRR');
   // CLOSE IS IN THE WINDOW, and the list is what scrolls — CONTROL: the list is taller than its region, or a dialog
   // short enough to fit would pass this without the layout doing anything.
@@ -2939,7 +2939,7 @@ test('the SIGNATURES dialog keeps a 256-character unbroken name inside itself, a
     return {
       sideways: scroll === null ? null : scroll.scrollWidth - scroll.clientWidth,
       // THE WHOLE NAME IS SHOWN, wrapped rather than cut: a fix that clipped it would also stop the overflow.
-      signerText: node.querySelector('.m-signatures__signer')?.textContent ?? '',
+      signerText: node.querySelector('[data-signature] .m-dialog-section__title')?.textContent ?? '',
     };
   });
   expect(measured).toStrictEqual({ sideways: 0, signerText: `${unbroken} — ${words}` });
