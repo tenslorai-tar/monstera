@@ -79,6 +79,7 @@ export default function DocumentPasswordBody({
           label={DOCUMENT_PASSWORD_LABEL}
           labelShownBeside
           onValueChange={setPassword}
+          opensFocused
           secret
           value={password}
         />

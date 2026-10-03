@@ -75,7 +75,19 @@ export interface InputProps {
    * name is still one string for both populations and the screen shows it once.
    */
   labelShownBeside?: boolean;
+  /**
+   * Whether this is the field the dialog was opened to be typed into, which takes focus when it opens (`Dialog`'s
+   * `openingField`).
+   *
+   * **Said by the field, never guessed by the dialog.** A dialog that took its first text field would open Settings
+   * with focus in some setting's box, where a stray key edits it, and Help on its search instead of its articles. Only
+   * the body knows whether typing is the first thing a person does in it, so the body says so.
+   */
+  opensFocused?: boolean;
 }
+
+/** The mark {@link InputProps.opensFocused} writes, which `Dialog` looks for. One spelling for both. */
+export const OPENS_FOCUSED = 'data-opens-focused';
 
 export function Input({
   label,
@@ -87,6 +99,7 @@ export function Input({
   invalid,
   purpose,
   labelShownBeside = false,
+  opensFocused = false,
 }: InputProps): ReactElement {
   // Subscribed rather than resolved once — see `Button`.
   const { _ } = useLingui();
@@ -95,6 +108,7 @@ export function Input({
     <Field.Root className="m-field" disabled={disabled} invalid={invalid}>
       <Field.Label className={labelShownBeside ? 'm-visually-hidden' : 'm-field__label'}>{_(label)}</Field.Label>
       <BaseInput
+        {...(opensFocused ? { [OPENS_FOCUSED]: '' } : {})}
         autoComplete={purpose}
         className="m-input"
         // HTML'S OWN RULE FOR WHICH WAY TYPED TEXT RUNS: the first letter with a direction decides, so Hebrew or Arabic
@@ -132,12 +146,17 @@ export function TextArea({
   disabled = false,
   invalid,
   labelShownBeside = false,
-}: Pick<InputProps, 'label' | 'value' | 'onValueChange' | 'disabled' | 'invalid' | 'labelShownBeside'>): ReactElement {
+  opensFocused = false,
+}: Pick<
+  InputProps,
+  'label' | 'value' | 'onValueChange' | 'disabled' | 'invalid' | 'labelShownBeside' | 'opensFocused'
+>): ReactElement {
   const { _ } = useLingui();
   return (
     <Field.Root className="m-field m-field--text" disabled={disabled} invalid={invalid}>
       <Field.Label className={labelShownBeside ? 'm-visually-hidden' : 'm-field__label'}>{_(label)}</Field.Label>
       <BaseInput
+        {...(opensFocused ? { [OPENS_FOCUSED]: '' } : {})}
         className="m-input m-textarea"
         dir="auto"
         onValueChange={(next): void => {

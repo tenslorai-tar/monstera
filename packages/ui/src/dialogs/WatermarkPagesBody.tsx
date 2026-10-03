@@ -96,6 +96,7 @@ export default function WatermarkPagesBody({
         <Input
           label={WATERMARK_PAGES_TEXT}
           labelShownBeside
+          opensFocused
           value={text}
           onValueChange={(next) => {
             setText(next);

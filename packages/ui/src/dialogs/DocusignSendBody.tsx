@@ -68,6 +68,7 @@ export default function DocusignSendBody({
                 onValueChange={(value) => {
                   change(index, 'name', value);
                 }}
+                opensFocused={index === 0}
                 value={row.name}
               />
             </DialogRow>

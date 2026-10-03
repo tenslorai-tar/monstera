@@ -9,6 +9,7 @@ import { activateCatalogue, i18n } from '../i18n.js';
 import { DIALOG_CANCEL } from '../messages/en.js';
 import { Button } from './Button.js';
 import { Dialog, DialogChoices, DialogFooter, DialogRow } from './Dialog.js';
+import { Input } from './Input.js';
 
 /**
  * `closeLabel` travels to `IconButton` as a KEY and is resolved there, so this
@@ -19,11 +20,13 @@ const TITLE = messageKey('dialog.rename.title');
 const CLOSE = messageKey('action.close.label');
 const CONFIRM = messageKey('action.confirm.label');
 const OUTSIDE = messageKey('action.outside.label');
+const WORDS = messageKey('dialog.rename.words');
 activateCatalogue('en', {
   [TITLE]: 'Rename document',
   [CLOSE]: 'Close',
   [CONFIRM]: 'Confirm',
   [OUTSIDE]: 'Outside',
+  [WORDS]: 'Words',
 });
 
 function Messages({ children }: { children: ReactNode }): ReactElement {
@@ -105,16 +108,29 @@ describe('Dialog', () => {
     });
   });
 
-  it('opens ON ITS FIRST TEXT FIELD when its body has one, in the commit that opens it', () => {
+  it('opens ON THE FIELD ITS BODY NAMES, past an unnamed text field before it, in the commit that opens it', () => {
     // A text box, a typewriter and a note opened with focus on the popup, so typing went nowhere (the owner's review).
     render(
       <Dialog closeLabel={CLOSE} onOpenChange={vi.fn()} open title={TITLE}>
-        <input aria-label="first" type="checkbox" />
-        <input aria-label="words" type="text" />
+        <input aria-label="setting" type="text" />
+        <Input label={WORDS} onValueChange={vi.fn()} opensFocused value="" />
       </Dialog>,
     );
     // NOT AFTER A FRAME: read synchronously after the render, where Base UI's own initial focus would come later.
-    expect(document.activeElement?.getAttribute('aria-label')).toBe('words');
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Words' }));
+  });
+
+  it('CONTROL: a text field its body does NOT name takes no focus — Settings and Help hold those', async () => {
+    // Taking the first text field put focus in some setting's box, where a stray key edits it.
+    render(
+      <Dialog closeLabel={CLOSE} onOpenChange={vi.fn()} open title={TITLE}>
+        <Input label={WORDS} onValueChange={vi.fn()} value="" />
+      </Dialog>,
+    );
+    const dialog = screen.getByRole('dialog');
+    await waitFor(() => {
+      expect(document.activeElement).toBe(dialog);
+    });
   });
 
   it('LEAVES FOCUS WHERE THE PERSON PUT IT when the dialog renders again', () => {
@@ -122,7 +138,7 @@ describe('Dialog', () => {
     // to the first field from the second while the person typed there.
     const dialog = (key: string): ReactElement => (
       <Dialog closeLabel={CLOSE} onOpenChange={() => undefined} open title={TITLE}>
-        <input aria-label="first" data-render={key} type="text" />
+        <Input label={WORDS} onValueChange={() => undefined} opensFocused value={key} />
         <input aria-label="second" type="text" />
       </Dialog>
     );

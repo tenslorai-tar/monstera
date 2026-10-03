@@ -151,6 +151,7 @@ export default function ProtectDocumentBody({
               label={PROTECT_DOCUMENT_USER}
               labelShownBeside
               onValueChange={setUserPassword}
+              opensFocused
               secret
               value={userPassword}
             />

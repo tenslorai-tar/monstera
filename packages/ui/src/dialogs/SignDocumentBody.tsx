@@ -240,7 +240,14 @@ export default function SignDocumentBody({
           {look === 'typed' ? (
             <>
               <DialogRow label={SIGN_DOCUMENT_TEXT}>
-                <Input invalid={tooLong === SIGN_DOCUMENT_TEXT} label={SIGN_DOCUMENT_TEXT} labelShownBeside onValueChange={setText} value={text} />
+                <Input
+                  invalid={tooLong === SIGN_DOCUMENT_TEXT}
+                  label={SIGN_DOCUMENT_TEXT}
+                  labelShownBeside
+                  onValueChange={setText}
+                  opensFocused
+                  value={text}
+                />
               </DialogRow>
               <DialogRow label={SIGN_DOCUMENT_FONT}>
                 <select

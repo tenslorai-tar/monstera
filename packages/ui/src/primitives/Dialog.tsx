@@ -15,6 +15,7 @@ import {
 import { CLOSE_LABEL, DIALOG_CANCEL, DIALOG_OK } from '../messages/en.js';
 import { Button } from './Button.js';
 import { IconButton } from './IconButton.js';
+import { OPENS_FOCUSED } from './Input.js';
 
 /**
  * The one dialog primitive. Every dialog in the application is this (B9).
@@ -36,8 +37,8 @@ import { IconButton } from './IconButton.js';
  *
  * ## Focus opens ON THE DIALOG, not on its first control — unless the dialog asks for words
  *
- * A dialog whose body holds a text field opens on that field (`firstFieldIn`), because it was opened to be typed
- * into. Every other dialog opens on the popup itself, for the reason that follows.
+ * A dialog whose body names the field it was opened to be typed into opens on that field (`openingField`). Every
+ * other dialog opens on the popup itself, for the reason that follows.
  *
  * Base UI's default initial focus is the popup's first tabbable element
  * (`dialog/popup/DialogPopup.js`, 1.7.0), which here is the header's Close icon
@@ -89,8 +90,8 @@ export interface DialogProps {
   /** The accessible name of the close control — an action, e.g. "Close". */
   closeLabel: MessageKey;
   /**
-   * Where focus lands when the dialog opens. When omitted, the body's first text field, or the popup itself where the
-   * body has none (`firstFieldIn`, and the tooltip reason above).
+   * Where focus lands when the dialog opens. When omitted, the field the body marks `opensFocused`, or the popup itself
+   * where the body marks none (`openingField`, and the tooltip reason above).
    *
    * Given by a dialog that is not a body of the pattern — the command palette names its query field.
    */
@@ -101,19 +102,16 @@ export interface DialogProps {
 }
 
 /**
- * The first field a person types into in a dialog's body, or `null` when it has none.
+ * The field the body was opened to be typed into, or `null` when it names none.
  *
- * A dialog that asks for words is opened to be typed into — a text box drawn, a note placed, a password asked for —
- * so focus opens there (the owner's review: a text box, a typewriter and a note opened with typing going nowhere). A
- * dialog with no such field keeps the popup, for the tooltip reason above: the header's Close is a tooltip trigger,
- * and a field is not. Choices, ticks and lists are not fields here, because a key pressed on one changes it.
+ * A dialog that asks for words — a text box drawn, a note placed, a password asked for — opens there (the owner's
+ * review: a text box, a typewriter and a note opened with typing going nowhere). **The body names that field**
+ * (`Input`'s `opensFocused`); the dialog does not take its first text field, because Settings and Help hold text fields
+ * too and were not opened to be typed into: focus in a setting's box is a stray key away from editing it. A dialog
+ * whose body names none keeps the popup, for the tooltip reason above.
  */
-function firstFieldIn(popup: HTMLElement | null): HTMLElement | null {
-  return (
-    popup?.querySelector<HTMLElement>(
-      '.m-dialog__body :is(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="button"]):not([type="file"]):not(:disabled), textarea:not(:disabled), [contenteditable="true"], [contenteditable="plaintext-only"])',
-    ) ?? null
-  );
+function openingField(popup: HTMLElement | null): HTMLElement | null {
+  return popup?.querySelector<HTMLElement>(`.m-dialog__body [${OPENS_FOCUSED}]:not(:disabled)`) ?? null;
 }
 
 export function Dialog({
@@ -139,7 +137,7 @@ export function Dialog({
   const attachPopup = useCallback(
     (element: HTMLDivElement | null): void => {
       popup.current = element;
-      if (element !== null && initialFocus === undefined) firstFieldIn(element)?.focus();
+      if (element !== null && initialFocus === undefined) openingField(element)?.focus();
     },
     [initialFocus],
   );
@@ -176,7 +174,7 @@ export function Dialog({
         <BaseDialog.Backdrop className="m-dialog__backdrop" />
         <BaseDialog.Popup
           className={popupClassName === undefined ? 'm-dialog' : `m-dialog ${popupClassName}`}
-          initialFocus={initialFocus ?? (() => firstFieldIn(popup.current) ?? popup.current)}
+          initialFocus={initialFocus ?? (() => openingField(popup.current) ?? popup.current)}
           ref={attachPopup}
         >
           <div className="m-dialog__header">

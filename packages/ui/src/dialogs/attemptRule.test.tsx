@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { MessageKey } from '@monstera/shared';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -21,6 +21,7 @@ import {
 import DocumentPasswordBody from './DocumentPasswordBody.js';
 import FormFieldDropdownBody from './FormFieldDropdownBody.js';
 import HeaderFooterBody from './HeaderFooterBody.js';
+import HelpBody from './HelpBody.js';
 import { InDialog } from './inDialog.js';
 import ProtectDocumentBody from './ProtectDocumentBody.js';
 import RedactMatchesBody from './RedactMatchesBody.js';
@@ -100,6 +101,27 @@ describe('a missing entry is said only once the person tries to go on', () => {
       expect(resolve).not.toHaveBeenCalled();
     });
   }
+
+  for (const { dialog, body } of CASES) {
+    it(`${dialog}: opens with focus IN its field, since typing is the first thing a person does there`, () => {
+      render(<InDialog>{body(vi.fn())}</InDialog>);
+      expect(document.activeElement?.getAttribute('role') ?? document.activeElement?.tagName).toMatch(/^(INPUT|TEXTAREA)$/u);
+    });
+  }
+
+  it('CONTROL: Help centre, whose search box it was not opened to type into, opens on the popup', async () => {
+    render(
+      <InDialog>
+        <HelpBody article={null} context={null} resolve={vi.fn()} showable={[]} update={vi.fn()} />
+      </InDialog>,
+    );
+    // Its body HOLDS a text field, which is what makes it the control: a dialog that took its first one would fail here.
+    expect(screen.getByRole('textbox')).toBeDefined();
+    const popup = screen.getByRole('dialog');
+    await waitFor(() => {
+      expect(document.activeElement).toBe(popup);
+    });
+  });
 
   it('Document password: a WRONG password is said on opening, because it reports what the person just did', () => {
     render(

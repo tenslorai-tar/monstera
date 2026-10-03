@@ -60,7 +60,14 @@ export default function RedactMatchesBody({
   return (
     <div className="m-redact-matches" ref={form}>
       <DialogRow label={REDACT_MATCHES_LABEL} problem={problem === undefined ? undefined : _(problem)}>
-        <Input invalid={problem !== undefined} label={REDACT_MATCHES_LABEL} labelShownBeside onValueChange={setQuery} value={query} />
+        <Input
+          invalid={problem !== undefined}
+          label={REDACT_MATCHES_LABEL}
+          labelShownBeside
+          onValueChange={setQuery}
+          opensFocused
+          value={query}
+        />
       </DialogRow>
 
       <DialogRow label={REDACT_MATCHES_SCOPE}>

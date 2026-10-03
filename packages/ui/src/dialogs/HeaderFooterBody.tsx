@@ -120,6 +120,7 @@ export default function HeaderFooterBody({
                 onValueChange={(next) => {
                   setSlots({ ...slots, [edge]: { ...slots[edge], [slot]: next } });
                 }}
+                opensFocused={edge === 'header' && slot === 'left'}
               />
             ))}
           </div>

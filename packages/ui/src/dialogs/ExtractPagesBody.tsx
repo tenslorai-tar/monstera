@@ -54,6 +54,7 @@ export default function ExtractPagesBody({
         <Input
           label={EXTRACT_PAGES_LABEL}
           labelShownBeside
+          opensFocused
           placeholder={DELETE_PAGES_HINT}
           value={text}
           onValueChange={setText}

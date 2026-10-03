@@ -84,6 +84,7 @@ export default function SplitDocumentBody({
           <Input
             label={SPLIT_DOCUMENT_LABEL}
             labelShownBeside
+            opensFocused
             placeholder={DELETE_PAGES_HINT}
             value={text}
             onValueChange={setText}

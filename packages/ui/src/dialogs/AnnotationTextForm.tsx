@@ -141,9 +141,23 @@ export function AnnotationTextForm({
     <div className="m-annotation-text" ref={form}>
       <DialogRow label={label} problem={problem === undefined ? undefined : _(problem)}>
         {multiline ? (
-          <TextArea invalid={problem !== undefined} label={label} labelShownBeside onValueChange={setText} value={text} />
+          <TextArea
+            invalid={problem !== undefined}
+            label={label}
+            labelShownBeside
+            onValueChange={setText}
+            opensFocused
+            value={text}
+          />
         ) : (
-          <Input invalid={problem !== undefined} label={label} labelShownBeside onValueChange={setText} value={text} />
+          <Input
+            invalid={problem !== undefined}
+            label={label}
+            labelShownBeside
+            onValueChange={setText}
+            opensFocused
+            value={text}
+          />
         )}
       </DialogRow>
       <DialogFooter>

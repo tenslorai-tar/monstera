@@ -66,6 +66,7 @@ export default function DeletePagesBody({
         <Input
           label={DELETE_PAGES_LABEL}
           labelShownBeside
+          opensFocused
           placeholder={DELETE_PAGES_HINT}
           value={text}
           onValueChange={setText}

@@ -118,7 +118,7 @@ export function FormFieldForm({
   return (
     <div className="m-form-field">
       <DialogRow label={label}>
-        <Input label={label} labelShownBeside onValueChange={setName} value={name} />
+        <Input label={label} labelShownBeside onValueChange={setName} opensFocused value={name} />
       </DialogRow>
 
       {collects === 'option' ? (
