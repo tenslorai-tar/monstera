@@ -234,7 +234,7 @@ describe('settlePendingRedactions', () => {
 describe('Save, with marks nobody applied', () => {
   function save(marks: number, answer: 'apply' | 'without' | undefined) {
     const { client, sent } = documentWith(marks, (id) => {
-      if (id === 'document.save') return { kind: 'saved', version: asDocVersion(3), cleared: null };
+      if (id === 'document.save') return { kind: 'saved', version: asDocVersion(3), cleared: null, held: [] };
       throw new Error(`no ${id}`);
     });
     const { ask, asked } = asking(answer);

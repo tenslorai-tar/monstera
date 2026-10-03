@@ -1170,6 +1170,9 @@ const clearedCopiesSchema = z
   })
   .strict();
 
+/** The names of a document's older copies that are owed a deletion and still held by another program (CR-DOC-10). */
+const heldCopiesSchema = z.array(z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH)).max(MAX_BACKUP_COPIES);
+
 /** A document that opened — `document.open`'s success, and the base of an import that opened with a note. */
 const openedSchema = z.object({
     kind: z.literal('opened'),
@@ -2197,6 +2200,19 @@ export const channels = {
    * PERMITS the write, so it cannot be a refusal reason. That is a state made
    * unrepresentable rather than a case nobody writes.
    */
+  /**
+   * Tries again to delete the older copies of this document that still hold what a removal took out (CR-DOC-10, the
+   * owner's decision of 2026-10-03): the ones a save could not delete because another program held them. Main deletes
+   * only the copies it recorded as owed, and only while each is still the file it made (ADR-0139), so nothing the
+   * renderer names is deleted: the request carries the document and nothing else.
+   */
+  'document.deleteHeldCopies': channel(
+    'Deletes the older copies of a document that a save could not delete, if nothing holds them now.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.object({ held: heldCopiesSchema }),
+    ['document-not-open', 'document-busy'],
+  ),
+
   'document.save': channel(
     'Writes an open document’s current content to the file it was opened from.',
     z.object({
@@ -2218,6 +2234,12 @@ export const channels = {
          * for every other save.
          */
         cleared: clearedCopiesSchema.nullable(),
+        /**
+         * The older copies of this document that still hold what a removal took out, by name, because another program
+         * held them when they were to be deleted (CR-DOC-10). Owed, kept in main across a restart, and tried again by
+         * every save of the document and by `document.deleteHeldCopies`. Empty when there is none. No path crosses.
+         */
+        held: heldCopiesSchema,
       }),
       /**
        * NOTHING WAS WRITTEN: the save would rewrite the file and so break this many signatures — a removal or a change

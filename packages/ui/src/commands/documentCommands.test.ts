@@ -18,6 +18,7 @@ import {
   TOAST_SAVED,
   TOAST_SAVED_CLEARED,
   TOAST_SAVED_CLEARED_BACKUPS,
+  TOAST_HELD_COPIES_DELETED,
   TOAST_SENT_TO_PRINTER,
   TOAST_SHOW_IN_FOLDER,
   TOAST_SIGNED_COPY_SAVED,
@@ -501,7 +502,7 @@ describe('save', () => {
     let asked: string | undefined;
     const client = createClient(channels, (id) => {
       asked = id;
-      return Promise.resolve(ok({ kind: 'saved', version: asDocVersion(2), cleared: null }));
+      return Promise.resolve(ok({ kind: 'saved', version: asDocVersion(2), cleared: null, held: [] }));
     });
 
     const shown: { id: string; props: unknown }[] = [];
@@ -539,7 +540,7 @@ describe('save', () => {
         sent.push(params);
         const agreed = (params as { breakSignatures: boolean }).breakSignatures;
         return Promise.resolve(
-          ok(agreed ? { kind: 'saved', version: asDocVersion(3), cleared: null } : { kind: 'breaks-signatures', signatures: 2 }),
+          ok(agreed ? { kind: 'saved', version: asDocVersion(3), cleared: null, held: [] } : { kind: 'breaks-signatures', signatures: 2 }),
         );
       });
       return { client, sent };
@@ -614,7 +615,7 @@ describe('save', () => {
       const sent: string[] = [];
       const client = createClient(channels, (id) => {
         sent.push(id);
-        return Promise.resolve(ok({ kind: 'saved', version: asDocVersion(4), cleared }));
+        return Promise.resolve(ok({ kind: 'saved', version: asDocVersion(4), cleared, held: [] }));
       });
       return { client, sent };
     };
@@ -646,6 +647,61 @@ describe('save', () => {
       // CONTROL: a timer's save has nobody to tell, and a save that kept nothing names nothing.
       expect((await savedWith({ backups: 1, undoCopies: 1, kept: ['report.pdf.bak2'] }, 'unattended')).asked).toStrictEqual([]);
       expect((await savedWith({ backups: 1, undoCopies: 1, kept: [] }, 'attended')).asked).toStrictEqual([]);
+    });
+  });
+
+  /** CR-DOC-10, at the page: a copy another program held is named, and *Delete now* asks main to try again. */
+  describe('a save that left a copy HELD by another program', () => {
+    /** Main's answers: the save names `held`, and each retry answers the next of `retries`. */
+    const heldClient = (held: string[], retries: string[][]): { client: ContractClient; sent: string[] } => {
+      const sent: string[] = [];
+      let retry = 0;
+      const client = createClient(channels, (id) => {
+        sent.push(id);
+        if (id === 'document.deleteHeldCopies') return Promise.resolve(ok({ held: retries[retry++] ?? [] }));
+        return Promise.resolve(ok({ kind: 'saved', version: asDocVersion(4), cleared: null, held }));
+      });
+      return { client, sent };
+    };
+
+    it('names the copy, and DELETE NOW sends exactly `document.deleteHeldCopies` for this document; none left is said', async () => {
+      const { client, sent } = heldClient(['report.pdf.bak'], [[]]);
+      const asked: { id: string; props: unknown }[] = [];
+      const record = saving();
+      const ask = (id: string, props: unknown): Promise<unknown> => {
+        asked.push({ id, props });
+        return Promise.resolve({ delete: true });
+      };
+      expect(await saveDocument({ client, ask, ...record }, DOC, 'attended')).toBe(true);
+      expect(asked).toStrictEqual([{ id: 'dialog.held-copies', props: { held: ['report.pdf.bak'], still: false } }]);
+      expect(sent).toStrictEqual(['document.save', 'document.deleteHeldCopies']);
+      expect(record.said.map((toast) => toast.message)).toStrictEqual([TOAST_SAVED, TOAST_HELD_COPIES_DELETED]);
+    });
+
+    it('a copy STILL held is named again, saying so; closing then keeps it and sends nothing more', async () => {
+      const { client, sent } = heldClient(['report.pdf.bak'], [['report.pdf.bak']]);
+      const asked: { id: string; props: unknown }[] = [];
+      const answers: unknown[] = [{ delete: true }, undefined];
+      const ask = (id: string, props: unknown): Promise<unknown> => {
+        asked.push({ id, props });
+        return Promise.resolve(answers.shift());
+      };
+      expect(await saveDocument({ client, ask, ...saving() }, DOC, 'attended')).toBe(true);
+      expect(asked.map((one) => one.props)).toStrictEqual([
+        { held: ['report.pdf.bak'], still: false },
+        { held: ['report.pdf.bak'], still: true },
+      ]);
+      expect(sent).toStrictEqual(['document.save', 'document.deleteHeldCopies']);
+    });
+
+    it('CONTROL: an autosave asks nothing, and a save that owes nothing names nothing', async () => {
+      const ask = (): Promise<unknown> => Promise.resolve({ delete: true });
+      const autosaved = heldClient(['report.pdf.bak'], []);
+      expect(await saveDocument({ client: autosaved.client, ask, ...saving() }, DOC, 'unattended')).toBe(true);
+      expect(autosaved.sent).toStrictEqual(['document.save']);
+      const clean = heldClient([], []);
+      expect(await saveDocument({ client: clean.client, ask, ...saving() }, DOC, 'attended')).toBe(true);
+      expect(clean.sent).toStrictEqual(['document.save']);
     });
   });
 

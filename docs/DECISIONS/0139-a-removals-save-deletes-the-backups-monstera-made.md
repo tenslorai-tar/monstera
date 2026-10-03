@@ -96,3 +96,20 @@ collection that brings costs nothing, since a change of encryption rewrites ever
 The other 51 commands were read for the same question, *does the copy beside the file hold what the person asked
 nobody may read*. None does: deleting pages, objects, annotations or fields is ordinary editing, where the backup is
 the safety net this ADR keeps.
+
+## Addition, 2026-10-03: a copy another program holds is owed, not thrown
+
+CR-DOC-10 found that a delete which failed (the copy open in another program) threw past a save that had already
+written, so the person was told the save went wrong, and the copy, still holding what was removed, was tried again
+only at the next removal's save. The owner's decision: retry, say plainly which copy still holds removed content, and
+offer to delete it.
+
+- The delete climbs the kernel's held-file ladder (`RENAME_BACKOFF_MS`, `isTransient` in `atomicWrite.ts`), the one a
+  held rename climbs, so the two cannot disagree about which failures are worth a wait.
+- A copy still held after it is **owed**: the ledger records its path and identity in the same `userData` document,
+  so the debt outlives the session. A retry deletes it only while its identity is still the one owed; a file changed
+  since drops the debt and is kept, under this ADR's rule.
+- Every save answers `held`, the names of the document's owed copies still held: a removal's save from its own
+  attempt, any other save after trying them again. An attended save names them in `dialog.held-copies`, whose
+  *Delete now* sends `document.deleteHeldCopies` with the document alone; an autosave says nothing.
+

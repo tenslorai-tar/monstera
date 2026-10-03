@@ -76,6 +76,11 @@ export const SIGNATURE_BREAK_EXPLAINS = messageKey('dialog.signature-break.expla
 export const SIGNATURE_BREAK_APPLY = messageKey('dialog.signature-break.apply');
 export const KEPT_BACKUPS_TITLE = messageKey('dialog.kept-backups.title');
 export const KEPT_BACKUPS_EXPLAINS = messageKey('dialog.kept-backups.explains');
+export const HELD_COPIES_TITLE = messageKey('dialog.held-copies.title');
+export const HELD_COPIES_EXPLAINS = messageKey('dialog.held-copies.explains');
+export const HELD_COPIES_STILL = messageKey('dialog.held-copies.still');
+export const HELD_COPIES_DELETE = messageKey('dialog.held-copies.delete');
+export const TOAST_HELD_COPIES_DELETED = messageKey('toast.held-copies-deleted');
 export const TOAST_SAVED_CLEARED = messageKey('toast.saved-cleared');
 export const TOAST_SAVED_CLEARED_BACKUPS = messageKey('toast.saved-cleared-backups');
 export const BACKUP_COPIES_DESCRIPTION = messageKey('setting.saving-backup-copies.description');
@@ -2468,6 +2473,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [KEPT_BACKUPS_TITLE]: 'Some older copies were kept',
   [KEPT_BACKUPS_EXPLAINS]:
     'Monstera permanently deleted the older copies it made, because they held what you removed. {count, plural, one {This file beside the document is named like a backup, but Monstera did not make it, so it was kept. It may still hold what you removed. Delete it yourself if you do not need it:} other {These files beside the document are named like backups, but Monstera did not make them, so they were kept. They may still hold what you removed. Delete them yourself if you do not need them:}}',
+  [HELD_COPIES_TITLE]: 'An older copy still holds what you removed',
+  [HELD_COPIES_EXPLAINS]:
+    'The document is saved. {count, plural, one {This older copy beside it still holds what you removed. Monstera could not delete it, because another program has it open:} other {These older copies beside it still hold what you removed. Monstera could not delete them, because another program has them open:}}',
+  [HELD_COPIES_STILL]:
+    '{count, plural, one {The copy is still open in another program, so it could not be deleted. Close it there, then try again:} other {The copies are still open in another program, so they could not be deleted. Close them there, then try again:}}',
+  [HELD_COPIES_DELETE]: 'Delete now',
+  [TOAST_HELD_COPIES_DELETED]: 'Deleted permanently. No older copy beside the document holds what you removed.',
   [TOAST_SAVED_CLEARED]: 'Saved. Older copies that held what you removed were deleted permanently, and undo cannot go back past this save.',
   [TOAST_SAVED_CLEARED_BACKUPS]: 'Saved. Older copies that held what you removed were deleted permanently.',
   [BACKUP_COPIES_DESCRIPTION]:

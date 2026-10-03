@@ -1039,6 +1039,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       provenance: createBackupProvenance(backupLedgerFile, {
         identity: readFileIdentity,
         remove: (path) => nodeFileSurface.remove(path),
+        // THE HELD-FILE LADDER'S DELAYS, real ones: a copy another program holds is tried again as a held rename is.
+        wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       }),
     },
     // THE SAME COMPOSITION POINT AS THE FLUSH, and for the same reason: the

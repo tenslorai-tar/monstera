@@ -87,6 +87,7 @@ import { PAGE_TRANSITION_DIALOG_ID } from '../dialogs/pageTransition.js';
 import type { PageTransitionAnswer } from '../dialogs/pageTransitionResult.js';
 import { RESIZE_PAGES_DIALOG_ID } from '../dialogs/resizePages.js';
 import type { ResizePagesAnswer } from '../dialogs/resizePagesResult.js';
+import { HELD_COPIES_DIALOG_ID, HELD_COPIES_RESULT } from '../dialogs/heldCopies.js';
 import { KEPT_BACKUPS_DIALOG_ID } from '../dialogs/keptBackups.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { SIGNATURE_BREAK_DIALOG_ID, SIGNATURE_BREAK_RESULT } from '../dialogs/signatureBreak.js';
@@ -243,6 +244,7 @@ import {
   TOAST_SAVED,
   TOAST_SAVED_CLEARED,
   TOAST_SAVED_CLEARED_BACKUPS,
+  TOAST_HELD_COPIES_DELETED,
   TOAST_SMALLER_COPY_SAVED,
   UNDO_TITLE,
   REDO_TITLE,
@@ -2437,6 +2439,9 @@ export async function saveDocument(
     if (attendance === 'attended' && cleared !== null && cleared.kept.length > 0) {
       await deps.ask(KEPT_BACKUPS_DIALOG_ID, { kept: cleared.kept });
     }
+    // A COPY ANOTHER PROGRAM HELD still holds what was removed (CR-DOC-10). Asked of a person only: an autosave says
+    // nothing, and the next save tries the copy again on its own.
+    if (attendance === 'attended' && answer.value.held.length > 0) await askAboutHeldCopies(deps, docId, answer.value.held);
     return true;
   }
   // NOT REACHABLE from a save that said `breakSignatures: true`, and narrowed rather than cast: an answer this
@@ -2450,6 +2455,35 @@ export async function saveDocument(
     outcome: answer.value.kind === 'write-failed' ? 'write-failed' : answer.value.reason,
   });
   return false;
+}
+
+/**
+ * Names the older copies a save could not delete and offers to try again (CR-DOC-10): `main` deletes, on
+ * `document.deleteHeldCopies`, only the copies it owes, so the dialog sends nothing but the document. A copy still held
+ * opens the same dialog saying so; none left ends in a toast. Closing keeps them, and the next save tries again.
+ */
+async function askAboutHeldCopies(
+  deps: Pick<DocumentCommandDeps, 'ask' | 'client'> & { readonly toast: ShowToast },
+  docId: DocId,
+  first: readonly string[],
+): Promise<void> {
+  let held = first;
+  let still = false;
+  for (;;) {
+    const asked = HELD_COPIES_RESULT.safeParse(await deps.ask(HELD_COPIES_DIALOG_ID, { held, still }));
+    if (!asked.success) return;
+    const retried = await deps.client['document.deleteHeldCopies']({ docId });
+    if (!retried.ok) {
+      reportProblem(deps, retried.error);
+      return;
+    }
+    if (retried.value.held.length === 0) {
+      deps.toast('done', TOAST_HELD_COPIES_DELETED);
+      return;
+    }
+    held = retried.value.held;
+    still = true;
+  }
 }
 
 /**

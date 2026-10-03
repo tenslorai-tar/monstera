@@ -549,6 +549,11 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       },
     },
   ],
+  'dialog.held-copies': [
+    { state: 'opened', props: { held: ['Quarterly report.pdf.bak'], still: false } },
+    { state: 'still', props: { held: ['Quarterly report.pdf.bak', 'Quarterly report.pdf.bak2'], still: true } },
+    { state: 'long', props: { held: [LONG_NAME.replace(/\.pdf$/u, '.pdf.bak')], still: false } },
+  ],
   'dialog.annotation-note': textForm('Comment', 'Please check these totals against the ledger.'),
   'dialog.annotation-edit': [
     { state: 'opened', props: { text: 'Please check these totals against the ledger.' } },

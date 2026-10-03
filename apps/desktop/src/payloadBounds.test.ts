@@ -341,6 +341,8 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.undo': 'needs an engine session',
   'document.redo': 'needs an engine session',
   'document.save': 'needs an engine session',
+  // A `DocId` in and a list of copy names out, bounded by the backup copies a save can make (CR-DOC-10).
+  'document.deleteHeldCopies': 'takes a DocId and answers names bounded by MAX_BACKUP_COPIES',
   // Needs an engine session for the flush, and a DIALOG besides — its whole
   // request is a `DocId` and its whole answer is a byte count and three
   // outcomes, so there is no payload here that could scale with anything.

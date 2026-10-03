@@ -1286,10 +1286,12 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
 
       savedAt.set(docId, current);
       return Promise.resolve(
-        // THE SHIM RUNS NO REMOVAL, so no save of it deletes anything (ADR-0139).
-        ok({ kind: 'saved' as const, version: asDocVersion(current), cleared: null }),
+        // THE SHIM RUNS NO REMOVAL, so no save of it deletes anything (ADR-0139), and no copy is owed a deletion.
+        ok({ kind: 'saved' as const, version: asDocVersion(current), cleared: null, held: [] }),
       );
     },
+    'document.deleteHeldCopies': ({ docId }) =>
+      Promise.resolve(versions.has(docId) ? ok({ held: [] }) : err({ code: 'document-not-open' as const })),
 
     /**
      * Writing a copy, which in the shim is **the picker's outcome and nothing

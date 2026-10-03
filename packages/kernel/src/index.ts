@@ -392,6 +392,7 @@ export {
   type AtomicWriteSurface,
   RENAME_BACKOFF_MS,
   atomicWrite,
+  isTransient,
 } from './atomicWrite.js';
 export { nodeFileSurface, siblingNames } from './fileSurface.js';
 export {

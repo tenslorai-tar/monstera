@@ -234,8 +234,11 @@ export async function atomicWrite(
  * Windows reports a file held open by another process as `EPERM` or `EBUSY`
  * depending on how it was opened; both are the same situation to this ladder.
  * Anything else — a missing temp, a full disk, a read-only volume — is not.
+ *
+ * Exported with {@link RENAME_BACKOFF_MS} as the one answer to *is another program holding this file*: a delete of a
+ * backup climbs the same ladder (`backupLedger.ts`), so the two cannot disagree about which failures are worth a wait.
  */
-function isTransient(cause: unknown): boolean {
+export function isTransient(cause: unknown): boolean {
   const code = (cause as { code?: unknown } | null)?.code;
   return code === 'EPERM' || code === 'EBUSY';
 }

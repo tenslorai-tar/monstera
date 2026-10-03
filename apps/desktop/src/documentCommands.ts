@@ -679,8 +679,14 @@ export type PlaceImageOutcome =
 
 /** What a save came to: the pipeline's outcomes, or a save held back because it would break signatures. */
 export type SaveRequestOutcome =
-  /** Saved — and, where the save was a removal's, which older copies it deleted and which it kept. */
-  | (Extract<SaveOutcome, { kind: 'saved' }> & { readonly cleared: ClearedCopies | null })
+  /**
+   * Saved — and, where the save was a removal's, which older copies it deleted and which it kept; and, for every save,
+   * the older copies still owed a deletion because another program holds them (CR-DOC-10).
+   */
+  | (Extract<SaveOutcome, { kind: 'saved' }> & {
+      readonly cleared: ClearedCopies | null;
+      readonly held: readonly string[];
+    })
   | Exclude<SaveOutcome, { kind: 'saved' }>
   | { readonly kind: 'breaks-signatures'; readonly signatures: number };
 
@@ -5739,10 +5745,34 @@ export class DocumentCommands {
       // THE BACKUP THIS SAVE MADE is the newest name, `atomicWrite`'s own reading of the same list.
       const [newest] = names.backups;
       if (saved.backedUp && newest !== undefined) await this.#save.provenance.made(newest);
-      return { ...saved, cleared: removal ? await this.#clearCopies(context) : null };
+      // A REMOVAL'S SAVE has just tried each copy, so what it could not delete is its answer; any other save tries the
+      // copies this document still owes again, which is what keeps a held copy from being kept for ever.
+      if (removal) {
+        const cleared = await this.#clearCopies(context);
+        return { ...saved, cleared: cleared.copies, held: cleared.held };
+      }
+      return { ...saved, cleared: null, held: await this.#retryHeld(context) };
     });
 
     return value;
+  }
+
+  /**
+   * Tries again to delete the older copies of this document that a save could not delete because another program held
+   * them (CR-DOC-10), and answers the names of those still held. In the document's lane, so no save lands between.
+   */
+  async deleteHeldCopies(docId: DocId): Promise<readonly string[]> {
+    const { value } = await this.#documents.run(docId, (context) => this.#retryHeld(context));
+    return value;
+  }
+
+  /** The owed copies among this document's backup names, tried again; the names still held. */
+  async #retryHeld(context: DocumentContext): Promise<readonly string[]> {
+    const names = this.#save.deps.names(context.path);
+    const mine = new Set([...names.backups, ...names.retired]);
+    const owed = this.#save.provenance.owed().filter((path) => mine.has(path));
+    if (owed.length === 0) return [];
+    return (await this.#save.provenance.retryOwed(owed)).map((path) => basename(path));
   }
 
   /**
@@ -5750,19 +5780,23 @@ export class DocumentCommands {
    * ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)): each backup beside
    * the file — every name a backup of it can have, kept or retired — that the ledger shows Monstera wrote and nothing
    * has changed since, and every undo copy of the document with the history that needs them. A file with a backup's
-   * name that Monstera did not make is kept and named. In the save's own lane entry, so nothing lands between.
+   * name that Monstera did not make is kept and named. One Monstera made that another program holds is **held**: owed a
+   * deletion and named, never thrown past a save that has written (CR-DOC-10). In the save's own lane entry, so
+   * nothing lands between.
    */
-  async #clearCopies(context: DocumentContext): Promise<ClearedCopies> {
+  async #clearCopies(context: DocumentContext): Promise<{ readonly copies: ClearedCopies; readonly held: readonly string[] }> {
     const names = this.#save.deps.names(context.path);
     let backups = 0;
     const kept: string[] = [];
+    const held: string[] = [];
     for (const path of [...names.backups, ...names.retired]) {
       const outcome = await this.#save.provenance.deleteIfMade(path);
       if (outcome === 'deleted') backups += 1;
       else if (outcome === 'not-made') kept.push(basename(path));
+      else if (outcome === 'held') held.push(basename(path));
     }
     const before = this.#bus.undoCopies(context);
     this.#bus.forgetUndoCopies(context);
-    return { backups, undoCopies: before - this.#bus.undoCopies(context), kept };
+    return { copies: { backups, undoCopies: before - this.#bus.undoCopies(context), kept }, held };
   }
 }

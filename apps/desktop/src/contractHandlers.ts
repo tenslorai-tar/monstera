@@ -436,6 +436,16 @@ export function createContractHandlers(deps: {
     'document.undo': undoHandler(deps.commands),
     'document.redo': redoHandler(deps.commands),
     'document.save': saveHandler(deps.commands),
+    'document.deleteHeldCopies': async ({ docId }) => {
+      try {
+        return ok({ held: [...(await deps.commands.deleteHeldCopies(docId))] });
+      } catch (thrown) {
+        // THE LANE'S OWN REFUSALS, as `document.save` answers them; anything else is `internal`.
+        if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' } as const);
+        if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' } as const);
+        throw thrown;
+      }
+    },
     'document.extract': extractHandler(deps.commands, mintWritten),
     'document.snapshotRegion': snapshotRegionHandler(deps.commands, mintWritten),
     'document.exportFormData': exportFormDataHandler(deps.commands, mintWritten),
@@ -898,6 +908,7 @@ function saveHandler(commands: DocumentCommands): ContractHandlers['document.sav
           kind: 'saved',
           version: outcome.version,
           cleared: cleared === null ? null : { backups: cleared.backups, undoCopies: cleared.undoCopies, kept: [...cleared.kept] },
+          held: [...outcome.held],
         } as const);
       }
       if (outcome.kind === 'breaks-signatures') {

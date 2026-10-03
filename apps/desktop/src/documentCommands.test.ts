@@ -303,6 +303,8 @@ const noSaving: SaveSource = {
   provenance: {
     made: () => Promise.reject(new Error('this case does not save')),
     deleteIfMade: () => Promise.reject(new Error('this case does not save')),
+    owed: () => [],
+    retryOwed: () => Promise.reject(new Error('this case does not save')),
   },
 };
 
@@ -315,6 +317,7 @@ function ledger(): BackupProvenance {
   return createBackupProvenance(createEphemeralSettings(), {
     identity: readFileIdentity,
     remove: (path) => rm(path, { force: true }),
+    wait: () => Promise.resolve(),
   });
 }
 
@@ -1392,6 +1395,8 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     async function aSavableDocument(
       /** What the writer says about the next save and the signatures — the real decision unless a case says otherwise. */
       signaturesKept: DocumentCommandsParts['signaturesKept'] = signaturesKeptBySave,
+      /** Which backups Monstera made — the product's ledger on the real disk unless a case holds a file. */
+      provenance: BackupProvenance = ledger(),
     ): Promise<{
       commands: DocumentCommands;
       saved: DocId;
@@ -1429,7 +1434,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           bus: bus(),
           engine: held,
           save: {
-            provenance: ledger(),
+            provenance,
             // THE REAL SURFACE AND THE REAL CHECK. Every other case in this
             // file is about a decision; this one is the first caller, and a
             // seam whose every test injects its surfaces is unproven against a
@@ -1520,6 +1525,57 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       // THE FACT CLEARS WITH THE SAVE: the file holds the removal now, so an ordinary save after it backs up again.
       await commands.execute(saved, rotateOnce);
       expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ backedUp: true, cleared: null });
+    });
+
+    it('a copy ANOTHER PROGRAM HOLDS does not fail the save: it is named, owed, retried, and deleted once let go', async () => {
+      // CR-DOC-10: the delete threw past a save that had written, so the person saw a failed save, and the copy — the
+      // unredacted file — stayed with nothing ever trying it again.
+      let holding = true;
+      const held = createBackupProvenance(createEphemeralSettings(), {
+        identity: readFileIdentity,
+        remove: (path) =>
+          holding ? Promise.reject(Object.assign(new Error('resource busy or locked'), { code: 'EBUSY' })) : rm(path, { force: true }),
+        wait: () => Promise.resolve(),
+      });
+      const { commands, saved, path, before } = await aSavableDocument(signaturesKeptBySave, held);
+      await commands.execute(saved, rotateOnce);
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ backedUp: true, held: [] });
+      expect(holdsReplaced(path, before)).toStrictEqual([`${basename(path)}.bak`]);
+
+      await commands.execute(saved, sanitize);
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({
+        kind: 'saved',
+        cleared: { backups: 0, kept: [] },
+        held: [`${basename(path)}.bak`],
+      });
+      // STILL THERE, and still owed: the next save of any kind tries it again, and so does the person's own ask.
+      expect(existsSync(`${path}.bak`)).toBe(true);
+      expect(await commands.deleteHeldCopies(saved)).toStrictEqual([`${basename(path)}.bak`]);
+
+      holding = false;
+      expect(await commands.deleteHeldCopies(saved)).toStrictEqual([]);
+      expect(existsSync(`${path}.bak`)).toBe(false);
+    });
+
+    it('an ORDINARY save after it tries the held copy again, unasked', async () => {
+      let holding = true;
+      const held = createBackupProvenance(createEphemeralSettings(), {
+        identity: readFileIdentity,
+        remove: (path) =>
+          holding ? Promise.reject(Object.assign(new Error('resource busy or locked'), { code: 'EBUSY' })) : rm(path, { force: true }),
+        wait: () => Promise.resolve(),
+      });
+      const { commands, saved, path } = await aSavableDocument(signaturesKeptBySave, held);
+      await commands.execute(saved, rotateOnce);
+      await commands.save(saved, { breakSignatures: false });
+      await commands.execute(saved, sanitize);
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ held: [`${basename(path)}.bak`] });
+
+      // LET GO, and the next ordinary save — which keeps its own backup of the redacted file — deletes the owed one
+      // first. Its answer owes nothing.
+      holding = false;
+      await commands.execute(saved, rotateOnce);
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ kind: 'saved', held: [] });
     });
 
     it('PROTECTING a document keeps no readable copy: the save deletes the backup Monstera made and writes none', async () => {

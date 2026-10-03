@@ -41,6 +41,7 @@ import { IMPORT_FORM_DATA_PROBLEM_DIALOG } from '../dialogs/importFormDataProble
 import { IMPORT_PAGE_AS_LAYER_DIALOG } from '../dialogs/importPageAsLayer.js';
 import { INSERT_FROM_PDF_DIALOG } from '../dialogs/insertFromPdf.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG } from '../dialogs/insertImageProblem.js';
+import { HELD_COPIES_DIALOG } from '../dialogs/heldCopies.js';
 import { KEPT_BACKUPS_DIALOG } from '../dialogs/keptBackups.js';
 import { KEYBOARD_SHORTCUTS_DIALOG } from '../dialogs/keyboardShortcuts.js';
 import { MARKDOWN_IMPORT_PROBLEM_DIALOG } from '../dialogs/markdownImportProblem.js';
@@ -123,6 +124,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   SIGNATURE_BREAK_DIALOG,
   PENDING_REDACTIONS_DIALOG,
   KEPT_BACKUPS_DIALOG,
+  HELD_COPIES_DIALOG,
   ANNOTATION_NOTE_DIALOG,
   ANNOTATION_EDIT_DIALOG,
   ANNOTATION_REPLY_DIALOG,
