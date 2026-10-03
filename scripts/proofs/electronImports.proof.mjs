@@ -615,6 +615,19 @@ try {
       },
     ],
     [
+      'scripts/research/hostDeadlineHost.mjs',
+      {
+        sites: 1,
+        reason:
+          'ONE helper loads four built modules through file:// URLs — the composition root, the engine ' +
+          'host platform, the harness surfaces and the fixture builder. The whole subject is the SHIPPED ' +
+          'deadline path (CR-SEC-09): it freezes a real contained host mid-call and asks whether the real ' +
+          'createShellDependencies ends it and rebuilds, which client.test.ts answers only against a fake ' +
+          'transport. It runs UNDER the Electron binary in Node mode rather than starting it — its driver ' +
+          'does that, through electronBinaryPath() — and it never imports the electron package.',
+      },
+    ],
+    [
       'scripts/research/composeHostLiveHost.mjs',
       {
         sites: 1,
