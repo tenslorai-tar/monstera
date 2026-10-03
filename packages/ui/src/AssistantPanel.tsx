@@ -842,7 +842,8 @@ export function AssistantPanel({
             count: sent.pageCount,
           });
     return sent.truncated
-      ? `${pages} ${i18n._(ASSISTANT_SENT_CUT, { characters: number.format(sent.characters) })}`
+      ? // A NUMBER, never `number.format`'s string: the plural formats it, and a string renders as "NaN".
+        `${pages} ${i18n._(ASSISTANT_SENT_CUT, { characters: sent.characters })}`
       : pages;
   };
 
@@ -886,7 +887,7 @@ export function AssistantPanel({
     const share =
       turn.share === undefined || turn.documents !== undefined
         ? []
-        : [i18n._(ASSISTANT_SENT_SHARE_EACH, { characters: number.format(turn.share) })];
+        : [i18n._(ASSISTANT_SENT_SHARE_EACH, { characters: turn.share })];
     return [...share, ...contextLines(turn), ...files];
   };
 
@@ -901,7 +902,7 @@ export function AssistantPanel({
           count: turn.documents.asked.length,
           // MAIN'S NUMBER where it answered one — with files beside the documents it is smaller than the documents'
           // count alone gives — and the same rule's answer otherwise.
-          characters: number.format(turn.share ?? askShareOf(turn.documents.asked.length)),
+          characters: turn.share ?? askShareOf(turn.documents.asked.length),
         }),
         ...turn.among.map((each) =>
           'sent' in each

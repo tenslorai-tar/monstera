@@ -851,6 +851,12 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       props: { pageCount: 12 },
       steps: [choose('One file for each range Each range you type becomes one PDF, for example 1-3, 4-6.'), type('Ranges', '1-4, 5-8, 9-12')],
     },
+    // ONE FILE, in the singular (item 13i): "1 files will be written" until the line went through the plural rule.
+    {
+      state: 'one-range',
+      props: { pageCount: 12 },
+      steps: [choose('One file for each range Each range you type becomes one PDF, for example 1-3, 4-6.'), type('Ranges', '1-12')],
+    },
     {
       state: 'refused',
       props: { pageCount: 12 },

@@ -68,7 +68,9 @@ export default function WordCountBody({
       </dl>
       {pagesCounted < pageCount ? (
         <p className="m-word-count-partial" data-partial="true">
-          {_(WORD_COUNT_PARTIAL, { counted: count(pagesCounted), total: count(pageCount) })}
+          {/* THE TOTAL IS A NUMBER: the plural picks *page* or *pages* from it and formats it itself. A formatted
+              string there renders as "NaN pages". */}
+          {_(WORD_COUNT_PARTIAL, { counted: count(pagesCounted), total: pageCount })}
         </p>
       ) : null}
     </div>

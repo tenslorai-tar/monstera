@@ -2768,7 +2768,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // SAYS THE FIGURES ARE SHORT, in the sentence rather than in a colour: a
   // total smaller than the document is indistinguishable from a correct total
   // for a shorter one, and a reader quoting it has no way to tell.
-  [WORD_COUNT_PARTIAL]: 'Counted {counted} of {total} pages — these totals are incomplete.',
+  [WORD_COUNT_PARTIAL]:
+    'Counted {counted} of {total, plural, one {# page} other {# pages}} — these totals are incomplete.',
   [PAGE_STRUCTURE_COMMAND_TITLE]: 'Reading order',
   [PAGE_STRUCTURE_TITLE]: 'Reading order and tags',
   [PAGE_STRUCTURE_PAGE]: 'Tags on page {page}, in the order the document gives them.',
@@ -2797,7 +2798,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SPELL_CHECK_CLEAN]: 'No misspellings found.',
   [SPELL_CHECK_UNAVAILABLE]:
     'The spelling dictionary could not be loaded, so nothing was checked.',
-  [SPELL_CHECK_PARTIAL]: 'Checked {counted} of {total} pages — this list is incomplete.',
+  [SPELL_CHECK_PARTIAL]: 'Checked {counted} of {total, plural, one {# page} other {# pages}} — this list is incomplete.',
   [SPELL_CHECK_OCCURRENCES]: '{count, plural, one {# time} other {# times}}',
   [SPELL_CHECK_FIRST_PAGE]: 'first on page {page}',
   [SPELL_CHECK_SUGGESTIONS]: 'Suggestions',
@@ -2969,13 +2970,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIND_REGEX]: 'Regular expression',
   [FIND_ALL_PAGES]: 'Search all pages',
   [FIND_CANCEL]: 'Cancel',
-  [FIND_PROGRESS]: 'Searched {done} of {count} pages',
+  [FIND_PROGRESS]: 'Searched {done} of {count, plural, one {# page} other {# pages}}',
   // NAMES WHAT WAS DISCARDED. A cancelled walk keeps nothing, and a message
   // that only said "cancelled" would leave a reader wondering whether the
   // partial count they glimpsed is still on screen.
   [FIND_CANCELLED]: 'Search cancelled. No results were kept.',
   [FIND_BAD_PATTERN]: 'That is not a valid regular expression.',
-  [FIND_DOCUMENT_MATCHES]: '{count} matches in this document',
+  [FIND_DOCUMENT_MATCHES]: '{count, plural, one {# match} other {# matches}} in this document',
   [FIND_DOCUMENT_EMPTY]: 'Nothing in this document matches.',
   [FIND_MATCH_ON_PAGE]: 'Page {page}: {text}',
   [FIND_NEXT_MATCH]: 'Next match',
@@ -3814,13 +3815,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_CHIP_NOTHING]: 'None',
   [ASSISTANT_SENT_PAGE]: 'Sent page {page} of {count}',
   [ASSISTANT_SENT_PAGES]: 'Sent pages {first} to {last} of {count}',
-  [ASSISTANT_SENT_CUT]: '— cut short at {characters} characters',
+  [ASSISTANT_SENT_CUT]: '— cut short at {characters, plural, one {# character} other {# characters}}',
   [ASSISTANT_SENT_NOTHING]: 'No text was found to send',
   [ASSISTANT_CITATION]: 'Go to page {page}',
   [ASSISTANT_CITATION_RIGHT]: 'Go to page {page} of the document on the right',
   [ASSISTANT_CHIP_ALL]: 'All Open Docs',
   [ASSISTANT_SCOPE_ALL]: 'all open documents',
-  [ASSISTANT_SENT_SHARE]: '{count} documents, up to {characters} characters of each',
+  [ASSISTANT_SENT_SHARE]:
+    '{count, plural, one {# document} other {# documents}}, up to {characters, plural, one {# character} other {# characters}} of each',
   [ASSISTANT_SENT_DOCUMENT]: '{name}: {sent}',
   [ASSISTANT_SENT_UNREAD]: '{name}: not read, {reason}',
   [ASSISTANT_SENT_NOT_SENT]: 'Not sent, more than {limit} were open: {names}',
@@ -3836,7 +3838,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     '{count, plural, one {One more file was not attached} other {# more files were not attached}}: at most {limit} go with one question.',
   [ASSISTANT_SIZE_KB]: '{size} KB',
   [ASSISTANT_SIZE_MB]: '{size} MB',
-  [ASSISTANT_SENT_SHARE_EACH]: 'Up to {characters} characters of each document and file',
+  [ASSISTANT_SENT_SHARE_EACH]:
+    'Up to {characters, plural, one {# character} other {# characters}} of each document and file',
   [ASSISTANT_SENT_FILE_PICTURE]: '{name}: sent as a picture',
   [ASSISTANT_FILE_NOT_FOUND]: 'it could not be found',
   [ASSISTANT_FILE_TOO_LARGE]: 'it is too large to send',
@@ -4091,7 +4094,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIND_SUBMIT]: 'Search this page',
   // A COUNT, because "found" without one cannot say whether narrowing the query
   // helped, which is the user's next decision.
-  [FIND_MATCHES]: '{count} matches on this page',
+  [FIND_MATCHES]: '{count, plural, one {# match} other {# matches}} on this page',
   // NOT "no results", which reads as a failure. The document was searched and
   // the word is not on this page — which is an answer.
   [FIND_EMPTY]: 'Nothing on this page matches.',
@@ -4261,7 +4264,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SPLIT_DOCUMENT_EMPTY]: 'Type the ranges to split into, for example 1-3, 4-6.',
   // THE NUMBER A READER CHECKS BEFORE PRESSING, and it says where they go —
   // the folder is chosen after this dialog, so *saved* would be premature.
-  [SPLIT_DOCUMENT_FILES]: 'This document is not changed. {files} files will be written.',
+  [SPLIT_DOCUMENT_FILES]:
+    'This document is not changed. {files, plural, one {# file} other {# files}} will be written.',
   [SPLIT_DOCUMENT_APPLY]: 'Choose a folder…',
   [EXPORT_PAGE_IMAGES_COMMAND_TITLE]: 'Export pages as images…',
   [EXPORT_PAGE_IMAGES_TITLE]: 'Export pages as images',
@@ -4433,7 +4437,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_PAGE_IMAGES_OUT_OF_BOUNDS]:
     'Resolution must be a whole number from {minDpi} to {maxDpi}, and quality from {minQuality} to {maxQuality}.',
   [EXPORT_PAGE_IMAGES_FILES]:
-    'This document is not changed. One image for each page: {files} files will be written.',
+    'This document is not changed. One image for each page: {files, plural, one {# file} other {# files}} will be written.',
   // WHILE THE TYPED PAGES NAME NONE, there is no count to give, and the half of the line above that is still true keeps
   // the line from reading as a message that failed to arrive.
   [EXPORT_PAGE_IMAGES_UNCHANGED]: 'This document is not changed.',
@@ -5051,7 +5055,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // THE OFFENDING PART IS QUOTED BACK. A message describing the class leaves a
   // person re-reading a whole expression to find which piece was wrong.
   [DELETE_PAGES_NOT_A_NUMBER]: '“{part}” is not a page or a page range.',
-  [DELETE_PAGES_OUT_OF_RANGE]: '“{part}” is outside this document, which has {pageCount} pages.',
+  [DELETE_PAGES_OUT_OF_RANGE]:
+    '“{part}” is outside this document, which has {pageCount, plural, one {# page} other {# pages}}.',
   // The correction is named rather than performed: reading 5-3 as 3-5 would
   // delete three pages the user did not ask for.
   [DELETE_PAGES_BACKWARDS]: '“{part}” counts backwards. Write the lower page first.',

@@ -269,8 +269,8 @@ describe('FindBar match navigation', () => {
     });
 
     // The page search DID find something — without this the case passes for a
-    // bar that rendered no results at all, which is the vacuous version.
-    expect(container.textContent).toContain('1 matches on this page');
+    // bar that rendered no results at all, which is the vacuous version. ONE MATCH, in the singular (item 13i).
+    expect(container.textContent).toContain('1 match on this page');
     expect(container.querySelector('[data-find-next]')).toBeNull();
     expect(jumped).not.toHaveBeenCalled();
   });
@@ -409,14 +409,14 @@ describe('FindBar replace-all', () => {
     });
     // THE SEARCH FOUND SOMETHING FIRST — without this the case passes on a bar
     // that never rendered a result, and *cleared* would mean nothing.
-    expect(container.textContent).toContain('1 matches on this page');
+    expect(container.textContent).toContain('1 match on this page');
 
     await act(async () => {
       only(container, '[data-find-replace-all]', HTMLButtonElement).click();
       await Promise.resolve();
     });
 
-    expect(container.textContent).not.toContain('1 matches on this page');
+    expect(container.textContent).not.toContain('1 match on this page');
     // AND THE HIGHLIGHTS WENT WITH THEM. A list cleared while the page kept its
     // boxes would put a rectangle around a word that is no longer there.
     expect(painted).toHaveBeenLastCalledWith(null);

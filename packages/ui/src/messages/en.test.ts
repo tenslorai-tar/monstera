@@ -36,6 +36,65 @@ import * as catalogue from './en.js';
  * exactly that, in the package everything imports.
  */
 
+/**
+ * Words ending in *s* that follow a placeholder and are NOT a plural noun — a verb, *this*, *as* — so the count check
+ * does not read them as one. Each is here because a message uses it; a new one is a line added on purpose.
+ */
+const NOT_A_PLURAL_NOUN: ReadonlySet<string> = new Set([
+  'is',
+  'was',
+  'has',
+  'does',
+  'needs',
+  'holds',
+  'puts',
+  'fixes',
+  'publishes',
+  'this',
+  'as',
+]);
+
+/** Placeholders that hold a fixed number above one, so a plural noun after them is always right. */
+const FIXED_ABOVE_ONE: ReadonlySet<string> = new Set(['limit', 'megapixels']);
+
+/** The text with every ICU `plural`, `select` and `selectordinal` argument taken out, braces balanced. */
+function outsideIcuChoices(text: string): string {
+  let out = '';
+  let at = 0;
+  while (at < text.length) {
+    const choice = /^\{\s*\w+\s*,\s*(?:plural|select|selectordinal)\s*,/u.exec(text.slice(at));
+    if (choice === null) {
+      out += text[at] ?? '';
+      at += 1;
+      continue;
+    }
+    let depth = 0;
+    for (; at < text.length; at += 1) {
+      if (text[at] === '{') depth += 1;
+      else if (text[at] === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          at += 1;
+          break;
+        }
+      }
+    }
+    out += ' ';
+  }
+  return out;
+}
+
+/** Whether a message writes a count for the plural alone: a "(s)", or `{n} things` outside a plural. */
+function countWrittenForThePluralAlone(text: string): boolean {
+  if (text.includes('(s)')) return true;
+  for (const match of outsideIcuChoices(text).matchAll(/\{(\w+)\}\s+([A-Za-z]+)/gu)) {
+    const [, placeholder = '', word = ''] = match;
+    if (!word.endsWith('s') || FIXED_ABOVE_ONE.has(placeholder)) continue;
+    if (!NOT_A_PLURAL_NOUN.has(word.toLowerCase())) return true;
+  }
+  return false;
+}
+
 /** Every message key this module exports, by the export's own name. */
 function exportedKeys(): ReadonlyMap<string, string> {
   const keys = new Map<string, string>();
@@ -101,6 +160,28 @@ describe('the English catalogue', () => {
    * a string added later that says *toolbar* for it reddens here rather than in a screenshot. The control is the new
    * name being present at all: an empty catalogue would satisfy *no value says toolbar* too.
    */
+  /**
+   * A COUNT IS SAID THROUGH THE PLURAL RULE, never as "(s)" and never as a bare number before a plural noun (item 13i:
+   * "1 files will be written"). 785fecc6 swept "(s)" by hand and left this shape standing, because nothing checked it.
+   *
+   * The rule is read off the text: a placeholder followed by a word ending in *s*, outside an ICU `plural` or `select`,
+   * is a count written for the plural alone. Prose cannot tell a plural noun from a verb (*"{name} needs"*), so the
+   * other words are named in {@link NOT_A_PLURAL_NOUN}, and a new one is a line someone adds on purpose. A fixed
+   * number that is never one (a limit, a size) is named in {@link FIXED_ABOVE_ONE} for the same reason.
+   */
+  it('says every count through the plural rule, with no "(s)" and no bare number before a plural noun', () => {
+    const offending = Object.entries(EN).filter(([, text]) => countWrittenForThePluralAlone(text));
+    expect(offending.map(([key]) => key)).toStrictEqual([]);
+  });
+
+  it('CONTROL: the count check sees the shapes it is for, and passes the plural rule', () => {
+    expect(countWrittenForThePluralAlone('{files} files will be written.')).toBe(true);
+    expect(countWrittenForThePluralAlone('Counted {counted} of {total} pages.')).toBe(true);
+    expect(countWrittenForThePluralAlone('Remove {count} duplicate page(s)')).toBe(true);
+    expect(countWrittenForThePluralAlone('{count, plural, one {# file} other {# files}} will be written.')).toBe(false);
+    expect(countWrittenForThePluralAlone('{name} needs a password.')).toBe(false);
+  });
+
   it('calls the floating bar the Float bar everywhere, and nowhere the toolbar', () => {
     const values = Object.values(EN);
     expect(values.filter((text) => /\btool ?bars?\b/iu.test(text))).toStrictEqual([]);
