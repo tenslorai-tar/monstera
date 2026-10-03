@@ -3,6 +3,7 @@ import { I18nProvider } from '@lingui/react';
 import { channels, contrast, messageKey } from '@monstera/shared';
 import { render as renderBare, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
+import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { activateCatalogue, i18n } from '../i18n.js';
@@ -120,7 +121,7 @@ describe('Button', () => {
       render(<Button label={SAVE} variant="primary" />);
       const button = screen.getByRole('button', { name: 'Save' });
 
-      // `useOnColor` solves in an effect, so the first paint carries no colour.
+      // `useOnColor` solves in a layout effect; the wait is for the render, not for a later frame.
       await vi.waitFor(() => {
         expect(button.style.color).not.toBe('');
       });
@@ -129,6 +130,38 @@ describe('Button', () => {
       const accent = channels('#2fb96a');
       if (applied === null || accent === null) throw new Error('a colour did not parse');
       expect(contrast(applied, accent)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it('has its colour BEFORE THE FIRST PAINT: it is on the element when the commit that inserts it ends', async () => {
+      // A default-priority render commits in one task: DOM insertion, then layout effects, synchronously; passive
+      // effects are scheduled for a LATER task, after which the browser may already have painted. The observer's
+      // callback is a microtask queued by the insertion, so it runs when the commit task ends and before any later
+      // one — it reads what the first paint shows. (`act` and `flushSync` both flush passive effects too, so neither
+      // can separate the two.) A colour solved in a passive effect was drawn once in the stylesheet's unchecked ink.
+      declareTokens();
+      const container = document.createElement('div');
+      document.body.append(container);
+      const root = createRoot(container);
+      const seen = new Promise<string | undefined>((answer) => {
+        const observer = new MutationObserver(() => {
+          const button = container.querySelector('button');
+          if (button === null) return;
+          observer.disconnect();
+          answer(button.style.color);
+        });
+        observer.observe(container, { childList: true, subtree: true });
+      });
+      try {
+        root.render(
+          <Messages>
+            <Button label={SAVE} variant="primary" />
+          </Messages>,
+        );
+        expect(await seen).not.toBe('');
+      } finally {
+        root.unmount();
+        container.remove();
+      }
     });
 
     it('  ...and that colour is NOT the --text token it started from', async () => {
