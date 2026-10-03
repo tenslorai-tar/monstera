@@ -24,15 +24,41 @@
  * start while the owner's installed application is open is not handed to the owner's window, and nothing the run
  * writes lands in the owner's profile. `--remote-debugging-port=0` lets Windows pick the port, which Chromium writes
  * to `DevToolsActivePort` in that folder. The process tree is ended by PID.
+ *
+ * ## The port file exists before it can be read
+ *
+ * Measured 2026-10-03 on the 0.1.10.0 stage (a scratch probe reading the file in a tight loop from the start): in 3 of 4
+ * starts the file existed and could not be opened — Windows' sharing violation, `EBUSY` in Node — for 11 to 46
+ * consecutive reads, then read complete, and never refused again after that. The packaging of 0.1.10.0 met one of those
+ * reads and stopped with `EBUSY`. So a name that exists is not a file that is written, and `readPortFile` answers *not
+ * yet* for a file still held, exactly as for an absent one; the loop's timeout is what reports a start that never
+ * gets there.
  */
 
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 /** The application's own page, as `window.ts` loads it. */
 const RENDERER_PAGE = /^file:\/\/\/.*\/renderer\/index\.html$/u;
+
+/**
+ * The DevTools port Chromium wrote into `userData`, or `null` while there is none to read yet: the file is absent, or
+ * it exists and is still held without sharing (`EBUSY`, see the header). Any other failure to read it is thrown.
+ *
+ * @param {string} userData
+ * @returns {string | null}
+ */
+export function readPortFile(userData) {
+  try {
+    return readFileSync(join(userData, 'DevToolsActivePort'), 'utf8').split('\n')[0] ?? '';
+  } catch (error) {
+    const code = /** @type {{ code?: unknown }} */ (error).code;
+    if (code === 'ENOENT' || code === 'EBUSY') return null;
+    throw error;
+  }
+}
 
 /**
  * One `Runtime.evaluate` on a page, over its DevTools socket.
@@ -104,9 +130,8 @@ export async function startsToWindow({ command, args = [], timeoutMs = 60_000 })
       if (exitCode !== undefined) {
         return { started: false, ms: elapsed(), reason: `the process exited with code ${String(exitCode)} before its renderer mounted; its output ends:\n${output}` };
       }
-      const portFile = join(userData, 'DevToolsActivePort');
-      if (!existsSync(portFile)) continue;
-      const port = readFileSync(portFile, 'utf8').split('\n')[0] ?? '';
+      const port = readPortFile(userData);
+      if (port === null) continue;
       /** @type {{ type: string, url: string, webSocketDebuggerUrl?: string }[]} */
       let targets;
       try {

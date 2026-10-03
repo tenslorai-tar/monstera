@@ -6,7 +6,8 @@
  *
  * And the executable's icon: the packager's own step is applied to a copy of the provisioned `electron.exe` and the
  * icon is read back from its resources, against the same file without the step. And the start check that refuses a
- * package whose program does not start, against three applications the provisioned runtime starts by folder.
+ * package whose program does not start, against three applications the provisioned runtime starts by folder, and its
+ * reading of a port file another process still holds without sharing.
  *
  * It builds no package and needs no SDK. The icon and start cases need a Windows executable, so they run where Windows
  * is; elsewhere they are named as not run, and `--require-runtime` — which the Windows leg passes — makes that a
@@ -14,6 +15,7 @@
  *
  * Usage: node scripts/proofs/packageMsix.proof.mjs [--require-runtime]
  */
+import { spawn } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -25,7 +27,7 @@ import { applicationIcon, carriesIcon, icoImages } from '../lib/peIcons.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { partialOutcome } from '../lib/unverifiable.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
-import { startsToWindow } from '../release/startCheck.mjs';
+import { readPortFile, startsToWindow } from '../release/startCheck.mjs';
 import {
   BRAND_ICON,
   UNSIGNED_OID,
@@ -52,6 +54,8 @@ const RUNTIME_CASES = [
   'the start check passes an application whose window loads its page and mounts',
   "CONTROL: one whose main throws before its window — 0.1.7.0's shape, silent on every stream — is not started, and no window is why",
   'CONTROL: one whose window loads its page and never mounts is not started, and the mount is why',
+  'the port file read while another process holds it without sharing is "not yet", and its port once released',
+  'CONTROL: a plain read of that held file throws EBUSY, as the packaging of 0.1.10.0 met it',
 ];
 
 /** Cases decidable without one. These run on every machine. */
@@ -264,6 +268,48 @@ try {
       timeoutMs: 10_000,
     });
     check(RUNTIME_CASES[5] ?? '', !empty.started && empty.reason.includes('had not mounted'), `${String(empty.ms)} ms: ${empty.reason}`);
+
+    // THE PORT FILE HELD BY ITS WRITER (`startCheck.mjs`' header): a second process opens a written port file with no
+    // sharing, as the file was found held during a start, and keeps it open until told to close it.
+    const profile = join(scratch, 'held-profile');
+    mkdirSync(profile);
+    writeFileSync(join(profile, 'DevToolsActivePort'), '51234\n/devtools/browser/held\n');
+    const holder = spawn(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        "$f = [System.IO.File]::Open($env:HELD_FILE, 'Open', 'ReadWrite', 'None'); [Console]::Out.WriteLine('held'); " +
+          '[void][Console]::In.ReadLine(); $f.Close()',
+      ],
+      { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, HELD_FILE: join(profile, 'DevToolsActivePort') } },
+    );
+    const holderExit = new Promise((done) => holder.on('exit', done));
+    await new Promise((held, failed) => {
+      holder.stdout.on('data', (chunk) => {
+        if (String(chunk).includes('held')) held(undefined);
+      });
+      holder.on('exit', (code) => failed(new Error(`the holding process exited (${String(code)}) before it held the file`)));
+    });
+    /** @type {string | null} */
+    let whileHeld;
+    try {
+      whileHeld = readPortFile(profile);
+    } catch (error) {
+      whileHeld = `threw ${formatError(error)}`;
+    }
+    let plainRead = 'read the file';
+    try {
+      readFileSync(join(profile, 'DevToolsActivePort'));
+    } catch (error) {
+      plainRead = String(/** @type {{ code?: unknown }} */ (error).code);
+    }
+    holder.stdin.end('\n');
+    await holderExit;
+    const afterRelease = readPortFile(profile);
+    check(RUNTIME_CASES[6] ?? '', whileHeld === null && afterRelease === '51234', `while held: ${String(whileHeld)}; after: ${String(afterRelease)}`);
+    check(RUNTIME_CASES[7] ?? '', plainRead === 'EBUSY', `the plain read: ${plainRead}`);
   }
 
   if (failures.length > 0) {
