@@ -5259,6 +5259,9 @@ optgroup {
  */
 /* A WHITE PAD in every theme (the owner, 2 October): the ink is drawn as it will land, black on the page's paper. */
 .m-signature-pad {
+  /* BORDER-BOX, so its border is inside the 100%: under the default content box the pad was 2 px wider than the body
+     and the Signature dialog scrolled sideways by that much (the gallery's reading, 2026-10-03, 578 > 576). */
+  box-sizing: border-box;
   width: 100%;
   aspect-ratio: 3 / 1;
   border: 1px solid var(--border-control);
