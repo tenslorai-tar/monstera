@@ -1771,6 +1771,7 @@ describe('a document-wide list answers in parts', () => {
 describe('a dense page’s blocks and objects answer in parts the contract accepts', () => {
   const OPENED = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' } as const;
   const box = { x0: 10, y0: 10, x1: 40, y1: 20 };
+  const cell = { size: 9, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
   const blocks = Array.from({ length: 600 }, (_, at) => ({
     box,
     lines: [{ runs: [{ index: at, text: `cell ${String(at)}`, style: cell }], box }],
@@ -1801,7 +1802,6 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
       const answer: { readonly ok: boolean; readonly value?: object & { readonly next: number | null } } = await handlers[name]({
         docId: A_DOC,
         page: 0,
-  const cell = { size: 9, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
         from: at,
       });
       if (!answer.ok || answer.value === undefined) throw new Error(`${name} refused the part from ${String(at)}`);

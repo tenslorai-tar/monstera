@@ -4659,6 +4659,11 @@ export const channels = {
                               index: z.number().int().min(0).max(MAX_OBJECT_INDEX),
                               /** What that run says, with the spaces PDFium infers between words. */
                               text: z.string().max(MAX_RUN_TEXT),
+                              /**
+                               * How THIS run is set, which the editor draws it in (ADR-0145): a line of a bold lead
+                               * word and a regular rest is two runs in two styles, and the block's own style is one.
+                               */
+                              style: textBlockStyleSchema,
                             })
                             .strict(),
                         )
@@ -4667,16 +4672,12 @@ export const channels = {
                         .readonly(),
                       box: pdfBoxSchema,
                     })
-                              /**
-                               * How THIS run is set, which the editor draws it in (ADR-0145): a line of a bold lead
-                               * word and a regular rest is two runs in two styles, and the block's own style is one.
-                               */
-                              style: textBlockStyleSchema,
                     .strict(),
                 )
                 .min(1)
                 .max(MAX_EDIT_RUNS)
                 .readonly(),
+              /** The block's base: its first line's longest run's style, for a paste and a line typed below. */
               style: textBlockStyleSchema,
             })
             .strict(),
@@ -4685,7 +4686,6 @@ export const channels = {
         .readonly(),
       /** Whether the engine's walk stopped at its bound, on the last part only. `document.annotations`' flag. */
       truncated: z.boolean(),
-              /** The block's base: its first line's longest run's style, for a paste and a line typed below. */
       /**
        * Characters on this page set at an angle, which are not offered for editing
        * in place — an editor cannot be placed along an axis the page is not set on.

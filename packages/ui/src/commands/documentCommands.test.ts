@@ -1331,6 +1331,7 @@ describe('delete pages — the mutation-dialog gate', () => {
    * and not from zero, so a write that sent a POSITION rather than the engine's
    * own number would edit whatever the page's first objects happen to be.
    */
+  const PLAIN = { size: 11, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
   const BLOCK: TextBlock = {
     box: { x0: 72, y0: 660, x1: 300, y1: 711 },
     lines: [
@@ -1353,7 +1354,6 @@ describe('delete pages — the mutation-dialog gate', () => {
     // read's (7) and not the tab's, because `#refuseIfStale` asks whether the
     // page is the one the outlines described.
     const sent: { id: string; params: unknown }[] = [];
-  const PLAIN = { size: 11, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0 }));

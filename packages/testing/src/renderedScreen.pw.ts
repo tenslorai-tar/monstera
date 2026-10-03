@@ -333,14 +333,14 @@ for (const look of LOOKS) {
   });
 }
 
-/** A one-page document built here, so the case needs no fixture from the corpus (B10). */
-async function onePagePdf(): Promise<Uint8Array> {
-  const document = await PDFDocument.create();
-  document.addPage([612, 792]);
 /** A text block's body run and a run set apart inside its line — larger, bold, blue — as `document.textBlocks` answers. */
 const BODY_RUN = { size: 12, colour: { r: 30, g: 30, b: 30 }, serif: false, mono: false, italic: false, bold: false };
 const SET_APART_RUN = { size: 16, colour: { r: 66, g: 83, b: 149 }, serif: false, mono: false, italic: false, bold: true };
 
+/** A one-page document built here, so the case needs no fixture from the corpus (B10). */
+async function onePagePdf(): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  document.addPage([612, 792]);
   return document.save();
 }
 
