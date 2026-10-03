@@ -179,6 +179,7 @@ const RUNTIME_CASES = [
   'CONTROL: the same counter reports ZERO for a blank canvas of the same size',
   'CONTROL: a canvas this renderer FILLS and copies, as renderPage presents, is counted WHOLE',
   'CONTROL: a BITMAP made as PDF.js makes an image’s, drawn scaled across the page, is counted WHOLE',
+  'CONTROL: the same bitmap made in a WORKER and posted to the page, as PDF.js’s worker posts one, is counted WHOLE',
   'the shipped zoom-in control was found and clicked, so the zoom reading means something',
   'the canvas is EXACTLY the page at the zoom, which is the rasteriser honouring the scale',
   'the zoomed canvas CARRIES A DRAWN PAGE, so the bigger bitmap is not a stretched empty one',
@@ -225,7 +226,7 @@ function withinSpan(hex, span) {
  *
  * @param {{ transparent: number, white: number, painted: number } | null} tally
  * @param {ReturnType<typeof readback>['environment']} environment
- * @param {Pick<ReturnType<typeof readback>, 'ink' | 'bitmapInk' | 'pixels'>} controls
+ * @param {Pick<ReturnType<typeof readback>, 'ink' | 'bitmapInk' | 'workerBitmapInk' | 'pixels'>} controls
  */
 function describeRun(tally, environment, controls) {
   const counted =
@@ -235,7 +236,7 @@ function describeRun(tally, environment, controls) {
   return (
     `tally: ${counted}.\n      ` +
     `controls of ${String(controls.pixels)}: copied ink ${String(controls.ink)}, bitmap ink ` +
-    `${String(controls.bitmapInk)}.\n      ` +
+    `${String(controls.bitmapInk)}, worker bitmap ink ${String(controls.workerBitmapInk)}.\n      ` +
     `renderer: visibility ${environment.visibility}; 2d_canvas ${environment.gpu.canvas2d}, gpu_compositing ` +
     `${environment.gpu.gpuCompositing}, rasterization ${environment.gpu.rasterization}; processes gone ` +
     `${JSON.stringify(environment.processesGone)}; render process gone ${JSON.stringify(environment.renderProcessGone)}.` +
@@ -418,6 +419,19 @@ try {
         `drawn and the image was not. Red here with the page red names the bitmap path; green here with the ` +
         `page red leaves the one difference this page cannot reach, that PDF.js makes its bitmap in a worker. ` +
         `-2 means no OffscreenCanvas, so PDF.js took its other path; -1 is a broken probe.\n      ` +
+        describeRun(seen.tally, seen.environment, seen),
+    );
+
+    check(
+      'CONTROL: the same bitmap made in a WORKER and posted to the page, as PDF.js’s worker posts one, is counted WHOLE',
+      seen.workerBitmapInk === seen.pixels,
+      `the counter reported ${String(seen.workerBitmapInk)} inked pixel(s) of ${String(seen.pixels)} for a canvas ` +
+        `a 144x144 bitmap was drawn across, the bitmap made in a worker exactly as the control above makes it and ` +
+        `transferred to the page with postMessage.\n      ` +
+        `THE LAST STEP OF THE IMAGE'S PATH the page can reach. Red here with the control above green names the ` +
+        `worker: a bitmap made off the page's thread arrives carrying nothing. Green here with the page red leaves ` +
+        `PDF.js itself. -3 means the worker would not start or answered nothing, so this reading says nothing about ` +
+        `the bitmap; -1 is a broken probe.\n      ` +
         describeRun(seen.tally, seen.environment, seen),
     );
 

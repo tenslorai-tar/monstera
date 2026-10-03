@@ -2,12 +2,13 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { AI_SETUP_AT_START_SETTING_ID } from '@monstera/contract';
-import { app, ipcMain, nativeImage, session } from 'electron';
+import { BrowserWindow, app, ipcMain, nativeImage, session } from 'electron';
 
 import { createShellDependencies } from './composition.js';
 import { harnessSurfaces } from './harnessComposition.js';
 import { createEphemeralSettings } from './settingsFile.js';
 import { createMainWindow, senderCheckFor } from './window.js';
+import { RENDERER_WEB_PREFERENCES } from './windowPolicy.js';
 import type { TitleBarOverlay } from './contractHandlers.js';
 import { registerContractHandlers } from './registerHandlers.js';
 
@@ -161,6 +162,12 @@ export interface CanvasReadback {
    * the one difference it cannot reach, which is that PDF.js makes its bitmap in a worker.
    */
   readonly bitmapInk: number;
+  /**
+   * {@link bitmapInk}'s bitmap made in a WORKER and posted to the page, which is the step of PDF.js's image path that
+   * control cannot take. It must equal `pixels`; `-3` means this renderer would not start the worker or it answered
+   * nothing, so the reading says nothing about the bitmap.
+   */
+  readonly workerBitmapInk: number;
   /** What the run's environment did around the draw, so a failure here can be attributed. */
   readonly environment: EnvironmentReadback;
   /**
@@ -333,6 +340,75 @@ const COUNT_PAINTED = `(canvas) => {
   const tally = (${TALLY_PIXELS})(canvas);
   return tally === null ? -1 : tally.painted;
 }`;
+
+/**
+ * The bitmap control's bitmap made in a WORKER, as `pdf.worker.mjs` makes an image's, posted to a page and counted
+ * across a canvas of `width` × `height`.
+ *
+ * ## In a window of its own, because the shipped page may not start this worker
+ *
+ * The renderer's policy gives workers `script-src 'self'`, so a worker from a `blob:` is refused there, and an
+ * isolated world takes the page's policy when none is set for it (measured 2026-10-03: *"Creating a worker from
+ * 'blob:file:///…' violates … script-src 'self'"*). Loosening the shipped policy for a probe is not available, so the
+ * probe runs in a second window built from the same {@link RENDERER_WEB_PREFERENCES}, in a partition of its own, on
+ * `about:blank`. The sandbox is a property of the renderer process those preferences launch, which is the property in
+ * question; the page and its policy are not.
+ *
+ * @returns the inked count; `-3` when the worker would not start or answered nothing, `-1` for a broken probe
+ */
+async function readWorkerBitmapInk(width: number, height: number): Promise<number> {
+  const probe = new BrowserWindow({
+    show: false,
+    webPreferences: { ...RENDERER_WEB_PREFERENCES, session: session.fromPartition('canvas-worker-probe') },
+  });
+  try {
+    await probe.loadURL('about:blank');
+    return await evaluate(
+      probe.webContents,
+      `(async () => {
+         const program = [
+           'onmessage = () => {',
+           '  const side = 144;',
+           '  const offscreen = new OffscreenCanvas(side, side);',
+           '  const drawing = offscreen.getContext("2d");',
+           '  const image = drawing.createImageData(side, side);',
+           '  for (let at = 0; at < image.data.length; at += 4) {',
+           '    image.data[at] = 0x33; image.data[at + 1] = 0x66; image.data[at + 2] = 0xcc; image.data[at + 3] = 0xff;',
+           '  }',
+           '  drawing.putImageData(image, 0, 0);',
+           '  const bitmap = offscreen.transferToImageBitmap();',
+           '  postMessage(bitmap, [bitmap]);',
+           '};',
+         ].join(String.fromCharCode(10));
+         let worker;
+         try {
+           worker = new Worker(URL.createObjectURL(new Blob([program], { type: 'text/javascript' })));
+         } catch {
+           return -3;
+         }
+         const bitmap = await new Promise((settle) => {
+           worker.onmessage = (event) => settle(event.data);
+           worker.onerror = () => settle(null);
+           setTimeout(() => settle(null), 5000);
+           worker.postMessage(0);
+         });
+         worker.terminate();
+         if (bitmap === null) return -3;
+         const control = document.createElement('canvas');
+         control.width = ${String(width)};
+         control.height = ${String(height)};
+         const context = control.getContext('2d');
+         if (context === null) return -1;
+         context.drawImage(bitmap, 0, 0, control.width, control.height);
+         return (${COUNT_PAINTED})(control);
+       })()`,
+      (value): value is number => typeof value === 'number',
+      'worker bitmap control',
+    );
+  } finally {
+    probe.destroy();
+  }
+}
 
 /**
  * Writes the page canvas's own pixels to `path`, as RGBA.
@@ -930,6 +1006,8 @@ export async function reportCanvasPixels(
     'bitmap control',
   );
 
+  const workerBitmapInk = await readWorkerBitmapInk(settled.width, settled.height);
+
   const zoomed = await readZoomed(contents, zoomControlName, settled.width);
   const pixelsTo = pixelPath === undefined ? null : await writePixels(contents, pixelPath);
 
@@ -974,6 +1052,7 @@ export async function reportCanvasPixels(
     tally: settled.tally,
     ink,
     bitmapInk,
+    workerBitmapInk,
     environment: {
       visibility,
       processesGone,

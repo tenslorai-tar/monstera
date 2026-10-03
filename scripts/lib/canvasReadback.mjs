@@ -114,6 +114,7 @@ export function controlName(key) {
  *   tally: { transparent: number, white: number, painted: number } | null,
  *   ink: number,
  *   bitmapInk: number,
+ *   workerBitmapInk: number,
  *   environment: {
  *     visibility: string,
  *     processesGone: Array<{ type: string, reason: string, exitCode: number }>,
