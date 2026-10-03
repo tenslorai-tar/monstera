@@ -31,9 +31,11 @@ import type { AnnotationStyle } from './annotationStyle.js';
  * ## Two finish signals, and only one of them needed the platform
  *
  * A **double press** is the one people arrive expecting, and it is the reason
- * `Gesture.done` exists — the overlay reads `event.detail`, because *was that a
- * double-click* is a question the DOM already answers and timing two presses
- * here would be a second opinion about it.
+ * `Gesture.done` exists — the overlay sets it on the platform's `dblclick`,
+ * because *was that a double-click* is a question the DOM already answers and
+ * timing two presses here would be a second opinion about it. The pointer-down's
+ * own `detail` cannot say it: Chromium leaves it at 0 (measured on
+ * 151.0.7922.34, 2026-10-03).
  *
  * **Closing the shape** — pressing near where the first vertex went — needed
  * nothing at all: it is a distance between two entries in `presses`, computed
@@ -148,11 +150,16 @@ export function vertexTool(
     // this gesture; a double press does, and for a closed shape so does landing
     // back on the first vertex.
     //
-    // Note what is NOT here: a minimum. A gesture that finishes with too few
-    // vertices is complete — the person said they were done — and `commit`
-    // answers `undefined`. Refusing to finish would leave somebody holding a
-    // gesture they cannot get out of except by pressing Escape.
-    complete: (gesture: Gesture): boolean => gesture.done || (closes && closesShape(gesture)),
+    // A DOUBLE PRESS FINISHES A SHAPE THERE IS ENOUGH OF, or a stray one (F-C5).
+    // It used to finish with too few vertices and commit nothing, so two corners
+    // of a polygon and a double-click threw the drawing away. Now a drawing of
+    // two or more corners stays, every corner placed, and the next press goes
+    // on with it; Escape still abandons it. One corner is a stray double-click
+    // on the page, which ends as it always did and makes nothing.
+    complete: (gesture: Gesture): boolean => {
+      const placedSoFar = verticesOf(gesture).length;
+      return (gesture.done && (placedSoFar >= minimum || placedSoFar <= 1)) || (closes && closesShape(gesture));
+    },
     commit: (
       gesture: Gesture,
       page: number,

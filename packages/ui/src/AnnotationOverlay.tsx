@@ -147,12 +147,6 @@ export function AnnotationOverlay({
           : {
               ...tool.controller.update(current, at),
               presses: [...current.presses, at],
-              // `detail` COUNTS THE CLICKS in this sequence, which is the
-              // platform's own answer to *was that a double-click* — the
-              // alternative is timing two presses here, which is a second
-              // opinion about a question the DOM already settles. Recorded
-              // rather than acted on: `complete` decides what it means.
-              done: current.done || event.detail >= 2,
             },
       );
     },
@@ -169,25 +163,20 @@ export function AnnotationOverlay({
     [gesture, pointAt, tool],
   );
 
-  const up = useCallback(
-    (event: React.PointerEvent<SVGSVGElement>): void => {
-      if (gesture === undefined) return;
-      const at = pointAt(event);
-      if (at === undefined) {
-        // NO POINT MEANS NO SURFACE TO MEASURE AGAINST, and the gesture is
-        // dropped rather than kept: there is nothing to extend it with and
-        // nothing to commit. Cleared here rather than before the check, so the
-        // multi-press path below is the only other place that decides.
-        setGesture(undefined);
-        return;
-      }
-      const finished = tool.controller.update(gesture, at);
+  /**
+   * A gesture at a release, or at a double-click: kept while the tool says it is not complete, committed once it is.
+   * One path for both, so a double-click finishes a shape exactly as the release that completes it would.
+   */
+  const release = useCallback(
+    (finished: Gesture): void => {
       if (!tool.controller.complete(finished)) {
         // THE GESTURE SURVIVES THE RELEASE. Kept rather than cleared, and
         // `commit` is not called — so the next press extends this one
         // (ADR-0042 Decision 2). The state is still a value this component
-        // holds, so Escape and `pointercancel` still abandon it.
-        setGesture(finished);
+        // holds, so Escape and `pointercancel` still abandon it. A double-click
+        // the tool did not take as a finish is not carried forward: kept, it
+        // would end the gesture at the next release, however many presses on.
+        setGesture(finished.done ? { ...finished, done: false } : finished);
         return;
       }
       // THE GESTURE IS CLEARED, whatever the commit decides. A commit that
@@ -229,8 +218,40 @@ export function AnnotationOverlay({
         if (!moved) setCommitted((current) => (current === released ? undefined : current));
       });
     },
-    [drawnWith, geometry, gesture, onCommand, page, pointAt, tool],
+    [drawnWith, geometry, onCommand, page, tool],
   );
+
+  const up = useCallback(
+    (event: React.PointerEvent<SVGSVGElement>): void => {
+      if (gesture === undefined) return;
+      const at = pointAt(event);
+      if (at === undefined) {
+        // NO POINT MEANS NO SURFACE TO MEASURE AGAINST, and the gesture is
+        // dropped rather than kept: there is nothing to extend it with and
+        // nothing to commit. Cleared here rather than before the check, so the
+        // multi-press path below is the only other place that decides.
+        setGesture(undefined);
+        return;
+      }
+      release(tool.controller.update(gesture, at));
+    },
+    [gesture, pointAt, release, tool],
+  );
+
+  /**
+   * A double-click finishes a live gesture (F-C5).
+   *
+   * **The click count is read where the platform puts it.** A pointer event carries none: measured on Chromium
+   * 151.0.7922.34, 2026-10-03, a double-click's two `pointerdown`s both carry `detail` 0, while `mousedown`, `click`
+   * and `dblclick` carry 1 and then 2. This read `detail` on the press until then, so no polygon, cloud, connected
+   * lines, area or perimeter could be finished by a double-click. `dblclick` arrives after the second release, which
+   * has already added that press to the gesture and kept it; it is then released as finished, the tool deciding what
+   * a finish with too few vertices makes.
+   */
+  const doubled = useCallback((): void => {
+    if (gesture === undefined) return;
+    release({ ...gesture, done: true });
+  }, [gesture, release]);
 
   const cancel = useCallback((): void => {
     setGesture(undefined);
@@ -254,6 +275,7 @@ export function AnnotationOverlay({
         // lifecycle arriving where the state lives.
         if (event.key === 'Escape') cancel();
       }}
+      onDoubleClick={doubled}
       onPointerCancel={cancel}
       onPointerDown={down}
       onPointerMove={move}

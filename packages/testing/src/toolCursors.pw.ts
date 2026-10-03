@@ -102,3 +102,31 @@ test('HIGHLIGHT selects the words as they are dragged over, and marks exactly th
   // AND THE SELECTION IS SPENT once it is a mark.
   expect(await page.evaluate(() => document.getSelection()?.toString() ?? '')).toBe('');
 });
+
+test('a POLYGON is finished by a real double-click, and its corners are the ones placed (F-C5)', async ({ page }) => {
+  // THE BROWSER'S OWN EVENTS, which is the point: Chromium puts no click count on a pointer event, and a synthetic
+  // event carrying one is what let this pass while no polygon could be finished.
+  const sent: Sent[] = [];
+  await openWithText(page, sent);
+  await chooseTool(page, 'Polygon');
+
+  const slot = page.locator('.m-page-slot').first();
+  const box = await slot.boundingBox();
+  if (box === null) throw new Error('the page has a box');
+  const at = (x: number, y: number): [number, number] => [box.x + box.width * x, box.y + box.height * y];
+  // IN THE PART OF THE PAGE ON SCREEN: the page is taller than the window, so its lower part is under the status bar.
+  for (const corner of [at(0.3, 0.25), at(0.6, 0.25)]) await page.mouse.click(...corner);
+  // THE THIRD CORNER, by double-click: two presses and the `dblclick` the platform sends after them.
+  await page.mouse.dblclick(...at(0.6, 0.4));
+
+  await expect
+    .poll(() => sent.filter((each) => each.channel === 'document.execute').length, { timeout: 5_000 })
+    .toBe(1);
+  const command = (sent.find((each) => each.channel === 'document.execute')?.params as { command?: unknown }).command as
+    | { kind?: string; annotation?: { type?: string; points?: unknown[] } }
+    | undefined;
+  expect(command?.kind).toBe('addAnnotation');
+  expect(command?.annotation?.type).toBe('polygon');
+  // THREE CORNERS: the double-click's second press is the same corner, not a fourth.
+  expect(command?.annotation?.points).toHaveLength(3);
+});

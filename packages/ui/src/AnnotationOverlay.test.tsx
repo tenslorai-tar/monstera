@@ -105,39 +105,30 @@ function inFlightPreview(surface: Element): Element | null {
  * event — which shows up as *nothing was dispatched* and is really *nothing has
  * rendered yet*.
  */
-function pointer(
-  surface: Element,
-  type: string,
-  x: number,
-  y: number,
-  button = 0,
-  detail = 1,
-): void {
+function pointer(surface: Element, type: string, x: number, y: number, button = 0): void {
   fireEvent(
     surface,
-    new window.PointerEvent(type, {
-      bubbles: true,
-      clientX: x,
-      clientY: y,
-      button,
-      // THE CLICK COUNT, which is how the overlay learns a press was a double
-      // one. Defaulted to 1 so every existing case describes a single click
-      // without saying so — `PointerEvent`'s own default is 0, which would make
-      // the overlay's `detail >= 2` unreachable for a reason no case states.
-      detail,
-      pointerId: 1,
-    }),
+    // NO CLICK COUNT, as the platform sends none: measured on Chromium 151.0.7922.34, 2026-10-03, a double-click's
+    // `pointerdown`s both carry `detail` 0. This helper used to write 2 there, which proved the overlay read a number
+    // no real press carries, while the tools it was finishing could not be finished (F-C5).
+    new window.PointerEvent(type, { bubbles: true, clientX: x, clientY: y, button, pointerId: 1 }),
   );
 }
 
-/** One press: down then up at the same point, settled. */
+/**
+ * One press: down then up at the same point, settled. A DOUBLE is what the platform sends for one: two presses, then
+ * `dblclick` carrying the count.
+ */
 async function click(
   surface: Element,
   at: readonly [number, number],
   { double = false }: { double?: boolean } = {},
 ): Promise<void> {
-  pointer(surface, 'pointerdown', at[0], at[1], 0, double ? 2 : 1);
-  pointer(surface, 'pointerup', at[0], at[1]);
+  for (let press = 0; press < (double ? 2 : 1); press += 1) {
+    pointer(surface, 'pointerdown', at[0], at[1]);
+    pointer(surface, 'pointerup', at[0], at[1]);
+  }
+  if (double) fireEvent.dblClick(surface, { clientX: at[0], clientY: at[1], detail: 2 });
   await act(async () => {
     await Promise.resolve();
   });
@@ -345,6 +336,24 @@ describe('AnnotationOverlay', () => {
     // after the first inherit the last one's corners. The IN-FLIGHT preview: the released shape is
     // held separately until the page redraws, and is not a gesture.
     expect(inFlightPreview(surface)).toBeNull();
+  });
+
+  it('a double-click on a shape with TOO FEW corners keeps the drawing, and the shape goes on (F-C5)', async () => {
+    // A POLYGON NEEDS THREE. Two corners and a double-click used to finish it and commit nothing, which threw away
+    // what the person drew.
+    const { surface, sent } = mounted(polygonTool);
+    await click(surface, [20, 20]);
+    await click(surface, [120, 20], { double: true });
+
+    expect(sent).toStrictEqual([]);
+    expect(surface.querySelector('[data-annotation-preview="path"]')).not.toBeNull();
+
+    // AND THE DOUBLE-CLICK IS NOT CARRIED FORWARD: the next single press adds a corner and finishes nothing.
+    await click(surface, [120, 80]);
+    expect(sent).toStrictEqual([]);
+    await click(surface, [20, 80], { double: true });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: 'addAnnotation', annotation: { type: 'polygon' } });
   });
 
   it('abandons a half-drawn multi-press gesture on Escape', async () => {
