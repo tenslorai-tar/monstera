@@ -61,3 +61,23 @@ no longer leaves a `.bak` of that file; the person chose to replace it, and the 
   after a removal was saved, to cover a destination this build cannot know holds an earlier version of the same
   document. That case stays as it is, and is said here so it is not read as covered: a copy made after the
   redaction is saved still leaves a `.bak` of the file it replaces.
+
+## Corrected, 2026-10-04 — the rebuild opens before it releases, and a protected document keeps its snapshot
+
+Decisions 1 and 2 as first written were wrong, and the build found it before anything shipped. **Protecting a
+document is a removal** (ADR-0139), so its save is one of these, and the file it writes is encrypted. Decision 1's
+route, the checkpoint restore, is `recycle`, which releases the old session BEFORE it opens the new one: the open
+then failed for want of the password, the document was left with no session, and the save threw past a file it had
+written. `documentCommands.test.ts`' protection case went red on exactly that.
+
+So the rebuild is `EngineSessions.renew`, the same open with the order reversed: the new sessions are opened first,
+and the old pair is released by the new open's own registration, so an open that fails leaves the document as it
+was. Decision 2 is replaced: **a saved file that opens only with a password keeps the old session**, the renewal
+answering `locked` (`EngineDocumentLocked`, classified at the composition root, the one refusal it expects). That
+covers a document a password opened, which is saved encrypted, without a second rule beside it.
+
+**What it leaves, said plainly:** for a document the save PROTECTED, the snapshot the session was opened from is the
+document without its password, the very thing the person asked nobody may read, and it stays until the document
+closes. It sits in the host's granted directory, deleted at close and swept at the next start. Reaching it needs the
+session rebuilt from the encrypted file with the password, which this build does not keep (ADR-0055), or from bytes
+the person has not saved; both are the owner's to weigh, and the report puts it to them.
