@@ -249,7 +249,7 @@ export function toggleDarkPageCommand(deps: { readonly settings: SettingsStore }
     placements: [
       // SECONDARY IN TOOLS › DISPLAY: drawn on Home › Display and in View › Show (ADR-0107).
       { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 70, prominence: 'secondary' },
-      // AND HOME › DISPLAY as v5-02's *Dim Pages*: this is the command that dims a page for a dark room.
+      // AND HOME › DISPLAY as v5-02's *Dim pages*: this is the command that dims a page for a dark room.
       { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 206 },
       { surface: 'menu-bar', menu: 'view', group: 3, order: 50, caption: MENU_GROUP_SHOW },
     ],

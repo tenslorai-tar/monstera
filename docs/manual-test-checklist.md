@@ -90,7 +90,7 @@ is not available.
 - [ ] **Link to a page** — Links · `annotate.link-page` · Shows: on screen · Help: *Add a link to a web page or another page*
 - [ ] **Highlight text** — Markup · `annotate.highlight` · Shows: on screen · Help: *Highlight, underline or strike through text*
 - [ ] **Underline text** — Markup · `annotate.underline` · Shows: on screen · Help: *Highlight, underline or strike through text*
-- [ ] **Strike through text** — Markup · `annotate.strikeout` · Shows: on screen · Help: *Highlight, underline or strike through text*
+- [ ] **Strikethrough text** — Markup · `annotate.strikeout` · Shows: on screen · Help: *Highlight, underline or strike through text*
 - [ ] **Select annotations** — Markup · `annotate.select` · Shows: on screen · Help: *Change how annotations look*
 - [ ] **Freehand** — Markup · `annotate.ink` · Shows: on screen · Help: *Draw freehand*
 - [ ] **Text box** — Markup · `annotate.text-box` · Shows: on screen · Help: *Add a text box*

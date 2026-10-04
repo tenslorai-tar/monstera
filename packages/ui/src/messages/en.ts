@@ -2722,7 +2722,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ZOOM_OUT_TITLE]: 'Zoom out',
   [FIT_WIDTH_TITLE]: 'Fit width',
   [FIT_PAGE_TITLE]: 'Fit page',
-  [DARK_PAGE_TITLE]: 'Dim Pages',
+  [DARK_PAGE_TITLE]: 'Dim pages',
   [LOUPE_TITLE]: 'Loupe',
   [SPLIT_VIEW_TITLE]: 'Split view',
   // NAMES WHICH PANE IT IS. Two scrollable regions with the same accessible
@@ -3493,8 +3493,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [HIGHLIGHT_TOOL_TITLE]: 'Highlight text',
   [UNDERLINE_TOOL_TITLE]: 'Underline text',
   // *STRIKETHROUGH* IN THE CONTROL AND `/StrikeOut` IN THE FILE. The format's
-  // name is not the word a reader uses, and this row is the reader's.
-  [STRIKEOUT_TOOL_TITLE]: 'Strike through text',
+  // name is not the word a reader uses, and this row is the reader's. The SAME
+  // word as the ribbon, the menu and the comments list say, in the tool's
+  // "… text" form beside Highlight text and Underline text.
+  [STRIKEOUT_TOOL_TITLE]: 'Strikethrough text',
   // ONLY THE FOREIGN ROWS ARE LABELLED, because *this application wrote this*
   // is the ordinary case in a panel a person reached from their own drawing
   // tools, and a badge on every row is a badge nobody reads. What is worth
@@ -4399,7 +4401,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ACCESSIBILITY_REFUSED]: 'The document could not be checked. It may be busy or no longer open.',
   [ACCESSIBILITY_MACHINE_HEADING]: 'Automatic checks',
   [ACCESSIBILITY_PERSON_HEADING]: 'Checks for a person',
-  [ACCESSIBILITY_PAGES]: 'Pages {pages}',
+  [ACCESSIBILITY_PAGES]: '{count, plural, one {Page {pages}} other {Pages {pages}}}',
   [ACCESSIBILITY_VERDICT_PASSED]: 'Passed',
   [ACCESSIBILITY_VERDICT_FAILED]: 'Failed',
   [ACCESSIBILITY_VERDICT_NOT_APPLICABLE]: 'Does not apply',

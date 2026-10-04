@@ -133,7 +133,10 @@ export default function AccessibilityCheckBody(props: AccessibilityProps): React
               </span>
               {rule.pages.length > 0 ? (
                 <span className="m-accessibility-check__pages">
-                  {_(ACCESSIBILITY_PAGES, { pages: rule.pages.map((page) => number.format(page)).join(', ') })}
+                  {_(ACCESSIBILITY_PAGES, {
+                    count: rule.pages.length,
+                    pages: rule.pages.map((page) => number.format(page)).join(', '),
+                  })}
                 </span>
               ) : null}
             </li>

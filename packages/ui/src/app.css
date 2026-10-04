@@ -1991,15 +1991,20 @@ optgroup {
  * and pages on one wrapping line so a long rule name does not push its verdict off the row.
  */
 /* Each rule's verdict, words and pages on one line that wraps; the list and its rows are the pattern's. */
+/* TWO COLUMNS, the verdict and what the rule says, with the pages under the rule's words: a wrapping row dropped the
+   pages to the verdict's column, where they read as a verdict of their own (the owner's item 19d). */
 .m-accessibility-check__rules li {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
+  display: grid;
+  grid-template-columns: 12ch minmax(0, 1fr);
+  column-gap: var(--space-8);
 }
 
 .m-accessibility-check__verdict {
   font-weight: 600;
-  min-width: 12ch;
+}
+
+.m-accessibility-check__pages {
+  grid-column: 2;
 }
 
 .m-accessibility-check__pages,
