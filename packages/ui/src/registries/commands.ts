@@ -210,6 +210,13 @@ export interface UiCommand {
    * the first, so a conflict among them is refused the same way.
    */
   readonly alsoShortcuts?: readonly string[];
+  /**
+   * `true` where a HELD key runs the command again on each of the keyboard's repeats — a step that is meant to be
+   * taken many times: a page on, a zoom step, an undo, a nudge. Absent, a held key runs it ONCE (`dispatchChord`):
+   * holding Delete in Organize deleted a page per repeat with nothing asked, and a held Ctrl+W closed a tab per repeat
+   * (code review CR-COR-06). Absent is the safe reading, so a command that forgets to say runs once.
+   */
+  readonly repeats?: true;
   /** Where this appears. Empty means palette-only, which is legitimate. */
   readonly placements: readonly Placement[];
   /**

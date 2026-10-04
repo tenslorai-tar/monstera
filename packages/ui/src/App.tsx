@@ -3977,7 +3977,8 @@ function useShortcuts(
         event.preventDefault();
         return;
       }
-      if (dispatchChord(registry, map, event, context).kind === 'ran') {
+      // CLAIMED EITHER WAY: a held key's repeat of a once-per-press command is still that command's chord.
+      if (dispatchChord(registry, map, event, context).kind !== 'unclaimed') {
         event.preventDefault();
       }
     };

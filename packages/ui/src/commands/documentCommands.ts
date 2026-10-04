@@ -937,6 +937,8 @@ export function zoomCommand(direction: 'in' | 'out', deps: StepDeps): UiCommand 
     // THE PLUS KEY TOO (ADR-0111): Ctrl+plus sign on a US keyboard is Ctrl+Shift+=, and on a German or Nordic one the
     // plus key is its own key, as the numpad's is. Zoom out needs no second chord — minus is minus on every layout.
     ...(direction === 'in' ? { alsoShortcuts: ['Ctrl+Plus', 'Ctrl+Shift+Plus'] } : {}),
+    // A STEP, so a held key zooms on.
+    repeats: true,
     placements: [
       // ON BOTH, and this is one of the six §10.3 names for the floating pill —
       // "the always-needed tools (select, hand, text selection, zoom in/out,
@@ -2233,6 +2235,8 @@ export function undoCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'Undo2',
     title: UNDO_TITLE,
     shortcut: 'Ctrl+Z',
+    // ONE STEP BACK per repeat, as every editor's held Ctrl+Z.
+    repeats: true,
     placements: [
       // IN FILE, as v5-02 draws Open · Save · Print · Undo · Redo in one group.
       { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 24 },
@@ -2272,6 +2276,7 @@ export function redoCommand(deps: DocumentCommandDeps): UiCommand {
     shortcut: 'Ctrl+Y',
     // THE OTHER REDO a person's hands know (ADR-0111), from nearly every editor that is not Windows' own.
     alsoShortcuts: ['Ctrl+Shift+Z'],
+    repeats: true,
     placements: [
       { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 26 },
       { surface: 'menu-bar', menu: 'edit', group: 0, order: 20 },

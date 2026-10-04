@@ -334,13 +334,20 @@ export function Thumbnails({
               // ENTER OPENS, and is prevented so the button's own click — which would select — does not follow.
               if (event.key === 'Enter') {
                 event.preventDefault();
-                grid.onOpen(page);
+                if (!event.repeat) grid.onOpen(page);
                 return;
               }
               // DELETE REMOVES THE TICKED PAGES, or this one when none is ticked: *"Delete removes"* (v5-09).
+              //
+              // ONCE PER PRESS: a held key repeats, the card in this slot is the page that moved into it, and each
+              // repeat deleted that page too — a page per repeat with nothing asked (code review CR-COR-06), the
+              // dispatcher's own rule for a once-per-press command (`UiCommand.repeats`). And THE GRID'S KEY ALONE:
+              // left to bubble, the document's own Delete (a selected annotation's) ran on the same press as well
+              // (CR-COR-15).
               if (event.key === 'Delete') {
                 event.preventDefault();
-                grid.onDelete(grid.selected.length > 0 ? grid.selected : [page]);
+                event.stopPropagation();
+                if (!event.repeat) grid.onDelete(grid.selected.length > 0 ? grid.selected : [page]);
                 return;
               }
             }

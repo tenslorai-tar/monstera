@@ -252,6 +252,29 @@ describe('Thumbnails as the Organize grid (ADR-0104)', () => {
     expect(ticked.calls.select).toStrictEqual([]);
   });
 
+  it('a HELD Delete removes once, and the document never hears the grid’s Delete (CR-COR-06, CR-COR-15)', () => {
+    const held = grid([]);
+    const heard: string[] = [];
+    const listener = (event: KeyboardEvent): void => {
+      heard.push(event.key);
+    };
+    document.addEventListener('keydown', listener);
+    try {
+      fireEvent.keyDown(held.card(1), { key: 'Delete' });
+      // THE KEYBOARD'S REPEATS of the same held key, which deleted the page that moved into this slot each time.
+      fireEvent.keyDown(held.card(1), { key: 'Delete', repeat: true });
+      fireEvent.keyDown(held.card(1), { key: 'Delete', repeat: true });
+      expect(held.calls.remove).toStrictEqual([[1]]);
+      // THE GRID'S KEY ALONE: a selected annotation's own Delete is the document's, and it ran on the same press.
+      expect(heard).toStrictEqual([]);
+      // CONTROL: a key the grid does not take still reaches the document, so the listener can hear.
+      fireEvent.keyDown(held.card(1), { key: 'x' });
+      expect(heard).toStrictEqual(['x']);
+    } finally {
+      document.removeEventListener('keydown', listener);
+    }
+  });
+
   it('the GRID draws every page at the width it is given, and a new width redraws', async () => {
     const card = (width: number): ReactElement => (
       <Wrapped>

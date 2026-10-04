@@ -27,6 +27,8 @@ export interface KeyChord {
   readonly altKey: boolean;
   readonly shiftKey: boolean;
   readonly metaKey: boolean;
+  /** Whether this press is the keyboard REPEATING a held key — `KeyboardEvent.repeat`. Absent reads as a press. */
+  readonly repeat?: boolean;
 }
 
 /**
@@ -197,6 +199,11 @@ const TYPED_INPUTS: ReadonlySet<string> = new Set(['text', 'search', 'email', 'u
 /** What a key press did, so a caller knows whether to let the browser have it. */
 export type Dispatch =
   | { readonly kind: 'ran'; readonly command: UiCommand }
+  /**
+   * The chord is a command's, and this press is a held key's repeat of one that runs once per press: claimed, so the
+   * browser does not act on it either, and not run (`UiCommand.repeats`).
+   */
+  | { readonly kind: 'held'; readonly command: UiCommand }
   /** A chord nothing claims, or one whose command does not exist right now. */
   | { readonly kind: 'unclaimed' };
 
@@ -225,6 +232,8 @@ export function dispatchChord(
   const command = map.get(chordOf(event));
   if (command === undefined) return { kind: 'unclaimed' };
   if (!(command.when?.(context) ?? true)) return { kind: 'unclaimed' };
+  // A HELD KEY RUNS A COMMAND ONCE unless the command is a step meant to repeat (`UiCommand.repeats`).
+  if (event.repeat === true && command.repeats !== true) return { kind: 'held', command };
   void command.run(context);
   return { kind: 'ran', command };
 }

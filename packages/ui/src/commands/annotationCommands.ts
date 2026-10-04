@@ -1014,6 +1014,8 @@ export function nudgeSelectionCommand(
     // every registered command whether or not it is placed.
     placements: [],
     shortcut: `${far ? 'Shift+' : ''}${ARROW_KEYS[direction]}`,
+    // A HELD ARROW KEEPS MOVING the mark, a point (or ten) per repeat.
+    repeats: true,
     // WITHOUT A SELECTION THE ARROWS ARE NOT REGISTERED AT ALL, which is what
     // keeps them from taking the key away from the scroller. A handler that
     // returned early would still have swallowed the press.
