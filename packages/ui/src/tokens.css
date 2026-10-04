@@ -97,12 +97,13 @@
  * @role light-ring fill
  * @role light-halo fill
  * @role dialog-head-wash surface @over float
+ * @role bubble-wash surface @over surface
  * @role accent-grad-top fill
  * @role accent-grad-bottom fill
  * @role redact-mark graphic @on page
  * @role signature-ink graphic @on page
- * @role text text @on ground bg bg2 surface surface2 canvas float list active dialog-head-wash
- * @role muted text @on ground bg bg2 surface surface2 canvas float list
+ * @role text text @on ground bg bg2 surface surface2 canvas float list active dialog-head-wash bubble-wash
+ * @role muted text @on ground bg bg2 surface surface2 canvas float list bubble-wash
  * @role faint text @on ground bg bg2 surface canvas
  * @role accent-text text @on ground bg bg2 surface canvas float
  * @role border-control boundary-control @on ground bg bg2 surface surface2 canvas float
@@ -195,6 +196,9 @@
   /* A SURFACE, not a tint: only the dialog's title and its close glyph — both `--text` — sit on it, so the check holds
      that pair and no other against it. */
   --dialog-head-wash: rgba(59, 198, 119, 0.14);
+  /* A PERSON'S MESSAGE in the assistant, a faint wash over the panel (the owner's item 17c): a surface its `--text` and
+     `--muted` are held on, turned to the accent with the other lights (`ACCENT_LIGHTS`). */
+  --bubble-wash: rgba(59, 198, 119, 0.18);
   --accent-grad-top: #3ccf7b;
   --accent-grad-bottom: #27a55c;
   --status-bg: linear-gradient(90deg, var(--tint-status), transparent 40%, var(--tint-status-far)), var(--bg);
@@ -285,6 +289,7 @@
   --tint-hero: rgba(22, 163, 74, 0.12);
   --tint-hero-far: rgba(45, 212, 191, 0.05);
   --dialog-head-wash: rgba(22, 163, 74, 0.1);
+  --bubble-wash: rgba(22, 163, 74, 0.16);
   --accent-grad-top: #15803d;
   --accent-grad-bottom: #116631;
   --status-bg: linear-gradient(90deg, var(--tint-status), transparent 40%, var(--tint-status-far)), var(--bg);
@@ -369,6 +374,8 @@
   --tint-hero: rgba(0, 0, 0, 0);
   --tint-hero-far: rgba(0, 0, 0, 0);
   --dialog-head-wash: rgba(0, 0, 0, 0);
+  /* NO WASH in high contrast, as no tint has one here: the bubble is its accent border on the panel's black. */
+  --bubble-wash: rgba(0, 0, 0, 0);
   --accent-grad-top: var(--accent);
   --accent-grad-bottom: var(--accent);
   --status-bg: var(--bg);

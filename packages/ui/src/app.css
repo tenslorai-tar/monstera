@@ -2976,17 +2976,14 @@ optgroup {
   max-inline-size: 85%;
   padding: var(--space-6) var(--space-10);
   border-radius: var(--radius-12);
-  /* THE ACCENT (the owner, 2026-10-02), so a person's message follows the colour they chose. Its text is SOLVED
-     against the accent where it is drawn (`Turn` in `AssistantPanel.tsx`, `useOnColor`), never stored; `--text` stands
-     only until the solve has run. Never `--accent-soft`, the selected state, which carries no text. */
+  /* A FAINT WASH OF THE ACCENT over the panel, edged in the accent (the owner's item 17c): the colour a person chose,
+     with the pane's own text colours on it. `--bubble-wash` is a light the accent turns (`ACCENT_LIGHTS`), so it is
+     derived where it is drawn and never stored, and `check:tokencontrast` holds `--text` and `--muted` on it for every
+     accent. It replaced a solid accent fill whose text was solved per accent, which read as a button. The edge is
+     decoration: the bubble is not a control, and its words say what it is. */
+  border: 1px solid var(--accent);
   color: var(--text);
-  background: var(--accent);
-}
-
-/* WHAT WENT, inside a person's bubble, takes the bubble's solved text: `--muted` is declared on the pane's surfaces,
-   and over the accent it is a pair nobody checked. */
-.m-assistant__turn[data-assistant-role='user'] .m-assistant__sent {
-  color: inherit;
+  background: var(--bubble-wash);
 }
 
 .m-assistant__turn[data-assistant-role='assistant'] {

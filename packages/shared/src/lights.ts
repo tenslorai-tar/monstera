@@ -29,7 +29,7 @@ import { type Rgb, channelsWithAlpha } from './colour.js';
 
 /**
  * EVERY TOKEN THE ACCENT TURNS, by name without its dashes — the one list, which the renderer writes and the check
- * sweeps. Every surface tint and its far stop, the dialog head's wash, the accent's soft fill, and the two colours the
+ * sweeps. Every surface tint and its far stop, the dialog head's wash, a person's message bubble's wash, the accent's soft fill, and the two colours the
  * design's glow and selection rings are drawn in. The ground's four glows, the page area's two lights and the start
  * screen's wash were here until the ground lost its lights (ADR-0140). NOT text, borders or the page, which carry the contrast
  * obligations the turned lights are held against; NOT the ground's own opaque colours, the base those obligations were
@@ -50,6 +50,7 @@ export const ACCENT_LIGHTS = [
   'tint-hero',
   'tint-hero-far',
   'dialog-head-wash',
+  'bubble-wash',
   'accent-soft',
   'light-ring',
   'light-halo',

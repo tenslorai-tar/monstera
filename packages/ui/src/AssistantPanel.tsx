@@ -157,7 +157,6 @@ import type { ShowToast } from './toasts.js';
 import { Button } from './primitives/Button.js';
 import { ChoiceMenu } from './primitives/ChoiceMenu.js';
 import { IconButton } from './primitives/IconButton.js';
-import { useOnColor } from './primitives/useOnColor.js';
 import { AI_MODELS_SETTING, AI_PROVIDER_SETTING } from './settings/ai.js';
 import type { SettingsStore } from './settingsStore.js';
 import { useSetting } from './useSetting.js';
@@ -370,15 +369,13 @@ function useConversation(store: DocumentStore | undefined): readonly Conversatio
 }
 
 /**
- * One turn of the conversation. A person's sits in a bubble filled with the ACCENT (the owner, 2 October), so its text
- * is solved against the accent in effect where it is drawn, never stored: the accent is the person's choice and the
- * theme the window's, and a fixed text colour is right for one pair of them (ADR-0003, `useOnColor`).
+ * One turn of the conversation. A person's sits in a bubble washed with the accent (the owner's item 17c), whose text
+ * is the pane's own `--text` and `--muted`: the wash is one of the accent's lights, held to those colours' floors for
+ * every accent by `check:tokencontrast`, so nothing is solved here.
  */
 function Turn({ role, children }: { readonly role: ConversationTurn['role']; readonly children: ReactNode }): ReactElement {
-  const element = useRef<HTMLLIElement>(null);
-  useOnColor(element, 'color', '--text', role === 'user' ? ['--accent'] : [], 'text');
   return (
-    <li ref={element} className="m-assistant__turn" data-assistant-role={role}>
+    <li className="m-assistant__turn" data-assistant-role={role}>
       {children}
     </li>
   );

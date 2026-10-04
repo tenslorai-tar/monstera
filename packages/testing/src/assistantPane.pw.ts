@@ -1,7 +1,8 @@
-import { asDocId, asDocVersion, channels, contrast } from '@monstera/shared';
+import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
+import { readsAtTextFloor } from './inkOnScreen.js';
 import { LOOKS, type Look, bridge, bridgeUnder } from './pageBridge.js';
 
 /**
@@ -38,7 +39,12 @@ async function openPane(
     // A SAVED CONVERSATION, so the chat is on screen without a provider to ask.
     aiHistory: {
       turns: [
-        { role: 'user' as const, text: 'What is this page about?' },
+        // WHAT WENT, so the bubble carries the owner's *Sent page 2 of 15* and its readability is measured.
+        {
+          role: 'user' as const,
+          text: 'What is this page about?',
+          sent: { firstPage: 1, lastPage: 1, pageCount: 15, characters: 800, truncated: false },
+        },
         { role: 'assistant' as const, text: 'It is a page with a black square in its middle.' },
       ],
     },
@@ -178,7 +184,7 @@ test('the message box carries its Enter hint for a screen reader only', async ({
   expect(await page.getByLabel('Ask about this document').getAttribute('aria-describedby')).toBe(await hint.getAttribute('id'));
 });
 
-test('the CHAT: the person’s message at the right in a filled bubble, the answer at the left, the text at 13 px', async ({ page }) => {
+test('the CHAT: the person’s message at the right in a washed bubble, the answer at the left, the text at 13 px', async ({ page }) => {
   await openPane(page);
   const shape = await page.evaluate(() => {
     const list = document.querySelector('.m-assistant__turns')?.getBoundingClientRect();
@@ -203,51 +209,65 @@ test('the CHAT: the person’s message at the right in a filled bubble, the answ
   expect(shape?.size).toBe('13px');
 });
 
-// A DEEP BLUE wants light text and an AMBER dark text, so a stored text colour fails one of them: each case asserting
-// its own direction is what shows the text is derived where it is drawn rather than kept. IN EVERY LOOK, at that look's
-// own text floor — 7:1 under high contrast, which clears a person's accent for the theme's, so the direction is asserted
-// only where the chosen accent is the one drawn.
+// A PERSON'S BUBBLE IS A WASH OF THE ACCENT EDGED IN IT (the owner's item 17c), with the pane's own text colours on it.
+// Under a deep blue and an amber the edge is the accent in effect and the wash is that accent's turned light, which
+// is what shows both are derived where they are drawn rather than kept; and every word in the bubble, *Sent page 2 of
+// 15* included, is MEASURED against the pixels painted behind it at the look's floor (`readsAtTextFloor`), since the
+// wash is translucent over a lit panel and no element's colour is the colour behind the words.
 for (const look of LOOKS) {
-  for (const [accent, wants] of [
-    ['#1d4ed8', 'lighter'],
-    ['#f59e0b', 'darker'],
+  for (const [accent, hue] of [
+    ['#1d4ed8', 'blue'],
+    ['#f59e0b', 'amber'],
   ] as const) {
-    test(`${look.name}: a person’s bubble FOLLOWS THE ACCENT in effect under ${accent}, its text solved to the look’s floor`, async ({
+    test(`${look.name}: a person’s bubble is a WASH of the accent in effect under ${accent}, edged in it, its words readable`, async ({
       page,
     }) => {
       await openPane(page, { 'appearance.accent': accent }, undefined, look);
-      const drawn = await page.evaluate(() => {
-        const user = document.querySelector<HTMLElement>('.m-assistant__turn[data-assistant-role="user"]');
-        if (user === null) return null;
-        // THE ACCENT IN EFFECT, read as a colour the way the bubble's background is, so the two compare as equals.
+      const bubble = page.locator('.m-assistant__turn[data-assistant-role="user"]');
+      await expect(bubble.locator('.m-assistant__sent')).toHaveText('Sent page 2 of 15');
+      const drawn = await bubble.evaluate((user) => {
+        // THE TOKENS IN EFFECT, read as colours the way the bubble's own are, so they compare as equals.
         const probe = document.createElement('span');
-        probe.style.backgroundColor = 'var(--accent)';
         user.append(probe);
+        probe.style.backgroundColor = 'var(--accent)';
         const accentColour = getComputedStyle(probe).backgroundColor;
+        probe.style.backgroundColor = 'var(--bubble-wash)';
+        const washColour = getComputedStyle(probe).backgroundColor;
+        probe.style.color = 'var(--text)';
+        const textColour = getComputedStyle(probe).color;
         probe.remove();
+        const style = getComputedStyle(user);
         return {
-          fill: getComputedStyle(user).backgroundColor,
-          text: getComputedStyle(user).color,
+          edge: style.borderTopColor,
+          edgeWidth: style.borderTopWidth,
+          fill: style.backgroundColor,
           accentColour,
-          // A PERSON'S ACCENT IS WRITTEN ON THE ROOT (`applyAccent`), and cleared there under high contrast.
+          washColour,
+          textColour,
+          text: style.color,
           personsAccent: document.documentElement.style.getPropertyValue('--accent'),
         };
       });
-      if (drawn === null) throw new Error('a person’s turn');
-      expect(drawn.fill, accent).toBe(drawn.accentColour);
-      const fill = channels(drawn.fill);
-      const text = channels(drawn.text);
-      if (fill === null || text === null) throw new Error(`colours that parse: ${drawn.fill} and ${drawn.text}`);
-      const floor = look.name === 'hc' ? 7 : 4.5;
-      expect(contrast(text, fill), `${drawn.text} on ${drawn.fill}`).toBeGreaterThanOrEqual(floor);
+      expect(drawn.edge, accent).toBe(drawn.accentColour);
+      expect(drawn.edgeWidth).toBe('1px');
+      expect(drawn.fill).toBe(drawn.washColour);
+      // THE PANE'S OWN TEXT COLOUR, never one solved per accent.
+      expect(drawn.text).toBe(drawn.textColour);
+      await readsAtTextFloor(page, bubble, look);
       if (look.name === 'hc') {
-        // CLEARED: the theme's accent is the one drawn, so the person's is not on the root.
+        // CLEARED: the theme's accent is the one drawn, and high contrast lays no wash.
         expect(drawn.personsAccent).toBe('');
-      } else {
-        expect(drawn.personsAccent).not.toBe('');
-        const brightness = ([r, g, b]: readonly number[]): number => (r ?? 0) + (g ?? 0) + (b ?? 0);
-        expect(brightness(text) > brightness(fill) ? 'lighter' : 'darker', `${drawn.text} on ${drawn.fill}`).toBe(wants);
+        expect(drawn.fill).toBe('rgba(0, 0, 0, 0)');
+        return;
       }
+      expect(drawn.personsAccent).not.toBe('');
+      // THE WASH FOLLOWS THE ACCENT: turned to its hue, faint, and not the theme's own green.
+      const wash = /rgba\((\d+), (\d+), (\d+), ([\d.]+)\)/u.exec(drawn.fill);
+      if (wash === null) throw new Error(`a translucent wash: ${drawn.fill}`);
+      const [red, green, blue, alpha] = wash.slice(1).map(Number) as [number, number, number, number];
+      expect(alpha).toBeGreaterThan(0.08);
+      expect(alpha).toBeLessThanOrEqual(0.2);
+      expect(hue === 'blue' ? blue > red && blue > green : red > blue, `${drawn.fill} under ${accent}`).toBe(true);
     });
   }
 }
